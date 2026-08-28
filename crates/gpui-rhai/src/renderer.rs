@@ -1,0 +1,1311 @@
+use std::collections::BTreeMap;
+use std::rc::Rc;
+
+use gpui::{
+    AnyElement, App, Bounds, BoxShadow, Context, Div, Element, ElementId, GlobalElementId,
+    InspectorElementId, InteractiveElement, IntoElement, LayoutId, ParentElement, Pixels, Point,
+    Render, SharedString, Stateful, StatefulInteractiveElement, Styled, Window, div, img, point,
+    px, relative, rems, rgba,
+};
+
+use crate::dropdown_element::{
+    DropdownCallbacks, DropdownEntityElement, DropdownPalette, DropdownSlotRuntime, QueryHandler,
+    SelectionHandler,
+};
+use crate::overlay_element::{ScriptOverlayElement, WindowOverlayCoordinator};
+use crate::toast_element::{ToastDismissHandler, ToastHostElement, ToastPalette, ToastPartStyles};
+use crate::virtual_list_element::{VirtualFocusHandler, VirtualListEntityElement};
+use crate::{
+    Align, AnimationKey, AnimationProperty, AssetRegistry, ColorValue, DropdownNodeSpec,
+    EventPropagation, FlexDirection, InteractionState, Justify, Length, OpaqueHandle,
+    OverlayNodeSpec, PrimitiveRegistry, PseudoState, Rgba8, ScriptCallback, Style, StyleProperties,
+    TextDirection, ToastHostSpec, UiNode, UiNodeKind, UiValue,
+};
+
+type DispatchFn = dyn Fn(ScriptCallback, UiValue, &mut Window, &mut App) -> EventPropagation;
+
+#[derive(Clone)]
+pub struct NodeEventDispatcher(Rc<DispatchFn>);
+
+impl NodeEventDispatcher {
+    #[must_use]
+    pub fn new(
+        dispatch: impl Fn(ScriptCallback, UiValue, &mut Window, &mut App) -> EventPropagation + 'static,
+    ) -> Self {
+        Self(Rc::new(dispatch))
+    }
+
+    pub(crate) fn dispatch(
+        &self,
+        callback: ScriptCallback,
+        payload: UiValue,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> EventPropagation {
+        (self.0)(callback, payload, window, cx)
+    }
+}
+
+pub trait ColorResolver {
+    fn resolve(&self, color: &ColorValue) -> Option<Rgba8>;
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct LiteralColorResolver;
+
+impl ColorResolver for LiteralColorResolver {
+    fn resolve(&self, color: &ColorValue) -> Option<Rgba8> {
+        match color {
+            ColorValue::Literal(color) => Some(*color),
+            ColorValue::Token(_) => None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct OwnedColorResolver {
+    tokens: BTreeMap<String, Rgba8>,
+}
+
+impl OwnedColorResolver {
+    fn capture(colors: &impl ColorResolver) -> Self {
+        const TOKENS: &[&str] = &[
+            "surface",
+            "surface_raised",
+            "surface_hover",
+            "text_primary",
+            "text_muted",
+            "accent",
+            "accent_hover",
+            "on_accent",
+            "danger",
+            "on_danger",
+            "warning",
+            "on_warning",
+            "success",
+            "on_success",
+            "border",
+            "focus_ring",
+            "disabled",
+        ];
+        Self {
+            tokens: TOKENS
+                .iter()
+                .filter_map(|token| {
+                    colors
+                        .resolve(&ColorValue::Token((*token).to_owned()))
+                        .map(|value| ((*token).to_owned(), value))
+                })
+                .collect(),
+        }
+    }
+}
+
+impl ColorResolver for OwnedColorResolver {
+    fn resolve(&self, color: &ColorValue) -> Option<Rgba8> {
+        match color {
+            ColorValue::Literal(color) => Some(*color),
+            ColorValue::Token(token) => self.tokens.get(token).copied(),
+        }
+    }
+}
+
+/// Converts stable runtime nodes into short-lived GPUI elements.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct GpuiNodeRenderer;
+
+struct RenderEnvironment<'a, C> {
+    colors: &'a C,
+    interaction: &'a InteractionState,
+    primitives: &'a PrimitiveRegistry,
+    dispatcher: Option<&'a NodeEventDispatcher>,
+    assets: Option<&'a AssetRegistry>,
+    overlays: &'a WindowOverlayCoordinator,
+    animations: &'a BTreeMap<AnimationKey, f64>,
+    direction: TextDirection,
+}
+
+pub(crate) struct WindowRenderResources<'a> {
+    pub assets: &'a AssetRegistry,
+    pub dispatcher: &'a NodeEventDispatcher,
+    pub overlays: &'a WindowOverlayCoordinator,
+    pub animations: &'a BTreeMap<AnimationKey, f64>,
+    pub direction: TextDirection,
+    pub root_path: &'a str,
+}
+
+impl GpuiNodeRenderer {
+    #[must_use]
+    pub fn render(node: &UiNode) -> AnyElement {
+        Self::render_with_primitives(
+            node,
+            &LiteralColorResolver,
+            &InteractionState::default(),
+            &PrimitiveRegistry::new(),
+        )
+    }
+
+    #[must_use]
+    pub fn render_with(
+        node: &UiNode,
+        colors: &impl ColorResolver,
+        interaction: &InteractionState,
+    ) -> AnyElement {
+        Self::render_with_primitives(node, colors, interaction, &PrimitiveRegistry::new())
+    }
+
+    #[must_use]
+    pub fn render_with_primitives(
+        node: &UiNode,
+        colors: &impl ColorResolver,
+        interaction: &InteractionState,
+        primitives: &PrimitiveRegistry,
+    ) -> AnyElement {
+        let overlays = WindowOverlayCoordinator::default();
+        let animations = BTreeMap::new();
+        let environment = RenderEnvironment {
+            colors,
+            interaction,
+            primitives,
+            dispatcher: None,
+            assets: None,
+            overlays: &overlays,
+            animations: &animations,
+            direction: TextDirection::LeftToRight,
+        };
+        Self::render_internal(node, &environment, None, "root")
+    }
+
+    #[must_use]
+    pub fn render_with_dispatcher(
+        node: &UiNode,
+        colors: &impl ColorResolver,
+        interaction: &InteractionState,
+        primitives: &PrimitiveRegistry,
+        dispatcher: &NodeEventDispatcher,
+    ) -> AnyElement {
+        let overlays = WindowOverlayCoordinator::default();
+        let animations = BTreeMap::new();
+        let environment = RenderEnvironment {
+            colors,
+            interaction,
+            primitives,
+            dispatcher: Some(dispatcher),
+            assets: None,
+            overlays: &overlays,
+            animations: &animations,
+            direction: TextDirection::LeftToRight,
+        };
+        Self::render_internal(node, &environment, None, "root")
+    }
+
+    #[must_use]
+    pub fn render_with_runtime(
+        node: &UiNode,
+        colors: &impl ColorResolver,
+        interaction: &InteractionState,
+        primitives: &PrimitiveRegistry,
+        assets: &AssetRegistry,
+        dispatcher: &NodeEventDispatcher,
+    ) -> AnyElement {
+        let overlays = WindowOverlayCoordinator::default();
+        let animations = BTreeMap::new();
+        let resources = WindowRenderResources {
+            assets,
+            dispatcher,
+            overlays: &overlays,
+            animations: &animations,
+            direction: TextDirection::LeftToRight,
+            root_path: "root",
+        };
+        Self::render_with_window_runtime(node, colors, interaction, primitives, &resources)
+    }
+
+    pub(crate) fn render_with_window_runtime(
+        node: &UiNode,
+        colors: &impl ColorResolver,
+        interaction: &InteractionState,
+        primitives: &PrimitiveRegistry,
+        resources: &WindowRenderResources<'_>,
+    ) -> AnyElement {
+        Self::render_subtree_with_window_runtime(
+            node,
+            colors,
+            interaction,
+            primitives,
+            resources,
+            resources.root_path,
+        )
+    }
+
+    pub(crate) fn render_subtree_with_window_runtime(
+        node: &UiNode,
+        colors: &impl ColorResolver,
+        interaction: &InteractionState,
+        primitives: &PrimitiveRegistry,
+        resources: &WindowRenderResources<'_>,
+        path: &str,
+    ) -> AnyElement {
+        let environment = RenderEnvironment {
+            colors,
+            interaction,
+            primitives,
+            dispatcher: Some(resources.dispatcher),
+            assets: Some(resources.assets),
+            overlays: resources.overlays,
+            animations: resources.animations,
+            direction: resources.direction,
+        };
+        Self::render_internal(node, &environment, None, path)
+    }
+
+    fn render_internal<C: ColorResolver>(
+        node: &UiNode,
+        environment: &RenderEnvironment<'_, C>,
+        boundary_fallback: Option<&UiNode>,
+        path: &str,
+    ) -> AnyElement {
+        let local_interaction = if is_disabled(node) {
+            environment.interaction.clone().with(PseudoState::Disabled)
+        } else {
+            environment.interaction.clone()
+        };
+        let animation = node_animation(environment.animations, path);
+        let mut resolved_style = node.style().resolve(&local_interaction);
+        apply_animated_dimensions(&mut resolved_style, animation);
+        let mut element = apply_style(
+            div(),
+            &resolved_style,
+            environment.colors,
+            environment.direction,
+        );
+        if matches!(node.kind(), UiNodeKind::Custom { .. }) {
+            let focus_ring = semantic_color(environment.colors, "focus_ring", 0x003b_82f6);
+            let focus_surface = semantic_color(environment.colors, "surface", 0x0018_181b);
+            element =
+                element.in_focus(move |style| focus_ring_shadow(style, focus_ring, focus_surface));
+        }
+        if let Some(opacity) = animation.opacity {
+            element = element.opacity(f64_to_f32(opacity.clamp(0.0, 1.0)));
+        }
+        if animation.clip_height.is_some() || resolved_style.clip == Some(true) {
+            element = element.overflow_hidden();
+        }
+        let click = node.handlers().get("click").map(|callback| {
+            (
+                callback.clone(),
+                node.handler_payload("click")
+                    .cloned()
+                    .unwrap_or(UiValue::Null),
+            )
+        });
+        let key_handlers = node
+            .handlers()
+            .iter()
+            .filter_map(|(event, callback)| {
+                event.strip_prefix("key:").map(|key| {
+                    (
+                        key.to_owned(),
+                        (
+                            callback.clone(),
+                            node.handler_payload(event)
+                                .cloned()
+                                .unwrap_or(UiValue::Null),
+                        ),
+                    )
+                })
+            })
+            .collect::<BTreeMap<_, _>>();
+        let text_direction = environment.direction;
+        let populated = if !is_disabled(node)
+            && (click.is_some() || !key_handlers.is_empty())
+            && let Some(dispatcher) = environment.dispatcher
+        {
+            let click_dispatcher = dispatcher.clone();
+            let keyboard_dispatcher = dispatcher.clone();
+            let keyboard_click = click.clone();
+            let tab_stop = match node.attributes().get("tab_stop") {
+                Some(UiValue::Bool(tab_stop)) => *tab_stop,
+                _ => true,
+            };
+            let element = apply_pseudo_backgrounds(
+                element.id(SharedString::from(path.to_owned())),
+                node.style(),
+                environment.colors,
+            )
+            .tab_index(0)
+            .tab_stop(tab_stop)
+            .on_click(move |_, window, cx| {
+                if let Some((callback, payload)) = &click
+                    && click_dispatcher.dispatch(callback.clone(), payload.clone(), window, cx)
+                        == EventPropagation::Handled
+                {
+                    cx.stop_propagation();
+                }
+            })
+            .on_key_down(move |event, window, cx| {
+                let semantic_key =
+                    logical_keyboard_key(event.keystroke.key.as_str(), text_direction);
+                let semantic = key_handlers.get(semantic_key).or_else(|| {
+                    matches!(event.keystroke.key.as_str(), "enter" | "space")
+                        .then_some(())
+                        .and(keyboard_click.as_ref())
+                });
+                if let Some((callback, payload)) = semantic {
+                    keyboard_dispatcher.dispatch(callback.clone(), payload.clone(), window, cx);
+                    cx.stop_propagation();
+                }
+            });
+            Self::populate(element, node, environment, boundary_fallback, path)
+        } else {
+            Self::populate(element, node, environment, boundary_fallback, path)
+        };
+        translated(populated, animation.translate_x, animation.translate_y)
+    }
+
+    fn populate<C: ColorResolver>(
+        element: impl ParentElement + IntoElement,
+        node: &UiNode,
+        environment: &RenderEnvironment<'_, C>,
+        boundary_fallback: Option<&UiNode>,
+        path: &str,
+    ) -> AnyElement {
+        match node.kind() {
+            UiNodeKind::Text { text } => element.child(text.as_str().to_owned()).into_any_element(),
+            UiNodeKind::Container { children } => element
+                .children(children.iter().enumerate().map(|(index, child)| {
+                    let child_path = child.key().map_or_else(
+                        || format!("{path}/{index}"),
+                        |key| format!("{path}/{}", key.as_str()),
+                    );
+                    Self::render_internal(child, environment, boundary_fallback, &child_path)
+                }))
+                .into_any_element(),
+            UiNodeKind::Custom { primitive } => element
+                .child(environment.primitives.element(
+                    primitive.clone(),
+                    boundary_fallback.cloned(),
+                    environment.dispatcher.cloned(),
+                ))
+                .into_any_element(),
+            UiNodeKind::Image { handle } => render_image(element, node, handle, environment),
+            UiNodeKind::DirectionalImage {
+                left_to_right,
+                right_to_left,
+            } => {
+                let handle = match environment.direction {
+                    TextDirection::LeftToRight => left_to_right,
+                    TextDirection::RightToLeft => right_to_left,
+                };
+                render_image(element, node, handle, environment)
+            }
+            UiNodeKind::Overlay {
+                trigger,
+                content,
+                spec,
+            } => element
+                .child(native_overlay_element(
+                    node,
+                    trigger,
+                    content,
+                    spec,
+                    environment,
+                    boundary_fallback,
+                    path,
+                ))
+                .into_any_element(),
+            UiNodeKind::Dropdown { spec } => element
+                .child(native_dropdown_element(node, spec, environment, path))
+                .into_any_element(),
+            UiNodeKind::ToastHost { spec } => element
+                .child(native_toast_element(node, spec, environment, path))
+                .into_any_element(),
+            UiNodeKind::VirtualList { spec } => element
+                .child(native_virtual_list_element(node, spec, environment, path))
+                .into_any_element(),
+            UiNodeKind::ErrorBoundary { child, fallback } => element
+                .child(Self::render_internal(
+                    child,
+                    environment,
+                    Some(fallback),
+                    &format!("{path}/boundary"),
+                ))
+                .into_any_element(),
+        }
+    }
+}
+
+fn render_image<C: ColorResolver>(
+    element: impl ParentElement + IntoElement,
+    node: &UiNode,
+    handle: &OpaqueHandle,
+    environment: &RenderEnvironment<'_, C>,
+) -> AnyElement {
+    let interaction = if is_disabled(node) {
+        environment.interaction.clone().with(PseudoState::Disabled)
+    } else {
+        environment.interaction.clone()
+    };
+    let tint = node
+        .style()
+        .resolve(&interaction)
+        .text_color
+        .as_ref()
+        .and_then(|color| environment.colors.resolve(color));
+    environment.assets.map_or_else(
+        || div().child("Image registry unavailable").into_any_element(),
+        |assets| match assets.image_source_tinted(handle, tint) {
+            Ok(source) => element.child(img(source)).into_any_element(),
+            Err(error) => div()
+                .child(format!("Image error: {error}"))
+                .into_any_element(),
+        },
+    )
+}
+
+fn native_overlay_element<C: ColorResolver>(
+    node: &UiNode,
+    trigger: &UiNode,
+    content: &UiNode,
+    spec: &OverlayNodeSpec,
+    environment: &RenderEnvironment<'_, C>,
+    boundary_fallback: Option<&UiNode>,
+    path: &str,
+) -> ScriptOverlayElement {
+    let mut rendered_spec = spec.clone();
+    if rendered_spec.kind == crate::OverlayKind::Tooltip {
+        rendered_spec.open = environment
+            .overlays
+            .tooltip_visible(&rendered_spec.id, std::time::Instant::now());
+    }
+    let trigger = GpuiNodeRenderer::render_internal(
+        trigger,
+        environment,
+        boundary_fallback,
+        &format!("{path}/trigger"),
+    );
+    let content = GpuiNodeRenderer::render_internal(
+        content,
+        environment,
+        boundary_fallback,
+        &format!("{path}/content"),
+    );
+    let open_change = node.handlers().get("open_change").and_then(|callback| {
+        environment.dispatcher.cloned().map(|dispatcher| {
+            let callback = callback.clone();
+            Rc::new(move |open, window: &mut Window, cx: &mut App| {
+                dispatcher.dispatch(callback.clone(), UiValue::Bool(open), window, cx);
+            }) as crate::overlay_element::OpenChangeHandler
+        })
+    });
+    let panel_key = environment.dispatcher.cloned().and_then(|dispatcher| {
+        let handlers = node
+            .handlers()
+            .iter()
+            .filter_map(|(event, callback)| {
+                event
+                    .strip_prefix("key:")
+                    .map(|key| (key.to_owned(), callback.clone()))
+            })
+            .collect::<BTreeMap<_, _>>();
+        (!handlers.is_empty()).then(|| {
+            let payloads = node
+                .handlers()
+                .keys()
+                .filter_map(|event| {
+                    event
+                        .strip_prefix("key:")
+                        .map(|key| (key.to_owned(), node.handler_payload(event).cloned()))
+                })
+                .collect::<BTreeMap<_, _>>();
+            let direction = environment.direction;
+            Rc::new(
+                move |event: &gpui::KeyDownEvent, window: &mut Window, cx: &mut App| {
+                    let key = logical_keyboard_key(event.keystroke.key.as_str(), direction);
+                    let Some(callback) = handlers.get(key) else {
+                        return false;
+                    };
+                    dispatcher.dispatch(
+                        callback.clone(),
+                        payloads
+                            .get(key)
+                            .and_then(Clone::clone)
+                            .unwrap_or(UiValue::Null),
+                        window,
+                        cx,
+                    );
+                    true
+                },
+            ) as crate::overlay_element::PanelKeyHandler
+        })
+    });
+    let restore_focus_on_close = rendered_spec.kind == crate::OverlayKind::Menu;
+    let overlay = ScriptOverlayElement::new(
+        path,
+        trigger,
+        content,
+        rendered_spec,
+        open_change,
+        panel_key,
+        environment.overlays.clone(),
+    );
+    let backdrop_style = node.part_style("backdrop").map(|style| {
+        let style = style.clone();
+        let colors = OwnedColorResolver::capture(environment.colors);
+        let direction = environment.direction;
+        Rc::new(move |backdrop: Div| apply_style_override(backdrop, &style, &colors, direction))
+            as crate::overlay_element::BackdropStyleHandler
+    });
+    overlay
+        .with_backdrop_style(backdrop_style)
+        .with_focus_ring(semantic_color(
+            environment.colors,
+            "focus_ring",
+            0x003b_82f6,
+        ))
+        .with_focus_surface(semantic_color(environment.colors, "surface", 0x0018_181b))
+        .restore_focus_on_close(restore_focus_on_close)
+}
+
+fn native_toast_element<C: ColorResolver>(
+    node: &UiNode,
+    spec: &ToastHostSpec,
+    environment: &RenderEnvironment<'_, C>,
+    path: &str,
+) -> ToastHostElement {
+    let dismiss = node
+        .handlers()
+        .get("dismiss")
+        .and_then(|callback| {
+            environment.dispatcher.cloned().map(|dispatcher| {
+                let callback = callback.clone();
+                Rc::new(move |id: String, window: &mut Window, cx: &mut App| {
+                    dispatcher.dispatch(callback.clone(), UiValue::String(id), window, cx);
+                }) as ToastDismissHandler
+            })
+        })
+        .unwrap_or_else(|| Rc::new(|_, _, _| {}));
+    ToastHostElement::new(
+        path,
+        spec.clone(),
+        ToastPalette {
+            surface: semantic_color(environment.colors, "surface_raised", 0x0027_272a),
+            text: semantic_color(environment.colors, "text_primary", 0x00f4_f4f5),
+            muted: semantic_color(environment.colors, "text_muted", 0x00a1_a1aa),
+            border: semantic_color(environment.colors, "border", 0x003f_3f46),
+            success: semantic_color(environment.colors, "success", 0x0022_c55e),
+            warning: semantic_color(environment.colors, "warning", 0x00f5_9e0b),
+            danger: semantic_color(environment.colors, "danger", 0x00ef_4444),
+        },
+        environment.overlays.clone(),
+        dismiss,
+        ToastPartStyles {
+            styles: node
+                .part_styles()
+                .map(|(name, style)| (name.to_owned(), style.clone()))
+                .collect(),
+            colors: OwnedColorResolver::capture(environment.colors),
+            direction: environment.direction,
+        },
+    )
+}
+
+fn native_dropdown_element<C: ColorResolver>(
+    node: &UiNode,
+    spec: &DropdownNodeSpec,
+    environment: &RenderEnvironment<'_, C>,
+    path: &str,
+) -> DropdownEntityElement {
+    let callbacks = dropdown_callbacks(node, environment.dispatcher);
+    let palette = DropdownPalette {
+        surface: semantic_color(environment.colors, "surface", 0x0018_181b),
+        raised: semantic_color(environment.colors, "surface_raised", 0x0027_272a),
+        hover: semantic_color(environment.colors, "surface_hover", 0x003f_3f46),
+        text: semantic_color(environment.colors, "text_primary", 0x00f4_f4f5),
+        muted: semantic_color(environment.colors, "text_muted", 0x00a1_a1aa),
+        accent: semantic_color(environment.colors, "accent", 0x003b_82f6),
+        border: semantic_color(environment.colors, "border", 0x003f_3f46),
+        disabled: semantic_color(environment.colors, "disabled", 0x0052_525b),
+        focus_ring: semantic_color(environment.colors, "focus_ring", 0x003b_82f6),
+    };
+    let slot_runtime = DropdownSlotRuntime {
+        colors: OwnedColorResolver::capture(environment.colors),
+        primitives: environment.primitives.clone(),
+        assets: environment.assets.cloned().unwrap_or_default(),
+        dispatcher: environment
+            .dispatcher
+            .cloned()
+            .unwrap_or_else(|| NodeEventDispatcher::new(|_, _, _, _| EventPropagation::Handled)),
+        overlays: environment.overlays.clone(),
+        animations: environment.animations.clone(),
+        direction: environment.direction,
+        base_path: path.to_owned(),
+        part_styles: node
+            .part_styles()
+            .map(|(name, style)| (name.to_owned(), style.clone()))
+            .collect(),
+    };
+    DropdownEntityElement::new(
+        path,
+        spec.clone(),
+        callbacks,
+        palette,
+        environment.overlays.clone(),
+        slot_runtime,
+    )
+}
+
+fn native_virtual_list_element<C: ColorResolver>(
+    node: &UiNode,
+    spec: &crate::VirtualListNodeSpec,
+    environment: &RenderEnvironment<'_, C>,
+    path: &str,
+) -> VirtualListEntityElement {
+    let focus_change = node.handlers().get("change").and_then(|callback| {
+        environment.dispatcher.cloned().map(|dispatcher| {
+            let callback = callback.clone();
+            Rc::new(move |key: String, window: &mut Window, cx: &mut App| {
+                dispatcher.dispatch(callback.clone(), UiValue::String(key), window, cx);
+            }) as VirtualFocusHandler
+        })
+    });
+    let runtime = DropdownSlotRuntime {
+        colors: OwnedColorResolver::capture(environment.colors),
+        primitives: environment.primitives.clone(),
+        assets: environment.assets.cloned().unwrap_or_default(),
+        dispatcher: environment
+            .dispatcher
+            .cloned()
+            .unwrap_or_else(|| NodeEventDispatcher::new(|_, _, _, _| EventPropagation::Handled)),
+        overlays: environment.overlays.clone(),
+        animations: environment.animations.clone(),
+        direction: environment.direction,
+        base_path: path.to_owned(),
+        part_styles: BTreeMap::new(),
+    };
+    VirtualListEntityElement::new(path, spec.clone(), runtime, focus_change)
+}
+
+#[derive(Clone, Copy, Default)]
+struct NodeAnimationValues {
+    opacity: Option<f64>,
+    translate_x: Option<f64>,
+    translate_y: Option<f64>,
+    width: Option<f64>,
+    height: Option<f64>,
+    clip_height: Option<f64>,
+}
+
+fn node_animation(values: &BTreeMap<AnimationKey, f64>, path: &str) -> NodeAnimationValues {
+    let value = |property| values.get(&AnimationKey::for_node(path, property)).copied();
+    NodeAnimationValues {
+        opacity: value(AnimationProperty::Opacity),
+        translate_x: value(AnimationProperty::TranslateX),
+        translate_y: value(AnimationProperty::TranslateY),
+        width: value(AnimationProperty::Width),
+        height: value(AnimationProperty::Height),
+        clip_height: value(AnimationProperty::ClipHeight),
+    }
+}
+
+fn apply_animated_dimensions(style: &mut StyleProperties, values: NodeAnimationValues) {
+    if let Some(width) = values.width {
+        style.width = Some(Length::Pixels(width.max(0.0)));
+    }
+    if let Some(height) = values.height {
+        style.height = Some(Length::Pixels(height.max(0.0)));
+    }
+    if let Some(height) = values.clip_height {
+        style.height = Some(Length::Pixels(height.max(0.0)));
+    }
+}
+
+fn translated(element: AnyElement, x: Option<f64>, y: Option<f64>) -> AnyElement {
+    let offset = point(
+        px(f64_to_f32(x.unwrap_or(0.0))),
+        px(f64_to_f32(y.unwrap_or(0.0))),
+    );
+    if offset == Point::default() {
+        element
+    } else {
+        TranslatedElement {
+            child: Some(element),
+            offset,
+        }
+        .into_any_element()
+    }
+}
+
+fn f64_to_f32(value: f64) -> f32 {
+    value.to_string().parse().unwrap_or_else(|_| {
+        if value.is_sign_negative() {
+            f32::MIN
+        } else {
+            f32::MAX
+        }
+    })
+}
+
+struct TranslatedElement {
+    child: Option<AnyElement>,
+    offset: Point<Pixels>,
+}
+
+impl Element for TranslatedElement {
+    type RequestLayoutState = AnyElement;
+    type PrepaintState = ();
+
+    fn id(&self) -> Option<ElementId> {
+        None
+    }
+
+    fn source_location(&self) -> Option<&'static core::panic::Location<'static>> {
+        None
+    }
+
+    fn request_layout(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> (LayoutId, Self::RequestLayoutState) {
+        let mut child = self.child.take().expect("translated element renders once");
+        let layout = child.request_layout(window, cx);
+        (layout, child)
+    }
+
+    fn prepaint(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        _bounds: Bounds<Pixels>,
+        child: &mut Self::RequestLayoutState,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        window.with_element_offset(self.offset, |window| child.prepaint(window, cx));
+    }
+
+    fn paint(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        _bounds: Bounds<Pixels>,
+        child: &mut Self::RequestLayoutState,
+        _prepaint: &mut Self::PrepaintState,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        window.with_element_offset(self.offset, |window| child.paint(window, cx));
+    }
+}
+
+impl IntoElement for TranslatedElement {
+    type Element = Self;
+
+    fn into_element(self) -> Self::Element {
+        self
+    }
+}
+
+fn dropdown_callbacks(
+    node: &UiNode,
+    dispatcher: Option<&NodeEventDispatcher>,
+) -> DropdownCallbacks {
+    let Some(dispatcher) = dispatcher.cloned() else {
+        return DropdownCallbacks::default();
+    };
+    let selection = node.handlers().get("change").map(|callback| {
+        let callback = callback.clone();
+        let dispatcher = dispatcher.clone();
+        Rc::new(
+            move |values: Vec<String>, window: &mut Window, cx: &mut App| {
+                dispatcher.dispatch(
+                    callback.clone(),
+                    UiValue::Array(values.into_iter().map(UiValue::String).collect()),
+                    window,
+                    cx,
+                );
+            },
+        ) as SelectionHandler
+    });
+    let open = node.handlers().get("open_change").map(|callback| {
+        let callback = callback.clone();
+        let dispatcher = dispatcher.clone();
+        Rc::new(move |open, window: &mut Window, cx: &mut App| {
+            dispatcher.dispatch(callback.clone(), UiValue::Bool(open), window, cx);
+        }) as crate::overlay_element::OpenChangeHandler
+    });
+    let query = node.handlers().get("query_change").map(|callback| {
+        let callback = callback.clone();
+        Rc::new(move |query: String, window: &mut Window, cx: &mut App| {
+            dispatcher.dispatch(callback.clone(), UiValue::String(query), window, cx);
+        }) as QueryHandler
+    });
+    DropdownCallbacks {
+        selection,
+        open,
+        query,
+    }
+}
+
+fn semantic_color(colors: &impl ColorResolver, token: &str, fallback: u32) -> Rgba8 {
+    colors
+        .resolve(&ColorValue::Token(token.to_owned()))
+        .unwrap_or_else(|| Rgba8::from_rgb_hex(fallback))
+}
+
+fn apply_pseudo_backgrounds(
+    mut element: Stateful<Div>,
+    style: &Style,
+    colors: &impl ColorResolver,
+) -> Stateful<Div> {
+    if let Some(color) = style
+        .hover
+        .as_ref()
+        .and_then(|properties| properties.background.as_ref())
+        .and_then(|color| colors.resolve(color))
+    {
+        element = element.hover(move |style| style.bg(rgba(color.as_rgba_hex())));
+    }
+    if let Some(color) = style
+        .active
+        .as_ref()
+        .and_then(|properties| properties.background.as_ref())
+        .and_then(|color| colors.resolve(color))
+    {
+        element = element.active(move |style| style.bg(rgba(color.as_rgba_hex())));
+    }
+    let focus_background = style
+        .focus
+        .as_ref()
+        .and_then(|properties| properties.background.as_ref())
+        .and_then(|color| colors.resolve(color));
+    let focus_ring = semantic_color(colors, "focus_ring", 0x003b_82f6);
+    let focus_surface = semantic_color(colors, "surface", 0x0018_181b);
+    element = element.focus(move |style| {
+        let style = match focus_background {
+            Some(color) => style.bg(rgba(color.as_rgba_hex())),
+            None => style,
+        };
+        focus_ring_shadow(style, focus_ring, focus_surface)
+    });
+    element
+}
+
+fn focus_ring_shadow(
+    style: gpui::StyleRefinement,
+    color: Rgba8,
+    surface: Rgba8,
+) -> gpui::StyleRefinement {
+    style.shadow(vec![
+        BoxShadow {
+            color: rgba(color.as_rgba_hex()).into(),
+            offset: point(px(0.0), px(0.0)),
+            blur_radius: px(0.0),
+            spread_radius: px(4.0),
+        },
+        BoxShadow {
+            color: rgba(surface.as_rgba_hex()).into(),
+            offset: point(px(0.0), px(0.0)),
+            blur_radius: px(0.0),
+            spread_radius: px(2.0),
+        },
+    ])
+}
+
+fn is_disabled(node: &UiNode) -> bool {
+    node.attributes().get("disabled") == Some(&UiValue::Bool(true))
+}
+
+fn apply_style(
+    element: Div,
+    style: &StyleProperties,
+    colors: &impl ColorResolver,
+    direction: TextDirection,
+) -> Div {
+    let element = apply_layout(element, style, direction);
+    let element = apply_spacing(element, style, direction);
+    apply_paint_and_text(element, style, colors)
+}
+
+pub(crate) fn apply_style_override(
+    element: Div,
+    style: &Style,
+    colors: &impl ColorResolver,
+    direction: TextDirection,
+) -> Div {
+    apply_style(
+        element,
+        &style.resolve(&InteractionState::default()),
+        colors,
+        direction,
+    )
+}
+
+fn apply_layout(mut element: Div, style: &StyleProperties, text_direction: TextDirection) -> Div {
+    if let Some(direction) = style.direction {
+        element = element.flex();
+        element = match (direction, text_direction) {
+            (FlexDirection::Row, TextDirection::LeftToRight) => element.flex_row(),
+            (FlexDirection::Row, TextDirection::RightToLeft) => element.flex_row_reverse(),
+            (FlexDirection::Column, _) => element.flex_col(),
+        };
+    }
+    if let Some(align) = style.align {
+        let align = if style.direction == Some(FlexDirection::Column)
+            && text_direction == TextDirection::RightToLeft
+        {
+            match align {
+                Align::Start => Align::End,
+                Align::End => Align::Start,
+                other => other,
+            }
+        } else {
+            align
+        };
+        element = match align {
+            Align::Start => element.items_start(),
+            Align::Center => element.items_center(),
+            Align::End => element.items_end(),
+            Align::Stretch => element,
+        };
+    }
+    if let Some(justify) = style.justify {
+        element = match justify {
+            Justify::Start => element.justify_start(),
+            Justify::Center => element.justify_center(),
+            Justify::End => element.justify_end(),
+            Justify::Between => element.justify_between(),
+            Justify::Around => element.justify_around(),
+        };
+    }
+    if let Some(value) = style.width {
+        element = width(element, value);
+    }
+    if let Some(value) = style.height {
+        element = height(element, value);
+    }
+    if let Some(value) = style.min_width {
+        element = min_width(element, value);
+    }
+    if let Some(value) = style.max_width {
+        element = max_width(element, value);
+    }
+    if let Some(value) = style.min_height {
+        element = min_height(element, value);
+    }
+    if let Some(value) = style.max_height {
+        element = max_height(element, value);
+    }
+    if let Some(value) = style.gap {
+        element = gap(element, value);
+    }
+    if style.flex_grow == Some(true) {
+        element = element.flex_grow();
+    }
+    element
+}
+
+fn apply_spacing(mut element: Div, style: &StyleProperties, direction: TextDirection) -> Div {
+    if let Some(value) = style.padding.top {
+        element = padding_top(element, value);
+    }
+    let (padding_left_value, padding_right_value) = logical_horizontal_edges(
+        style.padding.left,
+        style.padding.right,
+        style.padding.start,
+        style.padding.end,
+        direction,
+    );
+    if let Some(value) = padding_right_value {
+        element = padding_right(element, value);
+    }
+    if let Some(value) = style.padding.bottom {
+        element = padding_bottom(element, value);
+    }
+    if let Some(value) = padding_left_value {
+        element = padding_left(element, value);
+    }
+    if let Some(value) = style.margin.top {
+        element = margin_top(element, value);
+    }
+    let (margin_left_value, margin_right_value) = logical_horizontal_edges(
+        style.margin.left,
+        style.margin.right,
+        style.margin.start,
+        style.margin.end,
+        direction,
+    );
+    if let Some(value) = margin_right_value {
+        element = margin_right(element, value);
+    }
+    if let Some(value) = style.margin.bottom {
+        element = margin_bottom(element, value);
+    }
+    if let Some(value) = margin_left_value {
+        element = margin_left(element, value);
+    }
+    element
+}
+
+fn logical_horizontal_edges(
+    mut left: Option<Length>,
+    mut right: Option<Length>,
+    start: Option<Length>,
+    end: Option<Length>,
+    direction: TextDirection,
+) -> (Option<Length>, Option<Length>) {
+    match direction {
+        TextDirection::LeftToRight => {
+            if start.is_some() {
+                left = start;
+            }
+            if end.is_some() {
+                right = end;
+            }
+        }
+        TextDirection::RightToLeft => {
+            if start.is_some() {
+                right = start;
+            }
+            if end.is_some() {
+                left = end;
+            }
+        }
+    }
+    (left, right)
+}
+
+fn logical_keyboard_key(key: &str, direction: TextDirection) -> &str {
+    match (key, direction) {
+        ("left", TextDirection::RightToLeft) => "right",
+        ("right", TextDirection::RightToLeft) => "left",
+        _ => key,
+    }
+}
+
+fn apply_paint_and_text(
+    mut element: Div,
+    style: &StyleProperties,
+    colors: &impl ColorResolver,
+) -> Div {
+    if let Some(color) = style
+        .background
+        .as_ref()
+        .and_then(|color| colors.resolve(color))
+    {
+        element = element.bg(rgba(color.as_rgba_hex()));
+    }
+    if let Some(color) = style
+        .text_color
+        .as_ref()
+        .and_then(|color| colors.resolve(color))
+    {
+        element = element.text_color(rgba(color.as_rgba_hex()));
+    }
+    if let Some(color) = style
+        .border_color
+        .as_ref()
+        .and_then(|color| colors.resolve(color))
+    {
+        element = element.border_color(rgba(color.as_rgba_hex()));
+    }
+    if let Some(value) = style.border_width {
+        element = border(element, value);
+    }
+    if let Some(value) = style.radius {
+        element = radius(element, value);
+    }
+    if let Some(value) = style.font_size {
+        element = font_size(element, value);
+    }
+    element
+}
+
+macro_rules! definite_length_fn {
+    ($name:ident, $method:ident) => {
+        fn $name(element: Div, value: Length) -> Div {
+            match value {
+                Length::Pixels(value) => element.$method(px(to_f32(value))),
+                Length::Rems(value) => element.$method(rems(to_f32(value))),
+                Length::Relative(value) => element.$method(relative(to_f32(value))),
+            }
+        }
+    };
+}
+
+definite_length_fn!(width, w);
+definite_length_fn!(height, h);
+definite_length_fn!(min_width, min_w);
+definite_length_fn!(max_width, max_w);
+definite_length_fn!(min_height, min_h);
+definite_length_fn!(max_height, max_h);
+definite_length_fn!(gap, gap);
+definite_length_fn!(padding_top, pt);
+definite_length_fn!(padding_right, pr);
+definite_length_fn!(padding_bottom, pb);
+definite_length_fn!(padding_left, pl);
+definite_length_fn!(margin_top, mt);
+definite_length_fn!(margin_right, mr);
+definite_length_fn!(margin_bottom, mb);
+definite_length_fn!(margin_left, ml);
+
+fn border(element: Div, value: Length) -> Div {
+    match value {
+        Length::Pixels(value) => element.border(px(to_f32(value))),
+        Length::Rems(value) => element.border(rems(to_f32(value))),
+        Length::Relative(_) => element,
+    }
+}
+
+fn radius(element: Div, value: Length) -> Div {
+    match value {
+        Length::Pixels(value) => element.rounded(px(to_f32(value))),
+        Length::Rems(value) => element.rounded(rems(to_f32(value))),
+        Length::Relative(_) => element,
+    }
+}
+
+fn font_size(element: Div, value: Length) -> Div {
+    match value {
+        Length::Pixels(value) => element.text_size(px(to_f32(value))),
+        Length::Rems(value) => element.text_size(rems(to_f32(value))),
+        Length::Relative(_) => element,
+    }
+}
+
+#[allow(clippy::cast_possible_truncation)]
+fn to_f32(value: f64) -> f32 {
+    debug_assert!(value.is_finite() && value >= 0.0 && value <= f64::from(f32::MAX));
+    value as f32
+}
+
+/// Minimal GPUI view for a previously evaluated Rhai tree.
+pub struct ScriptView {
+    root: UiNode,
+    primitives: PrimitiveRegistry,
+}
+
+impl ScriptView {
+    #[must_use]
+    pub fn new(root: UiNode) -> Self {
+        Self {
+            root,
+            primitives: PrimitiveRegistry::new(),
+        }
+    }
+
+    #[must_use]
+    pub fn with_primitives(root: UiNode, primitives: PrimitiveRegistry) -> Self {
+        Self { root, primitives }
+    }
+
+    pub fn set_root(&mut self, root: UiNode, cx: &mut Context<Self>) {
+        self.root = root;
+        cx.notify();
+    }
+
+    #[must_use]
+    pub fn root(&self) -> &UiNode {
+        &self.root
+    }
+}
+
+impl Render for ScriptView {
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        GpuiNodeRenderer::render_with_primitives(
+            &self.root,
+            &LiteralColorResolver,
+            &InteractionState::default(),
+            &self.primitives,
+        )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{ColorValue, Length, Rgba8, Style};
+
+    #[test]
+    fn declarative_nodes_and_typed_styles_convert_without_a_gpui_context() {
+        let root = UiNode::column(vec![UiNode::text("one"), UiNode::text("two")]).with_style(
+            &Style::new()
+                .gap(Length::pixels(8.0).unwrap())
+                .background(ColorValue::Literal(Rgba8::from_rgb_hex(0x0022_2222))),
+        );
+        let _element = GpuiNodeRenderer::render(&root);
+    }
+
+    #[test]
+    fn sampled_animation_values_override_dimensions_and_transform_without_rhai() {
+        let values = BTreeMap::from([
+            (
+                AnimationKey::for_node("root/card", AnimationProperty::Width),
+                180.0,
+            ),
+            (
+                AnimationKey::for_node("root/card", AnimationProperty::ClipHeight),
+                64.0,
+            ),
+            (
+                AnimationKey::for_node("root/card", AnimationProperty::TranslateX),
+                12.0,
+            ),
+        ]);
+        let sampled = node_animation(&values, "root/card");
+        let mut style = StyleProperties::default();
+        apply_animated_dimensions(&mut style, sampled);
+        assert_eq!(style.width, Some(Length::Pixels(180.0)));
+        assert_eq!(style.height, Some(Length::Pixels(64.0)));
+        assert_eq!(sampled.translate_x, Some(12.0));
+    }
+
+    #[test]
+    fn logical_spacing_resolves_to_physical_edges_in_both_directions() {
+        let start = Length::Pixels(12.0);
+        let end = Length::Pixels(4.0);
+        assert_eq!(
+            logical_horizontal_edges(
+                None,
+                None,
+                Some(start),
+                Some(end),
+                TextDirection::LeftToRight,
+            ),
+            (Some(start), Some(end))
+        );
+        assert_eq!(
+            logical_horizontal_edges(
+                None,
+                None,
+                Some(start),
+                Some(end),
+                TextDirection::RightToLeft,
+            ),
+            (Some(end), Some(start))
+        );
+    }
+
+    #[test]
+    fn rtl_keyboard_navigation_maps_physical_arrows_to_logical_handlers() {
+        assert_eq!(
+            logical_keyboard_key("left", TextDirection::RightToLeft),
+            "right"
+        );
+        assert_eq!(
+            logical_keyboard_key("right", TextDirection::RightToLeft),
+            "left"
+        );
+        assert_eq!(
+            logical_keyboard_key("left", TextDirection::LeftToRight),
+            "left"
+        );
+        assert_eq!(
+            logical_keyboard_key("down", TextDirection::RightToLeft),
+            "down"
+        );
+    }
+}

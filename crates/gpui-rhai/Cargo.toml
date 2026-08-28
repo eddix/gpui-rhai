@@ -1,0 +1,35 @@
+[package]
+name = "gpui-rhai"
+description = "A Rhai-authored declarative UI runtime for GPUI"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+readme = "README.md"
+keywords = ["gpui", "rhai", "gui", "desktop", "declarative"]
+categories = ["gui"]
+include = ["src/**/*.rs", "README.md", "Cargo.toml"]
+
+[features]
+default = []
+dev-reload = ["dep:notify"]
+
+[dependencies]
+gpui.workspace = true
+notify = { workspace = true, optional = true }
+rhai.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+semver.workspace = true
+thiserror.workspace = true
+toml.workspace = true
+unicode-segmentation.workspace = true
+image.workspace = true
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true

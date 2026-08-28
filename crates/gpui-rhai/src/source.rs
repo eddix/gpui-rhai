@@ -1,0 +1,352 @@
+use std::collections::BTreeMap;
+use std::fmt;
+use std::sync::Mutex;
+
+use rhai::{AST, Dynamic, Engine, EvalAltResult, Module, ModuleResolver, Position, Scope, Shared};
+use serde::{Deserialize, Serialize};
+use thiserror::Error;
+
+use crate::{ModuleCompileCache, ScriptSource, ScriptSourceError};
+
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub struct ModuleId(String);
+
+impl ModuleId {
+    /// Parse and validate a logical module identifier.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ModuleIdError`] for absolute paths, traversal, empty segments,
+    /// platform paths, or unsupported characters.
+    pub fn parse(value: impl Into<String>) -> Result<Self, ModuleIdError> {
+        let value = value.into();
+        validate_module_id(&value)?;
+        Ok(Self(value))
+    }
+
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for ModuleId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(formatter)
+    }
+}
+
+impl TryFrom<String> for ModuleId {
+    type Error = ModuleIdError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::parse(value)
+    }
+}
+
+impl From<ModuleId> for String {
+    fn from(value: ModuleId) -> Self {
+        value.0
+    }
+}
+
+#[derive(Clone, Debug, Error, Eq, PartialEq)]
+pub enum ModuleIdError {
+    #[error("module id cannot be empty")]
+    Empty,
+    #[error("module id `{0}` must be relative and use `/` separators")]
+    AbsoluteOrPlatformPath(String),
+    #[error("module id `{0}` contains an empty, `.` or `..` segment")]
+    InvalidSegment(String),
+    #[error("module id `{0}` contains unsupported characters")]
+    UnsupportedCharacters(String),
+}
+
+fn validate_module_id(value: &str) -> Result<(), ModuleIdError> {
+    if value.is_empty() {
+        return Err(ModuleIdError::Empty);
+    }
+    if value.starts_with('/')
+        || value.starts_with('\\')
+        || value.contains('\\')
+        || value.contains(':')
+    {
+        return Err(ModuleIdError::AbsoluteOrPlatformPath(value.to_owned()));
+    }
+    if value
+        .split('/')
+        .any(|segment| segment.is_empty() || segment == "." || segment == "..")
+    {
+        return Err(ModuleIdError::InvalidSegment(value.to_owned()));
+    }
+    if !value
+        .chars()
+        .all(|character| character.is_ascii_alphanumeric() || matches!(character, '/' | '_' | '-'))
+    {
+        return Err(ModuleIdError::UnsupportedCharacters(value.to_owned()));
+    }
+    Ok(())
+}
+
+/// A resolver that can only load explicitly registered, logical module IDs.
+///
+/// It never reads the filesystem and rejects path traversal, absolute paths,
+/// platform path syntax, and cyclic imports.
+#[derive(Debug, Default)]
+pub struct RestrictedModuleResolver {
+    sources: BTreeMap<ModuleId, String>,
+    compiled: BTreeMap<ModuleId, AST>,
+    resolving: Mutex<Vec<ModuleId>>,
+}
+
+impl RestrictedModuleResolver {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Snapshot every module from a file or embedded script source.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ScriptSourceError`] when any declared module cannot be loaded.
+    pub fn from_source(source: &impl ScriptSource) -> Result<Self, ScriptSourceError> {
+        let mut resolver = Self::new();
+        for id in source.module_ids() {
+            let asset = source.load(&id)?;
+            // `ModuleId` has already been validated by the source.
+            resolver.sources.insert(id, asset.source);
+        }
+        Ok(resolver)
+    }
+
+    /// Snapshot source while reusing transactionally compiled module ASTs.
+    ///
+    /// # Errors
+    ///
+    /// Returns source errors for declared modules that cannot load.
+    pub fn from_source_with_cache(
+        source: &impl ScriptSource,
+        cache: &ModuleCompileCache,
+    ) -> Result<Self, ScriptSourceError> {
+        let mut resolver = Self::from_source(source)?;
+        for id in source.module_ids() {
+            let asset = source.load(&id)?;
+            if cache.content_hash(&id) == Some(asset.content_hash)
+                && let Some(ast) = cache.ast(&id)
+            {
+                resolver.compiled.insert(id, ast.clone());
+            }
+        }
+        Ok(resolver)
+    }
+
+    /// Register source under a validated logical module identifier.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ModuleIdError`] when `id` violates the resolver's path rules.
+    pub fn insert(
+        &mut self,
+        id: impl Into<String>,
+        source: impl Into<String>,
+    ) -> Result<(), ModuleIdError> {
+        self.sources.insert(ModuleId::parse(id)?, source.into());
+        Ok(())
+    }
+
+    #[must_use]
+    pub fn contains(&self, id: &ModuleId) -> bool {
+        self.sources.contains_key(id)
+    }
+
+    fn begin_resolution(
+        &self,
+        id: &ModuleId,
+        position: Position,
+    ) -> Result<(), Box<EvalAltResult>> {
+        let mut stack = self.resolving.lock().map_err(|_| {
+            Box::new(runtime_error(
+                "module resolver lock is poisoned".to_owned(),
+                position,
+            ))
+        })?;
+        if let Some(cycle_start) = stack.iter().position(|active| active == id) {
+            let mut cycle = stack[cycle_start..]
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>();
+            cycle.push(id.to_string());
+            return Err(Box::new(runtime_error(
+                format!("cyclic module import: {}", cycle.join(" -> ")),
+                position,
+            )));
+        }
+        stack.push(id.clone());
+        Ok(())
+    }
+
+    fn end_resolution(&self, id: &ModuleId) {
+        if let Ok(mut stack) = self.resolving.lock() {
+            if stack.last() == Some(id) {
+                stack.pop();
+            } else if let Some(index) = stack.iter().rposition(|active| active == id) {
+                stack.remove(index);
+            }
+        }
+    }
+}
+
+impl ModuleResolver for RestrictedModuleResolver {
+    fn resolve(
+        &self,
+        engine: &Engine,
+        _source: Option<&str>,
+        path: &str,
+        position: Position,
+    ) -> Result<Shared<Module>, Box<EvalAltResult>> {
+        let id = ModuleId::parse(path)
+            .map_err(|error| Box::new(runtime_error(error.to_string(), position)))?;
+        let source = self.sources.get(&id).ok_or_else(|| {
+            Box::new(EvalAltResult::ErrorModuleNotFound(
+                path.to_owned(),
+                position,
+            ))
+        })?;
+
+        self.begin_resolution(&id, position)?;
+        let result = (|| {
+            crate::extract_imports(source).map_err(|error| {
+                Box::new(EvalAltResult::ErrorInModule(
+                    path.to_owned(),
+                    Box::new(runtime_error(error.to_string(), position)),
+                    position,
+                ))
+            })?;
+            let ast = if let Some(ast) = self.compiled.get(&id) {
+                ast.clone()
+            } else {
+                let mut ast = engine.compile(source).map_err(|error| {
+                    Box::new(EvalAltResult::ErrorInModule(
+                        path.to_owned(),
+                        error.into(),
+                        position,
+                    ))
+                })?;
+                ast.set_source(path);
+                ast
+            };
+            Module::eval_ast_as_new(Scope::new(), &ast, engine)
+                .map(Into::into)
+                .map_err(|error| {
+                    Box::new(EvalAltResult::ErrorInModule(
+                        path.to_owned(),
+                        error,
+                        position,
+                    ))
+                })
+        })();
+        self.end_resolution(&id);
+        result
+    }
+}
+
+fn runtime_error(message: String, position: Position) -> EvalAltResult {
+    EvalAltResult::ErrorRuntime(Dynamic::from(message), position)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn module_ids_reject_escape_paths() {
+        for invalid in [
+            "",
+            "/absolute",
+            "../outside",
+            "a/../b",
+            "C:/ui",
+            "a\\b",
+            "a//b",
+        ] {
+            assert!(ModuleId::parse(invalid).is_err(), "accepted `{invalid}`");
+        }
+        assert_eq!(
+            ModuleId::parse("components/button").unwrap().as_str(),
+            "components/button"
+        );
+    }
+
+    #[test]
+    fn registered_modules_can_be_imported() {
+        let mut resolver = RestrictedModuleResolver::new();
+        resolver
+            .insert("components/greeting", "fn greeting() { \"hello\" }")
+            .unwrap();
+
+        let mut engine = Engine::new();
+        engine.set_module_resolver(resolver);
+        let value: String = engine
+            .eval(
+                r#"
+                    import "components/greeting" as greeting;
+                    greeting::greeting()
+                "#,
+            )
+            .unwrap();
+        assert_eq!(value, "hello");
+    }
+
+    #[test]
+    fn resolver_reuses_only_content_matching_cached_asts() {
+        let id = ModuleId::parse("components/greeting").unwrap();
+        let source = crate::EmbeddedScriptSource::new(BTreeMap::from([(
+            id.clone(),
+            "fn greeting() { \"hello\" }".to_owned(),
+        )]));
+        let engine = Engine::new();
+        let mut cache = ModuleCompileCache::new();
+        cache.refresh(&engine, &source, [id.clone()]).unwrap();
+        let resolver = RestrictedModuleResolver::from_source_with_cache(&source, &cache).unwrap();
+        assert!(resolver.compiled.contains_key(&id));
+
+        let changed = crate::EmbeddedScriptSource::new(BTreeMap::from([(
+            id.clone(),
+            "fn greeting() { \"changed\" }".to_owned(),
+        )]));
+        let resolver = RestrictedModuleResolver::from_source_with_cache(&changed, &cache).unwrap();
+        assert!(!resolver.compiled.contains_key(&id));
+    }
+
+    #[test]
+    fn missing_modules_are_diagnostic_errors() {
+        let mut engine = Engine::new();
+        engine.set_module_resolver(RestrictedModuleResolver::new());
+        let error = engine
+            .eval::<Dynamic>("import \"components/missing\" as missing;")
+            .unwrap_err();
+        assert!(error.to_string().contains("components/missing"));
+    }
+
+    #[test]
+    fn cyclic_imports_report_the_cycle() {
+        let mut resolver = RestrictedModuleResolver::new();
+        resolver
+            .insert("components/a", "import \"components/b\" as b;")
+            .unwrap();
+        resolver
+            .insert("components/b", "import \"components/a\" as a;")
+            .unwrap();
+
+        let mut engine = Engine::new();
+        engine.set_module_resolver(resolver);
+        let error = engine
+            .eval::<Dynamic>("import \"components/a\" as a;")
+            .unwrap_err();
+        let message = error.to_string();
+        assert!(message.contains("cyclic module import"), "{message}");
+        assert!(message.contains("components/a -> components/b -> components/a"));
+    }
+}

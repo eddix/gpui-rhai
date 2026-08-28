@@ -1,0 +1,40 @@
+#!/bin/bash
+set -eu
+
+original_dir="${PWD}"
+raw_arguments=("$@")
+tool=""
+output_path=""
+for ((index = 0; index < ${#raw_arguments[@]}; index++)); do
+  argument="${raw_arguments[index]}"
+  if [[ "${argument}" == "metal" || "${argument}" == "metallib" ]]; then
+    tool="${argument}"
+  fi
+  if [[ "${argument}" == "-o" && $((index + 1)) -lt ${#raw_arguments[@]} ]]; then
+    output_path="${raw_arguments[index + 1]}"
+  fi
+done
+
+if [[ -z "${tool}" || -z "${output_path}" ]]; then
+  exec /usr/bin/xcrun "${raw_arguments[@]}"
+fi
+
+output_dir="$(dirname "${output_path}")"
+arguments=()
+for argument in "${raw_arguments[@]}"; do
+  if [[ "${argument}" == "-gline-tables-only" && "${GPUI_RHAI_STRIP_METAL_DEBUG:-}" == "1" ]]; then
+    continue
+  fi
+  if [[ "${argument}" == "metal" && -n "${GPUI_RHAI_CLANG_CACHE:-}" ]]; then
+    arguments+=("${argument}" "-fmodules-cache-path=${GPUI_RHAI_CLANG_CACHE}")
+  elif [[ "${argument}" == "./"* ]]; then
+    arguments+=("${original_dir}/${argument#./}")
+  elif [[ "${argument}" == "${output_dir}/"* ]]; then
+    arguments+=("$(basename "${argument}")")
+  else
+    arguments+=("${argument}")
+  fi
+done
+
+cd "${output_dir}"
+exec /usr/bin/xcrun "${arguments[@]}"

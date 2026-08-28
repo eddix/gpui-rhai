@@ -1,0 +1,56 @@
+# Accessibility status
+
+Accessibility and keyboard operation are release requirements.
+
+## Implemented
+
+- Interactive nodes are GPUI tab stops.
+- Button activates with mouse click, Enter, or Space.
+- Disabled/loading Button instances do not dispatch callbacks.
+- Rhai nodes preserve normalized role, label, disabled, value, and related
+  semantic attributes independently of GPUI.
+- Focus, hover, active, and disabled visuals are represented by native GPUI
+  interaction styles rather than high-frequency Rhai rerenders.
+- Input and searchable Dropdown use the native GPUI input handler for IME,
+  UTF-16 ranges, selection, and clipboard operations.
+- Dropdown supports arrows, Home, End, Enter, Escape, type-ahead, and disabled
+  option skipping. Dialog traps focus and the window overlay coordinator
+  restores focus on dismissal.
+- Animation respects one central `MotionPreference`. Hosts may set it with
+  `.motion_preference(...)`, applications may call
+  `ctx.set_reduced_motion(bool)`, and `GPUI_RHAI_REDUCED_MOTION=1` provides a
+  process-level default. Reduced motion settles active animations immediately.
+- RTL windows reverse row ordering, resolve logical spacing/alignment, map
+  horizontal navigation keys logically, and support paired directional icons.
+- FormField retains stable semantic IDs plus labelled-by, described-by,
+  required, and invalid relationships in the runtime tree.
+
+## Pinned GPUI limitation
+
+The pinned GPUI 0.2.2 release uses AccessKit internally but does not expose a
+public element API for assigning arbitrary AccessKit roles, labels, checked
+state, or descriptions. GPUI Rhai therefore retains these semantics in
+`UiNode::attributes` and tests them, but cannot yet forward all values to the
+platform accessibility tree without relying on GPUI internals.
+
+GPUI 0.2.2 also does not expose the macOS Reduce Motion preference. The host
+and environment APIs above are therefore the supported bridge until GPUI adds a
+public system-preference signal.
+
+GPUI 0.2.2 does not expose a public per-element base-direction or bidi-isolation
+API. GPUI Rhai controls logical layout direction and delegates text shaping to
+the platform. Mixed-direction text that requires explicit isolation remains an
+upstream limitation.
+
+This is an explicit upstream gap, not a reason to remove semantic metadata from
+component contracts. The adapter must be added as soon as the pinned GPUI API
+supports it. M1 composite controls still implement deterministic keyboard and
+focus behavior and document any platform-semantic value that cannot be exposed.
+
+## Visual evidence
+
+macOS screenshot baselines must be generated from deterministic example windows
+using the matrix in `visual-testing.md`.
+When updating a baseline, record the theme, scale factor, viewport, state, and
+reason for the change. Screenshots supplement keyboard and semantic assertions;
+they do not replace them.

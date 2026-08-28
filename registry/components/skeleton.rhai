@@ -1,0 +1,54 @@
+/* gpui-rhai
+{
+  "id": "components/skeleton",
+  "export": "Skeleton",
+  "version": "0.1.0",
+  "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
+  "dependencies": [],
+  "capabilities": {}
+}
+*/
+// Content placeholder with optional Rust-side pulse animation.
+// Props: key, width, height, radius, animated. Parts: root.
+// State/events: stateless; Rust owns pulse frames and no events are emitted.
+// Example: Skeleton(#{ key: "avatar", width: 40, height: 40, animated: true })
+
+export_component(#{
+    metadata: #{
+        id: "components/skeleton", "export": "Skeleton", version: "0.1.0",
+        runtime_api: #{ min_inclusive: 1, max_exclusive: 2 }, dependencies: [], capabilities: #{},
+    },
+    schema: #{
+        props: #{
+            key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+            width: #{ schema: #{ type: "integer" }, required: true, sensitive: false },
+            height: #{ schema: #{ type: "integer" }, required: true, sensitive: false },
+            radius: #{ schema: #{ type: "integer" }, required: false, sensitive: false,
+                "default": #{ type: "integer", value: 6 } },
+            animated: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
+                "default": #{ type: "bool", value: true } },
+        },
+        state: #{ fields: #{} }, events: #{}, slots: #{}, parts: ["root"],
+    },
+});
+
+fn Skeleton(props) {
+    component_render("components/skeleton", props, Fn("render_Skeleton"))
+}
+fn render_Skeleton(ctx, props) {
+    let width = if props.width < 0 { 0 } else { props.width };
+    let height = if props.height < 0 { 0 } else { props.height };
+    let requested_radius = if "radius" in props { props.radius } else { 6 };
+    let radius = if requested_radius < 0 { 0 } else { requested_radius };
+    let node = row([])
+        .with_key(props.key)
+        .with_style(component_style(props, "root",
+            style().width(px(width)).height(px(height))
+                .radius(px(radius))
+                .background(theme_color("surface_hover"))
+        ))
+        .accessibility_role("presentation");
+    if !("animated" in props) || props.animated {
+        node.animate(loop_transition("opacity", 0.35, 0.85, 900, "ease_in_out"))
+    } else { node }
+}

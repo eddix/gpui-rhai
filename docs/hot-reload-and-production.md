@@ -1,0 +1,39 @@
+# Hot reload and production embedding
+
+## Development
+
+Run `gpui-rhai dev` or a file-backed `ScriptApp` with the `dev-reload` feature.
+The watcher tracks Rhai modules, themes, locale bundles, and image assets. Script candidates are
+compiled transactionally. A reverse dependency graph recompiles changed modules
+and their transitive dependants while the resolver reuses content-matching ASTs;
+the entry is then compiled self-contained for atomic commit. Failed candidates keep the last-good AST, tree,
+callbacks, state, and component metadata. Successful reloads preserve compatible
+state and invalidate callbacks from the previous generation.
+
+The inspector is available only in development and opens with Command-Option-I
+or F12. It shows source locations, redacted state, computed semantics, traces,
+and execution timings.
+
+## Production
+
+Run:
+
+```text
+gpui-rhai check
+gpui-rhai embed
+cargo build --release
+```
+
+`embed` deterministically generates `src/gpui_rhai_embedded.rs` using
+`include_str!`/`include_bytes!` for the entry, installed components, locales,
+themes, and assets, plus an `app_manifest()` constructor. Construct
+`EmbeddedScriptApp` from those generated sources and pass
+`.manifest(generated::app_manifest())`.
+Pass `.asset_sources(generated::asset_sources())` so embedded `app/...` image
+IDs resolve exactly like file-backed assets.
+Production needs no filesystem watcher or source-path access, and file-backed
+and embedded sources use the same restricted module-resolution contract.
+
+Do not edit the generated Rust module. Edit files under `ui/`, run `check`, then
+regenerate it. Keep `dev-reload` disabled in release builds unless a product has
+an explicit, reviewed reason to ship source watching.

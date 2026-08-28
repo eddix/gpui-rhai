@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy,rustfmt
+      - name: Install Metal Toolchain
+        run: xcodebuild -downloadComponent MetalToolchain
+      - name: Reject gpui-component dependencies
+        run: |
+          if cargo tree --workspace | grep -q 'gpui-component'; then
+            echo 'gpui-component must not appear in the dependency graph'
+            exit 1
+          fi
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Check
+        run: cargo check --workspace --all-targets --all-features
+      - name: MSRV check
+        run: |
+          rustup toolchain install 1.94.0 --profile minimal
+          cargo +1.94.0 check --workspace --all-targets --all-features
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+      - name: Test
+        run: cargo test --workspace --all-targets --all-features
+      - name: Native keyboard test support
+        run: cargo test --manifest-path tests/native-keyboard/Cargo.toml --locked
+      - name: Audit visual baselines
+        run: bash scripts/audit-visual-baselines.sh
+      - name: Public documentation
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: |
+          cargo doc -p gpui-rhai --all-features --no-deps
+          cargo doc -p gpui-rhai-cli --lib --no-deps
+      - name: Package runtime crate
+        run: cargo package -p gpui-rhai
+      - name: Release example smoke
+        run: bash scripts/release-smoke.sh
+      - name: Audit release artifacts
+        run: bash scripts/audit-release-artifacts.sh

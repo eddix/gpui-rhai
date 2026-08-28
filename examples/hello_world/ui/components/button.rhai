@@ -1,0 +1,167 @@
+/* gpui-rhai
+{
+  "id": "components/button",
+  "export": "Button",
+  "version": "0.1.0",
+  "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
+  "dependencies": [],
+  "capabilities": {}
+}
+*/
+// Button presents a desktop action.
+//
+// Props: text (required), prefix/suffix slots, variant, size, disabled, loading, loading_text, on_click.
+// Events: click(null).
+// Parts: root, label, prefix, suffix.
+// Example: Button(#{ text: "Save", variant: "primary", size: "md" })
+
+export_component(#{
+    metadata: #{
+        id: "components/button",
+        "export": "Button",
+        version: "0.1.0",
+        runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
+        dependencies: [],
+        capabilities: #{},
+    },
+    schema: #{
+        props: #{
+            text: #{
+                schema: #{ type: "string" },
+                required: true,
+                sensitive: false,
+            },
+            prefix: #{
+                schema: #{ type: "optional", value: #{ type: "node" } },
+                required: false,
+                sensitive: false,
+            },
+            suffix: #{
+                schema: #{ type: "optional", value: #{ type: "node" } },
+                required: false,
+                sensitive: false,
+            },
+            variant: #{
+                schema: #{
+                    type: "string",
+                    allowed: [
+                        "primary", "secondary", "danger", "warning",
+                        "success", "ghost", "outline"
+                    ]
+                },
+                required: false,
+                sensitive: false,
+                "default": #{ type: "string", value: "primary" },
+            },
+            size: #{
+                schema: #{ type: "string", allowed: ["xs", "sm", "md", "lg"] },
+                required: false,
+                sensitive: false,
+                "default": #{ type: "string", value: "md" },
+            },
+            disabled: #{
+                schema: #{ type: "bool" },
+                required: false,
+                sensitive: false,
+                "default": #{ type: "bool", value: false },
+            },
+            loading: #{
+                schema: #{ type: "bool" },
+                required: false,
+                sensitive: false,
+                "default": #{ type: "bool", value: false },
+            },
+            loading_text: #{
+                schema: #{ type: "string" },
+                required: false,
+                sensitive: false,
+                "default": #{ type: "string", value: "" },
+            },
+            on_click: #{
+                schema: #{ type: "optional", value: #{ type: "callback" } },
+                required: false,
+                sensitive: false,
+            },
+        },
+        state: #{ fields: #{} },
+        events: #{ click: #{ payload: #{ type: "null" } } },
+        slots: #{
+            prefix: #{ required: false, multiple: false },
+            suffix: #{ required: false, multiple: false },
+        },
+        parts: ["root", "label", "prefix", "suffix"],
+    },
+});
+
+fn button_height(size) {
+    if size == "xs" { 24 }
+    else if size == "sm" { 28 }
+    else if size == "lg" { 40 }
+    else { 32 }
+}
+
+fn button_background(variant) {
+    if variant == "danger" { theme_color("danger") }
+    else if variant == "warning" { theme_color("warning") }
+    else if variant == "success" { theme_color("success") }
+    else if variant == "secondary" { theme_color("surface_raised") }
+    else if variant == "ghost" || variant == "outline" { rgba(0x00000000) }
+    else { theme_color("accent") }
+}
+
+fn button_foreground(variant) {
+    if variant == "danger" { theme_color("on_danger") }
+    else if variant == "warning" { theme_color("on_warning") }
+    else if variant == "success" { theme_color("on_success") }
+    else if variant == "secondary" || variant == "ghost" || variant == "outline" {
+        theme_color("text_primary")
+    } else { theme_color("on_accent") }
+}
+
+fn Button(props) {
+    component_render("components/button", props, Fn("render_Button"))
+}
+fn render_Button(ctx, props) {
+    let variant = if "variant" in props { props.variant } else { "primary" };
+    let size = if "size" in props { props.size } else { "md" };
+    let disabled = if "disabled" in props { props.disabled } else { false };
+    let loading = if "loading" in props { props.loading } else { false };
+    let loading_text = if "loading_text" in props { props.loading_text } else { "" };
+    let label = if loading && loading_text != "" {
+        `${loading_text} ${props.text}`
+    } else {
+        props.text
+    };
+
+    let base = style()
+        .flex_row()
+        .items_center()
+        .justify_center()
+        .height(px(button_height(size)))
+        .padding_x(px(12))
+        .gap(px(6))
+        .radius(px(6))
+        .background(button_background(variant))
+        .text_color(button_foreground(variant))
+        .hover(style().background(theme_color("accent_hover")))
+        .disabled(style().background(theme_color("disabled")));
+
+    let children = [];
+    if "prefix" in props && props.prefix != () {
+        children.push(props.prefix.with_style(component_style(props, "prefix", style())));
+    }
+    children.push(text(label).with_style(component_style(props, "label", style())));
+    if "suffix" in props && props.suffix != () {
+        children.push(props.suffix.with_style(component_style(props, "suffix", style())));
+    }
+    let button = row(children)
+        .with_style(component_style(props, "root", base))
+        .disabled(disabled || loading)
+        .accessibility_role("button")
+        .accessibility_label(props.text);
+    if !disabled && !loading && "on_click" in props && props.on_click != () {
+        button.on_click(props.on_click)
+    } else {
+        button
+    }
+}

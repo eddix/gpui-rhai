@@ -1,0 +1,4 @@
+entry = "main"
+runtime_api = 1
+
+[capabilities]
