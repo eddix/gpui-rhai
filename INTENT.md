@@ -36,9 +36,10 @@ gpui-rhai dev
 The generated Rust host should remain small:
 
 ```rust
-ScriptApp::new("ui/main.rhai")
-    .register_capability(/* application service */)
-    .run();
+let view = FileScriptView::new("ui/main.rhai")
+    .extension(/* application service */)
+    .prepare()?;
+ScriptApplication::new(view).run()?;
 ```
 
 The Rhai entry point imports copied modules and returns a declarative tree:
@@ -278,7 +279,8 @@ paths or URLs. Rust owns decoding, caching, scaling, fallback, and cancellation.
 
 ### 7.1 Overlay system
 
-A per-window Rust `OverlayManager` is shared by Dropdown, Popover, Tooltip,
+A host-scoped Rust `OverlayManager` is shared by every script view in one
+interaction domain (normally one GPUI window) and by Dropdown, Popover, Tooltip,
 Dialog, Menu, and Toast. It owns portal rendering, layer order, anchored
 placement, boundary avoidance, dismiss stacks, modal focus, focus restoration,
 tooltip delay, and toast queues. Rhai components define content, style, and

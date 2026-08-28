@@ -279,7 +279,17 @@ impl OverlayManager {
         });
         candidate
             .cloned()
-            .map_or_else(DismissReport::default, |id| self.dismiss(&id))
+            .map_or_else(DismissReport::default, |id| {
+                if self
+                    .entries
+                    .get(&id)
+                    .is_some_and(|entry| entry.spec.dismiss_on_outside)
+                {
+                    self.dismiss(&id)
+                } else {
+                    DismissReport::default()
+                }
+            })
     }
 
     #[must_use]
@@ -383,6 +393,31 @@ impl TooltipScheduler {
     #[must_use]
     pub fn visible(&self) -> Option<&OverlayId> {
         self.visible.as_ref()
+    }
+
+    pub fn remove(&mut self, id: &OverlayId) -> bool {
+        let mut removed = false;
+        if self.visible.as_ref() == Some(id) {
+            self.visible = None;
+            removed = true;
+        }
+        if self
+            .pending_show
+            .as_ref()
+            .is_some_and(|(pending, _)| pending == id)
+        {
+            self.pending_show = None;
+            removed = true;
+        }
+        if self
+            .pending_hide
+            .as_ref()
+            .is_some_and(|(pending, _)| pending == id)
+        {
+            self.pending_hide = None;
+            removed = true;
+        }
+        removed
     }
 }
 

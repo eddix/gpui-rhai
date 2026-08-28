@@ -5,6 +5,7 @@ examples=(
   component_gallery
   dashboard_layout
   embedded_hello_world
+  embedded_views
   extension_host
   form_showcase
   hello_world

@@ -89,7 +89,21 @@ impl UiRuntimeState {
         self.component_state.remove_scope(root);
         self.component_event_handlers
             .retain(|(path, _), _| !path.is_within(root));
+        self.actions.remove_component_scope(root);
         self.dirty.retain(|path| !path.is_within(root));
+        self.pending_events
+            .retain(|event| !event.target.is_within(root));
+        self.pending_actions.retain(|action| {
+            !action
+                .callback
+                .component()
+                .is_some_and(|path| path.is_within(root))
+        });
+        self.pending_async.retain(|delivery| match &delivery.scope {
+            AsyncScope::App => true,
+            AsyncScope::Window(id) => id != window,
+            AsyncScope::Component(path) => !path.is_within(root),
+        });
         if let Some(theme) = self.theme.as_mut() {
             theme.remove_window(window);
             theme.remove_scope(root);
@@ -99,7 +113,7 @@ impl UiRuntimeState {
             locale.remove_scope(root);
         }
         self.animations
-            .cancel_node_scope(&format!("window:{window}/root"));
+            .cancel_node_scope(&format!("window:{window}"));
         self.animation_values = self.animations.snapshot(std::time::Instant::now());
         self.windows.remove(window);
         self.responsive.remove_window(window);
@@ -326,6 +340,7 @@ pub struct UiContext {
     runtime: Rc<RefCell<UiRuntimeState>>,
     component: ComponentInstancePath,
     window: Option<String>,
+    view: Option<String>,
     phase: ExecutionPhase,
     events: BTreeMap<String, EventSchema>,
     generation: ScriptGeneration,
@@ -345,6 +360,7 @@ impl UiContext {
             runtime,
             component,
             window,
+            view: None,
             phase,
             events,
             generation: ScriptGeneration::default(),
@@ -364,6 +380,18 @@ impl UiContext {
         self
     }
 
+    #[must_use]
+    pub fn with_view_id(mut self, view: impl Into<String>) -> Self {
+        self.view = Some(view.into());
+        self
+    }
+
+    #[must_use]
+    pub(crate) fn with_optional_view_id(mut self, view: Option<String>) -> Self {
+        self.view = view;
+        self
+    }
+
     pub(crate) fn for_component(
         &self,
         component: ComponentInstancePath,
@@ -373,6 +401,7 @@ impl UiContext {
             runtime: Rc::clone(&self.runtime),
             component,
             window: self.window.clone(),
+            view: self.view.clone(),
             phase: self.phase,
             events,
             generation: self.generation,
@@ -785,6 +814,16 @@ impl UiContext {
         self.window.clone().ok_or(UiContextError::MissingWindow)
     }
 
+    /// Return the stable identity of the mounted script view.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`UiContextError::MissingView`] for manually constructed contexts
+    /// that are not attached to a script view.
+    pub fn view_id(&self) -> Result<String, UiContextError> {
+        self.view.clone().ok_or(UiContextError::MissingView)
+    }
+
     /// Return `compact`, `regular`, or `wide` for the current native window.
     ///
     /// # Errors
@@ -809,13 +848,13 @@ impl UiContext {
     /// Returns phase, missing-window, validation, duplicate, or queue errors.
     pub fn open_window(&self, spec: ScriptWindowSpec) -> Result<(), UiContextError> {
         self.require_mutation()?;
-        self.window.as_ref().ok_or(UiContextError::MissingWindow)?;
+        let window = self.window.as_ref().ok_or(UiContextError::MissingWindow)?;
         let id = spec.id.clone();
         let mut runtime = self
             .runtime
             .try_borrow_mut()
             .map_err(|_| UiContextError::Borrowed)?;
-        runtime.windows.request_open(spec)?;
+        runtime.windows.request_open_from(window, spec)?;
         runtime.traces.push(
             crate::RuntimeTraceKind::Window,
             self.component.to_string(),
@@ -833,11 +872,12 @@ impl UiContext {
     /// Returns phase, registry, or queue errors.
     pub fn focus_window(&self, id: &str) -> Result<(), UiContextError> {
         self.require_mutation()?;
+        let window = self.window.as_ref().ok_or(UiContextError::MissingWindow)?;
         let mut runtime = self
             .runtime
             .try_borrow_mut()
             .map_err(|_| UiContextError::Borrowed)?;
-        runtime.windows.request_focus(id)?;
+        runtime.windows.request_focus_from(window, id)?;
         runtime.traces.push(
             crate::RuntimeTraceKind::Window,
             self.component.to_string(),
@@ -855,11 +895,12 @@ impl UiContext {
     /// Returns phase, registry, or queue errors.
     pub fn close_window(&self, id: &str) -> Result<(), UiContextError> {
         self.require_mutation()?;
+        let window = self.window.as_ref().ok_or(UiContextError::MissingWindow)?;
         let mut runtime = self
             .runtime
             .try_borrow_mut()
             .map_err(|_| UiContextError::Borrowed)?;
-        runtime.windows.request_close(id)?;
+        runtime.windows.request_close_from(window, id)?;
         runtime.traces.push(
             crate::RuntimeTraceKind::Window,
             self.component.to_string(),
@@ -1590,6 +1631,11 @@ fn register_window_context_methods(builder: &mut TypeBuilder<UiContext>) {
                 .window_id()
                 .map_err(|error| Box::new(context_runtime_error(&error)))
         })
+        .with_fn("view_id", |context: &mut UiContext| {
+            context
+                .view_id()
+                .map_err(|error| Box::new(context_runtime_error(&error)))
+        })
         .with_fn("viewport_class", |context: &mut UiContext| {
             context
                 .viewport_class()
@@ -1692,6 +1738,8 @@ pub enum UiContextError {
     InvalidEvent(crate::SchemaValidationError),
     #[error("this UI context is not associated with a window")]
     MissingWindow,
+    #[error("this UI context is not associated with a mounted script view")]
+    MissingView,
     #[error(transparent)]
     Window(#[from] WindowCommandError),
     #[error(transparent)]

@@ -7,7 +7,7 @@ also covers real native multi-window creation.
 - `ctx.open_window`, `focus_window`, and `close_window` use validated stable IDs.
 - Every window runs its own script lifecycle and owns a distinct component-state root.
 - The `shared` app store invalidates readers across windows.
-- `ScriptAppExtension::configure_window` declares a `session` store for each window.
+- `ScriptViewExtension::configure_window` declares a `session` store for each window.
 - Theme and locale overrides are per-window; choosing Arabic also exercises RTL layout.
 - Native close requests call a generation-bound Rhai handler. The confirmation dialog
   explicitly calls `close_window`, after which window state, stores, overlays, animation,

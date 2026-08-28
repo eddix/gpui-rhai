@@ -123,6 +123,7 @@ struct RenderEnvironment<'a, C> {
     overlays: &'a WindowOverlayCoordinator,
     animations: &'a BTreeMap<AnimationKey, f64>,
     direction: TextDirection,
+    view_id: &'a str,
 }
 
 pub(crate) struct WindowRenderResources<'a> {
@@ -132,6 +133,7 @@ pub(crate) struct WindowRenderResources<'a> {
     pub animations: &'a BTreeMap<AnimationKey, f64>,
     pub direction: TextDirection,
     pub root_path: &'a str,
+    pub view_id: &'a str,
 }
 
 impl GpuiNodeRenderer {
@@ -172,6 +174,7 @@ impl GpuiNodeRenderer {
             overlays: &overlays,
             animations: &animations,
             direction: TextDirection::LeftToRight,
+            view_id: "standalone",
         };
         Self::render_internal(node, &environment, None, "root")
     }
@@ -195,6 +198,7 @@ impl GpuiNodeRenderer {
             overlays: &overlays,
             animations: &animations,
             direction: TextDirection::LeftToRight,
+            view_id: "standalone",
         };
         Self::render_internal(node, &environment, None, "root")
     }
@@ -217,6 +221,7 @@ impl GpuiNodeRenderer {
             animations: &animations,
             direction: TextDirection::LeftToRight,
             root_path: "root",
+            view_id: "standalone",
         };
         Self::render_with_window_runtime(node, colors, interaction, primitives, &resources)
     }
@@ -255,6 +260,7 @@ impl GpuiNodeRenderer {
             overlays: resources.overlays,
             animations: resources.animations,
             direction: resources.direction,
+            view_id: resources.view_id,
         };
         Self::render_internal(node, &environment, None, path)
     }
@@ -329,7 +335,9 @@ impl GpuiNodeRenderer {
                 _ => true,
             };
             let element = apply_pseudo_backgrounds(
-                element.id(SharedString::from(path.to_owned())),
+                element
+                    .id(SharedString::from(path.to_owned()))
+                    .debug_selector(|| path.to_owned()),
                 node.style(),
                 environment.colors,
             )
@@ -463,6 +471,16 @@ fn render_image<C: ColorResolver>(
     )
 }
 
+fn scoped_overlay_spec(spec: &OverlayNodeSpec, view_id: &str) -> OverlayNodeSpec {
+    let mut rendered = spec.clone();
+    rendered.id = WindowOverlayCoordinator::scoped_id(view_id, &rendered.id);
+    rendered.parent = rendered
+        .parent
+        .as_ref()
+        .map(|parent| WindowOverlayCoordinator::scoped_id(view_id, parent));
+    rendered
+}
+
 fn native_overlay_element<C: ColorResolver>(
     node: &UiNode,
     trigger: &UiNode,
@@ -472,7 +490,7 @@ fn native_overlay_element<C: ColorResolver>(
     boundary_fallback: Option<&UiNode>,
     path: &str,
 ) -> ScriptOverlayElement {
-    let mut rendered_spec = spec.clone();
+    let mut rendered_spec = scoped_overlay_spec(spec, environment.view_id);
     if rendered_spec.kind == crate::OverlayKind::Tooltip {
         rendered_spec.open = environment
             .overlays
@@ -607,6 +625,7 @@ fn native_toast_element<C: ColorResolver>(
             colors: OwnedColorResolver::capture(environment.colors),
             direction: environment.direction,
         },
+        environment.view_id,
     )
 }
 
@@ -640,6 +659,7 @@ fn native_dropdown_element<C: ColorResolver>(
         animations: environment.animations.clone(),
         direction: environment.direction,
         base_path: path.to_owned(),
+        view_id: environment.view_id.to_owned(),
         part_styles: node
             .part_styles()
             .map(|(name, style)| (name.to_owned(), style.clone()))
@@ -681,6 +701,7 @@ fn native_virtual_list_element<C: ColorResolver>(
         animations: environment.animations.clone(),
         direction: environment.direction,
         base_path: path.to_owned(),
+        view_id: environment.view_id.to_owned(),
         part_styles: BTreeMap::new(),
     };
     VirtualListEntityElement::new(path, spec.clone(), runtime, focus_change)
@@ -1183,12 +1204,12 @@ fn to_f32(value: f64) -> f32 {
 }
 
 /// Minimal GPUI view for a previously evaluated Rhai tree.
-pub struct ScriptView {
+pub struct StaticUiView {
     root: UiNode,
     primitives: PrimitiveRegistry,
 }
 
-impl ScriptView {
+impl StaticUiView {
     #[must_use]
     pub fn new(root: UiNode) -> Self {
         Self {
@@ -1213,7 +1234,7 @@ impl ScriptView {
     }
 }
 
-impl Render for ScriptView {
+impl Render for StaticUiView {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         GpuiNodeRenderer::render_with_primitives(
             &self.root,

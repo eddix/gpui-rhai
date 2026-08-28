@@ -33,6 +33,10 @@ Rust host 注册为带 schema 和版本的 capability。需要发布时运行
 `gpui-rhai embed`，使用生成的 embedded source 构建 release；不要在生产环境
 依赖任意文件路径或动态下载脚本。
 
+Rust 侧以脚本视图为核心：`FileScriptView` / `EmbeddedScriptView` 先生成
+`PreparedScriptView`。独立应用交给 `ScriptApplication` 打开窗口；已有 GPUI
+应用则通过一个共享的 `ScriptViewHost` 在同一窗口挂载多个相互隔离的视图。
+
 更新已复制的组件前先运行 `gpui-rhai diff`。`update` 使用三方合并，冲突会写入
 `.gpui-rhai/conflicts/`，不会覆盖你的源文件。
 

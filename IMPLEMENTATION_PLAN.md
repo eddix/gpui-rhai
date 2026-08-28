@@ -475,6 +475,11 @@ Author and fully test:
 ### M2.5 Multi-window API
 
 - Validate the app/window/component lifetime model built earlier.
+- Make the script view—not the process—the primary prepared/mounted unit.
+- Allow several isolated ScriptViews inside one host-owned GPUI window.
+- Share one explicitly wrapped Host interaction domain for overlays, Toast,
+  Tooltip, focus fallback, and approved key bindings.
+- Keep measured view bounds separate from the absolute Overlay viewport.
 - Add a restricted window command API using the validated lifetime model.
 - Define app-store sharing, per-window stores, themes, locales, task ownership,
   close confirmation, and focus behavior.

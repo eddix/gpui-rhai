@@ -3,16 +3,18 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use gpui::{
-    Context, FocusHandle, InteractiveElement, IntoElement, ParentElement, Render, TestAppContext,
-    Window, div,
+    Context, FocusHandle, InteractiveElement, IntoElement, Modifiers, ParentElement, Render,
+    Styled, TestAppContext, VisualTestContext, Window, div, point, px,
 };
 use gpui_rhai::{
-    ComponentInstancePath, DropdownMode, DropdownNodeSpec, DropdownOption, EmbeddedScriptSource,
-    EventPropagation, GpuiNodeRenderer, InteractionState, LiteralColorResolver, ModuleId,
-    NodeEventDispatcher, OverlayDismissPolicy, OverlayId, OverlayKind, OverlayNodeSpec,
-    OverlayPlacement, PrimitiveRegistry, RestrictedModuleResolver, RuntimeEngine, ScriptCallback,
-    ScriptLifecycle, ToastHostSpec, ToastItemSpec, ToastRegion, ToastVariant, UiNode,
-    UiRuntimeState, UiValue, init_text_input,
+    ActionId, ComponentInstancePath, DropdownMode, DropdownNodeSpec, DropdownOption,
+    EmbeddedScriptSource, EmbeddedScriptView, EventPropagation, GpuiNodeRenderer,
+    InteractionState, KeyBindingSpec, LiteralColorResolver, ModuleId, NodeEventDispatcher,
+    OverlayDismissPolicy, OverlayId, OverlayKind, OverlayNodeSpec, OverlayPlacement,
+    PrimitiveRegistry, RestrictedModuleResolver, RuntimeEngine, ScriptCallback, ScriptLifecycle,
+    ScriptViewConfig, ScriptViewHandle, ScriptViewHost, ToastHostSpec, ToastItemSpec, ToastRegion,
+    ToastVariant, UiNode, UiRuntimeState, UiValue,
+    init_text_input,
 };
 
 struct KeyboardHost {
@@ -796,4 +798,403 @@ fn menu_trigger_routes_roving_and_enter_keys_through_current_rhai_state(
         runtime.component_state.get(&root_path, "action"),
         Some(&UiValue::String("open".to_owned()))
     );
+}
+
+const EMBEDDED_VIEW_SCRIPT: &str = r#"
+import "components/toast" as toast;
+fn state_schema() {
+    #{ fields: #{
+        count: #{ schema: #{ type: "integer" },
+            "default": #{ type: "integer", value: 0 } },
+        open: #{ schema: #{ type: "bool" },
+            "default": #{ type: "bool", value: __OPEN__ } },
+    } }
+}
+fn increment(ctx, payload) { ctx.set_state("count", ctx.get_state("count") + 1); }
+fn set_open(ctx, open) { ctx.set_state("open", open); }
+fn dismissed(ctx, id) { () }
+fn view(ctx) {
+    column([
+        toast::Toast(#{
+            key: "toasts",
+            items: [#{ id: "shared-toast", title: `Toast ${ctx.view_id()}`,
+                duration_ms: 60000 }],
+            on_dismiss: Fn("dismissed")
+        }),
+        text(`View: ${ctx.view_id()}`),
+        text(`Responsive: ${ctx.viewport_class()}`),
+        text(`Count: ${ctx.get_state("count")}`),
+        text("Increment").with_style(
+            style().height(px(32)).padding(px(6)).background(theme_color("accent"))
+        ).on_click(Fn("increment")),
+        overlay(
+            text("Shared overlay trigger").with_style(style().height(px(28))),
+            row([text("A 280 point overlay")]).with_style(
+                style().width(px(280)).height(px(64)).padding(px(8))
+                    .background(theme_color("surface_raised"))
+            ),
+            #{ id: "shared-overlay", kind: "dropdown", open: ctx.get_state("open"),
+                placement: "bottom", dismiss_on_escape: true, dismiss_on_outside: true }
+        ).with_key("shared-overlay").on_open_change(Fn("set_open"))
+    ]).with_style(style().width(relative(1.0)).height(relative(1.0)).gap(px(4)))
+}
+"#;
+
+fn prepared_embedded_test_view(open: bool) -> gpui_rhai::PreparedScriptView {
+    let entry = ModuleId::parse("main").unwrap();
+    EmbeddedScriptView::new(
+        entry.clone(),
+        EmbeddedScriptSource::new(std::collections::BTreeMap::from([
+            (
+                entry,
+                EMBEDDED_VIEW_SCRIPT.replace("__OPEN__", if open { "true" } else { "false" }),
+            ),
+            (
+                ModuleId::parse("components/toast").unwrap(),
+                include_str!("../../../registry/components/toast.rhai").to_owned(),
+            ),
+        ])),
+        include_str!("../../../registry/themes/default_dark.rhai"),
+    )
+    .prepare()
+    .unwrap()
+}
+
+struct EmbeddedIntegrationHost {
+    host: ScriptViewHost,
+    first: ScriptViewHandle,
+    second: ScriptViewHandle,
+    third: ScriptViewHandle,
+}
+
+impl EmbeddedIntegrationHost {
+    fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        Self::new_with_second_open(window, cx, false)
+    }
+
+    fn new_with_second_open(
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        second_open: bool,
+    ) -> Self {
+        let host = ScriptViewHost::new("integration-window", cx).unwrap();
+        let first = prepared_embedded_test_view(true)
+            .mount(
+                ScriptViewConfig::new("first"),
+                host.clone(),
+                window,
+                cx,
+            )
+            .unwrap();
+        let second = prepared_embedded_test_view(second_open)
+            .mount(
+                ScriptViewConfig::new("second"),
+                host.clone(),
+                window,
+                cx,
+            )
+            .unwrap();
+        let third = prepared_embedded_test_view(false)
+            .mount(
+                ScriptViewConfig::new("third"),
+                host.clone(),
+                window,
+                cx,
+            )
+            .unwrap();
+        Self {
+            host,
+            first,
+            second,
+            third,
+        }
+    }
+
+    fn dispose_and_remount_third(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.third.dispose(cx).unwrap();
+        self.third = prepared_embedded_test_view(false)
+            .mount(
+                ScriptViewConfig::new("third"),
+                self.host.clone(),
+                window,
+                cx,
+            )
+            .unwrap();
+        cx.notify();
+    }
+}
+
+impl Render for EmbeddedIntegrationHost {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        self.host.container(
+            div()
+                .size_full()
+                .flex()
+                .gap(px(12.0))
+                .items_start()
+                .child(
+                    div()
+                        .w(px(200.0))
+                        .h(px(240.0))
+                        .child(self.first.element().unwrap()),
+                )
+                .child(
+                    div()
+                        .w(px(240.0))
+                        .h(px(240.0))
+                        .child(self.second.element().unwrap()),
+                )
+                .child(
+                    div()
+                        .w(px(280.0))
+                        .h(px(240.0))
+                        .child(self.third.element().unwrap()),
+                ),
+        )
+    }
+}
+
+fn node_texts(node: &UiNode, output: &mut Vec<String>) {
+    match node.kind() {
+        gpui_rhai::UiNodeKind::Text { text } => output.push(text.to_string()),
+        gpui_rhai::UiNodeKind::Container { children } => {
+            for child in children {
+                node_texts(child, output);
+            }
+        }
+        gpui_rhai::UiNodeKind::Overlay {
+            trigger, content, ..
+        } => {
+            node_texts(trigger, output);
+            node_texts(content, output);
+        }
+        _ => {}
+    }
+}
+
+fn overlay_open(node: &UiNode) -> Option<bool> {
+    match node.kind() {
+        gpui_rhai::UiNodeKind::Overlay { spec, .. } => Some(spec.open),
+        gpui_rhai::UiNodeKind::Container { children } => {
+            children.iter().find_map(overlay_open)
+        }
+        _ => None,
+    }
+}
+
+#[gpui::test]
+fn multiple_embedded_views_share_host_mechanics_but_isolate_runtime_state(
+    cx: &mut TestAppContext,
+) {
+    let captured = Rc::new(RefCell::new(None));
+    let captured_for_window = Rc::clone(&captured);
+    let window = cx.add_window(move |window, cx| {
+        let host = EmbeddedIntegrationHost::new(window, cx);
+        *captured_for_window.borrow_mut() = Some((
+            host.host.clone(),
+            host.first.clone(),
+            host.second.clone(),
+            host.third.clone(),
+        ));
+        host
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    cx.run_until_parked();
+
+    let (host, first, second, third) = captured.borrow().as_ref().unwrap().clone();
+    let mut visual = VisualTestContext::from_window((*window).into(), cx);
+    visual.run_until_parked();
+
+    let first_root = visual
+        .update(|_, cx| first.root(cx).unwrap().unwrap());
+    let mut first_text = Vec::new();
+    node_texts(&first_root, &mut first_text);
+    assert!(first_text.contains(&"View: first".to_owned()));
+    assert!(first_text.contains(&"Responsive: compact".to_owned()));
+
+    let first_placement = host.overlay_placement("first", "shared-overlay").unwrap();
+    assert!(first_placement.bounds.width > 200.0);
+    assert_eq!(host.visible_toast_count(ToastRegion::TopRight), 3);
+
+    let increment = visual
+        .debug_bounds("window:integration-window/view:third/root/4")
+        .expect("third increment debug bounds");
+    let increment_center = point(
+        increment.origin.x + increment.size.width / 2.0,
+        increment.origin.y + increment.size.height / 2.0,
+    );
+    visual.simulate_click(increment_center, Modifiers::default());
+    visual.run_until_parked();
+    let third_root = visual
+        .update(|_, cx| third.root(cx).unwrap().unwrap());
+    let mut third_text = Vec::new();
+    node_texts(&third_root, &mut third_text);
+    assert!(
+        third_text.contains(&"Count: 1".to_owned()),
+        "{third_text:?}"
+    );
+    assert_eq!(overlay_open(&third_root), Some(false));
+
+    let first_root = visual
+        .update(|_, cx| first.root(cx).unwrap().unwrap());
+    assert_eq!(overlay_open(&first_root), Some(false));
+
+    let second_root = visual
+        .update(|_, cx| second.root(cx).unwrap().unwrap());
+    assert_eq!(overlay_open(&second_root), Some(false));
+
+    window
+        .update(&mut visual, |root, window, cx| {
+            root.dispose_and_remount_third(window, cx)
+        })
+        .unwrap();
+    assert!(matches!(
+        third.element(),
+        Err(gpui_rhai::ScriptViewError::DisposedView(id)) if id == "third"
+    ));
+    visual.run_until_parked();
+    assert_eq!(host.visible_toast_count(ToastRegion::TopRight), 3);
+}
+
+#[gpui::test]
+fn duplicate_local_overlay_ids_are_namespaced_per_embedded_view(cx: &mut TestAppContext) {
+    let captured = Rc::new(RefCell::new(None));
+    let captured_for_window = Rc::clone(&captured);
+    let _window = cx.add_window(move |window, cx| {
+        let root = EmbeddedIntegrationHost::new_with_second_open(window, cx, true);
+        *captured_for_window.borrow_mut() = Some(root.host.clone());
+        root
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    cx.run_until_parked();
+
+    let host = captured.borrow().as_ref().unwrap().clone();
+    let first = host.overlay_placement("first", "shared-overlay").unwrap();
+    let second = host.overlay_placement("second", "shared-overlay").unwrap();
+    assert!(first.bounds.width > 200.0);
+    assert!(second.bounds.width > 200.0);
+    assert_ne!(first.bounds.x, second.bounds.x);
+}
+
+#[gpui::test]
+fn script_runtime_install_is_idempotent_and_key_conflicts_are_explicit(
+    cx: &mut TestAppContext,
+) {
+    cx.update(|cx| {
+        gpui_rhai::install(cx);
+        gpui_rhai::install(cx);
+        let host = ScriptViewHost::new("keys-window", cx).unwrap();
+        let save = KeyBindingSpec::new(
+            "cmd-s",
+            ActionId::parse("document.save").unwrap(),
+            None,
+        )
+        .unwrap();
+        host.bind_keys([save.clone()], cx).unwrap();
+        host.bind_keys([save], cx).unwrap();
+        let conflicting = KeyBindingSpec::new(
+            "cmd-s",
+            ActionId::parse("document.sync").unwrap(),
+            None,
+        )
+        .unwrap();
+        assert!(matches!(
+            host.bind_keys([conflicting], cx),
+            Err(gpui_rhai::ScriptViewError::KeyBindingConflict { .. })
+        ));
+    });
+}
+
+struct DualHostRoot {
+    left_host: ScriptViewHost,
+    left: ScriptViewHandle,
+    right_host: ScriptViewHost,
+    right: ScriptViewHandle,
+}
+
+impl DualHostRoot {
+    fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let left_host = ScriptViewHost::new("left-domain", cx).unwrap();
+        let left = prepared_embedded_test_view(true)
+            .mount(
+                ScriptViewConfig::new("left-view"),
+                left_host.clone(),
+                window,
+                cx,
+            )
+            .unwrap();
+        let right_host = ScriptViewHost::new("right-domain", cx).unwrap();
+        let right = prepared_embedded_test_view(false)
+            .mount(
+                ScriptViewConfig::new("right-view"),
+                right_host.clone(),
+                window,
+                cx,
+            )
+            .unwrap();
+        Self {
+            left_host,
+            left,
+            right_host,
+            right,
+        }
+    }
+}
+
+impl Render for DualHostRoot {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .size_full()
+            .flex()
+            .gap(px(20.0))
+            .child(
+                div().w(px(320.0)).h(px(240.0)).child(
+                    self.left_host
+                        .container(self.left.element().expect("left live")),
+                ),
+            )
+            .child(
+                div().w(px(320.0)).h(px(240.0)).child(
+                    self.right_host
+                        .container(self.right.element().expect("right live")),
+                ),
+            )
+    }
+}
+
+#[gpui::test]
+fn separate_hosts_in_one_window_keep_overlay_domains_isolated(cx: &mut TestAppContext) {
+    let captured = Rc::new(RefCell::new(None));
+    let captured_for_window = Rc::clone(&captured);
+    let window = cx.add_window(move |window, cx| {
+        let root = DualHostRoot::new(window, cx);
+        *captured_for_window.borrow_mut() = Some((root.left.clone(), root.right.clone()));
+        root
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    cx.run_until_parked();
+
+    let (left, right) = captured.borrow().as_ref().unwrap().clone();
+    let mut visual = VisualTestContext::from_window((*window).into(), cx);
+    let increment = visual
+        .debug_bounds("window:right-domain/view:right-view/root/4")
+        .expect("right increment bounds");
+    visual.simulate_click(
+        point(
+            increment.origin.x + increment.size.width / 2.0,
+            increment.origin.y + increment.size.height / 2.0,
+        ),
+        Modifiers::default(),
+    );
+    visual.run_until_parked();
+
+    let left_root = visual.update(|_, cx| left.root(cx).unwrap().unwrap());
+    assert_eq!(overlay_open(&left_root), Some(true));
+    let right_root = visual.update(|_, cx| right.root(cx).unwrap().unwrap());
+    let mut right_text = Vec::new();
+    node_texts(&right_root, &mut right_text);
+    assert!(right_text.contains(&"Count: 1".to_owned()));
 }

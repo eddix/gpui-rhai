@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use gpui_rhai::{EmbeddedScriptApp, EmbeddedScriptSource, ModuleId};
+use gpui_rhai::{EmbeddedScriptSource, EmbeddedScriptView, ModuleId, ScriptApplication};
 
 const THEME: &str = include_str!("../../../registry/themes/default_dark.rhai");
 const MAIN: &str = r#"
@@ -28,8 +28,12 @@ fn view(ctx) {
 fn main() {
     let entry = ModuleId::parse("main").expect("static module ID");
     let scripts = EmbeddedScriptSource::new(BTreeMap::from([(entry.clone(), MAIN.to_owned())]));
-    EmbeddedScriptApp::new(entry, scripts, THEME)
-        .window_size(620.0, 500.0)
-        .run()
+    EmbeddedScriptView::new(entry, scripts, THEME)
+        .prepare()
+        .and_then(|prepared| {
+            ScriptApplication::new(prepared)
+                .window_size(620.0, 500.0)
+                .run()
+        })
         .expect("native virtual list smoke failed");
 }

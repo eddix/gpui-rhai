@@ -4,7 +4,7 @@ Use a custom primitive when a mechanism needs native GPUI APIs—for example an
 editor, canvas, media surface, or domain-specific control. Composition and
 policy should remain in copied Rhai components where possible.
 
-Register primitives in `ScriptAppExtension::configure_engine`, before scripts
+Register primitives in `ScriptViewExtension::configure_engine`, before scripts
 compile. A `PrimitiveDescriptor` declares a namespaced ID, PascalCase Rhai
 export, prop/event schemas, optional state schema, and lifecycle requirement.
 The `PrimitiveHandler` receives a validated `PrimitiveInstance`, normalized

@@ -62,6 +62,12 @@ pub enum WindowCommand {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WindowCommandPolicy {
+    ApplicationOwned,
+    Disabled,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum WindowStatus {
     Pending,
     Open,
@@ -70,6 +76,8 @@ enum WindowStatus {
 #[derive(Clone, Debug)]
 struct WindowRecord {
     status: WindowStatus,
+    policy: WindowCommandPolicy,
+    view_id: String,
     close_handler: Option<ScriptCallback>,
 }
 
@@ -91,6 +99,34 @@ impl WindowCommandRegistry {
     ///
     /// Returns duplicate or invalid-ID errors.
     pub fn register_open(&mut self, id: impl Into<String>) -> Result<(), WindowCommandError> {
+        self.register_open_with_policy(id, WindowCommandPolicy::ApplicationOwned)
+    }
+
+    /// Register an existing host window with an explicit script command policy.
+    ///
+    /// # Errors
+    ///
+    /// Returns duplicate, limit, or invalid-ID errors.
+    pub fn register_open_with_policy(
+        &mut self,
+        id: impl Into<String>,
+        policy: WindowCommandPolicy,
+    ) -> Result<(), WindowCommandError> {
+        let id = id.into();
+        self.register_open_for_view(id.clone(), policy, id)
+    }
+
+    /// Register an existing host window and its owning mounted view.
+    ///
+    /// # Errors
+    ///
+    /// Returns duplicate, limit, or invalid-ID errors.
+    pub fn register_open_for_view(
+        &mut self,
+        id: impl Into<String>,
+        policy: WindowCommandPolicy,
+        view_id: impl Into<String>,
+    ) -> Result<(), WindowCommandError> {
         let id = id.into();
         if !valid_window_id(&id) {
             return Err(WindowCommandError::InvalidId(id));
@@ -105,6 +141,8 @@ impl WindowCommandRegistry {
             id,
             WindowRecord {
                 status: WindowStatus::Open,
+                policy,
+                view_id: view_id.into(),
                 close_handler: None,
             },
         );
@@ -129,6 +167,8 @@ impl WindowCommandRegistry {
             spec.id.clone(),
             WindowRecord {
                 status: WindowStatus::Pending,
+                policy: WindowCommandPolicy::ApplicationOwned,
+                view_id: spec.id.clone(),
                 close_handler: None,
             },
         );
@@ -175,6 +215,16 @@ impl WindowCommandRegistry {
         Ok(())
     }
 
+    /// Queue focus after verifying that the source view owns window commands.
+    ///
+    /// # Errors
+    ///
+    /// Returns disabled-policy, unknown-window, or queue errors.
+    pub fn request_focus_from(&mut self, source: &str, id: &str) -> Result<(), WindowCommandError> {
+        self.require_commands(source, "focus_window")?;
+        self.request_focus(id)
+    }
+
     /// Queue forced close after script confirmation.
     ///
     /// # Errors
@@ -187,6 +237,30 @@ impl WindowCommandRegistry {
         Ok(())
     }
 
+    /// Queue close after verifying that the source view owns window commands.
+    ///
+    /// # Errors
+    ///
+    /// Returns disabled-policy, unknown-window, or queue errors.
+    pub fn request_close_from(&mut self, source: &str, id: &str) -> Result<(), WindowCommandError> {
+        self.require_commands(source, "close_window")?;
+        self.request_close(id)
+    }
+
+    /// Queue open after verifying that the source view owns window commands.
+    ///
+    /// # Errors
+    ///
+    /// Returns disabled-policy, validation, duplicate, limit, or queue errors.
+    pub fn request_open_from(
+        &mut self,
+        source: &str,
+        spec: ScriptWindowSpec,
+    ) -> Result<(), WindowCommandError> {
+        self.require_commands(source, "open_window")?;
+        self.request_open(spec)
+    }
+
     /// Install or clear the current generation's close-request callback.
     ///
     /// # Errors
@@ -197,6 +271,7 @@ impl WindowCommandRegistry {
         id: &str,
         handler: Option<ScriptCallback>,
     ) -> Result<(), WindowCommandError> {
+        self.require_commands(id, "set_close_handler")?;
         let record = self
             .windows
             .get_mut(id)
@@ -243,6 +318,26 @@ impl WindowCommandRegistry {
         }
     }
 
+    fn require_commands(
+        &self,
+        source: &str,
+        command: &'static str,
+    ) -> Result<(), WindowCommandError> {
+        let record = self
+            .windows
+            .get(source)
+            .ok_or_else(|| WindowCommandError::Unknown(source.to_owned()))?;
+        if record.policy == WindowCommandPolicy::Disabled {
+            Err(WindowCommandError::UnsupportedInEmbeddedView {
+                window: source.to_owned(),
+                view: record.view_id.clone(),
+                command,
+            })
+        } else {
+            Ok(())
+        }
+    }
+
     fn require_queue_capacity(&self) -> Result<(), WindowCommandError> {
         if self.commands.len() < MAX_PENDING_COMMANDS {
             Ok(())
@@ -272,6 +367,14 @@ pub enum WindowCommandError {
     WindowLimit(usize),
     #[error("at most {0} window commands may be pending")]
     QueueLimit(usize),
+    #[error(
+        "window command `{command}` is unavailable for embedded view `{view}` in window `{window}`"
+    )]
+    UnsupportedInEmbeddedView {
+        window: String,
+        view: String,
+        command: &'static str,
+    },
 }
 
 #[cfg(test)]
@@ -324,5 +427,35 @@ mod tests {
         invalid.width = 20.0;
         assert!(windows.request_open(invalid).is_err());
         assert!(!windows.contains("../escape"));
+    }
+
+    #[test]
+    fn embedded_view_policy_rejects_window_commands_at_call_site() {
+        let mut windows = WindowCommandRegistry::new();
+        windows
+            .register_open_with_policy("host", WindowCommandPolicy::Disabled)
+            .unwrap();
+        assert!(matches!(
+            windows.request_open_from("host", spec("settings")),
+            Err(WindowCommandError::UnsupportedInEmbeddedView {
+                command: "open_window",
+                ..
+            })
+        ));
+        assert!(matches!(
+            windows.request_focus_from("host", "host"),
+            Err(WindowCommandError::UnsupportedInEmbeddedView {
+                command: "focus_window",
+                ..
+            })
+        ));
+        assert!(matches!(
+            windows.request_close_from("host", "host"),
+            Err(WindowCommandError::UnsupportedInEmbeddedView {
+                command: "close_window",
+                ..
+            })
+        ));
+        assert!(windows.drain_commands().is_empty());
     }
 }

@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use gpui_rhai::{AssetData, EmbeddedScriptApp, EmbeddedScriptSource, ModuleId};
+use gpui_rhai::{AssetData, EmbeddedScriptSource, EmbeddedScriptView, ModuleId, ScriptApplication};
 
 const COLLAPSIBLE: &str = include_str!("../../../registry/components/collapsible.rhai");
 const DIVIDER: &str = include_str!("../../../registry/components/divider.rhai");
@@ -157,7 +157,7 @@ fn module(id: &str, source: &str) -> (ModuleId, String) {
     )
 }
 
-fn gallery_app() -> EmbeddedScriptApp {
+fn gallery_app() -> EmbeddedScriptView {
     let visual_theme = visual_theme("default-light");
     let visual_locale = visual_locale();
     let menu_open = std::env::var("GPUI_RHAI_VISUAL_STATE")
@@ -176,7 +176,7 @@ fn gallery_app() -> EmbeddedScriptApp {
         module("components/skeleton", SKELETON),
         module("components/tooltip", TOOLTIP),
     ]));
-    EmbeddedScriptApp::new(ModuleId::parse("main").unwrap(), scripts, DEFAULT_LIGHT)
+    EmbeddedScriptView::new(ModuleId::parse("main").unwrap(), scripts, DEFAULT_LIGHT)
         .theme_sources([
             ("default_dark.rhai".to_owned(), DEFAULT_DARK.to_owned()),
             ("tokyo_night.rhai".to_owned(), TOKYO_NIGHT.to_owned()),
@@ -211,11 +211,17 @@ fn gallery_app() -> EmbeddedScriptApp {
                 },
             ),
         ])
-        .window_size(720.0, 520.0)
 }
 
 fn main() {
-    gallery_app().run().expect("component_gallery failed");
+    gallery_app()
+        .prepare()
+        .and_then(|prepared| {
+            ScriptApplication::new(prepared)
+                .window_size(720.0, 520.0)
+                .run()
+        })
+        .expect("component_gallery failed");
 }
 
 #[cfg(test)]

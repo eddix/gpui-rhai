@@ -24,6 +24,7 @@ pub struct ScriptLifecycle {
     runtime: Rc<RefCell<UiRuntimeState>>,
     root_path: ComponentInstancePath,
     window: Option<String>,
+    view: Option<String>,
     events: BTreeMap<String, EventSchema>,
     state: LifecycleState,
     root: Option<UiNode>,
@@ -59,6 +60,7 @@ impl ScriptLifecycle {
             runtime,
             root_path,
             window,
+            view: None,
             events,
             state: LifecycleState::Created,
             root: None,
@@ -83,6 +85,12 @@ impl ScriptLifecycle {
     #[must_use]
     pub fn runtime(&self) -> Rc<RefCell<UiRuntimeState>> {
         Rc::clone(&self.runtime)
+    }
+
+    #[must_use]
+    pub fn with_view_id(mut self, view: impl Into<String>) -> Self {
+        self.view = Some(view.into());
+        self
     }
 
     /// Run optional `init(ctx)` exactly once.
@@ -221,6 +229,7 @@ impl ScriptLifecycle {
             ExecutionPhase::Event,
             events,
         )
+        .with_optional_view_id(self.view.clone())
         .with_generation(self.compiled.generation())
         .with_native_context(delivery.callback.native_context().cloned());
         Ok(engine.invoke_callback(
@@ -378,6 +387,11 @@ impl ScriptLifecycle {
     }
 
     #[must_use]
+    pub fn view_id(&self) -> Option<&str> {
+        self.view.as_deref()
+    }
+
+    #[must_use]
     pub fn root_path(&self) -> &ComponentInstancePath {
         &self.root_path
     }
@@ -388,10 +402,12 @@ impl ScriptLifecycle {
     }
 
     fn animation_root_path(&self) -> String {
-        self.window.as_deref().map_or_else(
-            || "root".to_owned(),
-            |window| format!("window:{window}/root"),
-        )
+        match (self.window.as_deref(), self.view.as_deref()) {
+            (Some(window), Some(view)) => format!("window:{window}/view:{view}/root"),
+            (Some(window), None) => format!("window:{window}/root"),
+            (None, Some(view)) => format!("view:{view}/root"),
+            (None, None) => "root".to_owned(),
+        }
     }
 
     fn context_for(&self, phase: ExecutionPhase, generation: ScriptGeneration) -> UiContext {
@@ -402,6 +418,7 @@ impl ScriptLifecycle {
             phase,
             self.events.clone(),
         )
+        .with_optional_view_id(self.view.clone())
         .with_generation(generation)
     }
 

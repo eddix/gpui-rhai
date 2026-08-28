@@ -12,7 +12,8 @@ use gpui::{
 use crate::overlay_element::WindowOverlayCoordinator;
 use crate::renderer::{OwnedColorResolver, apply_style_override};
 use crate::{
-    OverlayId, Rgba8, Style, TextDirection, ToastHostSpec, ToastItemSpec, ToastRegion, ToastVariant,
+    OverlayBounds, OverlayId, Rgba8, Style, TextDirection, ToastHostSpec, ToastItemSpec,
+    ToastRegion, ToastVariant,
 };
 
 pub(crate) type ToastDismissHandler = Rc<dyn Fn(String, &mut Window, &mut App)>;
@@ -42,6 +43,7 @@ pub(crate) struct ToastHostElement {
     coordinator: WindowOverlayCoordinator,
     dismiss: ToastDismissHandler,
     part_styles: ToastPartStyles,
+    view_id: String,
 }
 
 impl ToastHostElement {
@@ -52,6 +54,7 @@ impl ToastHostElement {
         coordinator: WindowOverlayCoordinator,
         dismiss: ToastDismissHandler,
         part_styles: ToastPartStyles,
+        view_id: impl Into<String>,
     ) -> Self {
         Self {
             id: SharedString::from(format!("{path}/toast-host")).into(),
@@ -60,6 +63,7 @@ impl ToastHostElement {
             coordinator,
             dismiss,
             part_styles,
+            view_id: view_id.into(),
         }
     }
 
@@ -78,46 +82,43 @@ impl ToastHostElement {
 
     fn synchronize(&self, window: &mut Window, cx: &mut App) {
         let now = cx.background_executor().now();
-        self.coordinator
-            .toast_set_max_visible(self.spec.max_visible);
         let source_ids = self
             .spec
             .items
             .iter()
-            .map(|item| item.id.as_str())
+            .take(self.spec.max_visible)
+            .map(|item| {
+                WindowOverlayCoordinator::scoped_id(&self.view_id, &OverlayId::new(&item.id))
+            })
             .collect::<BTreeSet<_>>();
         for region in toast_regions() {
             for id in self.coordinator.toast_visible(region) {
-                if !source_ids.contains(id.as_str()) {
-                    self.coordinator.toast_dismiss(&id);
+                if id.as_str().starts_with(&format!("{}::", self.view_id))
+                    && !source_ids.contains(&id)
+                {
+                    let _ = self.coordinator.toast_dismiss(&id);
                 }
             }
         }
-        for item in &self.spec.items {
-            let id = OverlayId::new(item.id.clone());
+        for item in self.spec.items.iter().take(self.spec.max_visible) {
+            let id = WindowOverlayCoordinator::scoped_id(
+                &self.view_id,
+                &OverlayId::new(item.id.clone()),
+            );
             if !self.coordinator.toast_contains(&id)
                 && let Ok(evicted) = self.coordinator.toast_enqueue(
                     id.clone(),
+                    item.id.clone(),
+                    self.dismiss.clone(),
                     item.region,
                     Duration::from_millis(item.duration_ms),
                     now,
                 )
             {
-                for evicted in evicted {
-                    schedule_dismiss(
-                        Duration::ZERO,
-                        self.coordinator.clone(),
-                        self.dismiss.clone(),
-                        Some(evicted),
-                        window,
-                        cx,
-                    );
-                }
+                self.coordinator.toast_dispatch(evicted, window, cx);
                 schedule_dismiss(
                     Duration::from_millis(item.duration_ms),
                     self.coordinator.clone(),
-                    self.dismiss.clone(),
-                    None,
                     window,
                     cx,
                 );
@@ -127,19 +128,12 @@ impl ToastHostElement {
             } else if self.coordinator.toast_resume(&id, now)
                 && let Some(remaining) = self.coordinator.toast_remaining(&id, now)
             {
-                schedule_dismiss(
-                    remaining,
-                    self.coordinator.clone(),
-                    self.dismiss.clone(),
-                    None,
-                    window,
-                    cx,
-                );
+                schedule_dismiss(remaining, self.coordinator.clone(), window, cx);
             }
         }
     }
 
-    fn layer(&self, viewport: gpui::Size<Pixels>) -> AnyElement {
+    fn layer(&self, viewport: OverlayBounds) -> AnyElement {
         let columns = toast_regions().into_iter().filter_map(|region| {
             let entries = self
                 .coordinator
@@ -149,10 +143,13 @@ impl ToastHostElement {
                     self.spec
                         .items
                         .iter()
-                        .find(|item| item.id == id.as_str())
-                        .map(|item| {
-                            render_toast(item, self.palette, &self.coordinator, &self.dismiss, self)
+                        .find(|item| {
+                            WindowOverlayCoordinator::scoped_id(
+                                &self.view_id,
+                                &OverlayId::new(item.id.clone()),
+                            ) == id
                         })
+                        .map(|item| render_toast(item, &id, self.palette, &self.coordinator, self))
                 })
                 .collect::<Vec<_>>();
             (!entries.is_empty()).then(|| toast_column(region, entries, self))
@@ -160,12 +157,30 @@ impl ToastHostElement {
         deferred(
             div()
                 .absolute()
-                .w(viewport.width)
-                .h(viewport.height)
+                .left(pixel_from_f64(viewport.x))
+                .top(pixel_from_f64(viewport.y))
+                .w(pixel_from_f64(viewport.width))
+                .h(pixel_from_f64(viewport.height))
                 .children(columns),
         )
         .with_priority(9_000)
         .into_any_element()
+    }
+
+    fn register_host_elements(&self) {
+        for region in toast_regions() {
+            for id in self.coordinator.toast_visible(region) {
+                if let Some(item) = self.spec.items.iter().find(|item| {
+                    WindowOverlayCoordinator::scoped_id(
+                        &self.view_id,
+                        &OverlayId::new(item.id.clone()),
+                    ) == id
+                }) {
+                    let element = render_toast(item, &id, self.palette, &self.coordinator, self);
+                    self.coordinator.register_toast_element(id, region, element);
+                }
+            }
+        }
     }
 }
 
@@ -189,7 +204,12 @@ impl Element for ToastHostElement {
         cx: &mut App,
     ) -> (LayoutId, Self::RequestLayoutState) {
         self.synchronize(window, cx);
-        let mut layer = self.layer(window.viewport_size());
+        let mut layer = if self.coordinator.host_managed() {
+            self.register_host_elements();
+            div().into_any_element()
+        } else {
+            self.layer(self.coordinator.viewport_or_window(window.viewport_size()))
+        };
         let layout = layer.request_layout(window, cx);
         (layout, layer)
     }
@@ -230,18 +250,15 @@ impl IntoElement for ToastHostElement {
 
 fn render_toast(
     item: &ToastItemSpec,
+    id: &OverlayId,
     palette: ToastPalette,
     coordinator: &WindowOverlayCoordinator,
-    dismiss: &ToastDismissHandler,
     styles: &ToastHostElement,
 ) -> AnyElement {
-    let id = OverlayId::new(item.id.clone());
     let hover_id = id.clone();
     let hover_coordinator = coordinator.clone();
-    let hover_dismiss = dismiss.clone();
     let close_id = id.clone();
     let close_coordinator = coordinator.clone();
-    let close_dismiss = dismiss.clone();
     let accent = match item.variant {
         ToastVariant::Neutral => palette.border,
         ToastVariant::Success => palette.success,
@@ -254,8 +271,8 @@ fn render_toast(
             .id(SharedString::from(format!("toast-close-{}", item.id)))
             .cursor_pointer()
             .on_click(move |_, window, cx| {
-                if close_coordinator.toast_dismiss(&close_id) {
-                    close_dismiss(close_id.as_str().to_owned(), window, cx);
+                if let Some((local_id, callback)) = close_coordinator.toast_dismiss(&close_id) {
+                    callback(local_id, window, cx);
                     window.refresh();
                 }
             })
@@ -281,14 +298,7 @@ fn render_toast(
             } else if hover_coordinator.toast_resume(&hover_id, now)
                 && let Some(remaining) = hover_coordinator.toast_remaining(&hover_id, now)
             {
-                schedule_dismiss(
-                    remaining,
-                    hover_coordinator.clone(),
-                    hover_dismiss.clone(),
-                    None,
-                    window,
-                    cx,
-                );
+                schedule_dismiss(remaining, hover_coordinator.clone(), window, cx);
             }
         })
         .child(
@@ -340,8 +350,6 @@ fn toast_column(
 fn schedule_dismiss(
     delay: Duration,
     coordinator: WindowOverlayCoordinator,
-    dismiss: ToastDismissHandler,
-    immediate: Option<OverlayId>,
     window: &mut Window,
     cx: &mut App,
 ) {
@@ -351,10 +359,7 @@ fn schedule_dismiss(
             timer.await;
             let _ = cx.update(|window, cx| {
                 let now = cx.background_executor().now();
-                let expired = immediate.map_or_else(|| coordinator.toast_tick(now), |id| vec![id]);
-                for id in expired {
-                    dismiss(id.as_str().to_owned(), window, cx);
-                }
+                coordinator.toast_tick(now, window, cx);
                 window.refresh();
             });
         })
@@ -368,4 +373,9 @@ fn toast_regions() -> [ToastRegion; 4] {
         ToastRegion::BottomLeft,
         ToastRegion::BottomRight,
     ]
+}
+
+#[allow(clippy::cast_possible_truncation)]
+fn pixel_from_f64(value: f64) -> Pixels {
+    px(value as f32)
 }

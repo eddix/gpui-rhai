@@ -16,4 +16,17 @@ The initial theme contract includes explicit `on_accent`, `on_danger`,
 `on_warning`, and `on_success` foregrounds. Reduced motion renders looping
 indicators at a static midpoint rather than moving them out of view.
 
+Dogfooding API reset before the first published release:
+
+- `ScriptApp` → `FileScriptView`;
+- `EmbeddedScriptApp` → `EmbeddedScriptView`;
+- `PreparedScriptApp` → `PreparedScriptView`;
+- `ScriptAppExtension` → `ScriptViewExtension`;
+- `ScriptAppError` → `ScriptViewError`;
+- standalone ownership moved to `ScriptApplication`;
+- existing GPUI hosts mount isolated views through `ScriptViewHost` and
+  `ScriptViewHandle`.
+
+No compatibility aliases are retained because `0.1.0` has not been published.
+
 There is no earlier GPUI Rhai release to migrate from.

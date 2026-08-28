@@ -42,7 +42,19 @@ cargo run -p gpui-rhai --example form_showcase
 cargo run -p gpui-rhai --example component_gallery
 cargo run -p gpui-rhai --example extension_host
 cargo run -p gpui-rhai --example multi_window
+cargo run -p gpui-rhai --example embedded_views
 ```
+
+Standalone applications explicitly adapt a prepared view into a window-owning
+application:
+
+```rust
+let view = gpui_rhai::FileScriptView::new("ui/main.rhai").prepare()?;
+gpui_rhai::ScriptApplication::new(view).run()?;
+```
+
+Existing GPUI applications instead mount one or more isolated views through a
+shared `ScriptViewHost`; see the [embedding guide](docs/embedding.md).
 
 See the [documentation index](docs/README.md) or the
 [Simplified Chinese quick start](docs/quick-start.zh-CN.md).

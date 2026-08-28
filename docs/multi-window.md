@@ -1,5 +1,10 @@
 # Multi-window applications
 
+The restricted window command API is enabled by the standalone
+`ScriptApplication` adapter. Views mounted into an existing host reject these
+commands immediately with `UnsupportedInEmbeddedView`; the Rust host already
+owns those windows.
+
 Rhai can request native windows without receiving native handles:
 
 ```rhai
@@ -9,12 +14,12 @@ ctx.close_window("settings");
 ```
 
 IDs are stable and unique; sizes, title length, window count, and pending command
-count are bounded. Every window runs the same entry in a separate lifecycle and
+count are bounded. Every standalone script window runs the same entry in a separate lifecycle and
 component-state namespace. App stores are shared; window stores, theme and locale
 overrides, overlays, animations, tasks, subscriptions, and image work are scoped.
 
 Declare per-window Rust resources with
-`ScriptAppExtension::configure_window(window_id, runtime)`. It runs before that
+`ScriptViewExtension::configure_window(window_id, runtime)`. It runs before that
 window's `init`. Use `ctx.get_window_store`/`set_window_store` for a declared
 window store.
 

@@ -18,6 +18,8 @@ declared viewport sizes across the main matrix:
 
 Capture `component_gallery` for its fixed open-Menu state, Arabic RTL
 directional Icon state, and reduced-motion pointer-triggered Tooltip state.
+Capture `embedded_views` once with the small view's Dropdown open and duplicate
+local Toast IDs visible in the shared Host queue.
 
 Record macOS version, GPUI version, display scale, viewport, theme, locale,
 component state, and the reason for every accepted baseline change. Store PNGs
@@ -52,6 +54,9 @@ official Rhai components, native
 Dropdown/TextInput/Toast/Menu entities, executor-clock timers, and transactional
 `ScriptLifecycle` callbacks. The suite also paints an open child Popover inside
 an open parent Dialog, guarding GPUI 0.2.x against nested `defer_draw` panics.
+Three-view embedding cases cover automatic bounds, runtime isolation, shared
+Host overlays, duplicate local IDs, click-through dismissal, key conflicts,
+and dispose/remount.
 It guards keyboard/clipboard dispatch mechanics but does not replace platform
 IME candidate-window, focus-ring, or accessibility certification.
 

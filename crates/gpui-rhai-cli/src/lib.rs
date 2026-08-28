@@ -1021,7 +1021,10 @@ fn embedded_asset_mime(path: &str) -> Result<&'static str, ProjectError> {
 
 fn host_source() -> String {
     r#"fn main() {
-    gpui_rhai::ScriptApp::new("ui/main.rhai")
+    let view = gpui_rhai::FileScriptView::new("ui/main.rhai")
+        .prepare()
+        .expect("GPUI Rhai view preparation failed");
+    gpui_rhai::ScriptApplication::new(view)
         .run()
         .expect("GPUI Rhai application failed");
 }

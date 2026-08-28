@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use gpui_rhai::{EmbeddedScriptApp, EmbeddedScriptSource, ModuleId};
+use gpui_rhai::{EmbeddedScriptSource, EmbeddedScriptView, ModuleId, ScriptApplication};
 
 const TABS: &str = include_str!("../../../registry/components/tabs.rhai");
 const TAG: &str = include_str!("../../../registry/components/tag.rhai");
@@ -126,7 +126,7 @@ fn main() {
         module("components/progress", PROGRESS),
         module("components/popover", POPOVER),
     ]));
-    EmbeddedScriptApp::new(ModuleId::parse("main").unwrap(), scripts, DEFAULT_DARK)
+    EmbeddedScriptView::new(ModuleId::parse("main").unwrap(), scripts, DEFAULT_DARK)
         .theme_sources([
             ("default_light.rhai".to_owned(), DEFAULT_LIGHT.to_owned()),
             ("tokyo_night.rhai".to_owned(), TOKYO_NIGHT.to_owned()),
@@ -145,8 +145,12 @@ fn main() {
             ("zh_cn.rhai".to_owned(), ZH_CN.to_owned()),
             ("ar.rhai".to_owned(), AR.to_owned()),
         ])
-        .window_size(760.0, 560.0)
-        .run()
+        .prepare()
+        .and_then(|prepared| {
+            ScriptApplication::new(prepared)
+                .window_size(760.0, 560.0)
+                .run()
+        })
         .expect("dashboard_layout failed");
 }
 

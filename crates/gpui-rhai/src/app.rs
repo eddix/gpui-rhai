@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -6,12 +6,15 @@ use std::rc::Rc;
 use std::time::Duration;
 
 #[cfg(feature = "dev-reload")]
+use gpui::KeyBinding;
+#[cfg(feature = "dev-reload")]
 use gpui::actions;
 use gpui::{
-    AnyWindowHandle, App, AppContext, Application, Bounds, Context, FocusHandle,
-    InteractiveElement, IntoElement, KeyBinding, ParentElement, Render, SharedString, Styled, Task,
-    Timer, TitlebarOptions, Window, WindowAppearance, WindowBounds, WindowOptions, div, px, rgba,
-    size,
+    AnyElement, AnyWindowHandle, App, AppContext, Application, Bounds, Context, DispatchPhase,
+    Element, ElementId, Entity, FocusHandle, Global, GlobalElementId, InspectorElementId,
+    InteractiveElement, IntoElement, LayoutId, MouseDownEvent, ParentElement, Pixels, Render,
+    SharedString, Styled, Task, Timer, TitlebarOptions, Window, WindowAppearance, WindowBounds,
+    WindowOptions, deferred, div, px, rgba, size,
 };
 use thiserror::Error;
 
@@ -27,8 +30,8 @@ use crate::{
     NodeEventDispatcher, PrimitiveRegistry, ResponsiveError, ResponsiveRuntime,
     RestrictedModuleResolver, RuntimeEngine, RuntimeError, ScriptCallback, ScriptLifecycle,
     ScriptSource, ScriptWindowSpec, SystemAppearance, TextDirection, ThemeManager, ThemeSelection,
-    ThemeVariant, UiRuntimeState, UiValue, ViewportBreakpoints, WindowCommand, init_text_input,
-    load_locale_source, load_theme_source,
+    ThemeVariant, UiRuntimeState, UiValue, ViewportBreakpoints, WindowCommand, WindowCommandPolicy,
+    init_text_input, load_locale_source, load_theme_source,
 };
 
 #[cfg(feature = "dev-reload")]
@@ -36,7 +39,642 @@ actions!(gpui_rhai_devtools, [ToggleInspector]);
 
 const HOST_KEY_CONTEXT: &str = "GPUIRhaiHost";
 
-pub trait ScriptAppExtension {
+#[derive(Default)]
+struct ScriptRuntimeInstallation {
+    bindings: BTreeMap<(String, Option<String>), ActionId>,
+}
+
+impl Global for ScriptRuntimeInstallation {}
+
+/// Install GPUI Rhai's application-wide input actions once.
+pub fn install(cx: &mut App) {
+    if cx.has_global::<ScriptRuntimeInstallation>() {
+        return;
+    }
+    init_text_input(cx);
+    cx.set_global(ScriptRuntimeInstallation::default());
+}
+
+#[derive(Clone, Debug)]
+pub struct ScriptViewConfig {
+    view_id: String,
+    paint_background: bool,
+}
+
+impl ScriptViewConfig {
+    #[must_use]
+    pub fn new(view_id: impl Into<String>) -> Self {
+        Self {
+            view_id: view_id.into(),
+            paint_background: false,
+        }
+    }
+
+    #[must_use]
+    pub const fn paint_background(mut self, paint: bool) -> Self {
+        self.paint_background = paint;
+        self
+    }
+
+    #[must_use]
+    pub fn view_id(&self) -> &str {
+        &self.view_id
+    }
+}
+
+#[derive(Clone)]
+pub struct ScriptViewHost {
+    inner: Rc<RefCell<ScriptViewHostState>>,
+}
+
+struct ScriptViewHostState {
+    window_id: String,
+    overlays: WindowOverlayCoordinator,
+    fallback_focus: FocusHandle,
+    views: BTreeMap<String, FocusHandle>,
+    pending_focus_recovery: Vec<FocusHandle>,
+    overlay_viewport: Option<crate::OverlayBounds>,
+    toast_max_visible: usize,
+    window_policy: WindowCommandPolicy,
+    frame_active: bool,
+    container_bounds: Option<Bounds<Pixels>>,
+}
+
+impl ScriptViewHost {
+    /// Create one interaction/overlay domain, normally one per GPUI window.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ScriptViewError::InvalidId`] for an unsafe window identifier.
+    pub fn new(window_id: impl Into<String>, cx: &mut App) -> Result<Self, ScriptViewError> {
+        Self::new_with_policy(window_id, WindowCommandPolicy::Disabled, cx)
+    }
+
+    fn new_with_policy(
+        window_id: impl Into<String>,
+        window_policy: WindowCommandPolicy,
+        cx: &mut App,
+    ) -> Result<Self, ScriptViewError> {
+        install(cx);
+        let window_id = window_id.into();
+        validate_view_id(&window_id)?;
+        Ok(Self {
+            inner: Rc::new(RefCell::new(ScriptViewHostState {
+                window_id,
+                overlays: WindowOverlayCoordinator::default(),
+                fallback_focus: cx.focus_handle(),
+                views: BTreeMap::new(),
+                pending_focus_recovery: Vec::new(),
+                overlay_viewport: None,
+                toast_max_visible: 3,
+                window_policy,
+                frame_active: false,
+                container_bounds: None,
+            })),
+        })
+    }
+
+    #[must_use]
+    pub fn window_id(&self) -> String {
+        self.inner.borrow().window_id.clone()
+    }
+
+    /// Restrict this Host's overlays to an explicit absolute rectangle.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ScriptViewError::Overlay`] for invalid geometry.
+    pub fn set_overlay_viewport(
+        &self,
+        viewport: crate::OverlayBounds,
+    ) -> Result<(), ScriptViewError> {
+        crate::OverlayManager::new(viewport)?;
+        self.inner.borrow_mut().overlay_viewport = Some(viewport);
+        Ok(())
+    }
+
+    pub fn use_window_overlay_viewport(&self) {
+        self.inner.borrow_mut().overlay_viewport = None;
+    }
+
+    pub fn set_toast_max_visible(&self, max_visible: usize) {
+        let max_visible = max_visible.max(1);
+        let mut state = self.inner.borrow_mut();
+        state.toast_max_visible = max_visible;
+        state.overlays.set_toast_max_visible(max_visible);
+    }
+
+    #[must_use]
+    pub fn overlay_placement(
+        &self,
+        view_id: &str,
+        local_id: &str,
+    ) -> Option<crate::PlacementResult> {
+        self.inner
+            .borrow()
+            .overlays
+            .placement(view_id, &crate::OverlayId::new(local_id))
+    }
+
+    #[must_use]
+    pub fn visible_toast_count(&self, region: crate::ToastRegion) -> usize {
+        self.inner.borrow().overlays.toast_visible_count(region)
+    }
+
+    /// Bind host-approved script actions once at App scope.
+    ///
+    /// # Errors
+    ///
+    /// Returns a conflict when another binding already owns the same keys and
+    /// context, or an invalid-key error from GPUI conversion.
+    pub fn bind_keys(
+        &self,
+        bindings: impl IntoIterator<Item = KeyBindingSpec>,
+        cx: &mut App,
+    ) -> Result<(), ScriptViewError> {
+        install(cx);
+        let bindings = bindings.into_iter().collect::<Vec<_>>();
+        let converted = bindings
+            .iter()
+            .map(KeyBindingSpec::to_gpui)
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut new = Vec::new();
+        {
+            let installed = cx.global_mut::<ScriptRuntimeInstallation>();
+            for (index, binding) in bindings.iter().enumerate() {
+                let key = (binding.keystrokes.clone(), binding.context.clone());
+                if let Some(existing) = installed.bindings.get(&key)
+                    && existing != &binding.action
+                {
+                    return Err(ScriptViewError::KeyBindingConflict {
+                        keystrokes: binding.keystrokes.clone(),
+                        context: binding.context.clone(),
+                        existing: existing.clone(),
+                        requested: binding.action.clone(),
+                    });
+                }
+                if let std::collections::btree_map::Entry::Vacant(entry) =
+                    installed.bindings.entry(key)
+                {
+                    entry.insert(binding.action.clone());
+                    new.push(index);
+                }
+            }
+        }
+        cx.bind_keys(new.into_iter().map(|index| converted[index].clone()));
+        Ok(())
+    }
+
+    #[must_use]
+    pub fn container(&self, child: impl IntoElement) -> AnyElement {
+        let (fallback, overlays) = {
+            let state = self.inner.borrow();
+            (state.fallback_focus.clone(), state.overlays.clone())
+        };
+        let escape_overlays = overlays.clone();
+        let child = div()
+            .size_full()
+            .track_focus(&fallback)
+            .on_key_down(move |event, window, cx| {
+                if event.keystroke.key.as_str() == "escape"
+                    && escape_overlays.dismiss_escape(window, cx)
+                {
+                    cx.stop_propagation();
+                }
+            })
+            .child(child)
+            .child(SharedToastPortalElement {
+                coordinator: overlays,
+            })
+            .into_any_element();
+        ScriptViewHostFrame {
+            host: self.clone(),
+            child: Some(child),
+        }
+        .into_any_element()
+    }
+
+    fn reserve_view(&self, view_id: &str) -> Result<(), ScriptViewError> {
+        validate_view_id(view_id)?;
+        let mut state = self.inner.borrow_mut();
+        if state.views.contains_key(view_id) {
+            return Err(ScriptViewError::DuplicateView(view_id.to_owned()));
+        }
+        let fallback = state.fallback_focus.clone();
+        state.views.insert(view_id.to_owned(), fallback);
+        Ok(())
+    }
+
+    fn attach_view_focus(&self, view_id: &str, focus: FocusHandle) {
+        if let Some(entry) = self.inner.borrow_mut().views.get_mut(view_id) {
+            *entry = focus;
+        }
+    }
+
+    fn unregister_view(&self, view_id: &str) {
+        let mut state = self.inner.borrow_mut();
+        if let Some(focus) = state.views.remove(view_id) {
+            state.pending_focus_recovery.push(focus);
+        }
+        state.overlays.remove_view(view_id);
+    }
+
+    fn overlays(&self) -> WindowOverlayCoordinator {
+        self.inner.borrow().overlays.clone()
+    }
+
+    fn window_policy(&self) -> WindowCommandPolicy {
+        self.inner.borrow().window_policy
+    }
+
+    fn frame_active(&self) -> bool {
+        self.inner.borrow().frame_active
+    }
+}
+
+fn validate_view_id(id: &str) -> Result<(), ScriptViewError> {
+    let valid = (1..=64).contains(&id.len())
+        && id
+            .chars()
+            .next()
+            .is_some_and(|character| character.is_ascii_alphanumeric())
+        && id
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '_' | '-'));
+    if valid {
+        Ok(())
+    } else {
+        Err(ScriptViewError::InvalidId(id.to_owned()))
+    }
+}
+
+struct ScriptViewHostFrame {
+    host: ScriptViewHost,
+    child: Option<AnyElement>,
+}
+
+impl Element for ScriptViewHostFrame {
+    type RequestLayoutState = AnyElement;
+    type PrepaintState = ();
+
+    fn id(&self) -> Option<ElementId> {
+        None
+    }
+
+    fn source_location(&self) -> Option<&'static core::panic::Location<'static>> {
+        None
+    }
+
+    fn request_layout(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> (LayoutId, Self::RequestLayoutState) {
+        let (overlays, viewport, toast_max_visible, fallback, pending) = {
+            let mut state = self.host.inner.borrow_mut();
+            state.frame_active = true;
+            let viewport = state
+                .overlay_viewport
+                .unwrap_or_else(|| crate::OverlayBounds {
+                    x: 0.0,
+                    y: 0.0,
+                    width: f64::from(window.viewport_size().width),
+                    height: f64::from(window.viewport_size().height),
+                });
+            (
+                state.overlays.clone(),
+                viewport,
+                state.toast_max_visible,
+                state.fallback_focus.clone(),
+                std::mem::take(&mut state.pending_focus_recovery),
+            )
+        };
+        overlays.begin_host_frame(viewport);
+        overlays.set_toast_max_visible(toast_max_visible);
+        if pending
+            .iter()
+            .any(|focus| focus.contains_focused(window, cx))
+        {
+            fallback.focus(window);
+        }
+        let mut child = self.child.take().expect("host frame lays out once");
+        let layout = child.request_layout(window, cx);
+        (layout, child)
+    }
+
+    fn prepaint(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        bounds: Bounds<Pixels>,
+        child: &mut Self::RequestLayoutState,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        self.host.inner.borrow_mut().container_bounds = Some(bounds);
+        child.prepaint(window, cx);
+    }
+
+    fn paint(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        _bounds: Bounds<Pixels>,
+        child: &mut Self::RequestLayoutState,
+        _prepaint: &mut Self::PrepaintState,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        child.paint(window, cx);
+        self.host.inner.borrow_mut().frame_active = false;
+        let overlays = self.host.overlays();
+        let container_bounds = self.host.inner.borrow().container_bounds;
+        window.on_mouse_event(move |event: &MouseDownEvent, phase, window, cx| {
+            if phase == DispatchPhase::Capture
+                && container_bounds.is_some_and(|bounds| bounds.contains(&event.position))
+            {
+                let _ = overlays.dismiss_outside(event.position, window, cx);
+            }
+        });
+    }
+}
+
+impl IntoElement for ScriptViewHostFrame {
+    type Element = Self;
+
+    fn into_element(self) -> Self::Element {
+        self
+    }
+}
+
+struct SharedToastPortalElement {
+    coordinator: WindowOverlayCoordinator,
+}
+
+impl Element for SharedToastPortalElement {
+    type RequestLayoutState = AnyElement;
+    type PrepaintState = ();
+
+    fn id(&self) -> Option<ElementId> {
+        None
+    }
+
+    fn source_location(&self) -> Option<&'static core::panic::Location<'static>> {
+        None
+    }
+
+    fn request_layout(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> (LayoutId, Self::RequestLayoutState) {
+        let viewport = self.coordinator.viewport_or_window(window.viewport_size());
+        let columns =
+            self.coordinator
+                .take_toast_elements()
+                .into_iter()
+                .map(|(region, elements)| {
+                    let column = div()
+                        .absolute()
+                        .w(px(320.0))
+                        .flex()
+                        .flex_col()
+                        .gap_2()
+                        .children(elements);
+                    match region {
+                        crate::ToastRegion::TopLeft => column.top(px(12.0)).left(px(12.0)),
+                        crate::ToastRegion::TopRight => column.top(px(12.0)).right(px(12.0)),
+                        crate::ToastRegion::BottomLeft => column.bottom(px(12.0)).left(px(12.0)),
+                        crate::ToastRegion::BottomRight => column.bottom(px(12.0)).right(px(12.0)),
+                    }
+                });
+        let mut layer = deferred(
+            div()
+                .absolute()
+                .left(pixel_from_f64(viewport.x))
+                .top(pixel_from_f64(viewport.y))
+                .w(pixel_from_f64(viewport.width))
+                .h(pixel_from_f64(viewport.height))
+                .children(columns),
+        )
+        .with_priority(9_000)
+        .into_any_element();
+        let layout = layer.request_layout(window, cx);
+        (layout, layer)
+    }
+
+    fn prepaint(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        _bounds: Bounds<Pixels>,
+        layer: &mut Self::RequestLayoutState,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        layer.prepaint(window, cx);
+    }
+
+    fn paint(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        _bounds: Bounds<Pixels>,
+        layer: &mut Self::RequestLayoutState,
+        _prepaint: &mut Self::PrepaintState,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        layer.paint(window, cx);
+    }
+}
+
+impl IntoElement for SharedToastPortalElement {
+    type Element = Self;
+
+    fn into_element(self) -> Self::Element {
+        self
+    }
+}
+
+#[derive(Clone)]
+pub struct ScriptViewHandle(Rc<ScriptViewHandleInner>);
+
+struct ScriptViewHandleInner {
+    entity: Entity<ScriptHostView>,
+    host: ScriptViewHost,
+    view_id: String,
+    disposed: Cell<bool>,
+    measured_bounds: Rc<Cell<Option<Bounds<Pixels>>>>,
+}
+
+impl Drop for ScriptViewHandleInner {
+    fn drop(&mut self) {
+        if !self.disposed.replace(true) {
+            self.host.unregister_view(&self.view_id);
+        }
+    }
+}
+
+impl ScriptViewHandle {
+    #[must_use]
+    pub fn view_id(&self) -> &str {
+        &self.0.view_id
+    }
+
+    /// Return the latest rendered declarative root.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ScriptViewError::DisposedView`] after disposal.
+    pub fn root(&self, cx: &App) -> Result<Option<crate::UiNode>, ScriptViewError> {
+        if self.0.disposed.get() {
+            return Err(ScriptViewError::DisposedView(self.0.view_id.clone()));
+        }
+        Ok(self.0.entity.read(cx).lifecycle.root().cloned())
+    }
+
+    /// Return the measured embedding element.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ScriptViewError::DisposedView`] after explicit disposal.
+    pub fn element(&self) -> Result<AnyElement, ScriptViewError> {
+        if self.0.disposed.get() {
+            return Err(ScriptViewError::DisposedView(self.0.view_id.clone()));
+        }
+        Ok(MeasuredScriptViewElement {
+            entity: self.0.entity.clone(),
+            measured_bounds: Rc::clone(&self.0.measured_bounds),
+        }
+        .into_any_element())
+    }
+
+    /// Dispose this view immediately. The operation is idempotent.
+    ///
+    /// # Errors
+    ///
+    /// Returns an entity update error only if GPUI has already released the
+    /// underlying view unexpectedly.
+    pub fn dispose(&self, cx: &mut App) -> Result<(), ScriptViewError> {
+        if self.0.disposed.replace(true) {
+            return Ok(());
+        }
+        self.0.entity.update(cx, |view, cx| {
+            view.release_view();
+            cx.notify();
+        });
+        self.0.host.unregister_view(&self.0.view_id);
+        cx.refresh_windows();
+        Ok(())
+    }
+
+    /// Focus this view's stable root handle.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ScriptViewError::DisposedView`] after disposal.
+    pub fn focus(&self, window: &mut Window, cx: &App) -> Result<(), ScriptViewError> {
+        if self.0.disposed.get() {
+            return Err(ScriptViewError::DisposedView(self.0.view_id.clone()));
+        }
+        self.0.entity.read(cx).host_focus.focus(window);
+        Ok(())
+    }
+
+    #[cfg(feature = "dev-reload")]
+    /// Open or close this view's isolated development inspector.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ScriptViewError::DisposedView`] after disposal.
+    pub fn set_inspector_open(&self, open: bool, cx: &mut App) -> Result<(), ScriptViewError> {
+        if self.0.disposed.get() {
+            return Err(ScriptViewError::DisposedView(self.0.view_id.clone()));
+        }
+        self.0.entity.update(cx, |view, cx| {
+            view.inspector_open = open;
+            cx.notify();
+        });
+        Ok(())
+    }
+}
+
+struct MeasuredScriptViewElement {
+    entity: Entity<ScriptHostView>,
+    measured_bounds: Rc<Cell<Option<Bounds<Pixels>>>>,
+}
+
+impl Element for MeasuredScriptViewElement {
+    type RequestLayoutState = AnyElement;
+    type PrepaintState = ();
+
+    fn id(&self) -> Option<ElementId> {
+        None
+    }
+
+    fn source_location(&self) -> Option<&'static core::panic::Location<'static>> {
+        None
+    }
+
+    fn request_layout(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> (LayoutId, Self::RequestLayoutState) {
+        let mut child = self.entity.clone().into_any_element();
+        let layout = child.request_layout(window, cx);
+        (layout, child)
+    }
+
+    fn prepaint(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        bounds: Bounds<Pixels>,
+        child: &mut Self::RequestLayoutState,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        child.prepaint(window, cx);
+        if self.measured_bounds.get() != Some(bounds) {
+            self.measured_bounds.set(Some(bounds));
+            let view = self.entity.downgrade();
+            window.defer(cx, move |_, cx| {
+                let _ = view.update(cx, |view, cx| view.set_content_bounds(bounds, cx));
+            });
+        }
+    }
+
+    fn paint(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        _bounds: Bounds<Pixels>,
+        child: &mut Self::RequestLayoutState,
+        _prepaint: &mut Self::PrepaintState,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        child.paint(window, cx);
+    }
+}
+
+impl IntoElement for MeasuredScriptViewElement {
+    type Element = Self;
+
+    fn into_element(self) -> Self::Element {
+        self
+    }
+}
+
+pub trait ScriptViewExtension {
     /// Register custom primitives or engine APIs before scripts compile.
     ///
     /// # Errors
@@ -88,34 +726,26 @@ fn parse_motion_preference(value: &str) -> MotionPreference {
     }
 }
 
-pub struct ScriptApp {
+pub struct FileScriptView {
     entry: PathBuf,
-    window_size: (f32, f32),
     development: bool,
     motion_preference: MotionPreference,
-    extensions: Vec<Box<dyn ScriptAppExtension>>,
+    extensions: Vec<Box<dyn ScriptViewExtension>>,
     key_bindings: Vec<KeyBindingSpec>,
     viewport_breakpoints: ViewportBreakpoints,
 }
 
-impl ScriptApp {
+impl FileScriptView {
     #[must_use]
     pub fn new(entry: impl Into<PathBuf>) -> Self {
         Self {
             entry: entry.into(),
-            window_size: (720.0, 480.0),
             development: cfg!(feature = "dev-reload") && cfg!(debug_assertions),
             motion_preference: motion_preference_from_env(),
             extensions: Vec::new(),
             key_bindings: Vec::new(),
             viewport_breakpoints: ViewportBreakpoints::default(),
         }
-    }
-
-    #[must_use]
-    pub fn window_size(mut self, width: f32, height: f32) -> Self {
-        self.window_size = (width, height);
-        self
     }
 
     #[must_use]
@@ -131,7 +761,7 @@ impl ScriptApp {
     }
 
     #[must_use]
-    pub fn extension(mut self, extension: impl ScriptAppExtension + 'static) -> Self {
+    pub fn extension(mut self, extension: impl ScriptViewExtension + 'static) -> Self {
         self.extensions.push(Box::new(extension));
         self
     }
@@ -152,10 +782,10 @@ impl ScriptApp {
     ///
     /// # Errors
     ///
-    /// Returns [`ScriptAppError`] for source I/O, compilation, lifecycle, or
+    /// Returns [`ScriptViewError`] for source I/O, compilation, lifecycle, or
     /// initial rendering failures.
-    pub fn prepare(self) -> Result<PreparedScriptApp, ScriptAppError> {
-        let source = fs::read_to_string(&self.entry).map_err(|source| ScriptAppError::Io {
+    pub fn prepare(self) -> Result<PreparedScriptView, ScriptViewError> {
+        let source = fs::read_to_string(&self.entry).map_err(|source| ScriptViewError::Io {
             path: self.entry.clone(),
             source,
         })?;
@@ -164,7 +794,7 @@ impl ScriptApp {
         for extension in extensions.iter() {
             extension
                 .configure_engine(&mut engine)
-                .map_err(ScriptAppError::Extension)?;
+                .map_err(ScriptViewError::Extension)?;
         }
         let (ui_root, theme_path, theme) = load_primary_file_theme(&engine, &self.entry)?;
         let manifest = load_file_manifest(&ui_root, &self.entry)?;
@@ -186,36 +816,18 @@ impl ScriptApp {
             &theme,
         )?);
         register_file_assets(&runtime_state, &ui_root)?;
-        runtime_state
-            .windows
-            .register_open("main")
-            .map_err(|error| ScriptAppError::Extension(error.to_string()))?;
         for extension in extensions.iter() {
             extension
                 .configure_runtime(&mut runtime_state)
-                .map_err(ScriptAppError::Extension)?;
+                .map_err(ScriptViewError::Extension)?;
         }
         manifest.activate(&mut runtime_state.capabilities)?;
-        for extension in extensions.iter() {
-            extension
-                .configure_window("main", &mut runtime_state)
-                .map_err(ScriptAppError::Extension)?;
-        }
         let runtime = Rc::new(RefCell::new(runtime_state));
         let program = WindowProgram {
             compiled: compiled.clone(),
             state_schema: state_schema.clone(),
             component_exports,
         };
-        let mut lifecycle = ScriptLifecycle::new(
-            compiled,
-            Rc::clone(&runtime),
-            ComponentInstancePath::root("App", "main"),
-            Some("main".to_owned()),
-            BTreeMap::default(),
-            &state_schema,
-        )?;
-        lifecycle.start(&mut engine)?;
         let factory = Rc::new(ScriptWindowFactory {
             program: RefCell::new(program),
             runtime,
@@ -224,10 +836,8 @@ impl ScriptApp {
             #[cfg(feature = "dev-reload")]
             development: self.development,
         });
-        Ok(PreparedScriptApp {
+        Ok(PreparedScriptView {
             engine,
-            lifecycle,
-            window_size: self.window_size,
             theme,
             entry: self.entry,
             ui_root,
@@ -239,34 +849,24 @@ impl ScriptApp {
             module_cache,
         })
     }
-
-    /// Prepare and run the app on GPUI's foreground event loop.
-    ///
-    /// # Errors
-    ///
-    /// Returns preparation or window-opening errors.
-    pub fn run(self) -> Result<(), ScriptAppError> {
-        self.prepare()?.run()
-    }
 }
 
-pub struct EmbeddedScriptApp {
+pub struct EmbeddedScriptView {
     entry: ModuleId,
     scripts: EmbeddedScriptSource,
     theme_source: String,
-    window_size: (f32, f32),
     locales: Vec<(String, String)>,
     themes: Vec<(String, String)>,
     development: bool,
     motion_preference: MotionPreference,
-    extensions: Vec<Box<dyn ScriptAppExtension>>,
+    extensions: Vec<Box<dyn ScriptViewExtension>>,
     manifest: AppManifest,
     key_bindings: Vec<KeyBindingSpec>,
     assets: BTreeMap<String, AssetData>,
     viewport_breakpoints: ViewportBreakpoints,
 }
 
-impl EmbeddedScriptApp {
+impl EmbeddedScriptView {
     #[must_use]
     pub fn new(
         entry: ModuleId,
@@ -278,7 +878,6 @@ impl EmbeddedScriptApp {
             entry,
             scripts,
             theme_source: theme_source.into(),
-            window_size: (720.0, 480.0),
             locales: Vec::new(),
             themes: Vec::new(),
             development: false,
@@ -289,12 +888,6 @@ impl EmbeddedScriptApp {
             assets: BTreeMap::new(),
             viewport_breakpoints: ViewportBreakpoints::default(),
         }
-    }
-
-    #[must_use]
-    pub fn window_size(mut self, width: f32, height: f32) -> Self {
-        self.window_size = (width, height);
-        self
     }
 
     #[must_use]
@@ -322,7 +915,7 @@ impl EmbeddedScriptApp {
     }
 
     #[must_use]
-    pub fn extension(mut self, extension: impl ScriptAppExtension + 'static) -> Self {
+    pub fn extension(mut self, extension: impl ScriptViewExtension + 'static) -> Self {
         self.extensions.push(Box::new(extension));
         self
     }
@@ -356,7 +949,7 @@ impl EmbeddedScriptApp {
     /// # Errors
     ///
     /// Returns source, theme, compile, or lifecycle errors.
-    pub fn prepare(self) -> Result<PreparedScriptApp, ScriptAppError> {
+    pub fn prepare(self) -> Result<PreparedScriptView, ScriptViewError> {
         let entry = self.scripts.load(&self.entry)?;
         validate_manifest_entry(&self.manifest, &self.entry)?;
         let extensions = Rc::new(self.extensions);
@@ -364,10 +957,10 @@ impl EmbeddedScriptApp {
         for extension in extensions.iter() {
             extension
                 .configure_engine(&mut engine)
-                .map_err(ScriptAppError::Extension)?;
+                .map_err(ScriptViewError::Extension)?;
         }
         let theme = load_theme_source(engine.engine(), "<embedded-theme>", &self.theme_source)
-            .map_err(|error| ScriptAppError::Theme(error.to_string()))?;
+            .map_err(|error| ScriptViewError::Theme(error.to_string()))?;
         engine.set_module_resolver(RestrictedModuleResolver::from_source(&self.scripts)?);
         let compiled = engine.compile_self_contained_named(self.entry.as_str(), &entry.source)?;
         let component_exports = engine.component_exports()?;
@@ -383,36 +976,18 @@ impl EmbeddedScriptApp {
                 .assets
                 .register("app", InMemoryAssetProvider::new(self.assets))?;
         }
-        runtime_state
-            .windows
-            .register_open("main")
-            .map_err(|error| ScriptAppError::Extension(error.to_string()))?;
         for extension in extensions.iter() {
             extension
                 .configure_runtime(&mut runtime_state)
-                .map_err(ScriptAppError::Extension)?;
+                .map_err(ScriptViewError::Extension)?;
         }
         self.manifest.activate(&mut runtime_state.capabilities)?;
-        for extension in extensions.iter() {
-            extension
-                .configure_window("main", &mut runtime_state)
-                .map_err(ScriptAppError::Extension)?;
-        }
         let runtime = Rc::new(RefCell::new(runtime_state));
         let program = WindowProgram {
             compiled: compiled.clone(),
             state_schema: state_schema.clone(),
             component_exports,
         };
-        let mut lifecycle = ScriptLifecycle::new(
-            compiled,
-            Rc::clone(&runtime),
-            ComponentInstancePath::root("App", "main"),
-            Some("main".to_owned()),
-            BTreeMap::default(),
-            &state_schema,
-        )?;
-        lifecycle.start(&mut engine)?;
         let factory = Rc::new(ScriptWindowFactory {
             program: RefCell::new(program),
             runtime,
@@ -421,10 +996,8 @@ impl EmbeddedScriptApp {
             #[cfg(feature = "dev-reload")]
             development: self.development,
         });
-        Ok(PreparedScriptApp {
+        Ok(PreparedScriptView {
             engine,
-            lifecycle,
-            window_size: self.window_size,
             theme,
             entry: PathBuf::new(),
             ui_root: PathBuf::new(),
@@ -436,26 +1009,17 @@ impl EmbeddedScriptApp {
             module_cache: ModuleCompileCache::new(),
         })
     }
-
-    /// Prepare and run the embedded application.
-    ///
-    /// # Errors
-    ///
-    /// Returns preparation or GPUI window errors.
-    pub fn run(self) -> Result<(), ScriptAppError> {
-        self.prepare()?.run()
-    }
 }
 
 fn load_embedded_locales(
     engine: &rhai::Engine,
     sources: Vec<(String, String)>,
-) -> Result<Option<LocaleManager>, ScriptAppError> {
+) -> Result<Option<LocaleManager>, ScriptViewError> {
     let mut bundles = sources
         .into_iter()
         .map(|(name, source)| {
             load_locale_source(engine, &name, &source)
-                .map_err(|error| ScriptAppError::Locale(error.to_string()))
+                .map_err(|error| ScriptViewError::Locale(error.to_string()))
         })
         .collect::<Result<Vec<_>, _>>()?;
     bundles.sort_by(|left, right| left.locale.cmp(&right.locale));
@@ -470,7 +1034,7 @@ fn load_embedded_locales(
         .clone();
     Ok(Some(
         LocaleManager::new(bundles, fallback.clone(), fallback)
-            .map_err(|error| ScriptAppError::Locale(error.to_string()))?,
+            .map_err(|error| ScriptViewError::Locale(error.to_string()))?,
     ))
 }
 
@@ -478,23 +1042,23 @@ fn load_embedded_themes(
     engine: &rhai::Engine,
     sources: Vec<(String, String)>,
     primary: &ThemeVariant,
-) -> Result<ThemeManager, ScriptAppError> {
+) -> Result<ThemeManager, ScriptViewError> {
     let mut variants = BTreeMap::from([(
         (primary.family.clone(), primary.name.clone()),
         primary.clone(),
     )]);
     for (name, source) in sources {
         let variant = load_theme_source(engine, &name, &source)
-            .map_err(|error| ScriptAppError::Theme(error.to_string()))?;
+            .map_err(|error| ScriptViewError::Theme(error.to_string()))?;
         insert_theme_variant(&mut variants, variant)?;
     }
     theme_manager(variants.into_values(), primary)
 }
 
-fn module_id_from_path(root: &Path, path: &Path) -> Result<ModuleId, ScriptAppError> {
+fn module_id_from_path(root: &Path, path: &Path) -> Result<ModuleId, ScriptViewError> {
     let relative = path
         .strip_prefix(root)
-        .map_err(|_| ScriptAppError::ModulePath(path.to_path_buf()))?;
+        .map_err(|_| ScriptViewError::ModulePath(path.to_path_buf()))?;
     let id = relative
         .with_extension("")
         .components()
@@ -504,14 +1068,14 @@ fn module_id_from_path(root: &Path, path: &Path) -> Result<ModuleId, ScriptAppEr
     Ok(ModuleId::parse(id)?)
 }
 
-fn load_file_manifest(root: &Path, entry: &Path) -> Result<AppManifest, ScriptAppError> {
+fn load_file_manifest(root: &Path, entry: &Path) -> Result<AppManifest, ScriptViewError> {
     let path = root.join("app.toml");
-    let source = fs::read_to_string(&path).map_err(|source| ScriptAppError::Io {
+    let source = fs::read_to_string(&path).map_err(|source| ScriptViewError::Io {
         path: path.clone(),
         source,
     })?;
     let manifest: AppManifest =
-        toml::from_str(&source).map_err(|error| ScriptAppError::Manifest(error.to_string()))?;
+        toml::from_str(&source).map_err(|error| ScriptViewError::Manifest(error.to_string()))?;
     let entry = module_id_from_path(root, entry)?;
     validate_manifest_entry(&manifest, &entry)?;
     Ok(manifest)
@@ -520,18 +1084,18 @@ fn load_file_manifest(root: &Path, entry: &Path) -> Result<AppManifest, ScriptAp
 fn load_primary_file_theme(
     engine: &RuntimeEngine,
     entry: &Path,
-) -> Result<(PathBuf, PathBuf, ThemeVariant), ScriptAppError> {
+) -> Result<(PathBuf, PathBuf, ThemeVariant), ScriptViewError> {
     let root = entry
         .parent()
         .unwrap_or_else(|| Path::new("."))
         .to_path_buf();
     let path = root.join("theme.rhai");
-    let source = fs::read_to_string(&path).map_err(|source| ScriptAppError::Io {
+    let source = fs::read_to_string(&path).map_err(|source| ScriptViewError::Io {
         path: path.clone(),
         source,
     })?;
     let theme = load_theme_source(engine.engine(), &path.to_string_lossy(), &source)
-        .map_err(|error| ScriptAppError::Theme(error.to_string()))?;
+        .map_err(|error| ScriptViewError::Theme(error.to_string()))?;
     Ok((root, path, theme))
 }
 
@@ -540,7 +1104,7 @@ fn configure_file_modules(
     root: &Path,
     entry: &Path,
     theme: &Path,
-) -> Result<ModuleCompileCache, ScriptAppError> {
+) -> Result<ModuleCompileCache, ScriptViewError> {
     let modules = discover_modules(root, entry, theme)?;
     let source = FileScriptSource::new(root, modules)?;
     let mut cache = ModuleCompileCache::new();
@@ -551,7 +1115,7 @@ fn configure_file_modules(
     Ok(cache)
 }
 
-fn register_file_assets(runtime: &UiRuntimeState, root: &Path) -> Result<(), ScriptAppError> {
+fn register_file_assets(runtime: &UiRuntimeState, root: &Path) -> Result<(), ScriptViewError> {
     let asset_root = root.join("assets");
     if asset_root.exists() {
         runtime
@@ -561,11 +1125,14 @@ fn register_file_assets(runtime: &UiRuntimeState, root: &Path) -> Result<(), Scr
     Ok(())
 }
 
-fn validate_manifest_entry(manifest: &AppManifest, entry: &ModuleId) -> Result<(), ScriptAppError> {
+fn validate_manifest_entry(
+    manifest: &AppManifest,
+    entry: &ModuleId,
+) -> Result<(), ScriptViewError> {
     if &manifest.entry == entry {
         Ok(())
     } else {
-        Err(ScriptAppError::ManifestEntry {
+        Err(ScriptViewError::ManifestEntry {
             manifest: manifest.entry.clone(),
             host: entry.clone(),
         })
@@ -576,15 +1143,15 @@ fn discover_modules(
     root: &Path,
     entry: &Path,
     theme: &Path,
-) -> Result<Vec<ModuleId>, ScriptAppError> {
+) -> Result<Vec<ModuleId>, ScriptViewError> {
     let mut pending = vec![root.to_path_buf()];
     let mut modules = Vec::new();
     while let Some(directory) = pending.pop() {
-        for item in fs::read_dir(&directory).map_err(|source| ScriptAppError::Io {
+        for item in fs::read_dir(&directory).map_err(|source| ScriptViewError::Io {
             path: directory.clone(),
             source,
         })? {
-            let item = item.map_err(|source| ScriptAppError::Io {
+            let item = item.map_err(|source| ScriptViewError::Io {
                 path: directory.clone(),
                 source,
             })?;
@@ -611,19 +1178,19 @@ fn discover_modules(
 fn load_locale_directory(
     engine: &rhai::Engine,
     directory: &Path,
-) -> Result<Option<LocaleManager>, ScriptAppError> {
+) -> Result<Option<LocaleManager>, ScriptViewError> {
     if !directory.exists() {
         return Ok(None);
     }
     let mut paths = fs::read_dir(directory)
-        .map_err(|source| ScriptAppError::Io {
+        .map_err(|source| ScriptViewError::Io {
             path: directory.to_path_buf(),
             source,
         })?
         .map(|entry| {
             entry
                 .map(|entry| entry.path())
-                .map_err(|source| ScriptAppError::Io {
+                .map_err(|source| ScriptViewError::Io {
                     path: directory.to_path_buf(),
                     source,
                 })
@@ -633,13 +1200,13 @@ fn load_locale_directory(
     paths.sort();
     let mut bundles = Vec::<LocaleBundle>::new();
     for path in paths {
-        let source = fs::read_to_string(&path).map_err(|source| ScriptAppError::Io {
+        let source = fs::read_to_string(&path).map_err(|source| ScriptViewError::Io {
             path: path.clone(),
             source,
         })?;
         bundles.push(
             load_locale_source(engine, &path.to_string_lossy(), &source)
-                .map_err(|error| ScriptAppError::Locale(error.to_string()))?,
+                .map_err(|error| ScriptViewError::Locale(error.to_string()))?,
         );
     }
     if bundles.is_empty() {
@@ -653,7 +1220,7 @@ fn load_locale_directory(
         .clone();
     Ok(Some(
         LocaleManager::new(bundles, fallback.clone(), fallback)
-            .map_err(|error| ScriptAppError::Locale(error.to_string()))?,
+            .map_err(|error| ScriptViewError::Locale(error.to_string()))?,
     ))
 }
 
@@ -661,21 +1228,21 @@ fn load_theme_directory(
     engine: &rhai::Engine,
     directory: &Path,
     primary: &ThemeVariant,
-) -> Result<ThemeManager, ScriptAppError> {
+) -> Result<ThemeManager, ScriptViewError> {
     let mut variants = BTreeMap::from([(
         (primary.family.clone(), primary.name.clone()),
         primary.clone(),
     )]);
     if directory.exists() {
         let mut paths = fs::read_dir(directory)
-            .map_err(|source| ScriptAppError::Io {
+            .map_err(|source| ScriptViewError::Io {
                 path: directory.to_path_buf(),
                 source,
             })?
             .map(|entry| {
                 entry
                     .map(|entry| entry.path())
-                    .map_err(|source| ScriptAppError::Io {
+                    .map_err(|source| ScriptViewError::Io {
                         path: directory.to_path_buf(),
                         source,
                     })
@@ -686,12 +1253,12 @@ fn load_theme_directory(
         });
         paths.sort();
         for path in paths {
-            let source = fs::read_to_string(&path).map_err(|source| ScriptAppError::Io {
+            let source = fs::read_to_string(&path).map_err(|source| ScriptViewError::Io {
                 path: path.clone(),
                 source,
             })?;
             let variant = load_theme_source(engine, &path.to_string_lossy(), &source)
-                .map_err(|error| ScriptAppError::Theme(error.to_string()))?;
+                .map_err(|error| ScriptViewError::Theme(error.to_string()))?;
             insert_theme_variant(&mut variants, variant)?;
         }
     }
@@ -701,13 +1268,13 @@ fn load_theme_directory(
 fn insert_theme_variant(
     variants: &mut BTreeMap<(String, String), ThemeVariant>,
     variant: ThemeVariant,
-) -> Result<(), ScriptAppError> {
+) -> Result<(), ScriptViewError> {
     let key = (variant.family.clone(), variant.name.clone());
     if let Some(existing) = variants.get(&key) {
         if existing == &variant {
             return Ok(());
         }
-        return Err(ScriptAppError::Theme(format!(
+        return Err(ScriptViewError::Theme(format!(
             "theme `{}/{}` is defined more than once with different tokens",
             key.0, key.1
         )));
@@ -719,12 +1286,12 @@ fn insert_theme_variant(
 fn theme_manager(
     variants: impl IntoIterator<Item = ThemeVariant>,
     primary: &ThemeVariant,
-) -> Result<ThemeManager, ScriptAppError> {
+) -> Result<ThemeManager, ScriptViewError> {
     ThemeManager::from_variants(
         variants,
         ThemeSelection::new(primary.family.clone(), primary.name.clone()),
     )
-    .map_err(|error| ScriptAppError::Theme(error.to_string()))
+    .map_err(|error| ScriptViewError::Theme(error.to_string()))
 }
 
 #[derive(Clone)]
@@ -737,7 +1304,7 @@ struct WindowProgram {
 struct ScriptWindowFactory {
     program: RefCell<WindowProgram>,
     runtime: Rc<RefCell<UiRuntimeState>>,
-    extensions: Rc<Vec<Box<dyn ScriptAppExtension>>>,
+    extensions: Rc<Vec<Box<dyn ScriptViewExtension>>>,
     theme: ThemeVariant,
     #[cfg(feature = "dev-reload")]
     development: bool,
@@ -746,6 +1313,7 @@ struct ScriptWindowFactory {
 impl ScriptWindowFactory {
     fn instantiate(
         &self,
+        view_id: &str,
         window_id: &str,
     ) -> Result<(RuntimeEngine, ScriptLifecycle, PrimitiveRegistry), String> {
         let mut engine = RuntimeEngine::new();
@@ -756,8 +1324,35 @@ impl ScriptWindowFactory {
         engine
             .restore_component_exports(program.component_exports.clone())
             .map_err(|error| error.to_string())?;
+        let lifecycle = self.mount_lifecycle(
+            &mut engine,
+            program,
+            view_id,
+            window_id,
+            WindowCommandPolicy::ApplicationOwned,
+            false,
+        )?;
+        let primitives = engine.primitive_registry();
+        Ok((engine, lifecycle, primitives))
+    }
+
+    fn mount_lifecycle(
+        &self,
+        engine: &mut RuntimeEngine,
+        program: WindowProgram,
+        view_id: &str,
+        window_id: &str,
+        policy: WindowCommandPolicy,
+        register_window: bool,
+    ) -> Result<ScriptLifecycle, String> {
         {
             let mut runtime = self.runtime.borrow_mut();
+            if register_window {
+                runtime
+                    .windows
+                    .register_open_for_view(window_id, policy, view_id)
+                    .map_err(|error| error.to_string())?;
+            }
             for extension in self.extensions.iter() {
                 extension.configure_window(window_id, &mut runtime)?;
             }
@@ -765,17 +1360,15 @@ impl ScriptWindowFactory {
         let mut lifecycle = ScriptLifecycle::new(
             program.compiled,
             Rc::clone(&self.runtime),
-            ComponentInstancePath::root("App", window_id),
+            ComponentInstancePath::root("View", view_id),
             Some(window_id.to_owned()),
             BTreeMap::new(),
             &program.state_schema,
         )
-        .map_err(|error| error.to_string())?;
-        lifecycle
-            .start(&mut engine)
-            .map_err(|error| error.to_string())?;
-        let primitives = engine.primitive_registry();
-        Ok((engine, lifecycle, primitives))
+        .map_err(|error| error.to_string())?
+        .with_view_id(view_id);
+        lifecycle.start(engine).map_err(|error| error.to_string())?;
+        Ok(lifecycle)
     }
 
     #[cfg(feature = "dev-reload")]
@@ -803,10 +1396,8 @@ struct NativeWindowRegistry {
     force_close: std::collections::BTreeSet<String>,
 }
 
-pub struct PreparedScriptApp {
+pub struct PreparedScriptView {
     engine: RuntimeEngine,
-    lifecycle: ScriptLifecycle,
-    window_size: (f32, f32),
     theme: ThemeVariant,
     entry: PathBuf,
     ui_root: PathBuf,
@@ -818,23 +1409,68 @@ pub struct PreparedScriptApp {
     module_cache: ModuleCompileCache,
 }
 
-impl PreparedScriptApp {
-    /// Open the initial GPUI window and retain the script runtime in its entity.
+impl PreparedScriptView {
+    #[must_use]
+    pub fn key_bindings(&self) -> &[KeyBindingSpec] {
+        &self.key_bindings
+    }
+
+    /// Mount one isolated script view into an existing GPUI window.
     ///
     /// # Errors
     ///
-    /// Returns [`ScriptAppError::Window`] when GPUI cannot open the window.
-    pub fn run(self) -> Result<(), ScriptAppError> {
-        let key_bindings = self
-            .key_bindings
-            .iter()
-            .map(KeyBindingSpec::to_gpui)
-            .collect::<Result<Vec<_>, _>>()?;
+    /// Returns identity, lifecycle, extension, or watcher errors.
+    pub fn mount(
+        self,
+        config: ScriptViewConfig,
+        host: ScriptViewHost,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Result<ScriptViewHandle, ScriptViewError> {
+        self.mount_with_registry(
+            config,
+            host,
+            Rc::new(RefCell::new(NativeWindowRegistry::default())),
+            window,
+            cx,
+        )
+    }
+
+    fn mount_with_registry(
+        mut self,
+        config: ScriptViewConfig,
+        host: ScriptViewHost,
+        native_windows: Rc<RefCell<NativeWindowRegistry>>,
+        _window: &mut Window,
+        cx: &mut App,
+    ) -> Result<ScriptViewHandle, ScriptViewError> {
+        install(cx);
         #[cfg(feature = "dev-reload")]
-        let watcher = if self.development {
+        let watcher = if self.development && !self.ui_root.as_os_str().is_empty() {
             Some(FileWatcher::new(&self.ui_root)?)
         } else {
             None
+        };
+        host.reserve_view(&config.view_id)?;
+        let window_id = host.window_id();
+        let program = self.factory.program();
+        let lifecycle = self
+            .factory
+            .mount_lifecycle(
+                &mut self.engine,
+                program,
+                &config.view_id,
+                &window_id,
+                host.window_policy(),
+                true,
+            )
+            .map_err(ScriptViewError::Extension);
+        let lifecycle = match lifecycle {
+            Ok(lifecycle) => lifecycle,
+            Err(error) => {
+                host.unregister_view(&config.view_id);
+                return Err(error);
+            }
         };
         #[cfg(not(feature = "dev-reload"))]
         let _ = (
@@ -843,119 +1479,213 @@ impl PreparedScriptApp {
             &self.theme_path,
             self.development,
         );
-        let error = Rc::new(RefCell::new(None));
-        let reported_error = Rc::clone(&error);
-        let native_windows = Rc::new(RefCell::new(NativeWindowRegistry::default()));
-        Application::new().run(move |cx: &mut App| {
-            self.launch_initial_window(
-                #[cfg(feature = "dev-reload")]
-                watcher,
-                &native_windows,
-                &reported_error,
-                key_bindings,
-                cx,
-            );
-        });
-        match error.borrow_mut().take() {
-            Some(message) => Err(ScriptAppError::Window(message)),
-            None => Ok(()),
-        }
-    }
-
-    fn launch_initial_window(
-        self,
-        #[cfg(feature = "dev-reload")] watcher: Option<FileWatcher>,
-        native_windows: &Rc<RefCell<NativeWindowRegistry>>,
-        reported_error: &Rc<RefCell<Option<String>>>,
-        key_bindings: Vec<KeyBinding>,
-        cx: &mut App,
-    ) {
-        init_text_input(cx);
-        cx.bind_keys(key_bindings);
-        #[cfg(feature = "dev-reload")]
-        cx.bind_keys([
-            KeyBinding::new("cmd-alt-i", ToggleInspector, Some(HOST_KEY_CONTEXT)),
-            KeyBinding::new("f12", ToggleInspector, Some(HOST_KEY_CONTEXT)),
-        ]);
-        let bounds = Bounds::centered(
-            None,
-            size(px(self.window_size.0), px(self.window_size.1)),
-            cx,
-        );
-        cx.on_window_closed(|cx| {
-            if cx.windows().is_empty() {
-                cx.quit();
-            }
-        })
-        .detach();
         let primitives = self.engine.primitive_registry();
         let timings = self.engine.take_timings();
         let factory = Rc::clone(&self.factory);
-        let view_native_windows = Rc::clone(native_windows);
-        let result = cx.open_window(
-            WindowOptions {
-                window_bounds: Some(WindowBounds::Windowed(bounds)),
-                ..WindowOptions::default()
-            },
-            |window, cx| {
-                let entity = cx.new(|entity_cx| {
-                    let async_task = spawn_host_poll(entity_cx);
-                    let host_focus = entity_cx.focus_handle();
-                    host_focus.focus(window);
-                    #[cfg(feature = "dev-reload")]
-                    let reload_task = watcher.as_ref().map(|_| spawn_host_reload_poll(entity_cx));
-                    ScriptHostView {
-                        window_id: "main".to_owned(),
-                        engine: self.engine,
-                        lifecycle: self.lifecycle,
-                        primitives,
-                        last_error: None,
-                        theme: self.theme,
-                        #[cfg(feature = "dev-reload")]
-                        development: self.development,
-                        #[cfg(feature = "dev-reload")]
-                        inspector_open: false,
-                        timings,
-                        overlays: WindowOverlayCoordinator::default(),
-                        factory: Rc::clone(&factory),
-                        native_windows: Rc::clone(&view_native_windows),
-                        host_focus,
-                        disposed: false,
-                        _async_task: async_task,
-                        #[cfg(feature = "dev-reload")]
-                        module_cache: self.module_cache,
-                        #[cfg(feature = "dev-reload")]
-                        watcher,
-                        #[cfg(feature = "dev-reload")]
-                        entry: self.entry,
-                        #[cfg(feature = "dev-reload")]
-                        ui_root: self.ui_root,
-                        #[cfg(feature = "dev-reload")]
-                        theme_path: self.theme_path,
-                        #[cfg(feature = "dev-reload")]
-                        _reload_task: reload_task,
-                    }
-                });
-                install_close_interceptor(window, cx, &entity);
-                entity
-            },
-        );
-        match result {
-            Ok(handle) => {
-                native_windows
-                    .borrow_mut()
-                    .handles
-                    .insert("main".to_owned(), handle.into());
-                cx.activate(true);
+        let overlays = host.overlays();
+        let view_id = config.view_id.clone();
+        let view_host = host.clone();
+        let entity = cx.new(|entity_cx| {
+            let async_task = spawn_host_poll(entity_cx);
+            let host_focus = entity_cx.focus_handle();
+            #[cfg(feature = "dev-reload")]
+            let reload_task = watcher.as_ref().map(|_| spawn_host_reload_poll(entity_cx));
+            ScriptHostView {
+                view_id: view_id.clone(),
+                window_id,
+                engine: self.engine,
+                lifecycle,
+                primitives,
+                last_error: None,
+                theme: self.theme,
+                #[cfg(feature = "dev-reload")]
+                development: self.development,
+                #[cfg(feature = "dev-reload")]
+                inspector_open: false,
+                timings,
+                overlays,
+                host: view_host,
+                paint_background: config.paint_background,
+                content_bounds: None,
+                factory,
+                native_windows,
+                host_focus,
+                disposed: false,
+                _async_task: async_task,
+                #[cfg(feature = "dev-reload")]
+                module_cache: self.module_cache,
+                #[cfg(feature = "dev-reload")]
+                watcher,
+                #[cfg(feature = "dev-reload")]
+                entry: self.entry,
+                #[cfg(feature = "dev-reload")]
+                ui_root: self.ui_root,
+                #[cfg(feature = "dev-reload")]
+                theme_path: self.theme_path,
+                #[cfg(feature = "dev-reload")]
+                _reload_task: reload_task,
             }
-            Err(window_error) => {
-                *reported_error.borrow_mut() = Some(window_error.to_string());
+        });
+        let focus = entity.read(cx).host_focus.clone();
+        host.attach_view_focus(&config.view_id, focus);
+        Ok(ScriptViewHandle(Rc::new(ScriptViewHandleInner {
+            entity,
+            host,
+            view_id: config.view_id,
+            disposed: Cell::new(false),
+            measured_bounds: Rc::new(Cell::new(None)),
+        })))
+    }
+}
+
+pub struct ScriptApplication {
+    prepared: PreparedScriptView,
+    window_size: (f32, f32),
+}
+
+impl ScriptApplication {
+    #[must_use]
+    pub const fn new(prepared: PreparedScriptView) -> Self {
+        Self {
+            prepared,
+            window_size: (720.0, 480.0),
+        }
+    }
+
+    #[must_use]
+    pub const fn window_size(mut self, width: f32, height: f32) -> Self {
+        self.window_size = (width, height);
+        self
+    }
+
+    /// Run this prepared view as a standalone GPUI application.
+    ///
+    /// # Errors
+    ///
+    /// Returns key-binding, mount, or native-window errors.
+    pub fn run(self) -> Result<(), ScriptViewError> {
+        let error = Rc::new(RefCell::new(None));
+        let reported_error = Rc::clone(&error);
+        let native_windows = Rc::new(RefCell::new(NativeWindowRegistry::default()));
+        let window_size = self.window_size;
+        let prepared = self.prepared;
+        Application::new().run(move |cx: &mut App| {
+            install(cx);
+            let host = match ScriptViewHost::new_with_policy(
+                "main",
+                WindowCommandPolicy::ApplicationOwned,
+                cx,
+            ) {
+                Ok(host) => host,
+                Err(error) => {
+                    *reported_error.borrow_mut() = Some(error.to_string());
+                    cx.quit();
+                    return;
+                }
+            };
+            if let Err(error) = host.bind_keys(prepared.key_bindings.clone(), cx) {
+                *reported_error.borrow_mut() = Some(error.to_string());
                 cx.quit();
+                return;
             }
+            #[cfg(feature = "dev-reload")]
+            cx.bind_keys([
+                KeyBinding::new("cmd-alt-i", ToggleInspector, Some(HOST_KEY_CONTEXT)),
+                KeyBinding::new("f12", ToggleInspector, Some(HOST_KEY_CONTEXT)),
+            ]);
+            let bounds = Bounds::centered(None, size(px(window_size.0), px(window_size.1)), cx);
+            cx.on_window_closed(|cx| {
+                if cx.windows().is_empty() {
+                    cx.quit();
+                }
+            })
+            .detach();
+            let view_native_windows = Rc::clone(&native_windows);
+            let mount_error = Rc::clone(&reported_error);
+            let result = cx.open_window(
+                WindowOptions {
+                    window_bounds: Some(WindowBounds::Windowed(bounds)),
+                    ..WindowOptions::default()
+                },
+                move |window, cx| {
+                    let view = prepared.mount_with_registry(
+                        ScriptViewConfig::new("main").paint_background(true),
+                        host.clone(),
+                        Rc::clone(&view_native_windows),
+                        window,
+                        cx,
+                    );
+                    match view {
+                        Ok(view) => {
+                            let _ = view.focus(window, cx);
+                            install_close_interceptor(window, cx, &view.0.entity);
+                            cx.new(|_| ScriptApplicationRoot {
+                                host,
+                                view: Some(view),
+                                error: None,
+                            })
+                        }
+                        Err(error) => {
+                            let message = error.to_string();
+                            *mount_error.borrow_mut() = Some(message.clone());
+                            cx.defer(|cx| cx.quit());
+                            cx.new(|_| ScriptApplicationRoot {
+                                host,
+                                view: None,
+                                error: Some(message),
+                            })
+                        }
+                    }
+                },
+            );
+            match result {
+                Ok(handle) => {
+                    native_windows
+                        .borrow_mut()
+                        .handles
+                        .insert("main".to_owned(), handle.into());
+                    cx.activate(true);
+                }
+                Err(error) => {
+                    *reported_error.borrow_mut() = Some(error.to_string());
+                    cx.quit();
+                }
+            }
+        });
+        match error.borrow_mut().take() {
+            Some(message) => Err(ScriptViewError::Window(message)),
+            None => Ok(()),
         }
     }
 }
 
+struct ScriptApplicationRoot {
+    host: ScriptViewHost,
+    view: Option<ScriptViewHandle>,
+    error: Option<String>,
+}
+
+impl Render for ScriptApplicationRoot {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        self.host.container(self.view.as_ref().map_or_else(
+            || {
+                div()
+                    .child(
+                        self.error
+                            .clone()
+                            .unwrap_or_else(|| "Script view failed".to_owned()),
+                    )
+                    .into_any_element()
+            },
+            |view| {
+                view.element()
+                    .unwrap_or_else(|error| div().child(error.to_string()).into_any_element())
+            },
+        ))
+    }
+}
+
+#[allow(clippy::too_many_lines)]
 fn open_secondary_window(
     spec: &ScriptWindowSpec,
     factory: &Rc<ScriptWindowFactory>,
@@ -965,10 +1695,19 @@ fn open_secondary_window(
     let factory = Rc::clone(factory);
     let native_windows = Rc::clone(native_windows);
     let window_id = spec.id.clone();
-    let (engine, lifecycle, primitives) = match factory.instantiate(&window_id) {
+    let host = ScriptViewHost::new_with_policy(
+        window_id.clone(),
+        WindowCommandPolicy::ApplicationOwned,
+        cx,
+    )
+    .map_err(|error| error.to_string())?;
+    host.reserve_view(&window_id)
+        .map_err(|error| error.to_string())?;
+    let (engine, lifecycle, primitives) = match factory.instantiate(&window_id, &window_id) {
         Ok(instance) => instance,
         Err(error) => {
-            let root = ComponentInstancePath::root("App", &window_id);
+            host.unregister_view(&window_id);
+            let root = ComponentInstancePath::root("View", &window_id);
             let _ = factory
                 .runtime
                 .borrow_mut()
@@ -981,13 +1720,14 @@ fn open_secondary_window(
     let view_factory = Rc::clone(&factory);
     let view_native_windows = Rc::clone(&native_windows);
     let view_window_id = window_id.clone();
+    let view_host = host.clone();
     let result = cx.open_window(options, move |window, cx| {
         let entity = cx.new(|entity_cx| {
             let async_task = spawn_host_poll(entity_cx);
             let host_focus = entity_cx.focus_handle();
-            host_focus.focus(window);
             ScriptHostView {
-                window_id: view_window_id,
+                view_id: view_window_id.clone(),
+                window_id: view_window_id.clone(),
                 engine,
                 lifecycle,
                 primitives,
@@ -998,7 +1738,10 @@ fn open_secondary_window(
                 #[cfg(feature = "dev-reload")]
                 inspector_open: false,
                 timings,
-                overlays: WindowOverlayCoordinator::default(),
+                overlays: view_host.overlays(),
+                host: view_host.clone(),
+                paint_background: true,
+                content_bounds: None,
                 factory: Rc::clone(&view_factory),
                 native_windows: Rc::clone(&view_native_windows),
                 host_focus,
@@ -1018,8 +1761,21 @@ fn open_secondary_window(
                 _reload_task: None,
             }
         });
+        view_host.attach_view_focus(&view_window_id, entity.read(cx).host_focus.clone());
+        let view = ScriptViewHandle(Rc::new(ScriptViewHandleInner {
+            entity: entity.clone(),
+            host: view_host.clone(),
+            view_id: view_window_id,
+            disposed: Cell::new(false),
+            measured_bounds: Rc::new(Cell::new(None)),
+        }));
+        let _ = view.focus(window, cx);
         install_close_interceptor(window, cx, &entity);
-        entity
+        cx.new(|_| ScriptApplicationRoot {
+            host: view_host,
+            view: Some(view),
+            error: None,
+        })
     });
     match result {
         Ok(handle) => {
@@ -1036,7 +1792,8 @@ fn open_secondary_window(
             Ok(())
         }
         Err(error) => {
-            let root = ComponentInstancePath::root("App", &window_id);
+            host.unregister_view(&window_id);
+            let root = ComponentInstancePath::root("View", &window_id);
             let mut runtime = factory.runtime.borrow_mut();
             let _ = runtime.release_window(&window_id, &root);
             Err(error.to_string())
@@ -1101,6 +1858,10 @@ fn validated_dimension_to_f32(value: f64) -> f32 {
     value as f32
 }
 
+fn pixel_from_f64(value: f64) -> Pixels {
+    px(value.to_string().parse::<f32>().unwrap_or(f32::MAX))
+}
+
 fn event_propagation_from_dynamic(value: &rhai::Dynamic) -> crate::EventPropagation {
     if value.is::<rhai::ImmutableString>()
         && value.clone_cast::<rhai::ImmutableString>().as_str() == "propagate"
@@ -1111,7 +1872,9 @@ fn event_propagation_from_dynamic(value: &rhai::Dynamic) -> crate::EventPropagat
     }
 }
 
+#[allow(clippy::struct_excessive_bools)]
 struct ScriptHostView {
+    view_id: String,
     window_id: String,
     engine: RuntimeEngine,
     lifecycle: ScriptLifecycle,
@@ -1124,6 +1887,9 @@ struct ScriptHostView {
     inspector_open: bool,
     timings: Vec<crate::ExecutionTiming>,
     overlays: WindowOverlayCoordinator,
+    host: ScriptViewHost,
+    paint_background: bool,
+    content_bounds: Option<Bounds<Pixels>>,
     factory: Rc<ScriptWindowFactory>,
     native_windows: Rc<RefCell<NativeWindowRegistry>>,
     host_focus: FocusHandle,
@@ -1164,15 +1930,23 @@ fn apply_root_text_direction(
     }
 }
 
-fn build_host_root(host_focus: &FocusHandle, theme: &ThemeVariant) -> gpui::Stateful<gpui::Div> {
-    div()
+fn build_host_root(
+    host_focus: &FocusHandle,
+    theme: &ThemeVariant,
+    paint_background: bool,
+) -> gpui::Stateful<gpui::Div> {
+    let root = div()
         .id("gpui-rhai-host")
         .size_full()
         .track_focus(host_focus)
-        .bg(rgba(theme.tokens.colors["surface"].as_rgba_hex()))
         .text_color(rgba(theme.tokens.colors["text_primary"].as_rgba_hex()))
         .key_context(HOST_KEY_CONTEXT)
-        .on_key_down(handle_tab_navigation)
+        .on_key_down(handle_tab_navigation);
+    if paint_background {
+        root.bg(rgba(theme.tokens.colors["surface"].as_rgba_hex()))
+    } else {
+        root
+    }
 }
 
 impl Render for ScriptHostView {
@@ -1193,7 +1967,7 @@ impl Render for ScriptHostView {
         };
         let (assets, theme, animations, direction) = {
             let runtime = runtime.borrow();
-            let root = ComponentInstancePath::root("App", self.window_id.clone());
+            let root = self.lifecycle.root_path().clone();
             let theme = runtime
                 .theme
                 .as_ref()
@@ -1214,7 +1988,7 @@ impl Render for ScriptHostView {
                     .unwrap_or(TextDirection::LeftToRight),
             )
         };
-        let animation_root = format!("window:{}/root", self.window_id);
+        let animation_root = format!("window:{}/view:{}/root", self.window_id, self.view_id);
         let render_resources = crate::renderer::WindowRenderResources {
             assets: &assets,
             dispatcher: &dispatcher,
@@ -1222,6 +1996,7 @@ impl Render for ScriptHostView {
             animations: &animations,
             direction,
             root_path: &animation_root,
+            view_id: &self.view_id,
         };
         let content = self.lifecycle.root().map_or_else(
             || div().child("Script view has no root").into_any_element(),
@@ -1254,7 +2029,7 @@ impl Render for ScriptHostView {
         };
         #[cfg(feature = "dev-reload")]
         let inspector = self.inspector_element(&runtime, &theme);
-        let root = build_host_root(&self.host_focus, &theme)
+        let root = build_host_root(&self.host_focus, &theme, self.paint_background)
             .child(content)
             .children({
                 #[cfg(feature = "dev-reload")]
@@ -1275,11 +2050,22 @@ impl Render for ScriptHostView {
 }
 
 impl ScriptHostView {
+    fn set_content_bounds(&mut self, bounds: Bounds<Pixels>, cx: &mut Context<Self>) {
+        if self.content_bounds != Some(bounds) {
+            self.content_bounds = Some(bounds);
+            cx.notify();
+        }
+    }
+
     fn prepare_render(&mut self, window: &Window) {
+        if !self.host.frame_active() {
+            self.last_error = Some(
+                "embedded ScriptView must be rendered inside ScriptViewHost::container".to_owned(),
+            );
+        }
         self.sync_viewport_class(window);
         debug_assert!(self.engine.is_current(self.lifecycle.generation()));
         self.reconcile_primitive_lifecycle();
-        self.overlays.begin_frame(window.viewport_size());
     }
 
     fn reconcile_primitive_lifecycle(&mut self) {
@@ -1291,7 +2077,10 @@ impl ScriptHostView {
     }
 
     fn sync_viewport_class(&mut self, window: &Window) {
-        let width = f64::from(window.viewport_size().width);
+        let width = self.content_bounds.map_or_else(
+            || f64::from(window.viewport_size().width),
+            |bounds| f64::from(bounds.size.width),
+        );
         let changed = self
             .lifecycle
             .runtime()
@@ -1407,7 +2196,7 @@ impl ScriptHostView {
             .force_close
             .remove(&self.window_id);
         if forced {
-            self.release_window();
+            self.release_view();
             return true;
         }
         let handler = self
@@ -1417,7 +2206,7 @@ impl ScriptHostView {
             .windows
             .close_handler(&self.window_id);
         let Some(handler) = handler else {
-            self.release_window();
+            self.release_view();
             return true;
         };
         let result = self
@@ -1440,13 +2229,13 @@ impl ScriptHostView {
             }
             Err(error) => {
                 self.last_error = Some(error);
-                self.release_window();
+                self.release_view();
                 true
             }
         }
     }
 
-    fn release_window(&mut self) {
+    fn release_view(&mut self) {
         if self.disposed {
             return;
         }
@@ -1463,6 +2252,8 @@ impl ScriptHostView {
         let mut native = self.native_windows.borrow_mut();
         native.handles.remove(&self.window_id);
         native.force_close.remove(&self.window_id);
+        drop(native);
+        self.host.unregister_view(&self.view_id);
         self.disposed = true;
     }
 
@@ -1661,6 +2452,13 @@ impl ScriptHostView {
     fn sync_program(&mut self) {
         let program = self.factory.program();
         if program.compiled.generation() == self.lifecycle.generation() {
+            return;
+        }
+        if let Err(error) = self
+            .engine
+            .restore_component_exports(program.component_exports.clone())
+        {
+            self.last_error = Some(error.to_string());
             return;
         }
         if let Err(error) =
@@ -1934,12 +2732,12 @@ impl ScriptHostView {
 
 impl Drop for ScriptHostView {
     fn drop(&mut self) {
-        self.release_window();
+        self.release_view();
     }
 }
 
 #[derive(Debug, Error)]
-pub enum ScriptAppError {
+pub enum ScriptViewError {
     #[error("failed to read script entry `{path}`: {source}")]
     Io {
         path: PathBuf,
@@ -1952,6 +2750,21 @@ pub enum ScriptAppError {
     Lifecycle(#[from] crate::LifecycleError),
     #[error("failed to open GPUI window: {0}")]
     Window(String),
+    #[error("script view ID `{0}` must be 1-64 ASCII alphanumeric, `_`, or `-` characters")]
+    InvalidId(String),
+    #[error("script view `{0}` is already mounted in this host")]
+    DuplicateView(String),
+    #[error("script view `{0}` has been disposed")]
+    DisposedView(String),
+    #[error(
+        "key binding `{keystrokes}` ({context:?}) conflicts: `{existing:?}` is already bound, requested `{requested:?}`"
+    )]
+    KeyBindingConflict {
+        keystrokes: String,
+        context: Option<String>,
+        existing: ActionId,
+        requested: ActionId,
+    },
     #[error("failed to load UI theme: {0}")]
     Theme(String),
     #[error("failed to load UI locale: {0}")]
@@ -1972,6 +2785,8 @@ pub enum ScriptAppError {
     ComponentExport(#[from] ComponentExportError),
     #[error(transparent)]
     Action(#[from] ActionError),
+    #[error(transparent)]
+    Overlay(#[from] crate::OverlayError),
     #[error("Rhai module path `{0}` is outside the UI root")]
     ModulePath(PathBuf),
     #[error(transparent)]
@@ -1998,6 +2813,26 @@ mod tests {
         .unwrap();
     }
 
+    fn start_prepared(
+        mut prepared: PreparedScriptView,
+        view_id: &str,
+        window_id: &str,
+    ) -> (RuntimeEngine, ScriptLifecycle) {
+        let program = prepared.factory.program();
+        let lifecycle = prepared
+            .factory
+            .mount_lifecycle(
+                &mut prepared.engine,
+                program,
+                view_id,
+                window_id,
+                WindowCommandPolicy::Disabled,
+                true,
+            )
+            .unwrap();
+        (prepared.engine, lifecycle)
+    }
+
     #[test]
     fn reduced_motion_environment_values_are_normalized() {
         assert_eq!(parse_motion_preference("1"), MotionPreference::Reduced);
@@ -2022,7 +2857,7 @@ mod tests {
     }
 
     #[test]
-    fn prepare_keeps_engine_and_lifecycle_alive() {
+    fn prepared_view_starts_engine_and_lifecycle_on_mount() {
         let directory = tempfile::tempdir().unwrap();
         let entry = directory.path().join("main.rhai");
         fs::write(&entry, "fn view(ctx) { text(\"prepared\") }").unwrap();
@@ -2032,9 +2867,10 @@ mod tests {
         )
         .unwrap();
         write_manifest(directory.path());
-        let prepared = ScriptApp::new(&entry).prepare().unwrap();
-        assert!(prepared.engine.is_current(prepared.lifecycle.generation()));
-        assert!(prepared.lifecycle.root().is_some());
+        let prepared = FileScriptView::new(&entry).prepare().unwrap();
+        let (engine, lifecycle) = start_prepared(prepared, "widget", "main");
+        assert!(engine.is_current(lifecycle.generation()));
+        assert!(lifecycle.root().is_some());
     }
 
     #[test]
@@ -2059,10 +2895,11 @@ mod tests {
         .unwrap();
         write_manifest(directory.path());
 
-        let prepared = ScriptApp::new(directory.path().join("main.rhai"))
+        let prepared = FileScriptView::new(directory.path().join("main.rhai"))
             .prepare()
             .unwrap();
-        let root = prepared.lifecycle.root().unwrap();
+        let (_, lifecycle) = start_prepared(prepared, "widget", "main");
+        let root = lifecycle.root().unwrap();
         assert!(matches!(
             root.kind(),
             crate::UiNodeKind::Text { text } if text == "hello"
@@ -2093,7 +2930,7 @@ mod tests {
                 include_str!("../../../registry/components/button.rhai").to_owned(),
             ),
         ]));
-        let prepared = EmbeddedScriptApp::new(
+        let prepared = EmbeddedScriptView::new(
             entry,
             scripts,
             include_str!("../../../registry/themes/default_dark.rhai"),
@@ -2101,7 +2938,23 @@ mod tests {
         .prepare()
         .unwrap();
 
-        let (_, lifecycle, _) = prepared.factory.instantiate("settings").unwrap();
+        prepared
+            .factory
+            .runtime
+            .borrow_mut()
+            .windows
+            .request_open(ScriptWindowSpec {
+                id: "settings".to_owned(),
+                title: "Settings".to_owned(),
+                width: 400.0,
+                height: 300.0,
+                focus: true,
+            })
+            .unwrap();
+        let (_, lifecycle, _) = prepared
+            .factory
+            .instantiate("settings-view", "settings")
+            .unwrap();
         assert!(lifecycle.root().is_some());
     }
 
@@ -2125,8 +2978,8 @@ mod tests {
         .unwrap();
 
         assert!(matches!(
-            ScriptApp::new(directory.path().join("main.rhai")).prepare(),
-            Err(ScriptAppError::Capability(CapabilityError::Missing(_)))
+            FileScriptView::new(directory.path().join("main.rhai")).prepare(),
+            Err(ScriptViewError::Capability(CapabilityError::Missing(_)))
         ));
     }
 
@@ -2145,7 +2998,7 @@ mod tests {
             "#
             .to_owned(),
         )]));
-        let prepared = EmbeddedScriptApp::new(
+        let prepared = EmbeddedScriptView::new(
             entry,
             scripts,
             include_str!("../../../registry/themes/default_dark.rhai"),
@@ -2159,8 +3012,9 @@ mod tests {
         )])
         .prepare()
         .unwrap();
+        let (_, lifecycle) = start_prepared(prepared, "asset-view", "main");
         assert!(matches!(
-            prepared.lifecycle.root().unwrap().kind(),
+            lifecycle.root().unwrap().kind(),
             crate::UiNodeKind::Image { handle } if handle.id() != 0
         ));
     }
@@ -2190,12 +3044,12 @@ mod tests {
         .unwrap();
         fs::write(directory.path().join("locales/en.rhai"), locale).unwrap();
         fs::write(directory.path().join("assets/check.svg"), svg).unwrap();
-        let file = ScriptApp::new(directory.path().join("main.rhai"))
+        let file = FileScriptView::new(directory.path().join("main.rhai"))
             .prepare()
             .unwrap();
 
         let entry = ModuleId::parse("main").unwrap();
-        let embedded = EmbeddedScriptApp::new(
+        let embedded = EmbeddedScriptView::new(
             entry.clone(),
             EmbeddedScriptSource::new(BTreeMap::from([(entry, script.to_owned())])),
             theme,
@@ -2211,10 +3065,10 @@ mod tests {
         .prepare()
         .unwrap();
 
-        for root in [
-            file.lifecycle.root().unwrap(),
-            embedded.lifecycle.root().unwrap(),
-        ] {
+        let (_, file) = start_prepared(file, "file-view", "main");
+        let (_, embedded) = start_prepared(embedded, "embedded-view", "main");
+
+        for root in [file.root().unwrap(), embedded.root().unwrap()] {
             let crate::UiNodeKind::Container { children } = root.kind() else {
                 panic!("equivalence app must render a row");
             };
@@ -2230,7 +3084,7 @@ mod tests {
     #[test]
     fn missing_entry_has_path_aware_error() {
         let path = Path::new("definitely-missing-ui/main.rhai");
-        let Err(error) = ScriptApp::new(path).prepare() else {
+        let Err(error) = FileScriptView::new(path).prepare() else {
             panic!("missing script unexpectedly prepared");
         };
         assert!(

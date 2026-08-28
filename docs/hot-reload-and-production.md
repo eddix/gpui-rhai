@@ -2,7 +2,7 @@
 
 ## Development
 
-Run `gpui-rhai dev` or a file-backed `ScriptApp` with the `dev-reload` feature.
+Run `gpui-rhai dev` or a file-backed `FileScriptView` with the `dev-reload` feature.
 The watcher tracks Rhai modules, themes, locale bundles, and image assets. Script candidates are
 compiled transactionally. A reverse dependency graph recompiles changed modules
 and their transitive dependants while the resolver reuses content-matching ASTs;
@@ -27,10 +27,12 @@ cargo build --release
 `embed` deterministically generates `src/gpui_rhai_embedded.rs` using
 `include_str!`/`include_bytes!` for the entry, installed components, locales,
 themes, and assets, plus an `app_manifest()` constructor. Construct
-`EmbeddedScriptApp` from those generated sources and pass
+`EmbeddedScriptView` from those generated sources and pass
 `.manifest(generated::app_manifest())`.
 Pass `.asset_sources(generated::asset_sources())` so embedded `app/...` image
 IDs resolve exactly like file-backed assets.
+Call `.prepare()` and either mount the result through a `ScriptViewHost` or pass
+it to `ScriptApplication::new`.
 Production needs no filesystem watcher or source-path access, and file-backed
 and embedded sources use the same restricted module-resolution contract.
 

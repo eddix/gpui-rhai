@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use gpui_rhai::{EmbeddedScriptApp, EmbeddedScriptSource, ModuleId};
+use gpui_rhai::{EmbeddedScriptSource, EmbeddedScriptView, ModuleId, ScriptApplication};
 
 const POPOVER: &str = include_str!("../../../registry/components/popover.rhai");
 const DIALOG: &str = include_str!("../../../registry/components/dialog.rhai");
@@ -184,7 +184,7 @@ fn main() {
             TOOLTIP.to_owned(),
         ),
     ]));
-    EmbeddedScriptApp::new(
+    EmbeddedScriptView::new(
         ModuleId::parse("main").expect("main module"),
         scripts,
         THEME,
@@ -196,7 +196,11 @@ fn main() {
             CATPPUCCIN_MOCHA.to_owned(),
         ),
     ])
-    .window_size(720.0, 480.0)
-    .run()
+    .prepare()
+    .and_then(|prepared| {
+        ScriptApplication::new(prepared)
+            .window_size(720.0, 480.0)
+            .run()
+    })
     .expect("native overlay smoke test failed");
 }

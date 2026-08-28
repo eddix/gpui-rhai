@@ -8,6 +8,7 @@ Start with the repository quick start, then use these guides by task:
 - [Capabilities](capabilities.md) and [custom Rust primitives](custom-primitives.md)
 - [Actions and keybindings](actions-and-keybindings.md)
 - [Multi-window applications](multi-window.md)
+- [Embedding multiple script views](embedding.md)
 - [Hot reload and production embedding](hot-reload-and-production.md)
 - [Updating copied source](source-updates.md)
 - [Development inspector](devtools.md) and [accessibility status](accessibility.md)

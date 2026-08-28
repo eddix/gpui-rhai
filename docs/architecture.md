@@ -63,7 +63,20 @@ Rust values cannot cross this boundary. Async task and subscription handles are
 implemented on top of the same registry; completions are delivered on the GPUI
 foreground thread and stale script generations are rejected.
 
-## Window mechanisms
+## View and window mechanisms
+
+`FileScriptView` and `EmbeddedScriptView` prepare the core unit of execution.
+Each mounted view owns an independent Engine, Runtime, Lifecycle, component
+root, task/subscription scopes, and diagnostics. `ScriptApplication` is an
+optional adapter that owns `Application` and native windows; existing GPUI
+applications mount views directly.
+
+Sibling views in one native window share a `ScriptViewHost`. The Host is an
+interaction domain, not a state container: it owns overlay/tooltip/toast order,
+absolute window-level placement, outside-click and Escape routing, focus
+fallback, and approved key bindings. Local IDs are namespaced by `view_id`.
+The view's automatically measured content bounds drive its responsive class,
+while the independent Host overlay viewport normally covers the whole window.
 
 Each native window runs the same compiled entry in a separate lifecycle,
 component-state root, renderer path, and animation namespace. The runtime and
@@ -71,7 +84,7 @@ app stores are shared. Window stores, theme/locale overrides, overlays, and
 window/component async scopes are released together on close. Rhai submits
 validated commands and never receives a GPUI window handle.
 
-Each script window owns one Rust overlay coordinator. Popover, Dropdown, Dialog,
+Each standalone script window or embedded Host owns one Rust overlay coordinator. Popover, Dropdown, Dialog,
 Menu, Tooltip, and Toast elements reserve their portal order during layout and
 register measured anchor/panel bounds during prepaint. The coordinator owns
 flipping/clamping, the parent-child dismiss stack, outside-click routing,

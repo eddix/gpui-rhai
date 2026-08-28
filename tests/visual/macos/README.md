@@ -14,6 +14,7 @@ evidence tied to an explicit environment, not portable pixel-perfect promises.
 - Dashboard viewport/capture: 760 × 560 points / 760 × 592 pixels
 - Form viewport/capture: 680 × 680 points / 680 × 712 pixels
 - Component Gallery viewport/capture: 720 × 520 points / 720 × 552 pixels
+- Embedded Views viewport/capture: 900 × 420 points / 900 × 452 pixels
 
 ## Recorded cases
 
@@ -42,6 +43,12 @@ Default Light open Menu, Catppuccin Mocha Arabic RTL directional Icon, and a
 Default Dark reduced-motion Skeleton plus pointer-triggered Tooltip. Together
 the four product examples and this mechanism gallery render every official
 component in at least one recorded macOS state.
+
+`embedded_views/default-dark.shared-host.png` records three independent Rhai
+views inside one host-owned GPUI layout. It proves compact responsive sizing for
+the 200-point view, a 280-point Dropdown escaping that view, two same-local-ID
+Toasts stacked by the shared Host queue, and distinct `view_id` values sharing
+one `window_id`.
 
 The two Settings focus cases come from real Tab/Shift-Tab traversal. Return
 switched the live locale to Simplified Chinese, Space toggled Switch state, and
@@ -78,7 +85,13 @@ Passed on the real macOS window:
 - the automatically opened Settings window reaches the foreground, renders
   official Button components from its own engine, observes app-store updates,
   cancels a native close request, and closes after explicit confirmation while
-  the main window remains alive.
+  the main window remains alive;
+- three independent ScriptViews render in one host-owned window; the 200-point
+  view reports `compact`, its 280-point Dropdown escapes into its neighbour,
+  two same-local-ID Toasts stack in one Host queue, and clicking the neighbour
+  both dismisses the Dropdown and increments that view;
+- explicit disposal removes the third view and its resources, and remounting
+  the same `view_id` starts from fresh state.
 
 Additionally, `tests/native-keyboard` passes synthesized GPUI integration for
 disabled-node skipping, forward/reverse traversal, Enter activation, searchable
@@ -86,9 +99,13 @@ single-select query/change/close callbacks through a real `ScriptLifecycle`,
 Unicode (`中文😀é`) controlled Input, Cmd-A/C/X/V clipboard behavior, and
 read-only selection/copy with edit suppression.
 
-The same eight-case native suite now verifies executor-clock Toast expiry, Menu
+The same twelve-case native suite now verifies executor-clock Toast expiry, Menu
 trigger→panel focus, separator-skipping roving selection, Enter action/close,
-and nested parent/child overlay painting. Official source tests preserve nested
+and nested parent/child overlay painting. It also verifies App installation and
+key conflicts, shared Host mechanics with isolated runtime state, duplicate
+local Overlay ID namespacing, automatic bounds, click-through dismissal, and
+dispose/remount. Separate Host domains in one window are also proven not to
+dismiss each other's overlays. Official source tests preserve nested
 submenu parent IDs, while OverlayManager tests prove top-down parent/child
 dismissal and topmost Escape behavior.
 

@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use gpui_rhai::{EmbeddedScriptApp, EmbeddedScriptSource, ModuleId};
+use gpui_rhai::{EmbeddedScriptSource, EmbeddedScriptView, ModuleId, ScriptApplication};
 
 const BUTTON: &str = include_str!("../../../registry/components/button.rhai");
 const LABEL: &str = include_str!("../../../registry/components/label.rhai");
@@ -295,7 +295,7 @@ fn main() {
         module("components/radio_group", RADIO_GROUP),
         module("components/accordion", ACCORDION),
     ]));
-    EmbeddedScriptApp::new(
+    EmbeddedScriptView::new(
         ModuleId::parse("main").expect("main module"),
         scripts,
         DEFAULT_DARK,
@@ -319,7 +319,11 @@ fn main() {
         ("ar.rhai".to_owned(), AR.to_owned()),
     ])
     .development(true)
-    .window_size(640.0, 520.0)
-    .run()
+    .prepare()
+    .and_then(|prepared| {
+        ScriptApplication::new(prepared)
+            .window_size(640.0, 520.0)
+            .run()
+    })
     .expect("settings_panel failed");
 }

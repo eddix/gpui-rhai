@@ -55,6 +55,7 @@ pub(crate) struct DropdownSlotRuntime {
     pub animations: BTreeMap<AnimationKey, f64>,
     pub direction: crate::TextDirection,
     pub base_path: String,
+    pub view_id: String,
     pub part_styles: BTreeMap<String, Style>,
 }
 
@@ -67,6 +68,7 @@ impl DropdownSlotRuntime {
             animations: &self.animations,
             direction: self.direction,
             root_path: &self.base_path,
+            view_id: &self.view_id,
         };
         GpuiNodeRenderer::render_subtree_with_window_runtime(
             node,
@@ -644,6 +646,33 @@ impl DropdownView {
             .children(footer)
             .into_any_element()
     }
+
+    fn overlay_spec(&self, open: bool) -> OverlayNodeSpec {
+        let overlay_id = WindowOverlayCoordinator::scoped_id(
+            &self.slot_runtime.view_id,
+            &OverlayId::new(self.spec.id.clone()),
+        );
+        let parent = self.spec.parent_overlay.as_ref().map(|parent| {
+            WindowOverlayCoordinator::scoped_id(
+                &self.slot_runtime.view_id,
+                &OverlayId::new(parent.clone()),
+            )
+        });
+        OverlayNodeSpec {
+            id: overlay_id,
+            parent,
+            kind: OverlayKind::Dropdown,
+            placement: self.spec.placement,
+            open,
+            gap: 4.0,
+            modal: false,
+            dismiss: OverlayDismissPolicy {
+                escape: true,
+                outside: true,
+            },
+            tooltip_delays: None,
+        }
+    }
 }
 
 impl Render for DropdownView {
@@ -716,24 +745,12 @@ impl Render for DropdownView {
                 }
             },
         ) as PanelKeyHandler;
+        let overlay_spec = self.overlay_spec(open);
         ScriptOverlayElement::new(
             &format!("dropdown/{}", self.spec.id),
             trigger,
             content,
-            OverlayNodeSpec {
-                id: OverlayId::new(self.spec.id.clone()),
-                parent: self.spec.parent_overlay.clone().map(OverlayId::new),
-                kind: OverlayKind::Dropdown,
-                placement: self.spec.placement,
-                open,
-                gap: 4.0,
-                modal: false,
-                dismiss: OverlayDismissPolicy {
-                    escape: true,
-                    outside: true,
-                },
-                tooltip_delays: None,
-            },
+            overlay_spec,
             open_change,
             Some(panel_key),
             self.coordinator.clone(),

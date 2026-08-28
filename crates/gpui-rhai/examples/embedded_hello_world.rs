@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use gpui_rhai::{EmbeddedScriptApp, EmbeddedScriptSource, ModuleId};
+use gpui_rhai::{EmbeddedScriptSource, EmbeddedScriptView, ModuleId, ScriptApplication};
 
 const MAIN: &str = include_str!("../../../examples/hello_world/ui/main.rhai");
 const BUTTON: &str = include_str!("../../../examples/hello_world/ui/components/button.rhai");
@@ -27,12 +27,16 @@ fn main() {
             INPUT.to_owned(),
         ),
     ]));
-    EmbeddedScriptApp::new(entry, scripts, THEME)
+    EmbeddedScriptView::new(entry, scripts, THEME)
         .locale_sources([
             ("locales/en.rhai".to_owned(), EN.to_owned()),
             ("locales/zh_cn.rhai".to_owned(), ZH_CN.to_owned()),
         ])
-        .window_size(560.0, 320.0)
-        .run()
+        .prepare()
+        .and_then(|prepared| {
+            ScriptApplication::new(prepared)
+                .window_size(560.0, 320.0)
+                .run()
+        })
         .expect("embedded hello_world failed");
 }

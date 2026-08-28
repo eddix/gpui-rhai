@@ -4,9 +4,9 @@ use std::time::Duration;
 use gpui::{AnyElement, App, IntoElement, ParentElement, Styled, Window, div, px, rgba};
 use gpui_rhai::{
     AppManifest, AsyncCapabilityHandler, CapabilityDescriptor, CapabilityHandler, CapabilityId,
-    CapabilityMethod, ComponentStateSchema, EmbeddedScriptApp, EmbeddedScriptSource, ModuleId,
+    CapabilityMethod, ComponentStateSchema, EmbeddedScriptSource, EmbeddedScriptView, ModuleId,
     ObjectField, PrimitiveDescriptor, PrimitiveEventEmitter, PrimitiveHandler, PrimitiveId,
-    PrimitiveInstance, PrimitiveValue, RuntimeEngine, ScriptAppExtension,
+    PrimitiveInstance, PrimitiveValue, RuntimeEngine, ScriptApplication, ScriptViewExtension,
     SubscriptionCapabilityHandler, SubscriptionWork, TaskWork, UiRuntimeState, UiValue,
     ValueSchema,
 };
@@ -122,7 +122,7 @@ impl PrimitiveHandler for StatusCard {
 
 struct DemoExtension;
 
-impl ScriptAppExtension for DemoExtension {
+impl ScriptViewExtension for DemoExtension {
     fn configure_engine(&self, engine: &mut RuntimeEngine) -> Result<(), String> {
         engine
             .register_primitive(
@@ -213,10 +213,14 @@ fn main() {
         .with_capability("app.ticker", "*")
         .expect("static capability requirement");
 
-    EmbeddedScriptApp::new(entry, scripts, DEFAULT_DARK)
+    EmbeddedScriptView::new(entry, scripts, DEFAULT_DARK)
         .extension(DemoExtension)
         .manifest(manifest)
-        .window_size(600.0, 320.0)
-        .run()
+        .prepare()
+        .and_then(|prepared| {
+            ScriptApplication::new(prepared)
+                .window_size(600.0, 320.0)
+                .run()
+        })
         .expect("extension_host failed");
 }

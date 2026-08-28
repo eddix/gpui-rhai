@@ -5,12 +5,12 @@ persistence, network requests, platform APIs, and long-running work. Each
 capability has a namespaced ID, semantic version, method schemas, and a Rust
 handler.
 
-Implement `ScriptAppExtension` to configure the host. Register the descriptor
+Implement `ScriptViewExtension` to configure the host. Register the descriptor
 and handler in `configure_runtime`; the application manifest activates exactly
 the versions the application declares after all extensions register:
 
 ```rust
-impl ScriptAppExtension for AppServices {
+impl ScriptViewExtension for AppServices {
     fn configure_runtime(&self, runtime: &mut UiRuntimeState) -> Result<(), String> {
         runtime.capabilities.register(descriptor(), Handler)
             .map_err(|error| error.to_string())
@@ -18,8 +18,8 @@ impl ScriptAppExtension for AppServices {
 }
 ```
 
-Attach it with `.extension(AppServices)`. The complete synchronous example is
-`crates/gpui-rhai/examples/extension_host.rs`. File applications load
+Attach it with `.extension(AppServices)`. The complete synchronous, task, and
+subscription example is `crates/gpui-rhai/examples/extension_host.rs`. File views load
 `ui/app.toml`; embedded applications pass `AppManifest` with `.manifest(...)`.
 
 ## Rhai calls

@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
@@ -12,12 +12,13 @@ use gpui::{
 
 use crate::{
     FocusToken, OverlayBounds, OverlayId, OverlayKind, OverlayManager, OverlayNodeSpec,
-    OverlaySpec, PlacementResult, Rgba8, ToastError, ToastRegion,
+    OverlayPlacement, OverlaySpec, PlacementResult, Rgba8, ToastError, ToastRegion,
 };
 
 pub(crate) type OpenChangeHandler = Rc<dyn Fn(bool, &mut Window, &mut App)>;
 pub(crate) type PanelKeyHandler = Rc<dyn Fn(&KeyDownEvent, &mut Window, &mut App) -> bool>;
 pub(crate) type BackdropStyleHandler = Rc<dyn Fn(gpui::Div) -> gpui::Div>;
+pub(crate) type HostToastDismissHandler = Rc<dyn Fn(String, &mut Window, &mut App)>;
 
 #[derive(Clone)]
 pub(crate) struct WindowOverlayCoordinator(Rc<RefCell<OverlayCoordinatorState>>);
@@ -28,6 +29,11 @@ struct OverlayCoordinatorState {
     priorities: BTreeMap<OverlayId, usize>,
     next_priority: usize,
     outside_listener_claimed: bool,
+    viewport: OverlayBounds,
+    tooltip_owners: BTreeMap<String, BTreeSet<OverlayId>>,
+    toast_callbacks: BTreeMap<OverlayId, (String, HostToastDismissHandler)>,
+    toast_elements: BTreeMap<OverlayId, (ToastRegion, AnyElement)>,
+    host_managed: bool,
 }
 
 impl Default for WindowOverlayCoordinator {
@@ -39,22 +45,150 @@ impl Default for WindowOverlayCoordinator {
             priorities: BTreeMap::new(),
             next_priority: 1,
             outside_listener_claimed: false,
+            viewport: OverlayBounds::default(),
+            tooltip_owners: BTreeMap::new(),
+            toast_callbacks: BTreeMap::new(),
+            toast_elements: BTreeMap::new(),
+            host_managed: false,
         })))
     }
 }
 
 impl WindowOverlayCoordinator {
-    pub(crate) fn begin_frame(&self, viewport: gpui::Size<Pixels>) {
-        let viewport = overlay_viewport(viewport);
+    #[cfg(test)]
+    pub(crate) fn begin_frame(&self, viewport: OverlayBounds) {
+        self.begin_frame_with_host(viewport, false);
+    }
+
+    pub(crate) fn begin_host_frame(&self, viewport: OverlayBounds) {
+        self.begin_frame_with_host(viewport, true);
+    }
+
+    fn begin_frame_with_host(&self, viewport: OverlayBounds, host_managed: bool) {
         let mut state = self.0.borrow_mut();
         state
             .manager
             .begin_frame(viewport)
             .expect("GPUI viewport geometry is valid");
+        state.viewport = viewport;
         state.callbacks.clear();
         state.priorities.clear();
         state.next_priority = 1;
         state.outside_listener_claimed = false;
+        state.toast_elements.clear();
+        state.host_managed = host_managed;
+    }
+
+    pub(crate) fn host_managed(&self) -> bool {
+        self.0.borrow().host_managed
+    }
+
+    pub(crate) fn register_toast_element(
+        &self,
+        id: OverlayId,
+        region: ToastRegion,
+        element: AnyElement,
+    ) {
+        self.0
+            .borrow_mut()
+            .toast_elements
+            .insert(id, (region, element));
+    }
+
+    pub(crate) fn take_toast_elements(&self) -> Vec<(ToastRegion, Vec<AnyElement>)> {
+        let mut state = self.0.borrow_mut();
+        let regions = [
+            ToastRegion::TopLeft,
+            ToastRegion::TopRight,
+            ToastRegion::BottomLeft,
+            ToastRegion::BottomRight,
+        ];
+        let mut output = Vec::new();
+        for region in regions {
+            let ids = state
+                .manager
+                .toasts()
+                .visible(region)
+                .into_iter()
+                .cloned()
+                .collect::<Vec<_>>();
+            let elements = ids
+                .into_iter()
+                .filter_map(|id| state.toast_elements.remove(&id).map(|(_, element)| element))
+                .collect::<Vec<_>>();
+            if !elements.is_empty() {
+                output.push((region, elements));
+            }
+        }
+        output
+    }
+
+    pub(crate) fn viewport(&self) -> OverlayBounds {
+        self.0.borrow().viewport
+    }
+
+    pub(crate) fn viewport_or_window(&self, viewport: gpui::Size<Pixels>) -> OverlayBounds {
+        let configured = self.viewport();
+        if configured.width == 0.0 || configured.height == 0.0 {
+            overlay_viewport(viewport)
+        } else {
+            configured
+        }
+    }
+
+    fn ensure_window_viewport(&self, viewport: gpui::Size<Pixels>) {
+        let mut state = self.0.borrow_mut();
+        if state.viewport.width == 0.0 || state.viewport.height == 0.0 {
+            state.viewport = overlay_viewport(viewport);
+        }
+    }
+
+    pub(crate) fn scoped_id(view_id: &str, local: &OverlayId) -> OverlayId {
+        OverlayId::new(format!("{view_id}::{}", local.as_str()))
+    }
+
+    pub(crate) fn placement(&self, view_id: &str, local: &OverlayId) -> Option<PlacementResult> {
+        let id = Self::scoped_id(view_id, local);
+        self.0.borrow().manager.placement(&id)
+    }
+
+    pub(crate) fn remove_view(&self, view_id: &str) {
+        let prefix = format!("{view_id}::");
+        let mut state = self.0.borrow_mut();
+        let overlays = state
+            .callbacks
+            .keys()
+            .filter(|id| id.as_str().starts_with(&prefix))
+            .cloned()
+            .collect::<Vec<_>>();
+        for id in overlays {
+            let _ = state.manager.dismiss(&id);
+            state.callbacks.remove(&id);
+        }
+        let toasts = state
+            .toast_callbacks
+            .keys()
+            .filter(|id| id.as_str().starts_with(&prefix))
+            .cloned()
+            .collect::<Vec<_>>();
+        for id in toasts {
+            state.manager.toasts_mut().dismiss(&id);
+            state.toast_callbacks.remove(&id);
+            state.toast_elements.remove(&id);
+        }
+        if let Some(tooltips) = state.tooltip_owners.remove(view_id) {
+            for id in tooltips {
+                state.manager.tooltips_mut().remove(&id);
+            }
+        }
+    }
+
+    pub(crate) fn set_toast_max_visible(&self, max_visible: usize) {
+        self.0
+            .borrow_mut()
+            .manager
+            .toasts_mut()
+            .set_max_visible(max_visible);
     }
 
     fn reserve(
@@ -76,13 +210,10 @@ impl WindowOverlayCoordinator {
         priority
     }
 
-    fn register(
-        &self,
-        spec: OverlaySpec,
-        viewport: gpui::Size<Pixels>,
-    ) -> Result<PlacementResult, crate::OverlayError> {
+    fn register(&self, spec: OverlaySpec) -> Result<PlacementResult, crate::OverlayError> {
         let mut state = self.0.borrow_mut();
-        state.manager.set_viewport(overlay_viewport(viewport))?;
+        let viewport = state.viewport;
+        state.manager.set_viewport(viewport)?;
         state.manager.open(spec)
     }
 
@@ -103,11 +234,16 @@ impl WindowOverlayCoordinator {
         handled
     }
 
-    fn dismiss_escape(&self, window: &mut Window, cx: &mut App) -> bool {
+    pub(crate) fn dismiss_escape(&self, window: &mut Window, cx: &mut App) -> bool {
         self.dismiss_report(true, 0.0, 0.0, window, cx)
     }
 
-    fn dismiss_outside(&self, point: Point<Pixels>, window: &mut Window, cx: &mut App) -> bool {
+    pub(crate) fn dismiss_outside(
+        &self,
+        point: Point<Pixels>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> bool {
         self.dismiss_report(false, f64::from(point.x), f64::from(point.y), window, cx)
     }
 
@@ -167,6 +303,15 @@ impl WindowOverlayCoordinator {
         let delay = if hovered { show_delay } else { hide_delay };
         {
             let mut state = self.0.borrow_mut();
+            let view_id = id
+                .as_str()
+                .split_once("::")
+                .map_or("standalone", |(view_id, _)| view_id);
+            state
+                .tooltip_owners
+                .entry(view_id.to_owned())
+                .or_default()
+                .insert(id.clone());
             let now = cx.background_executor().now();
             if hovered {
                 state
@@ -189,14 +334,6 @@ impl WindowOverlayCoordinator {
             .detach();
     }
 
-    pub(crate) fn toast_set_max_visible(&self, max_visible: usize) {
-        self.0
-            .borrow_mut()
-            .manager
-            .toasts_mut()
-            .set_max_visible(max_visible);
-    }
-
     pub(crate) fn toast_contains(&self, id: &OverlayId) -> bool {
         self.0.borrow().manager.toasts().contains(id)
     }
@@ -204,19 +341,32 @@ impl WindowOverlayCoordinator {
     pub(crate) fn toast_enqueue(
         &self,
         id: OverlayId,
+        local_id: String,
+        dismiss: HostToastDismissHandler,
         region: ToastRegion,
         duration: Duration,
         now: Instant,
     ) -> Result<Vec<OverlayId>, ToastError> {
-        self.0
-            .borrow_mut()
+        let mut state = self.0.borrow_mut();
+        let evicted = state
             .manager
             .toasts_mut()
-            .enqueue(id, region, duration, now)
+            .enqueue(id.clone(), region, duration, now)?;
+        state.toast_callbacks.insert(id, (local_id, dismiss));
+        Ok(evicted)
     }
 
-    pub(crate) fn toast_dismiss(&self, id: &OverlayId) -> bool {
-        self.0.borrow_mut().manager.toasts_mut().dismiss(id)
+    pub(crate) fn toast_dismiss(
+        &self,
+        id: &OverlayId,
+    ) -> Option<(String, HostToastDismissHandler)> {
+        let mut state = self.0.borrow_mut();
+        state
+            .manager
+            .toasts_mut()
+            .dismiss(id)
+            .then(|| state.toast_callbacks.remove(id))
+            .flatten()
     }
 
     pub(crate) fn toast_pause(&self, id: &OverlayId, now: Instant) -> bool {
@@ -231,8 +381,26 @@ impl WindowOverlayCoordinator {
         self.0.borrow().manager.toasts().remaining(id, now)
     }
 
-    pub(crate) fn toast_tick(&self, now: Instant) -> Vec<OverlayId> {
-        self.0.borrow_mut().manager.toasts_mut().tick(now)
+    pub(crate) fn toast_dispatch(
+        &self,
+        ids: impl IntoIterator<Item = OverlayId>,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        let callbacks = {
+            let mut state = self.0.borrow_mut();
+            ids.into_iter()
+                .filter_map(|id| state.toast_callbacks.remove(&id))
+                .collect::<Vec<_>>()
+        };
+        for (local_id, callback) in callbacks {
+            callback(local_id, window, cx);
+        }
+    }
+
+    pub(crate) fn toast_tick(&self, now: Instant, window: &mut Window, cx: &mut App) {
+        let expired = self.0.borrow_mut().manager.toasts_mut().tick(now);
+        self.toast_dispatch(expired, window, cx);
     }
 
     pub(crate) fn toast_visible(&self, region: ToastRegion) -> Vec<OverlayId> {
@@ -244,6 +412,10 @@ impl WindowOverlayCoordinator {
             .into_iter()
             .cloned()
             .collect()
+    }
+
+    pub(crate) fn toast_visible_count(&self, region: ToastRegion) -> usize {
+        self.0.borrow().manager.toasts().visible(region).len()
     }
 }
 
@@ -440,7 +612,7 @@ impl ScriptOverlayElement {
     fn build_overlay(
         &mut self,
         panel_focus: &FocusHandle,
-        viewport: gpui::Size<Pixels>,
+        viewport: OverlayBounds,
         priority: usize,
     ) -> Option<AnyElement> {
         if !self.spec.open {
@@ -518,7 +690,7 @@ impl ScriptOverlayElement {
     fn build_dialog_backdrop(
         &self,
         panel: impl IntoElement,
-        viewport: gpui::Size<Pixels>,
+        viewport: OverlayBounds,
     ) -> AnyElement {
         let dismiss_on_outside = self.spec.dismiss.outside;
         let modal = self.spec.modal;
@@ -526,8 +698,10 @@ impl ScriptOverlayElement {
         let id = self.spec.id.clone();
         let backdrop = div()
             .absolute()
-            .w(viewport.width)
-            .h(viewport.height)
+            .left(pixel_from_f64(viewport.x))
+            .top(pixel_from_f64(viewport.y))
+            .w(pixel_from_f64(viewport.width))
+            .h(pixel_from_f64(viewport.height))
             .flex()
             .items_center()
             .justify_center()
@@ -592,6 +766,8 @@ impl Element for ScriptOverlayElement {
         window.with_element_state(
             global_id.expect("overlay element is keyed"),
             |state, window| {
+                self.coordinator
+                    .ensure_window_viewport(window.viewport_size());
                 let mut state = state.unwrap_or_else(|| OverlayElementState {
                     was_open: false,
                     trigger_focus: cx.focus_handle().tab_stop(self.open_change.is_some()),
@@ -610,8 +786,11 @@ impl Element for ScriptOverlayElement {
                     self.spec.kind,
                     self.open_change.clone(),
                 );
-                let mut overlay =
-                    self.build_overlay(&state.panel_focus, window.viewport_size(), priority);
+                let mut overlay = self.build_overlay(
+                    &state.panel_focus,
+                    self.coordinator.viewport_or_window(window.viewport_size()),
+                    priority,
+                );
                 let overlay_layout = overlay
                     .as_mut()
                     .map(|overlay| overlay.request_layout(window, cx));
@@ -655,16 +834,24 @@ impl Element for ScriptOverlayElement {
             return OverlayPrepaint::default();
         };
         let overlay_bounds = window.layout_bounds(overlay_layout);
+        self.coordinator
+            .ensure_window_viewport(window.viewport_size());
         let overlay_spec = native_overlay_spec(&self.spec, trigger_bounds, overlay_bounds.size);
         let placement = self
             .coordinator
-            .register(overlay_spec.clone(), window.viewport_size())
-            .unwrap_or_else(|_| fallback_placement(overlay_spec, window.viewport_size()));
+            .register(overlay_spec.clone())
+            .unwrap_or_else(|_| {
+                fallback_placement(
+                    overlay_spec,
+                    self.coordinator.viewport_or_window(window.viewport_size()),
+                )
+            });
         let desired = if self.spec.kind == OverlayKind::Dialog {
-            Bounds {
-                origin: Point::default(),
-                size: window.viewport_size(),
-            }
+            placement_bounds(PlacementResult {
+                bounds: self.coordinator.viewport_or_window(window.viewport_size()),
+                placement: OverlayPlacement::Center,
+                flipped: false,
+            })
         } else {
             placement_bounds(placement)
         };
@@ -692,7 +879,7 @@ impl Element for ScriptOverlayElement {
             overlay.paint(window, cx);
         }
 
-        if !self.coordinator.claim_outside_listener() {
+        if self.coordinator.host_managed() || !self.coordinator.claim_outside_listener() {
             return;
         }
         let coordinator = self.coordinator.clone();
@@ -740,10 +927,10 @@ fn native_overlay_spec(
     }
 }
 
-fn fallback_placement(spec: OverlaySpec, viewport: gpui::Size<Pixels>) -> PlacementResult {
+fn fallback_placement(spec: OverlaySpec, viewport: OverlayBounds) -> PlacementResult {
     let mut fallback = spec;
     fallback.parent = None;
-    OverlayManager::new(overlay_viewport(viewport))
+    OverlayManager::new(viewport)
         .and_then(|mut manager| manager.open(fallback))
         .expect("validated overlay geometry has a standalone placement")
 }
@@ -807,16 +994,14 @@ mod tests {
     fn window_coordinator_shares_parent_stack_and_resets_per_frame() {
         let coordinator = WindowOverlayCoordinator::default();
         let viewport = size(px(800.0), px(600.0));
-        coordinator.begin_frame(viewport);
+        coordinator.begin_frame(overlay_viewport(viewport));
         let parent = OverlayId::new("dialog");
         let child = OverlayId::new("popover");
         let parent_priority = coordinator.reserve(parent.clone(), OverlayKind::Dialog, None);
         let child_priority = coordinator.reserve(child.clone(), OverlayKind::Popover, None);
+        coordinator.register(spec("dialog", None)).unwrap();
         coordinator
-            .register(spec("dialog", None), viewport)
-            .unwrap();
-        coordinator
-            .register(spec("popover", Some("dialog")), viewport)
+            .register(spec("popover", Some("dialog")))
             .unwrap();
         assert!(parent_priority < child_priority);
         let report = coordinator.0.borrow_mut().manager.dismiss(&parent);
@@ -834,7 +1019,7 @@ mod tests {
                 Instant::now(),
             )
             .unwrap();
-        coordinator.begin_frame(viewport);
+        coordinator.begin_frame(overlay_viewport(viewport));
         assert!(
             coordinator
                 .0

@@ -1,5 +1,5 @@
 use gpui::{App, AppContext, Application, Bounds, WindowBounds, WindowOptions, px, size};
-use gpui_rhai::{RuntimeEngine, ScriptView};
+use gpui_rhai::{RuntimeEngine, StaticUiView};
 
 fn main() {
     let mut runtime = RuntimeEngine::new();
@@ -26,7 +26,7 @@ fn main() {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
                 ..WindowOptions::default()
             },
-            |_, cx| cx.new(|_| ScriptView::new(root.clone())),
+            |_, cx| cx.new(|_| StaticUiView::new(root.clone())),
         )
         .expect("phase-0 GPUI window should open");
         cx.activate(true);

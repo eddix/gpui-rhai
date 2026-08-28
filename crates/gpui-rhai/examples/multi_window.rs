@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
 use gpui_rhai::{
-    ComponentStateSchema, EmbeddedScriptApp, EmbeddedScriptSource, ModuleId, ScriptAppExtension,
-    StateField, StoreId, UiRuntimeState, UiValue, ValueSchema,
+    ComponentStateSchema, EmbeddedScriptSource, EmbeddedScriptView, ModuleId, ScriptApplication,
+    ScriptViewExtension, StateField, StoreId, UiRuntimeState, UiValue, ValueSchema,
 };
 
 const BUTTON: &str = include_str!("../../../registry/components/button.rhai");
@@ -88,7 +88,7 @@ fn view(ctx) {
 
 struct MultiWindowStores;
 
-impl ScriptAppExtension for MultiWindowStores {
+impl ScriptViewExtension for MultiWindowStores {
     fn configure_runtime(&self, runtime: &mut UiRuntimeState) -> Result<(), String> {
         runtime
             .stores
@@ -138,7 +138,7 @@ fn main() {
         module("components/button", BUTTON),
         module("components/dialog", DIALOG),
     ]));
-    EmbeddedScriptApp::new(ModuleId::parse("main").unwrap(), scripts, DEFAULT_DARK)
+    EmbeddedScriptView::new(ModuleId::parse("main").unwrap(), scripts, DEFAULT_DARK)
         .extension(MultiWindowStores)
         .theme_sources([(
             "themes/default_light.rhai".to_owned(),
@@ -148,7 +148,11 @@ fn main() {
             ("locales/en.rhai".to_owned(), EN.to_owned()),
             ("locales/ar.rhai".to_owned(), AR.to_owned()),
         ])
-        .window_size(820.0, 460.0)
-        .run()
+        .prepare()
+        .and_then(|prepared| {
+            ScriptApplication::new(prepared)
+                .window_size(820.0, 460.0)
+                .run()
+        })
         .expect("multi_window failed");
 }

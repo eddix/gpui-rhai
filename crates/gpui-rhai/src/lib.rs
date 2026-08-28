@@ -50,7 +50,8 @@ pub use animation::{
     AnimationSpec, Easing, MotionPreference, SpringSpec, TransitionSpec,
 };
 pub use app::{
-    EmbeddedScriptApp, PreparedScriptApp, ScriptApp, ScriptAppError, ScriptAppExtension,
+    EmbeddedScriptView, FileScriptView, PreparedScriptView, ScriptApplication, ScriptViewConfig,
+    ScriptViewError, ScriptViewExtension, ScriptViewHandle, ScriptViewHost, install,
 };
 pub use asset::{
     AssetData, AssetError, AssetId, AssetProvider, AssetRegistry, DirectoryAssetProvider,
@@ -115,7 +116,7 @@ pub use primitive::{
 };
 pub use reload::{LiveScript, ReloadOutcome};
 pub use renderer::{
-    ColorResolver, GpuiNodeRenderer, LiteralColorResolver, NodeEventDispatcher, ScriptView,
+    ColorResolver, GpuiNodeRenderer, LiteralColorResolver, NodeEventDispatcher, StaticUiView,
 };
 pub use responsive::{ResponsiveError, ResponsiveRuntime, ViewportBreakpoints, ViewportClass};
 pub use schema::{ObjectField, SchemaIssue, SchemaValidationError, ValueSchema};
@@ -145,7 +146,9 @@ pub use virtual_list::{
     VirtualListError, VirtualListItem, VirtualListMetrics, VirtualListNodeSpec, VirtualListSpec,
     VirtualListState,
 };
-pub use window::{ScriptWindowSpec, WindowCommand, WindowCommandError, WindowCommandRegistry};
+pub use window::{
+    ScriptWindowSpec, WindowCommand, WindowCommandError, WindowCommandPolicy, WindowCommandRegistry,
+};
 
 /// The first runtime API generation understood by component source.
 pub const RUNTIME_API_VERSION: u32 = 1;

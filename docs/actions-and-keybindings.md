@@ -21,10 +21,17 @@ let binding = KeyBindingSpec::new(
     ActionId::parse("document.save")?,
     Some("GPUIRhaiHost".to_owned()),
 )?;
-EmbeddedScriptApp::new(entry, scripts, theme).key_binding(binding);
+let prepared = EmbeddedScriptView::new(entry, scripts, theme)
+    .key_binding(binding)
+    .prepare()?;
+let host = ScriptViewHost::new("main", cx)?;
+host.bind_keys(prepared.key_bindings().iter().cloned(), cx)?;
 ```
 
-The same builder is available on `ScriptApp`. GPUI first offers keyboard input
+The same declaration is available on `FileScriptView`, but mounting a view never
+changes the App keymap automatically. The host must explicitly approve and bind
+the declarations. Binding the same keys/context to different actions is an
+error; repeating the same binding is idempotent. GPUI first offers keyboard input
 to the focused native primitive; unhandled input then reaches the action system.
 Register an app action once (normally only when `ctx.window_id() == "main"`) so
 opening another script window does not redefine policy accidentally.

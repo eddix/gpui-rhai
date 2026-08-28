@@ -44,6 +44,9 @@ gallery_cases=(
   default-dark.en.tooltip.reduced
   default-light.en.menu
 )
+embedded_view_cases=(
+  default-dark.shared-host
+)
 
 check_case() {
   file="$1"
@@ -76,10 +79,13 @@ done
 for case_name in "${gallery_cases[@]}"; do
   check_case "tests/visual/macos/component_gallery/${case_name}.png" 720 552
 done
+for case_name in "${embedded_view_cases[@]}"; do
+  check_case "tests/visual/macos/embedded_views/${case_name}.png" 900 452
+done
 
 actual_count="$(find tests/visual/macos -type f -name '*.png' | wc -l | tr -d ' ')"
-if [[ "${actual_count}" != "35" ]]; then
-  echo "unexpected visual baseline count: ${actual_count} (expected 35)" >&2
+if [[ "${actual_count}" != "36" ]]; then
+  echo "unexpected visual baseline count: ${actual_count} (expected 36)" >&2
   exit 1
 fi
 

@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use gpui_rhai::{EmbeddedScriptApp, EmbeddedScriptSource, ModuleId};
+use gpui_rhai::{EmbeddedScriptSource, EmbeddedScriptView, ModuleId, ScriptApplication};
 
 const INPUT: &str = include_str!("../../../registry/components/input.rhai");
 const LABEL: &str = include_str!("../../../registry/components/label.rhai");
@@ -191,7 +191,7 @@ fn main() {
         module("components/dialog", DIALOG),
         module("components/toast", TOAST),
     ]));
-    EmbeddedScriptApp::new(ModuleId::parse("main").unwrap(), scripts, DEFAULT_LIGHT)
+    EmbeddedScriptView::new(ModuleId::parse("main").unwrap(), scripts, DEFAULT_LIGHT)
         .theme_sources([
             ("default_dark.rhai".to_owned(), DEFAULT_DARK.to_owned()),
             ("tokyo_night.rhai".to_owned(), TOKYO_NIGHT.to_owned()),
@@ -210,8 +210,12 @@ fn main() {
             ("zh_cn.rhai".to_owned(), ZH_CN.to_owned()),
             ("ar.rhai".to_owned(), AR.to_owned()),
         ])
-        .window_size(680.0, 680.0)
-        .run()
+        .prepare()
+        .and_then(|prepared| {
+            ScriptApplication::new(prepared)
+                .window_size(680.0, 680.0)
+                .run()
+        })
         .expect("form_showcase failed");
 }
 
