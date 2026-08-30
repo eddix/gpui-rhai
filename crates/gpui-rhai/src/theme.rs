@@ -40,6 +40,17 @@ pub struct ThemeTokens {
     pub colors: BTreeMap<String, Rgba8>,
     pub spacing: BTreeMap<String, Length>,
     pub radii: BTreeMap<String, Length>,
+    #[serde(default)]
+    pub namespaces: BTreeMap<String, BTreeMap<String, ThemeTokenValue>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", content = "value", rename_all = "snake_case")]
+pub enum ThemeTokenValue {
+    Color(Rgba8),
+    Length(Length),
+    Number(f64),
+    String(String),
 }
 
 impl ThemeTokens {
@@ -63,8 +74,73 @@ impl ThemeTokens {
                     source,
                 })?;
         }
+        for (namespace, tokens) in &self.namespaces {
+            if !valid_token_segment(namespace) {
+                return Err(ThemeError::InvalidNamespace(namespace.clone()));
+            }
+            for (name, value) in tokens {
+                if !valid_token_segment(name) {
+                    return Err(ThemeError::InvalidTokenName {
+                        namespace: namespace.clone(),
+                        name: name.clone(),
+                    });
+                }
+                match value {
+                    ThemeTokenValue::Length(length) => {
+                        if length.is_theme_token() {
+                            return Err(ThemeError::NestedNamespacedLength {
+                                namespace: namespace.clone(),
+                                name: name.clone(),
+                            });
+                        }
+                        length
+                            .validate()
+                            .map_err(|source| ThemeError::InvalidLength {
+                                token: format!("{namespace}.{name}"),
+                                source,
+                            })?;
+                    }
+                    ThemeTokenValue::Number(number) if !number.is_finite() => {
+                        return Err(ThemeError::NonFiniteNumber {
+                            namespace: namespace.clone(),
+                            name: name.clone(),
+                        });
+                    }
+                    ThemeTokenValue::Color(_)
+                    | ThemeTokenValue::Number(_)
+                    | ThemeTokenValue::String(_) => {}
+                }
+            }
+        }
         Ok(())
     }
+
+    #[must_use]
+    pub fn token(&self, path: &str) -> Option<&ThemeTokenValue> {
+        let (namespace, name) = path.split_once('.')?;
+        self.namespaces.get(namespace)?.get(name)
+    }
+
+    #[must_use]
+    pub fn color(&self, token: &str) -> Option<Rgba8> {
+        self.colors
+            .get(token)
+            .copied()
+            .or_else(|| match self.token(token) {
+                Some(ThemeTokenValue::Color(color)) => Some(*color),
+                _ => None,
+            })
+    }
+}
+
+fn valid_token_segment(value: &str) -> bool {
+    !value.is_empty()
+        && !value.starts_with('_')
+        && !value.ends_with('_')
+        && !value.contains("__")
+        && value.chars().all(|character| {
+            character.is_ascii_lowercase() || character.is_ascii_digit() || character == '_'
+        })
 }
 
 fn require_tokens<T>(
@@ -110,7 +186,7 @@ impl ColorResolver for ThemeVariant {
     fn resolve(&self, color: &ColorValue) -> Option<Rgba8> {
         match color {
             ColorValue::Literal(color) => Some(*color),
-            ColorValue::Token(token) => self.tokens.colors.get(token).copied(),
+            ColorValue::Token(token) => self.tokens.color(token),
         }
     }
 
@@ -476,7 +552,7 @@ impl ColorResolver for ResolvedTheme<'_> {
     fn resolve(&self, color: &ColorValue) -> Option<Rgba8> {
         match color {
             ColorValue::Literal(color) => Some(*color),
-            ColorValue::Token(token) => self.variant.tokens.colors.get(token).copied(),
+            ColorValue::Token(token) => self.variant.tokens.color(token),
         }
     }
 
@@ -525,6 +601,14 @@ pub enum ThemeError {
     },
     #[error("theme length token `{0}` cannot reference another theme token")]
     NestedLengthToken(String),
+    #[error("theme token namespace `{0}` must be snake_case")]
+    InvalidNamespace(String),
+    #[error("theme token `{namespace}.{name}` must use a snake_case name")]
+    InvalidTokenName { namespace: String, name: String },
+    #[error("theme length token `{namespace}.{name}` cannot reference another theme token")]
+    NestedNamespacedLength { namespace: String, name: String },
+    #[error("theme number token `{namespace}.{name}` must be finite")]
+    NonFiniteNumber { namespace: String, name: String },
     #[error("variant `{key}` does not match family `{family}` or its map key")]
     VariantIdentity { family: String, key: String },
     #[error("family `{family}` has no default variant `{variant}`")]
@@ -581,6 +665,7 @@ mod tests {
                 ("md".to_owned(), Length::Pixels(8.0)),
                 ("lg".to_owned(), Length::Pixels(12.0)),
             ]),
+            namespaces: BTreeMap::new(),
         }
     }
 
@@ -648,6 +733,39 @@ mod tests {
                 .name,
             "Dark"
         );
+    }
+
+    #[test]
+    fn namespaced_typed_tokens_validate_and_resolve_colors() {
+        let mut tokens = tokens(0x0033_66ff);
+        tokens.namespaces.insert(
+            "charts".to_owned(),
+            BTreeMap::from([
+                (
+                    "series_a".to_owned(),
+                    ThemeTokenValue::Color(Rgba8::from_rgb_hex(0x00ff_5500)),
+                ),
+                (
+                    "stroke".to_owned(),
+                    ThemeTokenValue::Length(Length::Pixels(2.0)),
+                ),
+                ("muted_alpha".to_owned(), ThemeTokenValue::Number(0.6)),
+            ]),
+        );
+        tokens.validate().unwrap();
+        assert_eq!(
+            tokens.color("charts.series_a"),
+            Some(Rgba8::from_rgb_hex(0x00ff_5500))
+        );
+        tokens
+            .namespaces
+            .get_mut("charts")
+            .unwrap()
+            .insert("bad_number".to_owned(), ThemeTokenValue::Number(f64::NAN));
+        assert!(matches!(
+            tokens.validate(),
+            Err(ThemeError::NonFiniteNumber { .. })
+        ));
     }
 
     #[test]

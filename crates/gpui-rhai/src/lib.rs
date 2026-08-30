@@ -189,7 +189,7 @@ pub use text_input::{
 };
 pub use theme::{
     ResolvedTheme, SystemAppearance, ThemeError, ThemeFamily, ThemeManager, ThemeMode,
-    ThemePreference, ThemeSelection, ThemeTokens, ThemeVariant, load_theme_source,
+    ThemePreference, ThemeSelection, ThemeTokenValue, ThemeTokens, ThemeVariant, load_theme_source,
 };
 pub use toast::{ToastHostSpec, ToastItemSpec, ToastVariant};
 pub use value::{OpaqueHandle, UiValue, UiValueError};
