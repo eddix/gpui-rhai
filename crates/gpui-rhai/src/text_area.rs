@@ -44,6 +44,8 @@ actions!(
         Paste,
         Cut,
         Copy,
+        Undo,
+        Redo,
     ]
 );
 
@@ -63,6 +65,8 @@ pub fn init_text_area(cx: &mut App) {
         KeyBinding::new("cmd-v", Paste, Some("GPUIRhaiTextarea")),
         KeyBinding::new("cmd-c", Copy, Some("GPUIRhaiTextarea")),
         KeyBinding::new("cmd-x", Cut, Some("GPUIRhaiTextarea")),
+        KeyBinding::new("cmd-z", Undo, Some("GPUIRhaiTextarea")),
+        KeyBinding::new("shift-cmd-z", Redo, Some("GPUIRhaiTextarea")),
         KeyBinding::new("home", Home, Some("GPUIRhaiTextarea")),
         KeyBinding::new("end", End, Some("GPUIRhaiTextarea")),
         KeyBinding::new("enter", Newline, Some("GPUIRhaiTextarea")),
@@ -368,6 +372,24 @@ impl TextAreaEntity {
         }
         if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
             self.buffer.replace(None, &text);
+            self.ensure_cursor_visible();
+            self.emit_change(window, cx);
+            cx.notify();
+        }
+    }
+
+    fn undo(&mut self, _: &Undo, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.config.disabled && !self.config.read_only && self.buffer.undo() {
+            self.reset_preferred_x();
+            self.ensure_cursor_visible();
+            self.emit_change(window, cx);
+            cx.notify();
+        }
+    }
+
+    fn redo(&mut self, _: &Redo, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.config.disabled && !self.config.read_only && self.buffer.redo() {
+            self.reset_preferred_x();
             self.ensure_cursor_visible();
             self.emit_change(window, cx);
             cx.notify();
@@ -905,6 +927,8 @@ impl Render for TextAreaEntity {
             .on_action(cx.listener(Self::paste))
             .on_action(cx.listener(Self::cut))
             .on_action(cx.listener(Self::copy))
+            .on_action(cx.listener(Self::undo))
+            .on_action(cx.listener(Self::redo))
             .on_mouse_down(MouseButton::Left, cx.listener(Self::mouse_down))
             .on_mouse_up(MouseButton::Left, cx.listener(Self::mouse_up))
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::mouse_up))

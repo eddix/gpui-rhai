@@ -52,7 +52,11 @@ styleable `limit` state; it does not emit a second hidden value.
 
 The shared editing core owns UTF-8/UTF-16 conversions, grapheme boundaries,
 selection direction, marked ranges, clipboard operations, controlled-value
-reconciliation, and max-length insertion policy. Input retains a separate
+reconciliation, max-length insertion policy, and a bounded 100-revision native
+undo/redo history. Consecutive single-grapheme typing coalesces for 750 ms; one
+IME composition is one revision; selection replacements/paste remain atomic;
+an authoritative external controlled replacement clears history. Cmd-Z and
+Shift-Cmd-Z use the same core in Input and Textarea. Input retains a separate
 single-line element. Textarea adds wrapped line layout, multi-rectangle
 selection paint, vertical hit testing, preferred-x Up/Down movement, caret
 visibility scrolling, auto-grow measurement, and multiline IME bounds.
@@ -78,7 +82,7 @@ highlighting, and horizontal no-wrap scrolling are separate products.
 ## Required evidence
 
 - shared editing-core unit tests for grapheme, UTF-16, selection, paste, limit,
-  and IME commit behavior;
+  IME commit, undo/redo/coalescing, and controlled reset behavior;
 - single-line Input regression coverage after the refactor;
 - wrapped layout, mouse hit, vertical movement, selection paint, auto-grow, and
   scroll-to-caret native tests;

@@ -37,6 +37,8 @@ actions!(
         Paste,
         Cut,
         Copy,
+        Undo,
+        Redo,
     ]
 );
 
@@ -52,6 +54,8 @@ pub fn init_text_input(cx: &mut App) {
         KeyBinding::new("cmd-v", Paste, Some("GPUIRhaiTextInput")),
         KeyBinding::new("cmd-c", Copy, Some("GPUIRhaiTextInput")),
         KeyBinding::new("cmd-x", Cut, Some("GPUIRhaiTextInput")),
+        KeyBinding::new("cmd-z", Undo, Some("GPUIRhaiTextInput")),
+        KeyBinding::new("shift-cmd-z", Redo, Some("GPUIRhaiTextInput")),
         KeyBinding::new("home", Home, Some("GPUIRhaiTextInput")),
         KeyBinding::new("end", End, Some("GPUIRhaiTextInput")),
         KeyBinding::new("enter", Submit, Some("GPUIRhaiTextInput")),
@@ -238,6 +242,20 @@ impl TextInputEntity {
         }
     }
 
+    fn undo(&mut self, _: &Undo, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.disabled && !self.read_only && self.buffer.undo() {
+            self.emit_change(window, cx);
+            cx.notify();
+        }
+    }
+
+    fn redo(&mut self, _: &Redo, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.disabled && !self.read_only && self.buffer.redo() {
+            self.emit_change(window, cx);
+            cx.notify();
+        }
+    }
+
     fn submit(&mut self, _: &Submit, window: &mut Window, cx: &mut Context<Self>) {
         if !self.disabled
             && let Some(submit) = self.callbacks.submit.clone()
@@ -332,7 +350,7 @@ impl EntityInputHandler for TextInputEntity {
     }
 
     fn unmark_text(&mut self, _: &mut Window, _: &mut Context<Self>) {
-        self.buffer.marked = None;
+        self.buffer.unmark();
     }
 
     fn replace_text_in_range(
@@ -606,6 +624,8 @@ impl Render for TextInputEntity {
             .on_action(cx.listener(Self::paste))
             .on_action(cx.listener(Self::cut))
             .on_action(cx.listener(Self::copy))
+            .on_action(cx.listener(Self::undo))
+            .on_action(cx.listener(Self::redo))
             .on_mouse_down(MouseButton::Left, cx.listener(Self::mouse_down))
             .on_mouse_up(MouseButton::Left, cx.listener(Self::mouse_up))
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::mouse_up))

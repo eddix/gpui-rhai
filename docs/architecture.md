@@ -201,7 +201,8 @@ UI node.
 
 Input and Textarea share a text-editing core for UTF-8/UTF-16 conversion,
 grapheme boundaries, selection, clipboard, IME marked ranges, and controlled
-reconciliation. Their layout elements remain separate: Input is a shaped
+reconciliation. The shared core also owns bounded native undo/redo, typing
+coalescing, IME-as-one-revision, and external-controlled reset. Their layout elements remain separate: Input is a shaped
 single line, while Textarea owns wrapped multiline layout, vertical hit testing,
 multi-line selection paint, caret scrolling, and auto-grow measurement.
 
