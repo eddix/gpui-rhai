@@ -1,0 +1,49 @@
+# Typed Style surface
+
+`Style` is a validated runtime value, not a GPUI handle or CSS string. Explicit
+merge and component parts determine precedence; pseudo refinements resolve in
+`base → hover → active → focus → disabled` order.
+
+The current public builder maps directly to stable GPUI 0.2.2 behavior:
+
+- block, flex, and bounded explicit grid layout (`grid_cols/rows`, spans);
+- row/column direction, wrapping, grow/shrink/basis, alignment, justification;
+- min/max/fixed sizing, gaps, physical/logical padding and margins;
+- relative/absolute positioning with four insets and per-axis overflow;
+- solid or typed two-stop linear-gradient backgrounds, borders, radii,
+  validated box shadows, opacity, visibility, and cursor policy;
+- paint translation with signed finite logical pixels;
+- font family, numeric weight, normal/italic style, size/line height, logical
+  text alignment, whitespace, ellipsis, and bounded line clamp.
+
+```rhai
+style()
+    .grid_cols(3).gap(px(12)).padding(px(20))
+    .linear_gradient(linear_gradient(#{
+        angle: 145,
+        from: rgba(0x24283be8),
+        to: rgba(0x16161ee8)
+    }))
+    .shadow(shadow(#{
+        x: 0, y: 18, blur: 48, spread: 2,
+        color: rgba(0x00000070)
+    }))
+    .font_family("Avenir Next").font_weight(650)
+    .opacity(0.92).cursor_pointer()
+```
+
+`shadow` and `linear_gradient` reject unknown fields. Opacity, grid counts,
+font weights, line clamps, translations, lengths, and shadow geometry are
+bounded before a GPUI element is built. Theme-backed colors resolve through the
+same `ColorValue` path as solid fills and Canvas.
+
+NativeSignal/animation bindings override literal opacity/translation/dimension
+values at frame sampling time without rerunning Rhai. Static translation uses
+the same paint wrapper, so visual geometry reporting remains the next required
+step before transformed hit testing can be marked complete.
+
+The remaining final-style gaps are property-specific signed insets/margins,
+intrinsic/auto/fr/grid-track values, multi-stop gradients, rotation/scale and
+transform-origin, detailed border corners/sides, font assets/fallback/features,
+selection styling, and explicit hit-testing/stacking-context controls. They are
+tracked as incomplete rather than silently ignored.

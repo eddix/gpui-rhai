@@ -129,6 +129,11 @@ Use semantic theme tokens and the typed `Style` builder. Merge order is:
 base -> size -> variant/state -> caller style/part_styles
 ```
 
+Use typed `linear_gradient(#{...})` and `shadow(#{...})` values for component
+paint; use Style grid/flex, opacity, cursor, typography, ellipsis/clamp, and
+translation methods only where their documented GPUI mapping applies. See
+`docs/style.md` for the supported surface and explicit remaining gaps.
+
 Use only `xs`, `sm`, `md`, and `lg` for component sizes. Preserve the desktop
 default cursor for controls. Attach normalized accessibility role/label data to
 the root node. Use `padding_start/end` and `margin_start/end` for asymmetric

@@ -5,6 +5,7 @@ Start with the repository quick start, then use these guides by task:
 - [Architecture](architecture.md) and [security boundary](security-boundary.md)
 - [Component authoring](component-authoring-guide.md)
 - [Theming](theming.md), [locale and RTL](locale-and-rtl.md), and [assets](assets.md)
+- [Typed Style surface](style.md)
 - [Capabilities](capabilities.md) and [custom Rust primitives](custom-primitives.md)
 - [Actions and keybindings](actions-and-keybindings.md)
 - [Multi-window applications](multi-window.md)

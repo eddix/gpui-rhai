@@ -4,23 +4,25 @@ use std::sync::OnceLock;
 use std::time::Instant;
 
 use gpui::{
-    AnyElement, App, Bounds, BoxShadow, ClickEvent, Context, DispatchPhase, Div, Element,
-    ElementId, FocusHandle, FontStyle, FontWeight, GlobalElementId, HighlightStyle,
+    AnyElement, App, Bounds, BoxShadow, ClickEvent, Context, CursorStyle, DispatchPhase, Div,
+    Element, ElementId, FocusHandle, FontStyle, FontWeight, GlobalElementId, HighlightStyle,
     InspectorElementId, InteractiveElement, IntoElement, LayoutId, Modifiers, MouseButton,
     MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point, Render,
     ScrollHandle, ScrollWheelEvent, SharedString, Stateful, StatefulInteractiveElement, Styled,
-    StyledText, Window, div, img, point, px, relative, rems, rgba,
+    StyledText, TextAlign, Window, div, img, linear_color_stop, linear_gradient, point, px,
+    relative, rems, rgba,
 };
 
 use crate::overlay_element::{ScriptLayerElement, ScriptOverlayElement, WindowOverlayCoordinator};
 use crate::slot_runtime::NodeSlotRuntime;
 use crate::virtual_list_element::VirtualListEntityElement;
 use crate::{
-    Align, AnimationKey, AnimationProperty, AssetRegistry, ColorValue, EventPropagation,
-    EventResponse, FlexDirection, ImageSourceSpec, InteractionState, Justify, Length, NodeId,
-    OverflowMode, OverlayNodeSpec, PositionMode, PrimitiveRegistry, PseudoState, RadiusToken,
-    RetainedUiTree, Rgba8, ScriptCallback, SpacingToken, Style, StyleProperties, TextDirection,
-    UiEventHandler, UiNode, UiNodeKind, UiValue,
+    Align, AnimationKey, AnimationProperty, AssetRegistry, ColorValue, CursorKind, DisplayMode,
+    EventPropagation, EventResponse, FlexDirection, FlexWrapMode, FontSlant, ImageSourceSpec,
+    InteractionState, Justify, Length, NodeId, OverflowMode, OverlayNodeSpec, PositionMode,
+    PrimitiveRegistry, PseudoState, RadiusToken, RetainedUiTree, Rgba8, ScriptCallback,
+    SpacingToken, Style, StyleProperties, TextAlignMode, TextDirection, UiEventHandler, UiNode,
+    UiNodeKind, UiValue, WhiteSpaceMode,
 };
 
 type DispatchFn = dyn Fn(ScriptCallback, UiValue, &mut Window, &mut App) -> EventResponse;
@@ -1086,8 +1088,14 @@ impl GpuiNodeRenderer {
         );
         let element = translated(
             populated,
-            signals.translate_x.or(animation.translate_x),
-            signals.translate_y.or(animation.translate_y),
+            signals
+                .translate_x
+                .or(animation.translate_x)
+                .or(resolved_style.translate_x),
+            signals
+                .translate_y
+                .or(animation.translate_y)
+                .or(resolved_style.translate_y),
         );
         match retained_id {
             Some(node) => GeometryTrackedElement {
@@ -2030,7 +2038,7 @@ fn apply_style(
     resolve_style_lengths(&mut style, colors);
     let element = apply_layout(element, &style, direction);
     let element = apply_spacing(element, &style, direction);
-    apply_paint_and_text(element, &style, colors)
+    apply_paint_and_text(element, &style, colors, direction)
 }
 
 fn resolve_style_lengths(style: &mut StyleProperties, resolver: &impl ColorResolver) {
@@ -2045,6 +2053,7 @@ fn resolve_style_lengths(style: &mut StyleProperties, resolver: &impl ColorResol
         &mut style.min_height,
         &mut style.max_height,
         &mut style.gap,
+        &mut style.flex_basis,
     ] {
         resolve(value);
     }
@@ -2064,7 +2073,10 @@ fn resolve_style_lengths(style: &mut StyleProperties, resolver: &impl ColorResol
         &mut style.border_width,
         &mut style.radius,
         &mut style.font_size,
+        &mut style.line_height,
         &mut style.top,
+        &mut style.right,
+        &mut style.bottom,
         &mut style.left,
     ] {
         resolve(value);
@@ -2085,7 +2097,21 @@ pub(crate) fn apply_style_override(
     )
 }
 
-fn apply_layout(mut element: Div, style: &StyleProperties, text_direction: TextDirection) -> Div {
+fn apply_layout(element: Div, style: &StyleProperties, text_direction: TextDirection) -> Div {
+    let element = apply_display_and_position(element, style);
+    let element = apply_flex_alignment(element, style, text_direction);
+    apply_layout_dimensions(element, style)
+}
+
+fn apply_display_and_position(mut element: Div, style: &StyleProperties) -> Div {
+    if let Some(display) = style.display {
+        element = match display {
+            DisplayMode::Block => element.block(),
+            DisplayMode::Flex => element.flex(),
+            DisplayMode::Grid => element.grid(),
+            DisplayMode::None => element.hidden(),
+        };
+    }
     if let Some(position) = style.position {
         element = match position {
             PositionMode::Relative => element.relative(),
@@ -2095,6 +2121,12 @@ fn apply_layout(mut element: Div, style: &StyleProperties, text_direction: TextD
     if let Some(value) = style.top {
         element = inset_top(element, value);
     }
+    if let Some(value) = style.right {
+        element = inset_right(element, value);
+    }
+    if let Some(value) = style.bottom {
+        element = inset_bottom(element, value);
+    }
     if let Some(value) = style.left {
         element = inset_left(element, value);
     }
@@ -2103,12 +2135,27 @@ fn apply_layout(mut element: Div, style: &StyleProperties, text_direction: TextD
     {
         element = element.overflow_hidden();
     }
+    element
+}
+
+fn apply_flex_alignment(
+    mut element: Div,
+    style: &StyleProperties,
+    text_direction: TextDirection,
+) -> Div {
     if let Some(direction) = style.direction {
         element = element.flex();
         element = match (direction, text_direction) {
             (FlexDirection::Row, TextDirection::LeftToRight) => element.flex_row(),
             (FlexDirection::Row, TextDirection::RightToLeft) => element.flex_row_reverse(),
             (FlexDirection::Column, _) => element.flex_col(),
+        };
+    }
+    if let Some(wrap) = style.flex_wrap {
+        element = match wrap {
+            FlexWrapMode::NoWrap => element.flex_nowrap(),
+            FlexWrapMode::Wrap => element.flex_wrap(),
+            FlexWrapMode::WrapReverse => element.flex_wrap_reverse(),
         };
     }
     if let Some(align) = style.align {
@@ -2139,6 +2186,10 @@ fn apply_layout(mut element: Div, style: &StyleProperties, text_direction: TextD
             Justify::Around => element.justify_around(),
         };
     }
+    element
+}
+
+fn apply_layout_dimensions(mut element: Div, style: &StyleProperties) -> Div {
     if let Some(value) = style.width {
         element = width(element, value);
     }
@@ -2162,6 +2213,28 @@ fn apply_layout(mut element: Div, style: &StyleProperties, text_direction: TextD
     }
     if style.flex_grow == Some(true) {
         element = element.flex_grow();
+    }
+    if let Some(shrink) = style.flex_shrink {
+        element = if shrink {
+            element.flex_shrink()
+        } else {
+            element.flex_shrink_0()
+        };
+    }
+    if let Some(value) = style.flex_basis {
+        element = flex_basis(element, value);
+    }
+    if let Some(columns) = style.grid_columns {
+        element = element.grid_cols(columns);
+    }
+    if let Some(rows) = style.grid_rows {
+        element = element.grid_rows(rows);
+    }
+    if let Some(span) = style.column_span {
+        element = element.col_span(span);
+    }
+    if let Some(span) = style.row_span {
+        element = element.row_span(span);
     }
     element
 }
@@ -2245,11 +2318,27 @@ fn logical_keyboard_key(key: &str, direction: TextDirection) -> &str {
 }
 
 fn apply_paint_and_text(
-    mut element: Div,
+    element: Div,
     style: &StyleProperties,
     colors: &impl ColorResolver,
+    direction: TextDirection,
 ) -> Div {
-    if let Some(color) = style
+    let element = apply_paint(element, style, colors);
+    let element = apply_typography(element, style, direction);
+    apply_shadows(element, style, colors)
+}
+
+fn apply_paint(mut element: Div, style: &StyleProperties, colors: &impl ColorResolver) -> Div {
+    if let Some(gradient) = &style.gradient
+        && let (Some(from), Some(to)) =
+            (colors.resolve(&gradient.from), colors.resolve(&gradient.to))
+    {
+        element = element.bg(linear_gradient(
+            f64_to_f32(gradient.angle_degrees),
+            linear_color_stop(rgba(from.as_rgba_hex()), 0.0),
+            linear_color_stop(rgba(to.as_rgba_hex()), 1.0),
+        ));
+    } else if let Some(color) = style
         .background
         .as_ref()
         .and_then(|color| colors.resolve(color))
@@ -2278,6 +2367,79 @@ fn apply_paint_and_text(
     }
     if let Some(value) = style.font_size {
         element = font_size(element, value);
+    }
+    if let Some(opacity) = style.opacity {
+        element = element.opacity(f64_to_f32(opacity));
+    }
+    if let Some(visible) = style.visible {
+        element = if visible {
+            element.visible()
+        } else {
+            element.invisible()
+        };
+    }
+    if let Some(cursor) = style.cursor {
+        element = element.cursor(gpui_cursor(cursor));
+    }
+    element
+}
+
+fn apply_typography(mut element: Div, style: &StyleProperties, direction: TextDirection) -> Div {
+    if let Some(family) = &style.font_family {
+        element = element.font_family(family.clone());
+    }
+    if let Some(weight) = style.font_weight {
+        element = element.font_weight(FontWeight(f32::from(weight)));
+    }
+    if let Some(slant) = style.font_slant {
+        element = match slant {
+            FontSlant::Normal => element.not_italic(),
+            FontSlant::Italic => element.italic(),
+        };
+    }
+    if let Some(value) = style.line_height {
+        element = line_height(element, value);
+    }
+    if let Some(align) = style.text_align {
+        let align = match (align, direction) {
+            (TextAlignMode::Start, TextDirection::LeftToRight)
+            | (TextAlignMode::End, TextDirection::RightToLeft) => TextAlign::Left,
+            (TextAlignMode::Start, TextDirection::RightToLeft)
+            | (TextAlignMode::End, TextDirection::LeftToRight) => TextAlign::Right,
+            (TextAlignMode::Center, _) => TextAlign::Center,
+        };
+        element = element.text_align(align);
+    }
+    if let Some(white_space) = style.white_space {
+        element = match white_space {
+            WhiteSpaceMode::Normal => element.whitespace_normal(),
+            WhiteSpaceMode::NoWrap => element.whitespace_nowrap(),
+        };
+    }
+    if style.text_ellipsis == Some(true) {
+        element = element.text_ellipsis();
+    }
+    if let Some(lines) = style.line_clamp {
+        element = element.line_clamp(lines);
+    }
+    element
+}
+
+fn apply_shadows(mut element: Div, style: &StyleProperties, colors: &impl ColorResolver) -> Div {
+    if let Some(shadows) = &style.shadows {
+        element = element.shadow(
+            shadows
+                .iter()
+                .filter_map(|shadow| {
+                    colors.resolve(&shadow.color).map(|color| BoxShadow {
+                        color: rgba(color.as_rgba_hex()).into(),
+                        offset: point(px(f64_to_f32(shadow.x)), px(f64_to_f32(shadow.y))),
+                        blur_radius: px(f64_to_f32(shadow.blur)),
+                        spread_radius: px(f64_to_f32(shadow.spread)),
+                    })
+                })
+                .collect(),
+        );
     }
     element
 }
@@ -2311,7 +2473,11 @@ definite_length_fn!(margin_right, mr);
 definite_length_fn!(margin_bottom, mb);
 definite_length_fn!(margin_left, ml);
 definite_length_fn!(inset_top, top);
+definite_length_fn!(inset_right, right);
+definite_length_fn!(inset_bottom, bottom);
 definite_length_fn!(inset_left, left);
+
+definite_length_fn!(flex_basis, flex_basis);
 
 fn border(element: Div, value: Length) -> Div {
     match value {
@@ -2334,6 +2500,27 @@ fn font_size(element: Div, value: Length) -> Div {
         Length::Pixels(value) => element.text_size(px(to_f32(value))),
         Length::Rems(value) => element.text_size(rems(to_f32(value))),
         Length::Relative(_) | Length::ThemeSpacing(_) | Length::ThemeRadius(_) => element,
+    }
+}
+
+fn line_height(element: Div, value: Length) -> Div {
+    match value {
+        Length::Pixels(value) => element.line_height(px(to_f32(value))),
+        Length::Rems(value) => element.line_height(rems(to_f32(value))),
+        Length::Relative(_) | Length::ThemeSpacing(_) | Length::ThemeRadius(_) => element,
+    }
+}
+
+const fn gpui_cursor(cursor: CursorKind) -> CursorStyle {
+    match cursor {
+        CursorKind::Default => CursorStyle::Arrow,
+        CursorKind::Pointer => CursorStyle::PointingHand,
+        CursorKind::Text => CursorStyle::IBeam,
+        CursorKind::Move => CursorStyle::ClosedHand,
+        CursorKind::Crosshair => CursorStyle::Crosshair,
+        CursorKind::NotAllowed => CursorStyle::OperationNotAllowed,
+        CursorKind::ResizeHorizontal => CursorStyle::ResizeLeftRight,
+        CursorKind::ResizeVertical => CursorStyle::ResizeUpDown,
     }
 }
 

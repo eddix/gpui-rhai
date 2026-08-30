@@ -51,7 +51,11 @@ fn render_ArtPanel(ctx, props) {
         .with_style(component_style(props, "root",
             style().width(px(608)).padding(px(24)).gap(px(16)).flex_col()
                 .radius(px(18)).border(px(1)).border_color(theme_color("border"))
-                .background(rgba(0x1a1b26e8))))
+                .linear_gradient(linear_gradient(#{ angle: 145,
+                    from: rgba(0x24283be8), to: rgba(0x16161ee8) }))
+                .shadow(shadow(#{ x: 0, y: 18, blur: 48, spread: 2,
+                    color: rgba(0x00000070) }))
+                .font_family("Avenir Next").cursor_pointer()))
         .accessibility_role("group")
         .accessibility_label("Night Signals artistic showcase")
 }
@@ -64,7 +68,7 @@ fn view(ctx) {
     box([
         fragment([
             art::ArtPanel(#{ key: "hero" }),
-            text("Box · Fragment · Span · Canvas · NativeSignal · raw pointer")
+            text("Box · Fragment · Span · Canvas · Gradient · Shadow · NativeSignal")
                 .with_key("capabilities")
                 .with_style(style().text_color(theme_color("text_muted")))
         ])
@@ -72,7 +76,8 @@ fn view(ctx) {
         .with_key("showcase")
         .with_style(style().width(relative(1.0)).height(relative(1.0))
             .padding(px(36)).gap(px(18)).flex_col()
-            .background(theme_color("surface")))
+            .linear_gradient(linear_gradient(#{ angle: 180,
+                from: theme_color("surface"), to: rgba(0x10121bcc) })))
 }
 "#;
 

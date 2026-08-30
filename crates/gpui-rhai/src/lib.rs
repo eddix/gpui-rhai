@@ -161,9 +161,10 @@ pub use state::{
 };
 pub use store::{StoreError, StoreId, StoreReadSession, StoreRegistry, StoreScope, StoreSnapshot};
 pub use style::{
-    Align, ColorValue, EdgeLengths, FlexDirection, InteractionState, Justify, Length, LengthError,
-    OverflowMode, PositionMode, PseudoState, RadiusToken, Rgba8, SpacingToken, Style,
-    StyleProperties,
+    Align, ColorValue, CursorKind, DisplayMode, EdgeLengths, FlexDirection, FlexWrapMode,
+    FontSlant, InteractionState, Justify, Length, LengthError, LinearGradientSpec, OverflowMode,
+    PositionMode, PseudoState, RadiusToken, Rgba8, ShadowSpec, SpacingToken, Style,
+    StyleProperties, StyleValueError, TextAlignMode, WhiteSpaceMode,
 };
 pub use text_area::{TextAreaPrimitiveHandler, init_text_area, text_area_primitive_descriptor};
 pub use text_input::{
