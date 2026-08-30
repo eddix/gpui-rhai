@@ -1284,7 +1284,6 @@ impl GpuiNodeRenderer {
         let hover_dispatcher = environment.dispatcher.cloned();
         let keyboard_dispatcher = environment.dispatcher.cloned();
         let keyboard_click = click.clone();
-        let tab_stop = node_tab_stop(node);
         let text_direction = environment.direction;
         let stable_id = interaction_element_id(retained_id, path);
         let debug_path = path.to_owned();
@@ -1294,9 +1293,8 @@ impl GpuiNodeRenderer {
                 .debug_selector(move || debug_path.clone()),
             node.style(),
             environment.colors,
-        )
-        .tab_index(0)
-        .tab_stop(tab_stop);
+        );
+        let element = apply_tab_behavior(element, node);
         let element = apply_environment_scroll(element, node, retained_id, environment);
         let element = element.on_click(move |event, window, cx| {
             if matches!(event, ClickEvent::Mouse(_))
@@ -1482,8 +1480,15 @@ fn node_needs_interaction_wrapper(node: &UiNode, click: bool, hover: bool, keybo
         && (click
             || hover
             || keyboard
+            || node_has_focus_declaration(node)
             || node_has_raw_pointer_handlers(node)
             || node_scrollable(node))
+}
+
+fn node_has_focus_declaration(node: &UiNode) -> bool {
+    node.attributes().contains_key("tab_index")
+        || node.attributes().get("tab_group") == Some(&UiValue::Bool(true))
+        || node.attributes().get("tab_stop") == Some(&UiValue::Bool(true))
 }
 
 fn apply_environment_scroll<C: ColorResolver>(
@@ -1506,6 +1511,23 @@ fn node_tab_stop(node: &UiNode) -> bool {
         node.attributes().get("tab_stop"),
         Some(UiValue::Bool(false))
     )
+}
+
+fn node_tab_index(node: &UiNode) -> isize {
+    match node.attributes().get("tab_index") {
+        Some(UiValue::Integer(index)) => isize::try_from(*index).unwrap_or_default(),
+        _ => 0,
+    }
+}
+
+fn apply_tab_behavior(mut element: Stateful<Div>, node: &UiNode) -> Stateful<Div> {
+    element = element
+        .tab_index(node_tab_index(node))
+        .tab_stop(node_tab_stop(node));
+    if node.attributes().get("tab_group") == Some(&UiValue::Bool(true)) {
+        element = element.tab_group();
+    }
+    element
 }
 
 fn interaction_element_id(retained_id: Option<NodeId>, path: &str) -> String {
@@ -2992,6 +3014,17 @@ mod tests {
             logical_keyboard_key("down", TextDirection::RightToLeft),
             "down"
         );
+    }
+
+    #[test]
+    fn retained_tab_order_reads_explicit_group_indices() {
+        let node = UiNode::text("tab")
+            .with_attribute("tab_index", UiValue::Integer(7))
+            .with_attribute("tab_stop", UiValue::Bool(false))
+            .with_attribute("tab_group", UiValue::Bool(true));
+        assert_eq!(node_tab_index(&node), 7);
+        assert!(!node_tab_stop(&node));
+        let _element = GpuiNodeRenderer::render(&node);
     }
 
     #[test]

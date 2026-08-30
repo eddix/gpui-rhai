@@ -5,6 +5,10 @@ Accessibility and keyboard operation are release requirements.
 ## Implemented
 
 - Interactive nodes are GPUI tab stops.
+- Atomic nodes may declare bounded `tab_index` values and `tab_group()`; the
+  renderer maps them to GPUI's native grouped tab-order instead of assigning
+  every node index zero. `tab_stop(false)` keeps programmatic focus while
+  removing keyboard reachability.
 - Button activates with mouse click, Enter, or Space.
 - Disabled/loading Button instances do not dispatch callbacks.
 - Rhai nodes preserve normalized role, label, disabled, value, and related

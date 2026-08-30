@@ -1074,6 +1074,24 @@ impl CustomType for UiNode {
                     .with_attribute("tab_stop", UiValue::Bool(tab_stop))
             })
             .with_fn(
+                "tab_index",
+                |node: &mut Self, index: INT| -> Result<Self, Box<EvalAltResult>> {
+                    if !(-32_768..=32_767).contains(&index) {
+                        return Err(Box::new(EvalAltResult::ErrorRuntime(
+                            "tab index must be between -32768 and 32767".into(),
+                            Position::NONE,
+                        )));
+                    }
+                    Ok(node
+                        .clone()
+                        .with_attribute("tab_index", UiValue::Integer(index)))
+                },
+            )
+            .with_fn("tab_group", |node: &mut Self| {
+                node.clone()
+                    .with_attribute("tab_group", UiValue::Bool(true))
+            })
+            .with_fn(
                 "on_key_value",
                 |node: &mut Self,
                  key: ImmutableString,

@@ -187,6 +187,12 @@ the retained geometry registry. Canvas pointer maps additionally include
 `canvas_key`, the topmost retained command hit or `()`; captured move/up events
 retain that production routing path.
 
+Use `tab_group()` on a container and bounded `tab_index(i)` on descendants for
+local native tab order. `tab_stop(false)` keeps an item programmatically
+focusable while removing it from keyboard traversal. Modal focus trap/restore
+belongs to Overlay; ordinary components should prefer one group tab stop plus
+semantic arrow-key roving policy.
+
 Trusted Hosts can register a `NativeHandlerDescriptor` and Rust closure, then
 Rhai resolves it with `native_handler("namespace.name")` and attaches it through
 the same `on` methods. The descriptor limits accepted event names and validates
