@@ -752,3 +752,84 @@ fn element_refs_follow_retained_node_identity_and_fail_stale_after_unmount() {
     assert!(lifecycle.render_dirty(&mut engine).unwrap());
     assert!(runtime.borrow().element_refs.resolve(&reference).is_err());
 }
+
+#[test]
+fn data_backed_virtual_collection_realizes_only_requested_items_off_layout_path() {
+    let mut engine = RuntimeEngine::new();
+    let compiled = engine
+        .compile(
+            r#"
+                define_component(#{
+                    metadata: #{
+                        id: "components/virtual_item", "export": "VirtualItem", version: "0.1.0",
+                        runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
+                        dependencies: [], capabilities: #{}
+                    },
+                    schema: #{
+                        props: #{
+                            key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+                            label: #{ schema: #{ type: "string" }, required: true, sensitive: false }
+                        },
+                        state: #{ fields: #{ mounted: #{ schema: #{ type: "bool" },
+                            "default": #{ type: "bool", value: true } } } },
+                        events: #{}, slots: #{}, parts: ["root"]
+                    },
+                    render: Fn("render_VirtualItem")
+                });
+                fn VirtualItem(props) { render_component("components/virtual_item", props) }
+                fn render_VirtualItem(ctx, props) { text(props.label) }
+                fn item(ctx, payload) {
+                    VirtualItem(#{ key: payload.key, label: payload.item.label })
+                }
+                fn view(ctx) {
+                    let data = [];
+                    for index in 0..100 {
+                        data.push(#{ key: `item-${index}`, label: `Item ${index}` });
+                    }
+                    virtual_collection(#{
+                        key: "messages", label: "Messages", data: data,
+                        estimated_height: 20, height: 100, overdraw_pixels: 40,
+                        alignment: "top", follow_tail: false
+                    }, Fn("item"))
+                }
+            "#,
+        )
+        .unwrap();
+    let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+    let root = ComponentInstancePath::root("App", "root");
+    let mut lifecycle = ScriptLifecycle::new(
+        compiled,
+        Rc::clone(&runtime),
+        root.clone(),
+        Some("main".to_owned()),
+        BTreeMap::new(),
+        &ComponentStateSchema::default(),
+    )
+    .unwrap();
+    lifecycle.start(&mut engine).unwrap();
+    let gpui_rhai::UiNodeKind::VirtualCollection { spec } = lifecycle.root().unwrap().kind() else {
+        panic!("root must be virtual collection");
+    };
+    assert_eq!(spec.data.len(), 100);
+    assert_eq!(spec.realized.len(), 8);
+    assert_eq!(runtime.borrow().component_state.instance_count(), 9);
+    let id = spec.id.clone();
+
+    runtime
+        .borrow()
+        .virtual_requests
+        .request(id, 50usize..56usize);
+    assert!(lifecycle.realize_virtual_requests(&mut engine).unwrap());
+    let gpui_rhai::UiNodeKind::VirtualCollection { spec } = lifecycle.root().unwrap().kind() else {
+        panic!("root must remain virtual collection");
+    };
+    assert_eq!(
+        spec.realized.keys().copied().collect::<Vec<_>>(),
+        (50..56).collect::<Vec<_>>()
+    );
+    assert_eq!(runtime.borrow().component_state.instance_count(), 7);
+    assert!(matches!(
+        spec.realized[&50].kind(),
+        UiNodeKind::Text { text } if text == "Item 50"
+    ));
+}

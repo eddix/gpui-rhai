@@ -191,6 +191,9 @@ pub enum UiNodeKind {
     VirtualList {
         spec: VirtualListNodeSpec,
     },
+    VirtualCollection {
+        spec: crate::VirtualCollectionNodeSpec,
+    },
     ErrorBoundary {
         child: Box<UiNode>,
         fallback: Box<UiNode>,
@@ -215,6 +218,7 @@ pub enum UiNodeKindTag {
     Table,
     ToastHost,
     VirtualList,
+    VirtualCollection,
     ErrorBoundary,
 }
 
@@ -604,6 +608,25 @@ impl UiNode {
     }
 
     #[must_use]
+    pub fn virtual_collection(spec: crate::VirtualCollectionNodeSpec) -> Self {
+        let key = spec.id.key.clone();
+        Self {
+            kind: UiNodeKind::VirtualCollection { spec },
+            key: Some(NodeKey::new(key)),
+            style: Style::new(),
+            part_styles: BTreeMap::new(),
+            source: None,
+            component_root: None,
+            attributes: BTreeMap::new(),
+            handlers: BTreeMap::new(),
+            handler_payloads: BTreeMap::new(),
+            animations: Vec::new(),
+            signal_bindings: BTreeMap::new(),
+            element_ref: None,
+        }
+    }
+
+    #[must_use]
     pub fn with_key(mut self, key: impl Into<ImmutableString>) -> Self {
         self.key = Some(NodeKey::new(key));
         self
@@ -755,6 +778,9 @@ impl UiNode {
                 component,
                 &replacement,
             ),
+            UiNodeKind::VirtualCollection { spec } => {
+                replace_in_nodes(spec.realized.values_mut(), component, &replacement)
+            }
             UiNodeKind::Text { .. }
             | UiNodeKind::RichText { .. }
             | UiNodeKind::Canvas { .. }
@@ -762,6 +788,55 @@ impl UiNode {
             | UiNodeKind::DirectionalImage { .. }
             | UiNodeKind::DatePicker { .. }
             | UiNodeKind::ToastHost { .. } => false,
+        }
+    }
+
+    pub(crate) fn virtual_collection_items(
+        &self,
+        id: &crate::VirtualCollectionId,
+    ) -> Option<&BTreeMap<usize, UiNode>> {
+        match &self.kind {
+            UiNodeKind::VirtualCollection { spec } if &spec.id == id => Some(&spec.realized),
+            UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => children
+                .iter()
+                .find_map(|child| child.virtual_collection_items(id)),
+            UiNodeKind::Overlay {
+                trigger, content, ..
+            }
+            | UiNodeKind::ErrorBoundary {
+                child: trigger,
+                fallback: content,
+            } => trigger
+                .virtual_collection_items(id)
+                .or_else(|| content.virtual_collection_items(id)),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn replace_virtual_collection_items(
+        &mut self,
+        id: &crate::VirtualCollectionId,
+        items: BTreeMap<usize, UiNode>,
+    ) -> bool {
+        match &mut self.kind {
+            UiNodeKind::VirtualCollection { spec } if &spec.id == id => {
+                spec.realized = items;
+                true
+            }
+            UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => children
+                .iter_mut()
+                .any(|child| child.replace_virtual_collection_items(id, items.clone())),
+            UiNodeKind::Overlay {
+                trigger, content, ..
+            }
+            | UiNodeKind::ErrorBoundary {
+                child: trigger,
+                fallback: content,
+            } => {
+                trigger.replace_virtual_collection_items(id, items.clone())
+                    || content.replace_virtual_collection_items(id, items)
+            }
+            _ => false,
         }
     }
 
@@ -889,6 +964,11 @@ impl UiNode {
                     item.node.bind_generation(generation);
                 }
             }
+            UiNodeKind::VirtualCollection { spec } => {
+                for item in spec.realized.values_mut() {
+                    item.bind_generation(generation);
+                }
+            }
             UiNodeKind::Dropdown { spec } => {
                 for slot in [
                     &mut spec.trigger_slot,
@@ -974,6 +1054,11 @@ impl UiNode {
                 for item in &mut spec.items {
                     item.node
                         .bind_component_scope(component, events, native_context);
+                }
+            }
+            UiNodeKind::VirtualCollection { spec } => {
+                for item in spec.realized.values_mut() {
+                    item.bind_component_scope(component, events, native_context);
                 }
             }
             UiNodeKind::Table { spec } => {
@@ -1063,6 +1148,11 @@ impl UiNode {
                         .bind_callback_scope_by_name(names, component, events, native_context);
                 }
             }
+            UiNodeKind::VirtualCollection { spec } => {
+                for item in spec.realized.values_mut() {
+                    item.bind_callback_scope_by_name(names, component, events, native_context);
+                }
+            }
             UiNodeKind::Table { spec } => {
                 for column in &mut spec.columns {
                     for cell in column.custom_cells.iter_mut().flatten() {
@@ -1112,6 +1202,7 @@ impl UiNode {
             UiNodeKind::Table { .. } => UiNodeKindTag::Table,
             UiNodeKind::ToastHost { .. } => UiNodeKindTag::ToastHost,
             UiNodeKind::VirtualList { .. } => UiNodeKindTag::VirtualList,
+            UiNodeKind::VirtualCollection { .. } => UiNodeKindTag::VirtualCollection,
             UiNodeKind::ErrorBoundary { .. } => UiNodeKindTag::ErrorBoundary,
         }
     }
@@ -1177,6 +1268,9 @@ impl UiNode {
                 "items".to_owned(),
                 spec.items.iter().map(|item| &item.node).collect(),
             )],
+            UiNodeKind::VirtualCollection { spec } => {
+                vec![("items".to_owned(), spec.realized.values().collect())]
+            }
             UiNodeKind::ErrorBoundary { child, fallback } => vec![
                 ("child".to_owned(), vec![child.as_ref()]),
                 ("fallback".to_owned(), vec![fallback.as_ref()]),

@@ -261,6 +261,100 @@ impl ScriptLifecycle {
         }
     }
 
+    /// Realize requested data-backed virtual items outside GPUI layout/paint.
+    ///
+    /// # Errors
+    ///
+    /// Returns renderer, retained reconciliation, effect, or rollback errors.
+    pub fn realize_virtual_requests(
+        &mut self,
+        engine: &mut RuntimeEngine,
+    ) -> Result<bool, LifecycleError> {
+        let runtime_snapshot = self
+            .runtime
+            .try_borrow()
+            .map_err(|_| LifecycleError::Borrowed)?
+            .snapshot()?;
+        let engine_checkpoint = engine.execution_checkpoint();
+        let requests = self
+            .runtime
+            .try_borrow()
+            .map_err(|_| LifecycleError::Borrowed)?
+            .virtual_requests
+            .drain();
+        let mut selected = Vec::new();
+        for (id, indices) in requests {
+            if id.component.is_within(&self.root_path) {
+                selected.push((id, indices));
+            } else {
+                self.runtime
+                    .try_borrow()
+                    .map_err(|_| LifecycleError::Borrowed)?
+                    .virtual_requests
+                    .request(id, indices);
+            }
+        }
+        if selected.is_empty() {
+            return Ok(false);
+        }
+        let mut root = self.root.clone().ok_or(LifecycleError::MissingRoot)?;
+        let mut retained = self.retained.clone();
+        let result = (|| {
+            let mut changed = false;
+            for (id, indices) in selected {
+                let existing = root
+                    .virtual_collection_items(&id)
+                    .cloned()
+                    .ok_or_else(|| LifecycleError::MissingVirtualCollection(id.clone()))?;
+                let missing = indices
+                    .iter()
+                    .filter(|index| !existing.contains_key(index))
+                    .copied()
+                    .collect::<BTreeSet<_>>();
+                if missing.is_empty() {
+                    continue;
+                }
+                let items = engine.realize_virtual_collection(&id, &indices)?;
+                if !root.replace_virtual_collection_items(&id, items) {
+                    return Err(LifecycleError::MissingVirtualCollection(id));
+                }
+                changed = true;
+            }
+            if !changed {
+                return Ok(false);
+            }
+            retained.reconcile(root.clone())?;
+            self.validate_resource_budgets(engine, &retained)?;
+            self.reconcile_animations(&root)?;
+            self.reconcile_effects(
+                engine,
+                &self.compiled,
+                runtime_snapshot.component_state().clone(),
+                &retained,
+            )?;
+            self.retain_geometry_nodes(&retained)?;
+            self.validate_signal_bindings(&root)?;
+            Ok(true)
+        })();
+        match result {
+            Ok(changed) => {
+                if changed {
+                    self.root = Some(root);
+                    self.retained = retained;
+                }
+                Ok(changed)
+            }
+            Err(error) => {
+                self.runtime
+                    .try_borrow_mut()
+                    .map_err(|_| LifecycleError::Borrowed)?
+                    .restore(runtime_snapshot)?;
+                engine.restore_execution_checkpoint(engine_checkpoint);
+                Err(error)
+            }
+        }
+    }
+
     /// Run optional `dispose(ctx)` once and make the lifecycle terminal.
     ///
     /// # Errors
@@ -574,6 +668,22 @@ impl ScriptLifecycle {
             total.saturating_add(node.canvas_command_count())
         });
         crate::RuntimeBudgets::check("canvas_commands", canvas_commands, budgets.canvas_commands)?;
+        let virtual_data = retained.nodes().fold(0usize, |total, node| {
+            total.saturating_add(node.virtual_data_item_count())
+        });
+        let virtual_realized = retained.nodes().fold(0usize, |total, node| {
+            total.saturating_add(node.virtual_realized_item_count())
+        });
+        crate::RuntimeBudgets::check(
+            "virtual_data_items",
+            virtual_data,
+            budgets.virtual_data_items,
+        )?;
+        crate::RuntimeBudgets::check(
+            "virtual_realized_items",
+            virtual_realized,
+            budgets.virtual_realized_items,
+        )?;
         crate::RuntimeBudgets::check(
             "formal_components",
             engine.component_invocations().len(),
@@ -654,6 +764,7 @@ impl ScriptLifecycle {
                 descriptor.dependencies().clone(),
             )?;
         }
+        let virtual_collections = engine.virtual_collection_ids_in_scope(&self.root_path);
         {
             let mut runtime = self
                 .runtime
@@ -664,6 +775,7 @@ impl ScriptLifecycle {
             runtime
                 .element_refs
                 .reconcile(&self.root_path, element_refs);
+            runtime.virtual_requests.retain(&virtual_collections);
         }
         for descriptor in plan.start() {
             self.invoke_effect_callback(
@@ -844,6 +956,8 @@ pub enum LifecycleError {
     MissingRoot,
     #[error("component subtree `{0}` is missing from the accepted UiNode snapshot")]
     MissingComponentSubtree(ComponentInstancePath),
+    #[error("virtual collection `{0:?}` is missing from the accepted UiNode snapshot")]
+    MissingVirtualCollection(crate::VirtualCollectionId),
     #[error("effect transition exceeded the 64-callback budget with {0} callbacks")]
     EffectBudget(usize),
     #[error("effect callback `{name}` belongs to unavailable generation {generation}")]

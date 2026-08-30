@@ -60,6 +60,7 @@ pub struct UiRuntimeState {
     pub geometry: crate::GeometryRegistry,
     pub pointer_capture: crate::PointerCaptureRegistry,
     pub budgets: crate::RuntimeBudgets,
+    pub virtual_requests: crate::VirtualRequestRegistry,
     pub windows: WindowCommandRegistry,
     pub responsive: ResponsiveRuntime,
     pub animation_values: BTreeMap<AnimationKey, f64>,
@@ -220,6 +221,10 @@ impl UiRuntimeState {
         !self.pending_actions.is_empty() || !self.pending_events.is_empty()
     }
 
+    pub(crate) fn has_virtual_requests(&self) -> bool {
+        !self.virtual_requests.is_empty()
+    }
+
     pub(crate) fn component_event_handler(
         &self,
         component: &ComponentInstancePath,
@@ -325,6 +330,7 @@ impl UiRuntimeState {
             geometry: self.geometry.snapshot(),
             pointer_capture: self.pointer_capture.snapshot(),
             budgets: self.budgets.clone(),
+            virtual_requests: self.virtual_requests.snapshot(),
             animation_values: self.animation_values.clone(),
             windows: self.windows.clone(),
             responsive: self.responsive.clone(),
@@ -361,6 +367,7 @@ impl UiRuntimeState {
         self.geometry.restore(snapshot.geometry);
         self.pointer_capture.restore(snapshot.pointer_capture);
         self.budgets = snapshot.budgets;
+        self.virtual_requests.restore(snapshot.virtual_requests);
         self.animation_values = snapshot.animation_values;
         self.windows = snapshot.windows;
         self.responsive = snapshot.responsive;
@@ -388,6 +395,7 @@ pub struct UiStateSnapshot {
     geometry: crate::geometry::GeometrySnapshot,
     pointer_capture: BTreeMap<u64, crate::NodeId>,
     budgets: crate::RuntimeBudgets,
+    virtual_requests: BTreeMap<crate::VirtualCollectionId, BTreeSet<usize>>,
     animation_values: BTreeMap<AnimationKey, f64>,
     windows: WindowCommandRegistry,
     responsive: ResponsiveRuntime,

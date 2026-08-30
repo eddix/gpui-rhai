@@ -229,6 +229,7 @@ fn inspect_node(node: &UiNode, path: &str) -> InspectorNode {
         UiNodeKind::Table { spec } => inspect_table(spec, &mut props),
         UiNodeKind::ToastHost { spec } => inspect_toast_host(spec, &mut props),
         UiNodeKind::VirtualList { spec } => inspect_virtual_list(spec, &mut props),
+        UiNodeKind::VirtualCollection { spec } => inspect_virtual_collection(spec, &mut props),
         UiNodeKind::ErrorBoundary { child, fallback } => (
             "error_boundary".to_owned(),
             vec![child.as_ref(), fallback.as_ref()],
@@ -294,6 +295,18 @@ fn inspect_virtual_list<'a>(
     (
         "virtual_list".to_owned(),
         spec.items.iter().map(|item| &item.node).collect(),
+    )
+}
+
+fn inspect_virtual_collection<'a>(
+    spec: &'a crate::VirtualCollectionNodeSpec,
+    props: &mut BTreeMap<String, String>,
+) -> (String, Vec<&'a UiNode>) {
+    props.insert("items".to_owned(), spec.data.len().to_string());
+    props.insert("realized".to_owned(), spec.realized.len().to_string());
+    (
+        "virtual_collection".to_owned(),
+        spec.realized.values().collect(),
     )
 }
 

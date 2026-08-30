@@ -9,6 +9,8 @@ pub struct RuntimeBudgets {
     pub signals: usize,
     pub element_refs: usize,
     pub canvas_commands: usize,
+    pub virtual_data_items: usize,
+    pub virtual_realized_items: usize,
 }
 
 impl Default for RuntimeBudgets {
@@ -21,6 +23,8 @@ impl Default for RuntimeBudgets {
             signals: 16_384,
             element_refs: 16_384,
             canvas_commands: 100_000,
+            virtual_data_items: 100_000,
+            virtual_realized_items: 10_000,
         }
     }
 }
@@ -40,6 +44,8 @@ impl RuntimeBudgets {
             ("signals", self.signals),
             ("element_refs", self.element_refs),
             ("canvas_commands", self.canvas_commands),
+            ("virtual_data_items", self.virtual_data_items),
+            ("virtual_realized_items", self.virtual_realized_items),
         ] {
             if limit == 0 {
                 return Err(RuntimeBudgetError::ZeroLimit(resource));

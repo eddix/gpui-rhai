@@ -1,44 +1,51 @@
-# Variable-height virtual collections
+# Data-backed variable-height virtual collections
 
-`virtual_list(config)` is the current public one-dimensional retained mechanism.
-Its source contract is variable-height and destructive relative to the old
-fixed-row API:
+`virtual_collection(config, Fn("render_item"))` is the final public
+one-dimensional collection path. Data crosses the retained boundary as
+`UiValue`; item `UiNode` snapshots do not exist until their viewport window is
+requested.
 
 ```rhai
-virtual_list(#{
-    key: "files",
-    label: "Files",
-    estimated_height: 28,
-    height: 420,
-    overdraw_pixels: 112,
-    alignment: "top",       // or "bottom" for chat/log layout
-    follow_tail: false,
-    items: [
-        #{ key: "readme", node: text("README.md") },
-        #{ key: "cargo", node: text([span("Cargo").bold(), span(".toml")]) },
-    ],
-}).on_change(Fn("focused"))
+fn render_message(ctx, payload) {
+    let message = payload.item;
+    box([text(message.body)])
+        .with_key(payload.key)
+        .accessibility_role("listitem")
+}
+
+virtual_collection(#{
+    key: "messages",
+    label: "Messages",
+    data: messages, // each map has a stable string `key`
+    estimated_height: 48,
+    height: 520,
+    overdraw_pixels: 240,
+    alignment: "bottom",
+    follow_tail: true,
+}, Fn("render_message"))
 ```
 
-The GPUI production element uses `list/ListState`, not `uniform_list`. GPUI
-measures realized rows, keeps a keyed Entity and variable-height scroll state,
-and renders only the requested range. Up/Down/Home/End retain logical focus and
-scroll the keyed item into view. Bottom alignment and follow-tail are explicit.
+The constructor validates every data key and executes only the estimated first
+window. GPUI's variable-height `list/ListState` requests indices while laying
+out, but that callback never invokes Rhai: it queues indices and returns a
+height-estimated placeholder for a missing item. The next foreground runtime
+turn invokes the retained named renderer in its original module/component
+context, renders formal item components inside a stable
+`VirtualCollection[key]` state scope, reconciles the realized window, runs
+effects, and notifies GPUI. Existing requested nodes are reused when no index is
+missing, so ordinary layout cannot create an evaluation loop.
 
-The standalone `VariableListState` is the deterministic policy core used for
-tests and future Inspector/automation metrics. It uses a Fenwick prefix tree to
-compute pixel-overdraw windows, preserves measured heights by key through
-reorder/filter, returns anchor scroll correction after remeasurement, and
-computes bottom/tail offsets. The 10,000-item tests prove bounded realization
-and anchor preservation.
+Realized windows replace offscreen item subtrees and clean their component
+state/tasks/effects. The GPUI `ListState` is not reset when only the realized map
+changes, preserving measured heights and anchor state. Data and realized item
+counts have separate Host budgets.
 
-One gap remains: `VirtualListNodeSpec` still receives prebuilt item `UiNode`
-snapshots. GPUI realization is lazy, but Rhai item construction is eager. The
-final data-backed formal item-component API must move item execution before
-layout/prepaint and outside the full root render; no implementation may call
-Rhai from a GPUI list callback.
+The deterministic `VariableListState` policy core uses a Fenwick prefix tree to
+compute pixel-overdraw windows, preserve measured heights by key across
+reorder/filter, return anchor scroll correction after remeasurement, and
+compute bottom/tail offsets. Tests cover 10,000 policy items, formal component
+state cleanup, off-layout realization, and the 2,000-item Chat acceptance app.
 
-The old native Table remains a separate fixed-height privileged specialization
-and is scheduled for deletion after its Rhai/headless replacement uses the
-public variable collection. No final architecture claim should infer 2D
-spreadsheet virtualization from this one-dimensional mechanism.
+The old eager `virtual_list` constructor and fixed-range types remain only while
+privileged Dropdown/Table implementations are being deleted. They are not the
+final public collection contract and must disappear with those native nodes.

@@ -22,8 +22,8 @@ use thiserror::Error;
 use crate::FileWatcher;
 use crate::overlay_element::WindowOverlayCoordinator;
 use crate::{
-    ActionError, ActionId, AnimationRuntime, AppManifest, AssetData, AssetId, CapabilityError,
-    CompiledUi, ComponentExportError, ComponentInstancePath, ComponentRegistry,
+    ActionError, ActionId, AnimationRuntime, AppManifest, AssetData, AssetId, AssetRegistry,
+    CapabilityError, CompiledUi, ComponentExportError, ComponentInstancePath, ComponentRegistry,
     ComponentStateSchema, DependencyError, DirectoryAssetProvider, DispatchScriptAction,
     EmbeddedScriptSource, FileScriptSource, GpuiNodeRenderer, InMemoryAssetProvider,
     InteractionState, KeyBindingSpec, LocaleBundle, LocaleManager, ModuleCompileCache, ModuleId,
@@ -2057,6 +2057,17 @@ struct ScriptHostView {
     _reload_task: Option<Task<()>>,
 }
 
+struct ScriptRenderSnapshot {
+    assets: AssetRegistry,
+    theme: ThemeVariant,
+    animations: BTreeMap<crate::AnimationKey, f64>,
+    signals: crate::SignalRegistry,
+    geometry: crate::GeometryRegistry,
+    pointer_capture: crate::PointerCaptureRegistry,
+    virtual_requests: crate::VirtualRequestRegistry,
+    direction: TextDirection,
+}
+
 struct ScriptViewTransaction {
     runtime: crate::UiStateSnapshot,
     engine: crate::engine::RuntimeEngineCheckpoint,
@@ -2125,50 +2136,25 @@ impl Render for ScriptHostView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.prepare_host_render(window, cx);
         let dispatcher = script_node_dispatcher(cx);
-        let runtime = self.lifecycle.runtime();
         let appearance = match window.appearance() {
             WindowAppearance::Dark | WindowAppearance::VibrantDark => SystemAppearance::Dark,
             WindowAppearance::Light | WindowAppearance::VibrantLight => SystemAppearance::Light,
         };
-        let (assets, theme, animations, signals, geometry, pointer_capture, direction) = {
-            let runtime = runtime.borrow();
-            let root = self.lifecycle.root_path().clone();
-            let theme = runtime
-                .theme
-                .as_ref()
-                .and_then(|themes| {
-                    themes
-                        .resolve(Some(&self.window_id), Some(&root), appearance)
-                        .ok()
-                })
-                .map_or_else(|| self.theme.clone(), |resolved| resolved.variant().clone());
-            (
-                runtime.assets.clone(),
-                theme,
-                runtime.animation_values.clone(),
-                runtime.signals.clone(),
-                runtime.geometry.clone(),
-                runtime.pointer_capture.clone(),
-                runtime
-                    .locale
-                    .as_ref()
-                    .and_then(|locale| locale.direction(Some(&self.window_id), Some(&root)).ok())
-                    .unwrap_or(TextDirection::LeftToRight),
-            )
-        };
-        self.install_pointer_capture_router(window, &dispatcher, &pointer_capture);
+        let snapshot = self.render_snapshot(appearance);
+        self.install_pointer_capture_router(window, &dispatcher, &snapshot.pointer_capture);
         let animation_root = format!("window:{}/view:{}/root", self.window_id, self.view_id);
         let render_resources = crate::renderer::WindowRenderResources {
-            assets: &assets,
+            assets: &snapshot.assets,
             dispatcher: &dispatcher,
             overlays: &self.overlays,
-            animations: &animations,
-            signals: &signals,
-            geometry: &geometry,
-            pointer_capture: &pointer_capture,
+            animations: &snapshot.animations,
+            signals: &snapshot.signals,
+            geometry: &snapshot.geometry,
+            pointer_capture: &snapshot.pointer_capture,
             focus_handles: &self.focus_handles,
             scroll_handles: &self.scroll_handles,
-            direction,
+            virtual_requests: &snapshot.virtual_requests,
+            direction: snapshot.direction,
             root_path: &animation_root,
             view_id: &self.view_id,
         };
@@ -2177,7 +2163,7 @@ impl Render for ScriptHostView {
             |_| {
                 GpuiNodeRenderer::render_retained_with_window_runtime(
                     self.lifecycle.retained(),
-                    &theme,
+                    &snapshot.theme,
                     &InteractionState::default(),
                     &self.primitives,
                     &render_resources,
@@ -2192,18 +2178,22 @@ impl Render for ScriptHostView {
                 .child(
                     div()
                         .p_2()
-                        .bg(rgba(theme.tokens.colors["surface_raised"].as_rgba_hex()))
-                        .text_color(rgba(theme.tokens.colors["danger"].as_rgba_hex()))
+                        .bg(rgba(
+                            snapshot.theme.tokens.colors["surface_raised"].as_rgba_hex(),
+                        ))
+                        .text_color(rgba(snapshot.theme.tokens.colors["danger"].as_rgba_hex()))
                         .border_1()
-                        .border_color(rgba(theme.tokens.colors["danger"].as_rgba_hex()))
+                        .border_color(rgba(snapshot.theme.tokens.colors["danger"].as_rgba_hex()))
                         .child(error.clone()),
                 )
                 .child(content)
                 .into_any_element(),
         };
         #[cfg(feature = "dev-reload")]
-        let inspector = self.inspector_element(&runtime, &theme);
-        let root = build_host_root(&self.host_focus, &theme, self.paint_background)
+        let runtime = self.lifecycle.runtime();
+        #[cfg(feature = "dev-reload")]
+        let inspector = self.inspector_element(&runtime, &snapshot.theme);
+        let root = build_host_root(&self.host_focus, &snapshot.theme, self.paint_background)
             .child(content)
             .children({
                 #[cfg(feature = "dev-reload")]
@@ -2215,7 +2205,7 @@ impl Render for ScriptHostView {
                     Option::<gpui::AnyElement>::None
                 }
             });
-        let root = apply_root_text_direction(root, direction);
+        let root = apply_root_text_direction(root, snapshot.direction);
         let root = root.on_action(cx.listener(Self::dispatch_key_binding));
         #[cfg(feature = "dev-reload")]
         let root = root.on_action(cx.listener(Self::toggle_inspector));
@@ -2224,6 +2214,36 @@ impl Render for ScriptHostView {
 }
 
 impl ScriptHostView {
+    fn render_snapshot(&self, appearance: SystemAppearance) -> ScriptRenderSnapshot {
+        let runtime = self.lifecycle.runtime();
+        let runtime = runtime.borrow();
+        let root = self.lifecycle.root_path();
+        let theme = runtime
+            .theme
+            .as_ref()
+            .and_then(|themes| {
+                themes
+                    .resolve(Some(&self.window_id), Some(root), appearance)
+                    .ok()
+            })
+            .map_or_else(|| self.theme.clone(), |resolved| resolved.variant().clone());
+        let direction = runtime
+            .locale
+            .as_ref()
+            .and_then(|locale| locale.direction(Some(&self.window_id), Some(root)).ok())
+            .unwrap_or(TextDirection::LeftToRight);
+        ScriptRenderSnapshot {
+            assets: runtime.assets.clone(),
+            theme,
+            animations: runtime.animation_values.clone(),
+            signals: runtime.signals.clone(),
+            geometry: runtime.geometry.clone(),
+            pointer_capture: runtime.pointer_capture.clone(),
+            virtual_requests: runtime.virtual_requests.clone(),
+            direction,
+        }
+    }
+
     fn prepare_host_render(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.prepare_render(window);
         self.sync_focus_handles(cx);
@@ -2738,7 +2758,7 @@ impl ScriptHostView {
         let generation = self.lifecycle.generation();
         let runtime = self.lifecycle.runtime();
         let root = self.lifecycle.root_path().clone();
-        let (deliveries, animation_active, dirty, pending_dispatch) = {
+        let (deliveries, animation_active, dirty, pending_dispatch, virtual_requests) = {
             let mut runtime = runtime.borrow_mut();
             runtime.flush_geometry_dependencies();
             let _ = runtime.assets.retain_decode_generation(generation);
@@ -2758,9 +2778,11 @@ impl ScriptHostView {
                 frame.needs_frame || !frame.values.is_empty(),
                 runtime.has_window_dirty(&root),
                 runtime.has_pending_dispatch(),
+                runtime.has_virtual_requests(),
             )
         };
-        let has_script_work = !deliveries.is_empty() || dirty || pending_dispatch;
+        let has_script_work =
+            !deliveries.is_empty() || dirty || pending_dispatch || virtual_requests;
         if !has_script_work && !animation_active {
             return;
         }
@@ -2775,6 +2797,9 @@ impl ScriptHostView {
                         .map_err(|error| error.to_string())?;
                 }
                 view.invoke_pending_effects()?;
+                view.lifecycle
+                    .realize_virtual_requests(&mut view.engine)
+                    .map_err(|error| error.to_string())?;
                 view.lifecycle
                     .render_dirty(&mut view.engine)
                     .map_err(|error| error.to_string())?;

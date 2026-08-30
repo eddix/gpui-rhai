@@ -745,6 +745,7 @@ struct RenderEnvironment<'a, C> {
     pointer_capture: &'a crate::PointerCaptureRegistry,
     focus_handles: &'a BTreeMap<NodeId, FocusHandle>,
     scroll_handles: &'a BTreeMap<NodeId, ScrollHandle>,
+    virtual_requests: &'a crate::VirtualRequestRegistry,
     direction: TextDirection,
     view_id: &'a str,
     retained: Option<&'a RetainedUiTree>,
@@ -760,6 +761,7 @@ pub(crate) struct WindowRenderResources<'a> {
     pub pointer_capture: &'a crate::PointerCaptureRegistry,
     pub focus_handles: &'a BTreeMap<NodeId, FocusHandle>,
     pub scroll_handles: &'a BTreeMap<NodeId, ScrollHandle>,
+    pub virtual_requests: &'a crate::VirtualRequestRegistry,
     pub direction: TextDirection,
     pub root_path: &'a str,
     pub view_id: &'a str,
@@ -799,6 +801,7 @@ impl GpuiNodeRenderer {
         let pointer_capture = crate::PointerCaptureRegistry::new();
         let focus_handles = BTreeMap::new();
         let scroll_handles = BTreeMap::new();
+        let virtual_requests = crate::VirtualRequestRegistry::new();
         let environment = RenderEnvironment {
             colors,
             interaction,
@@ -812,6 +815,7 @@ impl GpuiNodeRenderer {
             pointer_capture: &pointer_capture,
             focus_handles: &focus_handles,
             scroll_handles: &scroll_handles,
+            virtual_requests: &virtual_requests,
             direction: TextDirection::LeftToRight,
             view_id: "standalone",
             retained: None,
@@ -833,6 +837,7 @@ impl GpuiNodeRenderer {
         let pointer_capture = crate::PointerCaptureRegistry::new();
         let focus_handles = BTreeMap::new();
         let scroll_handles = BTreeMap::new();
+        let virtual_requests = crate::VirtualRequestRegistry::new();
         let environment = RenderEnvironment {
             colors,
             interaction,
@@ -846,6 +851,7 @@ impl GpuiNodeRenderer {
             pointer_capture: &pointer_capture,
             focus_handles: &focus_handles,
             scroll_handles: &scroll_handles,
+            virtual_requests: &virtual_requests,
             direction: TextDirection::LeftToRight,
             view_id: "standalone",
             retained: Some(tree),
@@ -875,6 +881,7 @@ impl GpuiNodeRenderer {
         let pointer_capture = crate::PointerCaptureRegistry::new();
         let focus_handles = BTreeMap::new();
         let scroll_handles = BTreeMap::new();
+        let virtual_requests = crate::VirtualRequestRegistry::new();
         let environment = RenderEnvironment {
             colors,
             interaction,
@@ -888,6 +895,7 @@ impl GpuiNodeRenderer {
             pointer_capture: &pointer_capture,
             focus_handles: &focus_handles,
             scroll_handles: &scroll_handles,
+            virtual_requests: &virtual_requests,
             direction: TextDirection::LeftToRight,
             view_id: "standalone",
             retained: None,
@@ -911,6 +919,7 @@ impl GpuiNodeRenderer {
         let pointer_capture = crate::PointerCaptureRegistry::new();
         let focus_handles = BTreeMap::new();
         let scroll_handles = BTreeMap::new();
+        let virtual_requests = crate::VirtualRequestRegistry::new();
         let resources = WindowRenderResources {
             assets,
             dispatcher,
@@ -921,6 +930,7 @@ impl GpuiNodeRenderer {
             pointer_capture: &pointer_capture,
             focus_handles: &focus_handles,
             scroll_handles: &scroll_handles,
+            virtual_requests: &virtual_requests,
             direction: TextDirection::LeftToRight,
             root_path: "root",
             view_id: "standalone",
@@ -965,6 +975,7 @@ impl GpuiNodeRenderer {
             pointer_capture: resources.pointer_capture,
             focus_handles: resources.focus_handles,
             scroll_handles: resources.scroll_handles,
+            virtual_requests: resources.virtual_requests,
             direction: resources.direction,
             view_id: resources.view_id,
             retained: Some(tree),
@@ -1008,6 +1019,7 @@ impl GpuiNodeRenderer {
             pointer_capture: resources.pointer_capture,
             focus_handles: resources.focus_handles,
             scroll_handles: resources.scroll_handles,
+            virtual_requests: resources.virtual_requests,
             direction: resources.direction,
             view_id: resources.view_id,
             retained: None,
@@ -1262,6 +1274,9 @@ impl GpuiNodeRenderer {
                 .into_any_element(),
             UiNodeKind::VirtualList { spec } => element
                 .child(native_virtual_list_element(node, spec, environment, path))
+                .into_any_element(),
+            UiNodeKind::VirtualCollection { spec } => element
+                .child(native_virtual_collection_element(spec, environment, path))
                 .into_any_element(),
             UiNodeKind::ErrorBoundary { child, fallback } => element
                 .child(Self::render_internal(
@@ -1710,6 +1725,7 @@ fn native_date_picker_element<C: ColorResolver>(
         pointer_capture: environment.pointer_capture.clone(),
         focus_handles: environment.focus_handles.clone(),
         scroll_handles: environment.scroll_handles.clone(),
+        virtual_requests: environment.virtual_requests.clone(),
         direction: environment.direction,
         base_path: path.to_owned(),
         view_id: environment.view_id.to_owned(),
@@ -1757,6 +1773,7 @@ fn native_table_element<C: ColorResolver>(
         pointer_capture: environment.pointer_capture.clone(),
         focus_handles: environment.focus_handles.clone(),
         scroll_handles: environment.scroll_handles.clone(),
+        virtual_requests: environment.virtual_requests.clone(),
         direction: environment.direction,
         base_path: path.to_owned(),
         view_id: environment.view_id.to_owned(),
@@ -1795,6 +1812,7 @@ fn native_choice_element<C: ColorResolver>(
         pointer_capture: environment.pointer_capture.clone(),
         focus_handles: environment.focus_handles.clone(),
         scroll_handles: environment.scroll_handles.clone(),
+        virtual_requests: environment.virtual_requests.clone(),
         direction: environment.direction,
         base_path: path.to_owned(),
         view_id: environment.view_id.to_owned(),
@@ -1845,12 +1863,42 @@ fn native_virtual_list_element<C: ColorResolver>(
         pointer_capture: environment.pointer_capture.clone(),
         focus_handles: environment.focus_handles.clone(),
         scroll_handles: environment.scroll_handles.clone(),
+        virtual_requests: environment.virtual_requests.clone(),
         direction: environment.direction,
         base_path: path.to_owned(),
         view_id: environment.view_id.to_owned(),
         part_styles: BTreeMap::new(),
     };
     VirtualListEntityElement::new(path, spec.clone(), runtime, focus_change)
+}
+
+fn native_virtual_collection_element<C: ColorResolver>(
+    spec: &crate::VirtualCollectionNodeSpec,
+    environment: &RenderEnvironment<'_, C>,
+    path: &str,
+) -> VirtualListEntityElement {
+    let runtime = DropdownSlotRuntime {
+        colors: OwnedColorResolver::capture(environment.colors),
+        primitives: environment.primitives.clone(),
+        assets: environment.assets.cloned().unwrap_or_default(),
+        dispatcher: environment
+            .dispatcher
+            .cloned()
+            .unwrap_or_else(|| NodeEventDispatcher::new(|_, _, _, _| EventPropagation::Handled)),
+        overlays: environment.overlays.clone(),
+        animations: environment.animations.clone(),
+        signals: environment.signals.clone(),
+        geometry: environment.geometry.clone(),
+        pointer_capture: environment.pointer_capture.clone(),
+        focus_handles: environment.focus_handles.clone(),
+        scroll_handles: environment.scroll_handles.clone(),
+        virtual_requests: environment.virtual_requests.clone(),
+        direction: environment.direction,
+        base_path: path.to_owned(),
+        view_id: environment.view_id.to_owned(),
+        part_styles: BTreeMap::new(),
+    };
+    VirtualListEntityElement::new_collection(path, spec.clone(), runtime)
 }
 
 #[derive(Clone, Copy, Default)]

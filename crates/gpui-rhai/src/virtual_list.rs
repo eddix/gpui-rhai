@@ -1,5 +1,7 @@
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
+use std::rc::Rc;
 
 use rhai::{
     CustomType, Engine, EvalAltResult, FLOAT, FuncRegistration, INT, Position, TypeBuilder,
@@ -7,7 +9,67 @@ use rhai::{
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::UiNode;
+use crate::{ComponentInstancePath, UiNode, UiValue};
+
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct VirtualCollectionId {
+    pub component: ComponentInstancePath,
+    pub key: String,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct VirtualCollectionNodeSpec {
+    pub id: VirtualCollectionId,
+    pub label: String,
+    pub data: Vec<UiValue>,
+    pub realized: BTreeMap<usize, UiNode>,
+    pub estimated_height: f64,
+    pub height: f64,
+    pub overdraw_pixels: f64,
+    pub bottom_align: bool,
+    pub follow_tail: bool,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct VirtualRequestRegistry {
+    inner: Rc<RefCell<BTreeMap<VirtualCollectionId, BTreeSet<usize>>>>,
+}
+
+impl VirtualRequestRegistry {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn request(&self, id: VirtualCollectionId, indices: impl IntoIterator<Item = usize>) {
+        self.inner
+            .borrow_mut()
+            .entry(id)
+            .or_default()
+            .extend(indices);
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.inner.borrow().is_empty()
+    }
+
+    pub(crate) fn drain(&self) -> BTreeMap<VirtualCollectionId, BTreeSet<usize>> {
+        std::mem::take(&mut *self.inner.borrow_mut())
+    }
+
+    pub(crate) fn snapshot(&self) -> BTreeMap<VirtualCollectionId, BTreeSet<usize>> {
+        self.inner.borrow().clone()
+    }
+
+    pub(crate) fn restore(&self, snapshot: BTreeMap<VirtualCollectionId, BTreeSet<usize>>) {
+        *self.inner.borrow_mut() = snapshot;
+    }
+
+    pub(crate) fn retain(&self, active: &BTreeSet<VirtualCollectionId>) {
+        self.inner.borrow_mut().retain(|id, _| active.contains(id));
+    }
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct VirtualListItem {

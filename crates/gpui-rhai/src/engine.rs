@@ -5,8 +5,8 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use rhai::{
-    AST, Dynamic, Engine, EvalAltResult, FnPtr, FuncArgs, FuncRegistration, ImmutableString, Map,
-    Module, ModuleResolver, Position, Scope,
+    AST, Array, Dynamic, Engine, EvalAltResult, FnPtr, FuncArgs, FuncRegistration, ImmutableString,
+    Map, Module, ModuleResolver, Position, Scope,
 };
 use thiserror::Error;
 
@@ -250,6 +250,16 @@ struct ActiveComponentRender {
     effects: BTreeMap<crate::EffectId, crate::EffectDescriptor>,
     signals: BTreeMap<crate::SignalId, crate::signal::SignalDescriptor>,
     element_refs: BTreeSet<crate::ElementRefId>,
+    virtual_collections: BTreeMap<crate::VirtualCollectionId, VirtualCollectionRecipe>,
+}
+
+#[derive(Clone, Debug)]
+struct VirtualCollectionRecipe {
+    id: crate::VirtualCollectionId,
+    data: Vec<UiValue>,
+    renderer: ScriptCallback,
+    context: UiContext,
+    generation: ScriptGeneration,
 }
 
 type ActiveComponentRenderState = Rc<RefCell<Option<ActiveComponentRender>>>;
@@ -357,6 +367,7 @@ pub struct RuntimeEngine {
     pending_component_commits: BTreeMap<ComponentInstancePath, PendingComponentCommit>,
     component_renderers: ComponentRenderRegistry,
     native_handlers: crate::NativeHandlerRegistry,
+    virtual_collections: BTreeMap<crate::VirtualCollectionId, VirtualCollectionRecipe>,
 }
 
 #[derive(Clone)]
@@ -368,6 +379,7 @@ pub(crate) struct RuntimeEngineCheckpoint {
     component_signals: BTreeMap<crate::SignalId, crate::signal::SignalDescriptor>,
     component_element_refs: BTreeSet<crate::ElementRefId>,
     pending_component_commits: BTreeMap<ComponentInstancePath, PendingComponentCommit>,
+    virtual_collections: BTreeMap<crate::VirtualCollectionId, VirtualCollectionRecipe>,
 }
 
 impl Default for RuntimeEngine {
@@ -435,6 +447,7 @@ impl RuntimeEngine {
             pending_component_commits: BTreeMap::new(),
             component_renderers,
             native_handlers,
+            virtual_collections: BTreeMap::new(),
         };
         runtime.register_builtin_primitives();
         runtime
@@ -557,6 +570,7 @@ impl RuntimeEngine {
             effects: BTreeMap::new(),
             signals: BTreeMap::new(),
             element_refs: BTreeSet::new(),
+            virtual_collections: BTreeMap::new(),
         });
         Ok(())
     }
@@ -599,6 +613,9 @@ impl RuntimeEngine {
             self.component_element_refs
                 .retain(|id| !id.component().is_within(&root));
             self.component_element_refs.extend(active.element_refs);
+            self.virtual_collections
+                .retain(|id, _| !id.component.is_within(&root));
+            self.virtual_collections.extend(active.virtual_collections);
         } else {
             active
                 .root_context
@@ -647,10 +664,11 @@ impl RuntimeEngine {
         if !self.component_effects_in_scope(&root_path).is_empty()
             || !self.component_signals_in_scope(&root_path).is_empty()
             || !self.component_element_refs_in_scope(&root_path).is_empty()
+            || !self.virtual_collection_ids_in_scope(&root_path).is_empty()
         {
             self.restore_execution_checkpoint(checkpoint);
             return Err(RuntimeError::ComponentRuntime(
-                "effectful, signal-owning, or ref-owning components require ScriptLifecycle"
+                "effectful, signal/ref-owning, or virtual components require ScriptLifecycle"
                     .to_owned(),
             ));
         }
@@ -687,9 +705,10 @@ impl RuntimeEngine {
             if !self.component_effects_in_scope(&root).is_empty()
                 || !self.component_signals_in_scope(&root).is_empty()
                 || !self.component_element_refs_in_scope(&root).is_empty()
+                || !self.virtual_collection_ids_in_scope(&root).is_empty()
             {
                 return Err(RuntimeError::ComponentRuntime(
-                    "effectful, signal-owning, or ref-owning components require ScriptLifecycle"
+                    "effectful, signal/ref-owning, or virtual components require ScriptLifecycle"
                         .to_owned(),
                 ));
             }
@@ -823,6 +842,7 @@ impl RuntimeEngine {
             component_signals: self.component_signals.clone(),
             component_element_refs: self.component_element_refs.clone(),
             pending_component_commits: self.pending_component_commits.clone(),
+            virtual_collections: self.virtual_collections.clone(),
         }
     }
 
@@ -835,6 +855,7 @@ impl RuntimeEngine {
         self.component_signals = checkpoint.component_signals;
         self.component_element_refs = checkpoint.component_element_refs;
         self.pending_component_commits = checkpoint.pending_component_commits;
+        self.virtual_collections = checkpoint.virtual_collections;
     }
 
     pub(crate) fn commit_component_renders(
@@ -883,6 +904,71 @@ impl RuntimeEngine {
             .filter(|id| id.component().is_within(root))
             .cloned()
             .collect()
+    }
+
+    pub(crate) fn virtual_collection_ids_in_scope(
+        &self,
+        root: &ComponentInstancePath,
+    ) -> BTreeSet<crate::VirtualCollectionId> {
+        self.virtual_collections
+            .keys()
+            .filter(|id| id.component.is_within(root))
+            .cloned()
+            .collect()
+    }
+
+    pub(crate) fn realize_virtual_collection(
+        &mut self,
+        id: &crate::VirtualCollectionId,
+        indices: &BTreeSet<usize>,
+    ) -> Result<BTreeMap<usize, UiNode>, RuntimeError> {
+        let recipe = self.virtual_collections.get(id).cloned().ok_or_else(|| {
+            RuntimeError::ComponentRuntime(format!(
+                "virtual collection `{}` is not retained in the active generation",
+                id.key
+            ))
+        })?;
+        if recipe.generation != self.generation || recipe.id != *id {
+            return Err(RuntimeError::StaleCallback {
+                name: recipe.renderer.name().to_owned(),
+                callback_generation: recipe.generation,
+                current_generation: self.generation,
+            });
+        }
+        let scope = id.component.child("VirtualCollection", id.key.clone());
+        let context = recipe
+            .context
+            .for_component(scope, BTreeMap::new())
+            .with_generation(recipe.generation);
+        self.begin_component_render(context.clone(), recipe.generation, None)?;
+        let result = (|| {
+            let mut realized = BTreeMap::new();
+            for index in indices
+                .iter()
+                .copied()
+                .filter(|index| *index < recipe.data.len())
+            {
+                let (key, payload) = collection_payload(&recipe.data[index], index)
+                    .map_err(RuntimeError::Evaluate)?;
+                let invocation = recipe.renderer.native_context.as_ref().ok_or_else(|| {
+                    RuntimeError::ComponentRuntime(
+                        "virtual collection renderer lost its module context".to_owned(),
+                    )
+                })?;
+                let node = invocation
+                    .call::<UiNode>(
+                        self.engine(),
+                        &recipe.renderer.function,
+                        (context.clone(), Dynamic::from_map(payload)),
+                    )
+                    .map_err(RuntimeError::Evaluate)?
+                    .with_key(key);
+                realized.insert(index, node);
+            }
+            Ok(realized)
+        })();
+        self.finish_component_render(result.is_ok())?;
+        result
     }
 
     /// Invoke an optional one-argument lifecycle function.
@@ -1376,6 +1462,7 @@ fn register_component_runtime_apis(
     register_effect_api(engine, &active);
     register_signal_api(engine, &active);
     register_element_ref_api(engine, &active);
+    register_virtual_collection_api(engine, &active);
     (active, renderers)
 }
 
@@ -1845,6 +1932,389 @@ fn register_element_ref_api(engine: &mut Engine, active: &ActiveComponentRenderS
                 Ok(crate::ElementRef::new(id))
             },
         );
+}
+
+struct DecodedVirtualCollection {
+    key: String,
+    label: String,
+    data: Vec<UiValue>,
+    estimated_height: f64,
+    height: f64,
+    overdraw_pixels: f64,
+    bottom_align: bool,
+    follow_tail: bool,
+}
+
+fn decode_virtual_collection(
+    mut config: Map,
+) -> Result<DecodedVirtualCollection, Box<EvalAltResult>> {
+    let key = collection_string(&mut config, "key")?;
+    let label = collection_optional_string(&mut config, "label")?.unwrap_or_default();
+    let estimated_height = collection_positive(&mut config, "estimated_height")?;
+    let height = collection_positive(&mut config, "height")?;
+    let overdraw_pixels = collection_optional_number(&mut config, "overdraw_pixels")?
+        .unwrap_or(estimated_height * 2.0);
+    if !overdraw_pixels.is_finite() || !(0.0..=10_000.0).contains(&overdraw_pixels) {
+        return Err(Box::new(component_render_error(
+            "virtual collection overdraw_pixels must be between 0 and 10000",
+        )));
+    }
+    let alignment =
+        collection_optional_string(&mut config, "alignment")?.unwrap_or_else(|| "top".to_owned());
+    let bottom_align = match alignment.as_str() {
+        "top" => false,
+        "bottom" => true,
+        _ => {
+            return Err(Box::new(component_render_error(
+                "virtual collection alignment must be `top` or `bottom`",
+            )));
+        }
+    };
+    let follow_tail = collection_optional_bool(&mut config, "follow_tail")?.unwrap_or(false);
+    let data = collection_data(&mut config)?;
+    if let Some((unknown, _)) = config.into_iter().next() {
+        return Err(Box::new(component_render_error(format!(
+            "unknown virtual collection field `{unknown}`"
+        ))));
+    }
+    Ok(DecodedVirtualCollection {
+        key,
+        label,
+        data,
+        estimated_height,
+        height,
+        overdraw_pixels,
+        bottom_align,
+        follow_tail,
+    })
+}
+
+fn register_virtual_collection_api(engine: &mut Engine, active: &ActiveComponentRenderState) {
+    let active = Rc::clone(active);
+    FuncRegistration::new("virtual_collection")
+        .in_global_namespace()
+        .register_into_engine(
+            engine,
+            move |call: rhai::NativeCallContext<'_>,
+                  config: Map,
+                  renderer: FnPtr|
+                  -> Result<UiNode, Box<EvalAltResult>> {
+                validate_virtual_renderer(&renderer)?;
+                let DecodedVirtualCollection {
+                    key,
+                    label,
+                    data,
+                    estimated_height,
+                    height,
+                    overdraw_pixels,
+                    bottom_align,
+                    follow_tail,
+                } = decode_virtual_collection(config)?;
+
+                let VirtualCollectionContext {
+                    component,
+                    context,
+                    generation,
+                    events,
+                } = virtual_collection_context(&active)?;
+                let id = crate::VirtualCollectionId {
+                    component: component.clone(),
+                    key: key.clone(),
+                };
+                let collection_context = context
+                    .for_component(
+                        component.child("VirtualCollection", key.clone()),
+                        BTreeMap::new(),
+                    )
+                    .with_generation(generation);
+                let native_context = crate::invocation::ScriptInvocationContext::capture(&call);
+                let mut callback = ScriptCallback::try_from_fn_ptr(renderer.clone(), generation)
+                    .map_err(|error| Box::new(component_render_error(error.to_string())))?;
+                callback
+                    .bind_component_if_unset(collection_context.component_path().clone(), events);
+                callback.bind_native_context_if_unset(native_context);
+
+                let initial_count =
+                    nonnegative_usize(((height + overdraw_pixels) / estimated_height).ceil() + 1.0)
+                        .min(data.len());
+                enter_virtual_collection_scope(&active, collection_context.clone())?;
+                let realized = realize_initial_collection(
+                    &call,
+                    &renderer,
+                    &collection_context,
+                    &data,
+                    initial_count,
+                );
+                leave_component_render(&active)?;
+                let realized = realized?;
+                let recipe = VirtualCollectionRecipe {
+                    id: id.clone(),
+                    data: data.clone(),
+                    renderer: callback,
+                    context: collection_context,
+                    generation,
+                };
+                let mut guard = active.try_borrow_mut().map_err(|_| {
+                    Box::new(component_render_error(
+                        "component render stack is already borrowed",
+                    ))
+                })?;
+                let render = guard.as_mut().ok_or_else(|| {
+                    Box::new(component_render_error(
+                        "virtual_collection may run only during view render",
+                    ))
+                })?;
+                if render
+                    .virtual_collections
+                    .insert(id.clone(), recipe)
+                    .is_some()
+                {
+                    return Err(Box::new(component_render_error(format!(
+                        "virtual collection `{key}` is declared more than once in `{}`",
+                        id.component
+                    ))));
+                }
+                Ok(UiNode::virtual_collection(
+                    crate::VirtualCollectionNodeSpec {
+                        id,
+                        label,
+                        data,
+                        realized,
+                        estimated_height,
+                        height,
+                        overdraw_pixels,
+                        bottom_align,
+                        follow_tail,
+                    },
+                ))
+            },
+        );
+}
+
+fn validate_virtual_renderer(renderer: &FnPtr) -> Result<(), Box<EvalAltResult>> {
+    if renderer.is_anonymous() {
+        Err(Box::new(component_render_error(
+            "virtual collection item renderer must be a named function",
+        )))
+    } else {
+        Ok(())
+    }
+}
+
+fn realize_initial_collection(
+    call: &rhai::NativeCallContext<'_>,
+    renderer: &FnPtr,
+    context: &UiContext,
+    data: &[UiValue],
+    count: usize,
+) -> Result<BTreeMap<usize, UiNode>, Box<EvalAltResult>> {
+    let mut realized = BTreeMap::new();
+    for (index, item) in data.iter().enumerate().take(count) {
+        let (item_key, payload) = collection_payload(item, index)?;
+        let node = renderer
+            .call_within_context::<UiNode>(call, (context.clone(), payload))?
+            .with_key(item_key);
+        realized.insert(index, node);
+    }
+    Ok(realized)
+}
+
+struct VirtualCollectionContext {
+    component: ComponentInstancePath,
+    context: UiContext,
+    generation: ScriptGeneration,
+    events: BTreeMap<String, EventSchema>,
+}
+
+fn enter_virtual_collection_scope(
+    active: &ActiveComponentRenderState,
+    context: UiContext,
+) -> Result<(), Box<EvalAltResult>> {
+    let mut guard = active.try_borrow_mut().map_err(|_| {
+        Box::new(component_render_error(
+            "component render stack is already borrowed",
+        ))
+    })?;
+    let render = guard.as_mut().ok_or_else(|| {
+        Box::new(component_render_error(
+            "virtual_collection may run only during view render",
+        ))
+    })?;
+    render.stack.push(context.component_path().clone());
+    render.contexts.push(context);
+    render.effect_keys.push(None);
+    Ok(())
+}
+
+fn virtual_collection_context(
+    active: &ActiveComponentRenderState,
+) -> Result<VirtualCollectionContext, Box<EvalAltResult>> {
+    let guard = active.try_borrow().map_err(|_| {
+        Box::new(component_render_error(
+            "component render stack is already borrowed",
+        ))
+    })?;
+    let render = guard.as_ref().ok_or_else(|| {
+        Box::new(component_render_error(
+            "virtual_collection may run only during view render",
+        ))
+    })?;
+    let context = render.contexts.last().cloned().ok_or_else(|| {
+        Box::new(component_render_error(
+            "component render context stack is empty",
+        ))
+    })?;
+    Ok(VirtualCollectionContext {
+        component: context.component_path().clone(),
+        context: context.clone(),
+        generation: render.generation,
+        events: context.event_schemas().clone(),
+    })
+}
+
+fn collection_string(config: &mut Map, name: &str) -> Result<String, Box<EvalAltResult>> {
+    config
+        .remove(name)
+        .and_then(Dynamic::try_cast::<ImmutableString>)
+        .map(|value| value.to_string())
+        .ok_or_else(|| {
+            Box::new(component_render_error(format!(
+                "virtual collection `{name}` must be a string"
+            )))
+        })
+}
+
+fn collection_optional_string(
+    config: &mut Map,
+    name: &str,
+) -> Result<Option<String>, Box<EvalAltResult>> {
+    config
+        .remove(name)
+        .map(|value| {
+            value
+                .try_cast::<ImmutableString>()
+                .map(|value| value.to_string())
+                .ok_or_else(|| {
+                    Box::new(component_render_error(format!(
+                        "virtual collection `{name}` must be a string"
+                    )))
+                })
+        })
+        .transpose()
+}
+
+fn collection_optional_number(
+    config: &mut Map,
+    name: &str,
+) -> Result<Option<f64>, Box<EvalAltResult>> {
+    config
+        .remove(name)
+        .map(|value| {
+            if value.is::<rhai::FLOAT>() {
+                Ok(value.cast::<rhai::FLOAT>())
+            } else if value.is::<rhai::INT>() {
+                value
+                    .cast::<rhai::INT>()
+                    .to_string()
+                    .parse::<f64>()
+                    .map_err(|_| Box::new(component_render_error("invalid collection number")))
+            } else {
+                Err(Box::new(component_render_error(format!(
+                    "virtual collection `{name}` must be a number"
+                ))))
+            }
+        })
+        .transpose()
+}
+
+fn collection_positive(config: &mut Map, name: &str) -> Result<f64, Box<EvalAltResult>> {
+    let value = collection_optional_number(config, name)?.ok_or_else(|| {
+        Box::new(component_render_error(format!(
+            "virtual collection `{name}` is required"
+        )))
+    })?;
+    if value.is_finite() && value > 0.0 {
+        Ok(value)
+    } else {
+        Err(Box::new(component_render_error(format!(
+            "virtual collection `{name}` must be finite and positive"
+        ))))
+    }
+}
+
+fn collection_optional_bool(
+    config: &mut Map,
+    name: &str,
+) -> Result<Option<bool>, Box<EvalAltResult>> {
+    config
+        .remove(name)
+        .map(|value| {
+            value.try_cast::<bool>().ok_or_else(|| {
+                Box::new(component_render_error(format!(
+                    "virtual collection `{name}` must be bool"
+                )))
+            })
+        })
+        .transpose()
+}
+
+fn collection_data(config: &mut Map) -> Result<Vec<UiValue>, Box<EvalAltResult>> {
+    let data = config
+        .remove("data")
+        .and_then(Dynamic::try_cast::<Array>)
+        .ok_or_else(|| {
+            Box::new(component_render_error(
+                "virtual collection `data` is required",
+            ))
+        })?;
+    let data = data
+        .into_iter()
+        .map(|value| {
+            UiValue::from_dynamic(value)
+                .map_err(|error| Box::new(component_render_error(error.to_string())))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut keys = BTreeSet::new();
+    for (index, item) in data.iter().enumerate() {
+        let (key, _) = collection_payload(item, index)?;
+        if !keys.insert(key.clone()) {
+            return Err(Box::new(component_render_error(format!(
+                "virtual collection data key `{key}` is duplicated"
+            ))));
+        }
+    }
+    Ok(data)
+}
+
+fn collection_payload(item: &UiValue, index: usize) -> Result<(String, Map), Box<EvalAltResult>> {
+    let UiValue::Map(map) = item else {
+        return Err(Box::new(component_render_error(
+            "virtual collection data items must be maps with a string `key`",
+        )));
+    };
+    let key = match map.get("key") {
+        Some(UiValue::String(key)) if !key.is_empty() => key.clone(),
+        _ => {
+            return Err(Box::new(component_render_error(
+                "virtual collection data item `key` must be a non-empty string",
+            )));
+        }
+    };
+    Ok((
+        key.clone(),
+        Map::from_iter([
+            ("key".into(), Dynamic::from(key)),
+            (
+                "index".into(),
+                Dynamic::from_int(rhai::INT::try_from(index).unwrap_or(rhai::INT::MAX)),
+            ),
+            ("item".into(), item.clone().into_dynamic()),
+        ]),
+    ))
+}
+
+fn nonnegative_usize(value: f64) -> usize {
+    value.to_string().parse().unwrap_or(usize::MAX)
 }
 
 fn component_event_callbacks(
