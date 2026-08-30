@@ -37,6 +37,12 @@ font weights, line clamps, translations, lengths, and shadow geometry are
 bounded before a GPUI element is built. Theme-backed colors resolve through the
 same `ColorValue` path as solid fills and Canvas.
 
+`color(string)` accepts strict `#rgb/#rgba/#rrggbb/#rrggbbaa`, CSS basic named
+colors plus `transparent`, comma-form `rgb/rgba`, and `hsl/hsla` with explicit
+percentage saturation/lightness. Channels are range checked; malformed or
+unsupported strings are errors. `hwb`, Lab/LCH and OKLab/OKLCH remain explicit
+future extensions rather than silently approximated values.
+
 NativeSignal/animation bindings override literal opacity/translation/dimension
 values at frame sampling time without rerunning Rhai. Static translation uses
 the same paint wrapper, so visual geometry reporting remains the next required
@@ -49,5 +55,6 @@ name. See `assets.md` for ownership and validation.
 The remaining final-style gaps are property-specific signed insets/margins,
 intrinsic/auto/fr/grid-track values, multi-stop gradients, rotation/scale and
 transform-origin, detailed border corners/sides, font aliases/fallback/features
-and hot replacement, selection styling, and explicit hit-testing/stacking-context controls. They are
+and hot replacement, selection styling, and explicit hit-testing/stacking-
+context controls. They are
 tracked as incomplete rather than silently ignored.

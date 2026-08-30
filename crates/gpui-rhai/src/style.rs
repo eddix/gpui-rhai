@@ -205,6 +205,203 @@ impl CustomType for ColorValue {
     }
 }
 
+impl ColorValue {
+    /// Parse a strict, bounded color literal shared by Style and Canvas.
+    ///
+    /// Supported forms are `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`, the CSS
+    /// basic named colors plus `transparent`, comma-separated `rgb/rgba`, and
+    /// `hsl/hsla` with percentage saturation/lightness.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ColorParseError`] for malformed syntax or out-of-range channels.
+    pub fn parse(value: &str) -> Result<Self, ColorParseError> {
+        let value = value.trim().to_ascii_lowercase();
+        if value.is_empty() || value.len() > 256 {
+            return Err(ColorParseError::Invalid(value));
+        }
+        if let Some(color) = parse_named_color(&value) {
+            return Ok(Self::Literal(color));
+        }
+        if let Some(hex) = value.strip_prefix('#') {
+            return parse_hex_color(hex).map(Self::Literal);
+        }
+        if value.starts_with("rgb(") || value.starts_with("rgba(") {
+            return parse_rgb_function(&value).map(Self::Literal);
+        }
+        if value.starts_with("hsl(") || value.starts_with("hsla(") {
+            return parse_hsl_function(&value).map(Self::Literal);
+        }
+        Err(ColorParseError::Invalid(value))
+    }
+}
+
+#[derive(Clone, Debug, Error, Eq, PartialEq)]
+pub enum ColorParseError {
+    #[error("invalid or unsupported color literal `{0}`")]
+    Invalid(String),
+    #[error("color channel `{0}` is outside its allowed range")]
+    Channel(String),
+}
+
+fn parse_named_color(value: &str) -> Option<Rgba8> {
+    let rgba = match value {
+        "transparent" => 0x0000_0000,
+        "black" => 0x0000_00ff,
+        "silver" => 0xc0c0_c0ff,
+        "gray" | "grey" => 0x8080_80ff,
+        "white" => 0xffff_ffff,
+        "maroon" => 0x8000_00ff,
+        "red" => 0xff00_00ff,
+        "purple" => 0x8000_80ff,
+        "fuchsia" | "magenta" => 0xff00_ffff,
+        "green" => 0x0080_00ff,
+        "lime" => 0x00ff_00ff,
+        "olive" => 0x8080_00ff,
+        "yellow" => 0xffff_00ff,
+        "navy" => 0x0000_80ff,
+        "blue" => 0x0000_ffff,
+        "teal" => 0x0080_80ff,
+        "aqua" | "cyan" => 0x00ff_ffff,
+        _ => return None,
+    };
+    Some(Rgba8::from_rgba_hex(rgba))
+}
+
+fn parse_hex_color(value: &str) -> Result<Rgba8, ColorParseError> {
+    let expanded = match value.len() {
+        3 | 4 => value
+            .chars()
+            .flat_map(|character| [character, character])
+            .collect::<String>(),
+        6 | 8 => value.to_owned(),
+        _ => return Err(ColorParseError::Invalid(format!("#{value}"))),
+    };
+    let parsed = u32::from_str_radix(&expanded, 16)
+        .map_err(|_| ColorParseError::Invalid(format!("#{value}")))?;
+    Ok(if expanded.len() == 6 {
+        Rgba8::from_rgb_hex(parsed)
+    } else {
+        Rgba8::from_rgba_hex(parsed)
+    })
+}
+
+fn function_parts<'a>(value: &'a str, name: &str) -> Result<Vec<&'a str>, ColorParseError> {
+    let body = value
+        .strip_prefix(name)
+        .and_then(|value| value.strip_prefix('('))
+        .and_then(|value| value.strip_suffix(')'))
+        .ok_or_else(|| ColorParseError::Invalid(value.to_owned()))?;
+    let parts = body.split(',').map(str::trim).collect::<Vec<_>>();
+    if parts.iter().any(|part| part.is_empty()) {
+        Err(ColorParseError::Invalid(value.to_owned()))
+    } else {
+        Ok(parts)
+    }
+}
+
+fn parse_rgb_function(value: &str) -> Result<Rgba8, ColorParseError> {
+    let (name, expected) = if value.starts_with("rgba(") {
+        ("rgba", 4)
+    } else {
+        ("rgb", 3)
+    };
+    let parts = function_parts(value, name)?;
+    if parts.len() != expected {
+        return Err(ColorParseError::Invalid(value.to_owned()));
+    }
+    let red = parse_byte(parts[0])?;
+    let green = parse_byte(parts[1])?;
+    let blue = parse_byte(parts[2])?;
+    let alpha = if expected == 4 {
+        parse_alpha(parts[3])?
+    } else {
+        u8::MAX
+    };
+    Ok(rgba_channels(red, green, blue, alpha))
+}
+
+fn parse_hsl_function(value: &str) -> Result<Rgba8, ColorParseError> {
+    let (name, expected) = if value.starts_with("hsla(") {
+        ("hsla", 4)
+    } else {
+        ("hsl", 3)
+    };
+    let parts = function_parts(value, name)?;
+    if parts.len() != expected {
+        return Err(ColorParseError::Invalid(value.to_owned()));
+    }
+    let hue = parse_finite(parts[0])?.rem_euclid(360.0) / 360.0;
+    let saturation = parse_percent(parts[1])?;
+    let lightness = parse_percent(parts[2])?;
+    let alpha = if expected == 4 {
+        parse_alpha(parts[3])?
+    } else {
+        u8::MAX
+    };
+    let (red, green, blue) = hsl_to_rgb(hue, saturation, lightness);
+    Ok(rgba_channels(red, green, blue, alpha))
+}
+
+fn parse_byte(value: &str) -> Result<u8, ColorParseError> {
+    value
+        .parse::<u16>()
+        .ok()
+        .and_then(|value| u8::try_from(value).ok())
+        .ok_or_else(|| ColorParseError::Channel(value.to_owned()))
+}
+
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn parse_alpha(value: &str) -> Result<u8, ColorParseError> {
+    let alpha = if value.ends_with('%') {
+        parse_percent(value)?
+    } else {
+        let value = parse_finite(value)?;
+        if !(0.0..=1.0).contains(&value) {
+            return Err(ColorParseError::Channel(value.to_string()));
+        }
+        value
+    };
+    Ok((alpha * 255.0).round() as u8)
+}
+
+fn parse_percent(value: &str) -> Result<f64, ColorParseError> {
+    let number = value
+        .strip_suffix('%')
+        .ok_or_else(|| ColorParseError::Channel(value.to_owned()))?;
+    let number = parse_finite(number)?;
+    if (0.0..=100.0).contains(&number) {
+        Ok(number / 100.0)
+    } else {
+        Err(ColorParseError::Channel(value.to_owned()))
+    }
+}
+
+fn parse_finite(value: &str) -> Result<f64, ColorParseError> {
+    value
+        .parse::<f64>()
+        .ok()
+        .filter(|value| value.is_finite())
+        .ok_or_else(|| ColorParseError::Channel(value.to_owned()))
+}
+
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn hsl_to_rgb(hue: f64, saturation: f64, lightness: f64) -> (u8, u8, u8) {
+    let channel = |offset: f64| {
+        let k = (offset + hue * 12.0).rem_euclid(12.0);
+        let a = saturation * lightness.min(1.0 - lightness);
+        let value = lightness - a * (-1.0_f64).max((k - 3.0).min(9.0 - k).min(1.0));
+        (value * 255.0).round() as u8
+    };
+    (channel(0.0), channel(8.0), channel(4.0))
+}
+
+fn rgba_channels(red: u8, green: u8, blue: u8, alpha: u8) -> Rgba8 {
+    Rgba8::from_rgba_hex(
+        u32::from(red) << 24 | u32::from(green) << 16 | u32::from(blue) << 8 | u32::from(alpha),
+    )
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FlexDirection {
@@ -1635,6 +1832,15 @@ pub(crate) fn register_style_api(engine: &mut Engine) {
     FuncRegistration::new("theme_color")
         .in_global_namespace()
         .register_into_engine(engine, |token: String| ColorValue::Token(token));
+    FuncRegistration::new("color")
+        .in_global_namespace()
+        .register_into_engine(
+            engine,
+            |value: ImmutableString| -> Result<ColorValue, Box<EvalAltResult>> {
+                ColorValue::parse(value.as_str())
+                    .map_err(|error| Box::new(style_runtime_error(error.to_string())))
+            },
+        );
     FuncRegistration::new("component_style")
         .in_global_namespace()
         .register_into_engine(engine, component_style);
@@ -1902,6 +2108,37 @@ mod tests {
         assert_eq!(style.base.line_clamp, Some(2));
         assert!(style.base.gradient.is_some());
         assert_eq!(style.base.shadows.as_ref().map(Vec::len), Some(1));
+    }
+
+    #[test]
+    fn strict_color_literals_share_one_typed_value_path() {
+        assert_eq!(
+            ColorValue::parse("#abc").unwrap(),
+            ColorValue::Literal(Rgba8::from_rgba_hex(0xaabb_ccff))
+        );
+        assert_eq!(
+            ColorValue::parse("rgba(255, 0, 0, 50%)").unwrap(),
+            ColorValue::Literal(Rgba8::from_rgba_hex(0xff00_0080))
+        );
+        assert_eq!(
+            ColorValue::parse("hsl(120, 100%, 50%)").unwrap(),
+            ColorValue::Literal(Rgba8::from_rgba_hex(0x00ff_00ff))
+        );
+        assert_eq!(
+            ColorValue::parse("transparent").unwrap(),
+            ColorValue::Literal(Rgba8::from_rgba_hex(0))
+        );
+        assert!(ColorValue::parse("rgb(256, 0, 0)").is_err());
+        assert!(ColorValue::parse("not-a-color").is_err());
+
+        let mut engine = Engine::new();
+        register_style_api(&mut engine);
+        assert_eq!(
+            engine
+                .eval::<ColorValue>(r##"color("#336699cc")"##)
+                .unwrap(),
+            ColorValue::Literal(Rgba8::from_rgba_hex(0x3366_99cc))
+        );
     }
 
     #[test]
