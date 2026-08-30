@@ -629,6 +629,25 @@ impl ScriptViewHandle {
         )?)
     }
 
+    /// Return the last successfully committed retained diff report.
+    ///
+    /// # Errors
+    ///
+    /// Returns after disposal.
+    pub fn reconcile_report(&self, cx: &App) -> Result<crate::ReconcileReport, ScriptViewError> {
+        if self.0.disposed.get() {
+            return Err(ScriptViewError::DisposedView(self.0.view_id.clone()));
+        }
+        Ok(self
+            .0
+            .entity
+            .read(cx)
+            .lifecycle
+            .retained()
+            .last_report()
+            .clone())
+    }
+
     /// Focus a mounted retained element without invoking Rhai.
     ///
     /// # Errors

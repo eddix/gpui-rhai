@@ -12,6 +12,10 @@ platform-owned rendering mechanisms.
    `NodeId` identity; the GPUI renderer then creates short-lived native
    elements from the accepted tree.
 
+The tree retains the last successful mounted/preserved/moved/unmounted report;
+failed candidates leave both the tree and report unchanged. Hosts read this
+deterministic result through `ScriptViewHandle::reconcile_report`.
+
 No GPUI `Window`, `App`, `Context`, `Div`, or `AnyElement` enters a Rhai
 `Dynamic`. Custom Rust primitives are the intentional extension point for
 mechanisms that require those types.

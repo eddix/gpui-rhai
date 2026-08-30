@@ -150,7 +150,8 @@ pub use renderer::{
 };
 pub use responsive::{ResponsiveError, ResponsiveRuntime, ViewportBreakpoints, ViewportClass};
 pub use retained::{
-    NodeId, ReconcileError, ReconcileReport, RetainedChildLink, RetainedNode, RetainedUiTree,
+    NodeId, ReconcileError, ReconcileMetrics, ReconcileReport, RetainedChildLink, RetainedNode,
+    RetainedUiTree,
 };
 pub use schema::{
     ObjectField, SchemaDefinitionError, SchemaIssue, SchemaValidationError, ValueSchema,

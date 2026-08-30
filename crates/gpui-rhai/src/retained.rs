@@ -157,12 +157,30 @@ pub struct ReconcileReport {
     pub unmounted: Vec<NodeId>,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct ReconcileMetrics {
+    pub mounted: usize,
+    pub preserved: usize,
+    pub moved: usize,
+    pub unmounted: usize,
+}
+
 impl ReconcileReport {
     fn sort(&mut self) {
         self.mounted.sort_unstable();
         self.preserved.sort_unstable();
         self.moved.sort_unstable();
         self.unmounted.sort_unstable();
+    }
+
+    #[must_use]
+    pub fn metrics(&self) -> ReconcileMetrics {
+        ReconcileMetrics {
+            mounted: self.mounted.len(),
+            preserved: self.preserved.len(),
+            moved: self.moved.len(),
+            unmounted: self.unmounted.len(),
+        }
     }
 }
 
@@ -197,6 +215,7 @@ pub struct RetainedUiTree {
     root_id: Option<NodeId>,
     nodes: BTreeMap<NodeId, RetainedNode>,
     next_id: u64,
+    last_report: ReconcileReport,
 }
 
 impl Default for RetainedUiTree {
@@ -206,6 +225,7 @@ impl Default for RetainedUiTree {
             root_id: None,
             nodes: BTreeMap::new(),
             next_id: 1,
+            last_report: ReconcileReport::default(),
         }
     }
 }
@@ -250,6 +270,11 @@ impl RetainedUiTree {
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.nodes.is_empty()
+    }
+
+    #[must_use]
+    pub const fn last_report(&self) -> &ReconcileReport {
+        &self.last_report
     }
 
     /// Reconcile and atomically accept one complete candidate snapshot.
@@ -297,6 +322,7 @@ impl RetainedUiTree {
         self.root_id = Some(root_id);
         self.nodes = new_nodes;
         self.next_id = next_id;
+        self.last_report = report.clone();
         Ok(report)
     }
 }
@@ -638,6 +664,7 @@ mod tests {
             .unwrap();
         let old_root = tree.root().unwrap().clone();
         let old_ids = tree.nodes().map(RetainedNode::id).collect::<Vec<_>>();
+        let old_report = tree.last_report().clone();
 
         let error = tree
             .reconcile(UiNode::column(vec![
@@ -647,6 +674,7 @@ mod tests {
             .unwrap_err();
         assert!(matches!(error, ReconcileError::DuplicateKey { .. }));
         assert_eq!(tree.root(), Some(&old_root));
+        assert_eq!(tree.last_report(), &old_report);
         assert_eq!(
             tree.nodes().map(RetainedNode::id).collect::<Vec<_>>(),
             old_ids
@@ -657,6 +685,7 @@ mod tests {
             .unwrap();
         assert_eq!(report.mounted.len(), 1);
         assert_eq!(report.mounted[0].get(), 3);
+        assert_eq!(tree.last_report().metrics(), report.metrics());
     }
 
     #[test]
