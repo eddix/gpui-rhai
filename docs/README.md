@@ -19,6 +19,7 @@ Start with the repository quick start, then use these guides by task:
   [DatePicker](components/date-picker.md),
   [Dropdown](components/dropdown.md),
   [Select](components/select.md),
+  [Toast](components/toast.md),
   [Table](components/table.md),
   [Pagination](components/pagination.md), and
   [Textarea](components/textarea.md)

@@ -8,8 +8,7 @@ use rhai::{
 use crate::{
     AnimationSpec, AssetId, ComponentInstancePath, HostCallback, OpaqueHandle, OverlayId,
     OverlayKind, OverlayPlacement, PrimitiveNode, ScriptCallback, ScriptGeneration, Style,
-    ToastHostSpec, ToastItemSpec, ToastRegion, ToastVariant, UiEventBinding, UiEventHandler,
-    UiValue,
+    UiEventBinding, UiEventHandler, UiValue,
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -29,6 +28,24 @@ pub struct OverlayNodeSpec {
     pub modal: bool,
     pub dismiss: OverlayDismissPolicy,
     pub tooltip_delays: Option<TooltipDelays>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LayerPlacement {
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    BottomRight,
+    Center,
+    Fill,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct LayerNodeSpec {
+    pub id: OverlayId,
+    pub placement: LayerPlacement,
+    pub inset: f64,
+    pub priority: usize,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -169,8 +186,9 @@ pub enum UiNodeKind {
         content: Box<UiNode>,
         spec: OverlayNodeSpec,
     },
-    ToastHost {
-        spec: ToastHostSpec,
+    Layer {
+        content: Box<UiNode>,
+        spec: LayerNodeSpec,
     },
     VirtualCollection {
         spec: crate::VirtualCollectionNodeSpec,
@@ -193,7 +211,7 @@ pub enum UiNodeKindTag {
     Image,
     DirectionalImage,
     Overlay,
-    ToastHost,
+    Layer,
     VirtualCollection,
     ErrorBoundary,
 }
@@ -427,10 +445,13 @@ impl UiNode {
     }
 
     #[must_use]
-    pub fn toast_host(spec: ToastHostSpec) -> Self {
-        let key = spec.key.clone();
+    pub fn layer(content: Self, spec: LayerNodeSpec) -> Self {
+        let key = spec.id.as_str().to_owned();
         Self {
-            kind: UiNodeKind::ToastHost { spec },
+            kind: UiNodeKind::Layer {
+                content: Box::new(content),
+                spec,
+            },
             key: Some(NodeKey::new(key)),
             style: Style::new(),
             part_styles: BTreeMap::new(),
@@ -574,6 +595,9 @@ impl UiNode {
                 trigger.replace_component_subtree(component, replacement.clone())
                     || content.replace_component_subtree(component, replacement)
             }
+            UiNodeKind::Layer { content, .. } => {
+                content.replace_component_subtree(component, replacement)
+            }
             UiNodeKind::VirtualCollection { spec } => {
                 replace_in_nodes(spec.realized.values_mut(), component, &replacement)
             }
@@ -581,8 +605,7 @@ impl UiNode {
             | UiNodeKind::RichText { .. }
             | UiNodeKind::Canvas { .. }
             | UiNodeKind::Image { .. }
-            | UiNodeKind::DirectionalImage { .. }
-            | UiNodeKind::ToastHost { .. } => false,
+            | UiNodeKind::DirectionalImage { .. } => false,
         }
     }
 
@@ -604,6 +627,7 @@ impl UiNode {
             } => trigger
                 .virtual_collection_items(id)
                 .or_else(|| content.virtual_collection_items(id)),
+            UiNodeKind::Layer { content, .. } => content.virtual_collection_items(id),
             _ => None,
         }
     }
@@ -630,6 +654,9 @@ impl UiNode {
             } => {
                 trigger.replace_virtual_collection_items(id, items.clone())
                     || content.replace_virtual_collection_items(id, items)
+            }
+            UiNodeKind::Layer { content, .. } => {
+                content.replace_virtual_collection_items(id, items)
             }
             _ => false,
         }
@@ -745,13 +772,13 @@ impl UiNode {
                 trigger.bind_generation(generation);
                 content.bind_generation(generation);
             }
+            UiNodeKind::Layer { content, .. } => content.bind_generation(generation),
             UiNodeKind::Text { .. }
             | UiNodeKind::RichText { .. }
             | UiNodeKind::Canvas { .. }
             | UiNodeKind::Custom { .. }
             | UiNodeKind::Image { .. }
-            | UiNodeKind::DirectionalImage { .. }
-            | UiNodeKind::ToastHost { .. } => {}
+            | UiNodeKind::DirectionalImage { .. } => {}
             UiNodeKind::VirtualCollection { spec } => {
                 for item in spec.realized.values_mut() {
                     item.bind_generation(generation);
@@ -797,6 +824,9 @@ impl UiNode {
                 trigger.bind_component_scope(component, events, native_context);
                 content.bind_component_scope(component, events, native_context);
             }
+            UiNodeKind::Layer { content, .. } => {
+                content.bind_component_scope(component, events, native_context);
+            }
             UiNodeKind::VirtualCollection { spec } => {
                 for item in spec.realized.values_mut() {
                     item.bind_component_scope(component, events, native_context);
@@ -806,8 +836,7 @@ impl UiNode {
             | UiNodeKind::RichText { .. }
             | UiNodeKind::Canvas { .. }
             | UiNodeKind::Image { .. }
-            | UiNodeKind::DirectionalImage { .. }
-            | UiNodeKind::ToastHost { .. } => {}
+            | UiNodeKind::DirectionalImage { .. } => {}
         }
     }
 
@@ -852,6 +881,9 @@ impl UiNode {
                 trigger.bind_callback_scope_by_name(names, component, events, native_context);
                 content.bind_callback_scope_by_name(names, component, events, native_context);
             }
+            UiNodeKind::Layer { content, .. } => {
+                content.bind_callback_scope_by_name(names, component, events, native_context);
+            }
             UiNodeKind::VirtualCollection { spec } => {
                 for item in spec.realized.values_mut() {
                     item.bind_callback_scope_by_name(names, component, events, native_context);
@@ -861,8 +893,7 @@ impl UiNode {
             | UiNodeKind::RichText { .. }
             | UiNodeKind::Canvas { .. }
             | UiNodeKind::Image { .. }
-            | UiNodeKind::DirectionalImage { .. }
-            | UiNodeKind::ToastHost { .. } => {}
+            | UiNodeKind::DirectionalImage { .. } => {}
         }
     }
 
@@ -882,7 +913,7 @@ impl UiNode {
             UiNodeKind::Image { .. } => UiNodeKindTag::Image,
             UiNodeKind::DirectionalImage { .. } => UiNodeKindTag::DirectionalImage,
             UiNodeKind::Overlay { .. } => UiNodeKindTag::Overlay,
-            UiNodeKind::ToastHost { .. } => UiNodeKindTag::ToastHost,
+            UiNodeKind::Layer { .. } => UiNodeKindTag::Layer,
             UiNodeKind::VirtualCollection { .. } => UiNodeKindTag::VirtualCollection,
             UiNodeKind::ErrorBoundary { .. } => UiNodeKindTag::ErrorBoundary,
         }
@@ -916,6 +947,9 @@ impl UiNode {
                 ("trigger".to_owned(), vec![trigger.as_ref()]),
                 ("content".to_owned(), vec![content.as_ref()]),
             ],
+            UiNodeKind::Layer { content, .. } => {
+                vec![("content".to_owned(), vec![content.as_ref()])]
+            }
             UiNodeKind::VirtualCollection { spec } => {
                 vec![("items".to_owned(), spec.realized.values().collect())]
             }
@@ -927,8 +961,7 @@ impl UiNode {
             | UiNodeKind::RichText { .. }
             | UiNodeKind::Canvas { .. }
             | UiNodeKind::Image { .. }
-            | UiNodeKind::DirectionalImage { .. }
-            | UiNodeKind::ToastHost { .. } => Vec::new(),
+            | UiNodeKind::DirectionalImage { .. } => Vec::new(),
         }
     }
 
@@ -1024,25 +1057,8 @@ impl CustomType for UiNode {
                 |node: &mut Self, part: ImmutableString, style: Style| {
                     node.clone().with_part_style(part.to_string(), style)
                 },
-            )
-            .with_fn(
-                "on_click_value",
-                |node: &mut Self,
-                 callback: FnPtr,
-                 payload: Dynamic|
-                 -> Result<Self, Box<EvalAltResult>> {
-                    let payload = UiValue::from_dynamic(payload).map_err(|error| {
-                        Box::new(EvalAltResult::ErrorRuntime(
-                            error.to_string().into(),
-                            Position::NONE,
-                        ))
-                    })?;
-                    Ok(node
-                        .clone()
-                        .with_handler("click", retained_script_callback(callback)?)
-                        .with_handler_payload("click", payload))
-                },
             );
+        register_value_event_methods(&mut builder);
         register_raw_event_methods(&mut builder);
         register_semantic_event_methods(&mut builder);
         builder
@@ -1090,6 +1106,36 @@ impl CustomType for UiNode {
             );
         register_accessibility_methods(&mut builder);
     }
+}
+
+fn register_value_event_methods(builder: &mut TypeBuilder<UiNode>) {
+    builder
+        .with_fn(
+            "on_click_value",
+            |node: &mut UiNode,
+             callback: FnPtr,
+             payload: Dynamic|
+             -> Result<UiNode, Box<EvalAltResult>> {
+                let payload = dynamic_ui_value(payload)?;
+                Ok(node
+                    .clone()
+                    .with_handler("click", retained_script_callback(callback)?)
+                    .with_handler_payload("click", payload))
+            },
+        )
+        .with_fn(
+            "on_hover_value",
+            |node: &mut UiNode,
+             callback: FnPtr,
+             payload: Dynamic|
+             -> Result<UiNode, Box<EvalAltResult>> {
+                let payload = dynamic_ui_value(payload)?;
+                Ok(node
+                    .clone()
+                    .with_handler("hover_change", retained_script_callback(callback)?)
+                    .with_handler_payload("hover_change", payload))
+            },
+        );
 }
 
 fn register_raw_event_methods(builder: &mut TypeBuilder<UiNode>) {
@@ -1225,13 +1271,9 @@ fn validate_node_event_name(event: &str) -> Result<(), Box<EvalAltResult>> {
 
 fn register_semantic_event_methods(builder: &mut TypeBuilder<UiNode>) {
     for (method, event) in [
+        ("on_hover_change", "hover_change"),
         ("on_open_change", "open_change"),
         ("on_change", "change"),
-        ("on_query_change", "query_change"),
-        ("on_dismiss", "dismiss"),
-        ("on_sort_change", "sort_change"),
-        ("on_selection_change", "selection_change"),
-        ("on_row_click", "row_click"),
     ] {
         let event = event.to_owned();
         builder.with_fn(
@@ -1533,7 +1575,6 @@ pub(crate) fn overlay_node(
         Some("tooltip") => OverlayKind::Tooltip,
         Some("dialog") => OverlayKind::Dialog,
         Some("menu") => OverlayKind::Menu,
-        Some("toast") => OverlayKind::Toast,
         Some(other) => return overlay_config_error(format!("unknown overlay kind `{other}`")),
     };
     let placement = match optional_string(&mut config, "placement")?.as_deref() {
@@ -1586,85 +1627,45 @@ pub(crate) fn overlay_node(
     ))
 }
 
-pub(crate) fn toast_host_node(
+pub(crate) fn layer_node(
     call: NativeCallContext<'_>,
+    content: UiNode,
     mut config: Map,
 ) -> Result<UiNode, Box<EvalAltResult>> {
-    let key = required_string(&mut config, "key")?;
-    let max_visible = optional_usize(&mut config, "max_visible")?.unwrap_or(3);
-    if !(1..=10).contains(&max_visible) {
-        return overlay_config_error("toast max_visible must be between 1 and 10");
+    let id = required_string(&mut config, "id")?;
+    if id.trim().is_empty() {
+        return overlay_config_error("layer ID cannot be empty");
     }
-    let raw_items = config.remove("items").ok_or_else(|| {
-        Box::new(EvalAltResult::ErrorRuntime(
-            "toast config field `items` is required".into(),
-            Position::NONE,
-        ))
-    })?;
-    let raw_items = raw_items
-        .try_cast::<Array>()
-        .ok_or_else(|| Box::new(overlay_type_error("items", "an array of toast maps")))?;
-    if raw_items.len() > 100 {
-        return overlay_config_error("toast host cannot contain more than 100 items");
+    let placement = match optional_string(&mut config, "placement")?.as_deref() {
+        None | Some("top_right") => LayerPlacement::TopRight,
+        Some("top_left") => LayerPlacement::TopLeft,
+        Some("bottom_left") => LayerPlacement::BottomLeft,
+        Some("bottom_right") => LayerPlacement::BottomRight,
+        Some("center") => LayerPlacement::Center,
+        Some("fill") => LayerPlacement::Fill,
+        Some(other) => return overlay_config_error(format!("unknown layer placement `{other}`")),
+    };
+    let inset = optional_number(&mut config, "inset")?.unwrap_or(12.0);
+    if !inset.is_finite() || inset < 0.0 {
+        return overlay_config_error("layer inset must be finite and non-negative");
     }
-    let mut ids = BTreeSet::new();
-    let mut items = Vec::with_capacity(raw_items.len());
-    for (index, item) in raw_items.into_iter().enumerate() {
-        let mut item = item.try_cast::<Map>().ok_or_else(|| {
-            Box::new(EvalAltResult::ErrorRuntime(
-                format!("toast item at index {index} must be a map").into(),
-                Position::NONE,
-            ))
-        })?;
-        let id = required_string(&mut item, "id")?;
-        if !ids.insert(id.clone()) {
-            return overlay_config_error(format!("toast ID `{id}` is duplicated"));
-        }
-        let title = required_string(&mut item, "title")?;
-        let message = optional_string(&mut item, "message")?.unwrap_or_default();
-        let variant = match optional_string(&mut item, "variant")?.as_deref() {
-            None | Some("neutral") => ToastVariant::Neutral,
-            Some("success") => ToastVariant::Success,
-            Some("warning") => ToastVariant::Warning,
-            Some("danger") => ToastVariant::Danger,
-            Some(value) => return overlay_config_error(format!("unknown toast variant `{value}`")),
-        };
-        let region = match optional_string(&mut item, "region")?.as_deref() {
-            None | Some("top_right") => ToastRegion::TopRight,
-            Some("top_left") => ToastRegion::TopLeft,
-            Some("bottom_left") => ToastRegion::BottomLeft,
-            Some("bottom_right") => ToastRegion::BottomRight,
-            Some(value) => return overlay_config_error(format!("unknown toast region `{value}`")),
-        };
-        let duration_ms = optional_usize(&mut item, "duration_ms")?.unwrap_or(5_000);
-        if duration_ms == 0 {
-            return overlay_config_error("toast duration must be greater than zero");
-        }
-        let paused = optional_bool(&mut item, "paused")?.unwrap_or(false);
-        let dismissible = optional_bool(&mut item, "dismissible")?.unwrap_or(true);
-        if let Some((unknown, _)) = item.into_iter().next() {
-            return overlay_config_error(format!("unknown field `{unknown}` in toast `{id}`"));
-        }
-        items.push(ToastItemSpec {
-            id,
-            title,
-            message,
-            variant,
-            region,
-            duration_ms: u64::try_from(duration_ms).unwrap_or(u64::MAX),
-            paused,
-            dismissible,
-        });
+    let priority = optional_usize(&mut config, "priority")?.unwrap_or(9_000);
+    if priority > 1_000_000 {
+        return overlay_config_error("layer priority cannot exceed 1000000");
     }
     if let Some((unknown, _)) = config.into_iter().next() {
-        return overlay_config_error(format!("unknown toast host config field `{unknown}`"));
+        return overlay_config_error(format!("unknown layer config field `{unknown}`"));
     }
     Ok(with_call_source(
-        UiNode::toast_host(ToastHostSpec {
-            key,
-            items,
-            max_visible,
-        }),
+        UiNode::layer(
+            content,
+            LayerNodeSpec {
+                id: OverlayId::new(id),
+                placement,
+                inset,
+                priority,
+            },
+        ),
         call,
     ))
 }

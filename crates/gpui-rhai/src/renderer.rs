@@ -12,16 +12,15 @@ use gpui::{
     StyledText, Window, div, img, point, px, relative, rems, rgba,
 };
 
-use crate::overlay_element::{ScriptOverlayElement, WindowOverlayCoordinator};
+use crate::overlay_element::{ScriptLayerElement, ScriptOverlayElement, WindowOverlayCoordinator};
 use crate::slot_runtime::NodeSlotRuntime;
-use crate::toast_element::{ToastDismissHandler, ToastHostElement, ToastPalette, ToastPartStyles};
 use crate::virtual_list_element::VirtualListEntityElement;
 use crate::{
     Align, AnimationKey, AnimationProperty, AssetRegistry, ColorValue, EventPropagation,
     EventResponse, FlexDirection, ImageSourceSpec, InteractionState, Justify, Length, NodeId,
     OverflowMode, OverlayNodeSpec, PositionMode, PrimitiveRegistry, PseudoState, RadiusToken,
     RetainedUiTree, Rgba8, ScriptCallback, SpacingToken, Style, StyleProperties, TextDirection,
-    ToastHostSpec, UiEventHandler, UiNode, UiNodeKind, UiValue,
+    UiEventHandler, UiNode, UiNodeKind, UiValue,
 };
 
 type DispatchFn = dyn Fn(ScriptCallback, UiValue, &mut Window, &mut App) -> EventResponse;
@@ -267,6 +266,35 @@ fn apply_raw_pointer_handlers(
         retained_id,
         captures.clone(),
     )
+}
+
+fn apply_hover_handler(
+    element: Stateful<Div>,
+    hover: Option<(Vec<crate::UiEventBinding>, Option<UiValue>)>,
+    dispatcher: Option<NodeEventDispatcher>,
+) -> Stateful<Div> {
+    element.on_hover(move |hovered, window, cx| {
+        if let Some((bindings, value)) = &hover {
+            let payload = value.as_ref().map_or_else(
+                || UiValue::Bool(*hovered),
+                |value| {
+                    UiValue::Map(BTreeMap::from([
+                        ("hovered".to_owned(), UiValue::Bool(*hovered)),
+                        ("value".to_owned(), value.clone()),
+                    ]))
+                },
+            );
+            let response = dispatch_ui_handlers(
+                bindings,
+                "hover_change",
+                &payload,
+                window,
+                cx,
+                dispatcher.as_ref(),
+            );
+            apply_event_response(response, window, cx);
+        }
+    })
 }
 
 fn apply_pointer_down_handlers(
@@ -1088,15 +1116,19 @@ impl GpuiNodeRenderer {
                     .unwrap_or(UiValue::Null),
             )
         });
+        let hover = (!node.event_handlers("hover_change").is_empty()).then(|| {
+            (
+                node.event_handlers("hover_change").to_vec(),
+                node.handler_payload("hover_change").cloned(),
+            )
+        });
         let key_handlers = key_handler_bindings(node);
-        let has_raw_pointer_handlers = node_has_raw_pointer_handlers(node);
-        let has_scroll = node_scrollable(node);
-        if is_disabled(node)
-            || (click.is_none()
-                && key_handlers.is_empty()
-                && !has_raw_pointer_handlers
-                && !has_scroll)
-        {
+        if !node_needs_interaction_wrapper(
+            node,
+            click.is_some(),
+            hover.is_some(),
+            !key_handlers.is_empty(),
+        ) {
             return Self::populate(
                 element,
                 node,
@@ -1108,17 +1140,12 @@ impl GpuiNodeRenderer {
         }
 
         let click_dispatcher = environment.dispatcher.cloned();
+        let hover_dispatcher = environment.dispatcher.cloned();
         let keyboard_dispatcher = environment.dispatcher.cloned();
         let keyboard_click = click.clone();
-        let tab_stop = match node.attributes().get("tab_stop") {
-            Some(UiValue::Bool(tab_stop)) => *tab_stop,
-            _ => true,
-        };
+        let tab_stop = node_tab_stop(node);
         let text_direction = environment.direction;
-        let stable_id = retained_id.map_or_else(
-            || path.to_owned(),
-            |node_id| format!("gpui-rhai-node-{node_id}"),
-        );
+        let stable_id = interaction_element_id(retained_id, path);
         let debug_path = path.to_owned();
         let element = apply_pseudo_backgrounds(
             element
@@ -1130,42 +1157,41 @@ impl GpuiNodeRenderer {
         .tab_index(0)
         .tab_stop(tab_stop);
         let element = apply_scroll_behavior(element, node, retained_id, environment.scroll_handles);
-        let element = element
-            .on_click(move |event, window, cx| {
-                if matches!(event, ClickEvent::Mouse(_))
-                    && let Some((bindings, payload)) = &click
-                {
-                    let response = dispatch_ui_handlers(
-                        bindings,
-                        "click",
-                        payload,
-                        window,
-                        cx,
-                        click_dispatcher.as_ref(),
-                    );
-                    apply_event_response(response, window, cx);
-                }
-            })
-            .on_key_down(move |event, window, cx| {
-                let semantic_key =
-                    logical_keyboard_key(event.keystroke.key.as_str(), text_direction);
-                let semantic = key_handlers.get(semantic_key).or_else(|| {
-                    matches!(event.keystroke.key.as_str(), "enter" | "space")
-                        .then_some(())
-                        .and(keyboard_click.as_ref())
-                });
-                if let Some((bindings, payload)) = semantic {
-                    let response = dispatch_ui_handlers(
-                        bindings,
-                        "key",
-                        payload,
-                        window,
-                        cx,
-                        keyboard_dispatcher.as_ref(),
-                    );
-                    apply_event_response(response, window, cx);
-                }
+        let element = element.on_click(move |event, window, cx| {
+            if matches!(event, ClickEvent::Mouse(_))
+                && let Some((bindings, payload)) = &click
+            {
+                let response = dispatch_ui_handlers(
+                    bindings,
+                    "click",
+                    payload,
+                    window,
+                    cx,
+                    click_dispatcher.as_ref(),
+                );
+                apply_event_response(response, window, cx);
+            }
+        });
+        let element = apply_hover_handler(element, hover, hover_dispatcher);
+        let element = element.on_key_down(move |event, window, cx| {
+            let semantic_key = logical_keyboard_key(event.keystroke.key.as_str(), text_direction);
+            let semantic = key_handlers.get(semantic_key).or_else(|| {
+                matches!(event.keystroke.key.as_str(), "enter" | "space")
+                    .then_some(())
+                    .and(keyboard_click.as_ref())
             });
+            if let Some((bindings, payload)) = semantic {
+                let response = dispatch_ui_handlers(
+                    bindings,
+                    "key",
+                    payload,
+                    window,
+                    cx,
+                    keyboard_dispatcher.as_ref(),
+                );
+                apply_event_response(response, window, cx);
+            }
+        });
         let element = apply_raw_pointer_handlers(
             element,
             node,
@@ -1240,9 +1266,24 @@ impl GpuiNodeRenderer {
                     (path, retained_id),
                 ))
                 .into_any_element(),
-            UiNodeKind::ToastHost { spec } => element
-                .child(native_toast_element(node, spec, environment, path))
-                .into_any_element(),
+            UiNodeKind::Layer { content, spec } => {
+                let content = Self::render_internal(
+                    content,
+                    environment,
+                    boundary_fallback,
+                    &format!("{path}/content"),
+                    retained_child_id(environment.retained, retained_id, "content", 0),
+                );
+                element
+                    .child(ScriptLayerElement::new(
+                        path,
+                        content,
+                        spec.clone(),
+                        environment.overlays.clone(),
+                        environment.view_id,
+                    ))
+                    .into_any_element()
+            }
             UiNodeKind::VirtualCollection { spec } => element
                 .child(native_virtual_collection_element(spec, environment, path))
                 .into_any_element(),
@@ -1292,6 +1333,26 @@ fn render_flattened_children<C: ColorResolver>(
         }
     }
     rendered
+}
+
+fn node_needs_interaction_wrapper(node: &UiNode, click: bool, hover: bool, keyboard: bool) -> bool {
+    !is_disabled(node)
+        && (click
+            || hover
+            || keyboard
+            || node_has_raw_pointer_handlers(node)
+            || node_scrollable(node))
+}
+
+fn node_tab_stop(node: &UiNode) -> bool {
+    !matches!(
+        node.attributes().get("tab_stop"),
+        Some(UiValue::Bool(false))
+    )
+}
+
+fn interaction_element_id(retained_id: Option<NodeId>, path: &str) -> String {
+    retained_id.map_or_else(|| path.to_owned(), |id| format!("gpui-rhai-node-{id}"))
 }
 
 fn retained_child_id(
@@ -1591,55 +1652,6 @@ fn overlay_panel_key(
             },
         ) as crate::overlay_element::PanelKeyHandler
     })
-}
-
-fn native_toast_element<C: ColorResolver>(
-    node: &UiNode,
-    spec: &ToastHostSpec,
-    environment: &RenderEnvironment<'_, C>,
-    path: &str,
-) -> ToastHostElement {
-    let dismiss = node.handler("dismiss").map_or_else(
-        || Rc::new(|_: String, _: &mut Window, _: &mut App| {}) as ToastDismissHandler,
-        |handler| {
-            let handler = handler.clone();
-            let dispatcher = environment.dispatcher.cloned();
-            Rc::new(move |id: String, window: &mut Window, cx: &mut App| {
-                dispatch_ui_event(
-                    &handler,
-                    "dismiss",
-                    UiValue::String(id),
-                    window,
-                    cx,
-                    dispatcher.as_ref(),
-                );
-            }) as ToastDismissHandler
-        },
-    );
-    ToastHostElement::new(
-        path,
-        spec.clone(),
-        ToastPalette {
-            surface: semantic_color(environment.colors, "surface_raised", 0x0027_272a),
-            text: semantic_color(environment.colors, "text_primary", 0x00f4_f4f5),
-            muted: semantic_color(environment.colors, "text_muted", 0x00a1_a1aa),
-            border: semantic_color(environment.colors, "border", 0x003f_3f46),
-            success: semantic_color(environment.colors, "success", 0x0022_c55e),
-            warning: semantic_color(environment.colors, "warning", 0x00f5_9e0b),
-            danger: semantic_color(environment.colors, "danger", 0x00ef_4444),
-        },
-        environment.overlays.clone(),
-        dismiss,
-        ToastPartStyles {
-            styles: node
-                .part_styles()
-                .map(|(name, style)| (name.to_owned(), style.clone()))
-                .collect(),
-            colors: OwnedColorResolver::capture(environment.colors),
-            direction: environment.direction,
-        },
-        environment.view_id,
-    )
 }
 
 fn native_virtual_collection_element<C: ColorResolver>(

@@ -6,6 +6,9 @@ The budgets are diagnostics, not permission to move per-frame policy into Rhai.
 - Rhai execution is capped at 1,000,000 operations, 64 call levels, bounded
   expression depth, 10,000 array entries, 100,000 aggregate map fields, and
   1 MiB strings.
+- Declarative timers are one-shot, component-scoped, capped by
+  `RuntimeBudgets::timers`, and polled with other foreground deliveries; they do
+  not create one OS thread per timeout.
 - A 5,000-item `VirtualList` must realize only the viewport plus configured
   overscan; tests enforce bounded realization and stable focus.
 - A 10,000-row scalar Table must retain row maps as data and realize only the

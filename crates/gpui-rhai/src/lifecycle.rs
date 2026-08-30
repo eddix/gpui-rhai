@@ -31,6 +31,14 @@ pub struct ScriptLifecycle {
     retained: crate::RetainedUiTree,
 }
 
+#[derive(Default)]
+struct RetainedDeclarations {
+    effects: BTreeMap<crate::EffectId, crate::EffectDescriptor>,
+    timers: BTreeMap<crate::TimerId, crate::TimerDescriptor>,
+    signals: BTreeMap<crate::SignalId, crate::signal::SignalDescriptor>,
+    element_refs: BTreeMap<crate::ElementRefId, crate::NodeId>,
+}
+
 impl ScriptLifecycle {
     /// Create an application lifecycle and mount its root component state.
     ///
@@ -380,9 +388,7 @@ impl ScriptLifecycle {
             self.reconcile_effect_candidate(
                 engine,
                 &self.compiled,
-                BTreeMap::new(),
-                BTreeMap::new(),
-                BTreeMap::new(),
+                RetainedDeclarations::default(),
                 None,
             )?;
             let context = self.context(ExecutionPhase::Dispose);
@@ -706,6 +712,11 @@ impl ScriptLifecycle {
                 .len(),
             budgets.element_refs,
         )?;
+        crate::RuntimeBudgets::check(
+            "timers",
+            engine.component_timers_in_scope(&self.root_path).len(),
+            budgets.timers,
+        )?;
         Ok(())
     }
 
@@ -716,26 +727,20 @@ impl ScriptLifecycle {
         previous_state: crate::StateStore,
         retained: &crate::RetainedUiTree,
     ) -> Result<(), LifecycleError> {
-        let effects = engine.component_effects_in_scope(&self.root_path);
-        let signals = engine.component_signals_in_scope(&self.root_path);
-        let element_refs = self.element_ref_bindings(engine, retained)?;
-        self.reconcile_effect_candidate(
-            engine,
-            candidate,
-            effects,
-            signals,
-            element_refs,
-            Some(previous_state),
-        )
+        let declarations = RetainedDeclarations {
+            effects: engine.component_effects_in_scope(&self.root_path),
+            timers: engine.component_timers_in_scope(&self.root_path),
+            signals: engine.component_signals_in_scope(&self.root_path),
+            element_refs: self.element_ref_bindings(engine, retained)?,
+        };
+        self.reconcile_effect_candidate(engine, candidate, declarations, Some(previous_state))
     }
 
     fn reconcile_effect_candidate(
         &self,
         engine: &mut RuntimeEngine,
         candidate: &CompiledUi,
-        effects: BTreeMap<crate::EffectId, crate::EffectDescriptor>,
-        signals: BTreeMap<crate::SignalId, crate::signal::SignalDescriptor>,
-        element_refs: BTreeMap<crate::ElementRefId, crate::NodeId>,
+        declarations: RetainedDeclarations,
         previous_state: Option<crate::StateStore>,
     ) -> Result<(), LifecycleError> {
         let plan = self
@@ -743,7 +748,7 @@ impl ScriptLifecycle {
             .try_borrow()
             .map_err(|_| LifecycleError::Borrowed)?
             .effects
-            .plan(&self.root_path, effects);
+            .plan(&self.root_path, declarations.effects);
         let transition_count = plan.cleanup().len().saturating_add(plan.start().len());
         if transition_count > 64 {
             return Err(LifecycleError::EffectBudget(transition_count));
@@ -771,10 +776,17 @@ impl ScriptLifecycle {
                 .try_borrow_mut()
                 .map_err(|_| LifecycleError::Borrowed)?;
             engine.commit_component_renders(&mut runtime)?;
-            runtime.signals.reconcile(&self.root_path, signals);
+            runtime.timers.reconcile(
+                &self.root_path,
+                declarations.timers,
+                std::time::Instant::now(),
+            );
+            runtime
+                .signals
+                .reconcile(&self.root_path, declarations.signals);
             runtime
                 .element_refs
-                .reconcile(&self.root_path, element_refs);
+                .reconcile(&self.root_path, declarations.element_refs);
             runtime.virtual_requests.retain(&virtual_collections);
         }
         for descriptor in plan.start() {

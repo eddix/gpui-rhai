@@ -19,8 +19,8 @@ use crate::date::register_date_api;
 use crate::node::{
     asset_image_node, box_node, canvas_node, column_node, directional_asset_image_node,
     directional_image_node, error_boundary_node, fragment_node, generic_directional_image_node,
-    generic_image_node, image_node, lazy_error_boundary_node, overlay_node, rich_text_node,
-    row_node, span_value, stack_node, text_node, toast_host_node,
+    generic_image_node, image_node, layer_node, lazy_error_boundary_node, overlay_node,
+    rich_text_node, row_node, span_value, stack_node, text_node,
 };
 use crate::primitive::{PrimitiveDescriptor, PrimitiveError, PrimitiveHandler, PrimitiveRegistry};
 use crate::style::register_style_api;
@@ -247,6 +247,7 @@ struct ActiveComponentRender {
     invocations: BTreeMap<ComponentInstancePath, ComponentInvocationRecipe>,
     effect_keys: Vec<Option<BTreeSet<String>>>,
     effects: BTreeMap<crate::EffectId, crate::EffectDescriptor>,
+    timers: BTreeMap<crate::TimerId, crate::TimerDescriptor>,
     signals: BTreeMap<crate::SignalId, crate::signal::SignalDescriptor>,
     element_refs: BTreeSet<crate::ElementRefId>,
     virtual_collections: BTreeMap<crate::VirtualCollectionId, VirtualCollectionRecipe>,
@@ -362,6 +363,7 @@ pub struct RuntimeEngine {
     component_render: ActiveComponentRenderState,
     component_invocations: BTreeMap<ComponentInstancePath, ComponentInvocationRecipe>,
     component_effects: BTreeMap<crate::EffectId, crate::EffectDescriptor>,
+    component_timers: BTreeMap<crate::TimerId, crate::TimerDescriptor>,
     component_signals: BTreeMap<crate::SignalId, crate::signal::SignalDescriptor>,
     component_element_refs: BTreeSet<crate::ElementRefId>,
     pending_component_commits: BTreeMap<ComponentInstancePath, PendingComponentCommit>,
@@ -376,6 +378,7 @@ pub(crate) struct RuntimeEngineCheckpoint {
     evaluation_generation: ScriptGeneration,
     component_invocations: BTreeMap<ComponentInstancePath, ComponentInvocationRecipe>,
     component_effects: BTreeMap<crate::EffectId, crate::EffectDescriptor>,
+    component_timers: BTreeMap<crate::TimerId, crate::TimerDescriptor>,
     component_signals: BTreeMap<crate::SignalId, crate::signal::SignalDescriptor>,
     component_element_refs: BTreeSet<crate::ElementRefId>,
     pending_component_commits: BTreeMap<ComponentInstancePath, PendingComponentCommit>,
@@ -442,6 +445,7 @@ impl RuntimeEngine {
             component_render,
             component_invocations: BTreeMap::new(),
             component_effects: BTreeMap::new(),
+            component_timers: BTreeMap::new(),
             component_signals: BTreeMap::new(),
             component_element_refs: BTreeSet::new(),
             pending_component_commits: BTreeMap::new(),
@@ -568,6 +572,7 @@ impl RuntimeEngine {
             invocations: BTreeMap::new(),
             effect_keys: vec![root_effects],
             effects: BTreeMap::new(),
+            timers: BTreeMap::new(),
             signals: BTreeMap::new(),
             element_refs: BTreeSet::new(),
             virtual_collections: BTreeMap::new(),
@@ -607,6 +612,9 @@ impl RuntimeEngine {
             self.component_effects
                 .retain(|id, _| !id.component().is_within(&root));
             self.component_effects.extend(active.effects);
+            self.component_timers
+                .retain(|id, _| !id.component().is_within(&root));
+            self.component_timers.extend(active.timers);
             self.component_signals
                 .retain(|id, _| !id.component().is_within(&root));
             self.component_signals.extend(active.signals);
@@ -662,13 +670,14 @@ impl RuntimeEngine {
         self.finish_component_render(result.is_ok())?;
         let mut root = result.map_err(RuntimeError::Evaluate)?;
         if !self.component_effects_in_scope(&root_path).is_empty()
+            || !self.component_timers_in_scope(&root_path).is_empty()
             || !self.component_signals_in_scope(&root_path).is_empty()
             || !self.component_element_refs_in_scope(&root_path).is_empty()
             || !self.virtual_collection_ids_in_scope(&root_path).is_empty()
         {
             self.restore_execution_checkpoint(checkpoint);
             return Err(RuntimeError::ComponentRuntime(
-                "effectful, signal/ref-owning, or virtual components require ScriptLifecycle"
+                "effectful, timer/signal/ref-owning, or virtual components require ScriptLifecycle"
                     .to_owned(),
             ));
         }
@@ -703,12 +712,13 @@ impl RuntimeEngine {
         let result = self.render_with_context_staged(compiled, context);
         let result = result.and_then(|node| {
             if !self.component_effects_in_scope(&root).is_empty()
+                || !self.component_timers_in_scope(&root).is_empty()
                 || !self.component_signals_in_scope(&root).is_empty()
                 || !self.component_element_refs_in_scope(&root).is_empty()
                 || !self.virtual_collection_ids_in_scope(&root).is_empty()
             {
                 return Err(RuntimeError::ComponentRuntime(
-                    "effectful, signal/ref-owning, or virtual components require ScriptLifecycle"
+                    "effectful, timer/signal/ref-owning, or virtual components require ScriptLifecycle"
                         .to_owned(),
                 ));
             }
@@ -839,6 +849,7 @@ impl RuntimeEngine {
             evaluation_generation: self.evaluation_generation.get(),
             component_invocations: self.component_invocations.clone(),
             component_effects: self.component_effects.clone(),
+            component_timers: self.component_timers.clone(),
             component_signals: self.component_signals.clone(),
             component_element_refs: self.component_element_refs.clone(),
             pending_component_commits: self.pending_component_commits.clone(),
@@ -852,6 +863,7 @@ impl RuntimeEngine {
             .set(checkpoint.evaluation_generation);
         self.component_invocations = checkpoint.component_invocations;
         self.component_effects = checkpoint.component_effects;
+        self.component_timers = checkpoint.component_timers;
         self.component_signals = checkpoint.component_signals;
         self.component_element_refs = checkpoint.component_element_refs;
         self.pending_component_commits = checkpoint.pending_component_commits;
@@ -889,6 +901,17 @@ impl RuntimeEngine {
         root: &ComponentInstancePath,
     ) -> BTreeMap<crate::SignalId, crate::signal::SignalDescriptor> {
         self.component_signals
+            .iter()
+            .filter(|(id, _)| id.component().is_within(root))
+            .map(|(id, descriptor)| (id.clone(), descriptor.clone()))
+            .collect()
+    }
+
+    pub(crate) fn component_timers_in_scope(
+        &self,
+        root: &ComponentInstancePath,
+    ) -> BTreeMap<crate::TimerId, crate::TimerDescriptor> {
+        self.component_timers
             .iter()
             .filter(|(id, _)| id.component().is_within(root))
             .map(|(id, descriptor)| (id.clone(), descriptor.clone()))
@@ -1354,9 +1377,9 @@ fn register_node_apis(engine: &mut Engine) {
     FuncRegistration::new("overlay")
         .in_global_namespace()
         .register_into_engine(engine, overlay_node);
-    FuncRegistration::new("toast_host")
+    FuncRegistration::new("layer")
         .in_global_namespace()
-        .register_into_engine(engine, toast_host_node);
+        .register_into_engine(engine, layer_node);
 }
 
 fn register_native_handler_api(engine: &mut Engine, registry: &crate::NativeHandlerRegistry) {
@@ -1451,6 +1474,7 @@ fn register_component_runtime_apis(
     register_define_component_api(engine, exports, &renderers, generation);
     register_render_component_api(engine, exports, &renderers, &active);
     register_effect_api(engine, &active);
+    register_timer_api(engine, &active);
     register_signal_api(engine, &active);
     register_element_ref_api(engine, &active);
     register_virtual_collection_api(engine, &active);
@@ -1821,6 +1845,81 @@ fn register_effect_api(engine: &mut Engine, active: &ActiveComponentRenderState)
                     return Err(Box::new(component_render_error(
                         crate::EffectError::Duplicate { component, key }.to_string(),
                     )));
+                }
+                Ok(())
+            },
+        );
+}
+
+fn register_timer_api(engine: &mut Engine, active: &ActiveComponentRenderState) {
+    let active = Rc::clone(active);
+    FuncRegistration::new("timeout")
+        .in_global_namespace()
+        .register_into_engine(
+            engine,
+            move |call: rhai::NativeCallContext<'_>,
+                  key: ImmutableString,
+                  delay_ms: rhai::INT,
+                  paused: bool,
+                  callback: FnPtr,
+                  payload: Dynamic|
+                  -> Result<(), Box<EvalAltResult>> {
+                let (component, context, generation) = {
+                    let guard = active.try_borrow().map_err(|_| {
+                        Box::new(component_render_error(
+                            "component render stack is already borrowed",
+                        ))
+                    })?;
+                    let render = guard.as_ref().ok_or_else(|| {
+                        Box::new(component_render_error(
+                            "timeout may run only during formal component render",
+                        ))
+                    })?;
+                    let context = render.contexts.last().cloned().ok_or_else(|| {
+                        Box::new(component_render_error(
+                            "component render context stack is empty",
+                        ))
+                    })?;
+                    (context.component_path().clone(), context, render.generation)
+                };
+                let delay_ms = u64::try_from(delay_ms).map_err(|_| {
+                    Box::new(component_render_error(
+                        "timeout delay must be a positive integer",
+                    ))
+                })?;
+                let id = crate::TimerId::new(component.clone(), key.to_string())
+                    .map_err(|error| Box::new(component_render_error(error.to_string())))?;
+                let payload = UiValue::from_dynamic(payload)
+                    .map_err(|error| Box::new(component_render_error(error.to_string())))?;
+                let native_context = crate::invocation::ScriptInvocationContext::capture(&call);
+                let mut callback = ScriptCallback::try_from_fn_ptr(callback, generation)
+                    .map_err(|error| Box::new(component_render_error(error.to_string())))?;
+                callback.bind_component_if_unset(component, context.event_schemas().clone());
+                callback.bind_native_context_if_unset(native_context);
+                let descriptor = crate::TimerDescriptor::new(
+                    id.clone(),
+                    Duration::from_millis(delay_ms),
+                    paused,
+                    callback,
+                    payload,
+                )
+                .map_err(|error| Box::new(component_render_error(error.to_string())))?;
+                let mut guard = active.try_borrow_mut().map_err(|_| {
+                    Box::new(component_render_error(
+                        "component render stack is already borrowed",
+                    ))
+                })?;
+                let render = guard.as_mut().ok_or_else(|| {
+                    Box::new(component_render_error(
+                        "timeout may run only during formal component render",
+                    ))
+                })?;
+                if render.timers.insert(id.clone(), descriptor).is_some() {
+                    return Err(Box::new(component_render_error(format!(
+                        "timeout `{}` is declared more than once in `{}`",
+                        id.key(),
+                        id.component()
+                    ))));
                 }
                 Ok(())
             },

@@ -159,11 +159,19 @@ window/component async scopes are released together on close. Rhai submits
 validated commands and never receives a GPUI window handle.
 
 Each standalone script window or embedded Host owns one Rust overlay coordinator. Generic Overlay nodes used by Popover, Dropdown, Dialog,
-Menu, Tooltip, and Toast reserve their portal order during layout and
+Menu, and Tooltip reserve their portal order during layout and
 register measured anchor/panel bounds during prepaint. The coordinator owns
 flipping/clamping, the parent-child dismiss stack, outside-click routing,
 Escape routing, modal policy, and per-frame cleanup. Rhai supplies only stable
 IDs, parent IDs, content, and controlled policy callbacks.
+
+Generic Layer nodes place arbitrary content at a window corner, center, or fill
+region with a bounded priority. In an embedded Host they register a view-ID-
+namespaced element with one shared deferred portal; standalone views render the
+same node directly. Toast is Rhai source over Layer plus component-scoped
+declarative one-shot timers. Timer reconciliation, pause/resume, stale
+generation rejection, scope disposal, and transaction rollback are generic
+runtime behavior rather than a native toast queue.
 
 Generic keyed native mechanisms retain GPUI Entities in element state. Business values
 remain controlled Rhai props; only interaction transients such as focus,

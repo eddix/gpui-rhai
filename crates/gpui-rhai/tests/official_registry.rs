@@ -119,6 +119,45 @@ fn pagination_source() -> EmbeddedScriptSource {
     ]))
 }
 
+fn contains_global_call(source: &str, name: &str) -> bool {
+    let needle = format!("{name}(");
+    source.match_indices(&needle).any(|(index, _)| {
+        source[..index]
+            .chars()
+            .next_back()
+            .is_none_or(|character| !(character.is_ascii_alphanumeric() || character == '_'))
+    })
+}
+
+#[test]
+fn official_registry_has_no_privileged_component_constructors() {
+    let forbidden = [
+        "table",
+        "dropdown",
+        "select",
+        "date_picker",
+        "toast_host",
+        "virtual_list",
+    ];
+    for (id, source) in [
+        ("dropdown", DROPDOWN),
+        ("select", SELECT),
+        ("date_picker", DATE_PICKER),
+        ("table", TABLE),
+        ("pagination", PAGINATION),
+        ("menu", MENU),
+        ("tabs", TABS),
+        ("toast", TOAST),
+    ] {
+        for constructor in &forbidden {
+            assert!(
+                !contains_global_call(source, constructor),
+                "official source `{id}` uses privileged constructor `{constructor}`"
+            );
+        }
+    }
+}
+
 fn dropdown_source() -> EmbeddedScriptSource {
     EmbeddedScriptSource::new(BTreeMap::from([
         (
@@ -1884,7 +1923,7 @@ fn nested_menu_preserves_parent_overlay_identity() {
 }
 
 #[test]
-fn toast_source_builds_native_timed_region_host() {
+fn toast_source_builds_public_layers_and_declarative_timers() {
     let source = EmbeddedScriptSource::new(BTreeMap::from([(
         ModuleId::parse("components/toast").unwrap(),
         TOAST.to_owned(),
@@ -1912,24 +1951,55 @@ fn toast_source_builds_native_timed_region_host() {
             "#,
         )
         .unwrap();
-    let context = UiContext::new(
-        Rc::new(RefCell::new(UiRuntimeState::new())),
+    let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+    let mut lifecycle = ScriptLifecycle::new(
+        compiled,
+        Rc::clone(&runtime),
         ComponentInstancePath::root("App", "root"),
         Some("main".to_owned()),
-        ExecutionPhase::Render,
         BTreeMap::new(),
-    );
-    let root = engine.render_with_context(&compiled, context).unwrap();
-    let UiNodeKind::ToastHost { spec } = root.kind() else {
-        panic!("Toast must render the native toast host node");
+        &ComponentStateSchema::default(),
+    )
+    .unwrap();
+    lifecycle.start(&mut engine).unwrap();
+    let UiNodeKind::Box { children: layers } = lifecycle.root().unwrap().kind() else {
+        panic!("Toast must be a public Box/Layer composition");
     };
-    assert_eq!(spec.max_visible, 2);
-    assert_eq!(spec.items.len(), 2);
-    assert_eq!(spec.items[0].region, gpui_rhai::ToastRegion::TopRight);
-    assert!(spec.items[1].paused);
-    assert!(root.handlers().contains_key("dismiss"));
+    assert_eq!(layers.len(), 1);
+    let UiNodeKind::Layer { content, spec } = layers[0].kind() else {
+        panic!("Toast region must use the generic Layer node");
+    };
+    assert_eq!(spec.placement, gpui_rhai::LayerPlacement::TopRight);
+    let UiNodeKind::Box { children: toasts } = content.kind() else {
+        unreachable!()
+    };
+    assert_eq!(toasts.len(), 2);
+    assert!(toasts[0].handlers().contains_key("hover_change"));
+    let UiNodeKind::Box { children } = toasts[0].kind() else {
+        unreachable!()
+    };
+    let UiNodeKind::Box { children: header } = children[0].kind() else {
+        unreachable!()
+    };
     assert_eq!(
-        root.part_style("title").unwrap().base.font_size,
+        header[0]
+            .style()
+            .resolve(&gpui_rhai::InteractionState::default())
+            .font_size,
         Some(gpui_rhai::Length::Pixels(18.0))
     );
+    assert_eq!(runtime.borrow().timers.active_count(), 2);
+    let deliveries = runtime.borrow_mut().timers.drain(
+        std::time::Instant::now() + std::time::Duration::from_secs(2),
+        lifecycle.generation(),
+    );
+    assert_eq!(deliveries.len(), 1, "paused toast must retain its deadline");
+    assert_eq!(deliveries[0].payload, UiValue::String("saved".to_owned()));
+    let _ = lifecycle
+        .invoke_async_delivery_transactional(&engine, deliveries.into_iter().next().unwrap())
+        .unwrap();
+    let events = runtime.borrow_mut().drain_batch().events;
+    assert!(events.iter().any(|event| {
+        event.event.name == "dismiss" && event.event.payload == UiValue::String("saved".to_owned())
+    }));
 }

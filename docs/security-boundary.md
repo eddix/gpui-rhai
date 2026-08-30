@@ -13,14 +13,15 @@ contexts, arbitrary Rust values, filesystem paths, URLs, sockets, or process API
   handles. GPUI elements and arbitrary `Dynamic` Rust values cannot cross it.
 - Capability inputs and outputs are validated against their declared schemas.
 - Mutations and effect execution are rejected during `view(ctx)`; formal render
-  may only emit pure named effect descriptors.
-- Callbacks, tasks, subscriptions, and image decodes bind to an AST generation;
+  may only emit pure named effect, timer, signal, ref, and node descriptors.
+- Callbacks, tasks, subscriptions, declarative timers, and image decodes bind to an AST generation;
   stale work is discarded after hot reload.
 - Script operation, expression-depth, call-depth, array, and map limits are set
   by the runtime.
 - Host-configurable `RuntimeBudgets` independently reject an otherwise valid
   candidate before commit when retained nodes, event handlers, formal
-  components, effects, signals, or element refs exceed their limits.
+  components, effects, timers, signals, element refs, Canvas commands, or
+  virtual data/realization counts exceed their limits.
 - Window commands accept bounded sizes and validated stable IDs. Scripts cannot
   access native window handles.
 - Diagnostics redact fields marked `sensitive`; capability payloads should be

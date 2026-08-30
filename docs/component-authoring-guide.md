@@ -191,6 +191,25 @@ Scrollable keyed ref nodes use `Style().overflow_x_scroll()`,
 `overflow_y_scroll()`, or `overflow_scroll()`. Handlers call
 `ctx.scroll_to(ref, x, y)` with finite non-negative visible offsets.
 
+Declare one-shot foreground callbacks during formal render with
+`timeout(key, delay_ms, paused, Fn("callback"), payload)`. Keys are local to the
+component and signatures reconcile transactionally: unchanged declarations
+keep deadlines, changed declarations restart, completed declarations do not
+repeat until removed or changed, and unreachable scopes cancel. Event handlers
+may call `ctx.pause_timeout(key)`, `ctx.resume_timeout(key)`, or
+`ctx.cancel_timeout(key)`. Only named non-capturing callbacks and UiValue
+payloads cross the retained boundary.
+
+Use `layer(content, #{ id, placement, inset?, priority? })` for arbitrary
+window-level content. Placements are the four corners, `center`, and `fill`;
+IDs are namespaced by embedded `view_id`. Layer is a generic portal primitive,
+not an authorization mechanism or a replacement for modal Overlay policy.
+
+`on_hover_change(callback)` emits a boolean transition. The
+`on_hover_value(callback, value)` variant emits
+`#{ hovered: bool, value: UiValue }`, which lets source components pause keyed
+timers without retaining closures.
+
 For structural responsive composition, branch only on
 `ctx.viewport_class()` (`compact`, `regular`, or `wide`). Hosts may replace the
 default 600/1000 logical-pixel boundaries with a validated

@@ -717,6 +717,7 @@ fn collect_primitive_instances(node: &UiNode, active: &mut BTreeSet<PrimitiveIns
             collect_primitive_instances(trigger, active);
             collect_primitive_instances(content, active);
         }
+        UiNodeKind::Layer { content, .. } => collect_primitive_instances(content, active),
         UiNodeKind::ErrorBoundary { child, fallback } => {
             collect_primitive_instances(child, active);
             collect_primitive_instances(fallback, active);
@@ -730,8 +731,7 @@ fn collect_primitive_instances(node: &UiNode, active: &mut BTreeSet<PrimitiveIns
         | UiNodeKind::RichText { .. }
         | UiNodeKind::Canvas { .. }
         | UiNodeKind::Image { .. }
-        | UiNodeKind::DirectionalImage { .. }
-        | UiNodeKind::ToastHost { .. } => {}
+        | UiNodeKind::DirectionalImage { .. } => {}
     }
 }
 

@@ -12,14 +12,13 @@ use gpui::{
 };
 
 use crate::{
-    FocusToken, OverlayBounds, OverlayId, OverlayKind, OverlayManager, OverlayNodeSpec,
-    OverlayPlacement, OverlaySpec, PlacementResult, Rgba8, ToastError, ToastRegion,
+    FocusToken, LayerNodeSpec, LayerPlacement, OverlayBounds, OverlayId, OverlayKind,
+    OverlayManager, OverlayNodeSpec, OverlayPlacement, OverlaySpec, PlacementResult, Rgba8,
 };
 
 pub(crate) type OpenChangeHandler = Rc<dyn Fn(bool, &mut Window, &mut App)>;
 pub(crate) type PanelKeyHandler = Rc<dyn Fn(&KeyDownEvent, &mut Window, &mut App) -> bool>;
 pub(crate) type BackdropStyleHandler = Rc<dyn Fn(gpui::Div) -> gpui::Div>;
-pub(crate) type HostToastDismissHandler = Rc<dyn Fn(String, &mut Window, &mut App)>;
 
 #[derive(Clone)]
 pub(crate) struct WindowOverlayCoordinator(Rc<RefCell<OverlayCoordinatorState>>);
@@ -32,8 +31,7 @@ struct OverlayCoordinatorState {
     outside_listener_claimed: bool,
     viewport: OverlayBounds,
     tooltip_owners: BTreeMap<String, BTreeSet<OverlayId>>,
-    toast_callbacks: BTreeMap<OverlayId, (String, HostToastDismissHandler)>,
-    toast_elements: BTreeMap<OverlayId, (ToastRegion, AnyElement)>,
+    layer_elements: BTreeMap<OverlayId, (usize, AnyElement)>,
     host_managed: bool,
 }
 
@@ -48,8 +46,7 @@ impl Default for WindowOverlayCoordinator {
             outside_listener_claimed: false,
             viewport: OverlayBounds::default(),
             tooltip_owners: BTreeMap::new(),
-            toast_callbacks: BTreeMap::new(),
-            toast_elements: BTreeMap::new(),
+            layer_elements: BTreeMap::new(),
             host_managed: false,
         })))
     }
@@ -76,7 +73,7 @@ impl WindowOverlayCoordinator {
         state.priorities.clear();
         state.next_priority = 1;
         state.outside_listener_claimed = false;
-        state.toast_elements.clear();
+        state.layer_elements.clear();
         state.host_managed = host_managed;
     }
 
@@ -84,44 +81,25 @@ impl WindowOverlayCoordinator {
         self.0.borrow().host_managed
     }
 
-    pub(crate) fn register_toast_element(
+    pub(crate) fn register_layer_element(
         &self,
         id: OverlayId,
-        region: ToastRegion,
+        priority: usize,
         element: AnyElement,
     ) {
         self.0
             .borrow_mut()
-            .toast_elements
-            .insert(id, (region, element));
+            .layer_elements
+            .insert(id, (priority, element));
     }
 
-    pub(crate) fn take_toast_elements(&self) -> Vec<(ToastRegion, Vec<AnyElement>)> {
+    pub(crate) fn take_layer_elements(&self) -> Vec<AnyElement> {
         let mut state = self.0.borrow_mut();
-        let regions = [
-            ToastRegion::TopLeft,
-            ToastRegion::TopRight,
-            ToastRegion::BottomLeft,
-            ToastRegion::BottomRight,
-        ];
-        let mut output = Vec::new();
-        for region in regions {
-            let ids = state
-                .manager
-                .toasts()
-                .visible(region)
-                .into_iter()
-                .cloned()
-                .collect::<Vec<_>>();
-            let elements = ids
-                .into_iter()
-                .filter_map(|id| state.toast_elements.remove(&id).map(|(_, element)| element))
-                .collect::<Vec<_>>();
-            if !elements.is_empty() {
-                output.push((region, elements));
-            }
-        }
-        output
+        let mut elements = std::mem::take(&mut state.layer_elements)
+            .into_values()
+            .collect::<Vec<_>>();
+        elements.sort_by_key(|(priority, _)| *priority);
+        elements.into_iter().map(|(_, element)| element).collect()
     }
 
     pub(crate) fn viewport(&self) -> OverlayBounds {
@@ -166,30 +144,14 @@ impl WindowOverlayCoordinator {
             let _ = state.manager.dismiss(&id);
             state.callbacks.remove(&id);
         }
-        let toasts = state
-            .toast_callbacks
-            .keys()
-            .filter(|id| id.as_str().starts_with(&prefix))
-            .cloned()
-            .collect::<Vec<_>>();
-        for id in toasts {
-            state.manager.toasts_mut().dismiss(&id);
-            state.toast_callbacks.remove(&id);
-            state.toast_elements.remove(&id);
-        }
+        state
+            .layer_elements
+            .retain(|id, _| !id.as_str().starts_with(&prefix));
         if let Some(tooltips) = state.tooltip_owners.remove(view_id) {
             for id in tooltips {
                 state.manager.tooltips_mut().remove(&id);
             }
         }
-    }
-
-    pub(crate) fn set_toast_max_visible(&self, max_visible: usize) {
-        self.0
-            .borrow_mut()
-            .manager
-            .toasts_mut()
-            .set_max_visible(max_visible);
     }
 
     fn reserve(
@@ -334,90 +296,6 @@ impl WindowOverlayCoordinator {
             })
             .detach();
     }
-
-    pub(crate) fn toast_contains(&self, id: &OverlayId) -> bool {
-        self.0.borrow().manager.toasts().contains(id)
-    }
-
-    pub(crate) fn toast_enqueue(
-        &self,
-        id: OverlayId,
-        local_id: String,
-        dismiss: HostToastDismissHandler,
-        region: ToastRegion,
-        duration: Duration,
-        now: Instant,
-    ) -> Result<Vec<OverlayId>, ToastError> {
-        let mut state = self.0.borrow_mut();
-        let evicted = state
-            .manager
-            .toasts_mut()
-            .enqueue(id.clone(), region, duration, now)?;
-        state.toast_callbacks.insert(id, (local_id, dismiss));
-        Ok(evicted)
-    }
-
-    pub(crate) fn toast_dismiss(
-        &self,
-        id: &OverlayId,
-    ) -> Option<(String, HostToastDismissHandler)> {
-        let mut state = self.0.borrow_mut();
-        state
-            .manager
-            .toasts_mut()
-            .dismiss(id)
-            .then(|| state.toast_callbacks.remove(id))
-            .flatten()
-    }
-
-    pub(crate) fn toast_pause(&self, id: &OverlayId, now: Instant) -> bool {
-        self.0.borrow_mut().manager.toasts_mut().pause(id, now)
-    }
-
-    pub(crate) fn toast_resume(&self, id: &OverlayId, now: Instant) -> bool {
-        self.0.borrow_mut().manager.toasts_mut().resume(id, now)
-    }
-
-    pub(crate) fn toast_remaining(&self, id: &OverlayId, now: Instant) -> Option<Duration> {
-        self.0.borrow().manager.toasts().remaining(id, now)
-    }
-
-    pub(crate) fn toast_dispatch(
-        &self,
-        ids: impl IntoIterator<Item = OverlayId>,
-        window: &mut Window,
-        cx: &mut App,
-    ) {
-        let callbacks = {
-            let mut state = self.0.borrow_mut();
-            ids.into_iter()
-                .filter_map(|id| state.toast_callbacks.remove(&id))
-                .collect::<Vec<_>>()
-        };
-        for (local_id, callback) in callbacks {
-            callback(local_id, window, cx);
-        }
-    }
-
-    pub(crate) fn toast_tick(&self, now: Instant, window: &mut Window, cx: &mut App) {
-        let expired = self.0.borrow_mut().manager.toasts_mut().tick(now);
-        self.toast_dispatch(expired, window, cx);
-    }
-
-    pub(crate) fn toast_visible(&self, region: ToastRegion) -> Vec<OverlayId> {
-        self.0
-            .borrow()
-            .manager
-            .toasts()
-            .visible(region)
-            .into_iter()
-            .cloned()
-            .collect()
-    }
-
-    pub(crate) fn toast_visible_count(&self, region: ToastRegion) -> usize {
-        self.0.borrow().manager.toasts().visible(region).len()
-    }
 }
 
 fn overlay_viewport(viewport: gpui::Size<Pixels>) -> OverlayBounds {
@@ -426,6 +304,139 @@ fn overlay_viewport(viewport: gpui::Size<Pixels>) -> OverlayBounds {
         y: 0.0,
         width: f64::from(viewport.width),
         height: f64::from(viewport.height),
+    }
+}
+
+pub(crate) struct ScriptLayerElement {
+    id: ElementId,
+    content: Option<AnyElement>,
+    spec: LayerNodeSpec,
+    coordinator: WindowOverlayCoordinator,
+    view_id: String,
+}
+
+impl ScriptLayerElement {
+    pub(crate) fn new(
+        path: &str,
+        content: AnyElement,
+        spec: LayerNodeSpec,
+        coordinator: WindowOverlayCoordinator,
+        view_id: impl Into<String>,
+    ) -> Self {
+        Self {
+            id: SharedString::from(format!("{path}/layer")).into(),
+            content: Some(content),
+            spec,
+            coordinator,
+            view_id: view_id.into(),
+        }
+    }
+
+    fn positioned(&self, content: AnyElement) -> gpui::Div {
+        let inset = pixel_from_f64(self.spec.inset);
+        let layer = div().absolute();
+        match self.spec.placement {
+            LayerPlacement::TopLeft => layer.top(inset).left(inset).child(content),
+            LayerPlacement::TopRight => layer.top(inset).right(inset).child(content),
+            LayerPlacement::BottomLeft => layer.bottom(inset).left(inset).child(content),
+            LayerPlacement::BottomRight => layer.bottom(inset).right(inset).child(content),
+            LayerPlacement::Center => layer
+                .top(inset)
+                .right(inset)
+                .bottom(inset)
+                .left(inset)
+                .flex()
+                .items_center()
+                .justify_center()
+                .child(content),
+            LayerPlacement::Fill => layer
+                .top(inset)
+                .right(inset)
+                .bottom(inset)
+                .left(inset)
+                .child(content),
+        }
+    }
+}
+
+impl Element for ScriptLayerElement {
+    type RequestLayoutState = AnyElement;
+    type PrepaintState = ();
+
+    fn id(&self) -> Option<ElementId> {
+        Some(self.id.clone())
+    }
+
+    fn source_location(&self) -> Option<&'static core::panic::Location<'static>> {
+        None
+    }
+
+    fn request_layout(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> (LayoutId, Self::RequestLayoutState) {
+        let content = self.content.take().expect("layer content rendered once");
+        let positioned = self.positioned(content);
+        let mut layer = if self.coordinator.host_managed() {
+            let id = WindowOverlayCoordinator::scoped_id(&self.view_id, &self.spec.id);
+            self.coordinator.register_layer_element(
+                id,
+                self.spec.priority,
+                positioned.into_any_element(),
+            );
+            div().into_any_element()
+        } else {
+            let viewport = self.coordinator.viewport_or_window(window.viewport_size());
+            deferred(
+                div()
+                    .absolute()
+                    .left(pixel_from_f64(viewport.x))
+                    .top(pixel_from_f64(viewport.y))
+                    .w(pixel_from_f64(viewport.width))
+                    .h(pixel_from_f64(viewport.height))
+                    .child(positioned),
+            )
+            .with_priority(self.spec.priority)
+            .into_any_element()
+        };
+        let layout = layer.request_layout(window, cx);
+        (layout, layer)
+    }
+
+    fn prepaint(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        _bounds: Bounds<Pixels>,
+        layer: &mut Self::RequestLayoutState,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        layer.prepaint(window, cx);
+    }
+
+    fn paint(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        _bounds: Bounds<Pixels>,
+        layer: &mut Self::RequestLayoutState,
+        _prepaint: &mut Self::PrepaintState,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        layer.paint(window, cx);
+    }
+}
+
+impl IntoElement for ScriptLayerElement {
+    type Element = Self;
+
+    fn into_element(self) -> Self::Element {
+        self
     }
 }
 
@@ -979,7 +990,6 @@ fn dispatch_open_change(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::{Duration, Instant};
 
     fn spec(id: &str, parent: Option<&str>) -> OverlaySpec {
         OverlaySpec {
@@ -1020,18 +1030,6 @@ mod tests {
         let report = coordinator.0.borrow_mut().manager.dismiss(&parent);
         assert_eq!(report.dismissed, vec![child, parent]);
 
-        coordinator
-            .0
-            .borrow_mut()
-            .manager
-            .toasts_mut()
-            .enqueue(
-                OverlayId::new("saved"),
-                crate::ToastRegion::TopRight,
-                Duration::from_secs(2),
-                Instant::now(),
-            )
-            .unwrap();
         coordinator.begin_frame(overlay_viewport(viewport));
         assert!(
             coordinator
@@ -1040,18 +1038,6 @@ mod tests {
                 .manager
                 .z_index(&OverlayId::new("dialog"))
                 .is_none()
-        );
-        assert_eq!(
-            coordinator
-                .0
-                .borrow()
-                .manager
-                .toasts()
-                .visible(crate::ToastRegion::TopRight)
-                .into_iter()
-                .map(OverlayId::as_str)
-                .collect::<Vec<_>>(),
-            vec!["saved"]
         );
     }
 }

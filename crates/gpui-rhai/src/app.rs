@@ -95,7 +95,6 @@ struct ScriptViewHostState {
     views: BTreeMap<String, FocusHandle>,
     pending_focus_recovery: Vec<FocusHandle>,
     overlay_viewport: Option<crate::OverlayBounds>,
-    toast_max_visible: usize,
     window_policy: WindowCommandPolicy,
     frame_active: bool,
     container_bounds: Option<Bounds<Pixels>>,
@@ -127,7 +126,6 @@ impl ScriptViewHost {
                 views: BTreeMap::new(),
                 pending_focus_recovery: Vec::new(),
                 overlay_viewport: None,
-                toast_max_visible: 3,
                 window_policy,
                 frame_active: false,
                 container_bounds: None,
@@ -158,13 +156,6 @@ impl ScriptViewHost {
         self.inner.borrow_mut().overlay_viewport = None;
     }
 
-    pub fn set_toast_max_visible(&self, max_visible: usize) {
-        let max_visible = max_visible.max(1);
-        let mut state = self.inner.borrow_mut();
-        state.toast_max_visible = max_visible;
-        state.overlays.set_toast_max_visible(max_visible);
-    }
-
     #[must_use]
     pub fn overlay_placement(
         &self,
@@ -175,11 +166,6 @@ impl ScriptViewHost {
             .borrow()
             .overlays
             .placement(view_id, &crate::OverlayId::new(local_id))
-    }
-
-    #[must_use]
-    pub fn visible_toast_count(&self, region: crate::ToastRegion) -> usize {
-        self.inner.borrow().overlays.toast_visible_count(region)
     }
 
     /// Bind host-approved script actions once at App scope.
@@ -244,7 +230,7 @@ impl ScriptViewHost {
                 }
             })
             .child(child)
-            .child(SharedToastPortalElement {
+            .child(SharedLayerPortalElement {
                 coordinator: overlays,
             })
             .into_any_element();
@@ -333,7 +319,7 @@ impl Element for ScriptViewHostFrame {
         window: &mut Window,
         cx: &mut App,
     ) -> (LayoutId, Self::RequestLayoutState) {
-        let (overlays, viewport, toast_max_visible, fallback, pending) = {
+        let (overlays, viewport, fallback, pending) = {
             let mut state = self.host.inner.borrow_mut();
             state.frame_active = true;
             let viewport = state
@@ -347,13 +333,11 @@ impl Element for ScriptViewHostFrame {
             (
                 state.overlays.clone(),
                 viewport,
-                state.toast_max_visible,
                 state.fallback_focus.clone(),
                 std::mem::take(&mut state.pending_focus_recovery),
             )
         };
         overlays.begin_host_frame(viewport);
-        overlays.set_toast_max_visible(toast_max_visible);
         if pending
             .iter()
             .any(|focus| focus.contains_focused(window, cx))
@@ -410,11 +394,11 @@ impl IntoElement for ScriptViewHostFrame {
     }
 }
 
-struct SharedToastPortalElement {
+struct SharedLayerPortalElement {
     coordinator: WindowOverlayCoordinator,
 }
 
-impl Element for SharedToastPortalElement {
+impl Element for SharedLayerPortalElement {
     type RequestLayoutState = AnyElement;
     type PrepaintState = ();
 
@@ -434,25 +418,7 @@ impl Element for SharedToastPortalElement {
         cx: &mut App,
     ) -> (LayoutId, Self::RequestLayoutState) {
         let viewport = self.coordinator.viewport_or_window(window.viewport_size());
-        let columns =
-            self.coordinator
-                .take_toast_elements()
-                .into_iter()
-                .map(|(region, elements)| {
-                    let column = div()
-                        .absolute()
-                        .w(px(320.0))
-                        .flex()
-                        .flex_col()
-                        .gap_2()
-                        .children(elements);
-                    match region {
-                        crate::ToastRegion::TopLeft => column.top(px(12.0)).left(px(12.0)),
-                        crate::ToastRegion::TopRight => column.top(px(12.0)).right(px(12.0)),
-                        crate::ToastRegion::BottomLeft => column.bottom(px(12.0)).left(px(12.0)),
-                        crate::ToastRegion::BottomRight => column.bottom(px(12.0)).right(px(12.0)),
-                    }
-                });
+        let layers = self.coordinator.take_layer_elements();
         let mut layer = deferred(
             div()
                 .absolute()
@@ -460,7 +426,7 @@ impl Element for SharedToastPortalElement {
                 .top(pixel_from_f64(viewport.y))
                 .w(pixel_from_f64(viewport.width))
                 .h(pixel_from_f64(viewport.height))
-                .children(columns),
+                .children(layers),
         )
         .with_priority(9_000)
         .into_any_element();
@@ -494,7 +460,7 @@ impl Element for SharedToastPortalElement {
     }
 }
 
-impl IntoElement for SharedToastPortalElement {
+impl IntoElement for SharedLayerPortalElement {
     type Element = Self;
 
     fn into_element(self) -> Self::Element {
@@ -2762,15 +2728,16 @@ impl ScriptHostView {
             let mut runtime = runtime.borrow_mut();
             runtime.flush_geometry_dependencies();
             let _ = runtime.assets.retain_decode_generation(generation);
+            let now = std::time::Instant::now();
             let mut deliveries = runtime.tasks.drain(generation);
             deliveries.extend(runtime.subscriptions.drain(generation));
+            deliveries.extend(runtime.timers.drain(now, generation));
             runtime.trace_subscription_closures();
             if let Ok(asset_deliveries) = runtime.assets.drain_image_decodes(generation) {
                 deliveries.extend(asset_deliveries);
             }
             runtime.queue_async(deliveries);
             let deliveries = runtime.take_window_async(&self.window_id, &root);
-            let now = std::time::Instant::now();
             let frame = runtime.animations.tick(now);
             runtime.animation_values = runtime.animations.snapshot(now);
             (

@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::{Duration, Instant};
 
 use thiserror::Error;
@@ -25,7 +25,6 @@ pub enum OverlayKind {
     Tooltip,
     Dialog,
     Menu,
-    Toast,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -115,7 +114,6 @@ pub struct OverlayManager {
     order: Vec<OverlayId>,
     next_z: u64,
     tooltips: TooltipScheduler,
-    toasts: ToastQueue,
 }
 
 impl OverlayManager {
@@ -132,7 +130,6 @@ impl OverlayManager {
             order: Vec::new(),
             next_z: 1,
             tooltips: TooltipScheduler::default(),
-            toasts: ToastQueue::new(3),
         })
     }
 
@@ -301,15 +298,6 @@ impl OverlayManager {
         &mut self.tooltips
     }
 
-    #[must_use]
-    pub fn toasts(&self) -> &ToastQueue {
-        &self.toasts
-    }
-
-    pub fn toasts_mut(&mut self) -> &mut ToastQueue {
-        &mut self.toasts
-    }
-
     fn collect_descendants(&self, id: &OverlayId, output: &mut BTreeSet<OverlayId>) {
         for (candidate, entry) in &self.entries {
             if entry.spec.parent.as_ref() == Some(id) && output.insert(candidate.clone()) {
@@ -425,167 +413,6 @@ impl TooltipScheduler {
 pub struct TooltipTransition {
     pub shown: Option<OverlayId>,
     pub hidden: Option<OverlayId>,
-}
-
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum ToastRegion {
-    TopLeft,
-    TopRight,
-    BottomLeft,
-    BottomRight,
-}
-
-#[derive(Clone, Debug)]
-struct ToastEntry {
-    id: OverlayId,
-    deadline: Instant,
-    paused_remaining: Option<Duration>,
-}
-
-#[derive(Clone, Debug)]
-pub struct ToastQueue {
-    max_visible: usize,
-    regions: BTreeMap<ToastRegion, VecDeque<ToastEntry>>,
-}
-
-impl ToastQueue {
-    #[must_use]
-    pub fn new(max_visible: usize) -> Self {
-        Self {
-            max_visible: max_visible.max(1),
-            regions: BTreeMap::new(),
-        }
-    }
-
-    pub fn set_max_visible(&mut self, max_visible: usize) {
-        self.max_visible = max_visible.max(1);
-    }
-
-    #[must_use]
-    pub fn contains(&self, id: &OverlayId) -> bool {
-        self.regions
-            .values()
-            .any(|entries| entries.iter().any(|entry| &entry.id == id))
-    }
-
-    #[must_use]
-    pub fn remaining(&self, id: &OverlayId, now: Instant) -> Option<Duration> {
-        self.regions.values().find_map(|entries| {
-            entries.iter().find(|entry| &entry.id == id).map(|entry| {
-                entry
-                    .paused_remaining
-                    .unwrap_or_else(|| entry.deadline.saturating_duration_since(now))
-            })
-        })
-    }
-
-    /// Enqueue one timed toast and return IDs evicted from the same region.
-    ///
-    /// # Errors
-    ///
-    /// Returns duplicate-ID or zero-duration errors.
-    pub fn enqueue(
-        &mut self,
-        id: OverlayId,
-        region: ToastRegion,
-        duration: Duration,
-        now: Instant,
-    ) -> Result<Vec<OverlayId>, ToastError> {
-        if duration.is_zero() {
-            return Err(ToastError::ZeroDuration);
-        }
-        if self
-            .regions
-            .values()
-            .any(|entries| entries.iter().any(|entry| entry.id == id))
-        {
-            return Err(ToastError::Duplicate(id));
-        }
-        let entries = self.regions.entry(region).or_default();
-        entries.push_back(ToastEntry {
-            id,
-            deadline: now + duration,
-            paused_remaining: None,
-        });
-        let mut evicted = Vec::new();
-        while entries.len() > self.max_visible {
-            if let Some(entry) = entries.pop_front() {
-                evicted.push(entry.id);
-            }
-        }
-        Ok(evicted)
-    }
-
-    pub fn dismiss(&mut self, id: &OverlayId) -> bool {
-        for entries in self.regions.values_mut() {
-            if let Some(index) = entries.iter().position(|entry| &entry.id == id) {
-                entries.remove(index);
-                return true;
-            }
-        }
-        false
-    }
-
-    pub fn pause(&mut self, id: &OverlayId, now: Instant) -> bool {
-        let Some(entry) = self.entry_mut(id) else {
-            return false;
-        };
-        if entry.paused_remaining.is_none() {
-            entry.paused_remaining = Some(entry.deadline.saturating_duration_since(now));
-        }
-        true
-    }
-
-    pub fn resume(&mut self, id: &OverlayId, now: Instant) -> bool {
-        let Some(entry) = self.entry_mut(id) else {
-            return false;
-        };
-        let Some(remaining) = entry.paused_remaining.take() else {
-            return false;
-        };
-        entry.deadline = now + remaining;
-        true
-    }
-
-    #[must_use]
-    pub fn tick(&mut self, now: Instant) -> Vec<OverlayId> {
-        let mut expired = Vec::new();
-        for entries in self.regions.values_mut() {
-            let mut retained = VecDeque::new();
-            while let Some(entry) = entries.pop_front() {
-                if entry.paused_remaining.is_none() && now >= entry.deadline {
-                    expired.push(entry.id);
-                } else {
-                    retained.push_back(entry);
-                }
-            }
-            *entries = retained;
-        }
-        expired
-    }
-
-    #[must_use]
-    pub fn visible(&self, region: ToastRegion) -> Vec<&OverlayId> {
-        self.regions
-            .get(&region)
-            .into_iter()
-            .flat_map(|entries| entries.iter().map(|entry| &entry.id))
-            .collect()
-    }
-
-    fn entry_mut(&mut self, id: &OverlayId) -> Option<&mut ToastEntry> {
-        self.regions
-            .values_mut()
-            .find_map(|entries| entries.iter_mut().find(|entry| &entry.id == id))
-    }
-}
-
-#[derive(Clone, Debug, Error, Eq, PartialEq)]
-pub enum ToastError {
-    #[error("toast `{0:?}` is already queued")]
-    Duplicate(OverlayId),
-    #[error("toast duration must be greater than zero")]
-    ZeroDuration,
 }
 
 fn place(spec: &OverlaySpec, viewport: OverlayBounds) -> PlacementResult {
@@ -828,42 +655,6 @@ mod tests {
         assert_eq!(
             tooltips.tick(start + Duration::from_millis(50)).hidden,
             Some(id)
-        );
-    }
-
-    #[test]
-    fn toast_regions_bound_pause_resume_and_expire_entries() {
-        let start = Instant::now();
-        let mut toasts = ToastQueue::new(2);
-        for id in ["one", "two"] {
-            toasts
-                .enqueue(
-                    OverlayId::new(id),
-                    ToastRegion::TopRight,
-                    Duration::from_secs(1),
-                    start,
-                )
-                .unwrap();
-        }
-        let evicted = toasts
-            .enqueue(
-                OverlayId::new("three"),
-                ToastRegion::TopRight,
-                Duration::from_secs(1),
-                start,
-            )
-            .unwrap();
-        assert_eq!(evicted, vec![OverlayId::new("one")]);
-        assert!(toasts.pause(&OverlayId::new("two"), start + Duration::from_millis(500)));
-        assert_eq!(
-            toasts.tick(start + Duration::from_secs(1)),
-            vec![OverlayId::new("three")]
-        );
-        assert!(toasts.resume(&OverlayId::new("two"), start + Duration::from_secs(2)));
-        assert!(toasts.tick(start + Duration::from_millis(2_499)).is_empty());
-        assert_eq!(
-            toasts.tick(start + Duration::from_millis(2_500)),
-            vec![OverlayId::new("two")]
         );
     }
 

@@ -49,6 +49,7 @@ pub struct UiRuntimeState {
     pub capabilities: CapabilityRegistry,
     pub tasks: TaskRegistry,
     pub subscriptions: SubscriptionRegistry,
+    pub timers: crate::TimerRegistry,
     pub locale: Option<LocaleManager>,
     pub calendar_clock: CalendarClock,
     pub theme: Option<ThemeManager>,
@@ -109,6 +110,7 @@ impl UiRuntimeState {
         self.tasks
             .cancel_scope(&AsyncScope::Window(window.to_owned()));
         self.tasks.cancel_component_scope(root);
+        self.timers.cancel_component_scope(root);
         self.subscriptions
             .cancel_scope(&AsyncScope::Window(window.to_owned()));
         self.subscriptions.cancel_component_scope(root);
@@ -266,6 +268,7 @@ impl UiRuntimeState {
         {
             self.tasks.cancel_component_scope(removed);
             self.subscriptions.cancel_component_scope(removed);
+            self.timers.cancel_component_scope(removed);
             self.assets.cancel_component_scope(removed)?;
             self.actions.remove_component_scope(removed);
         }
@@ -336,6 +339,7 @@ impl UiRuntimeState {
             responsive: self.responsive.clone(),
             task_ids: self.tasks.active_ids(),
             subscription_ids: self.subscriptions.active_ids(),
+            timers: self.timers.clone(),
             decode_ids: self.assets.pending_decode_ids()?,
         })
     }
@@ -348,6 +352,7 @@ impl UiRuntimeState {
     pub fn restore(&mut self, snapshot: UiStateSnapshot) -> Result<(), AssetError> {
         self.tasks.retain_ids(&snapshot.task_ids);
         self.subscriptions.retain_ids(&snapshot.subscription_ids);
+        self.timers = snapshot.timers;
         self.assets.retain_decode_ids(&snapshot.decode_ids)?;
         self.component_state = snapshot.component_state;
         self.stores = snapshot.stores;
@@ -401,6 +406,7 @@ pub struct UiStateSnapshot {
     responsive: ResponsiveRuntime,
     task_ids: BTreeSet<u64>,
     subscription_ids: BTreeSet<u64>,
+    timers: crate::TimerRegistry,
     decode_ids: BTreeSet<u64>,
 }
 
@@ -1678,6 +1684,54 @@ impl UiContext {
             .cancel(handle))
     }
 
+    /// Pause a declared timer by its component-local key.
+    ///
+    /// # Errors
+    ///
+    /// Returns phase, key, or borrow errors.
+    pub fn pause_timeout(&self, key: &str) -> Result<bool, UiContextError> {
+        self.require_mutation()?;
+        let id = crate::TimerId::new(self.component.clone(), key)?;
+        Ok(self
+            .runtime
+            .try_borrow_mut()
+            .map_err(|_| UiContextError::Borrowed)?
+            .timers
+            .pause(&id, std::time::Instant::now()))
+    }
+
+    /// Resume a declared timer by its component-local key.
+    ///
+    /// # Errors
+    ///
+    /// Returns phase, key, or borrow errors.
+    pub fn resume_timeout(&self, key: &str) -> Result<bool, UiContextError> {
+        self.require_mutation()?;
+        let id = crate::TimerId::new(self.component.clone(), key)?;
+        Ok(self
+            .runtime
+            .try_borrow_mut()
+            .map_err(|_| UiContextError::Borrowed)?
+            .timers
+            .resume(&id, std::time::Instant::now()))
+    }
+
+    /// Complete/cancel a declared timer until its signature changes or disappears.
+    ///
+    /// # Errors
+    ///
+    /// Returns phase, key, or borrow errors.
+    pub fn cancel_timeout(&self, key: &str) -> Result<bool, UiContextError> {
+        self.require_mutation()?;
+        let id = crate::TimerId::new(self.component.clone(), key)?;
+        Ok(self
+            .runtime
+            .try_borrow_mut()
+            .map_err(|_| UiContextError::Borrowed)?
+            .timers
+            .cancel(&id))
+    }
+
     /// Start a one-shot asynchronous capability call.
     ///
     /// # Errors
@@ -2071,6 +2125,30 @@ fn register_async_context_methods(builder: &mut TypeBuilder<UiContext>) {
                     .cancel_subscription(handle)
                     .map_err(|error| Box::new(context_runtime_error(&error)))
             },
+        )
+        .with_fn(
+            "pause_timeout",
+            |context: &mut UiContext, key: ImmutableString| {
+                context
+                    .pause_timeout(key.as_str())
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        )
+        .with_fn(
+            "resume_timeout",
+            |context: &mut UiContext, key: ImmutableString| {
+                context
+                    .resume_timeout(key.as_str())
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        )
+        .with_fn(
+            "cancel_timeout",
+            |context: &mut UiContext, key: ImmutableString| {
+                context
+                    .cancel_timeout(key.as_str())
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
         );
 }
 
@@ -2450,6 +2528,8 @@ pub enum UiContextError {
     InvalidScrollOffset { x: f64, y: f64 },
     #[error(transparent)]
     Callback(#[from] crate::ScriptCallbackDefinitionError),
+    #[error(transparent)]
+    Timer(#[from] crate::TimerError),
 }
 
 #[cfg(test)]

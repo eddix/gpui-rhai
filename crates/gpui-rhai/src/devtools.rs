@@ -8,8 +8,7 @@ use gpui::{
 
 use crate::{
     ComponentRegistry, ExecutionTiming, PrimitiveValue, SourceLocation, StateInstanceSnapshot,
-    StoreSnapshot, StyleProperties, ThemeVariant, ToastHostSpec, UiNode, UiNodeKind,
-    UiRuntimeState, UiValue,
+    StoreSnapshot, StyleProperties, ThemeVariant, UiNode, UiNodeKind, UiRuntimeState, UiValue,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -223,7 +222,12 @@ fn inspect_node(node: &UiNode, path: &str) -> InspectorNode {
                 vec![trigger.as_ref(), content.as_ref()],
             )
         }
-        UiNodeKind::ToastHost { spec } => inspect_toast_host(spec, &mut props),
+        UiNodeKind::Layer { content, spec } => {
+            props.insert("id".to_owned(), spec.id.as_str().to_owned());
+            props.insert("placement".to_owned(), format!("{:?}", spec.placement));
+            props.insert("priority".to_owned(), spec.priority.to_string());
+            ("layer".to_owned(), vec![content.as_ref()])
+        }
         UiNodeKind::VirtualCollection { spec } => inspect_virtual_collection(spec, &mut props),
         UiNodeKind::ErrorBoundary { child, fallback } => (
             "error_boundary".to_owned(),
@@ -333,16 +337,6 @@ fn inspect_image_source(source: &crate::ImageSourceSpec) -> String {
         crate::ImageSourceSpec::Handle(handle) => format!("{}#<opaque>", handle.kind()),
         crate::ImageSourceSpec::Asset(asset) => asset.as_str().to_owned(),
     }
-}
-
-fn inspect_toast_host<'a>(
-    spec: &'a ToastHostSpec,
-    props: &mut BTreeMap<String, String>,
-) -> (String, Vec<&'a UiNode>) {
-    props.insert("key".to_owned(), spec.key.clone());
-    props.insert("items".to_owned(), spec.items.len().to_string());
-    props.insert("max_visible".to_owned(), spec.max_visible.to_string());
-    ("toast_host".to_owned(), Vec::new())
 }
 
 fn primitive_value(value: &PrimitiveValue) -> String {

@@ -408,6 +408,9 @@ fn collect_node_animations(
             collect_node_animations(trigger, &format!("{path}/trigger"), output)?;
             collect_node_animations(content, &format!("{path}/content"), output)?;
         }
+        UiNodeKind::Layer { content, .. } => {
+            collect_node_animations(content, &format!("{path}/content"), output)?;
+        }
         UiNodeKind::ErrorBoundary { child, fallback } => {
             collect_node_animations(child, &format!("{path}/boundary"), output)?;
             collect_node_animations(fallback, &format!("{path}/fallback"), output)?;
@@ -422,8 +425,7 @@ fn collect_node_animations(
         | UiNodeKind::Canvas { .. }
         | UiNodeKind::Custom { .. }
         | UiNodeKind::Image { .. }
-        | UiNodeKind::DirectionalImage { .. }
-        | UiNodeKind::ToastHost { .. } => {}
+        | UiNodeKind::DirectionalImage { .. } => {}
     }
     Ok(())
 }

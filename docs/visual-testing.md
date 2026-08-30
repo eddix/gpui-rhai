@@ -70,8 +70,8 @@ accessibility state after every action and must not bypass the lock screen.
 `tests/native-keyboard` separately uses GPUI's non-release `test-support` window
 to synthesize Tab, Shift-Tab, Enter, Unicode text input, and clipboard
 copy/cut/paste plus read-only selection against real renderer tab stops,
-official Rhai components, native
-Dropdown/TextInput/Toast/Menu entities, executor-clock timers, and transactional
+official Rhai components, native text editing plus generic Overlay/Layer,
+declarative timers, and transactional
 `ScriptLifecycle` callbacks. The suite also paints an open child Popover inside
 an open parent Dialog, guarding GPUI 0.2.x against nested `defer_draw` panics.
 Three-view embedding cases cover automatic bounds, runtime isolation, shared

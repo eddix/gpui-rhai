@@ -17,7 +17,7 @@ GPUI Window
 Views never share Rhai state, app/window stores, themes, locales, tasks,
 subscriptions, assets, capabilities, or diagnostics. Share business data only
 through explicit host capabilities. The Host shares native interaction
-mechanisms that must coordinate across components: Overlay, Tooltip, Toast,
+mechanisms that must coordinate across components: Overlay, Tooltip, Layer,
 outside dismissal, Escape routing, focus fallback, and approved key bindings.
 
 ## Mounting
@@ -74,9 +74,10 @@ Dropdown in a 200-point widget can render at its measured 280-point width and
 flip/clamp against window edges. `ScriptViewHost::set_overlay_viewport` may set
 an explicit absolute rectangle for an intentionally isolated domain.
 
-Every local Overlay, Tooltip, Toast, and focus ID is internally namespaced by
-`view_id`. Rhai callbacks continue to receive their original local IDs. Toasts
-from every sibling use one Host queue and one per-region maximum (default 3).
+Every local Overlay, Tooltip, Layer, and focus ID is internally namespaced by
+`view_id`. Rhai callbacks continue to receive their original local IDs. Toast
+items remain owned and limited by their source component; only their generic
+positioned Layer elements share the Host portal.
 
 Non-modal outside clicks dismiss the topmost Host overlay during native capture
 and continue to the clicked sibling control. Modal backdrops consume the click.
@@ -108,13 +109,14 @@ actions for the same keystrokes/context.
 
 Remove a configured widget with `view.dispose(cx)?` before dropping it. Disposal
 is idempotent and immediately cancels tasks/subscriptions, removes scoped state,
-actions, overlays, tooltips, and toasts, and frees the `view_id` for remounting.
+actions, overlays, tooltips, layers, and declarative timers, and frees the
+`view_id` for remounting.
 Dropping the final handle is a fallback. Merely omitting `view.element()` from a
 temporary page does not dispose it.
 
 See `cargo run -p gpui-rhai --example embedded_views` for three isolated views,
 automatic compact sizing, escaping Dropdown placement, duplicate local IDs,
-cross-view dismissal, a shared Toast queue, and explicit dispose/remount.
+cross-view dismissal, shared Layer placement, and explicit dispose/remount.
 
 ## Host-owned interactive trees
 
