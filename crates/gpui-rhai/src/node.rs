@@ -2739,17 +2739,31 @@ pub(crate) fn virtual_list_node(
 ) -> Result<UiNode, Box<EvalAltResult>> {
     let key = required_string(&mut config, "key")?;
     let label = optional_string(&mut config, "label")?.unwrap_or_default();
-    let row_height = optional_number(&mut config, "row_height")?
-        .ok_or_else(|| Box::new(overlay_type_error("row_height", "a positive number")))?;
+    let estimated_height = optional_number(&mut config, "estimated_height")?
+        .ok_or_else(|| Box::new(overlay_type_error("estimated_height", "a positive number")))?;
     let height = optional_number(&mut config, "height")?
         .ok_or_else(|| Box::new(overlay_type_error("height", "a positive number")))?;
-    if !row_height.is_finite() || row_height <= 0.0 || !height.is_finite() || height <= 0.0 {
-        return overlay_config_error("virtual list row_height and height must be positive");
+    if !estimated_height.is_finite()
+        || estimated_height <= 0.0
+        || !height.is_finite()
+        || height <= 0.0
+    {
+        return overlay_config_error("virtual list estimated_height and height must be positive");
     }
-    let overscan = optional_usize(&mut config, "overscan")?.unwrap_or(2);
-    if overscan > 100 {
-        return overlay_config_error("virtual list overscan cannot exceed 100");
+    let overdraw_pixels =
+        optional_number(&mut config, "overdraw_pixels")?.unwrap_or(estimated_height * 2.0);
+    if !overdraw_pixels.is_finite() || !(0.0..=10_000.0).contains(&overdraw_pixels) {
+        return overlay_config_error(
+            "virtual list overdraw_pixels must be finite and between 0 and 10000",
+        );
     }
+    let alignment = optional_string(&mut config, "alignment")?.unwrap_or_else(|| "top".to_owned());
+    let bottom_align = match alignment.as_str() {
+        "top" => false,
+        "bottom" => true,
+        _ => return overlay_config_error("virtual list alignment must be `top` or `bottom`"),
+    };
+    let follow_tail = optional_bool(&mut config, "follow_tail")?.unwrap_or(false);
     let raw_items = config.remove("items").ok_or_else(|| {
         Box::new(EvalAltResult::ErrorRuntime(
             "virtual list config field `items` is required".into(),
@@ -2796,9 +2810,11 @@ pub(crate) fn virtual_list_node(
         key,
         label: label.clone(),
         items,
-        row_height,
+        estimated_height,
         height,
-        overscan,
+        overdraw_pixels,
+        bottom_align,
+        follow_tail,
     })
     .with_attribute("role", UiValue::String("list".to_owned()))
     .with_attribute("label", UiValue::String(label));

@@ -194,8 +194,8 @@ pub use theme::{
 pub use toast::{ToastHostSpec, ToastItemSpec, ToastVariant};
 pub use value::{OpaqueHandle, UiValue, UiValueError};
 pub use virtual_list::{
-    VirtualListError, VirtualListItem, VirtualListMetrics, VirtualListNodeSpec, VirtualListSpec,
-    VirtualListState,
+    VariableListSpec, VariableListState, VariableListWindow, VirtualListError, VirtualListItem,
+    VirtualListMetrics, VirtualListNodeSpec, VirtualListSpec, VirtualListState,
 };
 pub use window::{
     ScriptWindowSpec, WindowCommand, WindowCommandError, WindowCommandPolicy, WindowCommandRegistry,

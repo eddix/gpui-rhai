@@ -4,8 +4,8 @@ use gpui::prelude::FluentBuilder;
 use gpui::{
     AnyElement, App, AppContext, Bounds, BoxShadow, Context, Element, ElementId, Entity,
     GlobalElementId, InspectorElementId, InteractiveElement, IntoElement, KeyDownEvent, LayoutId,
-    ParentElement, Pixels, Render, ScrollStrategy, SharedString, Styled, UniformListScrollHandle,
-    Window, div, point, px, rgba, uniform_list,
+    ListAlignment, ListOffset, ListState, ParentElement, Pixels, Render, SharedString, Styled,
+    Window, div, list, point, px, rgba,
 };
 
 use crate::dropdown_element::DropdownSlotRuntime;
@@ -128,7 +128,7 @@ struct VirtualListView {
     spec: VirtualListNodeSpec,
     state: VirtualListState,
     runtime: DropdownSlotRuntime,
-    scroll: UniformListScrollHandle,
+    scroll: ListState,
     focus_change: Option<VirtualFocusHandler>,
 }
 
@@ -138,11 +138,12 @@ impl VirtualListView {
         runtime: DropdownSlotRuntime,
         focus_change: Option<VirtualFocusHandler>,
     ) -> Self {
+        let scroll = list_state(&spec);
         let mut this = Self {
             spec,
             state: VirtualListState::default(),
             runtime,
-            scroll: UniformListScrollHandle::new(),
+            scroll,
             focus_change,
         };
         this.install_keys();
@@ -157,11 +158,23 @@ impl VirtualListView {
         cx: &mut Context<Self>,
     ) {
         let changed = self.spec != spec;
+        let alignment_changed = self.spec.bottom_align != spec.bottom_align;
         self.spec = spec;
         self.runtime = runtime;
         self.focus_change = focus_change;
         self.install_keys();
         if changed {
+            if alignment_changed {
+                self.scroll = list_state(&self.spec);
+            } else {
+                self.scroll.reset(self.spec.items.len());
+            }
+            if self.spec.follow_tail && !self.spec.items.is_empty() {
+                self.scroll.scroll_to(ListOffset {
+                    item_ix: self.spec.items.len() - 1,
+                    offset_in_item: px(0.0),
+                });
+            }
             cx.notify();
         }
     }
@@ -194,11 +207,7 @@ impl VirtualListView {
                 .as_ref()
                 .and_then(|focused| self.spec.items.iter().position(|item| &item.key == focused))
             {
-                self.scroll.scroll_to_item_with_offset(
-                    index,
-                    ScrollStrategy::Center,
-                    self.spec.overscan,
-                );
+                self.scroll.scroll_to_reveal_item(index);
             }
             cx.notify();
         }
@@ -209,8 +218,6 @@ impl VirtualListView {
 impl Render for VirtualListView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let items = self.spec.items.clone();
-        let count = items.len();
-        let row_height = finite_to_f32(self.spec.row_height);
         let height = finite_to_f32(self.spec.height);
         let runtime = self.runtime.clone();
         let focused = self.state.focused().map(ToOwned::to_owned);
@@ -226,25 +233,16 @@ impl Render for VirtualListView {
             .colors
             .resolve(&ColorValue::Token("surface".to_owned()))
             .unwrap_or_else(|| Rgba8::from_rgb_hex(0x0018_181b));
-        let list = uniform_list(
-            SharedString::from(format!("virtual-list-{}", self.spec.key)),
-            count,
-            move |range, _window, _cx| {
-                range
-                    .map(|index| {
-                        let item = &items[index];
-                        div()
-                            .id(("virtual-list-row", index))
-                            .h(px(row_height))
-                            .when(focused.as_deref() == Some(item.key.as_str()), |row| {
-                                row.bg(rgba(focus_color.as_rgba_hex()))
-                            })
-                            .child(runtime.render(&item.node, &format!("item:{}", item.key)))
-                    })
-                    .collect::<Vec<_>>()
-            },
-        )
-        .track_scroll(self.scroll.clone())
+        let list = list(self.scroll.clone(), move |index, _window, _cx| {
+            let item = &items[index];
+            div()
+                .id(("virtual-list-row", index))
+                .when(focused.as_deref() == Some(item.key.as_str()), |row| {
+                    row.bg(rgba(focus_color.as_rgba_hex()))
+                })
+                .child(runtime.render(&item.node, &format!("item:{}", item.key)))
+                .into_any_element()
+        })
         .h(px(height))
         .w_full();
         let weak = cx.entity().downgrade();
@@ -293,6 +291,18 @@ impl Render for VirtualListView {
             })
             .child(list)
     }
+}
+
+fn list_state(spec: &VirtualListNodeSpec) -> ListState {
+    ListState::new(
+        spec.items.len(),
+        if spec.bottom_align {
+            ListAlignment::Bottom
+        } else {
+            ListAlignment::Top
+        },
+        px(finite_to_f32(spec.overdraw_pixels)),
+    )
 }
 
 #[allow(clippy::cast_possible_truncation)]

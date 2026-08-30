@@ -283,7 +283,14 @@ fn inspect_virtual_list<'a>(
     props: &mut BTreeMap<String, String>,
 ) -> (String, Vec<&'a UiNode>) {
     props.insert("items".to_owned(), spec.items.len().to_string());
-    props.insert("row_height".to_owned(), spec.row_height.to_string());
+    props.insert(
+        "estimated_height".to_owned(),
+        spec.estimated_height.to_string(),
+    );
+    props.insert(
+        "alignment".to_owned(),
+        if spec.bottom_align { "bottom" } else { "top" }.to_owned(),
+    );
     (
         "virtual_list".to_owned(),
         spec.items.iter().map(|item| &item.node).collect(),
