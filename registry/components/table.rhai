@@ -4,31 +4,31 @@
   "export": "Table",
   "version": "0.1.0",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
-  "dependencies": ["components/skeleton"],
+  "dependencies": [],
   "capabilities": {},
-  "assets": ["icons/check.svg", "icons/sort_ascending.svg", "icons/sort_descending.svg"]
+  "assets": []
 }
 */
-// Table is a controlled fixed-row-height data table with native row virtualization.
-//
-// Props: key/label, columns, rows, row_key, height, size, loading/empty states,
-//        stripes, controlled sort/selection, and semantic callbacks.
-// Events: sort_change(optional<sort>), selection_change(array<string>), row_click(string).
-// Example: Table(#{ key: "users", label: "Users", columns: columns, rows: rows, row_key: "id", height: px(420) })
-
-import "components/skeleton" as skeleton;
+// Data-backed Table composed entirely from public Box/Text/virtual_collection APIs.
+// Height is a positive logical-pixel number. Rows remain UiValue data until realized.
+// Props: key, label, row_key, rows, columns, height, loading/empty, sort and selection.
+// Events: sort_change, selection_change, and row_click.
+// State: controlled values only; realized item component state is keyed by row.
+// Example: Table(#{ key: "users", label: "Users", row_key: "id", rows: rows,
+//     columns: columns, height: 420 })
 
 define_component(#{
     metadata: #{ id: "components/table", "export": "Table", version: "0.1.0",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
-        dependencies: ["components/skeleton"], capabilities: #{},
-        assets: ["icons/check.svg", "icons/sort_ascending.svg", "icons/sort_descending.svg"] },
+        dependencies: [], capabilities: #{}, assets: [] },
     schema: #{
         props: #{
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
             label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
             row_key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-            rows: #{ schema: #{ type: "array", max_items: 10000, items: #{ type: "map", values: #{ type: "ui_value" } } }, required: true, sensitive: false },
+            rows: #{ schema: #{ type: "array", max_items: 100000,
+                items: #{ type: "map", values: #{ type: "ui_value" } } },
+                required: true, sensitive: false },
             columns: #{ schema: #{ type: "array", max_items: 256, items: #{
                 type: "object", allow_unknown: false, fields: #{
                     key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
@@ -38,26 +38,24 @@ define_component(#{
                         value: #{ schema: #{ type: "number", exclusive_min: 0.0 }, required: true, sensitive: false },
                     } }, required: true, sensitive: false },
                     align: #{ schema: #{ type: "optional", value: #{ type: "string", allowed: ["start", "center", "end"] } }, required: false, sensitive: false },
-                    format: #{ schema: #{ type: "optional", value: #{ type: "map", values: #{ type: "ui_value" } } }, required: false, sensitive: false },
                     sortable: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                         "default": #{ type: "bool", value: false } },
-                    cell_renderer: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false },
                 },
             } }, required: true, sensitive: false },
-            height: #{ schema: #{ type: "length" }, required: true, sensitive: false },
-            size: #{ schema: #{ type: "string", allowed: ["xs", "sm", "md", "lg"] }, required: false, sensitive: false,
-                "default": #{ type: "string", value: "md" } },
+            height: #{ schema: #{ type: "number", exclusive_min: 0.0 }, required: true, sensitive: false },
+            estimated_row_height: #{ schema: #{ type: "number", exclusive_min: 0.0 }, required: false, sensitive: false,
+                "default": #{ type: "float", value: 34.0 } },
             loading: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: false } },
             loading_content: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false },
             empty: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false },
             empty_text: #{ schema: #{ type: "string" }, required: false, sensitive: false,
-                "default": #{ type: "string", value: "" } },
+                "default": #{ type: "string", value: "No results" } },
             striped: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: false } },
             selection_mode: #{ schema: #{ type: "string", allowed: ["none", "single", "multiple"] }, required: false, sensitive: false,
                 "default": #{ type: "string", value: "none" } },
-            selected_keys: #{ schema: #{ type: "array", max_items: 10000, items: #{ type: "string" } }, required: false, sensitive: false,
+            selected_keys: #{ schema: #{ type: "array", max_items: 100000, items: #{ type: "string" } }, required: false, sensitive: false,
                 "default": #{ type: "array", value: [] } },
             sort: #{ schema: #{ type: "optional", value: #{ type: "object", allow_unknown: false, fields: #{
                 key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
@@ -73,113 +71,127 @@ define_component(#{
                 key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
                 direction: #{ schema: #{ type: "string", allowed: ["ascending", "descending"] }, required: true, sensitive: false },
             } } } },
-            selection_change: #{ payload: #{ type: "array", max_items: 10000, items: #{ type: "string" } } },
+            selection_change: #{ payload: #{ type: "array", max_items: 100000, items: #{ type: "string" } } },
             row_click: #{ payload: #{ type: "string" } },
         },
         slots: #{
             loading_content: #{ required: false, multiple: false },
             empty: #{ required: false, multiple: false },
         },
-        parts: ["root", "header", "header_cell", "body", "row", "cell", "selection_header", "selection_cell", "selection_indicator", "horizontal_scrollbar", "horizontal_scrollbar_thumb", "loading", "empty"],
+        parts: ["root", "header", "header_cell", "body", "loading", "empty"],
     },
     render: Fn("render_Table")
 });
 
-fn table_row_height(size) {
-    if size == "xs" { 24 }
-    else if size == "sm" { 28 }
-    else if size == "lg" { 40 }
-    else { 32 }
-}
-
-fn prop_or(props, name, fallback) {
-    if name in props { props[name] } else { fallback }
-}
-
-fn default_loading(key, row_height) {
-    let rows = [];
-    for index in 0..100 {
-        rows.push(skeleton::Skeleton(#{
-            key: `${key}-loading-${index}`, width: 1, height: row_height - 4,
-            animated: false
-        }).with_style(style().width(relative(1.0))));
-    }
-    rows
-}
-
 fn Table(props) { render_component("components/table", props) }
+fn prop_or(props, name, fallback) { if name in props { props[name] } else { fallback } }
+
+fn column_style(column) {
+    let style = style().padding_x(theme_spacing("sm"));
+    if column.width.kind == "fixed" { style.width(px(column.width.value)) }
+    else if column.width.kind == "percent" { style.width(relative(column.width.value / 100.0)) }
+    else { style.width(px(column.width.value)) }
+}
+
+fn next_sort(current, key) {
+    if current != () && current.key == key {
+        if current.direction == "ascending" { #{ key: key, direction: "descending" } }
+        else { () }
+    } else { #{ key: key, direction: "ascending" } }
+}
+
+fn sort_action(ctx, payload) { ctx.emit("sort_change", payload); }
+fn row_action(ctx, payload) {
+    ctx.emit("row_click", payload.key);
+    if payload.selection != () { ctx.emit("selection_change", payload.selection); }
+}
+
+fn render_table_row(ctx, payload) {
+    let item = payload.item;
+    let cells = [];
+    for cell in item.cells {
+        cells.push(text(cell.text).with_key(cell.key).with_style(column_style(cell)));
+    }
+    let node = row(cells)
+        .with_key(payload.key)
+        .with_style(style().height(px(item.height)).border_color(theme_color("border"))
+            .background(if item.selected { rgba(0x334155cc) }
+                else if item.striped { theme_color("surface_raised") }
+                else { rgba(0x00000000) }))
+        .accessibility_role("row")
+        .accessibility_label(item.label);
+    node.on_click_value(Fn("row_action"), #{ key: payload.key, selection: item.selection })
+}
+
 fn render_Table(ctx, props) {
-    let row_height = table_row_height(prop_or(props, "size", "md"));
-    let has_loading_content = "loading_content" in props && props.loading_content != ();
-    let loading = prop_or(props, "loading", false);
-    let config = #{
-        key: props.key,
-        label: props.label,
-        columns: props.columns,
-        rows: props.rows,
-        row_key: props.row_key,
-        height: props.height,
-        row_height: row_height * 1.0,
-        flex_min_width: 80.0,
-        selection_width: row_height * 1.0,
-        selection_size: row_height * 0.5,
-        horizontal_scrollbar_height: row_height * 0.375,
-        horizontal_scrollbar_thumb_min_width: row_height * 2.0,
-        horizontal_scrollbar_inset: row_height * 0.125,
-        overscan: 2,
-        loading: loading,
-        loading_rows: if loading && !has_loading_content {
-            default_loading(props.key, row_height)
-        } else { [] },
-        empty_text: if prop_or(props, "empty_text", "") == "" {
-            ctx.t("common.no_results")
-        } else { props.empty_text },
-        striped: prop_or(props, "striped", false),
-        selection_mode: prop_or(props, "selection_mode", "none"),
-        selected_keys: prop_or(props, "selected_keys", []),
-        sort: if "sort" in props { props.sort } else { () },
-        calendar: ctx.calendar(),
-        number: ctx.number(),
-        check_asset: asset("app/icons/check"),
-        sort_ascending_asset: asset("app/icons/sort_ascending"),
-        sort_descending_asset: asset("app/icons/sort_descending"),
-    };
-    if has_loading_content { config.loading_slot = props.loading_content; }
-    if "empty" in props && props.empty != () { config.empty_slot = props.empty; }
-    let node = table(config)
-        .with_style(component_style(props, "root", style()))
-        .with_part_style("header", component_style(props, "header",
-            style().background(theme_color("surface_raised")).border_color(theme_color("border"))))
-        .with_part_style("header_cell", component_style(props, "header_cell",
-            style().padding_x(theme_spacing("sm"))))
-        .with_part_style("body", component_style(props, "body", style()))
-        .with_part_style("row", component_style(props, "row",
-            style().border_color(theme_color("border"))))
-        .with_part_style("cell", component_style(props, "cell",
-            style().padding_x(theme_spacing("sm"))))
-        .with_part_style("selection_header", component_style(props, "selection_header", style()))
-        .with_part_style("selection_cell", component_style(props, "selection_cell", style()))
-        .with_part_style("selection_indicator", component_style(props, "selection_indicator",
-            style().radius(theme_radius("sm"))))
-        .with_part_style("horizontal_scrollbar", component_style(props, "horizontal_scrollbar",
-            style().background(theme_color("surface_raised"))))
-        .with_part_style("horizontal_scrollbar_thumb", component_style(props,
-            "horizontal_scrollbar_thumb",
-            style().background(theme_color("text_muted")).radius(px(row_height))))
-        .with_part_style("loading", component_style(props, "loading",
-            style().flex_col().gap(theme_spacing("xs"))
-                .text_color(theme_color("text_muted"))))
-        .with_part_style("empty", component_style(props, "empty",
-            style().text_color(theme_color("text_muted"))))
-        .accessibility_role("table")
-        .accessibility_label(props.label);
-    let node = if "on_sort_change" in props && props.on_sort_change != () {
-        node.on_sort_change(props.on_sort_change)
-    } else { node };
-    let node = if "on_selection_change" in props && props.on_selection_change != () {
-        node.on_selection_change(props.on_selection_change)
-    } else { node };
-    if "on_row_click" in props && props.on_row_click != () {
-        node.on_row_click(props.on_row_click)
-    } else { node }
+    let current_sort = if "sort" in props { props.sort } else { () };
+    let headers = [];
+    for column in props.columns {
+        let title = if current_sort != () && current_sort.key == column.key {
+            `${column.title} ${if current_sort.direction == "ascending" { "↑" } else { "↓" }}`
+        } else { column.title };
+        let header = text(title).with_key(column.key)
+            .with_style(component_style(props, "header_cell", column_style(column)))
+            .accessibility_role("columnheader");
+        headers.push(if prop_or(column, "sortable", false) {
+            header.on_click_value(Fn("sort_action"), next_sort(current_sort, column.key))
+        } else { header });
+    }
+    let header = row(headers).with_key(`${props.key}-header`)
+        .with_style(component_style(props, "header",
+            style().height(px(36)).background(theme_color("surface_raised"))))
+        .accessibility_role("row");
+
+    if prop_or(props, "loading", false) {
+        let loading = if "loading_content" in props && props.loading_content != () {
+            props.loading_content
+        } else { text("Loading…") };
+        return box([header, loading.with_style(component_style(props, "loading", style().padding(px(12)) ))])
+            .with_key(props.key).with_style(component_style(props, "root", style().flex_col()))
+            .accessibility_role("table").accessibility_label(props.label);
+    }
+    if props.rows.len == 0 {
+        let empty = if "empty" in props && props.empty != () { props.empty }
+            else { text(prop_or(props, "empty_text", "No results")) };
+        return box([header, empty.with_style(component_style(props, "empty", style().padding(px(12)) ))])
+            .with_key(props.key).with_style(component_style(props, "root", style().flex_col()))
+            .accessibility_role("table").accessibility_label(props.label);
+    }
+
+    let selected = prop_or(props, "selected_keys", []);
+    let selection_mode = prop_or(props, "selection_mode", "none");
+    let data = [];
+    for index in 0..props.rows.len {
+        let source = props.rows[index];
+        let key = `${source[props.row_key]}`;
+        let is_selected = key in selected;
+        let next_selection = if selection_mode == "none" { () }
+            else if selection_mode == "single" { if is_selected { [] } else { [key] } }
+            else {
+                let result = [];
+                for candidate in selected { if candidate != key { result.push(candidate); } }
+                if !is_selected { result.push(key); }
+                result
+            };
+        let cells = [];
+        for column in props.columns {
+            cells.push(#{
+                key: column.key, text: if column.key in source { `${source[column.key]}` } else { "" },
+                width: column.width, align: prop_or(column, "align", "start")
+            });
+        }
+        data.push(#{ key: key, label: `${props.label} row ${index + 1}`, cells: cells,
+            selected: is_selected, selection: next_selection,
+            striped: prop_or(props, "striped", false) && index % 2 == 1,
+            height: prop_or(props, "estimated_row_height", 34.0) });
+    }
+    let body = virtual_collection(#{
+        key: `${props.key}-body`, label: props.label, data: data,
+        estimated_height: prop_or(props, "estimated_row_height", 34.0),
+        height: props.height, overdraw_pixels: prop_or(props, "estimated_row_height", 34.0) * 4.0,
+        alignment: "top", follow_tail: false
+    }, Fn("render_table_row")).with_style(component_style(props, "body", style()));
+    box([header, body]).with_key(props.key)
+        .with_style(component_style(props, "root", style().flex_col().overflow_x_scroll()))
+        .accessibility_role("table").accessibility_label(props.label)
 }

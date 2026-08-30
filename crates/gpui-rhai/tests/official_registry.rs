@@ -802,7 +802,7 @@ fn official_date_picker_consumes_locale_and_strict_iso_values() {
 }
 
 #[test]
-fn official_table_builds_data_rows_and_eager_custom_cells() {
+fn official_table_is_public_data_backed_rhai_composition() {
     let table_id = ModuleId::parse("components/table").unwrap();
     let skeleton_id = ModuleId::parse("components/skeleton").unwrap();
     let source = EmbeddedScriptSource::new(BTreeMap::from([
@@ -816,24 +816,23 @@ fn official_table_builds_data_rows_and_eager_custom_cells() {
             "ui/table_test.rhai",
             r#"
                 import "components/table" as table;
-                fn status_cell(cell) { text(cell.value) }
                 fn sorted(ctx, value) { () }
                 fn selected(ctx, value) { () }
                 fn clicked(ctx, value) { () }
                 fn view(ctx) {
                     table::Table(#{
-                        key: "users", label: "Users", row_key: "id", height: px(240),
+                        key: "users", label: "Users", row_key: "id", height: 240,
                         rows: [
                             #{ id: "u1", name: "Ada", score: 12.5, joined: "2026-08-30", status: "Active" },
                             #{ id: "u2", name: "Lin", score: 9, joined: "2026-08-31", status: "Away" }
                         ],
                         columns: [
                             #{ key: "name", title: "Name", width: #{ kind: "fixed", value: 120 }, sortable: true },
-                            #{ key: "score", title: "Score", width: #{ kind: "flex", value: 1 }, format: #{ kind: "number", max_fraction_digits: 1 } },
-                            #{ key: "joined", title: "Joined", width: #{ kind: "percent", value: 0.3 }, format: #{ kind: "date", style: "short" } },
-                            #{ key: "status", title: "Status", width: #{ kind: "fixed", value: 90 }, cell_renderer: Fn("status_cell") }
+                            #{ key: "score", title: "Score", width: #{ kind: "flex", value: 100 } },
+                            #{ key: "joined", title: "Joined", width: #{ kind: "percent", value: 30 } },
+                            #{ key: "status", title: "Status", width: #{ kind: "fixed", value: 90 } }
                         ],
-                        loading: true, selection_mode: "multiple",
+                        loading: false, selection_mode: "multiple",
                         selected_keys: ["u1"], striped: true,
                         on_sort_change: Fn("sorted"), on_selection_change: Fn("selected"),
                         on_row_click: Fn("clicked")
@@ -842,39 +841,23 @@ fn official_table_builds_data_rows_and_eager_custom_cells() {
             "#,
         )
         .unwrap();
-    let locale = gpui_rhai::load_locale_source(
-        engine.engine(),
-        "en.rhai",
-        include_str!("../../../registry/locales/en.rhai"),
-    )
-    .unwrap();
-    let mut state = UiRuntimeState::new();
-    state.locale = Some(gpui_rhai::LocaleManager::new([locale], "en", "en").unwrap());
-    let context = UiContext::new(
-        Rc::new(RefCell::new(state)),
+    let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+    let mut lifecycle = ScriptLifecycle::new(
+        compiled,
+        runtime,
         ComponentInstancePath::root("App", "root"),
         Some("main".to_owned()),
-        ExecutionPhase::Render,
         BTreeMap::new(),
-    );
-    let root = engine.render_with_context(&compiled, context).unwrap();
-    let UiNodeKind::Table { spec } = root.kind() else {
-        panic!("Table must build its data-driven native node");
+        &ComponentStateSchema::default(),
+    )
+    .unwrap();
+    lifecycle.start(&mut engine).unwrap();
+    let UiNodeKind::Box { children } = lifecycle.root().unwrap().kind() else {
+        panic!("Table must be a public Box composition");
     };
-    assert_eq!(spec.rows.len(), 2);
-    assert_eq!(spec.rows[0].key, "u1");
-    assert_eq!(spec.display_cell(0, 1).unwrap(), "12.5");
-    assert_eq!(spec.display_cell(0, 2).unwrap(), "08/30/2026");
-    assert_eq!(spec.columns[3].custom_cells.as_ref().unwrap().len(), 2);
-    assert_eq!(spec.loading_rows.len(), 100);
-    assert_eq!(spec.check_asset.as_str(), "app/icons/check");
-    assert_eq!(
-        spec.sort_ascending_asset.as_str(),
-        "app/icons/sort_ascending"
-    );
-    assert_eq!(
-        root.attributes().get("row_count"),
-        Some(&UiValue::Integer(2))
+    assert!(
+        matches!(children[1].kind(), UiNodeKind::VirtualCollection { spec }
+        if spec.data.len() == 2 && spec.realized.len() == 2)
     );
 }
 

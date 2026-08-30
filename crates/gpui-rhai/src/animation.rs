@@ -429,28 +429,6 @@ fn collect_node_animations(
                 collect_node_animations(item, &format!("{path}/item:{index}"), output)?;
             }
         }
-        UiNodeKind::Table { spec } => {
-            for column in &spec.columns {
-                for (index, cell) in column.custom_cells.iter().flatten().enumerate() {
-                    collect_node_animations(
-                        cell,
-                        &format!("{path}/column:{}/cell:{index}", column.key),
-                        output,
-                    )?;
-                }
-            }
-            for (name, slot) in [
-                ("loading_slot", spec.loading_slot.as_deref()),
-                ("empty_slot", spec.empty_slot.as_deref()),
-            ] {
-                if let Some(slot) = slot {
-                    collect_node_animations(slot, &format!("{path}/{name}"), output)?;
-                }
-            }
-            for (index, row) in spec.loading_rows.iter().enumerate() {
-                collect_node_animations(row, &format!("{path}/loading_row:{index}"), output)?;
-            }
-        }
         UiNodeKind::Text { .. }
         | UiNodeKind::RichText { .. }
         | UiNodeKind::Canvas { .. }

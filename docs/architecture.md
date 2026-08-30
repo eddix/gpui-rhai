@@ -181,14 +181,11 @@ reconciliation. Their layout elements remain separate: Input is a shaped
 single line, while Textarea owns wrapped multiline layout, vertical hit testing,
 multi-line selection paint, caret scrolling, and auto-grow measurement.
 
-The current legacy Table path is a data-driven fixed-height native element. It
-is scheduled for removal by Core Runtime v2 registry migration and is not a
-privilege available to final registry components. Its scalar row maps are not
-expanded into Rhai cell nodes before scrolling; GPUI `uniform_list` requests
-only visible rows. A column with an explicit Rhai `cell_renderer` is the stated
-exception: the callback runs for all rows during the complete view transaction,
-then native element creation remains viewport-bounded. The runtime never calls
-Rhai from a scroll/layout closure.
+Table is now a copied Rhai composition over Box/Text and data-backed
+`virtual_collection`. Its former native constructor, UiNodeKind, Entity,
+fixed-height renderer, private scrollbar fields, eager cell renderers, and Rust
+public model were deleted. GPUI layout only queues indices; named/formal Rhai
+row renderers execute on the next foreground runtime transaction.
 
 Short-lived render elements never enter persistent runtime state.
 

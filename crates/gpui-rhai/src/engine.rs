@@ -20,7 +20,7 @@ use crate::node::{
     directional_asset_image_node, directional_image_node, dropdown_node, error_boundary_node,
     fragment_node, generic_directional_image_node, generic_image_node, image_node,
     lazy_error_boundary_node, overlay_node, rich_text_node, row_node, select_node, span_value,
-    stack_node, table_node, text_node, toast_host_node,
+    stack_node, text_node, toast_host_node,
 };
 use crate::primitive::{PrimitiveDescriptor, PrimitiveError, PrimitiveHandler, PrimitiveRegistry};
 use crate::style::register_style_api;
@@ -258,6 +258,7 @@ struct VirtualCollectionRecipe {
     data: Vec<UiValue>,
     renderer: ScriptCallback,
     context: UiContext,
+    event_context: UiContext,
     generation: ScriptGeneration,
 }
 
@@ -953,7 +954,7 @@ impl RuntimeEngine {
                         "virtual collection renderer lost its module context".to_owned(),
                     )
                 })?;
-                let node = invocation
+                let mut node = invocation
                     .call::<UiNode>(
                         self.engine(),
                         &recipe.renderer.function,
@@ -961,6 +962,12 @@ impl RuntimeEngine {
                     )
                     .map_err(RuntimeError::Evaluate)?
                     .with_key(key);
+                node.bind_generation(recipe.generation);
+                node.bind_component_scope(
+                    recipe.event_context.component_path(),
+                    recipe.renderer.events(),
+                    recipe.renderer.native_context(),
+                );
                 realized.insert(index, node);
             }
             Ok(realized)
@@ -1355,9 +1362,6 @@ fn register_node_apis(engine: &mut Engine) {
     FuncRegistration::new("date_picker")
         .in_global_namespace()
         .register_into_engine(engine, date_picker_node);
-    FuncRegistration::new("table")
-        .in_global_namespace()
-        .register_into_engine(engine, table_node);
     FuncRegistration::new("toast_host")
         .in_global_namespace()
         .register_into_engine(engine, toast_host_node);
@@ -2025,8 +2029,7 @@ fn register_virtual_collection_api(engine: &mut Engine, active: &ActiveComponent
                 let native_context = crate::invocation::ScriptInvocationContext::capture(&call);
                 let mut callback = ScriptCallback::try_from_fn_ptr(renderer.clone(), generation)
                     .map_err(|error| Box::new(component_render_error(error.to_string())))?;
-                callback
-                    .bind_component_if_unset(collection_context.component_path().clone(), events);
+                callback.bind_component_if_unset(component.clone(), events);
                 callback.bind_native_context_if_unset(native_context);
 
                 let initial_count =
@@ -2047,6 +2050,7 @@ fn register_virtual_collection_api(engine: &mut Engine, active: &ActiveComponent
                     data: data.clone(),
                     renderer: callback,
                     context: collection_context,
+                    event_context: context,
                     generation,
                 };
                 let mut guard = active.try_borrow_mut().map_err(|_| {

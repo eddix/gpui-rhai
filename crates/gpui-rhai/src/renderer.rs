@@ -20,10 +20,6 @@ use crate::dropdown_element::{
     SelectionHandler,
 };
 use crate::overlay_element::{ScriptOverlayElement, WindowOverlayCoordinator};
-use crate::table_element::{
-    TableCallbacks, TableEntityElement, TablePalette, TableRowHandler, TableSelectionHandler,
-    TableSortHandler,
-};
 use crate::toast_element::{ToastDismissHandler, ToastHostElement, ToastPalette, ToastPartStyles};
 use crate::virtual_list_element::VirtualListEntityElement;
 use crate::{
@@ -31,8 +27,8 @@ use crate::{
     DropdownNodeSpec, EventPropagation, EventResponse, FlexDirection, ImageSourceSpec,
     InteractionState, Justify, Length, NodeId, OverflowMode, OverlayNodeSpec, PositionMode,
     PrimitiveRegistry, PseudoState, RadiusToken, RetainedUiTree, Rgba8, ScriptCallback,
-    SpacingToken, Style, StyleProperties, TableNodeSpec, TableSort, TableSortDirection,
-    TextDirection, ToastHostSpec, UiEventHandler, UiNode, UiNodeKind, UiValue,
+    SpacingToken, Style, StyleProperties, TextDirection, ToastHostSpec, UiEventHandler, UiNode,
+    UiNodeKind, UiValue,
 };
 
 type DispatchFn = dyn Fn(ScriptCallback, UiValue, &mut Window, &mut App) -> EventResponse;
@@ -1266,9 +1262,6 @@ impl GpuiNodeRenderer {
             UiNodeKind::DatePicker { spec } => element
                 .child(native_date_picker_element(node, spec, environment, path))
                 .into_any_element(),
-            UiNodeKind::Table { spec } => element
-                .child(native_table_element(node, spec, environment, path))
-                .into_any_element(),
             UiNodeKind::ToastHost { spec } => element
                 .child(native_toast_element(node, spec, environment, path))
                 .into_any_element(),
@@ -1738,47 +1731,6 @@ fn native_date_picker_element<C: ColorResolver>(
     )
 }
 
-fn native_table_element<C: ColorResolver>(
-    node: &UiNode,
-    spec: &TableNodeSpec,
-    environment: &RenderEnvironment<'_, C>,
-    path: &str,
-) -> TableEntityElement {
-    let callbacks = table_callbacks(node, environment.dispatcher);
-    let palette = TablePalette {
-        surface: semantic_color(environment.colors, "surface", 0x0018_181b),
-        raised: semantic_color(environment.colors, "surface_raised", 0x0027_272a),
-        hover: semantic_color(environment.colors, "surface_hover", 0x003f_3f46),
-        text: semantic_color(environment.colors, "text_primary", 0x00f4_f4f5),
-        muted: semantic_color(environment.colors, "text_muted", 0x00a1_a1aa),
-        accent: semantic_color(environment.colors, "accent", 0x003b_82f6),
-        on_accent: semantic_color(environment.colors, "on_accent", 0x00ff_ffff),
-        border: semantic_color(environment.colors, "border", 0x003f_3f46),
-    };
-    let runtime = DropdownSlotRuntime {
-        colors: OwnedColorResolver::capture(environment.colors),
-        primitives: environment.primitives.clone(),
-        assets: environment.assets.cloned().unwrap_or_default(),
-        dispatcher: environment
-            .dispatcher
-            .cloned()
-            .unwrap_or_else(|| NodeEventDispatcher::new(|_, _, _, _| EventPropagation::Handled)),
-        overlays: environment.overlays.clone(),
-        animations: environment.animations.clone(),
-        signals: environment.signals.clone(),
-        geometry: environment.geometry.clone(),
-        pointer_capture: environment.pointer_capture.clone(),
-        focus_handles: environment.focus_handles.clone(),
-        scroll_handles: environment.scroll_handles.clone(),
-        virtual_requests: environment.virtual_requests.clone(),
-        direction: environment.direction,
-        base_path: path.to_owned(),
-        view_id: environment.view_id.to_owned(),
-        part_styles: owned_part_styles(node),
-    };
-    TableEntityElement::new(path, spec.clone(), callbacks, palette, runtime)
-}
-
 fn native_choice_element<C: ColorResolver>(
     node: &UiNode,
     spec: &DropdownNodeSpec,
@@ -2220,75 +2172,6 @@ fn date_picker_callbacks(
         ) as DateChangeHandler
     });
     DatePickerCallbacks { change }
-}
-
-fn table_callbacks(node: &UiNode, dispatcher: Option<&NodeEventDispatcher>) -> TableCallbacks {
-    let dispatcher = dispatcher.cloned();
-    let sort = node.handler("sort_change").map(|handler| {
-        let handler = handler.clone();
-        let dispatcher = dispatcher.clone();
-        Rc::new(
-            move |sort: Option<TableSort>, window: &mut Window, cx: &mut App| {
-                let payload = sort.map_or(UiValue::Null, |sort| {
-                    UiValue::Map(BTreeMap::from([
-                        ("key".to_owned(), UiValue::String(sort.key)),
-                        (
-                            "direction".to_owned(),
-                            UiValue::String(
-                                match sort.direction {
-                                    TableSortDirection::Ascending => "ascending",
-                                    TableSortDirection::Descending => "descending",
-                                }
-                                .to_owned(),
-                            ),
-                        ),
-                    ]))
-                });
-                dispatch_ui_event(
-                    &handler,
-                    "sort_change",
-                    payload,
-                    window,
-                    cx,
-                    dispatcher.as_ref(),
-                );
-            },
-        ) as TableSortHandler
-    });
-    let selection = node.handler("selection_change").map(|handler| {
-        let handler = handler.clone();
-        let dispatcher = dispatcher.clone();
-        Rc::new(
-            move |values: Vec<String>, window: &mut Window, cx: &mut App| {
-                dispatch_ui_event(
-                    &handler,
-                    "selection_change",
-                    UiValue::Array(values.into_iter().map(UiValue::String).collect()),
-                    window,
-                    cx,
-                    dispatcher.as_ref(),
-                );
-            },
-        ) as TableSelectionHandler
-    });
-    let row_click = node.handler("row_click").map(|handler| {
-        let handler = handler.clone();
-        Rc::new(move |key: String, window: &mut Window, cx: &mut App| {
-            dispatch_ui_event(
-                &handler,
-                "row_click",
-                UiValue::String(key),
-                window,
-                cx,
-                dispatcher.as_ref(),
-            );
-        }) as TableRowHandler
-    });
-    TableCallbacks {
-        sort,
-        selection,
-        row_click,
-    }
 }
 
 fn semantic_color(colors: &impl ColorResolver, token: &str, fallback: u32) -> Rgba8 {

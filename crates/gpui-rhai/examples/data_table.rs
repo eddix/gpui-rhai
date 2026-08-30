@@ -113,14 +113,11 @@ fn view(ctx) {
     let columns = [
         #{ key: "name", title: "Name", width: #{ kind: "fixed", value: 220 }, sortable: true },
         #{ key: "email", title: "Email", width: #{ kind: "fixed", value: 320 } },
-        #{ key: "score", title: "Score", width: #{ kind: "flex", value: 1 }, align: "end",
-            format: #{ kind: "number", min_fraction_digits: 1, max_fraction_digits: 1 } },
-        #{ key: "joined", title: "Joined", width: #{ kind: "percent", value: 0.25 }, align: "end",
-            format: #{ kind: "date", style: "short" } },
-        #{ key: "status", title: "Status", width: #{ kind: "fixed", value: 110 },
-            cell_renderer: Fn("status_cell") },
+        #{ key: "score", title: "Score", width: #{ kind: "flex", value: 100 }, align: "end" },
+        #{ key: "joined", title: "Joined", width: #{ kind: "percent", value: 25 }, align: "end" },
+        #{ key: "status", title: "Status", width: #{ kind: "fixed", value: 110 } },
         #{ key: "id", title: "Action", width: #{ kind: "fixed", value: 80 },
-            align: "center", cell_renderer: Fn("action_cell") },
+            align: "center" },
     ];
     column([
         row([
@@ -138,7 +135,7 @@ fn view(ctx) {
         ]).with_style(style().justify_between().items_center()),
         table::Table(#{
             key: "users", label: "Users", rows: page_rows(ctx), row_key: "id",
-            columns: columns, height: px(470), striped: true,
+            columns: columns, height: 470, striped: true,
             loading: ctx.get_state("loading"),
             selection_mode: ctx.get_state("selection_mode"),
             selected_keys: ctx.get_state("selected"), sort: ctx.get_state("sort"),

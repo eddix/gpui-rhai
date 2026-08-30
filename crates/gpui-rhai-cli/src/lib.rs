@@ -53,9 +53,6 @@ const DATE_PREVIOUS_SVG: &str = include_str!("../../../registry/assets/icons/dat
 const DATE_NEXT_SVG: &str = include_str!("../../../registry/assets/icons/date_next.svg");
 const DISCLOSURE_DOWN_SVG: &str =
     include_str!("../../../registry/assets/icons/disclosure_down.svg");
-const SORT_ASCENDING_SVG: &str = include_str!("../../../registry/assets/icons/sort_ascending.svg");
-const SORT_DESCENDING_SVG: &str =
-    include_str!("../../../registry/assets/icons/sort_descending.svg");
 const DEFAULT_THEME: &str = include_str!("../../../registry/themes/default_dark.rhai");
 const DEFAULT_LIGHT_THEME: &str = include_str!("../../../registry/themes/default_light.rhai");
 const TOKYO_NIGHT_THEME: &str = include_str!("../../../registry/themes/tokyo_night.rhai");
@@ -135,20 +132,7 @@ const SELECT_ASSETS: &[RegistryAsset] = &[
     },
 ];
 
-const TABLE_ASSETS: &[RegistryAsset] = &[
-    RegistryAsset {
-        path: "icons/check.svg",
-        source: CHECK_SVG,
-    },
-    RegistryAsset {
-        path: "icons/sort_ascending.svg",
-        source: SORT_ASCENDING_SVG,
-    },
-    RegistryAsset {
-        path: "icons/sort_descending.svg",
-        source: SORT_DESCENDING_SVG,
-    },
-];
+const TABLE_ASSETS: &[RegistryAsset] = &[];
 
 #[derive(Clone, Debug, Default)]
 pub struct BundledRegistry {
@@ -1586,13 +1570,12 @@ mod tests {
             .apply()
             .unwrap();
         let report = project.check().unwrap();
-        assert_eq!(report.components, 8);
+        assert_eq!(report.components, 7);
         for component in [
             "button.rhai",
             "icon.rhai",
             "select.rhai",
             "pagination.rhai",
-            "skeleton.rhai",
             "table.rhai",
             "textarea.rhai",
             "date_picker.rhai",
@@ -1614,8 +1597,6 @@ mod tests {
             "icons/date_previous.svg",
             "icons/date_next.svg",
             "icons/disclosure_down.svg",
-            "icons/sort_ascending.svg",
-            "icons/sort_descending.svg",
         ] {
             assert!(directory.path().join("ui/assets").join(asset).exists());
         }

@@ -226,7 +226,6 @@ fn inspect_node(node: &UiNode, path: &str) -> InspectorNode {
         UiNodeKind::Dropdown { spec } => inspect_dropdown(spec, &mut props),
         UiNodeKind::Select { spec } => inspect_select(spec, &mut props),
         UiNodeKind::DatePicker { spec } => inspect_date_picker(spec, &mut props),
-        UiNodeKind::Table { spec } => inspect_table(spec, &mut props),
         UiNodeKind::ToastHost { spec } => inspect_toast_host(spec, &mut props),
         UiNodeKind::VirtualCollection { spec } => inspect_virtual_collection(spec, &mut props),
         UiNodeKind::ErrorBoundary { child, fallback } => (
@@ -391,27 +390,6 @@ fn inspect_date_picker<'a>(
             .map_or_else(|| "<null>".to_owned(), crate::GregorianDate::to_iso),
     );
     ("date_picker".to_owned(), Vec::new())
-}
-
-fn inspect_table<'a>(
-    spec: &'a crate::TableNodeSpec,
-    props: &mut BTreeMap<String, String>,
-) -> (String, Vec<&'a UiNode>) {
-    props.insert("key".to_owned(), spec.key.clone());
-    props.insert("rows".to_owned(), spec.rows.len().to_string());
-    props.insert("columns".to_owned(), spec.columns.len().to_string());
-    let descendants = spec
-        .columns
-        .iter()
-        .flat_map(|column| column.custom_cells.iter().flatten())
-        .chain(
-            [spec.loading_slot.as_deref(), spec.empty_slot.as_deref()]
-                .into_iter()
-                .flatten(),
-        )
-        .chain(spec.loading_rows.iter())
-        .collect();
-    ("table".to_owned(), descendants)
 }
 
 fn inspect_image_source(source: &crate::ImageSourceSpec) -> String {

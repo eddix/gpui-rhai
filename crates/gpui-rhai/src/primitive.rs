@@ -739,22 +739,6 @@ fn collect_primitive_instances(node: &UiNode, active: &mut BTreeSet<PrimitiveIns
                 collect_primitive_instances(item, active);
             }
         }
-        UiNodeKind::Table { spec } => {
-            for column in &spec.columns {
-                for cell in column.custom_cells.iter().flatten() {
-                    collect_primitive_instances(cell, active);
-                }
-            }
-            for slot in [spec.loading_slot.as_deref(), spec.empty_slot.as_deref()]
-                .into_iter()
-                .flatten()
-            {
-                collect_primitive_instances(slot, active);
-            }
-            for row in &spec.loading_rows {
-                collect_primitive_instances(row, active);
-            }
-        }
         UiNodeKind::Text { .. }
         | UiNodeKind::RichText { .. }
         | UiNodeKind::Canvas { .. }

@@ -34,8 +34,6 @@ pub mod source;
 pub mod state;
 pub mod store;
 pub mod style;
-pub mod table;
-mod table_element;
 pub mod text_area;
 mod text_edit;
 pub mod text_input;
@@ -179,10 +177,6 @@ pub use style::{
     Align, ColorValue, EdgeLengths, FlexDirection, InteractionState, Justify, Length, LengthError,
     OverflowMode, PositionMode, PseudoState, RadiusToken, Rgba8, SpacingToken, Style,
     StyleProperties,
-};
-pub use table::{
-    TableAlign, TableCellFormat, TableColumnSpec, TableColumnWidth, TableError, TableLayout,
-    TableNodeSpec, TableRowSpec, TableSelectionMode, TableSort, TableSortDirection, TableState,
 };
 pub use text_area::{TextAreaPrimitiveHandler, init_text_area, text_area_primitive_descriptor};
 pub use text_input::{

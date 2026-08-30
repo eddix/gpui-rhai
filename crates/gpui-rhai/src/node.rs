@@ -10,9 +10,8 @@ use crate::{
     DatePickerNodeSpec, DatePickerPreset, DropdownMode, DropdownNodeSpec, DropdownOption,
     DropdownState, GregorianDate, HostCallback, NumberMetadata, OpaqueHandle, OverlayId,
     OverlayKind, OverlayPlacement, PrimitiveNode, ScriptCallback, ScriptGeneration, SelectNodeSpec,
-    Style, TableAlign, TableCellFormat, TableColumnSpec, TableColumnWidth, TableNodeSpec,
-    TableRowSpec, TableSelectionMode, TableSort, TableSortDirection, ToastHostSpec, ToastItemSpec,
-    ToastRegion, ToastVariant, UiEventBinding, UiEventHandler, UiValue,
+    Style, ToastHostSpec, ToastItemSpec, ToastRegion, ToastVariant, UiEventBinding, UiEventHandler,
+    UiValue,
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -181,9 +180,6 @@ pub enum UiNodeKind {
     DatePicker {
         spec: Box<DatePickerNodeSpec>,
     },
-    Table {
-        spec: Box<TableNodeSpec>,
-    },
     ToastHost {
         spec: ToastHostSpec,
     },
@@ -211,7 +207,6 @@ pub enum UiNodeKindTag {
     Dropdown,
     Select,
     DatePicker,
-    Table,
     ToastHost,
     VirtualCollection,
     ErrorBoundary,
@@ -533,38 +528,6 @@ impl UiNode {
     }
 
     #[must_use]
-    pub fn table(spec: TableNodeSpec) -> Self {
-        let key = spec.key.clone();
-        let attributes = BTreeMap::from([
-            ("role".to_owned(), UiValue::String("table".to_owned())),
-            (
-                "row_count".to_owned(),
-                UiValue::Integer(INT::try_from(spec.rows.len()).unwrap_or(INT::MAX)),
-            ),
-            (
-                "column_count".to_owned(),
-                UiValue::Integer(INT::try_from(spec.columns.len()).unwrap_or(INT::MAX)),
-            ),
-        ]);
-        Self {
-            kind: UiNodeKind::Table {
-                spec: Box::new(spec),
-            },
-            key: Some(NodeKey::new(key)),
-            style: Style::new(),
-            part_styles: BTreeMap::new(),
-            source: None,
-            component_root: None,
-            attributes,
-            handlers: BTreeMap::new(),
-            handler_payloads: BTreeMap::new(),
-            animations: Vec::new(),
-            signal_bindings: BTreeMap::new(),
-            element_ref: None,
-        }
-    }
-
-    #[must_use]
     pub fn toast_host(spec: ToastHostSpec) -> Self {
         let key = spec.key.clone();
         Self {
@@ -732,23 +695,6 @@ impl UiNode {
                 component,
                 &replacement,
             ),
-            UiNodeKind::Table { spec } => {
-                for column in &mut spec.columns {
-                    if let Some(cells) = &mut column.custom_cells
-                        && replace_in_nodes(cells.iter_mut(), component, &replacement)
-                    {
-                        return true;
-                    }
-                }
-                if replace_in_optional_nodes(
-                    [&mut spec.loading_slot, &mut spec.empty_slot],
-                    component,
-                    &replacement,
-                ) {
-                    return true;
-                }
-                replace_in_nodes(spec.loading_rows.iter_mut(), component, &replacement)
-            }
             UiNodeKind::VirtualCollection { spec } => {
                 replace_in_nodes(spec.realized.values_mut(), component, &replacement)
             }
@@ -947,22 +893,6 @@ impl UiNode {
                     }
                 }
             }
-            UiNodeKind::Table { spec } => {
-                for column in &mut spec.columns {
-                    for cell in column.custom_cells.iter_mut().flatten() {
-                        cell.bind_generation(generation);
-                    }
-                }
-                for slot in [&mut spec.loading_slot, &mut spec.empty_slot]
-                    .into_iter()
-                    .flatten()
-                {
-                    slot.bind_generation(generation);
-                }
-                for row in &mut spec.loading_rows {
-                    row.bind_generation(generation);
-                }
-            }
         }
     }
 
@@ -1019,22 +949,6 @@ impl UiNode {
             UiNodeKind::VirtualCollection { spec } => {
                 for item in spec.realized.values_mut() {
                     item.bind_component_scope(component, events, native_context);
-                }
-            }
-            UiNodeKind::Table { spec } => {
-                for column in &mut spec.columns {
-                    for cell in column.custom_cells.iter_mut().flatten() {
-                        cell.bind_component_scope(component, events, native_context);
-                    }
-                }
-                for slot in [&mut spec.loading_slot, &mut spec.empty_slot]
-                    .into_iter()
-                    .flatten()
-                {
-                    slot.bind_component_scope(component, events, native_context);
-                }
-                for row in &mut spec.loading_rows {
-                    row.bind_component_scope(component, events, native_context);
                 }
             }
             UiNodeKind::Text { .. }
@@ -1107,22 +1021,6 @@ impl UiNode {
                     item.bind_callback_scope_by_name(names, component, events, native_context);
                 }
             }
-            UiNodeKind::Table { spec } => {
-                for column in &mut spec.columns {
-                    for cell in column.custom_cells.iter_mut().flatten() {
-                        cell.bind_callback_scope_by_name(names, component, events, native_context);
-                    }
-                }
-                for slot in [&mut spec.loading_slot, &mut spec.empty_slot]
-                    .into_iter()
-                    .flatten()
-                {
-                    slot.bind_callback_scope_by_name(names, component, events, native_context);
-                }
-                for row in &mut spec.loading_rows {
-                    row.bind_callback_scope_by_name(names, component, events, native_context);
-                }
-            }
             UiNodeKind::Text { .. }
             | UiNodeKind::RichText { .. }
             | UiNodeKind::Canvas { .. }
@@ -1153,7 +1051,6 @@ impl UiNode {
             UiNodeKind::Dropdown { .. } => UiNodeKindTag::Dropdown,
             UiNodeKind::Select { .. } => UiNodeKindTag::Select,
             UiNodeKind::DatePicker { .. } => UiNodeKindTag::DatePicker,
-            UiNodeKind::Table { .. } => UiNodeKindTag::Table,
             UiNodeKind::ToastHost { .. } => UiNodeKindTag::ToastHost,
             UiNodeKind::VirtualCollection { .. } => UiNodeKindTag::VirtualCollection,
             UiNodeKind::ErrorBoundary { .. } => UiNodeKindTag::ErrorBoundary,
@@ -1190,33 +1087,6 @@ impl UiNode {
             ],
             UiNodeKind::Dropdown { spec } => dropdown_child_groups(spec),
             UiNodeKind::Select { spec } => dropdown_child_groups(&spec.choice),
-            UiNodeKind::Table { spec } => {
-                let mut groups = spec
-                    .columns
-                    .iter()
-                    .filter_map(|column| {
-                        column.custom_cells.as_ref().map(|cells| {
-                            (
-                                format!("column:{}:cells", column.key),
-                                cells.iter().collect::<Vec<_>>(),
-                            )
-                        })
-                    })
-                    .collect::<Vec<_>>();
-                if let Some(slot) = spec.loading_slot.as_deref() {
-                    groups.push(("loading-slot".to_owned(), vec![slot]));
-                }
-                if !spec.loading_rows.is_empty() {
-                    groups.push((
-                        "loading-rows".to_owned(),
-                        spec.loading_rows.iter().collect(),
-                    ));
-                }
-                if let Some(slot) = spec.empty_slot.as_deref() {
-                    groups.push(("empty-slot".to_owned(), vec![slot]));
-                }
-                groups
-            }
             UiNodeKind::VirtualCollection { spec } => {
                 vec![("items".to_owned(), spec.realized.values().collect())]
             }
@@ -2186,409 +2056,6 @@ pub(crate) fn date_picker_node(
     Ok(with_call_source(UiNode::date_picker(spec), call))
 }
 
-pub(crate) fn table_node(
-    call: NativeCallContext<'_>,
-    mut config: Map,
-) -> Result<UiNode, Box<EvalAltResult>> {
-    let key = required_string(&mut config, "key")?;
-    let label = required_string(&mut config, "label")?;
-    let row_key = required_string(&mut config, "row_key")?;
-    if row_key.trim().is_empty() {
-        return overlay_config_error("Table row_key field name cannot be empty");
-    }
-    let (raw_rows, rows) = parse_table_rows(&mut config, &row_key)?;
-    let columns = parse_table_columns(&call, &mut config, &raw_rows, &rows)?;
-    let height = config
-        .remove("height")
-        .and_then(Dynamic::try_cast::<crate::Length>)
-        .ok_or_else(|| Box::new(overlay_type_error("height", "a Length")))?;
-    let row_height = positive_config_number(&mut config, "row_height", 32.0)?;
-    let flex_min_width = positive_config_number(&mut config, "flex_min_width", 80.0)?;
-    let selection_width = positive_config_number(&mut config, "selection_width", row_height)?;
-    let selection_size = positive_config_number(&mut config, "selection_size", row_height / 2.0)?;
-    let horizontal_scrollbar_height = positive_config_number(
-        &mut config,
-        "horizontal_scrollbar_height",
-        row_height * 0.375,
-    )?;
-    let horizontal_scrollbar_thumb_min_width = positive_config_number(
-        &mut config,
-        "horizontal_scrollbar_thumb_min_width",
-        row_height * 2.0,
-    )?;
-    let horizontal_scrollbar_inset = positive_config_number(
-        &mut config,
-        "horizontal_scrollbar_inset",
-        row_height * 0.125,
-    )?;
-    let overscan = optional_usize(&mut config, "overscan")?.unwrap_or(2);
-    if overscan > 100 {
-        return overlay_config_error("Table overscan cannot exceed 100");
-    }
-    let loading = optional_bool(&mut config, "loading")?.unwrap_or(false);
-    let loading_slot = optional_node(&mut config, "loading_slot")?;
-    let loading_rows = required_node_array(&mut config, "loading_rows")?;
-    let empty_slot = optional_node(&mut config, "empty_slot")?;
-    let empty_text = optional_string(&mut config, "empty_text")?.unwrap_or_default();
-    let striped = optional_bool(&mut config, "striped")?.unwrap_or(false);
-    let selection_mode = match optional_string(&mut config, "selection_mode")?.as_deref() {
-        None | Some("none") => TableSelectionMode::None,
-        Some("single") => TableSelectionMode::Single,
-        Some("multiple") => TableSelectionMode::Multiple,
-        Some(value) => {
-            return overlay_config_error(format!("unknown Table selection mode `{value}`"));
-        }
-    };
-    let selected_keys = optional_string_array(&mut config, "selected_keys")?
-        .unwrap_or_default()
-        .into_iter()
-        .collect();
-    let sort = parse_table_sort(&mut config)?;
-    let calendar = required_decoded::<CalendarMetadata>(&mut config, "calendar")?;
-    let number = required_decoded::<NumberMetadata>(&mut config, "number")?;
-    let check_asset = required_asset(&mut config, "check_asset")?;
-    let sort_ascending_asset = required_asset(&mut config, "sort_ascending_asset")?;
-    let sort_descending_asset = required_asset(&mut config, "sort_descending_asset")?;
-    if let Some((unknown, _)) = config.into_iter().next() {
-        return overlay_config_error(format!("unknown Table config field `{unknown}`"));
-    }
-    let spec = TableNodeSpec {
-        key,
-        label,
-        columns,
-        rows,
-        height,
-        row_height,
-        flex_min_width,
-        selection_width,
-        selection_size,
-        horizontal_scrollbar_height,
-        horizontal_scrollbar_thumb_min_width,
-        horizontal_scrollbar_inset,
-        overscan,
-        loading,
-        loading_slot,
-        loading_rows,
-        empty_slot,
-        empty_text,
-        striped,
-        selection_mode,
-        selected_keys,
-        sort,
-        calendar,
-        number,
-        check_asset,
-        sort_ascending_asset,
-        sort_descending_asset,
-    };
-    spec.validate().map_err(|error| {
-        Box::new(EvalAltResult::ErrorRuntime(
-            error.to_string().into(),
-            Position::NONE,
-        ))
-    })?;
-    Ok(with_call_source(UiNode::table(spec), call))
-}
-
-fn parse_table_rows(
-    config: &mut Map,
-    row_key: &str,
-) -> Result<(Vec<Map>, Vec<TableRowSpec>), Box<EvalAltResult>> {
-    let values = config
-        .remove("rows")
-        .and_then(Dynamic::try_cast::<Array>)
-        .ok_or_else(|| Box::new(overlay_type_error("rows", "an array of row maps")))?;
-    if values.len() > 10_000 {
-        return overlay_config_error("Table rows cannot exceed 10,000 items");
-    }
-    let mut raw_rows = Vec::with_capacity(values.len());
-    let mut rows = Vec::with_capacity(values.len());
-    for (index, value) in values.into_iter().enumerate() {
-        let row = value.try_cast::<Map>().ok_or_else(|| {
-            Box::new(EvalAltResult::ErrorRuntime(
-                format!("Table row at index {index} must be a map").into(),
-                Position::NONE,
-            ))
-        })?;
-        let key = row
-            .get(row_key)
-            .filter(|value| value.is::<ImmutableString>())
-            .map(|value| value.clone_cast::<ImmutableString>().to_string())
-            .ok_or_else(|| {
-                Box::new(EvalAltResult::ErrorRuntime(
-                    format!("Table row at index {index} requires string field `{row_key}`").into(),
-                    Position::NONE,
-                ))
-            })?;
-        let values = UiValue::from_dynamic(Dynamic::from_map(row.clone())).map_err(|error| {
-            Box::new(EvalAltResult::ErrorRuntime(
-                error.to_string().into(),
-                Position::NONE,
-            ))
-        })?;
-        let UiValue::Map(values) = values else {
-            unreachable!("a Rhai map converts to UiValue::Map")
-        };
-        raw_rows.push(row);
-        rows.push(TableRowSpec { key, values });
-    }
-    Ok((raw_rows, rows))
-}
-
-fn parse_table_columns(
-    call: &NativeCallContext<'_>,
-    config: &mut Map,
-    raw_rows: &[Map],
-    rows: &[TableRowSpec],
-) -> Result<Vec<TableColumnSpec>, Box<EvalAltResult>> {
-    let values = config
-        .remove("columns")
-        .and_then(Dynamic::try_cast::<Array>)
-        .ok_or_else(|| Box::new(overlay_type_error("columns", "an array of column maps")))?;
-    if values.len() > 256 {
-        return overlay_config_error("Table columns cannot exceed 256 items");
-    }
-    validate_table_column_budget(&values, rows.len())?;
-    values
-        .into_iter()
-        .enumerate()
-        .map(|(index, value)| {
-            let mut column = value.try_cast::<Map>().ok_or_else(|| {
-                Box::new(EvalAltResult::ErrorRuntime(
-                    format!("Table column at index {index} must be a map").into(),
-                    Position::NONE,
-                ))
-            })?;
-            parse_table_column(call, &mut column, raw_rows, rows)
-        })
-        .collect()
-}
-
-fn validate_table_column_budget(
-    values: &Array,
-    row_count: usize,
-) -> Result<(), Box<EvalAltResult>> {
-    let custom_columns = values
-        .iter()
-        .filter_map(|value| value.clone().try_cast::<Map>())
-        .filter(|column| {
-            column
-                .get("cell_renderer")
-                .is_some_and(|renderer| !renderer.is_unit())
-        })
-        .count();
-    if custom_columns
-        .checked_mul(row_count)
-        .is_none_or(|cells| cells > 10_000)
-    {
-        return overlay_config_error(
-            "Table custom renderers cannot build more than 10,000 eager cell nodes",
-        );
-    }
-    let mut column_keys = BTreeSet::new();
-    for (index, value) in values.iter().enumerate() {
-        let Some(column) = value.clone().try_cast::<Map>() else {
-            continue;
-        };
-        let Some(key) = column
-            .get("key")
-            .and_then(|key| key.clone().try_cast::<ImmutableString>())
-            .map(|key| key.to_string())
-        else {
-            continue;
-        };
-        if key.trim().is_empty() {
-            return overlay_config_error(format!("Table column at index {index} has an empty key"));
-        }
-        if !column_keys.insert(key.clone()) {
-            return overlay_config_error(format!("Table column `{key}` is duplicated"));
-        }
-    }
-    Ok(())
-}
-
-fn parse_table_column(
-    call: &NativeCallContext<'_>,
-    column: &mut Map,
-    raw_rows: &[Map],
-    rows: &[TableRowSpec],
-) -> Result<TableColumnSpec, Box<EvalAltResult>> {
-    let key = required_string(column, "key")?;
-    let title = required_string(column, "title")?;
-    if let Some((row_index, _)) = raw_rows
-        .iter()
-        .enumerate()
-        .find(|(_, row)| !row.contains_key(key.as_str()))
-    {
-        return overlay_config_error(format!(
-            "Table row `{}` is missing column `{key}`",
-            rows[row_index].key
-        ));
-    }
-    let width = parse_table_width(column, &key)?;
-    let format = parse_table_format(column, &key)?;
-    let align = match optional_string(column, "align")?.as_deref() {
-        None if matches!(
-            format,
-            TableCellFormat::Number(_) | TableCellFormat::Date(_)
-        ) =>
-        {
-            TableAlign::End
-        }
-        None | Some("start") => TableAlign::Start,
-        Some("center") => TableAlign::Center,
-        Some("end") => TableAlign::End,
-        Some(value) => {
-            return overlay_config_error(format!("unknown Table alignment `{value}`"));
-        }
-    };
-    let sortable = optional_bool(column, "sortable")?.unwrap_or(false);
-    let renderer = optional_callback(column, "cell_renderer")?;
-    if let Some((unknown, _)) = column.iter().next() {
-        return overlay_config_error(format!("unknown field `{unknown}` in Table column `{key}`"));
-    }
-    let custom_cells = renderer
-        .map(|renderer| {
-            raw_rows
-                .iter()
-                .zip(rows)
-                .enumerate()
-                .map(|(row_index, (raw, row))| {
-                    let context = Map::from_iter([
-                        ("row".into(), Dynamic::from_map(raw.clone())),
-                        (
-                            "value".into(),
-                            raw.get(key.as_str()).cloned().unwrap_or(Dynamic::UNIT),
-                        ),
-                        ("row_key".into(), Dynamic::from(row.key.clone())),
-                        (
-                            "row_index".into(),
-                            Dynamic::from(INT::try_from(row_index).unwrap_or(INT::MAX)),
-                        ),
-                        ("column_key".into(), Dynamic::from(key.clone())),
-                    ]);
-                    renderer.call_within_context::<UiNode>(call, (context,))
-                })
-                .collect::<Result<Vec<_>, _>>()
-        })
-        .transpose()?;
-    Ok(TableColumnSpec {
-        key,
-        title,
-        width,
-        align,
-        format,
-        sortable,
-        custom_cells,
-    })
-}
-
-fn parse_table_width(column: &mut Map, key: &str) -> Result<TableColumnWidth, Box<EvalAltResult>> {
-    let mut width = column
-        .remove("width")
-        .and_then(Dynamic::try_cast::<Map>)
-        .ok_or_else(|| Box::new(overlay_type_error("width", "a tagged width map")))?;
-    let kind = required_string(&mut width, "kind")?;
-    let value = optional_number(&mut width, "value")?.ok_or_else(|| {
-        Box::new(EvalAltResult::ErrorRuntime(
-            format!("Table column `{key}` width requires value").into(),
-            Position::NONE,
-        ))
-    })?;
-    if let Some((unknown, _)) = width.into_iter().next() {
-        return overlay_config_error(format!("unknown Table width field `{unknown}`"));
-    }
-    match kind.as_str() {
-        "fixed" => Ok(TableColumnWidth::Fixed(value)),
-        "percent" => Ok(TableColumnWidth::Percent(value)),
-        "flex" => Ok(TableColumnWidth::Flex(value)),
-        _ => overlay_config_error(format!("unknown Table width kind `{kind}`")),
-    }
-}
-
-fn parse_table_format(column: &mut Map, key: &str) -> Result<TableCellFormat, Box<EvalAltResult>> {
-    let Some(value) = column.remove("format") else {
-        return Ok(TableCellFormat::Text);
-    };
-    let mut format = value
-        .try_cast::<Map>()
-        .ok_or_else(|| Box::new(overlay_type_error("format", "a tagged format map")))?;
-    let kind = required_string(&mut format, "kind")?;
-    let result = match kind.as_str() {
-        "text" => TableCellFormat::Text,
-        "number" => {
-            let min_fraction_digits =
-                optional_usize(&mut format, "min_fraction_digits")?.unwrap_or(0);
-            let max_fraction_digits =
-                optional_usize(&mut format, "max_fraction_digits")?.unwrap_or(3);
-            let grouping = optional_bool(&mut format, "grouping")?.unwrap_or(true);
-            let options = crate::NumberFormatOptions {
-                min_fraction_digits: u8::try_from(min_fraction_digits).unwrap_or(u8::MAX),
-                max_fraction_digits: u8::try_from(max_fraction_digits).unwrap_or(u8::MAX),
-                grouping,
-            };
-            options.validate().map_err(|error| {
-                Box::new(EvalAltResult::ErrorRuntime(
-                    format!("Table column `{key}` number format is invalid: {error}").into(),
-                    Position::NONE,
-                ))
-            })?;
-            TableCellFormat::Number(options)
-        }
-        "date" => {
-            let style =
-                optional_string(&mut format, "style")?.unwrap_or_else(|| "short".to_owned());
-            TableCellFormat::Date(crate::DateStyle::parse(&style).map_err(|error| {
-                Box::new(EvalAltResult::ErrorRuntime(
-                    error.to_string().into(),
-                    Position::NONE,
-                ))
-            })?)
-        }
-        _ => return overlay_config_error(format!("unknown Table format kind `{kind}`")),
-    };
-    if let Some((unknown, _)) = format.into_iter().next() {
-        return overlay_config_error(format!("unknown Table format field `{unknown}`"));
-    }
-    Ok(result)
-}
-
-fn parse_table_sort(config: &mut Map) -> Result<Option<TableSort>, Box<EvalAltResult>> {
-    let Some(value) = config.remove("sort") else {
-        return Ok(None);
-    };
-    if value.is_unit() {
-        return Ok(None);
-    }
-    let mut sort = value
-        .try_cast::<Map>()
-        .ok_or_else(|| Box::new(overlay_type_error("sort", "a sort map or null")))?;
-    let key = required_string(&mut sort, "key")?;
-    let direction = match required_string(&mut sort, "direction")?.as_str() {
-        "ascending" => TableSortDirection::Ascending,
-        "descending" => TableSortDirection::Descending,
-        value => return overlay_config_error(format!("unknown Table sort direction `{value}`")),
-    };
-    if let Some((unknown, _)) = sort.into_iter().next() {
-        return overlay_config_error(format!("unknown Table sort field `{unknown}`"));
-    }
-    Ok(Some(TableSort { key, direction }))
-}
-
-fn optional_callback(config: &mut Map, name: &str) -> Result<Option<FnPtr>, Box<EvalAltResult>> {
-    let Some(value) = config.remove(name) else {
-        return Ok(None);
-    };
-    if value.is_unit() {
-        Ok(None)
-    } else {
-        value
-            .try_cast::<FnPtr>()
-            .map(Some)
-            .ok_or_else(|| Box::new(overlay_type_error(name, "a callback")))
-    }
-}
-
 fn required_asset(config: &mut Map, name: &str) -> Result<AssetId, Box<EvalAltResult>> {
     config
         .remove(name)
@@ -2971,25 +2438,6 @@ fn optional_node(config: &mut Map, name: &str) -> Result<Option<Box<UiNode>>, Bo
         .try_cast::<UiNode>()
         .map(|node| Some(Box::new(node)))
         .ok_or_else(|| Box::new(overlay_type_error(name, "a UiNode")))
-}
-
-fn required_node_array(config: &mut Map, name: &str) -> Result<Vec<UiNode>, Box<EvalAltResult>> {
-    let values = config
-        .remove(name)
-        .and_then(Dynamic::try_cast::<Array>)
-        .ok_or_else(|| Box::new(overlay_type_error(name, "an array of UiNode values")))?;
-    values
-        .into_iter()
-        .enumerate()
-        .map(|(index, value)| {
-            value.try_cast::<UiNode>().ok_or_else(|| {
-                Box::new(EvalAltResult::ErrorRuntime(
-                    format!("{name} item at index {index} must be a UiNode").into(),
-                    Position::NONE,
-                ))
-            })
-        })
-        .collect()
 }
 
 fn overlay_type_error(name: &str, expected: &str) -> EvalAltResult {
