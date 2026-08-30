@@ -221,6 +221,13 @@ may call `ctx.pause_timeout(key)`, `ctx.resume_timeout(key)`, or
 `ctx.cancel_timeout(key)`. Only named non-capturing callbacks and UiValue
 payloads cross the retained boundary.
 
+Timer deadlines and animation sampling share the Host's monotonic
+`RuntimeClock`. Production applications use the system clock. Tests and
+automation should inject a `ManualRuntimeClock` through
+`FileScriptView::runtime_clock` or `EmbeddedScriptView::runtime_clock`, advance
+it explicitly, and then request/poll a frame; scripts never read the clock
+directly.
+
 Use `layer(content, #{ id, placement, inset?, priority? })` for arbitrary
 window-level content. Placements are the four corners, `center`, and `fill`;
 IDs are namespaced by embedded `view_id`. Layer is a generic portal primitive,

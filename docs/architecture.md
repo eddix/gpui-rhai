@@ -187,7 +187,9 @@ namespaced element with one shared deferred portal; standalone views render the
 same node directly. Toast is Rhai source over Layer plus component-scoped
 declarative one-shot timers. Timer reconciliation, pause/resume, stale
 generation rejection, scope disposal, and transaction rollback are generic
-runtime behavior rather than a native toast queue.
+runtime behavior rather than a native toast queue. Timer deadlines and
+animation sampling use the same Host-injected monotonic `RuntimeClock`, so
+automation can advance both deterministically without sleeping.
 
 Generic keyed native mechanisms retain GPUI Entities in element state. Business values
 remain controlled Rhai props; only interaction transients such as focus,
@@ -222,13 +224,15 @@ Window width is reduced to a configurable `compact`/`regular`/`wide` class.
 Crossing a breakpoint reruns `view`; ordinary resizing remains native GPUI
 layout and does not drive continuous Rhai evaluation.
 
-## Locale, clock, and assets
+## Locale, clocks, and assets
 
 Locale selection retains app/window/subtree precedence and additionally
 resolves immutable calendar and number metadata. `YYYY-MM-DD` is the strict
-date wire format; locale formatters produce presentation strings. A Runtime
-Clock supplies the system-local current date, and hosts may inject a fixed Clock
-without exposing wall-clock APIs to Rhai.
+date wire format; locale formatters produce presentation strings. A
+`CalendarClock` supplies the current civil date and may be fixed by the Host.
+The separate monotonic `RuntimeClock` drives timers and animation and may be
+replaced with `ManualRuntimeClock` for deterministic automation. Neither clock
+is readable by Rhai.
 
 Component metadata declares small assets. Script preparation registers and
 preloads them into `AssetRegistry`; asset-backed image nodes therefore resolve

@@ -1951,7 +1951,9 @@ fn toast_source_builds_public_layers_and_declarative_timers() {
             "#,
         )
         .unwrap();
+    let manual_clock = gpui_rhai::ManualRuntimeClock::new(std::time::Instant::now());
     let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+    runtime.borrow_mut().clock = manual_clock.clock();
     let mut lifecycle = ScriptLifecycle::new(
         compiled,
         Rc::clone(&runtime),
@@ -1989,10 +1991,12 @@ fn toast_source_builds_public_layers_and_declarative_timers() {
         Some(gpui_rhai::Length::Pixels(18.0))
     );
     assert_eq!(runtime.borrow().timers.active_count(), 2);
-    let deliveries = runtime.borrow_mut().timers.drain(
-        std::time::Instant::now() + std::time::Duration::from_secs(2),
-        lifecycle.generation(),
-    );
+    manual_clock.advance(std::time::Duration::from_secs(2));
+    let now = runtime.borrow().clock.now();
+    let deliveries = runtime
+        .borrow_mut()
+        .timers
+        .drain(now, lifecycle.generation());
     assert_eq!(deliveries.len(), 1, "paused toast must retain its deadline");
     assert_eq!(deliveries[0].payload, UiValue::String("saved".to_owned()));
     let _ = lifecycle

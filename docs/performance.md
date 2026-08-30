@@ -12,7 +12,9 @@ The budgets are diagnostics, not permission to move per-frame policy into Rhai.
   1 MiB strings.
 - Declarative timers are one-shot, component-scoped, capped by
   `RuntimeBudgets::timers`, and polled with other foreground deliveries; they do
-  not create one OS thread per timeout.
+  not create one OS thread per timeout. Timers and animation share a monotonic
+  `RuntimeClock`; deterministic probes inject and advance `ManualRuntimeClock`
+  instead of sleeping.
 - A 5,000-item `VirtualList` must realize only the viewport plus configured
   overscan; tests enforce bounded realization and stable focus.
 - A 10,000-row scalar Table must retain row maps as data and realize only the

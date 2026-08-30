@@ -643,10 +643,11 @@ impl ScriptLifecycle {
             .runtime
             .try_borrow_mut()
             .map_err(|_| LifecycleError::Borrowed)?;
+        let now = runtime.clock.now();
         let values = crate::animation::reconcile_node_animations_scoped(
             root,
             &mut runtime.animations,
-            std::time::Instant::now(),
+            now,
             &self.animation_root_path(),
         )?;
         runtime.animation_values = values;
@@ -775,12 +776,11 @@ impl ScriptLifecycle {
                 .runtime
                 .try_borrow_mut()
                 .map_err(|_| LifecycleError::Borrowed)?;
+            let now = runtime.clock.now();
             engine.commit_component_renders(&mut runtime)?;
-            runtime.timers.reconcile(
-                &self.root_path,
-                declarations.timers,
-                std::time::Instant::now(),
-            );
+            runtime
+                .timers
+                .reconcile(&self.root_path, declarations.timers, now);
             runtime
                 .signals
                 .reconcile(&self.root_path, declarations.signals);
@@ -1062,6 +1062,56 @@ mod tests {
             lifecycle.dispose(&mut engine),
             Err(LifecycleError::InvalidTransition { .. })
         ));
+    }
+
+    #[test]
+    fn lifecycle_animation_uses_the_host_runtime_clock() {
+        let mut engine = RuntimeEngine::new();
+        let compiled = engine
+            .compile(
+                r#"
+                    fn view(ctx) {
+                        text("clocked")
+                            .with_key("probe")
+                            .animate(transition("width", 0.0, 100.0, 100, "linear"))
+                    }
+                "#,
+            )
+            .unwrap();
+        let start = Instant::now();
+        let manual = crate::ManualRuntimeClock::new(start);
+        let mut runtime_state = UiRuntimeState::new();
+        runtime_state.clock = manual.clock();
+        let runtime = Rc::new(RefCell::new(runtime_state));
+        let mut lifecycle = ScriptLifecycle::new(
+            compiled,
+            Rc::clone(&runtime),
+            ComponentInstancePath::root("App", "root"),
+            Some("main".to_owned()),
+            BTreeMap::new(),
+            &ComponentStateSchema::default(),
+        )
+        .unwrap();
+
+        lifecycle.start(&mut engine).unwrap();
+        assert_eq!(
+            runtime
+                .borrow()
+                .animation_values
+                .values()
+                .copied()
+                .collect::<Vec<_>>(),
+            vec![0.0]
+        );
+
+        manual.advance(Duration::from_millis(50));
+        let mut runtime = runtime.borrow_mut();
+        let now = runtime.clock.now();
+        let frame = runtime.animations.tick(now);
+        assert_eq!(
+            frame.values.values().copied().collect::<Vec<_>>(),
+            vec![50.0]
+        );
     }
 
     #[test]

@@ -80,6 +80,11 @@ and dispose/remount.
 It guards keyboard/clipboard dispatch mechanics but does not replace platform
 IME candidate-window, focus-ring, or accessibility certification.
 
+Runtime-only automation injects `ManualRuntimeClock` through the file or
+embedded view builder, advances it explicitly, and polls a frame. This gives
+timers and animation a single deterministic timeline without process sleeps;
+platform screenshot tests still require an unlocked interactive session.
+
 Command-line example binaries do not have a macOS application bundle identity,
 so accessibility automation may not be able to address them by application.
 Build a temporary, non-destructive `.app` wrapper around an already-built

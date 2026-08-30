@@ -51,6 +51,7 @@ pub mod async_runtime;
 pub mod budget;
 pub mod canvas;
 pub mod capability;
+pub mod clock;
 
 pub use gpui;
 
@@ -84,6 +85,7 @@ pub use capability::{
     CapabilityId, CapabilityMethod, CapabilityRegistry, SubscriptionCapabilityHandler,
     SubscriptionWork, TaskWork,
 };
+pub use clock::{ManualRuntimeClock, RuntimeClock, RuntimeClockSource};
 pub use component::{
     ComponentDefinition, ComponentError, ComponentExportCollector, ComponentExportError,
     ComponentHeaderError, ComponentInvocation, ComponentMetadata, ComponentPropConversionError,

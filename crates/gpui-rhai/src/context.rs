@@ -52,6 +52,7 @@ pub struct UiRuntimeState {
     pub timers: crate::TimerRegistry,
     pub locale: Option<LocaleManager>,
     pub calendar_clock: CalendarClock,
+    pub clock: crate::RuntimeClock,
     pub theme: Option<ThemeManager>,
     pub assets: AssetRegistry,
     pub animations: AnimationRuntime,
@@ -146,7 +147,7 @@ impl UiRuntimeState {
         }
         self.animations
             .cancel_node_scope(&format!("window:{window}"));
-        self.animation_values = self.animations.snapshot(std::time::Instant::now());
+        self.animation_values = self.animations.snapshot(self.clock.now());
         self.effects.remove_scope(root);
         self.signals.remove_scope(root);
         self.element_refs.remove_scope(root);
@@ -1611,7 +1612,8 @@ impl UiContext {
         } else {
             crate::MotionPreference::Normal
         });
-        runtime.animation_values = runtime.animations.snapshot(std::time::Instant::now());
+        let now = runtime.clock.now();
+        runtime.animation_values = runtime.animations.snapshot(now);
         runtime.dirty.insert(self.component.clone());
         runtime.traces.push(
             crate::RuntimeTraceKind::State,
@@ -1729,12 +1731,12 @@ impl UiContext {
     pub fn pause_timeout(&self, key: &str) -> Result<bool, UiContextError> {
         self.require_mutation()?;
         let id = crate::TimerId::new(self.component.clone(), key)?;
-        Ok(self
+        let mut runtime = self
             .runtime
             .try_borrow_mut()
-            .map_err(|_| UiContextError::Borrowed)?
-            .timers
-            .pause(&id, std::time::Instant::now()))
+            .map_err(|_| UiContextError::Borrowed)?;
+        let now = runtime.clock.now();
+        Ok(runtime.timers.pause(&id, now))
     }
 
     /// Resume a declared timer by its component-local key.
@@ -1745,12 +1747,12 @@ impl UiContext {
     pub fn resume_timeout(&self, key: &str) -> Result<bool, UiContextError> {
         self.require_mutation()?;
         let id = crate::TimerId::new(self.component.clone(), key)?;
-        Ok(self
+        let mut runtime = self
             .runtime
             .try_borrow_mut()
-            .map_err(|_| UiContextError::Borrowed)?
-            .timers
-            .resume(&id, std::time::Instant::now()))
+            .map_err(|_| UiContextError::Borrowed)?;
+        let now = runtime.clock.now();
+        Ok(runtime.timers.resume(&id, now))
     }
 
     /// Complete/cancel a declared timer until its signature changes or disappears.

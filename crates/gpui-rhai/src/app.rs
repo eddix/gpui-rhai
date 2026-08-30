@@ -826,6 +826,7 @@ pub struct FileScriptView {
     key_bindings: Vec<KeyBindingSpec>,
     viewport_breakpoints: ViewportBreakpoints,
     calendar_clock: crate::CalendarClock,
+    runtime_clock: crate::RuntimeClock,
     fonts: Vec<crate::FontSource>,
 }
 
@@ -840,6 +841,7 @@ impl FileScriptView {
             key_bindings: Vec::new(),
             viewport_breakpoints: ViewportBreakpoints::default(),
             calendar_clock: crate::CalendarClock::default(),
+            runtime_clock: crate::RuntimeClock::default(),
             fonts: Vec::new(),
         }
     }
@@ -877,6 +879,12 @@ impl FileScriptView {
     #[must_use]
     pub fn calendar_clock(mut self, clock: crate::CalendarClock) -> Self {
         self.calendar_clock = clock;
+        self
+    }
+
+    #[must_use]
+    pub fn runtime_clock(mut self, clock: crate::RuntimeClock) -> Self {
+        self.runtime_clock = clock;
         self
     }
 
@@ -928,6 +936,7 @@ impl FileScriptView {
         runtime_state.animations = AnimationRuntime::new(self.motion_preference);
         runtime_state.responsive = ResponsiveRuntime::new(self.viewport_breakpoints);
         runtime_state.calendar_clock = self.calendar_clock;
+        runtime_state.clock = self.runtime_clock;
         runtime_state.locale = load_locale_directory(engine.engine(), &ui_root.join("locales"))?;
         runtime_state.theme = Some(load_theme_directory(
             engine.engine(),
@@ -987,6 +996,7 @@ pub struct EmbeddedScriptView {
     assets: BTreeMap<String, AssetData>,
     viewport_breakpoints: ViewportBreakpoints,
     calendar_clock: crate::CalendarClock,
+    runtime_clock: crate::RuntimeClock,
     fonts: Vec<crate::FontSource>,
 }
 
@@ -1012,6 +1022,7 @@ impl EmbeddedScriptView {
             assets: BTreeMap::new(),
             viewport_breakpoints: ViewportBreakpoints::default(),
             calendar_clock: crate::CalendarClock::default(),
+            runtime_clock: crate::RuntimeClock::default(),
             fonts: Vec::new(),
         }
     }
@@ -1077,6 +1088,12 @@ impl EmbeddedScriptView {
     }
 
     #[must_use]
+    pub fn runtime_clock(mut self, clock: crate::RuntimeClock) -> Self {
+        self.runtime_clock = clock;
+        self
+    }
+
+    #[must_use]
     pub fn font_source(mut self, font: crate::FontSource) -> Self {
         self.fonts.push(font);
         self
@@ -1116,6 +1133,7 @@ impl EmbeddedScriptView {
         runtime_state.animations = AnimationRuntime::new(self.motion_preference);
         runtime_state.responsive = ResponsiveRuntime::new(self.viewport_breakpoints);
         runtime_state.calendar_clock = self.calendar_clock;
+        runtime_state.clock = self.runtime_clock;
         runtime_state.locale = load_embedded_locales(engine.engine(), self.locales)?;
         runtime_state.theme = Some(load_embedded_themes(engine.engine(), self.themes, &theme)?);
         if !self.assets.is_empty() {
@@ -2945,7 +2963,7 @@ impl ScriptHostView {
             let mut runtime = runtime.borrow_mut();
             runtime.flush_geometry_dependencies();
             let _ = runtime.assets.retain_decode_generation(generation);
-            let now = std::time::Instant::now();
+            let now = runtime.clock.now();
             let mut deliveries = runtime.tasks.drain(generation);
             deliveries.extend(runtime.subscriptions.drain(generation));
             deliveries.extend(runtime.timers.drain(now, generation));
@@ -3670,6 +3688,31 @@ mod tests {
         .unwrap();
         assert_eq!(prepared.fonts.len(), 1);
         assert_eq!(prepared.fonts[0].label(), "Art Display");
+    }
+
+    #[test]
+    fn embedded_runtime_clock_is_installed_before_initial_render() {
+        let entry = ModuleId::parse("main").unwrap();
+        let scripts = EmbeddedScriptSource::new(BTreeMap::from([(
+            entry.clone(),
+            "fn view(ctx) { text(\"clock probe\") }".to_owned(),
+        )]));
+        let start = std::time::Instant::now();
+        let manual = crate::ManualRuntimeClock::new(start);
+        let prepared = EmbeddedScriptView::new(
+            entry,
+            scripts,
+            include_str!("../../../registry/themes/default_dark.rhai"),
+        )
+        .runtime_clock(manual.clock())
+        .prepare()
+        .unwrap();
+
+        manual.advance(std::time::Duration::from_millis(48));
+        assert_eq!(
+            prepared.factory.runtime.borrow().clock.now(),
+            start + std::time::Duration::from_millis(48)
+        );
     }
 
     #[test]

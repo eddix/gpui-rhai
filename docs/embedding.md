@@ -39,6 +39,21 @@ let first = gpui_rhai::FileScriptView::new("plugins/first/ui/main.rhai")
     )?;
 ```
 
+For deterministic tests, inject one monotonic clock before `prepare`:
+
+```rust
+let manual_clock = gpui_rhai::ManualRuntimeClock::new(std::time::Instant::now());
+let prepared = gpui_rhai::FileScriptView::new("plugins/first/ui/main.rhai")
+    .runtime_clock(manual_clock.clock())
+    .prepare()?;
+
+manual_clock.advance(std::time::Duration::from_millis(16));
+```
+
+The injected clock drives both animation sampling and declarative timer
+deadlines. Civil-date behavior remains independently controlled by
+`calendar_clock`.
+
 `PreparedScriptView::mount` consumes the prepared value. Prepare again for a
 second instance, even when it uses the same source. This preserves handler and
 runtime isolation.
