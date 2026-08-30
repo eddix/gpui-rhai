@@ -709,6 +709,54 @@ impl UiContext {
         self.focus_element(&reference)
     }
 
+    /// Queue a positive visible scroll offset for a retained scroll container.
+    ///
+    /// # Errors
+    ///
+    /// Returns during render, outside a window, for a stale ref, or for invalid
+    /// offsets.
+    pub fn scroll_element_to(
+        &self,
+        reference: &crate::ElementRef,
+        x: f64,
+        y: f64,
+    ) -> Result<(), UiContextError> {
+        self.require_mutation()?;
+        if !x.is_finite() || !y.is_finite() || x < 0.0 || y < 0.0 {
+            return Err(UiContextError::InvalidScrollOffset { x, y });
+        }
+        let window = self.window.clone().ok_or(UiContextError::MissingWindow)?;
+        let mut runtime = self
+            .runtime
+            .try_borrow_mut()
+            .map_err(|_| UiContextError::Borrowed)?;
+        let node = runtime.element_refs.resolve(reference)?;
+        runtime
+            .pending_element_commands
+            .push(crate::element_ref::ElementCommand::ScrollTo { window, node, x, y });
+        Ok(())
+    }
+
+    /// Resolve and queue scroll for a component-local ref key.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same errors as [`Self::scroll_element_to`] plus unknown keys.
+    pub fn scroll_element_to_by_key(
+        &self,
+        key: &str,
+        x: f64,
+        y: f64,
+    ) -> Result<(), UiContextError> {
+        let reference = self
+            .runtime
+            .try_borrow()
+            .map_err(|_| UiContextError::Borrowed)?
+            .element_refs
+            .resolve_key(&self.component, key)?;
+        self.scroll_element_to(&reference, x, y)
+    }
+
     /// Read and subscribe to an app-scoped store field.
     ///
     /// # Errors
@@ -1884,6 +1932,22 @@ fn register_action_context_methods(builder: &mut TypeBuilder<UiContext>) {
                     .set_action_enabled(action.as_str(), enabled)
                     .map_err(|error| Box::new(context_runtime_error(&error)))
             },
+        )
+        .with_fn(
+            "scroll_to",
+            |context: &mut UiContext, reference: crate::ElementRef, x: FLOAT, y: FLOAT| {
+                context
+                    .scroll_element_to(&reference, x, y)
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        )
+        .with_fn(
+            "scroll_to",
+            |context: &mut UiContext, key: ImmutableString, x: FLOAT, y: FLOAT| {
+                context
+                    .scroll_element_to_by_key(key.as_str(), x, y)
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
         );
 }
 
@@ -2311,6 +2375,8 @@ pub enum UiContextError {
     ElementRef(#[from] crate::ElementRefError),
     #[error(transparent)]
     Geometry(#[from] crate::GeometryError),
+    #[error("scroll offset must be finite and non-negative, got ({x}, {y})")]
+    InvalidScrollOffset { x: f64, y: f64 },
     #[error(transparent)]
     Callback(#[from] crate::ScriptCallbackDefinitionError),
 }
@@ -2620,14 +2686,21 @@ mod tests {
             BTreeMap::from([(reference.id().clone(), tree.root_id().unwrap())]),
         );
         context.focus_element_by_key("field").unwrap();
+        context
+            .scroll_element_to_by_key("field", 12.0, 24.0)
+            .unwrap();
         let commands = context
             .runtime()
             .borrow_mut()
             .take_window_element_commands("main");
         assert!(matches!(
             commands.as_slice(),
-            [crate::element_ref::ElementCommand::Focus { node, .. }]
+            [crate::element_ref::ElementCommand::Focus { node, .. },
+             crate::element_ref::ElementCommand::ScrollTo { node: scroll_node, x, y, .. }]
                 if *node == tree.root_id().unwrap()
+                    && scroll_node == node
+                    && (*x - 12.0).abs() < f64::EPSILON
+                    && (*y - 24.0).abs() < f64::EPSILON
         ));
     }
 }

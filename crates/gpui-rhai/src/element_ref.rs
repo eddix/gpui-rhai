@@ -159,15 +159,24 @@ pub enum ElementRefError {
     },
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) enum ElementCommand {
-    Focus { window: String, node: NodeId },
+    Focus {
+        window: String,
+        node: NodeId,
+    },
+    ScrollTo {
+        window: String,
+        node: NodeId,
+        x: f64,
+        y: f64,
+    },
 }
 
 impl ElementCommand {
     pub(crate) fn window(&self) -> &str {
         match self {
-            Self::Focus { window, .. } => window,
+            Self::Focus { window, .. } | Self::ScrollTo { window, .. } => window,
         }
     }
 }

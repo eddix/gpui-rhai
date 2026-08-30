@@ -7,8 +7,8 @@ use gpui::{
     AnyElement, App, Bounds, BoxShadow, ClickEvent, Context, DispatchPhase, Div, Element,
     ElementId, FocusHandle, GlobalElementId, InspectorElementId, InteractiveElement, IntoElement,
     LayoutId, Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement,
-    Pixels, Point, Render, ScrollWheelEvent, SharedString, Stateful, StatefulInteractiveElement,
-    Styled, Window, div, img, point, px, relative, rems, rgba,
+    Pixels, Point, Render, ScrollHandle, ScrollWheelEvent, SharedString, Stateful,
+    StatefulInteractiveElement, Styled, Window, div, img, point, px, relative, rems, rgba,
 };
 
 use crate::date_picker_element::{
@@ -28,10 +28,10 @@ use crate::virtual_list_element::{VirtualFocusHandler, VirtualListEntityElement}
 use crate::{
     Align, AnimationKey, AnimationProperty, AssetRegistry, ColorValue, DatePickerNodeSpec,
     DropdownNodeSpec, EventPropagation, EventResponse, FlexDirection, ImageSourceSpec,
-    InteractionState, Justify, Length, NodeId, OverlayNodeSpec, PrimitiveRegistry, PseudoState,
-    RadiusToken, RetainedUiTree, Rgba8, ScriptCallback, SpacingToken, Style, StyleProperties,
-    TableNodeSpec, TableSort, TableSortDirection, TextDirection, ToastHostSpec, UiEventHandler,
-    UiNode, UiNodeKind, UiValue,
+    InteractionState, Justify, Length, NodeId, OverflowMode, OverlayNodeSpec, PrimitiveRegistry,
+    PseudoState, RadiusToken, RetainedUiTree, Rgba8, ScriptCallback, SpacingToken, Style,
+    StyleProperties, TableNodeSpec, TableSort, TableSortDirection, TextDirection, ToastHostSpec,
+    UiEventHandler, UiNode, UiNodeKind, UiValue,
 };
 
 type DispatchFn = dyn Fn(ScriptCallback, UiValue, &mut Window, &mut App) -> EventResponse;
@@ -236,6 +236,35 @@ fn owned_part_styles(node: &UiNode) -> BTreeMap<String, Style> {
     node.part_styles()
         .map(|(name, style)| (name.to_owned(), style.clone()))
         .collect()
+}
+
+fn node_scrollable(node: &UiNode) -> bool {
+    matches!(node.style().base.overflow_x, Some(OverflowMode::Scroll))
+        || matches!(node.style().base.overflow_y, Some(OverflowMode::Scroll))
+}
+
+fn node_has_raw_pointer_handlers(node: &UiNode) -> bool {
+    ["pointer_down", "pointer_up", "pointer_move", "wheel"]
+        .into_iter()
+        .any(|event| !node.event_handlers(event).is_empty())
+}
+
+fn apply_scroll_behavior(
+    mut element: Stateful<Div>,
+    node: &UiNode,
+    retained_id: Option<NodeId>,
+    handles: &BTreeMap<NodeId, ScrollHandle>,
+) -> Stateful<Div> {
+    if matches!(node.style().base.overflow_x, Some(OverflowMode::Scroll)) {
+        element = element.overflow_x_scroll();
+    }
+    if matches!(node.style().base.overflow_y, Some(OverflowMode::Scroll)) {
+        element = element.overflow_y_scroll();
+    }
+    if let Some(handle) = retained_id.and_then(|node| handles.get(&node)) {
+        element = element.track_scroll(handle);
+    }
+    element
 }
 
 fn apply_raw_pointer_handlers(
@@ -714,6 +743,7 @@ struct RenderEnvironment<'a, C> {
     geometry: &'a crate::GeometryRegistry,
     pointer_capture: &'a crate::PointerCaptureRegistry,
     focus_handles: &'a BTreeMap<NodeId, FocusHandle>,
+    scroll_handles: &'a BTreeMap<NodeId, ScrollHandle>,
     direction: TextDirection,
     view_id: &'a str,
     retained: Option<&'a RetainedUiTree>,
@@ -728,6 +758,7 @@ pub(crate) struct WindowRenderResources<'a> {
     pub geometry: &'a crate::GeometryRegistry,
     pub pointer_capture: &'a crate::PointerCaptureRegistry,
     pub focus_handles: &'a BTreeMap<NodeId, FocusHandle>,
+    pub scroll_handles: &'a BTreeMap<NodeId, ScrollHandle>,
     pub direction: TextDirection,
     pub root_path: &'a str,
     pub view_id: &'a str,
@@ -766,6 +797,7 @@ impl GpuiNodeRenderer {
         let geometry = crate::GeometryRegistry::new();
         let pointer_capture = crate::PointerCaptureRegistry::new();
         let focus_handles = BTreeMap::new();
+        let scroll_handles = BTreeMap::new();
         let environment = RenderEnvironment {
             colors,
             interaction,
@@ -778,6 +810,7 @@ impl GpuiNodeRenderer {
             geometry: &geometry,
             pointer_capture: &pointer_capture,
             focus_handles: &focus_handles,
+            scroll_handles: &scroll_handles,
             direction: TextDirection::LeftToRight,
             view_id: "standalone",
             retained: None,
@@ -798,6 +831,7 @@ impl GpuiNodeRenderer {
         let geometry = crate::GeometryRegistry::new();
         let pointer_capture = crate::PointerCaptureRegistry::new();
         let focus_handles = BTreeMap::new();
+        let scroll_handles = BTreeMap::new();
         let environment = RenderEnvironment {
             colors,
             interaction,
@@ -810,6 +844,7 @@ impl GpuiNodeRenderer {
             geometry: &geometry,
             pointer_capture: &pointer_capture,
             focus_handles: &focus_handles,
+            scroll_handles: &scroll_handles,
             direction: TextDirection::LeftToRight,
             view_id: "standalone",
             retained: Some(tree),
@@ -838,6 +873,7 @@ impl GpuiNodeRenderer {
         let geometry = crate::GeometryRegistry::new();
         let pointer_capture = crate::PointerCaptureRegistry::new();
         let focus_handles = BTreeMap::new();
+        let scroll_handles = BTreeMap::new();
         let environment = RenderEnvironment {
             colors,
             interaction,
@@ -850,6 +886,7 @@ impl GpuiNodeRenderer {
             geometry: &geometry,
             pointer_capture: &pointer_capture,
             focus_handles: &focus_handles,
+            scroll_handles: &scroll_handles,
             direction: TextDirection::LeftToRight,
             view_id: "standalone",
             retained: None,
@@ -872,6 +909,7 @@ impl GpuiNodeRenderer {
         let geometry = crate::GeometryRegistry::new();
         let pointer_capture = crate::PointerCaptureRegistry::new();
         let focus_handles = BTreeMap::new();
+        let scroll_handles = BTreeMap::new();
         let resources = WindowRenderResources {
             assets,
             dispatcher,
@@ -881,6 +919,7 @@ impl GpuiNodeRenderer {
             geometry: &geometry,
             pointer_capture: &pointer_capture,
             focus_handles: &focus_handles,
+            scroll_handles: &scroll_handles,
             direction: TextDirection::LeftToRight,
             root_path: "root",
             view_id: "standalone",
@@ -924,6 +963,7 @@ impl GpuiNodeRenderer {
             geometry: resources.geometry,
             pointer_capture: resources.pointer_capture,
             focus_handles: resources.focus_handles,
+            scroll_handles: resources.scroll_handles,
             direction: resources.direction,
             view_id: resources.view_id,
             retained: Some(tree),
@@ -966,6 +1006,7 @@ impl GpuiNodeRenderer {
             geometry: resources.geometry,
             pointer_capture: resources.pointer_capture,
             focus_handles: resources.focus_handles,
+            scroll_handles: resources.scroll_handles,
             direction: resources.direction,
             view_id: resources.view_id,
             retained: None,
@@ -1052,11 +1093,13 @@ impl GpuiNodeRenderer {
             )
         });
         let key_handlers = key_handler_bindings(node);
-        let has_raw_pointer_handlers = ["pointer_down", "pointer_up", "pointer_move", "wheel"]
-            .into_iter()
-            .any(|event| !node.event_handlers(event).is_empty());
+        let has_raw_pointer_handlers = node_has_raw_pointer_handlers(node);
+        let has_scroll = node_scrollable(node);
         if is_disabled(node)
-            || (click.is_none() && key_handlers.is_empty() && !has_raw_pointer_handlers)
+            || (click.is_none()
+                && key_handlers.is_empty()
+                && !has_raw_pointer_handlers
+                && !has_scroll)
         {
             return Self::populate(
                 element,
@@ -1089,41 +1132,44 @@ impl GpuiNodeRenderer {
             environment.colors,
         )
         .tab_index(0)
-        .tab_stop(tab_stop)
-        .on_click(move |event, window, cx| {
-            if matches!(event, ClickEvent::Mouse(_))
-                && let Some((bindings, payload)) = &click
-            {
-                let response = dispatch_ui_handlers(
-                    bindings,
-                    "click",
-                    payload,
-                    window,
-                    cx,
-                    click_dispatcher.as_ref(),
-                );
-                apply_event_response(response, window, cx);
-            }
-        })
-        .on_key_down(move |event, window, cx| {
-            let semantic_key = logical_keyboard_key(event.keystroke.key.as_str(), text_direction);
-            let semantic = key_handlers.get(semantic_key).or_else(|| {
-                matches!(event.keystroke.key.as_str(), "enter" | "space")
-                    .then_some(())
-                    .and(keyboard_click.as_ref())
+        .tab_stop(tab_stop);
+        let element = apply_scroll_behavior(element, node, retained_id, environment.scroll_handles);
+        let element = element
+            .on_click(move |event, window, cx| {
+                if matches!(event, ClickEvent::Mouse(_))
+                    && let Some((bindings, payload)) = &click
+                {
+                    let response = dispatch_ui_handlers(
+                        bindings,
+                        "click",
+                        payload,
+                        window,
+                        cx,
+                        click_dispatcher.as_ref(),
+                    );
+                    apply_event_response(response, window, cx);
+                }
+            })
+            .on_key_down(move |event, window, cx| {
+                let semantic_key =
+                    logical_keyboard_key(event.keystroke.key.as_str(), text_direction);
+                let semantic = key_handlers.get(semantic_key).or_else(|| {
+                    matches!(event.keystroke.key.as_str(), "enter" | "space")
+                        .then_some(())
+                        .and(keyboard_click.as_ref())
+                });
+                if let Some((bindings, payload)) = semantic {
+                    let response = dispatch_ui_handlers(
+                        bindings,
+                        "key",
+                        payload,
+                        window,
+                        cx,
+                        keyboard_dispatcher.as_ref(),
+                    );
+                    apply_event_response(response, window, cx);
+                }
             });
-            if let Some((bindings, payload)) = semantic {
-                let response = dispatch_ui_handlers(
-                    bindings,
-                    "key",
-                    payload,
-                    window,
-                    cx,
-                    keyboard_dispatcher.as_ref(),
-                );
-                apply_event_response(response, window, cx);
-            }
-        });
         let element = apply_raw_pointer_handlers(
             element,
             node,
@@ -1515,6 +1561,7 @@ fn native_date_picker_element<C: ColorResolver>(
         geometry: environment.geometry.clone(),
         pointer_capture: environment.pointer_capture.clone(),
         focus_handles: environment.focus_handles.clone(),
+        scroll_handles: environment.scroll_handles.clone(),
         direction: environment.direction,
         base_path: path.to_owned(),
         view_id: environment.view_id.to_owned(),
@@ -1561,6 +1608,7 @@ fn native_table_element<C: ColorResolver>(
         geometry: environment.geometry.clone(),
         pointer_capture: environment.pointer_capture.clone(),
         focus_handles: environment.focus_handles.clone(),
+        scroll_handles: environment.scroll_handles.clone(),
         direction: environment.direction,
         base_path: path.to_owned(),
         view_id: environment.view_id.to_owned(),
@@ -1598,6 +1646,7 @@ fn native_choice_element<C: ColorResolver>(
         geometry: environment.geometry.clone(),
         pointer_capture: environment.pointer_capture.clone(),
         focus_handles: environment.focus_handles.clone(),
+        scroll_handles: environment.scroll_handles.clone(),
         direction: environment.direction,
         base_path: path.to_owned(),
         view_id: environment.view_id.to_owned(),
@@ -1647,6 +1696,7 @@ fn native_virtual_list_element<C: ColorResolver>(
         geometry: environment.geometry.clone(),
         pointer_capture: environment.pointer_capture.clone(),
         focus_handles: environment.focus_handles.clone(),
+        scroll_handles: environment.scroll_handles.clone(),
         direction: environment.direction,
         base_path: path.to_owned(),
         view_id: environment.view_id.to_owned(),
@@ -2225,6 +2275,11 @@ pub(crate) fn apply_style_override(
 }
 
 fn apply_layout(mut element: Div, style: &StyleProperties, text_direction: TextDirection) -> Div {
+    if matches!(style.overflow_x, Some(OverflowMode::Hidden))
+        || matches!(style.overflow_y, Some(OverflowMode::Hidden))
+    {
+        element = element.overflow_hidden();
+    }
     if let Some(direction) = style.direction {
         element = element.flex();
         element = match (direction, text_direction) {

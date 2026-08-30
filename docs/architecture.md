@@ -78,6 +78,9 @@ layout/visual geometry and exact geometry reads create component dependencies.
 Unmounted refs fail stale instead of rebinding by name. `ctx.focus(ref)` queues
 a window-scoped retained command; the Host view owns the corresponding GPUI
 `FocusHandle` by `NodeId`, so no window/focus object crosses into Rhai.
+Per-axis `Style.overflow_x_scroll/y_scroll` creates a retained GPUI
+`ScrollHandle` for keyed ref nodes. `ctx.scroll_to(ref, x, y)` queues positive
+visible offsets and applies them only after transaction commit.
 
 `error_boundary(child, fallback)` catches native subtree rendering failures.
 Use `error_boundary_lazy(Fn("child"), Fn("fallback"))` when Rhai construction

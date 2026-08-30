@@ -162,6 +162,9 @@ before first committed prepaint and then the last committed layout/visual
 geometry; geometry changes dirty only components that read that exact ref.
 Event handlers can call `ctx.focus(ref)` or `ctx.focus("local_ref_key")`; focus
 is executed as a window-scoped retained command after the transaction commits.
+Scrollable keyed ref nodes use `Style().overflow_x_scroll()`,
+`overflow_y_scroll()`, or `overflow_scroll()`. Handlers call
+`ctx.scroll_to(ref, x, y)` with finite non-negative visible offsets.
 
 For structural responsive composition, branch only on
 `ctx.viewport_class()` (`compact`, `regular`, or `wide`). Hosts may replace the

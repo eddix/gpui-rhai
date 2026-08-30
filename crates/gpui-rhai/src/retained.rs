@@ -53,6 +53,7 @@ pub struct RetainedNode {
     element_ref: Option<crate::ElementRef>,
     handlers: BTreeMap<String, Vec<crate::UiEventBinding>>,
     handler_payloads: BTreeMap<String, crate::UiValue>,
+    scrollable: bool,
     children: Vec<RetainedChildLink>,
 }
 
@@ -95,6 +96,11 @@ impl RetainedNode {
     #[must_use]
     pub fn handler_payload(&self, event: &str) -> Option<&crate::UiValue> {
         self.handler_payloads.get(event)
+    }
+
+    #[must_use]
+    pub const fn scrollable(&self) -> bool {
+        self.scrollable
     }
 
     pub fn children(&self) -> impl ExactSizeIterator<Item = &RetainedChildLink> {
@@ -364,6 +370,7 @@ impl ReconcileTransaction<'_> {
                 element_ref: candidate.element_ref().cloned(),
                 handlers: candidate.handlers().clone(),
                 handler_payloads: candidate.handler_payloads().clone(),
+                scrollable: snapshot_scrollable(candidate),
                 children: child_links,
             },
         );
@@ -394,6 +401,16 @@ impl ReconcileTransaction<'_> {
         self.report.unmounted.push(id);
         Ok(())
     }
+}
+
+fn snapshot_scrollable(node: &UiNode) -> bool {
+    matches!(
+        node.style().base.overflow_x,
+        Some(crate::OverflowMode::Scroll)
+    ) || matches!(
+        node.style().base.overflow_y,
+        Some(crate::OverflowMode::Scroll)
+    )
 }
 
 #[derive(Clone, Copy)]

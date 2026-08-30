@@ -13,8 +13,8 @@ use gpui::{
     AnyElement, AnyWindowHandle, App, AppContext, Application, Bounds, Context, DispatchPhase,
     Element, ElementId, Entity, FocusHandle, Global, GlobalElementId, InspectorElementId,
     InteractiveElement, IntoElement, LayoutId, MouseDownEvent, ParentElement, Pixels, Render,
-    SharedString, Styled, Task, Timer, TitlebarOptions, Window, WindowAppearance, WindowBounds,
-    WindowOptions, deferred, div, px, rgba, size,
+    ScrollHandle, SharedString, Styled, Task, Timer, TitlebarOptions, Window, WindowAppearance,
+    WindowBounds, WindowOptions, deferred, div, px, rgba, size,
 };
 use thiserror::Error;
 
@@ -1647,6 +1647,7 @@ impl PreparedScriptView {
                 native_windows,
                 host_focus,
                 focus_handles: BTreeMap::new(),
+                scroll_handles: BTreeMap::new(),
                 disposed: false,
                 _async_task: async_task,
                 #[cfg(feature = "dev-reload")]
@@ -1887,6 +1888,7 @@ fn open_secondary_window(
                 native_windows: Rc::clone(&view_native_windows),
                 host_focus,
                 focus_handles: BTreeMap::new(),
+                scroll_handles: BTreeMap::new(),
                 disposed: false,
                 _async_task: async_task,
                 #[cfg(feature = "dev-reload")]
@@ -2038,6 +2040,7 @@ struct ScriptHostView {
     native_windows: Rc<RefCell<NativeWindowRegistry>>,
     host_focus: FocusHandle,
     focus_handles: BTreeMap<crate::NodeId, FocusHandle>,
+    scroll_handles: BTreeMap<crate::NodeId, ScrollHandle>,
     disposed: bool,
     _async_task: Task<()>,
     #[cfg(feature = "dev-reload")]
@@ -2164,6 +2167,7 @@ impl Render for ScriptHostView {
             geometry: &geometry,
             pointer_capture: &pointer_capture,
             focus_handles: &self.focus_handles,
+            scroll_handles: &self.scroll_handles,
             direction,
             root_path: &animation_root,
             view_id: &self.view_id,
@@ -2272,6 +2276,18 @@ impl ScriptHostView {
                 .entry(node)
                 .or_insert_with(|| cx.focus_handle());
         }
+        let scrollable = self
+            .lifecycle
+            .retained()
+            .nodes()
+            .filter(|node| node.element_ref().is_some() && node.scrollable())
+            .map(crate::RetainedNode::id)
+            .collect::<BTreeSet<_>>();
+        self.scroll_handles
+            .retain(|node, _| scrollable.contains(node));
+        for node in scrollable {
+            self.scroll_handles.entry(node).or_default();
+        }
     }
 
     fn process_element_commands(&mut self, window: &mut Window) {
@@ -2288,6 +2304,15 @@ impl ScriptHostView {
                     } else {
                         self.last_error = Some(format!(
                             "retained node {node} is not focusable or has been unmounted"
+                        ));
+                    }
+                }
+                crate::element_ref::ElementCommand::ScrollTo { node, x, y, .. } => {
+                    if let Some(handle) = self.scroll_handles.get(&node) {
+                        handle.set_offset(gpui::point(pixel_from_f64(-x), pixel_from_f64(-y)));
+                    } else {
+                        self.last_error = Some(format!(
+                            "retained node {node} is not a scroll container or has been unmounted"
                         ));
                     }
                 }

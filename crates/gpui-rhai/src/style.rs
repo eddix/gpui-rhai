@@ -214,6 +214,14 @@ pub enum FlexDirection {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+pub enum OverflowMode {
+    Visible,
+    Hidden,
+    Scroll,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Align {
     Start,
     Center,
@@ -312,6 +320,8 @@ pub struct StyleProperties {
     pub font_size: Option<Length>,
     pub flex_grow: Option<bool>,
     pub clip: Option<bool>,
+    pub overflow_x: Option<OverflowMode>,
+    pub overflow_y: Option<OverflowMode>,
 }
 
 impl StyleProperties {
@@ -336,6 +346,8 @@ impl StyleProperties {
         merge_option(&mut self.font_size, overlay.font_size);
         merge_option(&mut self.flex_grow, overlay.flex_grow);
         merge_option(&mut self.clip, overlay.clip);
+        merge_option(&mut self.overflow_x, overlay.overflow_x);
+        merge_option(&mut self.overflow_y, overlay.overflow_y);
     }
 }
 
@@ -570,6 +582,32 @@ impl Style {
     }
 
     #[must_use]
+    pub fn overflow_x_scroll(mut self) -> Self {
+        self.base.overflow_x = Some(OverflowMode::Scroll);
+        self
+    }
+
+    #[must_use]
+    pub fn overflow_y_scroll(mut self) -> Self {
+        self.base.overflow_y = Some(OverflowMode::Scroll);
+        self
+    }
+
+    #[must_use]
+    pub fn overflow_scroll(mut self) -> Self {
+        self.base.overflow_x = Some(OverflowMode::Scroll);
+        self.base.overflow_y = Some(OverflowMode::Scroll);
+        self
+    }
+
+    #[must_use]
+    pub fn overflow_hidden(mut self) -> Self {
+        self.base.overflow_x = Some(OverflowMode::Hidden);
+        self.base.overflow_y = Some(OverflowMode::Hidden);
+        self
+    }
+
+    #[must_use]
     pub fn hover(mut self, style: &Self) -> Self {
         merge_pseudo(&mut self.hover, Some(&style.base));
         self
@@ -680,7 +718,9 @@ impl CustomType for Style {
             .with_fn("justify_between", |style: &mut Self| {
                 style.clone().justify_between()
             })
-            .with_fn("clip", |style: &mut Self| style.clone().clip())
+            .with_fn("clip", |style: &mut Self| style.clone().clip());
+        register_overflow_methods(&mut builder);
+        builder
             .with_fn("hover", |style: &mut Self, state: Self| {
                 style.clone().hover(&state)
             })
@@ -697,6 +737,22 @@ impl CustomType for Style {
                 style.clone().merged(&overlay)
             });
     }
+}
+
+fn register_overflow_methods(builder: &mut TypeBuilder<Style>) {
+    builder
+        .with_fn("overflow_x_scroll", |style: &mut Style| {
+            style.clone().overflow_x_scroll()
+        })
+        .with_fn("overflow_y_scroll", |style: &mut Style| {
+            style.clone().overflow_y_scroll()
+        })
+        .with_fn("overflow_scroll", |style: &mut Style| {
+            style.clone().overflow_scroll()
+        })
+        .with_fn("overflow_hidden", |style: &mut Style| {
+            style.clone().overflow_hidden()
+        });
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
