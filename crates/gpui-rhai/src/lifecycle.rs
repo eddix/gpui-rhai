@@ -130,14 +130,41 @@ impl ScriptLifecycle {
                 operation: "render",
             });
         }
-        let context = self.context(ExecutionPhase::Render);
-        let root = engine.render_with_context(&self.compiled, context)?;
-        let mut retained = self.retained.clone();
-        retained.reconcile(root.clone())?;
-        self.reconcile_animations(&root)?;
-        self.retained = retained;
-        self.state = LifecycleState::Running;
-        Ok(self.root.insert(root))
+        let runtime_snapshot = self
+            .runtime
+            .try_borrow()
+            .map_err(|_| LifecycleError::Borrowed)?
+            .snapshot()?;
+        let engine_checkpoint = engine.execution_checkpoint();
+        let result = (|| {
+            let context = self.context(ExecutionPhase::Render);
+            let root = engine.render_with_context_staged(&self.compiled, context)?;
+            let mut retained = self.retained.clone();
+            retained.reconcile(root.clone())?;
+            self.reconcile_animations(&root)?;
+            self.reconcile_effects(
+                engine,
+                &self.compiled,
+                runtime_snapshot.component_state().clone(),
+            )?;
+            self.validate_signal_bindings(&root)?;
+            Ok((root, retained))
+        })();
+        match result {
+            Ok((root, retained)) => {
+                self.retained = retained;
+                self.state = LifecycleState::Running;
+                Ok(self.root.insert(root))
+            }
+            Err(error) => {
+                self.runtime
+                    .try_borrow_mut()
+                    .map_err(|_| LifecycleError::Borrowed)?
+                    .restore(runtime_snapshot)?;
+                engine.restore_execution_checkpoint(engine_checkpoint);
+                Err(error)
+            }
+        }
     }
 
     /// Rerender only the topmost dirty formal component subtrees.
@@ -150,14 +177,26 @@ impl ScriptLifecycle {
     /// Returns component invocation, script evaluation, reconciliation, or
     /// runtime-state rollback errors.
     pub fn render_dirty(&mut self, engine: &mut RuntimeEngine) -> Result<bool, LifecycleError> {
+        if !self
+            .runtime
+            .try_borrow()
+            .map_err(|_| LifecycleError::Borrowed)?
+            .has_window_dirty(&self.root_path)
+        {
+            return Ok(false);
+        }
+        let runtime_snapshot = self
+            .runtime
+            .try_borrow()
+            .map_err(|_| LifecycleError::Borrowed)?
+            .snapshot()?;
+        let engine_checkpoint = engine.execution_checkpoint();
         let dirty = self
             .runtime
             .try_borrow_mut()
             .map_err(|_| LifecycleError::Borrowed)?
             .take_window_dirty_components(&self.root_path);
-        if dirty.is_empty() {
-            return Ok(false);
-        }
+        debug_assert!(!dirty.is_empty());
         let dirty = topmost_paths(&dirty);
         if dirty.iter().any(|path| path == &self.root_path)
             || dirty.iter().any(|path| {
@@ -166,16 +205,19 @@ impl ScriptLifecycle {
                     .all(|recipe| recipe.path() != path)
             })
         {
-            self.render(engine)?;
-            return Ok(true);
+            return match self.render(engine) {
+                Ok(_) => Ok(true),
+                Err(error) => {
+                    self.runtime
+                        .try_borrow_mut()
+                        .map_err(|_| LifecycleError::Borrowed)?
+                        .restore(runtime_snapshot)?;
+                    engine.restore_execution_checkpoint(engine_checkpoint);
+                    Err(error)
+                }
+            };
         }
 
-        let runtime_snapshot = self
-            .runtime
-            .try_borrow()
-            .map_err(|_| LifecycleError::Borrowed)?
-            .snapshot()?;
-        let invocation_snapshot = engine.component_invocation_snapshot();
         let mut root = self.root.clone().ok_or(LifecycleError::MissingRoot)?;
         let mut retained = self.retained.clone();
         let result = (|| {
@@ -187,6 +229,12 @@ impl ScriptLifecycle {
             }
             retained.reconcile(root.clone())?;
             self.reconcile_animations(&root)?;
+            self.reconcile_effects(
+                engine,
+                &self.compiled,
+                runtime_snapshot.component_state().clone(),
+            )?;
+            self.validate_signal_bindings(&root)?;
             Ok(())
         })();
         match result {
@@ -201,7 +249,7 @@ impl ScriptLifecycle {
                     .try_borrow_mut()
                     .map_err(|_| LifecycleError::Borrowed)?
                     .restore(runtime_snapshot)?;
-                engine.restore_component_invocations(invocation_snapshot);
+                engine.restore_execution_checkpoint(engine_checkpoint);
                 Err(error)
             }
         }
@@ -213,7 +261,7 @@ impl ScriptLifecycle {
     ///
     /// Returns [`LifecycleError::InvalidTransition`] before initialization or
     /// after disposal, or a script evaluation error.
-    pub fn dispose(&mut self, engine: &RuntimeEngine) -> Result<(), LifecycleError> {
+    pub fn dispose(&mut self, engine: &mut RuntimeEngine) -> Result<(), LifecycleError> {
         if !matches!(
             self.state,
             LifecycleState::Initialized | LifecycleState::Running
@@ -223,10 +271,36 @@ impl ScriptLifecycle {
                 operation: "dispose",
             });
         }
-        let context = self.context(ExecutionPhase::Dispose);
-        engine.call_optional_lifecycle(&self.compiled, "dispose", context)?;
-        self.state = LifecycleState::Disposed;
-        Ok(())
+        let snapshot = self
+            .runtime
+            .try_borrow()
+            .map_err(|_| LifecycleError::Borrowed)?
+            .snapshot()?;
+        let result = (|| {
+            self.reconcile_effect_candidate(
+                engine,
+                &self.compiled,
+                BTreeMap::new(),
+                BTreeMap::new(),
+                None,
+            )?;
+            let context = self.context(ExecutionPhase::Dispose);
+            engine.call_optional_lifecycle(&self.compiled, "dispose", context)?;
+            Ok(())
+        })();
+        match result {
+            Ok(()) => {
+                self.state = LifecycleState::Disposed;
+                Ok(())
+            }
+            Err(error) => {
+                self.runtime
+                    .try_borrow_mut()
+                    .map_err(|_| LifecycleError::Borrowed)?
+                    .restore(snapshot)?;
+                Err(error)
+            }
+        }
     }
 
     /// Invoke a generation-bound event callback with `(ctx, payload)`.
@@ -391,6 +465,7 @@ impl ScriptLifecycle {
             .try_borrow()
             .map_err(|_| LifecycleError::Borrowed)?
             .snapshot()?;
+        let engine_checkpoint = engine.execution_checkpoint();
         {
             let mut runtime = self
                 .runtime
@@ -406,13 +481,15 @@ impl ScriptLifecycle {
                 "init",
                 self.context_for(ExecutionPhase::Init, candidate.generation()),
             )?;
-            let root = engine.render_with_context(
+            let root = engine.render_with_context_staged(
                 &candidate,
                 self.context_for(ExecutionPhase::Render, candidate.generation()),
             )?;
             let mut retained = self.retained.clone();
             retained.reconcile(root.clone())?;
             self.reconcile_animations(&root)?;
+            self.reconcile_effects(engine, &candidate, snapshot.component_state().clone())?;
+            self.validate_signal_bindings(&root)?;
             Ok((root, retained))
         })();
         match result {
@@ -427,6 +504,7 @@ impl ScriptLifecycle {
                     .try_borrow_mut()
                     .map_err(|_| LifecycleError::Borrowed)?
                     .restore(snapshot)?;
+                engine.restore_execution_checkpoint(engine_checkpoint);
                 Err(error)
             }
         }
@@ -458,6 +536,124 @@ impl ScriptLifecycle {
             &self.animation_root_path(),
         )?;
         runtime.animation_values = values;
+        Ok(())
+    }
+
+    fn reconcile_effects(
+        &self,
+        engine: &mut RuntimeEngine,
+        candidate: &CompiledUi,
+        previous_state: crate::StateStore,
+    ) -> Result<(), LifecycleError> {
+        let effects = engine.component_effects_in_scope(&self.root_path);
+        let signals = engine.component_signals_in_scope(&self.root_path);
+        self.reconcile_effect_candidate(engine, candidate, effects, signals, Some(previous_state))
+    }
+
+    fn reconcile_effect_candidate(
+        &self,
+        engine: &mut RuntimeEngine,
+        candidate: &CompiledUi,
+        effects: BTreeMap<crate::EffectId, crate::EffectDescriptor>,
+        signals: BTreeMap<crate::SignalId, crate::signal::SignalDescriptor>,
+        previous_state: Option<crate::StateStore>,
+    ) -> Result<(), LifecycleError> {
+        let plan = self
+            .runtime
+            .try_borrow()
+            .map_err(|_| LifecycleError::Borrowed)?
+            .effects
+            .plan(&self.root_path, effects);
+        let transition_count = plan.cleanup().len().saturating_add(plan.start().len());
+        if transition_count > 64 {
+            return Err(LifecycleError::EffectBudget(transition_count));
+        }
+        if !plan.cleanup().is_empty()
+            && let Some(previous_state) = previous_state
+        {
+            self.runtime
+                .try_borrow_mut()
+                .map_err(|_| LifecycleError::Borrowed)?
+                .component_state = previous_state;
+        }
+        for descriptor in plan.cleanup() {
+            self.invoke_effect_callback(
+                engine,
+                candidate,
+                descriptor.cleanup(),
+                descriptor.dependencies().clone(),
+            )?;
+        }
+        {
+            let mut runtime = self
+                .runtime
+                .try_borrow_mut()
+                .map_err(|_| LifecycleError::Borrowed)?;
+            engine.commit_component_renders(&mut runtime)?;
+            runtime.signals.reconcile(&self.root_path, signals);
+        }
+        for descriptor in plan.start() {
+            self.invoke_effect_callback(
+                engine,
+                candidate,
+                descriptor.start(),
+                descriptor.dependencies().clone(),
+            )?;
+        }
+        self.runtime
+            .try_borrow_mut()
+            .map_err(|_| LifecycleError::Borrowed)?
+            .effects
+            .commit(plan);
+        Ok(())
+    }
+
+    fn invoke_effect_callback(
+        &self,
+        engine: &RuntimeEngine,
+        candidate: &CompiledUi,
+        callback: &ScriptCallback,
+        dependencies: UiValue,
+    ) -> Result<(), LifecycleError> {
+        let compiled = if callback.generation() == candidate.generation() {
+            candidate
+        } else if callback.generation() == self.compiled.generation() {
+            &self.compiled
+        } else {
+            return Err(LifecycleError::StaleEffect {
+                name: callback.name().to_owned(),
+                generation: callback.generation(),
+            });
+        };
+        let root_context = self.context_for(ExecutionPhase::Event, compiled.generation());
+        let context = callback
+            .component()
+            .map_or(root_context.clone(), |component| {
+                root_context.for_component(component.clone(), callback.events().clone())
+            })
+            .with_native_context(callback.native_context().cloned());
+        let _ = engine.invoke_callback_for_generation(
+            compiled,
+            callback,
+            (context, dependencies.into_dynamic()),
+        )?;
+        Ok(())
+    }
+
+    fn validate_signal_bindings(&self, root: &UiNode) -> Result<(), LifecycleError> {
+        let runtime = self
+            .runtime
+            .try_borrow()
+            .map_err(|_| LifecycleError::Borrowed)?;
+        let mut pending = vec![root];
+        while let Some(node) = pending.pop() {
+            for (_, signal) in node.signal_bindings() {
+                let _ = runtime.signals.read(signal)?;
+            }
+            for (_, children) in node.retained_child_groups() {
+                pending.extend(children);
+            }
+        }
         Ok(())
     }
 
@@ -535,8 +731,17 @@ pub enum LifecycleError {
     MissingRoot,
     #[error("component subtree `{0}` is missing from the accepted UiNode snapshot")]
     MissingComponentSubtree(ComponentInstancePath),
+    #[error("effect transition exceeded the 64-callback budget with {0} callbacks")]
+    EffectBudget(usize),
+    #[error("effect callback `{name}` belongs to unavailable generation {generation}")]
+    StaleEffect {
+        name: String,
+        generation: ScriptGeneration,
+    },
     #[error(transparent)]
     Asset(#[from] crate::AssetError),
+    #[error(transparent)]
+    Signal(#[from] crate::SignalError),
 }
 
 fn topmost_paths(paths: &BTreeSet<ComponentInstancePath>) -> Vec<ComponentInstancePath> {
@@ -604,14 +809,14 @@ mod tests {
             crate::UiNodeKind::Text { text } if text == "initialized"
         ));
         assert!(root.source().is_some());
-        lifecycle.dispose(&engine).unwrap();
+        lifecycle.dispose(&mut engine).unwrap();
         assert_eq!(lifecycle.state(), LifecycleState::Disposed);
         assert_eq!(
             runtime.borrow().component_state.get(&path, "phase"),
             Some(&UiValue::String("disposed".to_owned()))
         );
         assert!(matches!(
-            lifecycle.dispose(&engine),
+            lifecycle.dispose(&mut engine),
             Err(LifecycleError::InvalidTransition { .. })
         ));
     }
@@ -685,7 +890,7 @@ mod tests {
         )
         .unwrap();
         lifecycle.start(&mut engine).unwrap();
-        lifecycle.dispose(&engine).unwrap();
+        lifecycle.dispose(&mut engine).unwrap();
     }
 
     #[test]
@@ -731,6 +936,61 @@ mod tests {
             runtime.borrow().component_state.get(&path, "phase"),
             Some(&UiValue::String("active".to_owned()))
         );
+    }
+
+    #[test]
+    fn hot_reload_rolls_back_engine_generation_after_retained_validation_failure() {
+        let mut engine = RuntimeEngine::new();
+        let active = engine
+            .compile(
+                r#"
+                    fn init(ctx) { ctx.set_state("phase", "active"); }
+                    fn view(ctx) { text(ctx.get_state("phase")) }
+                "#,
+            )
+            .unwrap();
+        let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+        let path = ComponentInstancePath::root("App", "root");
+        let mut lifecycle = ScriptLifecycle::new(
+            active,
+            Rc::clone(&runtime),
+            path.clone(),
+            None,
+            BTreeMap::new(),
+            &state_schema(),
+        )
+        .unwrap();
+        lifecycle.start(&mut engine).unwrap();
+        let active_generation = lifecycle.generation();
+
+        let rejected = engine
+            .compile(
+                r#"
+                    fn init(ctx) { ctx.set_state("phase", "candidate"); }
+                    fn view(ctx) {
+                        row([
+                            text("first").with_key("duplicate"),
+                            text("second").with_key("duplicate")
+                        ])
+                    }
+                "#,
+            )
+            .unwrap();
+        assert!(
+            lifecycle
+                .reload(&mut engine, rejected, &state_schema())
+                .is_err()
+        );
+        assert_eq!(lifecycle.generation(), active_generation);
+        assert!(engine.is_current(active_generation));
+        assert_eq!(
+            runtime.borrow().component_state.get(&path, "phase"),
+            Some(&UiValue::String("active".to_owned()))
+        );
+        assert!(matches!(
+            lifecycle.root().unwrap().kind(),
+            crate::UiNodeKind::Text { text } if text == "active"
+        ));
     }
 
     #[test]

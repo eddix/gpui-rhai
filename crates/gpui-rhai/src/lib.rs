@@ -10,6 +10,7 @@ pub mod devtools;
 pub mod diagnostic;
 pub mod dropdown;
 mod dropdown_element;
+pub mod effect;
 pub mod engine;
 pub mod event;
 mod invocation;
@@ -25,6 +26,7 @@ pub mod responsive;
 pub mod retained;
 pub mod schema;
 pub mod script_source;
+pub mod signal;
 pub mod source;
 pub mod state;
 pub mod store;
@@ -107,6 +109,7 @@ pub use dropdown::{
     ChoiceBehavior, DropdownError, DropdownKey, DropdownMode, DropdownNodeSpec, DropdownOption,
     DropdownOutcome, DropdownState, DropdownVisibleRow, SelectNodeSpec,
 };
+pub use effect::{EffectDescriptor, EffectError, EffectId, EffectRegistry};
 pub use engine::{
     CompiledUi, ComponentInvocationRecipe, ExecutionOperation, ExecutionTiming, RuntimeEngine,
     RuntimeError, ScriptCallback, ScriptCallbackDefinitionError, ScriptGeneration,
@@ -147,6 +150,9 @@ pub use schema::{
 };
 pub use script_source::{
     EmbeddedScriptSource, FileScriptSource, ScriptAsset, ScriptSource, ScriptSourceError,
+};
+pub use signal::{
+    NativeSignal, SignalError, SignalId, SignalKind, SignalProperty, SignalRegistry, SignalValue,
 };
 pub use source::{ModuleId, ModuleIdError, RestrictedModuleResolver};
 pub use state::{

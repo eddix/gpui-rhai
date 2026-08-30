@@ -5,7 +5,7 @@ use std::fmt;
 use rhai::{Array, Dynamic, FLOAT, FnPtr, INT, ImmutableString, Map};
 use serde::{Deserialize, Serialize};
 
-use crate::{AssetId, Length, OpaqueHandle, Style, UiNode, UiValue};
+use crate::{AssetId, Length, NativeSignal, OpaqueHandle, Style, UiNode, UiValue};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -67,6 +67,7 @@ pub enum ValueSchema {
     Length,
     UiValue,
     Asset,
+    Signal,
     Handle {
         kind: String,
     },
@@ -242,6 +243,7 @@ impl ValueSchema {
             | Self::Length
             | Self::UiValue
             | Self::Asset
+            | Self::Signal
             | Self::Handle { .. } => Ok(()),
         }
     }
@@ -320,6 +322,13 @@ impl ValueSchema {
                 }
             }
             Self::Asset => expect_type(value.is::<AssetId>(), value, path, "AssetId", issues),
+            Self::Signal => expect_type(
+                value.is::<NativeSignal>(),
+                value,
+                path,
+                "NativeSignal",
+                issues,
+            ),
             Self::Handle { kind } => validate_handle(value, kind, path, issues),
         }
     }

@@ -125,6 +125,7 @@ pub struct CompiledUi {
 #[derive(Clone, Debug)]
 pub struct ScriptCallback {
     function: FnPtr,
+    curry: Vec<UiValue>,
     generation: ScriptGeneration,
     component: Option<ComponentInstancePath>,
     events: BTreeMap<String, EventSchema>,
@@ -135,6 +136,7 @@ pub struct ScriptCallback {
 impl PartialEq for ScriptCallback {
     fn eq(&self, other: &Self) -> bool {
         self.name() == other.name()
+            && self.curry == other.curry
             && self.generation == other.generation
             && self.component == other.component
     }
@@ -169,9 +171,10 @@ impl ScriptCallback {
                     .map_err(|source| ScriptCallbackDefinitionError::InvalidCurry { index, source })
             })
             .collect::<Result<Vec<_>, _>>()?;
-        function.set_curry(curry.into_iter().map(UiValue::into_dynamic));
+        function.set_curry(curry.iter().cloned().map(UiValue::into_dynamic));
         Ok(Self {
             function,
+            curry,
             generation,
             component: None,
             events: BTreeMap::new(),
@@ -241,9 +244,21 @@ struct ActiveComponentRender {
     state_snapshot: crate::StateStore,
     event_handlers: BTreeMap<(ComponentInstancePath, String), ScriptCallback>,
     invocations: BTreeMap<ComponentInstancePath, ComponentInvocationRecipe>,
+    effect_keys: Vec<Option<BTreeSet<String>>>,
+    effects: BTreeMap<crate::EffectId, crate::EffectDescriptor>,
+    signals: BTreeMap<crate::SignalId, crate::signal::SignalDescriptor>,
 }
 
 type ActiveComponentRenderState = Rc<RefCell<Option<ActiveComponentRender>>>;
+
+#[derive(Clone)]
+struct PendingComponentCommit {
+    root: ComponentInstancePath,
+    previous: BTreeSet<ComponentInstancePath>,
+    active: BTreeSet<ComponentInstancePath>,
+    transaction: RenderStateTransaction,
+    event_handlers: BTreeMap<(ComponentInstancePath, String), ScriptCallback>,
+}
 
 #[derive(Clone, Debug)]
 pub struct ComponentInvocationRecipe {
@@ -260,6 +275,7 @@ pub struct ComponentInvocationRecipe {
     caller_callbacks: BTreeSet<String>,
     event_callbacks: Vec<(String, FnPtr)>,
     component_events: BTreeMap<String, EventSchema>,
+    declared_effects: BTreeSet<String>,
     render: FnPtr,
     context: crate::invocation::ScriptInvocationContext,
     generation: ScriptGeneration,
@@ -332,7 +348,20 @@ pub struct RuntimeEngine {
     slow_threshold: Duration,
     component_render: ActiveComponentRenderState,
     component_invocations: BTreeMap<ComponentInstancePath, ComponentInvocationRecipe>,
+    component_effects: BTreeMap<crate::EffectId, crate::EffectDescriptor>,
+    component_signals: BTreeMap<crate::SignalId, crate::signal::SignalDescriptor>,
+    pending_component_commits: BTreeMap<ComponentInstancePath, PendingComponentCommit>,
     component_renderers: ComponentRenderRegistry,
+}
+
+#[derive(Clone)]
+pub(crate) struct RuntimeEngineCheckpoint {
+    generation: ScriptGeneration,
+    evaluation_generation: ScriptGeneration,
+    component_invocations: BTreeMap<ComponentInstancePath, ComponentInvocationRecipe>,
+    component_effects: BTreeMap<crate::EffectId, crate::EffectDescriptor>,
+    component_signals: BTreeMap<crate::SignalId, crate::signal::SignalDescriptor>,
+    pending_component_commits: BTreeMap<ComponentInstancePath, PendingComponentCommit>,
 }
 
 impl Default for RuntimeEngine {
@@ -357,6 +386,7 @@ impl RuntimeEngine {
         engine.build_type::<SubscriptionHandle>();
         engine.build_type::<AssetId>();
         engine.build_type::<ImageDecodeHandle>();
+        engine.build_type::<crate::NativeSignal>();
         register_ui_context_api(&mut engine);
         register_style_api(&mut engine);
         register_animation_api(&mut engine);
@@ -371,69 +401,7 @@ impl RuntimeEngine {
         );
         let primitives = PrimitiveRegistry::new();
 
-        FuncRegistration::new("text")
-            .in_global_namespace()
-            .register_into_engine(&mut engine, text_node);
-        FuncRegistration::new("handled")
-            .in_global_namespace()
-            .register_into_engine(&mut engine, || ImmutableString::from("handled"));
-        FuncRegistration::new("propagate")
-            .in_global_namespace()
-            .register_into_engine(&mut engine, || ImmutableString::from("propagate"));
-        FuncRegistration::new("column")
-            .in_global_namespace()
-            .register_into_engine(&mut engine, column_node);
-        FuncRegistration::new("row")
-            .in_global_namespace()
-            .register_into_engine(&mut engine, row_node);
-        FuncRegistration::new("error_boundary")
-            .in_global_namespace()
-            .register_into_engine(&mut engine, error_boundary_node);
-        FuncRegistration::new("error_boundary_lazy")
-            .in_global_namespace()
-            .register_into_engine(&mut engine, lazy_error_boundary_node);
-        FuncRegistration::new("asset")
-            .in_global_namespace()
-            .register_into_engine(&mut engine, asset_id_from_script);
-        FuncRegistration::new("image")
-            .in_global_namespace()
-            .register_into_engine(&mut engine, image_node);
-        FuncRegistration::new("image")
-            .in_global_namespace()
-            .register_into_engine(&mut engine, asset_image_node);
-        FuncRegistration::new("directional_image")
-            .in_global_namespace()
-            .register_into_engine(&mut engine, directional_image_node);
-        FuncRegistration::new("directional_image")
-            .in_global_namespace()
-            .register_into_engine(&mut engine, directional_asset_image_node);
-        FuncRegistration::new("image_source")
-            .in_global_namespace()
-            .register_into_engine(&mut engine, generic_image_node);
-        FuncRegistration::new("directional_image_source")
-            .in_global_namespace()
-            .register_into_engine(&mut engine, generic_directional_image_node);
-        FuncRegistration::new("overlay")
-            .in_global_namespace()
-            .register_into_engine(&mut engine, overlay_node);
-        FuncRegistration::new("dropdown")
-            .in_global_namespace()
-            .register_into_engine(&mut engine, dropdown_node);
-        FuncRegistration::new("select")
-            .in_global_namespace()
-            .register_into_engine(&mut engine, select_node);
-        FuncRegistration::new("date_picker")
-            .in_global_namespace()
-            .register_into_engine(&mut engine, date_picker_node);
-        FuncRegistration::new("table")
-            .in_global_namespace()
-            .register_into_engine(&mut engine, table_node);
-        FuncRegistration::new("toast_host")
-            .in_global_namespace()
-            .register_into_engine(&mut engine, toast_host_node);
-        FuncRegistration::new("virtual_list")
-            .in_global_namespace()
-            .register_into_engine(&mut engine, virtual_list_node);
+        register_node_apis(&mut engine);
 
         configure_engine_limits(&mut engine);
 
@@ -448,6 +416,9 @@ impl RuntimeEngine {
             slow_threshold: Duration::from_millis(16),
             component_render,
             component_invocations: BTreeMap::new(),
+            component_effects: BTreeMap::new(),
+            component_signals: BTreeMap::new(),
+            pending_component_commits: BTreeMap::new(),
             component_renderers,
         };
         runtime.register_builtin_primitives();
@@ -537,6 +508,7 @@ impl RuntimeEngine {
         &self,
         context: UiContext,
         generation: ScriptGeneration,
+        root_effects: Option<BTreeSet<String>>,
     ) -> Result<(), RuntimeError> {
         let root = context.component_path().clone();
         let mut transaction = context
@@ -566,6 +538,9 @@ impl RuntimeEngine {
             state_snapshot,
             event_handlers: BTreeMap::new(),
             invocations: BTreeMap::new(),
+            effect_keys: vec![root_effects],
+            effects: BTreeMap::new(),
+            signals: BTreeMap::new(),
         });
         Ok(())
     }
@@ -586,21 +561,25 @@ impl RuntimeEngine {
         if commit {
             let root = active.root_context.component_path().clone();
             let previous = active.state_snapshot.paths();
-            let mut runtime = active
-                .root_context
-                .runtime()
-                .try_borrow_mut()
-                .map_err(|_| {
-                    RuntimeError::ComponentRuntime("UI state is already borrowed".to_owned())
-                })?;
-            runtime
-                .reconcile_component_lifetimes(&root, &active.seen, &previous)
-                .map_err(|error| RuntimeError::ComponentRuntime(error.to_string()))?;
-            runtime.replace_component_event_handlers(&root, active.event_handlers);
-            runtime.component_state.commit_render(active.transaction);
+            self.pending_component_commits.insert(
+                root.clone(),
+                PendingComponentCommit {
+                    root: root.clone(),
+                    previous,
+                    active: active.seen,
+                    transaction: active.transaction,
+                    event_handlers: active.event_handlers,
+                },
+            );
             self.component_invocations
                 .retain(|path, _| !path.is_within(&root));
             self.component_invocations.extend(active.invocations);
+            self.component_effects
+                .retain(|id, _| !id.component().is_within(&root));
+            self.component_effects.extend(active.effects);
+            self.component_signals
+                .retain(|id, _| !id.component().is_within(&root));
+            self.component_signals.extend(active.signals);
         } else {
             active
                 .root_context
@@ -622,15 +601,18 @@ impl RuntimeEngine {
     /// returns a value other than [`UiNode`].
     pub fn render(&mut self, compiled: &CompiledUi) -> Result<UiNode, RuntimeError> {
         self.evaluation_generation.set(compiled.generation);
+        let checkpoint = self.execution_checkpoint();
+        let root_path = ComponentInstancePath::root("App", "root");
+        let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
         let context = UiContext::new(
-            Rc::new(RefCell::new(UiRuntimeState::new())),
-            ComponentInstancePath::root("App", "root"),
+            Rc::clone(&runtime),
+            root_path.clone(),
             None,
             ExecutionPhase::Render,
             BTreeMap::new(),
         )
         .with_generation(compiled.generation);
-        self.begin_component_render(context, compiled.generation)?;
+        self.begin_component_render(context, compiled.generation, None)?;
         let started = Instant::now();
         let result = self
             .engine
@@ -643,6 +625,18 @@ impl RuntimeEngine {
         );
         self.finish_component_render(result.is_ok())?;
         let mut root = result.map_err(RuntimeError::Evaluate)?;
+        if !self.component_effects_in_scope(&root_path).is_empty()
+            || !self.component_signals_in_scope(&root_path).is_empty()
+        {
+            self.restore_execution_checkpoint(checkpoint);
+            return Err(RuntimeError::ComponentRuntime(
+                "effectful or signal-owning components require ScriptLifecycle".to_owned(),
+            ));
+        }
+        if let Err(error) = self.commit_component_renders(&mut runtime.borrow_mut()) {
+            self.restore_execution_checkpoint(checkpoint);
+            return Err(error);
+        }
         root.bind_generation(compiled.generation);
         self.generation = compiled.generation;
         Ok(root)
@@ -659,8 +653,49 @@ impl RuntimeEngine {
         compiled: &CompiledUi,
         context: UiContext,
     ) -> Result<UiNode, RuntimeError> {
+        let runtime = Rc::clone(context.runtime());
+        let root = context.component_path().clone();
+        let snapshot = runtime
+            .try_borrow()
+            .map_err(|_| RuntimeError::ComponentRuntime("UI state is already borrowed".to_owned()))?
+            .snapshot()
+            .map_err(|error| RuntimeError::ComponentRuntime(error.to_string()))?;
+        let checkpoint = self.execution_checkpoint();
+        let result = self.render_with_context_staged(compiled, context);
+        let result = result.and_then(|node| {
+            if !self.component_effects_in_scope(&root).is_empty()
+                || !self.component_signals_in_scope(&root).is_empty()
+            {
+                return Err(RuntimeError::ComponentRuntime(
+                    "effectful or signal-owning components require ScriptLifecycle".to_owned(),
+                ));
+            }
+            self.commit_component_renders(&mut runtime.borrow_mut())?;
+            Ok(node)
+        });
+        match result {
+            Ok(node) => Ok(node),
+            Err(error) => {
+                runtime
+                    .try_borrow_mut()
+                    .map_err(|_| {
+                        RuntimeError::ComponentRuntime("UI state is already borrowed".to_owned())
+                    })?
+                    .restore(snapshot)
+                    .map_err(|restore| RuntimeError::ComponentRuntime(restore.to_string()))?;
+                self.restore_execution_checkpoint(checkpoint);
+                Err(error)
+            }
+        }
+    }
+
+    pub(crate) fn render_with_context_staged(
+        &mut self,
+        compiled: &CompiledUi,
+        context: UiContext,
+    ) -> Result<UiNode, RuntimeError> {
         self.evaluation_generation.set(compiled.generation);
-        self.begin_component_render(context.clone(), compiled.generation)?;
+        self.begin_component_render(context.clone(), compiled.generation, None)?;
         let started = Instant::now();
         let result =
             self.engine
@@ -701,7 +736,11 @@ impl RuntimeEngine {
             .map_err(|_| RuntimeError::ComponentRuntime("UI state is already borrowed".to_owned()))?
             .stores
             .reset_reader(component);
-        self.begin_component_render(recipe.component_context.clone(), recipe.generation)?;
+        self.begin_component_render(
+            recipe.component_context.clone(),
+            recipe.generation,
+            Some(recipe.declared_effects.clone()),
+        )?;
         register_component_invocation(&self.component_render, recipe.clone())
             .map_err(RuntimeError::Evaluate)?;
 
@@ -752,17 +791,62 @@ impl RuntimeEngine {
         result
     }
 
-    pub(crate) fn component_invocation_snapshot(
-        &self,
-    ) -> BTreeMap<ComponentInstancePath, ComponentInvocationRecipe> {
-        self.component_invocations.clone()
+    pub(crate) fn execution_checkpoint(&self) -> RuntimeEngineCheckpoint {
+        RuntimeEngineCheckpoint {
+            generation: self.generation,
+            evaluation_generation: self.evaluation_generation.get(),
+            component_invocations: self.component_invocations.clone(),
+            component_effects: self.component_effects.clone(),
+            component_signals: self.component_signals.clone(),
+            pending_component_commits: self.pending_component_commits.clone(),
+        }
     }
 
-    pub(crate) fn restore_component_invocations(
+    pub(crate) fn restore_execution_checkpoint(&mut self, checkpoint: RuntimeEngineCheckpoint) {
+        self.generation = checkpoint.generation;
+        self.evaluation_generation
+            .set(checkpoint.evaluation_generation);
+        self.component_invocations = checkpoint.component_invocations;
+        self.component_effects = checkpoint.component_effects;
+        self.component_signals = checkpoint.component_signals;
+        self.pending_component_commits = checkpoint.pending_component_commits;
+    }
+
+    pub(crate) fn commit_component_renders(
         &mut self,
-        invocations: BTreeMap<ComponentInstancePath, ComponentInvocationRecipe>,
-    ) {
-        self.component_invocations = invocations;
+        runtime: &mut UiRuntimeState,
+    ) -> Result<(), RuntimeError> {
+        let commits = std::mem::take(&mut self.pending_component_commits);
+        for (_, commit) in commits {
+            runtime
+                .reconcile_component_lifetimes(&commit.root, &commit.active, &commit.previous)
+                .map_err(|error| RuntimeError::ComponentRuntime(error.to_string()))?;
+            runtime.replace_component_event_handlers(&commit.root, commit.event_handlers);
+            runtime.component_state.commit_render(commit.transaction);
+        }
+        Ok(())
+    }
+
+    pub(crate) fn component_effects_in_scope(
+        &self,
+        root: &ComponentInstancePath,
+    ) -> BTreeMap<crate::EffectId, crate::EffectDescriptor> {
+        self.component_effects
+            .iter()
+            .filter(|(id, _)| id.component().is_within(root))
+            .map(|(id, descriptor)| (id.clone(), descriptor.clone()))
+            .collect()
+    }
+
+    pub(crate) fn component_signals_in_scope(
+        &self,
+        root: &ComponentInstancePath,
+    ) -> BTreeMap<crate::SignalId, crate::signal::SignalDescriptor> {
+        self.component_signals
+            .iter()
+            .filter(|(id, _)| id.component().is_within(root))
+            .map(|(id, descriptor)| (id.clone(), descriptor.clone()))
+            .collect()
     }
 
     /// Invoke an optional one-argument lifecycle function.
@@ -858,6 +942,22 @@ impl RuntimeEngine {
             });
         }
 
+        self.invoke_callback_for_generation(compiled, callback, args)
+    }
+
+    pub(crate) fn invoke_callback_for_generation(
+        &self,
+        compiled: &CompiledUi,
+        callback: &ScriptCallback,
+        args: impl FuncArgs,
+    ) -> Result<Dynamic, RuntimeError> {
+        if callback.generation != compiled.generation {
+            return Err(RuntimeError::StaleCallback {
+                name: callback.name().to_owned(),
+                callback_generation: callback.generation,
+                current_generation: compiled.generation,
+            });
+        }
         self.evaluation_generation.set(compiled.generation);
         let started = Instant::now();
         #[allow(deprecated)]
@@ -1035,6 +1135,72 @@ impl RuntimeEngine {
     }
 }
 
+fn register_node_apis(engine: &mut Engine) {
+    FuncRegistration::new("text")
+        .in_global_namespace()
+        .register_into_engine(engine, text_node);
+    FuncRegistration::new("handled")
+        .in_global_namespace()
+        .register_into_engine(engine, || ImmutableString::from("handled"));
+    FuncRegistration::new("propagate")
+        .in_global_namespace()
+        .register_into_engine(engine, || ImmutableString::from("propagate"));
+    FuncRegistration::new("column")
+        .in_global_namespace()
+        .register_into_engine(engine, column_node);
+    FuncRegistration::new("row")
+        .in_global_namespace()
+        .register_into_engine(engine, row_node);
+    FuncRegistration::new("error_boundary")
+        .in_global_namespace()
+        .register_into_engine(engine, error_boundary_node);
+    FuncRegistration::new("error_boundary_lazy")
+        .in_global_namespace()
+        .register_into_engine(engine, lazy_error_boundary_node);
+    FuncRegistration::new("asset")
+        .in_global_namespace()
+        .register_into_engine(engine, asset_id_from_script);
+    FuncRegistration::new("image")
+        .in_global_namespace()
+        .register_into_engine(engine, image_node);
+    FuncRegistration::new("image")
+        .in_global_namespace()
+        .register_into_engine(engine, asset_image_node);
+    FuncRegistration::new("directional_image")
+        .in_global_namespace()
+        .register_into_engine(engine, directional_image_node);
+    FuncRegistration::new("directional_image")
+        .in_global_namespace()
+        .register_into_engine(engine, directional_asset_image_node);
+    FuncRegistration::new("image_source")
+        .in_global_namespace()
+        .register_into_engine(engine, generic_image_node);
+    FuncRegistration::new("directional_image_source")
+        .in_global_namespace()
+        .register_into_engine(engine, generic_directional_image_node);
+    FuncRegistration::new("overlay")
+        .in_global_namespace()
+        .register_into_engine(engine, overlay_node);
+    FuncRegistration::new("dropdown")
+        .in_global_namespace()
+        .register_into_engine(engine, dropdown_node);
+    FuncRegistration::new("select")
+        .in_global_namespace()
+        .register_into_engine(engine, select_node);
+    FuncRegistration::new("date_picker")
+        .in_global_namespace()
+        .register_into_engine(engine, date_picker_node);
+    FuncRegistration::new("table")
+        .in_global_namespace()
+        .register_into_engine(engine, table_node);
+    FuncRegistration::new("toast_host")
+        .in_global_namespace()
+        .register_into_engine(engine, toast_host_node);
+    FuncRegistration::new("virtual_list")
+        .in_global_namespace()
+        .register_into_engine(engine, virtual_list_node);
+}
+
 fn configure_engine_limits(engine: &mut Engine) {
     engine.set_max_call_levels(64);
     engine.set_max_expr_depths(64, 32);
@@ -1110,6 +1276,8 @@ fn register_component_runtime_apis(
     let renderers = Rc::new(RefCell::new(BTreeMap::new()));
     register_define_component_api(engine, exports, &renderers, generation);
     register_render_component_api(engine, exports, &renderers, &active);
+    register_effect_api(engine, &active);
+    register_signal_api(engine, &active);
     (active, renderers)
 }
 
@@ -1196,7 +1364,7 @@ fn execute_component_render(
         .as_ref()
         .ok_or_else(|| {
             Box::new(component_render_error(
-                "component_render may run only inside view",
+                "formal component rendering may run only inside view",
             ))
         })?
         .generation;
@@ -1242,6 +1410,7 @@ fn execute_component_render(
             caller_callbacks: caller_callbacks.clone(),
             event_callbacks: recipe_event_callbacks,
             component_events: component.schema.events.clone(),
+            declared_effects: component.schema.effects.clone(),
             render: render_recipe,
             context: native_context.clone(),
             generation,
@@ -1272,7 +1441,7 @@ fn register_component_invocation(
     })?;
     let active = guard.as_mut().ok_or_else(|| {
         Box::new(component_render_error(
-            "component_render may run only inside view",
+            "formal component rendering may run only inside view",
         ))
     })?;
     active.invocations.insert(recipe.path.clone(), recipe);
@@ -1320,7 +1489,7 @@ fn enter_component_render(
     })?;
     let active = guard.as_mut().ok_or_else(|| {
         Box::new(component_render_error(
-            "component_render may run only inside view",
+            "formal component rendering may run only inside view",
         ))
     })?;
     let caller_context = active.contexts.last().cloned().ok_or_else(|| {
@@ -1371,6 +1540,9 @@ fn enter_component_render(
         .with_generation(active.generation);
     active.stack.push(path.clone());
     active.contexts.push(context.clone());
+    active
+        .effect_keys
+        .push(Some(component.schema.effects.clone()));
     Ok((path, context, caller_context))
 }
 
@@ -1383,8 +1555,153 @@ fn leave_component_render(active: &ActiveComponentRenderState) -> Result<(), Box
     if let Some(active) = guard.as_mut() {
         active.stack.pop();
         active.contexts.pop();
+        active.effect_keys.pop();
     }
     Ok(())
+}
+
+fn register_effect_api(engine: &mut Engine, active: &ActiveComponentRenderState) {
+    let active = Rc::clone(active);
+    FuncRegistration::new("effect")
+        .in_global_namespace()
+        .register_into_engine(
+            engine,
+            move |call: rhai::NativeCallContext<'_>,
+                  key: ImmutableString,
+                  dependencies: Dynamic,
+                  start: FnPtr,
+                  cleanup: FnPtr|
+                  -> Result<(), Box<EvalAltResult>> {
+                let key = key.to_string();
+                let (component, context, generation, declared) = {
+                    let guard = active.try_borrow().map_err(|_| {
+                        Box::new(component_render_error(
+                            "component render stack is already borrowed",
+                        ))
+                    })?;
+                    let render = guard.as_ref().ok_or_else(|| {
+                        Box::new(component_render_error(
+                            "effect may run only during formal component render",
+                        ))
+                    })?;
+                    let context = render.contexts.last().cloned().ok_or_else(|| {
+                        Box::new(component_render_error(
+                            "component render context stack is empty",
+                        ))
+                    })?;
+                    let declared =
+                        render
+                            .effect_keys
+                            .last()
+                            .cloned()
+                            .flatten()
+                            .ok_or_else(|| {
+                                Box::new(component_render_error(
+                                    "effects may be declared only by formal components",
+                                ))
+                            })?;
+                    (
+                        context.component_path().clone(),
+                        context,
+                        render.generation,
+                        declared,
+                    )
+                };
+                if !declared.contains(&key) {
+                    return Err(Box::new(component_render_error(
+                        crate::EffectError::Undeclared { component, key }.to_string(),
+                    )));
+                }
+                let id = crate::EffectId::new(component.clone(), key.clone())
+                    .map_err(|error| Box::new(component_render_error(error.to_string())))?;
+                let dependencies = UiValue::from_dynamic(dependencies)
+                    .map_err(|error| Box::new(component_render_error(error.to_string())))?;
+                let native_context = crate::invocation::ScriptInvocationContext::capture(&call);
+                let mut start = ScriptCallback::try_from_fn_ptr(start, generation)
+                    .map_err(|error| Box::new(component_render_error(error.to_string())))?;
+                start.bind_component_if_unset(component.clone(), context.event_schemas().clone());
+                start.bind_native_context_if_unset(native_context.clone());
+                let mut cleanup = ScriptCallback::try_from_fn_ptr(cleanup, generation)
+                    .map_err(|error| Box::new(component_render_error(error.to_string())))?;
+                cleanup.bind_component_if_unset(component.clone(), context.event_schemas().clone());
+                cleanup.bind_native_context_if_unset(native_context);
+                let descriptor =
+                    crate::EffectDescriptor::new(id.clone(), dependencies, start, cleanup);
+                let mut guard = active.try_borrow_mut().map_err(|_| {
+                    Box::new(component_render_error(
+                        "component render stack is already borrowed",
+                    ))
+                })?;
+                let render = guard.as_mut().ok_or_else(|| {
+                    Box::new(component_render_error(
+                        "effect may run only during formal component render",
+                    ))
+                })?;
+                if render.effects.insert(id, descriptor).is_some() {
+                    return Err(Box::new(component_render_error(
+                        crate::EffectError::Duplicate { component, key }.to_string(),
+                    )));
+                }
+                Ok(())
+            },
+        );
+}
+
+fn register_signal_api(engine: &mut Engine, active: &ActiveComponentRenderState) {
+    let active = Rc::clone(active);
+    FuncRegistration::new("signal")
+        .in_global_namespace()
+        .register_into_engine(
+            engine,
+            move |key: ImmutableString,
+                  initial: Dynamic|
+                  -> Result<crate::NativeSignal, Box<EvalAltResult>> {
+                let key = key.to_string();
+                let initial = crate::SignalValue::from_dynamic(initial)
+                    .map_err(|error| Box::new(crate::signal::signal_runtime_error(&error)))?;
+                let mut guard = active.try_borrow_mut().map_err(|_| {
+                    Box::new(crate::signal::signal_runtime_error(
+                        &"component render stack is already borrowed",
+                    ))
+                })?;
+                let render = guard.as_mut().ok_or_else(|| {
+                    Box::new(crate::signal::signal_runtime_error(
+                        &"signal may run only during formal component render",
+                    ))
+                })?;
+                if render.effect_keys.last().and_then(Option::as_ref).is_none() {
+                    return Err(Box::new(crate::signal::signal_runtime_error(
+                        &"signals may be declared only by formal components",
+                    )));
+                }
+                let component = render
+                    .contexts
+                    .last()
+                    .ok_or_else(|| {
+                        Box::new(crate::signal::signal_runtime_error(
+                            &"component render context stack is empty",
+                        ))
+                    })?
+                    .component_path()
+                    .clone();
+                if render
+                    .signals
+                    .keys()
+                    .any(|id| id.component() == &component && id.key() == key)
+                {
+                    return Err(Box::new(crate::signal::signal_runtime_error(
+                        &crate::SignalError::Duplicate { component, key },
+                    )));
+                }
+                let id = crate::SignalId::new(component, key, initial.kind())
+                    .map_err(|error| Box::new(crate::signal::signal_runtime_error(&error)))?;
+                let signal = crate::NativeSignal::new(id.clone());
+                render
+                    .signals
+                    .insert(id, crate::signal::SignalDescriptor::new(initial));
+                Ok(signal)
+            },
+        );
 }
 
 fn component_event_callbacks(
@@ -1441,7 +1758,7 @@ fn register_component_event_callbacks(
     })?;
     let active = guard.as_mut().ok_or_else(|| {
         Box::new(component_render_error(
-            "component_render may run only inside view",
+            "formal component rendering may run only inside view",
         ))
     })?;
     for (event, function) in callbacks {

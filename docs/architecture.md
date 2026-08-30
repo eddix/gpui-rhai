@@ -8,7 +8,9 @@ platform-owned rendering mechanisms.
 1. Rhai source produces `UiNode`, `Style`, semantic events, and typed values.
 2. The Rust runtime validates schemas, owns state, resolves modules and themes,
    and binds callbacks to a script generation.
-3. The GPUI renderer converts a short-lived node tree into native elements.
+3. A per-view `RetainedUiTree` validates and reconciles snapshots into stable
+   `NodeId` identity; the GPUI renderer then creates short-lived native
+   elements from the accepted tree.
 
 No GPUI `Window`, `App`, `Context`, `Div`, or `AnyElement` enters a Rhai
 `Dynamic`. Custom Rust primitives are the intentional extension point for
@@ -26,22 +28,36 @@ escape hatch.
 
 ## Rendering transaction
 
-`view(ctx)` returns a complete declarative tree. A candidate tree becomes
-active only after compilation and evaluation both succeed. Failed reloads keep:
+`view(ctx)` returns a declarative snapshot. Formal component calls record
+generation-scoped invocation recipes, and state/store writes dirty only their
+tracked component boundaries. A candidate becomes active only after script
+evaluation, retained validation, staged component-state commit, effect
+transitions, signal reconciliation, and animation reconciliation succeed.
+Failed renders and reloads restore one runtime/Engine checkpoint and keep:
 
 - the previous AST generation;
 - callback validity;
 - the last-good node tree;
 - component and store state;
-- component export metadata.
+- component definitions/render functions and retained invocation recipes;
+- effect and native-signal ownership.
 
 State schema changes are reconciled by stable component keys. Compatible fields
 survive; incompatible fields reset to their declared defaults.
 
-Formal Rhai components execute through `component_render`. A render-local stack
-derives nested instance paths and a scoped state transaction; returned handlers
-carry the component path, declared event schema, generation, and an internal
-Rhai module-call context so later callbacks resolve in their source module.
+Formal Rhai modules register once with `define_component`; their PascalCase
+constructors call `render_component(id, props)`. A render-local stack derives
+nested instance paths and stages scoped state, event, effect, signal, and
+invocation updates. Returned handlers carry component path, declared event
+schema, generation, and an internal Rhai module-call context so later callbacks
+resolve in their source module.
+
+Formal render functions may declare named effects and typed native signals.
+Effects compare immutable `UiValue` dependencies, run old cleanup before new
+start, and retain original imported-module invocation context across event turns
+and hot reload. Signals are non-owning component/key/type handles; values live
+in Rust, writes never dirty a Rhai component, and approved style bindings are
+sampled by the GPUI renderer without per-frame Rhai execution.
 
 `UiEventHandler` joins event targets only at the node/primitive boundary.
 Script handlers keep generation, component scope, Rhai context, transactions,
@@ -54,9 +70,11 @@ itself may fail; the fallback retains a redacted `boundary_error` diagnostic.
 Custom primitive lifecycle/render panics are caught and converted to
 `PrimitiveError` rather than unwinding through the runtime.
 
-Foreground events, semantic actions, close callbacks, and async deliveries take
-a UI-runtime snapshot. A failing callback restores component/store state,
-theme/locale selection, dirty sets, and queued UI events/actions. External
+Foreground events, semantic actions, close callbacks, and async deliveries use
+one outer transaction spanning callback, semantic dispatch, effect processing,
+incremental render, validation, and reconciliation. A failure restores
+component/store state, theme/locale selection, dirty sets, effects, signals,
+queued UI events/actions, Engine generation, and component recipes. External
 capability side effects are intentionally outside this transaction and must be
 designed idempotently by the host; task, subscription, and image-decode handles
 created by a failed callback are canceled before their results can deliver.
@@ -122,7 +140,9 @@ reconciliation. Their layout elements remain separate: Input is a shaped
 single line, while Textarea owns wrapped multiline layout, vertical hit testing,
 multi-line selection paint, caret scrolling, and auto-grow measurement.
 
-Table is a data-driven fixed-height native element. Its scalar row maps are not
+The current legacy Table path is a data-driven fixed-height native element. It
+is scheduled for removal by Core Runtime v2 registry migration and is not a
+privilege available to final registry components. Its scalar row maps are not
 expanded into Rhai cell nodes before scrolling; GPUI `uniform_list` requests
 only visible rows. A column with an explicit Rhai `cell_renderer` is the stated
 exception: the callback runs for all rows during the complete view transaction,

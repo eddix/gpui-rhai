@@ -539,6 +539,60 @@ impl ScriptViewHandle {
         Ok(self.0.entity.read(cx).lifecycle.root().cloned())
     }
 
+    /// Read one mounted native hot value without invoking Rhai.
+    ///
+    /// # Errors
+    ///
+    /// Returns after disposal or when the signal is stale.
+    pub fn read_signal(
+        &self,
+        signal: &crate::NativeSignal,
+        cx: &App,
+    ) -> Result<crate::SignalValue, ScriptViewError> {
+        if self.0.disposed.get() {
+            return Err(ScriptViewError::DisposedView(self.0.view_id.clone()));
+        }
+        Ok(self
+            .0
+            .entity
+            .read(cx)
+            .lifecycle
+            .runtime()
+            .borrow()
+            .signals
+            .read(signal)?)
+    }
+
+    /// Update one mounted native hot value on the GPUI foreground thread.
+    ///
+    /// This repaints signal-bound properties without running a Rhai component.
+    ///
+    /// # Errors
+    ///
+    /// Returns after disposal or for stale/type-incompatible values.
+    pub fn write_signal(
+        &self,
+        signal: &crate::NativeSignal,
+        value: crate::SignalValue,
+        cx: &mut App,
+    ) -> Result<bool, ScriptViewError> {
+        if self.0.disposed.get() {
+            return Err(ScriptViewError::DisposedView(self.0.view_id.clone()));
+        }
+        self.0.entity.update(cx, |view, cx| {
+            let changed = view
+                .lifecycle
+                .runtime()
+                .borrow_mut()
+                .signals
+                .write(signal, value)?;
+            if changed {
+                cx.notify();
+            }
+            Ok::<_, ScriptViewError>(changed)
+        })
+    }
+
     /// Return the measured embedding element.
     ///
     /// # Errors
@@ -1967,7 +2021,7 @@ struct ScriptHostView {
 
 struct ScriptViewTransaction {
     runtime: crate::UiStateSnapshot,
-    invocations: BTreeMap<ComponentInstancePath, crate::ComponentInvocationRecipe>,
+    engine: crate::engine::RuntimeEngineCheckpoint,
 }
 
 fn handle_tab_navigation(event: &gpui::KeyDownEvent, window: &mut Window, cx: &mut App) {
@@ -2026,7 +2080,7 @@ impl Render for ScriptHostView {
             WindowAppearance::Dark | WindowAppearance::VibrantDark => SystemAppearance::Dark,
             WindowAppearance::Light | WindowAppearance::VibrantLight => SystemAppearance::Light,
         };
-        let (assets, theme, animations, direction) = {
+        let (assets, theme, animations, signals, direction) = {
             let runtime = runtime.borrow();
             let root = self.lifecycle.root_path().clone();
             let theme = runtime
@@ -2042,6 +2096,7 @@ impl Render for ScriptHostView {
                 runtime.assets.clone(),
                 theme,
                 runtime.animation_values.clone(),
+                runtime.signals.clone(),
                 runtime
                     .locale
                     .as_ref()
@@ -2055,6 +2110,7 @@ impl Render for ScriptHostView {
             dispatcher: &dispatcher,
             overlays: &self.overlays,
             animations: &animations,
+            signals: &signals,
             direction,
             root_path: &animation_root,
             view_id: &self.view_id,
@@ -2142,20 +2198,23 @@ impl ScriptHostView {
             || f64::from(window.viewport_size().width),
             |bounds| f64::from(bounds.size.width),
         );
-        let changed = self
-            .lifecycle
-            .runtime()
-            .borrow_mut()
-            .responsive
-            .update_window(&self.window_id, width);
-        match changed {
-            Ok(true) => {
-                if let Err(error) = self.lifecycle.render(&mut self.engine) {
-                    self.last_error = Some(error.to_string());
-                }
+        let result = self.run_script_transaction(|view| {
+            let changed = view
+                .lifecycle
+                .runtime()
+                .borrow_mut()
+                .responsive
+                .update_window(&view.window_id, width)
+                .map_err(|error| error.to_string())?;
+            if changed {
+                view.lifecycle
+                    .render(&mut view.engine)
+                    .map_err(|error| error.to_string())?;
             }
-            Ok(false) => {}
-            Err(error) => self.last_error = Some(error.to_string()),
+            Ok(())
+        });
+        if let Err(error) = result {
+            self.last_error = Some(error);
         }
     }
 
@@ -2270,17 +2329,17 @@ impl ScriptHostView {
             self.release_view();
             return true;
         };
-        let result = self
-            .lifecycle
-            .invoke_callback_transactional(&self.engine, &handler, UiValue::Null)
-            .map_err(|error| error.to_string())
-            .and_then(|_| self.invoke_pending_effects().map(|_| ()))
-            .and_then(|()| {
-                self.lifecycle
-                    .render_dirty(&mut self.engine)
-                    .map(|_| ())
-                    .map_err(|error| error.to_string())
-            });
+        let result = self.run_script_transaction(|view| {
+            let _ = view
+                .lifecycle
+                .invoke_callback(&view.engine, &handler, UiValue::Null)
+                .map_err(|error| error.to_string())?;
+            view.invoke_pending_effects()?;
+            view.lifecycle
+                .render_dirty(&mut view.engine)
+                .map_err(|error| error.to_string())?;
+            Ok(())
+        });
         match result {
             Ok(()) => {
                 self.last_error = None;
@@ -2303,7 +2362,7 @@ impl ScriptHostView {
         if let Err(error) = self.primitives.retain_mounted(&BTreeSet::new()) {
             self.last_error = Some(error.to_string());
         }
-        let _ = self.lifecycle.dispose(&self.engine);
+        let _ = self.lifecycle.dispose(&mut self.engine);
         let root = self.lifecycle.root_path().clone();
         let _ = self
             .lifecycle
@@ -2406,26 +2465,16 @@ impl ScriptHostView {
                 false,
             );
         }
-        let transaction = self.begin_script_transaction();
-        let callback_result = transaction.and_then(|transaction| {
-            let result = self
+        let callback_result = self.run_script_transaction(|view| {
+            let value = view
                 .lifecycle
-                .invoke_callback(&self.engine, callback, payload)
-                .map_err(|error| error.to_string())
-                .and_then(|value| {
-                    self.invoke_pending_effects()?;
-                    self.lifecycle
-                        .render_dirty(&mut self.engine)
-                        .map_err(|error| error.to_string())?;
-                    Ok(value)
-                });
-            match result {
-                Ok(value) => Ok(value),
-                Err(error) => {
-                    let rollback = self.rollback_script_transaction(transaction);
-                    Err(rollback.err().unwrap_or(error))
-                }
-            }
+                .invoke_callback(&view.engine, callback, payload)
+                .map_err(|error| error.to_string())?;
+            view.invoke_pending_effects()?;
+            view.lifecycle
+                .render_dirty(&mut view.engine)
+                .map_err(|error| error.to_string())?;
+            Ok(value)
         });
         let propagation = callback_result.as_ref().map_or(
             crate::EventPropagation::Handled,
@@ -2456,7 +2505,7 @@ impl ScriptHostView {
             .map_err(|error| error.to_string())?;
         Ok(ScriptViewTransaction {
             runtime,
-            invocations: self.engine.component_invocation_snapshot(),
+            engine: self.engine.execution_checkpoint(),
         })
     }
 
@@ -2470,9 +2519,22 @@ impl ScriptHostView {
             .map_err(|_| "UI runtime state is already borrowed".to_owned())?
             .restore(transaction.runtime)
             .map_err(|error| error.to_string())?;
-        self.engine
-            .restore_component_invocations(transaction.invocations);
+        self.engine.restore_execution_checkpoint(transaction.engine);
         Ok(())
+    }
+
+    fn run_script_transaction<T>(
+        &mut self,
+        operation: impl FnOnce(&mut Self) -> Result<T, String>,
+    ) -> Result<T, String> {
+        let transaction = self.begin_script_transaction()?;
+        match operation(self) {
+            Ok(value) => Ok(value),
+            Err(error) => {
+                let rollback = self.rollback_script_transaction(transaction);
+                Err(rollback.err().unwrap_or(error))
+            }
+        }
     }
 
     fn collect_timings(&mut self) {
@@ -2485,14 +2547,10 @@ impl ScriptHostView {
     fn poll_async(&mut self, cx: &mut Context<Self>) {
         self.process_window_commands(cx);
         self.sync_program();
-        let (initial_effects, mut error) = match self.invoke_pending_effects() {
-            Ok(processed) => (processed, None),
-            Err(error) => (false, Some(error)),
-        };
         let generation = self.lifecycle.generation();
         let runtime = self.lifecycle.runtime();
         let root = self.lifecycle.root_path().clone();
-        let (deliveries, animation_active, dirty) = {
+        let (deliveries, animation_active, dirty, pending_dispatch) = {
             let mut runtime = runtime.borrow_mut();
             let _ = runtime.assets.retain_decode_generation(generation);
             let mut deliveries = runtime.tasks.drain(generation);
@@ -2510,35 +2568,39 @@ impl ScriptHostView {
                 deliveries,
                 frame.needs_frame || !frame.values.is_empty(),
                 runtime.has_window_dirty(&root),
+                runtime.has_pending_dispatch(),
             )
         };
-        if deliveries.is_empty() && !animation_active && !dirty && !initial_effects {
-            if error.is_some() {
-                self.last_error = error;
-                cx.notify();
-            }
+        let has_script_work = !deliveries.is_empty() || dirty || pending_dispatch;
+        if !has_script_work && !animation_active {
             return;
         }
 
-        for delivery in deliveries {
-            if let Err(delivery_error) = self
-                .lifecycle
-                .invoke_async_delivery_transactional(&self.engine, delivery)
-            {
-                error = Some(delivery_error.to_string());
+        let result = if has_script_work {
+            self.run_script_transaction(|view| {
+                view.invoke_pending_effects()?;
+                for delivery in deliveries {
+                    let _ = view
+                        .lifecycle
+                        .invoke_async_delivery(&view.engine, delivery)
+                        .map_err(|error| error.to_string())?;
+                }
+                view.invoke_pending_effects()?;
+                view.lifecycle
+                    .render_dirty(&mut view.engine)
+                    .map_err(|error| error.to_string())?;
+                Ok(())
+            })
+        } else {
+            Ok(())
+        };
+        match result {
+            Ok(()) => {
+                self.last_error = None;
+                self.process_window_commands(cx);
             }
+            Err(error) => self.last_error = Some(error),
         }
-        if error.is_none()
-            && let Err(action_error) = self.invoke_pending_effects()
-        {
-            error = Some(action_error);
-        }
-        if error.is_none()
-            && let Err(render_error) = self.lifecycle.render_dirty(&mut self.engine)
-        {
-            error = Some(render_error.to_string());
-        }
-        self.last_error = error;
         self.collect_timings();
         cx.notify();
     }
@@ -2548,6 +2610,20 @@ impl ScriptHostView {
         if program.compiled.generation() == self.lifecycle.generation() {
             return;
         }
+        let previous_exports = match self.engine.component_exports() {
+            Ok(exports) => exports,
+            Err(error) => {
+                self.last_error = Some(error.to_string());
+                return;
+            }
+        };
+        let previous_renderers = match self.engine.component_renderer_snapshot() {
+            Ok(renderers) => renderers,
+            Err(error) => {
+                self.last_error = Some(error.to_string());
+                return;
+            }
+        };
         if let Err(error) = self
             .engine
             .restore_component_exports(program.component_exports.clone())
@@ -2555,11 +2631,27 @@ impl ScriptHostView {
             self.last_error = Some(error.to_string());
             return;
         }
+        if let Err(error) = self
+            .engine
+            .restore_component_renderers(program.component_renderers.clone())
+        {
+            self.last_error = Some(error.to_string());
+            let _ = self.engine.restore_component_exports(previous_exports);
+            return;
+        }
         if let Err(error) =
             self.lifecycle
                 .reload(&mut self.engine, program.compiled, &program.state_schema)
         {
-            self.last_error = Some(error.to_string());
+            let rollback_exports = self.engine.restore_component_exports(previous_exports);
+            let rollback_renderers = self.engine.restore_component_renderers(previous_renderers);
+            self.last_error = rollback_exports
+                .err()
+                .or_else(|| rollback_renderers.err())
+                .map_or_else(
+                    || Some(error.to_string()),
+                    |rollback| Some(rollback.to_string()),
+                );
         }
     }
 
@@ -2891,6 +2983,8 @@ pub enum ScriptViewError {
     ComponentExport(#[from] ComponentExportError),
     #[error(transparent)]
     Action(#[from] ActionError),
+    #[error(transparent)]
+    Signal(#[from] crate::SignalError),
     #[error(transparent)]
     Overlay(#[from] crate::OverlayError),
     #[error("Rhai module path `{0}` is outside the UI root")]

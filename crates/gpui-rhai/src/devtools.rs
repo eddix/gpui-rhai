@@ -21,6 +21,7 @@ pub enum RuntimeTraceKind {
     Subscription,
     State,
     Store,
+    Signal,
     Theme,
     Locale,
     Reload,

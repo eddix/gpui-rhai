@@ -186,6 +186,7 @@ struct RenderEnvironment<'a, C> {
     assets: Option<&'a AssetRegistry>,
     overlays: &'a WindowOverlayCoordinator,
     animations: &'a BTreeMap<AnimationKey, f64>,
+    signals: &'a crate::SignalRegistry,
     direction: TextDirection,
     view_id: &'a str,
     retained: Option<&'a RetainedUiTree>,
@@ -196,6 +197,7 @@ pub(crate) struct WindowRenderResources<'a> {
     pub dispatcher: &'a NodeEventDispatcher,
     pub overlays: &'a WindowOverlayCoordinator,
     pub animations: &'a BTreeMap<AnimationKey, f64>,
+    pub signals: &'a crate::SignalRegistry,
     pub direction: TextDirection,
     pub root_path: &'a str,
     pub view_id: &'a str,
@@ -230,6 +232,7 @@ impl GpuiNodeRenderer {
     ) -> AnyElement {
         let overlays = WindowOverlayCoordinator::default();
         let animations = BTreeMap::new();
+        let signals = crate::SignalRegistry::new();
         let environment = RenderEnvironment {
             colors,
             interaction,
@@ -238,6 +241,7 @@ impl GpuiNodeRenderer {
             assets: None,
             overlays: &overlays,
             animations: &animations,
+            signals: &signals,
             direction: TextDirection::LeftToRight,
             view_id: "standalone",
             retained: None,
@@ -254,6 +258,7 @@ impl GpuiNodeRenderer {
     ) -> AnyElement {
         let overlays = WindowOverlayCoordinator::default();
         let animations = BTreeMap::new();
+        let signals = crate::SignalRegistry::new();
         let environment = RenderEnvironment {
             colors,
             interaction,
@@ -262,6 +267,7 @@ impl GpuiNodeRenderer {
             assets: None,
             overlays: &overlays,
             animations: &animations,
+            signals: &signals,
             direction: TextDirection::LeftToRight,
             view_id: "standalone",
             retained: Some(tree),
@@ -286,6 +292,7 @@ impl GpuiNodeRenderer {
     ) -> AnyElement {
         let overlays = WindowOverlayCoordinator::default();
         let animations = BTreeMap::new();
+        let signals = crate::SignalRegistry::new();
         let environment = RenderEnvironment {
             colors,
             interaction,
@@ -294,6 +301,7 @@ impl GpuiNodeRenderer {
             assets: None,
             overlays: &overlays,
             animations: &animations,
+            signals: &signals,
             direction: TextDirection::LeftToRight,
             view_id: "standalone",
             retained: None,
@@ -312,11 +320,13 @@ impl GpuiNodeRenderer {
     ) -> AnyElement {
         let overlays = WindowOverlayCoordinator::default();
         let animations = BTreeMap::new();
+        let signals = crate::SignalRegistry::new();
         let resources = WindowRenderResources {
             assets,
             dispatcher,
             overlays: &overlays,
             animations: &animations,
+            signals: &signals,
             direction: TextDirection::LeftToRight,
             root_path: "root",
             view_id: "standalone",
@@ -356,6 +366,7 @@ impl GpuiNodeRenderer {
             assets: Some(resources.assets),
             overlays: resources.overlays,
             animations: resources.animations,
+            signals: resources.signals,
             direction: resources.direction,
             view_id: resources.view_id,
             retained: Some(tree),
@@ -394,6 +405,7 @@ impl GpuiNodeRenderer {
             assets: Some(resources.assets),
             overlays: resources.overlays,
             animations: resources.animations,
+            signals: resources.signals,
             direction: resources.direction,
             view_id: resources.view_id,
             retained: None,
@@ -414,8 +426,10 @@ impl GpuiNodeRenderer {
             environment.interaction.clone()
         };
         let animation = node_animation(environment.animations, path);
+        let signals = node_signals(environment.signals, node);
         let mut resolved_style = node.style().resolve(&local_interaction);
         apply_animated_dimensions(&mut resolved_style, animation);
+        apply_signal_style(&mut resolved_style, &signals);
         let mut element = apply_style(
             div(),
             &resolved_style,
@@ -428,7 +442,7 @@ impl GpuiNodeRenderer {
             element =
                 element.in_focus(move |style| focus_ring_shadow(style, focus_ring, focus_surface));
         }
-        if let Some(opacity) = animation.opacity {
+        if let Some(opacity) = signals.opacity.or(animation.opacity) {
             element = element.opacity(f64_to_f32(opacity.clamp(0.0, 1.0)));
         }
         if animation.clip_height.is_some() || resolved_style.clip == Some(true) {
@@ -442,7 +456,11 @@ impl GpuiNodeRenderer {
             path,
             retained_id,
         );
-        translated(populated, animation.translate_x, animation.translate_y)
+        translated(
+            populated,
+            signals.translate_x.or(animation.translate_x),
+            signals.translate_y.or(animation.translate_y),
+        )
     }
 
     fn populate_with_interactions<C: ColorResolver>(
@@ -912,6 +930,7 @@ fn native_date_picker_element<C: ColorResolver>(
             .unwrap_or_else(|| NodeEventDispatcher::new(|_, _, _, _| EventPropagation::Handled)),
         overlays: environment.overlays.clone(),
         animations: environment.animations.clone(),
+        signals: environment.signals.clone(),
         direction: environment.direction,
         base_path: path.to_owned(),
         view_id: environment.view_id.to_owned(),
@@ -957,6 +976,7 @@ fn native_table_element<C: ColorResolver>(
             .unwrap_or_else(|| NodeEventDispatcher::new(|_, _, _, _| EventPropagation::Handled)),
         overlays: environment.overlays.clone(),
         animations: environment.animations.clone(),
+        signals: environment.signals.clone(),
         direction: environment.direction,
         base_path: path.to_owned(),
         view_id: environment.view_id.to_owned(),
@@ -993,6 +1013,7 @@ fn native_choice_element<C: ColorResolver>(
             .unwrap_or_else(|| NodeEventDispatcher::new(|_, _, _, _| EventPropagation::Handled)),
         overlays: environment.overlays.clone(),
         animations: environment.animations.clone(),
+        signals: environment.signals.clone(),
         direction: environment.direction,
         base_path: path.to_owned(),
         view_id: environment.view_id.to_owned(),
@@ -1040,6 +1061,7 @@ fn native_virtual_list_element<C: ColorResolver>(
             .unwrap_or_else(|| NodeEventDispatcher::new(|_, _, _, _| EventPropagation::Handled)),
         overlays: environment.overlays.clone(),
         animations: environment.animations.clone(),
+        signals: environment.signals.clone(),
         direction: environment.direction,
         base_path: path.to_owned(),
         view_id: environment.view_id.to_owned(),
@@ -1056,6 +1078,73 @@ struct NodeAnimationValues {
     width: Option<f64>,
     height: Option<f64>,
     clip_height: Option<f64>,
+}
+
+#[derive(Clone, Debug, Default)]
+struct NodeSignalValues {
+    opacity: Option<f64>,
+    translate_x: Option<f64>,
+    translate_y: Option<f64>,
+    width: Option<f64>,
+    height: Option<f64>,
+    background: Option<ColorValue>,
+    text_color: Option<ColorValue>,
+    border_color: Option<ColorValue>,
+}
+
+fn node_signals(registry: &crate::SignalRegistry, node: &UiNode) -> NodeSignalValues {
+    let mut values = NodeSignalValues::default();
+    for (property, signal) in node.signal_bindings() {
+        let Ok(value) = registry.read(signal) else {
+            continue;
+        };
+        match (property, value) {
+            (crate::SignalProperty::Opacity, crate::SignalValue::Float(value)) => {
+                values.opacity = Some(value);
+            }
+            (crate::SignalProperty::TranslateX, crate::SignalValue::Float(value)) => {
+                values.translate_x = Some(value);
+            }
+            (crate::SignalProperty::TranslateY, crate::SignalValue::Float(value)) => {
+                values.translate_y = Some(value);
+            }
+            (crate::SignalProperty::Width, crate::SignalValue::Float(value)) => {
+                values.width = Some(value);
+            }
+            (crate::SignalProperty::Height, crate::SignalValue::Float(value)) => {
+                values.height = Some(value);
+            }
+            (crate::SignalProperty::Background, crate::SignalValue::Color(value)) => {
+                values.background = Some(value);
+            }
+            (crate::SignalProperty::TextColor, crate::SignalValue::Color(value)) => {
+                values.text_color = Some(value);
+            }
+            (crate::SignalProperty::BorderColor, crate::SignalValue::Color(value)) => {
+                values.border_color = Some(value);
+            }
+            _ => debug_assert!(false, "validated signal binding changed type"),
+        }
+    }
+    values
+}
+
+fn apply_signal_style(style: &mut StyleProperties, values: &NodeSignalValues) {
+    if let Some(width) = values.width {
+        style.width = Some(Length::Pixels(width.max(0.0)));
+    }
+    if let Some(height) = values.height {
+        style.height = Some(Length::Pixels(height.max(0.0)));
+    }
+    if let Some(background) = &values.background {
+        style.background = Some(background.clone());
+    }
+    if let Some(text_color) = &values.text_color {
+        style.text_color = Some(text_color.clone());
+    }
+    if let Some(border_color) = &values.border_color {
+        style.border_color = Some(border_color.clone());
+    }
 }
 
 fn node_animation(values: &BTreeMap<AnimationKey, f64>, path: &str) -> NodeAnimationValues {
@@ -1810,6 +1899,32 @@ mod tests {
         assert_eq!(style.width, Some(Length::Pixels(180.0)));
         assert_eq!(style.height, Some(Length::Pixels(64.0)));
         assert_eq!(sampled.translate_x, Some(12.0));
+    }
+
+    #[test]
+    fn native_signal_values_override_approved_properties_without_rhai() {
+        let component = crate::ComponentInstancePath::root("Meter", "primary");
+        let id =
+            crate::SignalId::new(component.clone(), "width", crate::SignalKind::Float).unwrap();
+        let signal = crate::NativeSignal::new(id.clone());
+        let node = UiNode::text("meter")
+            .with_signal_binding(crate::SignalProperty::Width, signal.clone())
+            .unwrap();
+        let mut registry = crate::SignalRegistry::new();
+        registry.reconcile(
+            &component,
+            BTreeMap::from([(
+                id,
+                crate::signal::SignalDescriptor::new(crate::SignalValue::Float(80.0)),
+            )]),
+        );
+        registry
+            .write(&signal, crate::SignalValue::Float(144.0))
+            .unwrap();
+        let values = node_signals(&registry, &node);
+        let mut style = StyleProperties::default();
+        apply_signal_style(&mut style, &values);
+        assert_eq!(style.width, Some(Length::Pixels(144.0)));
     }
 
     #[test]

@@ -5,8 +5,8 @@ use std::rc::Rc;
 use gpui_rhai::{
     ActionId, AsyncCapabilityHandler, CapabilityDescriptor, CapabilityId, CapabilityMethod,
     ComponentInstancePath, ComponentStateSchema, EmbeddedScriptSource, ModuleId,
-    RestrictedModuleResolver, RuntimeEngine, ScriptLifecycle, TaskWork, UiNodeKind, UiRuntimeState,
-    UiValue, ValueSchema,
+    RestrictedModuleResolver, RuntimeEngine, ScriptLifecycle, StateField, StoreId, TaskWork,
+    UiNodeKind, UiRuntimeState, UiValue, ValueSchema,
 };
 use semver::{Version, VersionReq};
 
@@ -72,6 +72,98 @@ fn changed(ctx, value) { ctx.set_state("observed", value); }
 fn view(ctx) { counter::Counter(#{ key: "primary", on_change: Fn("changed") }) }
 "#;
 
+const EFFECT_PROBE: &str = r#"
+define_component(#{
+    metadata: #{
+        id: "components/effect_probe", "export": "EffectProbe", version: "0.1.0",
+        runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
+        dependencies: [], capabilities: #{}
+    },
+    schema: #{
+        props: #{
+            key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+            dependency: #{ schema: #{ type: "integer" }, required: true, sensitive: false }
+        },
+        state: #{ fields: #{} }, events: #{}, slots: #{}, parts: ["root"],
+        effects: ["sync"]
+    },
+    render: Fn("render_EffectProbe")
+});
+fn start_sync(ctx, dependency) {
+    if dependency == 3 { throw "effect start rejected dependency 3"; }
+    let count = ctx.get_app_store("effect_audit", "starts");
+    ctx.set_app_store("effect_audit", "starts", count + 1);
+    ctx.set_app_store("effect_audit", "last_start", dependency);
+}
+fn cleanup_sync(ctx, dependency) {
+    let count = ctx.get_app_store("effect_audit", "cleanups");
+    ctx.set_app_store("effect_audit", "cleanups", count + 1);
+    ctx.set_app_store("effect_audit", "last_cleanup", dependency);
+}
+fn EffectProbe(props) { render_component("components/effect_probe", props) }
+fn render_EffectProbe(ctx, props) {
+    effect("sync", props.dependency, Fn("start_sync"), Fn("cleanup_sync"));
+    text(`${props.dependency}`)
+}
+"#;
+
+const EFFECT_APP: &str = r#"
+import "components/effect_probe" as probe;
+fn state_schema() { #{ fields: #{
+    dependency: #{ schema: #{ type: "integer" },
+        "default": #{ type: "integer", value: 1 } },
+    visible: #{ schema: #{ type: "bool" },
+        "default": #{ type: "bool", value: true } }
+} } }
+fn change(ctx, payload) { ctx.set_state("dependency", 2); }
+fn fail_effect(ctx, payload) { ctx.set_state("dependency", 3); }
+fn hide(ctx, payload) { ctx.set_state("visible", false); }
+fn view(ctx) {
+    if ctx.get_state("visible") {
+        probe::EffectProbe(#{ key: "primary", dependency: ctx.get_state("dependency") })
+    } else {
+        text("hidden")
+    }
+}
+"#;
+
+const SIGNAL_PROBE: &str = r#"
+define_component(#{
+    metadata: #{
+        id: "components/signal_probe", "export": "SignalProbe", version: "0.1.0",
+        runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
+        dependencies: [], capabilities: #{}
+    },
+    schema: #{
+        props: #{ key: #{ schema: #{ type: "string" }, required: true, sensitive: false } },
+        state: #{ fields: #{} }, events: #{}, slots: #{}, parts: ["root"]
+    },
+    render: Fn("render_SignalProbe")
+});
+fn advance(ctx, payload) {
+    ctx.set_signal("progress", ctx.get_signal("progress") + 0.25);
+}
+fn SignalProbe(props) { render_component("components/signal_probe", props) }
+fn render_SignalProbe(ctx, props) {
+    let progress = signal("progress", 0.0);
+    text("meter").bind_signal("opacity", progress).on_click(Fn("advance"))
+}
+"#;
+
+const SIGNAL_APP: &str = r#"
+import "components/signal_probe" as probe;
+fn state_schema() { #{ fields: #{ visible: #{ schema: #{ type: "bool" },
+    "default": #{ type: "bool", value: true } } } } }
+fn hide(ctx, payload) { ctx.set_state("visible", false); }
+fn view(ctx) {
+    if ctx.get_state("visible") {
+        probe::SignalProbe(#{ key: "primary" })
+    } else {
+        text("hidden")
+    }
+}
+"#;
+
 fn source() -> EmbeddedScriptSource {
     EmbeddedScriptSource::new(BTreeMap::from([(
         ModuleId::parse("components/counter").unwrap(),
@@ -112,6 +204,35 @@ fn runtime_with_async_echo() -> Rc<RefCell<UiRuntimeState>> {
         .activate(&BTreeMap::from([(capability, VersionReq::STAR)]))
         .unwrap();
     Rc::new(RefCell::new(runtime))
+}
+
+fn effect_audit_runtime() -> Rc<RefCell<UiRuntimeState>> {
+    let mut runtime = UiRuntimeState::new();
+    let fields = ["starts", "cleanups", "last_start", "last_cleanup"]
+        .into_iter()
+        .map(|name| {
+            (
+                name.to_owned(),
+                StateField::new(ValueSchema::integer(), UiValue::Integer(0)),
+            )
+        })
+        .collect();
+    runtime
+        .stores
+        .declare(
+            StoreId::app("effect_audit"),
+            ComponentStateSchema::new(fields).unwrap(),
+        )
+        .unwrap();
+    Rc::new(RefCell::new(runtime))
+}
+
+fn effect_audit_values(runtime: &Rc<RefCell<UiRuntimeState>>) -> BTreeMap<String, UiValue> {
+    runtime.borrow().stores.inspect()[0]
+        .fields
+        .iter()
+        .map(|(name, value)| (name.clone(), value.value.clone()))
+        .collect()
 }
 
 fn assert_counter_recipe(engine: &RuntimeEngine, component_path: &ComponentInstancePath) {
@@ -371,4 +492,191 @@ fn native_semantic_callback_props_execute_in_the_caller_state_scope() {
         runtime.borrow().component_state.get(&root, "open"),
         Some(&UiValue::Bool(false))
     );
+}
+
+#[test]
+fn declarative_effects_start_restart_and_cleanup_in_imported_module_context() {
+    let module = ModuleId::parse("components/effect_probe").unwrap();
+    let source = EmbeddedScriptSource::new(BTreeMap::from([(module, EFFECT_PROBE.to_owned())]));
+    let mut engine = RuntimeEngine::new();
+    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
+    let compiled = engine
+        .compile_self_contained_named("ui/effect_probe.rhai", EFFECT_APP)
+        .unwrap();
+    let schema = engine.root_state_schema(&compiled).unwrap();
+    let runtime = effect_audit_runtime();
+    let root = ComponentInstancePath::root("App", "root");
+    let mut lifecycle = ScriptLifecycle::new(
+        compiled.clone(),
+        Rc::clone(&runtime),
+        root.clone(),
+        Some("main".to_owned()),
+        BTreeMap::new(),
+        &schema,
+    )
+    .unwrap();
+    lifecycle.start(&mut engine).unwrap();
+    assert_eq!(runtime.borrow().effects.len(), 1);
+
+    assert_eq!(effect_audit_values(&runtime)["starts"], UiValue::Integer(1));
+    assert_eq!(
+        effect_audit_values(&runtime)["cleanups"],
+        UiValue::Integer(0)
+    );
+
+    let change = engine.callback(&compiled, "change").unwrap();
+    let _ = lifecycle
+        .invoke_callback_transactional(&engine, &change, UiValue::Null)
+        .unwrap();
+    assert!(lifecycle.render_dirty(&mut engine).unwrap());
+    assert_eq!(effect_audit_values(&runtime)["starts"], UiValue::Integer(2));
+    assert_eq!(
+        effect_audit_values(&runtime)["cleanups"],
+        UiValue::Integer(1)
+    );
+    assert_eq!(
+        effect_audit_values(&runtime)["last_start"],
+        UiValue::Integer(2)
+    );
+    assert_eq!(
+        effect_audit_values(&runtime)["last_cleanup"],
+        UiValue::Integer(1)
+    );
+
+    let fail_effect = engine.callback(&compiled, "fail_effect").unwrap();
+    let _ = lifecycle
+        .invoke_callback_transactional(&engine, &fail_effect, UiValue::Null)
+        .unwrap();
+    assert!(lifecycle.render_dirty(&mut engine).is_err());
+    assert_root_text(&lifecycle, "2");
+    assert!(runtime.borrow().dirty_components().contains(&root));
+    assert_eq!(runtime.borrow().effects.len(), 1);
+    assert_eq!(effect_audit_values(&runtime)["starts"], UiValue::Integer(2));
+    assert_eq!(
+        effect_audit_values(&runtime)["cleanups"],
+        UiValue::Integer(1)
+    );
+
+    let _ = lifecycle
+        .invoke_callback_transactional(&engine, &change, UiValue::Null)
+        .unwrap();
+    assert!(lifecycle.render_dirty(&mut engine).unwrap());
+
+    let hide = engine.callback(&compiled, "hide").unwrap();
+    let _ = lifecycle
+        .invoke_callback_transactional(&engine, &hide, UiValue::Null)
+        .unwrap();
+    assert!(lifecycle.render_dirty(&mut engine).unwrap());
+    assert!(runtime.borrow().effects.is_empty());
+    assert_eq!(effect_audit_values(&runtime)["starts"], UiValue::Integer(2));
+    assert_eq!(
+        effect_audit_values(&runtime)["cleanups"],
+        UiValue::Integer(2)
+    );
+    assert_eq!(
+        effect_audit_values(&runtime)["last_cleanup"],
+        UiValue::Integer(2)
+    );
+}
+
+#[test]
+fn hot_reload_cleans_old_effect_context_before_starting_new_generation() {
+    let source = EmbeddedScriptSource::new(BTreeMap::from([(
+        ModuleId::parse("components/effect_probe").unwrap(),
+        EFFECT_PROBE.to_owned(),
+    )]));
+    let mut engine = RuntimeEngine::new();
+    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
+    let active = engine
+        .compile_self_contained_named("ui/effect_probe.rhai", EFFECT_APP)
+        .unwrap();
+    let schema = engine.root_state_schema(&active).unwrap();
+    let runtime = effect_audit_runtime();
+    let mut lifecycle = ScriptLifecycle::new(
+        active,
+        Rc::clone(&runtime),
+        ComponentInstancePath::root("App", "root"),
+        Some("main".to_owned()),
+        BTreeMap::new(),
+        &schema,
+    )
+    .unwrap();
+    lifecycle.start(&mut engine).unwrap();
+
+    let candidate = engine
+        .compile_self_contained_named("ui/effect_probe.rhai", EFFECT_APP)
+        .unwrap();
+    let candidate_generation = candidate.generation();
+    lifecycle.reload(&mut engine, candidate, &schema).unwrap();
+    assert_eq!(lifecycle.generation(), candidate_generation);
+    assert_eq!(effect_audit_values(&runtime)["starts"], UiValue::Integer(2));
+    assert_eq!(
+        effect_audit_values(&runtime)["cleanups"],
+        UiValue::Integer(1)
+    );
+
+    lifecycle.dispose(&mut engine).unwrap();
+    assert!(runtime.borrow().effects.is_empty());
+    assert_eq!(
+        effect_audit_values(&runtime)["cleanups"],
+        UiValue::Integer(2)
+    );
+}
+
+#[test]
+fn native_signal_updates_preserve_identity_without_component_invalidation() {
+    let source = EmbeddedScriptSource::new(BTreeMap::from([(
+        ModuleId::parse("components/signal_probe").unwrap(),
+        SIGNAL_PROBE.to_owned(),
+    )]));
+    let mut engine = RuntimeEngine::new();
+    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
+    let compiled = engine
+        .compile_self_contained_named("ui/signal_probe.rhai", SIGNAL_APP)
+        .unwrap();
+    let schema = engine.root_state_schema(&compiled).unwrap();
+    let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+    let root = ComponentInstancePath::root("App", "root");
+    let component = root.child("SignalProbe", "primary");
+    let mut lifecycle = ScriptLifecycle::new(
+        compiled.clone(),
+        Rc::clone(&runtime),
+        root.clone(),
+        Some("main".to_owned()),
+        BTreeMap::new(),
+        &schema,
+    )
+    .unwrap();
+    lifecycle.start(&mut engine).unwrap();
+    assert_eq!(lifecycle.root().unwrap().signal_bindings().len(), 1);
+    let signal = runtime
+        .borrow()
+        .signals
+        .resolve(&component, "progress")
+        .unwrap();
+    let click = lifecycle.root().unwrap().handlers()["click"]
+        .as_script()
+        .unwrap()
+        .clone();
+    let _ = lifecycle
+        .invoke_callback_transactional(&engine, &click, UiValue::Null)
+        .unwrap();
+    assert_eq!(
+        runtime.borrow().signals.read(&signal).unwrap(),
+        gpui_rhai::SignalValue::Float(0.25)
+    );
+    assert!(runtime.borrow().dirty_components().is_empty());
+
+    lifecycle.render(&mut engine).unwrap();
+    assert_eq!(
+        runtime.borrow().signals.read(&signal).unwrap(),
+        gpui_rhai::SignalValue::Float(0.25)
+    );
+
+    let hide = engine.callback(&compiled, "hide").unwrap();
+    let _ = lifecycle
+        .invoke_callback_transactional(&engine, &hide, UiValue::Null)
+        .unwrap();
+    assert!(lifecycle.render_dirty(&mut engine).unwrap());
+    assert!(runtime.borrow().signals.read(&signal).is_err());
 }

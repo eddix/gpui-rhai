@@ -4,7 +4,8 @@ An official or application component is a Rhai module with three parts:
 
 1. a structured `/* gpui-rhai ... */` JSON header;
 2. a `define_component` schema and render declaration;
-3. a PascalCase render function accepting one props map.
+3. a PascalCase constructor accepting one props map and a named
+   `render_Name(ctx, props)` function.
 
 Use `registry/components/label.rhai` as the smallest complete reference.
 
@@ -29,7 +30,8 @@ label::Label(#{ text: "Project" })
 
 ## Schema
 
-Declare every prop, local state field, semantic event, slot, and styleable part.
+Declare every prop, local state field, semantic event, slot, styleable part,
+and effect key.
 Unknown props are errors. Defaults must satisfy their own schemas. Every event
 named `change` requires an optional callback prop named `on_change`.
 
@@ -59,6 +61,61 @@ base, size, variant/state, caller `style`, then caller root `part_styles`.
 
 Stateful components and lifecycle custom primitives require a stable caller
 `key`. Never store UI state in mutable script globals.
+
+## Effects
+
+Effects are declarations made during a formal component's pure render. Declare
+their stable snake_case keys in the component schema, then provide a
+UiValue-convertible dependency payload and named start/cleanup functions:
+
+```rhai
+// schema: #{ ..., effects: ["subscription"] }
+fn start_subscription(ctx, dependency) { /* start owned work */ }
+fn cleanup_subscription(ctx, dependency) { /* release owned work */ }
+
+fn render_Stream(ctx, props) {
+    effect(
+        "subscription",
+        #{ channel: props.channel },
+        Fn("start_subscription"),
+        Fn("cleanup_subscription")
+    );
+    text(props.channel)
+}
+```
+
+Start runs only after the candidate subtree reconciles. A changed dependency or
+script generation runs the old cleanup in its original module context before
+starting the replacement. Removal, disposal, and successful hot reload clean up
+exactly once. Anonymous/capturing closures and non-UiValue dependencies are
+rejected. Failed start/cleanup restores runtime state and keeps the last-good
+tree; external Rust side effects remain outside rollback and therefore need
+idempotent Host design.
+
+## Native signals
+
+Declare a component-local hot value during render and bind it only to an
+approved property. Event handlers address the signal by local key, so no Rhai
+closure or runtime reference is retained:
+
+```rhai
+fn advance(ctx, payload) {
+    ctx.set_signal("progress", ctx.get_signal("progress") + 0.1);
+}
+
+fn render_Meter(ctx, props) {
+    let progress = signal("progress", 0.0);
+    text("meter")
+        .bind_signal("opacity", progress)
+        .on_click(Fn("advance"))
+}
+```
+
+Signal identity is component path + key + value type. Compatible rerenders and
+hot reload preserve the current value; unmount makes old handles explicitly
+stale. Signal reads do not establish component dependencies and writes do not
+rerun Rhai. Trusted Rust can update a mounted handle through
+`ScriptViewHandle::write_signal` on the GPUI foreground thread.
 
 ## Styling
 

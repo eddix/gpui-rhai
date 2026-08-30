@@ -67,6 +67,8 @@ pub struct ComponentSchema {
     pub slots: BTreeMap<String, SlotSchema>,
     #[serde(default)]
     pub parts: BTreeSet<String>,
+    #[serde(default)]
+    pub effects: BTreeSet<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -269,6 +271,7 @@ pub enum ComponentPropValue {
     Styles(BTreeMap<String, Style>),
     Length(Length),
     Asset(AssetId),
+    Signal(crate::NativeSignal),
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -386,6 +389,9 @@ fn convert_component_prop(
         ValueSchema::Style => Ok(ComponentPropValue::Style(Box::new(value.cast::<Style>()))),
         ValueSchema::Length => Ok(ComponentPropValue::Length(value.cast::<Length>())),
         ValueSchema::Asset => Ok(ComponentPropValue::Asset(value.cast::<AssetId>())),
+        ValueSchema::Signal => Ok(ComponentPropValue::Signal(
+            value.cast::<crate::NativeSignal>(),
+        )),
         _ => UiValue::from_dynamic(value)
             .map(ComponentPropValue::Data)
             .map_err(Into::into),
@@ -679,6 +685,11 @@ fn validate_schema(schema: &ComponentSchema) -> Result<(), ComponentError> {
     for part in &schema.parts {
         if !is_snake_case_identifier(part) {
             return Err(ComponentError::InvalidSchemaName(part.clone()));
+        }
+    }
+    for effect in &schema.effects {
+        if !is_snake_case_identifier(effect) {
+            return Err(ComponentError::InvalidSchemaName(effect.clone()));
         }
     }
     for (name, field) in schema.state.fields() {

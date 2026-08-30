@@ -149,6 +149,7 @@ pub struct UiNode {
     handlers: BTreeMap<String, UiEventHandler>,
     handler_payloads: BTreeMap<String, UiValue>,
     animations: Vec<AnimationSpec>,
+    signal_bindings: BTreeMap<crate::SignalProperty, crate::NativeSignal>,
 }
 
 impl UiNode {
@@ -165,6 +166,7 @@ impl UiNode {
             handlers: BTreeMap::new(),
             handler_payloads: BTreeMap::new(),
             animations: Vec::new(),
+            signal_bindings: BTreeMap::new(),
         }
     }
 
@@ -181,6 +183,7 @@ impl UiNode {
             handlers: BTreeMap::new(),
             handler_payloads: BTreeMap::new(),
             animations: Vec::new(),
+            signal_bindings: BTreeMap::new(),
         }
     }
 
@@ -207,6 +210,7 @@ impl UiNode {
             handlers: BTreeMap::new(),
             handler_payloads: BTreeMap::new(),
             animations: Vec::new(),
+            signal_bindings: BTreeMap::new(),
         }
     }
 
@@ -226,6 +230,7 @@ impl UiNode {
             handlers: BTreeMap::new(),
             handler_payloads: BTreeMap::new(),
             animations: Vec::new(),
+            signal_bindings: BTreeMap::new(),
         }
     }
 
@@ -251,6 +256,7 @@ impl UiNode {
             handlers: BTreeMap::new(),
             handler_payloads: BTreeMap::new(),
             animations: Vec::new(),
+            signal_bindings: BTreeMap::new(),
         }
     }
 
@@ -288,6 +294,7 @@ impl UiNode {
             handlers: BTreeMap::new(),
             handler_payloads: BTreeMap::new(),
             animations: Vec::new(),
+            signal_bindings: BTreeMap::new(),
         }
     }
 
@@ -308,6 +315,7 @@ impl UiNode {
             handlers: BTreeMap::new(),
             handler_payloads: BTreeMap::new(),
             animations: Vec::new(),
+            signal_bindings: BTreeMap::new(),
         }
     }
 
@@ -325,6 +333,7 @@ impl UiNode {
             handlers: BTreeMap::new(),
             handler_payloads: BTreeMap::new(),
             animations: Vec::new(),
+            signal_bindings: BTreeMap::new(),
         }
     }
 
@@ -349,6 +358,7 @@ impl UiNode {
             handlers: BTreeMap::new(),
             handler_payloads: BTreeMap::new(),
             animations: Vec::new(),
+            signal_bindings: BTreeMap::new(),
         }
     }
 
@@ -389,6 +399,7 @@ impl UiNode {
             handlers: BTreeMap::new(),
             handler_payloads: BTreeMap::new(),
             animations: Vec::new(),
+            signal_bindings: BTreeMap::new(),
         }
     }
 
@@ -419,6 +430,7 @@ impl UiNode {
             handlers: BTreeMap::new(),
             handler_payloads: BTreeMap::new(),
             animations: Vec::new(),
+            signal_bindings: BTreeMap::new(),
         }
     }
 
@@ -436,6 +448,7 @@ impl UiNode {
             handlers: BTreeMap::new(),
             handler_payloads: BTreeMap::new(),
             animations: Vec::new(),
+            signal_bindings: BTreeMap::new(),
         }
     }
 
@@ -453,6 +466,7 @@ impl UiNode {
             handlers: BTreeMap::new(),
             handler_payloads: BTreeMap::new(),
             animations: Vec::new(),
+            signal_bindings: BTreeMap::new(),
         }
     }
 
@@ -466,6 +480,29 @@ impl UiNode {
     pub fn with_style(mut self, style: &Style) -> Self {
         self.style = self.style.merged(style);
         self
+    }
+
+    /// Bind one approved hot property to a component-scoped native signal.
+    ///
+    /// # Errors
+    ///
+    /// Returns a property/type mismatch without changing the node.
+    pub fn with_signal_binding(
+        mut self,
+        property: crate::SignalProperty,
+        signal: crate::NativeSignal,
+    ) -> Result<Self, crate::SignalError> {
+        let expected = property.signal_kind();
+        let actual = signal.id().kind();
+        if expected != actual {
+            return Err(crate::SignalError::InvalidBinding {
+                property,
+                expected,
+                actual,
+            });
+        }
+        self.signal_bindings.insert(property, signal);
+        Ok(self)
     }
 
     #[must_use]
@@ -993,6 +1030,14 @@ impl UiNode {
     pub fn attributes(&self) -> &BTreeMap<String, UiValue> {
         &self.attributes
     }
+
+    pub fn signal_bindings(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (crate::SignalProperty, &crate::NativeSignal)> {
+        self.signal_bindings
+            .iter()
+            .map(|(property, signal)| (*property, signal))
+    }
 }
 
 fn replace_in_nodes<'a>(
@@ -1042,6 +1087,19 @@ impl CustomType for UiNode {
             .with_fn("with_style", |node: &mut Self, style: Style| {
                 node.clone().with_style(&style)
             })
+            .with_fn(
+                "bind_signal",
+                |node: &mut Self,
+                 property: ImmutableString,
+                 signal: crate::NativeSignal|
+                 -> Result<Self, Box<EvalAltResult>> {
+                    let property = crate::SignalProperty::parse(property.as_str())
+                        .map_err(|error| Box::new(crate::signal::signal_runtime_error(&error)))?;
+                    node.clone()
+                        .with_signal_binding(property, signal)
+                        .map_err(|error| Box::new(crate::signal::signal_runtime_error(&error)))
+                },
+            )
             .with_fn(
                 "with_part_style",
                 |node: &mut Self, part: ImmutableString, style: Style| {

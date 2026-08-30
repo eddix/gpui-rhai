@@ -54,6 +54,8 @@ pub struct UiRuntimeState {
     pub theme: Option<ThemeManager>,
     pub assets: AssetRegistry,
     pub animations: AnimationRuntime,
+    pub effects: crate::EffectRegistry,
+    pub signals: crate::SignalRegistry,
     pub windows: WindowCommandRegistry,
     pub responsive: ResponsiveRuntime,
     pub animation_values: BTreeMap<AnimationKey, f64>,
@@ -135,6 +137,8 @@ impl UiRuntimeState {
         self.animations
             .cancel_node_scope(&format!("window:{window}"));
         self.animation_values = self.animations.snapshot(std::time::Instant::now());
+        self.effects.remove_scope(root);
+        self.signals.remove_scope(root);
         self.windows.remove(window);
         self.responsive.remove_window(window);
         Ok(())
@@ -186,6 +190,10 @@ impl UiRuntimeState {
 
     pub(crate) fn drain_pending_events(&mut self) -> Vec<PendingEvent> {
         std::mem::take(&mut self.pending_events)
+    }
+
+    pub(crate) fn has_pending_dispatch(&self) -> bool {
+        !self.pending_actions.is_empty() || !self.pending_events.is_empty()
     }
 
     pub(crate) fn component_event_handler(
@@ -286,6 +294,8 @@ impl UiRuntimeState {
             locale: self.locale.clone(),
             theme: self.theme.clone(),
             animations: self.animations.clone(),
+            effects: self.effects.clone(),
+            signals: self.signals.clone(),
             animation_values: self.animation_values.clone(),
             windows: self.windows.clone(),
             responsive: self.responsive.clone(),
@@ -315,6 +325,8 @@ impl UiRuntimeState {
         self.locale = snapshot.locale;
         self.theme = snapshot.theme;
         self.animations = snapshot.animations;
+        self.effects = snapshot.effects;
+        self.signals = snapshot.signals;
         self.animation_values = snapshot.animation_values;
         self.windows = snapshot.windows;
         self.responsive = snapshot.responsive;
@@ -335,12 +347,20 @@ pub struct UiStateSnapshot {
     locale: Option<LocaleManager>,
     theme: Option<ThemeManager>,
     animations: AnimationRuntime,
+    effects: crate::EffectRegistry,
+    signals: crate::SignalRegistry,
     animation_values: BTreeMap<AnimationKey, f64>,
     windows: WindowCommandRegistry,
     responsive: ResponsiveRuntime,
     task_ids: BTreeSet<u64>,
     subscription_ids: BTreeSet<u64>,
     decode_ids: BTreeSet<u64>,
+}
+
+impl UiStateSnapshot {
+    pub(crate) const fn component_state(&self) -> &StateStore {
+        &self.component_state
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -513,6 +533,84 @@ impl UiContext {
             sensitive,
         );
         Ok(())
+    }
+
+    /// Read a native hot value without establishing a component dependency.
+    ///
+    /// # Errors
+    ///
+    /// Returns a stale-signal or runtime borrow error.
+    pub fn get_signal(&self, signal: &crate::NativeSignal) -> Result<Dynamic, UiContextError> {
+        Ok(self
+            .runtime
+            .try_borrow()
+            .map_err(|_| UiContextError::Borrowed)?
+            .signals
+            .read(signal)?
+            .into_dynamic())
+    }
+
+    /// Update a native hot value without dirtying a formal component.
+    ///
+    /// # Errors
+    ///
+    /// Returns during render, for a stale signal, a type mismatch, or an
+    /// unsupported value.
+    pub fn set_signal(
+        &self,
+        signal: &crate::NativeSignal,
+        value: Dynamic,
+    ) -> Result<(), UiContextError> {
+        self.require_mutation()?;
+        let value = crate::SignalValue::from_dynamic(value)?;
+        let mut runtime = self
+            .runtime
+            .try_borrow_mut()
+            .map_err(|_| UiContextError::Borrowed)?;
+        let changed = runtime.signals.write(signal, value.clone())?;
+        runtime.traces.push(
+            crate::RuntimeTraceKind::Signal,
+            signal.id().component().to_string(),
+            format!(
+                "set {} ({}){}",
+                signal.id().key(),
+                signal.id().kind().as_str(),
+                if changed { "" } else { " unchanged" }
+            ),
+            None,
+            false,
+        );
+        Ok(())
+    }
+
+    /// Resolve and read a component-local signal key without tracking a dependency.
+    ///
+    /// # Errors
+    ///
+    /// Returns when the key is not mounted or runtime state is borrowed.
+    pub fn get_signal_by_key(&self, key: &str) -> Result<Dynamic, UiContextError> {
+        let runtime = self
+            .runtime
+            .try_borrow()
+            .map_err(|_| UiContextError::Borrowed)?;
+        let signal = runtime.signals.resolve(&self.component, key)?;
+        Ok(runtime.signals.read(&signal)?.into_dynamic())
+    }
+
+    /// Resolve and write a component-local signal key.
+    ///
+    /// # Errors
+    ///
+    /// Returns during render, when the key is not mounted, or for a type mismatch.
+    pub fn set_signal_by_key(&self, key: &str, value: Dynamic) -> Result<(), UiContextError> {
+        self.require_mutation()?;
+        let signal = self
+            .runtime
+            .try_borrow()
+            .map_err(|_| UiContextError::Borrowed)?
+            .signals
+            .resolve(&self.component, key)?;
+        self.set_signal(&signal, value)
     }
 
     /// Read and subscribe to an app-scoped store field.
@@ -1582,6 +1680,7 @@ impl CustomType for UiContext {
                         .map_err(|error| Box::new(context_runtime_error(&error)))
                 },
             );
+        register_signal_context_methods(&mut builder);
         register_async_context_methods(&mut builder);
         register_action_context_methods(&mut builder);
         register_locale_context_methods(&mut builder);
@@ -1590,6 +1689,42 @@ impl CustomType for UiContext {
         register_asset_context_methods(&mut builder);
         register_window_context_methods(&mut builder);
     }
+}
+
+fn register_signal_context_methods(builder: &mut TypeBuilder<UiContext>) {
+    builder
+        .with_fn(
+            "get_signal",
+            |context: &mut UiContext, signal: crate::NativeSignal| {
+                context
+                    .get_signal(&signal)
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        )
+        .with_fn(
+            "get_signal",
+            |context: &mut UiContext, key: ImmutableString| {
+                context
+                    .get_signal_by_key(key.as_str())
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        )
+        .with_fn(
+            "set_signal",
+            |context: &mut UiContext, signal: crate::NativeSignal, value: Dynamic| {
+                context
+                    .set_signal(&signal, value)
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        )
+        .with_fn(
+            "set_signal",
+            |context: &mut UiContext, key: ImmutableString, value: Dynamic| {
+                context
+                    .set_signal_by_key(key.as_str(), value)
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        );
 }
 
 fn register_action_context_methods(builder: &mut TypeBuilder<UiContext>) {
@@ -2038,6 +2173,8 @@ pub enum UiContextError {
     Asset(#[from] AssetError),
     #[error(transparent)]
     Value(#[from] UiValueError),
+    #[error(transparent)]
+    Signal(#[from] crate::SignalError),
     #[error(transparent)]
     Callback(#[from] crate::ScriptCallbackDefinitionError),
 }
