@@ -104,6 +104,9 @@ Use `error_boundary_lazy(Fn("child"), Fn("fallback"))` when Rhai construction
 itself may fail; the fallback retains a redacted `boundary_error` diagnostic.
 Custom primitive lifecycle/render panics are caught and converted to
 `PrimitiveError` rather than unwinding through the runtime.
+Keyed lifecycle primitives retain their prior normalized instance snapshot and
+run `mount -> update(previous, next) -> render -> unmount`; failed update/render
+does not replace the retained instance record.
 
 Foreground events, semantic actions, close callbacks, and async deliveries use
 one outer transaction spanning callback, semantic dispatch, effect processing,

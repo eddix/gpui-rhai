@@ -390,6 +390,19 @@ pub trait PrimitiveHandler {
         Ok(())
     }
 
+    /// Apply a validated prop/style/event snapshot to an existing keyed instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns a diagnostic message when the retained native update fails.
+    fn update(
+        &mut self,
+        _previous: &PrimitiveInstance,
+        _next: &PrimitiveInstance,
+    ) -> Result<(), String> {
+        Ok(())
+    }
+
     /// Render the primitive into a native GPUI element.
     ///
     /// # Errors
@@ -416,7 +429,7 @@ struct PrimitiveEntry {
 #[derive(Default)]
 struct PrimitiveRegistryInner {
     entries: BTreeMap<PrimitiveId, PrimitiveEntry>,
-    mounted: BTreeSet<PrimitiveInstanceId>,
+    mounted: BTreeMap<PrimitiveInstanceId, PrimitiveInstance>,
 }
 
 #[derive(Clone, Default)]
@@ -430,7 +443,7 @@ impl fmt::Debug for PrimitiveRegistry {
             Ok(inner) => formatter
                 .debug_struct("PrimitiveRegistry")
                 .field("registered", &inner.entries.keys().collect::<Vec<_>>())
-                .field("mounted", &inner.mounted)
+                .field("mounted", &inner.mounted.keys().collect::<Vec<_>>())
                 .finish(),
             Err(_) => formatter.write_str("PrimitiveRegistry(<borrowed>)"),
         }
@@ -574,7 +587,8 @@ impl PrimitiveRegistry {
             .map_err(|_| PrimitiveError::Borrowed)?;
         let removed = inner
             .mounted
-            .difference(active)
+            .keys()
+            .filter(|instance| !active.contains(*instance))
             .cloned()
             .collect::<Vec<_>>();
         for instance in &removed {
@@ -584,7 +598,9 @@ impl PrimitiveRegistry {
                 })?;
             }
         }
-        inner.mounted.retain(|instance| active.contains(instance));
+        inner
+            .mounted
+            .retain(|instance, _| active.contains(instance));
         Ok(())
     }
 
@@ -636,9 +652,11 @@ impl PrimitiveRegistry {
             id: instance_id.clone(),
             node,
         };
-        let needs_mount = instance_id
+        let previous = instance_id
             .as_ref()
-            .is_some_and(|id| !inner.mounted.contains(id));
+            .and_then(|id| inner.mounted.get(id))
+            .cloned();
+        let needs_mount = instance_id.is_some() && previous.is_none();
         let entry = inner
             .entries
             .get_mut(&instance.node.primitive)
@@ -652,6 +670,18 @@ impl PrimitiveRegistry {
                 message,
             })?;
         }
+        if entry.descriptor.lifecycle
+            && let Some(previous) = &previous
+            && previous.node != instance.node
+        {
+            guard_primitive_panic(&instance.node.primitive, "update", || {
+                entry.handler.update(previous, &instance)
+            })?
+            .map_err(|message| PrimitiveError::Handler {
+                primitive: instance.node.primitive.clone(),
+                message,
+            })?;
+        }
         let element = guard_primitive_panic(&instance.node.primitive, "render", || {
             entry.handler.render(&instance, events, theme, window, cx)
         })?
@@ -659,8 +689,8 @@ impl PrimitiveRegistry {
             primitive: instance.node.primitive.clone(),
             message,
         })?;
-        if needs_mount && let Some(id) = instance_id {
-            inner.mounted.insert(id);
+        if let Some(id) = instance_id {
+            inner.mounted.insert(id, instance);
         }
         Ok(element)
     }
@@ -1159,7 +1189,17 @@ mod tests {
         registry
             .register(descriptor, UnmountCounter(Rc::clone(&unmounted)))
             .unwrap();
-        registry.inner.borrow_mut().mounted.insert(instance);
+        registry.inner.borrow_mut().mounted.insert(
+            instance.clone(),
+            PrimitiveInstance {
+                id: Some(instance.clone()),
+                node: PrimitiveNode {
+                    primitive: instance.primitive.clone(),
+                    key: Some(instance.key.clone()),
+                    props: PrimitiveProps::new(),
+                },
+            },
+        );
         registry.retain_tree(&UiNode::text("removed")).unwrap();
         assert_eq!(unmounted.get(), 1);
     }
