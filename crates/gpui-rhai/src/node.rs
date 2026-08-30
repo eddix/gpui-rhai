@@ -12,8 +12,7 @@ use crate::{
     OverlayKind, OverlayPlacement, PrimitiveNode, ScriptCallback, ScriptGeneration, SelectNodeSpec,
     Style, TableAlign, TableCellFormat, TableColumnSpec, TableColumnWidth, TableNodeSpec,
     TableRowSpec, TableSelectionMode, TableSort, TableSortDirection, ToastHostSpec, ToastItemSpec,
-    ToastRegion, ToastVariant, UiEventBinding, UiEventHandler, UiValue, VirtualListItem,
-    VirtualListNodeSpec,
+    ToastRegion, ToastVariant, UiEventBinding, UiEventHandler, UiValue,
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -188,9 +187,6 @@ pub enum UiNodeKind {
     ToastHost {
         spec: ToastHostSpec,
     },
-    VirtualList {
-        spec: VirtualListNodeSpec,
-    },
     VirtualCollection {
         spec: crate::VirtualCollectionNodeSpec,
     },
@@ -217,7 +213,6 @@ pub enum UiNodeKindTag {
     DatePicker,
     Table,
     ToastHost,
-    VirtualList,
     VirtualCollection,
     ErrorBoundary,
 }
@@ -589,25 +584,6 @@ impl UiNode {
     }
 
     #[must_use]
-    pub fn virtual_list(spec: VirtualListNodeSpec) -> Self {
-        let key = spec.key.clone();
-        Self {
-            kind: UiNodeKind::VirtualList { spec },
-            key: Some(NodeKey::new(key)),
-            style: Style::new(),
-            part_styles: BTreeMap::new(),
-            source: None,
-            component_root: None,
-            attributes: BTreeMap::new(),
-            handlers: BTreeMap::new(),
-            handler_payloads: BTreeMap::new(),
-            animations: Vec::new(),
-            signal_bindings: BTreeMap::new(),
-            element_ref: None,
-        }
-    }
-
-    #[must_use]
     pub fn virtual_collection(spec: crate::VirtualCollectionNodeSpec) -> Self {
         let key = spec.id.key.clone();
         Self {
@@ -773,11 +749,6 @@ impl UiNode {
                 }
                 replace_in_nodes(spec.loading_rows.iter_mut(), component, &replacement)
             }
-            UiNodeKind::VirtualList { spec } => replace_in_nodes(
-                spec.items.iter_mut().map(|item| &mut item.node),
-                component,
-                &replacement,
-            ),
             UiNodeKind::VirtualCollection { spec } => {
                 replace_in_nodes(spec.realized.values_mut(), component, &replacement)
             }
@@ -959,11 +930,6 @@ impl UiNode {
             | UiNodeKind::Select { .. }
             | UiNodeKind::DatePicker { .. }
             | UiNodeKind::ToastHost { .. } => {}
-            UiNodeKind::VirtualList { spec } => {
-                for item in &mut spec.items {
-                    item.node.bind_generation(generation);
-                }
-            }
             UiNodeKind::VirtualCollection { spec } => {
                 for item in spec.realized.values_mut() {
                     item.bind_generation(generation);
@@ -1048,12 +1014,6 @@ impl UiNode {
                 .flatten()
                 {
                     slot.bind_component_scope(component, events, native_context);
-                }
-            }
-            UiNodeKind::VirtualList { spec } => {
-                for item in &mut spec.items {
-                    item.node
-                        .bind_component_scope(component, events, native_context);
                 }
             }
             UiNodeKind::VirtualCollection { spec } => {
@@ -1142,12 +1102,6 @@ impl UiNode {
                     slot.bind_callback_scope_by_name(names, component, events, native_context);
                 }
             }
-            UiNodeKind::VirtualList { spec } => {
-                for item in &mut spec.items {
-                    item.node
-                        .bind_callback_scope_by_name(names, component, events, native_context);
-                }
-            }
             UiNodeKind::VirtualCollection { spec } => {
                 for item in spec.realized.values_mut() {
                     item.bind_callback_scope_by_name(names, component, events, native_context);
@@ -1201,7 +1155,6 @@ impl UiNode {
             UiNodeKind::DatePicker { .. } => UiNodeKindTag::DatePicker,
             UiNodeKind::Table { .. } => UiNodeKindTag::Table,
             UiNodeKind::ToastHost { .. } => UiNodeKindTag::ToastHost,
-            UiNodeKind::VirtualList { .. } => UiNodeKindTag::VirtualList,
             UiNodeKind::VirtualCollection { .. } => UiNodeKindTag::VirtualCollection,
             UiNodeKind::ErrorBoundary { .. } => UiNodeKindTag::ErrorBoundary,
         }
@@ -1264,10 +1217,6 @@ impl UiNode {
                 }
                 groups
             }
-            UiNodeKind::VirtualList { spec } => vec![(
-                "items".to_owned(),
-                spec.items.iter().map(|item| &item.node).collect(),
-            )],
             UiNodeKind::VirtualCollection { spec } => {
                 vec![("items".to_owned(), spec.realized.values().collect())]
             }
@@ -2829,94 +2778,6 @@ pub(crate) fn toast_host_node(
         }),
         call,
     ))
-}
-
-pub(crate) fn virtual_list_node(
-    call: NativeCallContext<'_>,
-    mut config: Map,
-) -> Result<UiNode, Box<EvalAltResult>> {
-    let key = required_string(&mut config, "key")?;
-    let label = optional_string(&mut config, "label")?.unwrap_or_default();
-    let estimated_height = optional_number(&mut config, "estimated_height")?
-        .ok_or_else(|| Box::new(overlay_type_error("estimated_height", "a positive number")))?;
-    let height = optional_number(&mut config, "height")?
-        .ok_or_else(|| Box::new(overlay_type_error("height", "a positive number")))?;
-    if !estimated_height.is_finite()
-        || estimated_height <= 0.0
-        || !height.is_finite()
-        || height <= 0.0
-    {
-        return overlay_config_error("virtual list estimated_height and height must be positive");
-    }
-    let overdraw_pixels =
-        optional_number(&mut config, "overdraw_pixels")?.unwrap_or(estimated_height * 2.0);
-    if !overdraw_pixels.is_finite() || !(0.0..=10_000.0).contains(&overdraw_pixels) {
-        return overlay_config_error(
-            "virtual list overdraw_pixels must be finite and between 0 and 10000",
-        );
-    }
-    let alignment = optional_string(&mut config, "alignment")?.unwrap_or_else(|| "top".to_owned());
-    let bottom_align = match alignment.as_str() {
-        "top" => false,
-        "bottom" => true,
-        _ => return overlay_config_error("virtual list alignment must be `top` or `bottom`"),
-    };
-    let follow_tail = optional_bool(&mut config, "follow_tail")?.unwrap_or(false);
-    let raw_items = config.remove("items").ok_or_else(|| {
-        Box::new(EvalAltResult::ErrorRuntime(
-            "virtual list config field `items` is required".into(),
-            Position::NONE,
-        ))
-    })?;
-    let raw_items = raw_items
-        .try_cast::<Array>()
-        .ok_or_else(|| Box::new(overlay_type_error("items", "an array of item maps")))?;
-    if raw_items.len() > 10_000 {
-        return overlay_config_error("virtual list cannot exceed 10,000 items");
-    }
-    let mut keys = BTreeSet::new();
-    let mut items = Vec::with_capacity(raw_items.len());
-    for (index, item) in raw_items.into_iter().enumerate() {
-        let mut item = item.try_cast::<Map>().ok_or_else(|| {
-            Box::new(EvalAltResult::ErrorRuntime(
-                format!("virtual list item at index {index} must be a map").into(),
-                Position::NONE,
-            ))
-        })?;
-        let item_key = required_string(&mut item, "key")?;
-        if !keys.insert(item_key.clone()) {
-            return overlay_config_error(format!("virtual list key `{item_key}` is duplicated"));
-        }
-        let node = item
-            .remove("node")
-            .and_then(Dynamic::try_cast::<UiNode>)
-            .ok_or_else(|| Box::new(overlay_type_error("node", "a UiNode")))?;
-        if let Some((unknown, _)) = item.into_iter().next() {
-            return overlay_config_error(format!(
-                "unknown field `{unknown}` in virtual list item `{item_key}`"
-            ));
-        }
-        items.push(VirtualListItem {
-            key: item_key,
-            node,
-        });
-    }
-    if let Some((unknown, _)) = config.into_iter().next() {
-        return overlay_config_error(format!("unknown virtual list config field `{unknown}`"));
-    }
-    let node = UiNode::virtual_list(VirtualListNodeSpec {
-        key,
-        label: label.clone(),
-        items,
-        estimated_height,
-        height,
-        overdraw_pixels,
-        bottom_align,
-        follow_tail,
-    })
-    .with_attribute("role", UiValue::String("list".to_owned()))
-    .with_attribute("label", UiValue::String(label));
-    Ok(with_call_source(node, call))
 }
 
 fn with_call_source(node: UiNode, call: NativeCallContext<'_>) -> UiNode {

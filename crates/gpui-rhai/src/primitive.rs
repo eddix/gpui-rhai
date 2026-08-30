@@ -734,11 +734,6 @@ fn collect_primitive_instances(node: &UiNode, active: &mut BTreeSet<PrimitiveIns
                 collect_primitive_instances(slot, active);
             }
         }
-        UiNodeKind::VirtualList { spec } => {
-            for item in &spec.items {
-                collect_primitive_instances(&item.node, active);
-            }
-        }
         UiNodeKind::VirtualCollection { spec } => {
             for item in spec.realized.values() {
                 collect_primitive_instances(item, active);

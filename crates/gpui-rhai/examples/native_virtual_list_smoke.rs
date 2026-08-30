@@ -4,23 +4,20 @@ use gpui_rhai::{EmbeddedScriptSource, EmbeddedScriptView, ModuleId, ScriptApplic
 
 const THEME: &str = include_str!("../../../registry/themes/default_dark.rhai");
 const MAIN: &str = r#"
-fn state_schema() {
-    #{ fields: #{ focused: #{ schema: #{ type: "string" },
-        "default": #{ type: "string", value: "item-0" } } } }
-}
-fn focused(ctx, key) { ctx.set_state("focused", key); }
+fn row(ctx, payload) { text(payload.item.label).with_key(payload.key) }
 fn view(ctx) {
-    let items = [];
+    let data = [];
     for index in 0..5000 {
         let key = `item-${index}`;
-        items.push(#{ key: key, node: text(`Row ${index}`).with_key(key) });
+        data.push(#{ key: key, label: `Row ${index}` });
     }
     column([
-        text(`Focused: ${ctx.get_state("focused")}`),
-        virtual_list(#{
+        text("Data-backed virtual collection"),
+        virtual_collection(#{
             key: "five-thousand", label: "Five thousand rows",
-            items: items, row_height: 28, height: 420, overscan: 2
-        }).on_change(Fn("focused"))
+            data: data, estimated_height: 28, height: 420, overdraw_pixels: 112,
+            alignment: "top", follow_tail: false
+        }, Fn("row"))
     ]).with_style(style().padding(px(16)).gap(px(8)).background(theme_color("surface")))
 }
 "#;

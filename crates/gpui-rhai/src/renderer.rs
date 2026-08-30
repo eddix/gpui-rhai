@@ -25,7 +25,7 @@ use crate::table_element::{
     TableSortHandler,
 };
 use crate::toast_element::{ToastDismissHandler, ToastHostElement, ToastPalette, ToastPartStyles};
-use crate::virtual_list_element::{VirtualFocusHandler, VirtualListEntityElement};
+use crate::virtual_list_element::VirtualListEntityElement;
 use crate::{
     Align, AnimationKey, AnimationProperty, AssetRegistry, ColorValue, DatePickerNodeSpec,
     DropdownNodeSpec, EventPropagation, EventResponse, FlexDirection, ImageSourceSpec,
@@ -1272,9 +1272,6 @@ impl GpuiNodeRenderer {
             UiNodeKind::ToastHost { spec } => element
                 .child(native_toast_element(node, spec, environment, path))
                 .into_any_element(),
-            UiNodeKind::VirtualList { spec } => element
-                .child(native_virtual_list_element(node, spec, environment, path))
-                .into_any_element(),
             UiNodeKind::VirtualCollection { spec } => element
                 .child(native_virtual_collection_element(spec, environment, path))
                 .into_any_element(),
@@ -1826,50 +1823,6 @@ fn native_choice_element<C: ColorResolver>(
         environment.overlays.clone(),
         slot_runtime,
     )
-}
-
-fn native_virtual_list_element<C: ColorResolver>(
-    node: &UiNode,
-    spec: &crate::VirtualListNodeSpec,
-    environment: &RenderEnvironment<'_, C>,
-    path: &str,
-) -> VirtualListEntityElement {
-    let focus_change = node.handler("change").map(|handler| {
-        let handler = handler.clone();
-        let dispatcher = environment.dispatcher.cloned();
-        Rc::new(move |key: String, window: &mut Window, cx: &mut App| {
-            dispatch_ui_event(
-                &handler,
-                "change",
-                UiValue::String(key),
-                window,
-                cx,
-                dispatcher.as_ref(),
-            );
-        }) as VirtualFocusHandler
-    });
-    let runtime = DropdownSlotRuntime {
-        colors: OwnedColorResolver::capture(environment.colors),
-        primitives: environment.primitives.clone(),
-        assets: environment.assets.cloned().unwrap_or_default(),
-        dispatcher: environment
-            .dispatcher
-            .cloned()
-            .unwrap_or_else(|| NodeEventDispatcher::new(|_, _, _, _| EventPropagation::Handled)),
-        overlays: environment.overlays.clone(),
-        animations: environment.animations.clone(),
-        signals: environment.signals.clone(),
-        geometry: environment.geometry.clone(),
-        pointer_capture: environment.pointer_capture.clone(),
-        focus_handles: environment.focus_handles.clone(),
-        scroll_handles: environment.scroll_handles.clone(),
-        virtual_requests: environment.virtual_requests.clone(),
-        direction: environment.direction,
-        base_path: path.to_owned(),
-        view_id: environment.view_id.to_owned(),
-        part_styles: BTreeMap::new(),
-    };
-    VirtualListEntityElement::new(path, spec.clone(), runtime, focus_change)
 }
 
 fn native_virtual_collection_element<C: ColorResolver>(

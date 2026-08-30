@@ -196,8 +196,8 @@ pub use toast::{ToastHostSpec, ToastItemSpec, ToastVariant};
 pub use value::{OpaqueHandle, UiValue, UiValueError};
 pub use virtual_list::{
     VariableListSpec, VariableListState, VariableListWindow, VirtualCollectionId,
-    VirtualCollectionNodeSpec, VirtualListError, VirtualListItem, VirtualListMetrics,
-    VirtualListNodeSpec, VirtualListSpec, VirtualListState, VirtualRequestRegistry,
+    VirtualCollectionNodeSpec, VirtualListError, VirtualListMetrics, VirtualListSpec,
+    VirtualListState, VirtualRequestRegistry,
 };
 pub use window::{
     ScriptWindowSpec, WindowCommand, WindowCommandError, WindowCommandPolicy, WindowCommandRegistry,

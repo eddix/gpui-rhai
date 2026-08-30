@@ -424,11 +424,6 @@ fn collect_node_animations(
                 }
             }
         }
-        UiNodeKind::VirtualList { spec } => {
-            for item in &spec.items {
-                collect_node_animations(&item.node, &format!("{path}/item:{}", item.key), output)?;
-            }
-        }
         UiNodeKind::VirtualCollection { spec } => {
             for (index, item) in &spec.realized {
                 collect_node_animations(item, &format!("{path}/item:{index}"), output)?;

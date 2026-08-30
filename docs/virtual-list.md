@@ -46,6 +46,6 @@ reorder/filter, return anchor scroll correction after remeasurement, and
 compute bottom/tail offsets. Tests cover 10,000 policy items, formal component
 state cleanup, off-layout realization, and the 2,000-item Chat acceptance app.
 
-The old eager `virtual_list` constructor and fixed-range types remain only while
-privileged Dropdown/Table implementations are being deleted. They are not the
-final public collection contract and must disappear with those native nodes.
+The old eager `virtual_list` Rhai constructor and `UiNodeKind` have been deleted.
+Fixed-range Rust policy types remain private dependencies of the privileged
+Dropdown/Table implementations only and must disappear with those native nodes.

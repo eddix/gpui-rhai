@@ -20,7 +20,7 @@ use crate::node::{
     directional_asset_image_node, directional_image_node, dropdown_node, error_boundary_node,
     fragment_node, generic_directional_image_node, generic_image_node, image_node,
     lazy_error_boundary_node, overlay_node, rich_text_node, row_node, select_node, span_value,
-    stack_node, table_node, text_node, toast_host_node, virtual_list_node,
+    stack_node, table_node, text_node, toast_host_node,
 };
 use crate::primitive::{PrimitiveDescriptor, PrimitiveError, PrimitiveHandler, PrimitiveRegistry};
 use crate::style::register_style_api;
@@ -29,7 +29,6 @@ use crate::text_area::{
 };
 use crate::text_input::{TextInputPrimitiveHandler, text_input_primitive_descriptor};
 use crate::value::OpaqueHandle;
-use crate::virtual_list::register_virtual_list_api;
 use crate::{
     ComponentInstancePath, ComponentStateSchema, EventSchema, ExecutionPhase, ModuleId,
     RenderStateTransaction, UiNode, UiRuntimeState, UiValue,
@@ -413,7 +412,6 @@ impl RuntimeEngine {
         register_style_api(&mut engine);
         register_animation_api(&mut engine);
         register_text_area_api(&mut engine);
-        register_virtual_list_api(&mut engine);
         register_canvas_api(&mut engine);
         let evaluation_generation = Rc::new(Cell::new(ScriptGeneration::default()));
         let component_exports = ComponentExportCollector::new();
@@ -1363,9 +1361,6 @@ fn register_node_apis(engine: &mut Engine) {
     FuncRegistration::new("toast_host")
         .in_global_namespace()
         .register_into_engine(engine, toast_host_node);
-    FuncRegistration::new("virtual_list")
-        .in_global_namespace()
-        .register_into_engine(engine, virtual_list_node);
 }
 
 fn register_native_handler_api(engine: &mut Engine, registry: &crate::NativeHandlerRegistry) {

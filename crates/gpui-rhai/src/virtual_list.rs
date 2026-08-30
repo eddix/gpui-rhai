@@ -3,9 +3,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
 use std::rc::Rc;
 
-use rhai::{
-    CustomType, Engine, EvalAltResult, FLOAT, FuncRegistration, INT, Position, TypeBuilder,
-};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -71,24 +68,6 @@ impl VirtualRequestRegistry {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct VirtualListItem {
-    pub key: String,
-    pub node: UiNode,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct VirtualListNodeSpec {
-    pub key: String,
-    pub label: String,
-    pub items: Vec<VirtualListItem>,
-    pub estimated_height: f64,
-    pub height: f64,
-    pub overdraw_pixels: f64,
-    pub bottom_align: bool,
-    pub follow_tail: bool,
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct VirtualListSpec {
     pub row_height: f64,
@@ -141,35 +120,6 @@ impl VirtualListSpec {
 
 fn nonnegative_to_usize(value: f64) -> usize {
     value.to_string().parse().unwrap_or(usize::MAX)
-}
-
-impl CustomType for VirtualListSpec {
-    fn build(mut builder: TypeBuilder<Self>) {
-        builder.with_name("VirtualListSpec");
-    }
-}
-
-pub(crate) fn register_virtual_list_api(engine: &mut Engine) {
-    engine.build_type::<VirtualListSpec>();
-    FuncRegistration::new("virtual_list_spec")
-        .in_global_namespace()
-        .register_into_engine(
-            engine,
-            |row_height: FLOAT, overscan: INT| -> Result<VirtualListSpec, Box<EvalAltResult>> {
-                let overscan = usize::try_from(overscan).map_err(|_| {
-                    Box::new(EvalAltResult::ErrorRuntime(
-                        "virtual list overscan must be non-negative".into(),
-                        Position::NONE,
-                    ))
-                })?;
-                VirtualListSpec::new(row_height, overscan).map_err(|error| {
-                    Box::new(EvalAltResult::ErrorRuntime(
-                        error.to_string().into(),
-                        Position::NONE,
-                    ))
-                })
-            },
-        );
 }
 
 fn validate_viewport(scroll_offset: f64, viewport_height: f64) -> Result<(), VirtualListError> {
@@ -533,7 +483,6 @@ pub enum VirtualListError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{RuntimeEngine, UiNodeKind};
 
     #[test]
     fn five_thousand_items_have_bounded_realization() {
@@ -593,34 +542,5 @@ mod tests {
             .unwrap();
         assert_eq!(list.measured_count(), 1);
         assert!((list.tail_offset(50.0) - 50.0).abs() < f64::EPSILON);
-    }
-
-    #[test]
-    fn rhai_builds_keyed_native_virtual_list_node() {
-        let mut engine = RuntimeEngine::new();
-        let compiled = engine
-            .compile(
-                r#"
-                    fn view() {
-                        virtual_list(#{
-                            key: "files", label: "Files", estimated_height: 28,
-                            height: 280, overdraw_pixels: 56,
-                            alignment: "top", follow_tail: false,
-                            items: [
-                                #{ key: "a", node: text("A") },
-                                #{ key: "b", node: text("B") }
-                            ]
-                        })
-                    }
-                "#,
-            )
-            .unwrap();
-        let root = engine.render(&compiled).unwrap();
-        assert!(matches!(
-            root.kind(),
-            UiNodeKind::VirtualList { spec }
-                if spec.items.len() == 2
-                    && (spec.estimated_height - 28.0).abs() < f64::EPSILON
-        ));
     }
 }

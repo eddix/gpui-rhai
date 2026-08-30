@@ -228,7 +228,6 @@ fn inspect_node(node: &UiNode, path: &str) -> InspectorNode {
         UiNodeKind::DatePicker { spec } => inspect_date_picker(spec, &mut props),
         UiNodeKind::Table { spec } => inspect_table(spec, &mut props),
         UiNodeKind::ToastHost { spec } => inspect_toast_host(spec, &mut props),
-        UiNodeKind::VirtualList { spec } => inspect_virtual_list(spec, &mut props),
         UiNodeKind::VirtualCollection { spec } => inspect_virtual_collection(spec, &mut props),
         UiNodeKind::ErrorBoundary { child, fallback } => (
             "error_boundary".to_owned(),
@@ -277,25 +276,6 @@ fn inspect_node(node: &UiNode, path: &str) -> InspectorNode {
         style: node.style().resolve(&crate::InteractionState::default()),
         children,
     }
-}
-
-fn inspect_virtual_list<'a>(
-    spec: &'a crate::VirtualListNodeSpec,
-    props: &mut BTreeMap<String, String>,
-) -> (String, Vec<&'a UiNode>) {
-    props.insert("items".to_owned(), spec.items.len().to_string());
-    props.insert(
-        "estimated_height".to_owned(),
-        spec.estimated_height.to_string(),
-    );
-    props.insert(
-        "alignment".to_owned(),
-        if spec.bottom_align { "bottom" } else { "top" }.to_owned(),
-    );
-    (
-        "virtual_list".to_owned(),
-        spec.items.iter().map(|item| &item.node).collect(),
-    )
 }
 
 fn inspect_virtual_collection<'a>(
