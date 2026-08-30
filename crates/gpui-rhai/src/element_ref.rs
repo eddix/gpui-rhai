@@ -171,12 +171,18 @@ pub(crate) enum ElementCommand {
         x: f64,
         y: f64,
     },
+    ScrollIntoView {
+        window: String,
+        node: NodeId,
+    },
 }
 
 impl ElementCommand {
     pub(crate) fn window(&self) -> &str {
         match self {
-            Self::Focus { window, .. } | Self::ScrollTo { window, .. } => window,
+            Self::Focus { window, .. }
+            | Self::ScrollTo { window, .. }
+            | Self::ScrollIntoView { window, .. } => window,
         }
     }
 }

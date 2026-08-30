@@ -14,8 +14,8 @@ use gpui::{
     AnyElement, AnyWindowHandle, App, AppContext, Application, Bounds, Context, DispatchPhase,
     Element, ElementId, Entity, FocusHandle, Global, GlobalElementId, InspectorElementId,
     InteractiveElement, IntoElement, LayoutId, MouseDownEvent, ParentElement, Pixels, Render,
-    ScrollHandle, SharedString, Styled, Task, Timer, TitlebarOptions, Window, WindowAppearance,
-    WindowBounds, WindowOptions, deferred, div, px, rgba, size,
+    ScrollAnchor, ScrollHandle, SharedString, Styled, Task, Timer, TitlebarOptions, Window,
+    WindowAppearance, WindowBounds, WindowOptions, deferred, div, px, rgba, size,
 };
 use thiserror::Error;
 
@@ -1743,6 +1743,7 @@ impl PreparedScriptView {
                 host_focus,
                 focus_handles: BTreeMap::new(),
                 scroll_handles: BTreeMap::new(),
+                scroll_anchors: BTreeMap::new(),
                 disposed: false,
                 _async_task: async_task,
                 #[cfg(feature = "dev-reload")]
@@ -1984,6 +1985,7 @@ fn open_secondary_window(
                 host_focus,
                 focus_handles: BTreeMap::new(),
                 scroll_handles: BTreeMap::new(),
+                scroll_anchors: BTreeMap::new(),
                 disposed: false,
                 _async_task: async_task,
                 #[cfg(feature = "dev-reload")]
@@ -2136,6 +2138,7 @@ struct ScriptHostView {
     host_focus: FocusHandle,
     focus_handles: BTreeMap<crate::NodeId, FocusHandle>,
     scroll_handles: BTreeMap<crate::NodeId, ScrollHandle>,
+    scroll_anchors: BTreeMap<crate::NodeId, ScrollAnchor>,
     disposed: bool,
     _async_task: Task<()>,
     #[cfg(feature = "dev-reload")]
@@ -2150,6 +2153,21 @@ struct ScriptHostView {
     theme_path: PathBuf,
     #[cfg(feature = "dev-reload")]
     _reload_task: Option<Task<()>>,
+}
+
+fn nearest_scroll_ancestor(
+    tree: &crate::RetainedUiTree,
+    node: crate::NodeId,
+) -> Option<crate::NodeId> {
+    let mut current = tree.node(node)?.parent();
+    while let Some(node) = current {
+        let retained = tree.node(node)?;
+        if retained.scrollable() {
+            return Some(node);
+        }
+        current = retained.parent();
+    }
+    None
 }
 
 struct ScriptRenderSnapshot {
@@ -2248,6 +2266,7 @@ impl Render for ScriptHostView {
             pointer_capture: &snapshot.pointer_capture,
             focus_handles: &self.focus_handles,
             scroll_handles: &self.scroll_handles,
+            scroll_anchors: &self.scroll_anchors,
             virtual_requests: &snapshot.virtual_requests,
             direction: snapshot.direction,
             root_path: &animation_root,
@@ -2342,7 +2361,7 @@ impl ScriptHostView {
     fn prepare_host_render(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.prepare_render(window);
         self.sync_focus_handles(cx);
-        self.process_element_commands(window);
+        self.process_element_commands(window, cx);
     }
 
     fn install_pointer_capture_router(
@@ -2397,7 +2416,7 @@ impl ScriptHostView {
             .lifecycle
             .retained()
             .nodes()
-            .filter(|node| node.element_ref().is_some() && node.scrollable())
+            .filter(|node| node.scrollable())
             .map(crate::RetainedNode::id)
             .collect::<BTreeSet<_>>();
         self.scroll_handles
@@ -2405,9 +2424,28 @@ impl ScriptHostView {
         for node in scrollable {
             self.scroll_handles.entry(node).or_default();
         }
+        let anchors = self
+            .lifecycle
+            .retained()
+            .nodes()
+            .filter(|node| node.element_ref().is_some())
+            .filter_map(|node| {
+                nearest_scroll_ancestor(self.lifecycle.retained(), node.id())
+                    .map(|ancestor| (node.id(), ancestor))
+            })
+            .collect::<BTreeMap<_, _>>();
+        self.scroll_anchors
+            .retain(|node, _| anchors.contains_key(node));
+        for (node, ancestor) in anchors {
+            if let Some(handle) = self.scroll_handles.get(&ancestor) {
+                self.scroll_anchors
+                    .entry(node)
+                    .or_insert_with(|| ScrollAnchor::for_handle(handle.clone()));
+            }
+        }
     }
 
-    fn process_element_commands(&mut self, window: &mut Window) {
+    fn process_element_commands(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let commands = self
             .lifecycle
             .runtime()
@@ -2430,6 +2468,15 @@ impl ScriptHostView {
                     } else {
                         self.last_error = Some(format!(
                             "retained node {node} is not a scroll container or has been unmounted"
+                        ));
+                    }
+                }
+                crate::element_ref::ElementCommand::ScrollIntoView { node, .. } => {
+                    if let Some(anchor) = self.scroll_anchors.get(&node) {
+                        anchor.scroll_to(window, cx);
+                    } else {
+                        self.last_error = Some(format!(
+                            "retained node {node} has no scrollable ancestor or was unmounted"
                         ));
                     }
                 }
@@ -2739,7 +2786,7 @@ impl ScriptHostView {
             Err(error) => self.last_error = Some(error),
         }
         self.process_window_commands(cx);
-        self.process_element_commands(window);
+        self.process_element_commands(window, cx);
         self.collect_timings();
         cx.notify();
         if succeeded {
@@ -2787,7 +2834,7 @@ impl ScriptHostView {
             Ok(response) => {
                 self.last_error = None;
                 self.process_window_commands(cx);
-                self.process_element_commands(window);
+                self.process_element_commands(window, cx);
                 self.collect_timings();
                 cx.notify();
                 response
@@ -3358,6 +3405,24 @@ mod tests {
             MotionPreference::Reduced
         );
         assert_eq!(parse_motion_preference("0"), MotionPreference::Normal);
+    }
+
+    #[test]
+    fn retained_descendant_resolves_nearest_scroll_ancestor() {
+        let root = crate::UiNode::box_node(vec![
+            crate::UiNode::box_node(vec![crate::UiNode::text("target").with_key("target")])
+                .with_key("middle"),
+        ])
+        .with_key("scroll")
+        .with_style(&crate::Style::new().overflow_y_scroll());
+        let mut tree = crate::RetainedUiTree::new();
+        tree.reconcile(root).unwrap();
+        let target = tree
+            .nodes()
+            .find(|node| node.key() == Some("target"))
+            .unwrap()
+            .id();
+        assert_eq!(nearest_scroll_ancestor(&tree, target), tree.root_id());
     }
 
     #[test]

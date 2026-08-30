@@ -202,6 +202,9 @@ is executed as a window-scoped retained command after the transaction commits.
 Scrollable keyed ref nodes use `Style().overflow_x_scroll()`,
 `overflow_y_scroll()`, or `overflow_scroll()`. Handlers call
 `ctx.scroll_to(ref, x, y)` with finite non-negative visible offsets.
+For a retained descendant, `ctx.scroll_into_view(ref)` (or its component-local
+ref key) uses a GPUI `ScrollAnchor` tied to the nearest retained scrollable
+ancestor and applies the minimal native reveal on the next frame.
 
 Declare one-shot foreground callbacks during formal render with
 `timeout(key, delay_ms, paused, Fn("callback"), payload)`. Keys are local to the

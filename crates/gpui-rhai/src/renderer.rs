@@ -315,6 +315,7 @@ fn apply_scroll_behavior(
     node: &UiNode,
     retained_id: Option<NodeId>,
     handles: &BTreeMap<NodeId, ScrollHandle>,
+    anchors: &BTreeMap<NodeId, gpui::ScrollAnchor>,
 ) -> Stateful<Div> {
     if matches!(node.style().base.overflow_x, Some(OverflowMode::Scroll)) {
         element = element.overflow_x_scroll();
@@ -324,6 +325,9 @@ fn apply_scroll_behavior(
     }
     if let Some(handle) = retained_id.and_then(|node| handles.get(&node)) {
         element = element.track_scroll(handle);
+    }
+    if let Some(anchor) = retained_id.and_then(|node| anchors.get(&node)) {
+        element = element.anchor_scroll(Some(anchor.clone()));
     }
     element
 }
@@ -875,6 +879,7 @@ struct RenderEnvironment<'a, C> {
     pointer_capture: &'a crate::PointerCaptureRegistry,
     focus_handles: &'a BTreeMap<NodeId, FocusHandle>,
     scroll_handles: &'a BTreeMap<NodeId, ScrollHandle>,
+    scroll_anchors: &'a BTreeMap<NodeId, gpui::ScrollAnchor>,
     virtual_requests: &'a crate::VirtualRequestRegistry,
     direction: TextDirection,
     view_id: &'a str,
@@ -891,6 +896,7 @@ pub(crate) struct WindowRenderResources<'a> {
     pub pointer_capture: &'a crate::PointerCaptureRegistry,
     pub focus_handles: &'a BTreeMap<NodeId, FocusHandle>,
     pub scroll_handles: &'a BTreeMap<NodeId, ScrollHandle>,
+    pub scroll_anchors: &'a BTreeMap<NodeId, gpui::ScrollAnchor>,
     pub virtual_requests: &'a crate::VirtualRequestRegistry,
     pub direction: TextDirection,
     pub root_path: &'a str,
@@ -931,6 +937,7 @@ impl GpuiNodeRenderer {
         let pointer_capture = crate::PointerCaptureRegistry::new();
         let focus_handles = BTreeMap::new();
         let scroll_handles = BTreeMap::new();
+        let scroll_anchors = BTreeMap::new();
         let virtual_requests = crate::VirtualRequestRegistry::new();
         let environment = RenderEnvironment {
             colors,
@@ -945,6 +952,7 @@ impl GpuiNodeRenderer {
             pointer_capture: &pointer_capture,
             focus_handles: &focus_handles,
             scroll_handles: &scroll_handles,
+            scroll_anchors: &scroll_anchors,
             virtual_requests: &virtual_requests,
             direction: TextDirection::LeftToRight,
             view_id: "standalone",
@@ -967,6 +975,7 @@ impl GpuiNodeRenderer {
         let pointer_capture = crate::PointerCaptureRegistry::new();
         let focus_handles = BTreeMap::new();
         let scroll_handles = BTreeMap::new();
+        let scroll_anchors = BTreeMap::new();
         let virtual_requests = crate::VirtualRequestRegistry::new();
         let environment = RenderEnvironment {
             colors,
@@ -981,6 +990,7 @@ impl GpuiNodeRenderer {
             pointer_capture: &pointer_capture,
             focus_handles: &focus_handles,
             scroll_handles: &scroll_handles,
+            scroll_anchors: &scroll_anchors,
             virtual_requests: &virtual_requests,
             direction: TextDirection::LeftToRight,
             view_id: "standalone",
@@ -1011,6 +1021,7 @@ impl GpuiNodeRenderer {
         let pointer_capture = crate::PointerCaptureRegistry::new();
         let focus_handles = BTreeMap::new();
         let scroll_handles = BTreeMap::new();
+        let scroll_anchors = BTreeMap::new();
         let virtual_requests = crate::VirtualRequestRegistry::new();
         let environment = RenderEnvironment {
             colors,
@@ -1025,6 +1036,7 @@ impl GpuiNodeRenderer {
             pointer_capture: &pointer_capture,
             focus_handles: &focus_handles,
             scroll_handles: &scroll_handles,
+            scroll_anchors: &scroll_anchors,
             virtual_requests: &virtual_requests,
             direction: TextDirection::LeftToRight,
             view_id: "standalone",
@@ -1049,6 +1061,7 @@ impl GpuiNodeRenderer {
         let pointer_capture = crate::PointerCaptureRegistry::new();
         let focus_handles = BTreeMap::new();
         let scroll_handles = BTreeMap::new();
+        let scroll_anchors = BTreeMap::new();
         let virtual_requests = crate::VirtualRequestRegistry::new();
         let resources = WindowRenderResources {
             assets,
@@ -1060,6 +1073,7 @@ impl GpuiNodeRenderer {
             pointer_capture: &pointer_capture,
             focus_handles: &focus_handles,
             scroll_handles: &scroll_handles,
+            scroll_anchors: &scroll_anchors,
             virtual_requests: &virtual_requests,
             direction: TextDirection::LeftToRight,
             root_path: "root",
@@ -1105,6 +1119,7 @@ impl GpuiNodeRenderer {
             pointer_capture: resources.pointer_capture,
             focus_handles: resources.focus_handles,
             scroll_handles: resources.scroll_handles,
+            scroll_anchors: resources.scroll_anchors,
             virtual_requests: resources.virtual_requests,
             direction: resources.direction,
             view_id: resources.view_id,
@@ -1149,6 +1164,7 @@ impl GpuiNodeRenderer {
             pointer_capture: resources.pointer_capture,
             focus_handles: resources.focus_handles,
             scroll_handles: resources.scroll_handles,
+            scroll_anchors: resources.scroll_anchors,
             virtual_requests: resources.virtual_requests,
             direction: resources.direction,
             view_id: resources.view_id,
@@ -1281,7 +1297,7 @@ impl GpuiNodeRenderer {
         )
         .tab_index(0)
         .tab_stop(tab_stop);
-        let element = apply_scroll_behavior(element, node, retained_id, environment.scroll_handles);
+        let element = apply_environment_scroll(element, node, retained_id, environment);
         let element = element.on_click(move |event, window, cx| {
             if matches!(event, ClickEvent::Mouse(_))
                 && let Some((bindings, payload)) = &click
@@ -1468,6 +1484,21 @@ fn node_needs_interaction_wrapper(node: &UiNode, click: bool, hover: bool, keybo
             || keyboard
             || node_has_raw_pointer_handlers(node)
             || node_scrollable(node))
+}
+
+fn apply_environment_scroll<C: ColorResolver>(
+    element: Stateful<Div>,
+    node: &UiNode,
+    retained_id: Option<NodeId>,
+    environment: &RenderEnvironment<'_, C>,
+) -> Stateful<Div> {
+    apply_scroll_behavior(
+        element,
+        node,
+        retained_id,
+        environment.scroll_handles,
+        environment.scroll_anchors,
+    )
 }
 
 fn node_tab_stop(node: &UiNode) -> bool {
@@ -1921,6 +1952,7 @@ fn native_virtual_collection_element<C: ColorResolver>(
         pointer_capture: environment.pointer_capture.clone(),
         focus_handles: environment.focus_handles.clone(),
         scroll_handles: environment.scroll_handles.clone(),
+        scroll_anchors: environment.scroll_anchors.clone(),
         virtual_requests: environment.virtual_requests.clone(),
         direction: environment.direction,
         base_path: path.to_owned(),

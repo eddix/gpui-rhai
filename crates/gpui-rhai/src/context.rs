@@ -803,6 +803,43 @@ impl UiContext {
         self.scroll_element_to(&reference, x, y)
     }
 
+    /// Queue minimal ancestor scrolling that reveals a retained descendant.
+    ///
+    /// # Errors
+    ///
+    /// Returns during render, outside a window, or for a stale ref.
+    pub fn scroll_element_into_view(
+        &self,
+        reference: &crate::ElementRef,
+    ) -> Result<(), UiContextError> {
+        self.require_mutation()?;
+        let window = self.window.clone().ok_or(UiContextError::MissingWindow)?;
+        let mut runtime = self
+            .runtime
+            .try_borrow_mut()
+            .map_err(|_| UiContextError::Borrowed)?;
+        let node = runtime.element_refs.resolve(reference)?;
+        runtime
+            .pending_element_commands
+            .push(crate::element_ref::ElementCommand::ScrollIntoView { window, node });
+        Ok(())
+    }
+
+    /// Resolve and reveal a component-local ref key.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same errors as [`Self::scroll_element_into_view`] plus unknown keys.
+    pub fn scroll_element_into_view_by_key(&self, key: &str) -> Result<(), UiContextError> {
+        let reference = self
+            .runtime
+            .try_borrow()
+            .map_err(|_| UiContextError::Borrowed)?
+            .element_refs
+            .resolve_key(&self.component, key)?;
+        self.scroll_element_into_view(&reference)
+    }
+
     /// Read and subscribe to an app-scoped store field.
     ///
     /// # Errors
@@ -2065,6 +2102,22 @@ fn register_action_context_methods(builder: &mut TypeBuilder<UiContext>) {
                     .scroll_element_to_by_key(key.as_str(), x, y)
                     .map_err(|error| Box::new(context_runtime_error(&error)))
             },
+        )
+        .with_fn(
+            "scroll_into_view",
+            |context: &mut UiContext, reference: crate::ElementRef| {
+                context
+                    .scroll_element_into_view(&reference)
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        )
+        .with_fn(
+            "scroll_into_view",
+            |context: &mut UiContext, key: ImmutableString| {
+                context
+                    .scroll_element_into_view_by_key(key.as_str())
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
         );
 }
 
@@ -2840,6 +2893,7 @@ mod tests {
         context
             .scroll_element_to_by_key("field", 12.0, 24.0)
             .unwrap();
+        context.scroll_element_into_view_by_key("field").unwrap();
         let commands = context
             .runtime()
             .borrow_mut()
@@ -2847,9 +2901,11 @@ mod tests {
         assert!(matches!(
             commands.as_slice(),
             [crate::element_ref::ElementCommand::Focus { node, .. },
-             crate::element_ref::ElementCommand::ScrollTo { node: scroll_node, x, y, .. }]
+             crate::element_ref::ElementCommand::ScrollTo { node: scroll_node, x, y, .. },
+             crate::element_ref::ElementCommand::ScrollIntoView { node: reveal_node, .. }]
                 if *node == tree.root_id().unwrap()
                     && scroll_node == node
+                    && reveal_node == node
                     && (*x - 12.0).abs() < f64::EPSILON
                     && (*y - 24.0).abs() < f64::EPSILON
         ));
