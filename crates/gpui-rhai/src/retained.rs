@@ -43,7 +43,7 @@ impl RetainedChildLink {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct RetainedNode {
     id: NodeId,
     parent: Option<NodeId>,
@@ -51,6 +51,8 @@ pub struct RetainedNode {
     kind: UiNodeKindTag,
     component_root: Option<crate::ComponentInstancePath>,
     element_ref: Option<crate::ElementRef>,
+    handlers: BTreeMap<String, Vec<crate::UiEventBinding>>,
+    handler_payloads: BTreeMap<String, crate::UiValue>,
     children: Vec<RetainedChildLink>,
 }
 
@@ -83,6 +85,16 @@ impl RetainedNode {
     #[must_use]
     pub const fn element_ref(&self) -> Option<&crate::ElementRef> {
         self.element_ref.as_ref()
+    }
+
+    #[must_use]
+    pub fn event_handlers(&self, event: &str) -> &[crate::UiEventBinding] {
+        self.handlers.get(event).map_or(&[], Vec::as_slice)
+    }
+
+    #[must_use]
+    pub fn handler_payload(&self, event: &str) -> Option<&crate::UiValue> {
+        self.handler_payloads.get(event)
     }
 
     pub fn children(&self) -> impl ExactSizeIterator<Item = &RetainedChildLink> {
@@ -350,6 +362,8 @@ impl ReconcileTransaction<'_> {
                 kind: candidate.kind_tag(),
                 component_root: candidate.component_root().cloned(),
                 element_ref: candidate.element_ref().cloned(),
+                handlers: candidate.handlers().clone(),
+                handler_payloads: candidate.handler_payloads().clone(),
                 children: child_links,
             },
         );

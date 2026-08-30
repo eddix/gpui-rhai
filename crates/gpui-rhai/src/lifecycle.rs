@@ -712,11 +712,12 @@ impl ScriptLifecycle {
         retained: &crate::RetainedUiTree,
     ) -> Result<(), LifecycleError> {
         let nodes = retained.nodes().map(crate::RetainedNode::id).collect();
-        self.runtime
+        let runtime = self
+            .runtime
             .try_borrow()
-            .map_err(|_| LifecycleError::Borrowed)?
-            .geometry
-            .retain_nodes(&nodes);
+            .map_err(|_| LifecycleError::Borrowed)?;
+        runtime.geometry.retain_nodes(&nodes);
+        runtime.pointer_capture.retain_nodes(&nodes);
         Ok(())
     }
 

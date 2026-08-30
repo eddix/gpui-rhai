@@ -2094,7 +2094,7 @@ impl Render for ScriptHostView {
             WindowAppearance::Dark | WindowAppearance::VibrantDark => SystemAppearance::Dark,
             WindowAppearance::Light | WindowAppearance::VibrantLight => SystemAppearance::Light,
         };
-        let (assets, theme, animations, signals, geometry, direction) = {
+        let (assets, theme, animations, signals, geometry, pointer_capture, direction) = {
             let runtime = runtime.borrow();
             let root = self.lifecycle.root_path().clone();
             let theme = runtime
@@ -2112,6 +2112,7 @@ impl Render for ScriptHostView {
                 runtime.animation_values.clone(),
                 runtime.signals.clone(),
                 runtime.geometry.clone(),
+                runtime.pointer_capture.clone(),
                 runtime
                     .locale
                     .as_ref()
@@ -2119,6 +2120,12 @@ impl Render for ScriptHostView {
                     .unwrap_or(TextDirection::LeftToRight),
             )
         };
+        crate::renderer::install_pointer_capture_router(
+            window,
+            self.lifecycle.retained(),
+            &dispatcher,
+            &pointer_capture,
+        );
         let animation_root = format!("window:{}/view:{}/root", self.window_id, self.view_id);
         let render_resources = crate::renderer::WindowRenderResources {
             assets: &assets,
@@ -2127,6 +2134,7 @@ impl Render for ScriptHostView {
             animations: &animations,
             signals: &signals,
             geometry: &geometry,
+            pointer_capture: &pointer_capture,
             direction,
             root_path: &animation_root,
             view_id: &self.view_id,

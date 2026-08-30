@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::rc::Rc;
@@ -274,6 +275,45 @@ pub enum EventPhase {
     Capture,
     Target,
     Bubble,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct PointerCaptureRegistry {
+    active: Rc<RefCell<BTreeMap<u64, crate::NodeId>>>,
+}
+
+impl PointerCaptureRegistry {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn capture(&self, pointer_id: u64, node: crate::NodeId) {
+        self.active.borrow_mut().insert(pointer_id, node);
+    }
+
+    pub fn release(&self, pointer_id: u64) -> Option<crate::NodeId> {
+        self.active.borrow_mut().remove(&pointer_id)
+    }
+
+    #[must_use]
+    pub fn captured(&self, pointer_id: u64) -> Option<crate::NodeId> {
+        self.active.borrow().get(&pointer_id).copied()
+    }
+
+    pub(crate) fn retain_nodes(&self, nodes: &std::collections::BTreeSet<crate::NodeId>) {
+        self.active
+            .borrow_mut()
+            .retain(|_, node| nodes.contains(node));
+    }
+
+    pub(crate) fn snapshot(&self) -> BTreeMap<u64, crate::NodeId> {
+        self.active.borrow().clone()
+    }
+
+    pub(crate) fn restore(&self, snapshot: BTreeMap<u64, crate::NodeId>) {
+        *self.active.borrow_mut() = snapshot;
+    }
 }
 
 type HostCallbackFn = dyn Fn(UiValue, &mut Window, &mut App) -> EventResponse;
@@ -695,6 +735,18 @@ mod tests {
             .unwrap();
         assert_eq!(invoked, 2);
         assert_eq!(report.stopped_at, Some(child));
+    }
+
+    #[test]
+    fn pointer_capture_is_node_scoped_and_clears_on_unmount() {
+        let mut tree = crate::RetainedUiTree::new();
+        tree.reconcile(crate::UiNode::text("drag")).unwrap();
+        let node = tree.root_id().unwrap();
+        let captures = PointerCaptureRegistry::new();
+        captures.capture(0, node);
+        assert_eq!(captures.captured(0), Some(node));
+        captures.retain_nodes(&std::collections::BTreeSet::new());
+        assert_eq!(captures.captured(0), None);
     }
 
     #[test]

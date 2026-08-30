@@ -722,6 +722,11 @@ impl UiNode {
     }
 
     #[must_use]
+    pub(crate) const fn handler_payloads(&self) -> &BTreeMap<String, UiValue> {
+        &self.handler_payloads
+    }
+
+    #[must_use]
     pub fn animations(&self) -> &[AnimationSpec] {
         &self.animations
     }

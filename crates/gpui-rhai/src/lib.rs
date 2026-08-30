@@ -120,8 +120,8 @@ pub use engine::{
 };
 pub use event::{
     EventDispatchReport, EventModifiers, EventPhase, EventPropagation, EventResponse, EventRouter,
-    HostCallback, LogicalPoint, PointerCaptureDirective, PointerEventData, PropagationControl,
-    UiEvent, UiEventBinding, UiEventHandler, WheelEventData,
+    HostCallback, LogicalPoint, PointerCaptureDirective, PointerCaptureRegistry, PointerEventData,
+    PropagationControl, UiEvent, UiEventBinding, UiEventHandler, WheelEventData,
 };
 pub use geometry::{ElementGeometry, GeometryBounds, GeometryError, GeometryRegistry};
 pub use lifecycle::{LifecycleError, LifecycleState, ScriptLifecycle};

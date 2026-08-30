@@ -4,11 +4,11 @@ use std::sync::OnceLock;
 use std::time::Instant;
 
 use gpui::{
-    AnyElement, App, Bounds, BoxShadow, ClickEvent, Context, Div, Element, ElementId,
-    GlobalElementId, InspectorElementId, InteractiveElement, IntoElement, LayoutId, Modifiers,
-    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point,
-    Render, ScrollWheelEvent, SharedString, Stateful, StatefulInteractiveElement, Styled, Window,
-    div, img, point, px, relative, rems, rgba,
+    AnyElement, App, Bounds, BoxShadow, ClickEvent, Context, DispatchPhase, Div, Element,
+    ElementId, GlobalElementId, InspectorElementId, InteractiveElement, IntoElement, LayoutId,
+    Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels,
+    Point, Render, ScrollWheelEvent, SharedString, Stateful, StatefulInteractiveElement, Styled,
+    Window, div, img, point, px, relative, rems, rgba,
 };
 
 use crate::date_picker_element::{
@@ -191,6 +191,28 @@ fn apply_event_response(response: EventResponse, window: &mut Window, app: &mut 
     }
 }
 
+fn apply_pointer_response(
+    response: EventResponse,
+    node: Option<NodeId>,
+    pointer_id: u64,
+    captures: &crate::PointerCaptureRegistry,
+    window: &mut Window,
+    app: &mut App,
+) {
+    match response.pointer_capture() {
+        crate::PointerCaptureDirective::Capture => {
+            if let Some(node) = node {
+                captures.capture(pointer_id, node);
+            }
+        }
+        crate::PointerCaptureDirective::Release => {
+            captures.release(pointer_id);
+        }
+        crate::PointerCaptureDirective::None => {}
+    }
+    apply_event_response(response, window, app);
+}
+
 fn key_handler_bindings(node: &UiNode) -> BTreeMap<String, (Vec<crate::UiEventBinding>, UiValue)> {
     node.handlers()
         .iter()
@@ -220,16 +242,26 @@ fn apply_raw_pointer_handlers(
     element: Stateful<Div>,
     node: &UiNode,
     dispatcher: Option<&NodeEventDispatcher>,
+    retained_id: Option<NodeId>,
+    captures: &crate::PointerCaptureRegistry,
 ) -> Stateful<Div> {
-    let element = apply_pointer_down_handlers(element, node, dispatcher);
-    let element = apply_pointer_up_handlers(element, node, dispatcher);
-    apply_pointer_motion_handlers(element, node, dispatcher.cloned())
+    let element = apply_pointer_down_handlers(element, node, dispatcher, retained_id, captures);
+    let element = apply_pointer_up_handlers(element, node, dispatcher, retained_id, captures);
+    apply_pointer_motion_handlers(
+        element,
+        node,
+        dispatcher.cloned(),
+        retained_id,
+        captures.clone(),
+    )
 }
 
 fn apply_pointer_down_handlers(
     mut element: Stateful<Div>,
     node: &UiNode,
     dispatcher: Option<&NodeEventDispatcher>,
+    retained_id: Option<NodeId>,
+    captures: &crate::PointerCaptureRegistry,
 ) -> Stateful<Div> {
     let pointer_down = node.event_handlers("pointer_down").to_vec();
     if pointer_down
@@ -238,6 +270,7 @@ fn apply_pointer_down_handlers(
     {
         let bindings = pointer_down.clone();
         let dispatcher = dispatcher.cloned();
+        let captures = captures.clone();
         element = element.capture_any_mouse_down(move |event, window, app| {
             let response = dispatch_ui_handler_phases(
                 &bindings,
@@ -248,7 +281,7 @@ fn apply_pointer_down_handlers(
                 app,
                 dispatcher.as_ref(),
             );
-            apply_event_response(response, window, app);
+            apply_pointer_response(response, retained_id, 0, &captures, window, app);
         });
     }
     if pointer_down.iter().any(|binding| {
@@ -259,6 +292,7 @@ fn apply_pointer_down_handlers(
     }) {
         let bindings = pointer_down;
         let dispatcher = dispatcher.cloned();
+        let captures = captures.clone();
         element = element.on_any_mouse_down(move |event, window, app| {
             let response = dispatch_ui_handler_phases(
                 &bindings,
@@ -269,7 +303,7 @@ fn apply_pointer_down_handlers(
                 app,
                 dispatcher.as_ref(),
             );
-            apply_event_response(response, window, app);
+            apply_pointer_response(response, retained_id, 0, &captures, window, app);
         });
     }
     element
@@ -279,6 +313,8 @@ fn apply_pointer_up_handlers(
     mut element: Stateful<Div>,
     node: &UiNode,
     dispatcher: Option<&NodeEventDispatcher>,
+    retained_id: Option<NodeId>,
+    captures: &crate::PointerCaptureRegistry,
 ) -> Stateful<Div> {
     let pointer_up = node.event_handlers("pointer_up").to_vec();
     if pointer_up
@@ -287,6 +323,7 @@ fn apply_pointer_up_handlers(
     {
         let bindings = pointer_up.clone();
         let dispatcher = dispatcher.cloned();
+        let captures = captures.clone();
         element = element.capture_any_mouse_up(move |event, window, app| {
             let response = dispatch_ui_handler_phases(
                 &bindings,
@@ -297,7 +334,8 @@ fn apply_pointer_up_handlers(
                 app,
                 dispatcher.as_ref(),
             );
-            apply_event_response(response, window, app);
+            apply_pointer_response(response, retained_id, 0, &captures, window, app);
+            captures.release(0);
         });
     }
     if pointer_up.iter().any(|binding| {
@@ -309,6 +347,7 @@ fn apply_pointer_up_handlers(
         for button in MouseButton::all() {
             let bindings = pointer_up.clone();
             let dispatcher = dispatcher.cloned();
+            let captures = captures.clone();
             element = element.on_mouse_up(button, move |event, window, app| {
                 let response = dispatch_ui_handler_phases(
                     &bindings,
@@ -319,7 +358,8 @@ fn apply_pointer_up_handlers(
                     app,
                     dispatcher.as_ref(),
                 );
-                apply_event_response(response, window, app);
+                apply_pointer_response(response, retained_id, 0, &captures, window, app);
+                captures.release(0);
             });
         }
     }
@@ -330,10 +370,13 @@ fn apply_pointer_motion_handlers(
     mut element: Stateful<Div>,
     node: &UiNode,
     dispatcher: Option<NodeEventDispatcher>,
+    retained_id: Option<NodeId>,
+    captures: crate::PointerCaptureRegistry,
 ) -> Stateful<Div> {
     let pointer_move = node.event_handlers("pointer_move").to_vec();
     if !pointer_move.is_empty() {
         let dispatcher = dispatcher.clone();
+        let captures = captures.clone();
         element = element.on_mouse_move(move |event, window, app| {
             let response = dispatch_ui_handler_phases(
                 &pointer_move,
@@ -344,7 +387,7 @@ fn apply_pointer_motion_handlers(
                 app,
                 dispatcher.as_ref(),
             );
-            apply_event_response(response, window, app);
+            apply_pointer_response(response, retained_id, 0, &captures, window, app);
         });
     }
 
@@ -360,7 +403,7 @@ fn apply_pointer_motion_handlers(
                 app,
                 dispatcher.as_ref(),
             );
-            apply_event_response(response, window, app);
+            apply_pointer_response(response, retained_id, 0, &captures, window, app);
         });
     }
     element
@@ -373,26 +416,37 @@ fn mouse_down_payload(event: &MouseDownEvent) -> UiValue {
         vec![event.button],
         event.modifiers,
         event.click_count,
+        false,
     )
 }
 
 fn mouse_up_payload(event: &MouseUpEvent) -> UiValue {
+    mouse_up_payload_with_capture(event, false)
+}
+
+fn mouse_up_payload_with_capture(event: &MouseUpEvent, captured: bool) -> UiValue {
     pointer_payload(
         event.position,
         Some(event.button),
         Vec::new(),
         event.modifiers,
         event.click_count,
+        captured,
     )
 }
 
 fn mouse_move_payload(event: &MouseMoveEvent) -> UiValue {
+    mouse_move_payload_with_capture(event, false)
+}
+
+fn mouse_move_payload_with_capture(event: &MouseMoveEvent, captured: bool) -> UiValue {
     pointer_payload(
         event.position,
         None,
         event.pressed_button.into_iter().collect(),
         event.modifiers,
         0,
+        captured,
     )
 }
 
@@ -402,6 +456,7 @@ fn pointer_payload(
     buttons: Vec<MouseButton>,
     modifiers: Modifiers,
     click_count: usize,
+    captured: bool,
 ) -> UiValue {
     let position = logical_point(position);
     crate::PointerEventData {
@@ -416,7 +471,7 @@ fn pointer_payload(
         modifiers: event_modifiers(modifiers),
         click_count,
         timestamp_ms: event_timestamp_ms(),
-        captured: false,
+        captured,
     }
     .into_value()
 }
@@ -467,6 +522,76 @@ fn mouse_button_name(button: MouseButton) -> String {
 fn event_timestamp_ms() -> f64 {
     static START: OnceLock<Instant> = OnceLock::new();
     START.get_or_init(Instant::now).elapsed().as_secs_f64() * 1_000.0
+}
+
+pub(crate) fn install_pointer_capture_router(
+    window: &mut Window,
+    tree: &RetainedUiTree,
+    dispatcher: &NodeEventDispatcher,
+    captures: &crate::PointerCaptureRegistry,
+) {
+    let move_handlers = retained_handlers(tree, "pointer_move");
+    let up_handlers = retained_handlers(tree, "pointer_up");
+    let move_dispatcher = dispatcher.clone();
+    let up_dispatcher = dispatcher.clone();
+    let move_captures = captures.clone();
+    let up_captures = captures.clone();
+    window.on_mouse_event(move |event: &MouseMoveEvent, phase, window, app| {
+        if phase != DispatchPhase::Capture {
+            return;
+        }
+        let Some(node) = move_captures.captured(0) else {
+            return;
+        };
+        let Some(bindings) = move_handlers.get(&node) else {
+            return;
+        };
+        let response = dispatch_ui_handler_phases(
+            bindings,
+            "pointer_move",
+            &[crate::EventPhase::Target, crate::EventPhase::Bubble],
+            &mouse_move_payload_with_capture(event, true),
+            window,
+            app,
+            Some(&move_dispatcher),
+        );
+        apply_pointer_response(response, Some(node), 0, &move_captures, window, app);
+        app.stop_propagation();
+    });
+    window.on_mouse_event(move |event: &MouseUpEvent, phase, window, app| {
+        if phase != DispatchPhase::Capture {
+            return;
+        }
+        let Some(node) = up_captures.captured(0) else {
+            return;
+        };
+        if let Some(bindings) = up_handlers.get(&node) {
+            let response = dispatch_ui_handler_phases(
+                bindings,
+                "pointer_up",
+                &[crate::EventPhase::Target, crate::EventPhase::Bubble],
+                &mouse_up_payload_with_capture(event, true),
+                window,
+                app,
+                Some(&up_dispatcher),
+            );
+            apply_pointer_response(response, Some(node), 0, &up_captures, window, app);
+        }
+        up_captures.release(0);
+        app.stop_propagation();
+    });
+}
+
+fn retained_handlers(
+    tree: &RetainedUiTree,
+    event: &str,
+) -> BTreeMap<NodeId, Vec<crate::UiEventBinding>> {
+    tree.nodes()
+        .filter_map(|node| {
+            let handlers = node.event_handlers(event);
+            (!handlers.is_empty()).then(|| (node.id(), handlers.to_vec()))
+        })
+        .collect()
 }
 
 pub trait ColorResolver {
@@ -587,6 +712,7 @@ struct RenderEnvironment<'a, C> {
     animations: &'a BTreeMap<AnimationKey, f64>,
     signals: &'a crate::SignalRegistry,
     geometry: &'a crate::GeometryRegistry,
+    pointer_capture: &'a crate::PointerCaptureRegistry,
     direction: TextDirection,
     view_id: &'a str,
     retained: Option<&'a RetainedUiTree>,
@@ -599,6 +725,7 @@ pub(crate) struct WindowRenderResources<'a> {
     pub animations: &'a BTreeMap<AnimationKey, f64>,
     pub signals: &'a crate::SignalRegistry,
     pub geometry: &'a crate::GeometryRegistry,
+    pub pointer_capture: &'a crate::PointerCaptureRegistry,
     pub direction: TextDirection,
     pub root_path: &'a str,
     pub view_id: &'a str,
@@ -635,6 +762,7 @@ impl GpuiNodeRenderer {
         let animations = BTreeMap::new();
         let signals = crate::SignalRegistry::new();
         let geometry = crate::GeometryRegistry::new();
+        let pointer_capture = crate::PointerCaptureRegistry::new();
         let environment = RenderEnvironment {
             colors,
             interaction,
@@ -645,6 +773,7 @@ impl GpuiNodeRenderer {
             animations: &animations,
             signals: &signals,
             geometry: &geometry,
+            pointer_capture: &pointer_capture,
             direction: TextDirection::LeftToRight,
             view_id: "standalone",
             retained: None,
@@ -663,6 +792,7 @@ impl GpuiNodeRenderer {
         let animations = BTreeMap::new();
         let signals = crate::SignalRegistry::new();
         let geometry = crate::GeometryRegistry::new();
+        let pointer_capture = crate::PointerCaptureRegistry::new();
         let environment = RenderEnvironment {
             colors,
             interaction,
@@ -673,6 +803,7 @@ impl GpuiNodeRenderer {
             animations: &animations,
             signals: &signals,
             geometry: &geometry,
+            pointer_capture: &pointer_capture,
             direction: TextDirection::LeftToRight,
             view_id: "standalone",
             retained: Some(tree),
@@ -699,6 +830,7 @@ impl GpuiNodeRenderer {
         let animations = BTreeMap::new();
         let signals = crate::SignalRegistry::new();
         let geometry = crate::GeometryRegistry::new();
+        let pointer_capture = crate::PointerCaptureRegistry::new();
         let environment = RenderEnvironment {
             colors,
             interaction,
@@ -709,6 +841,7 @@ impl GpuiNodeRenderer {
             animations: &animations,
             signals: &signals,
             geometry: &geometry,
+            pointer_capture: &pointer_capture,
             direction: TextDirection::LeftToRight,
             view_id: "standalone",
             retained: None,
@@ -729,6 +862,7 @@ impl GpuiNodeRenderer {
         let animations = BTreeMap::new();
         let signals = crate::SignalRegistry::new();
         let geometry = crate::GeometryRegistry::new();
+        let pointer_capture = crate::PointerCaptureRegistry::new();
         let resources = WindowRenderResources {
             assets,
             dispatcher,
@@ -736,6 +870,7 @@ impl GpuiNodeRenderer {
             animations: &animations,
             signals: &signals,
             geometry: &geometry,
+            pointer_capture: &pointer_capture,
             direction: TextDirection::LeftToRight,
             root_path: "root",
             view_id: "standalone",
@@ -777,6 +912,7 @@ impl GpuiNodeRenderer {
             animations: resources.animations,
             signals: resources.signals,
             geometry: resources.geometry,
+            pointer_capture: resources.pointer_capture,
             direction: resources.direction,
             view_id: resources.view_id,
             retained: Some(tree),
@@ -817,6 +953,7 @@ impl GpuiNodeRenderer {
             animations: resources.animations,
             signals: resources.signals,
             geometry: resources.geometry,
+            pointer_capture: resources.pointer_capture,
             direction: resources.direction,
             view_id: resources.view_id,
             retained: None,
@@ -972,7 +1109,13 @@ impl GpuiNodeRenderer {
                 apply_event_response(response, window, cx);
             }
         });
-        let element = apply_raw_pointer_handlers(element, node, environment.dispatcher);
+        let element = apply_raw_pointer_handlers(
+            element,
+            node,
+            environment.dispatcher,
+            retained_id,
+            environment.pointer_capture,
+        );
         Self::populate(
             element,
             node,
@@ -1355,6 +1498,7 @@ fn native_date_picker_element<C: ColorResolver>(
         animations: environment.animations.clone(),
         signals: environment.signals.clone(),
         geometry: environment.geometry.clone(),
+        pointer_capture: environment.pointer_capture.clone(),
         direction: environment.direction,
         base_path: path.to_owned(),
         view_id: environment.view_id.to_owned(),
@@ -1399,6 +1543,7 @@ fn native_table_element<C: ColorResolver>(
         animations: environment.animations.clone(),
         signals: environment.signals.clone(),
         geometry: environment.geometry.clone(),
+        pointer_capture: environment.pointer_capture.clone(),
         direction: environment.direction,
         base_path: path.to_owned(),
         view_id: environment.view_id.to_owned(),
@@ -1434,6 +1579,7 @@ fn native_choice_element<C: ColorResolver>(
         animations: environment.animations.clone(),
         signals: environment.signals.clone(),
         geometry: environment.geometry.clone(),
+        pointer_capture: environment.pointer_capture.clone(),
         direction: environment.direction,
         base_path: path.to_owned(),
         view_id: environment.view_id.to_owned(),
@@ -1481,6 +1627,7 @@ fn native_virtual_list_element<C: ColorResolver>(
         animations: environment.animations.clone(),
         signals: environment.signals.clone(),
         geometry: environment.geometry.clone(),
+        pointer_capture: environment.pointer_capture.clone(),
         direction: environment.direction,
         base_path: path.to_owned(),
         view_id: environment.view_id.to_owned(),
