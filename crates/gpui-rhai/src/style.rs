@@ -575,6 +575,12 @@ impl LinearGradientSpec {
     }
 }
 
+impl CustomType for LinearGradientSpec {
+    fn build(mut builder: TypeBuilder<Self>) {
+        builder.with_name("LinearGradientSpec");
+    }
+}
+
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum StyleValueError {
     #[error("shadow offsets must be finite and blur/spread must be finite and non-negative")]
@@ -1791,6 +1797,7 @@ pub(crate) fn register_style_api(engine: &mut Engine) {
     engine.build_type::<Length>();
     engine.build_type::<ColorValue>();
     engine.build_type::<ShadowSpec>();
+    engine.build_type::<LinearGradientSpec>();
     engine.build_type::<Style>();
 
     FuncRegistration::new("style")

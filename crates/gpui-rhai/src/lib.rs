@@ -73,7 +73,10 @@ pub use async_runtime::{
     SubscriptionHandle, SubscriptionRegistration, SubscriptionRegistry, TaskHandle, TaskRegistry,
 };
 pub use budget::{RuntimeBudgetError, RuntimeBudgets};
-pub use canvas::{CanvasCommand, CanvasError, CanvasScene};
+pub use canvas::{
+    CanvasClipRect, CanvasCommand, CanvasError, CanvasFill, CanvasPathSegment, CanvasScene,
+    CanvasTransform,
+};
 pub use capability::{
     AppManifest, AsyncCapabilityHandler, CapabilityDescriptor, CapabilityError, CapabilityHandler,
     CapabilityId, CapabilityMethod, CapabilityRegistry, SubscriptionCapabilityHandler,

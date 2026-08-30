@@ -4,12 +4,12 @@ use std::sync::OnceLock;
 use std::time::Instant;
 
 use gpui::{
-    AnyElement, App, Bounds, BoxShadow, ClickEvent, Context, CursorStyle, DispatchPhase, Div,
-    Element, ElementId, FocusHandle, FontStyle, FontWeight, GlobalElementId, HighlightStyle,
-    InspectorElementId, InteractiveElement, IntoElement, LayoutId, Modifiers, MouseButton,
-    MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point, Render,
-    ScrollHandle, ScrollWheelEvent, SharedString, Stateful, StatefulInteractiveElement, Styled,
-    StyledText, TextAlign, Window, div, img, linear_color_stop, linear_gradient, point, px,
+    AnyElement, App, Background, Bounds, BoxShadow, ClickEvent, ContentMask, Context, CursorStyle,
+    DispatchPhase, Div, Element, ElementId, FocusHandle, FontStyle, FontWeight, GlobalElementId,
+    HighlightStyle, InspectorElementId, InteractiveElement, IntoElement, LayoutId, Modifiers,
+    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point,
+    Render, ScrollHandle, ScrollWheelEvent, SharedString, Stateful, StatefulInteractiveElement,
+    Styled, StyledText, TextAlign, Window, div, img, linear_color_stop, linear_gradient, point, px,
     relative, rems, rgba,
 };
 
@@ -1490,8 +1490,129 @@ fn paint_canvas_scene(
                     }
                 }
             }
+            crate::CanvasCommand::Path { .. } => {
+                paint_canvas_path(bounds, command, colors, window);
+            }
         }
     }
+}
+
+fn paint_canvas_path(
+    bounds: Bounds<Pixels>,
+    command: &crate::CanvasCommand,
+    colors: &impl ColorResolver,
+    window: &mut Window,
+) {
+    let crate::CanvasCommand::Path {
+        segments,
+        fill,
+        stroke,
+        transform,
+        clip,
+        ..
+    } = command
+    else {
+        return;
+    };
+    let mut builder = stroke
+        .as_ref()
+        .map_or_else(gpui::PathBuilder::fill, |(_, width)| {
+            gpui::PathBuilder::stroke(px(f64_to_f32(*width)))
+        });
+    for segment in segments {
+        match segment {
+            crate::CanvasPathSegment::Move { x, y } => {
+                builder.move_to(canvas_path_point(bounds, *transform, *x, *y));
+            }
+            crate::CanvasPathSegment::Line { x, y } => {
+                builder.line_to(canvas_path_point(bounds, *transform, *x, *y));
+            }
+            crate::CanvasPathSegment::Quadratic {
+                x,
+                y,
+                control_x,
+                control_y,
+            } => builder.curve_to(
+                canvas_path_point(bounds, *transform, *x, *y),
+                canvas_path_point(bounds, *transform, *control_x, *control_y),
+            ),
+            crate::CanvasPathSegment::Cubic {
+                x,
+                y,
+                control_a_x,
+                control_a_y,
+                control_b_x,
+                control_b_y,
+            } => builder.cubic_bezier_to(
+                canvas_path_point(bounds, *transform, *x, *y),
+                canvas_path_point(bounds, *transform, *control_a_x, *control_a_y),
+                canvas_path_point(bounds, *transform, *control_b_x, *control_b_y),
+            ),
+            crate::CanvasPathSegment::Close => builder.close(),
+        }
+    }
+    let Ok(path) = builder.build() else {
+        return;
+    };
+    let paint = stroke
+        .as_ref()
+        .and_then(|(color, _)| {
+            colors
+                .resolve(color)
+                .map(|color| Background::from(rgba(color.as_rgba_hex())))
+        })
+        .or_else(|| fill.as_ref().and_then(|fill| canvas_fill(fill, colors)));
+    let Some(paint) = paint else {
+        return;
+    };
+    if let Some(clip) = clip {
+        let mask = ContentMask {
+            bounds: Bounds::new(
+                point(
+                    bounds.origin.x + px(f64_to_f32(clip.x)),
+                    bounds.origin.y + px(f64_to_f32(clip.y)),
+                ),
+                gpui::size(px(f64_to_f32(clip.width)), px(f64_to_f32(clip.height))),
+            ),
+        };
+        window.with_content_mask(Some(mask), |window| window.paint_path(path, paint));
+    } else {
+        window.paint_path(path, paint);
+    }
+}
+
+fn canvas_fill(fill: &crate::CanvasFill, colors: &impl ColorResolver) -> Option<Background> {
+    match fill {
+        crate::CanvasFill::Solid(color) => colors
+            .resolve(color)
+            .map(|color| Background::from(rgba(color.as_rgba_hex()))),
+        crate::CanvasFill::LinearGradient(gradient) => {
+            let from = colors.resolve(&gradient.from)?;
+            let to = colors.resolve(&gradient.to)?;
+            Some(linear_gradient(
+                f64_to_f32(gradient.angle_degrees),
+                linear_color_stop(rgba(from.as_rgba_hex()), 0.0),
+                linear_color_stop(rgba(to.as_rgba_hex()), 1.0),
+            ))
+        }
+    }
+}
+
+fn canvas_path_point(
+    bounds: Bounds<Pixels>,
+    transform: crate::CanvasTransform,
+    x: f64,
+    y: f64,
+) -> Point<Pixels> {
+    let radians = transform.rotate_degrees.to_radians();
+    let scaled_x = x * transform.scale;
+    let scaled_y = y * transform.scale;
+    let rotated_x = scaled_x * radians.cos() - scaled_y * radians.sin();
+    let rotated_y = scaled_x * radians.sin() + scaled_y * radians.cos();
+    point(
+        bounds.origin.x + px(f64_to_f32(rotated_x + transform.translate_x)),
+        bounds.origin.y + px(f64_to_f32(rotated_y + transform.translate_y)),
+    )
 }
 
 fn render_image<C: ColorResolver>(

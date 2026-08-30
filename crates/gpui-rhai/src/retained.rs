@@ -409,7 +409,7 @@ impl ReconcileTransaction<'_> {
                 handler_payloads: candidate.handler_payloads().clone(),
                 scrollable: snapshot_scrollable(candidate),
                 canvas_commands: match candidate.kind() {
-                    crate::UiNodeKind::Canvas { scene } => scene.commands().len(),
+                    crate::UiNodeKind::Canvas { scene } => scene.complexity(),
                     _ => 0,
                 },
                 virtual_data_items: match candidate.kind() {

@@ -34,10 +34,11 @@ ranges; Span currently exposes color, bold, and italic without splitting text
 into layout boxes or invoking Rhai during text layout.
 
 `canvas(canvas_scene([...]))` retains a keyed vector command list. Rect, circle,
-and stroked-line commands validate finite geometry, positive sizes, safe unique
-keys, typed colors, and Host command budgets before commit. GPUI's Canvas paint
-closure consumes the accepted Rust scene; it never calls Rhai during layout,
-prepaint, or paint.
+line, and arbitrary move/line/quadratic/cubic/close paths validate finite
+geometry, positive sizes, safe unique keys, typed solid/two-stop gradient
+paint, uniform transform, axis-aligned clip, and Host complexity budgets before
+commit. GPUI's Canvas paint closure consumes the accepted Rust scene; it never
+calls Rhai during layout, prepaint, or paint.
 
 A trusted Rust Host may also build a tree directly and attach `HostCallback`
 closures. Structural node data remains declarative, but this Host-augmented

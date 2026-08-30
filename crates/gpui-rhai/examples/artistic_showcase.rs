@@ -4,7 +4,7 @@ use gpui_rhai::{EmbeddedScriptSource, EmbeddedScriptView, ModuleId, ScriptApplic
 
 const THEME: &str = include_str!("../../../registry/themes/tokyo_night.rhai");
 
-const PANEL: &str = r#"
+const PANEL: &str = r##"
 define_component(#{
     metadata: #{
         id: "components/art_panel", "export": "ArtPanel", version: "0.1.0",
@@ -32,7 +32,18 @@ fn render_ArtPanel(ctx, props) {
         canvas_circle("sun", 430.0, 72.0, 42.0, rgba(0xffe0afcc)),
         canvas_circle("moon", 128.0, 92.0, 22.0, rgba(0x7aa2f7cc)),
         canvas_line("route_a", 36.0, 184.0, 290.0, 42.0, 3.0, rgba(0xbb9af7ff)),
-        canvas_line("route_b", 290.0, 42.0, 520.0, 196.0, 3.0, rgba(0x7dcfffff))
+        canvas_line("route_b", 290.0, 42.0, 520.0, 196.0, 3.0, rgba(0x7dcfffff)),
+        canvas_fill_path("aurora", [
+            path_move(24.0, 156.0),
+            path_cubic(188.0, 112.0, 72.0, 88.0, 138.0, 196.0),
+            path_cubic(352.0, 148.0, 238.0, 52.0, 310.0, 224.0),
+            path_line(528.0, 212.0),
+            path_line(528.0, 220.0),
+            path_line(24.0, 220.0),
+            path_close()
+        ], linear_gradient(#{ angle: 90,
+            from: color("#7aa2f744"), to: color("hsla(280, 65%, 65%, 15%)") }))
+            .clip_rect(0.0, 0.0, 560.0, 220.0)
     ])).with_key("sky").with_style(style().width(px(560)).height(px(220)));
 
     box([
@@ -59,7 +70,7 @@ fn render_ArtPanel(ctx, props) {
         .accessibility_role("group")
         .accessibility_label("Night Signals artistic showcase")
 }
-"#;
+"##;
 
 const MAIN: &str = r#"
 import "components/art_panel" as art;

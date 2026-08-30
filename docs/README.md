@@ -6,6 +6,7 @@ Start with the repository quick start, then use these guides by task:
 - [Component authoring](component-authoring-guide.md)
 - [Theming](theming.md), [locale and RTL](locale-and-rtl.md), and [assets](assets.md)
 - [Typed Style surface](style.md)
+- [Retained Canvas scenes](canvas.md)
 - [Capabilities](capabilities.md) and [custom Rust primitives](custom-primitives.md)
 - [Actions and keybindings](actions-and-keybindings.md)
 - [Multi-window applications](multi-window.md)
