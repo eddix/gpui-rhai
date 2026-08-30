@@ -3,6 +3,10 @@
 The budgets are diagnostics, not permission to move per-frame policy into Rhai.
 
 - `view`, event callbacks, and capability delivery warn at 16 ms by default.
+- Every compile/render/lifecycle/callback `ExecutionTiming` records wall time,
+  success, slow-threshold state, and Rhai's actual operation counter. Imported
+  component/helper calls are included in their outer render/callback total;
+  Inspector shows the latest operation counts beside duration.
 - Rhai execution is capped at 1,000,000 operations, 64 call levels, bounded
   expression depth, 10,000 array entries, 100,000 aggregate map fields, and
   1 MiB strings.

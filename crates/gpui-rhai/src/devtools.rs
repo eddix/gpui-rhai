@@ -436,10 +436,11 @@ pub(crate) fn inspector_element(snapshot: &InspectorSnapshot) -> AnyElement {
     lines.push("Script timings".to_owned());
     for timing in snapshot.timings.iter().rev().take(20) {
         lines.push(format!(
-            "  {:?} {} {:.2?}{}",
+            "  {:?} {} {:.2?} {} ops{}",
             timing.operation,
             timing.source,
             timing.duration,
+            timing.operations,
             if timing.slow { " SLOW" } else { "" }
         ));
     }

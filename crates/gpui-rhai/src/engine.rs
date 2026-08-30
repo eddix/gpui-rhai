@@ -2,6 +2,8 @@ use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::rc::Rc;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use rhai::{
@@ -69,6 +71,7 @@ pub struct ExecutionTiming {
     pub operation: ExecutionOperation,
     pub source: String,
     pub duration: Duration,
+    pub operations: u64,
     pub slow: bool,
     pub succeeded: bool,
 }
@@ -359,6 +362,7 @@ pub struct RuntimeEngine {
     primitives: PrimitiveRegistry,
     primitive_modules: BTreeMap<String, Module>,
     timings: RefCell<Vec<ExecutionTiming>>,
+    operation_counter: Arc<AtomicU64>,
     slow_threshold: Duration,
     component_render: ActiveComponentRenderState,
     component_invocations: BTreeMap<ComponentInstancePath, ComponentInvocationRecipe>,
@@ -401,6 +405,12 @@ impl RuntimeEngine {
     #[must_use]
     pub fn new() -> Self {
         let mut engine = Engine::new();
+        let operation_counter = Arc::new(AtomicU64::new(0));
+        let progress = Arc::clone(&operation_counter);
+        engine.on_progress(move |operations| {
+            progress.store(operations, Ordering::Relaxed);
+            None
+        });
         engine.build_type::<UiNode>();
         engine.build_type::<OpaqueHandle>();
         engine.build_type::<TaskHandle>();
@@ -441,6 +451,7 @@ impl RuntimeEngine {
             primitives,
             primitive_modules: BTreeMap::new(),
             timings: RefCell::new(Vec::new()),
+            operation_counter,
             slow_threshold: Duration::from_millis(16),
             component_render,
             component_invocations: BTreeMap::new(),
@@ -491,7 +502,7 @@ impl RuntimeEngine {
     ) -> Result<CompiledUi, RuntimeError> {
         let generation = self.candidate_generation();
         self.evaluation_generation.set(generation);
-        let started = Instant::now();
+        let started = self.begin_timing();
         let result = self.engine.compile(source);
         self.record_timing(
             ExecutionOperation::Compile,
@@ -517,7 +528,7 @@ impl RuntimeEngine {
         let generation = self.candidate_generation();
         self.evaluation_generation.set(generation);
         crate::extract_imports(source).map_err(|error| RuntimeError::Import(error.to_string()))?;
-        let started = Instant::now();
+        let started = self.begin_timing();
         let result = self
             .engine
             .compile_into_self_contained(&Scope::new(), source);
@@ -657,7 +668,7 @@ impl RuntimeEngine {
         )
         .with_generation(compiled.generation);
         self.begin_component_render(context, compiled.generation, None)?;
-        let started = Instant::now();
+        let started = self.begin_timing();
         let result = self
             .engine
             .call_fn::<UiNode>(&mut Scope::new(), &compiled.ast, "view", ());
@@ -748,7 +759,7 @@ impl RuntimeEngine {
     ) -> Result<UiNode, RuntimeError> {
         self.evaluation_generation.set(compiled.generation);
         self.begin_component_render(context.clone(), compiled.generation, None)?;
-        let started = Instant::now();
+        let started = self.begin_timing();
         let result =
             self.engine
                 .call_fn::<UiNode>(&mut Scope::new(), &compiled.ast, "view", (context,));
@@ -796,7 +807,7 @@ impl RuntimeEngine {
         register_component_invocation(&self.component_render, recipe.clone())
             .map_err(RuntimeError::Evaluate)?;
 
-        let started = Instant::now();
+        let started = self.begin_timing();
         let result = (|| {
             let mut node = recipe
                 .context
@@ -1015,7 +1026,7 @@ impl RuntimeEngine {
             return Ok(false);
         }
         self.evaluation_generation.set(compiled.generation);
-        let started = Instant::now();
+        let started = self.begin_timing();
         let result =
             self.engine
                 .call_fn::<Dynamic>(&mut Scope::new(), &compiled.ast, function, (context,));
@@ -1110,7 +1121,7 @@ impl RuntimeEngine {
             });
         }
         self.evaluation_generation.set(compiled.generation);
-        let started = Instant::now();
+        let started = self.begin_timing();
         #[allow(deprecated)]
         let result = if let Some(context) = callback.native_context.as_ref() {
             context.call(self.engine(), &callback.function, args)
@@ -1308,9 +1319,15 @@ impl RuntimeEngine {
             operation,
             source: source.to_owned(),
             duration,
+            operations: self.operation_counter.load(Ordering::Relaxed),
             slow: duration >= self.slow_threshold,
             succeeded,
         });
+    }
+
+    fn begin_timing(&self) -> Instant {
+        self.operation_counter.store(0, Ordering::Relaxed);
+        Instant::now()
     }
 
     fn candidate_generation(&self) -> ScriptGeneration {
@@ -2932,12 +2949,28 @@ mod tests {
     fn execution_timings_cover_compile_and_render() {
         let mut runtime = RuntimeEngine::new();
         runtime.set_slow_threshold(Duration::ZERO);
-        let compiled = runtime.compile("fn view() { text(\"timed\") }").unwrap();
+        let compiled = runtime
+            .compile(
+                r#"
+                    fn view() { text("timed") }
+                    fn counted() { let total = 0; for value in 0..100 { total += value; } total }
+                "#,
+            )
+            .unwrap();
         runtime.render(&compiled).unwrap();
+        let callback = runtime.callback(&compiled, "counted").unwrap();
+        let _ = runtime.invoke_callback(&compiled, &callback, ()).unwrap();
         let timings = runtime.take_timings();
-        assert_eq!(timings.len(), 2);
+        assert_eq!(timings.len(), 3);
         assert_eq!(timings[0].operation, ExecutionOperation::Compile);
         assert_eq!(timings[1].operation, ExecutionOperation::Render);
+        assert_eq!(
+            timings[2].operation,
+            ExecutionOperation::Callback("counted".to_owned())
+        );
+        assert_eq!(timings[0].operations, 0);
+        assert!(timings[1].operations > 0);
+        assert!(timings[2].operations > timings[1].operations);
         assert!(timings.iter().all(|timing| timing.slow && timing.succeeded));
     }
 }
