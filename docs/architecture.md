@@ -104,6 +104,10 @@ testing. Exact geometry reads create component dependencies.
 Unmounted refs fail stale instead of rebinding by name. `ctx.focus(ref)` queues
 a window-scoped retained command; the Host view owns the corresponding GPUI
 `FocusHandle` by `NodeId`, so no window/focus object crosses into Rhai.
+Semantic attributes and static text are copied into RetainedNode and projected
+as a layout-flattened AccessibilityTree with committed geometry. Host tooling
+queries it by role/name or semantic ID; the pinned GPUI platform bridge remains
+the final forwarding boundary.
 Per-axis `Style.overflow_x_scroll/y_scroll` creates a retained GPUI
 `ScrollHandle` for keyed ref nodes. `ctx.scroll_to(ref, x, y)` queues positive
 visible offsets and applies them only after transaction commit. Ref descendants

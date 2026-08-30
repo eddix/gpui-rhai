@@ -609,6 +609,26 @@ impl ScriptViewHandle {
         Ok(())
     }
 
+    /// Snapshot the retained semantic tree and last committed geometry.
+    ///
+    /// # Errors
+    ///
+    /// Returns after disposal or for an invalid retained semantic graph.
+    pub fn accessibility_snapshot(
+        &self,
+        cx: &App,
+    ) -> Result<crate::AccessibilityTree, ScriptViewError> {
+        if self.0.disposed.get() {
+            return Err(ScriptViewError::DisposedView(self.0.view_id.clone()));
+        }
+        let view = self.0.entity.read(cx);
+        let geometry = view.lifecycle.runtime().borrow().geometry.clone();
+        Ok(crate::AccessibilityTree::from_retained(
+            view.lifecycle.retained(),
+            &geometry,
+        )?)
+    }
+
     /// Focus a mounted retained element without invoking Rhai.
     ///
     /// # Errors
@@ -3358,6 +3378,8 @@ pub enum ScriptViewError {
     Asset(#[from] crate::AssetError),
     #[error(transparent)]
     Font(#[from] crate::FontError),
+    #[error(transparent)]
+    Accessibility(#[from] crate::AccessibilityError),
     #[cfg(feature = "dev-reload")]
     #[error(transparent)]
     Watcher(#[from] crate::WatcherError),

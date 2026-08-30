@@ -51,6 +51,8 @@ pub struct RetainedNode {
     kind: UiNodeKindTag,
     component_root: Option<crate::ComponentInstancePath>,
     element_ref: Option<crate::ElementRef>,
+    attributes: BTreeMap<String, crate::UiValue>,
+    text: Option<String>,
     handlers: BTreeMap<String, Vec<crate::UiEventBinding>>,
     handler_payloads: BTreeMap<String, crate::UiValue>,
     scrollable: bool,
@@ -90,6 +92,16 @@ impl RetainedNode {
     #[must_use]
     pub const fn element_ref(&self) -> Option<&crate::ElementRef> {
         self.element_ref.as_ref()
+    }
+
+    #[must_use]
+    pub fn attributes(&self) -> &BTreeMap<String, crate::UiValue> {
+        &self.attributes
+    }
+
+    #[must_use]
+    pub fn text(&self) -> Option<&str> {
+        self.text.as_deref()
     }
 
     #[must_use]
@@ -411,6 +423,13 @@ impl ReconcileTransaction<'_> {
                 kind: candidate.kind_tag(),
                 component_root: candidate.component_root().cloned(),
                 element_ref: candidate.element_ref().cloned(),
+                attributes: candidate.attributes().clone(),
+                text: match candidate.kind() {
+                    crate::UiNodeKind::Text { text } | crate::UiNodeKind::RichText { text, .. } => {
+                        Some(text.to_string())
+                    }
+                    _ => None,
+                },
                 handlers: candidate.handlers().clone(),
                 handler_payloads: candidate.handler_payloads().clone(),
                 scrollable: snapshot_scrollable(candidate),

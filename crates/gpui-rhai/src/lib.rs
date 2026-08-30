@@ -42,6 +42,7 @@ pub mod virtual_list;
 mod virtual_list_element;
 pub mod window;
 
+pub mod accessibility;
 pub mod action;
 pub mod animation;
 pub mod app;
@@ -53,6 +54,7 @@ pub mod capability;
 
 pub use gpui;
 
+pub use accessibility::{AccessibilityError, AccessibilityNode, AccessibilityTree};
 pub use action::{
     ActionError, ActionId, ActionInvocation, ActionRegistry, DispatchScriptAction, KeyBindingSpec,
 };

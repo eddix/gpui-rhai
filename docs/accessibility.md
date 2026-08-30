@@ -25,6 +25,11 @@ Accessibility and keyboard operation are release requirements.
   horizontal navigation keys logically, and support paired directional icons.
 - FormField retains stable semantic IDs plus labelled-by, described-by,
   required, and invalid relationships in the runtime tree.
+- Retained reconciliation copies semantic attributes and static text into a
+  stable `AccessibilityTree`, flattens layout-only nodes, resolves
+  labelled-by/described-by text, rejects duplicate semantic IDs, attaches last
+  committed geometry, and supports role/name or semantic-ID lookup through
+  `ScriptViewHandle::accessibility_snapshot`.
 
 ## Complex-control behavior
 
@@ -53,8 +58,8 @@ visual baselines.
 
 The pinned GPUI 0.2.2 release uses AccessKit internally but does not expose a
 public element API for assigning arbitrary AccessKit roles, labels, checked
-state, or descriptions. GPUI Rhai therefore retains these semantics in
-`UiNode::attributes` and tests them, but cannot yet forward all values to the
+state, or descriptions. GPUI Rhai therefore retains these semantics in UiNode
+snapshots and the stable AccessibilityTree, but cannot yet forward all values to the
 platform accessibility tree without relying on GPUI internals.
 
 GPUI 0.2.2 also does not expose the macOS Reduce Motion preference. The host
