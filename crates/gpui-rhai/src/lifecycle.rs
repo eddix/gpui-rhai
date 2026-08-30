@@ -799,7 +799,7 @@ mod tests {
         struct Stream;
         impl SubscriptionCapabilityHandler for Stream {
             fn subscribe(&mut self, _: &str, _: UiValue) -> Result<SubscriptionWork, String> {
-                Ok(Box::new(|emitter| {
+                Ok(SubscriptionWork::new(|emitter| {
                     emitter.emit(UiValue::String("first".to_owned())).unwrap();
                     emitter.emit(UiValue::String("second".to_owned())).unwrap();
                 }))

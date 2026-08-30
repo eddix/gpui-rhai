@@ -15,10 +15,10 @@ use crate::{
     CapabilityError, CapabilityId, CapabilityRegistry, ComponentInstancePath, DateStyle,
     EventSchema, ImageDecodeHandle, LocaleError, LocaleManager, NumberFormatOptions, OpaqueHandle,
     ResponsiveError, ResponsiveRuntime, ScriptCallback, ScriptGeneration, ScriptWindowSpec,
-    StateError, StateStore, StoreError, StoreId, StoreRegistry, SubscriptionHandle,
-    SubscriptionRegistry, TaskHandle, TaskRegistry, TextDirection, ThemeError, ThemeManager,
-    ThemePreference, ThemeSelection, UiEvent, UiValue, UiValueError, WindowCommandError,
-    WindowCommandRegistry,
+    StateError, StateStore, StoreError, StoreId, StoreRegistry, SubscriptionCloseReason,
+    SubscriptionHandle, SubscriptionRegistration, SubscriptionRegistry, TaskHandle, TaskRegistry,
+    TextDirection, ThemeError, ThemeManager, ThemePreference, ThemeSelection, UiEvent, UiValue,
+    UiValueError, WindowCommandError, WindowCommandRegistry,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -69,6 +69,23 @@ impl UiRuntimeState {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub(crate) fn trace_subscription_closures(&mut self) {
+        for closure in self.subscriptions.take_closures() {
+            let scope = match closure.scope {
+                AsyncScope::App => "/App".to_owned(),
+                AsyncScope::Window(window) => format!("window:{window}"),
+                AsyncScope::Component(component) => component.to_string(),
+            };
+            self.traces.push(
+                crate::RuntimeTraceKind::Subscription,
+                scope,
+                format!("close {}: {}", closure.label, closure.reason),
+                None,
+                false,
+            );
+        }
     }
 
     /// Release every window-owned runtime resource while retaining app scope.
@@ -1426,23 +1443,24 @@ impl UiContext {
         let (work, output) = runtime
             .capabilities
             .start_subscription(&id, method, input)?;
-        let (handle, emitter) = runtime.subscriptions.subscribe(
+        let registration = SubscriptionRegistration::new(
+            format!("{capability}.{method}"),
             AsyncScope::Component(self.component.clone()),
             self.generation,
             success,
             error,
             output,
-            throttle,
-        );
+        )
+        .with_throttle(throttle);
+        let (handle, emitter) = runtime.subscriptions.subscribe(registration);
         let closer = emitter.clone();
         if let Err(spawn_error) = std::thread::Builder::new()
             .name("gpui-rhai-subscription".to_owned())
-            .spawn(move || {
-                work(emitter);
-                closer.close();
-            })
+            .spawn(move || run_subscription_work(work, emitter, &closer))
         {
-            let _ = runtime.subscriptions.cancel(handle);
+            let _ = runtime
+                .subscriptions
+                .cancel_with_reason(handle, SubscriptionCloseReason::StartupFailed);
             return Err(AsyncRuntimeError::Spawn(spawn_error).into());
         }
         runtime.traces.push(
@@ -1470,6 +1488,15 @@ impl UiContext {
             Ok(())
         }
     }
+}
+
+fn run_subscription_work(
+    work: crate::SubscriptionWork,
+    emitter: crate::SubscriptionEmitter,
+    closer: &crate::SubscriptionEmitter,
+) {
+    work.run(emitter);
+    closer.close_with_reason(SubscriptionCloseReason::WorkReturned);
 }
 
 impl CustomType for UiContext {
@@ -2011,7 +2038,7 @@ pub enum UiContextError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ComponentStateSchema, RuntimeEngine, StateField, ValueSchema};
+    use crate::{ComponentStateSchema, RuntimeEngine, StateField, SubscriptionWork, ValueSchema};
 
     fn mounted_context(phase: ExecutionPhase) -> UiContext {
         let path = ComponentInstancePath::root("Counter", "counter");
@@ -2197,5 +2224,106 @@ mod tests {
         );
         assert_eq!(values[2].clone_cast::<String>(), "12,345");
         assert_eq!(values[3].clone_cast::<String>(), "sunday");
+    }
+
+    #[test]
+    fn returning_subscription_work_closes_external_emitters_with_reason() {
+        let mut engine = RuntimeEngine::new();
+        let compiled = engine
+            .compile(
+                r#"
+                    fn view() { text("subscription") }
+                    fn success(ctx, value) { value }
+                    fn failure(ctx, error) { error }
+                "#,
+            )
+            .unwrap();
+        let generation = compiled.generation();
+        let success = engine.callback(&compiled, "success").unwrap();
+        let failure = engine.callback(&compiled, "failure").unwrap();
+        let mut state = UiRuntimeState::new();
+        let registration = SubscriptionRegistration::new(
+            "app.stream.watch",
+            AsyncScope::App,
+            generation,
+            success,
+            failure,
+            ValueSchema::integer(),
+        );
+        let (_, emitter) = state.subscriptions.subscribe(registration);
+        let external = emitter.clone();
+        run_subscription_work(SubscriptionWork::new(|_| {}), emitter.clone(), &emitter);
+
+        assert!(matches!(
+            external.emit(UiValue::Integer(1)),
+            Err(AsyncRuntimeError::Closed {
+                reason: SubscriptionCloseReason::WorkReturned
+            })
+        ));
+        let _ = state.subscriptions.drain(generation);
+        assert_eq!(
+            state.subscriptions.take_closures()[0].reason,
+            SubscriptionCloseReason::WorkReturned
+        );
+        let registration = SubscriptionRegistration::new(
+            "app.stream.trace",
+            AsyncScope::App,
+            generation,
+            engine.callback(&compiled, "success").unwrap(),
+            engine.callback(&compiled, "failure").unwrap(),
+            ValueSchema::integer(),
+        );
+        let (_, emitter) = state.subscriptions.subscribe(registration);
+        emitter.close_with_reason(SubscriptionCloseReason::WorkReturned);
+        let _ = state.subscriptions.drain(generation);
+        state.trace_subscription_closures();
+        let traces = state.traces.snapshot();
+        assert!(traces.iter().any(|trace| {
+            trace.kind == crate::RuntimeTraceKind::Subscription
+                && trace.message == "close app.stream.trace: the subscription work returned"
+        }));
+    }
+
+    #[test]
+    fn receiver_subscription_forwards_external_values_until_sender_drop() {
+        let mut engine = RuntimeEngine::new();
+        let compiled = engine
+            .compile(
+                r#"
+                    fn view() { text("subscription") }
+                    fn success(ctx, value) { value }
+                    fn failure(ctx, error) { error }
+                "#,
+            )
+            .unwrap();
+        let generation = compiled.generation();
+        let registration = SubscriptionRegistration::new(
+            "app.stream.receiver",
+            AsyncScope::App,
+            generation,
+            engine.callback(&compiled, "success").unwrap(),
+            engine.callback(&compiled, "failure").unwrap(),
+            ValueSchema::integer(),
+        );
+        let mut subscriptions = SubscriptionRegistry::new();
+        let (_, emitter) = subscriptions.subscribe(registration);
+        let external = emitter.clone();
+        let closer = emitter.clone();
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            run_subscription_work(SubscriptionWork::from_receiver(receiver), emitter, &closer);
+        });
+        sender.send(UiValue::Integer(42)).unwrap();
+        drop(sender);
+        worker.join().unwrap();
+
+        let deliveries = subscriptions.drain(generation);
+        assert_eq!(deliveries[0].payload, UiValue::Integer(42));
+        assert!(matches!(
+            external.emit(UiValue::Integer(43)),
+            Err(AsyncRuntimeError::Closed {
+                reason: SubscriptionCloseReason::WorkReturned
+            })
+        ));
     }
 }

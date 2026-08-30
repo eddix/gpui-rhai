@@ -2450,6 +2450,7 @@ impl ScriptHostView {
             let _ = runtime.assets.retain_decode_generation(generation);
             let mut deliveries = runtime.tasks.drain(generation);
             deliveries.extend(runtime.subscriptions.drain(generation));
+            runtime.trace_subscription_closures();
             if let Ok(asset_deliveries) = runtime.assets.drain_image_decodes(generation) {
                 deliveries.extend(asset_deliveries);
             }

@@ -1,6 +1,7 @@
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
+use std::sync::mpsc::Receiver;
 
 use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
@@ -94,10 +95,49 @@ pub trait AsyncCapabilityHandler {
     fn start(&mut self, method: &str, input: UiValue) -> Result<TaskWork, String>;
 }
 
-pub type SubscriptionWork = Box<dyn FnOnce(crate::SubscriptionEmitter) + Send + 'static>;
+/// One continuous subscription producer.
+///
+/// The work owns the producer loop and should not return until the stream is
+/// finished. Returning closes the subscription and invalidates every cloned
+/// [`crate::SubscriptionEmitter`] with
+/// [`crate::SubscriptionCloseReason::WorkReturned`].
+pub struct SubscriptionWork {
+    work: Box<dyn FnOnce(crate::SubscriptionEmitter) + Send + 'static>,
+}
+
+impl SubscriptionWork {
+    /// Build a subscription from its complete blocking producer loop.
+    #[must_use]
+    pub fn new(work: impl FnOnce(crate::SubscriptionEmitter) + Send + 'static) -> Self {
+        Self {
+            work: Box::new(work),
+        }
+    }
+
+    /// Forward values from a channel until its senders are dropped or the
+    /// subscription is closed.
+    #[must_use]
+    pub fn from_receiver(receiver: Receiver<UiValue>) -> Self {
+        Self::new(move |emitter| {
+            while let Ok(value) = receiver.recv() {
+                if emitter.emit(value).is_err() {
+                    break;
+                }
+            }
+        })
+    }
+
+    pub(crate) fn run(self, emitter: crate::SubscriptionEmitter) {
+        (self.work)(emitter);
+    }
+}
 
 pub trait SubscriptionCapabilityHandler {
     /// Build continuous producer work after input validation.
+    ///
+    /// The returned [`SubscriptionWork`] is the producer loop. It must remain
+    /// running for as long as external code may use the emitter; returning from
+    /// it closes the subscription immediately.
     ///
     /// # Errors
     ///

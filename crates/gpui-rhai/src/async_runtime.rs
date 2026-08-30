@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
 use std::time::{Duration, Instant};
 
@@ -43,6 +43,78 @@ impl CustomType for SubscriptionHandle {
             .with_fn("to_string", |handle: &mut Self| {
                 format!("subscription#{}", handle.0)
             });
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+pub enum SubscriptionCloseReason {
+    #[error("the subscription work returned")]
+    WorkReturned,
+    #[error("the producer closed its emitter")]
+    ProducerClosed,
+    #[error("the subscription was cancelled explicitly")]
+    Cancelled,
+    #[error("the owning scope was disposed")]
+    ScopeDisposed,
+    #[error("the script generation became stale")]
+    GenerationStale,
+    #[error("the creating transaction was rolled back")]
+    TransactionRolledBack,
+    #[error("subscription startup failed")]
+    StartupFailed,
+    #[error("the subscription registry was dropped")]
+    RegistryDropped,
+}
+
+impl SubscriptionCloseReason {
+    const fn code(self) -> u8 {
+        match self {
+            Self::WorkReturned => 1,
+            Self::ProducerClosed => 2,
+            Self::Cancelled => 3,
+            Self::ScopeDisposed => 4,
+            Self::GenerationStale => 5,
+            Self::TransactionRolledBack => 6,
+            Self::StartupFailed => 7,
+            Self::RegistryDropped => 8,
+        }
+    }
+
+    const fn from_code(code: u8) -> Option<Self> {
+        match code {
+            1 => Some(Self::WorkReturned),
+            2 => Some(Self::ProducerClosed),
+            3 => Some(Self::Cancelled),
+            4 => Some(Self::ScopeDisposed),
+            5 => Some(Self::GenerationStale),
+            6 => Some(Self::TransactionRolledBack),
+            7 => Some(Self::StartupFailed),
+            8 => Some(Self::RegistryDropped),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug)]
+struct SubscriptionLifetime {
+    close_reason: AtomicU8,
+}
+
+impl SubscriptionLifetime {
+    fn new() -> Self {
+        Self {
+            close_reason: AtomicU8::new(0),
+        }
+    }
+
+    fn close(&self, reason: SubscriptionCloseReason) -> bool {
+        self.close_reason
+            .compare_exchange(0, reason.code(), Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+    }
+
+    fn close_reason(&self) -> Option<SubscriptionCloseReason> {
+        SubscriptionCloseReason::from_code(self.close_reason.load(Ordering::Acquire))
     }
 }
 
@@ -216,6 +288,7 @@ enum SubscriptionMessage {
     },
     Closed {
         id: u64,
+        reason: SubscriptionCloseReason,
     },
 }
 
@@ -223,7 +296,7 @@ enum SubscriptionMessage {
 pub struct SubscriptionEmitter {
     id: u64,
     sender: Sender<SubscriptionMessage>,
-    active: Arc<AtomicBool>,
+    lifetime: Arc<SubscriptionLifetime>,
 }
 
 impl SubscriptionEmitter {
@@ -231,7 +304,9 @@ impl SubscriptionEmitter {
     ///
     /// # Errors
     ///
-    /// Returns [`AsyncRuntimeError::Closed`] after cancellation or registry drop.
+    /// Returns [`AsyncRuntimeError::Closed`] after the producer work returns,
+    /// explicit cancellation, scope teardown, generation replacement, or
+    /// registry drop.
     pub fn emit(&self, value: UiValue) -> Result<(), AsyncRuntimeError> {
         self.send(Ok(value))
     }
@@ -240,41 +315,106 @@ impl SubscriptionEmitter {
     ///
     /// # Errors
     ///
-    /// Returns [`AsyncRuntimeError::Closed`] after cancellation or registry drop.
+    /// Returns [`AsyncRuntimeError::Closed`] after the producer work returns,
+    /// explicit cancellation, scope teardown, generation replacement, or
+    /// registry drop.
     pub fn emit_error(&self, message: impl Into<String>) -> Result<(), AsyncRuntimeError> {
         self.send(Err(message.into()))
     }
 
     fn send(&self, result: Result<UiValue, String>) -> Result<(), AsyncRuntimeError> {
-        if !self.active.load(Ordering::Acquire) {
-            return Err(AsyncRuntimeError::Closed);
+        if let Some(reason) = self.lifetime.close_reason() {
+            return Err(AsyncRuntimeError::Closed { reason });
         }
         self.sender
             .send(SubscriptionMessage::Value {
                 id: self.id,
                 result,
             })
-            .map_err(|_| AsyncRuntimeError::Closed)
+            .map_err(|_| AsyncRuntimeError::Closed {
+                reason: self
+                    .lifetime
+                    .close_reason()
+                    .unwrap_or(SubscriptionCloseReason::RegistryDropped),
+            })
     }
 
+    /// Close the stream explicitly from the producer side.
     pub fn close(&self) {
-        if self.active.swap(false, Ordering::AcqRel) {
-            let _ = self
-                .sender
-                .send(SubscriptionMessage::Closed { id: self.id });
+        self.close_with_reason(SubscriptionCloseReason::ProducerClosed);
+    }
+
+    /// Return the first reason that closed this emitter, if any.
+    #[must_use]
+    pub fn close_reason(&self) -> Option<SubscriptionCloseReason> {
+        self.lifetime.close_reason()
+    }
+
+    pub(crate) fn close_with_reason(&self, reason: SubscriptionCloseReason) {
+        if self.lifetime.close(reason) {
+            let _ = self.sender.send(SubscriptionMessage::Closed {
+                id: self.id,
+                reason,
+            });
         }
     }
 }
 
 struct SubscriptionEntry {
+    label: String,
     scope: AsyncScope,
     generation: ScriptGeneration,
     callbacks: CallbackPair,
     output: ValueSchema,
-    active: Arc<AtomicBool>,
+    lifetime: Arc<SubscriptionLifetime>,
     throttle: Duration,
     last_delivery: Option<Instant>,
     pending: Option<Result<UiValue, String>>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct SubscriptionClosure {
+    pub label: String,
+    pub scope: AsyncScope,
+    pub reason: SubscriptionCloseReason,
+}
+
+pub struct SubscriptionRegistration {
+    label: String,
+    scope: AsyncScope,
+    generation: ScriptGeneration,
+    success: ScriptCallback,
+    error: ScriptCallback,
+    output: ValueSchema,
+    throttle: Duration,
+}
+
+impl SubscriptionRegistration {
+    #[must_use]
+    pub fn new(
+        label: impl Into<String>,
+        scope: AsyncScope,
+        generation: ScriptGeneration,
+        success: ScriptCallback,
+        error: ScriptCallback,
+        output: ValueSchema,
+    ) -> Self {
+        Self {
+            label: label.into(),
+            scope,
+            generation,
+            success,
+            error,
+            output,
+            throttle: Duration::ZERO,
+        }
+    }
+
+    #[must_use]
+    pub const fn with_throttle(mut self, throttle: Duration) -> Self {
+        self.throttle = throttle;
+        self
+    }
 }
 
 pub struct SubscriptionRegistry {
@@ -282,6 +422,7 @@ pub struct SubscriptionRegistry {
     entries: BTreeMap<u64, SubscriptionEntry>,
     sender: Sender<SubscriptionMessage>,
     receiver: Receiver<SubscriptionMessage>,
+    closures: Vec<SubscriptionClosure>,
 }
 
 impl Default for SubscriptionRegistry {
@@ -292,6 +433,7 @@ impl Default for SubscriptionRegistry {
             entries: BTreeMap::new(),
             sender,
             receiver,
+            closures: Vec::new(),
         }
     }
 }
@@ -314,25 +456,24 @@ impl SubscriptionRegistry {
     #[must_use]
     pub fn subscribe(
         &mut self,
-        scope: AsyncScope,
-        generation: ScriptGeneration,
-        success: ScriptCallback,
-        error: ScriptCallback,
-        output: ValueSchema,
-        throttle: Duration,
+        registration: SubscriptionRegistration,
     ) -> (SubscriptionHandle, SubscriptionEmitter) {
         let id = self.next_id;
         self.next_id = self.next_id.saturating_add(1);
-        let active = Arc::new(AtomicBool::new(true));
+        let lifetime = Arc::new(SubscriptionLifetime::new());
         self.entries.insert(
             id,
             SubscriptionEntry {
-                scope,
-                generation,
-                callbacks: CallbackPair { success, error },
-                output,
-                active: Arc::clone(&active),
-                throttle,
+                label: registration.label,
+                scope: registration.scope,
+                generation: registration.generation,
+                callbacks: CallbackPair {
+                    success: registration.success,
+                    error: registration.error,
+                },
+                output: registration.output,
+                lifetime: Arc::clone(&lifetime),
+                throttle: registration.throttle,
                 last_delivery: None,
                 pending: None,
             },
@@ -342,45 +483,64 @@ impl SubscriptionRegistry {
             SubscriptionEmitter {
                 id,
                 sender: self.sender.clone(),
-                active,
+                lifetime,
             },
         )
     }
 
     #[must_use]
     pub fn cancel(&mut self, handle: SubscriptionHandle) -> bool {
-        self.entries.remove(&handle.0).is_some_and(|entry| {
-            entry.active.store(false, Ordering::Release);
-            true
-        })
+        self.cancel_with_reason(handle, SubscriptionCloseReason::Cancelled)
+    }
+
+    pub(crate) fn cancel_with_reason(
+        &mut self,
+        handle: SubscriptionHandle,
+        reason: SubscriptionCloseReason,
+    ) -> bool {
+        let Some(entry) = self.entries.remove(&handle.0) else {
+            return false;
+        };
+        self.closures.push(close_subscription_entry(&entry, reason));
+        true
     }
 
     pub fn cancel_scope(&mut self, scope: &AsyncScope) {
+        let mut closures = Vec::new();
         self.entries.retain(|_, entry| {
             if &entry.scope == scope {
-                entry.active.store(false, Ordering::Release);
+                closures.push(close_subscription_entry(
+                    entry,
+                    SubscriptionCloseReason::ScopeDisposed,
+                ));
                 false
             } else {
                 true
             }
         });
+        self.closures.extend(closures);
     }
 
     pub fn cancel_component_scope(&mut self, component: &ComponentInstancePath) {
+        let mut closures = Vec::new();
         self.entries.retain(|_, entry| {
             let remove =
                 matches!(&entry.scope, AsyncScope::Component(path) if path.is_within(component));
             if remove {
-                entry.active.store(false, Ordering::Release);
+                closures.push(close_subscription_entry(
+                    entry,
+                    SubscriptionCloseReason::ScopeDisposed,
+                ));
             }
             !remove
         });
+        self.closures.extend(closures);
     }
 
     #[must_use]
     pub fn drain(&mut self, current: ScriptGeneration) -> Vec<AsyncDelivery> {
         let now = Instant::now();
-        let mut closed = std::collections::BTreeSet::new();
+        let mut closed = BTreeMap::new();
         loop {
             match self.receiver.try_recv() {
                 Ok(SubscriptionMessage::Value { id, result }) => {
@@ -390,12 +550,21 @@ impl SubscriptionRegistry {
                     if entry.generation == current {
                         entry.pending = Some(result);
                     } else {
-                        entry.active.store(false, Ordering::Release);
-                        closed.insert(id);
+                        entry
+                            .lifetime
+                            .close(SubscriptionCloseReason::GenerationStale);
+                        closed.entry(id).or_insert_with(|| {
+                            entry
+                                .lifetime
+                                .close_reason()
+                                .unwrap_or(SubscriptionCloseReason::GenerationStale)
+                        });
                     }
                 }
-                Ok(SubscriptionMessage::Closed { id }) => {
-                    closed.insert(id);
+                Ok(SubscriptionMessage::Closed { id, reason }) => {
+                    if self.entries.contains_key(&id) {
+                        closed.entry(id).or_insert(reason);
+                    }
                 }
                 Err(TryRecvError::Empty | TryRecvError::Disconnected) => break,
             }
@@ -404,10 +573,18 @@ impl SubscriptionRegistry {
         let mut deliveries = Vec::new();
         for (id, entry) in &mut self.entries {
             if entry.generation != current {
-                closed.insert(*id);
+                entry
+                    .lifetime
+                    .close(SubscriptionCloseReason::GenerationStale);
+                closed.entry(*id).or_insert_with(|| {
+                    entry
+                        .lifetime
+                        .close_reason()
+                        .unwrap_or(SubscriptionCloseReason::GenerationStale)
+                });
                 continue;
             }
-            let ready = closed.contains(id)
+            let ready = closed.contains_key(id)
                 || entry
                     .last_delivery
                     .is_none_or(|last| now.duration_since(last) >= entry.throttle);
@@ -416,8 +593,10 @@ impl SubscriptionRegistry {
                 deliveries.push(subscription_delivery(entry, result));
             }
         }
-        for id in closed {
-            self.entries.remove(&id);
+        for (id, reason) in closed {
+            if let Some(entry) = self.entries.remove(&id) {
+                self.closures.push(close_subscription_entry(&entry, reason));
+            }
         }
         deliveries
     }
@@ -432,13 +611,44 @@ impl SubscriptionRegistry {
     }
 
     pub(crate) fn retain_ids(&mut self, retained: &std::collections::BTreeSet<u64>) {
+        let mut closures = Vec::new();
         self.entries.retain(|id, entry| {
             let keep = retained.contains(id);
             if !keep {
-                entry.active.store(false, Ordering::Release);
+                closures.push(close_subscription_entry(
+                    entry,
+                    SubscriptionCloseReason::TransactionRolledBack,
+                ));
             }
             keep
         });
+        self.closures.extend(closures);
+    }
+
+    pub(crate) fn take_closures(&mut self) -> Vec<SubscriptionClosure> {
+        std::mem::take(&mut self.closures)
+    }
+}
+
+impl Drop for SubscriptionRegistry {
+    fn drop(&mut self) {
+        for entry in self.entries.values() {
+            entry
+                .lifetime
+                .close(SubscriptionCloseReason::RegistryDropped);
+        }
+    }
+}
+
+fn close_subscription_entry(
+    entry: &SubscriptionEntry,
+    reason: SubscriptionCloseReason,
+) -> SubscriptionClosure {
+    entry.lifetime.close(reason);
+    SubscriptionClosure {
+        label: entry.label.clone(),
+        scope: entry.scope.clone(),
+        reason: entry.lifetime.close_reason().unwrap_or(reason),
     }
 }
 
@@ -478,8 +688,8 @@ fn error_payload(message: String) -> UiValue {
 pub enum AsyncRuntimeError {
     #[error("failed to spawn async worker: {0}")]
     Spawn(std::io::Error),
-    #[error("task or subscription is closed")]
-    Closed,
+    #[error("subscription is closed: {reason}")]
+    Closed { reason: SubscriptionCloseReason },
     #[error("async output is invalid: {0}")]
     InvalidOutput(#[from] SchemaValidationError),
 }
@@ -597,14 +807,16 @@ mod tests {
     fn subscription_throttles_to_latest_value_and_cancels() {
         let (success, error, generation) = callbacks();
         let mut subscriptions = SubscriptionRegistry::new();
-        let (handle, emitter) = subscriptions.subscribe(
+        let registration = SubscriptionRegistration::new(
+            "app.stream.watch",
             AsyncScope::Window("main".to_owned()),
             generation,
             success,
             error,
             ValueSchema::integer(),
-            Duration::from_millis(50),
-        );
+        )
+        .with_throttle(Duration::from_millis(50));
+        let (handle, emitter) = subscriptions.subscribe(registration);
         emitter.emit(UiValue::Integer(1)).unwrap();
         let first = subscriptions.drain(generation);
         assert_eq!(first[0].payload, UiValue::Integer(1));
@@ -615,6 +827,66 @@ mod tests {
         let latest = subscriptions.drain(generation);
         assert_eq!(latest[0].payload, UiValue::Integer(3));
         assert!(subscriptions.cancel(handle));
-        assert!(emitter.emit(UiValue::Integer(4)).is_err());
+        assert!(matches!(
+            emitter.emit(UiValue::Integer(4)),
+            Err(AsyncRuntimeError::Closed {
+                reason: SubscriptionCloseReason::Cancelled
+            })
+        ));
+        assert_eq!(
+            subscriptions.take_closures(),
+            vec![SubscriptionClosure {
+                label: "app.stream.watch".to_owned(),
+                scope: AsyncScope::Window("main".to_owned()),
+                reason: SubscriptionCloseReason::Cancelled,
+            }]
+        );
+    }
+
+    #[test]
+    fn producer_close_and_registry_drop_report_first_close_reason() {
+        let (success, error, generation) = callbacks();
+        let mut subscriptions = SubscriptionRegistry::new();
+        let registration = SubscriptionRegistration::new(
+            "app.stream.watch",
+            AsyncScope::App,
+            generation,
+            success.clone(),
+            error.clone(),
+            ValueSchema::integer(),
+        );
+        let (_, emitter) = subscriptions.subscribe(registration);
+        emitter.close();
+        let _ = subscriptions.drain(generation);
+        assert!(matches!(
+            emitter.emit(UiValue::Integer(1)),
+            Err(AsyncRuntimeError::Closed {
+                reason: SubscriptionCloseReason::ProducerClosed
+            })
+        ));
+        assert_eq!(
+            subscriptions.take_closures()[0].reason,
+            SubscriptionCloseReason::ProducerClosed
+        );
+
+        let orphan = {
+            let mut registry = SubscriptionRegistry::new();
+            let registration = SubscriptionRegistration::new(
+                "app.stream.orphan",
+                AsyncScope::App,
+                generation,
+                success,
+                error,
+                ValueSchema::integer(),
+            );
+            let (_, emitter) = registry.subscribe(registration);
+            emitter
+        };
+        assert!(matches!(
+            orphan.emit(UiValue::Integer(2)),
+            Err(AsyncRuntimeError::Closed {
+                reason: SubscriptionCloseReason::RegistryDropped
+            })
+        ));
     }
 }

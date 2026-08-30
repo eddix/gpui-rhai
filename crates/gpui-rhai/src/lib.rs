@@ -65,8 +65,8 @@ pub use asset::{
     ImageDecodeHandle, ImageHandle, InMemoryAssetProvider,
 };
 pub use async_runtime::{
-    AsyncDelivery, AsyncRuntimeError, AsyncScope, SubscriptionEmitter, SubscriptionHandle,
-    SubscriptionRegistry, TaskHandle, TaskRegistry,
+    AsyncDelivery, AsyncRuntimeError, AsyncScope, SubscriptionCloseReason, SubscriptionEmitter,
+    SubscriptionHandle, SubscriptionRegistration, SubscriptionRegistry, TaskHandle, TaskRegistry,
 };
 pub use capability::{
     AppManifest, AsyncCapabilityHandler, CapabilityDescriptor, CapabilityError, CapabilityHandler,

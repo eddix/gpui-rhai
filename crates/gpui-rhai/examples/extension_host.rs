@@ -83,14 +83,19 @@ impl SubscriptionCapabilityHandler for TickerCapability {
         if method != "watch" || input != UiValue::Null {
             return Err("watch expects null input".to_owned());
         }
-        Ok(Box::new(|emitter| {
-            for tick in 1..=3 {
-                std::thread::sleep(Duration::from_millis(15));
-                if emitter.emit(UiValue::Integer(tick)).is_err() {
-                    break;
+        let (sender, receiver) = std::sync::mpsc::channel();
+        std::thread::Builder::new()
+            .name("gpui-rhai-example-ticker".to_owned())
+            .spawn(move || {
+                for tick in 1..=3 {
+                    std::thread::sleep(Duration::from_millis(15));
+                    if sender.send(UiValue::Integer(tick)).is_err() {
+                        break;
+                    }
                 }
-            }
-        }))
+            })
+            .map_err(|error| error.to_string())?;
+        Ok(SubscriptionWork::from_receiver(receiver))
     }
 }
 

@@ -13,6 +13,9 @@ depending on `gpui-component`.
 - The embedded Rhai entry calls all three capability forms in `init`, receives
   task/subscription results on the GPUI foreground thread, stores the values,
   and renders them through normal nodes and the custom primitive in `view`.
+- The ticker models an external producer with an `mpsc` sender and returns
+  `SubscriptionWork::from_receiver`; the work therefore remains alive until the
+  producer drops the channel instead of silently closing after setup returns.
 
 Run it from the repository root:
 
