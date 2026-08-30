@@ -493,6 +493,7 @@ impl Project {
                 .collect(),
         };
         let snippets = editor_snippets(&registry);
+        let definitions = RuntimeEngine::new().definition_source();
         let mut plan = ProjectPlan::new(self.root.clone());
         plan.replace_or_create(
             self.root.join(".gpui-rhai/editor/components.json"),
@@ -501,6 +502,11 @@ impl Project {
         plan.replace_or_create(
             self.root.join(".gpui-rhai/editor/snippets.json"),
             format!("{}\n", serde_json::to_string_pretty(&snippets)?),
+        )?;
+        plan.replace_or_create(
+            self.root
+                .join(".gpui-rhai/editor/definitions/gpui_rhai.d.rhai"),
+            definitions,
         )?;
         Ok(plan)
     }
@@ -1865,7 +1871,7 @@ mod tests {
             .apply()
             .unwrap();
         let plan = project.plan_editor_metadata().unwrap();
-        assert_eq!(plan.writes.len(), 2);
+        assert_eq!(plan.writes.len(), 3);
         plan.apply().unwrap();
 
         let metadata: serde_json::Value = serde_json::from_str(
@@ -1895,5 +1901,13 @@ mod tests {
         assert!(snippets.contains("import \\\"components/dropdown\\\" as dropdown;"));
         assert!(snippets.contains("${1:key}"));
         assert!(snippets.contains("${2:options}"));
+        let definitions = read(
+            &directory
+                .path()
+                .join(".gpui-rhai/editor/definitions/gpui_rhai.d.rhai"),
+        )
+        .unwrap();
+        assert!(definitions.contains("fn render_component"));
+        assert!(definitions.contains("fn canvas_fill_path"));
     }
 }

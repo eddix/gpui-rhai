@@ -1136,6 +1136,18 @@ impl RuntimeEngine {
         &self.engine
     }
 
+    /// Generate the official Rhai language-server definition source for every
+    /// function/type/module registered on this engine.
+    ///
+    /// Standard packages are omitted because the language server supplies them.
+    #[must_use]
+    pub fn definition_source(&self) -> String {
+        self.engine
+            .definitions()
+            .include_standard_packages(false)
+            .single_file()
+    }
+
     /// Return a snapshot of components exported through this engine.
     ///
     /// # Errors
@@ -2528,6 +2540,17 @@ mod tests {
             Some("greeting")
         );
         assert!(children.iter().all(|child| child.source().is_some()));
+    }
+
+    #[test]
+    fn runtime_emits_official_rhai_language_server_definitions() {
+        let runtime = RuntimeEngine::new();
+        let definitions = runtime.definition_source();
+        assert!(definitions.starts_with("module static;"));
+        assert!(definitions.contains("fn box"));
+        assert!(definitions.contains("fn timeout"));
+        assert!(definitions.contains("fn canvas_fill_path"));
+        assert!(definitions.contains("UiNode"));
     }
 
     #[test]

@@ -34,7 +34,11 @@ overwrite local source; inspect them under `.gpui-rhai/conflicts/`.
 
 `metadata` compiles the installed Rhai component sources and writes
 `.gpui-rhai/editor/components.json` plus basic editor snippets derived from the
-actual exported prop, event, slot, and part schemas.
+actual exported prop, event, slot, and part schemas. It also writes
+`.gpui-rhai/editor/definitions/gpui_rhai.d.rhai` using Rhai 1.26's official
+`Engine::definitions()` format for the Rhai Language Server. Hosts that register
+extensions can call `RuntimeEngine::definition_source()` after configuration to
+emit the same format including their custom APIs.
 
 Run the repository example with:
 
