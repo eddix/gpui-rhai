@@ -55,6 +55,7 @@ pub struct RetainedNode {
     handler_payloads: BTreeMap<String, crate::UiValue>,
     scrollable: bool,
     canvas_commands: usize,
+    canvas_scene: Option<crate::CanvasScene>,
     virtual_data_items: usize,
     virtual_realized_items: usize,
     children: Vec<RetainedChildLink>,
@@ -114,6 +115,11 @@ impl RetainedNode {
     #[must_use]
     pub const fn canvas_command_count(&self) -> usize {
         self.canvas_commands
+    }
+
+    #[must_use]
+    pub const fn canvas_scene(&self) -> Option<&crate::CanvasScene> {
+        self.canvas_scene.as_ref()
     }
 
     #[must_use]
@@ -411,6 +417,10 @@ impl ReconcileTransaction<'_> {
                 canvas_commands: match candidate.kind() {
                     crate::UiNodeKind::Canvas { scene } => scene.complexity(),
                     _ => 0,
+                },
+                canvas_scene: match candidate.kind() {
+                    crate::UiNodeKind::Canvas { scene } => Some(scene.clone()),
+                    _ => None,
                 },
                 virtual_data_items: match candidate.kind() {
                     crate::UiNodeKind::VirtualCollection { spec } => spec.data.len(),

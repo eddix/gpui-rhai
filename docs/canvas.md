@@ -35,7 +35,14 @@ not rotate with the path. All coordinates/transforms are finite, sizes/scales
 are positive, and retained `canvas_commands` budget accounting includes every
 path segment so one command cannot hide unbounded work.
 
-The remaining Canvas contract is per-command hit testing and event targets,
-semantic/accessibility nodes, signal-bound geometry/paint, multi-stop/path-
-relative gradients, stroke joins/caps/dashes, nested transform/clip groups, and
-automation geometry.
+Pointer down/up/move payloads on a keyed Canvas use committed node geometry for
+`local`/`content` coordinates and add `canvas_key`, the topmost hit command in
+reverse paint order or `()`. Rect/circle/line use analytic tests; paths flatten
+quadratic/cubic curves deterministically and test fill/stroke plus clip. The
+window capture router preserves the same local coordinates and key after a
+handler captures the pointer. Rhai attaches an ordinary node handler; no
+Canvas-specific callback lane exists.
+
+The remaining Canvas contract is per-command semantic/accessibility nodes,
+signal-bound geometry/paint, multi-stop/path-relative gradients, stroke
+joins/caps/dashes, nested transform/clip groups, and automation geometry.

@@ -115,6 +115,10 @@ impl GeometryRegistry {
         state.committed.get(&node).copied()
     }
 
+    pub(crate) fn get(&self, node: NodeId) -> Option<ElementGeometry> {
+        self.inner.borrow().committed.get(&node).copied()
+    }
+
     pub(crate) fn retain_nodes(&self, active: &BTreeSet<NodeId>) {
         let mut state = self.inner.borrow_mut();
         state.committed.retain(|node, _| active.contains(node));

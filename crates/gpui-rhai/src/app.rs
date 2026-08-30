@@ -2351,11 +2351,13 @@ impl ScriptHostView {
         dispatcher: &NodeEventDispatcher,
         pointer_capture: &crate::PointerCaptureRegistry,
     ) {
+        let geometry = self.lifecycle.runtime().borrow().geometry.clone();
         crate::renderer::install_pointer_capture_router(
             window,
             self.lifecycle.retained(),
             dispatcher,
             pointer_capture,
+            &geometry,
         );
     }
 

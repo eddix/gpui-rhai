@@ -234,6 +234,82 @@ fn node_has_raw_pointer_handlers(node: &UiNode) -> bool {
         .any(|event| !node.event_handlers(event).is_empty())
 }
 
+#[derive(Clone)]
+struct PointerPayloadContext {
+    node: Option<NodeId>,
+    geometry: crate::GeometryRegistry,
+    canvas: Option<crate::CanvasScene>,
+}
+
+impl PointerPayloadContext {
+    fn new(node: &UiNode, retained_id: Option<NodeId>, geometry: crate::GeometryRegistry) -> Self {
+        let canvas = match node.kind() {
+            UiNodeKind::Canvas { scene } => Some(scene.clone()),
+            _ => None,
+        };
+        Self {
+            node: retained_id,
+            geometry,
+            canvas,
+        }
+    }
+
+    fn retained(
+        node: NodeId,
+        geometry: crate::GeometryRegistry,
+        canvas: Option<crate::CanvasScene>,
+    ) -> Self {
+        Self {
+            node: Some(node),
+            geometry,
+            canvas,
+        }
+    }
+
+    fn enrich(&self, payload: UiValue) -> UiValue {
+        let UiValue::Map(mut payload) = payload else {
+            return payload;
+        };
+        let window = payload.get("window").and_then(value_point);
+        let local = self
+            .node
+            .and_then(|node| self.geometry.get(node))
+            .and_then(|geometry| {
+                window.map(|(x, y)| (x - geometry.layout.x, y - geometry.layout.y))
+            });
+        if let Some((x, y)) = local {
+            let point = logical_point_value(x, y);
+            payload.insert("local".to_owned(), point.clone());
+            payload.insert("content".to_owned(), point);
+            payload.insert(
+                "canvas_key".to_owned(),
+                self.canvas
+                    .as_ref()
+                    .and_then(|scene| scene.hit_test(x, y))
+                    .map_or(UiValue::Null, |key| UiValue::String(key.to_owned())),
+            );
+        }
+        UiValue::Map(payload)
+    }
+}
+
+fn value_point(value: &UiValue) -> Option<(f64, f64)> {
+    let UiValue::Map(point) = value else {
+        return None;
+    };
+    match (point.get("x"), point.get("y")) {
+        (Some(UiValue::Float(x)), Some(UiValue::Float(y))) => Some((*x, *y)),
+        _ => None,
+    }
+}
+
+fn logical_point_value(x: f64, y: f64) -> UiValue {
+    UiValue::Map(BTreeMap::from([
+        ("x".to_owned(), UiValue::Float(x)),
+        ("y".to_owned(), UiValue::Float(y)),
+    ]))
+}
+
 fn apply_scroll_behavior(
     mut element: Stateful<Div>,
     node: &UiNode,
@@ -258,15 +334,20 @@ fn apply_raw_pointer_handlers(
     dispatcher: Option<&NodeEventDispatcher>,
     retained_id: Option<NodeId>,
     captures: &crate::PointerCaptureRegistry,
+    geometry: &crate::GeometryRegistry,
 ) -> Stateful<Div> {
-    let element = apply_pointer_down_handlers(element, node, dispatcher, retained_id, captures);
-    let element = apply_pointer_up_handlers(element, node, dispatcher, retained_id, captures);
+    let payload = PointerPayloadContext::new(node, retained_id, geometry.clone());
+    let element =
+        apply_pointer_down_handlers(element, node, dispatcher, retained_id, captures, &payload);
+    let element =
+        apply_pointer_up_handlers(element, node, dispatcher, retained_id, captures, &payload);
     apply_pointer_motion_handlers(
         element,
         node,
         dispatcher.cloned(),
         retained_id,
         captures.clone(),
+        &payload,
     )
 }
 
@@ -305,6 +386,7 @@ fn apply_pointer_down_handlers(
     dispatcher: Option<&NodeEventDispatcher>,
     retained_id: Option<NodeId>,
     captures: &crate::PointerCaptureRegistry,
+    payload_context: &PointerPayloadContext,
 ) -> Stateful<Div> {
     let pointer_down = node.event_handlers("pointer_down").to_vec();
     if pointer_down
@@ -314,12 +396,14 @@ fn apply_pointer_down_handlers(
         let bindings = pointer_down.clone();
         let dispatcher = dispatcher.cloned();
         let captures = captures.clone();
+        let payload_context = (*payload_context).clone();
         element = element.capture_any_mouse_down(move |event, window, app| {
+            let payload = payload_context.enrich(mouse_down_payload(event));
             let response = dispatch_ui_handler_phases(
                 &bindings,
                 "pointer_down",
                 &[crate::EventPhase::Capture],
-                &mouse_down_payload(event),
+                &payload,
                 window,
                 app,
                 dispatcher.as_ref(),
@@ -336,12 +420,14 @@ fn apply_pointer_down_handlers(
         let bindings = pointer_down;
         let dispatcher = dispatcher.cloned();
         let captures = captures.clone();
+        let payload_context = (*payload_context).clone();
         element = element.on_any_mouse_down(move |event, window, app| {
+            let payload = payload_context.enrich(mouse_down_payload(event));
             let response = dispatch_ui_handler_phases(
                 &bindings,
                 "pointer_down",
                 &[crate::EventPhase::Target, crate::EventPhase::Bubble],
-                &mouse_down_payload(event),
+                &payload,
                 window,
                 app,
                 dispatcher.as_ref(),
@@ -358,6 +444,7 @@ fn apply_pointer_up_handlers(
     dispatcher: Option<&NodeEventDispatcher>,
     retained_id: Option<NodeId>,
     captures: &crate::PointerCaptureRegistry,
+    payload_context: &PointerPayloadContext,
 ) -> Stateful<Div> {
     let pointer_up = node.event_handlers("pointer_up").to_vec();
     if pointer_up
@@ -367,12 +454,14 @@ fn apply_pointer_up_handlers(
         let bindings = pointer_up.clone();
         let dispatcher = dispatcher.cloned();
         let captures = captures.clone();
+        let payload_context = (*payload_context).clone();
         element = element.capture_any_mouse_up(move |event, window, app| {
+            let payload = payload_context.enrich(mouse_up_payload(event));
             let response = dispatch_ui_handler_phases(
                 &bindings,
                 "pointer_up",
                 &[crate::EventPhase::Capture],
-                &mouse_up_payload(event),
+                &payload,
                 window,
                 app,
                 dispatcher.as_ref(),
@@ -391,12 +480,14 @@ fn apply_pointer_up_handlers(
             let bindings = pointer_up.clone();
             let dispatcher = dispatcher.cloned();
             let captures = captures.clone();
+            let payload_context = (*payload_context).clone();
             element = element.on_mouse_up(button, move |event, window, app| {
+                let payload = payload_context.enrich(mouse_up_payload(event));
                 let response = dispatch_ui_handler_phases(
                     &bindings,
                     "pointer_up",
                     &[crate::EventPhase::Target, crate::EventPhase::Bubble],
-                    &mouse_up_payload(event),
+                    &payload,
                     window,
                     app,
                     dispatcher.as_ref(),
@@ -415,17 +506,20 @@ fn apply_pointer_motion_handlers(
     dispatcher: Option<NodeEventDispatcher>,
     retained_id: Option<NodeId>,
     captures: crate::PointerCaptureRegistry,
+    payload_context: &PointerPayloadContext,
 ) -> Stateful<Div> {
     let pointer_move = node.event_handlers("pointer_move").to_vec();
     if !pointer_move.is_empty() {
         let dispatcher = dispatcher.clone();
         let captures = captures.clone();
+        let payload_context = (*payload_context).clone();
         element = element.on_mouse_move(move |event, window, app| {
+            let payload = payload_context.enrich(mouse_move_payload(event));
             let response = dispatch_ui_handler_phases(
                 &pointer_move,
                 "pointer_move",
                 &[crate::EventPhase::Target, crate::EventPhase::Bubble],
-                &mouse_move_payload(event),
+                &payload,
                 window,
                 app,
                 dispatcher.as_ref(),
@@ -572,6 +666,7 @@ pub(crate) fn install_pointer_capture_router(
     tree: &RetainedUiTree,
     dispatcher: &NodeEventDispatcher,
     captures: &crate::PointerCaptureRegistry,
+    geometry: &crate::GeometryRegistry,
 ) {
     let move_handlers = retained_handlers(tree, "pointer_move");
     let up_handlers = retained_handlers(tree, "pointer_up");
@@ -579,6 +674,20 @@ pub(crate) fn install_pointer_capture_router(
     let up_dispatcher = dispatcher.clone();
     let move_captures = captures.clone();
     let up_captures = captures.clone();
+    let payload_contexts = tree
+        .nodes()
+        .map(|node| {
+            (
+                node.id(),
+                PointerPayloadContext::retained(
+                    node.id(),
+                    geometry.clone(),
+                    node.canvas_scene().cloned(),
+                ),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    let move_payload_contexts = payload_contexts.clone();
     window.on_mouse_event(move |event: &MouseMoveEvent, phase, window, app| {
         if phase != DispatchPhase::Capture {
             return;
@@ -589,11 +698,15 @@ pub(crate) fn install_pointer_capture_router(
         let Some(bindings) = move_handlers.get(&node) else {
             return;
         };
+        let payload = move_payload_contexts.get(&node).map_or_else(
+            || mouse_move_payload_with_capture(event, true),
+            |context| context.enrich(mouse_move_payload_with_capture(event, true)),
+        );
         let response = dispatch_ui_handler_phases(
             bindings,
             "pointer_move",
             &[crate::EventPhase::Target, crate::EventPhase::Bubble],
-            &mouse_move_payload_with_capture(event, true),
+            &payload,
             window,
             app,
             Some(&move_dispatcher),
@@ -609,11 +722,15 @@ pub(crate) fn install_pointer_capture_router(
             return;
         };
         if let Some(bindings) = up_handlers.get(&node) {
+            let payload = payload_contexts.get(&node).map_or_else(
+                || mouse_up_payload_with_capture(event, true),
+                |context| context.enrich(mouse_up_payload_with_capture(event, true)),
+            );
             let response = dispatch_ui_handler_phases(
                 bindings,
                 "pointer_up",
                 &[crate::EventPhase::Target, crate::EventPhase::Bubble],
-                &mouse_up_payload_with_capture(event, true),
+                &payload,
                 window,
                 app,
                 Some(&up_dispatcher),
@@ -1206,6 +1323,7 @@ impl GpuiNodeRenderer {
             environment.dispatcher,
             retained_id,
             environment.pointer_capture,
+            environment.geometry,
         );
         Self::populate(
             element,
@@ -2836,5 +2954,47 @@ mod tests {
             logical_keyboard_key("down", TextDirection::RightToLeft),
             "down"
         );
+    }
+
+    #[test]
+    fn pointer_payload_uses_committed_local_geometry_and_canvas_hit_key() {
+        let scene = crate::CanvasScene::new(vec![crate::CanvasCommand::Rect {
+            key: "clip".to_owned(),
+            x: 0.0,
+            y: 0.0,
+            width: 40.0,
+            height: 30.0,
+            fill: ColorValue::Token("accent".to_owned()),
+        }])
+        .unwrap();
+        let mut tree = crate::RetainedUiTree::new();
+        tree.reconcile(UiNode::canvas(scene.clone()).with_key("canvas"))
+            .unwrap();
+        let node = tree.root_id().unwrap();
+        let geometry = crate::GeometryRegistry::new();
+        geometry.update(
+            node,
+            crate::ElementGeometry {
+                layout: crate::GeometryBounds::new(100.0, 50.0, 200.0, 120.0).unwrap(),
+                visual: crate::GeometryBounds::new(100.0, 50.0, 200.0, 120.0).unwrap(),
+                clip: None,
+            },
+        );
+        let context = PointerPayloadContext::retained(node, geometry, Some(scene));
+        let payload = context.enrich(pointer_payload(
+            point(px(112.0), px(68.0)),
+            Some(MouseButton::Left),
+            vec![MouseButton::Left],
+            Modifiers::default(),
+            1,
+            false,
+        ));
+        let UiValue::Map(payload) = payload else {
+            unreachable!()
+        };
+        assert_eq!(payload["canvas_key"], UiValue::String("clip".to_owned()));
+        assert!(value_point(&payload["local"]).is_some_and(|(x, y)| {
+            (x - 12.0).abs() < f64::EPSILON && (y - 18.0).abs() < f64::EPSILON
+        }));
     }
 }

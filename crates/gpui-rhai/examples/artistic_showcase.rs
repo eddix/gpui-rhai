@@ -19,6 +19,7 @@ define_component(#{
 });
 
 fn pulse(ctx, event) {
+    if event.canvas_key == () { return propagate(); }
     let current = ctx.get_signal("panel_alpha");
     ctx.set_signal("panel_alpha", if current > 0.8 { 0.58 } else { 0.96 });
     event_response().prevent_default()
@@ -44,7 +45,8 @@ fn render_ArtPanel(ctx, props) {
         ], linear_gradient(#{ angle: 90,
             from: color("#7aa2f744"), to: color("hsla(280, 65%, 65%, 15%)") }))
             .clip_rect(0.0, 0.0, 560.0, 220.0)
-    ])).with_key("sky").with_style(style().width(px(560)).height(px(220)));
+    ])).with_key("sky").with_style(style().width(px(560)).height(px(220)))
+        .on("pointer_down", Fn("pulse"));
 
     box([
         text([
@@ -58,7 +60,6 @@ fn render_ArtPanel(ctx, props) {
     ])
         .with_key("panel")
         .bind_signal("opacity", alpha)
-        .on("pointer_down", Fn("pulse"))
         .with_style(component_style(props, "root",
             style().width(px(608)).padding(px(24)).gap(px(16)).flex_col()
                 .radius(px(18)).border(px(1)).border_color(theme_color("border"))

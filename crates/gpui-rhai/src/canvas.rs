@@ -236,12 +236,229 @@ impl CanvasScene {
             total.saturating_add(command.complexity())
         })
     }
+
+    #[must_use]
+    pub fn hit_test(&self, x: f64, y: f64) -> Option<&str> {
+        self.commands
+            .iter()
+            .rev()
+            .find(|command| command.hit_test(x, y))
+            .map(CanvasCommand::key)
+    }
 }
 
 impl CustomType for CanvasScene {
     fn build(mut builder: TypeBuilder<Self>) {
         builder.with_name("CanvasScene");
     }
+}
+
+impl CanvasCommand {
+    fn hit_test(&self, x: f64, y: f64) -> bool {
+        match self {
+            Self::Rect {
+                x: left,
+                y: top,
+                width,
+                height,
+                ..
+            } => x >= *left && x <= left + width && y >= *top && y <= top + height,
+            Self::Circle {
+                center_x,
+                center_y,
+                radius,
+                ..
+            } => {
+                (x - center_x).mul_add(x - center_x, (y - center_y) * (y - center_y))
+                    <= radius * radius
+            }
+            Self::Line {
+                from_x,
+                from_y,
+                to_x,
+                to_y,
+                width,
+                ..
+            } => point_segment_distance(x, y, *from_x, *from_y, *to_x, *to_y) <= width / 2.0,
+            Self::Path {
+                segments,
+                fill,
+                stroke,
+                transform,
+                clip,
+                ..
+            } => {
+                if clip.is_some_and(|clip| {
+                    x < clip.x || x > clip.x + clip.width || y < clip.y || y > clip.y + clip.height
+                }) {
+                    return false;
+                }
+                let paths = flatten_path(segments, *transform);
+                let fill_hit = fill.is_some()
+                    && paths
+                        .iter()
+                        .fold(false, |inside, path| inside ^ point_in_polygon(x, y, path));
+                let stroke_hit = stroke.as_ref().is_some_and(|(_, width)| {
+                    paths.iter().any(|path| {
+                        path.windows(2).any(|segment| {
+                            point_segment_distance(
+                                x,
+                                y,
+                                segment[0].0,
+                                segment[0].1,
+                                segment[1].0,
+                                segment[1].1,
+                            ) <= width / 2.0
+                        })
+                    })
+                });
+                fill_hit || stroke_hit
+            }
+        }
+    }
+}
+
+fn flatten_path(
+    segments: &[CanvasPathSegment],
+    transform: CanvasTransform,
+) -> Vec<Vec<(f64, f64)>> {
+    let mut paths = Vec::<Vec<(f64, f64)>>::new();
+    let mut current = (0.0, 0.0);
+    let mut start = (0.0, 0.0);
+    for segment in segments {
+        match *segment {
+            CanvasPathSegment::Move { x, y } => {
+                current = canvas_transform_point(transform, x, y);
+                start = current;
+                paths.push(vec![current]);
+            }
+            CanvasPathSegment::Line { x, y } => {
+                current = canvas_transform_point(transform, x, y);
+                if let Some(path) = paths.last_mut() {
+                    path.push(current);
+                }
+            }
+            CanvasPathSegment::Quadratic {
+                x,
+                y,
+                control_x,
+                control_y,
+            } => {
+                let control = canvas_transform_point(transform, control_x, control_y);
+                let end = canvas_transform_point(transform, x, y);
+                append_quadratic(paths.last_mut(), current, control, end);
+                current = end;
+            }
+            CanvasPathSegment::Cubic {
+                x,
+                y,
+                control_a_x,
+                control_a_y,
+                control_b_x,
+                control_b_y,
+            } => {
+                let control_a = canvas_transform_point(transform, control_a_x, control_a_y);
+                let control_b = canvas_transform_point(transform, control_b_x, control_b_y);
+                let end = canvas_transform_point(transform, x, y);
+                append_cubic(paths.last_mut(), current, control_a, control_b, end);
+                current = end;
+            }
+            CanvasPathSegment::Close => {
+                if let Some(path) = paths.last_mut()
+                    && path.last().is_none_or(|last| {
+                        (last.0 - start.0).abs() > f64::EPSILON
+                            || (last.1 - start.1).abs() > f64::EPSILON
+                    })
+                {
+                    path.push(start);
+                }
+                current = start;
+            }
+        }
+    }
+    paths
+}
+
+fn canvas_transform_point(transform: CanvasTransform, x: f64, y: f64) -> (f64, f64) {
+    let radians = transform.rotate_degrees.to_radians();
+    let scaled_x = x * transform.scale;
+    let scaled_y = y * transform.scale;
+    (
+        scaled_x * radians.cos() - scaled_y * radians.sin() + transform.translate_x,
+        scaled_x * radians.sin() + scaled_y * radians.cos() + transform.translate_y,
+    )
+}
+
+fn append_quadratic(
+    path: Option<&mut Vec<(f64, f64)>>,
+    start: (f64, f64),
+    control: (f64, f64),
+    end: (f64, f64),
+) {
+    if let Some(path) = path {
+        for step in 1..=16 {
+            let t = f64::from(step) / 16.0;
+            let inverse = 1.0 - t;
+            path.push((
+                inverse * inverse * start.0 + 2.0 * inverse * t * control.0 + t * t * end.0,
+                inverse * inverse * start.1 + 2.0 * inverse * t * control.1 + t * t * end.1,
+            ));
+        }
+    }
+}
+
+fn append_cubic(
+    path: Option<&mut Vec<(f64, f64)>>,
+    start: (f64, f64),
+    control_a: (f64, f64),
+    control_b: (f64, f64),
+    end: (f64, f64),
+) {
+    if let Some(path) = path {
+        for step in 1..=24 {
+            let t = f64::from(step) / 24.0;
+            let inverse = 1.0 - t;
+            path.push((
+                inverse.powi(3) * start.0
+                    + 3.0 * inverse * inverse * t * control_a.0
+                    + 3.0 * inverse * t * t * control_b.0
+                    + t.powi(3) * end.0,
+                inverse.powi(3) * start.1
+                    + 3.0 * inverse * inverse * t * control_a.1
+                    + 3.0 * inverse * t * t * control_b.1
+                    + t.powi(3) * end.1,
+            ));
+        }
+    }
+}
+
+fn point_in_polygon(x: f64, y: f64, polygon: &[(f64, f64)]) -> bool {
+    if polygon.len() < 3 {
+        return false;
+    }
+    let mut inside = false;
+    let mut previous = polygon[polygon.len() - 1];
+    for &current in polygon {
+        if (current.1 > y) != (previous.1 > y)
+            && x < (previous.0 - current.0) * (y - current.1) / (previous.1 - current.1) + current.0
+        {
+            inside = !inside;
+        }
+        previous = current;
+    }
+    inside
+}
+
+fn point_segment_distance(x: f64, y: f64, from_x: f64, from_y: f64, to_x: f64, to_y: f64) -> f64 {
+    let delta_x = to_x - from_x;
+    let delta_y = to_y - from_y;
+    let length_squared = delta_x.mul_add(delta_x, delta_y * delta_y);
+    if length_squared <= f64::EPSILON {
+        return (x - from_x).hypot(y - from_y);
+    }
+    let projection = ((x - from_x) * delta_x + (y - from_y) * delta_y) / length_squared;
+    let projection = projection.clamp(0.0, 1.0);
+    (x - (from_x + projection * delta_x)).hypot(y - (from_y + projection * delta_y))
 }
 
 #[derive(Clone, Debug, Error, PartialEq)]
@@ -616,5 +833,43 @@ mod tests {
                 )
                 .is_err()
         );
+    }
+
+    #[test]
+    fn scene_hit_testing_uses_reverse_paint_order_and_path_geometry() {
+        let under = CanvasCommand::Rect {
+            key: "under".to_owned(),
+            x: 0.0,
+            y: 0.0,
+            width: 200.0,
+            height: 200.0,
+            fill: ColorValue::Token("surface".to_owned()),
+        };
+        let path = CanvasCommand::Path {
+            key: "triangle".to_owned(),
+            segments: vec![
+                CanvasPathSegment::Move { x: 0.0, y: 0.0 },
+                CanvasPathSegment::Line { x: 100.0, y: 0.0 },
+                CanvasPathSegment::Line { x: 0.0, y: 100.0 },
+                CanvasPathSegment::Close,
+            ],
+            fill: Some(CanvasFill::Solid(ColorValue::Token("accent".to_owned()))),
+            stroke: None,
+            transform: CanvasTransform {
+                translate_x: 10.0,
+                translate_y: 20.0,
+                ..CanvasTransform::default()
+            },
+            clip: Some(CanvasClipRect {
+                x: 0.0,
+                y: 0.0,
+                width: 120.0,
+                height: 120.0,
+            }),
+        };
+        let scene = CanvasScene::new(vec![under, path]).unwrap();
+        assert_eq!(scene.hit_test(20.0, 30.0), Some("triangle"));
+        assert_eq!(scene.hit_test(150.0, 150.0), Some("under"));
+        assert_eq!(scene.hit_test(250.0, 250.0), None);
     }
 }
