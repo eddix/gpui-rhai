@@ -395,6 +395,39 @@ impl AssetRegistry {
         Ok(handle)
     }
 
+    /// Preload a deterministic set of declared image assets.
+    ///
+    /// # Errors
+    ///
+    /// Returns the first provider/MIME/data error without hiding which asset
+    /// failed. Successfully loaded earlier entries remain cached and reusable.
+    pub fn preload_images(
+        &self,
+        ids: impl IntoIterator<Item = AssetId>,
+    ) -> Result<usize, AssetError> {
+        let mut loaded = 0;
+        for id in ids {
+            self.load_image(&id)?;
+            loaded += 1;
+        }
+        Ok(loaded)
+    }
+
+    /// Resolve a declarative asset only if preparation already cached it.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AssetError::NotPreloaded`] instead of performing provider I/O.
+    pub fn cached_image(&self, id: &AssetId) -> Result<ImageHandle, AssetError> {
+        self.inner
+            .try_borrow()
+            .map_err(|_| AssetError::Borrowed)?
+            .by_asset
+            .get(id)
+            .cloned()
+            .ok_or_else(|| AssetError::NotPreloaded(id.clone()))
+    }
+
     /// Start background validation/decoding for a logical image while keeping
     /// callbacks and runtime ownership on the foreground thread.
     ///
@@ -797,6 +830,8 @@ pub enum AssetError {
     WrongHandleKind(String),
     #[error("image handle `{0}` is unknown")]
     UnknownHandle(u64),
+    #[error("declarative image asset `{0:?}` was not preloaded during preparation")]
+    NotPreloaded(AssetId),
     #[error("asset I/O failed for `{path}`: {source}")]
     Io {
         path: PathBuf,

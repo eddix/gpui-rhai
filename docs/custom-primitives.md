@@ -8,7 +8,11 @@ Register primitives in `ScriptViewExtension::configure_engine`, before scripts
 compile. A `PrimitiveDescriptor` declares a namespaced ID, PascalCase Rhai
 export, prop/event schemas, optional state schema, and lifecycle requirement.
 The `PrimitiveHandler` receives a validated `PrimitiveInstance`, normalized
-event emitter, `Window`, and `App`, then returns `AnyElement`.
+event emitter, read-only `PrimitiveTheme`, `Window`, and `App`, then returns
+`AnyElement`. Resolve component-owned native paint through `PrimitiveTheme`;
+handlers must not cache a mutable theme manager or hard-code palette colors.
+The snapshot resolves required semantic colors plus spacing/radius `Length`
+tokens and changes on the next render after a live theme switch.
 
 ```rust
 engine.register_primitive(

@@ -21,9 +21,9 @@ export_component(#{
     schema: #{
         props: #{
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-            value: #{ schema: #{ type: "number" }, required: false, sensitive: false,
+            value: #{ schema: #{ type: "number", min: 0.0 }, required: false, sensitive: false,
                 "default": #{ type: "float", value: 0.0 } },
-            max: #{ schema: #{ type: "number" }, required: false, sensitive: false,
+            max: #{ schema: #{ type: "number", exclusive_min: 0.0 }, required: false, sensitive: false,
                 "default": #{ type: "float", value: 100.0 } },
             indeterminate: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: false } },
@@ -38,9 +38,9 @@ fn Progress(props) {
     component_render("components/progress", props, Fn("render_Progress"))
 }
 fn render_Progress(ctx, props) {
-    let max = if "max" in props && props.max > 0 { props.max } else { 100.0 };
+    let max = if "max" in props { props.max } else { 100.0 };
     let value = if "value" in props { props.value } else { 0.0 };
-    let ratio = if value < 0 { 0.0 } else if value > max { 1.0 } else { (value * 1.0) / (max * 1.0) };
+    let ratio = if value > max { 1.0 } else { (value * 1.0) / (max * 1.0) };
     let indeterminate = if "indeterminate" in props { props.indeterminate } else { false };
     let indicator = row([])
         .with_key(`${props.key}-indicator`)

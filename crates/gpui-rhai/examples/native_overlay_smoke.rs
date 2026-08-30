@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use gpui_rhai::{EmbeddedScriptSource, EmbeddedScriptView, ModuleId, ScriptApplication};
+use gpui_rhai::{AssetData, EmbeddedScriptSource, EmbeddedScriptView, ModuleId, ScriptApplication};
 
 const POPOVER: &str = include_str!("../../../registry/components/popover.rhai");
 const DIALOG: &str = include_str!("../../../registry/components/dialog.rhai");
@@ -196,6 +196,7 @@ fn main() {
             CATPPUCCIN_MOCHA.to_owned(),
         ),
     ])
+    .asset_sources(choice_assets())
     .prepare()
     .and_then(|prepared| {
         ScriptApplication::new(prepared)
@@ -203,4 +204,30 @@ fn main() {
             .run()
     })
     .expect("native overlay smoke test failed");
+}
+
+fn choice_assets() -> [(String, AssetData); 3] {
+    [
+        (
+            "icons/check".to_owned(),
+            svg(include_bytes!("../../../registry/assets/icons/check.svg")),
+        ),
+        (
+            "icons/close".to_owned(),
+            svg(include_bytes!("../../../registry/assets/icons/close.svg")),
+        ),
+        (
+            "icons/disclosure_down".to_owned(),
+            svg(include_bytes!(
+                "../../../registry/assets/icons/disclosure_down.svg"
+            )),
+        ),
+    ]
+}
+
+fn svg(bytes: &[u8]) -> AssetData {
+    AssetData {
+        mime_type: "image/svg+xml".to_owned(),
+        bytes: bytes.to_vec(),
+    }
 }

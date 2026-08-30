@@ -96,7 +96,7 @@ impl ScriptViewExtension for MultiWindowStores {
                 StoreId::app("shared"),
                 ComponentStateSchema::new(BTreeMap::from([(
                     "count".to_owned(),
-                    StateField::new(ValueSchema::Integer, UiValue::Integer(0)),
+                    StateField::new(ValueSchema::integer(), UiValue::Integer(0)),
                 )]))
                 .map_err(|error| error.to_string())?,
             )

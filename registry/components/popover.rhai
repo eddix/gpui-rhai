@@ -43,7 +43,7 @@ export_component(#{
                 "default": #{ type: "string", value: "bottom" },
             },
             gap: #{
-                schema: #{ type: "number" },
+                schema: #{ type: "number", min: 0.0 },
                 required: false,
                 sensitive: false,
                 "default": #{ type: "float", value: 8.0 },

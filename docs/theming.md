@@ -39,3 +39,20 @@ windows; window and subtree changes remain local.
 
 Literal colors are supported for exceptional geometry, but official components
 should use `theme_color("semantic_name")`.
+
+## Token and component-metric boundary
+
+Themes own values whose meaning crosses component boundaries: semantic colors,
+the standard spacing scale, and radii. They must not grow one required token for
+every row height, calendar cell, or control-specific width. Adding a component
+must not force unrelated application themes to migrate.
+
+Source-owned `.rhai` components define structural metrics such as control
+height, fixed Table row height, calendar cell size, and Textarea line-height
+mapping through named `xs`/`sm`/`md`/`lg` helper functions. They pass those
+values to native behavior; Rust must not hide component visual constants.
+Applications own the copied source and may change these metrics directly.
+
+Official components never hard-code palette colors. New semantic color tokens
+are added only when a state has cross-component meaning that cannot be expressed
+by the existing surface/accent/border/disabled vocabulary.

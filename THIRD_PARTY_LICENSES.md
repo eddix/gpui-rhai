@@ -4,7 +4,7 @@ GPUI Rhai depends on third-party Rust crates under their respective licenses.
 Copied themes, icons, palettes, and adapted source must add their attribution to
 this file before entering the official registry.
 
-The check and close SVGs are original GPUI Rhai project assets. No third-party
+The check, close, chevron, disclosure, calendar, date-navigation, and sort SVGs are original GPUI Rhai project assets. No third-party
 icon or raster image assets are currently included.
 
 ## Direct Rust dependencies
@@ -12,6 +12,7 @@ icon or raster image assets are currently included.
 - GPUI 0.2.2 — Apache-2.0.
 - Rhai 1.26.0 — MIT OR Apache-2.0.
 - notify 8.2.0 — CC0-1.0 (development hot reload only).
+- Jiff 0.2.35 — Unlicense OR MIT.
 - image 0.25.10, unicode-segmentation 1.13.3, serde, serde_json,
   semver, thiserror, toml, toml_edit, clap, and tempfile — MIT OR Apache-2.0.
 

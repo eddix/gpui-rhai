@@ -11,8 +11,13 @@ Use `registry/components/label.rhai` as the smallest complete reference.
 ## Metadata
 
 The header declares component ID, source version, runtime API range,
-dependencies, and capabilities. The same metadata appears in
+dependencies, capabilities, and component-owned asset paths. The same metadata appears in
 `export_component`; `gpui-rhai check` rejects disagreement.
+
+Asset paths are provider-relative files under `ui/assets`, such as
+`icons/chevron_next.svg`. Component source addresses an installed asset through
+the application namespace, for example `asset("app/icons/chevron_next")`. The
+CLI copies declared assets and records their pristine baselines with the source.
 
 Module IDs are lowercase logical paths such as `components/form_field`.
 Components are imported under an explicit alias:
@@ -27,6 +32,13 @@ label::Label(#{ text: "Project" })
 Declare every prop, local state field, semantic event, slot, and styleable part.
 Unknown props are errors. Defaults must satisfy their own schemas. Every event
 named `change` requires an optional callback prop named `on_change`.
+
+Use inclusive/exclusive numeric bounds, `one_of`, `Length`, and
+UiValue-convertible schemas when a
+public contract needs them. Do not replace a precise union with an unrestricted
+map or defer every constraint to native construction. Component-specific tagged
+maps, such as Table column widths, still receive semantic validation after their
+outer schema succeeds.
 
 Every formal component automatically receives optional `key`, `style: Style`
 and `part_styles: map<Style>` props. Route the PascalCase constructor through

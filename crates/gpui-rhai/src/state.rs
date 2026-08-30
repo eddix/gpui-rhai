@@ -4,7 +4,7 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::{SchemaValidationError, UiValue, ValueSchema};
+use crate::{SchemaDefinitionError, SchemaValidationError, UiValue, ValueSchema};
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct ComponentInstancePath(Vec<ComponentInstanceSegment>);
@@ -102,6 +102,13 @@ impl ComponentStateSchema {
     /// its field schema.
     pub fn new(fields: BTreeMap<String, StateField>) -> Result<Self, StateError> {
         for (name, field) in &fields {
+            field
+                .schema
+                .validate_definition()
+                .map_err(|source| StateError::InvalidSchema {
+                    field: name.clone(),
+                    source,
+                })?;
             field
                 .schema
                 .validate(&field.default.clone().into_dynamic())
@@ -406,6 +413,11 @@ pub struct StateReconcileReport {
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum StateError {
+    #[error("schema for state field `{field}` is invalid: {source}")]
+    InvalidSchema {
+        field: String,
+        source: SchemaDefinitionError,
+    },
     #[error("default for state field `{field}` is invalid: {source}")]
     InvalidDefault {
         field: String,
@@ -490,7 +502,7 @@ mod tests {
     fn successful_render_cleans_unreachable_instances() {
         let first = ComponentInstancePath::root("App", "root").child("Row", "first");
         let second = ComponentInstancePath::root("App", "root").child("Row", "second");
-        let state_schema = schema(ValueSchema::Integer, UiValue::Integer(0));
+        let state_schema = schema(ValueSchema::integer(), UiValue::Integer(0));
         let mut store = StateStore::new();
         let mut initial = store.begin_render();
         initial.mount(first.clone(), &state_schema).unwrap();

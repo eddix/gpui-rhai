@@ -25,6 +25,30 @@ Accessibility and keyboard operation are release requirements.
 - FormField retains stable semantic IDs plus labelled-by, described-by,
   required, and invalid relationships in the runtime tree.
 
+## Complex-control behavior
+
+Native tests prove:
+
+- Select exposes one combobox tab stop, skips group headers and disabled
+  options, clears transient search on close, and restores trigger focus;
+- DatePicker supports trigger opening, logical day/week/month navigation,
+  locale week boundaries, disabled-range suppression, commit, Escape, and focus
+  restoration;
+- Table exposes deterministic header/body traversal and row-level navigation;
+  Enter emits row activation and Space follows controlled selection mode;
+- Pagination controls have localized labels, current-page state, disabled edge
+  behavior, and explicit LTR/RTL directional resources;
+- Textarea retains multiline/read-only/invalid metadata, visible focus,
+  grapheme-safe selection and limits, correct IME candidate bounds, and Tab form
+  traversal.
+
+Platform-level manual certification and fresh visual baselines remain governed
+by `visual-testing.md`.
+
+The 2026-08-30 macOS pass includes real `鼠须管` candidate commit and marked-text
+Escape cancellation in Textarea; the exact evidence is recorded with the
+visual baselines.
+
 ## Pinned GPUI limitation
 
 The pinned GPUI 0.2.2 release uses AccessKit internally but does not expose a

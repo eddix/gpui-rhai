@@ -5,14 +5,15 @@
   "version": "0.1.0",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": [],
-  "capabilities": {}
+  "capabilities": {},
+  "assets": ["icons/check.svg", "icons/close.svg"]
 }
 */
-// Icon wraps a Rust-loaded image handle with consistent size semantics.
+// Icon wraps a declarative AssetId or a runtime image handle with consistent sizing.
 //
-// Props: handle (required LTR image handle), rtl_handle, size, label.
+// Props: source, optional rtl_source, size, and label.
 // State/events: none. Parts: root.
-// Example: Icon(#{ handle: check_image, size: "sm", label: "Complete" })
+// Example: Icon(#{ source: asset("app/icons/check"), size: "sm", label: "Complete" })
 
 export_component(#{
     metadata: #{
@@ -22,16 +23,23 @@ export_component(#{
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
         dependencies: [],
         capabilities: #{},
+        assets: ["icons/check.svg", "icons/close.svg"],
     },
     schema: #{
         props: #{
-            handle: #{
-                schema: #{ type: "handle", kind: "image" },
+            source: #{
+                schema: #{ type: "one_of", variants: [
+                    #{ type: "asset" },
+                    #{ type: "handle", kind: "image" },
+                ] },
                 required: true,
                 sensitive: false,
             },
-            rtl_handle: #{
-                schema: #{ type: "optional", value: #{ type: "handle", kind: "image" } },
+            rtl_source: #{
+                schema: #{ type: "optional", value: #{ type: "one_of", variants: [
+                    #{ type: "asset" },
+                    #{ type: "handle", kind: "image" },
+                ] } },
                 required: false,
                 sensitive: false,
             },
@@ -67,10 +75,10 @@ fn Icon(props) {
 fn render_Icon(ctx, props) {
     let size = if "size" in props { props.size } else { "md" };
     let label = if "label" in props { props.label } else { "" };
-    let node = if "rtl_handle" in props && props.rtl_handle != () {
-        directional_image(props.handle, props.rtl_handle)
+    let node = if "rtl_source" in props && props.rtl_source != () {
+        directional_image_source(props.source, props.rtl_source)
     } else {
-        image(props.handle)
+        image_source(props.source)
     };
     node
         .with_style(component_style(props, "root",

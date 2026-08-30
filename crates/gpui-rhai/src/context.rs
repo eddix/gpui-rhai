@@ -4,19 +4,21 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use rhai::{
-    CustomType, Dynamic, Engine, EvalAltResult, FnPtr, ImmutableString, Position, TypeBuilder,
+    CustomType, Dynamic, Engine, EvalAltResult, FLOAT, FnPtr, INT, ImmutableString, Map, Position,
+    TypeBuilder,
 };
 use thiserror::Error;
 
 use crate::{
     ActionError, ActionId, ActionInvocation, ActionRegistry, AnimationKey, AnimationRuntime,
-    AssetError, AssetId, AssetRegistry, AsyncRuntimeError, AsyncScope, CapabilityError,
-    CapabilityId, CapabilityRegistry, ComponentInstancePath, EventSchema, ImageDecodeHandle,
-    LocaleError, LocaleManager, OpaqueHandle, ResponsiveError, ResponsiveRuntime, ScriptCallback,
-    ScriptGeneration, ScriptWindowSpec, StateError, StateStore, StoreError, StoreId, StoreRegistry,
-    SubscriptionHandle, SubscriptionRegistry, TaskHandle, TaskRegistry, TextDirection, ThemeError,
-    ThemeManager, ThemePreference, ThemeSelection, UiEvent, UiValue, UiValueError,
-    WindowCommandError, WindowCommandRegistry,
+    AssetError, AssetId, AssetRegistry, AsyncRuntimeError, AsyncScope, CalendarClock,
+    CapabilityError, CapabilityId, CapabilityRegistry, ComponentInstancePath, DateStyle,
+    EventSchema, ImageDecodeHandle, LocaleError, LocaleManager, NumberFormatOptions, OpaqueHandle,
+    ResponsiveError, ResponsiveRuntime, ScriptCallback, ScriptGeneration, ScriptWindowSpec,
+    StateError, StateStore, StoreError, StoreId, StoreRegistry, SubscriptionHandle,
+    SubscriptionRegistry, TaskHandle, TaskRegistry, TextDirection, ThemeError, ThemeManager,
+    ThemePreference, ThemeSelection, UiEvent, UiValue, UiValueError, WindowCommandError,
+    WindowCommandRegistry,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -48,6 +50,7 @@ pub struct UiRuntimeState {
     pub tasks: TaskRegistry,
     pub subscriptions: SubscriptionRegistry,
     pub locale: Option<LocaleManager>,
+    pub calendar_clock: CalendarClock,
     pub theme: Option<ThemeManager>,
     pub assets: AssetRegistry,
     pub animations: AnimationRuntime,
@@ -745,6 +748,137 @@ impl UiContext {
             TextDirection::LeftToRight => Ok("ltr".to_owned()),
             TextDirection::RightToLeft => Ok("rtl".to_owned()),
         }
+    }
+
+    /// Return today's strict ISO date from the host-injected calendar Clock.
+    ///
+    /// This is a read-only presentation input and is available during render.
+    ///
+    /// # Errors
+    ///
+    /// Returns a borrow error when another callback owns the runtime state.
+    pub fn today(&self) -> Result<String, UiContextError> {
+        Ok(self
+            .runtime
+            .try_borrow()
+            .map_err(|_| UiContextError::Borrowed)?
+            .calendar_clock
+            .today()
+            .to_iso())
+    }
+
+    /// Format a strict ISO date through the selected locale.
+    ///
+    /// # Errors
+    ///
+    /// Returns locale, date, style, or runtime borrow errors.
+    pub fn format_date(&self, iso_date: &str, style: &str) -> Result<String, UiContextError> {
+        let runtime = self
+            .runtime
+            .try_borrow()
+            .map_err(|_| UiContextError::Borrowed)?;
+        let locale = runtime
+            .locale
+            .as_ref()
+            .ok_or(UiContextError::LocaleUnavailable)?;
+        Ok(locale.format_date(
+            self.window.as_deref(),
+            Some(&self.component),
+            iso_date,
+            DateStyle::parse(style)?,
+        )?)
+    }
+
+    /// Return a detached read-only copy of selected calendar metadata.
+    ///
+    /// # Errors
+    ///
+    /// Returns locale, serialization, or runtime borrow errors.
+    pub fn calendar_metadata(&self) -> Result<Map, UiContextError> {
+        let runtime = self
+            .runtime
+            .try_borrow()
+            .map_err(|_| UiContextError::Borrowed)?;
+        let locale = runtime
+            .locale
+            .as_ref()
+            .ok_or(UiContextError::LocaleUnavailable)?;
+        let calendar = locale.calendar(self.window.as_deref(), Some(&self.component))?;
+        let dynamic = rhai::serde::to_dynamic(calendar)
+            .map_err(|error| LocaleError::Decode(error.to_string()))?;
+        Ok(dynamic.cast::<Map>())
+    }
+
+    /// Return a detached read-only copy of selected number metadata.
+    ///
+    /// # Errors
+    ///
+    /// Returns locale, serialization, or runtime borrow errors.
+    pub fn number_metadata(&self) -> Result<Map, UiContextError> {
+        let runtime = self
+            .runtime
+            .try_borrow()
+            .map_err(|_| UiContextError::Borrowed)?;
+        let locale = runtime
+            .locale
+            .as_ref()
+            .ok_or(UiContextError::LocaleUnavailable)?;
+        let number = locale.number(self.window.as_deref(), Some(&self.component))?;
+        let dynamic = rhai::serde::to_dynamic(number)
+            .map_err(|error| LocaleError::Decode(error.to_string()))?;
+        Ok(dynamic.cast::<Map>())
+    }
+
+    /// Format an integer through the selected locale.
+    ///
+    /// # Errors
+    ///
+    /// Returns locale, option, or runtime borrow errors.
+    pub fn format_integer(
+        &self,
+        value: INT,
+        options: NumberFormatOptions,
+    ) -> Result<String, UiContextError> {
+        let runtime = self
+            .runtime
+            .try_borrow()
+            .map_err(|_| UiContextError::Borrowed)?;
+        let locale = runtime
+            .locale
+            .as_ref()
+            .ok_or(UiContextError::LocaleUnavailable)?;
+        Ok(locale.format_integer(
+            self.window.as_deref(),
+            Some(&self.component),
+            value,
+            options,
+        )?)
+    }
+
+    /// Format a finite decimal number through the selected locale.
+    ///
+    /// # Errors
+    ///
+    /// Returns locale, option, or runtime borrow errors.
+    pub fn format_number(
+        &self,
+        value: FLOAT,
+        options: NumberFormatOptions,
+    ) -> Result<String, UiContextError> {
+        let runtime = self
+            .runtime
+            .try_borrow()
+            .map_err(|_| UiContextError::Borrowed)?;
+        let locale = runtime
+            .locale
+            .as_ref()
+            .ok_or(UiContextError::LocaleUnavailable)?;
+        Ok(locale.format_number(
+            self.window.as_deref(),
+            Some(&self.component),
+            value,
+            options,
+        )?)
     }
 
     /// Change the app locale at runtime without changing component state.
@@ -1533,7 +1667,117 @@ fn register_locale_context_methods(builder: &mut TypeBuilder<UiContext>) {
             context
                 .text_direction()
                 .map_err(|error| Box::new(context_runtime_error(&error)))
-        });
+        })
+        .with_fn("today", |context: &mut UiContext| {
+            context
+                .today()
+                .map_err(|error| Box::new(context_runtime_error(&error)))
+        })
+        .with_fn(
+            "format_date",
+            |context: &mut UiContext, date: ImmutableString, style: ImmutableString| {
+                context
+                    .format_date(date.as_str(), style.as_str())
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        )
+        .with_fn("calendar", |context: &mut UiContext| {
+            context
+                .calendar_metadata()
+                .map_err(|error| Box::new(context_runtime_error(&error)))
+        })
+        .with_fn("number", |context: &mut UiContext| {
+            context
+                .number_metadata()
+                .map_err(|error| Box::new(context_runtime_error(&error)))
+        })
+        .with_fn("format_number", |context: &mut UiContext, value: INT| {
+            context
+                .format_integer(value, NumberFormatOptions::default())
+                .map_err(|error| Box::new(context_runtime_error(&error)))
+        })
+        .with_fn("format_number", |context: &mut UiContext, value: FLOAT| {
+            context
+                .format_number(value, NumberFormatOptions::default())
+                .map_err(|error| Box::new(context_runtime_error(&error)))
+        })
+        .with_fn(
+            "format_number",
+            |context: &mut UiContext,
+             value: INT,
+             options: Map|
+             -> Result<String, Box<EvalAltResult>> {
+                let options = number_format_options(options)?;
+                context
+                    .format_integer(value, options)
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        )
+        .with_fn(
+            "format_number",
+            |context: &mut UiContext,
+             value: FLOAT,
+             options: Map|
+             -> Result<String, Box<EvalAltResult>> {
+                let options = number_format_options(options)?;
+                context
+                    .format_number(value, options)
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        );
+}
+
+fn number_format_options(mut options: Map) -> Result<NumberFormatOptions, Box<EvalAltResult>> {
+    let mut parsed = NumberFormatOptions::default();
+    if let Some(value) = options.remove("min_fraction_digits") {
+        let value = value.try_cast::<INT>().ok_or_else(|| {
+            Box::new(EvalAltResult::ErrorRuntime(
+                "min_fraction_digits must be an integer".into(),
+                Position::NONE,
+            ))
+        })?;
+        parsed.min_fraction_digits = u8::try_from(value).map_err(|_| {
+            Box::new(EvalAltResult::ErrorRuntime(
+                "min_fraction_digits must be between 0 and 12".into(),
+                Position::NONE,
+            ))
+        })?;
+    }
+    if let Some(value) = options.remove("max_fraction_digits") {
+        let value = value.try_cast::<INT>().ok_or_else(|| {
+            Box::new(EvalAltResult::ErrorRuntime(
+                "max_fraction_digits must be an integer".into(),
+                Position::NONE,
+            ))
+        })?;
+        parsed.max_fraction_digits = u8::try_from(value).map_err(|_| {
+            Box::new(EvalAltResult::ErrorRuntime(
+                "max_fraction_digits must be between 0 and 12".into(),
+                Position::NONE,
+            ))
+        })?;
+    }
+    if let Some(value) = options.remove("grouping") {
+        parsed.grouping = value.try_cast::<bool>().ok_or_else(|| {
+            Box::new(EvalAltResult::ErrorRuntime(
+                "grouping must be a bool".into(),
+                Position::NONE,
+            ))
+        })?;
+    }
+    if let Some((unknown, _)) = options.into_iter().next() {
+        return Err(Box::new(EvalAltResult::ErrorRuntime(
+            format!("unknown number format option `{unknown}`").into(),
+            Position::NONE,
+        )));
+    }
+    parsed.validate().map_err(|error| {
+        Box::new(EvalAltResult::ErrorRuntime(
+            error.to_string().into(),
+            Position::NONE,
+        ))
+    })?;
+    Ok(parsed)
 }
 
 fn register_theme_context_methods(builder: &mut TypeBuilder<UiContext>) {
@@ -1773,7 +2017,7 @@ mod tests {
         let path = ComponentInstancePath::root("Counter", "counter");
         let schema = ComponentStateSchema::new(BTreeMap::from([(
             "count".to_owned(),
-            StateField::new(ValueSchema::Integer, UiValue::Integer(0)),
+            StateField::new(ValueSchema::integer(), UiValue::Integer(0)),
         )]))
         .unwrap();
         let mut state = UiRuntimeState::new();
@@ -1788,7 +2032,7 @@ mod tests {
             BTreeMap::from([(
                 "change".to_owned(),
                 EventSchema {
-                    payload: ValueSchema::Integer,
+                    payload: ValueSchema::integer(),
                 },
             )]),
         )
@@ -1910,5 +2154,48 @@ mod tests {
             state.theme.as_ref().unwrap().app_preference(),
             ThemePreference::System { family } if family == "Default"
         ));
+    }
+
+    #[test]
+    fn script_reads_fixed_today_calendar_and_locale_formatters() {
+        let mut engine = Engine::new();
+        register_ui_context_api(&mut engine);
+        let bundle = crate::load_locale_source(
+            &engine,
+            "en.rhai",
+            include_str!("../../../registry/locales/en.rhai"),
+        )
+        .unwrap();
+        let mut state = UiRuntimeState::new();
+        state.locale = Some(LocaleManager::new([bundle], "en", "en").unwrap());
+        state.calendar_clock =
+            crate::CalendarClock::fixed(crate::GregorianDate::parse_iso("2026-08-29").unwrap());
+        let context = UiContext::new(
+            Rc::new(RefCell::new(state)),
+            ComponentInstancePath::root("App", "root"),
+            Some("main".to_owned()),
+            ExecutionPhase::Render,
+            BTreeMap::new(),
+        );
+        let mut scope = rhai::Scope::new();
+        scope.push("ctx", context);
+        let values = engine
+            .eval_with_scope::<rhai::Array>(
+                &mut scope,
+                r#"[
+                    ctx.today(),
+                    ctx.format_date("2024-02-29", "long"),
+                    ctx.format_number(12345, #{ min_fraction_digits: 0, max_fraction_digits: 0 }),
+                    ctx.calendar().first_weekday,
+                ]"#,
+            )
+            .unwrap();
+        assert_eq!(values[0].clone_cast::<String>(), "2026-08-29");
+        assert_eq!(
+            values[1].clone_cast::<String>(),
+            "Thursday, February 29, 2024"
+        );
+        assert_eq!(values[2].clone_cast::<String>(), "12,345");
+        assert_eq!(values[3].clone_cast::<String>(), "sunday");
     }
 }

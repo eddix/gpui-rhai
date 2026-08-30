@@ -13,10 +13,15 @@ const BUTTON: &str = include_str!("../../../registry/components/button.rhai");
 const LABEL: &str = include_str!("../../../registry/components/label.rhai");
 const ICON: &str = include_str!("../../../registry/components/icon.rhai");
 const INPUT: &str = include_str!("../../../registry/components/input.rhai");
+const TEXTAREA: &str = include_str!("../../../registry/components/textarea.rhai");
 const DIVIDER: &str = include_str!("../../../registry/components/divider.rhai");
 const POPOVER: &str = include_str!("../../../registry/components/popover.rhai");
 const DIALOG: &str = include_str!("../../../registry/components/dialog.rhai");
 const DROPDOWN: &str = include_str!("../../../registry/components/dropdown.rhai");
+const SELECT: &str = include_str!("../../../registry/components/select.rhai");
+const DATE_PICKER: &str = include_str!("../../../registry/components/date_picker.rhai");
+const TABLE: &str = include_str!("../../../registry/components/table.rhai");
+const PAGINATION: &str = include_str!("../../../registry/components/pagination.rhai");
 const CHECKBOX: &str = include_str!("../../../registry/components/checkbox.rhai");
 const RADIO: &str = include_str!("../../../registry/components/radio.rhai");
 const RADIO_GROUP: &str = include_str!("../../../registry/components/radio_group.rhai");
@@ -74,6 +79,40 @@ const TOKYO_NIGHT: &str = include_str!("../../../registry/themes/tokyo_night.rha
 const TOKYO_STORM: &str = include_str!("../../../registry/themes/tokyo_storm.rhai");
 const CATPPUCCIN_LATTE: &str = include_str!("../../../registry/themes/catppuccin_latte.rhai");
 const CATPPUCCIN_MOCHA: &str = include_str!("../../../registry/themes/catppuccin_mocha.rhai");
+
+fn contains_select(node: &gpui_rhai::UiNode) -> bool {
+    match node.kind() {
+        UiNodeKind::Select { .. } => true,
+        UiNodeKind::Container { children } => children.iter().any(contains_select),
+        _ => false,
+    }
+}
+
+fn find_select(node: &gpui_rhai::UiNode) -> Option<&gpui_rhai::UiNode> {
+    match node.kind() {
+        UiNodeKind::Select { .. } => Some(node),
+        UiNodeKind::Container { children } => children.iter().find_map(find_select),
+        _ => None,
+    }
+}
+
+fn find_label<'a>(node: &'a gpui_rhai::UiNode, label: &str) -> Option<&'a gpui_rhai::UiNode> {
+    if node.attributes().get("label") == Some(&UiValue::String(label.to_owned())) {
+        return Some(node);
+    }
+    match node.kind() {
+        UiNodeKind::Container { children } => {
+            children.iter().find_map(|child| find_label(child, label))
+        }
+        UiNodeKind::Overlay {
+            trigger, content, ..
+        } => find_label(trigger, label).or_else(|| find_label(content, label)),
+        UiNodeKind::ErrorBoundary { child, fallback } => {
+            find_label(child, label).or_else(|| find_label(fallback, label))
+        }
+        _ => None,
+    }
+}
 
 #[test]
 fn official_m0_components_compile_export_and_render_together() {
@@ -224,7 +263,7 @@ fn official_icon_uses_only_logical_asset_and_opaque_image_handle() {
                 }
                 fn view(ctx) {
                     icon::Icon(#{
-                        handle: ctx.get_state("image"),
+                        source: ctx.get_state("image"),
                         size: "sm",
                         label: "Complete"
                     })
@@ -269,7 +308,9 @@ fn official_icon_uses_only_logical_asset_and_opaque_image_handle() {
     let root = lifecycle.start(&mut engine).unwrap();
     assert!(matches!(
         root.kind(),
-        UiNodeKind::Image { handle } if handle.kind() == "image" && handle.id() != 0
+        UiNodeKind::Image {
+            source: gpui_rhai::ImageSourceSpec::Handle(handle),
+        } if handle.kind() == "image" && handle.id() != 0
     ));
 }
 
@@ -286,8 +327,8 @@ fn official_icon_selects_explicit_rtl_resource_pair() {
                 import "components/icon" as icon;
                 fn view(ctx) {
                     icon::Icon(#{
-                        handle: ctx.get_state("ltr"),
-                        rtl_handle: ctx.get_state("rtl"),
+                        source: ctx.get_state("ltr"),
+                        rtl_source: ctx.get_state("rtl"),
                         label: "Forward"
                     })
                 }
@@ -328,8 +369,10 @@ fn official_icon_selects_explicit_rtl_resource_pair() {
     let root = lifecycle.start(&mut engine).unwrap();
     assert!(matches!(
         root.kind(),
-        UiNodeKind::DirectionalImage { left_to_right, right_to_left }
-            if left_to_right.id() == 1 && right_to_left.id() == 2
+        UiNodeKind::DirectionalImage {
+            left_to_right: gpui_rhai::ImageSourceSpec::Handle(left_to_right),
+            right_to_left: gpui_rhai::ImageSourceSpec::Handle(right_to_left),
+        } if left_to_right.id() == 1 && right_to_left.id() == 2
     ));
 }
 
@@ -400,6 +443,61 @@ fn official_input_wraps_keyed_native_text_input_primitive() {
         primitive.props.get("read_only"),
         Some(gpui_rhai::PrimitiveValue::Data(UiValue::Bool(true)))
     ));
+}
+
+#[test]
+fn official_textarea_wraps_independent_multiline_primitive() {
+    let textarea_id = ModuleId::parse("components/textarea").unwrap();
+    let source = EmbeddedScriptSource::new(BTreeMap::from([(textarea_id, TEXTAREA.to_owned())]));
+    let mut engine = RuntimeEngine::new();
+    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
+    let compiled = engine
+        .compile_self_contained_named(
+            "ui/textarea_test.rhai",
+            r#"
+                import "components/textarea" as textarea;
+                fn changed(ctx, value) { () }
+                fn view(ctx) {
+                    textarea::Textarea(#{
+                        key: "notes", value: "Line one\nLine two",
+                        min_rows: 2, max_rows: 6, max_length: 100,
+                        on_change: Fn("changed")
+                    })
+                }
+            "#,
+        )
+        .unwrap();
+    let context = UiContext::new(
+        Rc::new(RefCell::new(UiRuntimeState::new())),
+        ComponentInstancePath::root("App", "root"),
+        Some("main".to_owned()),
+        ExecutionPhase::Render,
+        BTreeMap::new(),
+    );
+    let root = engine.render_with_context(&compiled, context).unwrap();
+    let UiNodeKind::Container { children } = root.kind() else {
+        panic!("Textarea must render its source-owned root wrapper");
+    };
+    let UiNodeKind::Custom { primitive } = children[0].kind() else {
+        panic!("Textarea must wrap the native multiline primitive");
+    };
+    assert_eq!(primitive.primitive.as_str(), "gpui_rhai.textarea");
+    assert_eq!(primitive.key.as_deref(), Some("notes"));
+    assert!(matches!(
+        primitive.props.get("max_length"),
+        Some(gpui_rhai::PrimitiveValue::Data(UiValue::Integer(100)))
+    ));
+    for part in [
+        "placeholder_style",
+        "selection_style",
+        "caret_style",
+        "scroll_style",
+    ] {
+        assert!(matches!(
+            primitive.props.get(part),
+            Some(gpui_rhai::PrimitiveValue::Style(_))
+        ));
+    }
 }
 
 #[test]
@@ -586,6 +684,487 @@ fn official_dropdown_wraps_keyed_native_virtualized_entity() {
     assert_eq!(
         root.part_style("option").unwrap().base.height,
         Some(gpui_rhai::Length::Pixels(44.0))
+    );
+}
+
+#[test]
+fn official_select_uses_scalar_controlled_choice_semantics() {
+    let select_id = ModuleId::parse("components/select").unwrap();
+    let source = EmbeddedScriptSource::new(BTreeMap::from([(select_id, SELECT.to_owned())]));
+    let mut engine = RuntimeEngine::new();
+    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
+    let compiled = engine
+        .compile_self_contained_named(
+            "ui/select_test.rhai",
+            r#"
+                import "components/select" as select;
+                fn changed(ctx, value) { () }
+                fn view(ctx) {
+                    select::Select(#{
+                        key: "country", value: (), searchable: true, clearable: true,
+                        empty_text: "No countries",
+                        options: [
+                            #{ value: "cn", label: "China", group: "Asia" },
+                            #{ value: "fr", label: "France", group: "Europe" }
+                        ],
+                        on_change: Fn("changed")
+                    })
+                }
+            "#,
+        )
+        .unwrap();
+    let context = UiContext::new(
+        Rc::new(RefCell::new(UiRuntimeState::new())),
+        ComponentInstancePath::root("App", "root"),
+        Some("main".to_owned()),
+        ExecutionPhase::Render,
+        BTreeMap::new(),
+    );
+    let root = engine.render_with_context(&compiled, context).unwrap();
+    let UiNodeKind::Select { spec } = root.kind() else {
+        panic!("Select must use the native scalar choice adapter");
+    };
+    assert_eq!(spec.choice.selected, Some(Vec::new()));
+    assert!(spec.choice.behavior.searchable);
+    assert!(spec.choice.behavior.clearable);
+    assert!(spec.choice.behavior.reset_query_on_close);
+    assert_eq!(spec.choice.options[0].group.as_deref(), Some("Asia"));
+    assert_eq!(spec.choice.check_asset.as_str(), "app/icons/check");
+    assert_eq!(
+        spec.choice.indicator_asset.as_str(),
+        "app/icons/disclosure_down"
+    );
+}
+
+#[test]
+fn official_date_picker_consumes_locale_and_strict_iso_values() {
+    let date_picker_id = ModuleId::parse("components/date_picker").unwrap();
+    let source =
+        EmbeddedScriptSource::new(BTreeMap::from([(date_picker_id, DATE_PICKER.to_owned())]));
+    let mut engine = RuntimeEngine::new();
+    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
+    let compiled = engine
+        .compile_self_contained_named(
+            "ui/date_picker_test.rhai",
+            r#"
+                import "components/date_picker" as date_picker;
+                fn changed(ctx, value) { () }
+                fn view(ctx) {
+                    date_picker::DatePicker(#{
+                        key: "appointment", value: "2026-09-01",
+                        min_date: "2026-08-30", max_date: "2026-12-31",
+                        placeholder: "Appointment", clearable: true,
+                        presets: [#{ label: "Launch", value: "2026-09-01" }],
+                        on_change: Fn("changed")
+                    })
+                }
+            "#,
+        )
+        .unwrap();
+    let locale = gpui_rhai::load_locale_source(
+        engine.engine(),
+        "en.rhai",
+        include_str!("../../../registry/locales/en.rhai"),
+    )
+    .unwrap();
+    let mut state = UiRuntimeState::new();
+    state.locale = Some(gpui_rhai::LocaleManager::new([locale], "en", "en").unwrap());
+    state.calendar_clock =
+        gpui_rhai::CalendarClock::fixed(gpui_rhai::GregorianDate::parse_iso("2026-08-30").unwrap());
+    let context = UiContext::new(
+        Rc::new(RefCell::new(state)),
+        ComponentInstancePath::root("App", "root"),
+        Some("main".to_owned()),
+        ExecutionPhase::Render,
+        BTreeMap::new(),
+    );
+    let root = engine.render_with_context(&compiled, context).unwrap();
+    let UiNodeKind::DatePicker { spec } = root.kind() else {
+        panic!("DatePicker must use its native calendar node");
+    };
+    assert_eq!(spec.value.unwrap().to_iso(), "2026-09-01");
+    assert_eq!(spec.today.to_iso(), "2026-08-30");
+    assert_eq!(spec.calendar.first_weekday, gpui_rhai::Weekday::Sunday);
+    assert_eq!(spec.display_value, "09/01/2026");
+    assert_eq!(spec.presets.len(), 1);
+    assert_eq!(spec.clear_asset.as_str(), "app/icons/close");
+    assert_eq!(
+        root.attributes().get("calendar_previous_label"),
+        Some(&UiValue::String("Previous month".to_owned()))
+    );
+    assert_eq!(
+        root.attributes().get("row_count"),
+        Some(&UiValue::Integer(6))
+    );
+}
+
+#[test]
+fn official_table_builds_data_rows_and_eager_custom_cells() {
+    let table_id = ModuleId::parse("components/table").unwrap();
+    let skeleton_id = ModuleId::parse("components/skeleton").unwrap();
+    let source = EmbeddedScriptSource::new(BTreeMap::from([
+        (table_id, TABLE.to_owned()),
+        (skeleton_id, SKELETON.to_owned()),
+    ]));
+    let mut engine = RuntimeEngine::new();
+    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
+    let compiled = engine
+        .compile_self_contained_named(
+            "ui/table_test.rhai",
+            r#"
+                import "components/table" as table;
+                fn status_cell(cell) { text(cell.value) }
+                fn sorted(ctx, value) { () }
+                fn selected(ctx, value) { () }
+                fn clicked(ctx, value) { () }
+                fn view(ctx) {
+                    table::Table(#{
+                        key: "users", label: "Users", row_key: "id", height: px(240),
+                        rows: [
+                            #{ id: "u1", name: "Ada", score: 12.5, joined: "2026-08-30", status: "Active" },
+                            #{ id: "u2", name: "Lin", score: 9, joined: "2026-08-31", status: "Away" }
+                        ],
+                        columns: [
+                            #{ key: "name", title: "Name", width: #{ kind: "fixed", value: 120 }, sortable: true },
+                            #{ key: "score", title: "Score", width: #{ kind: "flex", value: 1 }, format: #{ kind: "number", max_fraction_digits: 1 } },
+                            #{ key: "joined", title: "Joined", width: #{ kind: "percent", value: 0.3 }, format: #{ kind: "date", style: "short" } },
+                            #{ key: "status", title: "Status", width: #{ kind: "fixed", value: 90 }, cell_renderer: Fn("status_cell") }
+                        ],
+                        loading: true, selection_mode: "multiple",
+                        selected_keys: ["u1"], striped: true,
+                        on_sort_change: Fn("sorted"), on_selection_change: Fn("selected"),
+                        on_row_click: Fn("clicked")
+                    })
+                }
+            "#,
+        )
+        .unwrap();
+    let locale = gpui_rhai::load_locale_source(
+        engine.engine(),
+        "en.rhai",
+        include_str!("../../../registry/locales/en.rhai"),
+    )
+    .unwrap();
+    let mut state = UiRuntimeState::new();
+    state.locale = Some(gpui_rhai::LocaleManager::new([locale], "en", "en").unwrap());
+    let context = UiContext::new(
+        Rc::new(RefCell::new(state)),
+        ComponentInstancePath::root("App", "root"),
+        Some("main".to_owned()),
+        ExecutionPhase::Render,
+        BTreeMap::new(),
+    );
+    let root = engine.render_with_context(&compiled, context).unwrap();
+    let UiNodeKind::Table { spec } = root.kind() else {
+        panic!("Table must build its data-driven native node");
+    };
+    assert_eq!(spec.rows.len(), 2);
+    assert_eq!(spec.rows[0].key, "u1");
+    assert_eq!(spec.display_cell(0, 1).unwrap(), "12.5");
+    assert_eq!(spec.display_cell(0, 2).unwrap(), "08/30/2026");
+    assert_eq!(spec.columns[3].custom_cells.as_ref().unwrap().len(), 2);
+    assert_eq!(spec.loading_rows.len(), 100);
+    assert_eq!(spec.check_asset.as_str(), "app/icons/check");
+    assert_eq!(
+        spec.sort_ascending_asset.as_str(),
+        "app/icons/sort_ascending"
+    );
+    assert_eq!(
+        root.attributes().get("row_count"),
+        Some(&UiValue::Integer(2))
+    );
+}
+
+#[test]
+fn official_pagination_is_pure_rhai_composition() {
+    let source = EmbeddedScriptSource::new(BTreeMap::from([
+        (
+            ModuleId::parse("components/pagination").unwrap(),
+            PAGINATION.to_owned(),
+        ),
+        (
+            ModuleId::parse("components/button").unwrap(),
+            BUTTON.to_owned(),
+        ),
+        (ModuleId::parse("components/icon").unwrap(), ICON.to_owned()),
+        (
+            ModuleId::parse("components/select").unwrap(),
+            SELECT.to_owned(),
+        ),
+    ]));
+    let mut engine = RuntimeEngine::new();
+    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
+    let compiled = engine
+        .compile_self_contained_named(
+            "ui/pagination_test.rhai",
+            r#"
+                import "components/pagination" as pagination;
+                fn changed(ctx, value) { () }
+                fn view(ctx) {
+                    pagination::Pagination(#{
+                        key: "users-pages", total_items: 5000,
+                        current_page: 250, page_size: 10,
+                        page_size_options: [10, 25, 50],
+                        on_change: Fn("changed")
+                    })
+                }
+            "#,
+        )
+        .unwrap();
+    let locale = gpui_rhai::load_locale_source(
+        engine.engine(),
+        "en.rhai",
+        include_str!("../../../registry/locales/en.rhai"),
+    )
+    .unwrap();
+    let mut state = UiRuntimeState::new();
+    state.locale = Some(gpui_rhai::LocaleManager::new([locale], "en", "en").unwrap());
+    let context = UiContext::new(
+        Rc::new(RefCell::new(state)),
+        ComponentInstancePath::root("App", "root"),
+        Some("main".to_owned()),
+        ExecutionPhase::Render,
+        BTreeMap::new(),
+    );
+    let root = engine.render_with_context(&compiled, context).unwrap();
+    assert!(matches!(root.kind(), UiNodeKind::Container { .. }));
+    assert!(contains_select(&root));
+    let page = find_label(&root, "251").expect("page 251 button");
+    assert_eq!(
+        page.handler_payload("click"),
+        Some(&UiValue::Map(BTreeMap::from([
+            ("current_page".to_owned(), UiValue::Integer(251)),
+            ("page_size".to_owned(), UiValue::Integer(10)),
+        ])))
+    );
+}
+
+#[test]
+fn official_pagination_rejects_duplicate_page_sizes() {
+    let source = EmbeddedScriptSource::new(BTreeMap::from([
+        (
+            ModuleId::parse("components/pagination").unwrap(),
+            PAGINATION.to_owned(),
+        ),
+        (
+            ModuleId::parse("components/button").unwrap(),
+            BUTTON.to_owned(),
+        ),
+        (ModuleId::parse("components/icon").unwrap(), ICON.to_owned()),
+        (
+            ModuleId::parse("components/select").unwrap(),
+            SELECT.to_owned(),
+        ),
+    ]));
+    let mut engine = RuntimeEngine::new();
+    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
+    let compiled = engine
+        .compile_self_contained_named(
+            "ui/pagination_duplicate_test.rhai",
+            r#"
+                import "components/pagination" as pagination;
+                fn view(ctx) {
+                    pagination::Pagination(#{
+                        key: "pages", total_items: 100, current_page: 1,
+                        page_size: 10, page_size_options: [10, 10]
+                    })
+                }
+            "#,
+        )
+        .unwrap();
+    let locale = gpui_rhai::load_locale_source(
+        engine.engine(),
+        "en.rhai",
+        include_str!("../../../registry/locales/en.rhai"),
+    )
+    .unwrap();
+    let mut state = UiRuntimeState::new();
+    state.locale = Some(gpui_rhai::LocaleManager::new([locale], "en", "en").unwrap());
+    let context = UiContext::new(
+        Rc::new(RefCell::new(state)),
+        ComponentInstancePath::root("App", "root"),
+        Some("main".to_owned()),
+        ExecutionPhase::Render,
+        BTreeMap::new(),
+    );
+    let error = engine.render_with_context(&compiled, context).unwrap_err();
+    assert!(error.to_string().contains("duplicate value 10"));
+}
+
+#[test]
+fn official_pagination_page_window_covers_ellipsis_transitions() {
+    let source = EmbeddedScriptSource::new(BTreeMap::from([
+        (
+            ModuleId::parse("components/pagination").unwrap(),
+            PAGINATION.to_owned(),
+        ),
+        (
+            ModuleId::parse("components/button").unwrap(),
+            BUTTON.to_owned(),
+        ),
+        (ModuleId::parse("components/icon").unwrap(), ICON.to_owned()),
+        (
+            ModuleId::parse("components/select").unwrap(),
+            SELECT.to_owned(),
+        ),
+    ]));
+    let mut engine = RuntimeEngine::new();
+    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
+    let compiled = engine
+        .compile_self_contained_named(
+            "ui/pagination_windows.rhai",
+            r#"
+                import "components/pagination" as pagination;
+                fn window_nodes(values) {
+                    let nodes = [];
+                    for value in values { nodes.push(text(`${value}`)); }
+                    row(nodes)
+                }
+                fn view(ctx) {
+                    column([
+                        window_nodes(pagination::page_window(1, 1, 1, 1)),
+                        window_nodes(pagination::page_window(5, 3, 1, 1)),
+                        window_nodes(pagination::page_window(7, 1, 1, 1)),
+                        window_nodes(pagination::page_window(7, 3, 1, 1)),
+                        window_nodes(pagination::page_window(7, 4, 1, 1)),
+                        window_nodes(pagination::page_window(7, 5, 1, 1)),
+                        window_nodes(pagination::page_window(100, 50, 2, 2)),
+                    ])
+                }
+            "#,
+        )
+        .unwrap();
+    let root = engine
+        .render_with_context(
+            &compiled,
+            UiContext::new(
+                Rc::new(RefCell::new(UiRuntimeState::new())),
+                ComponentInstancePath::root("App", "root"),
+                Some("main".to_owned()),
+                ExecutionPhase::Render,
+                BTreeMap::new(),
+            ),
+        )
+        .unwrap();
+    let UiNodeKind::Container { children: cases } = root.kind() else {
+        panic!("pagination page-window probe must render a column");
+    };
+    let actual = cases
+        .iter()
+        .map(|case| {
+            let UiNodeKind::Container { children } = case.kind() else {
+                panic!("pagination page-window case must render a row");
+            };
+            children
+                .iter()
+                .map(|node| match node.kind() {
+                    UiNodeKind::Text { text } => text.parse::<i64>().unwrap(),
+                    _ => panic!("pagination page-window values must be text"),
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        actual,
+        vec![
+            vec![1],
+            vec![1, 2, 3, 4, 5],
+            vec![1, 2, 0, 7],
+            vec![1, 2, 3, 4, 0, 7],
+            vec![1, 2, 3, 4, 5, 6, 7],
+            vec![1, 0, 4, 5, 6, 7],
+            vec![1, 2, 0, 48, 49, 50, 51, 52, 0, 99, 100],
+        ]
+    );
+}
+
+#[test]
+fn official_pagination_page_size_emits_one_atomic_reset() {
+    let source = EmbeddedScriptSource::new(BTreeMap::from([
+        (
+            ModuleId::parse("components/pagination").unwrap(),
+            PAGINATION.to_owned(),
+        ),
+        (
+            ModuleId::parse("components/button").unwrap(),
+            BUTTON.to_owned(),
+        ),
+        (ModuleId::parse("components/icon").unwrap(), ICON.to_owned()),
+        (
+            ModuleId::parse("components/select").unwrap(),
+            SELECT.to_owned(),
+        ),
+    ]));
+    let mut engine = RuntimeEngine::new();
+    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
+    let compiled = engine
+        .compile_self_contained_named(
+            "ui/pagination_atomic.rhai",
+            r#"
+                import "components/pagination" as pagination;
+                fn state_schema() { #{ fields: #{
+                    current_page: #{ schema: #{ type: "integer", min: 1 },
+                        "default": #{ type: "integer", value: 4 } },
+                    page_size: #{ schema: #{ type: "integer", min: 1 },
+                        "default": #{ type: "integer", value: 10 } },
+                } } }
+                fn changed(ctx, value) {
+                    ctx.set_state("current_page", value.current_page);
+                    ctx.set_state("page_size", value.page_size);
+                }
+                fn view(ctx) {
+                    pagination::Pagination(#{
+                        key: "pages", total_items: 100,
+                        current_page: ctx.get_state("current_page"),
+                        page_size: ctx.get_state("page_size"),
+                        page_size_options: [10, 25], on_change: Fn("changed")
+                    })
+                }
+            "#,
+        )
+        .unwrap();
+    let schema = engine.root_state_schema(&compiled).unwrap();
+    let locale = gpui_rhai::load_locale_source(
+        engine.engine(),
+        "en.rhai",
+        include_str!("../../../registry/locales/en.rhai"),
+    )
+    .unwrap();
+    let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+    runtime.borrow_mut().locale =
+        Some(gpui_rhai::LocaleManager::new([locale], "en", "en").unwrap());
+    let path = ComponentInstancePath::root("App", "root");
+    let mut lifecycle = ScriptLifecycle::new(
+        compiled,
+        Rc::clone(&runtime),
+        path.clone(),
+        Some("main".to_owned()),
+        BTreeMap::new(),
+        &schema,
+    )
+    .unwrap();
+    lifecycle.start(&mut engine).unwrap();
+    let callback = find_select(lifecycle.root().unwrap())
+        .and_then(|select| select.handlers().get("change"))
+        .cloned()
+        .expect("page-size Select change callback");
+    let _ = lifecycle
+        .invoke_callback_transactional(&engine, &callback, UiValue::String("25".to_owned()))
+        .unwrap();
+    let events = runtime.borrow_mut().drain_batch().events;
+    assert_eq!(events.len(), 1);
+    for event in events {
+        let _ = lifecycle
+            .invoke_component_event_transactional(&engine, event)
+            .unwrap();
+    }
+    assert_eq!(
+        runtime.borrow().component_state.get(&path, "current_page"),
+        Some(&UiValue::Integer(1))
+    );
+    assert_eq!(
+        runtime.borrow().component_state.get(&path, "page_size"),
+        Some(&UiValue::Integer(25))
     );
 }
 

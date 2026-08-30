@@ -2,23 +2,31 @@ use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use gpui::{
-    AnyElement, App, Bounds, BoxShadow, Context, Div, Element, ElementId, GlobalElementId,
-    InspectorElementId, InteractiveElement, IntoElement, LayoutId, ParentElement, Pixels, Point,
-    Render, SharedString, Stateful, StatefulInteractiveElement, Styled, Window, div, img, point,
-    px, relative, rems, rgba,
+    AnyElement, App, Bounds, BoxShadow, ClickEvent, Context, Div, Element, ElementId,
+    GlobalElementId, InspectorElementId, InteractiveElement, IntoElement, LayoutId, ParentElement,
+    Pixels, Point, Render, SharedString, Stateful, StatefulInteractiveElement, Styled, Window, div,
+    img, point, px, relative, rems, rgba,
 };
 
+use crate::date_picker_element::{
+    DateChangeHandler, DatePickerCallbacks, DatePickerEntityElement, DatePickerPalette,
+};
 use crate::dropdown_element::{
     DropdownCallbacks, DropdownEntityElement, DropdownPalette, DropdownSlotRuntime, QueryHandler,
     SelectionHandler,
 };
 use crate::overlay_element::{ScriptOverlayElement, WindowOverlayCoordinator};
+use crate::table_element::{
+    TableCallbacks, TableEntityElement, TablePalette, TableRowHandler, TableSelectionHandler,
+    TableSortHandler,
+};
 use crate::toast_element::{ToastDismissHandler, ToastHostElement, ToastPalette, ToastPartStyles};
 use crate::virtual_list_element::{VirtualFocusHandler, VirtualListEntityElement};
 use crate::{
-    Align, AnimationKey, AnimationProperty, AssetRegistry, ColorValue, DropdownNodeSpec,
-    EventPropagation, FlexDirection, InteractionState, Justify, Length, OpaqueHandle,
-    OverlayNodeSpec, PrimitiveRegistry, PseudoState, Rgba8, ScriptCallback, Style, StyleProperties,
+    Align, AnimationKey, AnimationProperty, AssetRegistry, ColorValue, DatePickerNodeSpec,
+    DropdownNodeSpec, EventPropagation, FlexDirection, ImageSourceSpec, InteractionState, Justify,
+    Length, OverlayNodeSpec, PrimitiveRegistry, PseudoState, RadiusToken, Rgba8, ScriptCallback,
+    SpacingToken, Style, StyleProperties, TableNodeSpec, TableSort, TableSortDirection,
     TextDirection, ToastHostSpec, UiNode, UiNodeKind, UiValue,
 };
 
@@ -48,6 +56,13 @@ impl NodeEventDispatcher {
 
 pub trait ColorResolver {
     fn resolve(&self, color: &ColorValue) -> Option<Rgba8>;
+
+    fn resolve_length(&self, length: Length) -> Option<Length> {
+        match length {
+            Length::Pixels(_) | Length::Rems(_) | Length::Relative(_) => Some(length),
+            Length::ThemeSpacing(_) | Length::ThemeRadius(_) => None,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -65,6 +80,8 @@ impl ColorResolver for LiteralColorResolver {
 #[derive(Clone, Debug, Default)]
 pub(crate) struct OwnedColorResolver {
     tokens: BTreeMap<String, Rgba8>,
+    spacing: BTreeMap<SpacingToken, Length>,
+    radii: BTreeMap<RadiusToken, Length>,
 }
 
 impl OwnedColorResolver {
@@ -88,6 +105,27 @@ impl OwnedColorResolver {
             "focus_ring",
             "disabled",
         ];
+        let spacing = [
+            SpacingToken::Xs,
+            SpacingToken::Sm,
+            SpacingToken::Md,
+            SpacingToken::Lg,
+        ]
+        .into_iter()
+        .filter_map(|token| {
+            colors
+                .resolve_length(Length::ThemeSpacing(token))
+                .map(|value| (token, value))
+        })
+        .collect();
+        let radii = [RadiusToken::Sm, RadiusToken::Md, RadiusToken::Lg]
+            .into_iter()
+            .filter_map(|token| {
+                colors
+                    .resolve_length(Length::ThemeRadius(token))
+                    .map(|value| (token, value))
+            })
+            .collect();
         Self {
             tokens: TOKENS
                 .iter()
@@ -97,6 +135,8 @@ impl OwnedColorResolver {
                         .map(|value| ((*token).to_owned(), value))
                 })
                 .collect(),
+            spacing,
+            radii,
         }
     }
 }
@@ -106,6 +146,14 @@ impl ColorResolver for OwnedColorResolver {
         match color {
             ColorValue::Literal(color) => Some(*color),
             ColorValue::Token(token) => self.tokens.get(token).copied(),
+        }
+    }
+
+    fn resolve_length(&self, length: Length) -> Option<Length> {
+        match length {
+            Length::ThemeSpacing(token) => self.spacing.get(&token).copied(),
+            Length::ThemeRadius(token) => self.radii.get(&token).copied(),
+            Length::Pixels(_) | Length::Rems(_) | Length::Relative(_) => Some(length),
         }
     }
 }
@@ -343,8 +391,9 @@ impl GpuiNodeRenderer {
             )
             .tab_index(0)
             .tab_stop(tab_stop)
-            .on_click(move |_, window, cx| {
-                if let Some((callback, payload)) = &click
+            .on_click(move |event, window, cx| {
+                if matches!(event, ClickEvent::Mouse(_))
+                    && let Some((callback, payload)) = &click
                     && click_dispatcher.dispatch(callback.clone(), payload.clone(), window, cx)
                         == EventPropagation::Handled
                 {
@@ -394,18 +443,19 @@ impl GpuiNodeRenderer {
                     primitive.clone(),
                     boundary_fallback.cloned(),
                     environment.dispatcher.cloned(),
+                    crate::PrimitiveTheme::capture(environment.colors),
                 ))
                 .into_any_element(),
-            UiNodeKind::Image { handle } => render_image(element, node, handle, environment),
+            UiNodeKind::Image { source } => render_image(element, node, source, environment),
             UiNodeKind::DirectionalImage {
                 left_to_right,
                 right_to_left,
             } => {
-                let handle = match environment.direction {
+                let source = match environment.direction {
                     TextDirection::LeftToRight => left_to_right,
                     TextDirection::RightToLeft => right_to_left,
                 };
-                render_image(element, node, handle, environment)
+                render_image(element, node, source, environment)
             }
             UiNodeKind::Overlay {
                 trigger,
@@ -424,6 +474,15 @@ impl GpuiNodeRenderer {
                 .into_any_element(),
             UiNodeKind::Dropdown { spec } => element
                 .child(native_dropdown_element(node, spec, environment, path))
+                .into_any_element(),
+            UiNodeKind::Select { spec } => element
+                .child(native_select_element(node, &spec.choice, environment, path))
+                .into_any_element(),
+            UiNodeKind::DatePicker { spec } => element
+                .child(native_date_picker_element(node, spec, environment, path))
+                .into_any_element(),
+            UiNodeKind::Table { spec } => element
+                .child(native_table_element(node, spec, environment, path))
                 .into_any_element(),
             UiNodeKind::ToastHost { spec } => element
                 .child(native_toast_element(node, spec, environment, path))
@@ -446,7 +505,7 @@ impl GpuiNodeRenderer {
 fn render_image<C: ColorResolver>(
     element: impl ParentElement + IntoElement,
     node: &UiNode,
-    handle: &OpaqueHandle,
+    source: &ImageSourceSpec,
     environment: &RenderEnvironment<'_, C>,
 ) -> AnyElement {
     let interaction = if is_disabled(node) {
@@ -462,11 +521,19 @@ fn render_image<C: ColorResolver>(
         .and_then(|color| environment.colors.resolve(color));
     environment.assets.map_or_else(
         || div().child("Image registry unavailable").into_any_element(),
-        |assets| match assets.image_source_tinted(handle, tint) {
-            Ok(source) => element.child(img(source)).into_any_element(),
-            Err(error) => div()
-                .child(format!("Image error: {error}"))
-                .into_any_element(),
+        |assets| {
+            let handle = match source {
+                ImageSourceSpec::Handle(handle) => Ok(handle.clone()),
+                ImageSourceSpec::Asset(asset) => assets
+                    .cached_image(asset)
+                    .map(|image| image.opaque().clone()),
+            };
+            match handle.and_then(|handle| assets.image_source_tinted(&handle, tint)) {
+                Ok(source) => element.child(img(source)).into_any_element(),
+                Err(error) => div()
+                    .child(format!("Image error: {error}"))
+                    .into_any_element(),
+            }
         },
     )
 }
@@ -636,14 +703,113 @@ fn native_dropdown_element<C: ColorResolver>(
     path: &str,
 ) -> DropdownEntityElement {
     let callbacks = dropdown_callbacks(node, environment.dispatcher);
-    let palette = DropdownPalette {
+    native_choice_element(node, spec, callbacks, environment, path)
+}
+
+fn native_select_element<C: ColorResolver>(
+    node: &UiNode,
+    spec: &DropdownNodeSpec,
+    environment: &RenderEnvironment<'_, C>,
+    path: &str,
+) -> DropdownEntityElement {
+    let callbacks = select_callbacks(node, environment.dispatcher);
+    native_choice_element(node, spec, callbacks, environment, path)
+}
+
+fn native_date_picker_element<C: ColorResolver>(
+    node: &UiNode,
+    spec: &DatePickerNodeSpec,
+    environment: &RenderEnvironment<'_, C>,
+    path: &str,
+) -> DatePickerEntityElement {
+    let callbacks = date_picker_callbacks(node, environment.dispatcher);
+    let palette = DatePickerPalette {
+        surface: semantic_color(environment.colors, "surface", 0x0018_181b),
+        hover: semantic_color(environment.colors, "surface_hover", 0x003f_3f46),
+        text: semantic_color(environment.colors, "text_primary", 0x00f4_f4f5),
+        muted: semantic_color(environment.colors, "text_muted", 0x00a1_a1aa),
+        accent: semantic_color(environment.colors, "accent", 0x003b_82f6),
+        on_accent: semantic_color(environment.colors, "on_accent", 0x00ff_ffff),
+        focus_ring: semantic_color(environment.colors, "focus_ring", 0x003b_82f6),
+    };
+    let runtime = DropdownSlotRuntime {
+        colors: OwnedColorResolver::capture(environment.colors),
+        primitives: environment.primitives.clone(),
+        assets: environment.assets.cloned().unwrap_or_default(),
+        dispatcher: environment
+            .dispatcher
+            .cloned()
+            .unwrap_or_else(|| NodeEventDispatcher::new(|_, _, _, _| EventPropagation::Handled)),
+        overlays: environment.overlays.clone(),
+        animations: environment.animations.clone(),
+        direction: environment.direction,
+        base_path: path.to_owned(),
+        view_id: environment.view_id.to_owned(),
+        part_styles: node
+            .part_styles()
+            .map(|(name, style)| (name.to_owned(), style.clone()))
+            .collect(),
+    };
+    DatePickerEntityElement::new(
+        path,
+        spec.clone(),
+        callbacks,
+        palette,
+        environment.overlays.clone(),
+        runtime,
+    )
+}
+
+fn native_table_element<C: ColorResolver>(
+    node: &UiNode,
+    spec: &TableNodeSpec,
+    environment: &RenderEnvironment<'_, C>,
+    path: &str,
+) -> TableEntityElement {
+    let callbacks = table_callbacks(node, environment.dispatcher);
+    let palette = TablePalette {
         surface: semantic_color(environment.colors, "surface", 0x0018_181b),
         raised: semantic_color(environment.colors, "surface_raised", 0x0027_272a),
         hover: semantic_color(environment.colors, "surface_hover", 0x003f_3f46),
         text: semantic_color(environment.colors, "text_primary", 0x00f4_f4f5),
         muted: semantic_color(environment.colors, "text_muted", 0x00a1_a1aa),
         accent: semantic_color(environment.colors, "accent", 0x003b_82f6),
+        on_accent: semantic_color(environment.colors, "on_accent", 0x00ff_ffff),
         border: semantic_color(environment.colors, "border", 0x003f_3f46),
+    };
+    let runtime = DropdownSlotRuntime {
+        colors: OwnedColorResolver::capture(environment.colors),
+        primitives: environment.primitives.clone(),
+        assets: environment.assets.cloned().unwrap_or_default(),
+        dispatcher: environment
+            .dispatcher
+            .cloned()
+            .unwrap_or_else(|| NodeEventDispatcher::new(|_, _, _, _| EventPropagation::Handled)),
+        overlays: environment.overlays.clone(),
+        animations: environment.animations.clone(),
+        direction: environment.direction,
+        base_path: path.to_owned(),
+        view_id: environment.view_id.to_owned(),
+        part_styles: node
+            .part_styles()
+            .map(|(name, style)| (name.to_owned(), style.clone()))
+            .collect(),
+    };
+    TableEntityElement::new(path, spec.clone(), callbacks, palette, runtime)
+}
+
+fn native_choice_element<C: ColorResolver>(
+    node: &UiNode,
+    spec: &DropdownNodeSpec,
+    callbacks: DropdownCallbacks,
+    environment: &RenderEnvironment<'_, C>,
+    path: &str,
+) -> DropdownEntityElement {
+    let palette = DropdownPalette {
+        surface: semantic_color(environment.colors, "surface", 0x0018_181b),
+        hover: semantic_color(environment.colors, "surface_hover", 0x003f_3f46),
+        muted: semantic_color(environment.colors, "text_muted", 0x00a1_a1aa),
+        accent: semantic_color(environment.colors, "accent", 0x003b_82f6),
         disabled: semantic_color(environment.colors, "disabled", 0x0052_525b),
         focus_ring: semantic_color(environment.colors, "focus_ring", 0x003b_82f6),
     };
@@ -871,6 +1037,107 @@ fn dropdown_callbacks(
     }
 }
 
+fn select_callbacks(node: &UiNode, dispatcher: Option<&NodeEventDispatcher>) -> DropdownCallbacks {
+    let Some(dispatcher) = dispatcher.cloned() else {
+        return DropdownCallbacks::default();
+    };
+    let selection = node.handlers().get("change").map(|callback| {
+        let callback = callback.clone();
+        Rc::new(
+            move |values: Vec<String>, window: &mut Window, cx: &mut App| {
+                let payload = values
+                    .into_iter()
+                    .next()
+                    .map_or(UiValue::Null, UiValue::String);
+                dispatcher.dispatch(callback.clone(), payload, window, cx);
+            },
+        ) as SelectionHandler
+    });
+    DropdownCallbacks {
+        selection,
+        open: None,
+        query: None,
+    }
+}
+
+fn date_picker_callbacks(
+    node: &UiNode,
+    dispatcher: Option<&NodeEventDispatcher>,
+) -> DatePickerCallbacks {
+    let Some(dispatcher) = dispatcher.cloned() else {
+        return DatePickerCallbacks::default();
+    };
+    let change = node.handlers().get("change").map(|callback| {
+        let callback = callback.clone();
+        Rc::new(
+            move |value: Option<String>, window: &mut Window, cx: &mut App| {
+                dispatcher.dispatch(
+                    callback.clone(),
+                    value.map_or(UiValue::Null, UiValue::String),
+                    window,
+                    cx,
+                );
+            },
+        ) as DateChangeHandler
+    });
+    DatePickerCallbacks { change }
+}
+
+fn table_callbacks(node: &UiNode, dispatcher: Option<&NodeEventDispatcher>) -> TableCallbacks {
+    let Some(dispatcher) = dispatcher.cloned() else {
+        return TableCallbacks::default();
+    };
+    let sort = node.handlers().get("sort_change").map(|callback| {
+        let callback = callback.clone();
+        let dispatcher = dispatcher.clone();
+        Rc::new(
+            move |sort: Option<TableSort>, window: &mut Window, cx: &mut App| {
+                let payload = sort.map_or(UiValue::Null, |sort| {
+                    UiValue::Map(BTreeMap::from([
+                        ("key".to_owned(), UiValue::String(sort.key)),
+                        (
+                            "direction".to_owned(),
+                            UiValue::String(
+                                match sort.direction {
+                                    TableSortDirection::Ascending => "ascending",
+                                    TableSortDirection::Descending => "descending",
+                                }
+                                .to_owned(),
+                            ),
+                        ),
+                    ]))
+                });
+                dispatcher.dispatch(callback.clone(), payload, window, cx);
+            },
+        ) as TableSortHandler
+    });
+    let selection = node.handlers().get("selection_change").map(|callback| {
+        let callback = callback.clone();
+        let dispatcher = dispatcher.clone();
+        Rc::new(
+            move |values: Vec<String>, window: &mut Window, cx: &mut App| {
+                dispatcher.dispatch(
+                    callback.clone(),
+                    UiValue::Array(values.into_iter().map(UiValue::String).collect()),
+                    window,
+                    cx,
+                );
+            },
+        ) as TableSelectionHandler
+    });
+    let row_click = node.handlers().get("row_click").map(|callback| {
+        let callback = callback.clone();
+        Rc::new(move |key: String, window: &mut Window, cx: &mut App| {
+            dispatcher.dispatch(callback.clone(), UiValue::String(key), window, cx);
+        }) as TableRowHandler
+    });
+    TableCallbacks {
+        sort,
+        selection,
+        row_click,
+    }
+}
+
 fn semantic_color(colors: &impl ColorResolver, token: &str, fallback: u32) -> Rgba8 {
     colors
         .resolve(&ColorValue::Token(token.to_owned()))
@@ -946,9 +1213,47 @@ fn apply_style(
     colors: &impl ColorResolver,
     direction: TextDirection,
 ) -> Div {
-    let element = apply_layout(element, style, direction);
-    let element = apply_spacing(element, style, direction);
-    apply_paint_and_text(element, style, colors)
+    let mut style = style.clone();
+    resolve_style_lengths(&mut style, colors);
+    let element = apply_layout(element, &style, direction);
+    let element = apply_spacing(element, &style, direction);
+    apply_paint_and_text(element, &style, colors)
+}
+
+fn resolve_style_lengths(style: &mut StyleProperties, resolver: &impl ColorResolver) {
+    let resolve = |value: &mut Option<Length>| {
+        *value = (*value).and_then(|value| resolver.resolve_length(value));
+    };
+    for value in [
+        &mut style.width,
+        &mut style.height,
+        &mut style.min_width,
+        &mut style.max_width,
+        &mut style.min_height,
+        &mut style.max_height,
+        &mut style.gap,
+    ] {
+        resolve(value);
+    }
+    for value in [
+        &mut style.padding.top,
+        &mut style.padding.right,
+        &mut style.padding.bottom,
+        &mut style.padding.left,
+        &mut style.padding.start,
+        &mut style.padding.end,
+        &mut style.margin.top,
+        &mut style.margin.right,
+        &mut style.margin.bottom,
+        &mut style.margin.left,
+        &mut style.margin.start,
+        &mut style.margin.end,
+        &mut style.border_width,
+        &mut style.radius,
+        &mut style.font_size,
+    ] {
+        resolve(value);
+    }
 }
 
 pub(crate) fn apply_style_override(
@@ -1152,6 +1457,7 @@ macro_rules! definite_length_fn {
                 Length::Pixels(value) => element.$method(px(to_f32(value))),
                 Length::Rems(value) => element.$method(rems(to_f32(value))),
                 Length::Relative(value) => element.$method(relative(to_f32(value))),
+                Length::ThemeSpacing(_) | Length::ThemeRadius(_) => element,
             }
         }
     };
@@ -1177,7 +1483,7 @@ fn border(element: Div, value: Length) -> Div {
     match value {
         Length::Pixels(value) => element.border(px(to_f32(value))),
         Length::Rems(value) => element.border(rems(to_f32(value))),
-        Length::Relative(_) => element,
+        Length::Relative(_) | Length::ThemeSpacing(_) | Length::ThemeRadius(_) => element,
     }
 }
 
@@ -1185,7 +1491,7 @@ fn radius(element: Div, value: Length) -> Div {
     match value {
         Length::Pixels(value) => element.rounded(px(to_f32(value))),
         Length::Rems(value) => element.rounded(rems(to_f32(value))),
-        Length::Relative(_) => element,
+        Length::Relative(_) | Length::ThemeSpacing(_) | Length::ThemeRadius(_) => element,
     }
 }
 
@@ -1193,7 +1499,7 @@ fn font_size(element: Div, value: Length) -> Div {
     match value {
         Length::Pixels(value) => element.text_size(px(to_f32(value))),
         Length::Rems(value) => element.text_size(rems(to_f32(value))),
-        Length::Relative(_) => element,
+        Length::Relative(_) | Length::ThemeSpacing(_) | Length::ThemeRadius(_) => element,
     }
 }
 

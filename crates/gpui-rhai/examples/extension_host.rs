@@ -101,6 +101,7 @@ impl PrimitiveHandler for StatusCard {
         &mut self,
         instance: &PrimitiveInstance,
         _: &PrimitiveEventEmitter,
+        theme: &gpui_rhai::PrimitiveTheme,
         _: &mut Window,
         _: &mut App,
     ) -> Result<AnyElement, String> {
@@ -113,8 +114,18 @@ impl PrimitiveHandler for StatusCard {
         Ok(div()
             .p_4()
             .rounded(px(10.0))
-            .bg(rgba(0x2563_ebff))
-            .text_color(rgba(0xffff_ffff))
+            .bg(rgba(
+                theme
+                    .color("accent")
+                    .unwrap_or_else(|| gpui_rhai::Rgba8::from_rgba_hex(0x2563_ebff))
+                    .as_rgba_hex(),
+            ))
+            .text_color(rgba(
+                theme
+                    .color("on_accent")
+                    .unwrap_or_else(|| gpui_rhai::Rgba8::from_rgba_hex(0xffff_ffff))
+                    .as_rgba_hex(),
+            ))
             .child(message.clone())
             .into_any_element())
     }
@@ -191,7 +202,7 @@ impl ScriptViewExtension for DemoExtension {
                         "watch".to_owned(),
                         CapabilityMethod {
                             input: ValueSchema::Null,
-                            output: ValueSchema::Integer,
+                            output: ValueSchema::integer(),
                         },
                     )]),
                 },

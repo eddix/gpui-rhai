@@ -21,6 +21,17 @@ directional Icon state, and reduced-motion pointer-triggered Tooltip state.
 Capture `embedded_views` once with the small view's Dropdown open and duplicate
 local Toast IDs visible in the shared Host queue.
 
+The complex-control expansion adds:
+
+- `form_showcase` states for searchable/grouped Select, fixed-Clock DatePicker
+  in English and Simplified Chinese, and Textarea empty/multiline/error/limit/
+  auto-grow states;
+- `data_table` states for scalar/custom cells, sorting, single/multiple
+  selection, loading, empty, striped rows, horizontal overflow, Pagination, and
+  RTL logical alignment;
+- a fixed Clock, fixed generated row data, and settled scroll offsets recorded
+  in each new baseline manifest.
+
 Record macOS version, GPUI version, display scale, viewport, theme, locale,
 component state, and the reason for every accepted baseline change. Store PNGs
 under `tests/visual/macos/<example>/<case>.png` once captured.
@@ -37,6 +48,15 @@ under `tests/visual/macos/<example>/<case>.png` once captured.
 - Hover Tooltip delays and Toast pause/resume/automatic/manual dismissal.
 - Enter Latin, Simplified Chinese IME composition, emoji, combining text,
   selection replacement, copy/cut/paste, and read-only selection in Input.
+- Repeat the input matrix in Textarea, including visual-line Up/Down, multiline
+  selection, internal caret scrolling, max-length paste/IME commit, autofocus,
+  fixed rows, and auto-grow under width changes.
+- Exercise Select groups/search/clear, DatePicker day/week/month/year-boundary
+  navigation and min/max, and locale switching while their panels are open.
+- Exercise Table row navigation, sorting, select-all semantics, custom-cell Tab
+  order, synchronized horizontal scrolling, draggable overflow scrollbar,
+  vertical-wheel axis isolation, sticky header, and bounded visible rows.
+  Exercise every Pagination ellipsis/edge transition and page-size reset.
 - Open/focus/confirm-close a secondary window; verify app-store propagation and
   per-window theme/locale/state cleanup.
 
@@ -71,6 +91,8 @@ bash scripts/build-macos-test-app.sh settings_panel catppuccin-mocha ar
 bash scripts/build-macos-test-app.sh form_showcase default-light en dialog
 bash scripts/build-macos-test-app.sh dashboard_layout tokyo-night en default reduced
 bash scripts/build-macos-test-app.sh component_gallery default-light en menu
+bash scripts/build-macos-test-app.sh data_table default-dark en selected
+bash scripts/build-macos-test-app.sh form_showcase default-light zh-CN date-picker
 ```
 
 The command prints the unique temporary bundle path. It never replaces an

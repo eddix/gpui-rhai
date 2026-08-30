@@ -20,10 +20,15 @@ const BUTTON_SOURCE: &str = include_str!("../../../registry/components/button.rh
 const LABEL_SOURCE: &str = include_str!("../../../registry/components/label.rhai");
 const ICON_SOURCE: &str = include_str!("../../../registry/components/icon.rhai");
 const INPUT_SOURCE: &str = include_str!("../../../registry/components/input.rhai");
+const TEXTAREA_SOURCE: &str = include_str!("../../../registry/components/textarea.rhai");
 const DIVIDER_SOURCE: &str = include_str!("../../../registry/components/divider.rhai");
 const POPOVER_SOURCE: &str = include_str!("../../../registry/components/popover.rhai");
 const DIALOG_SOURCE: &str = include_str!("../../../registry/components/dialog.rhai");
 const DROPDOWN_SOURCE: &str = include_str!("../../../registry/components/dropdown.rhai");
+const SELECT_SOURCE: &str = include_str!("../../../registry/components/select.rhai");
+const DATE_PICKER_SOURCE: &str = include_str!("../../../registry/components/date_picker.rhai");
+const TABLE_SOURCE: &str = include_str!("../../../registry/components/table.rhai");
+const PAGINATION_SOURCE: &str = include_str!("../../../registry/components/pagination.rhai");
 const CHECKBOX_SOURCE: &str = include_str!("../../../registry/components/checkbox.rhai");
 const RADIO_SOURCE: &str = include_str!("../../../registry/components/radio.rhai");
 const RADIO_GROUP_SOURCE: &str = include_str!("../../../registry/components/radio_group.rhai");
@@ -41,6 +46,16 @@ const MENU_SOURCE: &str = include_str!("../../../registry/components/menu.rhai")
 const TOAST_SOURCE: &str = include_str!("../../../registry/components/toast.rhai");
 const CHECK_SVG: &str = include_str!("../../../registry/assets/icons/check.svg");
 const CLOSE_SVG: &str = include_str!("../../../registry/assets/icons/close.svg");
+const CHEVRON_LEFT_SVG: &str = include_str!("../../../registry/assets/icons/chevron_left.svg");
+const CHEVRON_RIGHT_SVG: &str = include_str!("../../../registry/assets/icons/chevron_right.svg");
+const CALENDAR_SVG: &str = include_str!("../../../registry/assets/icons/calendar.svg");
+const DATE_PREVIOUS_SVG: &str = include_str!("../../../registry/assets/icons/date_previous.svg");
+const DATE_NEXT_SVG: &str = include_str!("../../../registry/assets/icons/date_next.svg");
+const DISCLOSURE_DOWN_SVG: &str =
+    include_str!("../../../registry/assets/icons/disclosure_down.svg");
+const SORT_ASCENDING_SVG: &str = include_str!("../../../registry/assets/icons/sort_ascending.svg");
+const SORT_DESCENDING_SVG: &str =
+    include_str!("../../../registry/assets/icons/sort_descending.svg");
 const DEFAULT_THEME: &str = include_str!("../../../registry/themes/default_dark.rhai");
 const DEFAULT_LIGHT_THEME: &str = include_str!("../../../registry/themes/default_light.rhai");
 const TOKYO_NIGHT_THEME: &str = include_str!("../../../registry/themes/tokyo_night.rhai");
@@ -75,6 +90,66 @@ const ICON_ASSETS: &[RegistryAsset] = &[
     },
 ];
 
+const PAGINATION_ASSETS: &[RegistryAsset] = &[
+    RegistryAsset {
+        path: "icons/chevron_left.svg",
+        source: CHEVRON_LEFT_SVG,
+    },
+    RegistryAsset {
+        path: "icons/chevron_right.svg",
+        source: CHEVRON_RIGHT_SVG,
+    },
+];
+
+const DATE_PICKER_ASSETS: &[RegistryAsset] = &[
+    RegistryAsset {
+        path: "icons/calendar.svg",
+        source: CALENDAR_SVG,
+    },
+    RegistryAsset {
+        path: "icons/date_previous.svg",
+        source: DATE_PREVIOUS_SVG,
+    },
+    RegistryAsset {
+        path: "icons/date_next.svg",
+        source: DATE_NEXT_SVG,
+    },
+    RegistryAsset {
+        path: "icons/close.svg",
+        source: CLOSE_SVG,
+    },
+];
+
+const SELECT_ASSETS: &[RegistryAsset] = &[
+    RegistryAsset {
+        path: "icons/check.svg",
+        source: CHECK_SVG,
+    },
+    RegistryAsset {
+        path: "icons/close.svg",
+        source: CLOSE_SVG,
+    },
+    RegistryAsset {
+        path: "icons/disclosure_down.svg",
+        source: DISCLOSURE_DOWN_SVG,
+    },
+];
+
+const TABLE_ASSETS: &[RegistryAsset] = &[
+    RegistryAsset {
+        path: "icons/check.svg",
+        source: CHECK_SVG,
+    },
+    RegistryAsset {
+        path: "icons/sort_ascending.svg",
+        source: SORT_ASCENDING_SVG,
+    },
+    RegistryAsset {
+        path: "icons/sort_descending.svg",
+        source: SORT_DESCENDING_SVG,
+    },
+];
+
 #[derive(Clone, Debug, Default)]
 pub struct BundledRegistry {
     entries: BTreeMap<ModuleId, RegistryEntry>,
@@ -94,10 +169,15 @@ impl BundledRegistry {
             (LABEL_SOURCE, &[][..]),
             (ICON_SOURCE, ICON_ASSETS),
             (INPUT_SOURCE, &[][..]),
+            (TEXTAREA_SOURCE, &[][..]),
             (DIVIDER_SOURCE, &[][..]),
             (POPOVER_SOURCE, &[][..]),
             (DIALOG_SOURCE, &[][..]),
-            (DROPDOWN_SOURCE, &[][..]),
+            (DROPDOWN_SOURCE, SELECT_ASSETS),
+            (SELECT_SOURCE, SELECT_ASSETS),
+            (DATE_PICKER_SOURCE, DATE_PICKER_ASSETS),
+            (TABLE_SOURCE, TABLE_ASSETS),
+            (PAGINATION_SOURCE, PAGINATION_ASSETS),
             (CHECKBOX_SOURCE, &[][..]),
             (RADIO_SOURCE, &[][..]),
             (RADIO_GROUP_SOURCE, &[][..]),
@@ -117,6 +197,23 @@ impl BundledRegistry {
             let metadata = parse_component_header(source)?;
             let id = metadata.id.clone();
             validate_component_documentation(source, &id)?;
+            let declared_assets = metadata
+                .assets
+                .iter()
+                .map(String::as_str)
+                .collect::<BTreeSet<_>>();
+            let bundled_assets = assets
+                .iter()
+                .map(|asset| asset.path)
+                .collect::<BTreeSet<_>>();
+            if declared_assets != bundled_assets {
+                return Err(ProjectError::RegistryAssetMismatch {
+                    component: id,
+                    declared: declared_assets.into_iter().map(ToOwned::to_owned).collect(),
+                    bundled: bundled_assets.into_iter().map(ToOwned::to_owned).collect(),
+                });
+            }
+            let id = metadata.id.clone();
             if registry
                 .entries
                 .insert(
@@ -1273,6 +1370,14 @@ pub enum ProjectError {
     InvalidPath(PathBuf),
     #[error("component registry contains duplicate `{0}`")]
     DuplicateRegistry(ModuleId),
+    #[error(
+        "component `{component}` asset metadata differs from bundled assets: declared {declared:?}, bundled {bundled:?}"
+    )]
+    RegistryAssetMismatch {
+        component: ModuleId,
+        declared: BTreeSet<String>,
+        bundled: BTreeSet<String>,
+    },
     #[error("component `{0}` is not in the bundled registry")]
     UnknownComponent(ModuleId),
     #[error("component registry dependency cycle: {0:?}")]
@@ -1460,6 +1565,60 @@ mod tests {
                 .join(".gpui-rhai/baselines/assets/icons/check.svg")
                 .exists()
         );
+    }
+
+    #[test]
+    fn complex_components_install_transitive_sources_and_assets() {
+        let directory = fixture();
+        let project = Project::new(directory.path());
+        project.plan_init().unwrap().apply().unwrap();
+        project
+            .plan_add(
+                &BundledRegistry::load().unwrap(),
+                &[
+                    "pagination".to_owned(),
+                    "table".to_owned(),
+                    "textarea".to_owned(),
+                    "date_picker".to_owned(),
+                ],
+            )
+            .unwrap()
+            .apply()
+            .unwrap();
+        let report = project.check().unwrap();
+        assert_eq!(report.components, 8);
+        for component in [
+            "button.rhai",
+            "icon.rhai",
+            "select.rhai",
+            "pagination.rhai",
+            "skeleton.rhai",
+            "table.rhai",
+            "textarea.rhai",
+            "date_picker.rhai",
+        ] {
+            assert!(
+                directory
+                    .path()
+                    .join("ui/components")
+                    .join(component)
+                    .exists()
+            );
+        }
+        for asset in [
+            "icons/check.svg",
+            "icons/close.svg",
+            "icons/chevron_left.svg",
+            "icons/chevron_right.svg",
+            "icons/calendar.svg",
+            "icons/date_previous.svg",
+            "icons/date_next.svg",
+            "icons/disclosure_down.svg",
+            "icons/sort_ascending.svg",
+            "icons/sort_descending.svg",
+        ] {
+            assert!(directory.path().join("ui/assets").join(asset).exists());
+        }
     }
 
     #[test]

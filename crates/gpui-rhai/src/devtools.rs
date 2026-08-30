@@ -198,7 +198,7 @@ fn inspect_node(node: &UiNode, path: &str) -> InspectorNode {
                 Vec::new(),
             )
         }
-        UiNodeKind::Image { handle } => inspect_image(handle, &mut props),
+        UiNodeKind::Image { source } => inspect_image(source, &mut props),
         UiNodeKind::DirectionalImage {
             left_to_right,
             right_to_left,
@@ -217,32 +217,10 @@ fn inspect_node(node: &UiNode, path: &str) -> InspectorNode {
                 vec![trigger.as_ref(), content.as_ref()],
             )
         }
-        UiNodeKind::Dropdown { spec } => {
-            props.insert("id".to_owned(), spec.id.clone());
-            props.insert("options".to_owned(), spec.options.len().to_string());
-            props.insert("mode".to_owned(), format!("{:?}", spec.mode));
-            props.insert(
-                "selected".to_owned(),
-                spec.selected
-                    .as_ref()
-                    .map_or_else(|| "<uncontrolled>".to_owned(), |value| format!("{value:?}")),
-            );
-            props.insert(
-                "open".to_owned(),
-                spec.open
-                    .map_or_else(|| "<uncontrolled>".to_owned(), |value| value.to_string()),
-            );
-            let slots = [
-                spec.trigger_slot.as_deref(),
-                spec.header_slot.as_deref(),
-                spec.footer_slot.as_deref(),
-                spec.empty_slot.as_deref(),
-            ]
-            .into_iter()
-            .flatten()
-            .collect();
-            ("dropdown".to_owned(), slots)
-        }
+        UiNodeKind::Dropdown { spec } => inspect_dropdown(spec, &mut props),
+        UiNodeKind::Select { spec } => inspect_select(spec, &mut props),
+        UiNodeKind::DatePicker { spec } => inspect_date_picker(spec, &mut props),
+        UiNodeKind::Table { spec } => inspect_table(spec, &mut props),
         UiNodeKind::ToastHost { spec } => inspect_toast_host(spec, &mut props),
         UiNodeKind::VirtualList { spec } => inspect_virtual_list(spec, &mut props),
         UiNodeKind::ErrorBoundary { child, fallback } => (
@@ -295,27 +273,116 @@ fn inspect_virtual_list<'a>(
 }
 
 fn inspect_image<'a>(
-    handle: &crate::OpaqueHandle,
+    source: &crate::ImageSourceSpec,
     props: &mut BTreeMap<String, String>,
 ) -> (String, Vec<&'a UiNode>) {
-    props.insert("handle".to_owned(), format!("{}#<opaque>", handle.kind()));
+    props.insert("source".to_owned(), inspect_image_source(source));
     ("image".to_owned(), Vec::new())
 }
 
 fn inspect_directional_image<'a>(
-    left_to_right: &crate::OpaqueHandle,
-    right_to_left: &crate::OpaqueHandle,
+    left_to_right: &crate::ImageSourceSpec,
+    right_to_left: &crate::ImageSourceSpec,
     props: &mut BTreeMap<String, String>,
 ) -> (String, Vec<&'a UiNode>) {
     props.insert(
         "left_to_right".to_owned(),
-        format!("{}#<opaque>", left_to_right.kind()),
+        inspect_image_source(left_to_right),
     );
     props.insert(
         "right_to_left".to_owned(),
-        format!("{}#<opaque>", right_to_left.kind()),
+        inspect_image_source(right_to_left),
     );
     ("directional_image".to_owned(), Vec::new())
+}
+
+fn inspect_select<'a>(
+    spec: &crate::SelectNodeSpec,
+    props: &mut BTreeMap<String, String>,
+) -> (String, Vec<&'a UiNode>) {
+    props.insert("id".to_owned(), spec.choice.id.clone());
+    props.insert("options".to_owned(), spec.choice.options.len().to_string());
+    props.insert(
+        "value".to_owned(),
+        spec.choice
+            .selected
+            .as_ref()
+            .and_then(|values| values.first())
+            .cloned()
+            .unwrap_or_else(|| "<null>".to_owned()),
+    );
+    ("select".to_owned(), Vec::new())
+}
+
+fn inspect_dropdown<'a>(
+    spec: &'a crate::DropdownNodeSpec,
+    props: &mut BTreeMap<String, String>,
+) -> (String, Vec<&'a UiNode>) {
+    props.insert("id".to_owned(), spec.id.clone());
+    props.insert("options".to_owned(), spec.options.len().to_string());
+    props.insert("mode".to_owned(), format!("{:?}", spec.mode));
+    props.insert(
+        "selected".to_owned(),
+        spec.selected
+            .as_ref()
+            .map_or_else(|| "<uncontrolled>".to_owned(), |value| format!("{value:?}")),
+    );
+    props.insert(
+        "open".to_owned(),
+        spec.open
+            .map_or_else(|| "<uncontrolled>".to_owned(), |value| value.to_string()),
+    );
+    let slots = [
+        spec.trigger_slot.as_deref(),
+        spec.header_slot.as_deref(),
+        spec.footer_slot.as_deref(),
+        spec.empty_slot.as_deref(),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    ("dropdown".to_owned(), slots)
+}
+
+fn inspect_date_picker<'a>(
+    spec: &crate::DatePickerNodeSpec,
+    props: &mut BTreeMap<String, String>,
+) -> (String, Vec<&'a UiNode>) {
+    props.insert("id".to_owned(), spec.id.clone());
+    props.insert(
+        "value".to_owned(),
+        spec.value
+            .map_or_else(|| "<null>".to_owned(), crate::GregorianDate::to_iso),
+    );
+    ("date_picker".to_owned(), Vec::new())
+}
+
+fn inspect_table<'a>(
+    spec: &'a crate::TableNodeSpec,
+    props: &mut BTreeMap<String, String>,
+) -> (String, Vec<&'a UiNode>) {
+    props.insert("key".to_owned(), spec.key.clone());
+    props.insert("rows".to_owned(), spec.rows.len().to_string());
+    props.insert("columns".to_owned(), spec.columns.len().to_string());
+    let descendants = spec
+        .columns
+        .iter()
+        .flat_map(|column| column.custom_cells.iter().flatten())
+        .chain(
+            [spec.loading_slot.as_deref(), spec.empty_slot.as_deref()]
+                .into_iter()
+                .flatten(),
+        )
+        .chain(spec.loading_rows.iter())
+        .collect();
+    ("table".to_owned(), descendants)
+}
+
+fn inspect_image_source(source: &crate::ImageSourceSpec) -> String {
+    match source {
+        crate::ImageSourceSpec::Handle(handle) => format!("{}#<opaque>", handle.kind()),
+        crate::ImageSourceSpec::Asset(asset) => asset.as_str().to_owned(),
+    }
 }
 
 fn inspect_toast_host<'a>(
@@ -334,6 +401,9 @@ fn primitive_value(value: &PrimitiveValue) -> String {
         PrimitiveValue::Node(_) => "<node>".to_owned(),
         PrimitiveValue::Nodes(nodes) => format!("<{} nodes>", nodes.len()),
         PrimitiveValue::Callback(callback) => format!("Fn({})", callback.name()),
+        PrimitiveValue::Style(_) => "<style>".to_owned(),
+        PrimitiveValue::Length(length) => format!("{length:?}"),
+        PrimitiveValue::Asset(asset) => asset.as_str().to_owned(),
     }
 }
 

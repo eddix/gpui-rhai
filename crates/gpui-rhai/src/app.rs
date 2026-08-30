@@ -22,16 +22,16 @@ use thiserror::Error;
 use crate::FileWatcher;
 use crate::overlay_element::WindowOverlayCoordinator;
 use crate::{
-    ActionError, ActionId, AnimationRuntime, AppManifest, AssetData, CapabilityError, CompiledUi,
-    ComponentExportError, ComponentInstancePath, ComponentRegistry, ComponentStateSchema,
-    DependencyError, DirectoryAssetProvider, DispatchScriptAction, EmbeddedScriptSource,
-    FileScriptSource, GpuiNodeRenderer, InMemoryAssetProvider, InteractionState, KeyBindingSpec,
-    LocaleBundle, LocaleManager, ModuleCompileCache, ModuleId, MotionPreference,
-    NodeEventDispatcher, PrimitiveRegistry, ResponsiveError, ResponsiveRuntime,
+    ActionError, ActionId, AnimationRuntime, AppManifest, AssetData, AssetId, CapabilityError,
+    CompiledUi, ComponentExportError, ComponentInstancePath, ComponentRegistry,
+    ComponentStateSchema, DependencyError, DirectoryAssetProvider, DispatchScriptAction,
+    EmbeddedScriptSource, FileScriptSource, GpuiNodeRenderer, InMemoryAssetProvider,
+    InteractionState, KeyBindingSpec, LocaleBundle, LocaleManager, ModuleCompileCache, ModuleId,
+    MotionPreference, NodeEventDispatcher, PrimitiveRegistry, ResponsiveError, ResponsiveRuntime,
     RestrictedModuleResolver, RuntimeEngine, RuntimeError, ScriptCallback, ScriptLifecycle,
     ScriptSource, ScriptWindowSpec, SystemAppearance, TextDirection, ThemeManager, ThemeSelection,
     ThemeVariant, UiRuntimeState, UiValue, ViewportBreakpoints, WindowCommand, WindowCommandPolicy,
-    init_text_input, load_locale_source, load_theme_source,
+    init_text_area, init_text_input, load_locale_source, load_theme_source,
 };
 
 #[cfg(feature = "dev-reload")]
@@ -52,6 +52,7 @@ pub fn install(cx: &mut App) {
         return;
     }
     init_text_input(cx);
+    init_text_area(cx);
     cx.set_global(ScriptRuntimeInstallation::default());
 }
 
@@ -733,6 +734,7 @@ pub struct FileScriptView {
     extensions: Vec<Box<dyn ScriptViewExtension>>,
     key_bindings: Vec<KeyBindingSpec>,
     viewport_breakpoints: ViewportBreakpoints,
+    calendar_clock: crate::CalendarClock,
 }
 
 impl FileScriptView {
@@ -745,6 +747,7 @@ impl FileScriptView {
             extensions: Vec::new(),
             key_bindings: Vec::new(),
             viewport_breakpoints: ViewportBreakpoints::default(),
+            calendar_clock: crate::CalendarClock::default(),
         }
     }
 
@@ -775,6 +778,12 @@ impl FileScriptView {
     #[must_use]
     pub const fn viewport_breakpoints(mut self, breakpoints: ViewportBreakpoints) -> Self {
         self.viewport_breakpoints = breakpoints;
+        self
+    }
+
+    #[must_use]
+    pub fn calendar_clock(mut self, clock: crate::CalendarClock) -> Self {
+        self.calendar_clock = clock;
         self
     }
 
@@ -809,6 +818,7 @@ impl FileScriptView {
         let mut runtime_state = UiRuntimeState::new();
         runtime_state.animations = AnimationRuntime::new(self.motion_preference);
         runtime_state.responsive = ResponsiveRuntime::new(self.viewport_breakpoints);
+        runtime_state.calendar_clock = self.calendar_clock;
         runtime_state.locale = load_locale_directory(engine.engine(), &ui_root.join("locales"))?;
         runtime_state.theme = Some(load_theme_directory(
             engine.engine(),
@@ -816,6 +826,7 @@ impl FileScriptView {
             &theme,
         )?);
         register_file_assets(&runtime_state, &ui_root)?;
+        preload_component_assets(&runtime_state, &component_exports)?;
         for extension in extensions.iter() {
             extension
                 .configure_runtime(&mut runtime_state)
@@ -864,6 +875,7 @@ pub struct EmbeddedScriptView {
     key_bindings: Vec<KeyBindingSpec>,
     assets: BTreeMap<String, AssetData>,
     viewport_breakpoints: ViewportBreakpoints,
+    calendar_clock: crate::CalendarClock,
 }
 
 impl EmbeddedScriptView {
@@ -887,6 +899,7 @@ impl EmbeddedScriptView {
             key_bindings: Vec::new(),
             assets: BTreeMap::new(),
             viewport_breakpoints: ViewportBreakpoints::default(),
+            calendar_clock: crate::CalendarClock::default(),
         }
     }
 
@@ -944,6 +957,12 @@ impl EmbeddedScriptView {
         self
     }
 
+    #[must_use]
+    pub fn calendar_clock(mut self, clock: crate::CalendarClock) -> Self {
+        self.calendar_clock = clock;
+        self
+    }
+
     /// Compile and initialize a fully embedded application.
     ///
     /// # Errors
@@ -969,6 +988,7 @@ impl EmbeddedScriptView {
         let mut runtime_state = UiRuntimeState::new();
         runtime_state.animations = AnimationRuntime::new(self.motion_preference);
         runtime_state.responsive = ResponsiveRuntime::new(self.viewport_breakpoints);
+        runtime_state.calendar_clock = self.calendar_clock;
         runtime_state.locale = load_embedded_locales(engine.engine(), self.locales)?;
         runtime_state.theme = Some(load_embedded_themes(engine.engine(), self.themes, &theme)?);
         if !self.assets.is_empty() {
@@ -976,6 +996,7 @@ impl EmbeddedScriptView {
                 .assets
                 .register("app", InMemoryAssetProvider::new(self.assets))?;
         }
+        preload_component_assets(&runtime_state, &component_exports)?;
         for extension in extensions.iter() {
             extension
                 .configure_runtime(&mut runtime_state)
@@ -1122,6 +1143,27 @@ fn register_file_assets(runtime: &UiRuntimeState, root: &Path) -> Result<(), Scr
             .assets
             .register("app", DirectoryAssetProvider::new(&asset_root)?)?;
     }
+    Ok(())
+}
+
+fn preload_component_assets(
+    runtime: &UiRuntimeState,
+    components: &ComponentRegistry,
+) -> Result<(), ScriptViewError> {
+    let ids = components
+        .iter()
+        .flat_map(|(_, component)| component.metadata.assets.iter())
+        .map(|asset| {
+            let logical = Path::new(asset).with_extension("");
+            let logical = logical
+                .components()
+                .map(|component| component.as_os_str().to_string_lossy())
+                .collect::<Vec<_>>()
+                .join("/");
+            AssetId::parse(format!("app/{logical}")).map_err(ScriptViewError::Asset)
+        })
+        .collect::<Result<BTreeSet<_>, _>>()?;
+    runtime.assets.preload_images(ids)?;
     Ok(())
 }
 
@@ -1608,34 +1650,41 @@ impl ScriptApplication {
                     ..WindowOptions::default()
                 },
                 move |window, cx| {
-                    let view = prepared.mount_with_registry(
-                        ScriptViewConfig::new("main").paint_background(true),
-                        host.clone(),
-                        Rc::clone(&view_native_windows),
-                        window,
-                        cx,
-                    );
-                    match view {
-                        Ok(view) => {
-                            let _ = view.focus(window, cx);
-                            install_close_interceptor(window, cx, &view.0.entity);
-                            cx.new(|_| ScriptApplicationRoot {
-                                host,
-                                view: Some(view),
-                                error: None,
-                            })
+                    let root = cx.new(|_| ScriptApplicationRoot {
+                        host: host.clone(),
+                        view: None,
+                        error: None,
+                    });
+                    let weak_root = root.downgrade();
+                    window.defer(cx, move |window, cx| {
+                        let view = prepared.mount_with_registry(
+                            ScriptViewConfig::new("main").paint_background(true),
+                            host,
+                            Rc::clone(&view_native_windows),
+                            window,
+                            cx,
+                        );
+                        match view {
+                            Ok(view) => {
+                                let _ = view.focus(window, cx);
+                                install_close_interceptor(window, cx, &view.0.entity);
+                                let _ = weak_root.update(cx, |root, cx| {
+                                    root.view = Some(view);
+                                    cx.notify();
+                                });
+                            }
+                            Err(error) => {
+                                let message = error.to_string();
+                                *mount_error.borrow_mut() = Some(message.clone());
+                                let _ = weak_root.update(cx, |root, cx| {
+                                    root.error = Some(message);
+                                    cx.notify();
+                                });
+                                cx.defer(|cx| cx.quit());
+                            }
                         }
-                        Err(error) => {
-                            let message = error.to_string();
-                            *mount_error.borrow_mut() = Some(message.clone());
-                            cx.defer(|cx| cx.quit());
-                            cx.new(|_| ScriptApplicationRoot {
-                                host,
-                                view: None,
-                                error: Some(message),
-                            })
-                        }
-                    }
+                    });
+                    root
                 },
             );
             match result {
@@ -1669,13 +1718,10 @@ impl Render for ScriptApplicationRoot {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         self.host.container(self.view.as_ref().map_or_else(
             || {
-                div()
-                    .child(
-                        self.error
-                            .clone()
-                            .unwrap_or_else(|| "Script view failed".to_owned()),
-                    )
-                    .into_any_element()
+                self.error.as_ref().map_or_else(
+                    || div().child("Loading…").into_any_element(),
+                    |error| div().child(error.clone()).into_any_element(),
+                )
             },
             |view| {
                 view.element()
@@ -3015,8 +3061,120 @@ mod tests {
         let (_, lifecycle) = start_prepared(prepared, "asset-view", "main");
         assert!(matches!(
             lifecycle.root().unwrap().kind(),
-            crate::UiNodeKind::Image { handle } if handle.id() != 0
+            crate::UiNodeKind::Image {
+                source: crate::ImageSourceSpec::Handle(handle),
+            } if handle.id() != 0
         ));
+    }
+
+    #[test]
+    fn declared_component_assets_preload_and_render_without_lifecycle_io() {
+        let entry = ModuleId::parse("main").unwrap();
+        let component = ModuleId::parse("components/declarative_icon").unwrap();
+        let scripts = EmbeddedScriptSource::new(BTreeMap::from([
+            (
+                entry.clone(),
+                r#"
+                    import "components/declarative_icon" as declarative_icon;
+                    fn view(ctx) { declarative_icon::DeclarativeIcon(#{} ) }
+                "#
+                .to_owned(),
+            ),
+            (
+                component,
+                r#"/* gpui-rhai
+{
+  "id": "components/declarative_icon",
+  "export": "DeclarativeIcon",
+  "version": "0.1.0",
+  "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
+  "dependencies": [],
+  "capabilities": {},
+  "assets": ["icons/check.svg"]
+}
+*/
+export_component(#{
+    metadata: #{ id: "components/declarative_icon", "export": "DeclarativeIcon",
+        version: "0.1.0", runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
+        dependencies: [], capabilities: #{}, assets: ["icons/check.svg"] },
+    schema: #{ props: #{}, state: #{ fields: #{} }, events: #{}, slots: #{}, parts: ["root"] }
+});
+fn DeclarativeIcon(props) {
+    component_render("components/declarative_icon", props, Fn("render_DeclarativeIcon"))
+}
+fn render_DeclarativeIcon(ctx, props) { image(asset("app/icons/check")) }
+"#
+                .to_owned(),
+            ),
+        ]));
+        let prepared = EmbeddedScriptView::new(
+            entry,
+            scripts,
+            include_str!("../../../registry/themes/default_dark.rhai"),
+        )
+        .asset_sources([(
+            "icons/check".to_owned(),
+            AssetData {
+                mime_type: "image/svg+xml".to_owned(),
+                bytes: include_bytes!("../../../registry/assets/icons/check.svg").to_vec(),
+            },
+        )])
+        .prepare()
+        .unwrap();
+        assert!(
+            prepared
+                .factory
+                .runtime
+                .borrow()
+                .assets
+                .cached_image(&AssetId::parse("app/icons/check").unwrap())
+                .is_ok()
+        );
+        let (_, lifecycle) = start_prepared(prepared, "asset-view", "main");
+        assert!(matches!(
+            lifecycle.root().unwrap().kind(),
+            crate::UiNodeKind::Image {
+                source: crate::ImageSourceSpec::Asset(asset),
+            } if asset.as_str() == "app/icons/check"
+        ));
+    }
+
+    #[test]
+    fn missing_declared_component_asset_fails_preparation() {
+        let entry = ModuleId::parse("main").unwrap();
+        let component = ModuleId::parse("components/missing_asset").unwrap();
+        let scripts = EmbeddedScriptSource::new(BTreeMap::from([
+            (
+                entry.clone(),
+                "import \"components/missing_asset\" as missing; fn view(ctx) { missing::MissingAsset(#{} ) }"
+                    .to_owned(),
+            ),
+            (
+                component,
+                r#"/* gpui-rhai
+{
+  "id": "components/missing_asset", "export": "MissingAsset", "version": "0.1.0",
+  "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
+  "dependencies": [], "capabilities": {}, "assets": ["icons/missing.svg"]
+}
+*/
+export_component(#{ metadata: #{ id: "components/missing_asset", "export": "MissingAsset",
+    version: "0.1.0", runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
+    dependencies: [], capabilities: #{}, assets: ["icons/missing.svg"] },
+    schema: #{ props: #{}, state: #{ fields: #{} }, events: #{}, slots: #{}, parts: ["root"] } });
+fn MissingAsset(props) { component_render("components/missing_asset", props, Fn("render_MissingAsset")) }
+fn render_MissingAsset(ctx, props) { image(asset("app/icons/missing")) }
+"#
+                .to_owned(),
+            ),
+        ]));
+        let result = EmbeddedScriptView::new(
+            entry,
+            scripts,
+            include_str!("../../../registry/themes/default_dark.rhai"),
+        )
+        .prepare();
+        assert!(matches!(result, Err(ScriptViewError::Asset(_))));
     }
 
     #[test]
@@ -3075,9 +3233,12 @@ mod tests {
             assert!(
                 matches!(&children[0].kind(), crate::UiNodeKind::Text { text } if text == "Loading")
             );
-            assert!(
-                matches!(&children[1].kind(), crate::UiNodeKind::Image { handle } if handle.id() == 1)
-            );
+            assert!(matches!(
+                &children[1].kind(),
+                crate::UiNodeKind::Image {
+                    source: crate::ImageSourceSpec::Handle(handle),
+                } if handle.id() == 1
+            ));
         }
     }
 

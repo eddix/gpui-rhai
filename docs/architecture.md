@@ -14,6 +14,11 @@ No GPUI `Window`, `App`, `Context`, `Div`, or `AnyElement` enters a Rhai
 `Dynamic`. Custom Rust primitives are the intentional extension point for
 mechanisms that require those types.
 
+Schemas validate public values before native construction. The complex-control
+line adds bounded numeric schemas, `one_of`, `Length`, and a schema that accepts
+only values convertible to `UiValue`; it does not add an unrestricted Dynamic
+escape hatch.
+
 ## Rendering transaction
 
 `view(ctx)` returns a complete declarative tree. A candidate tree becomes
@@ -91,14 +96,47 @@ flipping/clamping, the parent-child dismiss stack, outside-click routing,
 Escape routing, modal policy, and per-frame cleanup. Rhai supplies only stable
 IDs, parent IDs, content, and controlled policy callbacks.
 
-Keyed native controls retain GPUI Entities in element state. Dropdown uses one
-Entity per stable key, the native TextInput Entity for searchable input, and
-GPUI `uniform_list` for viewport-bounded row realization. Short-lived render
-elements never enter the persistent runtime state.
+Keyed native controls retain GPUI Entities in element state. Business values
+remain controlled Rhai props; only interaction transients such as focus,
+selection ranges, open panels, visible months, search text, and scroll offsets
+live in the native Entity.
+
+Dropdown and Select share a private listbox core for validation, grouping,
+filtering, keyboard navigation, and viewport-bounded option realization. Their
+public value and composition semantics remain separate. DatePicker reuses the
+same host overlay coordinator but owns a Gregorian calendar state machine.
+
+Input and Textarea share a text-editing core for UTF-8/UTF-16 conversion,
+grapheme boundaries, selection, clipboard, IME marked ranges, and controlled
+reconciliation. Their layout elements remain separate: Input is a shaped
+single line, while Textarea owns wrapped multiline layout, vertical hit testing,
+multi-line selection paint, caret scrolling, and auto-grow measurement.
+
+Table is a data-driven fixed-height native element. Its scalar row maps are not
+expanded into Rhai cell nodes before scrolling; GPUI `uniform_list` requests
+only visible rows. A column with an explicit Rhai `cell_renderer` is the stated
+exception: the callback runs for all rows during the complete view transaction,
+then native element creation remains viewport-bounded. The runtime never calls
+Rhai from a scroll/layout closure.
+
+Short-lived render elements never enter persistent runtime state.
 
 Window width is reduced to a configurable `compact`/`regular`/`wide` class.
 Crossing a breakpoint reruns `view`; ordinary resizing remains native GPUI
 layout and does not drive continuous Rhai evaluation.
+
+## Locale, clock, and assets
+
+Locale selection retains app/window/subtree precedence and additionally
+resolves immutable calendar and number metadata. `YYYY-MM-DD` is the strict
+date wire format; locale formatters produce presentation strings. A Runtime
+Clock supplies the system-local current date, and hosts may inject a fixed Clock
+without exposing wall-clock APIs to Rhai.
+
+Component metadata declares small assets. Script preparation registers and
+preloads them into `AssetRegistry`; asset-backed image nodes therefore resolve
+only cached `AssetId` values during render. Capability-provided image handles
+remain supported for dynamic application images.
 
 ## Source ownership
 

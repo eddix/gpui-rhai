@@ -647,6 +647,7 @@ mod tests {
                     "app.echo".to_owned(),
                     VersionReq::parse("^1.0").unwrap(),
                 )]),
+                assets: BTreeSet::new(),
             },
             ComponentSchema::default(),
         )

@@ -30,7 +30,7 @@ export_component(#{
                         key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
                         title: #{ schema: #{ type: "string" }, required: true, sensitive: false },
                         content: #{ schema: #{ type: "node" }, required: true, sensitive: false },
-                        content_height: #{ schema: #{ type: "integer" }, required: true, sensitive: false },
+                        content_height: #{ schema: #{ type: "integer", min: 0 }, required: true, sensitive: false },
                         disabled: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                             "default": #{ type: "bool", value: false } },
                     },
@@ -82,7 +82,7 @@ fn render_Accordion(ctx, props) {
         if !item_disabled && callback != () {
             trigger = trigger.on_click_value(callback, toggled(props.expanded, item.key, mode));
         }
-        let height = if item.content_height < 0 { 0 } else { item.content_height };
+        let height = item.content_height;
         let panel = column([item.content])
             .with_key(`${item.key}-content`)
             .with_style(component_style(props, "content", style().padding_x(px(8)).clip()))

@@ -10,8 +10,10 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::{
-    ComponentStateSchema, EventSchema, NodeEventDispatcher, ObjectField, SchemaValidationError,
-    ScriptCallback, ScriptGeneration, UiNode, UiNodeKind, UiValue, UiValueError, ValueSchema,
+    AssetId, ColorResolver, ColorValue, ComponentStateSchema, EventSchema, Length,
+    NodeEventDispatcher, ObjectField, RadiusToken, Rgba8, SchemaDefinitionError,
+    SchemaValidationError, ScriptCallback, ScriptGeneration, SpacingToken, Style, UiNode,
+    UiNodeKind, UiValue, UiValueError, ValueSchema,
 };
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -103,6 +105,98 @@ pub enum PrimitiveValue {
     Node(Box<UiNode>),
     Nodes(Vec<UiNode>),
     Callback(ScriptCallback),
+    Style(Box<Style>),
+    Length(Length),
+    Asset(AssetId),
+}
+
+/// Read-only semantic theme values captured for one native primitive render.
+///
+/// Primitive handlers use this snapshot to resolve component-owned paint parts
+/// without receiving a mutable application/theme manager or coupling to a
+/// concrete theme family.
+#[derive(Clone, Debug, Default)]
+pub struct PrimitiveTheme {
+    colors: BTreeMap<String, Rgba8>,
+    spacing: BTreeMap<SpacingToken, Length>,
+    radii: BTreeMap<RadiusToken, Length>,
+}
+
+impl PrimitiveTheme {
+    pub(crate) fn capture(colors: &impl ColorResolver) -> Self {
+        const TOKENS: &[&str] = &[
+            "surface",
+            "surface_raised",
+            "surface_hover",
+            "text_primary",
+            "text_muted",
+            "accent",
+            "accent_hover",
+            "on_accent",
+            "danger",
+            "on_danger",
+            "warning",
+            "on_warning",
+            "success",
+            "on_success",
+            "border",
+            "focus_ring",
+            "disabled",
+        ];
+        Self {
+            colors: TOKENS
+                .iter()
+                .filter_map(|token| {
+                    colors
+                        .resolve(&ColorValue::Token((*token).to_owned()))
+                        .map(|value| ((*token).to_owned(), value))
+                })
+                .collect(),
+            spacing: [
+                SpacingToken::Xs,
+                SpacingToken::Sm,
+                SpacingToken::Md,
+                SpacingToken::Lg,
+            ]
+            .into_iter()
+            .filter_map(|token| {
+                colors
+                    .resolve_length(Length::ThemeSpacing(token))
+                    .map(|value| (token, value))
+            })
+            .collect(),
+            radii: [RadiusToken::Sm, RadiusToken::Md, RadiusToken::Lg]
+                .into_iter()
+                .filter_map(|token| {
+                    colors
+                        .resolve_length(Length::ThemeRadius(token))
+                        .map(|value| (token, value))
+                })
+                .collect(),
+        }
+    }
+
+    #[must_use]
+    pub fn color(&self, token: &str) -> Option<Rgba8> {
+        self.colors.get(token).copied()
+    }
+
+    #[must_use]
+    pub fn resolve_color(&self, value: &ColorValue) -> Option<Rgba8> {
+        match value {
+            ColorValue::Literal(value) => Some(*value),
+            ColorValue::Token(token) => self.color(token),
+        }
+    }
+
+    #[must_use]
+    pub fn resolve_length(&self, value: Length) -> Option<Length> {
+        match value {
+            Length::ThemeSpacing(token) => self.spacing.get(&token).copied(),
+            Length::ThemeRadius(token) => self.radii.get(&token).copied(),
+            Length::Pixels(_) | Length::Rems(_) | Length::Relative(_) => Some(value),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -140,7 +234,10 @@ impl PrimitiveProps {
                         node.bind_component_scope(component, events, native_context);
                     }
                 }
-                PrimitiveValue::Data(_) => {}
+                PrimitiveValue::Data(_)
+                | PrimitiveValue::Style(_)
+                | PrimitiveValue::Length(_)
+                | PrimitiveValue::Asset(_) => {}
             }
         }
     }
@@ -168,7 +265,11 @@ impl PrimitiveProps {
                         node.bind_callback_scope_by_name(names, component, events, native_context);
                     }
                 }
-                PrimitiveValue::Data(_) | PrimitiveValue::Callback(_) => {}
+                PrimitiveValue::Data(_)
+                | PrimitiveValue::Style(_)
+                | PrimitiveValue::Length(_)
+                | PrimitiveValue::Asset(_)
+                | PrimitiveValue::Callback(_) => {}
             }
         }
     }
@@ -246,6 +347,7 @@ pub trait PrimitiveHandler {
         &mut self,
         instance: &PrimitiveInstance,
         events: &PrimitiveEventEmitter,
+        theme: &PrimitiveTheme,
         window: &mut Window,
         cx: &mut App,
     ) -> Result<AnyElement, String>;
@@ -450,12 +552,14 @@ impl PrimitiveRegistry {
         node: PrimitiveNode,
         fallback: Option<UiNode>,
         dispatcher: Option<NodeEventDispatcher>,
+        theme: PrimitiveTheme,
     ) -> AnyElement {
         RegisteredPrimitiveElement {
             registry: self.clone(),
             node,
             fallback,
             dispatcher,
+            theme,
         }
         .into_any_element()
     }
@@ -464,6 +568,7 @@ impl PrimitiveRegistry {
         &self,
         node: PrimitiveNode,
         events: &PrimitiveEventEmitter,
+        theme: &PrimitiveTheme,
         window: &mut Window,
         cx: &mut App,
     ) -> Result<AnyElement, PrimitiveError> {
@@ -496,7 +601,7 @@ impl PrimitiveRegistry {
             })?;
         }
         let element = guard_primitive_panic(&instance.node.primitive, "render", || {
-            entry.handler.render(&instance, events, window, cx)
+            entry.handler.render(&instance, events, theme, window, cx)
         })?
         .map_err(|message| PrimitiveError::Handler {
             primitive: instance.node.primitive.clone(),
@@ -552,9 +657,27 @@ fn collect_primitive_instances(node: &UiNode, active: &mut BTreeSet<PrimitiveIns
                 collect_primitive_instances(&item.node, active);
             }
         }
+        UiNodeKind::Table { spec } => {
+            for column in &spec.columns {
+                for cell in column.custom_cells.iter().flatten() {
+                    collect_primitive_instances(cell, active);
+                }
+            }
+            for slot in [spec.loading_slot.as_deref(), spec.empty_slot.as_deref()]
+                .into_iter()
+                .flatten()
+            {
+                collect_primitive_instances(slot, active);
+            }
+            for row in &spec.loading_rows {
+                collect_primitive_instances(row, active);
+            }
+        }
         UiNodeKind::Text { .. }
         | UiNodeKind::Image { .. }
         | UiNodeKind::DirectionalImage { .. }
+        | UiNodeKind::Select { .. }
+        | UiNodeKind::DatePicker { .. }
         | UiNodeKind::ToastHost { .. } => {}
     }
 }
@@ -576,6 +699,7 @@ struct RegisteredPrimitiveElement {
     node: PrimitiveNode,
     fallback: Option<UiNode>,
     dispatcher: Option<NodeEventDispatcher>,
+    theme: PrimitiveTheme,
 }
 
 impl RenderOnce for RegisteredPrimitiveElement {
@@ -600,7 +724,7 @@ impl RenderOnce for RegisteredPrimitiveElement {
             callbacks,
             dispatcher: self.dispatcher,
         };
-        match registry.render_instance(self.node, &events, window, cx) {
+        match registry.render_instance(self.node, &events, &self.theme, window, cx) {
             Ok(element) => element,
             Err(error) => self.fallback.map_or_else(
                 || {
@@ -629,6 +753,13 @@ fn validate_descriptor(descriptor: &PrimitiveDescriptor) -> Result<(), Primitive
         if !is_identifier(name) {
             return Err(PrimitiveError::InvalidPropName(name.clone()));
         }
+        field
+            .schema
+            .validate_definition()
+            .map_err(|source| PrimitiveError::InvalidSchema {
+                location: format!("prop `{name}`"),
+                source,
+            })?;
         if let Some(default) = &field.default {
             field
                 .schema
@@ -639,23 +770,35 @@ fn validate_descriptor(descriptor: &PrimitiveDescriptor) -> Result<(), Primitive
                 })?;
         }
     }
-    for name in descriptor.events.keys() {
+    for (name, event) in &descriptor.events {
+        event
+            .payload
+            .validate_definition()
+            .map_err(|source| PrimitiveError::InvalidSchema {
+                location: format!("event `{name}`"),
+                source,
+            })?;
         let callback = format!("on_{name}");
-        if !descriptor.props.get(&callback).is_some_and(|field| {
-            matches!(field.schema, ValueSchema::Callback)
-                || matches!(
-                    &field.schema,
-                    ValueSchema::Optional { value }
-                        if matches!(value.as_ref(), ValueSchema::Callback)
-                )
-        }) {
+        if !descriptor
+            .props
+            .get(&callback)
+            .is_some_and(|field| schema_accepts_callback(&field.schema))
+        {
             return Err(PrimitiveError::MissingEventCallback {
                 event: name.clone(),
                 prop: callback,
             });
         }
     }
+    ComponentStateSchema::new(descriptor.state.fields().clone())
+        .map_err(|source| PrimitiveError::InvalidStateSchema(source.to_string()))?;
     Ok(())
+}
+
+fn schema_accepts_callback(schema: &ValueSchema) -> bool {
+    matches!(schema, ValueSchema::Callback)
+        || matches!(schema, ValueSchema::Optional { value } if schema_accepts_callback(value))
+        || matches!(schema, ValueSchema::OneOf { variants } if variants.iter().any(schema_accepts_callback))
 }
 
 fn convert_props(
@@ -694,6 +837,13 @@ fn convert_prop(
             Ok(PrimitiveValue::Data(UiValue::Null))
         }
         ValueSchema::Optional { value: inner } => convert_prop(inner, value, generation),
+        ValueSchema::OneOf { variants } => {
+            let branch = variants
+                .iter()
+                .find(|variant| variant.validate(&value).is_ok())
+                .expect("validated primitive one_of prop matches one branch");
+            convert_prop(branch, value, generation)
+        }
         ValueSchema::Node => Ok(PrimitiveValue::Node(Box::new(value.cast::<UiNode>()))),
         ValueSchema::Callback => Ok(PrimitiveValue::Callback(ScriptCallback::from_fn_ptr(
             value.cast::<FnPtr>(),
@@ -708,6 +858,9 @@ fn convert_prop(
                     .collect(),
             ))
         }
+        ValueSchema::Style => Ok(PrimitiveValue::Style(Box::new(value.cast::<Style>()))),
+        ValueSchema::Length => Ok(PrimitiveValue::Length(value.cast::<Length>())),
+        ValueSchema::Asset => Ok(PrimitiveValue::Asset(value.cast::<AssetId>())),
         _ => UiValue::from_dynamic(value).map(PrimitiveValue::Data),
     }
 }
@@ -720,6 +873,13 @@ pub enum PrimitiveError {
     InvalidExport(String),
     #[error("primitive prop `{0}` must be `snake_case`")]
     InvalidPropName(String),
+    #[error("invalid schema definition for primitive {location}: {source}")]
+    InvalidSchema {
+        location: String,
+        source: SchemaDefinitionError,
+    },
+    #[error("invalid primitive state schema: {0}")]
+    InvalidStateSchema(String),
     #[error("primitive registry is already borrowed during rendering")]
     Borrowed,
     #[error("primitive `{0:?}` is already registered")]
@@ -775,16 +935,48 @@ mod tests {
 
     struct TestHandler;
 
+    struct TestTheme;
+
+    impl ColorResolver for TestTheme {
+        fn resolve(&self, color: &ColorValue) -> Option<Rgba8> {
+            matches!(color, ColorValue::Token(token) if token == "accent")
+                .then(|| Rgba8::from_rgba_hex(0x1234_56ff))
+        }
+
+        fn resolve_length(&self, length: Length) -> Option<Length> {
+            (length == Length::ThemeSpacing(SpacingToken::Sm)).then_some(Length::Pixels(6.0))
+        }
+    }
+
     impl PrimitiveHandler for TestHandler {
         fn render(
             &mut self,
             _: &PrimitiveInstance,
             _: &PrimitiveEventEmitter,
+            _: &PrimitiveTheme,
             _: &mut Window,
             _: &mut App,
         ) -> Result<AnyElement, String> {
             Ok(div().into_any_element())
         }
+    }
+
+    #[test]
+    fn primitive_theme_exposes_only_resolved_semantic_snapshot() {
+        let theme = PrimitiveTheme::capture(&TestTheme);
+        assert_eq!(
+            theme.color("accent"),
+            Some(Rgba8::from_rgba_hex(0x1234_56ff))
+        );
+        assert_eq!(theme.color("unknown"), None);
+        assert_eq!(
+            theme.resolve_color(&ColorValue::Literal(Rgba8::from_rgba_hex(0xaabb_ccdd))),
+            Some(Rgba8::from_rgba_hex(0xaabb_ccdd))
+        );
+        assert_eq!(
+            theme.resolve_length(Length::ThemeSpacing(SpacingToken::Sm)),
+            Some(Length::Pixels(6.0))
+        );
     }
 
     fn descriptor() -> PrimitiveDescriptor {
@@ -809,7 +1001,7 @@ mod tests {
             )]),
             state: ComponentStateSchema::new(BTreeMap::from([(
                 "selection".to_owned(),
-                StateField::new(ValueSchema::Integer, UiValue::Integer(0)),
+                StateField::new(ValueSchema::integer(), UiValue::Integer(0)),
             )]))
             .unwrap(),
             lifecycle: true,
@@ -879,6 +1071,7 @@ mod tests {
                 &mut self,
                 _: &PrimitiveInstance,
                 _: &PrimitiveEventEmitter,
+                _: &PrimitiveTheme,
                 _: &mut Window,
                 _: &mut App,
             ) -> Result<AnyElement, String> {

@@ -4,10 +4,11 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use gpui::{
-    AnyElement, App, Bounds, BoxShadow, DispatchPhase, Display, Element, ElementId, FocusHandle,
-    GlobalElementId, InspectorElementId, InteractiveElement, IntoElement, KeyDownEvent, LayoutId,
-    MouseDownEvent, ParentElement, Pixels, Point, SharedString, StatefulInteractiveElement,
-    Style as GpuiStyle, Styled, WeakFocusHandle, Window, deferred, div, point, px, rgba, size,
+    AnyElement, App, Bounds, BoxShadow, ClickEvent, DispatchPhase, Display, Element, ElementId,
+    FocusHandle, GlobalElementId, InspectorElementId, InteractiveElement, IntoElement,
+    KeyDownEvent, LayoutId, MouseDownEvent, ParentElement, Pixels, Point, SharedString,
+    StatefulInteractiveElement, Style as GpuiStyle, Styled, WeakFocusHandle, Window, deferred, div,
+    point, px, rgba, size,
 };
 
 use crate::{
@@ -217,7 +218,7 @@ impl WindowOverlayCoordinator {
         state.manager.open(spec)
     }
 
-    fn dismiss(&self, id: &OverlayId, window: &mut Window, cx: &mut App) -> bool {
+    pub(crate) fn dismiss(&self, id: &OverlayId, window: &mut Window, cx: &mut App) -> bool {
         let callbacks = {
             let mut state = self.0.borrow_mut();
             let report = state.manager.dismiss(id);
@@ -439,6 +440,7 @@ pub(crate) struct ScriptOverlayElement {
     focus_ring: Rgba8,
     focus_surface: Rgba8,
     restore_focus_on_close: bool,
+    open_keys: BTreeSet<&'static str>,
     coordinator: WindowOverlayCoordinator,
 }
 
@@ -464,6 +466,7 @@ impl ScriptOverlayElement {
             focus_ring: Rgba8::from_rgb_hex(0x003b_82f6),
             focus_surface: Rgba8::from_rgb_hex(0x0018_181b),
             restore_focus_on_close,
+            open_keys: BTreeSet::new(),
             coordinator,
         }
     }
@@ -485,6 +488,11 @@ impl ScriptOverlayElement {
 
     pub(crate) fn restore_focus_on_close(mut self, restore: bool) -> Self {
         self.restore_focus_on_close = restore;
+        self
+    }
+
+    pub(crate) fn with_open_key(mut self, key: &'static str) -> Self {
+        self.open_keys.insert(key);
         self
     }
 
@@ -523,6 +531,7 @@ impl ScriptOverlayElement {
         let hover_id = self.spec.id.clone();
         let tooltip_delays = self.spec.tooltip_delays;
         let open = self.spec.open;
+        let open_keys = self.open_keys.clone();
         let dismiss_on_escape = self.spec.dismiss.escape;
         let focus_ring = self.focus_ring;
         let focus_surface = self.focus_surface;
@@ -530,24 +539,12 @@ impl ScriptOverlayElement {
             .id(SharedString::from(format!("{}-trigger", self.id)))
             .track_focus(trigger_focus)
             .tab_stop(click_callback.is_some())
-            .focus(move |style| {
-                style.shadow(vec![
-                    BoxShadow {
-                        color: rgba(focus_ring.as_rgba_hex()).into(),
-                        offset: point(px(0.0), px(0.0)),
-                        blur_radius: px(0.0),
-                        spread_radius: px(4.0),
-                    },
-                    BoxShadow {
-                        color: rgba(focus_surface.as_rgba_hex()).into(),
-                        offset: point(px(0.0), px(0.0)),
-                        blur_radius: px(0.0),
-                        spread_radius: px(2.0),
-                    },
-                ])
-            })
+            .focus(move |style| overlay_focus_shadow(style, focus_ring, focus_surface))
             .child(self.trigger.take().expect("overlay trigger rendered once"))
-            .on_click(move |_, window, cx| {
+            .on_click(move |event, window, cx| {
+                if !matches!(event, ClickEvent::Mouse(_)) {
+                    return;
+                }
                 if open {
                     let _ = click_coordinator.dismiss(&click_id, window, cx);
                 } else {
@@ -563,6 +560,13 @@ impl ScriptOverlayElement {
                         window.focus_next();
                     }
                     cx.stop_propagation();
+                    return;
+                }
+                if !open && open_keys.contains(key) {
+                    dispatch_open_change(key_callback.as_ref(), true, window, cx);
+                    if key_callback.is_some() {
+                        cx.stop_propagation();
+                    }
                     return;
                 }
                 if (key == "enter" && open || !matches!(key, "enter" | "space"))
@@ -725,6 +729,27 @@ impl ScriptOverlayElement {
     }
 }
 
+fn overlay_focus_shadow(
+    style: gpui::StyleRefinement,
+    ring: Rgba8,
+    surface: Rgba8,
+) -> gpui::StyleRefinement {
+    style.shadow(vec![
+        BoxShadow {
+            color: rgba(ring.as_rgba_hex()).into(),
+            offset: point(px(0.0), px(0.0)),
+            blur_radius: px(0.0),
+            spread_radius: px(4.0),
+        },
+        BoxShadow {
+            color: rgba(surface.as_rgba_hex()).into(),
+            offset: point(px(0.0), px(0.0)),
+            blur_radius: px(0.0),
+            spread_radius: px(2.0),
+        },
+    ])
+}
+
 struct OverlayElementState {
     was_open: bool,
     trigger_focus: FocusHandle,
@@ -778,6 +803,9 @@ impl Element for ScriptOverlayElement {
                     .trigger_focus
                     .clone()
                     .tab_stop(self.open_change.is_some());
+                if state.was_open && !self.spec.open {
+                    let _ = self.coordinator.dismiss(&self.spec.id, window, cx);
+                }
                 self.update_focus(&mut state, window, cx);
                 let mut trigger = self.build_trigger(&state.trigger_focus);
                 let trigger_layout = trigger.request_layout(window, cx);

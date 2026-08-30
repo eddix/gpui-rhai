@@ -602,7 +602,7 @@ mod tests {
             generation,
             success,
             error,
-            ValueSchema::Integer,
+            ValueSchema::integer(),
             Duration::from_millis(50),
         );
         emitter.emit(UiValue::Integer(1)).unwrap();

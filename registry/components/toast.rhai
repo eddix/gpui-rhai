@@ -22,7 +22,7 @@ export_component(#{
     schema: #{
         props: #{
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-            max_visible: #{ schema: #{ type: "integer" }, required: false, sensitive: false,
+            max_visible: #{ schema: #{ type: "integer", min: 1, max: 10 }, required: false, sensitive: false,
                 "default": #{ type: "integer", value: 3 } },
             items: #{ schema: #{ type: "array", max_items: 100, items: #{
                 type: "object", allow_unknown: false, fields: #{
@@ -34,7 +34,7 @@ export_component(#{
                         "default": #{ type: "string", value: "neutral" } },
                     region: #{ schema: #{ type: "string", allowed: ["top_left", "top_right", "bottom_left", "bottom_right"] }, required: false, sensitive: false,
                         "default": #{ type: "string", value: "top_right" } },
-                    duration_ms: #{ schema: #{ type: "integer" }, required: false, sensitive: false,
+                    duration_ms: #{ schema: #{ type: "integer", min: 1 }, required: false, sensitive: false,
                         "default": #{ type: "integer", value: 5000 } },
                     paused: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                         "default": #{ type: "bool", value: false } },

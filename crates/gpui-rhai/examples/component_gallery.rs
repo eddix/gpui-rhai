@@ -35,10 +35,6 @@ fn state_schema() {
             "default": #{ type: "string", value: "open" } },
         last_action: #{ schema: #{ type: "string" },
             "default": #{ type: "string", value: "None" } },
-        check_icon: #{ schema: #{ type: "handle", kind: "image" },
-            "default": #{ type: "handle", value: #{ kind: "image", id: 0 } } },
-        close_icon: #{ schema: #{ type: "handle", kind: "image" },
-            "default": #{ type: "handle", value: #{ kind: "image", id: 0 } } },
     } }
 }
 
@@ -51,8 +47,6 @@ fn run_action(ctx, value) {
 }
 
 fn init(ctx) {
-    ctx.set_state("check_icon", ctx.load_image(asset("app/check")));
-    ctx.set_state("close_icon", ctx.load_image(asset("app/close")));
     let theme = "__VISUAL_THEME__";
     if theme == "default-light" { ctx.set_theme("Default", "Light"); }
     else if theme == "default-dark" { ctx.set_theme("Default", "Dark"); }
@@ -72,13 +66,13 @@ fn gallery_menu_items() {
     ]
 }
 
-fn image_section(ctx) {
+fn image_section() {
     column([
         text("Images and loading"),
         row([
             icon::Icon(#{
-                handle: ctx.get_state("check_icon"),
-                rtl_handle: ctx.get_state("close_icon"),
+                source: asset("app/icons/check"),
+                rtl_source: asset("app/icons/close"),
                 size: "lg", label: "Directional status icon"
             }),
             skeleton::Skeleton(#{ key: "avatar-placeholder", width: 44, height: 44, radius: 22 }),
@@ -139,7 +133,7 @@ fn view(ctx) {
         text("Source-owned mechanisms not shown in the four product examples")
             .with_style(style().text_color(theme_color("text_muted"))),
         row([
-            image_section(ctx),
+            image_section(),
             overlay_section(ctx)
         ]).with_style(style().gap(px(40)).items_start()),
         details_section(ctx)
@@ -197,14 +191,14 @@ fn gallery_app() -> EmbeddedScriptView {
         ])
         .asset_sources([
             (
-                "check".to_owned(),
+                "icons/check".to_owned(),
                 AssetData {
                     mime_type: "image/svg+xml".to_owned(),
                     bytes: include_bytes!("../../../registry/assets/icons/check.svg").to_vec(),
                 },
             ),
             (
-                "close".to_owned(),
+                "icons/close".to_owned(),
                 AssetData {
                     mime_type: "image/svg+xml".to_owned(),
                     bytes: include_bytes!("../../../registry/assets/icons/close.svg").to_vec(),
@@ -229,6 +223,13 @@ mod tests {
     #[test]
     fn embedded_gallery_prepares_all_component_sources() {
         super::gallery_app().prepare().unwrap();
+    }
+
+    #[test]
+    fn gallery_uses_component_declared_icon_assets() {
+        assert!(!super::MAIN.contains("ctx.load_image"));
+        assert!(super::MAIN.contains("asset(\"app/icons/check\")"));
+        assert!(super::MAIN.contains("asset(\"app/icons/close\")"));
     }
 }
 

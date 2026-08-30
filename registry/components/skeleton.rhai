@@ -21,9 +21,9 @@ export_component(#{
     schema: #{
         props: #{
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-            width: #{ schema: #{ type: "integer" }, required: true, sensitive: false },
-            height: #{ schema: #{ type: "integer" }, required: true, sensitive: false },
-            radius: #{ schema: #{ type: "integer" }, required: false, sensitive: false,
+            width: #{ schema: #{ type: "integer", min: 0 }, required: true, sensitive: false },
+            height: #{ schema: #{ type: "integer", min: 0 }, required: true, sensitive: false },
+            radius: #{ schema: #{ type: "integer", min: 0 }, required: false, sensitive: false,
                 "default": #{ type: "integer", value: 6 } },
             animated: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: true } },
@@ -36,10 +36,10 @@ fn Skeleton(props) {
     component_render("components/skeleton", props, Fn("render_Skeleton"))
 }
 fn render_Skeleton(ctx, props) {
-    let width = if props.width < 0 { 0 } else { props.width };
-    let height = if props.height < 0 { 0 } else { props.height };
+    let width = props.width;
+    let height = props.height;
     let requested_radius = if "radius" in props { props.radius } else { 6 };
-    let radius = if requested_radius < 0 { 0 } else { requested_radius };
+    let radius = requested_radius;
     let node = row([])
         .with_key(props.key)
         .with_style(component_style(props, "root",

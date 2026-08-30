@@ -32,7 +32,7 @@ export_component(#{
                 "default": #{ type: "string", value: "horizontal" },
             },
             thickness: #{
-                schema: #{ type: "integer" },
+                schema: #{ type: "integer", min: 1 },
                 required: false,
                 sensitive: false,
                 "default": #{ type: "integer", value: 1 },

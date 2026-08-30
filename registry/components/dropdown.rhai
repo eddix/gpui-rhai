@@ -5,7 +5,8 @@
   "version": "0.1.0",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": [],
-  "capabilities": {}
+  "capabilities": {},
+  "assets": ["icons/check.svg", "icons/close.svg", "icons/disclosure_down.svg"]
 }
 */
 // Dropdown wraps the keyed native dropdown entity and overlay mechanism.
@@ -25,6 +26,7 @@ export_component(#{
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
         dependencies: [],
         capabilities: #{},
+        assets: ["icons/check.svg", "icons/close.svg", "icons/disclosure_down.svg"],
     },
     schema: #{
         props: #{
@@ -67,6 +69,11 @@ export_component(#{
                                 required: false,
                                 sensitive: false,
                                 "default": #{ type: "bool", value: false },
+                            },
+                            group: #{
+                                schema: #{ type: "optional", value: #{ type: "string" } },
+                                required: false,
+                                sensitive: false,
                             },
                         },
                     },
@@ -149,11 +156,12 @@ export_component(#{
                 "default": #{ type: "bool", value: false },
             },
             max_visible: #{
-                schema: #{ type: "integer" },
+                schema: #{ type: "integer", min: 1, max: 32 },
                 required: false,
                 sensitive: false,
                 "default": #{ type: "integer", value: 8 },
             },
+            width: #{ schema: #{ type: "optional", value: #{ type: "length" } }, required: false, sensitive: false },
             placement: #{
                 schema: #{ type: "string", allowed: ["top", "bottom", "left", "right"] },
                 required: false,
@@ -190,7 +198,9 @@ export_component(#{
             footer: #{ required: false, multiple: false },
             empty: #{ required: false, multiple: false },
         },
-        parts: ["root", "trigger", "search", "list", "option", "indicator"],
+        parts: ["root", "trigger", "value", "placeholder", "indicator", "clear",
+            "panel", "search", "list", "group", "option", "option_selected",
+            "option_disabled", "empty"],
     },
 });
 
@@ -213,6 +223,15 @@ fn render_Dropdown(ctx, props) {
         disabled: prop_or(props, "disabled", false),
         max_visible: prop_or(props, "max_visible", 8),
         placement: prop_or(props, "placement", "bottom"),
+        row_height: 32.0,
+        trigger_height: 32.0,
+        trigger_width: if "width" in props && props.width != () { props.width } else { px(280) },
+        panel_width: 280.0,
+        panel_extra_height: 104.0,
+        overlay_gap: 4.0,
+        clear_asset: asset("app/icons/close"),
+        indicator_asset: asset("app/icons/disclosure_down"),
+        check_asset: asset("app/icons/check"),
     };
     if "selected" in props && props.selected != () { config.selected = props.selected; }
     if "parent_overlay" in props && props.parent_overlay != () {
@@ -226,6 +245,39 @@ fn render_Dropdown(ctx, props) {
     if "empty" in props && props.empty != () { config.empty = props.empty; }
 
     let node = dropdown(config).with_style(component_style(props, "root", style()));
+    let node = node
+        .with_part_style("trigger", component_style(props, "trigger",
+            style().border(px(1)).border_color(theme_color("border"))
+                .radius(theme_radius("md")).padding_x(theme_spacing("sm"))
+                .background(theme_color("surface"))))
+        .with_part_style("value", component_style(props, "value",
+            style().text_color(theme_color("text_primary"))))
+        .with_part_style("placeholder", component_style(props, "placeholder",
+            style().text_color(theme_color("text_muted"))))
+        .with_part_style("indicator", component_style(props, "indicator",
+            style().text_color(theme_color("text_muted"))));
+    let node = node
+        .with_part_style("clear", component_style(props, "clear",
+            style().text_color(theme_color("text_muted"))))
+        .with_part_style("panel", component_style(props, "panel",
+            style().border(px(1)).border_color(theme_color("border"))
+                .radius(theme_radius("md")).padding(theme_spacing("xs"))
+                .background(theme_color("surface_raised"))))
+        .with_part_style("search", component_style(props, "search",
+            style().border(px(1)).border_color(theme_color("border"))
+                .text_color(theme_color("text_muted"))))
+        .with_part_style("list", component_style(props, "list", style()))
+        .with_part_style("group", component_style(props, "group",
+            style().padding_x(theme_spacing("sm")).text_color(theme_color("text_muted"))));
+    let node = node
+        .with_part_style("option", component_style(props, "option",
+            style().padding_x(theme_spacing("sm")).radius(theme_radius("sm"))))
+        .with_part_style("option_selected", component_style(props, "option_selected",
+            style().text_color(theme_color("accent"))))
+        .with_part_style("option_disabled", component_style(props, "option_disabled",
+            style().text_color(theme_color("disabled"))))
+        .with_part_style("empty", component_style(props, "empty",
+            style().padding_x(theme_spacing("sm")).text_color(theme_color("text_muted"))));
     if "on_change" in props && props.on_change != () {
         node = node.on_change(props.on_change);
     }

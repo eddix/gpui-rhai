@@ -11,6 +11,10 @@ The project is under active implementation. The authoritative product contract
 is in [INTENT.md](INTENT.md), and the dependency-ordered implementation plan is
 in [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md).
 
+The implemented complex-control line is specified under
+[docs/components](docs/components/) for DatePicker, Select, Table, Pagination,
+and Textarea.
+
 ## Quick start
 
 ```text
@@ -39,6 +43,7 @@ cargo run -p gpui-rhai --features dev-reload --example hello_world
 cargo run -p gpui-rhai --example settings_panel
 cargo run -p gpui-rhai --example dashboard_layout
 cargo run -p gpui-rhai --example form_showcase
+cargo run -p gpui-rhai --example data_table
 cargo run -p gpui-rhai --example component_gallery
 cargo run -p gpui-rhai --example extension_host
 cargo run -p gpui-rhai --example multi_window

@@ -47,6 +47,13 @@ gallery_cases=(
 embedded_view_cases=(
   default-dark.shared-host
 )
+data_table_cases=(
+  catppuccin-mocha.ar.rtl
+  default-dark.en.selected
+  default-light.en.empty
+  default-light.en.ltr
+  default-light.en.loading
+)
 
 check_case() {
   file="$1"
@@ -74,7 +81,10 @@ for case_name in "${dashboard_cases[@]}"; do
   check_case "tests/visual/macos/dashboard_layout/${case_name}.png" 760 592
 done
 for case_name in "${form_cases[@]}"; do
-  check_case "tests/visual/macos/form_showcase/${case_name}.png" 680 712
+  check_case "tests/visual/macos/form_showcase/${case_name}.png" 760 752
+done
+for case_name in "${data_table_cases[@]}"; do
+  check_case "tests/visual/macos/data_table/${case_name}.png" 980 752
 done
 for case_name in "${gallery_cases[@]}"; do
   check_case "tests/visual/macos/component_gallery/${case_name}.png" 720 552
@@ -84,8 +94,8 @@ for case_name in "${embedded_view_cases[@]}"; do
 done
 
 actual_count="$(find tests/visual/macos -type f -name '*.png' | wc -l | tr -d ' ')"
-if [[ "${actual_count}" != "36" ]]; then
-  echo "unexpected visual baseline count: ${actual_count} (expected 36)" >&2
+if [[ "${actual_count}" != "41" ]]; then
+  echo "unexpected visual baseline count: ${actual_count} (expected 41)" >&2
   exit 1
 fi
 

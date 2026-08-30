@@ -50,6 +50,8 @@ pub struct ComponentMetadata {
     pub dependencies: BTreeSet<ModuleId>,
     #[serde(default)]
     pub capabilities: BTreeMap<String, VersionReq>,
+    #[serde(default)]
+    pub assets: BTreeSet<String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -340,8 +342,12 @@ impl ComponentRegistry {
         runtime_api: u32,
     ) -> Result<(), ComponentRegistryError> {
         let id = definition.metadata.id.clone();
-        if self.components.contains_key(&id) {
-            return Err(ComponentRegistryError::Duplicate(id));
+        if let Some(existing) = self.components.get(&id) {
+            return if existing == &definition {
+                Ok(())
+            } else {
+                Err(ComponentRegistryError::Duplicate(id))
+            };
         }
         if !definition.metadata.runtime_api.contains(runtime_api) {
             return Err(ComponentRegistryError::IncompatibleRuntime {
@@ -454,6 +460,11 @@ fn validate_metadata(metadata: &ComponentMetadata) -> Result<(), ComponentError>
             return Err(ComponentError::InvalidCapability(name.clone()));
         }
     }
+    for asset in &metadata.assets {
+        if !is_component_asset_path(asset) {
+            return Err(ComponentError::InvalidAsset(asset.clone()));
+        }
+    }
     Ok(())
 }
 
@@ -465,6 +476,12 @@ fn validate_schema(schema: &ComponentSchema) -> Result<(), ComponentError> {
         if field.required && field.default.is_some() {
             return Err(ComponentError::RequiredPropHasDefault(name.clone()));
         }
+        field.schema.validate_definition().map_err(|source| {
+            ComponentError::InvalidSchemaDefinition {
+                location: format!("prop `{name}`"),
+                source,
+            }
+        })?;
         if let Some(default) = &field.default {
             field
                 .schema
@@ -490,7 +507,12 @@ fn validate_schema(schema: &ComponentSchema) -> Result<(), ComponentError> {
                 prop: callback_name,
             });
         }
-        let _ = event;
+        event.payload.validate_definition().map_err(|source| {
+            ComponentError::InvalidSchemaDefinition {
+                location: format!("event `{name}`"),
+                source,
+            }
+        })?;
     }
     for (name, slot) in &schema.slots {
         if !is_snake_case_identifier(name) {
@@ -515,17 +537,37 @@ fn validate_schema(schema: &ComponentSchema) -> Result<(), ComponentError> {
             return Err(ComponentError::InvalidSchemaName(part.clone()));
         }
     }
+    for (name, field) in schema.state.fields() {
+        if !is_snake_case_identifier(name) {
+            return Err(ComponentError::InvalidSchemaName(name.clone()));
+        }
+        field.schema.validate_definition().map_err(|source| {
+            ComponentError::InvalidSchemaDefinition {
+                location: format!("state field `{name}`"),
+                source,
+            }
+        })?;
+        field
+            .schema
+            .validate(&field.default.clone().into_dynamic())
+            .map_err(|source| ComponentError::InvalidStateDefault {
+                field: name.clone(),
+                source,
+            })?;
+    }
     Ok(())
 }
 
 fn schema_accepts_callback(schema: &ValueSchema) -> bool {
     matches!(schema, ValueSchema::Callback)
         || matches!(schema, ValueSchema::Optional { value } if matches!(value.as_ref(), ValueSchema::Callback))
+        || matches!(schema, ValueSchema::OneOf { variants } if variants.iter().any(schema_accepts_callback))
 }
 
 fn schema_accepts_node(schema: &ValueSchema) -> bool {
     matches!(schema, ValueSchema::Node)
         || matches!(schema, ValueSchema::Optional { value } if matches!(value.as_ref(), ValueSchema::Node))
+        || matches!(schema, ValueSchema::OneOf { variants } if variants.iter().any(schema_accepts_node))
 }
 
 fn is_pascal_case_identifier(value: &str) -> bool {
@@ -554,6 +596,21 @@ fn is_namespaced_identifier(value: &str) -> bool {
     })
 }
 
+fn is_component_asset_path(value: &str) -> bool {
+    !value.is_empty()
+        && !value.starts_with('/')
+        && !value.ends_with('/')
+        && !value.contains(':')
+        && !value.contains('\\')
+        && value.split('/').all(|segment| {
+            !segment.is_empty()
+                && !matches!(segment, "." | "..")
+                && segment.chars().all(|character| {
+                    character.is_ascii_alphanumeric() || matches!(character, '_' | '-' | '.')
+                })
+        })
+}
+
 fn export_runtime_error(error: String) -> EvalAltResult {
     EvalAltResult::ErrorRuntime(Dynamic::from(error), Position::NONE)
 }
@@ -568,10 +625,24 @@ pub enum ComponentError {
     SelfDependency(ModuleId),
     #[error("capability `{0}` must be a namespaced snake_case identifier")]
     InvalidCapability(String),
+    #[error("component asset `{0}` must be a safe provider-relative path")]
+    InvalidAsset(String),
     #[error("schema name `{0}` must be a snake_case identifier")]
     InvalidSchemaName(String),
     #[error("required prop `{0}` cannot also declare a default")]
     RequiredPropHasDefault(String),
+    #[error("invalid schema definition for {location}: {source}")]
+    InvalidSchemaDefinition {
+        location: String,
+        #[source]
+        source: crate::SchemaDefinitionError,
+    },
+    #[error("default for state field `{field}` is invalid: {source}")]
+    InvalidStateDefault {
+        field: String,
+        #[source]
+        source: SchemaValidationError,
+    },
     #[error("standard style prop `{0}` has an incompatible schema")]
     InvalidStandardStyleProp(String),
     #[error("standard component key prop must be a string")]
@@ -657,6 +728,7 @@ mod tests {
             runtime_api: RuntimeApiRange::new(1, 2),
             dependencies: BTreeSet::new(),
             capabilities: BTreeMap::new(),
+            assets: BTreeSet::new(),
         }
     }
 
@@ -804,7 +876,8 @@ mod tests {
   "version": "0.1.0",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": [],
-  "capabilities": {}
+  "capabilities": {},
+  "assets": []
 }
 */
 // Human-facing Button documentation follows.
@@ -833,10 +906,27 @@ fn render_button(props) { text(props.text) }
             .unwrap();
         assert_eq!(collector.snapshot().unwrap().len(), 1);
 
-        let error = engine
+        engine
+            .eval_with_scope::<()>(&mut scope, "export_component(definition)")
+            .unwrap();
+        assert_eq!(collector.snapshot().unwrap().len(), 1);
+
+        let mut conflicting = definition;
+        conflicting.metadata.export = "OtherButton".to_owned();
+        scope.set_value("definition", conflicting);
+        let _error = engine
             .eval_with_scope::<()>(&mut scope, "export_component(definition)")
             .unwrap_err();
-        assert!(error.to_string().contains("already registered"));
+        assert_eq!(
+            collector
+                .snapshot()
+                .unwrap()
+                .get(&ModuleId::parse("components/button").unwrap())
+                .unwrap()
+                .metadata
+                .export,
+            "Button"
+        );
     }
 
     #[test]
@@ -856,5 +946,43 @@ fn render_button(props) { text(props.text) }
         let json = serde_json::to_string_pretty(&definition).unwrap();
         let decoded: ComponentDefinition = serde_json::from_str(&json).unwrap();
         assert_eq!(decoded, definition);
+    }
+
+    #[test]
+    fn component_assets_are_safe_and_part_of_header_identity() {
+        let mut valid = metadata("components/icon_button", "IconButton");
+        valid.assets.insert("icons/arrow-next.svg".to_owned());
+        let definition =
+            ComponentDefinition::new(valid.clone(), ComponentSchema::default()).unwrap();
+        definition.validate_header(&valid).unwrap();
+
+        let mut mismatch = valid.clone();
+        mismatch.assets.clear();
+        assert!(matches!(
+            definition.validate_header(&mismatch),
+            Err(ComponentError::HeaderMismatch { .. })
+        ));
+
+        let mut invalid = metadata("components/icon_button", "IconButton");
+        invalid.assets.insert("../secret.svg".to_owned());
+        assert!(matches!(
+            ComponentDefinition::new(invalid, ComponentSchema::default()),
+            Err(ComponentError::InvalidAsset(_))
+        ));
+    }
+
+    #[test]
+    fn invalid_nested_schema_definition_is_rejected_at_export() {
+        let schema = ComponentSchema {
+            props: BTreeMap::from([(
+                "page".to_owned(),
+                ObjectField::required(ValueSchema::bounded_integer(Some(3), Some(1))),
+            )]),
+            ..ComponentSchema::default()
+        };
+        assert!(matches!(
+            ComponentDefinition::new(metadata("components/pager", "Pager"), schema),
+            Err(ComponentError::InvalidSchemaDefinition { .. })
+        ));
     }
 }

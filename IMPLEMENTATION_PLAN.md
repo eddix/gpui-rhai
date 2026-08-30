@@ -1,606 +1,458 @@
-# GPUI Rhai Implementation Plan
+# GPUI Rhai complex-controls implementation plan
 
-## 1. Purpose
+## 1. Purpose and authority
 
-This plan turns the product contract in `INTENT.md` into dependency-ordered,
-testable delivery milestones. It deliberately prioritizes end-to-end risk
-reduction over component count.
+This plan delivers DatePicker, Select, Table, Pagination, and Textarea against
+the normative specifications under `docs/components/`. It assumes the existing
+runtime, registry, examples, and test infrastructure are complete foundations;
+it does not repeat the historical M0-M2 bootstrap plan.
 
-The plan contains no calendar estimates. Work advances when an exit gate is met,
-not when a nominal date arrives.
+Work is dependency-ordered and gate-driven. There are no calendar estimates.
+A phase is complete only after its automated exit gate passes and its public
+documentation agrees with the implementation.
 
-## 2. Planning principles
+`INTENT.md` remains the product authority. The five component specifications
+are the API and behavior authority for this expansion. When an implementation
+detail conflicts with a speculative historical prompt, the prompt has no
+standing.
 
-1. Build one executable vertical slice before broadening APIs.
-2. Keep GPUI types behind the `UiNode` rendering boundary.
-3. Stabilize identity, state, errors, and schemas before writing many components.
-4. Put native mechanisms in Rust and component policy in Rhai.
-5. Exercise every public extension point in an example or integration test.
-6. Treat keyboard accessibility and diagnostics as architecture, not polish.
-7. Add dependencies only when their responsibility and feature placement are
-   explicit.
-8. Do not begin M2 breadth work while M1 mechanism risks remain unresolved.
+**Status: completed on 2026-08-30.** The final gate passed 214 workspace tests,
+16 native GPUI integration tests, strict Clippy and rustdoc, all release example
+smokes plus Data Table selected/loading/empty states, release-artifact and
+41-file visual-baseline audits, offline package verification, bounded Table
+performance probes, and the unlocked macOS interaction matrix including real
+`鼠须管` Textarea candidate commit and composition cancellation.
 
-## 3. Target workspace
+## 2. Fixed decisions
+
+These decisions are not reopened during implementation without an explicit
+design discussion:
+
+1. The crate and component source versions remain `0.1.0` and
+   `RUNTIME_API_VERSION` remains 1.
+2. The repository is in dogfooding mode. Build the best final SDK shape without
+   compatibility aliases, dual parsers, deprecated entry points, or application
+   migration code. Compatibility work begins only after an explicit release
+   signal from the maintainer.
+3. Business values are controlled props. Keyed native entities own only
+   interaction transients such as focus, selection, open panels, search text,
+   visible month, scroll offsets, and text layout.
+4. Rhai `view(ctx)` remains one complete transactional declaration. Rust must
+   never call Rhai lazily from GPUI scroll or layout callbacks.
+5. Component source owns composition, visual policy, structural size helpers,
+   assets, and style parts. Rust owns input, focus, geometry, scrolling,
+   Gregorian arithmetic, overlay coordination, and bounded native realization.
+6. Themes own cross-component semantic tokens, not a token for every component
+   metric. Rust contains no component palette or hidden visual-size constants.
+7. Pinned GPUI public APIs are the only GPUI dependency. `gpui-component` is
+   forbidden directly and through optional features.
+
+## 3. Dependency graph
 
 ```text
-gpui-rhai/
-├── Cargo.toml
-├── crates/
-│   ├── gpui-rhai/
-│   │   ├── Cargo.toml
-│   │   └── src/
-│   │       ├── app/
-│   │       ├── assets/
-│   │       ├── capability/
-│   │       ├── diagnostics/
-│   │       ├── engine/
-│   │       ├── event/
-│   │       ├── node/
-│   │       ├── overlay/
-│   │       ├── primitive/
-│   │       ├── schema/
-│   │       ├── state/
-│   │       ├── style/
-│   │       ├── theme/
-│   │       └── devtools/
-│   └── gpui-rhai-cli/
-├── registry/
-│   ├── components/
-│   ├── themes/
-│   ├── locales/
-│   └── assets/
-├── examples/
-│   ├── hello_world/
-│   ├── settings_panel/
-│   ├── dashboard_layout/
-│   └── form_showcase/
-├── docs/
-└── tests/
+Schema ───────────────┬───────────────┬─────────────────────────┐
+Locale + Clock ───────┼──── DatePicker├──── Table formatting ───┤
+Asset-backed Icon ────┼──── DatePicker├──── Pagination ─────────┤
+Text editing core ────┴──── Textarea  │                         │
+Choice-list core ─────────── Select ──┴──── Pagination           │
+Virtual-list mechanics ──────────────── Table ──────────────────┘
+
+All five components -> CLI registry -> form_showcase/data_table -> full gates
 ```
 
-Module boundaries may be consolidated while code is small, but public concepts
-must not be collapsed merely to reduce file count.
-
-## 4. Phase 0: feasibility and foundations
-
-Phase 0 should produce disposable or narrowly scoped probes. Only validated
-findings become public API.
-
-### P0.1 Bootstrap the workspace
-
-- Create the Cargo workspace, runtime crate, and CLI crate.
-- Pin a GPUI revision and a compatible Rhai release.
-- Re-export GPUI from the runtime crate.
-- Declare stable Rust policy, edition, and initial MSRV.
-- Add formatting, lint, unit-test, and macOS CI jobs.
-- Add `MIT`, `Apache-2.0`, contribution, and third-party attribution files.
-
-**Acceptance:** both crates build on macOS; CI runs formatting, linting, and tests;
-the dependency graph contains no `gpui-component` package.
-
-### P0.2 Probe `UiNode` rendering
-
-- Define a temporary minimal node enum containing text and a block container.
-- Evaluate one Rhai function returning a nested node tree.
-- Render the tree into a GPUI window.
-- Confirm that GPUI contexts and elements never enter Rhai values.
-- Measure conversion and script execution for a representative small tree.
-
-**Acceptance:** a Rhai-authored tree renders in GPUI and the boundary can be
-expressed without unsafe lifetime workarounds.
-
-### P0.3 Probe Rhai callbacks and reload invalidation
-
-- Register a normalized click callback represented by a Rhai function pointer.
-- Invoke it from GPUI on the foreground thread.
-- Compile a replacement AST and prove callbacks from the old generation are
-  rejected.
-- Record the error and backtrace information Rhai can retain across modules.
-
-**Acceptance:** a click updates observable Rust-owned state, and stale callbacks
-cannot execute after a generation change.
-
-### P0.4 Probe source locations and module resolution
-
-- Implement a restricted resolver rooted at an explicit script source.
-- Reject absolute paths, parent traversal, undeclared roots, and cycles.
-- Confirm error spans survive imports and point to the correct file, line, and
-  column.
-- Disable arbitrary eval and unbounded dynamic module loading.
-
-**Acceptance:** an imported syntax/runtime error produces an actionable source
-diagnostic and no module can escape its allowed roots.
-
-### Phase 0 exit gate
-
-- The core architecture is feasible without exposing GPUI types to Rhai.
-- Callback generation invalidation is demonstrated.
-- Source diagnostics and restricted imports are demonstrated.
-- Any deviation from `INTENT.md` is captured as an explicit design decision
-  before M0 begins.
-
-## 5. M0: executable foundation
-
-M0 ends with a small but real application created by the CLI, authored in Rhai,
-hot-reloaded during development, and embedded for release.
-
-### M0.1 Core value and schema model
-
-- Implement `UiValue` primitives, arrays, maps, and registered opaque handles.
-- Add schema definitions for scalar, enum, optional, array, map, node, callback,
-  handle, and object values.
-- Implement path-aware validation errors and unknown-field rejection.
-- Define component schemas for props, state, events, slots, parts, dependencies,
-  capabilities, component version, and runtime API range.
-- Add schema serialization for CLI/editor tooling.
-
-**Tests:** validation success/failure matrices, nested error paths, unknown fields,
-handle type mismatch, schema serialization snapshots.
-
-### M0.2 Stable node and style model
-
-- Define the initial `UiNode`, `NodeKind`, `NodeKey`, source metadata, props, and
-  children model.
-- Define typed length, color, edge, alignment, typography, and layout values.
-- Implement a deliberately small `Style` builder and deterministic merge rules.
-- Implement pseudo-state style declarations for hover, active, focus, and
-  disabled.
-- Expose initial layout/text primitives to Rhai.
-
-**Tests:** node snapshots, style merge precedence, invalid style values, source
-metadata propagation, pseudo-state resolution.
-
-### M0.3 Component declarations and module API
-
-- Implement `export_component`.
-- Define and parse the structured component header metadata block.
-- Cross-check header identity, compatibility, dependencies, and capabilities
-  against the registry and exported schema.
-- Require explicit aliases and PascalCase exports.
-- Distinguish formal component instances from render helper functions.
-- Validate component props/state/events/slots/parts against the schema.
-- Generate component instance paths from parents and keys.
-
-**Tests:** duplicate export, missing key for stateful component, duplicate sibling
-keys, invalid slot/event, component path stability.
-
-### M0.4 State, stores, and render transactions
-
-- Implement Rust-owned component state with schema-declared keys.
-- Implement typed application and window stores.
-- Track store reads and invalidate only dependent consumers.
-- Batch mutations until the current callback completes.
-- Reconcile keyed instances and clean unreachable state only after a successful
-  render.
-- Preserve compatible state and locally reset incompatible state on reload.
-
-**Tests:** controlled/uncontrolled behavior, keyed reorder, selective
-invalidation, batched updates, successful/failed reload cleanup, schema-change
-reset.
-
-### M0.5 Event and action core
-
-- Implement restricted `UiContext` state/store/event APIs.
-- Implement normalized payloads and `handled`/`propagate` bubbling.
-- Implement declared event output validation.
-- Implement namespaced action registration and dispatch.
-- Add a small configurable keybinding adapter.
-
-**Tests:** event order, propagation stop, payload validation, action dispatch,
-disabled action, keyboard-to-action mapping.
-
-### M0.6 Script application lifecycle
-
-- Implement required `view(ctx)` and optional `init(ctx)` / `dispose(ctx)`.
-- Enforce the no-side-effects render phase in capability APIs.
-- Add AST and module dependency caching.
-- Add operation/depth/data limits and slow-script diagnostics.
-- Keep all Rhai evaluation on the foreground thread.
-
-**Tests:** lifecycle order, render-phase capability rejection, limit errors,
-dependency cache reuse, callback generation checks.
-
-### M0.7 Theme foundation
-
-- Define the initial semantic token schema.
-- Load theme source from Rhai and validate type/completeness.
-- Implement `ThemeFamily`, variants, and app/window/subtree scopes.
-- Implement `system` selection and runtime switching.
-- Ensure theme changes invalidate consumers without AST recompilation or state
-  loss.
-- Create project-owned Default Light and Default Dark.
-
-**Tests:** missing/wrong token diagnostics, scope precedence, live switch, system
-variant selection, state preservation.
-
-### M0.8 Hot reload and error recovery
-
-- Add file watching behind a development feature.
-- Recompile only changed modules and transitive dependants.
-- Retain the last good AST/tree/state after compile or render failure.
-- Implement structured diagnostics with script stack, source span, component
-  path, and key.
-- Add root error fallback and the first `ErrorBoundary` node.
-
-**Tests:** leaf and dependency reload, compile failure recovery, render failure
-boundary, stale callbacks, state compatibility.
-
-### M0.9 Custom primitive registration
-
-- Define the public namespaced primitive registration API.
-- Register props schemas and a renderer.
-- Normalize primitive events into `UiValue` payloads.
-- Add optional instance lifecycle and state hooks.
-- Build one example custom primitive outside the runtime module to prove the
-  public interface.
-
-**Tests:** registration conflicts, invalid props, event conversion, lifecycle,
-external-crate usage test.
-
-### M0.10 CLI and registry skeleton
-
-- Define registry metadata, component dependency graph, and local manifest.
-- Implement `init`, `add`, `check`, and `--dry-run` foundations.
-- Bundle the registry snapshot in the CLI.
-- Resolve transitive dependencies and runtime API ranges.
-- Create `.gpui-rhai/manifest.toml` and pristine baselines.
-- Generate a minimal host without overwriting existing project files.
-
-**Tests:** fresh project fixture, existing-entry fixture, dependency resolution,
-cycle detection, incompatible runtime, dry-run with zero writes.
-
-### M0.11 File and embedded script sources
-
-- Define a shared `ScriptSource` interface.
-- Implement file-backed development loading.
-- Generate an embedded Rust source manifest from the CLI.
-- Prove import, theme, locale, and asset identifiers resolve identically in both
-  modes.
-
-**Tests:** run identical tree snapshots against file and embedded sources;
-content-hash stability; missing embedded resource errors.
-
-### M0.12 First source components and example
-
-- Author Button with sizes, all declared variants, disabled/loading behavior,
-  prefix/suffix icon slots, style, and part styles.
-- Author Label with required marker, description, and accessibility semantics.
-- Build `hello_world` using only public downstream APIs and copied sources.
-- Add component headers, schemas, tests, screenshots, and usage documentation.
-
-### M0 exit gate
-
-- `gpui-rhai init` creates a runnable application without overwriting user files.
-- `gpui-rhai add button label` installs reproducible editable source.
-- `gpui-rhai dev` renders and hot-reloads `hello_world`.
-- A failed edit retains the last good UI and reports the correct source span.
-- Runtime theme switching works without state loss.
-- A custom Rust primitive renders and emits a Rhai event.
-- A release-mode example runs entirely from embedded sources.
-- Button and Label pass logic, node snapshot, screenshot, keyboard, and
-  accessibility gates.
-
-## 6. M1: mechanism and interaction validation
-
-M1 addresses the areas most likely to force architectural changes: native text
-input, focus, accessibility, overlays, animation, asynchronous work, assets,
-large lists, and developer inspection.
-
-### M1.1 Accessibility and focus infrastructure
-
-- Define runtime semantic properties supported by the pinned GPUI version.
-- Implement focus handles/scopes, deterministic traversal, and restoration.
-- Add type-ahead helper behavior and disabled-state consistency.
-- Surface known upstream accessibility gaps in diagnostics and documentation.
-- Add reduced-motion environment handling.
-
-**Acceptance:** all M1 controls are operable by keyboard, focus is visible, and
-semantic assertions pass where GPUI exposes the required platform API.
-
-### M1.2 Text input primitive
-
-- Implement editing buffer, cursor, selection, clipboard, IME composition,
-  placeholder, disabled/read-only, and focus behavior in Rust.
-- Normalize change, submit, focus, and blur payloads.
-- Keep validation and visual policy in Rhai.
-- Test Latin, CJK IME, selection replacement, clipboard, and shortcut behavior
-  on macOS.
-
-**Acceptance:** the primitive survives real IME composition and focus changes
-without corrupting text or exposing GPUI objects to Rhai.
-
-### M1.3 Overlay manager
-
-- Implement per-window portal layers and ordering.
-- Implement anchored placement, flipping, clamping, and viewport avoidance.
-- Implement dismiss hierarchy, outside click, Escape, modal masks, focus trap,
-  and focus restoration.
-- Implement tooltip delays and toast queue regions.
-- Validate nested overlays and parent/child dismissal.
-
-**Acceptance:** Popover inside Dialog and nested Menu scenarios have deterministic
-focus and dismissal behavior.
-
-### M1.4 Animation runtime
-
-- Implement transition/spring specifications and Rust-side frame scheduling.
-- Support opacity, transform, size/clip, and the minimum properties required by
-  M1 components.
-- Cancel or retarget animations when keyed nodes change.
-- Apply reduced-motion policy centrally.
-
-**Acceptance:** no per-frame Rhai execution occurs; Accordion/Popover-style
-transitions remain correct across interruption and reload.
-
-### M1.5 Tasks, subscriptions, and capabilities
-
-- Implement versioned capability registration and manifest validation.
-- Implement `TaskHandle` completion, cancellation, and error payloads.
-- Implement `SubscriptionHandle` delivery, throttling hooks, and cleanup.
-- Reject effectful capability calls during `view`.
-- Drop callbacks from obsolete AST generations.
-
-**Acceptance:** a demo capability loads data asynchronously, a subscription
-updates it repeatedly, and both cancel correctly on component removal/reload.
-
-### M1.6 Assets and images
-
-- Implement `AssetId`, `ImageHandle`, and provider registration.
-- Add SVG loading, semantic color inheritance, cache keys, and fallback behavior.
-- Add asynchronous raster decode and cancellation.
-- Package the minimal official icon set with attribution.
-
-**Acceptance:** Icon and Avatar source can switch live without direct script path
-or URL access.
-
-### M1.7 Virtual list
-
-- Implement one-dimensional viewport-driven realization.
-- Require item count, stable key, predictable height, and a pure item renderer.
-- Preserve focus and state through scroll, reorder, and filtering.
-- Add overscan and performance diagnostics.
-
-**Acceptance:** a several-thousand-item list maintains bounded realized nodes and
-correct keyboard selection on macOS.
-
-### M1.8 Locale bundles
-
-- Define locale bundle schemas and fallback rules.
-- Add runtime app/window/subtree locale selection if required by real component
-  composition.
-- Ship English and Simplified Chinese bundles.
-- Ensure components do not hard-code internal user-visible phrases.
-
-**Acceptance:** an example switches locales live without losing component state.
-
-### M1.9 Developer tools
-
-- Add a development-only inspector overlay.
-- Display the component/node tree, keys, source spans, props, parts, computed
-  style, theme tokens, state/store values, and invalidation reasons.
-- Add recent event/action/capability traces and script timing.
-- Redact schema-marked sensitive values.
-
-**Acceptance:** a developer can locate a rendered node back to its Rhai source
-and explain why it rerendered.
-
-### M1.10 CLI development and update workflow
-
-- Complete `gpui-rhai dev` orchestration and diagnostic output.
-- Complete `diff` and three-way `update` using committed baselines.
-- Refuse silent overwrite and preserve conflict artifacts for inspection.
-- Emit schema-driven editor metadata and basic snippets.
-- Keep a full LSP and formatter out of scope.
-
-**Acceptance:** a locally modified component can be updated offline with clean
-changes merged and conflicts explicitly reported.
-
-### M1.11 Themes
-
-- Refine semantic tokens against real interactive components.
-- Add two Tokyo Night variants.
-- Add Catppuccin Latte and Mocha.
-- Preserve upstream names/attribution while mapping to project semantic tokens.
-- Add representative multi-theme visual regression coverage.
-
-### M1.12 Risk-validation components
-
-Author and fully test:
-
-- Input;
-- Icon;
-- Divider;
-- Popover;
-- Dropdown, including single/multi-select, search, keyboard navigation, outside
-  dismissal, controlled/uncontrolled use, slots, and large-option virtualization;
-- Dialog, including modal focus, Escape, focus restoration, slots, and actions.
-
-Build `settings_panel` from installed source components and public APIs.
-
-### M1 exit gate
-
-- CJK IME and clipboard behavior pass macOS integration tests.
-- Nested overlays, modal focus, and keyboard dismissal pass interaction tests.
-- Async task/subscription cleanup passes removal and hot-reload tests.
-- A 5,000-item virtual list has bounded node realization.
-- Default, Tokyo Night, and Catppuccin themes hot-switch without recompilation or
-  state loss.
-- English and Simplified Chinese internal strings switch live.
-- Devtools explains source, state, computed styling, and invalidation.
-- The modified-source three-way update workflow is proven end to end.
-- Every M1 component passes all quality gates from `INTENT.md`.
-
-## 7. M2: component product line and release hardening
-
-### M2.1 Remaining primitives
-
-Author and fully test:
-
-- Checkbox with checked, unchecked, and indeterminate states;
-- Radio and RadioGroup with roving keyboard focus;
-- Switch with loading state;
-- Tag with variants and close event;
-- Avatar with initials fallback and presence indicator;
-- Progress with determinate and indeterminate animation;
-- Skeleton with reduced-motion behavior.
-
-### M2.2 Remaining composites
-
-Author and fully test:
-
-- Tooltip;
-- Accordion with single/multiple modes and animation;
-- Collapsible;
-- Tabs with horizontal/vertical orientation and keyboard navigation;
-- Menu with nested submenus, separators, action state, and shortcut hints;
-- Toast with queue, automatic expiry, pause behavior, and manual dismissal;
-- FormField with label/control/description/error associations.
-
-### M2.3 Locale and RTL validation
-
-- Validate logical spacing, alignment, ordering, and directional icons under RTL.
-- Add at least one RTL test locale for layout validation.
-- Complete screenshot and keyboard-navigation coverage in both directions.
-- Document components or upstream GPUI APIs that cannot yet meet the contract.
-
-### M2.4 Example completion
-
-- Expand and finalize `settings_panel`.
-- Build `dashboard_layout`.
-- Build `form_showcase` with explicit Rhai state and validation.
-- Keep every example independently runnable and embedded-release compatible.
-- Add an extension example showing a custom Rust capability and primitive.
-
-### M2.5 Multi-window API
-
-- Validate the app/window/component lifetime model built earlier.
-- Make the script view—not the process—the primary prepared/mounted unit.
-- Allow several isolated ScriptViews inside one host-owned GPUI window.
-- Share one explicitly wrapped Host interaction domain for overlays, Toast,
-  Tooltip, focus fallback, and approved key bindings.
-- Keep measured view bounds separate from the absolute Overlay viewport.
-- Add a restricted window command API using the validated lifetime model.
-- Define app-store sharing, per-window stores, themes, locales, task ownership,
-  close confirmation, and focus behavior.
-- Add integration coverage for opening, communicating with, and closing multiple
-  windows without leaking state, overlays, tasks, or subscriptions.
-
-### M2.6 Documentation
-
-- Write architecture and security-boundary documentation.
-- Write the component authoring guide using `export_component` and schemas.
-- Write theming, locale, assets, capabilities, custom primitives, hot reload,
-  production embedding, and source-update guides.
-- Document every known GPUI accessibility/platform gap.
-- Provide a concise English quick start and optional Simplified Chinese guide.
-
-### M2.7 Release engineering
-
-- Audit public API visibility and SemVer exposure.
-- Verify component/runtime/registry compatibility checks.
-- Audit dependency licenses and copied asset attribution.
-- Test MSRV and latest stable Rust.
-- Produce macOS release-mode smoke tests for all examples.
-- Verify that release artifacts contain no unintended devtools, source paths, or
-  sensitive diagnostic values.
-- Publish migration notes for every breaking `0.x` runtime API change.
-
-### M2 exit gate
-
-- The complete component list in `INTENT.md` meets all quality gates.
-- All four examples are independently runnable and documented.
-- App/window state, theme, locale, task, and overlay lifetimes pass multi-window
-  integration tests.
-- Representative RTL layouts pass visual and keyboard-navigation tests.
-- CLI init/add/check/dev/diff/update workflows pass clean and modified-project
-  fixtures.
-- File-backed development and embedded production produce equivalent behavior.
-- macOS keyboard, focus, accessibility, theme, and visual suites pass.
-- Documentation is sufficient to author a component, capability, custom
-  primitive, theme, and production application without reading runtime internals.
-
-## 8. Cross-cutting test strategy
-
-### Unit tests
-
-- schemas, values, styles, tokens, state, reconciliation, actions, manifests;
-- capability lifecycle and generation invalidation;
-- module resolution and compatibility ranges.
-
-### Rhai contract tests
-
-- component defaults and validation;
-- declared state and event behavior;
-- import graph and component export semantics;
-- file/embedded source equivalence.
-
-### Snapshot tests
-
-- normalized `UiNode` trees;
-- schemas and editor metadata;
-- diagnostics and CLI dry-run plans;
-- manifests and generated embedding source.
-
-### macOS integration tests
-
-- real GPUI rendering and input;
-- keyboard/focus/IME/clipboard;
-- overlays and animation;
-- hot reload and last-good recovery;
-- task/subscription cleanup.
-
-### Visual regression tests
-
-- representative themes, sizes, variants, and states;
-- deterministic fonts, scale factor, viewport, and animation state;
-- documented tolerance and intentional-baseline update process.
-
-### Performance checks
-
-- script compile and cached-render timings;
-- node conversion and reconciliation cost;
-- store invalidation fan-out;
-- virtual-list realized-node bounds;
-- warnings for slow view/handler/capability delivery.
-
-Initial numeric budgets should be recorded after Phase 0 measurements rather
-than invented before a working GPUI baseline exists.
-
-## 9. Decision records required during implementation
-
-Create short ADRs before committing to public APIs for:
-
-1. `UiNode` representation and GPUI conversion ownership;
-2. Rhai engine/thread model and callback generation identity;
-3. component schema format and editor metadata representation;
-4. state path/key reconciliation and cleanup;
-5. script source/module resolver abstraction;
-6. capability/task/subscription ABI;
-7. custom primitive registration API;
-8. style and semantic token type systems;
-9. overlay manager and focus hierarchy;
-10. registry metadata, baseline storage, and three-way update behavior.
-
-An ADR records the chosen design, rejected alternatives, consequences, and the
-tests that protect the decision. It does not restate general project intent.
-
-## 10. First implementation sequence
-
-The recommended first pull requests are deliberately small:
-
-1. Workspace, licenses, CI, pinned dependencies, and dependency guard.
-2. Minimal `UiNode` Rhai-to-GPUI feasibility probe.
-3. Callback generation and restricted module resolver probes.
-4. `UiValue` and schema core.
-5. Stable `UiNode`/`Style` core and renderer.
-6. Component declaration, identity, state, and event transaction path.
-7. Minimal script app lifecycle and error recovery.
-8. Default theme contract and live switch.
-9. External custom primitive proof.
-10. CLI init/add/check skeleton and registry format.
-11. File/embedded source equivalence.
-12. Button, Label, and `hello_world` M0 gate.
-
-Do not start broad component authoring before item 12 passes. Component breadth
-must validate a stable runtime rather than become test data for an unstable one.
+The implementation order is therefore:
+
+1. public foundations;
+2. Textarea;
+3. Select;
+4. DatePicker;
+5. Table;
+6. Pagination;
+7. integration, documentation, and visual certification.
+
+## 4. Phase 1: public foundations
+
+### 4.1 Schema model
+
+- Replace unit numeric schemas with integer/float/number schemas that may carry
+  inclusive or exclusive bounds while preserving concise source syntax for
+  unconstrained numbers.
+- Add `one_of` with deterministic branch diagnostics.
+- Add `Length` as a first-class component schema value.
+- Add a schema that accepts exactly values convertible to `UiValue`; do not add
+  an unrestricted `Dynamic`/`Any` escape hatch.
+- Ensure default-value validation, sensitive-path redaction, serialization,
+  editor metadata, component invocation, and error paths cover every new type.
+- Add component-owned asset paths to `ComponentMetadata`, cross-check the Rhai
+  header/export declarations, and feed them into CLI dependency installation.
+- Migrate official component schemas directly to the best representation where
+  existing hand validation can be removed.
+
+**Exit gate:** schema unit tests, registry compilation, editor metadata
+snapshots, CLI `check`, and every existing component contract pass with no
+compatibility parser.
+
+### 4.2 Gregorian date, locale, number, and Clock
+
+- Add a small validated Gregorian date model with strict `YYYY-MM-DD` parsing,
+  formatting, comparison, leap-year/month length, weekday, add-day, and
+  add-month operations. It is an internal/native model; the Rhai ABI remains a
+  string.
+- Add required `CalendarMetadata` and `NumberMetadata` to `LocaleBundle` using
+  the contract in `docs/locale-and-rtl.md`.
+- Validate month/weekday cardinality, first weekday, digit set, separators,
+  group sizes, and the supported date-pattern grammar at locale load time.
+- Implement general locale date and decimal-number formatting in
+  `LocaleManager`, then expose restricted read APIs through `UiContext`.
+- Add a host-injectable `CalendarClock` abstraction. The default reports the
+  host system-local Gregorian date; tests use a fixed implementation.
+- Migrate English, Simplified Chinese, and Arabic registry bundles in one step.
+- Prove app/window/subtree locale precedence and hot switching include the new
+  metadata without changing AST or component/native state identity.
+
+**Exit gate:** exhaustive Gregorian boundary tests, locale decode/fallback/
+scope tests, format snapshots for all registry locales, fixed-Clock tests, and
+live-switch regression tests pass.
+
+### 4.3 Declarative assets and Icon
+
+- Add an asset-backed image source to `UiNode` and its renderer path.
+- Preload component-declared assets transactionally during file and embedded
+  script preparation. Rendering may only resolve cache entries.
+- Redesign Icon around `source` and optional `rtl_source`, each a schema union of
+  `AssetId` and image handle.
+- Keep dynamic lifecycle image loading for capability/application images.
+- Add the minimal chevron, calendar, clear, disclosure, and sort SVGs required
+  by the five components, using `currentColor` and explicit RTL pairs where
+  directional.
+- Update CLI asset dependency resolution, hot refresh, embedding, attribution,
+  and failure diagnostics.
+
+**Exit gate:** file/embedded equivalence, missing/malformed asset preparation
+failure, no-render-I/O assertion, theme recoloring, hot refresh, RTL selection,
+and dynamic-handle Icon tests pass.
+
+### Phase 1 gate
+
+- All existing examples and native keyboard tests still pass.
+- The dependency graph remains free of `gpui-component`.
+- Public docs and rustdoc describe only the new best API, with no old aliases.
+
+## 5. Phase 2: shared editing core and Textarea
+
+### 5.1 Refactor without behavior loss
+
+- Extract the current buffer into a shared editing module responsible for:
+  - UTF-8/UTF-16 range conversion;
+  - extended-grapheme cursor boundaries and counts;
+  - forward/reversed selection and marked ranges;
+  - controlled-value reconciliation;
+  - clipboard cut/copy/paste;
+  - replacement capacity under `max_length`;
+  - IME marked-text commit clamping.
+- Keep separate Input and Textarea entities/elements. Do not branch one large
+  renderer on a `multiline` boolean.
+- Preserve Input's single-line paste normalization, Enter submit behavior,
+  mouse hit testing, selection, IME, focus, and callback payloads through
+  explicit regression tests.
+
+### 5.2 Multiline native element
+
+- Add Textarea actions/key context for visual-line Up/Down, logical line
+  Home/End, selection variants, and newline insertion.
+- Use GPUI wrapped-line layout for soft wrapping and cache the mapping between
+  UTF-8 offsets, visual lines, x coordinates, and painted origins.
+- Paint one caret and all selection rectangles intersecting the viewport.
+- Implement mouse point-to-line/offset hit testing and drag selection across
+  scrolled lines.
+- Implement IME character/range bounds against the correct wrapped line.
+- Retain preferred x for vertical movement and scroll the caret into view.
+- Compute auto-grow from visual lines after width is known. Clamp to min/max;
+  fixed rows bypass auto-grow. Avoid update/layout feedback loops.
+- Implement one-shot mount autofocus and normal Tab/Shift-Tab traversal.
+
+### 5.3 Rhai component
+
+- Register a keyed native Textarea primitive with typed props/events.
+- Author `registry/components/textarea.rhai`, formal schema, size helpers,
+  error/disabled/read-only policy, count/limit display, semantic metadata, and
+  all declared parts.
+- Expose a general grapheme-count helper only if the source counter needs it;
+  do not duplicate Unicode segmentation in Rhai.
+
+**Phase 2 gate:** shared-core unit tests, all Input regressions, native multiline
+keyboard/mouse/IME/clipboard tests, large-paste/delete/width-change probes,
+Textarea component snapshots, and representative visual states pass.
+
+## 6. Phase 3: choice-list core and Select
+
+### 6.1 Private core extraction
+
+- Refactor Dropdown option validation, filtering, type-ahead, focus movement,
+  disabled skipping, virtualized visible rows, scroll-to-focus, and overlay
+  lifecycle into a private choice-list core.
+- Extend the core option model with optional group display identity while
+  preserving stable option-value identity.
+- Model selectable options and nonselectable group headers explicitly; do not
+  fake headers as disabled options.
+- Keep Dropdown's advanced array selection, multiple mode, custom slots, and
+  controlled open/query APIs intact in its new best internal shape.
+
+### 6.2 Select adapter and source
+
+- Add a scalar optional-value Select spec/adapter over the core.
+- Reset internal search query on every close and selection.
+- Emit scalar string or `()` on select/clear; never expose a one-element array.
+- Implement fixed trigger, form placeholder/error/disabled/size policy,
+  localized labels, parts, and normalized combobox/listbox semantics.
+- Author `registry/components/select.rhai` and document the Select/Dropdown/
+  Popover/Menu taxonomy in both relevant component headers.
+
+**Phase 3 gate:** Dropdown regression suite, Select schema/value/group/search/
+clear tests, 10,000-option bounded realization, native keyboard/type-ahead/
+search/dismiss/focus tests, RTL, accessibility assertions, and visuals pass.
+
+## 7. Phase 4: DatePicker
+
+### 7.1 Native model and element
+
+- Add DatePicker spec, validation, outcome, and keyed transient state modules.
+- Build a fixed 42-cell month model from locale first-weekday, controlled value,
+  fixed/system Clock today, min/max, and presets.
+- Reuse the existing host overlay coordinator for placement, outside click,
+  Escape ordering, panel bounds, and focus restoration.
+- Implement logical day/week/month/year keyboard movement, disabled-range
+  suppression, month-nav disabled state, selection/clear commit, and transient
+  visible-month reset rules.
+- Synchronize external value/locale/theme changes without discarding native
+  focus/identity incorrectly.
+
+### 7.2 Source and formatting
+
+- Author `registry/components/date_picker.rhai` with strict schemas, size
+  helpers, asset IDs, part styles, semantic metadata, and optional presets.
+- Use only LocaleManager calendar data and `format_date`; no English literals or
+  locale-ID branches may appear in DatePicker source/native code.
+
+**Phase 4 gate:** date/model unit tests, December/January and leap-year cases,
+min/max/preset behavior, fixed-Clock locale snapshots, native keyboard/
+dismiss/focus tests, hot locale/theme switching, and visual baselines pass.
+
+## 8. Phase 5: Table
+
+### 8.1 Data and column model
+
+- Add Table row/cell, format, width-track, sort, selection, spec, validation,
+  outcome, and metrics models.
+- Require stable unique string identity from `row_key`.
+- Validate tagged fixed/percent/flex widths, format descriptors, sortable keys,
+  controlled sort, controlled selected keys, and scalar/default cell types.
+- Resolve fixed and percent widths before weighted flex. Produce horizontal
+  content width rather than squeezing declared tracks when space is insufficient.
+- Format text/number/date through the common locale service.
+
+### 8.2 Complete-tree custom renderers
+
+- Bind column `cell_renderer` callbacks to their defining component/module and
+  current script generation.
+- Evaluate them during the Rhai Table construction/view transaction with the
+  documented cell-context map.
+- Store returned nodes only for custom columns and bind their event/component
+  scopes normally.
+- Never evaluate render callbacks from `uniform_list`, request-layout,
+  prepaint, paint, or scroll handlers.
+- Add metrics that report scalar rows, custom nodes built, and GPUI rows
+  realized separately.
+
+### 8.3 Native element
+
+- Build a keyed Table Entity with vertical `UniformListScrollHandle`, shared
+  horizontal ScrollHandle, active row identity, and focused header/body state.
+- Render sticky header outside the vertical list but inside the shared
+  horizontal coordinate space.
+- Render fixed-height, single-line, clipped/truncated visible rows and native
+  selection indicators styled through parts.
+- Implement loading precedence, viewport-sized default Skeleton rows, custom
+  loading/empty slots, striped state, and semantic colors.
+- Implement sort cycling, single/multiple/select-all outcomes, row click, and
+  row-level keyboard navigation with scroll-to-active behavior.
+- Preserve row focus and selection identity through reorder/filter/page changes.
+
+### 8.4 Rhai component
+
+- Author `registry/components/table.rhai` with a dependency on Skeleton, schema,
+  size/row metrics, all parts, slots, callbacks, and semantic metadata.
+- Keep Pagination, data slicing, filtering, fetching, and sorting algorithms out
+  of Table.
+
+**Phase 5 gate:** model/schema tests, 10,000-row bounded scalar realization,
+custom-renderer cost metrics, sticky/synchronized scroll native tests, sorting/
+selection/row-key reconciliation, keyboard/focus/semantics, loading/empty/
+striped/overflow/RTL visuals, and no-scroll-time-Rhai assertions pass.
+
+## 9. Phase 6: Pagination
+
+- Author a pure `registry/components/pagination.rhai` depending on Button, Icon,
+  and Select. Do not add a native node.
+- Implement one-based page validation, zero-items-as-1/1, total-page arithmetic,
+  bounded boundary/sibling counts, and the deterministic ellipsis algorithm.
+- Use curried internal `FnPtr` callbacks to bind next page/state to ordinary
+  Button events.
+- Emit one atomic `{ current_page, page_size }` payload; reset page to 1 on a
+  page-size change.
+- Add optional Select page-size control, locale-formatted neutral summary,
+  directional assets, accessible labels, size helpers, parts, and metadata.
+
+**Phase 6 gate:** exhaustive page-window transitions, invalid controlled state,
+atomic callback, dependency resolution, keyboard/focus/RTL, schemas/snapshots,
+and visual states pass. Runtime Rust source has no Pagination node/module.
+
+## 10. Phase 7: registry, examples, and certification
+
+### 10.1 Registry and CLI
+
+- Bundle all five sources and assets in `BundledRegistry`.
+- Encode the exact dependency graph and verify install ordering.
+- Update init/check/metadata/diff/update/embed fixtures and editor snippets.
+- Prove file-backed and embedded production sources behave identically.
+- Keep crate/component version 0.1.0 and Runtime API 1; do not add migration
+  adapters or application-side fixups.
+
+### 10.2 Examples
+
+- Reorganize `form_showcase` into bounded sections/tabs and add:
+  - searchable/grouped/clearable Select;
+  - fixed-Clock appointment DatePicker with min/max, presets, clear, and live
+    English/Simplified Chinese switching;
+  - feedback Textarea showing auto-grow, max length, count, error, and fixed-row
+    variants.
+- Add independent `data_table` using deterministic generated data and:
+  - scalar text/number/date formatting;
+  - a custom Tag/action cell;
+  - fixed/percent/flex columns and horizontal overflow;
+  - sticky header, stripes, loading, and empty states;
+  - controlled sorting and single/multiple/select-all behavior;
+  - Pagination with Select page size and localized summary.
+- Add README files, release embedding, smoke registration, bundle building, and
+  artifact audit coverage for `data_table`.
+
+### 10.3 Automated and manual evidence
+
+- Extend registry source tests and normalized `UiNode` snapshots.
+- Extend `tests/native-keyboard` with all component interaction matrices.
+- Add deterministic performance metrics and protect the existing VirtualList
+  and Input numbers from regression.
+- Capture the visual matrix in `docs/visual-testing.md` across representative
+  themes, English/Simplified Chinese, and RTL.
+- Complete unlocked macOS mouse, keyboard, focus, IME candidate-window,
+  clipboard, overlay, horizontal scroll, and accessibility inspection.
+- If an unlocked interactive session is unavailable, automated work may finish
+  with one explicitly recorded pending manual gate; the components are not
+  called fully certified until that gate is executed.
+
+**Phase 7 gate:** CLI, all tests, examples, rustdoc, strict Clippy, release
+smoke, artifact audit, performance probes, baseline audit, and manual matrix
+pass or the sole manual gate is explicitly pending.
+
+## 11. Required test matrix
+
+### Pure logic
+
+- schema branches/bounds/defaults and precise error paths;
+- Gregorian date arithmetic and patterns;
+- locale number/date output;
+- grapheme/UTF-16 editing operations;
+- choice-list filter/group/focus;
+- Table widths/format/sort/selection;
+- Pagination page windows.
+
+### Runtime and source contracts
+
+- official component header/export/schema agreement;
+- callback module scope and hot-reload generation invalidation;
+- controlled props versus native transient synchronization;
+- theme/locale switch without AST or identity loss;
+- file/embedded source and asset equivalence;
+- CLI dependency and metadata snapshots.
+
+### Native GPUI
+
+- request-layout/prepaint/paint without panic;
+- focus traversal/restoration and logical RTL keys;
+- IME range/candidate bounds and clipboard;
+- overlay placement/dismiss hierarchy;
+- vertical/horizontal scroll and bounded realization;
+- no Rhai execution from layout/scroll paths.
+
+### Visual and performance
+
+- all new parts/states in Default Light/Dark plus representative Tokyo Night
+  and Catppuccin variants;
+- fixed-Clock locale/RTL cases;
+- large scalar Table and explicit custom-render cost;
+- Textarea paste/delete/resize stability;
+- no regression of existing 1,000-node, Input, Dropdown, and VirtualList probes.
+
+## 12. Risk register
+
+### Multiline text layout
+
+Risk: wrapped-line geometry, UTF-16 IME ranges, and selection rectangles diverge.
+
+Mitigation: one offset/visual-line model feeds paint, hit testing, movement, and
+IME bounds; randomized round-trip tests cover Unicode boundaries.
+
+### Auto-grow feedback
+
+Risk: width-dependent wrapping and height invalidation oscillate.
+
+Mitigation: measure from the current assigned content width, publish height only
+when the clamped row count changes, and assert convergence under paste/delete/
+resize probes.
+
+### Table custom rendering
+
+Risk: users interpret native row virtualization as lazy Rhai callback execution.
+
+Mitigation: keep scroll-time callbacks forbidden, expose separate metrics, and
+document/probe eager custom-node cost everywhere performance is claimed.
+
+### Dual-axis Table scrolling
+
+Risk: header and body widths/offsets drift or vertical realization receives the
+wrong viewport.
+
+Mitigation: one column-layout result and one horizontal handle feed both; native
+tests inspect measured bounds and offsets before screenshot tests.
+
+### Locale scope creep
+
+Risk: a partial formatter grows into an incorrect Intl/CLDR implementation.
+
+Mitigation: limit the contract to Gregorian presentation and decimal digits/
+grouping. Currency, plural prose, and other calendars remain explicit non-goals.
+
+### Asset render I/O
+
+Risk: direct `AssetId` support accidentally loads files during paint.
+
+Mitigation: preparation preloads declarations; renderer accepts only cached
+resolution and treats a miss as an invariant diagnostic.
+
+## 13. Completion definition
+
+The expansion is complete only when:
+
+1. all five component specifications match source schemas, native behavior,
+   docs, CLI metadata, and examples;
+2. every phase exit gate passes;
+3. Table scalar rows are genuinely data-driven and bounded while custom-cell
+   Rhai cost is explicit;
+4. Textarea passes real multiline IME, selection, clipboard, scrolling, and
+   auto-grow evidence without changing Input behavior;
+5. locale/theme/Clock/asset hot changes preserve controlled values and native
+   identity;
+6. no `gpui-component` dependency, compatibility shim, hidden visual constant,
+   scroll-time Rhai callback, or speculative excluded API remains;
+7. the only permissible unfinished item is a clearly recorded manual macOS
+   gate waiting for an unlocked interactive session.

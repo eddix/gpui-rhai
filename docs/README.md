@@ -15,6 +15,12 @@ Start with the repository quick start, then use these guides by task:
 - [macOS visual and interaction test matrix](visual-testing.md)
 - [Performance budgets and probe](performance.md)
 - [Native virtual lists](virtual-list.md)
+- Complex component specifications:
+  [DatePicker](components/date-picker.md),
+  [Select](components/select.md),
+  [Table](components/table.md),
+  [Pagination](components/pagination.md), and
+  [Textarea](components/textarea.md)
 - [简体中文快速开始](quick-start.zh-CN.md)
 
 Architecture decisions and their test evidence are recorded under `docs/adr`.

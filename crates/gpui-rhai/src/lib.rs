@@ -2,6 +2,9 @@
 
 pub mod component;
 pub mod context;
+pub mod date;
+pub mod date_picker;
+mod date_picker_element;
 pub mod dependency;
 pub mod devtools;
 pub mod diagnostic;
@@ -24,6 +27,10 @@ pub mod source;
 pub mod state;
 pub mod store;
 pub mod style;
+pub mod table;
+mod table_element;
+pub mod text_area;
+mod text_edit;
 pub mod text_input;
 pub mod theme;
 pub mod toast;
@@ -76,6 +83,11 @@ pub use context::{
     ExecutionPhase, PendingEvent, UiContext, UiContextError, UiMutationBatch, UiRuntimeState,
     UiStateSnapshot,
 };
+pub use date::{CalendarClock, CalendarClockSource, DateError, GregorianDate, Weekday};
+pub use date_picker::{
+    DatePickerCell, DatePickerCellState, DatePickerKey, DatePickerNodeSpec, DatePickerOutcome,
+    DatePickerPreset, DatePickerState,
+};
 pub use dependency::{
     DependencyError, ModuleCompileCache, ModuleDependencyGraph, ModuleRefreshReport,
     extract_imports,
@@ -90,8 +102,8 @@ pub use diagnostic::{
     Diagnostic, DiagnosticCode, DiagnosticContext, DiagnosticFrame, DiagnosticSeverity,
 };
 pub use dropdown::{
-    DropdownError, DropdownKey, DropdownMode, DropdownNodeSpec, DropdownOption, DropdownOutcome,
-    DropdownState,
+    ChoiceBehavior, DropdownError, DropdownKey, DropdownMode, DropdownNodeSpec, DropdownOption,
+    DropdownOutcome, DropdownState, DropdownVisibleRow, SelectNodeSpec,
 };
 pub use engine::{
     CompiledUi, ExecutionOperation, ExecutionTiming, RuntimeEngine, RuntimeError, ScriptCallback,
@@ -99,10 +111,14 @@ pub use engine::{
 };
 pub use event::{EventDispatchReport, EventPropagation, EventRouter, UiEvent};
 pub use lifecycle::{LifecycleError, LifecycleState, ScriptLifecycle};
-pub use locale::{LocaleBundle, LocaleError, LocaleManager, TextDirection, load_locale_source};
+pub use locale::{
+    CalendarMetadata, CalendarNames, DatePatterns, DateStyle, LocaleBundle, LocaleError,
+    LocaleManager, NumberFormatOptions, NumberMetadata, TextDirection, format_date_with_metadata,
+    format_integer_with_metadata, format_number_with_metadata, load_locale_source,
+};
 pub use node::{
-    NodeKey, OverlayDismissPolicy, OverlayNodeSpec, SourceLocation, TooltipDelays, UiNode,
-    UiNodeKind,
+    ImageSourceSpec, NodeKey, OverlayDismissPolicy, OverlayNodeSpec, SourceLocation, TooltipDelays,
+    UiNode, UiNodeKind,
 };
 pub use overlay::{
     DismissReport, FocusToken, OverlayBounds, OverlayError, OverlayId, OverlayKind, OverlayManager,
@@ -112,14 +128,16 @@ pub use overlay::{
 pub use primitive::{
     PrimitiveDescriptor, PrimitiveError, PrimitiveEventEmitter, PrimitiveHandler, PrimitiveId,
     PrimitiveInstance, PrimitiveInstanceId, PrimitiveNode, PrimitiveProps, PrimitiveRegistry,
-    PrimitiveValue,
+    PrimitiveTheme, PrimitiveValue,
 };
 pub use reload::{LiveScript, ReloadOutcome};
 pub use renderer::{
     ColorResolver, GpuiNodeRenderer, LiteralColorResolver, NodeEventDispatcher, StaticUiView,
 };
 pub use responsive::{ResponsiveError, ResponsiveRuntime, ViewportBreakpoints, ViewportClass};
-pub use schema::{ObjectField, SchemaIssue, SchemaValidationError, ValueSchema};
+pub use schema::{
+    ObjectField, SchemaDefinitionError, SchemaIssue, SchemaValidationError, ValueSchema,
+};
 pub use script_source::{
     EmbeddedScriptSource, FileScriptSource, ScriptAsset, ScriptSource, ScriptSourceError,
 };
@@ -131,8 +149,13 @@ pub use state::{
 pub use store::{StoreError, StoreId, StoreReadSession, StoreRegistry, StoreScope, StoreSnapshot};
 pub use style::{
     Align, ColorValue, EdgeLengths, FlexDirection, InteractionState, Justify, Length, LengthError,
-    PseudoState, Rgba8, Style, StyleProperties,
+    PseudoState, RadiusToken, Rgba8, SpacingToken, Style, StyleProperties,
 };
+pub use table::{
+    TableAlign, TableCellFormat, TableColumnSpec, TableColumnWidth, TableError, TableLayout,
+    TableNodeSpec, TableRowSpec, TableSelectionMode, TableSort, TableSortDirection, TableState,
+};
+pub use text_area::{TextAreaPrimitiveHandler, init_text_area, text_area_primitive_descriptor};
 pub use text_input::{
     TextBuffer, TextInputPrimitiveHandler, init_text_input, text_input_primitive_descriptor,
 };

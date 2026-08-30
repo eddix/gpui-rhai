@@ -15,12 +15,16 @@ use crate::asset::{AssetId, ImageDecodeHandle, asset_id_from_script};
 use crate::component::{ComponentExportCollector, ComponentExportError, ComponentRegistry};
 use crate::context::{UiContext, register_ui_context_api};
 use crate::node::{
-    column_node, directional_image_node, dropdown_node, error_boundary_node, image_node,
-    lazy_error_boundary_node, overlay_node, row_node, text_node, toast_host_node,
-    virtual_list_node,
+    asset_image_node, column_node, date_picker_node, directional_asset_image_node,
+    directional_image_node, dropdown_node, error_boundary_node, generic_directional_image_node,
+    generic_image_node, image_node, lazy_error_boundary_node, overlay_node, row_node, select_node,
+    table_node, text_node, toast_host_node, virtual_list_node,
 };
 use crate::primitive::{PrimitiveDescriptor, PrimitiveError, PrimitiveHandler, PrimitiveRegistry};
 use crate::style::register_style_api;
+use crate::text_area::{
+    TextAreaPrimitiveHandler, register_text_area_api, text_area_primitive_descriptor,
+};
 use crate::text_input::{TextInputPrimitiveHandler, text_input_primitive_descriptor};
 use crate::value::OpaqueHandle;
 use crate::virtual_list::register_virtual_list_api;
@@ -241,6 +245,7 @@ impl RuntimeEngine {
         register_ui_context_api(&mut engine);
         register_style_api(&mut engine);
         register_animation_api(&mut engine);
+        register_text_area_api(&mut engine);
         register_virtual_list_api(&mut engine);
         let component_exports = ComponentExportCollector::new();
         component_exports.register_into(&mut engine);
@@ -277,15 +282,36 @@ impl RuntimeEngine {
         FuncRegistration::new("image")
             .in_global_namespace()
             .register_into_engine(&mut engine, image_node);
+        FuncRegistration::new("image")
+            .in_global_namespace()
+            .register_into_engine(&mut engine, asset_image_node);
         FuncRegistration::new("directional_image")
             .in_global_namespace()
             .register_into_engine(&mut engine, directional_image_node);
+        FuncRegistration::new("directional_image")
+            .in_global_namespace()
+            .register_into_engine(&mut engine, directional_asset_image_node);
+        FuncRegistration::new("image_source")
+            .in_global_namespace()
+            .register_into_engine(&mut engine, generic_image_node);
+        FuncRegistration::new("directional_image_source")
+            .in_global_namespace()
+            .register_into_engine(&mut engine, generic_directional_image_node);
         FuncRegistration::new("overlay")
             .in_global_namespace()
             .register_into_engine(&mut engine, overlay_node);
         FuncRegistration::new("dropdown")
             .in_global_namespace()
             .register_into_engine(&mut engine, dropdown_node);
+        FuncRegistration::new("select")
+            .in_global_namespace()
+            .register_into_engine(&mut engine, select_node);
+        FuncRegistration::new("date_picker")
+            .in_global_namespace()
+            .register_into_engine(&mut engine, date_picker_node);
+        FuncRegistration::new("table")
+            .in_global_namespace()
+            .register_into_engine(&mut engine, table_node);
         FuncRegistration::new("toast_host")
             .in_global_namespace()
             .register_into_engine(&mut engine, toast_host_node);
@@ -293,12 +319,7 @@ impl RuntimeEngine {
             .in_global_namespace()
             .register_into_engine(&mut engine, virtual_list_node);
 
-        engine.set_max_call_levels(64);
-        engine.set_max_expr_depths(64, 32);
-        engine.set_max_operations(1_000_000);
-        engine.set_max_array_size(10_000);
-        engine.set_max_map_size(100_000);
-        engine.set_max_string_size(1_048_576);
+        configure_engine_limits(&mut engine);
 
         let mut runtime = Self {
             engine,
@@ -311,13 +332,21 @@ impl RuntimeEngine {
             slow_threshold: Duration::from_millis(16),
             component_render,
         };
+        runtime.register_builtin_primitives();
         runtime
-            .register_primitive(
-                text_input_primitive_descriptor(),
-                TextInputPrimitiveHandler::default(),
-            )
-            .expect("built-in TextInput primitive descriptor is valid");
-        runtime
+    }
+
+    fn register_builtin_primitives(&mut self) {
+        self.register_primitive(
+            text_input_primitive_descriptor(),
+            TextInputPrimitiveHandler::default(),
+        )
+        .expect("built-in TextInput primitive descriptor is valid");
+        self.register_primitive(
+            text_area_primitive_descriptor(),
+            TextAreaPrimitiveHandler::default(),
+        )
+        .expect("built-in Textarea primitive descriptor is valid");
     }
 
     /// Compile the default application entry source.
@@ -761,6 +790,15 @@ impl RuntimeEngine {
             self.generation.next()
         }
     }
+}
+
+fn configure_engine_limits(engine: &mut Engine) {
+    engine.set_max_call_levels(64);
+    engine.set_max_expr_depths(64, 32);
+    engine.set_max_operations(1_000_000);
+    engine.set_max_array_size(10_000);
+    engine.set_max_map_size(100_000);
+    engine.set_max_string_size(1_048_576);
 }
 
 fn register_component_props_api(engine: &mut Engine, exports: &ComponentExportCollector) {

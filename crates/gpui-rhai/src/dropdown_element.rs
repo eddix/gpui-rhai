@@ -6,7 +6,7 @@ use gpui::{
     AnyElement, App, AppContext, Bounds, Context, Element, ElementId, Entity, Focusable,
     GlobalElementId, InspectorElementId, InteractiveElement, IntoElement, KeyDownEvent, LayoutId,
     ParentElement, Pixels, Render, ScrollStrategy, SharedString, StatefulInteractiveElement,
-    Styled, UniformListScrollHandle, Window, div, px, rgba, uniform_list,
+    Styled, UniformListScrollHandle, Window, div, img, px, relative, rems, rgba, uniform_list,
 };
 
 use crate::overlay_element::{
@@ -17,9 +17,10 @@ use crate::renderer::{
 };
 use crate::text_input::{TextInputCallbacks, TextInputEntity};
 use crate::{
-    AnimationKey, AssetRegistry, DropdownKey, DropdownNodeSpec, DropdownOption, DropdownOutcome,
-    DropdownState, InteractionState, NodeEventDispatcher, OverlayDismissPolicy, OverlayId,
-    OverlayKind, OverlayNodeSpec, PrimitiveRegistry, Rgba8, Style, UiNode,
+    AnimationKey, AssetId, AssetRegistry, ColorResolver, DropdownKey, DropdownNodeSpec,
+    DropdownOption, DropdownOutcome, DropdownState, DropdownVisibleRow, InteractionState, Length,
+    NodeEventDispatcher, OverlayDismissPolicy, OverlayId, OverlayKind, OverlayNodeSpec,
+    PrimitiveRegistry, Rgba8, Style, UiNode,
 };
 
 pub(crate) type SelectionHandler = Rc<dyn Fn(Vec<String>, &mut Window, &mut App)>;
@@ -35,12 +36,9 @@ pub(crate) struct DropdownCallbacks {
 #[derive(Clone, Copy)]
 pub(crate) struct DropdownPalette {
     pub surface: Rgba8,
-    pub raised: Rgba8,
     pub hover: Rgba8,
-    pub text: Rgba8,
     pub muted: Rgba8,
     pub accent: Rgba8,
-    pub border: Rgba8,
     pub disabled: Rgba8,
     pub focus_ring: Rgba8,
 }
@@ -80,12 +78,24 @@ impl DropdownSlotRuntime {
         )
     }
 
-    fn style(&self, element: gpui::Div, part: &str) -> gpui::Div {
+    pub(crate) fn style(&self, element: gpui::Div, part: &str) -> gpui::Div {
         if let Some(style) = self.part_styles.get(part) {
             apply_style_override(element, style, &self.colors, self.direction)
         } else {
             element
         }
+    }
+
+    pub(crate) fn part_color(&self, part: &str, fallback: Rgba8) -> Rgba8 {
+        self.part_styles
+            .get(part)
+            .and_then(|style| {
+                style
+                    .resolve(&InteractionState::default())
+                    .text_color
+                    .and_then(|color| self.colors.resolve(&color))
+            })
+            .unwrap_or(fallback)
     }
 }
 
@@ -265,7 +275,7 @@ impl DropdownView {
         if spec.open == Some(true) {
             state.open();
         }
-        let search_input = spec.searchable.then(|| {
+        let search_input = spec.behavior.searchable.then(|| {
             Self::create_search_input(
                 state.query(),
                 &spec.search_placeholder,
@@ -359,7 +369,7 @@ impl DropdownView {
     }
 
     fn synchronize_search_input(&mut self, cx: &mut Context<Self>) -> Option<SearchInputSync> {
-        if !self.spec.searchable {
+        if !self.spec.behavior.searchable {
             self.search_input = None;
             return None;
         }
@@ -399,6 +409,14 @@ impl DropdownView {
 
     fn set_open(&mut self, open: bool, cx: &mut Context<Self>) -> DropdownEmission {
         let changed = self.state.set_controlled_open(open);
+        let query = if !open && self.spec.behavior.reset_query_on_close {
+            self.state
+                .clear_query()
+                .expect("clearing choice-list query preserves option identity")
+                .then(String::new)
+        } else {
+            None
+        };
         if changed && self.spec.open.is_some() {
             self.pending_controlled_open = Some(open);
         }
@@ -408,6 +426,7 @@ impl DropdownView {
         DropdownEmission {
             callbacks: self.callbacks.clone(),
             open: changed.then_some(open),
+            query,
             ..DropdownEmission::default()
         }
     }
@@ -418,6 +437,28 @@ impl DropdownView {
             .select_value(value)
             .expect("rendered dropdown option remains valid");
         self.emission(outcome, true, cx)
+    }
+
+    fn clear_selection(&mut self, cx: &mut Context<Self>) -> DropdownEmission {
+        let selection_changed = self.state.clear_selection();
+        let open_changed = self.state.close();
+        let query = if self.spec.behavior.reset_query_on_close {
+            self.state
+                .clear_query()
+                .expect("clearing choice-list query preserves option identity")
+                .then(String::new)
+        } else {
+            None
+        };
+        if selection_changed || open_changed || query.is_some() {
+            cx.notify();
+        }
+        DropdownEmission {
+            callbacks: self.callbacks.clone(),
+            selection: selection_changed.then(Vec::new),
+            open: open_changed.then_some(false),
+            query,
+        }
     }
 
     fn set_query(&mut self, query: String, cx: &mut Context<Self>) -> DropdownEmission {
@@ -462,7 +503,7 @@ impl DropdownView {
             "end" => Some(DropdownKey::End),
             "enter" => Some(DropdownKey::Enter),
             "escape" => return (false, DropdownEmission::default()),
-            "backspace" if self.spec.searchable => {
+            "backspace" if self.spec.behavior.searchable => {
                 let mut query = self.state.query().to_owned();
                 query.pop();
                 let changed = self
@@ -498,7 +539,7 @@ impl DropdownView {
         else {
             return (false, DropdownEmission::default());
         };
-        if self.spec.searchable {
+        if self.spec.behavior.searchable {
             let query = format!("{}{text}", self.state.query());
             let changed = self
                 .state
@@ -530,10 +571,17 @@ impl DropdownView {
 
     fn emission(
         &mut self,
-        outcome: DropdownOutcome,
+        mut outcome: DropdownOutcome,
         notify_for_focus: bool,
         cx: &mut Context<Self>,
     ) -> DropdownEmission {
+        if outcome.open_changed && !self.state.is_open() && self.spec.behavior.reset_query_on_close
+        {
+            outcome.query_changed = self
+                .state
+                .clear_query()
+                .expect("clearing choice-list query preserves option identity");
+        }
         if outcome.open_changed && self.spec.open.is_some() {
             self.pending_controlled_open = Some(self.state.is_open());
         }
@@ -557,57 +605,81 @@ impl DropdownView {
         }
     }
 
-    fn render_content(&self, cx: &mut Context<Self>) -> AnyElement {
-        let options = self.state.visible_options().cloned().collect::<Vec<_>>();
+    fn render_list(&self, cx: &mut Context<Self>) -> AnyElement {
+        let rows = self.state.visible_rows().collect::<Vec<_>>();
         let selected = self.state.selected().clone();
         let focused = self.state.focused().map(ToOwned::to_owned);
         let weak = cx.entity().downgrade();
         let palette = self.palette;
+        let check_asset = self.spec.check_asset.clone();
         let option_runtime = self.slot_runtime.clone();
-        let list = if options.is_empty() {
+        let list = if rows.is_empty() {
             self.spec.empty_slot.as_deref().map_or_else(
                 || {
-                    div()
-                        .h(px(32.0))
-                        .px_2()
-                        .flex()
-                        .items_center()
-                        .text_color(rgba(palette.muted.as_rgba_hex()))
-                        .child(self.spec.empty_text.clone())
+                    self.slot_runtime
+                        .style(
+                            div()
+                                .h(px(to_f32(self.spec.row_height)))
+                                .flex()
+                                .items_center()
+                                .child(self.spec.empty_text.clone()),
+                            "empty",
+                        )
                         .into_any_element()
                 },
                 |empty| self.slot_runtime.render(empty, "empty_slot"),
             )
         } else {
-            let count = options.len();
+            let count = rows.len();
+            let row_height = to_f32(self.spec.row_height);
             uniform_list(
                 SharedString::from(format!("dropdown-{}-options", self.spec.id)),
                 count,
                 move |range, _window, _cx| {
                     range
-                        .map(|index| {
-                            render_option_row(
+                        .map(|index| match &rows[index] {
+                            DropdownVisibleRow::Group(group) => option_runtime
+                                .style(
+                                    div()
+                                        .h(px(row_height))
+                                        .flex()
+                                        .items_center()
+                                        .child(group.clone()),
+                                    "group",
+                                )
+                                .into_any_element(),
+                            DropdownVisibleRow::Option(option) => render_option_row(
                                 index,
-                                &options[index],
+                                option,
                                 &selected,
                                 focused.as_deref(),
                                 &weak,
-                                palette,
+                                &OptionRowVisual {
+                                    palette,
+                                    row_height,
+                                    check_asset: check_asset.clone(),
+                                },
                                 &option_runtime,
-                            )
+                            ),
                         })
                         .collect::<Vec<_>>()
                 },
             )
             .track_scroll(self.scroll.clone())
-            .h(px(rows_height(count.min(self.spec.max_visible))))
+            .h(px(rows_height(
+                count.min(self.spec.max_visible),
+                self.spec.row_height,
+            )))
             .w_full()
             .into_any_element()
         };
-        let list = self
-            .slot_runtime
+        self.slot_runtime
             .style(div().child(list), "list")
-            .into_any_element();
+            .into_any_element()
+    }
+
+    fn render_content(&self, cx: &mut Context<Self>) -> AnyElement {
+        let list = self.render_list(cx);
         let search_input = self.search_input.clone();
         let header = self
             .spec
@@ -619,31 +691,100 @@ impl DropdownView {
             .footer_slot
             .as_deref()
             .map(|footer| self.slot_runtime.render(footer, "footer_slot"));
-        div()
-            .w(px(280.0))
-            .max_h(px(rows_height(self.spec.max_visible) + 104.0))
-            .p_1()
-            .rounded(px(8.0))
-            .border_1()
-            .border_color(rgba(self.palette.border.as_rgba_hex()))
-            .bg(rgba(self.palette.raised.as_rgba_hex()))
-            .text_color(rgba(self.palette.text.as_rgba_hex()))
-            .children(header)
-            .when_some(search_input, |panel, search_input| {
-                panel.child(
-                    self.slot_runtime.style(
-                        div()
-                            .h(px(32.0))
-                            .border_b_1()
-                            .border_color(rgba(self.palette.border.as_rgba_hex()))
-                            .text_color(rgba(self.palette.muted.as_rgba_hex()))
-                            .child(search_input),
-                        "search",
-                    ),
+        self.slot_runtime
+            .style(
+                div()
+                    .w(px(to_f32(self.spec.panel_width)))
+                    .when_some(self.spec.panel_extra_height, |panel, extra| {
+                        panel.max_h(px(rows_height(self.spec.max_visible, self.spec.row_height)
+                            + to_f32(extra)))
+                    })
+                    .children(header)
+                    .when_some(search_input, |panel, search_input| {
+                        panel.child(
+                            self.slot_runtime.style(
+                                div()
+                                    .h(px(to_f32(self.spec.row_height)))
+                                    .child(search_input),
+                                "search",
+                            ),
+                        )
+                    })
+                    .child(list)
+                    .children(footer),
+                "panel",
+            )
+            .into_any_element()
+    }
+
+    fn render_trigger(&self, cx: &mut Context<Self>) -> AnyElement {
+        let label = self.selected_label();
+        let palette = self.palette;
+        let trigger = self.spec.trigger_slot.as_deref().map_or_else(
+            || {
+                let clearable = self.spec.behavior.clearable && !self.state.selected().is_empty();
+                let weak_clear = cx.entity().downgrade();
+                let clear_icon = choice_asset_element(
+                    &self.slot_runtime,
+                    &self.spec.clear_asset,
+                    self.slot_runtime.part_color("clear", palette.muted),
+                    self.spec.trigger_height * 0.45,
+                );
+                let indicator_icon = choice_asset_element(
+                    &self.slot_runtime,
+                    &self.spec.indicator_asset,
+                    self.slot_runtime.part_color("indicator", palette.muted),
+                    self.spec.trigger_height * 0.45,
+                );
+                let has_value = !self.state.selected().is_empty();
+                let value = self.slot_runtime.style(
+                    div().child(label),
+                    if has_value { "value" } else { "placeholder" },
+                );
+                apply_trigger_width(
+                    div(),
+                    self.slot_runtime
+                        .colors
+                        .resolve_length(self.spec.trigger_width),
                 )
-            })
-            .child(list)
-            .children(footer)
+                .h(px(to_f32(self.spec.trigger_height)))
+                .flex()
+                .items_center()
+                .justify_between()
+                .when(self.spec.disabled, |trigger| {
+                    trigger.bg(rgba(palette.disabled.as_rgba_hex()))
+                })
+                .child(value)
+                .when(clearable, |trigger| {
+                    trigger.child(
+                        self.slot_runtime
+                            .style(div().child(clear_icon), "clear")
+                            .id("choice-list-clear")
+                            .on_click(move |_, window, app| {
+                                if let Ok(emission) =
+                                    weak_clear.update(app, DropdownView::clear_selection)
+                                {
+                                    emit_from_current_view(
+                                        weak_clear.clone(),
+                                        emission,
+                                        window,
+                                        app,
+                                    );
+                                }
+                                app.stop_propagation();
+                            }),
+                    )
+                })
+                .child(
+                    self.slot_runtime
+                        .style(div().child(indicator_icon), "indicator"),
+                )
+                .into_any_element()
+            },
+            |trigger| self.slot_runtime.render(trigger, "trigger_slot"),
+        );
+        self.slot_runtime
+            .style(div().child(trigger), "trigger")
             .into_any_element()
     }
 
@@ -664,7 +805,7 @@ impl DropdownView {
             kind: OverlayKind::Dropdown,
             placement: self.spec.placement,
             open,
-            gap: 4.0,
+            gap: self.spec.overlay_gap,
             modal: false,
             dismiss: OverlayDismissPolicy {
                 escape: true,
@@ -675,41 +816,42 @@ impl DropdownView {
     }
 }
 
+fn choice_asset_element(
+    runtime: &DropdownSlotRuntime,
+    asset: &AssetId,
+    tint: Rgba8,
+    size: f64,
+) -> AnyElement {
+    runtime.assets.cached_image(asset).map_or_else(
+        |error| {
+            div()
+                .child(format!("Asset error: {error}"))
+                .into_any_element()
+        },
+        |handle| {
+            runtime
+                .assets
+                .image_source_tinted(handle.opaque(), Some(tint))
+                .map_or_else(
+                    |error| {
+                        div()
+                            .child(format!("Image error: {error}"))
+                            .into_any_element()
+                    },
+                    |source| {
+                        img(source)
+                            .w(px(to_f32(size)))
+                            .h(px(to_f32(size)))
+                            .into_any_element()
+                    },
+                )
+        },
+    )
+}
+
 impl Render for DropdownView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let label = self.selected_label();
-        let palette = self.palette;
-        let trigger = self.spec.trigger_slot.as_deref().map_or_else(
-            || {
-                div()
-                    .w(px(280.0))
-                    .h(px(32.0))
-                    .px_2()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .rounded(px(6.0))
-                    .border_1()
-                    .border_color(rgba(palette.border.as_rgba_hex()))
-                    .bg(rgba(palette.surface.as_rgba_hex()))
-                    .text_color(rgba(if label.is_empty() {
-                        palette.muted.as_rgba_hex()
-                    } else {
-                        palette.text.as_rgba_hex()
-                    }))
-                    .when(self.spec.disabled, |trigger| {
-                        trigger.bg(rgba(palette.disabled.as_rgba_hex()))
-                    })
-                    .child(label)
-                    .child(self.slot_runtime.style(div().child("⌄"), "indicator"))
-                    .into_any_element()
-            },
-            |trigger| self.slot_runtime.render(trigger, "trigger_slot"),
-        );
-        let trigger = self
-            .slot_runtime
-            .style(div().child(trigger), "trigger")
-            .into_any_element();
+        let trigger = self.render_trigger(cx);
         let content = self.render_content(cx);
         let open = self.state.is_open() && !self.spec.disabled;
         let weak_open = cx.entity().downgrade();
@@ -757,6 +899,8 @@ impl Render for DropdownView {
         )
         .with_focus_ring(self.palette.focus_ring)
         .with_focus_surface(self.palette.surface)
+        .with_open_key("up")
+        .with_open_key("down")
         .restore_focus_on_close(true)
         .into_any_element()
     }
@@ -768,50 +912,86 @@ fn render_option_row(
     selected: &std::collections::BTreeSet<String>,
     focused: Option<&str>,
     weak: &gpui::WeakEntity<DropdownView>,
-    palette: DropdownPalette,
+    visual: &OptionRowVisual,
     runtime: &DropdownSlotRuntime,
 ) -> AnyElement {
     let value = option.value.clone();
+    let label = option.label.clone();
+    let disabled = option.disabled;
     let is_selected = selected.contains(&option.value);
     let is_focused = focused == Some(option.value.as_str());
     let weak = weak.clone();
-    runtime
-        .style(
-            div()
-                .h(px(32.0))
-                .px_2()
-                .flex()
-                .items_center()
-                .justify_between()
-                .rounded(px(4.0))
-                .text_color(rgba(if option.disabled {
-                    palette.muted.as_rgba_hex()
-                } else {
-                    palette.text.as_rgba_hex()
-                })),
-            "option",
+    let check = if is_selected {
+        choice_asset_element(
+            runtime,
+            &visual.check_asset,
+            runtime.part_color("option_selected", visual.palette.accent),
+            f64::from(visual.row_height) * 0.45,
         )
+    } else {
+        div().into_any_element()
+    };
+    let option = runtime.style(
+        div()
+            .h(px(visual.row_height))
+            .flex()
+            .items_center()
+            .justify_between(),
+        "option",
+    );
+    let option = if disabled {
+        runtime.style(option, "option_disabled")
+    } else if is_selected {
+        runtime.style(option, "option_selected")
+    } else {
+        option
+    };
+    let selected_color = runtime.part_color("option_selected", visual.palette.accent);
+    option
         .id(("dropdown-option", index))
-        .when(is_focused, |row| row.bg(rgba(palette.hover.as_rgba_hex())))
-        .when(is_selected && !option.disabled, |row| {
-            row.text_color(rgba(palette.accent.as_rgba_hex()))
+        .when(is_focused, |row| {
+            row.bg(rgba(visual.palette.hover.as_rgba_hex()))
         })
-        .when(!option.disabled, |row| {
+        .when(is_selected && !disabled, |row| {
+            row.text_color(rgba(selected_color.as_rgba_hex()))
+        })
+        .when(!disabled, |row| {
             row.cursor_pointer()
-                .hover(move |style| style.bg(rgba(palette.hover.as_rgba_hex())))
+                .hover(move |style| style.bg(rgba(visual.palette.hover.as_rgba_hex())))
                 .on_click(move |_, window, app| {
                     if let Ok(emission) = weak.update(app, |view, cx| view.activate(&value, cx)) {
                         emit_from_current_view(weak.clone(), emission, window, app);
                     }
                 })
         })
-        .child(option.label.clone())
-        .child(if is_selected { "✓" } else { "" })
+        .child(label)
+        .child(check)
         .into_any_element()
 }
 
-fn rows_height(rows: usize) -> f32 {
-    f32::from(u16::try_from(rows).expect("dropdown visible row count is at most 32")) * 32.0
+#[derive(Clone)]
+struct OptionRowVisual {
+    palette: DropdownPalette,
+    row_height: f32,
+    check_asset: AssetId,
+}
+
+fn rows_height(rows: usize, row_height: f64) -> f32 {
+    f32::from(u16::try_from(rows).expect("choice-list visible row count is at most 32"))
+        * to_f32(row_height)
+}
+
+fn to_f32(value: f64) -> f32 {
+    value.to_string().parse().unwrap_or(f32::MAX)
+}
+
+fn apply_trigger_width(element: gpui::Div, width: Option<Length>) -> gpui::Div {
+    match width {
+        Some(Length::Pixels(value)) => element.w(px(to_f32(value))),
+        Some(Length::Rems(value)) => element.w(rems(to_f32(value))),
+        Some(Length::Relative(value)) => element.w(relative(to_f32(value))),
+        Some(Length::ThemeSpacing(_) | Length::ThemeRadius(_)) | None => element.w_full(),
+    }
 }
 
 #[derive(Clone, Default)]

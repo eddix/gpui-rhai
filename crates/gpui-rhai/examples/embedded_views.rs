@@ -5,8 +5,8 @@ use gpui::{
     Render, StatefulInteractiveElement, Styled, Window, WindowBounds, WindowOptions, div, px, size,
 };
 use gpui_rhai::{
-    EmbeddedScriptSource, EmbeddedScriptView, ModuleId, ScriptViewConfig, ScriptViewHandle,
-    ScriptViewHost, install,
+    AssetData, EmbeddedScriptSource, EmbeddedScriptView, ModuleId, ScriptViewConfig,
+    ScriptViewHandle, ScriptViewHost, install,
 };
 
 const BUTTON: &str = include_str!("../../../registry/components/button.rhai");
@@ -86,8 +86,35 @@ fn prepared_widget(open: bool, toast: bool) -> gpui_rhai::PreparedScriptView {
         ),
     ]));
     EmbeddedScriptView::new(ModuleId::parse("main").unwrap(), scripts, THEME)
+        .asset_sources(choice_assets())
         .prepare()
         .expect("embedded widget prepares")
+}
+
+fn choice_assets() -> [(String, AssetData); 3] {
+    [
+        (
+            "icons/check".to_owned(),
+            svg(include_bytes!("../../../registry/assets/icons/check.svg")),
+        ),
+        (
+            "icons/close".to_owned(),
+            svg(include_bytes!("../../../registry/assets/icons/close.svg")),
+        ),
+        (
+            "icons/disclosure_down".to_owned(),
+            svg(include_bytes!(
+                "../../../registry/assets/icons/disclosure_down.svg"
+            )),
+        ),
+    ]
+}
+
+fn svg(bytes: &[u8]) -> AssetData {
+    AssetData {
+        mime_type: "image/svg+xml".to_owned(),
+        bytes: bytes.to_vec(),
+    }
 }
 
 struct EmbeddedViewsDemo {

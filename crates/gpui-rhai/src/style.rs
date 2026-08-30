@@ -13,6 +13,67 @@ pub enum Length {
     Pixels(f64),
     Rems(f64),
     Relative(f64),
+    ThemeSpacing(SpacingToken),
+    ThemeRadius(RadiusToken),
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SpacingToken {
+    Xs,
+    Sm,
+    Md,
+    Lg,
+}
+
+impl SpacingToken {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Xs => "xs",
+            Self::Sm => "sm",
+            Self::Md => "md",
+            Self::Lg => "lg",
+        }
+    }
+
+    fn parse(value: &str) -> Result<Self, LengthError> {
+        match value {
+            "xs" => Ok(Self::Xs),
+            "sm" => Ok(Self::Sm),
+            "md" => Ok(Self::Md),
+            "lg" => Ok(Self::Lg),
+            _ => Err(LengthError::UnknownSpacingToken(value.to_owned())),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RadiusToken {
+    Sm,
+    Md,
+    Lg,
+}
+
+impl RadiusToken {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Sm => "sm",
+            Self::Md => "md",
+            Self::Lg => "lg",
+        }
+    }
+
+    fn parse(value: &str) -> Result<Self, LengthError> {
+        match value {
+            "sm" => Ok(Self::Sm),
+            "md" => Ok(Self::Md),
+            "lg" => Ok(Self::Lg),
+            _ => Err(LengthError::UnknownRadiusToken(value.to_owned())),
+        }
+    }
 }
 
 impl Length {
@@ -47,6 +108,29 @@ impl Length {
         }
     }
 
+    /// Create one standard semantic spacing reference.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`LengthError`] for an unknown standard token.
+    pub fn theme_spacing(value: &str) -> Result<Self, LengthError> {
+        SpacingToken::parse(value).map(Self::ThemeSpacing)
+    }
+
+    /// Create one standard semantic radius reference.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`LengthError`] for an unknown standard token.
+    pub fn theme_radius(value: &str) -> Result<Self, LengthError> {
+        RadiusToken::parse(value).map(Self::ThemeRadius)
+    }
+
+    #[must_use]
+    pub const fn is_theme_token(self) -> bool {
+        matches!(self, Self::ThemeSpacing(_) | Self::ThemeRadius(_))
+    }
+
     /// Revalidate a deserialized length.
     ///
     /// # Errors
@@ -57,6 +141,7 @@ impl Length {
         match self {
             Self::Pixels(value) | Self::Rems(value) => validate_non_negative(value),
             Self::Relative(value) => Self::relative(value).map(|_| ()),
+            Self::ThemeSpacing(_) | Self::ThemeRadius(_) => Ok(()),
         }
     }
 }
@@ -67,12 +152,16 @@ impl CustomType for Length {
     }
 }
 
-#[derive(Clone, Copy, Debug, Error, PartialEq)]
+#[derive(Clone, Debug, Error, PartialEq)]
 pub enum LengthError {
     #[error("length must be finite and non-negative, got {0}")]
     InvalidLength(f64),
     #[error("relative length must be finite and between 0 and 1, got {0}")]
     InvalidRelative(f64),
+    #[error("spacing token `{0}` is unknown; expected xs, sm, md, or lg")]
+    UnknownSpacingToken(String),
+    #[error("radius token `{0}` is unknown; expected sm, md, or lg")]
+    UnknownRadiusToken(String),
 }
 
 fn validate_non_negative(value: f64) -> Result<(), LengthError> {
@@ -647,6 +736,24 @@ pub(crate) fn register_style_api(engine: &mut Engine) {
     register_length_constructor(engine, "px", Length::pixels);
     register_length_constructor(engine, "rem", Length::rems);
     register_length_constructor(engine, "relative", Length::relative);
+    FuncRegistration::new("theme_spacing")
+        .in_global_namespace()
+        .register_into_engine(
+            engine,
+            |token: ImmutableString| -> Result<Length, Box<EvalAltResult>> {
+                Length::theme_spacing(token.as_str())
+                    .map_err(|error| Box::new(style_runtime_error(error.to_string())))
+            },
+        );
+    FuncRegistration::new("theme_radius")
+        .in_global_namespace()
+        .register_into_engine(
+            engine,
+            |token: ImmutableString| -> Result<Length, Box<EvalAltResult>> {
+                Length::theme_radius(token.as_str())
+                    .map_err(|error| Box::new(style_runtime_error(error.to_string())))
+            },
+        );
     FuncRegistration::new("rgb")
         .in_global_namespace()
         .register_into_engine(engine, rgb_color);
@@ -804,15 +911,20 @@ mod tests {
                 r#"
                     style()
                         .flex_col()
-                        .gap(px(8))
+                        .gap(theme_spacing("sm"))
                         .padding_x(rem(1.5))
+                        .radius(theme_radius("md"))
                         .background(rgb(0x112233))
                         .hover(style().background(theme_color("surface_hover")))
                 "#,
             )
             .unwrap();
         assert_eq!(style.base.direction, Some(FlexDirection::Column));
-        assert_eq!(style.base.gap, Some(Length::Pixels(8.0)));
+        assert_eq!(style.base.gap, Some(Length::ThemeSpacing(SpacingToken::Sm)));
+        assert_eq!(
+            style.base.radius,
+            Some(Length::ThemeRadius(RadiusToken::Md))
+        );
         assert!(style.hover.is_some());
     }
 
@@ -823,5 +935,6 @@ mod tests {
             Err(LengthError::InvalidRelative(1.5))
         );
         assert!(Length::pixels(f64::NAN).is_err());
+        assert!(Length::theme_spacing("xxl").is_err());
     }
 }

@@ -3,18 +3,20 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use gpui::{
-    Context, FocusHandle, InteractiveElement, IntoElement, Modifiers, ParentElement, Render,
-    Styled, TestAppContext, VisualTestContext, Window, div, point, px,
+    Context, FocusHandle, InteractiveElement, IntoElement, Modifiers, MouseButton, MouseDownEvent,
+    MouseMoveEvent, MouseUpEvent, ParentElement, Render, ScrollDelta, ScrollWheelEvent, Styled,
+    TestAppContext, VisualTestContext, Window, div, point, px,
 };
 use gpui_rhai::{
-    ActionId, ComponentInstancePath, DropdownMode, DropdownNodeSpec, DropdownOption,
-    EmbeddedScriptSource, EmbeddedScriptView, EventPropagation, GpuiNodeRenderer,
-    InteractionState, KeyBindingSpec, LiteralColorResolver, ModuleId, NodeEventDispatcher,
-    OverlayDismissPolicy, OverlayId, OverlayKind, OverlayNodeSpec, OverlayPlacement,
+    ActionId, ChoiceBehavior, ComponentInstancePath, DatePickerNodeSpec, DropdownMode,
+    DropdownNodeSpec, DropdownOption, EmbeddedScriptSource, EmbeddedScriptView, EventPropagation,
+    GpuiNodeRenderer, GregorianDate, InteractionState, KeyBindingSpec, LiteralColorResolver,
+    ModuleId, NodeEventDispatcher, OverlayDismissPolicy, OverlayId, OverlayKind, OverlayNodeSpec, OverlayPlacement,
     PrimitiveRegistry, RestrictedModuleResolver, RuntimeEngine, ScriptCallback, ScriptLifecycle,
-    ScriptViewConfig, ScriptViewHandle, ScriptViewHost, ToastHostSpec, ToastItemSpec, ToastRegion,
-    ToastVariant, UiNode, UiRuntimeState, UiValue,
-    init_text_input,
+    ScriptViewConfig, ScriptViewHandle, ScriptViewHost, SelectNodeSpec, TableAlign,
+    TableCellFormat, TableColumnSpec, TableColumnWidth, TableNodeSpec, TableRowSpec,
+    TableSelectionMode, ToastHostSpec, ToastItemSpec, ToastRegion, ToastVariant, UiNode,
+    UiRuntimeState, UiValue, Style as NodeStyle, init_text_area, init_text_input,
 };
 
 struct KeyboardHost {
@@ -204,7 +206,11 @@ fn searchable_single_dropdown_emits_close_and_selection(cx: &mut TestAppContext)
         mode: DropdownMode::Single,
         selected: Some(vec!["default-dark".to_owned()]),
         open: None,
-        searchable: true,
+        behavior: ChoiceBehavior {
+            searchable: true,
+            clearable: false,
+            reset_query_on_close: false,
+        },
         query: None,
         placeholder: "Theme".to_owned(),
         search_placeholder: "Search".to_owned(),
@@ -216,6 +222,15 @@ fn searchable_single_dropdown_emits_close_and_selection(cx: &mut TestAppContext)
         disabled: false,
         max_visible: 4,
         placement: OverlayPlacement::Bottom,
+        row_height: 32.0,
+        trigger_height: 32.0,
+        trigger_width: gpui_rhai::Length::Pixels(280.0),
+        panel_width: 280.0,
+        panel_extra_height: Some(104.0),
+        overlay_gap: 4.0,
+        clear_asset: gpui_rhai::AssetId::parse("app/icons/close").unwrap(),
+        indicator_asset: gpui_rhai::AssetId::parse("app/icons/disclosure_down").unwrap(),
+        check_asset: gpui_rhai::AssetId::parse("app/icons/check").unwrap(),
     })
     .with_handler("change", callback("changed"))
     .with_handler("open_change", callback("opened"))
@@ -252,6 +267,362 @@ fn searchable_single_dropdown_emits_close_and_selection(cx: &mut TestAppContext)
             && payload
                 == &UiValue::Array(vec![UiValue::String("tokyo-night".to_owned())])
     }));
+}
+
+#[gpui::test]
+fn grouped_select_emits_one_scalar_value(cx: &mut TestAppContext) {
+    let mut engine = RuntimeEngine::new();
+    let compiled = engine
+        .compile(
+            r#"
+                fn view(ctx) { text("select callbacks") }
+                fn changed(ctx, payload) { () }
+            "#,
+        )
+        .unwrap();
+    let root = UiNode::select(SelectNodeSpec {
+        choice: DropdownNodeSpec {
+            id: "country".to_owned(),
+            parent_overlay: None,
+            options: vec![
+                DropdownOption::new("cn", "China").group("Asia"),
+                DropdownOption::new("fr", "France").group("Europe"),
+            ],
+            mode: DropdownMode::Single,
+            selected: Some(Vec::new()),
+            open: None,
+            behavior: ChoiceBehavior {
+                searchable: false,
+                clearable: true,
+                reset_query_on_close: true,
+            },
+            query: None,
+            placeholder: "Country".to_owned(),
+            search_placeholder: "Search".to_owned(),
+            empty_text: "None".to_owned(),
+            trigger_slot: None,
+            header_slot: None,
+            footer_slot: None,
+            empty_slot: None,
+            disabled: false,
+            max_visible: 8,
+            placement: OverlayPlacement::Bottom,
+            row_height: 32.0,
+            trigger_height: 32.0,
+            trigger_width: gpui_rhai::Length::Pixels(280.0),
+            panel_width: 280.0,
+            panel_extra_height: None,
+            overlay_gap: 4.0,
+            clear_asset: gpui_rhai::AssetId::parse("app/icons/close").unwrap(),
+            indicator_asset: gpui_rhai::AssetId::parse("app/icons/disclosure_down").unwrap(),
+            check_asset: gpui_rhai::AssetId::parse("app/icons/check").unwrap(),
+        },
+    })
+    .with_handler("change", engine.callback(&compiled, "changed").unwrap());
+    let values = Rc::new(RefCell::new(Vec::new()));
+    let captured = Rc::clone(&values);
+    let dispatcher = NodeEventDispatcher::new(move |_, payload, _, _| {
+        captured.borrow_mut().push(payload);
+        EventPropagation::Handled
+    });
+    let window = cx.add_window(|window, cx| {
+        let host_focus = cx.focus_handle();
+        host_focus.focus(window);
+        KeyboardHost {
+            root: Rc::new(RefCell::new(root)),
+            dispatcher,
+            host_focus,
+            primitives: PrimitiveRegistry::new(),
+        }
+    });
+    cx.run_until_parked();
+    cx.simulate_keystrokes(*window, "tab enter down enter");
+    assert_eq!(*values.borrow(), vec![UiValue::String("fr".to_owned())]);
+}
+
+#[gpui::test]
+fn date_picker_keyboard_commits_one_iso_date(cx: &mut TestAppContext) {
+    let mut engine = RuntimeEngine::new();
+    let compiled = engine
+        .compile(
+            r#"
+                fn view(ctx) { text("date callbacks") }
+                fn changed(ctx, payload) { () }
+            "#,
+        )
+        .unwrap();
+    let locale = gpui_rhai::load_locale_source(
+        engine.engine(),
+        "en.rhai",
+        include_str!("../../../registry/locales/en.rhai"),
+    )
+    .unwrap();
+    let root = UiNode::date_picker(DatePickerNodeSpec {
+        id: "appointment".to_owned(),
+        parent_overlay: None,
+        value: None,
+        min_date: None,
+        max_date: None,
+        today: GregorianDate::parse_iso("2026-08-30").unwrap(),
+        display_value: String::new(),
+        placeholder: "Appointment".to_owned(),
+        open_label: "Open calendar".to_owned(),
+        previous_label: "Previous month".to_owned(),
+        next_label: "Next month".to_owned(),
+        clear_label: "Clear date".to_owned(),
+        calendar: locale.calendar,
+        number: locale.number,
+        presets: Vec::new(),
+        clearable: true,
+        disabled: false,
+        placement: OverlayPlacement::Bottom,
+        cell_size: 32.0,
+        trigger_height: 32.0,
+        panel_width: 256.0,
+        overlay_gap: 4.0,
+        previous_asset: gpui_rhai::AssetId::parse("app/icons/date_previous").unwrap(),
+        next_asset: gpui_rhai::AssetId::parse("app/icons/date_next").unwrap(),
+        trigger_asset: gpui_rhai::AssetId::parse("app/icons/calendar").unwrap(),
+        clear_asset: gpui_rhai::AssetId::parse("app/icons/close").unwrap(),
+    })
+    .with_handler("change", engine.callback(&compiled, "changed").unwrap());
+    let values = Rc::new(RefCell::new(Vec::new()));
+    let captured = Rc::clone(&values);
+    let dispatcher = NodeEventDispatcher::new(move |_, payload, _, _| {
+        captured.borrow_mut().push(payload);
+        EventPropagation::Handled
+    });
+    let window = cx.add_window(|window, cx| {
+        let host_focus = cx.focus_handle();
+        host_focus.focus(window);
+        KeyboardHost {
+            root: Rc::new(RefCell::new(root)),
+            dispatcher,
+            host_focus,
+            primitives: PrimitiveRegistry::new(),
+        }
+    });
+    cx.run_until_parked();
+    cx.simulate_keystrokes(*window, "tab enter right enter");
+    assert_eq!(
+        *values.borrow(),
+        vec![UiValue::String("2026-08-31".to_owned())]
+    );
+
+    // Commit must close: Right moves only transient focus and Enter reopens,
+    // rather than committing a second value from a still-open panel.
+    cx.simulate_keystrokes(*window, "right enter");
+    assert_eq!(values.borrow().len(), 1);
+
+    // ArrowDown is an explicit DatePicker open key. This direct node keeps its
+    // external controlled value at null, so reopening resets focus to fixed
+    // today; Right then commits the same next day exactly once.
+    cx.simulate_keystrokes(*window, "escape");
+    cx.run_until_parked();
+    cx.simulate_keystrokes(*window, "down");
+    cx.run_until_parked();
+    cx.simulate_keystrokes(*window, "right enter");
+    assert_eq!(
+        *values.borrow(),
+        vec![
+            UiValue::String("2026-08-31".to_owned()),
+            UiValue::String("2026-08-31".to_owned()),
+        ]
+    );
+}
+
+#[gpui::test]
+fn table_keyboard_moves_rows_selects_and_activates(cx: &mut TestAppContext) {
+    let mut engine = RuntimeEngine::new();
+    let compiled = engine
+        .compile(
+            r#"
+                fn view(ctx) { text("table callbacks") }
+                fn selected(ctx, payload) { () }
+                fn clicked(ctx, payload) { () }
+                fn sorted(ctx, payload) { () }
+            "#,
+        )
+        .unwrap();
+    let locale = gpui_rhai::load_locale_source(
+        engine.engine(),
+        "en.rhai",
+        include_str!("../../../registry/locales/en.rhai"),
+    )
+    .unwrap();
+    let root = UiNode::table(TableNodeSpec {
+        key: "users".to_owned(),
+        label: "Users".to_owned(),
+        columns: vec![TableColumnSpec {
+            key: "name".to_owned(),
+            title: "Name".to_owned(),
+            width: TableColumnWidth::Fixed(1600.0),
+            align: TableAlign::Start,
+            format: TableCellFormat::Text,
+            sortable: true,
+            custom_cells: None,
+        }],
+        rows: (0..100)
+            .map(|index| TableRowSpec {
+                key: format!("user-{index}"),
+                values: std::collections::BTreeMap::from([(
+                    "name".to_owned(),
+                    UiValue::String(format!("User {index}")),
+                )]),
+            })
+            .collect(),
+        height: gpui_rhai::Length::Pixels(240.0),
+        row_height: 28.0,
+        flex_min_width: 80.0,
+        selection_width: 28.0,
+        selection_size: 14.0,
+        horizontal_scrollbar_height: 10.5,
+        horizontal_scrollbar_thumb_min_width: 56.0,
+        horizontal_scrollbar_inset: 3.5,
+        overscan: 2,
+        loading: false,
+        loading_slot: None,
+        loading_rows: Vec::new(),
+        empty_slot: None,
+        empty_text: "No users".to_owned(),
+        striped: true,
+        selection_mode: TableSelectionMode::Multiple,
+        selected_keys: std::collections::BTreeSet::new(),
+        sort: None,
+        calendar: locale.calendar,
+        number: locale.number,
+        check_asset: gpui_rhai::AssetId::parse("app/icons/check").unwrap(),
+        sort_ascending_asset: gpui_rhai::AssetId::parse("app/icons/sort_ascending").unwrap(),
+        sort_descending_asset: gpui_rhai::AssetId::parse("app/icons/sort_descending").unwrap(),
+    })
+    .with_handler(
+        "selection_change",
+        engine.callback(&compiled, "selected").unwrap(),
+    )
+    .with_handler("sort_change", engine.callback(&compiled, "sorted").unwrap())
+    .with_handler("row_click", engine.callback(&compiled, "clicked").unwrap());
+    let mut table_frame_style = NodeStyle::new();
+    table_frame_style.base.width = Some(gpui_rhai::Length::Pixels(600.0));
+    table_frame_style.base.height = Some(gpui_rhai::Length::Pixels(260.0));
+    let root = UiNode::column(vec![root]).with_style(&table_frame_style);
+    let events = Rc::new(RefCell::new(Vec::new()));
+    let captured = Rc::clone(&events);
+    let dispatcher = NodeEventDispatcher::new(move |callback, payload, _, _| {
+        captured
+            .borrow_mut()
+            .push((callback.name().to_owned(), payload));
+        EventPropagation::Handled
+    });
+    let window = cx.add_window(|window, cx| {
+        let host_focus = cx.focus_handle();
+        host_focus.focus(window);
+        KeyboardHost {
+            root: Rc::new(RefCell::new(root)),
+            dispatcher,
+            host_focus,
+            primitives: PrimitiveRegistry::new(),
+        }
+    });
+    cx.run_until_parked();
+    cx.simulate_keystrokes(*window, "tab down down space enter");
+    assert_eq!(
+        *events.borrow(),
+        vec![
+            (
+                "selected".to_owned(),
+                UiValue::Array(vec![UiValue::String("user-2".to_owned())]),
+            ),
+            (
+                "clicked".to_owned(),
+                UiValue::String("user-2".to_owned()),
+            ),
+        ]
+    );
+
+    cx.simulate_keystrokes(*window, "tab enter tab enter");
+    let events = events.borrow();
+    assert!(events.iter().any(|(name, payload)| {
+        name == "selected"
+            && matches!(payload, UiValue::Array(values)
+                if values.len() == 100
+                    && values[0] == UiValue::String("user-0".to_owned())
+                    && values[10] == UiValue::String("user-10".to_owned()))
+    }));
+    assert!(events.iter().any(|(name, payload)| {
+        name == "sorted"
+            && matches!(payload, UiValue::Map(sort)
+                if sort.get("key") == Some(&UiValue::String("name".to_owned()))
+                    && sort.get("direction")
+                        == Some(&UiValue::String("ascending".to_owned())))
+    }));
+    drop(events);
+
+    let mut visual = VisualTestContext::from_window((*window).into(), cx);
+    visual.run_until_parked();
+    let selector = "table-users-horizontal-content";
+    let content_before = visual
+        .debug_bounds(selector)
+        .expect("wide Table horizontal content bounds");
+    let scrollbar = visual
+        .debug_bounds("table-users-horizontal-scrollbar")
+        .expect("wide Table horizontal scrollbar bounds");
+    assert!(scrollbar.size.width > px(0.0));
+    assert_eq!(scrollbar.size.height, px(10.5));
+    let thumb = visual
+        .debug_bounds("table-users-horizontal-scrollbar-thumb")
+        .expect("wide Table horizontal scrollbar thumb bounds");
+    assert!(thumb.size.width > px(0.0));
+    assert!(thumb.size.width < scrollbar.size.width);
+    let position = point(
+        content_before.origin.x + px(20.0),
+        content_before.origin.y + px(80.0),
+    );
+    visual.simulate_event(ScrollWheelEvent {
+        position,
+        delta: ScrollDelta::Pixels(point(px(0.0), px(-40.0))),
+        ..Default::default()
+    });
+    visual.run_until_parked();
+    let content_after_vertical = visual
+        .debug_bounds(selector)
+        .expect("Table content after vertical wheel");
+    assert_eq!(content_after_vertical.origin.x, content_before.origin.x);
+
+    let thumb_center = point(
+        thumb.origin.x + thumb.size.width / 2.0,
+        thumb.origin.y + thumb.size.height / 2.0,
+    );
+    visual.simulate_event(MouseDownEvent {
+        button: MouseButton::Left,
+        position: thumb_center,
+        ..Default::default()
+    });
+    visual.simulate_event(MouseMoveEvent {
+        position: point(thumb_center.x + px(60.0), thumb_center.y),
+        pressed_button: Some(MouseButton::Left),
+        ..Default::default()
+    });
+    visual.simulate_event(MouseUpEvent {
+        button: MouseButton::Left,
+        position: point(thumb_center.x + px(60.0), thumb_center.y),
+        ..Default::default()
+    });
+    visual.run_until_parked();
+    let content_after_drag = visual
+        .debug_bounds(selector)
+        .expect("Table content after scrollbar drag");
+    assert!(content_after_drag.origin.x < content_before.origin.x);
+
+    visual.simulate_event(ScrollWheelEvent {
+        position,
+        delta: ScrollDelta::Pixels(point(px(-40.0), px(0.0))),
+        ..Default::default()
+    });
+    visual.run_until_parked();
+    let content_after_horizontal = visual
+        .debug_bounds(selector)
+        .expect("Table content after horizontal wheel");
+    assert!(content_after_horizontal.origin.x < content_after_drag.origin.x);
 }
 
 #[gpui::test]
@@ -498,6 +869,147 @@ fn native_input_updates_rhai_state_and_clipboard_with_unicode(cx: &mut TestAppCo
         runtime.borrow().component_state.get(&root_path, "value"),
         Some(&UiValue::String("粘贴".to_owned()))
     );
+}
+
+#[gpui::test]
+fn native_textarea_wraps_inserts_newlines_and_limits_graphemes(cx: &mut TestAppContext) {
+    cx.update(init_text_area);
+    let textarea = include_str!("../../../registry/components/textarea.rhai");
+    let source = EmbeddedScriptSource::new(std::collections::BTreeMap::from([(
+        ModuleId::parse("components/textarea").unwrap(),
+        textarea.to_owned(),
+    )]));
+    let mut runtime_engine = RuntimeEngine::new();
+    runtime_engine
+        .set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
+    let compiled = runtime_engine
+        .compile_self_contained_named(
+            "ui/textarea_lifecycle.rhai",
+            r#"
+                import "components/textarea" as textarea;
+                fn state_schema() { #{ fields: #{
+                    value: #{ schema: #{ type: "string" },
+                        "default": #{ type: "string", value: "" } },
+                    read_only_value: #{ schema: #{ type: "string" },
+                        "default": #{ type: "string", value: "Read only 中文" } },
+                } } }
+                fn changed(ctx, value) { ctx.set_state("value", value); }
+                fn changed_read_only(ctx, value) { ctx.set_state("read_only_value", value); }
+                fn view(ctx) {
+                    column([
+                        textarea::Textarea(#{
+                            key: "notes", value: ctx.get_state("value"),
+                            placeholder: "Notes", min_rows: 2, max_rows: 4,
+                            max_length: 5, autofocus: true, on_change: Fn("changed")
+                        }),
+                        textarea::Textarea(#{
+                            key: "reference", value: ctx.get_state("read_only_value"),
+                            read_only: true, rows: 2,
+                            on_change: Fn("changed_read_only")
+                        })
+                    ])
+                }
+            "#,
+        )
+        .unwrap();
+    let primitives = runtime_engine.primitive_registry();
+    let schema = runtime_engine.root_state_schema(&compiled).unwrap();
+    let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+    let root_path = ComponentInstancePath::root("App", "root");
+    let mut lifecycle = ScriptLifecycle::new(
+        compiled,
+        Rc::clone(&runtime),
+        root_path.clone(),
+        Some("main".to_owned()),
+        std::collections::BTreeMap::new(),
+        &schema,
+    )
+    .unwrap();
+    lifecycle.start(&mut runtime_engine).unwrap();
+    let root = Rc::new(RefCell::new(lifecycle.root().unwrap().clone()));
+    let lifecycle = Rc::new(RefCell::new(lifecycle));
+    let runtime_engine = Rc::new(RefCell::new(runtime_engine));
+    let captured_root = Rc::clone(&root);
+    let captured_lifecycle = Rc::clone(&lifecycle);
+    let captured_engine = Rc::clone(&runtime_engine);
+    let errors = Rc::new(RefCell::new(Vec::new()));
+    let captured_errors = Rc::clone(&errors);
+    let dispatcher = NodeEventDispatcher::new(move |callback, payload, _, app| {
+        let result = {
+            let engine = captured_engine.borrow();
+            captured_lifecycle
+                .borrow()
+                .invoke_callback_transactional(&engine, &callback, payload)
+        };
+        if let Err(error) = result {
+            captured_errors.borrow_mut().push(error.to_string());
+            return EventPropagation::Handled;
+        }
+        if let Err(error) = captured_lifecycle
+            .borrow_mut()
+            .render(&mut captured_engine.borrow_mut())
+            .map(|root| {
+                *captured_root.borrow_mut() = root.clone();
+                app.refresh_windows();
+            })
+        {
+            captured_errors.borrow_mut().push(error.to_string());
+        }
+        EventPropagation::Handled
+    });
+    let window = cx.add_window(|window, cx| {
+        let host_focus = cx.focus_handle();
+        let _ = window;
+        KeyboardHost {
+            root,
+            dispatcher,
+            host_focus,
+            primitives,
+        }
+    });
+    cx.run_until_parked();
+
+    cx.simulate_input(*window, "a👩‍💻b");
+    cx.simulate_keystrokes(*window, "enter");
+    cx.simulate_input(*window, "cd");
+    cx.run_until_parked();
+
+    assert!(errors.borrow().is_empty(), "{:?}", errors.borrow());
+    assert_eq!(
+        runtime.borrow().component_state.get(&root_path, "value"),
+        Some(&UiValue::String("a👩‍💻b\nc".to_owned()))
+    );
+
+    cx.write_to_clipboard(gpui::ClipboardItem::new_string(
+        "👨‍👩‍👧‍👦abcdef".to_owned(),
+    ));
+    cx.simulate_keystrokes(*window, "cmd-a cmd-v cmd-a cmd-c");
+    assert_eq!(
+        cx.read_from_clipboard().and_then(|item| item.text()),
+        Some("👨‍👩‍👧‍👦abcd".to_owned())
+    );
+    cx.simulate_keystrokes(*window, "cmd-x");
+    assert_eq!(
+        runtime.borrow().component_state.get(&root_path, "value"),
+        Some(&UiValue::String(String::new()))
+    );
+
+    cx.simulate_keystrokes(*window, "tab cmd-a cmd-c");
+    assert_eq!(
+        cx.read_from_clipboard().and_then(|item| item.text()),
+        Some("Read only 中文".to_owned())
+    );
+    cx.write_to_clipboard(gpui::ClipboardItem::new_string("mutated".to_owned()));
+    cx.simulate_keystrokes(*window, "cmd-v cmd-x");
+    cx.simulate_input(*window, "typed");
+    assert_eq!(
+        runtime
+            .borrow()
+            .component_state
+            .get(&root_path, "read_only_value"),
+        Some(&UiValue::String("Read only 中文".to_owned()))
+    );
+    assert!(errors.borrow().is_empty(), "{:?}", errors.borrow());
 }
 
 #[gpui::test]

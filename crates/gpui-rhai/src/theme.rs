@@ -53,6 +53,9 @@ impl ThemeTokens {
         require_tokens("spacing", REQUIRED_SPACING, &self.spacing)?;
         require_tokens("radius", REQUIRED_RADII, &self.radii)?;
         for (name, value) in self.spacing.iter().chain(&self.radii) {
+            if value.is_theme_token() {
+                return Err(ThemeError::NestedLengthToken(name.clone()));
+            }
             value
                 .validate()
                 .map_err(|source| ThemeError::InvalidLength {
@@ -108,6 +111,14 @@ impl ColorResolver for ThemeVariant {
         match color {
             ColorValue::Literal(color) => Some(*color),
             ColorValue::Token(token) => self.tokens.colors.get(token).copied(),
+        }
+    }
+
+    fn resolve_length(&self, length: Length) -> Option<Length> {
+        match length {
+            Length::ThemeSpacing(token) => self.tokens.spacing.get(token.as_str()).copied(),
+            Length::ThemeRadius(token) => self.tokens.radii.get(token.as_str()).copied(),
+            Length::Pixels(_) | Length::Rems(_) | Length::Relative(_) => Some(length),
         }
     }
 }
@@ -468,6 +479,10 @@ impl ColorResolver for ResolvedTheme<'_> {
             ColorValue::Token(token) => self.variant.tokens.colors.get(token).copied(),
         }
     }
+
+    fn resolve_length(&self, length: Length) -> Option<Length> {
+        self.variant.resolve_length(length)
+    }
 }
 
 /// Compile and evaluate a Rhai theme source exporting `theme() -> map`.
@@ -508,6 +523,8 @@ pub enum ThemeError {
         token: String,
         source: crate::LengthError,
     },
+    #[error("theme length token `{0}` cannot reference another theme token")]
+    NestedLengthToken(String),
     #[error("variant `{key}` does not match family `{family}` or its map key")]
     VariantIdentity { family: String, key: String },
     #[error("family `{family}` has no default variant `{variant}`")]
@@ -661,6 +678,29 @@ mod tests {
                 category: "color",
                 ..
             })
+        ));
+    }
+
+    #[test]
+    fn semantic_spacing_and_radius_lengths_resolve_without_recursion() {
+        let mut theme_family = family();
+        let variant = theme_family.variants.remove("Dark").unwrap();
+        assert_eq!(
+            variant.resolve_length(Length::ThemeSpacing(crate::SpacingToken::Sm)),
+            Some(Length::Pixels(8.0))
+        );
+        assert_eq!(
+            variant.resolve_length(Length::ThemeRadius(crate::RadiusToken::Md)),
+            Some(Length::Pixels(8.0))
+        );
+        let mut invalid = variant.tokens;
+        invalid.spacing.insert(
+            "sm".to_owned(),
+            Length::ThemeSpacing(crate::SpacingToken::Sm),
+        );
+        assert!(matches!(
+            invalid.validate(),
+            Err(ThemeError::NestedLengthToken(token)) if token == "sm"
         ));
     }
 

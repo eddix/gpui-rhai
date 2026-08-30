@@ -11,6 +11,7 @@ pub struct DropdownOption {
     pub label: String,
     pub keywords: Vec<String>,
     pub disabled: bool,
+    pub group: Option<String>,
 }
 
 impl DropdownOption {
@@ -21,6 +22,7 @@ impl DropdownOption {
             label: label.into(),
             keywords: Vec::new(),
             disabled: false,
+            group: None,
         }
     }
 
@@ -35,6 +37,18 @@ impl DropdownOption {
         self.disabled = disabled;
         self
     }
+
+    #[must_use]
+    pub fn group(mut self, group: impl Into<String>) -> Self {
+        self.group = Some(group.into());
+        self
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum DropdownVisibleRow {
+    Group(String),
+    Option(DropdownOption),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -51,7 +65,7 @@ pub struct DropdownNodeSpec {
     pub mode: DropdownMode,
     pub selected: Option<Vec<String>>,
     pub open: Option<bool>,
-    pub searchable: bool,
+    pub behavior: ChoiceBehavior,
     pub query: Option<String>,
     pub placeholder: String,
     pub search_placeholder: String,
@@ -63,6 +77,27 @@ pub struct DropdownNodeSpec {
     pub disabled: bool,
     pub max_visible: usize,
     pub placement: crate::OverlayPlacement,
+    pub row_height: f64,
+    pub trigger_height: f64,
+    pub trigger_width: crate::Length,
+    pub panel_width: f64,
+    pub panel_extra_height: Option<f64>,
+    pub overlay_gap: f64,
+    pub clear_asset: crate::AssetId,
+    pub indicator_asset: crate::AssetId,
+    pub check_asset: crate::AssetId,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct ChoiceBehavior {
+    pub searchable: bool,
+    pub clearable: bool,
+    pub reset_query_on_close: bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct SelectNodeSpec {
+    pub choice: DropdownNodeSpec,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -247,6 +282,25 @@ impl DropdownState {
         true
     }
 
+    /// Clear filtering while preserving stable option and selection identity.
+    ///
+    /// # Errors
+    ///
+    /// Returns virtual-list identity errors if internal option invariants are
+    /// broken.
+    pub fn clear_query(&mut self) -> Result<bool, DropdownError> {
+        self.set_query(String::new())
+    }
+
+    pub fn clear_selection(&mut self) -> bool {
+        if self.selected.is_empty() {
+            false
+        } else {
+            self.selected.clear();
+            true
+        }
+    }
+
     #[must_use]
     pub fn selected(&self) -> &BTreeSet<String> {
         &self.selected
@@ -259,16 +313,31 @@ impl DropdownState {
 
     #[must_use]
     pub fn focused_visible_index(&self) -> Option<usize> {
-        self.list.focused().and_then(|focused| {
-            self.visible
-                .iter()
-                .position(|index| self.options[*index].value == focused)
-        })
+        let focused = self.list.focused()?;
+        self.visible_rows().position(
+            |row| matches!(row, DropdownVisibleRow::Option(option) if option.value == focused),
+        )
     }
 
     #[must_use]
     pub fn visible_options(&self) -> impl ExactSizeIterator<Item = &DropdownOption> {
         self.visible.iter().map(|index| &self.options[*index])
+    }
+
+    pub fn visible_rows(&self) -> impl Iterator<Item = DropdownVisibleRow> + '_ {
+        let mut previous_group: Option<&str> = None;
+        self.visible.iter().flat_map(move |index| {
+            let option = &self.options[*index];
+            let mut rows = Vec::with_capacity(2);
+            if option.group.as_deref() != previous_group {
+                if let Some(group) = option.group.as_ref() {
+                    rows.push(DropdownVisibleRow::Group(group.clone()));
+                }
+                previous_group = option.group.as_deref();
+            }
+            rows.push(DropdownVisibleRow::Option(option.clone()));
+            rows
+        })
     }
 
     /// Return only rows within the equal-height virtual realization range.
@@ -379,6 +448,23 @@ impl DropdownState {
             })
             .map(|(index, _)| index)
             .collect();
+        let mut group_order = Vec::<Option<String>>::new();
+        for index in &self.visible {
+            let group = self.options[*index].group.clone();
+            if !group_order.contains(&group) {
+                group_order.push(group);
+            }
+        }
+        let filtered = self.visible.clone();
+        self.visible.clear();
+        for group in &group_order {
+            self.visible.extend(
+                filtered
+                    .iter()
+                    .copied()
+                    .filter(|index| &self.options[*index].group == group),
+            );
+        }
         self.list.set_keys(
             self.visible
                 .iter()
@@ -519,14 +605,18 @@ impl DropdownState {
 fn validate_options(options: &[DropdownOption]) -> Result<(), DropdownError> {
     let mut values = BTreeSet::new();
     for option in options {
-        if option.value.trim().is_empty() {
-            return Err(DropdownError::EmptyValue);
-        }
         if option.label.trim().is_empty() {
             return Err(DropdownError::EmptyLabel(option.value.clone()));
         }
         if !values.insert(option.value.clone()) {
             return Err(DropdownError::DuplicateValue(option.value.clone()));
+        }
+        if option
+            .group
+            .as_ref()
+            .is_some_and(|group| group.trim().is_empty())
+        {
+            return Err(DropdownError::EmptyGroup(option.value.clone()));
         }
     }
     Ok(())
@@ -551,12 +641,12 @@ fn validate_selection(
 
 #[derive(Debug, Error)]
 pub enum DropdownError {
-    #[error("dropdown option values cannot be empty")]
-    EmptyValue,
     #[error("dropdown option `{0}` has an empty label")]
     EmptyLabel(String),
     #[error("dropdown option value `{0}` is duplicated")]
     DuplicateValue(String),
+    #[error("dropdown option `{0}` has an empty group")]
+    EmptyGroup(String),
     #[error("single-select dropdown cannot contain multiple selected values")]
     MultipleValuesInSingleMode,
     #[error("dropdown selection `{0}` does not match an option")]
@@ -646,5 +736,31 @@ mod tests {
         assert_eq!(metrics.item_count, 5_000);
         assert_eq!(metrics.realized_count, realized.len());
         assert!(realized.len() <= 25);
+    }
+
+    #[test]
+    fn groups_are_real_rows_in_first_occurrence_order() {
+        let state = DropdownState::new(
+            vec![
+                DropdownOption::new("a", "A").group("Second"),
+                DropdownOption::new("b", "B").group("First"),
+                DropdownOption::new("c", "C").group("Second"),
+                DropdownOption::new("", "Empty value"),
+            ],
+            DropdownMode::Single,
+            std::iter::empty::<String>(),
+        )
+        .unwrap();
+        assert_eq!(
+            state.visible_rows().collect::<Vec<_>>(),
+            vec![
+                DropdownVisibleRow::Group("Second".to_owned()),
+                DropdownVisibleRow::Option(DropdownOption::new("a", "A").group("Second")),
+                DropdownVisibleRow::Option(DropdownOption::new("c", "C").group("Second")),
+                DropdownVisibleRow::Group("First".to_owned()),
+                DropdownVisibleRow::Option(DropdownOption::new("b", "B").group("First")),
+                DropdownVisibleRow::Option(DropdownOption::new("", "Empty value")),
+            ]
+        );
     }
 }

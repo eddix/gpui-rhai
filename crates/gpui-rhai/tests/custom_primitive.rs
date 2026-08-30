@@ -14,6 +14,7 @@ impl PrimitiveHandler for DownstreamEditor {
         &mut self,
         _: &PrimitiveInstance,
         _: &PrimitiveEventEmitter,
+        _: &gpui_rhai::PrimitiveTheme,
         _: &mut Window,
         _: &mut App,
     ) -> Result<AnyElement, String> {

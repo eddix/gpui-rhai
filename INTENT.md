@@ -119,6 +119,7 @@ covering:
 - styleable parts;
 - runtime API compatibility;
 - component dependencies and required capabilities.
+- component-owned asset declarations copied with the source.
 
 Functions that merely return nodes may be used as render helpers, but they do
 not receive component identity, local state, lifecycle, or a devtools entry.
@@ -207,6 +208,7 @@ primitives. A registration supplies:
 - a node name and props schema;
 - a `UiNode`-to-GPUI renderer;
 - normalized event adapters;
+- a read-only semantic color/spacing/radius snapshot for native paint;
 - optional instance state and lifecycle support.
 
 This is a first-class initial-release extension point. It allows applications to
@@ -264,6 +266,14 @@ Chinese bundles validate the initial system. Logical layout direction is
 preserved in the architecture, while full RTL visual certification is deferred
 until M2.
 
+Locale bundles also own the reusable presentation metadata needed by complex
+controls: Gregorian month/weekday names, first weekday, validated short/medium/
+long date patterns, decimal digits and separators, and grouping rules. Runtime
+date and number formatters consume that data for DatePicker, Table, Pagination,
+and application scripts. ISO `YYYY-MM-DD` remains the locale-independent date
+value ABI. A host-provided Clock supplies the system-local current date and can
+be replaced with a fixed Clock for tests.
+
 ### 6.4 Icons and images
 
 The runtime defines asset, icon, and image provider protocols without depending
@@ -272,8 +282,11 @@ required by its components. Complete icon collections may be distributed as
 optional source packs.
 
 Rhai addresses assets by semantic `AssetId` or receives a controlled
-`ImageHandle` from a capability. Components never read arbitrary filesystem
-paths or URLs. Rust owns decoding, caching, scaling, fallback, and cancellation.
+`ImageHandle` from a capability. The Icon source accepts either kind and may
+provide an explicit RTL counterpart. Declared component assets are preloaded
+during application preparation, so rendering performs cache lookup rather than
+filesystem I/O. Components never read arbitrary filesystem paths or URLs. Rust
+owns decoding, caching, scaling, fallback, and cancellation.
 
 ## 7. Rendering mechanisms
 
@@ -296,7 +309,7 @@ Rhai declares transitions or springs; Rust performs interpolation and frame
 scheduling. Rhai is never invoked once per animation frame. Reduced-motion
 preferences shorten or remove nonessential animation automatically.
 
-### 7.3 Responsive layout and large lists
+### 7.3 Responsive layout, large lists, and tables
 
 Normal resizing relies on GPUI layout. Structural adaptation uses discrete,
 configurable viewport classes (`compact`, `regular`, and `wide`) rather than
@@ -304,7 +317,15 @@ continuous script-side pixel calculations.
 
 M1 includes a one-dimensional Rust `VirtualList` behavior primitive for large
 collections. It supports stable item keys and equal or predictable row heights.
-Data tables and arbitrary two-dimensional virtualization remain out of scope.
+
+Table is a later data-driven specialization over the same fixed-height range,
+identity, and `uniform_list` mechanisms. Ordinary scalar cells remain Rust data
+until GPUI requests visible rows. Explicit Rhai custom-cell renderers still run
+for all rows during the complete `view(ctx)` transaction; only their GPUI
+elements are virtualized. This preserves one transactional declarative-tree
+boundary and forbids scroll-time Rhai callbacks. Spreadsheet editing,
+variable-height rows, and arbitrary two-dimensional virtualization remain out
+of scope.
 
 ## 8. Accessibility and desktop behavior
 
@@ -371,8 +392,17 @@ Both the manifest and baselines should be committed to version control.
 it never silently overwrites modifications.
 
 Runtime SemVer, component source versions, and `runtime_api` compatibility are
-tracked separately. The CLI enforces compatibility before installation or
-update. During `0.x`, a breaking runtime API change increments the minor version.
+tracked separately. The CLI enforces declared compatibility before installation
+or update. After an explicit release baseline exists, a breaking `0.x` runtime
+API change increments the minor version.
+
+Before the maintainer gives an explicit release signal, this repository is in
+dogfooding mode. Breaking Rust, Rhai, schema, locale, registry, and generated
+source changes should move directly to the best target design: no compatibility
+adapter, deprecated alias, dual parser, or SDK-managed application migration is
+required. `RUNTIME_API_VERSION` remains 1 for the current expansion. Release and
+migration policy is reconsidered only after an explicit versioning signal such
+as preparing 0.1.1.
 
 Required initial commands are:
 
@@ -394,6 +424,7 @@ binary. Both use the same resolver and execution semantics.
 
 - Button
 - Input
+- Textarea
 - Checkbox
 - Radio / RadioGroup
 - Switch
@@ -408,6 +439,8 @@ binary. Both use the same resolver and execution semantics.
 ### Composite components
 
 - Dropdown
+- Select
+- DatePicker
 - Popover
 - Tooltip
 - Dialog
@@ -417,13 +450,18 @@ binary. Both use the same resolver and execution semantics.
 - Menu
 - Toast
 - FormField
+- Table
+- Pagination
 
 ### Example applications
 
 - `hello_world` — the smallest Button and Label end-to-end path;
 - `settings_panel` — Switch, Radio, Dropdown, Divider, and Accordion;
 - `dashboard_layout` — Tabs, Tag, Avatar, Progress, and Popover;
-- `form_showcase` — Input, FormField, Checkbox, Radio, Switch, Dialog, and Toast.
+- `form_showcase` — Input, Textarea, Select, DatePicker, FormField, Checkbox,
+  Radio, Switch, Dialog, and Toast;
+- `data_table` — Table, Pagination, Select page-size, sorting, selection, and
+  custom cells over a representative large data set.
 
 Examples use the same `ui/` source layout and runtime API as downstream
 applications and remain independently runnable through Cargo.
@@ -440,6 +478,8 @@ applications and remain independently runnable through Cargo.
 - **M2, product-line completion:** remaining components and examples, locale and
   RTL validation, broader integration polish, complete documentation, and
   release hardening.
+- **M3, complex controls:** schema/locale/asset foundations, Textarea, Select,
+  DatePicker, Table, Pagination, `data_table`, and the expanded form scenario.
 
 Each milestone is independently runnable and may be published as a preview.
 The full component list is a v0.x product-line goal, not a reason to delay early
@@ -472,7 +512,8 @@ The initial project does not:
 - expose filesystem, network, process, or raw GPUI access implicitly;
 - depend on `gpui-component`;
 - provide a Web-style URL router;
-- implement Dock layouts, rich-text editing, data tables, or 2D virtualization;
+- implement Dock layouts, rich-text editing, spreadsheets, variable-height
+  virtualized tables, or arbitrary 2D virtualization;
 - provide a complete form framework;
 - provide a complete custom LSP or formatter;
 - provide complete multi-window APIs before M2;

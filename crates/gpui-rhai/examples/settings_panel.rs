@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use gpui_rhai::{EmbeddedScriptSource, EmbeddedScriptView, ModuleId, ScriptApplication};
+use gpui_rhai::{AssetData, EmbeddedScriptSource, EmbeddedScriptView, ModuleId, ScriptApplication};
 
 const BUTTON: &str = include_str!("../../../registry/components/button.rhai");
 const LABEL: &str = include_str!("../../../registry/components/label.rhai");
@@ -318,6 +318,7 @@ fn main() {
         ("zh_cn.rhai".to_owned(), ZH_CN.to_owned()),
         ("ar.rhai".to_owned(), AR.to_owned()),
     ])
+    .asset_sources(choice_assets())
     .development(true)
     .prepare()
     .and_then(|prepared| {
@@ -326,4 +327,30 @@ fn main() {
             .run()
     })
     .expect("settings_panel failed");
+}
+
+fn choice_assets() -> [(String, AssetData); 3] {
+    [
+        (
+            "icons/check".to_owned(),
+            svg(include_bytes!("../../../registry/assets/icons/check.svg")),
+        ),
+        (
+            "icons/close".to_owned(),
+            svg(include_bytes!("../../../registry/assets/icons/close.svg")),
+        ),
+        (
+            "icons/disclosure_down".to_owned(),
+            svg(include_bytes!(
+                "../../../registry/assets/icons/disclosure_down.svg"
+            )),
+        ),
+    ]
+}
+
+fn svg(bytes: &[u8]) -> AssetData {
+    AssetData {
+        mime_type: "image/svg+xml".to_owned(),
+        bytes: bytes.to_vec(),
+    }
 }

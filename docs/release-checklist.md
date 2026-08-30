@@ -1,7 +1,10 @@
 # Release checklist
 
-1. Add migration notes for every breaking runtime API, component schema, registry
-   baseline, manifest, or generated-source change.
+1. Do not begin compatibility or migration work until the maintainer gives an
+   explicit release/version signal. Before that signal, dogfooding changes go
+   directly to the best SDK design without aliases or dual parsers. Once a
+   release is requested, document every breaking runtime API, component schema,
+   locale, registry, manifest, and generated-source change from that baseline.
 2. Run format, all-target/all-feature check, strict Clippy, tests, and rustdoc.
 3. Test the declared MSRV (`1.94`) and latest stable toolchains.
 4. Run `cargo package -p gpui-rhai` and inspect the package file list.
@@ -18,7 +21,10 @@
 9. Run CLI clean and modified-project fixtures for init/add/check/dev metadata,
    diff/update, and embed behavior.
 10. Record the exact GPUI/Rhai versions and known accessibility/platform gaps.
+11. For the complex-control line, run fixed-Clock DatePicker locale cases, large
+    scalar/custom Table probes, Select group/search cases, Pagination boundary
+    transitions, and Textarea multiline IME/auto-grow cases.
 
-The `0.1.0` public surface is intentionally pre-1.0, but changes are never
-silently breaking: the changelog and source-update baseline are the migration
-contract.
+The repository remains version 0.1.0 and `RUNTIME_API_VERSION` 1 during the
+current dogfooding expansion. A later explicit release signal establishes the
+baseline from which changelog and source-update migration contracts apply.

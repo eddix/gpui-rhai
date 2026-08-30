@@ -24,7 +24,7 @@ export_component(#{
             open: #{ schema: #{ type: "bool" }, required: true, sensitive: false },
             trigger: #{ schema: #{ type: "node" }, required: true, sensitive: false },
             content: #{ schema: #{ type: "node" }, required: true, sensitive: false },
-            content_height: #{ schema: #{ type: "integer" }, required: true, sensitive: false },
+            content_height: #{ schema: #{ type: "integer", min: 0 }, required: true, sensitive: false },
             disabled: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: false } },
             on_open_change: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false },
@@ -51,7 +51,7 @@ fn render_Collapsible(ctx, props) {
     if !disabled && "on_open_change" in props && props.on_open_change != () {
         trigger = trigger.on_click_value(props.on_open_change, !props.open);
     }
-    let height = if props.content_height < 0 { 0 } else { props.content_height };
+    let height = props.content_height;
     let panel = column([props.content])
         .with_key(`${props.key}-content`)
         .with_style(component_style(props, "content", style().clip()))

@@ -11,7 +11,8 @@ use gpui::{
     Pixels, Point, Render, ShapedLine, SharedString, Style as GpuiStyle, TextRun, UTF16Selection,
     UnderlineStyle, Window, actions, div, fill, point, prelude::*, px, relative, rgba, size,
 };
-use unicode_segmentation::UnicodeSegmentation;
+
+pub use crate::text_edit::TextBuffer;
 
 use crate::{
     ComponentStateSchema, EventSchema, ObjectField, PrimitiveDescriptor, PrimitiveEventEmitter,
@@ -60,158 +61,6 @@ pub fn init_text_input(cx: &mut App) {
             Some("GPUIRhaiTextInput"),
         ),
     ]);
-}
-
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct TextBuffer {
-    content: String,
-    selected: Range<usize>,
-    selection_reversed: bool,
-    marked: Option<Range<usize>>,
-}
-
-impl TextBuffer {
-    #[must_use]
-    pub fn new(content: impl Into<String>) -> Self {
-        let content = content.into();
-        let cursor = content.len();
-        Self {
-            content,
-            selected: cursor..cursor,
-            selection_reversed: false,
-            marked: None,
-        }
-    }
-
-    #[must_use]
-    pub fn content(&self) -> &str {
-        &self.content
-    }
-
-    #[must_use]
-    pub fn selection(&self) -> &Range<usize> {
-        &self.selected
-    }
-
-    #[must_use]
-    pub fn marked(&self) -> Option<&Range<usize>> {
-        self.marked.as_ref()
-    }
-
-    fn cursor_offset(&self) -> usize {
-        if self.selection_reversed {
-            self.selected.start
-        } else {
-            self.selected.end
-        }
-    }
-
-    fn move_to(&mut self, offset: usize) {
-        let offset = offset.min(self.content.len());
-        self.selected = offset..offset;
-        self.selection_reversed = false;
-    }
-
-    fn select_to(&mut self, offset: usize) {
-        let offset = offset.min(self.content.len());
-        if self.selection_reversed {
-            self.selected.start = offset;
-        } else {
-            self.selected.end = offset;
-        }
-        if self.selected.end < self.selected.start {
-            self.selection_reversed = !self.selection_reversed;
-            self.selected = self.selected.end..self.selected.start;
-        }
-    }
-
-    fn previous_boundary(&self, offset: usize) -> usize {
-        self.content
-            .grapheme_indices(true)
-            .rev()
-            .find_map(|(index, _)| (index < offset).then_some(index))
-            .unwrap_or(0)
-    }
-
-    fn next_boundary(&self, offset: usize) -> usize {
-        self.content
-            .grapheme_indices(true)
-            .find_map(|(index, _)| (index > offset).then_some(index))
-            .unwrap_or(self.content.len())
-    }
-
-    fn offset_from_utf16(&self, offset: usize) -> usize {
-        let mut utf8_offset = 0;
-        let mut utf16_count = 0;
-        for character in self.content.chars() {
-            if utf16_count >= offset {
-                break;
-            }
-            utf16_count += character.len_utf16();
-            utf8_offset += character.len_utf8();
-        }
-        utf8_offset
-    }
-
-    fn offset_to_utf16(&self, offset: usize) -> usize {
-        let mut utf16_offset = 0;
-        let mut utf8_count = 0;
-        for character in self.content.chars() {
-            if utf8_count >= offset {
-                break;
-            }
-            utf8_count += character.len_utf8();
-            utf16_offset += character.len_utf16();
-        }
-        utf16_offset
-    }
-
-    fn range_to_utf16(&self, range: &Range<usize>) -> Range<usize> {
-        self.offset_to_utf16(range.start)..self.offset_to_utf16(range.end)
-    }
-
-    fn range_from_utf16(&self, range: &Range<usize>) -> Range<usize> {
-        self.offset_from_utf16(range.start)..self.offset_from_utf16(range.end)
-    }
-
-    fn replace(&mut self, range_utf16: Option<&Range<usize>>, text: &str) {
-        let range = range_utf16
-            .map(|range| self.range_from_utf16(range))
-            .or_else(|| self.marked.clone())
-            .unwrap_or_else(|| self.selected.clone());
-        self.content.replace_range(range.clone(), text);
-        self.move_to(range.start + text.len());
-        self.marked = None;
-    }
-
-    fn replace_and_mark(
-        &mut self,
-        range_utf16: Option<&Range<usize>>,
-        text: &str,
-        selected_utf16: Option<Range<usize>>,
-    ) {
-        let range = range_utf16
-            .map(|range| self.range_from_utf16(range))
-            .or_else(|| self.marked.clone())
-            .unwrap_or_else(|| self.selected.clone());
-        self.content.replace_range(range.clone(), text);
-        self.marked = (!text.is_empty()).then(|| range.start..range.start + text.len());
-        self.selected = selected_utf16.map_or_else(
-            || range.start + text.len()..range.start + text.len(),
-            |selection| {
-                let selection = self.range_from_utf16(&selection);
-                range.start + selection.start..range.start + selection.end
-            },
-        );
-    }
-
-    fn set_controlled(&mut self, content: &str) {
-        if self.content != content {
-            content.clone_into(&mut self.content);
-            self.move_to(self.content.len());
-            self.marked = None;
-        }
-    }
 }
 
 pub(crate) type TextValueHandler = Rc<dyn Fn(String, &mut Window, &mut App)>;
@@ -790,6 +639,7 @@ impl PrimitiveHandler for TextInputPrimitiveHandler {
         &mut self,
         instance: &PrimitiveInstance,
         events: &PrimitiveEventEmitter,
+        _: &crate::PrimitiveTheme,
         window: &mut Window,
         cx: &mut App,
     ) -> Result<gpui::AnyElement, String> {
