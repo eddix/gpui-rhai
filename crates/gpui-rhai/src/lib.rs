@@ -3,8 +3,6 @@
 pub mod component;
 pub mod context;
 pub mod date;
-pub mod date_picker;
-mod date_picker_element;
 pub mod dependency;
 pub mod devtools;
 pub mod diagnostic;
@@ -92,10 +90,6 @@ pub use context::{
     UiStateSnapshot,
 };
 pub use date::{CalendarClock, CalendarClockSource, DateError, GregorianDate, Weekday};
-pub use date_picker::{
-    DatePickerCell, DatePickerCellState, DatePickerKey, DatePickerNodeSpec, DatePickerOutcome,
-    DatePickerPreset, DatePickerState,
-};
 pub use dependency::{
     DependencyError, ModuleCompileCache, ModuleDependencyGraph, ModuleRefreshReport,
     extract_imports,

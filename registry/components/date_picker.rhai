@@ -9,12 +9,10 @@
   "assets": ["icons/calendar.svg", "icons/date_previous.svg", "icons/date_next.svg", "icons/close.svg"]
 }
 */
-// DatePicker is a controlled single-date field with a localized native Gregorian month grid.
-//
-// Props: key, optional ISO value/min/max, placeholder/display_style, presets, clearable,
-//        disabled/error, size, placement, and on_change.
-// Events: change(optional<string>). State: controlled value plus keyed native calendar transients.
-// Example: DatePicker(#{ key: "appointment", value: "2026-09-01", min_date: "2026-08-30", on_change: Fn("changed") })
+// Controlled single-date field composed from public date data helpers, atoms, and Overlay.
+// Props: key, optional strict ISO value/min/max, localized presentation, presets, and on_change.
+// Events: change(optional<string>). State: keyed open/visible-month/focused-date transients.
+// Example: DatePicker(#{ key: "appointment", value: "2026-09-01", on_change: Fn("changed") })
 
 define_component(#{
     metadata: #{
@@ -26,6 +24,7 @@ define_component(#{
     schema: #{
         props: #{
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+            parent_overlay: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
             value: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
             min_date: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
             max_date: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
@@ -50,109 +49,334 @@ define_component(#{
                 "default": #{ type: "bool", value: false } },
             size: #{ schema: #{ type: "string", allowed: ["xs", "sm", "md", "lg"] }, required: false, sensitive: false,
                 "default": #{ type: "string", value: "md" } },
+            width: #{ schema: #{ type: "optional", value: #{ type: "length" } }, required: false, sensitive: false },
             placement: #{ schema: #{ type: "string", allowed: ["top", "bottom", "left", "right"] }, required: false, sensitive: false,
                 "default": #{ type: "string", value: "bottom" } },
             on_change: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false },
         },
-        state: #{ fields: #{} },
+        state: #{ fields: #{
+            open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: false } },
+            visible_month: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "" } },
+            focused_date: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "" } },
+            anchor_date: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "" } },
+        } },
         events: #{ change: #{ payload: #{ type: "optional", value: #{ type: "string" } } } },
         slots: #{},
-        parts: ["root", "trigger", "trigger_value", "trigger_icon", "panel", "header", "previous", "next", "weekdays", "weekday", "grid", "day", "day_outside", "day_today", "day_selected", "day_disabled", "footer", "preset", "clear"],
+        parts: ["root", "trigger", "trigger_value", "trigger_icon", "panel", "header",
+            "month_title", "previous", "next", "weekdays", "weekday", "grid", "week",
+            "day", "day_outside", "day_today", "day_selected", "day_focused",
+            "day_disabled", "footer", "preset", "clear"],
+        effects: ["controlled_anchor"],
     },
     render: Fn("render_DatePicker")
 });
 
+fn DatePicker(props) { render_component("components/date_picker", props) }
+fn prop_or(props, name, fallback) { if name in props { props[name] } else { fallback } }
+fn optional_prop(props, name) { if name in props && props[name] != () { props[name] } else { () } }
 fn date_picker_size(size) {
     if size == "xs" { 24 }
     else if size == "sm" { 28 }
     else if size == "lg" { 40 }
     else { 32 }
 }
+fn weekday_index(name) {
+    if name == "monday" { 1 }
+    else if name == "tuesday" { 2 }
+    else if name == "wednesday" { 3 }
+    else if name == "thursday" { 4 }
+    else if name == "friday" { 5 }
+    else if name == "saturday" { 6 }
+    else { 0 }
+}
+fn date_enabled(date, min_date, max_date) {
+    date != () && (min_date == () || date >= min_date) && (max_date == () || date <= max_date)
+}
+fn checked_or(value, fallback) { if value == () { fallback } else { value } }
 
-fn prop_or(props, name, fallback) {
-    if name in props { props[name] } else { fallback }
+fn validate_date_picker(props, value, min_date, max_date, today) {
+    date_info(today);
+    if min_date != () { date_info(min_date); }
+    if max_date != () { date_info(max_date); }
+    if min_date != () && max_date != () && min_date > max_date {
+        throw "DatePicker min_date cannot be after max_date";
+    }
+    if value != () {
+        date_info(value);
+        if !date_enabled(value, min_date, max_date) {
+            throw "DatePicker controlled value is outside min_date/max_date";
+        }
+    }
+    let preset_values = #{};
+    for preset in prop_or(props, "presets", []) {
+        date_info(preset.value);
+        let label = preset.label;
+        label.trim();
+        if label == "" { throw "DatePicker preset labels cannot be empty"; }
+        if preset.value in preset_values {
+            throw `DatePicker preset date '${preset.value}' is duplicated`;
+        }
+        preset_values[preset.value] = true;
+    }
 }
 
-fn DatePicker(props) { render_component("components/date_picker", props) }
+fn sync_anchor(ctx, payload) {
+    ctx.set_state("anchor_date", payload.anchor);
+    ctx.set_state("visible_month", date_month_start(payload.anchor));
+    ctx.set_state("focused_date", payload.anchor);
+}
+fn cleanup_anchor(ctx, payload) { () }
+fn set_open(ctx, open) {
+    ctx.set_state("open", open);
+    if !open {
+        ctx.set_state("visible_month", "");
+        ctx.set_state("focused_date", "");
+    }
+    handled()
+}
+fn navigate_date(ctx, payload) {
+    ctx.set_state("focused_date", payload.date);
+    ctx.set_state("visible_month", date_month_start(payload.date));
+    handled()
+}
+fn move_month(ctx, payload) {
+    ctx.set_state("focused_date", payload.date);
+    ctx.set_state("visible_month", date_month_start(payload.date));
+    handled()
+}
+fn choose_date(ctx, payload) {
+    if payload.changed { ctx.emit("change", payload.date); }
+    ctx.set_state("open", false);
+    ctx.set_state("visible_month", "");
+    ctx.set_state("focused_date", "");
+    handled()
+}
+fn clear_date(ctx, payload) {
+    if payload.changed { ctx.emit("change", ()); }
+    ctx.set_state("open", false);
+    ctx.set_state("visible_month", "");
+    ctx.set_state("focused_date", "");
+    handled()
+}
+
+fn date_target(value, days, min_date, max_date) {
+    let target = date_checked_add_days(value, days);
+    if target == () { value } else { date_clamp(target, min_date, max_date) }
+}
+fn month_target(value, months, min_date, max_date) {
+    let target = date_checked_add_months(value, months);
+    if target == () || !date_month_intersects(target, min_date, max_date) { value }
+    else { date_clamp(target, min_date, max_date) }
+}
+fn week_target(value, first_weekday, end, min_date, max_date) {
+    let target = date_week_edge(value, first_weekday, end);
+    if target == () { value } else { date_clamp(target, min_date, max_date) }
+}
+
+fn icon_node(source, rtl_source, label, size, part_style) {
+    directional_image_source(asset(source), asset(rtl_source))
+        .with_style(part_style.width(px(size)).height(px(size)))
+        .accessibility_role("image").accessibility_label(label)
+}
+
 fn render_DatePicker(ctx, props) {
-    let value = if "value" in props { props.value } else { () };
-    let size = prop_or(props, "size", "md");
-    let height = date_picker_size(size);
+    let value = optional_prop(props, "value");
+    let min_date = optional_prop(props, "min_date");
+    let max_date = optional_prop(props, "max_date");
+    let today = ctx.today();
+    validate_date_picker(props, value, min_date, max_date, today);
+    let anchor = date_clamp(if value == () { today } else { value }, min_date, max_date);
+    let open = ctx.get_state("open");
+    effect("controlled_anchor", #{ anchor: anchor }, Fn("sync_anchor"), Fn("cleanup_anchor"));
+
+    let stored_month = ctx.get_state("visible_month");
+    let stored_focus = ctx.get_state("focused_date");
+    let anchor_changed = ctx.get_state("anchor_date") != anchor;
+    let visible_month = if stored_month == "" || anchor_changed {
+        date_month_start(anchor)
+    } else { stored_month };
+    let focused_date = if stored_focus == "" || anchor_changed { anchor } else { stored_focus };
+    let calendar = ctx.calendar();
+    let size = date_picker_size(prop_or(props, "size", "md"));
+    let width = if "width" in props && props.width != () { props.width } else { px(280) };
+    let panel_width = size * 7 + 32;
+    let placeholder = prop_or(props, "placeholder", "");
+    let display = if value == () { placeholder }
+        else { ctx.format_date(value, prop_or(props, "display_style", "short")) };
     let error = prop_or(props, "error", false);
-    let config = #{
-        id: props.key,
-        value: value,
-        today: ctx.today(),
-        display_value: if value == () { "" } else {
-            ctx.format_date(value, prop_or(props, "display_style", "short"))
-        },
-        placeholder: prop_or(props, "placeholder", ""),
-        open_label: ctx.t("calendar.open"),
-        previous_label: ctx.t("calendar.previous_month"),
-        next_label: ctx.t("calendar.next_month"),
-        clear_label: ctx.t("calendar.clear"),
-        calendar: ctx.calendar(),
-        number: ctx.number(),
-        presets: prop_or(props, "presets", []),
-        clearable: prop_or(props, "clearable", false),
-        disabled: prop_or(props, "disabled", false),
-        placement: prop_or(props, "placement", "bottom"),
-        cell_size: height * 1.0,
-        trigger_height: height * 1.0,
-        panel_width: height * 7.0 + 32.0,
-        overlay_gap: 4.0,
-        previous_asset: asset("app/icons/date_previous"),
-        next_asset: asset("app/icons/date_next"),
-        trigger_asset: asset("app/icons/calendar"),
-        clear_asset: asset("app/icons/close"),
-    };
-    if "min_date" in props && props.min_date != () { config.min_date = props.min_date; }
-    if "max_date" in props && props.max_date != () { config.max_date = props.max_date; }
-    let border = if error { theme_color("danger") } else { theme_color("border") };
-    let node = date_picker(config).with_style(component_style(props, "root", style()));
-    let node = node.with_part_style("trigger", component_style(props, "trigger",
-        style().border(px(1)).border_color(border).radius(theme_radius("md"))
-            .padding_x(theme_spacing("sm")).background(theme_color("surface"))));
-    let node = node
-        .with_part_style("trigger_value", component_style(props, "trigger_value", style()))
-        .with_part_style("trigger_icon", component_style(props, "trigger_icon",
-            style().text_color(theme_color("text_muted"))))
-        .with_part_style("panel", component_style(props, "panel",
-            style().border(px(1)).border_color(theme_color("border"))
-                .radius(theme_radius("md")).padding(theme_spacing("sm"))
-                .background(theme_color("surface_raised"))
-                .text_color(theme_color("text_primary"))));
-    let node = node
-        .with_part_style("header", component_style(props, "header",
-            style().padding_x(theme_spacing("xs"))))
-        .with_part_style("previous", component_style(props, "previous", style()))
-        .with_part_style("next", component_style(props, "next", style()))
-        .with_part_style("weekdays", component_style(props, "weekdays", style()))
-        .with_part_style("weekday", component_style(props, "weekday",
-            style().text_color(theme_color("text_muted"))));
-    let node = node
-        .with_part_style("grid", component_style(props, "grid", style()))
-        .with_part_style("day", component_style(props, "day",
-            style().radius(theme_radius("sm"))))
-        .with_part_style("day_selected", component_style(props, "day_selected",
-            style().radius(theme_radius("sm")).background(theme_color("accent"))
-                .text_color(theme_color("on_accent"))))
-        .with_part_style("day_today", component_style(props, "day_today",
-            style().border(px(1)).border_color(theme_color("accent"))));
-    let node = node
-        .with_part_style("day_disabled", component_style(props, "day_disabled",
-            style().text_color(theme_color("disabled"))))
-        .with_part_style("day_outside", component_style(props, "day_outside",
-            style().text_color(theme_color("text_muted"))))
-        .with_part_style("footer", component_style(props, "footer", style()))
-        .with_part_style("preset", component_style(props, "preset", style()))
-        .with_part_style("clear", component_style(props, "clear",
-            style().text_color(theme_color("text_muted"))))
-        .accessibility_role("combobox")
-        .accessibility_label(prop_or(props, "placeholder", ""))
-        .accessibility_value(value)
+
+    let trigger_children = [
+        text(display).with_style(component_style(props,
+            if value == () { "trigger_value" } else { "trigger_value" },
+            style().text_color(if value == () { theme_color("text_muted") }
+                else { theme_color("text_primary") })))
+    ];
+    if prop_or(props, "clearable", false) && value != () {
+        trigger_children.push(image_source(asset("app/icons/close"))
+            .with_style(component_style(props, "clear", style().width(px(14)).height(px(14))))
+            .accessibility_role("button").accessibility_label(ctx.t("calendar.clear"))
+            .on_click_value(Fn("clear_date"), #{ changed: true }));
+    }
+    trigger_children.push(image_source(asset("app/icons/calendar"))
+        .with_style(component_style(props, "trigger_icon", style().width(px(16)).height(px(16))))
+        .accessibility_role("image").accessibility_label(ctx.t("calendar.open")));
+    let trigger = row(trigger_children).with_key(`${props.key}-trigger`)
+        .with_style(component_style(props, "trigger",
+            style().width(width).height(px(size)).padding_x(theme_spacing("sm"))
+                .items_center().justify_between().border(px(1))
+                .border_color(if error { theme_color("danger") } else { theme_color("border") })
+                .radius(theme_radius("md")).background(theme_color("surface"))))
+        .disabled(prop_or(props, "disabled", false)).tab_stop(true)
+        .accessibility_role("combobox").accessibility_checked(open)
+        .accessibility_label(placeholder).accessibility_value(value)
         .accessibility_invalid(error);
-    if "on_change" in props && props.on_change != () {
-        node.on_change(props.on_change)
-    } else { node }
+
+    let previous = date_checked_add_months(focused_date, -1);
+    let next = date_checked_add_months(focused_date, 1);
+    let can_previous = previous != () && date_month_intersects(previous, min_date, max_date);
+    let can_next = next != () && date_month_intersects(next, min_date, max_date);
+    let previous_node = row([icon_node(
+        "app/icons/date_previous", "app/icons/date_next", ctx.t("calendar.previous_month"), 16,
+        component_style(props, "previous", style())
+    )]).with_key(`${props.key}-previous`).disabled(!can_previous)
+        .accessibility_role("button").accessibility_label(ctx.t("calendar.previous_month"));
+    if can_previous {
+        previous_node = previous_node.on_click_value(Fn("move_month"),
+            #{ date: month_target(focused_date, -1, min_date, max_date) });
+    }
+    let next_node = row([icon_node(
+        "app/icons/date_next", "app/icons/date_previous", ctx.t("calendar.next_month"), 16,
+        component_style(props, "next", style())
+    )]).with_key(`${props.key}-next`).disabled(!can_next)
+        .accessibility_role("button").accessibility_label(ctx.t("calendar.next_month"));
+    if can_next {
+        next_node = next_node.on_click_value(Fn("move_month"),
+            #{ date: month_target(focused_date, 1, min_date, max_date) });
+    }
+    let header = row([
+        previous_node,
+        text(ctx.format_month_year(visible_month))
+            .with_style(component_style(props, "month_title", style())),
+        next_node,
+    ]).with_style(component_style(props, "header",
+        style().items_center().justify_between().padding_x(theme_spacing("xs"))));
+
+    let weekday_nodes = [];
+    let first_weekday = weekday_index(calendar.first_weekday);
+    for offset in 0..7 {
+        let label = calendar.weekdays.short[(first_weekday + offset) % 7];
+        weekday_nodes.push(text(label)
+            .with_style(component_style(props, "weekday",
+                style().width(px(size)).height(px(size)).text_color(theme_color("text_muted"))))
+            .accessibility_role("columnheader").accessibility_label(label));
+    }
+    let weekdays = row(weekday_nodes)
+        .with_style(component_style(props, "weekdays", style()));
+
+    let cells = date_month_grid(visible_month, calendar.first_weekday);
+    let weeks = [];
+    for week_index in 0..6 {
+        let days = [];
+        for day_index in 0..7 {
+            let cell = cells[week_index * 7 + day_index];
+            let disabled = !date_enabled(cell.date, min_date, max_date);
+            let selected = cell.date != () && cell.date == value;
+            let is_today = cell.date != () && cell.date == today;
+            let is_focused = cell.date != () && cell.date == focused_date;
+            let day_style = component_style(props, "day",
+                style().width(px(size)).height(px(size)).items_center().justify_center()
+                    .radius(theme_radius("sm")));
+            let day_style = if cell.outside {
+                component_style(props, "day_outside", day_style.text_color(theme_color("text_muted")))
+            } else { day_style };
+            let day_style = if is_today {
+                component_style(props, "day_today",
+                    day_style.border(px(1)).border_color(theme_color("accent")))
+            } else { day_style };
+            let day_style = if is_focused {
+                component_style(props, "day_focused",
+                    day_style.border(px(1)).border_color(theme_color("focus_ring")))
+            } else { day_style };
+            let day_style = if selected {
+                component_style(props, "day_selected",
+                    day_style.background(theme_color("accent")).text_color(theme_color("on_accent")))
+            } else { day_style };
+            let day_style = if disabled {
+                component_style(props, "day_disabled", day_style.text_color(theme_color("disabled")))
+            } else { day_style };
+            let label = if cell.date == () { "" } else { ctx.format_date(cell.date, "long") };
+            let day = row([text(if cell.day == () { "" }
+                else { ctx.format_number(cell.day, #{ grouping: false }) })])
+                .with_key(if cell.date == () { `blank-${week_index}-${day_index}` } else { cell.date })
+                .with_style(day_style).disabled(disabled).tab_stop(false)
+                .accessibility_role("gridcell").accessibility_label(label)
+                .accessibility_checked(selected).accessibility_value(cell.date);
+            if !disabled {
+                day = day.on_click_value(Fn("choose_date"),
+                    #{ date: cell.date, changed: cell.date != value });
+            }
+            days.push(day);
+        }
+        weeks.push(row(days).with_key(`week-${week_index}`)
+            .with_style(component_style(props, "week", style())));
+    }
+    let grid = column(weeks).with_style(component_style(props, "grid", style()))
+        .accessibility_role("grid").accessibility_label(ctx.format_month_year(visible_month));
+
+    let footer_nodes = [];
+    for preset in prop_or(props, "presets", []) {
+        let preset_disabled = prop_or(preset, "disabled", false)
+            || !date_enabled(preset.value, min_date, max_date);
+        let preset_node = text(preset.label).with_key(`preset-${preset.value}`)
+            .with_style(component_style(props, "preset", style().padding(px(4))))
+            .disabled(preset_disabled).accessibility_role("button")
+            .accessibility_label(preset.label).accessibility_value(preset.value);
+        if !preset_disabled {
+            preset_node = preset_node.on_click_value(Fn("choose_date"),
+                #{ date: preset.value, changed: preset.value != value });
+        }
+        footer_nodes.push(preset_node);
+    }
+    let panel_children = [header, weekdays, grid];
+    if footer_nodes.len > 0 {
+        panel_children.push(row(footer_nodes)
+            .with_style(component_style(props, "footer", style().gap(px(4)))));
+    }
+    let panel = column(panel_children).with_key(`${props.key}-panel`)
+        .with_style(component_style(props, "panel",
+            style().width(px(panel_width)).gap(px(4)).padding(theme_spacing("sm"))
+                .border(px(1)).border_color(theme_color("border"))
+                .radius(theme_radius("md")).background(theme_color("surface_raised"))))
+        .tab_stop(true).accessibility_role("dialog")
+        .accessibility_label(ctx.format_month_year(visible_month));
+
+    panel = panel
+        .on_key_value("left", Fn("navigate_date"),
+            #{ date: date_target(focused_date, -1, min_date, max_date) })
+        .on_key_value("right", Fn("navigate_date"),
+            #{ date: date_target(focused_date, 1, min_date, max_date) })
+        .on_key_value("up", Fn("navigate_date"),
+            #{ date: date_target(focused_date, -7, min_date, max_date) })
+        .on_key_value("down", Fn("navigate_date"),
+            #{ date: date_target(focused_date, 7, min_date, max_date) })
+        .on_key_value("home", Fn("navigate_date"),
+            #{ date: week_target(focused_date, calendar.first_weekday, false, min_date, max_date) })
+        .on_key_value("end", Fn("navigate_date"),
+            #{ date: week_target(focused_date, calendar.first_weekday, true, min_date, max_date) })
+        .on_key_value("pageup", Fn("navigate_date"),
+            #{ date: month_target(focused_date, -1, min_date, max_date) })
+        .on_key_value("pagedown", Fn("navigate_date"),
+            #{ date: month_target(focused_date, 1, min_date, max_date) })
+        .on_key_value("enter", Fn("choose_date"),
+            #{ date: focused_date, changed: focused_date != value })
+        .on_key_value("space", Fn("choose_date"),
+            #{ date: focused_date, changed: focused_date != value });
+
+    let config = #{ id: props.key, kind: "popover", open: open,
+        placement: prop_or(props, "placement", "bottom"), gap: 4,
+        modal: false, dismiss_on_escape: true, dismiss_on_outside: true };
+    if "parent_overlay" in props && props.parent_overlay != () { config.parent = props.parent_overlay; }
+    overlay(trigger, panel, config).with_key(props.key)
+        .with_style(component_style(props, "root", style()))
+        .on_open_change(Fn("set_open"))
 }

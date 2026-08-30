@@ -15,11 +15,12 @@ use crate::asset::{AssetId, ImageDecodeHandle, asset_id_from_script};
 use crate::canvas::register_canvas_api;
 use crate::component::{ComponentExportCollector, ComponentExportError, ComponentRegistry};
 use crate::context::{UiContext, register_ui_context_api};
+use crate::date::register_date_api;
 use crate::node::{
-    asset_image_node, box_node, canvas_node, column_node, date_picker_node,
-    directional_asset_image_node, directional_image_node, error_boundary_node, fragment_node,
-    generic_directional_image_node, generic_image_node, image_node, lazy_error_boundary_node,
-    overlay_node, rich_text_node, row_node, span_value, stack_node, text_node, toast_host_node,
+    asset_image_node, box_node, canvas_node, column_node, directional_asset_image_node,
+    directional_image_node, error_boundary_node, fragment_node, generic_directional_image_node,
+    generic_image_node, image_node, lazy_error_boundary_node, overlay_node, rich_text_node,
+    row_node, span_value, stack_node, text_node, toast_host_node,
 };
 use crate::primitive::{PrimitiveDescriptor, PrimitiveError, PrimitiveHandler, PrimitiveRegistry};
 use crate::style::register_style_api;
@@ -409,6 +410,7 @@ impl RuntimeEngine {
         engine.build_type::<crate::NativeHandlerRef>();
         engine.build_type::<crate::Span>();
         register_ui_context_api(&mut engine);
+        register_date_api(&mut engine);
         register_style_api(&mut engine);
         register_animation_api(&mut engine);
         register_text_area_api(&mut engine);
@@ -1352,9 +1354,6 @@ fn register_node_apis(engine: &mut Engine) {
     FuncRegistration::new("overlay")
         .in_global_namespace()
         .register_into_engine(engine, overlay_node);
-    FuncRegistration::new("date_picker")
-        .in_global_namespace()
-        .register_into_engine(engine, date_picker_node);
     FuncRegistration::new("toast_host")
         .in_global_namespace()
         .register_into_engine(engine, toast_host_node);

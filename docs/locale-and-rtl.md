@@ -52,15 +52,23 @@ pluralized prose belong to caller policy or a future complete formatter.
 - `ctx.t(key)` resolves required internal phrases.
 - `ctx.format_date(iso_date, style)` accepts strict Gregorian `YYYY-MM-DD` and
   `short`, `medium`, or `long`.
+- `ctx.format_month_year(iso_date)` applies the validated locale month/year
+  pattern used by calendar headers.
 - `ctx.format_number(value, options)` applies the selected bundle's digits,
   separators, grouping, sign, and fraction policy.
 - read-only calendar metadata is exposed only through a validated value shape
   needed by source components; scripts cannot mutate the selected bundle.
-- `ctx.number()` returns the corresponding detached read-only number metadata
-  when a native source component must format internally changing values.
+- `ctx.number()` returns corresponding detached read-only number metadata.
 - `ctx.set_locale`, `ctx.set_window_locale`, and `ctx.set_local_locale` retain
   app/window/subtree selection precedence.
 - `ctx.text_direction()` returns `ltr` or `rtl` for explicit policy branches.
+
+Pure global helpers keep calendar policy available to every Rhai author without
+a DatePicker-specific native node: `date_info`, `date_month_start`,
+`date_checked_add_days`, `date_checked_add_months`, `date_week_edge`,
+`date_month_grid`, `date_clamp`, and `date_month_intersects`. They validate the
+strict four-digit Gregorian range; checked shifts return `()` at the absolute
+boundary, and month grids always contain 42 detached data maps.
 
 Date values never change with locale. DatePicker values, date column data,
 min/max constraints, and callbacks use ISO strings; only their visible text is
@@ -68,7 +76,7 @@ formatted. Today's date comes from the injected Runtime Clock in the host's
 local time zone.
 
 Locale switches increment locale generation, rerender affected views, and keep
-component state, native entity identity, scroll state, and compiled ASTs.
+component state, retained node identity, scroll state, and compiled ASTs.
 
 ## RTL
 

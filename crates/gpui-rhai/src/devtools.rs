@@ -223,7 +223,6 @@ fn inspect_node(node: &UiNode, path: &str) -> InspectorNode {
                 vec![trigger.as_ref(), content.as_ref()],
             )
         }
-        UiNodeKind::DatePicker { spec } => inspect_date_picker(spec, &mut props),
         UiNodeKind::ToastHost { spec } => inspect_toast_host(spec, &mut props),
         UiNodeKind::VirtualCollection { spec } => inspect_virtual_collection(spec, &mut props),
         UiNodeKind::ErrorBoundary { child, fallback } => (
@@ -327,19 +326,6 @@ fn inspect_directional_image<'a>(
         inspect_image_source(right_to_left),
     );
     ("directional_image".to_owned(), Vec::new())
-}
-
-fn inspect_date_picker<'a>(
-    spec: &crate::DatePickerNodeSpec,
-    props: &mut BTreeMap<String, String>,
-) -> (String, Vec<&'a UiNode>) {
-    props.insert("id".to_owned(), spec.id.clone());
-    props.insert(
-        "value".to_owned(),
-        spec.value
-            .map_or_else(|| "<null>".to_owned(), crate::GregorianDate::to_iso),
-    );
-    ("date_picker".to_owned(), Vec::new())
 }
 
 fn inspect_image_source(source: &crate::ImageSourceSpec) -> String {

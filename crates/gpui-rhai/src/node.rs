@@ -6,8 +6,7 @@ use rhai::{
 };
 
 use crate::{
-    AnimationSpec, AssetId, CalendarMetadata, ComponentInstancePath, DatePickerNodeSpec,
-    DatePickerPreset, GregorianDate, HostCallback, NumberMetadata, OpaqueHandle, OverlayId,
+    AnimationSpec, AssetId, ComponentInstancePath, HostCallback, OpaqueHandle, OverlayId,
     OverlayKind, OverlayPlacement, PrimitiveNode, ScriptCallback, ScriptGeneration, Style,
     ToastHostSpec, ToastItemSpec, ToastRegion, ToastVariant, UiEventBinding, UiEventHandler,
     UiValue,
@@ -170,9 +169,6 @@ pub enum UiNodeKind {
         content: Box<UiNode>,
         spec: OverlayNodeSpec,
     },
-    DatePicker {
-        spec: Box<DatePickerNodeSpec>,
-    },
     ToastHost {
         spec: ToastHostSpec,
     },
@@ -197,7 +193,6 @@ pub enum UiNodeKindTag {
     Image,
     DirectionalImage,
     Overlay,
-    DatePicker,
     ToastHost,
     VirtualCollection,
     ErrorBoundary,
@@ -432,48 +427,6 @@ impl UiNode {
     }
 
     #[must_use]
-    pub fn date_picker(spec: DatePickerNodeSpec) -> Self {
-        let key = spec.id.clone();
-        let attributes = BTreeMap::from([
-            ("role".to_owned(), UiValue::String("combobox".to_owned())),
-            (
-                "calendar_open_label".to_owned(),
-                UiValue::String(spec.open_label.clone()),
-            ),
-            (
-                "calendar_previous_label".to_owned(),
-                UiValue::String(spec.previous_label.clone()),
-            ),
-            (
-                "calendar_next_label".to_owned(),
-                UiValue::String(spec.next_label.clone()),
-            ),
-            (
-                "calendar_clear_label".to_owned(),
-                UiValue::String(spec.clear_label.clone()),
-            ),
-            ("row_count".to_owned(), UiValue::Integer(6)),
-            ("column_count".to_owned(), UiValue::Integer(7)),
-        ]);
-        Self {
-            kind: UiNodeKind::DatePicker {
-                spec: Box::new(spec),
-            },
-            key: Some(NodeKey::new(key)),
-            style: Style::new(),
-            part_styles: BTreeMap::new(),
-            source: None,
-            component_root: None,
-            attributes,
-            handlers: BTreeMap::new(),
-            handler_payloads: BTreeMap::new(),
-            animations: Vec::new(),
-            signal_bindings: BTreeMap::new(),
-            element_ref: None,
-        }
-    }
-
-    #[must_use]
     pub fn toast_host(spec: ToastHostSpec) -> Self {
         let key = spec.key.clone();
         Self {
@@ -629,7 +582,6 @@ impl UiNode {
             | UiNodeKind::Canvas { .. }
             | UiNodeKind::Image { .. }
             | UiNodeKind::DirectionalImage { .. }
-            | UiNodeKind::DatePicker { .. }
             | UiNodeKind::ToastHost { .. } => false,
         }
     }
@@ -799,7 +751,6 @@ impl UiNode {
             | UiNodeKind::Custom { .. }
             | UiNodeKind::Image { .. }
             | UiNodeKind::DirectionalImage { .. }
-            | UiNodeKind::DatePicker { .. }
             | UiNodeKind::ToastHost { .. } => {}
             UiNodeKind::VirtualCollection { spec } => {
                 for item in spec.realized.values_mut() {
@@ -856,7 +807,6 @@ impl UiNode {
             | UiNodeKind::Canvas { .. }
             | UiNodeKind::Image { .. }
             | UiNodeKind::DirectionalImage { .. }
-            | UiNodeKind::DatePicker { .. }
             | UiNodeKind::ToastHost { .. } => {}
         }
     }
@@ -912,7 +862,6 @@ impl UiNode {
             | UiNodeKind::Canvas { .. }
             | UiNodeKind::Image { .. }
             | UiNodeKind::DirectionalImage { .. }
-            | UiNodeKind::DatePicker { .. }
             | UiNodeKind::ToastHost { .. } => {}
         }
     }
@@ -933,7 +882,6 @@ impl UiNode {
             UiNodeKind::Image { .. } => UiNodeKindTag::Image,
             UiNodeKind::DirectionalImage { .. } => UiNodeKindTag::DirectionalImage,
             UiNodeKind::Overlay { .. } => UiNodeKindTag::Overlay,
-            UiNodeKind::DatePicker { .. } => UiNodeKindTag::DatePicker,
             UiNodeKind::ToastHost { .. } => UiNodeKindTag::ToastHost,
             UiNodeKind::VirtualCollection { .. } => UiNodeKindTag::VirtualCollection,
             UiNodeKind::ErrorBoundary { .. } => UiNodeKindTag::ErrorBoundary,
@@ -980,7 +928,6 @@ impl UiNode {
             | UiNodeKind::Canvas { .. }
             | UiNodeKind::Image { .. }
             | UiNodeKind::DirectionalImage { .. }
-            | UiNodeKind::DatePicker { .. }
             | UiNodeKind::ToastHost { .. } => Vec::new(),
         }
     }
@@ -1639,175 +1586,6 @@ pub(crate) fn overlay_node(
     ))
 }
 
-pub(crate) fn date_picker_node(
-    call: NativeCallContext<'_>,
-    mut config: Map,
-) -> Result<UiNode, Box<EvalAltResult>> {
-    let id = required_string(&mut config, "id")?;
-    let parent_overlay = optional_string(&mut config, "parent_overlay")?;
-    let value = optional_date(&mut config, "value")?;
-    let min_date = optional_date(&mut config, "min_date")?;
-    let max_date = optional_date(&mut config, "max_date")?;
-    let today = required_date(&mut config, "today")?;
-    let display_value = optional_string(&mut config, "display_value")?.unwrap_or_default();
-    let placeholder = optional_string(&mut config, "placeholder")?.unwrap_or_default();
-    let open_label = required_string(&mut config, "open_label")?;
-    let previous_label = required_string(&mut config, "previous_label")?;
-    let next_label = required_string(&mut config, "next_label")?;
-    let clear_label = required_string(&mut config, "clear_label")?;
-    let calendar = required_decoded::<CalendarMetadata>(&mut config, "calendar")?;
-    let number = required_decoded::<NumberMetadata>(&mut config, "number")?;
-    let mut presets = parse_date_picker_presets(&mut config)?;
-    let clearable = optional_bool(&mut config, "clearable")?.unwrap_or(false);
-    let disabled = optional_bool(&mut config, "disabled")?.unwrap_or(false);
-    let placement = match optional_string(&mut config, "placement")?.as_deref() {
-        None | Some("bottom") => OverlayPlacement::Bottom,
-        Some("top") => OverlayPlacement::Top,
-        Some("left") => OverlayPlacement::Left,
-        Some("right") => OverlayPlacement::Right,
-        Some(other) => {
-            return overlay_config_error(format!("unsupported DatePicker placement `{other}`"));
-        }
-    };
-    let cell_size = positive_config_number(&mut config, "cell_size", 32.0)?;
-    let trigger_height = positive_config_number(&mut config, "trigger_height", 32.0)?;
-    let panel_width = positive_config_number(&mut config, "panel_width", 280.0)?;
-    let overlay_gap = optional_number(&mut config, "overlay_gap")?.unwrap_or(0.0);
-    let previous_asset = required_asset(&mut config, "previous_asset")?;
-    let next_asset = required_asset(&mut config, "next_asset")?;
-    let trigger_asset = required_asset(&mut config, "trigger_asset")?;
-    let clear_asset = required_asset(&mut config, "clear_asset")?;
-    if let Some((unknown, _)) = config.into_iter().next() {
-        return overlay_config_error(format!("unknown DatePicker config field `{unknown}`"));
-    }
-    for preset in &mut presets {
-        preset.disabled = preset.disabled
-            || min_date.is_some_and(|min| preset.value < min)
-            || max_date.is_some_and(|max| preset.value > max);
-    }
-    let spec = DatePickerNodeSpec {
-        id,
-        parent_overlay,
-        value,
-        min_date,
-        max_date,
-        today,
-        display_value,
-        placeholder,
-        open_label,
-        previous_label,
-        next_label,
-        clear_label,
-        calendar,
-        number,
-        presets,
-        clearable,
-        disabled,
-        placement,
-        cell_size,
-        trigger_height,
-        panel_width,
-        overlay_gap,
-        previous_asset,
-        next_asset,
-        trigger_asset,
-        clear_asset,
-    };
-    spec.validate()
-        .map_err(|message| Box::new(EvalAltResult::ErrorRuntime(message.into(), Position::NONE)))?;
-    Ok(with_call_source(UiNode::date_picker(spec), call))
-}
-
-fn required_asset(config: &mut Map, name: &str) -> Result<AssetId, Box<EvalAltResult>> {
-    config
-        .remove(name)
-        .and_then(Dynamic::try_cast::<AssetId>)
-        .ok_or_else(|| Box::new(overlay_type_error(name, "an AssetId")))
-}
-
-fn optional_date(
-    config: &mut Map,
-    name: &str,
-) -> Result<Option<GregorianDate>, Box<EvalAltResult>> {
-    optional_nullable_string(config, name)?
-        .map(|value| {
-            GregorianDate::parse_iso(&value).map_err(|error| {
-                Box::new(EvalAltResult::ErrorRuntime(
-                    format!("invalid DatePicker {name}: {error}").into(),
-                    Position::NONE,
-                ))
-            })
-        })
-        .transpose()
-}
-
-fn required_date(config: &mut Map, name: &str) -> Result<GregorianDate, Box<EvalAltResult>> {
-    let value = required_string(config, name)?;
-    GregorianDate::parse_iso(&value).map_err(|error| {
-        Box::new(EvalAltResult::ErrorRuntime(
-            format!("invalid DatePicker {name}: {error}").into(),
-            Position::NONE,
-        ))
-    })
-}
-
-fn required_decoded<T: serde::de::DeserializeOwned>(
-    config: &mut Map,
-    name: &str,
-) -> Result<T, Box<EvalAltResult>> {
-    let value = config.remove(name).ok_or_else(|| {
-        Box::new(EvalAltResult::ErrorRuntime(
-            format!("DatePicker config field `{name}` is required").into(),
-            Position::NONE,
-        ))
-    })?;
-    rhai::serde::from_dynamic(&value).map_err(|error| {
-        Box::new(EvalAltResult::ErrorRuntime(
-            format!("DatePicker {name} is invalid: {error}").into(),
-            Position::NONE,
-        ))
-    })
-}
-
-fn parse_date_picker_presets(
-    config: &mut Map,
-) -> Result<Vec<DatePickerPreset>, Box<EvalAltResult>> {
-    let Some(value) = config.remove("presets") else {
-        return Ok(Vec::new());
-    };
-    let presets = value
-        .try_cast::<Array>()
-        .ok_or_else(|| Box::new(overlay_type_error("presets", "an array of preset maps")))?;
-    if presets.len() > 32 {
-        return overlay_config_error("DatePicker presets cannot exceed 32 items");
-    }
-    presets
-        .into_iter()
-        .enumerate()
-        .map(|(index, preset)| {
-            let mut preset = preset.try_cast::<Map>().ok_or_else(|| {
-                Box::new(EvalAltResult::ErrorRuntime(
-                    format!("DatePicker preset at index {index} must be a map").into(),
-                    Position::NONE,
-                ))
-            })?;
-            let label = required_string(&mut preset, "label")?;
-            let value = required_date(&mut preset, "value")?;
-            let disabled = optional_bool(&mut preset, "disabled")?.unwrap_or(false);
-            if let Some((unknown, _)) = preset.into_iter().next() {
-                return overlay_config_error(format!(
-                    "unknown field `{unknown}` in DatePicker preset `{label}`"
-                ));
-            }
-            Ok(DatePickerPreset {
-                label,
-                value,
-                disabled,
-            })
-        })
-        .collect()
-}
-
 pub(crate) fn toast_host_node(
     call: NativeCallContext<'_>,
     mut config: Map,
@@ -1914,19 +1692,6 @@ fn with_call_source(node: UiNode, call: NativeCallContext<'_>) -> UiNode {
     })
 }
 
-fn positive_config_number(
-    config: &mut Map,
-    name: &str,
-    default: f64,
-) -> Result<f64, Box<EvalAltResult>> {
-    let value = optional_number(config, name)?.unwrap_or(default);
-    if value.is_finite() && value > 0.0 {
-        Ok(value)
-    } else {
-        overlay_config_error(format!("{name} must be finite and positive"))
-    }
-}
-
 fn required_string(config: &mut Map, name: &str) -> Result<String, Box<EvalAltResult>> {
     optional_string(config, name)?.ok_or_else(|| {
         Box::new(EvalAltResult::ErrorRuntime(
@@ -1944,23 +1709,6 @@ fn optional_string(config: &mut Map, name: &str) -> Result<Option<String>, Box<E
         .try_cast::<ImmutableString>()
         .map(|value| Some(value.to_string()))
         .ok_or_else(|| Box::new(overlay_type_error(name, "string")))
-}
-
-fn optional_nullable_string(
-    config: &mut Map,
-    name: &str,
-) -> Result<Option<String>, Box<EvalAltResult>> {
-    let Some(value) = config.remove(name) else {
-        return Ok(None);
-    };
-    if value.is_unit() {
-        Ok(None)
-    } else {
-        value
-            .try_cast::<ImmutableString>()
-            .map(|value| Some(value.to_string()))
-            .ok_or_else(|| Box::new(overlay_type_error(name, "string or null")))
-    }
 }
 
 fn optional_bool(config: &mut Map, name: &str) -> Result<Option<bool>, Box<EvalAltResult>> {

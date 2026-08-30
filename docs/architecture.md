@@ -175,8 +175,9 @@ data-backed `virtual_collection`; Select is its scalar Rhai adapter. Validation,
 grouping, filtering, keyboard navigation, selection, and presentation remain
 inspectable source. Rust contributes only the same generic overlay placement,
 text editing, input routing, and virtual measurement available to application
-scripts. DatePicker currently reuses the overlay coordinator but still owns a
-specialized Gregorian calendar state machine scheduled for source migration.
+scripts. DatePicker is likewise Rhai composition; checked Gregorian arithmetic
+and localized month formatting are generic data APIs rather than a specialized
+UI node.
 
 Input and Textarea share a text-editing core for UTF-8/UTF-16 conversion,
 grapheme boundaries, selection, clipboard, IME marked ranges, and controlled

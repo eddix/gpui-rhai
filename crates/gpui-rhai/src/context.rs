@@ -1092,6 +1092,23 @@ impl UiContext {
         )?)
     }
 
+    /// Format a strict ISO date with the locale's month/year pattern.
+    ///
+    /// # Errors
+    ///
+    /// Returns locale, date, or runtime borrow errors.
+    pub fn format_month_year(&self, iso_date: &str) -> Result<String, UiContextError> {
+        let runtime = self
+            .runtime
+            .try_borrow()
+            .map_err(|_| UiContextError::Borrowed)?;
+        let locale = runtime
+            .locale
+            .as_ref()
+            .ok_or(UiContextError::LocaleUnavailable)?;
+        Ok(locale.format_month_year(self.window.as_deref(), Some(&self.component), iso_date)?)
+    }
+
     /// Return a detached read-only copy of selected calendar metadata.
     ///
     /// # Errors
@@ -2087,6 +2104,14 @@ fn register_locale_context_methods(builder: &mut TypeBuilder<UiContext>) {
             |context: &mut UiContext, date: ImmutableString, style: ImmutableString| {
                 context
                     .format_date(date.as_str(), style.as_str())
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        )
+        .with_fn(
+            "format_month_year",
+            |context: &mut UiContext, date: ImmutableString| {
+                context
+                    .format_month_year(date.as_str())
                     .map_err(|error| Box::new(context_runtime_error(&error)))
             },
         )

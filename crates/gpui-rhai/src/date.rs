@@ -1,6 +1,9 @@
 use std::fmt;
 use std::rc::Rc;
 
+use rhai::{
+    Array, Dynamic, Engine, EvalAltResult, FuncRegistration, ImmutableString, Map, Position,
+};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -230,6 +233,251 @@ impl Weekday {
             _ => Self::Saturday,
         }
     }
+
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Sunday => "sunday",
+            Self::Monday => "monday",
+            Self::Tuesday => "tuesday",
+            Self::Wednesday => "wednesday",
+            Self::Thursday => "thursday",
+            Self::Friday => "friday",
+            Self::Saturday => "saturday",
+        }
+    }
+
+    /// Parse the stable lowercase weekday vocabulary used by locale metadata.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DateError::Weekday`] for another value.
+    pub fn parse(value: &str) -> Result<Self, DateError> {
+        match value {
+            "sunday" => Ok(Self::Sunday),
+            "monday" => Ok(Self::Monday),
+            "tuesday" => Ok(Self::Tuesday),
+            "wednesday" => Ok(Self::Wednesday),
+            "thursday" => Ok(Self::Thursday),
+            "friday" => Ok(Self::Friday),
+            "saturday" => Ok(Self::Saturday),
+            _ => Err(DateError::Weekday(value.to_owned())),
+        }
+    }
+}
+
+pub(crate) fn register_date_api(engine: &mut Engine) {
+    FuncRegistration::new("date_info")
+        .in_global_namespace()
+        .register_into_engine(engine, date_info);
+    FuncRegistration::new("date_month_start")
+        .in_global_namespace()
+        .register_into_engine(engine, date_month_start);
+    FuncRegistration::new("date_checked_add_days")
+        .in_global_namespace()
+        .register_into_engine(engine, date_checked_add_days);
+    FuncRegistration::new("date_checked_add_months")
+        .in_global_namespace()
+        .register_into_engine(engine, date_checked_add_months);
+    FuncRegistration::new("date_week_edge")
+        .in_global_namespace()
+        .register_into_engine(engine, date_week_edge);
+    FuncRegistration::new("date_month_grid")
+        .in_global_namespace()
+        .register_into_engine(engine, date_month_grid);
+    FuncRegistration::new("date_clamp")
+        .in_global_namespace()
+        .register_into_engine(engine, date_clamp);
+    FuncRegistration::new("date_month_intersects")
+        .in_global_namespace()
+        .register_into_engine(engine, date_month_intersects);
+}
+
+fn date_info(value: ImmutableString) -> Result<Map, Box<EvalAltResult>> {
+    let value: String = value.into();
+    let date = parse_script_date(&value)?;
+    Ok(Map::from_iter([
+        ("iso".into(), Dynamic::from(date.to_iso())),
+        ("year".into(), Dynamic::from_int(i64::from(date.year()))),
+        ("month".into(), Dynamic::from_int(i64::from(date.month()))),
+        ("day".into(), Dynamic::from_int(i64::from(date.day()))),
+        (
+            "weekday".into(),
+            Dynamic::from(date.weekday().as_str().to_owned()),
+        ),
+    ]))
+}
+
+fn date_month_start(value: ImmutableString) -> Result<ImmutableString, Box<EvalAltResult>> {
+    let value: String = value.into();
+    let date = parse_script_date(&value)?;
+    Ok(GregorianDate::new(date.year(), date.month(), 1)
+        .expect("parsed date has a valid month")
+        .to_iso()
+        .into())
+}
+
+fn date_checked_add_days(
+    value: ImmutableString,
+    days: rhai::INT,
+) -> Result<Dynamic, Box<EvalAltResult>> {
+    let value: String = value.into();
+    let date = parse_script_date(&value)?;
+    Ok(date
+        .checked_add_days(days)
+        .map_or(Dynamic::UNIT, |date| Dynamic::from(date.to_iso())))
+}
+
+fn date_checked_add_months(
+    value: ImmutableString,
+    months: rhai::INT,
+) -> Result<Dynamic, Box<EvalAltResult>> {
+    let value: String = value.into();
+    let date = parse_script_date(&value)?;
+    let months = i32::try_from(months)
+        .map_err(|_| Box::new(date_script_error(&DateError::ArithmeticRange)))?;
+    Ok(date
+        .checked_add_months(months)
+        .map_or(Dynamic::UNIT, |date| Dynamic::from(date.to_iso())))
+}
+
+fn date_week_edge(
+    value: ImmutableString,
+    first_weekday: ImmutableString,
+    end: bool,
+) -> Result<Dynamic, Box<EvalAltResult>> {
+    let value: String = value.into();
+    let first_weekday: String = first_weekday.into();
+    let date = parse_script_date(&value)?;
+    let first =
+        Weekday::parse(&first_weekday).map_err(|error| Box::new(date_script_error(&error)))?;
+    let weekday = date.weekday().sunday_index();
+    let from_start = (weekday + 7 - first.sunday_index()) % 7;
+    let delta = if end {
+        i64::try_from(6 - from_start).unwrap_or(0)
+    } else {
+        -i64::try_from(from_start).unwrap_or(0)
+    };
+    Ok(date
+        .checked_add_days(delta)
+        .map_or(Dynamic::UNIT, |date| Dynamic::from(date.to_iso())))
+}
+
+fn date_month_grid(
+    value: ImmutableString,
+    first_weekday: ImmutableString,
+) -> Result<Array, Box<EvalAltResult>> {
+    let value: String = value.into();
+    let first_weekday: String = first_weekday.into();
+    let date = parse_script_date(&value)?;
+    let month =
+        GregorianDate::new(date.year(), date.month(), 1).expect("parsed date has a valid month");
+    let first =
+        Weekday::parse(&first_weekday).map_err(|error| Box::new(date_script_error(&error)))?;
+    let leading = (month.weekday().sunday_index() + 7 - first.sunday_index()) % 7;
+    Ok((0_i64..42)
+        .map(|offset| {
+            let date = month.checked_add_days(offset - i64::try_from(leading).unwrap_or(0));
+            let (iso, day, outside, weekday) = date.map_or_else(
+                |_| (Dynamic::UNIT, Dynamic::UNIT, true, Dynamic::UNIT),
+                |date| {
+                    (
+                        Dynamic::from(date.to_iso()),
+                        Dynamic::from_int(i64::from(date.day())),
+                        date.year() != month.year() || date.month() != month.month(),
+                        Dynamic::from(date.weekday().as_str().to_owned()),
+                    )
+                },
+            );
+            Dynamic::from_map(Map::from_iter([
+                ("date".into(), iso),
+                ("day".into(), day),
+                ("outside".into(), Dynamic::from_bool(outside)),
+                ("weekday".into(), weekday),
+            ]))
+        })
+        .collect())
+}
+
+fn date_clamp(
+    value: ImmutableString,
+    min: Dynamic,
+    max: Dynamic,
+) -> Result<ImmutableString, Box<EvalAltResult>> {
+    let value: String = value.into();
+    let date = parse_script_date(&value)?;
+    let min = optional_script_date(min, "min")?;
+    let max = optional_script_date(max, "max")?;
+    validate_script_range(min, max)?;
+    Ok(min
+        .filter(|min| date < *min)
+        .or_else(|| max.filter(|max| date > *max))
+        .unwrap_or(date)
+        .to_iso()
+        .into())
+}
+
+fn date_month_intersects(
+    value: ImmutableString,
+    min: Dynamic,
+    max: Dynamic,
+) -> Result<bool, Box<EvalAltResult>> {
+    let value: String = value.into();
+    let date = parse_script_date(&value)?;
+    let first =
+        GregorianDate::new(date.year(), date.month(), 1).expect("parsed date has a valid month");
+    let last = GregorianDate::new(
+        date.year(),
+        date.month(),
+        GregorianDate::days_in_month(date.year(), date.month()).expect("parsed valid month"),
+    )
+    .expect("last day is valid");
+    let min = optional_script_date(min, "min")?;
+    let max = optional_script_date(max, "max")?;
+    validate_script_range(min, max)?;
+    Ok(min.is_none_or(|min| last >= min) && max.is_none_or(|max| first <= max))
+}
+
+fn parse_script_date(value: &str) -> Result<GregorianDate, Box<EvalAltResult>> {
+    GregorianDate::parse_iso(value).map_err(|error| Box::new(date_script_error(&error)))
+}
+
+fn optional_script_date(
+    value: Dynamic,
+    name: &str,
+) -> Result<Option<GregorianDate>, Box<EvalAltResult>> {
+    if value.is_unit() {
+        return Ok(None);
+    }
+    value
+        .try_cast::<ImmutableString>()
+        .ok_or_else(|| {
+            Box::new(date_runtime_error(format!(
+                "date range `{name}` must be a string or ()"
+            )))
+        })
+        .and_then(|value| parse_script_date(value.as_str()).map(Some))
+}
+
+fn validate_script_range(
+    min: Option<GregorianDate>,
+    max: Option<GregorianDate>,
+) -> Result<(), Box<EvalAltResult>> {
+    if min.zip(max).is_some_and(|(min, max)| min > max) {
+        Err(Box::new(date_runtime_error(
+            "date range min cannot be after max",
+        )))
+    } else {
+        Ok(())
+    }
+}
+
+fn date_script_error(error: &DateError) -> EvalAltResult {
+    date_runtime_error(error.to_string())
+}
+
+fn date_runtime_error(message: impl Into<String>) -> EvalAltResult {
+    EvalAltResult::ErrorRuntime(message.into().into(), Position::NONE)
 }
 
 pub trait CalendarClockSource: fmt::Debug {
@@ -312,6 +560,8 @@ pub enum DateError {
     Day { year: i32, month: u8, day: u8 },
     #[error("date arithmetic left the supported years 0001 through 9999")]
     ArithmeticRange,
+    #[error("weekday `{0}` is not in the stable lowercase weekday vocabulary")]
+    Weekday(String),
 }
 
 #[cfg(test)]
@@ -383,5 +633,42 @@ mod tests {
     fn fixed_clock_is_deterministic() {
         let date = GregorianDate::parse_iso("2026-08-29").unwrap();
         assert_eq!(CalendarClock::fixed(date).today(), date);
+    }
+
+    #[test]
+    fn rhai_date_data_api_is_checked_and_month_grid_is_stable() {
+        let runtime = crate::RuntimeEngine::new();
+        let info = runtime
+            .engine()
+            .eval::<Map>(r#"date_info("2024-02-29")"#)
+            .unwrap();
+        assert_eq!(info["weekday"].clone_cast::<ImmutableString>(), "thursday");
+        let grid = runtime
+            .engine()
+            .eval::<Array>(r#"date_month_grid("2024-02-15", "sunday")"#)
+            .unwrap();
+        assert_eq!(grid.len(), 42);
+        let first = grid[0].clone_cast::<Map>();
+        assert_eq!(first["date"].clone_cast::<ImmutableString>(), "2024-01-28");
+        assert!(first["outside"].clone_cast::<bool>());
+        assert!(
+            runtime
+                .engine()
+                .eval::<Dynamic>(r#"date_checked_add_days("9999-12-31", 1)"#)
+                .unwrap()
+                .is_unit()
+        );
+        assert!(
+            runtime
+                .engine()
+                .eval::<bool>(r#"date_month_intersects("2024-02-01", "2024-02-10", "2024-02-20")"#)
+                .unwrap()
+        );
+        assert!(
+            runtime
+                .engine()
+                .eval::<Map>(r#"date_info("2023-02-29")"#)
+                .is_err()
+        );
     }
 }

@@ -423,7 +423,6 @@ fn collect_node_animations(
         | UiNodeKind::Custom { .. }
         | UiNodeKind::Image { .. }
         | UiNodeKind::DirectionalImage { .. }
-        | UiNodeKind::DatePicker { .. }
         | UiNodeKind::ToastHost { .. } => {}
     }
     Ok(())

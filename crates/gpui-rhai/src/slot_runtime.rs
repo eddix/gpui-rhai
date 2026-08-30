@@ -3,12 +3,9 @@ use std::collections::BTreeMap;
 use gpui::AnyElement;
 
 use crate::overlay_element::WindowOverlayCoordinator;
-use crate::renderer::{
-    GpuiNodeRenderer, OwnedColorResolver, WindowRenderResources, apply_style_override,
-};
+use crate::renderer::{GpuiNodeRenderer, OwnedColorResolver, WindowRenderResources};
 use crate::{
-    AnimationKey, AssetRegistry, ColorResolver, InteractionState, NodeEventDispatcher,
-    PrimitiveRegistry, Rgba8, Style, UiNode,
+    AnimationKey, AssetRegistry, InteractionState, NodeEventDispatcher, PrimitiveRegistry, UiNode,
 };
 
 #[derive(Clone)]
@@ -28,7 +25,6 @@ pub(crate) struct NodeSlotRuntime {
     pub direction: crate::TextDirection,
     pub base_path: String,
     pub view_id: String,
-    pub part_styles: BTreeMap<String, Style>,
 }
 
 impl NodeSlotRuntime {
@@ -56,25 +52,5 @@ impl NodeSlotRuntime {
             &resources,
             &format!("{}/{slot}", self.base_path),
         )
-    }
-
-    pub(crate) fn style(&self, element: gpui::Div, part: &str) -> gpui::Div {
-        if let Some(style) = self.part_styles.get(part) {
-            apply_style_override(element, style, &self.colors, self.direction)
-        } else {
-            element
-        }
-    }
-
-    pub(crate) fn part_color(&self, part: &str, fallback: Rgba8) -> Rgba8 {
-        self.part_styles
-            .get(part)
-            .and_then(|style| {
-                style
-                    .resolve(&InteractionState::default())
-                    .text_color
-                    .and_then(|color| self.colors.resolve(&color))
-            })
-            .unwrap_or(fallback)
     }
 }

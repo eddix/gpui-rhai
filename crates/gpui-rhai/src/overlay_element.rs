@@ -440,7 +440,6 @@ pub(crate) struct ScriptOverlayElement {
     focus_ring: Rgba8,
     focus_surface: Rgba8,
     restore_focus_on_close: bool,
-    open_keys: BTreeSet<&'static str>,
     coordinator: WindowOverlayCoordinator,
 }
 
@@ -466,7 +465,6 @@ impl ScriptOverlayElement {
             focus_ring: Rgba8::from_rgb_hex(0x003b_82f6),
             focus_surface: Rgba8::from_rgb_hex(0x0018_181b),
             restore_focus_on_close,
-            open_keys: BTreeSet::new(),
             coordinator,
         }
     }
@@ -488,11 +486,6 @@ impl ScriptOverlayElement {
 
     pub(crate) fn restore_focus_on_close(mut self, restore: bool) -> Self {
         self.restore_focus_on_close = restore;
-        self
-    }
-
-    pub(crate) fn with_open_key(mut self, key: &'static str) -> Self {
-        self.open_keys.insert(key);
         self
     }
 
@@ -531,7 +524,6 @@ impl ScriptOverlayElement {
         let hover_id = self.spec.id.clone();
         let tooltip_delays = self.spec.tooltip_delays;
         let open = self.spec.open;
-        let open_keys = self.open_keys.clone();
         let dismiss_on_escape = self.spec.dismiss.escape;
         let focus_ring = self.focus_ring;
         let focus_surface = self.focus_surface;
@@ -560,13 +552,6 @@ impl ScriptOverlayElement {
                         window.focus_next();
                     }
                     cx.stop_propagation();
-                    return;
-                }
-                if !open && open_keys.contains(key) {
-                    dispatch_open_change(key_callback.as_ref(), true, window, cx);
-                    if key_callback.is_some() {
-                        cx.stop_propagation();
-                    }
                     return;
                 }
                 if (key == "enter" && open || !matches!(key, "enter" | "space"))

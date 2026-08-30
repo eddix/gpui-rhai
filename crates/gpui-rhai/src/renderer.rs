@@ -12,19 +12,16 @@ use gpui::{
     StyledText, Window, div, img, point, px, relative, rems, rgba,
 };
 
-use crate::date_picker_element::{
-    DateChangeHandler, DatePickerCallbacks, DatePickerEntityElement, DatePickerPalette,
-};
 use crate::overlay_element::{ScriptOverlayElement, WindowOverlayCoordinator};
 use crate::slot_runtime::NodeSlotRuntime;
 use crate::toast_element::{ToastDismissHandler, ToastHostElement, ToastPalette, ToastPartStyles};
 use crate::virtual_list_element::VirtualListEntityElement;
 use crate::{
-    Align, AnimationKey, AnimationProperty, AssetRegistry, ColorValue, DatePickerNodeSpec,
-    EventPropagation, EventResponse, FlexDirection, ImageSourceSpec, InteractionState, Justify,
-    Length, NodeId, OverflowMode, OverlayNodeSpec, PositionMode, PrimitiveRegistry, PseudoState,
-    RadiusToken, RetainedUiTree, Rgba8, ScriptCallback, SpacingToken, Style, StyleProperties,
-    TextDirection, ToastHostSpec, UiEventHandler, UiNode, UiNodeKind, UiValue,
+    Align, AnimationKey, AnimationProperty, AssetRegistry, ColorValue, EventPropagation,
+    EventResponse, FlexDirection, ImageSourceSpec, InteractionState, Justify, Length, NodeId,
+    OverflowMode, OverlayNodeSpec, PositionMode, PrimitiveRegistry, PseudoState, RadiusToken,
+    RetainedUiTree, Rgba8, ScriptCallback, SpacingToken, Style, StyleProperties, TextDirection,
+    ToastHostSpec, UiEventHandler, UiNode, UiNodeKind, UiValue,
 };
 
 type DispatchFn = dyn Fn(ScriptCallback, UiValue, &mut Window, &mut App) -> EventResponse;
@@ -222,12 +219,6 @@ fn key_handler_bindings(node: &UiNode) -> BTreeMap<String, (Vec<crate::UiEventBi
                 )
             })
         })
-        .collect()
-}
-
-fn owned_part_styles(node: &UiNode) -> BTreeMap<String, Style> {
-    node.part_styles()
-        .map(|(name, style)| (name.to_owned(), style.clone()))
         .collect()
 }
 
@@ -1249,9 +1240,6 @@ impl GpuiNodeRenderer {
                     (path, retained_id),
                 ))
                 .into_any_element(),
-            UiNodeKind::DatePicker { spec } => element
-                .child(native_date_picker_element(node, spec, environment, path))
-                .into_any_element(),
             UiNodeKind::ToastHost { spec } => element
                 .child(native_toast_element(node, spec, environment, path))
                 .into_any_element(),
@@ -1654,53 +1642,6 @@ fn native_toast_element<C: ColorResolver>(
     )
 }
 
-fn native_date_picker_element<C: ColorResolver>(
-    node: &UiNode,
-    spec: &DatePickerNodeSpec,
-    environment: &RenderEnvironment<'_, C>,
-    path: &str,
-) -> DatePickerEntityElement {
-    let callbacks = date_picker_callbacks(node, environment.dispatcher);
-    let palette = DatePickerPalette {
-        surface: semantic_color(environment.colors, "surface", 0x0018_181b),
-        hover: semantic_color(environment.colors, "surface_hover", 0x003f_3f46),
-        text: semantic_color(environment.colors, "text_primary", 0x00f4_f4f5),
-        muted: semantic_color(environment.colors, "text_muted", 0x00a1_a1aa),
-        accent: semantic_color(environment.colors, "accent", 0x003b_82f6),
-        on_accent: semantic_color(environment.colors, "on_accent", 0x00ff_ffff),
-        focus_ring: semantic_color(environment.colors, "focus_ring", 0x003b_82f6),
-    };
-    let runtime = NodeSlotRuntime {
-        colors: OwnedColorResolver::capture(environment.colors),
-        primitives: environment.primitives.clone(),
-        assets: environment.assets.cloned().unwrap_or_default(),
-        dispatcher: environment
-            .dispatcher
-            .cloned()
-            .unwrap_or_else(|| NodeEventDispatcher::new(|_, _, _, _| EventPropagation::Handled)),
-        overlays: environment.overlays.clone(),
-        animations: environment.animations.clone(),
-        signals: environment.signals.clone(),
-        geometry: environment.geometry.clone(),
-        pointer_capture: environment.pointer_capture.clone(),
-        focus_handles: environment.focus_handles.clone(),
-        scroll_handles: environment.scroll_handles.clone(),
-        virtual_requests: environment.virtual_requests.clone(),
-        direction: environment.direction,
-        base_path: path.to_owned(),
-        view_id: environment.view_id.to_owned(),
-        part_styles: owned_part_styles(node),
-    };
-    DatePickerEntityElement::new(
-        path,
-        spec.clone(),
-        callbacks,
-        palette,
-        environment.overlays.clone(),
-        runtime,
-    )
-}
-
 fn native_virtual_collection_element<C: ColorResolver>(
     spec: &crate::VirtualCollectionNodeSpec,
     environment: &RenderEnvironment<'_, C>,
@@ -1725,7 +1666,6 @@ fn native_virtual_collection_element<C: ColorResolver>(
         direction: environment.direction,
         base_path: path.to_owned(),
         view_id: environment.view_id.to_owned(),
-        part_styles: BTreeMap::new(),
     };
     VirtualListEntityElement::new_collection(path, spec.clone(), runtime)
 }
@@ -1997,29 +1937,6 @@ impl IntoElement for TranslatedElement {
     fn into_element(self) -> Self::Element {
         self
     }
-}
-
-fn date_picker_callbacks(
-    node: &UiNode,
-    dispatcher: Option<&NodeEventDispatcher>,
-) -> DatePickerCallbacks {
-    let dispatcher = dispatcher.cloned();
-    let change = node.handler("change").map(|handler| {
-        let handler = handler.clone();
-        Rc::new(
-            move |value: Option<String>, window: &mut Window, cx: &mut App| {
-                dispatch_ui_event(
-                    &handler,
-                    "change",
-                    value.map_or(UiValue::Null, UiValue::String),
-                    window,
-                    cx,
-                    dispatcher.as_ref(),
-                );
-            },
-        ) as DateChangeHandler
-    });
-    DatePickerCallbacks { change }
 }
 
 fn semantic_color(colors: &impl ColorResolver, token: &str, fallback: u32) -> Rgba8 {

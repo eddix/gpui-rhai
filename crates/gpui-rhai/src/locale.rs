@@ -432,6 +432,22 @@ impl LocaleManager {
         format_date_with_metadata(iso_date, style, &bundle.calendar, &bundle.number)
     }
 
+    /// Format a strict ISO date with the locale's month/year presentation.
+    ///
+    /// # Errors
+    ///
+    /// Returns date, pattern, or locale-selection errors.
+    pub fn format_month_year(
+        &self,
+        window: Option<&str>,
+        component: Option<&ComponentInstancePath>,
+        iso_date: &str,
+    ) -> Result<String, LocaleError> {
+        let bundle = self.selected_bundle(window, component)?;
+        let date = GregorianDate::parse_iso(iso_date)?;
+        format_month_year_with_metadata(date, &bundle.calendar, &bundle.number)
+    }
+
     /// Format an integer without lossy float conversion.
     ///
     /// # Errors

@@ -32,7 +32,7 @@ Source/runtime tests prove:
 
 - Select uses public combobox/listbox metadata, skips group headers and disabled
   options, clears transient search on close, and relies on Overlay focus restore;
-- DatePicker supports trigger opening, logical day/week/month navigation,
+- Rhai DatePicker supports trigger opening, logical day/week/month navigation,
   locale week boundaries, disabled-range suppression, commit, Escape, and focus
   restoration;
 - Table retains table/row/header metadata and controlled selection payloads;

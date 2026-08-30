@@ -37,6 +37,19 @@ const TABS: &str = include_str!("../../../registry/components/tabs.rhai");
 const TOOLTIP: &str = include_str!("../../../registry/components/tooltip.rhai");
 const MENU: &str = include_str!("../../../registry/components/menu.rhai");
 const TOAST: &str = include_str!("../../../registry/components/toast.rhai");
+const DATE_PICKER_TEST_APP: &str = r#"
+    import "components/date_picker" as date_picker;
+    fn changed(ctx, value) { () }
+    fn view(ctx) {
+        date_picker::DatePicker(#{
+            key: "appointment", value: "2026-09-01",
+            min_date: "2026-08-30", max_date: "2026-12-31",
+            placeholder: "Appointment", clearable: true,
+            presets: [#{ label: "Launch", value: "2026-09-01" }],
+            on_change: Fn("changed")
+        })
+    }
+"#;
 const M2_COMPOSITES_APP: &str = r#"
     import "components/form_field" as form_field;
     import "components/collapsible" as collapsible;
@@ -430,7 +443,7 @@ fn official_icon_selects_explicit_rtl_resource_pair() {
     let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
     let mut lifecycle = ScriptLifecycle::new(
         compiled,
-        runtime,
+        Rc::clone(&runtime),
         ComponentInstancePath::root("App", "main"),
         Some("main".to_owned()),
         BTreeMap::new(),
@@ -736,7 +749,7 @@ fn official_dropdown_is_public_overlay_and_virtual_collection_composition() {
     let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
     let mut lifecycle = ScriptLifecycle::new(
         compiled,
-        runtime,
+        Rc::clone(&runtime),
         ComponentInstancePath::root("App", "root"),
         Some("main".to_owned()),
         BTreeMap::new(),
@@ -965,22 +978,7 @@ fn official_date_picker_consumes_locale_and_strict_iso_values() {
     let mut engine = RuntimeEngine::new();
     engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
     let compiled = engine
-        .compile_self_contained_named(
-            "ui/date_picker_test.rhai",
-            r#"
-                import "components/date_picker" as date_picker;
-                fn changed(ctx, value) { () }
-                fn view(ctx) {
-                    date_picker::DatePicker(#{
-                        key: "appointment", value: "2026-09-01",
-                        min_date: "2026-08-30", max_date: "2026-12-31",
-                        placeholder: "Appointment", clearable: true,
-                        presets: [#{ label: "Launch", value: "2026-09-01" }],
-                        on_change: Fn("changed")
-                    })
-                }
-            "#,
-        )
+        .compile_self_contained_named("ui/date_picker_test.rhai", DATE_PICKER_TEST_APP)
         .unwrap();
     let locale = gpui_rhai::load_locale_source(
         engine.engine(),
@@ -988,35 +986,88 @@ fn official_date_picker_consumes_locale_and_strict_iso_values() {
         include_str!("../../../registry/locales/en.rhai"),
     )
     .unwrap();
-    let mut state = UiRuntimeState::new();
-    state.locale = Some(gpui_rhai::LocaleManager::new([locale], "en", "en").unwrap());
-    state.calendar_clock =
+    let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+    runtime.borrow_mut().locale =
+        Some(gpui_rhai::LocaleManager::new([locale], "en", "en").unwrap());
+    runtime.borrow_mut().calendar_clock =
         gpui_rhai::CalendarClock::fixed(gpui_rhai::GregorianDate::parse_iso("2026-08-30").unwrap());
-    let context = UiContext::new(
-        Rc::new(RefCell::new(state)),
+    let mut lifecycle = ScriptLifecycle::new(
+        compiled,
+        Rc::clone(&runtime),
         ComponentInstancePath::root("App", "root"),
         Some("main".to_owned()),
-        ExecutionPhase::Render,
         BTreeMap::new(),
-    );
-    let root = engine.render_with_context(&compiled, context).unwrap();
-    let UiNodeKind::DatePicker { spec } = root.kind() else {
-        panic!("DatePicker must use its native calendar node");
+        &ComponentStateSchema::default(),
+    )
+    .unwrap();
+    lifecycle.start(&mut engine).unwrap();
+    let UiNodeKind::Overlay {
+        trigger,
+        content,
+        spec,
+    } = lifecycle.root().unwrap().kind()
+    else {
+        panic!("DatePicker must compose the public Overlay node");
     };
-    assert_eq!(spec.value.unwrap().to_iso(), "2026-09-01");
-    assert_eq!(spec.today.to_iso(), "2026-08-30");
-    assert_eq!(spec.calendar.first_weekday, gpui_rhai::Weekday::Sunday);
-    assert_eq!(spec.display_value, "09/01/2026");
-    assert_eq!(spec.presets.len(), 1);
-    assert_eq!(spec.clear_asset.as_str(), "app/icons/close");
-    assert_eq!(
-        root.attributes().get("calendar_previous_label"),
-        Some(&UiValue::String("Previous month".to_owned()))
+    assert_eq!(spec.id.as_str(), "appointment");
+    let UiNodeKind::Box {
+        children: trigger_children,
+    } = trigger.kind()
+    else {
+        unreachable!()
+    };
+    assert!(
+        matches!(&trigger_children[0].kind(), UiNodeKind::Text { text } if text == "09/01/2026")
     );
-    assert_eq!(
-        root.attributes().get("row_count"),
-        Some(&UiValue::Integer(6))
+    let UiNodeKind::Box { children } = content.kind() else {
+        unreachable!()
+    };
+    let UiNodeKind::Box { children: weeks } = children[2].kind() else {
+        unreachable!()
+    };
+    assert_eq!(weeks.len(), 6);
+    assert!(
+        weeks
+            .iter()
+            .all(|week| matches!(week.kind(), UiNodeKind::Box { children } if children.len() == 7))
     );
+    assert!(find_label(content, "Tuesday, September 1, 2026").is_some());
+
+    let component = lifecycle.root().unwrap().component_root().unwrap().clone();
+    let open = lifecycle
+        .root()
+        .unwrap()
+        .handler("open_change")
+        .and_then(gpui_rhai::UiEventHandler::as_script)
+        .cloned()
+        .unwrap();
+    invoke_and_render(&mut lifecycle, &mut engine, &open, UiValue::Bool(true));
+    assert_eq!(
+        runtime.borrow().component_state.get(&component, "open"),
+        Some(&UiValue::Bool(true))
+    );
+    let UiNodeKind::Overlay { content, .. } = lifecycle.root().unwrap().kind() else {
+        unreachable!()
+    };
+    let (right, payload) = target_handler(content, "key:right");
+    invoke_and_render(&mut lifecycle, &mut engine, &right, payload);
+    assert_eq!(
+        runtime
+            .borrow()
+            .component_state
+            .get(&component, "focused_date"),
+        Some(&UiValue::String("2026-09-02".to_owned()))
+    );
+    let UiNodeKind::Overlay { content, .. } = lifecycle.root().unwrap().kind() else {
+        unreachable!()
+    };
+    let (commit, payload) = target_handler(content, "key:enter");
+    invoke_and_render(&mut lifecycle, &mut engine, &commit, payload);
+    let events = runtime.borrow_mut().drain_batch().events;
+    assert!(events.iter().any(|event| {
+        event.event.name == "change"
+            && event.event.payload == UiValue::String("2026-09-02".to_owned())
+    }));
 }
 
 #[test]

@@ -731,7 +731,6 @@ fn collect_primitive_instances(node: &UiNode, active: &mut BTreeSet<PrimitiveIns
         | UiNodeKind::Canvas { .. }
         | UiNodeKind::Image { .. }
         | UiNodeKind::DirectionalImage { .. }
-        | UiNodeKind::DatePicker { .. }
         | UiNodeKind::ToastHost { .. } => {}
     }
 }
