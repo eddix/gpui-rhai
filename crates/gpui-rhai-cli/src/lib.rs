@@ -1,15 +1,18 @@
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::fs;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::rc::Rc;
 
 use gpui_rhai::{
-    AppManifest, ComponentDefinition, ComponentMetadata, ComponentRegistry, EmbeddedScriptSource,
-    FontSource, LocaleManager, ModuleId, RUNTIME_API_VERSION, RestrictedModuleResolver,
-    RuntimeEngine, ScriptAsset, ThemeManager, ThemeSelection, load_locale_source,
-    load_theme_source, parse_component_header, validate_font_sources,
+    AppManifest, ComponentDefinition, ComponentInstancePath, ComponentMetadata, ComponentRegistry,
+    DirectoryAssetProvider, EmbeddedScriptSource, FontSource, LocaleManager, ModuleId,
+    RUNTIME_API_VERSION, RestrictedModuleResolver, RuntimeEngine, ScriptAsset, ScriptLifecycle,
+    ThemeManager, ThemeSelection, UiRuntimeState, load_locale_source, load_theme_source,
+    parse_component_header, validate_font_sources,
 };
 use semver::Version;
 use serde::{Deserialize, Serialize};
@@ -803,11 +806,74 @@ fn validate_entry(root: &Path, modules: &BTreeMap<ModuleId, String>) -> Result<(
     let mut runtime = RuntimeEngine::new();
     runtime.set_module_resolver(RestrictedModuleResolver::from_source(&source)?);
     let compiled = runtime.compile_self_contained_named("ui/main.rhai", &entry)?;
-    if compiled.has_function("view", 1) {
-        Ok(())
-    } else {
-        Err(ProjectError::MissingView)
+    if !compiled.has_function("view", 1) {
+        return Err(ProjectError::MissingView);
     }
+    let schema = runtime.root_state_schema(&compiled)?;
+    let primary_source = read(&root.join("ui/theme.rhai"))?;
+    let primary = load_theme_source(runtime.engine(), "ui/theme.rhai", &primary_source)
+        .map_err(|error| ProjectError::Theme(error.to_string()))?;
+    let mut themes = vec![primary.clone()];
+    for path in collect_paths(&root.join("ui/themes"))? {
+        themes.push(
+            load_theme_source(runtime.engine(), &path.to_string_lossy(), &read(&path)?)
+                .map_err(|error| ProjectError::Theme(error.to_string()))?,
+        );
+    }
+    let mut state = UiRuntimeState::new();
+    state.theme = Some(
+        ThemeManager::from_variants(
+            themes,
+            ThemeSelection::new(primary.family.clone(), primary.name.clone()),
+        )
+        .map_err(|error| ProjectError::Theme(error.to_string()))?,
+    );
+    state.locale = load_check_locales(root)?;
+    let asset_root = root.join("ui/assets");
+    if asset_root.exists() {
+        state
+            .assets
+            .register(
+                "app",
+                DirectoryAssetProvider::new(&asset_root)
+                    .map_err(|error| ProjectError::Asset(error.to_string()))?,
+            )
+            .map_err(|error| ProjectError::Asset(error.to_string()))?;
+    }
+    let runtime_state = Rc::new(RefCell::new(state));
+    let mut lifecycle = ScriptLifecycle::new(
+        compiled,
+        runtime_state,
+        ComponentInstancePath::root("App", "check"),
+        Some("check".to_owned()),
+        BTreeMap::new(),
+        &schema,
+    )?;
+    lifecycle.start(&mut runtime)?;
+    Ok(())
+}
+
+fn load_check_locales(root: &Path) -> Result<Option<LocaleManager>, ProjectError> {
+    let runtime = RuntimeEngine::new();
+    let mut bundles = Vec::new();
+    for path in collect_paths(&root.join("ui/locales"))? {
+        bundles.push(
+            load_locale_source(runtime.engine(), &path.to_string_lossy(), &read(&path)?)
+                .map_err(|error| ProjectError::Locale(error.to_string()))?,
+        );
+    }
+    if bundles.is_empty() {
+        return Ok(None);
+    }
+    let selected = bundles
+        .iter()
+        .find(|bundle| bundle.locale == "en")
+        .unwrap_or(&bundles[0])
+        .locale
+        .clone();
+    LocaleManager::new(bundles, selected.clone(), selected)
+        .map(Some)
+        .map_err(|error| ProjectError::Locale(error.to_string()))
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1421,6 +1487,8 @@ pub enum ProjectError {
     UnsupportedFont(String),
     #[error("font validation failed: {0}")]
     Font(String),
+    #[error("asset validation failed: {0}")]
+    Asset(String),
     #[error("embedded assets resolve to duplicate logical ID `app/{0}`")]
     DuplicateAssetLogical(String),
     #[error("theme validation failed: {0}")]
@@ -1445,6 +1513,8 @@ pub enum ProjectError {
     Capability(#[from] gpui_rhai::CapabilityError),
     #[error(transparent)]
     Runtime(#[from] gpui_rhai::RuntimeError),
+    #[error(transparent)]
+    Lifecycle(#[from] gpui_rhai::LifecycleError),
     #[error(transparent)]
     Source(#[from] gpui_rhai::ScriptSourceError),
     #[error(transparent)]
@@ -1502,6 +1572,22 @@ mod tests {
                 .join(".gpui-rhai/baselines/components/button.rhai")
                 .exists()
         );
+    }
+
+    #[test]
+    fn check_executes_the_headless_initial_view() {
+        let directory = fixture();
+        let project = Project::new(directory.path());
+        project.plan_init().unwrap().apply().unwrap();
+        fs::write(
+            directory.path().join("ui/main.rhai"),
+            "fn view(ctx) { throw \"headless render failed\"; }\n",
+        )
+        .unwrap();
+        assert!(matches!(
+            project.check(),
+            Err(ProjectError::Lifecycle(_) | ProjectError::Runtime(_))
+        ));
     }
 
     #[test]

@@ -236,3 +236,10 @@ Each component needs logic tests, normalized node snapshots, representative
 macOS screenshots, keyboard/focus tests, accessibility assertions, and an
 example. Its file header must contain purpose, props, events, statefulness, and a
 short usage example.
+
+`gpui-rhai check` resolves the copied module graph, loads the real
+theme/locale/assets, mounts the application state schema, and executes the
+initial `view(ctx)` through ScriptLifecycle and retained reconciliation.
+Render-time errors, duplicate keys, component-state failures, effects/timers,
+and retained budget violations therefore fail headless CI rather than waiting
+for a native window.
