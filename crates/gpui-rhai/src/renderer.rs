@@ -275,7 +275,7 @@ impl PointerPayloadContext {
             .node
             .and_then(|node| self.geometry.get(node))
             .and_then(|geometry| {
-                window.map(|(x, y)| (x - geometry.layout.x, y - geometry.layout.y))
+                window.map(|(x, y)| (x - geometry.visual.x, y - geometry.visual.y))
             });
         if let Some((x, y)) = local {
             let point = logical_point_value(x, y);
@@ -1219,22 +1219,22 @@ impl GpuiNodeRenderer {
             path,
             retained_id,
         );
-        let element = translated(
-            populated,
-            signals
-                .translate_x
-                .or(animation.translate_x)
-                .or(resolved_style.translate_x),
-            signals
-                .translate_y
-                .or(animation.translate_y)
-                .or(resolved_style.translate_y),
-        );
+        let translate_x = signals
+            .translate_x
+            .or(animation.translate_x)
+            .or(resolved_style.translate_x);
+        let translate_y = signals
+            .translate_y
+            .or(animation.translate_y)
+            .or(resolved_style.translate_y);
+        let element = translated(populated, translate_x, translate_y);
         match retained_id {
             Some(node) => GeometryTrackedElement {
                 child: Some(element),
                 node,
                 registry: environment.geometry.clone(),
+                translate_x: translate_x.unwrap_or(0.0),
+                translate_y: translate_y.unwrap_or(0.0),
             }
             .into_any_element(),
             None => element,
@@ -2097,6 +2097,8 @@ struct GeometryTrackedElement {
     child: Option<AnyElement>,
     node: NodeId,
     registry: crate::GeometryRegistry,
+    translate_x: f64,
+    translate_y: f64,
 }
 
 impl Element for GeometryTrackedElement {
@@ -2132,7 +2134,7 @@ impl Element for GeometryTrackedElement {
         window: &mut Window,
         cx: &mut App,
     ) {
-        if let Ok(bounds) = crate::GeometryBounds::new(
+        if let Ok(layout) = crate::GeometryBounds::new(
             f64::from(bounds.origin.x),
             f64::from(bounds.origin.y),
             f64::from(bounds.size.width),
@@ -2141,8 +2143,12 @@ impl Element for GeometryTrackedElement {
             self.registry.update(
                 self.node,
                 crate::ElementGeometry {
-                    layout: bounds,
-                    visual: bounds,
+                    layout,
+                    visual: crate::GeometryBounds {
+                        x: layout.x + self.translate_x,
+                        y: layout.y + self.translate_y,
+                        ..layout
+                    },
                     clip: None,
                 },
             );
@@ -3008,7 +3014,7 @@ mod tests {
             node,
             crate::ElementGeometry {
                 layout: crate::GeometryBounds::new(100.0, 50.0, 200.0, 120.0).unwrap(),
-                visual: crate::GeometryBounds::new(100.0, 50.0, 200.0, 120.0).unwrap(),
+                visual: crate::GeometryBounds::new(105.0, 54.0, 200.0, 120.0).unwrap(),
                 clip: None,
             },
         );
@@ -3026,7 +3032,7 @@ mod tests {
         };
         assert_eq!(payload["canvas_key"], UiValue::String("clip".to_owned()));
         assert!(value_point(&payload["local"]).is_some_and(|(x, y)| {
-            (x - 12.0).abs() < f64::EPSILON && (y - 18.0).abs() < f64::EPSILON
+            (x - 7.0).abs() < f64::EPSILON && (y - 14.0).abs() < f64::EPSILON
         }));
     }
 }

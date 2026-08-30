@@ -98,7 +98,9 @@ Pointer down/up/move and wheel input are normalized at the GPUI boundary into
 stable `UiValue` maps with logical window/local/content coordinates, buttons,
 modifiers, click count, precise delta, and a monotonic timestamp. Retained
 `ElementRef` declarations bind to stable `NodeId`; prepaint reports committed
-layout/visual geometry and exact geometry reads create component dependencies.
+layout geometry plus visual bounds after static/signal/animation translation;
+pointer local coordinates invert that visual translation before Canvas hit
+testing. Exact geometry reads create component dependencies.
 Unmounted refs fail stale instead of rebinding by name. `ctx.focus(ref)` queues
 a window-scoped retained command; the Host view owns the corresponding GPUI
 `FocusHandle` by `NodeId`, so no window/focus object crosses into Rhai.
