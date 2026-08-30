@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -42,6 +43,7 @@ const HOST_KEY_CONTEXT: &str = "GPUIRhaiHost";
 #[derive(Default)]
 struct ScriptRuntimeInstallation {
     bindings: BTreeMap<(String, Option<String>), ActionId>,
+    loaded_fonts: BTreeSet<u64>,
 }
 
 impl Global for ScriptRuntimeInstallation {}
@@ -785,6 +787,7 @@ pub struct FileScriptView {
     key_bindings: Vec<KeyBindingSpec>,
     viewport_breakpoints: ViewportBreakpoints,
     calendar_clock: crate::CalendarClock,
+    fonts: Vec<crate::FontSource>,
 }
 
 impl FileScriptView {
@@ -798,6 +801,7 @@ impl FileScriptView {
             key_bindings: Vec::new(),
             viewport_breakpoints: ViewportBreakpoints::default(),
             calendar_clock: crate::CalendarClock::default(),
+            fonts: Vec::new(),
         }
     }
 
@@ -837,6 +841,18 @@ impl FileScriptView {
         self
     }
 
+    #[must_use]
+    pub fn font_source(mut self, font: crate::FontSource) -> Self {
+        self.fonts.push(font);
+        self
+    }
+
+    #[must_use]
+    pub fn font_sources(mut self, fonts: impl IntoIterator<Item = crate::FontSource>) -> Self {
+        self.fonts.extend(fonts);
+        self
+    }
+
     /// Read, compile, initialize, and render the app before opening GPUI.
     ///
     /// # Errors
@@ -856,6 +872,9 @@ impl FileScriptView {
                 .map_err(ScriptViewError::Extension)?;
         }
         let (ui_root, theme_path, theme) = load_primary_file_theme(&engine, &self.entry)?;
+        let mut fonts = self.fonts;
+        fonts.extend(load_file_fonts(&ui_root.join("fonts"))?);
+        crate::validate_font_sources(&fonts)?;
         let manifest = load_file_manifest(&ui_root, &self.entry)?;
         let module_cache = configure_file_modules(&mut engine, &ui_root, &self.entry, &theme_path)?;
         #[cfg(not(feature = "dev-reload"))]
@@ -908,6 +927,7 @@ impl FileScriptView {
             development: self.development,
             factory,
             key_bindings: self.key_bindings,
+            fonts,
             #[cfg(feature = "dev-reload")]
             module_cache,
         })
@@ -928,6 +948,7 @@ pub struct EmbeddedScriptView {
     assets: BTreeMap<String, AssetData>,
     viewport_breakpoints: ViewportBreakpoints,
     calendar_clock: crate::CalendarClock,
+    fonts: Vec<crate::FontSource>,
 }
 
 impl EmbeddedScriptView {
@@ -952,6 +973,7 @@ impl EmbeddedScriptView {
             assets: BTreeMap::new(),
             viewport_breakpoints: ViewportBreakpoints::default(),
             calendar_clock: crate::CalendarClock::default(),
+            fonts: Vec::new(),
         }
     }
 
@@ -1015,12 +1037,25 @@ impl EmbeddedScriptView {
         self
     }
 
+    #[must_use]
+    pub fn font_source(mut self, font: crate::FontSource) -> Self {
+        self.fonts.push(font);
+        self
+    }
+
+    #[must_use]
+    pub fn font_sources(mut self, fonts: impl IntoIterator<Item = crate::FontSource>) -> Self {
+        self.fonts.extend(fonts);
+        self
+    }
+
     /// Compile and initialize a fully embedded application.
     ///
     /// # Errors
     ///
     /// Returns source, theme, compile, or lifecycle errors.
     pub fn prepare(self) -> Result<PreparedScriptView, ScriptViewError> {
+        crate::validate_font_sources(&self.fonts)?;
         let entry = self.scripts.load(&self.entry)?;
         validate_manifest_entry(&self.manifest, &self.entry)?;
         let extensions = Rc::new(self.extensions);
@@ -1080,6 +1115,7 @@ impl EmbeddedScriptView {
             development: self.development,
             factory,
             key_bindings: self.key_bindings,
+            fonts: self.fonts,
             #[cfg(feature = "dev-reload")]
             module_cache: ModuleCompileCache::new(),
         })
@@ -1197,6 +1233,97 @@ fn register_file_assets(runtime: &UiRuntimeState, root: &Path) -> Result<(), Scr
             .assets
             .register("app", DirectoryAssetProvider::new(&asset_root)?)?;
     }
+    Ok(())
+}
+
+fn load_file_fonts(directory: &Path) -> Result<Vec<crate::FontSource>, ScriptViewError> {
+    if !directory.exists() {
+        return Ok(Vec::new());
+    }
+    let mut paths = collect_font_paths(directory)?;
+    paths.retain(|path| {
+        path.extension()
+            .and_then(|extension| extension.to_str())
+            .is_some_and(|extension| {
+                matches!(
+                    extension.to_ascii_lowercase().as_str(),
+                    "ttf" | "otf" | "ttc"
+                )
+            })
+    });
+    paths.sort();
+    paths
+        .into_iter()
+        .map(|path| {
+            let bytes = fs::read(&path).map_err(|error| crate::FontError::Io {
+                path: path.display().to_string(),
+                message: error.to_string(),
+            })?;
+            let label = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("font")
+                .to_owned();
+            crate::FontSource::new(label, bytes).map_err(ScriptViewError::from)
+        })
+        .collect()
+}
+
+fn collect_font_paths(directory: &Path) -> Result<Vec<PathBuf>, ScriptViewError> {
+    let mut pending = vec![directory.to_path_buf()];
+    let mut files = Vec::new();
+    while let Some(current) = pending.pop() {
+        for entry in fs::read_dir(&current).map_err(|error| crate::FontError::Io {
+            path: current.display().to_string(),
+            message: error.to_string(),
+        })? {
+            let path = entry
+                .map_err(|error| crate::FontError::Io {
+                    path: current.display().to_string(),
+                    message: error.to_string(),
+                })?
+                .path();
+            if path.is_dir() {
+                pending.push(path);
+            } else {
+                files.push(path);
+            }
+        }
+    }
+    Ok(files)
+}
+
+fn install_declared_fonts(
+    fonts: Vec<crate::FontSource>,
+    cx: &mut App,
+) -> Result<(), ScriptViewError> {
+    if fonts.is_empty() {
+        return Ok(());
+    }
+    let fresh = {
+        let loaded = &cx.global::<ScriptRuntimeInstallation>().loaded_fonts;
+        fonts
+            .into_iter()
+            .filter(|font| !loaded.contains(&font.fingerprint()))
+            .collect::<Vec<_>>()
+    };
+    if fresh.is_empty() {
+        return Ok(());
+    }
+    let fingerprints = fresh
+        .iter()
+        .map(crate::FontSource::fingerprint)
+        .collect::<Vec<_>>();
+    let bytes = fresh
+        .into_iter()
+        .map(|font| Cow::Owned(font.into_bytes()))
+        .collect();
+    cx.text_system()
+        .add_fonts(bytes)
+        .map_err(|error| crate::FontError::Load(error.to_string()))?;
+    cx.global_mut::<ScriptRuntimeInstallation>()
+        .loaded_fonts
+        .extend(fingerprints);
     Ok(())
 }
 
@@ -1507,6 +1634,7 @@ pub struct PreparedScriptView {
     development: bool,
     factory: Rc<ScriptWindowFactory>,
     key_bindings: Vec<KeyBindingSpec>,
+    fonts: Vec<crate::FontSource>,
     #[cfg(feature = "dev-reload")]
     module_cache: ModuleCompileCache,
 }
@@ -1547,6 +1675,7 @@ impl PreparedScriptView {
         cx: &mut App,
     ) -> Result<ScriptViewHandle, ScriptViewError> {
         install(cx);
+        install_declared_fonts(std::mem::take(&mut self.fonts), cx)?;
         #[cfg(feature = "dev-reload")]
         let watcher = if self.development && !self.ui_root.as_os_str().is_empty() {
             Some(FileWatcher::new(&self.ui_root)?)
@@ -3178,6 +3307,8 @@ pub enum ScriptViewError {
     ScriptSource(#[from] crate::ScriptSourceError),
     #[error(transparent)]
     Asset(#[from] crate::AssetError),
+    #[error(transparent)]
+    Font(#[from] crate::FontError),
     #[cfg(feature = "dev-reload")]
     #[error(transparent)]
     Watcher(#[from] crate::WatcherError),
@@ -3409,6 +3540,28 @@ mod tests {
                 source: crate::ImageSourceSpec::Handle(handle),
             } if handle.id() != 0
         ));
+    }
+
+    #[test]
+    fn embedded_font_sources_are_validated_and_retained_for_mount() {
+        let entry = ModuleId::parse("main").unwrap();
+        let scripts = EmbeddedScriptSource::new(BTreeMap::from([(
+            entry.clone(),
+            "fn view(ctx) { text(\"font probe\") }".to_owned(),
+        )]));
+        let font =
+            crate::FontSource::new("Art Display", [b"OTTO".as_slice(), &[0, 1, 2, 3]].concat())
+                .unwrap();
+        let prepared = EmbeddedScriptView::new(
+            entry,
+            scripts,
+            include_str!("../../../registry/themes/default_dark.rhai"),
+        )
+        .font_source(font)
+        .prepare()
+        .unwrap();
+        assert_eq!(prepared.fonts.len(), 1);
+        assert_eq!(prepared.fonts[0].label(), "Art Display");
     }
 
     #[test]

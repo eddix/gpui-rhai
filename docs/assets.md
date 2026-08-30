@@ -56,3 +56,21 @@ icons without script recompilation or state loss.
 In file-backed development, supported asset changes refresh the provider
 transactionally. Existing logical identity remains stable, tinted cache entries
 are replaced, and affected windows invalidate.
+
+## Declared fonts
+
+File applications load `.ttf`, `.otf`, and `.ttc` files under `ui/fonts` before
+their first mounted GPUI view. Embedded applications pass validated in-memory
+`FontSource` values with `.font_source(...)` or `.font_sources(...)`.
+`gpui-rhai embed` emits matching `FONTS` and `font_sources()` artifacts.
+
+The Host validates safe labels, TrueType/OpenType headers, a 16 MiB per-font
+limit, at most 64 sources, and duplicate payloads. App-global fingerprints
+prevent sibling views from registering identical bytes repeatedly. GPUI
+performs final parsing; failure aborts mount before the view is exposed. Rhai
+receives only the platform family name used through `Style.font_family`, never
+paths or bytes.
+
+Family aliases, fallback stacks/features, and development hot replacement
+remain incomplete. Until aliases land, `font_family` must use the internal
+family name declared by the font itself.

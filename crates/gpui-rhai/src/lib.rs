@@ -10,6 +10,7 @@ pub mod effect;
 pub mod element_ref;
 pub mod engine;
 pub mod event;
+pub mod font;
 pub mod geometry;
 mod invocation;
 pub mod lifecycle;
@@ -113,6 +114,7 @@ pub use event::{
     HostCallback, LogicalPoint, PointerCaptureDirective, PointerCaptureRegistry, PointerEventData,
     PropagationControl, UiEvent, UiEventBinding, UiEventHandler, WheelEventData,
 };
+pub use font::{FontError, FontSource, validate_font_sources};
 pub use geometry::{ElementGeometry, GeometryBounds, GeometryError, GeometryRegistry};
 pub use lifecycle::{LifecycleError, LifecycleState, ScriptLifecycle};
 pub use locale::{

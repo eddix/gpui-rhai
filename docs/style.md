@@ -42,8 +42,12 @@ values at frame sampling time without rerunning Rhai. Static translation uses
 the same paint wrapper, so visual geometry reporting remains the next required
 step before transformed hit testing can be marked complete.
 
+Hosts may register bounded in-memory TrueType/OpenType sources and file apps
+automatically discover `ui/fonts`; `font_family` selects the internal family
+name. See `assets.md` for ownership and validation.
+
 The remaining final-style gaps are property-specific signed insets/margins,
 intrinsic/auto/fr/grid-track values, multi-stop gradients, rotation/scale and
-transform-origin, detailed border corners/sides, font assets/fallback/features,
-selection styling, and explicit hit-testing/stacking-context controls. They are
+transform-origin, detailed border corners/sides, font aliases/fallback/features
+and hot replacement, selection styling, and explicit hit-testing/stacking-context controls. They are
 tracked as incomplete rather than silently ignored.
