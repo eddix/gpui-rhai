@@ -83,7 +83,7 @@ const CATPPUCCIN_MOCHA: &str = include_str!("../../../registry/themes/catppuccin
 fn contains_select(node: &gpui_rhai::UiNode) -> bool {
     match node.kind() {
         UiNodeKind::Select { .. } => true,
-        UiNodeKind::Container { children } => children.iter().any(contains_select),
+        UiNodeKind::Box { children } => children.iter().any(contains_select),
         _ => false,
     }
 }
@@ -91,7 +91,7 @@ fn contains_select(node: &gpui_rhai::UiNode) -> bool {
 fn find_select(node: &gpui_rhai::UiNode) -> Option<&gpui_rhai::UiNode> {
     match node.kind() {
         UiNodeKind::Select { .. } => Some(node),
-        UiNodeKind::Container { children } => children.iter().find_map(find_select),
+        UiNodeKind::Box { children } => children.iter().find_map(find_select),
         _ => None,
     }
 }
@@ -101,9 +101,7 @@ fn find_label<'a>(node: &'a gpui_rhai::UiNode, label: &str) -> Option<&'a gpui_r
         return Some(node);
     }
     match node.kind() {
-        UiNodeKind::Container { children } => {
-            children.iter().find_map(|child| find_label(child, label))
-        }
+        UiNodeKind::Box { children } => children.iter().find_map(|child| find_label(child, label)),
         UiNodeKind::Overlay {
             trigger, content, ..
         } => find_label(trigger, label).or_else(|| find_label(content, label)),
@@ -158,7 +156,7 @@ fn official_m0_components_compile_export_and_render_together() {
         BTreeMap::new(),
     );
     let root = runtime.render_with_context(&compiled, context).unwrap();
-    let UiNodeKind::Container { children } = root.kind() else {
+    let UiNodeKind::Box { children } = root.kind() else {
         panic!("official component composition did not return a container");
     };
     assert_eq!(children.len(), 2);
@@ -220,7 +218,7 @@ fn official_components_validate_props_and_merge_standard_style_overrides() {
         root.style().base.height,
         Some(gpui_rhai::Length::Pixels(77.0))
     );
-    assert!(matches!(root.kind(), UiNodeKind::Container { children } if children.len() == 3));
+    assert!(matches!(root.kind(), UiNodeKind::Box { children } if children.len() == 3));
 
     let mut rejecting_engine = RuntimeEngine::new();
     rejecting_engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
@@ -480,7 +478,7 @@ fn official_textarea_wraps_independent_multiline_primitive() {
         BTreeMap::new(),
     );
     let root = engine.render_with_context(&compiled, context).unwrap();
-    let UiNodeKind::Container { children } = root.kind() else {
+    let UiNodeKind::Box { children } = root.kind() else {
         panic!("Textarea must render its source-owned root wrapper");
     };
     let UiNodeKind::Custom { primitive } = children[0].kind() else {
@@ -533,7 +531,7 @@ fn official_divider_is_typed_decorative_layout() {
         BTreeMap::new(),
     );
     let root = engine.render_with_context(&compiled, context).unwrap();
-    let UiNodeKind::Container { children } = root.kind() else {
+    let UiNodeKind::Box { children } = root.kind() else {
         panic!("divider showcase must render a container");
     };
     assert_eq!(children.len(), 2);
@@ -599,7 +597,7 @@ fn official_popover_and_dialog_use_native_overlay_nodes() {
         BTreeMap::new(),
     );
     let root = engine.render_with_context(&compiled, context).unwrap();
-    let UiNodeKind::Container { children } = root.kind() else {
+    let UiNodeKind::Box { children } = root.kind() else {
         panic!("overlay showcase must render a container");
     };
     let UiNodeKind::Overlay { spec: popover, .. } = children[0].kind() else {
@@ -932,7 +930,7 @@ fn official_pagination_is_pure_rhai_composition() {
         BTreeMap::new(),
     );
     let root = engine.render_with_context(&compiled, context).unwrap();
-    assert!(matches!(root.kind(), UiNodeKind::Container { .. }));
+    assert!(matches!(root.kind(), UiNodeKind::Box { .. }));
     assert!(contains_select(&root));
     let page = find_label(&root, "251").expect("page 251 button");
     assert_eq!(
@@ -1051,13 +1049,13 @@ fn official_pagination_page_window_covers_ellipsis_transitions() {
             ),
         )
         .unwrap();
-    let UiNodeKind::Container { children: cases } = root.kind() else {
+    let UiNodeKind::Box { children: cases } = root.kind() else {
         panic!("pagination page-window probe must render a column");
     };
     let actual = cases
         .iter()
         .map(|case| {
-            let UiNodeKind::Container { children } = case.kind() else {
+            let UiNodeKind::Box { children } = case.kind() else {
                 panic!("pagination page-window case must render a row");
             };
             children
@@ -1241,7 +1239,7 @@ fn m2_control_sources_emit_typed_values_and_roving_keys() {
         BTreeMap::new(),
     );
     let root = engine.render_with_context(&compiled, context).unwrap();
-    let UiNodeKind::Container { children } = root.kind() else {
+    let UiNodeKind::Box { children } = root.kind() else {
         panic!("M2 controls must compose into a container");
     };
     assert!(matches!(
@@ -1264,7 +1262,7 @@ fn m2_control_sources_emit_typed_values_and_roving_keys() {
         children[2].handler_payload("key:right"),
         Some(&UiValue::String("a".to_owned()))
     );
-    let UiNodeKind::Container {
+    let UiNodeKind::Box {
         children: tag_children,
     } = children[3].kind()
     else {
@@ -1320,14 +1318,14 @@ fn m2_visual_primitives_export_fallbacks_and_rust_animations() {
         BTreeMap::new(),
     );
     let root = engine.render_with_context(&compiled, context).unwrap();
-    let UiNodeKind::Container { children } = root.kind() else {
+    let UiNodeKind::Box { children } = root.kind() else {
         panic!("visual primitives must compose into a container");
     };
     assert_eq!(
         children[0].attributes().get("label"),
         Some(&UiValue::String("Ada".to_owned()))
     );
-    let UiNodeKind::Container {
+    let UiNodeKind::Box {
         children: determinate,
     } = children[1].kind()
     else {
@@ -1337,7 +1335,7 @@ fn m2_visual_primitives_export_fallbacks_and_rust_animations() {
         determinate[0].animations()[0],
         gpui_rhai::AnimationSpec::Transition(_)
     ));
-    let UiNodeKind::Container {
+    let UiNodeKind::Box {
         children: indeterminate,
     } = children[2].kind()
     else {
@@ -1387,14 +1385,14 @@ fn m2_composites_export_slots_animation_and_keyboard_payloads() {
         BTreeMap::new(),
     );
     let root = engine.render_with_context(&compiled, context).unwrap();
-    let UiNodeKind::Container { children } = root.kind() else {
+    let UiNodeKind::Box { children } = root.kind() else {
         panic!("M2 composites must compose into a container");
     };
     assert_eq!(
         children[0].attributes().get("invalid"),
         Some(&UiValue::Bool(true))
     );
-    let UiNodeKind::Container {
+    let UiNodeKind::Box {
         children: field_children,
     } = children[0].kind()
     else {
@@ -1416,7 +1414,7 @@ fn m2_composites_export_slots_animation_and_keyboard_payloads() {
         field_children[1].attributes().get("required"),
         Some(&UiValue::Bool(true))
     );
-    let UiNodeKind::Container {
+    let UiNodeKind::Box {
         children: collapsible_children,
     } = children[1].kind()
     else {
@@ -1426,13 +1424,13 @@ fn m2_composites_export_slots_animation_and_keyboard_payloads() {
         collapsible_children[1].animations()[0],
         gpui_rhai::AnimationSpec::Transition(_)
     ));
-    let UiNodeKind::Container {
+    let UiNodeKind::Box {
         children: accordion_items,
     } = children[2].kind()
     else {
         panic!("Accordion must render item containers");
     };
-    let UiNodeKind::Container {
+    let UiNodeKind::Box {
         children: first_item,
     } = accordion_items[0].kind()
     else {
@@ -1440,7 +1438,7 @@ fn m2_composites_export_slots_animation_and_keyboard_payloads() {
     };
     assert!(first_item[0].handler_payload("click").is_some());
     assert!(!first_item[1].animations().is_empty());
-    let UiNodeKind::Container {
+    let UiNodeKind::Box {
         children: tabs_root,
     } = children[3].kind()
     else {
@@ -1506,7 +1504,7 @@ fn tooltip_and_menu_use_window_overlay_policies() {
         BTreeMap::new(),
     );
     let root = engine.render_with_context(&compiled, context).unwrap();
-    let UiNodeKind::Container { children } = root.kind() else {
+    let UiNodeKind::Box { children } = root.kind() else {
         panic!("Tooltip and Menu must compose into a container");
     };
     let UiNodeKind::Overlay { spec: tooltip, .. } = children[0].kind() else {
@@ -1582,7 +1580,7 @@ fn nested_menu_preserves_parent_overlay_identity() {
         panic!("parent Menu must render an overlay");
     };
     assert_eq!(spec.id.as_str(), "file");
-    let UiNodeKind::Container { children } = content.kind() else {
+    let UiNodeKind::Box { children } = content.kind() else {
         panic!("parent Menu content must contain submenu nodes");
     };
     let UiNodeKind::Overlay { spec: child, .. } = children[0].kind() else {

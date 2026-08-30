@@ -676,7 +676,7 @@ fn collect_primitive_instances(node: &UiNode, active: &mut BTreeSet<PrimitiveIns
                 });
             }
         }
-        UiNodeKind::Container { children } => {
+        UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => {
             for child in children {
                 collect_primitive_instances(child, active);
             }

@@ -397,7 +397,7 @@ fn collect_node_animations(
             .map(|animation| (path.to_owned(), animation)),
     );
     match node.kind() {
-        UiNodeKind::Container { children } => {
+        UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => {
             for (index, child) in children.iter().enumerate() {
                 collect_node_animations(child, &child_path(path, index, child), output)?;
             }

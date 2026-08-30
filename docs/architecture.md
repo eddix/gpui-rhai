@@ -16,6 +16,12 @@ No GPUI `Window`, `App`, `Context`, `Div`, or `AnyElement` enters a Rhai
 `Dynamic`. Custom Rust primitives are the intentional extension point for
 mechanisms that require those types.
 
+The final atomic surface starts with `box(children)` and layout-transparent
+`fragment(children)`. `row`, `column`, and `stack` construct Box snapshots.
+Fragment may carry only children, source, key; nested fragments are flattened
+before GPUI layout, so style/handlers/ref on a fragment are rejected instead of
+silently introducing a wrapper.
+
 A trusted Rust Host may also build a tree directly and attach `HostCallback`
 closures. Structural node data remains declarative, but this Host-augmented
 subset contains opaque foreground event behavior and is not serializable pure

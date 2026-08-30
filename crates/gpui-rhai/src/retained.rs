@@ -141,6 +141,8 @@ pub enum ReconcileError {
         group: String,
         key: String,
     },
+    #[error("fragment nodes may contain only children, source, and an optional key")]
+    FragmentDecoration,
 }
 
 /// One accepted declarative snapshot plus its stable runtime identity graph.
@@ -275,6 +277,7 @@ impl ReconcileTransaction<'_> {
         parent: Option<NodeId>,
         moved: bool,
     ) -> Result<NodeId, ReconcileError> {
+        validate_fragment(candidate)?;
         let id = if let Some(id) = old_id {
             self.reused.insert(id);
             self.report.preserved.push(id);
@@ -359,6 +362,17 @@ impl ReconcileTransaction<'_> {
                 }
             }
         }
+        self.insert_candidate(id, parent, candidate, child_links);
+        Ok(id)
+    }
+
+    fn insert_candidate(
+        &mut self,
+        id: NodeId,
+        parent: Option<NodeId>,
+        candidate: &UiNode,
+        children: Vec<RetainedChildLink>,
+    ) {
         self.new_nodes.insert(
             id,
             RetainedNode {
@@ -371,10 +385,9 @@ impl ReconcileTransaction<'_> {
                 handlers: candidate.handlers().clone(),
                 handler_payloads: candidate.handler_payloads().clone(),
                 scrollable: snapshot_scrollable(candidate),
-                children: child_links,
+                children,
             },
         );
-        Ok(id)
     }
 
     fn allocate(&mut self) -> Result<NodeId, ReconcileError> {
@@ -411,6 +424,22 @@ fn snapshot_scrollable(node: &UiNode) -> bool {
         node.style().base.overflow_y,
         Some(crate::OverflowMode::Scroll)
     )
+}
+
+fn validate_fragment(node: &UiNode) -> Result<(), ReconcileError> {
+    if matches!(node.kind(), crate::UiNodeKind::Fragment { .. })
+        && (node.style() != &crate::Style::new()
+            || node.part_styles().next().is_some()
+            || !node.attributes().is_empty()
+            || !node.handlers().is_empty()
+            || !node.animations().is_empty()
+            || node.signal_bindings().next().is_some()
+            || node.element_ref().is_some())
+    {
+        Err(ReconcileError::FragmentDecoration)
+    } else {
+        Ok(())
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -589,5 +618,17 @@ mod tests {
         );
         tree.reconcile(overlay).unwrap();
         assert_eq!(tree.len(), 3);
+    }
+
+    #[test]
+    fn fragment_rejects_layout_or_interaction_decoration() {
+        let mut tree = RetainedUiTree::new();
+        let decorated = UiNode::fragment(vec![UiNode::text("child")])
+            .with_style(&crate::Style::new().flex_row());
+        assert_eq!(
+            tree.reconcile(decorated).unwrap_err(),
+            ReconcileError::FragmentDecoration
+        );
+        assert!(tree.is_empty());
     }
 }

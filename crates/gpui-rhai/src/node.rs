@@ -75,7 +75,10 @@ pub enum UiNodeKind {
     Text {
         text: ImmutableString,
     },
-    Container {
+    Box {
+        children: Vec<UiNode>,
+    },
+    Fragment {
         children: Vec<UiNode>,
     },
     Custom {
@@ -122,7 +125,8 @@ pub enum UiNodeKind {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum UiNodeKindTag {
     Text,
-    Container,
+    Box,
+    Fragment,
     Custom,
     Image,
     DirectionalImage,
@@ -174,9 +178,9 @@ impl UiNode {
     }
 
     #[must_use]
-    pub fn container(children: Vec<Self>) -> Self {
+    pub fn box_node(children: Vec<Self>) -> Self {
         Self {
-            kind: UiNodeKind::Container { children },
+            kind: UiNodeKind::Box { children },
             key: None,
             style: Style::new(),
             part_styles: BTreeMap::new(),
@@ -192,13 +196,23 @@ impl UiNode {
     }
 
     #[must_use]
+    pub fn fragment(children: Vec<Self>) -> Self {
+        let mut node = Self::box_node(children);
+        node.kind = match node.kind {
+            UiNodeKind::Box { children } => UiNodeKind::Fragment { children },
+            _ => unreachable!(),
+        };
+        node
+    }
+
+    #[must_use]
     pub fn column(children: Vec<Self>) -> Self {
-        Self::container(children).with_style(&Style::new().flex_col())
+        Self::box_node(children).with_style(&Style::new().flex_col())
     }
 
     #[must_use]
     pub fn row(children: Vec<Self>) -> Self {
-        Self::container(children).with_style(&Style::new().flex_row())
+        Self::box_node(children).with_style(&Style::new().flex_row())
     }
 
     #[must_use]
@@ -564,7 +578,7 @@ impl UiNode {
             return true;
         }
         match &mut self.kind {
-            UiNodeKind::Container { children } => {
+            UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => {
                 replace_in_nodes(children.iter_mut(), component, &replacement)
             }
             UiNodeKind::Custom { primitive } => {
@@ -740,7 +754,7 @@ impl UiNode {
             }
         }
         match &mut self.kind {
-            UiNodeKind::Container { children } => {
+            UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => {
                 for child in children {
                     child.bind_generation(generation);
                 }
@@ -815,7 +829,7 @@ impl UiNode {
             }
         }
         match &mut self.kind {
-            UiNodeKind::Container { children } => {
+            UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => {
                 for child in children {
                     child.bind_component_scope(component, events, native_context);
                 }
@@ -899,7 +913,7 @@ impl UiNode {
             }
         }
         match &mut self.kind {
-            UiNodeKind::Container { children } => {
+            UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => {
                 for child in children {
                     child.bind_callback_scope_by_name(names, component, events, native_context);
                 }
@@ -973,7 +987,8 @@ impl UiNode {
     pub const fn kind_tag(&self) -> UiNodeKindTag {
         match self.kind {
             UiNodeKind::Text { .. } => UiNodeKindTag::Text,
-            UiNodeKind::Container { .. } => UiNodeKindTag::Container,
+            UiNodeKind::Box { .. } => UiNodeKindTag::Box,
+            UiNodeKind::Fragment { .. } => UiNodeKindTag::Fragment,
             UiNodeKind::Custom { .. } => UiNodeKindTag::Custom,
             UiNodeKind::Image { .. } => UiNodeKindTag::Image,
             UiNodeKind::DirectionalImage { .. } => UiNodeKindTag::DirectionalImage,
@@ -990,7 +1005,7 @@ impl UiNode {
 
     pub(crate) fn retained_child_groups(&self) -> Vec<(String, Vec<&Self>)> {
         match &self.kind {
-            UiNodeKind::Container { children } => {
+            UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => {
                 vec![("children".to_owned(), children.iter().collect())]
             }
             UiNodeKind::Custom { primitive } => primitive
@@ -1485,6 +1500,30 @@ fn dynamic_ui_value(value: Dynamic) -> Result<UiValue, Box<EvalAltResult>> {
 
 pub(crate) fn text_node(call: NativeCallContext<'_>, text: ImmutableString) -> UiNode {
     with_call_source(UiNode::text(text), call)
+}
+
+pub(crate) fn box_node(
+    call: NativeCallContext<'_>,
+    children: Array,
+) -> Result<UiNode, Box<rhai::EvalAltResult>> {
+    collect_children(children, "box")
+        .map(|children| with_call_source(UiNode::box_node(children), call))
+}
+
+pub(crate) fn fragment_node(
+    call: NativeCallContext<'_>,
+    children: Array,
+) -> Result<UiNode, Box<rhai::EvalAltResult>> {
+    collect_children(children, "fragment")
+        .map(|children| with_call_source(UiNode::fragment(children), call))
+}
+
+pub(crate) fn stack_node(
+    call: NativeCallContext<'_>,
+    children: Array,
+) -> Result<UiNode, Box<rhai::EvalAltResult>> {
+    collect_children(children, "stack")
+        .map(|children| with_call_source(UiNode::box_node(children), call))
 }
 
 pub(crate) fn column_node(

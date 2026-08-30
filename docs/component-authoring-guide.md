@@ -130,6 +130,11 @@ default cursor for controls. Attach normalized accessibility role/label data to
 the root node. Use `padding_start/end` and `margin_start/end` for asymmetric
 inline spacing so caller locale direction remains correct.
 
+Use `box(children)` for layout/paint/interaction and `fragment(children)` only
+for transparent snapshot grouping. Fragment cannot carry Style, handlers,
+signals, attributes, animations, or refs. `row`, `column`, and `stack` are Box
+helpers, not distinct privileged node kinds.
+
 ## Events
 
 Bind callbacks to nodes rather than calling them during rendering:

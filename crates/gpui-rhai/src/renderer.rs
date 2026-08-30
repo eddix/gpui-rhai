@@ -1197,22 +1197,14 @@ impl GpuiNodeRenderer {
     ) -> AnyElement {
         match node.kind() {
             UiNodeKind::Text { text } => element.child(text.as_str().to_owned()).into_any_element(),
-            UiNodeKind::Container { children } => element
-                .children(children.iter().enumerate().map(|(index, child)| {
-                    let child_path = child.key().map_or_else(
-                        || format!("{path}/{index}"),
-                        |key| format!("{path}/{}", key.as_str()),
-                    );
-                    let child_id =
-                        retained_child_id(environment.retained, retained_id, "children", index);
-                    Self::render_internal(
-                        child,
-                        environment,
-                        boundary_fallback,
-                        &child_path,
-                        child_id,
-                    )
-                }))
+            UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => element
+                .children(render_flattened_children(
+                    children,
+                    environment,
+                    boundary_fallback,
+                    path,
+                    retained_id,
+                ))
                 .into_any_element(),
             UiNodeKind::Custom { primitive } => element
                 .child(environment.primitives.element(
@@ -1277,6 +1269,41 @@ impl GpuiNodeRenderer {
                 .into_any_element(),
         }
     }
+}
+
+fn render_flattened_children<C: ColorResolver>(
+    children: &[UiNode],
+    environment: &RenderEnvironment<'_, C>,
+    boundary_fallback: Option<&UiNode>,
+    path: &str,
+    retained_id: Option<NodeId>,
+) -> Vec<AnyElement> {
+    let mut rendered = Vec::new();
+    for (index, child) in children.iter().enumerate() {
+        let child_path = child.key().map_or_else(
+            || format!("{path}/{index}"),
+            |key| format!("{path}/{}", key.as_str()),
+        );
+        let child_id = retained_child_id(environment.retained, retained_id, "children", index);
+        if let UiNodeKind::Fragment { children } = child.kind() {
+            rendered.extend(render_flattened_children(
+                children,
+                environment,
+                boundary_fallback,
+                &child_path,
+                child_id,
+            ));
+        } else {
+            rendered.push(GpuiNodeRenderer::render_internal(
+                child,
+                environment,
+                boundary_fallback,
+                &child_path,
+                child_id,
+            ));
+        }
+    }
+    rendered
 }
 
 fn retained_child_id(

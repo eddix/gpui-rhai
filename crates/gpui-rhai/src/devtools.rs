@@ -189,7 +189,8 @@ fn inspect_node(node: &UiNode, path: &str) -> InspectorNode {
             props.insert("text".to_owned(), truncate(text, 80));
             ("text".to_owned(), Vec::new())
         }
-        UiNodeKind::Container { children } => ("container".to_owned(), children.iter().collect()),
+        UiNodeKind::Box { children } => ("box".to_owned(), children.iter().collect()),
+        UiNodeKind::Fragment { children } => ("fragment".to_owned(), children.iter().collect()),
         UiNodeKind::Custom { primitive } => {
             for (name, value) in primitive.props.iter() {
                 props.insert(name.to_owned(), primitive_value(value));

@@ -15,10 +15,11 @@ use crate::asset::{AssetId, ImageDecodeHandle, asset_id_from_script};
 use crate::component::{ComponentExportCollector, ComponentExportError, ComponentRegistry};
 use crate::context::{UiContext, register_ui_context_api};
 use crate::node::{
-    asset_image_node, column_node, date_picker_node, directional_asset_image_node,
-    directional_image_node, dropdown_node, error_boundary_node, generic_directional_image_node,
-    generic_image_node, image_node, lazy_error_boundary_node, overlay_node, row_node, select_node,
-    table_node, text_node, toast_host_node, virtual_list_node,
+    asset_image_node, box_node, column_node, date_picker_node, directional_asset_image_node,
+    directional_image_node, dropdown_node, error_boundary_node, fragment_node,
+    generic_directional_image_node, generic_image_node, image_node, lazy_error_boundary_node,
+    overlay_node, row_node, select_node, stack_node, table_node, text_node, toast_host_node,
+    virtual_list_node,
 };
 use crate::primitive::{PrimitiveDescriptor, PrimitiveError, PrimitiveHandler, PrimitiveRegistry};
 use crate::style::register_style_api;
@@ -1195,6 +1196,15 @@ fn register_node_apis(engine: &mut Engine) {
     FuncRegistration::new("text")
         .in_global_namespace()
         .register_into_engine(engine, text_node);
+    FuncRegistration::new("box")
+        .in_global_namespace()
+        .register_into_engine(engine, box_node);
+    FuncRegistration::new("fragment")
+        .in_global_namespace()
+        .register_into_engine(engine, fragment_node);
+    FuncRegistration::new("stack")
+        .in_global_namespace()
+        .register_into_engine(engine, stack_node);
     FuncRegistration::new("handled")
         .in_global_namespace()
         .register_into_engine(engine, || crate::EventResponse::new().stop());
@@ -1926,8 +1936,8 @@ mod tests {
             root.source().map(|source| source.module.as_str()),
             Some("ui/main.rhai")
         );
-        let crate::UiNodeKind::Container { children } = root.kind() else {
-            panic!("column must render a container");
+        let crate::UiNodeKind::Box { children } = root.kind() else {
+            panic!("column must render a box");
         };
         assert_eq!(children.len(), 2);
         assert_eq!(
@@ -2175,6 +2185,28 @@ mod tests {
             )
             .unwrap();
         assert!(runtime.render(&missing).is_err());
+    }
+
+    #[test]
+    fn final_box_and_fragment_atoms_are_distinct_snapshots() {
+        let mut runtime = RuntimeEngine::new();
+        let compiled = runtime
+            .compile(
+                r#"
+                    fn view() {
+                        box([text("a"), fragment([text("b"), text("c")])])
+                    }
+                "#,
+            )
+            .unwrap();
+        let root = runtime.render(&compiled).unwrap();
+        let crate::UiNodeKind::Box { children } = root.kind() else {
+            panic!("root must be the final Box atom");
+        };
+        assert!(matches!(
+            children[1].kind(),
+            crate::UiNodeKind::Fragment { children } if children.len() == 2
+        ));
     }
 
     #[test]

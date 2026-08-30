@@ -3579,7 +3579,7 @@ fn render_MissingAsset(ctx, props) { image(asset("app/icons/missing")) }
         let (_, embedded) = start_prepared(embedded, "embedded-view", "main");
 
         for root in [file.root().unwrap(), embedded.root().unwrap()] {
-            let crate::UiNodeKind::Container { children } = root.kind() else {
+            let crate::UiNodeKind::Box { children } = root.kind() else {
                 panic!("equivalence app must render a row");
             };
             assert!(
