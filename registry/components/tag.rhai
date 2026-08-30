@@ -14,7 +14,7 @@
 // State: stateless and controlled by caller props.
 // Example: Tag(#{ text: "Rust", closable: true, on_close: Fn("closed") })
 
-export_component(#{
+define_component(#{
     metadata: #{
         id: "components/tag", "export": "Tag", version: "0.1.0",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
@@ -45,6 +45,7 @@ export_component(#{
         events: #{ close: #{ payload: #{ type: "string" } } },
         slots: #{}, parts: ["root", "label", "close"],
     },
+    render: Fn("render_Tag")
 });
 
 fn tag_color(variant) {
@@ -63,9 +64,7 @@ fn tag_foreground(variant) {
     else { theme_color("text_primary") }
 }
 
-fn Tag(props) {
-    component_render("components/tag", props, Fn("render_Tag"))
-}
+fn Tag(props) { render_component("components/tag", props) }
 fn render_Tag(ctx, props) {
     let variant = if "variant" in props { props.variant } else { "neutral" };
     let closable = if "closable" in props { props.closable } else { false };

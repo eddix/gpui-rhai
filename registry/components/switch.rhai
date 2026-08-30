@@ -14,7 +14,7 @@
 // State: controlled by the checked prop.
 // Example: Switch(#{ checked: true, label: "Updates", on_change: Fn("changed") })
 
-export_component(#{
+define_component(#{
     metadata: #{
         id: "components/switch", "export": "Switch", version: "0.1.0",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
@@ -41,11 +41,10 @@ export_component(#{
         events: #{ change: #{ payload: #{ type: "bool" } } },
         slots: #{}, parts: ["root", "track", "thumb", "label"],
     },
+    render: Fn("render_Switch")
 });
 
-fn Switch(props) {
-    component_render("components/switch", props, Fn("render_Switch"))
-}
+fn Switch(props) { render_component("components/switch", props) }
 fn render_Switch(ctx, props) {
     let disabled = if "disabled" in props { props.disabled } else { false };
     let loading = if "loading" in props { props.loading } else { false };

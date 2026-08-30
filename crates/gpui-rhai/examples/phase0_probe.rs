@@ -26,7 +26,11 @@ fn main() {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
                 ..WindowOptions::default()
             },
-            |_, cx| cx.new(|_| StaticUiView::new(root.clone())),
+            |_, cx| {
+                let view = StaticUiView::new(root.clone())
+                    .expect("phase-0 root should reconcile into a retained tree");
+                cx.new(|_| view)
+            },
         )
         .expect("phase-0 GPUI window should open");
         cx.activate(true);

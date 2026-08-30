@@ -25,9 +25,9 @@ use crate::virtual_list_element::{VirtualFocusHandler, VirtualListEntityElement}
 use crate::{
     Align, AnimationKey, AnimationProperty, AssetRegistry, ColorValue, DatePickerNodeSpec,
     DropdownNodeSpec, EventPropagation, FlexDirection, ImageSourceSpec, InteractionState, Justify,
-    Length, OverlayNodeSpec, PrimitiveRegistry, PseudoState, RadiusToken, Rgba8, ScriptCallback,
-    SpacingToken, Style, StyleProperties, TableNodeSpec, TableSort, TableSortDirection,
-    TextDirection, ToastHostSpec, UiEventHandler, UiNode, UiNodeKind, UiValue,
+    Length, NodeId, OverlayNodeSpec, PrimitiveRegistry, PseudoState, RadiusToken, RetainedUiTree,
+    Rgba8, ScriptCallback, SpacingToken, Style, StyleProperties, TableNodeSpec, TableSort,
+    TableSortDirection, TextDirection, ToastHostSpec, UiEventHandler, UiNode, UiNodeKind, UiValue,
 };
 
 type DispatchFn = dyn Fn(ScriptCallback, UiValue, &mut Window, &mut App) -> EventPropagation;
@@ -188,6 +188,7 @@ struct RenderEnvironment<'a, C> {
     animations: &'a BTreeMap<AnimationKey, f64>,
     direction: TextDirection,
     view_id: &'a str,
+    retained: Option<&'a RetainedUiTree>,
 }
 
 pub(crate) struct WindowRenderResources<'a> {
@@ -239,8 +240,40 @@ impl GpuiNodeRenderer {
             animations: &animations,
             direction: TextDirection::LeftToRight,
             view_id: "standalone",
+            retained: None,
         };
-        Self::render_internal(node, &environment, None, "root")
+        Self::render_internal(node, &environment, None, "root", None)
+    }
+
+    #[must_use]
+    pub fn render_retained_with_primitives(
+        tree: &RetainedUiTree,
+        colors: &impl ColorResolver,
+        interaction: &InteractionState,
+        primitives: &PrimitiveRegistry,
+    ) -> AnyElement {
+        let overlays = WindowOverlayCoordinator::default();
+        let animations = BTreeMap::new();
+        let environment = RenderEnvironment {
+            colors,
+            interaction,
+            primitives,
+            dispatcher: None,
+            assets: None,
+            overlays: &overlays,
+            animations: &animations,
+            direction: TextDirection::LeftToRight,
+            view_id: "standalone",
+            retained: Some(tree),
+        };
+        tree.root().map_or_else(
+            || {
+                div()
+                    .child("Retained UI tree has no root")
+                    .into_any_element()
+            },
+            |root| Self::render_internal(root, &environment, None, "root", tree.root_id()),
+        )
     }
 
     #[must_use]
@@ -263,8 +296,9 @@ impl GpuiNodeRenderer {
             animations: &animations,
             direction: TextDirection::LeftToRight,
             view_id: "standalone",
+            retained: None,
         };
-        Self::render_internal(node, &environment, None, "root")
+        Self::render_internal(node, &environment, None, "root", None)
     }
 
     #[must_use]
@@ -307,6 +341,43 @@ impl GpuiNodeRenderer {
         )
     }
 
+    pub(crate) fn render_retained_with_window_runtime(
+        tree: &RetainedUiTree,
+        colors: &impl ColorResolver,
+        interaction: &InteractionState,
+        primitives: &PrimitiveRegistry,
+        resources: &WindowRenderResources<'_>,
+    ) -> AnyElement {
+        let environment = RenderEnvironment {
+            colors,
+            interaction,
+            primitives,
+            dispatcher: Some(resources.dispatcher),
+            assets: Some(resources.assets),
+            overlays: resources.overlays,
+            animations: resources.animations,
+            direction: resources.direction,
+            view_id: resources.view_id,
+            retained: Some(tree),
+        };
+        tree.root().map_or_else(
+            || {
+                div()
+                    .child("Retained UI tree has no root")
+                    .into_any_element()
+            },
+            |root| {
+                Self::render_internal(
+                    root,
+                    &environment,
+                    None,
+                    resources.root_path,
+                    tree.root_id(),
+                )
+            },
+        )
+    }
+
     pub(crate) fn render_subtree_with_window_runtime(
         node: &UiNode,
         colors: &impl ColorResolver,
@@ -325,8 +396,9 @@ impl GpuiNodeRenderer {
             animations: resources.animations,
             direction: resources.direction,
             view_id: resources.view_id,
+            retained: None,
         };
-        Self::render_internal(node, &environment, None, path)
+        Self::render_internal(node, &environment, None, path, None)
     }
 
     fn render_internal<C: ColorResolver>(
@@ -334,6 +406,7 @@ impl GpuiNodeRenderer {
         environment: &RenderEnvironment<'_, C>,
         boundary_fallback: Option<&UiNode>,
         path: &str,
+        retained_id: Option<NodeId>,
     ) -> AnyElement {
         let local_interaction = if is_disabled(node) {
             environment.interaction.clone().with(PseudoState::Disabled)
@@ -361,8 +434,14 @@ impl GpuiNodeRenderer {
         if animation.clip_height.is_some() || resolved_style.clip == Some(true) {
             element = element.overflow_hidden();
         }
-        let populated =
-            Self::populate_with_interactions(element, node, environment, boundary_fallback, path);
+        let populated = Self::populate_with_interactions(
+            element,
+            node,
+            environment,
+            boundary_fallback,
+            path,
+            retained_id,
+        );
         translated(populated, animation.translate_x, animation.translate_y)
     }
 
@@ -372,6 +451,7 @@ impl GpuiNodeRenderer {
         environment: &RenderEnvironment<'_, C>,
         boundary_fallback: Option<&UiNode>,
         path: &str,
+        retained_id: Option<NodeId>,
     ) -> AnyElement {
         let click = node.handlers().get("click").map(|callback| {
             (
@@ -399,7 +479,14 @@ impl GpuiNodeRenderer {
             })
             .collect::<BTreeMap<_, _>>();
         if is_disabled(node) || (click.is_none() && key_handlers.is_empty()) {
-            return Self::populate(element, node, environment, boundary_fallback, path);
+            return Self::populate(
+                element,
+                node,
+                environment,
+                boundary_fallback,
+                path,
+                retained_id,
+            );
         }
 
         let click_dispatcher = environment.dispatcher.cloned();
@@ -410,10 +497,15 @@ impl GpuiNodeRenderer {
             _ => true,
         };
         let text_direction = environment.direction;
+        let stable_id = retained_id.map_or_else(
+            || path.to_owned(),
+            |node_id| format!("gpui-rhai-node-{node_id}"),
+        );
+        let debug_path = path.to_owned();
         let element = apply_pseudo_backgrounds(
             element
-                .id(SharedString::from(path.to_owned()))
-                .debug_selector(|| path.to_owned()),
+                .id(SharedString::from(stable_id))
+                .debug_selector(move || debug_path.clone()),
             node.style(),
             environment.colors,
         )
@@ -452,7 +544,14 @@ impl GpuiNodeRenderer {
                 cx.stop_propagation();
             }
         });
-        Self::populate(element, node, environment, boundary_fallback, path)
+        Self::populate(
+            element,
+            node,
+            environment,
+            boundary_fallback,
+            path,
+            retained_id,
+        )
     }
 
     fn populate<C: ColorResolver>(
@@ -461,6 +560,7 @@ impl GpuiNodeRenderer {
         environment: &RenderEnvironment<'_, C>,
         boundary_fallback: Option<&UiNode>,
         path: &str,
+        retained_id: Option<NodeId>,
     ) -> AnyElement {
         match node.kind() {
             UiNodeKind::Text { text } => element.child(text.as_str().to_owned()).into_any_element(),
@@ -470,7 +570,15 @@ impl GpuiNodeRenderer {
                         || format!("{path}/{index}"),
                         |key| format!("{path}/{}", key.as_str()),
                     );
-                    Self::render_internal(child, environment, boundary_fallback, &child_path)
+                    let child_id =
+                        retained_child_id(environment.retained, retained_id, "children", index);
+                    Self::render_internal(
+                        child,
+                        environment,
+                        boundary_fallback,
+                        &child_path,
+                        child_id,
+                    )
                 }))
                 .into_any_element(),
             UiNodeKind::Custom { primitive } => element
@@ -504,7 +612,7 @@ impl GpuiNodeRenderer {
                     spec,
                     environment,
                     boundary_fallback,
-                    path,
+                    (path, retained_id),
                 ))
                 .into_any_element(),
             UiNodeKind::Dropdown { spec } => element
@@ -531,10 +639,26 @@ impl GpuiNodeRenderer {
                     environment,
                     Some(fallback),
                     &format!("{path}/boundary"),
+                    retained_child_id(environment.retained, retained_id, "child", 0),
                 ))
                 .into_any_element(),
         }
     }
+}
+
+fn retained_child_id(
+    tree: Option<&RetainedUiTree>,
+    parent: Option<NodeId>,
+    group: &str,
+    index: usize,
+) -> Option<NodeId> {
+    tree.and_then(|tree| tree.node(parent?))
+        .and_then(|node| {
+            node.children()
+                .filter(|child| child.group() == group)
+                .nth(index)
+        })
+        .map(crate::RetainedChildLink::node)
 }
 
 fn render_image<C: ColorResolver>(
@@ -590,7 +714,7 @@ fn native_overlay_element<C: ColorResolver>(
     spec: &OverlayNodeSpec,
     environment: &RenderEnvironment<'_, C>,
     boundary_fallback: Option<&UiNode>,
-    path: &str,
+    (path, retained_id): (&str, Option<NodeId>),
 ) -> ScriptOverlayElement {
     let mut rendered_spec = scoped_overlay_spec(spec, environment.view_id);
     if rendered_spec.kind == crate::OverlayKind::Tooltip {
@@ -603,12 +727,14 @@ fn native_overlay_element<C: ColorResolver>(
         environment,
         boundary_fallback,
         &format!("{path}/trigger"),
+        retained_child_id(environment.retained, retained_id, "trigger", 0),
     );
     let content = GpuiNodeRenderer::render_internal(
         content,
         environment,
         boundary_fallback,
         &format!("{path}/content"),
+        retained_child_id(environment.retained, retained_id, "content", 0),
     );
     let open_change = node.handlers().get("open_change").map(|handler| {
         let handler = handler.clone();
@@ -1573,42 +1699,76 @@ fn to_f32(value: f64) -> f32 {
 
 /// Minimal GPUI view for a previously evaluated Rhai tree or a Host-built tree.
 pub struct StaticUiView {
-    root: UiNode,
+    tree: crate::RetainedUiTree,
     primitives: PrimitiveRegistry,
 }
 
 impl StaticUiView {
-    #[must_use]
-    pub fn new(root: UiNode) -> Self {
-        Self {
-            root,
-            primitives: PrimitiveRegistry::new(),
-        }
+    /// Create a retained view from one accepted root snapshot.
+    ///
+    /// # Errors
+    ///
+    /// Returns structural reconciliation errors such as duplicate sibling keys.
+    pub fn new(root: UiNode) -> Result<Self, crate::ReconcileError> {
+        Self::with_primitives(root, PrimitiveRegistry::new())
     }
 
-    #[must_use]
-    pub fn with_primitives(root: UiNode, primitives: PrimitiveRegistry) -> Self {
-        Self { root, primitives }
+    /// Create a retained view with a custom primitive registry.
+    ///
+    /// # Errors
+    ///
+    /// Returns structural reconciliation errors such as duplicate sibling keys.
+    pub fn with_primitives(
+        root: UiNode,
+        primitives: PrimitiveRegistry,
+    ) -> Result<Self, crate::ReconcileError> {
+        let mut tree = crate::RetainedUiTree::new();
+        tree.reconcile(root)?;
+        Ok(Self { tree, primitives })
     }
 
-    pub fn set_root(&mut self, root: UiNode, cx: &mut Context<Self>) {
-        self.root = root;
+    /// Reconcile and atomically accept a new Host-owned snapshot.
+    ///
+    /// # Errors
+    ///
+    /// Returns structural reconciliation errors without changing the live root.
+    pub fn set_root(
+        &mut self,
+        root: UiNode,
+        cx: &mut Context<Self>,
+    ) -> Result<crate::ReconcileReport, crate::ReconcileError> {
+        let report = self.tree.reconcile(root)?;
         cx.notify();
+        Ok(report)
     }
 
     #[must_use]
-    pub fn root(&self) -> &UiNode {
-        &self.root
+    pub fn root(&self) -> Option<&UiNode> {
+        self.tree.root()
+    }
+
+    #[must_use]
+    pub const fn retained(&self) -> &crate::RetainedUiTree {
+        &self.tree
     }
 }
 
 impl Render for StaticUiView {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        GpuiNodeRenderer::render_with_primitives(
-            &self.root,
-            &LiteralColorResolver,
-            &InteractionState::default(),
-            &self.primitives,
+        self.root().map_or_else(
+            || {
+                div()
+                    .child("Static UI view has no accepted root")
+                    .into_any_element()
+            },
+            |_| {
+                GpuiNodeRenderer::render_retained_with_primitives(
+                    &self.tree,
+                    &LiteralColorResolver,
+                    &InteractionState::default(),
+                    &self.primitives,
+                )
+            },
         )
     }
 }

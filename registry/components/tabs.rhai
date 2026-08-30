@@ -13,7 +13,7 @@
 // State/events: controlled selected value; emits change(string).
 // Example: Tabs(#{ value: "overview", label: "Sections", tabs: tabs, on_change: Fn("changed") })
 
-export_component(#{
+define_component(#{
     metadata: #{
         id: "components/tabs", "export": "Tabs", version: "0.1.0",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 }, dependencies: [], capabilities: #{},
@@ -38,6 +38,7 @@ export_component(#{
         state: #{ fields: #{} }, events: #{ change: #{ payload: #{ type: "string" } } },
         slots: #{}, parts: ["root", "list", "tab", "panel"],
     },
+    render: Fn("render_Tabs")
 });
 
 fn tab_disabled(tab) { if "disabled" in tab { tab.disabled } else { false } }
@@ -56,9 +57,7 @@ fn next_tab(tabs, value, step) {
     value
 }
 
-fn Tabs(props) {
-    component_render("components/tabs", props, Fn("render_Tabs"))
-}
+fn Tabs(props) { render_component("components/tabs", props) }
 fn render_Tabs(ctx, props) {
     let orientation = if "orientation" in props { props.orientation } else { "horizontal" };
     let callback = if "on_change" in props { props.on_change } else { () };

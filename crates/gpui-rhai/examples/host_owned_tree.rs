@@ -50,8 +50,10 @@ impl HostOwnedTree {
             ..HostFrame::default()
         };
         let weak = cx.entity().downgrade();
-        let view = cx
-            .new(|_| StaticUiView::with_primitives(build_tree(&initial, &events, &weak), registry));
+        let retained =
+            StaticUiView::with_primitives(build_tree(&initial, &events, &weak), registry)
+                .expect("initial Host-owned tree should reconcile");
+        let view = cx.new(|_| retained);
         let poll_weak = weak.clone();
         let poll = cx.spawn(async move |_, cx| {
             loop {
@@ -94,7 +96,9 @@ impl HostOwnedTree {
     fn refresh_tree(&mut self, cx: &mut Context<Self>) {
         let weak = cx.entity().downgrade();
         let root = build_tree(&self.frame, &self.events, &weak);
-        self.view.update(cx, |view, cx| view.set_root(root, cx));
+        self.view
+            .update(cx, |view, cx| view.set_root(root, cx))
+            .expect("Host-owned frame should reconcile atomically");
     }
 }
 

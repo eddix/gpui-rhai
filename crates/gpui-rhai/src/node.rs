@@ -6,13 +6,13 @@ use rhai::{
 };
 
 use crate::{
-    AnimationSpec, AssetId, CalendarMetadata, ChoiceBehavior, DatePickerNodeSpec, DatePickerPreset,
-    DropdownMode, DropdownNodeSpec, DropdownOption, DropdownState, GregorianDate, HostCallback,
-    NumberMetadata, OpaqueHandle, OverlayId, OverlayKind, OverlayPlacement, PrimitiveNode,
-    ScriptCallback, ScriptGeneration, SelectNodeSpec, Style, TableAlign, TableCellFormat,
-    TableColumnSpec, TableColumnWidth, TableNodeSpec, TableRowSpec, TableSelectionMode, TableSort,
-    TableSortDirection, ToastHostSpec, ToastItemSpec, ToastRegion, ToastVariant, UiEventHandler,
-    UiValue, VirtualListItem, VirtualListNodeSpec,
+    AnimationSpec, AssetId, CalendarMetadata, ChoiceBehavior, ComponentInstancePath,
+    DatePickerNodeSpec, DatePickerPreset, DropdownMode, DropdownNodeSpec, DropdownOption,
+    DropdownState, GregorianDate, HostCallback, NumberMetadata, OpaqueHandle, OverlayId,
+    OverlayKind, OverlayPlacement, PrimitiveNode, ScriptCallback, ScriptGeneration, SelectNodeSpec,
+    Style, TableAlign, TableCellFormat, TableColumnSpec, TableColumnWidth, TableNodeSpec,
+    TableRowSpec, TableSelectionMode, TableSort, TableSortDirection, ToastHostSpec, ToastItemSpec,
+    ToastRegion, ToastVariant, UiEventHandler, UiValue, VirtualListItem, VirtualListNodeSpec,
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -116,6 +116,25 @@ pub enum UiNodeKind {
     },
 }
 
+/// Stable discriminant used by retained reconciliation without exposing GPUI
+/// element types or borrowing a complete [`UiNodeKind`] payload.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum UiNodeKindTag {
+    Text,
+    Container,
+    Custom,
+    Image,
+    DirectionalImage,
+    Overlay,
+    Dropdown,
+    Select,
+    DatePicker,
+    Table,
+    ToastHost,
+    VirtualList,
+    ErrorBoundary,
+}
+
 /// A stable declarative UI node. Script-produced nodes contain no GPUI values
 /// or lifetimes; trusted Rust Hosts may attach opaque foreground callbacks.
 #[derive(Clone, Debug, PartialEq)]
@@ -125,6 +144,7 @@ pub struct UiNode {
     style: Style,
     part_styles: BTreeMap<String, Style>,
     source: Option<SourceLocation>,
+    component_root: Option<ComponentInstancePath>,
     attributes: BTreeMap<String, UiValue>,
     handlers: BTreeMap<String, UiEventHandler>,
     handler_payloads: BTreeMap<String, UiValue>,
@@ -140,6 +160,7 @@ impl UiNode {
             style: Style::new(),
             part_styles: BTreeMap::new(),
             source: None,
+            component_root: None,
             attributes: BTreeMap::new(),
             handlers: BTreeMap::new(),
             handler_payloads: BTreeMap::new(),
@@ -155,6 +176,7 @@ impl UiNode {
             style: Style::new(),
             part_styles: BTreeMap::new(),
             source: None,
+            component_root: None,
             attributes: BTreeMap::new(),
             handlers: BTreeMap::new(),
             handler_payloads: BTreeMap::new(),
@@ -180,6 +202,7 @@ impl UiNode {
             style: Style::new(),
             part_styles: BTreeMap::new(),
             source: None,
+            component_root: None,
             attributes: BTreeMap::new(),
             handlers: BTreeMap::new(),
             handler_payloads: BTreeMap::new(),
@@ -198,6 +221,7 @@ impl UiNode {
             style: Style::new(),
             part_styles: BTreeMap::new(),
             source: None,
+            component_root: None,
             attributes: BTreeMap::new(),
             handlers: BTreeMap::new(),
             handler_payloads: BTreeMap::new(),
@@ -222,6 +246,7 @@ impl UiNode {
             style: Style::new(),
             part_styles: BTreeMap::new(),
             source: None,
+            component_root: None,
             attributes: BTreeMap::new(),
             handlers: BTreeMap::new(),
             handler_payloads: BTreeMap::new(),
@@ -258,6 +283,7 @@ impl UiNode {
             style: Style::new(),
             part_styles: BTreeMap::new(),
             source: None,
+            component_root: None,
             attributes: BTreeMap::new(),
             handlers: BTreeMap::new(),
             handler_payloads: BTreeMap::new(),
@@ -277,6 +303,7 @@ impl UiNode {
             style: Style::new(),
             part_styles: BTreeMap::new(),
             source: None,
+            component_root: None,
             attributes: BTreeMap::new(),
             handlers: BTreeMap::new(),
             handler_payloads: BTreeMap::new(),
@@ -293,6 +320,7 @@ impl UiNode {
             style: Style::new(),
             part_styles: BTreeMap::new(),
             source: None,
+            component_root: None,
             attributes: BTreeMap::new(),
             handlers: BTreeMap::new(),
             handler_payloads: BTreeMap::new(),
@@ -316,6 +344,7 @@ impl UiNode {
             style: Style::new(),
             part_styles: BTreeMap::new(),
             source: None,
+            component_root: None,
             attributes,
             handlers: BTreeMap::new(),
             handler_payloads: BTreeMap::new(),
@@ -355,6 +384,7 @@ impl UiNode {
             style: Style::new(),
             part_styles: BTreeMap::new(),
             source: None,
+            component_root: None,
             attributes,
             handlers: BTreeMap::new(),
             handler_payloads: BTreeMap::new(),
@@ -384,6 +414,7 @@ impl UiNode {
             style: Style::new(),
             part_styles: BTreeMap::new(),
             source: None,
+            component_root: None,
             attributes,
             handlers: BTreeMap::new(),
             handler_payloads: BTreeMap::new(),
@@ -400,6 +431,7 @@ impl UiNode {
             style: Style::new(),
             part_styles: BTreeMap::new(),
             source: None,
+            component_root: None,
             attributes: BTreeMap::new(),
             handlers: BTreeMap::new(),
             handler_payloads: BTreeMap::new(),
@@ -416,6 +448,7 @@ impl UiNode {
             style: Style::new(),
             part_styles: BTreeMap::new(),
             source: None,
+            component_root: None,
             attributes: BTreeMap::new(),
             handlers: BTreeMap::new(),
             handler_payloads: BTreeMap::new(),
@@ -451,6 +484,107 @@ impl UiNode {
     pub fn with_source(mut self, source: SourceLocation) -> Self {
         self.source = Some(source);
         self
+    }
+
+    pub(crate) fn with_component_root(mut self, component: ComponentInstancePath) -> Self {
+        self.component_root = Some(component);
+        self
+    }
+
+    #[must_use]
+    pub fn component_root(&self) -> Option<&ComponentInstancePath> {
+        self.component_root.as_ref()
+    }
+
+    pub(crate) fn replace_component_subtree(
+        &mut self,
+        component: &ComponentInstancePath,
+        replacement: Self,
+    ) -> bool {
+        if self.component_root.as_ref() == Some(component) {
+            *self = replacement;
+            return true;
+        }
+        match &mut self.kind {
+            UiNodeKind::Container { children } => {
+                replace_in_nodes(children.iter_mut(), component, &replacement)
+            }
+            UiNodeKind::Custom { primitive } => {
+                for (_, value) in primitive.props.iter_mut() {
+                    match value {
+                        crate::PrimitiveValue::Node(node) => {
+                            if node.replace_component_subtree(component, replacement.clone()) {
+                                return true;
+                            }
+                        }
+                        crate::PrimitiveValue::Nodes(nodes) => {
+                            if replace_in_nodes(nodes.iter_mut(), component, &replacement) {
+                                return true;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                false
+            }
+            UiNodeKind::Overlay {
+                trigger, content, ..
+            }
+            | UiNodeKind::ErrorBoundary {
+                child: trigger,
+                fallback: content,
+            } => {
+                trigger.replace_component_subtree(component, replacement.clone())
+                    || content.replace_component_subtree(component, replacement)
+            }
+            UiNodeKind::Dropdown { spec } => replace_in_optional_nodes(
+                [
+                    &mut spec.trigger_slot,
+                    &mut spec.header_slot,
+                    &mut spec.footer_slot,
+                    &mut spec.empty_slot,
+                ],
+                component,
+                &replacement,
+            ),
+            UiNodeKind::Select { spec } => replace_in_optional_nodes(
+                [
+                    &mut spec.choice.trigger_slot,
+                    &mut spec.choice.header_slot,
+                    &mut spec.choice.footer_slot,
+                    &mut spec.choice.empty_slot,
+                ],
+                component,
+                &replacement,
+            ),
+            UiNodeKind::Table { spec } => {
+                for column in &mut spec.columns {
+                    if let Some(cells) = &mut column.custom_cells
+                        && replace_in_nodes(cells.iter_mut(), component, &replacement)
+                    {
+                        return true;
+                    }
+                }
+                if replace_in_optional_nodes(
+                    [&mut spec.loading_slot, &mut spec.empty_slot],
+                    component,
+                    &replacement,
+                ) {
+                    return true;
+                }
+                replace_in_nodes(spec.loading_rows.iter_mut(), component, &replacement)
+            }
+            UiNodeKind::VirtualList { spec } => replace_in_nodes(
+                spec.items.iter_mut().map(|item| &mut item.node),
+                component,
+                &replacement,
+            ),
+            UiNodeKind::Text { .. }
+            | UiNodeKind::Image { .. }
+            | UiNodeKind::DirectionalImage { .. }
+            | UiNodeKind::DatePicker { .. }
+            | UiNodeKind::ToastHost { .. } => false,
+        }
     }
 
     #[must_use]
@@ -574,13 +708,13 @@ impl UiNode {
         &mut self,
         component: &crate::ComponentInstancePath,
         events: &BTreeMap<String, crate::EventSchema>,
-        native_context: Option<&crate::engine::ScriptNativeContext>,
+        native_context: Option<&crate::invocation::ScriptInvocationContext>,
     ) {
         for handler in self.handlers.values_mut() {
             if let Some(callback) = handler.as_script_mut() {
                 callback.bind_component_if_unset(component.clone(), events.clone());
                 if let Some(context) = native_context {
-                    callback.bind_native_context_if_unset(std::rc::Rc::clone(context));
+                    callback.bind_native_context_if_unset(context.clone());
                 }
             }
         }
@@ -654,7 +788,7 @@ impl UiNode {
         names: &BTreeSet<String>,
         component: &crate::ComponentInstancePath,
         events: &BTreeMap<String, crate::EventSchema>,
-        native_context: Option<&crate::engine::ScriptNativeContext>,
+        native_context: Option<&crate::invocation::ScriptInvocationContext>,
     ) {
         for handler in self.handlers.values_mut() {
             if let Some(callback) = handler.as_script_mut()
@@ -662,7 +796,7 @@ impl UiNode {
             {
                 callback.bind_component_if_unset(component.clone(), events.clone());
                 if let (Some(context), None) = (native_context, callback.native_context()) {
-                    callback.bind_native_context_if_unset(std::rc::Rc::clone(context));
+                    callback.bind_native_context_if_unset(context.clone());
                 }
             }
         }
@@ -738,6 +872,98 @@ impl UiNode {
     }
 
     #[must_use]
+    pub const fn kind_tag(&self) -> UiNodeKindTag {
+        match self.kind {
+            UiNodeKind::Text { .. } => UiNodeKindTag::Text,
+            UiNodeKind::Container { .. } => UiNodeKindTag::Container,
+            UiNodeKind::Custom { .. } => UiNodeKindTag::Custom,
+            UiNodeKind::Image { .. } => UiNodeKindTag::Image,
+            UiNodeKind::DirectionalImage { .. } => UiNodeKindTag::DirectionalImage,
+            UiNodeKind::Overlay { .. } => UiNodeKindTag::Overlay,
+            UiNodeKind::Dropdown { .. } => UiNodeKindTag::Dropdown,
+            UiNodeKind::Select { .. } => UiNodeKindTag::Select,
+            UiNodeKind::DatePicker { .. } => UiNodeKindTag::DatePicker,
+            UiNodeKind::Table { .. } => UiNodeKindTag::Table,
+            UiNodeKind::ToastHost { .. } => UiNodeKindTag::ToastHost,
+            UiNodeKind::VirtualList { .. } => UiNodeKindTag::VirtualList,
+            UiNodeKind::ErrorBoundary { .. } => UiNodeKindTag::ErrorBoundary,
+        }
+    }
+
+    pub(crate) fn retained_child_groups(&self) -> Vec<(String, Vec<&Self>)> {
+        match &self.kind {
+            UiNodeKind::Container { children } => {
+                vec![("children".to_owned(), children.iter().collect())]
+            }
+            UiNodeKind::Custom { primitive } => primitive
+                .props
+                .iter()
+                .filter_map(|(name, value)| match value {
+                    crate::PrimitiveValue::Node(node) => {
+                        Some((format!("prop:{name}"), vec![node.as_ref()]))
+                    }
+                    crate::PrimitiveValue::Nodes(nodes) => {
+                        Some((format!("prop:{name}"), nodes.iter().collect::<Vec<_>>()))
+                    }
+                    crate::PrimitiveValue::Data(_)
+                    | crate::PrimitiveValue::Callback(_)
+                    | crate::PrimitiveValue::Style(_)
+                    | crate::PrimitiveValue::Length(_)
+                    | crate::PrimitiveValue::Asset(_) => None,
+                })
+                .collect(),
+            UiNodeKind::Overlay {
+                trigger, content, ..
+            } => vec![
+                ("trigger".to_owned(), vec![trigger.as_ref()]),
+                ("content".to_owned(), vec![content.as_ref()]),
+            ],
+            UiNodeKind::Dropdown { spec } => dropdown_child_groups(spec),
+            UiNodeKind::Select { spec } => dropdown_child_groups(&spec.choice),
+            UiNodeKind::Table { spec } => {
+                let mut groups = spec
+                    .columns
+                    .iter()
+                    .filter_map(|column| {
+                        column.custom_cells.as_ref().map(|cells| {
+                            (
+                                format!("column:{}:cells", column.key),
+                                cells.iter().collect::<Vec<_>>(),
+                            )
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                if let Some(slot) = spec.loading_slot.as_deref() {
+                    groups.push(("loading-slot".to_owned(), vec![slot]));
+                }
+                if !spec.loading_rows.is_empty() {
+                    groups.push((
+                        "loading-rows".to_owned(),
+                        spec.loading_rows.iter().collect(),
+                    ));
+                }
+                if let Some(slot) = spec.empty_slot.as_deref() {
+                    groups.push(("empty-slot".to_owned(), vec![slot]));
+                }
+                groups
+            }
+            UiNodeKind::VirtualList { spec } => vec![(
+                "items".to_owned(),
+                spec.items.iter().map(|item| &item.node).collect(),
+            )],
+            UiNodeKind::ErrorBoundary { child, fallback } => vec![
+                ("child".to_owned(), vec![child.as_ref()]),
+                ("fallback".to_owned(), vec![fallback.as_ref()]),
+            ],
+            UiNodeKind::Text { .. }
+            | UiNodeKind::Image { .. }
+            | UiNodeKind::DirectionalImage { .. }
+            | UiNodeKind::DatePicker { .. }
+            | UiNodeKind::ToastHost { .. } => Vec::new(),
+        }
+    }
+
+    #[must_use]
     pub fn key(&self) -> Option<&NodeKey> {
         self.key.as_ref()
     }
@@ -769,6 +995,43 @@ impl UiNode {
     }
 }
 
+fn replace_in_nodes<'a>(
+    nodes: impl IntoIterator<Item = &'a mut UiNode>,
+    component: &ComponentInstancePath,
+    replacement: &UiNode,
+) -> bool {
+    for node in nodes {
+        if node.replace_component_subtree(component, replacement.clone()) {
+            return true;
+        }
+    }
+    false
+}
+
+fn replace_in_optional_nodes<const N: usize>(
+    nodes: [&mut Option<Box<UiNode>>; N],
+    component: &ComponentInstancePath,
+    replacement: &UiNode,
+) -> bool {
+    replace_in_nodes(
+        nodes.into_iter().filter_map(Option::as_deref_mut),
+        component,
+        replacement,
+    )
+}
+
+fn dropdown_child_groups(spec: &DropdownNodeSpec) -> Vec<(String, Vec<&UiNode>)> {
+    [
+        ("trigger-slot", spec.trigger_slot.as_deref()),
+        ("header-slot", spec.header_slot.as_deref()),
+        ("footer-slot", spec.footer_slot.as_deref()),
+        ("empty-slot", spec.empty_slot.as_deref()),
+    ]
+    .into_iter()
+    .filter_map(|(name, node)| node.map(|node| (name.to_owned(), vec![node])))
+    .collect()
+}
+
 impl CustomType for UiNode {
     fn build(mut builder: TypeBuilder<Self>) {
         builder
@@ -785,12 +1048,14 @@ impl CustomType for UiNode {
                     node.clone().with_part_style(part.to_string(), style)
                 },
             )
-            .with_fn("on_click", |node: &mut Self, callback: FnPtr| {
-                node.clone().with_handler(
-                    "click",
-                    ScriptCallback::from_fn_ptr(callback, ScriptGeneration::default()),
-                )
-            })
+            .with_fn(
+                "on_click",
+                |node: &mut Self, callback: FnPtr| -> Result<Self, Box<EvalAltResult>> {
+                    Ok(node
+                        .clone()
+                        .with_handler("click", retained_script_callback(callback)?))
+                },
+            )
             .with_fn(
                 "on_click_value",
                 |node: &mut Self,
@@ -805,10 +1070,7 @@ impl CustomType for UiNode {
                     })?;
                     Ok(node
                         .clone()
-                        .with_handler(
-                            "click",
-                            ScriptCallback::from_fn_ptr(callback, ScriptGeneration::default()),
-                        )
+                        .with_handler("click", retained_script_callback(callback)?)
                         .with_handler_payload("click", payload))
                 },
             );
@@ -852,10 +1114,7 @@ impl CustomType for UiNode {
                     let event = format!("key:{key}");
                     Ok(node
                         .clone()
-                        .with_handler(
-                            event.clone(),
-                            ScriptCallback::from_fn_ptr(callback, ScriptGeneration::default()),
-                        )
+                        .with_handler(event.clone(), retained_script_callback(callback)?)
                         .with_handler_payload(event, payload))
                 },
             );
@@ -874,13 +1133,24 @@ fn register_semantic_event_methods(builder: &mut TypeBuilder<UiNode>) {
         ("on_row_click", "row_click"),
     ] {
         let event = event.to_owned();
-        builder.with_fn(method, move |node: &mut UiNode, callback: FnPtr| {
-            node.clone().with_handler(
-                event.clone(),
-                ScriptCallback::from_fn_ptr(callback, ScriptGeneration::default()),
-            )
-        });
+        builder.with_fn(
+            method,
+            move |node: &mut UiNode, callback: FnPtr| -> Result<UiNode, Box<EvalAltResult>> {
+                Ok(node
+                    .clone()
+                    .with_handler(event.clone(), retained_script_callback(callback)?))
+            },
+        );
     }
+}
+
+fn retained_script_callback(callback: FnPtr) -> Result<ScriptCallback, Box<EvalAltResult>> {
+    ScriptCallback::try_from_fn_ptr(callback, ScriptGeneration::default()).map_err(|error| {
+        Box::new(EvalAltResult::ErrorRuntime(
+            error.to_string().into(),
+            Position::NONE,
+        ))
+    })
 }
 
 fn register_accessibility_methods(builder: &mut TypeBuilder<UiNode>) {

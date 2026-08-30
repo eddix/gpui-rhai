@@ -18,7 +18,7 @@
 // State: controlled props or keyed native state.
 // Example: Dropdown(#{ key: "country", options: options, selected: ["uk"], on_change: Fn("changed") })
 
-export_component(#{
+define_component(#{
     metadata: #{
         id: "components/dropdown",
         "export": "Dropdown",
@@ -202,15 +202,14 @@ export_component(#{
             "panel", "search", "list", "group", "option", "option_selected",
             "option_disabled", "empty"],
     },
+    render: Fn("render_Dropdown")
 });
 
 fn prop_or(props, name, fallback) {
     if name in props { props[name] } else { fallback }
 }
 
-fn Dropdown(props) {
-    component_render("components/dropdown", props, Fn("render_Dropdown"))
-}
+fn Dropdown(props) { render_component("components/dropdown", props) }
 fn render_Dropdown(ctx, props) {
     let config = #{
         id: props.key,

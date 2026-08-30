@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
 use rhai::Dynamic;
@@ -28,6 +28,7 @@ pub struct ScriptLifecycle {
     events: BTreeMap<String, EventSchema>,
     state: LifecycleState,
     root: Option<UiNode>,
+    retained: crate::RetainedUiTree,
 }
 
 impl ScriptLifecycle {
@@ -64,6 +65,7 @@ impl ScriptLifecycle {
             events,
             state: LifecycleState::Created,
             root: None,
+            retained: crate::RetainedUiTree::new(),
         })
     }
 
@@ -75,6 +77,11 @@ impl ScriptLifecycle {
     #[must_use]
     pub fn root(&self) -> Option<&UiNode> {
         self.root.as_ref()
+    }
+
+    #[must_use]
+    pub const fn retained(&self) -> &crate::RetainedUiTree {
+        &self.retained
     }
 
     #[must_use]
@@ -125,9 +132,79 @@ impl ScriptLifecycle {
         }
         let context = self.context(ExecutionPhase::Render);
         let root = engine.render_with_context(&self.compiled, context)?;
+        let mut retained = self.retained.clone();
+        retained.reconcile(root.clone())?;
         self.reconcile_animations(&root)?;
+        self.retained = retained;
         self.state = LifecycleState::Running;
         Ok(self.root.insert(root))
+    }
+
+    /// Rerender only the topmost dirty formal component subtrees.
+    ///
+    /// Falls back to a complete root render when the root itself is dirty or a
+    /// component has no active invocation recipe.
+    ///
+    /// # Errors
+    ///
+    /// Returns component invocation, script evaluation, reconciliation, or
+    /// runtime-state rollback errors.
+    pub fn render_dirty(&mut self, engine: &mut RuntimeEngine) -> Result<bool, LifecycleError> {
+        let dirty = self
+            .runtime
+            .try_borrow_mut()
+            .map_err(|_| LifecycleError::Borrowed)?
+            .take_window_dirty_components(&self.root_path);
+        if dirty.is_empty() {
+            return Ok(false);
+        }
+        let dirty = topmost_paths(&dirty);
+        if dirty.iter().any(|path| path == &self.root_path)
+            || dirty.iter().any(|path| {
+                engine
+                    .component_invocations()
+                    .all(|recipe| recipe.path() != path)
+            })
+        {
+            self.render(engine)?;
+            return Ok(true);
+        }
+
+        let runtime_snapshot = self
+            .runtime
+            .try_borrow()
+            .map_err(|_| LifecycleError::Borrowed)?
+            .snapshot()?;
+        let invocation_snapshot = engine.component_invocation_snapshot();
+        let mut root = self.root.clone().ok_or(LifecycleError::MissingRoot)?;
+        let mut retained = self.retained.clone();
+        let result = (|| {
+            for path in dirty {
+                let subtree = engine.rerender_component(&path)?;
+                if !root.replace_component_subtree(&path, subtree) {
+                    return Err(LifecycleError::MissingComponentSubtree(path));
+                }
+            }
+            retained.reconcile(root.clone())?;
+            self.reconcile_animations(&root)?;
+            Ok(())
+        })();
+        match result {
+            Ok(()) => {
+                self.root = Some(root);
+                self.retained = retained;
+                self.state = LifecycleState::Running;
+                Ok(true)
+            }
+            Err(error) => {
+                self.runtime
+                    .try_borrow_mut()
+                    .map_err(|_| LifecycleError::Borrowed)?
+                    .restore(runtime_snapshot)?;
+                engine.restore_component_invocations(invocation_snapshot);
+                Err(error)
+            }
+        }
     }
 
     /// Run optional `dispose(ctx)` once and make the lifecycle terminal.
@@ -323,7 +400,7 @@ impl ScriptLifecycle {
                 .component_state
                 .mount_instance(self.root_path.clone(), state_schema)?;
         }
-        let result: Result<UiNode, LifecycleError> = (|| {
+        let result: Result<(UiNode, crate::RetainedUiTree), LifecycleError> = (|| {
             engine.call_optional_lifecycle(
                 &candidate,
                 "init",
@@ -333,12 +410,15 @@ impl ScriptLifecycle {
                 &candidate,
                 self.context_for(ExecutionPhase::Render, candidate.generation()),
             )?;
+            let mut retained = self.retained.clone();
+            retained.reconcile(root.clone())?;
             self.reconcile_animations(&root)?;
-            Ok(root)
+            Ok((root, retained))
         })();
         match result {
-            Ok(root) => {
+            Ok((root, retained)) => {
                 self.compiled = candidate;
+                self.retained = retained;
                 self.state = LifecycleState::Running;
                 Ok(self.root.insert(root))
             }
@@ -450,7 +530,25 @@ pub enum LifecycleError {
     #[error(transparent)]
     Animation(#[from] AnimationError),
     #[error(transparent)]
+    Reconcile(#[from] crate::ReconcileError),
+    #[error("script lifecycle has no accepted root")]
+    MissingRoot,
+    #[error("component subtree `{0}` is missing from the accepted UiNode snapshot")]
+    MissingComponentSubtree(ComponentInstancePath),
+    #[error(transparent)]
     Asset(#[from] crate::AssetError),
+}
+
+fn topmost_paths(paths: &BTreeSet<ComponentInstancePath>) -> Vec<ComponentInstancePath> {
+    paths
+        .iter()
+        .filter(|path| {
+            !paths
+                .iter()
+                .any(|candidate| *path != candidate && path.is_within(candidate))
+        })
+        .cloned()
+        .collect()
 }
 
 #[cfg(test)]

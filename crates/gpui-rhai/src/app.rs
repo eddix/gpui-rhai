@@ -813,6 +813,7 @@ impl FileScriptView {
         let compiled =
             engine.compile_self_contained_named(&self.entry.to_string_lossy(), &source)?;
         let component_exports = engine.component_exports()?;
+        let component_renderers = engine.component_renderer_snapshot()?;
         manifest.validate_components(&component_exports)?;
         let state_schema = engine.root_state_schema(&compiled)?;
         let mut runtime_state = UiRuntimeState::new();
@@ -838,6 +839,7 @@ impl FileScriptView {
             compiled: compiled.clone(),
             state_schema: state_schema.clone(),
             component_exports,
+            component_renderers,
         };
         let factory = Rc::new(ScriptWindowFactory {
             program: RefCell::new(program),
@@ -983,6 +985,7 @@ impl EmbeddedScriptView {
         engine.set_module_resolver(RestrictedModuleResolver::from_source(&self.scripts)?);
         let compiled = engine.compile_self_contained_named(self.entry.as_str(), &entry.source)?;
         let component_exports = engine.component_exports()?;
+        let component_renderers = engine.component_renderer_snapshot()?;
         self.manifest.validate_components(&component_exports)?;
         let state_schema = engine.root_state_schema(&compiled)?;
         let mut runtime_state = UiRuntimeState::new();
@@ -1008,6 +1011,7 @@ impl EmbeddedScriptView {
             compiled: compiled.clone(),
             state_schema: state_schema.clone(),
             component_exports,
+            component_renderers,
         };
         let factory = Rc::new(ScriptWindowFactory {
             program: RefCell::new(program),
@@ -1341,6 +1345,7 @@ struct WindowProgram {
     compiled: CompiledUi,
     state_schema: ComponentStateSchema,
     component_exports: ComponentRegistry,
+    component_renderers: BTreeMap<ModuleId, crate::engine::RegisteredComponentRender>,
 }
 
 struct ScriptWindowFactory {
@@ -1365,6 +1370,9 @@ impl ScriptWindowFactory {
         let program = self.program.borrow().clone();
         engine
             .restore_component_exports(program.component_exports.clone())
+            .map_err(|error| error.to_string())?;
+        engine
+            .restore_component_renderers(program.component_renderers.clone())
             .map_err(|error| error.to_string())?;
         let lifecycle = self.mount_lifecycle(
             &mut engine,
@@ -1419,11 +1427,13 @@ impl ScriptWindowFactory {
         compiled: CompiledUi,
         state_schema: ComponentStateSchema,
         component_exports: ComponentRegistry,
+        component_renderers: BTreeMap<ModuleId, crate::engine::RegisteredComponentRender>,
     ) {
         *self.program.borrow_mut() = WindowProgram {
             compiled,
             state_schema,
             component_exports,
+            component_renderers,
         };
     }
 
@@ -1955,6 +1965,11 @@ struct ScriptHostView {
     _reload_task: Option<Task<()>>,
 }
 
+struct ScriptViewTransaction {
+    runtime: crate::UiStateSnapshot,
+    invocations: BTreeMap<ComponentInstancePath, crate::ComponentInvocationRecipe>,
+}
+
 fn handle_tab_navigation(event: &gpui::KeyDownEvent, window: &mut Window, cx: &mut App) {
     if event.keystroke.key.as_str() == "tab" {
         if event.keystroke.modifiers.shift {
@@ -2044,11 +2059,11 @@ impl Render for ScriptHostView {
             root_path: &animation_root,
             view_id: &self.view_id,
         };
-        let content = self.lifecycle.root().map_or_else(
+        let content = self.lifecycle.retained().root().map_or_else(
             || div().child("Script view has no root").into_any_element(),
-            |root| {
-                GpuiNodeRenderer::render_with_window_runtime(
-                    root,
+            |_| {
+                GpuiNodeRenderer::render_retained_with_window_runtime(
+                    self.lifecycle.retained(),
                     &theme,
                     &InteractionState::default(),
                     &self.primitives,
@@ -2262,7 +2277,7 @@ impl ScriptHostView {
             .and_then(|_| self.invoke_pending_effects().map(|_| ()))
             .and_then(|()| {
                 self.lifecycle
-                    .render(&mut self.engine)
+                    .render_dirty(&mut self.engine)
                     .map(|_| ())
                     .map_err(|error| error.to_string())
             });
@@ -2391,33 +2406,36 @@ impl ScriptHostView {
                 false,
             );
         }
-        let callback_result = self
-            .lifecycle
-            .invoke_callback_transactional(&self.engine, callback, payload)
-            .map_err(|error| error.to_string());
+        let transaction = self.begin_script_transaction();
+        let callback_result = transaction.and_then(|transaction| {
+            let result = self
+                .lifecycle
+                .invoke_callback(&self.engine, callback, payload)
+                .map_err(|error| error.to_string())
+                .and_then(|value| {
+                    self.invoke_pending_effects()?;
+                    self.lifecycle
+                        .render_dirty(&mut self.engine)
+                        .map_err(|error| error.to_string())?;
+                    Ok(value)
+                });
+            match result {
+                Ok(value) => Ok(value),
+                Err(error) => {
+                    let rollback = self.rollback_script_transaction(transaction);
+                    Err(rollback.err().unwrap_or(error))
+                }
+            }
+        });
         let propagation = callback_result.as_ref().map_or(
             crate::EventPropagation::Handled,
             event_propagation_from_dynamic,
         );
-        let result = callback_result
-            .map(|_| ())
-            .and_then(|()| self.invoke_pending_effects().map(|_| ()))
-            .and_then(|()| {
-                self.lifecycle
-                    .render(&mut self.engine)
-                    .map(|_| ())
-                    .map_err(|error| error.to_string())
-            });
-        let succeeded = result.is_ok();
-        match result {
-            Ok(()) => self.last_error = None,
+        let succeeded = callback_result.is_ok();
+        match callback_result {
+            Ok(_) => self.last_error = None,
             Err(error) => self.last_error = Some(error),
         }
-        let root = self.lifecycle.root_path().clone();
-        self.lifecycle
-            .runtime()
-            .borrow_mut()
-            .take_window_dirty(&root);
         self.process_window_commands(cx);
         self.collect_timings();
         cx.notify();
@@ -2426,6 +2444,35 @@ impl ScriptHostView {
         } else {
             crate::EventPropagation::Handled
         }
+    }
+
+    fn begin_script_transaction(&self) -> Result<ScriptViewTransaction, String> {
+        let runtime = self
+            .lifecycle
+            .runtime()
+            .try_borrow()
+            .map_err(|_| "UI runtime state is already borrowed".to_owned())?
+            .snapshot()
+            .map_err(|error| error.to_string())?;
+        Ok(ScriptViewTransaction {
+            runtime,
+            invocations: self.engine.component_invocation_snapshot(),
+        })
+    }
+
+    fn rollback_script_transaction(
+        &mut self,
+        transaction: ScriptViewTransaction,
+    ) -> Result<(), String> {
+        self.lifecycle
+            .runtime()
+            .try_borrow_mut()
+            .map_err(|_| "UI runtime state is already borrowed".to_owned())?
+            .restore(transaction.runtime)
+            .map_err(|error| error.to_string())?;
+        self.engine
+            .restore_component_invocations(transaction.invocations);
+        Ok(())
     }
 
     fn collect_timings(&mut self) {
@@ -2462,7 +2509,7 @@ impl ScriptHostView {
             (
                 deliveries,
                 frame.needs_frame || !frame.values.is_empty(),
-                runtime.take_window_dirty(&root),
+                runtime.has_window_dirty(&root),
             )
         };
         if deliveries.is_empty() && !animation_active && !dirty && !initial_effects {
@@ -2487,7 +2534,7 @@ impl ScriptHostView {
             error = Some(action_error);
         }
         if error.is_none()
-            && let Err(render_error) = self.lifecycle.render(&mut self.engine)
+            && let Err(render_error) = self.lifecycle.render_dirty(&mut self.engine)
         {
             error = Some(render_error.to_string());
         }
@@ -2642,6 +2689,10 @@ impl ScriptHostView {
             .engine
             .component_exports()
             .map_err(|error| error.to_string())?;
+        let previous_renderers = self
+            .engine
+            .component_renderer_snapshot()
+            .map_err(|error| error.to_string())?;
         self.engine
             .clear_component_exports()
             .map_err(|error| error.to_string())?;
@@ -2662,6 +2713,10 @@ impl ScriptHostView {
                     .engine
                     .component_exports()
                     .map_err(|error| error.to_string())?;
+                let program_renderers = self
+                    .engine
+                    .component_renderer_snapshot()
+                    .map_err(|error| error.to_string())?;
                 self.lifecycle
                     .reload(&mut self.engine, candidate, &state_schema)
                     .map(|_| {
@@ -2669,6 +2724,7 @@ impl ScriptHostView {
                             program_compiled,
                             program_schema,
                             program_exports,
+                            program_renderers,
                         );
                     })
                     .map_err(|error| error.to_string())
@@ -2676,6 +2732,9 @@ impl ScriptHostView {
         if result.is_err() {
             self.engine
                 .restore_component_exports(previous_exports)
+                .map_err(|error| error.to_string())?;
+            self.engine
+                .restore_component_renderers(previous_renderers)
                 .map_err(|error| error.to_string())?;
         }
         if result.is_ok() {
@@ -3094,15 +3153,14 @@ mod tests {
   "assets": ["icons/check.svg"]
 }
 */
-export_component(#{
+define_component(#{
     metadata: #{ id: "components/declarative_icon", "export": "DeclarativeIcon",
         version: "0.1.0", runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
         dependencies: [], capabilities: #{}, assets: ["icons/check.svg"] },
-    schema: #{ props: #{}, state: #{ fields: #{} }, events: #{}, slots: #{}, parts: ["root"] }
+    schema: #{ props: #{}, state: #{ fields: #{} }, events: #{}, slots: #{}, parts: ["root"] },
+    render: Fn("render_DeclarativeIcon")
 });
-fn DeclarativeIcon(props) {
-    component_render("components/declarative_icon", props, Fn("render_DeclarativeIcon"))
-}
+fn DeclarativeIcon(props) { render_component("components/declarative_icon", props) }
 fn render_DeclarativeIcon(ctx, props) { image(asset("app/icons/check")) }
 "#
                 .to_owned(),
@@ -3159,11 +3217,12 @@ fn render_DeclarativeIcon(ctx, props) { image(asset("app/icons/check")) }
   "dependencies": [], "capabilities": {}, "assets": ["icons/missing.svg"]
 }
 */
-export_component(#{ metadata: #{ id: "components/missing_asset", "export": "MissingAsset",
+define_component(#{ metadata: #{ id: "components/missing_asset", "export": "MissingAsset",
     version: "0.1.0", runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
     dependencies: [], capabilities: #{}, assets: ["icons/missing.svg"] },
-    schema: #{ props: #{}, state: #{ fields: #{} }, events: #{}, slots: #{}, parts: ["root"] } });
-fn MissingAsset(props) { component_render("components/missing_asset", props, Fn("render_MissingAsset")) }
+    schema: #{ props: #{}, state: #{ fields: #{} }, events: #{}, slots: #{}, parts: ["root"] },
+    render: Fn("render_MissingAsset") });
+fn MissingAsset(props) { render_component("components/missing_asset", props) }
 fn render_MissingAsset(ctx, props) { image(asset("app/icons/missing")) }
 "#
                 .to_owned(),

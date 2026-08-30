@@ -20,7 +20,7 @@ import "components/button" as button;
 import "components/icon" as icon;
 import "components/select" as select;
 
-export_component(#{
+define_component(#{
     metadata: #{ id: "components/pagination", "export": "Pagination", version: "0.1.0",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
         dependencies: ["components/button", "components/icon", "components/select"], capabilities: #{},
@@ -51,6 +51,7 @@ export_component(#{
         slots: #{},
         parts: ["root", "summary", "controls", "previous", "next", "page", "page_current", "ellipsis", "page_size", "page_size_label"],
     },
+    render: Fn("render_Pagination")
 });
 
 fn prop_or(props, name, fallback) {
@@ -110,9 +111,7 @@ fn page_button(props, page, current, size, callback) {
     else { node.on_click_value(Fn("pagination_emit"), #{ current_page: page, page_size: props.page_size }) }
 }
 
-fn Pagination(props) {
-    component_render("components/pagination", props, Fn("render_Pagination"))
-}
+fn Pagination(props) { render_component("components/pagination", props) }
 fn render_Pagination(ctx, props) {
     if props.key == "" { throw "Pagination key cannot be empty"; }
     let pages = total_pages(props.total_items, props.page_size);

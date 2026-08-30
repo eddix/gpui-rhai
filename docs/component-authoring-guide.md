@@ -3,7 +3,7 @@
 An official or application component is a Rhai module with three parts:
 
 1. a structured `/* gpui-rhai ... */` JSON header;
-2. an `export_component` schema declaration;
+2. a `define_component` schema and render declaration;
 3. a PascalCase render function accepting one props map.
 
 Use `registry/components/label.rhai` as the smallest complete reference.
@@ -12,7 +12,7 @@ Use `registry/components/label.rhai` as the smallest complete reference.
 
 The header declares component ID, source version, runtime API range,
 dependencies, capabilities, and component-owned asset paths. The same metadata appears in
-`export_component`; `gpui-rhai check` rejects disagreement.
+`define_component`; `gpui-rhai check` rejects disagreement.
 
 Asset paths are provider-relative files under `ui/assets`, such as
 `icons/chevron_next.svg`. Component source addresses an installed asset through
@@ -45,7 +45,7 @@ and `part_styles: map<Style>` props. Route the PascalCase constructor through
 the runtime wrapper, then validate normalized props in its render function:
 
 ```rhai
-fn Counter(props) { component_render("components/counter", props, Fn("render_Counter")) }
+fn Counter(props) { render_component("components/counter", props) }
 fn render_Counter(ctx, props) {
     text(`${ctx.get_state("count")}`)
 }

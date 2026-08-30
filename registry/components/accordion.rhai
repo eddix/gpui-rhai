@@ -13,7 +13,7 @@
 // State/events: controlled expanded values; emits change(array<string>).
 // Example: Accordion(#{ key: "faq", items: items, expanded: [], on_change: Fn("changed") })
 
-export_component(#{
+define_component(#{
     metadata: #{
         id: "components/accordion", "export": "Accordion", version: "0.1.0",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 }, dependencies: [], capabilities: #{},
@@ -43,6 +43,7 @@ export_component(#{
         state: #{ fields: #{} }, events: #{ change: #{ payload: #{ type: "array", max_items: 256, items: #{ type: "string" } } } },
         slots: #{}, parts: ["root", "item", "trigger", "content"],
     },
+    render: Fn("render_Accordion")
 });
 
 fn has_value(values, key) { key in values }
@@ -58,9 +59,7 @@ fn toggled(values, key, mode) {
     }
 }
 
-fn Accordion(props) {
-    component_render("components/accordion", props, Fn("render_Accordion"))
-}
+fn Accordion(props) { render_component("components/accordion", props) }
 fn render_Accordion(ctx, props) {
     let mode = if "mode" in props { props.mode } else { "single" };
     let all_disabled = if "disabled" in props { props.disabled } else { false };

@@ -16,7 +16,7 @@
 
 import "components/divider" as divider;
 
-export_component(#{
+define_component(#{
     metadata: #{
         id: "components/menu", "export": "Menu", version: "0.1.0",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
@@ -57,6 +57,7 @@ export_component(#{
         slots: #{ trigger: #{ required: true, multiple: false } },
         parts: ["root", "trigger", "content", "item", "separator", "shortcut", "submenu"],
     },
+    render: Fn("render_Menu")
 });
 
 fn item_disabled(item) { "disabled" in item && item.disabled }
@@ -92,9 +93,7 @@ fn next_typeahead(items, value, key) {
     result
 }
 
-fn Menu(props) {
-    component_render("components/menu", props, Fn("render_Menu"))
-}
+fn Menu(props) { render_component("components/menu", props) }
 fn render_Menu(ctx, props) {
     let action = if "on_action" in props { props.on_action } else { () };
     let active_change = if "on_active_change" in props { props.on_active_change } else { () };

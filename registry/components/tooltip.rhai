@@ -14,7 +14,7 @@
 // State/events: stateless delayed overlay; emits no semantic events.
 // Example: Tooltip(#{ key: "help", trigger: text("?"), content: text("Help") })
 
-export_component(#{
+define_component(#{
     metadata: #{
         id: "components/tooltip", "export": "Tooltip", version: "0.1.0",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 }, dependencies: [], capabilities: #{},
@@ -40,11 +40,10 @@ export_component(#{
         },
         parts: ["root", "trigger", "content"],
     },
+    render: Fn("render_Tooltip")
 });
 
-fn Tooltip(props) {
-    component_render("components/tooltip", props, Fn("render_Tooltip"))
-}
+fn Tooltip(props) { render_component("components/tooltip", props) }
 fn render_Tooltip(ctx, props) {
     if "disabled" in props && props.disabled { return props.trigger; }
     let show_delay = if "show_delay_ms" in props && props.show_delay_ms > 0 { props.show_delay_ms } else { 0 };

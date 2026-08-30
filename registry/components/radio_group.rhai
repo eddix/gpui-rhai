@@ -16,7 +16,7 @@
 
 import "components/radio" as radio;
 
-export_component(#{
+define_component(#{
     metadata: #{
         id: "components/radio_group", "export": "RadioGroup", version: "0.1.0",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
@@ -61,6 +61,7 @@ export_component(#{
         events: #{ change: #{ payload: #{ type: "string" } } },
         slots: #{}, parts: ["root", "option"],
     },
+    render: Fn("render_RadioGroup")
 });
 
 fn option_disabled(option) {
@@ -88,9 +89,7 @@ fn next_value(options, value, step) {
     value
 }
 
-fn RadioGroup(props) {
-    component_render("components/radio_group", props, Fn("render_RadioGroup"))
-}
+fn RadioGroup(props) { render_component("components/radio_group", props) }
 fn render_RadioGroup(ctx, props) {
     let disabled = if "disabled" in props { props.disabled } else { false };
     let orientation = if "orientation" in props { props.orientation } else { "vertical" };

@@ -14,7 +14,7 @@
 // State: controlled by checked/indeterminate props.
 // Example: Checkbox(#{ checked: true, label: "Remember", on_change: Fn("changed") })
 
-export_component(#{
+define_component(#{
     metadata: #{
         id: "components/checkbox", "export": "Checkbox", version: "0.1.0",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
@@ -52,11 +52,10 @@ export_component(#{
         slots: #{},
         parts: ["root", "box", "mark", "label"],
     },
+    render: Fn("render_Checkbox")
 });
 
-fn Checkbox(props) {
-    component_render("components/checkbox", props, Fn("render_Checkbox"))
-}
+fn Checkbox(props) { render_component("components/checkbox", props) }
 fn render_Checkbox(ctx, props) {
     let mixed = if "indeterminate" in props { props.indeterminate } else { false };
     let disabled = if "disabled" in props { props.disabled } else { false };

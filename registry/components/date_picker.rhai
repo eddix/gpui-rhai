@@ -16,7 +16,7 @@
 // Events: change(optional<string>). State: controlled value plus keyed native calendar transients.
 // Example: DatePicker(#{ key: "appointment", value: "2026-09-01", min_date: "2026-08-30", on_change: Fn("changed") })
 
-export_component(#{
+define_component(#{
     metadata: #{
         id: "components/date_picker", "export": "DatePicker", version: "0.1.0",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
@@ -59,6 +59,7 @@ export_component(#{
         slots: #{},
         parts: ["root", "trigger", "trigger_value", "trigger_icon", "panel", "header", "previous", "next", "weekdays", "weekday", "grid", "day", "day_outside", "day_today", "day_selected", "day_disabled", "footer", "preset", "clear"],
     },
+    render: Fn("render_DatePicker")
 });
 
 fn date_picker_size(size) {
@@ -72,9 +73,7 @@ fn prop_or(props, name, fallback) {
     if name in props { props[name] } else { fallback }
 }
 
-fn DatePicker(props) {
-    component_render("components/date_picker", props, Fn("render_DatePicker"))
-}
+fn DatePicker(props) { render_component("components/date_picker", props) }
 fn render_DatePicker(ctx, props) {
     let value = if "value" in props { props.value } else { () };
     let size = prop_or(props, "size", "md");

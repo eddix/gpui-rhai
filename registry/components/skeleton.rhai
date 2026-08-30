@@ -13,7 +13,7 @@
 // State/events: stateless; Rust owns pulse frames and no events are emitted.
 // Example: Skeleton(#{ key: "avatar", width: 40, height: 40, animated: true })
 
-export_component(#{
+define_component(#{
     metadata: #{
         id: "components/skeleton", "export": "Skeleton", version: "0.1.0",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 }, dependencies: [], capabilities: #{},
@@ -30,11 +30,10 @@ export_component(#{
         },
         state: #{ fields: #{} }, events: #{}, slots: #{}, parts: ["root"],
     },
+    render: Fn("render_Skeleton")
 });
 
-fn Skeleton(props) {
-    component_render("components/skeleton", props, Fn("render_Skeleton"))
-}
+fn Skeleton(props) { render_component("components/skeleton", props) }
 fn render_Skeleton(ctx, props) {
     let width = props.width;
     let height = props.height;

@@ -14,7 +14,7 @@
 // State: controlled by the selected prop.
 // Example: Radio(#{ value: "team", selected: true, label: "Team", on_select: Fn("selected") })
 
-export_component(#{
+define_component(#{
     metadata: #{
         id: "components/radio", "export": "Radio", version: "0.1.0",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
@@ -38,11 +38,10 @@ export_component(#{
         events: #{ select: #{ payload: #{ type: "string" } } },
         slots: #{}, parts: ["root", "indicator", "label"],
     },
+    render: Fn("render_Radio")
 });
 
-fn Radio(props) {
-    component_render("components/radio", props, Fn("render_Radio"))
-}
+fn Radio(props) { render_component("components/radio", props) }
 fn render_Radio(ctx, props) {
     let disabled = if "disabled" in props { props.disabled } else { false };
     let indicator = text(if props.selected { "●" } else { "○" })

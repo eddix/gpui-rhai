@@ -15,7 +15,7 @@
 // State: native keyed TextInput Entity. Parts: root, input.
 // Example: Input(#{ key: "name", value: name, on_change: Fn("name_changed") })
 
-export_component(#{
+define_component(#{
     metadata: #{
         id: "components/input",
         "export": "Input",
@@ -90,15 +90,14 @@ export_component(#{
         slots: #{},
         parts: ["root", "input"],
     },
+    render: Fn("render_Input")
 });
 
 fn optional_prop(props, name) {
     if name in props { props[name] } else { () }
 }
 
-fn Input(props) {
-    component_render("components/input", props, Fn("render_Input"))
-}
+fn Input(props) { render_component("components/input", props) }
 fn render_Input(ctx, props) {
     let disabled = if "disabled" in props { props.disabled } else { false };
     let read_only = if "read_only" in props { props.read_only } else { false };

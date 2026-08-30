@@ -234,7 +234,7 @@ impl StateStore {
         path: &ComponentInstancePath,
         field: &str,
         value: UiValue,
-    ) -> Result<(), StateError> {
+    ) -> Result<bool, StateError> {
         let state = self
             .instances
             .get_mut(path)
@@ -254,8 +254,11 @@ impl StateStore {
                 field: field.to_owned(),
                 source,
             })?;
+        if state.values.get(field) == Some(&value) {
+            return Ok(false);
+        }
         state.values.insert(field.to_owned(), value);
-        Ok(())
+        Ok(true)
     }
 
     #[must_use]

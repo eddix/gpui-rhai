@@ -973,8 +973,8 @@ mod tests {
                 &AssetId::parse("app/pixel").unwrap(),
                 AsyncScope::Component(crate::ComponentInstancePath::root("App", "root")),
                 generation,
-                ScriptCallback::from_fn_ptr(FnPtr::new("loaded").unwrap(), generation),
-                ScriptCallback::from_fn_ptr(FnPtr::new("failed").unwrap(), generation),
+                ScriptCallback::try_from_fn_ptr(FnPtr::new("loaded").unwrap(), generation).unwrap(),
+                ScriptCallback::try_from_fn_ptr(FnPtr::new("failed").unwrap(), generation).unwrap(),
             )
             .unwrap();
         let mut deliveries = Vec::new();
@@ -1015,8 +1015,8 @@ mod tests {
                 &AssetId::parse("app/pixel").unwrap(),
                 AsyncScope::App,
                 generation,
-                ScriptCallback::from_fn_ptr(FnPtr::new("loaded").unwrap(), generation),
-                ScriptCallback::from_fn_ptr(FnPtr::new("failed").unwrap(), generation),
+                ScriptCallback::try_from_fn_ptr(FnPtr::new("loaded").unwrap(), generation).unwrap(),
+                ScriptCallback::try_from_fn_ptr(FnPtr::new("failed").unwrap(), generation).unwrap(),
             )
             .unwrap();
         assert!(registry.cancel_image_decode(handle).unwrap());

@@ -1,6 +1,6 @@
 # ADR 0012: Host callbacks on Host-owned UiNode trees
 
-Status: Accepted
+Status: Superseded in part by ADR 0015
 
 ## Context
 
@@ -52,7 +52,7 @@ A callback stored in a tree must not strongly capture the Entity that owns that
 tree. Hosts should capture channels or `WeakEntity`; gpui-rhai cannot infer or
 repair arbitrary Rust ownership cycles.
 
-## Rejected alternatives
+## Rejected alternatives at the time
 
 - Adding a Host variant to `ScriptCallback`, which would blur generation and
   transactional semantics.
@@ -70,3 +70,7 @@ repair arbitrary Rust ownership cycles.
 Protected by Host-only pointer/keyboard tests, callback-typed TextInput and
 custom-primitive tests, drop/identity/Inspector tests, existing Script callback
 generation regressions, and the `host_owned_tree` release example.
+
+ADR 0015 later adopts ordered multi-handlers and schema-checked named native
+handlers as part of the general atomic event platform. The direct Rust-owned
+`HostCallback` variant and its closure ownership rules remain valid.

@@ -1,14 +1,15 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
 
-use rhai::{Dynamic, Engine, EvalAltResult, FuncRegistration, Map, Position};
+use rhai::{Dynamic, Map};
 use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::{
-    ComponentStateSchema, ModuleId, ObjectField, RUNTIME_API_VERSION, SchemaValidationError,
-    ValueSchema,
+    AssetId, ComponentStateSchema, Length, ModuleId, ObjectField, RUNTIME_API_VERSION,
+    SchemaValidationError, ScriptCallback, ScriptGeneration, Style, UiEventHandler, UiNode,
+    UiValue, UiValueError, ValueSchema,
 };
 
 const HEADER_START: &str = "/* gpui-rhai\n";
@@ -114,7 +115,16 @@ impl ComponentDefinition {
     pub fn invoke(
         &self,
         key: Option<String>,
+        props: Map,
+    ) -> Result<ComponentInvocation, ComponentError> {
+        self.invoke_with_generation(key, props, ScriptGeneration::default())
+    }
+
+    pub(crate) fn invoke_with_generation(
+        &self,
+        key: Option<String>,
         mut props: Map,
+        generation: ScriptGeneration,
     ) -> Result<ComponentInvocation, ComponentError> {
         if !self.schema.state.is_empty() && key.is_none() {
             return Err(ComponentError::MissingKey {
@@ -150,11 +160,14 @@ impl ComponentDefinition {
             }
         }
 
+        let retained_props =
+            ComponentProps::from_validated(&self.schema.props, &props, generation)?;
         Ok(ComponentInvocation {
             component: self.metadata.id.clone(),
             export: self.metadata.export.clone(),
             key,
             props,
+            retained_props,
         })
     }
 
@@ -241,6 +254,150 @@ pub struct ComponentInvocation {
     pub export: String,
     pub key: Option<String>,
     pub props: Map,
+    pub retained_props: ComponentProps,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum ComponentPropValue {
+    Data(UiValue),
+    Array(Vec<ComponentPropValue>),
+    Map(BTreeMap<String, ComponentPropValue>),
+    Node(Box<UiNode>),
+    Nodes(Vec<UiNode>),
+    Callback(UiEventHandler),
+    Style(Box<Style>),
+    Styles(BTreeMap<String, Style>),
+    Length(Length),
+    Asset(AssetId),
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ComponentProps(BTreeMap<String, ComponentPropValue>);
+
+impl ComponentProps {
+    fn from_validated(
+        schema: &BTreeMap<String, ObjectField>,
+        props: &Map,
+        generation: ScriptGeneration,
+    ) -> Result<Self, ComponentError> {
+        let values = schema
+            .iter()
+            .filter_map(|(name, field)| {
+                props.get(name.as_str()).cloned().map(|value| {
+                    convert_component_prop(&field.schema, value, generation)
+                        .map(|value| (name.clone(), value))
+                        .map_err(|source| ComponentError::PropConversion {
+                            prop: name.clone(),
+                            source,
+                        })
+                })
+            })
+            .collect::<Result<_, _>>()?;
+        Ok(Self(values))
+    }
+
+    #[must_use]
+    pub fn get(&self, name: &str) -> Option<&ComponentPropValue> {
+        self.0.get(name)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&str, &ComponentPropValue)> {
+        self.0.iter().map(|(name, value)| (name.as_str(), value))
+    }
+}
+
+fn convert_component_prop(
+    schema: &ValueSchema,
+    value: Dynamic,
+    generation: ScriptGeneration,
+) -> Result<ComponentPropValue, ComponentPropConversionError> {
+    match schema {
+        ValueSchema::Optional { value: inner } if value.is_unit() => {
+            Ok(ComponentPropValue::Data(UiValue::Null))
+        }
+        ValueSchema::Optional { value: inner } => convert_component_prop(inner, value, generation),
+        ValueSchema::OneOf { variants } => {
+            let branch = variants
+                .iter()
+                .find(|variant| variant.validate(&value).is_ok())
+                .expect("validated component one_of prop matches one branch");
+            convert_component_prop(branch, value, generation)
+        }
+        ValueSchema::Node => Ok(ComponentPropValue::Node(Box::new(value.cast::<UiNode>()))),
+        ValueSchema::Callback => Ok(ComponentPropValue::Callback(UiEventHandler::Script(
+            ScriptCallback::try_from_fn_ptr(value.cast::<rhai::FnPtr>(), generation)?,
+        ))),
+        ValueSchema::Array { items, .. } if matches!(items.as_ref(), ValueSchema::Node) => {
+            Ok(ComponentPropValue::Nodes(
+                value
+                    .cast::<rhai::Array>()
+                    .into_iter()
+                    .map(Dynamic::cast::<UiNode>)
+                    .collect(),
+            ))
+        }
+        ValueSchema::Array { items, .. } => Ok(ComponentPropValue::Array(
+            value
+                .cast::<rhai::Array>()
+                .into_iter()
+                .map(|value| convert_component_prop(items, value, generation))
+                .collect::<Result<_, _>>()?,
+        )),
+        ValueSchema::Map { values } if matches!(values.as_ref(), ValueSchema::Style) => {
+            Ok(ComponentPropValue::Styles(
+                value
+                    .cast::<Map>()
+                    .into_iter()
+                    .map(|(name, value)| (name.to_string(), value.cast::<Style>()))
+                    .collect(),
+            ))
+        }
+        ValueSchema::Map { values } => Ok(ComponentPropValue::Map(
+            value
+                .cast::<Map>()
+                .into_iter()
+                .map(|(name, value)| {
+                    convert_component_prop(values, value, generation)
+                        .map(|value| (name.to_string(), value))
+                })
+                .collect::<Result<_, _>>()?,
+        )),
+        ValueSchema::Object {
+            fields,
+            allow_unknown,
+        } => Ok(ComponentPropValue::Map(
+            value
+                .cast::<Map>()
+                .into_iter()
+                .map(|(name, value)| {
+                    let name = name.to_string();
+                    let converted = if let Some(field) = fields.get(&name) {
+                        convert_component_prop(&field.schema, value, generation)
+                    } else {
+                        debug_assert!(*allow_unknown);
+                        UiValue::from_dynamic(value)
+                            .map(ComponentPropValue::Data)
+                            .map_err(Into::into)
+                    };
+                    converted.map(|value| (name, value))
+                })
+                .collect::<Result<_, _>>()?,
+        )),
+        ValueSchema::Style => Ok(ComponentPropValue::Style(Box::new(value.cast::<Style>()))),
+        ValueSchema::Length => Ok(ComponentPropValue::Length(value.cast::<Length>())),
+        ValueSchema::Asset => Ok(ComponentPropValue::Asset(value.cast::<AssetId>())),
+        _ => UiValue::from_dynamic(value)
+            .map(ComponentPropValue::Data)
+            .map_err(Into::into),
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum ComponentPropConversionError {
+    #[error(transparent)]
+    Value(#[from] UiValueError),
+    #[error(transparent)]
+    Callback(#[from] crate::ScriptCallbackDefinitionError),
 }
 
 #[derive(Clone, Debug, Default)]
@@ -248,7 +405,7 @@ pub struct ComponentRegistry {
     components: BTreeMap<ModuleId, ComponentDefinition>,
 }
 
-/// Installs `export_component` into Rhai and accumulates validated definitions.
+/// Collects definitions registered by `define_component` during module setup.
 #[derive(Clone, Debug, Default)]
 pub struct ComponentExportCollector {
     registry: Arc<Mutex<ComponentRegistry>>,
@@ -260,27 +417,14 @@ impl ComponentExportCollector {
         Self::default()
     }
 
-    pub fn register_into(&self, engine: &mut Engine) {
-        let registry = Arc::clone(&self.registry);
-        FuncRegistration::new("export_component")
-            .in_global_namespace()
-            .register_into_engine(
-                engine,
-                move |raw: Dynamic| -> Result<(), Box<EvalAltResult>> {
-                    let decoded: ComponentDefinition = rhai::serde::from_dynamic(&raw)?;
-                    let definition = ComponentDefinition::new(decoded.metadata, decoded.schema)
-                        .map_err(|error| Box::new(export_runtime_error(error.to_string())))?;
-                    registry
-                        .lock()
-                        .map_err(|_| {
-                            Box::new(export_runtime_error(
-                                "component export registry lock is poisoned".to_owned(),
-                            ))
-                        })?
-                        .register(definition, RUNTIME_API_VERSION)
-                        .map_err(|error| Box::new(export_runtime_error(error.to_string())))
-                },
-            );
+    pub(crate) fn register_definition(
+        &self,
+        definition: ComponentDefinition,
+    ) -> Result<(), ComponentRegistryError> {
+        self.registry
+            .lock()
+            .map_err(|_| ComponentRegistryError::Poisoned)?
+            .register(definition, RUNTIME_API_VERSION)
     }
 
     /// Clone the current exported-component registry.
@@ -611,10 +755,6 @@ fn is_component_asset_path(value: &str) -> bool {
         })
 }
 
-fn export_runtime_error(error: String) -> EvalAltResult {
-    EvalAltResult::ErrorRuntime(Dynamic::from(error), Position::NONE)
-}
-
 #[derive(Debug, Error)]
 pub enum ComponentError {
     #[error("component export `{0}` must be a PascalCase identifier")]
@@ -665,6 +805,11 @@ pub enum ComponentError {
         #[source]
         source: SchemaValidationError,
     },
+    #[error("component prop `{prop}` cannot cross the retained boundary: {source}")]
+    PropConversion {
+        prop: String,
+        source: ComponentPropConversionError,
+    },
     #[error("component `{component}` does not declare style part `{part}`")]
     UnknownStylePart { component: ModuleId, part: String },
     #[error("component `{component}` does not declare event `{event}`")]
@@ -685,6 +830,8 @@ pub enum ComponentError {
 
 #[derive(Debug, Error)]
 pub enum ComponentRegistryError {
+    #[error("component export registry is poisoned")]
+    Poisoned,
     #[error("component `{0}` is already registered")]
     Duplicate(ModuleId),
     #[error("component `{component}` requires runtime API {required:?}, current API is {actual}")]
@@ -713,12 +860,15 @@ pub enum ComponentHeaderError {
 pub enum ComponentExportError {
     #[error("component export registry lock is poisoned")]
     Poisoned,
+    #[error("component render registry is already borrowed")]
+    Borrowed,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{ObjectField, StateField, Style, UiValue};
+    use rhai::Engine;
 
     fn metadata(id: &str, export: &str) -> ComponentMetadata {
         ComponentMetadata {
@@ -792,6 +942,53 @@ mod tests {
             )
             .unwrap_err();
         assert!(matches!(error, ComponentError::InvalidProps { .. }));
+    }
+
+    #[test]
+    fn invocation_normalizes_data_style_and_callback_props_for_retention() {
+        let button = button();
+        let invocation = button
+            .invoke(
+                None,
+                Map::from_iter([
+                    ("text".into(), Dynamic::from("Save")),
+                    ("style".into(), Dynamic::from(Style::new().flex_row())),
+                    (
+                        "on_click".into(),
+                        Dynamic::from(rhai::FnPtr::new("clicked").unwrap()),
+                    ),
+                ]),
+            )
+            .unwrap();
+        assert!(matches!(
+            invocation.retained_props.get("text"),
+            Some(ComponentPropValue::Data(UiValue::String(value))) if value == "Save"
+        ));
+        assert!(matches!(
+            invocation.retained_props.get("style"),
+            Some(ComponentPropValue::Style(_))
+        ));
+        assert!(matches!(
+            invocation.retained_props.get("on_click"),
+            Some(ComponentPropValue::Callback(UiEventHandler::Script(_)))
+        ));
+    }
+
+    #[test]
+    fn invocation_rejects_anonymous_retained_callback_props() {
+        let button = button();
+        let engine = Engine::new();
+        let callback = engine.eval::<rhai::FnPtr>("|| ()").unwrap();
+        assert!(matches!(
+            button.invoke(
+                None,
+                Map::from_iter([
+                    ("text".into(), Dynamic::from("Save")),
+                    ("on_click".into(), Dynamic::from(callback)),
+                ]),
+            ),
+            Err(ComponentError::PropConversion { .. })
+        ));
     }
 
     #[test]
@@ -890,33 +1087,17 @@ fn render_button(props) { text(props.text) }
     }
 
     #[test]
-    fn export_component_registers_validated_schema() {
+    fn component_collector_is_idempotent_and_rejects_conflicts() {
         let collector = ComponentExportCollector::new();
-        let mut engine = Engine::new();
-        collector.register_into(&mut engine);
         let definition = button();
-        let mut scope = rhai::Scope::new();
-        scope.push_dynamic(
-            "definition",
-            rhai::serde::to_dynamic(definition.clone()).unwrap(),
-        );
-
-        engine
-            .eval_with_scope::<()>(&mut scope, "export_component(definition)")
-            .unwrap();
+        collector.register_definition(definition.clone()).unwrap();
         assert_eq!(collector.snapshot().unwrap().len(), 1);
-
-        engine
-            .eval_with_scope::<()>(&mut scope, "export_component(definition)")
-            .unwrap();
+        collector.register_definition(definition.clone()).unwrap();
         assert_eq!(collector.snapshot().unwrap().len(), 1);
 
         let mut conflicting = definition;
         conflicting.metadata.export = "OtherButton".to_owned();
-        scope.set_value("definition", conflicting);
-        let _error = engine
-            .eval_with_scope::<()>(&mut scope, "export_component(definition)")
-            .unwrap_err();
+        assert!(collector.register_definition(conflicting).is_err());
         assert_eq!(
             collector
                 .snapshot()

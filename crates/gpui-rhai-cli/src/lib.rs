@@ -683,8 +683,8 @@ fn validate_component_documentation(source: &str, id: &ModuleId) -> Result<(), P
         ),
         ("example", source.contains("// Example:")),
         (
-            "component_render wrapper",
-            source.contains("component_render("),
+            "render_component wrapper",
+            source.contains("render_component("),
         ),
     ] {
         if !present {
@@ -1392,7 +1392,7 @@ pub enum ProjectError {
     BaselineHash(ModuleId),
     #[error("installed metadata for `{0}` does not match its manifest")]
     InstalledMetadata(ModuleId),
-    #[error("component `{0}` did not call export_component")]
+    #[error("component `{0}` did not call define_component")]
     MissingExport(ModuleId),
     #[error("component `{component}` source documentation is missing {missing}")]
     ComponentDocumentation {

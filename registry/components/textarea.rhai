@@ -16,7 +16,7 @@
 // Events: change(string), focus(null), blur(null). State: keyed native transient editor state.
 // Example: Textarea(#{ key: "notes", value: notes, max_length: 500, show_count: true, on_change: Fn("notes_changed") })
 
-export_component(#{
+define_component(#{
     metadata: #{
         id: "components/textarea", "export": "Textarea", version: "0.1.0",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
@@ -58,6 +58,7 @@ export_component(#{
         slots: #{},
         parts: ["root", "editor", "placeholder", "selection", "caret", "scroll", "counter", "limit"],
     },
+    render: Fn("render_Textarea")
 });
 
 fn optional_prop(props, name) {
@@ -78,9 +79,7 @@ fn textarea_font_size(size) {
     else { 14 }
 }
 
-fn Textarea(props) {
-    component_render("components/textarea", props, Fn("render_Textarea"))
-}
+fn Textarea(props) { render_component("components/textarea", props) }
 fn render_Textarea(ctx, props) {
     let size = if "size" in props { props.size } else { "md" };
     let error = if "error" in props { props.error } else { false };

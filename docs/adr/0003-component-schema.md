@@ -1,6 +1,6 @@
 # ADR 0003: Formal component schema
 
-Status: Accepted
+Status: Superseded by ADR 0014
 
 Formal Rhai components call `export_component` with one schema covering props,
 defaults, state, events, slots, style parts, dependencies, capabilities, source
@@ -17,3 +17,7 @@ clonable native call-context store is used only inside `ScriptCallback` so
 module-private handlers remain resolvable after render. This volatile Rhai type
 is not exposed in GPUI Rhai's public API and must be revalidated on any Rhai
 upgrade.
+
+ADR 0014 retains strict formal schemas and module-scoped invocation while
+replacing `export_component/component_render` with one generation registration
+and retained invocation recipes for incremental component rendering.

@@ -13,7 +13,7 @@
 // State/events: stateless; emits no events.
 // Example: Avatar(#{ name: "Ada Lovelace", initials: "AL", presence: "online" })
 
-export_component(#{
+define_component(#{
     metadata: #{
         id: "components/avatar", "export": "Avatar", version: "0.1.0",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 }, dependencies: [], capabilities: #{},
@@ -43,6 +43,7 @@ export_component(#{
         state: #{ fields: #{} }, events: #{}, slots: #{},
         parts: ["root", "image", "initials", "presence"],
     },
+    render: Fn("render_Avatar")
 });
 
 fn avatar_size(size) {
@@ -56,9 +57,7 @@ fn presence_color(presence) {
     else { rgba(0x00000000) }
 }
 
-fn Avatar(props) {
-    component_render("components/avatar", props, Fn("render_Avatar"))
-}
+fn Avatar(props) { render_component("components/avatar", props) }
 fn render_Avatar(ctx, props) {
     let size = avatar_size(if "size" in props { props.size } else { "md" });
     let initials = if "initials" in props && props.initials != () {

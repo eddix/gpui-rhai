@@ -18,7 +18,7 @@
 
 import "components/skeleton" as skeleton;
 
-export_component(#{
+define_component(#{
     metadata: #{ id: "components/table", "export": "Table", version: "0.1.0",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
         dependencies: ["components/skeleton"], capabilities: #{},
@@ -82,6 +82,7 @@ export_component(#{
         },
         parts: ["root", "header", "header_cell", "body", "row", "cell", "selection_header", "selection_cell", "selection_indicator", "horizontal_scrollbar", "horizontal_scrollbar_thumb", "loading", "empty"],
     },
+    render: Fn("render_Table")
 });
 
 fn table_row_height(size) {
@@ -106,9 +107,7 @@ fn default_loading(key, row_height) {
     rows
 }
 
-fn Table(props) {
-    component_render("components/table", props, Fn("render_Table"))
-}
+fn Table(props) { render_component("components/table", props) }
 fn render_Table(ctx, props) {
     let row_height = table_row_height(prop_or(props, "size", "md"));
     let has_loading_content = "loading_content" in props && props.loading_content != ();

@@ -16,7 +16,7 @@
 // Events: change(optional<string>). State: controlled value plus keyed native transient interaction.
 // Example: Select(#{ key: "country", options: countries, value: "cn", searchable: true, on_change: Fn("changed") })
 
-export_component(#{
+define_component(#{
     metadata: #{
         id: "components/select", "export": "Select", version: "0.1.0",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
@@ -66,6 +66,7 @@ export_component(#{
         slots: #{},
         parts: ["root", "trigger", "value", "placeholder", "indicator", "clear", "panel", "search", "list", "group", "option", "option_selected", "option_disabled", "empty"],
     },
+    render: Fn("render_Select")
 });
 
 fn select_height(size) {
@@ -79,9 +80,7 @@ fn prop_or(props, name, fallback) {
     if name in props { props[name] } else { fallback }
 }
 
-fn Select(props) {
-    component_render("components/select", props, Fn("render_Select"))
-}
+fn Select(props) { render_component("components/select", props) }
 fn render_Select(ctx, props) {
     let size = prop_or(props, "size", "md");
     let height = select_height(size);

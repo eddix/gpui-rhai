@@ -166,17 +166,18 @@ impl UiRuntimeState {
         accepted
     }
 
-    pub(crate) fn take_window_dirty(&mut self, root: &ComponentInstancePath) -> bool {
-        let mut found = false;
-        self.dirty.retain(|path| {
-            if path.is_within(root) {
-                found = true;
-                false
-            } else {
-                true
-            }
-        });
-        found
+    pub(crate) fn has_window_dirty(&self, root: &ComponentInstancePath) -> bool {
+        self.dirty.iter().any(|path| path.is_within(root))
+    }
+
+    pub(crate) fn take_window_dirty_components(
+        &mut self,
+        root: &ComponentInstancePath,
+    ) -> BTreeSet<ComponentInstancePath> {
+        let all = std::mem::take(&mut self.dirty);
+        let (selected, retained) = all.into_iter().partition(|path| path.is_within(root));
+        self.dirty = retained;
+        selected
     }
 
     pub(crate) fn drain_pending_actions(&mut self) -> Vec<ActionInvocation> {
@@ -364,7 +365,7 @@ pub struct UiContext {
     phase: ExecutionPhase,
     events: BTreeMap<String, EventSchema>,
     generation: ScriptGeneration,
-    native_context: Option<crate::engine::ScriptNativeContext>,
+    native_context: Option<crate::invocation::ScriptInvocationContext>,
 }
 
 impl UiContext {
@@ -437,19 +438,19 @@ impl UiContext {
 
     pub(crate) fn with_native_context(
         mut self,
-        native_context: Option<crate::engine::ScriptNativeContext>,
+        native_context: Option<crate::invocation::ScriptInvocationContext>,
     ) -> Self {
         self.native_context = native_context;
         self
     }
 
-    fn scoped_callback(&self, function: FnPtr) -> ScriptCallback {
-        let mut callback = ScriptCallback::from_fn_ptr(function, self.generation);
+    fn scoped_callback(&self, function: FnPtr) -> Result<ScriptCallback, UiContextError> {
+        let mut callback = ScriptCallback::try_from_fn_ptr(function, self.generation)?;
         callback.bind_component_if_unset(self.component.clone(), self.events.clone());
         if let Some(context) = &self.native_context {
-            callback.bind_native_context_if_unset(Rc::clone(context));
+            callback.bind_native_context_if_unset(context.clone());
         }
-        callback
+        Ok(callback)
     }
 
     #[must_use]
@@ -498,10 +499,12 @@ impl UiContext {
             .try_borrow_mut()
             .map_err(|_| UiContextError::Borrowed)?;
         let sensitive = runtime.component_state.is_sensitive(&self.component, field);
-        runtime
+        let changed = runtime
             .component_state
             .set(&self.component, field, value.clone())?;
-        runtime.dirty.insert(self.component.clone());
+        if changed {
+            runtime.dirty.insert(self.component.clone());
+        }
         runtime.traces.push(
             crate::RuntimeTraceKind::State,
             self.component.to_string(),
@@ -677,11 +680,12 @@ impl UiContext {
     pub fn register_action(&self, action: &str, callback: FnPtr) -> Result<(), UiContextError> {
         self.require_mutation()?;
         let id = ActionId::parse(action)?;
+        let callback = self.scoped_callback(callback)?;
         self.runtime
             .try_borrow_mut()
             .map_err(|_| UiContextError::Borrowed)?
             .actions
-            .register_or_replace(id, self.scoped_callback(callback));
+            .register_or_replace(id, callback);
         Ok(())
     }
 
@@ -1071,11 +1075,12 @@ impl UiContext {
     pub fn set_close_handler(&self, callback: FnPtr) -> Result<(), UiContextError> {
         self.require_mutation()?;
         let window = self.window.as_ref().ok_or(UiContextError::MissingWindow)?;
+        let callback = self.scoped_callback(callback)?;
         self.runtime
             .try_borrow_mut()
             .map_err(|_| UiContextError::Borrowed)?
             .windows
-            .set_close_handler(window, Some(self.scoped_callback(callback)))?;
+            .set_close_handler(window, Some(callback))?;
         Ok(())
     }
 
@@ -1306,8 +1311,8 @@ impl UiContext {
     ) -> Result<ImageDecodeHandle, UiContextError> {
         self.require_mutation()?;
         self.require_generation()?;
-        let success = self.scoped_callback(success);
-        let error = self.scoped_callback(error);
+        let success = self.scoped_callback(success)?;
+        let error = self.scoped_callback(error)?;
         let mut runtime = self
             .runtime
             .try_borrow_mut()
@@ -1391,8 +1396,8 @@ impl UiContext {
         self.require_generation()?;
         let id = CapabilityId::parse(capability)?;
         let input = UiValue::from_dynamic(input)?;
-        let success = self.scoped_callback(success);
-        let error = self.scoped_callback(error);
+        let success = self.scoped_callback(success)?;
+        let error = self.scoped_callback(error)?;
         let mut runtime = self
             .runtime
             .try_borrow_mut()
@@ -1434,8 +1439,8 @@ impl UiContext {
         self.require_generation()?;
         let id = CapabilityId::parse(capability)?;
         let input = UiValue::from_dynamic(input)?;
-        let success = self.scoped_callback(success);
-        let error = self.scoped_callback(error);
+        let success = self.scoped_callback(success)?;
+        let error = self.scoped_callback(error)?;
         let mut runtime = self
             .runtime
             .try_borrow_mut()
@@ -2033,6 +2038,8 @@ pub enum UiContextError {
     Asset(#[from] AssetError),
     #[error(transparent)]
     Value(#[from] UiValueError),
+    #[error(transparent)]
+    Callback(#[from] crate::ScriptCallbackDefinitionError),
 }
 
 #[cfg(test)]

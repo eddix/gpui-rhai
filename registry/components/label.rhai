@@ -14,7 +14,7 @@
 // Events: none. State: none. Parts: root, text, required, description.
 // Example: Label(#{ text: "Project name", required: true })
 
-export_component(#{
+define_component(#{
     metadata: #{
         id: "components/label",
         "export": "Label",
@@ -47,11 +47,10 @@ export_component(#{
         slots: #{},
         parts: ["root", "text", "required", "description"],
     },
+    render: Fn("render_Label")
 });
 
-fn Label(props) {
-    component_render("components/label", props, Fn("render_Label"))
-}
+fn Label(props) { render_component("components/label", props) }
 fn render_Label(ctx, props) {
     let required = if "required" in props { props.required } else { false };
     let description = if "description" in props { props.description } else { () };

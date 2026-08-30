@@ -16,7 +16,7 @@
 // Parts: root, label, prefix, suffix.
 // Example: Button(#{ text: "Save", variant: "primary", size: "md" })
 
-export_component(#{
+define_component(#{
     metadata: #{
         id: "components/button",
         "export": "Button",
@@ -92,6 +92,7 @@ export_component(#{
         },
         parts: ["root", "label", "prefix", "suffix"],
     },
+    render: Fn("render_Button")
 });
 
 fn button_height(size) {
@@ -119,9 +120,7 @@ fn button_foreground(variant) {
     } else { theme_color("on_accent") }
 }
 
-fn Button(props) {
-    component_render("components/button", props, Fn("render_Button"))
-}
+fn Button(props) { render_component("components/button", props) }
 fn render_Button(ctx, props) {
     let variant = if "variant" in props { props.variant } else { "primary" };
     let size = if "size" in props { props.size } else { "md" };

@@ -16,7 +16,7 @@
 // Parts: root, trigger, content.
 // Example: Popover(#{ key: "profile", trigger: text("Open"), content: text("Profile"), open: true })
 
-export_component(#{
+define_component(#{
     metadata: #{
         id: "components/popover",
         "export": "Popover",
@@ -74,15 +74,14 @@ export_component(#{
         },
         parts: ["root", "trigger", "content"],
     },
+    render: Fn("render_Popover")
 });
 
 fn optional_bool(props, name, fallback) {
     if name in props { props[name] } else { fallback }
 }
 
-fn Popover(props) {
-    component_render("components/popover", props, Fn("render_Popover"))
-}
+fn Popover(props) { render_component("components/popover", props) }
 fn render_Popover(ctx, props) {
     let placement = if "placement" in props { props.placement } else { "bottom" };
     let gap = if "gap" in props { props.gap } else { 8.0 };

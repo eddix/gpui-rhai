@@ -15,7 +15,7 @@
 // State/events: none. Parts: root.
 // Example: Icon(#{ source: asset("app/icons/check"), size: "sm", label: "Complete" })
 
-export_component(#{
+define_component(#{
     metadata: #{
         id: "components/icon",
         "export": "Icon",
@@ -60,6 +60,7 @@ export_component(#{
         slots: #{},
         parts: ["root"],
     },
+    render: Fn("render_Icon")
 });
 
 fn icon_size(size) {
@@ -69,9 +70,7 @@ fn icon_size(size) {
     else { 20 }
 }
 
-fn Icon(props) {
-    component_render("components/icon", props, Fn("render_Icon"))
-}
+fn Icon(props) { render_component("components/icon", props) }
 fn render_Icon(ctx, props) {
     let size = if "size" in props { props.size } else { "md" };
     let label = if "label" in props { props.label } else { "" };

@@ -2,569 +2,486 @@
 
 ## 1. Product definition
 
-**GPUI Rhai is a desktop UI system in which a stable Rust runtime renders a
-declarative `UiNode` tree produced by Rhai. Developers build applications and
-components primarily from inspectable, editable, hot-reloadable Rhai source,
-and extend the system through explicit, typed Rust capabilities.**
+**GPUI Rhai is a general desktop UI runtime in which Rhai and trusted Rust build
+the same typed declarative UI, a retained Rust reconciler owns identity and
+native state, and GPUI performs layout, input, and GPU rendering.**
 
-The project applies the source-ownership philosophy popularized by shadcn/ui to
-GPUI applications without pretending that the runtime itself can be copied as
-loose scripts:
+The product has two deliberately separate layers:
 
-- `gpui-rhai` is a normal Cargo dependency. It owns the Rhai engine, GPUI
-  integration, rendering mechanisms, state, lifecycle, and safety boundaries.
-- Components, themes, locale bundles, and their small assets are copied into the
-  user's repository by the `gpui-rhai` CLI. They belong to the user and may be
-  modified without waiting for an upstream release.
-- A versioned registry and local installation baseline make source updates
-  reproducible, inspectable, and mergeable.
+- `gpui-rhai` core/runtime is the language binding and application
+  infrastructure. It provides atomic visual nodes, typed style, retained
+  reconciliation, events, state, native hot values, focus, scrolling, overlays,
+  animation, text, Canvas, accessibility, automation, and Rust extension points.
+- The registry is a shadcn-like collection of inspectable Rhai source components,
+  themes, locales, and assets copied into the user's repository. Registry
+  components have no private layout or interaction privileges; they are built on
+  the same public core available to application scripts.
 
-GPUI Rhai is an independent project parallel to `gpui-component`. It must not
-depend on `gpui-component`, directly or through an optional feature.
+GPUI Rhai is parallel to other GPUI language bindings such as GPUIX, not a
+wrapper around them. It is independent of `gpui-component` and must not depend
+on it directly or through an optional feature.
 
-## 2. Intended user experience
+## 2. Product promise
 
-A Rust developer initializes a minimal host, adds source components, and writes
-the application UI in Rhai:
+Rhai is the primary UI language, not a configuration or styling layer. Using
+only public Rhai APIs, an application author can build conventional desktop
+applications and custom interaction surfaces involving pointer capture,
+dragging, resizing, panning, zooming, animation, exact geometry, custom fonts,
+rich visual composition, Canvas scenes, and variable-height data views.
 
-```text
-gpui-rhai init
-gpui-rhai add button dropdown dialog
-gpui-rhai dev
-```
+A pure-Rhai Mini Timeline is a hard acceptance application. Rust native paths
+raise the performance ceiling and integrate business/platform services; they do
+not determine whether an interaction is expressible.
 
-The generated Rust host should remain small:
+Rust remains first-class because `gpui-rhai` is linked into the Host rather than
+hidden behind a fixed precompiled language bridge. One UI may combine:
+
+- pure Rhai components and event handlers;
+- Rhai handlers calling registered Rust computation;
+- Host-registered native handlers on ordinary atomic nodes;
+- Rust-owned native signals and retained custom primitives;
+- Host-owned `UiNode` trees using the same reconciler.
+
+The Rust host can remain minimal:
 
 ```rust
 let view = FileScriptView::new("ui/main.rhai")
-    .extension(/* application service */)
+    .extension(/* application services and native handlers */)
     .prepare()?;
 ScriptApplication::new(view).run()?;
 ```
 
-The Rhai entry point imports copied modules and returns a declarative tree:
+## 3. Layering
 
-```rhai
-import "components/button" as button;
-import "components/dropdown" as dropdown;
-
-fn view(ctx) {
-    // Build and return the root UiNode.
-}
+```text
+Application screens and domain UI             Rhai, with optional Rust services
+Copied registry components                    editable Rhai source
+Public atomic and headless APIs                gpui-rhai core
+RetainedUiTree and native runtime state        Rust
+Immediate layout, input, paint and platform    GPUI
 ```
 
-`view(ctx) -> UiNode` is the only required lifecycle function. `init(ctx)` and
-`dispose(ctx)` are optional. Rendering is pure: external effects may start only
-from `init` or event handlers, never from `view`.
+Official components may use generic native mechanisms where platform behavior
+requires them: text editing/IME, retained scrolling, focus/accessibility bridges,
+deferred overlay drawing, generic virtualization, Canvas scene painting, native
+animation, and input routing. Table, DatePicker, Select, Menu, Tabs, Toast
+presentation, and similar product components are Rhai/headless compositions,
+not privileged native UI nodes.
 
-Rhai is not limited to component styling. It is the primary language for view
-composition and lightweight UI interaction. Rust remains responsible for
-business services, persistence, filesystem and network access, platform APIs,
-and other side effects.
+## 4. Declarative and retained rendering
 
-## 3. Architecture
+### 4.1 UiNode boundary
 
-### 3.1 Rust runtime
+Rhai never owns GPUI `Window`, `App`, `Context`, `Div`, `AnyElement`, closures,
+or lifetimes. Rhai and trusted Rust construct runtime-defined `UiNode` snapshots.
+The runtime validates them and reconciles them into a retained Rust tree.
 
-The runtime:
+The built-in visual atoms are:
 
-- initializes and configures Rhai;
-- compiles, caches, evaluates, and hot-reloads script modules;
-- owns the GPUI application and window lifecycle;
-- stores component and application UI state;
-- reconciles keyed node identity;
-- converts `UiNode` values into GPUI elements;
-- schedules events, actions, animation frames, tasks, and subscriptions;
-- manages focus, accessibility, overlays, themes, locales, assets, and errors;
-- exposes explicitly registered primitives and capabilities.
+- `fragment(children)` for layout-transparent grouping;
+- `box(children)` for layout, paint, semantics, and interaction;
+- `text` and inline `span`;
+- `image` and tintable `svg`;
+- declarative retained `canvas(scene)`.
 
-Rhai evaluation and event handling run serially on the GPUI foreground thread in
-the first release. Expensive work must execute inside asynchronous Rust
-capabilities. Script operation and time budgets provide diagnostics and prevent
-accidental UI starvation.
+`row`, `column`, and `stack` are convenience constructors over `box`, not
+independent node kinds. Scrolling is Box overflow behavior rather than a separate
+visual atom.
 
-The runtime pins one compatible GPUI release or commit and re-exports its GPUI
-types. Rust extensions must use that re-export so an application cannot
-accidentally link incompatible GPUI type universes.
+### 4.2 RetainedUiTree
 
-### 3.2 Declarative node boundary
+The runtime holds stable nodes identified by `(parent NodeId, explicit key,
+node kind)`. A keyed Rust reconciler atomically applies accepted subtree
+snapshots. Keyed reorder preserves NodeId, focus, scrolling, pointer capture,
+animation, signals, accessibility identity, and retained primitive Entities.
+Changing key or kind unmounts the old node and mounts a new one. Duplicate keys
+are hard errors. Interactive, focusable, scrollable, animated, signal-bound, and
+stateful nodes require keys; static display-only nodes may use positional
+identity.
 
-Rhai never owns GPUI `Window`, `App`, `Context`, `Div`, or `AnyElement` values.
-It constructs a runtime-defined `UiNode` tree. The runtime validates and renders
-that tree into GPUI.
+GPUI elements remain short-lived immediate render values. Retained identity and
+state live in the runtime and GPUI Entities, never in a cached `AnyElement`.
 
-This boundary exists to:
+### 4.3 Incremental formal components
 
-- keep the script API stable across GPUI changes;
-- avoid leaking Rust lifetimes and context types into Rhai `Dynamic` values;
-- enable validation, diagnostics, reconciliation, and developer tooling;
-- maintain a clear safety and capability boundary.
+A formal keyed Rhai component is the only independent script rerender boundary.
+Helper functions rerun with their owning component. During render, the runtime
+records reads of declared component state, exact store paths, theme/locale
+tokens, viewport/geometry, and other host-observable values. A mutation dirties
+only dependent components. Reading an entire Map/Array establishes a broad
+dependency; exact nested tracking requires explicit path or keyed-collection
+accessors.
 
-A trusted Rust Host may construct the same tree directly. It may attach a
-labeled `HostCallback` to ordinary node events or callback-typed primitive
-props. Host callbacks are opaque foreground Rust closures: they never enter
-Rhai, `UiValue`, capabilities, serialization, or script schemas, and their
-blocking, side effects, stale references, and ownership cycles remain the
-Host's responsibility. This is a supported renderer entry point, not a second
-Host runtime or Rust component product line.
+The runtime retains each component's invocation recipe: module/export/key,
+render function and module context, normalized structural props, parent context,
+generation, dependency set, and prior subtree. Rhai itself does not provide this
+reactivity; it is a gpui-rhai host runtime.
 
-The runtime exposes both visual primitives and behavior primitives. Mechanisms
-that require native input, frame scheduling, or window coordinates belong in
-Rust. Examples include text input and IME, selection and clipboard behavior,
-scrolling, overlays, focus scopes, animated values, and virtual lists. Rhai
-controls composition, policy, appearance, and semantic state.
+## 5. Rhai execution and component model
 
-### 3.3 Rhai component source
+### 5.1 Invocation adapter
 
-Official and user-authored components use the same declaration mechanism. A
-formal component is registered with `export_component` and declares one schema
-covering:
+Rhai is pinned exactly. All use of `NativeCallContextStore`,
+`GlobalRuntimeState`, or other volatile `internals` is isolated behind one
+`ScriptInvocationContext` adapter with characterization tests for imports,
+closures, callbacks, component rerender, effects, errors, and hot reload.
 
-- props and defaults;
+AST interpretation is the semantic oracle. The runtime has a backend boundary
+capable of using Rhai Grain when AST/Grain parity, residual coverage,
+diagnostics, and end-to-end performance are proven. Backend selection does not
+change Rhai source or the UI API.
+
+Rhai evaluation, component render, ScriptCallback dispatch, reconciliation, and
+GPUI mutation remain serialized on the foreground thread. Background work moves
+validated `UiValue` or typed Host results, never Engine, Dynamic, FnPtr, or
+stored call contexts.
+
+### 5.2 Formal components
+
+Component modules register metadata, schema, and render function once per
+generation with `define_component`; exported PascalCase constructors call
+`render_component(id, props)`. A formal schema covers:
+
+- typed data props and defaults;
+- node/style/callback/slot/ref/signal props;
 - local state and defaults;
-- named slots and render callbacks;
-- emitted events and payloads;
-- styleable parts;
-- runtime API compatibility;
-- component dependencies and required capabilities.
-- component-owned asset declarations copied with the source.
-
-Functions that merely return nodes may be used as render helpers, but they do
-not receive component identity, local state, lifecycle, or a devtools entry.
-
-Public components accept a single props map. Unknown props are errors by
-default. Component modules are imported under explicit aliases and export
-PascalCase component names; they do not inject global constructors.
-
-Each `.rhai` component starts with a structured machine-readable metadata block
-for identity, source version, runtime API range, dependencies, and capabilities,
-followed by concise human-facing documentation covering purpose, props, events,
-statefulness, and a usage example. The exported component schema remains
-authoritative for runtime value validation; registry checks reject disagreement
-between the header metadata and exported schema.
-
-## 4. State, identity, and data flow
-
-### 4.1 Controlled components and local state
-
-Reusable stateful components are controlled-first: values and change handlers
-can be owned by the caller. Convenience uncontrolled behavior is allowed, but
-state lives in the Rust runtime rather than mutable Rhai globals.
-
-Formal components declare a state schema. `UiContext` may read or write only
-declared keys. A state mutation is batched and invalidates the corresponding
-GPUI entity.
-
-Every stateful component instance requires a stable `key`. Dynamic interactive
-lists also require stable sibling keys. Identity is derived from the parent
-instance path and key. Duplicate sibling keys are development errors. Static,
-stateless nodes may use positional identity.
-
-### 4.2 Shared state
-
-Applications may declare typed, in-memory stores at application or window
-scope. Store reads are tracked so only affected consumers are invalidated.
-Official reusable components must not depend on application stores implicitly;
-they receive data through props and communicate through events.
-
-Runtime state and stores survive compatible hot reloads but do not persist
-across process restarts. Persistence is an explicit capability.
-
-### 4.3 Events and actions
-
-Rhai callbacks receive a restricted `UiContext` and normalized payloads. They
-may update state, emit declared semantic events, dispatch actions, or invoke
-declared capabilities. They cannot access raw GPUI contexts or events.
-
-Host callbacks receive an owned normalized `UiValue`, `Window`, and `App`, then
-return `EventPropagation`. They execute directly without ScriptLifecycle,
-generation checks, transactions, or automatic runtime traces.
-
-Pointer events bubble from the hit node toward its ancestors and may return
-`handled` or `propagate`. There is no DOM-style capture phase. Keyboard input is
-first offered to the focused primitive and then to the action/keybinding system.
-
-Semantic actions decouple UI controls from physical shortcuts. Rust or
-configuration maps platform key bindings to namespaced action identifiers, and
-buttons, menus, and handlers dispatch those identifiers.
-
-## 5. Capabilities and extensibility
-
-### 5.1 Capability boundary
-
-Filesystem, network, persistence, process, and platform services are unavailable
-unless the Rust host registers them. The application manifest explicitly
-declares every capability and compatible version; startup and `check` fail on a
-missing or incompatible implementation.
-
-Values crossing the Rust/Rhai boundary use a validated `UiValue` model:
-
-- null, booleans, integers, floats, and strings;
-- arrays and string-keyed maps;
-- explicitly registered opaque handles for expensive or native resources.
-
-Arbitrary Rust values are not placed into Rhai `Dynamic`. Capability inputs and
-outputs have schemas. Diagnostics redact sensitive values.
-
-One-shot asynchronous work returns a `TaskHandle`; continuous event streams
-return a `SubscriptionHandle`. Completion callbacks run on the GPUI thread.
-Handles bind to app, window, or component lifetime and are cancelled when their
-scope disappears. Callbacks originating from obsolete hot-reloaded ASTs do not
-run.
-
-### 5.2 Custom primitives
-
-The runtime provides a stable Rust registration API for namespaced custom
-primitives. A registration supplies:
-
-- a node name and props schema;
-- a `UiNode`-to-GPUI renderer;
-- normalized event adapters;
-- a read-only semantic color/spacing/radius snapshot for native paint;
-- optional instance state and lifecycle support.
-
-This is a first-class initial-release extension point. It allows applications to
-add editors, canvases, or domain-specific controls without modifying the runtime
-or exposing raw GPUI to Rhai.
-
-## 6. Styling, themes, locale, and assets
-
-### 6.1 Styling
-
-`Style` is a stable, typed runtime value rather than an unrestricted mirror of
-GPUI's API. Components consume semantic design tokens instead of hard-coded
-palette colors and standard spacing.
-
-All visual components accept a caller `style` override. Composite components
-declare named `part_styles`. The merge order is fixed:
-
-```text
-base -> size -> variant/state -> caller style/part_styles
-```
-
-Unknown style parts are errors. Hover, active, focus, disabled, and similar
-high-frequency visual states are resolved by Rust pseudo-state styling rather
-than Rhai state and rerender loops.
-
-The standard size vocabulary is `xs`, `sm`, `md` (default), and `lg`. The
-standard semantic variants are `primary`, `secondary`, `danger`, `warning`,
-`success`, `ghost`, and `outline`; individual components may support a declared
-subset. Desktop cursor conventions apply: interactive controls retain the
-default cursor, while link-like elements may use a pointer cursor.
-
-### 6.2 Themes
-
-Theme definitions are copied Rhai source owned by the application. Rust defines
-and validates the semantic token contract. A `ThemeFamily` contains named light
-or dark variants and identifies the variants used by system-following mode.
-
-Theme selection supports application defaults, window overrides, and local
-`ThemeScope` subtree overrides. Runtime theme changes and theme-file hot reloads
-invalidate relevant UI without recompiling component ASTs or discarding state.
-
-The first product line validates the contract with:
-
-- project-owned Default Light and Default Dark;
-- two suitable Tokyo Night variants;
-- Catppuccin Latte and Catppuccin Mocha.
-
-Components reference only semantic tokens, never palette-specific names.
-
-### 6.3 Locale
-
-Components do not hard-code user-facing text. Props provide application content;
-shared internal phrases resolve through a locale bundle. English and Simplified
-Chinese bundles validate the initial system. Logical layout direction is
-preserved in the architecture, while full RTL visual certification is deferred
-until M2.
-
-Locale bundles also own the reusable presentation metadata needed by complex
-controls: Gregorian month/weekday names, first weekday, validated short/medium/
-long date patterns, decimal digits and separators, and grouping rules. Runtime
-date and number formatters consume that data for DatePicker, Table, Pagination,
-and application scripts. ISO `YYYY-MM-DD` remains the locale-independent date
-value ABI. A host-provided Clock supplies the system-local current date and can
-be replaced with a fixed Clock for tests.
-
-### 6.4 Icons and images
-
-The runtime defines asset, icon, and image provider protocols without depending
-on a full icon library. The official registry includes only the minimal SVG set
-required by its components. Complete icon collections may be distributed as
-optional source packs.
-
-Rhai addresses assets by semantic `AssetId` or receives a controlled
-`ImageHandle` from a capability. The Icon source accepts either kind and may
-provide an explicit RTL counterpart. Declared component assets are preloaded
-during application preparation, so rendering performs cache lookup rather than
-filesystem I/O. Components never read arbitrary filesystem paths or URLs. Rust
-owns decoding, caching, scaling, fallback, and cancellation.
-
-## 7. Rendering mechanisms
-
-### 7.1 Overlay system
-
-A host-scoped Rust `OverlayManager` is shared by every script view in one
-interaction domain (normally one GPUI window) and by Dropdown, Popover, Tooltip,
-Dialog, Menu, and Toast. It owns portal rendering, layer order, anchored
-placement, boundary avoidance, dismiss stacks, modal focus, focus restoration,
-tooltip delay, and toast queues. Rhai components define content, style, and
-policy rather than rebuilding those mechanisms.
-
-`Menu` refers to in-window context and dropdown menus. Native macOS menu-bar
-integration is outside the initial component contract and may later consume the
-same action registry.
-
-### 7.2 Animation
-
-Rhai declares transitions or springs; Rust performs interpolation and frame
-scheduling. Rhai is never invoked once per animation frame. Reduced-motion
-preferences shorten or remove nonessential animation automatically.
-
-### 7.3 Responsive layout, large lists, and tables
-
-Normal resizing relies on GPUI layout. Structural adaptation uses discrete,
-configurable viewport classes (`compact`, `regular`, and `wide`) rather than
-continuous script-side pixel calculations.
-
-M1 includes a one-dimensional Rust `VirtualList` behavior primitive for large
-collections. It supports stable item keys and equal or predictable row heights.
-
-Table is a later data-driven specialization over the same fixed-height range,
-identity, and `uniform_list` mechanisms. Ordinary scalar cells remain Rust data
-until GPUI requests visible rows. Explicit Rhai custom-cell renderers still run
-for all rows during the complete `view(ctx)` transaction; only their GPUI
-elements are virtualized. This preserves one transactional declarative-tree
-boundary and forbids scroll-time Rhai callbacks. Spreadsheet editing,
-variable-height rows, and arbitrary two-dimensional virtualization remain out
-of scope.
-
-## 8. Accessibility and desktop behavior
-
-Accessibility and full keyboard operation are part of the definition of done,
-not deferred polish. Components must provide available GPUI semantics for role,
-label, value, checked state, descriptions, and invalid state.
-
-At minimum:
-
-- every interactive component works without a pointer;
-- focus is visible and traversal order is deterministic;
-- disabled behavior is consistent;
-- Dialog traps focus and restores it when closed;
-- Dropdown and Menu support arrows, Enter, Escape, and type-ahead;
-- animations respect reduced-motion settings;
-- missing upstream GPUI accessibility capabilities are documented explicitly.
-
-`FormField` is included as a lightweight composite component to consistently
-associate labels, controls, descriptions, required state, and validation errors.
-It is not a full form framework.
-
-The default visual language is modern, restrained, and desktop-first. It follows
-macOS interaction conventions without attempting to imitate AppKit controls
-pixel for pixel.
-
-## 9. Loading, hot reload, and diagnostics
-
-Scripts and their dependency graph are compiled and validated at startup. The
-runtime caches ASTs; a GPUI rerender does not reread or reparse files.
-
-Development mode watches scripts, themes, locales, and assets. It recompiles
-only affected modules. Failed compilation preserves the last successfully
-rendered UI and its state. Successful reload preserves keyed state when schemas
-remain compatible, resets only incompatible component instances, and removes
-unreachable state after a successful render.
-
-Compilation errors retain the last good tree. Render errors are caught by the
-nearest `ErrorBoundary`, or by a themeable root error page. Event errors preserve
-the current UI. Diagnostics include the Rhai stack, source location, component
-path, and key. Rust custom primitive panics must not unwind through the runtime
-boundary.
-
-M1 includes a development-only inspector showing the component/`UiNode` tree,
-keys, source positions, props, computed style, theme tokens, state, recent
-events, rerender causes, and script timings.
-
-## 10. Distribution and tooling
-
-The CLI contains a versioned snapshot of the official component registry so
-installation is offline and reproducible. Third-party remote registries are a
-future extension.
-
-The user project contains:
-
-```text
-ui/                    # editable application and copied source
-.gpui-rhai/
-  manifest.toml        # installed versions and compatibility
-  baselines/           # pristine upstream sources for three-way updates
-```
-
-Both the manifest and baselines should be committed to version control.
-`update` compares the installed baseline, user source, and new registry source;
-it never silently overwrites modifications.
-
-Runtime SemVer, component source versions, and `runtime_api` compatibility are
-tracked separately. The CLI enforces declared compatibility before installation
-or update. After an explicit release baseline exists, a breaking `0.x` runtime
-API change increments the minor version.
-
-Before the maintainer gives an explicit release signal, this repository is in
-dogfooding mode. Breaking Rust, Rhai, schema, locale, registry, and generated
-source changes should move directly to the best target design: no compatibility
-adapter, deprecated alias, dual parser, or SDK-managed application migration is
-required. `RUNTIME_API_VERSION` remains 1 for the current expansion. Release and
-migration policy is reconsidered only after an explicit versioning signal such
-as preparing 0.1.1.
-
-Required initial commands are:
-
-- `gpui-rhai init` — scaffold a minimal host and UI without overwriting files;
-- `gpui-rhai add` — resolve and copy source plus transitive dependencies;
-- `gpui-rhai check` — validate modules, compatibility, schemas, and themes;
-- `gpui-rhai dev` — run with hot reload and structured diagnostics;
-- `gpui-rhai diff` / `update` — inspect and merge upstream source changes.
-
-All mutating CLI operations support a dry run.
-
-Development uses `FileScriptSource`. Production uses a CLI-generated
-`EmbeddedScriptSource` that includes scripts, themes, locales, and assets in the
-binary. Both use the same resolver and execution semantics.
-
-## 11. Component product line
-
-### Primitives and small components
-
-- Button
-- Input
-- Textarea
-- Checkbox
-- Radio / RadioGroup
-- Switch
-- Label
-- Tag
-- Avatar
-- Icon
-- Divider
-- Progress
-- Skeleton
-
-### Composite components
-
-- Dropdown
-- Select
-- DatePicker
-- Popover
-- Tooltip
-- Dialog
-- Accordion
-- Collapsible
-- Tabs
-- Menu
-- Toast
-- FormField
-- Table
-- Pagination
-
-### Example applications
-
-- `hello_world` — the smallest Button and Label end-to-end path;
-- `settings_panel` — Switch, Radio, Dropdown, Divider, and Accordion;
-- `dashboard_layout` — Tabs, Tag, Avatar, Progress, and Popover;
-- `form_showcase` — Input, Textarea, Select, DatePicker, FormField, Checkbox,
-  Radio, Switch, Dialog, and Toast;
-- `data_table` — Table, Pagination, Select page-size, sorting, selection, and
-  custom cells over a representative large data set.
-
-Examples use the same `ui/` source layout and runtime API as downstream
-applications and remain independently runnable through Cargo.
-
-## 12. Delivery milestones
-
-- **M0, foundation:** runtime skeleton, `UiNode`, schemas, state/events, theme
-  foundations, hot reload, custom primitives, CLI skeleton, Button, Label, and
-  `hello_world`.
-- **M1, risk validation:** input/IME, accessibility and actions, overlays,
-  animation, async tasks/subscriptions, assets, virtual list, multiple themes,
-  devtools, Input, Icon, Divider, Popover, Dropdown, Dialog, and
-  `settings_panel`.
-- **M2, product-line completion:** remaining components and examples, locale and
-  RTL validation, broader integration polish, complete documentation, and
-  release hardening.
-- **M3, complex controls:** schema/locale/asset foundations, Textarea, Select,
-  DatePicker, Table, Pagination, `data_table`, and the expanded form scenario.
-
-Each milestone is independently runnable and may be published as a preview.
-The full component list is a v0.x product-line goal, not a reason to delay early
-vertical-slice releases.
-
-## 13. Quality gates
-
-A component is complete only when it has:
-
-1. Rhai logic tests for defaults, schema, variants, and state behavior;
-2. stable `UiNode` snapshot tests;
-3. representative macOS visual regression screenshots across themes and states;
-4. interaction tests for keyboard, focus, events, and reload behavior;
-5. accessibility assertions for composite controls;
-6. source-header documentation and a working example.
-
-The project initially supports macOS as its fully tested platform. Windows and
-Linux remain architectural compatibility targets without complete behavior
-guarantees during v0.x.
-
-The workspace uses stable Rust, declares an MSRV compatible with the pinned
-GPUI version, and tests both MSRV and current stable. Nightly Rust is not
-required.
-
-## 14. Explicit non-goals
-
-The initial project does not:
-
-- execute hostile or untrusted Rhai as a strong security sandbox;
-- expose filesystem, network, process, or raw GPUI access implicitly;
-- depend on `gpui-component`;
-- provide a Web-style URL router;
-- implement Dock layouts, rich-text editing, spreadsheets, variable-height
-  virtualized tables, or arbitrary 2D virtualization;
-- provide a complete form framework;
-- provide a complete custom LSP or formatter;
-- provide complete multi-window APIs before M2;
-- treat the in-window Menu component as the native macOS menu bar;
-- attempt simultaneous full-quality certification on all desktop platforms.
-
-Scripts are trusted application source, but the runtime still restricts the
-module resolver, disables arbitrary eval/path loading, applies execution and data
-limits, and exposes only declared capabilities. Documentation calls this a
-restricted capability environment rather than a hostile-code sandbox.
-
-## 15. Repository and licensing
-
-The repository is a Cargo workspace:
-
-```text
-gpui-rhai/
-├── crates/
-│   ├── gpui-rhai/
-│   └── gpui-rhai-cli/
-├── registry/
-│   ├── components/
-│   ├── themes/
-│   ├── locales/
-│   └── assets/
-├── examples/
-├── docs/
-└── tests/
-```
-
-Focused infrastructure crates such as serialization, CLI parsing, file
-watching, and error-reporting libraries are permitted after license and cost
-review. The dependency prohibition targets alternative UI frameworks, script
-engines, and heavyweight runtimes—not every third-party Rust utility.
-
-Project Rust and Rhai source is licensed under `MIT OR Apache-2.0`. Theme,
-palette, icon, and adapted-source attribution is tracked separately and copied
-with assets where required.
-
-English is the normative language for source comments, schemas, errors, and
-project documentation. Simplified Chinese documentation may be maintained as a
-supplementary translation.
+- emitted semantic events;
+- named styleable parts;
+- effects;
+- assets, dependencies, capabilities, and runtime compatibility.
+
+Unknown props and parts are errors. Component metadata and exported schema must
+agree. Module top level may declare components, themes, locales, assets,
+functions, and pure constants; it cannot hold mutable UI state or start effects.
+
+### 5.3 Value boundary
+
+Durable data uses schema-checked `UiValue`: null, bool, integer, float, string,
+arrays, string-keyed maps, and approved opaque resource handles. Component
+invocations also carry a closed `ComponentPropValue` union for generation-scoped
+structural values such as UiNode, Style, callback, slot renderer, ElementRef,
+and NativeSignal. Arbitrary `Dynamic`, captured closure environments, and custom
+Rust variants cannot enter retained state.
+
+Retained UI callbacks and effects use named functions. Curried payloads must
+convert to immutable `UiValue`. Anonymous/capturing closures may be used only
+inside one synchronous evaluation and cannot escape as event, effect, task, or
+subscription handlers.
+
+### 5.4 Lifecycle and effects
+
+`view(ctx) -> UiNode` is required; application `init` and `dispose` remain
+optional. Formal components declare effects during pure render by key,
+dependency payload, named start function, and named cleanup function. Effects
+start only after a successful subtree commit, restart after dependency changes,
+and cleanup exactly once on replacement, unmount, or hot reload. Tasks,
+subscriptions, and timers bind to component/key/generation ownership.
+
+## 6. State, transactions, and hot reload
+
+Component fields and typed app/window stores are versioned at field/path level.
+Equal writes do not invalidate readers. Keyed collection access can invalidate
+one item; whole-value reads intentionally create broad dependencies.
+
+Script events and renders use Host-owned transactions. State, store, theme,
+locale, queued work, and runtime-managed signal writes commit only after
+callback, component render, validation, and reconciliation succeed. Failure
+keeps the complete last-good tree. External Rust side effects remain the Host's
+responsibility and are not rollbackable.
+
+Hot reload compiles a candidate generation. Failure preserves the complete old
+generation. Successful reload retains compatible keyed component state and
+retained node/native state, runs old effect cleanup while its invocation context
+is valid, invalidates old deliveries, and atomically switches generation.
+Incompatible schema or node kinds reset only the affected subtree and produce a
+diagnostic.
+
+## 7. Events, handlers, and native hot state
+
+### 7.1 Event contract
+
+Atomic nodes expose normalized pointer, click/aux-click, wheel, hover,
+focus/blur, keyboard, layout, scroll, outside-press, and semantic events.
+Pointer payloads include pointer identity/type, logical window/local/content
+coordinates, movement, buttons, modifiers, click count, timestamp, capture
+state, and available pressure/tilt data. Coordinates account for committed
+layout, scrolling, and invertible 2D transforms.
+
+Propagation is capture -> target -> bubble. Each node/phase may have an ordered
+list of Script and Host handlers. Responses independently control default
+behavior, propagation, immediate propagation, pointer capture, and release.
+Continuous move/wheel/layout/scroll events coalesce at most once per frame;
+down/up/cancel/focus/submit are never discarded.
+
+### 7.2 Rust handler lanes
+
+`UiEventHandler` supports generation-bound Script handlers and trusted Rust Host
+handlers. A Host can also register a named, schema-checked `NativeHandlerRef`
+that Rhai attaches to an ordinary atomic node. Native handlers receive a typed
+event context, can update signals and declared runtime state transactionally,
+and may use `Window`/`App` only inside the trusted Rust closure.
+
+### 7.3 NativeSignal
+
+`NativeSignal<T>` is the only high-frequency imperative value path. It binds to
+approved style, transform, scroll, animation, or Canvas properties and repaints
+without dirtying a Rhai component. Signal reads do not establish component
+dependencies; structural synchronization is explicit. Signals are scoped by
+component path/key/type, preserve compatible reconcile/hot reload, serialize
+nowhere, and update only through the foreground queue.
+
+## 8. Atomic layout, style, text, and Canvas
+
+### 8.1 Typed Style
+
+Style is an exhaustive-by-default typed mapping of stable, safely representable
+GPUI capabilities, not a raw GPUI handle and not a promise of browser CSS
+compatibility. It covers flex/grid, wrap/grow/shrink/basis, alignment, gaps,
+sizing and intrinsic tracks, spacing, positioning/insets, per-axis overflow,
+paint order/stacking contexts, borders/radii, shadow, gradient, alpha, cursor,
+hit testing, visibility, typography, selection, clipping, and 2D transforms.
+
+Lengths are property-validated: signed px/rem/percent values are allowed where
+meaningful, while sizes/padding/gaps/radii reject negatives. Auto, intrinsic
+content, fit, and grid fractions are typed variants. Invalid property/value
+combinations fail candidate validation.
+
+There is no general CSS cascade, selector, or specificity. Explicit Style
+merge and component part composition determine values. Only documented
+typography, direction, and selection properties inherit. Runtime states apply
+in a fixed order after base styles; disabled wins over pointer states.
+
+### 8.2 Property sources and animation
+
+Each animatable property has one typed source: literal, signal, transition,
+spring, keyframes, or derived signal. Rust samples animation; Rhai never runs
+per frame. The engine supports delay/easing, retargeting, repeat/reverse,
+enter/exit, layout transitions, shared layout IDs within a compatible Host
+layer, reduced-motion policy, and a deterministic test clock.
+
+Exit nodes leave layout, input, focus, and accessibility immediately while a
+noninteractive paint ghost finishes visual exit. Layout transitions use
+committed old/new geometry and paint transforms rather than rerunning layout
+each animation frame.
+
+### 8.3 Colors and themes
+
+One ColorValue grammar serves text, fills, borders, gradients, shadows,
+selection, and Canvas. It accepts semantic tokens, typed constructors, and
+strict validated CSS-like named/hex/rgb/hsl/hwb/lab/lch/oklab/oklch strings,
+then converts to GPUI's drawable color space.
+
+Themes are namespaced typed token registries rather than a fixed struct. Core,
+applications, and component packs declare color, spacing, radius, typography,
+shadow, motion, and metric token schemas. Theme switching validates a complete
+candidate then commits atomically at app/window/subtree scope. Official
+components consume public semantic tokens; application atoms may also use
+literals.
+
+### 8.4 Text and fonts
+
+Text/Span support declared font assets and fallback stacks, family, weight,
+style, size, line height, available font features, wrapping, alignment,
+ellipsis, line clamp, inline styling, links, hover/click, selection, and
+subtree search/highlight with UTF-16 ranges. Selection is continuous across
+ordinary and native document text in paint order. Markdown, Code, and Diff use
+the same text, selection, search, theme, and automation infrastructure.
+
+Font files are declared through AssetId/provider metadata, loaded before
+render, registered under stable aliases, and hot reloaded without render-time
+file I/O. Unsupported variable-font axes are reported rather than simulated.
+
+### 8.5 Canvas
+
+Canvas is a declarative retained vector scene with keyed rectangles, rounded
+rectangles, circles/ellipses, lines, paths, fill/stroke, linear gradients,
+clipping, opacity, and 2D transforms. It never calls Rhai during GPUI paint.
+Shapes participate in diff, signal/animation binding, path hit testing,
+capture/bubble events, accessibility, Inspector, automation, and Host resource
+budgets. Applications may alternatively handle one Canvas event using content
+coordinates and perform their own hit policy.
+
+## 9. Native behavior mechanisms
+
+### 9.1 ElementRef and geometry
+
+Component-scoped typed ElementRefs bind retained NodeId. They provide focus,
+blur, scroll, capture, layout/visual bounds, clipping, and automation identity.
+Stale refs fail explicitly. Measurement returns the last committed geometry;
+same-layout synchronous feedback is forbidden. Exact geometry dependencies and
+layout events coalesce once per frame and are loop-budgeted.
+
+Responsive Style supports named application breakpoints and committed
+window/view/container conditions without Rhai execution. Scripts may read exact
+committed size when custom geometry requires it.
+
+### 9.2 Focus and accessibility
+
+Public behaviors cover focusability, tab order, autofocus, focus-visible,
+scopes, traps, restore, roving focus, and directional/grid navigation. Every
+retained node may declare role, name, description, value, checked/selected/
+expanded/disabled/invalid state, collection metadata, and semantic actions.
+Canvas shapes can be accessibility nodes. The same tree drives platform
+accessibility, Inspector, and automation.
+
+### 9.3 Scrolling and overlays
+
+Box overflow creates retained per-axis scrolling. A shared router selects the
+deepest eligible scroller per axis, preserves vertical input for parents of
+horizontal scrollers, chains residual delta at boundaries, and supports
+overscroll containment. Ref commands expose offsets, scrollIntoView, and
+signal-owned synchronized panes.
+
+Normal nodes use sibling paint order and local stacking contexts. Deferred
+layers use the public Host overlay coordinator for anchors, placement, flip/
+shift/snap, nested ownership, priority, outside press, Escape routing, modal
+occlusion, focus trap/restore, tooltip timing, and toast queues.
+
+### 9.4 Virtualization and text editing
+
+Generic data-backed one-dimensional virtualization supports stable keys,
+variable measured heights, estimates, overdraw, bottom alignment, follow-tail,
+prepend anchoring, remeasure, focus retention, and programmatic scrolling. Rhai
+item renderers are formal components scheduled outside GPUI layout/paint and
+only instantiated for the window plus overdraw. Arbitrary two-dimensional
+spreadsheet virtualization remains a separate future mechanism.
+
+A retained native TextEditor mechanism provides controlled and uncontrolled
+single/multiline modes, immediate native edits, revision-safe reconciliation,
+selection, IME, clipboard, undo/redo, grapheme operations, hit testing,
+autoscroll, wrapping, and auto-grow. Input and Textarea are Rhai wrappers;
+rich/code editing is a separate editor model.
+
+## 10. Host embedding, capabilities, and custom primitives
+
+The prepared unit remains a single-use `PreparedScriptView`. Existing GPUI hosts
+mount multiple independent views into one window through a shared
+`ScriptViewHost`. Views isolate Engine, script state, capabilities, tasks,
+themes, and diagnostics; the Host shares only native mechanisms that must
+coordinate across views, such as overlays, input routing, fonts, and window
+policy.
+
+Filesystem, network, persistence, process, credentials, and arbitrary platform
+services require explicit versioned Rust capabilities. Module imports use the
+restricted ScriptSource resolver; scripts never receive paths, URLs, sockets,
+process APIs, or raw GPUI handles.
+
+Custom primitives use a retained lifecycle: mount, validated update, render,
+and unmount. Keyed instances preserve their GPUI Entity and native state.
+Downstream handlers use the runtime's re-exported GPUI types, WeakEntity in
+retained closures, explicit cleanup, and the same event/style/theme/automation
+contracts as built-ins.
+
+## 11. Window and platform contract
+
+Standalone applications declare title, initial/min/max size, resizability,
+fullscreen, opaque/transparent/blurred background, titlebar behavior,
+traffic-light position, visibility/focus, appearance, safe-area/insets, standard
+platform menus, and approved runtime commands. Embedded views cannot mutate
+Host windows unless explicitly authorized.
+
+The public data model is cross-platform. macOS is the first complete visual,
+interaction, IME, automation, and 120 Hz reference platform. Windows and Linux
+remain compiling/tested architectural targets with explicit capability results;
+the first Core Runtime v2 completion does not wait for their full visual
+certification.
+
+## 12. Safety, scheduling, and resource budgets
+
+Scripts are trusted application source inside a restricted capability
+environment, not hostile code in a strong sandbox. The runtime still replaces
+Rhai's default filesystem resolver, uses Simple optimization, configures
+operation/depth/collection limits, rejects arbitrary eval/path loading, and
+enforces Host budgets at every retained boundary. Rhai limits are defense in
+depth; they cannot interrupt blocking Rust and do not cover every collection
+mutation path.
+
+The Host budgets UiValue size/depth, retained nodes, styles, handlers, signals,
+effects, tasks, Canvas commands, layers, virtual data/overdraw, assets, dirty
+components, and diff work. Soft violations produce source-scoped diagnostics;
+hard violations reject the candidate and preserve last-good state.
+
+At 120 Hz, script plus reconcile has a 4 ms p95 reference budget, leaving the
+rest of the 8.33 ms frame for GPUI layout/paint. Runtime frame scheduling
+accumulates all script work independently of per-call Rhai counters. Atomic
+commits never split across frames; coalescible input can defer, while mandatory
+events remain ordered.
+
+## 13. Tooling, diagnostics, and automation
+
+The runtime emits definitions for atoms, Style, events, extensions,
+capabilities, components, parts, and theme tokens. `gpui-rhai check` combines
+compile/strict checks, metadata/schema/asset validation, known-call AST lint,
+and real headless view evaluation because Rhai compilation alone cannot prove
+function availability. LSP/editor tooling consumes the same definitions.
+
+Inspector shows retained/component trees, NodeId/key/source, props, style
+provenance, dependencies, state, signals, effects, focus/scroll/capture,
+accessibility, recent event paths, dirty causes, animation sources, and frame
+timings.
+
+Public automation provides role/name/text/test-ID locators, input, drag/wheel,
+bounds/style/text/selection/scroll/accessibility queries, deterministic clocks,
+and GPU screenshots through production render/input paths. It has an in-process
+Rust API and an explicitly enabled language-neutral stdio/JSON protocol for
+standalone applications.
+
+## 14. Source components and distribution
+
+The CLI copies versioned component/theme/locale/asset source plus local pristine
+baselines into the application. Diff/update is offline, reproducible,
+inspectable, and three-way mergeable. Development uses file-backed sources;
+production embeds the same validated graph and assets.
+
+The registry includes the existing component product line—Button, Input,
+Textarea, Checkbox, Radio/RadioGroup, Switch, Label, Tag, Avatar, Icon, Divider,
+Progress, Skeleton, Dropdown, Select, DatePicker, Popover, Tooltip, Dialog,
+Accordion, Collapsible, Tabs, Menu, Toast, FormField, Table, and Pagination—but
+all compositional implementations migrate to public Core Runtime v2 mechanisms.
+
+Dogfooding permits destructive migration. Until an explicit release/versioning
+signal, crate/component version remains `0.1.0`, `RUNTIME_API_VERSION` remains 1,
+and no compatibility adapter, deprecated alias, dual parser, old component
+format, or SDK-managed downstream migration is retained.
+
+## 15. Completion and acceptance
+
+The maintainer reviews one final delivery, not intermediate product states. The
+delivery is complete only when it includes:
+
+- the full retained/incremental Core Runtime v2 and public atomic surface;
+- every official source component migrated and unnecessary native UI nodes
+  deleted;
+- old Style/atomic/component APIs removed without shims;
+- an artistic typography/translucent-card/animated-Tabs showcase;
+- a pure-Rhai Mini Timeline meeting the reference interaction contract;
+- a variable-height Chat/List showcase;
+- a Rust native fast-path implementation of the same interaction surface;
+- public automation, Inspector, definitions/check tooling, and final docs;
+- hot-reload, rollback, accessibility, interaction, visual, and performance
+  matrices passing on the macOS reference platform.
+
+Internal commits and tests may proceed in dependency order, but no temporary
+public API or intermediate user acceptance target is allowed.
+
+## 16. Explicit non-goals
+
+Core Runtime v2 does not:
+
+- expose raw GPUI values or arbitrary retained-node mutation to Rhai;
+- execute hostile code as a process/memory-secure sandbox;
+- pretend to implement browser CSS/DOM semantics;
+- fake GPUI capabilities such as per-element backdrop blur or unsupported
+  variable-font axes;
+- include arbitrary two-dimensional spreadsheet virtualization or a rich/code
+  editor product;
+- require simultaneous full visual certification on every desktop platform;
+- depend on GPUIX, `gpui-component`, another script engine, or a Web runtime.
+
+## 17. Repository and licensing
+
+The repository remains a Cargo workspace containing the runtime, CLI, copied
+registry, examples, docs, and tests. Project Rust and Rhai source is licensed
+under `MIT OR Apache-2.0`; themes, palettes, fonts, icons, and adapted sources
+carry their own reviewed attribution. English is normative for source,
+schemas, diagnostics, and project documentation; translations may supplement it.

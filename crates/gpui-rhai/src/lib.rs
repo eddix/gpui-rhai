@@ -12,6 +12,7 @@ pub mod dropdown;
 mod dropdown_element;
 pub mod engine;
 pub mod event;
+mod invocation;
 pub mod lifecycle;
 pub mod locale;
 pub mod node;
@@ -21,6 +22,7 @@ pub mod primitive;
 pub mod reload;
 pub mod renderer;
 pub mod responsive;
+pub mod retained;
 pub mod schema;
 pub mod script_source;
 pub mod source;
@@ -75,9 +77,9 @@ pub use capability::{
 };
 pub use component::{
     ComponentDefinition, ComponentError, ComponentExportCollector, ComponentExportError,
-    ComponentHeaderError, ComponentInvocation, ComponentMetadata, ComponentRegistry,
-    ComponentRegistryError, ComponentSchema, EventSchema, RuntimeApiRange, SlotSchema,
-    parse_component_header,
+    ComponentHeaderError, ComponentInvocation, ComponentMetadata, ComponentPropConversionError,
+    ComponentPropValue, ComponentProps, ComponentRegistry, ComponentRegistryError, ComponentSchema,
+    EventSchema, RuntimeApiRange, SlotSchema, parse_component_header,
 };
 pub use context::{
     ExecutionPhase, PendingEvent, UiContext, UiContextError, UiMutationBatch, UiRuntimeState,
@@ -106,8 +108,8 @@ pub use dropdown::{
     DropdownOutcome, DropdownState, DropdownVisibleRow, SelectNodeSpec,
 };
 pub use engine::{
-    CompiledUi, ExecutionOperation, ExecutionTiming, RuntimeEngine, RuntimeError, ScriptCallback,
-    ScriptGeneration,
+    CompiledUi, ComponentInvocationRecipe, ExecutionOperation, ExecutionTiming, RuntimeEngine,
+    RuntimeError, ScriptCallback, ScriptCallbackDefinitionError, ScriptGeneration,
 };
 pub use event::{
     EventDispatchReport, EventPropagation, EventRouter, HostCallback, UiEvent, UiEventHandler,
@@ -120,7 +122,7 @@ pub use locale::{
 };
 pub use node::{
     ImageSourceSpec, NodeKey, OverlayDismissPolicy, OverlayNodeSpec, SourceLocation, TooltipDelays,
-    UiNode, UiNodeKind,
+    UiNode, UiNodeKind, UiNodeKindTag,
 };
 pub use overlay::{
     DismissReport, FocusToken, OverlayBounds, OverlayError, OverlayId, OverlayKind, OverlayManager,
@@ -137,6 +139,9 @@ pub use renderer::{
     ColorResolver, GpuiNodeRenderer, LiteralColorResolver, NodeEventDispatcher, StaticUiView,
 };
 pub use responsive::{ResponsiveError, ResponsiveRuntime, ViewportBreakpoints, ViewportClass};
+pub use retained::{
+    NodeId, ReconcileError, ReconcileReport, RetainedChildLink, RetainedNode, RetainedUiTree,
+};
 pub use schema::{
     ObjectField, SchemaDefinitionError, SchemaIssue, SchemaValidationError, ValueSchema,
 };

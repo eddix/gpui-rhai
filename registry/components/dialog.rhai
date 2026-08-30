@@ -16,7 +16,7 @@
 // Parts: root, backdrop, panel, title, content, actions.
 // Example: Dialog(#{ key: "confirm", open: true, title: "Confirm", content: text("Continue?") })
 
-export_component(#{
+define_component(#{
     metadata: #{
         id: "components/dialog",
         "export": "Dialog",
@@ -63,15 +63,14 @@ export_component(#{
         },
         parts: ["root", "backdrop", "panel", "title", "content", "actions"],
     },
+    render: Fn("render_Dialog")
 });
 
 fn optional_bool(props, name, fallback) {
     if name in props { props[name] } else { fallback }
 }
 
-fn Dialog(props) {
-    component_render("components/dialog", props, Fn("render_Dialog"))
-}
+fn Dialog(props) { render_component("components/dialog", props) }
 fn render_Dialog(ctx, props) {
     let children = [
         text(props.title).with_style(component_style(props, "title",

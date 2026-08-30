@@ -25,7 +25,7 @@ const COUNTER: &str = r#"
 // Props: stable key.
 // State: local count integer. Events: none.
 // Example: Counter(#{ key: "primary" })
-export_component(#{
+define_component(#{
     metadata: #{
         id: "components/counter", "export": "Counter", version: "0.1.0",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
@@ -42,7 +42,8 @@ export_component(#{
         } },
         events: #{ change: #{ payload: #{ type: "integer" } } },
         slots: #{}, parts: ["root"]
-    }
+    },
+    render: Fn("render_Counter")
 });
 
 fn reset(ctx, payload) { ctx.set_state("count", 0); }
@@ -55,7 +56,7 @@ fn increment(ctx, payload) {
     ctx.register_action("counter.reset", Fn("reset"));
     ctx.start_task("app.echo", "echo", "work", Fn("loaded"), Fn("failed"));
 }
-fn Counter(props) { component_render("components/counter", props, Fn("render_Counter")) }
+fn Counter(props) { render_component("components/counter", props) }
 fn render_Counter(ctx, props) {
     text(`${ctx.get_state("count")}`).on_click(Fn("increment"))
 }
@@ -113,6 +114,34 @@ fn runtime_with_async_echo() -> Rc<RefCell<UiRuntimeState>> {
     Rc::new(RefCell::new(runtime))
 }
 
+fn assert_counter_recipe(engine: &RuntimeEngine, component_path: &ComponentInstancePath) {
+    let recipe = engine
+        .component_invocations()
+        .find(|recipe| recipe.path() == component_path)
+        .expect("formal component render records one retained invocation recipe");
+    assert_eq!(recipe.component().as_str(), "components/counter");
+    assert_eq!(recipe.render_name(), "render_Counter");
+    assert!(recipe.has_invocation_context());
+    assert!(matches!(
+        recipe.props().get("on_change"),
+        Some(gpui_rhai::ComponentPropValue::Callback(_))
+    ));
+}
+
+fn assert_root_text(lifecycle: &ScriptLifecycle, expected: &str) {
+    assert!(matches!(
+        lifecycle.root().unwrap().kind(),
+        UiNodeKind::Text { text } if text == expected
+    ));
+}
+
+fn assert_incremental_counter_timing(engine: &mut RuntimeEngine) {
+    assert!(engine.take_timings().iter().any(|timing| {
+        matches!(timing.operation, gpui_rhai::ExecutionOperation::Render)
+            && timing.source == "components/counter"
+    }));
+}
+
 #[test]
 fn local_state_callback_scope_and_reload_cleanup_are_end_to_end() {
     let mut engine = RuntimeEngine::new();
@@ -134,6 +163,7 @@ fn local_state_callback_scope_and_reload_cleanup_are_end_to_end() {
     )
     .unwrap();
     lifecycle.start(&mut engine).unwrap();
+    assert_counter_recipe(&engine, &component_path);
     assert_eq!(
         runtime
             .borrow()
@@ -148,6 +178,9 @@ fn local_state_callback_scope_and_reload_cleanup_are_end_to_end() {
     let _ = lifecycle
         .invoke_callback_transactional(&engine, &click, UiValue::Null)
         .unwrap();
+    assert!(lifecycle.render_dirty(&mut engine).unwrap());
+    assert_root_text(&lifecycle, "1");
+    assert_incremental_counter_timing(&mut engine);
     let batch = runtime.borrow_mut().drain_batch();
     assert_eq!(batch.events.len(), 1);
     for event in batch.events {
@@ -155,11 +188,8 @@ fn local_state_callback_scope_and_reload_cleanup_are_end_to_end() {
             .invoke_component_event_transactional(&engine, event)
             .unwrap();
     }
-    lifecycle.render(&mut engine).unwrap();
-    assert!(matches!(
-        lifecycle.root().unwrap().kind(),
-        UiNodeKind::Text { text } if text == "1"
-    ));
+    assert!(lifecycle.render_dirty(&mut engine).unwrap());
+    assert_root_text(&lifecycle, "1");
     assert_eq!(
         runtime
             .borrow()

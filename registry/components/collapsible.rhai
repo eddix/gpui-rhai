@@ -13,7 +13,7 @@
 // State/events: controlled open state; emits open_change(bool).
 // Example: Collapsible(#{ key: "details", open: true, trigger: text("Details"), content: text("Body"), content_height: 40 })
 
-export_component(#{
+define_component(#{
     metadata: #{
         id: "components/collapsible", "export": "Collapsible", version: "0.1.0",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 }, dependencies: [], capabilities: #{},
@@ -36,11 +36,10 @@ export_component(#{
         },
         parts: ["root", "trigger", "content"],
     },
+    render: Fn("render_Collapsible")
 });
 
-fn Collapsible(props) {
-    component_render("components/collapsible", props, Fn("render_Collapsible"))
-}
+fn Collapsible(props) { render_component("components/collapsible", props) }
 fn render_Collapsible(ctx, props) {
     let disabled = if "disabled" in props { props.disabled } else { false };
     let trigger = props.trigger

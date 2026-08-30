@@ -231,11 +231,17 @@ impl PrimitiveProps {
         self.0.iter().map(|(name, value)| (name.as_str(), value))
     }
 
+    pub(crate) fn iter_mut(&mut self) -> impl Iterator<Item = (&str, &mut PrimitiveValue)> {
+        self.0
+            .iter_mut()
+            .map(|(name, value)| (name.as_str(), value))
+    }
+
     pub(crate) fn bind_component_scope(
         &mut self,
         component: &crate::ComponentInstancePath,
         events: &BTreeMap<String, EventSchema>,
-        native_context: Option<&crate::engine::ScriptNativeContext>,
+        native_context: Option<&crate::invocation::ScriptInvocationContext>,
     ) {
         for value in self.0.values_mut() {
             match value {
@@ -243,7 +249,7 @@ impl PrimitiveProps {
                     if let Some(callback) = callback.as_script_mut() {
                         callback.bind_component_if_unset(component.clone(), events.clone());
                         if let Some(context) = native_context {
-                            callback.bind_native_context_if_unset(Rc::clone(context));
+                            callback.bind_native_context_if_unset(context.clone());
                         }
                     }
                 }
@@ -268,7 +274,7 @@ impl PrimitiveProps {
         names: &BTreeSet<String>,
         component: &crate::ComponentInstancePath,
         events: &BTreeMap<String, EventSchema>,
-        native_context: Option<&crate::engine::ScriptNativeContext>,
+        native_context: Option<&crate::invocation::ScriptInvocationContext>,
     ) {
         for value in self.0.values_mut() {
             match value {
@@ -282,7 +288,7 @@ impl PrimitiveProps {
                         .expect("matched script callback handler");
                     callback.bind_component_if_unset(component.clone(), events.clone());
                     if let (Some(context), None) = (native_context, callback.native_context()) {
-                        callback.bind_native_context_if_unset(Rc::clone(context));
+                        callback.bind_native_context_if_unset(context.clone());
                     }
                 }
                 PrimitiveValue::Node(node) => {
@@ -866,7 +872,7 @@ fn convert_prop(
     schema: &ValueSchema,
     value: Dynamic,
     generation: ScriptGeneration,
-) -> Result<PrimitiveValue, UiValueError> {
+) -> Result<PrimitiveValue, PrimitivePropConversionError> {
     match schema {
         ValueSchema::Optional { value: inner } if value.is_unit() => {
             Ok(PrimitiveValue::Data(UiValue::Null))
@@ -881,7 +887,7 @@ fn convert_prop(
         }
         ValueSchema::Node => Ok(PrimitiveValue::Node(Box::new(value.cast::<UiNode>()))),
         ValueSchema::Callback => Ok(PrimitiveValue::Callback(UiEventHandler::Script(
-            ScriptCallback::from_fn_ptr(value.cast::<FnPtr>(), generation),
+            ScriptCallback::try_from_fn_ptr(value.cast::<FnPtr>(), generation)?,
         ))),
         ValueSchema::Array { items, .. } if matches!(items.as_ref(), ValueSchema::Node) => {
             Ok(PrimitiveValue::Nodes(
@@ -895,8 +901,18 @@ fn convert_prop(
         ValueSchema::Style => Ok(PrimitiveValue::Style(Box::new(value.cast::<Style>()))),
         ValueSchema::Length => Ok(PrimitiveValue::Length(value.cast::<Length>())),
         ValueSchema::Asset => Ok(PrimitiveValue::Asset(value.cast::<AssetId>())),
-        _ => UiValue::from_dynamic(value).map(PrimitiveValue::Data),
+        _ => UiValue::from_dynamic(value)
+            .map(PrimitiveValue::Data)
+            .map_err(Into::into),
     }
+}
+
+#[derive(Debug, Error)]
+pub enum PrimitivePropConversionError {
+    #[error(transparent)]
+    Value(#[from] UiValueError),
+    #[error(transparent)]
+    Callback(#[from] crate::ScriptCallbackDefinitionError),
 }
 
 #[derive(Debug, Error)]
@@ -935,7 +951,10 @@ pub enum PrimitiveError {
         source: SchemaValidationError,
     },
     #[error("primitive prop `{prop}` cannot cross the runtime boundary: {source}")]
-    PropConversion { prop: String, source: UiValueError },
+    PropConversion {
+        prop: String,
+        source: PrimitivePropConversionError,
+    },
     #[error("primitive event `{event}` requires callback prop `{prop}`")]
     MissingEventCallback { event: String, prop: String },
     #[error("primitive `{primitive:?}` does not declare event `{event}`")]

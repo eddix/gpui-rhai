@@ -13,7 +13,7 @@
 // State/events: stateless; Rust owns animation frames and no events are emitted.
 // Example: Progress(#{ key: "upload", value: 60, max: 100, label: "Upload" })
 
-export_component(#{
+define_component(#{
     metadata: #{
         id: "components/progress", "export": "Progress", version: "0.1.0",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 }, dependencies: [], capabilities: #{},
@@ -32,11 +32,10 @@ export_component(#{
         },
         state: #{ fields: #{} }, events: #{}, slots: #{}, parts: ["root", "track", "indicator"],
     },
+    render: Fn("render_Progress")
 });
 
-fn Progress(props) {
-    component_render("components/progress", props, Fn("render_Progress"))
-}
+fn Progress(props) { render_component("components/progress", props) }
 fn render_Progress(ctx, props) {
     let max = if "max" in props { props.max } else { 100.0 };
     let value = if "value" in props { props.value } else { 0.0 };

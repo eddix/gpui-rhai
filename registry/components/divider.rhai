@@ -14,7 +14,7 @@
 // Events: none. State: none. Slots: none. Parts: root.
 // Example: Divider(#{ orientation: "horizontal" })
 
-export_component(#{
+define_component(#{
     metadata: #{
         id: "components/divider",
         "export": "Divider",
@@ -43,11 +43,10 @@ export_component(#{
         slots: #{},
         parts: ["root"],
     },
+    render: Fn("render_Divider")
 });
 
-fn Divider(props) {
-    component_render("components/divider", props, Fn("render_Divider"))
-}
+fn Divider(props) { render_component("components/divider", props) }
 fn render_Divider(ctx, props) {
     let orientation = if "orientation" in props {
         props.orientation

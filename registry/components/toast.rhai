@@ -14,7 +14,7 @@
 // State: controlled item list; native queue owns timing and pause state.
 // Example: Toast(#{ key: "toasts", items: items, on_dismiss: Fn("dismissed") })
 
-export_component(#{
+define_component(#{
     metadata: #{
         id: "components/toast", "export": "Toast", version: "0.1.0",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 }, dependencies: [], capabilities: #{},
@@ -47,11 +47,10 @@ export_component(#{
         state: #{ fields: #{} }, events: #{ dismiss: #{ payload: #{ type: "string" } } },
         slots: #{}, parts: ["root", "region", "toast", "title", "message", "close"],
     },
+    render: Fn("render_Toast")
 });
 
-fn Toast(props) {
-    component_render("components/toast", props, Fn("render_Toast"))
-}
+fn Toast(props) { render_component("components/toast", props) }
 fn render_Toast(ctx, props) {
     toast_host(#{
         key: props.key,

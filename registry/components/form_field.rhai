@@ -15,7 +15,7 @@
 
 import "components/label" as label_component;
 
-export_component(#{
+define_component(#{
     metadata: #{
         id: "components/form_field", "export": "FormField", version: "0.1.0",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
@@ -35,11 +35,10 @@ export_component(#{
         slots: #{ control: #{ required: true, multiple: false } },
         parts: ["root", "label", "control", "description", "error"],
     },
+    render: Fn("render_FormField")
 });
 
-fn FormField(props) {
-    component_render("components/form_field", props, Fn("render_FormField"))
-}
+fn FormField(props) { render_component("components/form_field", props) }
 fn render_FormField(ctx, props) {
     let description = if "description" in props { props.description } else { () };
     let error = if "error" in props { props.error } else { () };
