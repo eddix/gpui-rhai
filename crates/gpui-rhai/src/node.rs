@@ -12,7 +12,8 @@ use crate::{
     OverlayKind, OverlayPlacement, PrimitiveNode, ScriptCallback, ScriptGeneration, SelectNodeSpec,
     Style, TableAlign, TableCellFormat, TableColumnSpec, TableColumnWidth, TableNodeSpec,
     TableRowSpec, TableSelectionMode, TableSort, TableSortDirection, ToastHostSpec, ToastItemSpec,
-    ToastRegion, ToastVariant, UiEventHandler, UiValue, VirtualListItem, VirtualListNodeSpec,
+    ToastRegion, ToastVariant, UiEventBinding, UiEventHandler, UiValue, VirtualListItem,
+    VirtualListNodeSpec,
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -146,10 +147,11 @@ pub struct UiNode {
     source: Option<SourceLocation>,
     component_root: Option<ComponentInstancePath>,
     attributes: BTreeMap<String, UiValue>,
-    handlers: BTreeMap<String, UiEventHandler>,
+    handlers: BTreeMap<String, Vec<UiEventBinding>>,
     handler_payloads: BTreeMap<String, UiValue>,
     animations: Vec<AnimationSpec>,
     signal_bindings: BTreeMap<crate::SignalProperty, crate::NativeSignal>,
+    element_ref: Option<crate::ElementRef>,
 }
 
 impl UiNode {
@@ -167,6 +169,7 @@ impl UiNode {
             handler_payloads: BTreeMap::new(),
             animations: Vec::new(),
             signal_bindings: BTreeMap::new(),
+            element_ref: None,
         }
     }
 
@@ -184,6 +187,7 @@ impl UiNode {
             handler_payloads: BTreeMap::new(),
             animations: Vec::new(),
             signal_bindings: BTreeMap::new(),
+            element_ref: None,
         }
     }
 
@@ -211,6 +215,7 @@ impl UiNode {
             handler_payloads: BTreeMap::new(),
             animations: Vec::new(),
             signal_bindings: BTreeMap::new(),
+            element_ref: None,
         }
     }
 
@@ -231,6 +236,7 @@ impl UiNode {
             handler_payloads: BTreeMap::new(),
             animations: Vec::new(),
             signal_bindings: BTreeMap::new(),
+            element_ref: None,
         }
     }
 
@@ -257,6 +263,7 @@ impl UiNode {
             handler_payloads: BTreeMap::new(),
             animations: Vec::new(),
             signal_bindings: BTreeMap::new(),
+            element_ref: None,
         }
     }
 
@@ -295,6 +302,7 @@ impl UiNode {
             handler_payloads: BTreeMap::new(),
             animations: Vec::new(),
             signal_bindings: BTreeMap::new(),
+            element_ref: None,
         }
     }
 
@@ -316,6 +324,7 @@ impl UiNode {
             handler_payloads: BTreeMap::new(),
             animations: Vec::new(),
             signal_bindings: BTreeMap::new(),
+            element_ref: None,
         }
     }
 
@@ -334,6 +343,7 @@ impl UiNode {
             handler_payloads: BTreeMap::new(),
             animations: Vec::new(),
             signal_bindings: BTreeMap::new(),
+            element_ref: None,
         }
     }
 
@@ -359,6 +369,7 @@ impl UiNode {
             handler_payloads: BTreeMap::new(),
             animations: Vec::new(),
             signal_bindings: BTreeMap::new(),
+            element_ref: None,
         }
     }
 
@@ -400,6 +411,7 @@ impl UiNode {
             handler_payloads: BTreeMap::new(),
             animations: Vec::new(),
             signal_bindings: BTreeMap::new(),
+            element_ref: None,
         }
     }
 
@@ -431,6 +443,7 @@ impl UiNode {
             handler_payloads: BTreeMap::new(),
             animations: Vec::new(),
             signal_bindings: BTreeMap::new(),
+            element_ref: None,
         }
     }
 
@@ -449,6 +462,7 @@ impl UiNode {
             handler_payloads: BTreeMap::new(),
             animations: Vec::new(),
             signal_bindings: BTreeMap::new(),
+            element_ref: None,
         }
     }
 
@@ -467,6 +481,7 @@ impl UiNode {
             handler_payloads: BTreeMap::new(),
             animations: Vec::new(),
             signal_bindings: BTreeMap::new(),
+            element_ref: None,
         }
     }
 
@@ -503,6 +518,12 @@ impl UiNode {
         }
         self.signal_bindings.insert(property, signal);
         Ok(self)
+    }
+
+    #[must_use]
+    pub fn with_element_ref(mut self, reference: crate::ElementRef) -> Self {
+        self.element_ref = Some(reference);
+        self
     }
 
     #[must_use]
@@ -636,15 +657,30 @@ impl UiNode {
         event: impl Into<String>,
         handler: impl Into<UiEventHandler>,
     ) -> Self {
-        self.handlers.insert(event.into(), handler.into());
+        self.handlers
+            .entry(event.into())
+            .or_default()
+            .push(UiEventBinding::new(crate::EventPhase::Target, handler));
         self
     }
 
     #[must_use]
-    pub fn with_host_handler(mut self, event: impl Into<String>, callback: HostCallback) -> Self {
+    pub fn with_handler_phase(
+        mut self,
+        event: impl Into<String>,
+        phase: crate::EventPhase,
+        handler: impl Into<UiEventHandler>,
+    ) -> Self {
         self.handlers
-            .insert(event.into(), UiEventHandler::Host(callback));
+            .entry(event.into())
+            .or_default()
+            .push(UiEventBinding::new(phase, handler));
         self
+    }
+
+    #[must_use]
+    pub fn with_host_handler(self, event: impl Into<String>, callback: HostCallback) -> Self {
+        self.with_handler(event, UiEventHandler::Host(callback))
     }
 
     #[must_use]
@@ -662,8 +698,22 @@ impl UiNode {
     }
 
     #[must_use]
-    pub fn handlers(&self) -> &BTreeMap<String, UiEventHandler> {
+    pub fn handlers(&self) -> &BTreeMap<String, Vec<UiEventBinding>> {
         &self.handlers
+    }
+
+    #[must_use]
+    pub fn handler(&self, event: &str) -> Option<&UiEventHandler> {
+        self.handlers
+            .get(event)?
+            .iter()
+            .find(|binding| binding.phase() == crate::EventPhase::Target)
+            .map(UiEventBinding::handler)
+    }
+
+    #[must_use]
+    pub fn event_handlers(&self, event: &str) -> &[UiEventBinding] {
+        self.handlers.get(event).map_or(&[], Vec::as_slice)
     }
 
     #[must_use]
@@ -677,9 +727,11 @@ impl UiNode {
     }
 
     pub(crate) fn bind_generation(&mut self, generation: ScriptGeneration) {
-        for handler in self.handlers.values_mut() {
-            if let Some(callback) = handler.as_script_mut() {
-                callback.bind_generation(generation);
+        for bindings in self.handlers.values_mut() {
+            for binding in bindings {
+                if let Some(callback) = binding.handler_mut().as_script_mut() {
+                    callback.bind_generation(generation);
+                }
             }
         }
         match &mut self.kind {
@@ -747,11 +799,13 @@ impl UiNode {
         events: &BTreeMap<String, crate::EventSchema>,
         native_context: Option<&crate::invocation::ScriptInvocationContext>,
     ) {
-        for handler in self.handlers.values_mut() {
-            if let Some(callback) = handler.as_script_mut() {
-                callback.bind_component_if_unset(component.clone(), events.clone());
-                if let Some(context) = native_context {
-                    callback.bind_native_context_if_unset(context.clone());
+        for bindings in self.handlers.values_mut() {
+            for binding in bindings {
+                if let Some(callback) = binding.handler_mut().as_script_mut() {
+                    callback.bind_component_if_unset(component.clone(), events.clone());
+                    if let Some(context) = native_context {
+                        callback.bind_native_context_if_unset(context.clone());
+                    }
                 }
             }
         }
@@ -827,13 +881,15 @@ impl UiNode {
         events: &BTreeMap<String, crate::EventSchema>,
         native_context: Option<&crate::invocation::ScriptInvocationContext>,
     ) {
-        for handler in self.handlers.values_mut() {
-            if let Some(callback) = handler.as_script_mut()
-                && names.contains(callback.name())
-            {
-                callback.bind_component_if_unset(component.clone(), events.clone());
-                if let (Some(context), None) = (native_context, callback.native_context()) {
-                    callback.bind_native_context_if_unset(context.clone());
+        for bindings in self.handlers.values_mut() {
+            for binding in bindings {
+                if let Some(callback) = binding.handler_mut().as_script_mut()
+                    && names.contains(callback.name())
+                {
+                    callback.bind_component_if_unset(component.clone(), events.clone());
+                    if let (Some(context), None) = (native_context, callback.native_context()) {
+                        callback.bind_native_context_if_unset(context.clone());
+                    }
                 }
             }
         }
@@ -1038,6 +1094,11 @@ impl UiNode {
             .iter()
             .map(|(property, signal)| (*property, signal))
     }
+
+    #[must_use]
+    pub const fn element_ref(&self) -> Option<&crate::ElementRef> {
+        self.element_ref.as_ref()
+    }
 }
 
 fn replace_in_nodes<'a>(
@@ -1101,17 +1162,15 @@ impl CustomType for UiNode {
                 },
             )
             .with_fn(
-                "with_part_style",
-                |node: &mut Self, part: ImmutableString, style: Style| {
-                    node.clone().with_part_style(part.to_string(), style)
+                "with_ref",
+                |node: &mut Self, reference: crate::ElementRef| {
+                    node.clone().with_element_ref(reference)
                 },
             )
             .with_fn(
-                "on_click",
-                |node: &mut Self, callback: FnPtr| -> Result<Self, Box<EvalAltResult>> {
-                    Ok(node
-                        .clone()
-                        .with_handler("click", retained_script_callback(callback)?))
+                "with_part_style",
+                |node: &mut Self, part: ImmutableString, style: Style| {
+                    node.clone().with_part_style(part.to_string(), style)
                 },
             )
             .with_fn(
@@ -1132,6 +1191,7 @@ impl CustomType for UiNode {
                         .with_handler_payload("click", payload))
                 },
             );
+        register_raw_event_methods(&mut builder);
         register_semantic_event_methods(&mut builder);
         builder
             .with_fn("animate", |node: &mut Self, animation: AnimationSpec| {
@@ -1177,6 +1237,137 @@ impl CustomType for UiNode {
                 },
             );
         register_accessibility_methods(&mut builder);
+    }
+}
+
+fn register_raw_event_methods(builder: &mut TypeBuilder<UiNode>) {
+    builder
+        .with_fn(
+            "on_click",
+            |node: &mut UiNode, callback: FnPtr| -> Result<UiNode, Box<EvalAltResult>> {
+                Ok(node
+                    .clone()
+                    .with_handler("click", retained_script_callback(callback)?))
+            },
+        )
+        .with_fn(
+            "on",
+            |node: &mut UiNode,
+             event: ImmutableString,
+             callback: FnPtr|
+             -> Result<UiNode, Box<EvalAltResult>> {
+                validate_node_event_name(event.as_str())?;
+                Ok(node
+                    .clone()
+                    .with_handler(event.to_string(), retained_script_callback(callback)?))
+            },
+        )
+        .with_fn(
+            "on_capture",
+            |node: &mut UiNode,
+             event: ImmutableString,
+             callback: FnPtr|
+             -> Result<UiNode, Box<EvalAltResult>> {
+                validate_node_event_name(event.as_str())?;
+                Ok(node.clone().with_handler_phase(
+                    event.to_string(),
+                    crate::EventPhase::Capture,
+                    retained_script_callback(callback)?,
+                ))
+            },
+        )
+        .with_fn(
+            "on_bubble",
+            |node: &mut UiNode,
+             event: ImmutableString,
+             callback: FnPtr|
+             -> Result<UiNode, Box<EvalAltResult>> {
+                validate_node_event_name(event.as_str())?;
+                Ok(node.clone().with_handler_phase(
+                    event.to_string(),
+                    crate::EventPhase::Bubble,
+                    retained_script_callback(callback)?,
+                ))
+            },
+        );
+    register_native_event_methods(builder);
+}
+
+fn register_native_event_methods(builder: &mut TypeBuilder<UiNode>) {
+    builder
+        .with_fn(
+            "on",
+            |node: &mut UiNode,
+             event: ImmutableString,
+             handler: crate::NativeHandlerRef|
+             -> Result<UiNode, Box<EvalAltResult>> {
+                validate_node_event_name(event.as_str())?;
+                handler.validate_event(event.as_str()).map_err(|error| {
+                    Box::new(EvalAltResult::ErrorRuntime(
+                        error.to_string().into(),
+                        Position::NONE,
+                    ))
+                })?;
+                Ok(node.clone().with_handler(event.to_string(), handler))
+            },
+        )
+        .with_fn(
+            "on_capture",
+            |node: &mut UiNode,
+             event: ImmutableString,
+             handler: crate::NativeHandlerRef|
+             -> Result<UiNode, Box<EvalAltResult>> {
+                validate_node_event_name(event.as_str())?;
+                handler.validate_event(event.as_str()).map_err(|error| {
+                    Box::new(EvalAltResult::ErrorRuntime(
+                        error.to_string().into(),
+                        Position::NONE,
+                    ))
+                })?;
+                Ok(node.clone().with_handler_phase(
+                    event.to_string(),
+                    crate::EventPhase::Capture,
+                    handler,
+                ))
+            },
+        )
+        .with_fn(
+            "on_bubble",
+            |node: &mut UiNode,
+             event: ImmutableString,
+             handler: crate::NativeHandlerRef|
+             -> Result<UiNode, Box<EvalAltResult>> {
+                validate_node_event_name(event.as_str())?;
+                handler.validate_event(event.as_str()).map_err(|error| {
+                    Box::new(EvalAltResult::ErrorRuntime(
+                        error.to_string().into(),
+                        Position::NONE,
+                    ))
+                })?;
+                Ok(node.clone().with_handler_phase(
+                    event.to_string(),
+                    crate::EventPhase::Bubble,
+                    handler,
+                ))
+            },
+        );
+}
+
+fn validate_node_event_name(event: &str) -> Result<(), Box<EvalAltResult>> {
+    let valid = (1..=64).contains(&event.len())
+        && event.chars().all(|character| {
+            character.is_ascii_lowercase()
+                || character.is_ascii_digit()
+                || matches!(character, '_' | ':')
+        });
+    if valid {
+        Ok(())
+    } else {
+        Err(Box::new(EvalAltResult::ErrorRuntime(
+            format!("event `{event}` must be a 1-64 character snake_case or namespaced name")
+                .into(),
+            Position::NONE,
+        )))
     }
 }
 

@@ -272,6 +272,7 @@ pub enum ComponentPropValue {
     Length(Length),
     Asset(AssetId),
     Signal(crate::NativeSignal),
+    Ref(crate::ElementRef),
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -327,8 +328,13 @@ fn convert_component_prop(
             convert_component_prop(branch, value, generation)
         }
         ValueSchema::Node => Ok(ComponentPropValue::Node(Box::new(value.cast::<UiNode>()))),
-        ValueSchema::Callback => Ok(ComponentPropValue::Callback(UiEventHandler::Script(
-            ScriptCallback::try_from_fn_ptr(value.cast::<rhai::FnPtr>(), generation)?,
+        ValueSchema::Callback if value.is::<rhai::FnPtr>() => {
+            Ok(ComponentPropValue::Callback(UiEventHandler::Script(
+                ScriptCallback::try_from_fn_ptr(value.cast::<rhai::FnPtr>(), generation)?,
+            )))
+        }
+        ValueSchema::Callback => Ok(ComponentPropValue::Callback(UiEventHandler::Native(
+            value.cast::<crate::NativeHandlerRef>(),
         ))),
         ValueSchema::Array { items, .. } if matches!(items.as_ref(), ValueSchema::Node) => {
             Ok(ComponentPropValue::Nodes(
@@ -392,6 +398,7 @@ fn convert_component_prop(
         ValueSchema::Signal => Ok(ComponentPropValue::Signal(
             value.cast::<crate::NativeSignal>(),
         )),
+        ValueSchema::Ref => Ok(ComponentPropValue::Ref(value.cast::<crate::ElementRef>())),
         _ => UiValue::from_dynamic(value)
             .map(ComponentPropValue::Data)
             .map_err(Into::into),

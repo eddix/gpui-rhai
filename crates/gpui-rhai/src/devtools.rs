@@ -253,7 +253,15 @@ fn inspect_node(node: &UiNode, path: &str) -> InspectorNode {
         handlers: node
             .handlers()
             .iter()
-            .map(|(event, handler)| format!("{event}={}", handler.diagnostic_label()))
+            .flat_map(|(event, bindings)| {
+                bindings.iter().map(move |binding| {
+                    format!(
+                        "{event}:{:?}={}",
+                        binding.phase(),
+                        binding.handler().diagnostic_label()
+                    )
+                })
+            })
             .collect(),
         animations: node
             .animations()
@@ -591,7 +599,7 @@ mod tests {
             HostCallback::new("widget.select", |_, _, _| EventPropagation::Handled),
         );
         let inspected = inspect_node(&root, "root");
-        assert_eq!(inspected.handlers, vec!["click=host:widget.select"]);
+        assert_eq!(inspected.handlers, vec!["click:Target=host:widget.select"]);
     }
 
     #[test]

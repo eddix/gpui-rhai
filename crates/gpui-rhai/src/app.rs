@@ -1972,13 +1972,15 @@ fn pixel_from_f64(value: f64) -> Pixels {
     px(value.to_string().parse::<f32>().unwrap_or(f32::MAX))
 }
 
-fn event_propagation_from_dynamic(value: &rhai::Dynamic) -> crate::EventPropagation {
-    if value.is::<rhai::ImmutableString>()
+fn event_response_from_dynamic(value: &rhai::Dynamic) -> crate::EventResponse {
+    if value.is::<crate::EventResponse>() {
+        value.clone_cast::<crate::EventResponse>()
+    } else if value.is::<rhai::ImmutableString>()
         && value.clone_cast::<rhai::ImmutableString>().as_str() == "propagate"
     {
-        crate::EventPropagation::Propagate
+        crate::EventResponse::new()
     } else {
-        crate::EventPropagation::Handled
+        crate::EventResponse::new().stop()
     }
 }
 
@@ -2064,23 +2066,35 @@ fn build_host_root(
     }
 }
 
+fn script_node_dispatcher(cx: &Context<ScriptHostView>) -> NodeEventDispatcher {
+    let script_entity = cx.entity().downgrade();
+    let native_entity = script_entity.clone();
+    NodeEventDispatcher::new(move |callback, payload, _, app| {
+        script_entity
+            .update(app, |view, cx| {
+                view.handle_node_event(&callback, payload, cx)
+            })
+            .unwrap_or_else(|_| crate::EventResponse::new().stop())
+    })
+    .with_native(move |handler, event, payload, window, app| {
+        native_entity
+            .update(app, |view, cx| {
+                view.handle_native_event(&handler, event, payload, window, cx)
+            })
+            .unwrap_or_else(|_| crate::EventResponse::new().stop())
+    })
+}
+
 impl Render for ScriptHostView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.prepare_render(window);
-        let entity = cx.entity().downgrade();
-        let dispatcher = NodeEventDispatcher::new(move |callback, payload, _, app| {
-            entity
-                .update(app, |view, cx| {
-                    view.handle_node_event(&callback, payload, cx)
-                })
-                .unwrap_or(crate::EventPropagation::Handled)
-        });
+        let dispatcher = script_node_dispatcher(cx);
         let runtime = self.lifecycle.runtime();
         let appearance = match window.appearance() {
             WindowAppearance::Dark | WindowAppearance::VibrantDark => SystemAppearance::Dark,
             WindowAppearance::Light | WindowAppearance::VibrantLight => SystemAppearance::Light,
         };
-        let (assets, theme, animations, signals, direction) = {
+        let (assets, theme, animations, signals, geometry, direction) = {
             let runtime = runtime.borrow();
             let root = self.lifecycle.root_path().clone();
             let theme = runtime
@@ -2097,6 +2111,7 @@ impl Render for ScriptHostView {
                 theme,
                 runtime.animation_values.clone(),
                 runtime.signals.clone(),
+                runtime.geometry.clone(),
                 runtime
                     .locale
                     .as_ref()
@@ -2111,6 +2126,7 @@ impl Render for ScriptHostView {
             overlays: &self.overlays,
             animations: &animations,
             signals: &signals,
+            geometry: &geometry,
             direction,
             root_path: &animation_root,
             view_id: &self.view_id,
@@ -2455,7 +2471,7 @@ impl ScriptHostView {
         callback: &ScriptCallback,
         payload: UiValue,
         cx: &mut Context<Self>,
-    ) -> crate::EventPropagation {
+    ) -> crate::EventResponse {
         if let Ok(mut runtime) = self.lifecycle.runtime().try_borrow_mut() {
             runtime.traces.push(
                 crate::RuntimeTraceKind::Event,
@@ -2476,9 +2492,9 @@ impl ScriptHostView {
                 .map_err(|error| error.to_string())?;
             Ok(value)
         });
-        let propagation = callback_result.as_ref().map_or(
-            crate::EventPropagation::Handled,
-            event_propagation_from_dynamic,
+        let response = callback_result.as_ref().map_or_else(
+            |_| crate::EventResponse::new().stop(),
+            event_response_from_dynamic,
         );
         let succeeded = callback_result.is_ok();
         match callback_result {
@@ -2489,9 +2505,59 @@ impl ScriptHostView {
         self.collect_timings();
         cx.notify();
         if succeeded {
-            propagation
+            response
         } else {
-            crate::EventPropagation::Handled
+            crate::EventResponse::new().stop()
+        }
+    }
+
+    fn handle_native_event(
+        &mut self,
+        handler: &crate::NativeHandlerRef,
+        event: String,
+        payload: UiValue,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> crate::EventResponse {
+        let registry = self.engine.native_handler_registry();
+        let result = self.run_script_transaction(|view| {
+            let response = {
+                let runtime = view.lifecycle.runtime();
+                let mut runtime = runtime
+                    .try_borrow_mut()
+                    .map_err(|_| "UI runtime state is already borrowed".to_owned())?;
+                registry
+                    .invoke(
+                        handler,
+                        crate::NativeEvent {
+                            name: event,
+                            payload,
+                        },
+                        &mut runtime,
+                        window,
+                        cx,
+                    )
+                    .map_err(|error| error.to_string())?
+            };
+            view.invoke_pending_effects()?;
+            view.lifecycle
+                .render_dirty(&mut view.engine)
+                .map_err(|error| error.to_string())?;
+            Ok(response)
+        });
+        match result {
+            Ok(response) => {
+                self.last_error = None;
+                self.process_window_commands(cx);
+                self.collect_timings();
+                cx.notify();
+                response
+            }
+            Err(error) => {
+                self.last_error = Some(error);
+                cx.notify();
+                crate::EventResponse::new().stop()
+            }
         }
     }
 
@@ -2552,6 +2618,7 @@ impl ScriptHostView {
         let root = self.lifecycle.root_path().clone();
         let (deliveries, animation_active, dirty, pending_dispatch) = {
             let mut runtime = runtime.borrow_mut();
+            runtime.flush_geometry_dependencies();
             let _ = runtime.assets.retain_decode_generation(generation);
             let mut deliveries = runtime.tasks.drain(generation);
             deliveries.extend(runtime.subscriptions.drain(generation));
@@ -3047,12 +3114,19 @@ mod tests {
     #[test]
     fn pointer_callback_return_controls_gpui_propagation() {
         assert_eq!(
-            event_propagation_from_dynamic(&rhai::Dynamic::from("propagate")),
-            crate::EventPropagation::Propagate
+            event_response_from_dynamic(&rhai::Dynamic::from("propagate")).propagation(),
+            crate::PropagationControl::Continue
         );
         assert_eq!(
-            event_propagation_from_dynamic(&rhai::Dynamic::UNIT),
-            crate::EventPropagation::Handled
+            event_response_from_dynamic(&rhai::Dynamic::UNIT).propagation(),
+            crate::PropagationControl::Stop
+        );
+        let response = crate::EventResponse::new()
+            .prevent_default()
+            .capture_pointer();
+        assert_eq!(
+            event_response_from_dynamic(&rhai::Dynamic::from(response)),
+            response
         );
     }
 
@@ -3497,7 +3571,11 @@ fn render_MissingAsset(ctx, props) { image(asset("app/icons/missing")) }
         )
         .unwrap();
         lifecycle.start(&mut engine).unwrap();
-        let fire = lifecycle.root().unwrap().handlers()["click"]
+        let fire = lifecycle
+            .root()
+            .unwrap()
+            .handler("click")
+            .unwrap()
             .as_script()
             .unwrap()
             .clone();

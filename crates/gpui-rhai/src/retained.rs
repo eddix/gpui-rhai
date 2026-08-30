@@ -50,6 +50,7 @@ pub struct RetainedNode {
     key: Option<String>,
     kind: UiNodeKindTag,
     component_root: Option<crate::ComponentInstancePath>,
+    element_ref: Option<crate::ElementRef>,
     children: Vec<RetainedChildLink>,
 }
 
@@ -77,6 +78,11 @@ impl RetainedNode {
     #[must_use]
     pub fn component_root(&self) -> Option<&crate::ComponentInstancePath> {
         self.component_root.as_ref()
+    }
+
+    #[must_use]
+    pub const fn element_ref(&self) -> Option<&crate::ElementRef> {
+        self.element_ref.as_ref()
     }
 
     pub fn children(&self) -> impl ExactSizeIterator<Item = &RetainedChildLink> {
@@ -343,6 +349,7 @@ impl ReconcileTransaction<'_> {
                 key: candidate.key().map(|key| key.as_str().to_owned()),
                 kind: candidate.kind_tag(),
                 component_root: candidate.component_root().cloned(),
+                element_ref: candidate.element_ref().cloned(),
                 children: child_links,
             },
         );

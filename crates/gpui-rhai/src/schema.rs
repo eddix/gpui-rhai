@@ -5,7 +5,7 @@ use std::fmt;
 use rhai::{Array, Dynamic, FLOAT, FnPtr, INT, ImmutableString, Map};
 use serde::{Deserialize, Serialize};
 
-use crate::{AssetId, Length, NativeSignal, OpaqueHandle, Style, UiNode, UiValue};
+use crate::{AssetId, ElementRef, Length, NativeSignal, OpaqueHandle, Style, UiNode, UiValue};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -68,6 +68,7 @@ pub enum ValueSchema {
     UiValue,
     Asset,
     Signal,
+    Ref,
     Handle {
         kind: String,
     },
@@ -244,6 +245,7 @@ impl ValueSchema {
             | Self::UiValue
             | Self::Asset
             | Self::Signal
+            | Self::Ref
             | Self::Handle { .. } => Ok(()),
         }
     }
@@ -313,7 +315,13 @@ impl ValueSchema {
             }
             Self::OneOf { variants } => validate_one_of(value, variants, path, issues),
             Self::Node => expect_type(value.is::<UiNode>(), value, path, "UiNode", issues),
-            Self::Callback => expect_type(value.is::<FnPtr>(), value, path, "callback", issues),
+            Self::Callback => expect_type(
+                value.is::<FnPtr>() || value.is::<crate::NativeHandlerRef>(),
+                value,
+                path,
+                "callback or NativeHandlerRef",
+                issues,
+            ),
             Self::Style => expect_type(value.is::<Style>(), value, path, "Style", issues),
             Self::Length => validate_length(value, path, issues),
             Self::UiValue => {
@@ -329,6 +337,7 @@ impl ValueSchema {
                 "NativeSignal",
                 issues,
             ),
+            Self::Ref => expect_type(value.is::<ElementRef>(), value, path, "ElementRef", issues),
             Self::Handle { kind } => validate_handle(value, kind, path, issues),
         }
     }

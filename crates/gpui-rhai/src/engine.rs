@@ -247,6 +247,7 @@ struct ActiveComponentRender {
     effect_keys: Vec<Option<BTreeSet<String>>>,
     effects: BTreeMap<crate::EffectId, crate::EffectDescriptor>,
     signals: BTreeMap<crate::SignalId, crate::signal::SignalDescriptor>,
+    element_refs: BTreeSet<crate::ElementRefId>,
 }
 
 type ActiveComponentRenderState = Rc<RefCell<Option<ActiveComponentRender>>>;
@@ -350,8 +351,10 @@ pub struct RuntimeEngine {
     component_invocations: BTreeMap<ComponentInstancePath, ComponentInvocationRecipe>,
     component_effects: BTreeMap<crate::EffectId, crate::EffectDescriptor>,
     component_signals: BTreeMap<crate::SignalId, crate::signal::SignalDescriptor>,
+    component_element_refs: BTreeSet<crate::ElementRefId>,
     pending_component_commits: BTreeMap<ComponentInstancePath, PendingComponentCommit>,
     component_renderers: ComponentRenderRegistry,
+    native_handlers: crate::NativeHandlerRegistry,
 }
 
 #[derive(Clone)]
@@ -361,6 +364,7 @@ pub(crate) struct RuntimeEngineCheckpoint {
     component_invocations: BTreeMap<ComponentInstancePath, ComponentInvocationRecipe>,
     component_effects: BTreeMap<crate::EffectId, crate::EffectDescriptor>,
     component_signals: BTreeMap<crate::SignalId, crate::signal::SignalDescriptor>,
+    component_element_refs: BTreeSet<crate::ElementRefId>,
     pending_component_commits: BTreeMap<ComponentInstancePath, PendingComponentCommit>,
 }
 
@@ -387,6 +391,9 @@ impl RuntimeEngine {
         engine.build_type::<AssetId>();
         engine.build_type::<ImageDecodeHandle>();
         engine.build_type::<crate::NativeSignal>();
+        engine.build_type::<crate::EventResponse>();
+        engine.build_type::<crate::ElementRef>();
+        engine.build_type::<crate::NativeHandlerRef>();
         register_ui_context_api(&mut engine);
         register_style_api(&mut engine);
         register_animation_api(&mut engine);
@@ -400,6 +407,8 @@ impl RuntimeEngine {
             &evaluation_generation,
         );
         let primitives = PrimitiveRegistry::new();
+        let native_handlers = crate::NativeHandlerRegistry::new();
+        register_native_handler_api(&mut engine, &native_handlers);
 
         register_node_apis(&mut engine);
 
@@ -418,8 +427,10 @@ impl RuntimeEngine {
             component_invocations: BTreeMap::new(),
             component_effects: BTreeMap::new(),
             component_signals: BTreeMap::new(),
+            component_element_refs: BTreeSet::new(),
             pending_component_commits: BTreeMap::new(),
             component_renderers,
+            native_handlers,
         };
         runtime.register_builtin_primitives();
         runtime
@@ -541,6 +552,7 @@ impl RuntimeEngine {
             effect_keys: vec![root_effects],
             effects: BTreeMap::new(),
             signals: BTreeMap::new(),
+            element_refs: BTreeSet::new(),
         });
         Ok(())
     }
@@ -580,6 +592,9 @@ impl RuntimeEngine {
             self.component_signals
                 .retain(|id, _| !id.component().is_within(&root));
             self.component_signals.extend(active.signals);
+            self.component_element_refs
+                .retain(|id| !id.component().is_within(&root));
+            self.component_element_refs.extend(active.element_refs);
         } else {
             active
                 .root_context
@@ -627,10 +642,12 @@ impl RuntimeEngine {
         let mut root = result.map_err(RuntimeError::Evaluate)?;
         if !self.component_effects_in_scope(&root_path).is_empty()
             || !self.component_signals_in_scope(&root_path).is_empty()
+            || !self.component_element_refs_in_scope(&root_path).is_empty()
         {
             self.restore_execution_checkpoint(checkpoint);
             return Err(RuntimeError::ComponentRuntime(
-                "effectful or signal-owning components require ScriptLifecycle".to_owned(),
+                "effectful, signal-owning, or ref-owning components require ScriptLifecycle"
+                    .to_owned(),
             ));
         }
         if let Err(error) = self.commit_component_renders(&mut runtime.borrow_mut()) {
@@ -665,9 +682,11 @@ impl RuntimeEngine {
         let result = result.and_then(|node| {
             if !self.component_effects_in_scope(&root).is_empty()
                 || !self.component_signals_in_scope(&root).is_empty()
+                || !self.component_element_refs_in_scope(&root).is_empty()
             {
                 return Err(RuntimeError::ComponentRuntime(
-                    "effectful or signal-owning components require ScriptLifecycle".to_owned(),
+                    "effectful, signal-owning, or ref-owning components require ScriptLifecycle"
+                        .to_owned(),
                 ));
             }
             self.commit_component_renders(&mut runtime.borrow_mut())?;
@@ -798,6 +817,7 @@ impl RuntimeEngine {
             component_invocations: self.component_invocations.clone(),
             component_effects: self.component_effects.clone(),
             component_signals: self.component_signals.clone(),
+            component_element_refs: self.component_element_refs.clone(),
             pending_component_commits: self.pending_component_commits.clone(),
         }
     }
@@ -809,6 +829,7 @@ impl RuntimeEngine {
         self.component_invocations = checkpoint.component_invocations;
         self.component_effects = checkpoint.component_effects;
         self.component_signals = checkpoint.component_signals;
+        self.component_element_refs = checkpoint.component_element_refs;
         self.pending_component_commits = checkpoint.pending_component_commits;
     }
 
@@ -846,6 +867,17 @@ impl RuntimeEngine {
             .iter()
             .filter(|(id, _)| id.component().is_within(root))
             .map(|(id, descriptor)| (id.clone(), descriptor.clone()))
+            .collect()
+    }
+
+    pub(crate) fn component_element_refs_in_scope(
+        &self,
+        root: &ComponentInstancePath,
+    ) -> BTreeSet<crate::ElementRefId> {
+        self.component_element_refs
+            .iter()
+            .filter(|id| id.component().is_within(root))
+            .cloned()
             .collect()
     }
 
@@ -1100,6 +1132,30 @@ impl RuntimeEngine {
         self.primitives.clone()
     }
 
+    /// Register a trusted Rust handler attachable by Rhai through `native_handler`.
+    ///
+    /// # Errors
+    ///
+    /// Returns descriptor/duplicate registry errors.
+    pub fn register_native_handler(
+        &self,
+        descriptor: crate::NativeHandlerDescriptor,
+        handler: impl FnMut(
+            crate::NativeEvent,
+            &mut UiRuntimeState,
+            &mut gpui::Window,
+            &mut gpui::App,
+        ) -> Result<crate::EventResponse, String>
+        + 'static,
+    ) -> Result<(), crate::NativeHandlerError> {
+        self.native_handlers.register(descriptor, handler)
+    }
+
+    #[must_use]
+    pub fn native_handler_registry(&self) -> crate::NativeHandlerRegistry {
+        self.native_handlers.clone()
+    }
+
     pub fn set_slow_threshold(&mut self, threshold: Duration) {
         self.slow_threshold = threshold;
     }
@@ -1141,10 +1197,13 @@ fn register_node_apis(engine: &mut Engine) {
         .register_into_engine(engine, text_node);
     FuncRegistration::new("handled")
         .in_global_namespace()
-        .register_into_engine(engine, || ImmutableString::from("handled"));
+        .register_into_engine(engine, || crate::EventResponse::new().stop());
     FuncRegistration::new("propagate")
         .in_global_namespace()
-        .register_into_engine(engine, || ImmutableString::from("propagate"));
+        .register_into_engine(engine, crate::EventResponse::new);
+    FuncRegistration::new("event_response")
+        .in_global_namespace()
+        .register_into_engine(engine, crate::EventResponse::new);
     FuncRegistration::new("column")
         .in_global_namespace()
         .register_into_engine(engine, column_node);
@@ -1199,6 +1258,22 @@ fn register_node_apis(engine: &mut Engine) {
     FuncRegistration::new("virtual_list")
         .in_global_namespace()
         .register_into_engine(engine, virtual_list_node);
+}
+
+fn register_native_handler_api(engine: &mut Engine, registry: &crate::NativeHandlerRegistry) {
+    let registry = registry.clone();
+    FuncRegistration::new("native_handler")
+        .in_global_namespace()
+        .register_into_engine(
+            engine,
+            move |id: ImmutableString| -> Result<crate::NativeHandlerRef, Box<EvalAltResult>> {
+                let id = crate::NativeHandlerId::parse(id.to_string())
+                    .map_err(|error| Box::new(component_render_error(error.to_string())))?;
+                registry
+                    .resolve(&id)
+                    .map_err(|error| Box::new(component_render_error(error.to_string())))
+            },
+        );
 }
 
 fn configure_engine_limits(engine: &mut Engine) {
@@ -1278,6 +1353,7 @@ fn register_component_runtime_apis(
     register_render_component_api(engine, exports, &renderers, &active);
     register_effect_api(engine, &active);
     register_signal_api(engine, &active);
+    register_element_ref_api(engine, &active);
     (active, renderers)
 }
 
@@ -1704,6 +1780,51 @@ fn register_signal_api(engine: &mut Engine, active: &ActiveComponentRenderState)
         );
 }
 
+fn register_element_ref_api(engine: &mut Engine, active: &ActiveComponentRenderState) {
+    let active = Rc::clone(active);
+    FuncRegistration::new("element_ref")
+        .in_global_namespace()
+        .register_into_engine(
+            engine,
+            move |key: ImmutableString| -> Result<crate::ElementRef, Box<EvalAltResult>> {
+                let key = key.to_string();
+                let mut guard = active.try_borrow_mut().map_err(|_| {
+                    Box::new(component_render_error(
+                        "component render stack is already borrowed",
+                    ))
+                })?;
+                let render = guard.as_mut().ok_or_else(|| {
+                    Box::new(component_render_error(
+                        "element_ref may run only during formal component render",
+                    ))
+                })?;
+                if render.effect_keys.last().and_then(Option::as_ref).is_none() {
+                    return Err(Box::new(component_render_error(
+                        "element refs may be declared only by formal components",
+                    )));
+                }
+                let component = render
+                    .contexts
+                    .last()
+                    .ok_or_else(|| {
+                        Box::new(component_render_error(
+                            "component render context stack is empty",
+                        ))
+                    })?
+                    .component_path()
+                    .clone();
+                let id = crate::ElementRefId::new(component.clone(), key.clone())
+                    .map_err(|error| Box::new(component_render_error(error.to_string())))?;
+                if !render.element_refs.insert(id.clone()) {
+                    return Err(Box::new(component_render_error(format!(
+                        "element ref `{key}` is declared more than once by component `{component}`"
+                    ))));
+                }
+                Ok(crate::ElementRef::new(id))
+            },
+        );
+}
+
 fn component_event_callbacks(
     component: &crate::ComponentDefinition,
     props: &Map,
@@ -1951,7 +2072,8 @@ mod tests {
                     && spec.placement == crate::OverlayPlacement::Bottom
         ));
         assert_eq!(
-            root.handlers()["open_change"]
+            root.handler("open_change")
+                .unwrap()
                 .as_script()
                 .unwrap()
                 .generation(),
@@ -1986,6 +2108,73 @@ mod tests {
             ])))
         );
         assert!(root.handlers().contains_key("click"));
+    }
+
+    #[test]
+    fn rhai_nodes_retain_ordered_handlers_for_all_event_phases() {
+        let mut runtime = RuntimeEngine::new();
+        let compiled = runtime
+            .compile(
+                r#"
+                    fn first(ctx, event) { event_response().prevent_default() }
+                    fn second(ctx, event) { event_response().stop_immediate() }
+                    fn capture(ctx, event) { propagate() }
+                    fn view() {
+                        text("drag")
+                            .on_capture("pointer_down", Fn("capture"))
+                            .on("pointer_down", Fn("first"))
+                            .on("pointer_down", Fn("second"))
+                    }
+                "#,
+            )
+            .unwrap();
+        let root = runtime.render(&compiled).unwrap();
+        let bindings = root.event_handlers("pointer_down");
+        assert_eq!(bindings.len(), 3);
+        assert_eq!(bindings[0].phase(), crate::EventPhase::Capture);
+        assert_eq!(bindings[1].phase(), crate::EventPhase::Target);
+        assert_eq!(bindings[2].phase(), crate::EventPhase::Target);
+        assert_eq!(bindings[2].handler().as_script().unwrap().name(), "second");
+    }
+
+    #[test]
+    fn rhai_nodes_attach_only_registered_schema_checked_native_handlers() {
+        let mut runtime = RuntimeEngine::new();
+        let id = crate::NativeHandlerId::parse("timeline.drag").unwrap();
+        runtime
+            .register_native_handler(
+                crate::NativeHandlerDescriptor::new(
+                    id,
+                    BTreeMap::from([("pointer_down".to_owned(), crate::ValueSchema::UiValue)]),
+                )
+                .unwrap(),
+                |_, _, _, _| Ok(crate::EventResponse::new().capture_pointer()),
+            )
+            .unwrap();
+        let compiled = runtime
+            .compile(
+                r#"
+                    fn view() {
+                        text("drag").on(
+                            "pointer_down", native_handler("timeline.drag")
+                        )
+                    }
+                "#,
+            )
+            .unwrap();
+        let root = runtime.render(&compiled).unwrap();
+        assert!(matches!(
+            root.handler("pointer_down"),
+            Some(crate::UiEventHandler::Native(reference))
+                if reference.descriptor().id.as_str() == "timeline.drag"
+        ));
+
+        let missing = runtime
+            .compile(
+                "fn view() { text(\"x\").on(\"pointer_down\", native_handler(\"app.missing\")) }",
+            )
+            .unwrap();
+        assert!(runtime.render(&missing).is_err());
     }
 
     #[test]

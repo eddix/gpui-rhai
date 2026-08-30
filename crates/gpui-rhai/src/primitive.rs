@@ -363,6 +363,17 @@ impl PrimitiveEventEmitter {
                 UiEventHandler::Host(callback) => {
                     callback.invoke(payload, window, cx);
                 }
+                UiEventHandler::Native(reference) => {
+                    if let Some(dispatcher) = self.dispatcher.as_ref() {
+                        dispatcher.dispatch_native(
+                            reference.clone(),
+                            event.to_owned(),
+                            payload,
+                            window,
+                            cx,
+                        );
+                    }
+                }
             }
         }
         Ok(())

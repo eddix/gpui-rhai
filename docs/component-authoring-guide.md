@@ -143,6 +143,24 @@ action, emit an event, or call a manifest-declared capability. They may not
 access GPUI contexts. Pointer callbacks are handled by default; return
 `propagate()` to allow the normalized event to continue to an ancestor handler.
 
+`on(event, handler)`, `on_capture(event, handler)`, and
+`on_bubble(event, handler)` append ordered handlers; they do not replace a prior
+binding. A handler may return `event_response()` refined with
+`prevent_default()`, `stop()`, `stop_immediate()`, `capture_pointer()`, or
+`release_pointer()`. Pointer and wheel handlers receive normalized maps rather
+than GPUI event values.
+
+Trusted Hosts can register a `NativeHandlerDescriptor` and Rust closure, then
+Rhai resolves it with `native_handler("namespace.name")` and attaches it through
+the same `on` methods. The descriptor limits accepted event names and validates
+payloads before Rust runs. Native and Script handlers share transaction and
+response semantics.
+
+Formal components may declare `element_ref("name")` during render and attach it
+to a stable keyed node with `with_ref`. `ctx.element_bounds(ref)` returns null
+before first committed prepaint and then the last committed layout/visual
+geometry; geometry changes dirty only components that read that exact ref.
+
 For structural responsive composition, branch only on
 `ctx.viewport_class()` (`compact`, `regular`, or `wide`). Hosts may replace the
 default 600/1000 logical-pixel boundaries with a validated

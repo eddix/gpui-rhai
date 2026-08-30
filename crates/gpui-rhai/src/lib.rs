@@ -11,11 +11,14 @@ pub mod diagnostic;
 pub mod dropdown;
 mod dropdown_element;
 pub mod effect;
+pub mod element_ref;
 pub mod engine;
 pub mod event;
+pub mod geometry;
 mod invocation;
 pub mod lifecycle;
 pub mod locale;
+pub mod native_handler;
 pub mod node;
 pub mod overlay;
 mod overlay_element;
@@ -110,18 +113,26 @@ pub use dropdown::{
     DropdownOutcome, DropdownState, DropdownVisibleRow, SelectNodeSpec,
 };
 pub use effect::{EffectDescriptor, EffectError, EffectId, EffectRegistry};
+pub use element_ref::{ElementRef, ElementRefError, ElementRefId, ElementRefRegistry};
 pub use engine::{
     CompiledUi, ComponentInvocationRecipe, ExecutionOperation, ExecutionTiming, RuntimeEngine,
     RuntimeError, ScriptCallback, ScriptCallbackDefinitionError, ScriptGeneration,
 };
 pub use event::{
-    EventDispatchReport, EventPropagation, EventRouter, HostCallback, UiEvent, UiEventHandler,
+    EventDispatchReport, EventModifiers, EventPhase, EventPropagation, EventResponse, EventRouter,
+    HostCallback, LogicalPoint, PointerCaptureDirective, PointerEventData, PropagationControl,
+    UiEvent, UiEventBinding, UiEventHandler, WheelEventData,
 };
+pub use geometry::{ElementGeometry, GeometryBounds, GeometryError, GeometryRegistry};
 pub use lifecycle::{LifecycleError, LifecycleState, ScriptLifecycle};
 pub use locale::{
     CalendarMetadata, CalendarNames, DatePatterns, DateStyle, LocaleBundle, LocaleError,
     LocaleManager, NumberFormatOptions, NumberMetadata, TextDirection, format_date_with_metadata,
     format_integer_with_metadata, format_number_with_metadata, load_locale_source,
+};
+pub use native_handler::{
+    NativeEvent, NativeHandlerDescriptor, NativeHandlerError, NativeHandlerId, NativeHandlerRef,
+    NativeHandlerRegistry,
 };
 pub use node::{
     ImageSourceSpec, NodeKey, OverlayDismissPolicy, OverlayNodeSpec, SourceLocation, TooltipDelays,

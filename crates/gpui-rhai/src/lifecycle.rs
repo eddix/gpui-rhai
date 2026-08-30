@@ -146,7 +146,9 @@ impl ScriptLifecycle {
                 engine,
                 &self.compiled,
                 runtime_snapshot.component_state().clone(),
+                &retained,
             )?;
+            self.retain_geometry_nodes(&retained)?;
             self.validate_signal_bindings(&root)?;
             Ok((root, retained))
         })();
@@ -233,7 +235,9 @@ impl ScriptLifecycle {
                 engine,
                 &self.compiled,
                 runtime_snapshot.component_state().clone(),
+                &retained,
             )?;
+            self.retain_geometry_nodes(&retained)?;
             self.validate_signal_bindings(&root)?;
             Ok(())
         })();
@@ -280,6 +284,7 @@ impl ScriptLifecycle {
             self.reconcile_effect_candidate(
                 engine,
                 &self.compiled,
+                BTreeMap::new(),
                 BTreeMap::new(),
                 BTreeMap::new(),
                 None,
@@ -488,7 +493,13 @@ impl ScriptLifecycle {
             let mut retained = self.retained.clone();
             retained.reconcile(root.clone())?;
             self.reconcile_animations(&root)?;
-            self.reconcile_effects(engine, &candidate, snapshot.component_state().clone())?;
+            self.reconcile_effects(
+                engine,
+                &candidate,
+                snapshot.component_state().clone(),
+                &retained,
+            )?;
+            self.retain_geometry_nodes(&retained)?;
             self.validate_signal_bindings(&root)?;
             Ok((root, retained))
         })();
@@ -544,10 +555,19 @@ impl ScriptLifecycle {
         engine: &mut RuntimeEngine,
         candidate: &CompiledUi,
         previous_state: crate::StateStore,
+        retained: &crate::RetainedUiTree,
     ) -> Result<(), LifecycleError> {
         let effects = engine.component_effects_in_scope(&self.root_path);
         let signals = engine.component_signals_in_scope(&self.root_path);
-        self.reconcile_effect_candidate(engine, candidate, effects, signals, Some(previous_state))
+        let element_refs = self.element_ref_bindings(engine, retained)?;
+        self.reconcile_effect_candidate(
+            engine,
+            candidate,
+            effects,
+            signals,
+            element_refs,
+            Some(previous_state),
+        )
     }
 
     fn reconcile_effect_candidate(
@@ -556,6 +576,7 @@ impl ScriptLifecycle {
         candidate: &CompiledUi,
         effects: BTreeMap<crate::EffectId, crate::EffectDescriptor>,
         signals: BTreeMap<crate::SignalId, crate::signal::SignalDescriptor>,
+        element_refs: BTreeMap<crate::ElementRefId, crate::NodeId>,
         previous_state: Option<crate::StateStore>,
     ) -> Result<(), LifecycleError> {
         let plan = self
@@ -591,6 +612,9 @@ impl ScriptLifecycle {
                 .map_err(|_| LifecycleError::Borrowed)?;
             engine.commit_component_renders(&mut runtime)?;
             runtime.signals.reconcile(&self.root_path, signals);
+            runtime
+                .element_refs
+                .reconcile(&self.root_path, element_refs);
         }
         for descriptor in plan.start() {
             self.invoke_effect_callback(
@@ -654,6 +678,45 @@ impl ScriptLifecycle {
                 pending.extend(children);
             }
         }
+        Ok(())
+    }
+
+    fn element_ref_bindings(
+        &self,
+        engine: &RuntimeEngine,
+        retained: &crate::RetainedUiTree,
+    ) -> Result<BTreeMap<crate::ElementRefId, crate::NodeId>, LifecycleError> {
+        let declared = engine.component_element_refs_in_scope(&self.root_path);
+        let mut bindings = BTreeMap::new();
+        for node in retained.nodes() {
+            let Some(reference) = node.element_ref() else {
+                continue;
+            };
+            if node.key().is_none() {
+                return Err(crate::ElementRefError::MissingNodeKey(reference.id().clone()).into());
+            }
+            if !declared.contains(reference.id()) {
+                return Err(crate::ElementRefError::Undeclared(reference.id().clone()).into());
+            }
+            if bindings.insert(reference.id().clone(), node.id()).is_some() {
+                return Err(
+                    crate::ElementRefError::DuplicateBinding(reference.id().clone()).into(),
+                );
+            }
+        }
+        Ok(bindings)
+    }
+
+    fn retain_geometry_nodes(
+        &self,
+        retained: &crate::RetainedUiTree,
+    ) -> Result<(), LifecycleError> {
+        let nodes = retained.nodes().map(crate::RetainedNode::id).collect();
+        self.runtime
+            .try_borrow()
+            .map_err(|_| LifecycleError::Borrowed)?
+            .geometry
+            .retain_nodes(&nodes);
         Ok(())
     }
 
@@ -742,6 +805,8 @@ pub enum LifecycleError {
     Asset(#[from] crate::AssetError),
     #[error(transparent)]
     Signal(#[from] crate::SignalError),
+    #[error(transparent)]
+    ElementRef(#[from] crate::ElementRefError),
 }
 
 fn topmost_paths(paths: &BTreeSet<ComponentInstancePath>) -> Vec<ComponentInstancePath> {

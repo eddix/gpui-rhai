@@ -164,6 +164,37 @@ fn view(ctx) {
 }
 "#;
 
+const REF_PROBE: &str = r#"
+define_component(#{
+    metadata: #{
+        id: "components/ref_probe", "export": "RefProbe", version: "0.1.0",
+        runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
+        dependencies: [], capabilities: #{}
+    },
+    schema: #{
+        props: #{ key: #{ schema: #{ type: "string" }, required: true, sensitive: false } },
+        state: #{ fields: #{} }, events: #{}, slots: #{}, parts: ["root"]
+    },
+    render: Fn("render_RefProbe")
+});
+fn RefProbe(props) { render_component("components/ref_probe", props) }
+fn render_RefProbe(ctx, props) {
+    let field = element_ref("field");
+    text("field").with_key("field").with_ref(field)
+}
+"#;
+
+const REF_APP: &str = r#"
+import "components/ref_probe" as probe;
+fn state_schema() { #{ fields: #{ visible: #{ schema: #{ type: "bool" },
+    "default": #{ type: "bool", value: true } } } } }
+fn hide(ctx, payload) { ctx.set_state("visible", false); }
+fn view(ctx) {
+    if ctx.get_state("visible") { probe::RefProbe(#{ key: "primary" }) }
+    else { text("hidden") }
+}
+"#;
+
 fn source() -> EmbeddedScriptSource {
     EmbeddedScriptSource::new(BTreeMap::from([(
         ModuleId::parse("components/counter").unwrap(),
@@ -256,6 +287,17 @@ fn assert_root_text(lifecycle: &ScriptLifecycle, expected: &str) {
     ));
 }
 
+fn script_handler(lifecycle: &ScriptLifecycle, event: &str) -> gpui_rhai::ScriptCallback {
+    lifecycle
+        .root()
+        .unwrap()
+        .handler(event)
+        .unwrap()
+        .as_script()
+        .unwrap()
+        .clone()
+}
+
 fn assert_incremental_counter_timing(engine: &mut RuntimeEngine) {
     assert!(engine.take_timings().iter().any(|timing| {
         matches!(timing.operation, gpui_rhai::ExecutionOperation::Render)
@@ -292,10 +334,7 @@ fn local_state_callback_scope_and_reload_cleanup_are_end_to_end() {
             .get(&component_path, "count"),
         Some(&UiValue::Integer(0))
     );
-    let click = lifecycle.root().unwrap().handlers()["click"]
-        .as_script()
-        .unwrap()
-        .clone();
+    let click = script_handler(&lifecycle, "click");
     let _ = lifecycle
         .invoke_callback_transactional(&engine, &click, UiValue::Null)
         .unwrap();
@@ -429,10 +468,7 @@ fn callback_props_execute_in_the_caller_state_scope() {
     )
     .unwrap();
     lifecycle.start(&mut engine).unwrap();
-    let click = lifecycle.root().unwrap().handlers()["click"]
-        .as_script()
-        .unwrap()
-        .clone();
+    let click = script_handler(&lifecycle, "click");
     let _ = lifecycle
         .invoke_callback_transactional(&engine, &click, UiValue::Null)
         .unwrap();
@@ -481,10 +517,7 @@ fn native_semantic_callback_props_execute_in_the_caller_state_scope() {
     )
     .unwrap();
     lifecycle.start(&mut engine).unwrap();
-    let open_change = lifecycle.root().unwrap().handlers()["open_change"]
-        .as_script()
-        .unwrap()
-        .clone();
+    let open_change = script_handler(&lifecycle, "open_change");
     let _ = lifecycle
         .invoke_callback_transactional(&engine, &open_change, UiValue::Bool(false))
         .unwrap();
@@ -654,10 +687,7 @@ fn native_signal_updates_preserve_identity_without_component_invalidation() {
         .signals
         .resolve(&component, "progress")
         .unwrap();
-    let click = lifecycle.root().unwrap().handlers()["click"]
-        .as_script()
-        .unwrap()
-        .clone();
+    let click = script_handler(&lifecycle, "click");
     let _ = lifecycle
         .invoke_callback_transactional(&engine, &click, UiValue::Null)
         .unwrap();
@@ -679,4 +709,46 @@ fn native_signal_updates_preserve_identity_without_component_invalidation() {
         .unwrap();
     assert!(lifecycle.render_dirty(&mut engine).unwrap());
     assert!(runtime.borrow().signals.read(&signal).is_err());
+}
+
+#[test]
+fn element_refs_follow_retained_node_identity_and_fail_stale_after_unmount() {
+    let source = EmbeddedScriptSource::new(BTreeMap::from([(
+        ModuleId::parse("components/ref_probe").unwrap(),
+        REF_PROBE.to_owned(),
+    )]));
+    let mut engine = RuntimeEngine::new();
+    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
+    let compiled = engine
+        .compile_self_contained_named("ui/ref_probe.rhai", REF_APP)
+        .unwrap();
+    let schema = engine.root_state_schema(&compiled).unwrap();
+    let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+    let root_path = ComponentInstancePath::root("App", "root");
+    let mut lifecycle = ScriptLifecycle::new(
+        compiled.clone(),
+        Rc::clone(&runtime),
+        root_path,
+        Some("main".to_owned()),
+        BTreeMap::new(),
+        &schema,
+    )
+    .unwrap();
+    lifecycle.start(&mut engine).unwrap();
+    let reference = lifecycle.root().unwrap().element_ref().unwrap().clone();
+    let node_id = runtime.borrow().element_refs.resolve(&reference).unwrap();
+    assert_eq!(Some(node_id), lifecycle.retained().root_id());
+
+    lifecycle.render(&mut engine).unwrap();
+    assert_eq!(
+        runtime.borrow().element_refs.resolve(&reference).unwrap(),
+        node_id
+    );
+
+    let hide = engine.callback(&compiled, "hide").unwrap();
+    let _ = lifecycle
+        .invoke_callback_transactional(&engine, &hide, UiValue::Null)
+        .unwrap();
+    assert!(lifecycle.render_dirty(&mut engine).unwrap());
+    assert!(runtime.borrow().element_refs.resolve(&reference).is_err());
 }

@@ -56,6 +56,8 @@ pub struct UiRuntimeState {
     pub animations: AnimationRuntime,
     pub effects: crate::EffectRegistry,
     pub signals: crate::SignalRegistry,
+    pub element_refs: crate::ElementRefRegistry,
+    pub geometry: crate::GeometryRegistry,
     pub windows: WindowCommandRegistry,
     pub responsive: ResponsiveRuntime,
     pub animation_values: BTreeMap<AnimationKey, f64>,
@@ -139,6 +141,7 @@ impl UiRuntimeState {
         self.animation_values = self.animations.snapshot(std::time::Instant::now());
         self.effects.remove_scope(root);
         self.signals.remove_scope(root);
+        self.element_refs.remove_scope(root);
         self.windows.remove(window);
         self.responsive.remove_window(window);
         Ok(())
@@ -172,6 +175,10 @@ impl UiRuntimeState {
 
     pub(crate) fn has_window_dirty(&self, root: &ComponentInstancePath) -> bool {
         self.dirty.iter().any(|path| path.is_within(root))
+    }
+
+    pub(crate) fn flush_geometry_dependencies(&mut self) {
+        self.dirty.extend(self.geometry.take_dirty());
     }
 
     pub(crate) fn take_window_dirty_components(
@@ -296,6 +303,8 @@ impl UiRuntimeState {
             animations: self.animations.clone(),
             effects: self.effects.clone(),
             signals: self.signals.clone(),
+            element_refs: self.element_refs.clone(),
+            geometry: self.geometry.snapshot(),
             animation_values: self.animation_values.clone(),
             windows: self.windows.clone(),
             responsive: self.responsive.clone(),
@@ -327,6 +336,8 @@ impl UiRuntimeState {
         self.animations = snapshot.animations;
         self.effects = snapshot.effects;
         self.signals = snapshot.signals;
+        self.element_refs = snapshot.element_refs;
+        self.geometry.restore(snapshot.geometry);
         self.animation_values = snapshot.animation_values;
         self.windows = snapshot.windows;
         self.responsive = snapshot.responsive;
@@ -349,6 +360,8 @@ pub struct UiStateSnapshot {
     animations: AnimationRuntime,
     effects: crate::EffectRegistry,
     signals: crate::SignalRegistry,
+    element_refs: crate::ElementRefRegistry,
+    geometry: crate::geometry::GeometrySnapshot,
     animation_values: BTreeMap<AnimationKey, f64>,
     windows: WindowCommandRegistry,
     responsive: ResponsiveRuntime,
@@ -611,6 +624,33 @@ impl UiContext {
             .signals
             .resolve(&self.component, key)?;
         self.set_signal(&signal, value)
+    }
+
+    /// Read last committed layout/visual geometry through a stable element ref.
+    ///
+    /// The exact node becomes a component dependency. The first render returns
+    /// null until GPUI has committed prepaint, which then dirties the reader.
+    ///
+    /// # Errors
+    ///
+    /// Returns for stale refs, unavailable geometry, or runtime borrow conflicts.
+    pub fn element_bounds(&self, reference: &crate::ElementRef) -> Result<UiValue, UiContextError> {
+        let runtime = self
+            .runtime
+            .try_borrow()
+            .map_err(|_| UiContextError::Borrowed)?;
+        let node = runtime.element_refs.resolve(reference)?;
+        let Some(geometry) = runtime.geometry.read_tracked(node, &self.component) else {
+            return Ok(UiValue::Null);
+        };
+        Ok(UiValue::Map(BTreeMap::from([
+            ("layout".to_owned(), geometry_bounds_value(geometry.layout)),
+            ("visual".to_owned(), geometry_bounds_value(geometry.visual)),
+            (
+                "clip".to_owned(),
+                geometry.clip.map_or(UiValue::Null, geometry_bounds_value),
+            ),
+        ])))
     }
 
     /// Read and subscribe to an app-scoped store field.
@@ -1681,6 +1721,7 @@ impl CustomType for UiContext {
                 },
             );
         register_signal_context_methods(&mut builder);
+        register_element_ref_context_methods(&mut builder);
         register_async_context_methods(&mut builder);
         register_action_context_methods(&mut builder);
         register_locale_context_methods(&mut builder);
@@ -1725,6 +1766,27 @@ fn register_signal_context_methods(builder: &mut TypeBuilder<UiContext>) {
                     .map_err(|error| Box::new(context_runtime_error(&error)))
             },
         );
+}
+
+fn register_element_ref_context_methods(builder: &mut TypeBuilder<UiContext>) {
+    builder.with_fn(
+        "element_bounds",
+        |context: &mut UiContext, reference: crate::ElementRef| {
+            context
+                .element_bounds(&reference)
+                .map(UiValue::into_dynamic)
+                .map_err(|error| Box::new(context_runtime_error(&error)))
+        },
+    );
+}
+
+fn geometry_bounds_value(bounds: crate::GeometryBounds) -> UiValue {
+    UiValue::Map(BTreeMap::from([
+        ("x".to_owned(), UiValue::Float(bounds.x)),
+        ("y".to_owned(), UiValue::Float(bounds.y)),
+        ("width".to_owned(), UiValue::Float(bounds.width)),
+        ("height".to_owned(), UiValue::Float(bounds.height)),
+    ]))
 }
 
 fn register_action_context_methods(builder: &mut TypeBuilder<UiContext>) {
@@ -2175,6 +2237,10 @@ pub enum UiContextError {
     Value(#[from] UiValueError),
     #[error(transparent)]
     Signal(#[from] crate::SignalError),
+    #[error(transparent)]
+    ElementRef(#[from] crate::ElementRefError),
+    #[error(transparent)]
+    Geometry(#[from] crate::GeometryError),
     #[error(transparent)]
     Callback(#[from] crate::ScriptCallbackDefinitionError),
 }

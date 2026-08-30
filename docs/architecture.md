@@ -60,9 +60,19 @@ in Rust, writes never dirty a Rhai component, and approved style bindings are
 sampled by the GPUI renderer without per-frame Rhai execution.
 
 `UiEventHandler` joins event targets only at the node/primitive boundary.
-Script handlers keep generation, component scope, Rhai context, transactions,
-and runtime traces. Host handlers execute their labeled Rust closure directly
-and retain ordinary Host-owned GPUI lifecycle semantics.
+Each event has ordered capture/target/bubble bindings. Responses independently
+control default behavior, propagation, immediate propagation, and pointer
+capture intent. Script handlers keep generation, component scope, Rhai context,
+transactions, and runtime traces. Host callbacks execute their labeled Rust
+closure directly. A schema-checked `NativeHandlerRef` lets Rhai attach a Host-
+registered Rust fast path to the same ordinary node and outer transaction.
+
+Pointer down/up/move and wheel input are normalized at the GPUI boundary into
+stable `UiValue` maps with logical window/local/content coordinates, buttons,
+modifiers, click count, precise delta, and a monotonic timestamp. Retained
+`ElementRef` declarations bind to stable `NodeId`; prepaint reports committed
+layout/visual geometry and exact geometry reads create component dependencies.
+Unmounted refs fail stale instead of rebinding by name.
 
 `error_boundary(child, fallback)` catches native subtree rendering failures.
 Use `error_boundary_lazy(Fn("child"), Fn("fallback"))` when Rhai construction
