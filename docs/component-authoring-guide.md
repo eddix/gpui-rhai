@@ -58,6 +58,10 @@ scopes callbacks to the component module, rejects duplicate stateful keys, and
 cleans unreachable instances only after a successful render. Merge overrides with
 `component_style(props, "part_name", base_style)`; the root merge order remains
 base, size, variant/state, caller `style`, then caller root `part_styles`.
+Named `virtual_collection` item renderers do not retain the original Dynamic
+props. They resolve the same validated Style-only snapshot with
+`ctx.component_style("part_name", base_style)`, which cannot expose nodes,
+callbacks, or arbitrary Dynamic values to deferred rendering.
 
 Stateful components and lifecycle custom primitives require a stable caller
 `key`. Never store UI state in mutable script globals.

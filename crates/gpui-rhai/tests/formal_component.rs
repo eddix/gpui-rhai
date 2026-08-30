@@ -479,10 +479,19 @@ fn callback_props_execute_in_the_caller_state_scope() {
 }
 
 #[test]
-fn native_semantic_callback_props_execute_in_the_caller_state_scope() {
+fn composed_semantic_callback_props_execute_in_the_caller_state_scope() {
     let dropdown = include_str!("../../../registry/components/dropdown.rhai");
-    let module = ModuleId::parse("components/dropdown").unwrap();
-    let source = EmbeddedScriptSource::new(BTreeMap::from([(module, dropdown.to_owned())]));
+    let input = include_str!("../../../registry/components/input.rhai");
+    let source = EmbeddedScriptSource::new(BTreeMap::from([
+        (
+            ModuleId::parse("components/dropdown").unwrap(),
+            dropdown.to_owned(),
+        ),
+        (
+            ModuleId::parse("components/input").unwrap(),
+            input.to_owned(),
+        ),
+    ]));
     let mut engine = RuntimeEngine::new();
     engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
     let compiled = engine
@@ -521,6 +530,12 @@ fn native_semantic_callback_props_execute_in_the_caller_state_scope() {
     let _ = lifecycle
         .invoke_callback_transactional(&engine, &open_change, UiValue::Bool(false))
         .unwrap();
+    let events = runtime.borrow_mut().drain_batch().events;
+    for event in events {
+        let _ = lifecycle
+            .invoke_component_event_transactional(&engine, event)
+            .unwrap();
+    }
     assert_eq!(
         runtime.borrow().component_state.get(&root, "open"),
         Some(&UiValue::Bool(false))

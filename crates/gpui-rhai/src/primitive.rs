@@ -721,19 +721,6 @@ fn collect_primitive_instances(node: &UiNode, active: &mut BTreeSet<PrimitiveIns
             collect_primitive_instances(child, active);
             collect_primitive_instances(fallback, active);
         }
-        UiNodeKind::Dropdown { spec } => {
-            for slot in [
-                spec.trigger_slot.as_deref(),
-                spec.header_slot.as_deref(),
-                spec.footer_slot.as_deref(),
-                spec.empty_slot.as_deref(),
-            ]
-            .into_iter()
-            .flatten()
-            {
-                collect_primitive_instances(slot, active);
-            }
-        }
         UiNodeKind::VirtualCollection { spec } => {
             for item in spec.realized.values() {
                 collect_primitive_instances(item, active);
@@ -744,7 +731,6 @@ fn collect_primitive_instances(node: &UiNode, active: &mut BTreeSet<PrimitiveIns
         | UiNodeKind::Canvas { .. }
         | UiNodeKind::Image { .. }
         | UiNodeKind::DirectionalImage { .. }
-        | UiNodeKind::Select { .. }
         | UiNodeKind::DatePicker { .. }
         | UiNodeKind::ToastHost { .. } => {}
     }

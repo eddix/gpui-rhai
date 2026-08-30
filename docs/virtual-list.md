@@ -47,5 +47,6 @@ compute bottom/tail offsets. Tests cover 10,000 policy items, formal component
 state cleanup, off-layout realization, and the 2,000-item Chat acceptance app.
 
 The old eager `virtual_list` Rhai constructor and `UiNodeKind` have been deleted.
-Fixed-range Rust policy types remain private dependencies of the privileged
-Dropdown/Table implementations only and must disappear with those native nodes.
+The remaining fixed-range policy types are internal helpers of the generic
+`virtual_collection` element; Table, Dropdown, and Select now consume only the
+same public data-backed API available to application Rhai.

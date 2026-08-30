@@ -433,6 +433,8 @@ pub struct UiContext {
     events: BTreeMap<String, EventSchema>,
     generation: ScriptGeneration,
     native_context: Option<crate::invocation::ScriptInvocationContext>,
+    component_style: Option<crate::Style>,
+    component_part_styles: BTreeMap<String, crate::Style>,
 }
 
 impl UiContext {
@@ -453,6 +455,8 @@ impl UiContext {
             events,
             generation: ScriptGeneration::default(),
             native_context: None,
+            component_style: None,
+            component_part_styles: BTreeMap::new(),
         };
         if phase == ExecutionPhase::Render
             && let Ok(mut runtime) = context.runtime.try_borrow_mut()
@@ -494,6 +498,8 @@ impl UiContext {
             events,
             generation: self.generation,
             native_context: self.native_context.clone(),
+            component_style: self.component_style.clone(),
+            component_part_styles: self.component_part_styles.clone(),
         };
         if context.phase == ExecutionPhase::Render
             && let Ok(mut runtime) = context.runtime.try_borrow_mut()
@@ -509,6 +515,28 @@ impl UiContext {
     ) -> Self {
         self.native_context = native_context;
         self
+    }
+
+    pub(crate) fn with_component_styles(
+        mut self,
+        style: Option<crate::Style>,
+        part_styles: BTreeMap<String, crate::Style>,
+    ) -> Self {
+        self.component_style = style;
+        self.component_part_styles = part_styles;
+        self
+    }
+
+    fn resolve_component_style(&self, part: &str, mut base: crate::Style) -> crate::Style {
+        if part == "root"
+            && let Some(style) = &self.component_style
+        {
+            base = base.merged(style);
+        }
+        if let Some(style) = self.component_part_styles.get(part) {
+            base = base.merged(style);
+        }
+        base
     }
 
     fn scoped_callback(&self, function: FnPtr) -> Result<ScriptCallback, UiContextError> {
@@ -1782,6 +1810,12 @@ impl CustomType for UiContext {
                     context
                         .emit(event.as_str(), payload)
                         .map_err(|error| Box::new(context_runtime_error(&error)))
+                },
+            )
+            .with_fn(
+                "component_style",
+                |context: &mut Self, part: ImmutableString, base: crate::Style| {
+                    context.resolve_component_style(part.as_str(), base)
                 },
             )
             .with_fn(

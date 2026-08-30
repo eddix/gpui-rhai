@@ -7,10 +7,10 @@ use gpui::{
     Pixels, Render, SharedString, StatefulInteractiveElement, Styled, Window, div, img, px, rgba,
 };
 
-use crate::dropdown_element::DropdownSlotRuntime;
 use crate::overlay_element::{
     OpenChangeHandler, PanelKeyHandler, ScriptOverlayElement, WindowOverlayCoordinator,
 };
+use crate::slot_runtime::NodeSlotRuntime;
 use crate::{
     AssetId, DatePickerCellState, DatePickerKey, DatePickerNodeSpec, DatePickerOutcome,
     DatePickerState, GregorianDate, OverlayDismissPolicy, OverlayId, OverlayKind, OverlayNodeSpec,
@@ -41,7 +41,7 @@ pub(crate) struct DatePickerEntityElement {
     callbacks: DatePickerCallbacks,
     palette: DatePickerPalette,
     coordinator: WindowOverlayCoordinator,
-    runtime: DropdownSlotRuntime,
+    runtime: NodeSlotRuntime,
 }
 
 impl DatePickerEntityElement {
@@ -51,7 +51,7 @@ impl DatePickerEntityElement {
         callbacks: DatePickerCallbacks,
         palette: DatePickerPalette,
         coordinator: WindowOverlayCoordinator,
-        runtime: DropdownSlotRuntime,
+        runtime: NodeSlotRuntime,
     ) -> Self {
         Self {
             id: SharedString::from(format!("{path}/date-picker-entity")).into(),
@@ -162,7 +162,7 @@ struct DatePickerView {
     callbacks: DatePickerCallbacks,
     palette: DatePickerPalette,
     coordinator: WindowOverlayCoordinator,
-    runtime: DropdownSlotRuntime,
+    runtime: NodeSlotRuntime,
 }
 
 impl DatePickerView {
@@ -171,7 +171,7 @@ impl DatePickerView {
         callbacks: DatePickerCallbacks,
         palette: DatePickerPalette,
         coordinator: WindowOverlayCoordinator,
-        runtime: DropdownSlotRuntime,
+        runtime: NodeSlotRuntime,
     ) -> Self {
         let state = DatePickerState::new(spec.clone())
             .expect("validated DatePicker node creates valid native state");
@@ -191,7 +191,7 @@ impl DatePickerView {
         callbacks: DatePickerCallbacks,
         palette: DatePickerPalette,
         coordinator: WindowOverlayCoordinator,
-        runtime: DropdownSlotRuntime,
+        runtime: NodeSlotRuntime,
         cx: &mut Context<Self>,
     ) {
         let changed = self
@@ -646,12 +646,7 @@ fn localize_ascii_digits(value: &str, digits: &[String]) -> String {
         .collect()
 }
 
-fn asset_element(
-    runtime: &DropdownSlotRuntime,
-    asset: &AssetId,
-    tint: Rgba8,
-    size: f64,
-) -> AnyElement {
+fn asset_element(runtime: &NodeSlotRuntime, asset: &AssetId, tint: Rgba8, size: f64) -> AnyElement {
     runtime.assets.cached_image(asset).map_or_else(
         |error| {
             div()

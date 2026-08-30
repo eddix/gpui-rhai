@@ -412,18 +412,6 @@ fn collect_node_animations(
             collect_node_animations(child, &format!("{path}/boundary"), output)?;
             collect_node_animations(fallback, &format!("{path}/fallback"), output)?;
         }
-        UiNodeKind::Dropdown { spec } => {
-            for (name, slot) in [
-                ("trigger_slot", spec.trigger_slot.as_deref()),
-                ("header_slot", spec.header_slot.as_deref()),
-                ("footer_slot", spec.footer_slot.as_deref()),
-                ("empty_slot", spec.empty_slot.as_deref()),
-            ] {
-                if let Some(slot) = slot {
-                    collect_node_animations(slot, &format!("{path}/{name}"), output)?;
-                }
-            }
-        }
         UiNodeKind::VirtualCollection { spec } => {
             for (index, item) in &spec.realized {
                 collect_node_animations(item, &format!("{path}/item:{index}"), output)?;
@@ -435,7 +423,6 @@ fn collect_node_animations(
         | UiNodeKind::Custom { .. }
         | UiNodeKind::Image { .. }
         | UiNodeKind::DirectionalImage { .. }
-        | UiNodeKind::Select { .. }
         | UiNodeKind::DatePicker { .. }
         | UiNodeKind::ToastHost { .. } => {}
     }

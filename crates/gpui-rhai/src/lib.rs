@@ -8,8 +8,6 @@ mod date_picker_element;
 pub mod dependency;
 pub mod devtools;
 pub mod diagnostic;
-pub mod dropdown;
-mod dropdown_element;
 pub mod effect;
 pub mod element_ref;
 pub mod engine;
@@ -30,6 +28,7 @@ pub mod retained;
 pub mod schema;
 pub mod script_source;
 pub mod signal;
+mod slot_runtime;
 pub mod source;
 pub mod state;
 pub mod store;
@@ -109,10 +108,6 @@ pub use devtools::{
 };
 pub use diagnostic::{
     Diagnostic, DiagnosticCode, DiagnosticContext, DiagnosticFrame, DiagnosticSeverity,
-};
-pub use dropdown::{
-    ChoiceBehavior, DropdownError, DropdownKey, DropdownMode, DropdownNodeSpec, DropdownOption,
-    DropdownOutcome, DropdownState, DropdownVisibleRow, SelectNodeSpec,
 };
 pub use effect::{EffectDescriptor, EffectError, EffectId, EffectRegistry};
 pub use element_ref::{ElementRef, ElementRefError, ElementRefId, ElementRefRegistry};

@@ -158,22 +158,25 @@ app stores are shared. Window stores, theme/locale overrides, overlays, and
 window/component async scopes are released together on close. Rhai submits
 validated commands and never receives a GPUI window handle.
 
-Each standalone script window or embedded Host owns one Rust overlay coordinator. Popover, Dropdown, Dialog,
-Menu, Tooltip, and Toast elements reserve their portal order during layout and
+Each standalone script window or embedded Host owns one Rust overlay coordinator. Generic Overlay nodes used by Popover, Dropdown, Dialog,
+Menu, Tooltip, and Toast reserve their portal order during layout and
 register measured anchor/panel bounds during prepaint. The coordinator owns
 flipping/clamping, the parent-child dismiss stack, outside-click routing,
 Escape routing, modal policy, and per-frame cleanup. Rhai supplies only stable
 IDs, parent IDs, content, and controlled policy callbacks.
 
-Keyed native controls retain GPUI Entities in element state. Business values
+Generic keyed native mechanisms retain GPUI Entities in element state. Business values
 remain controlled Rhai props; only interaction transients such as focus,
 selection ranges, open panels, visible months, search text, and scroll offsets
 live in the native Entity.
 
-Dropdown and Select share a private listbox core for validation, grouping,
-filtering, keyboard navigation, and viewport-bounded option realization. Their
-public value and composition semantics remain separate. DatePicker reuses the
-same host overlay coordinator but owns a Gregorian calendar state machine.
+Dropdown is copied Rhai source over public Overlay, Input, semantic events, and
+data-backed `virtual_collection`; Select is its scalar Rhai adapter. Validation,
+grouping, filtering, keyboard navigation, selection, and presentation remain
+inspectable source. Rust contributes only the same generic overlay placement,
+text editing, input routing, and virtual measurement available to application
+scripts. DatePicker currently reuses the overlay coordinator but still owns a
+specialized Gregorian calendar state machine scheduled for source migration.
 
 Input and Textarea share a text-editing core for UTF-8/UTF-16 conversion,
 grapheme boundaries, selection, clipboard, IME marked ranges, and controlled

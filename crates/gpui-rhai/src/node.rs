@@ -6,11 +6,10 @@ use rhai::{
 };
 
 use crate::{
-    AnimationSpec, AssetId, CalendarMetadata, ChoiceBehavior, ComponentInstancePath,
-    DatePickerNodeSpec, DatePickerPreset, DropdownMode, DropdownNodeSpec, DropdownOption,
-    DropdownState, GregorianDate, HostCallback, NumberMetadata, OpaqueHandle, OverlayId,
-    OverlayKind, OverlayPlacement, PrimitiveNode, ScriptCallback, ScriptGeneration, SelectNodeSpec,
-    Style, ToastHostSpec, ToastItemSpec, ToastRegion, ToastVariant, UiEventBinding, UiEventHandler,
+    AnimationSpec, AssetId, CalendarMetadata, ComponentInstancePath, DatePickerNodeSpec,
+    DatePickerPreset, GregorianDate, HostCallback, NumberMetadata, OpaqueHandle, OverlayId,
+    OverlayKind, OverlayPlacement, PrimitiveNode, ScriptCallback, ScriptGeneration, Style,
+    ToastHostSpec, ToastItemSpec, ToastRegion, ToastVariant, UiEventBinding, UiEventHandler,
     UiValue,
 };
 
@@ -171,12 +170,6 @@ pub enum UiNodeKind {
         content: Box<UiNode>,
         spec: OverlayNodeSpec,
     },
-    Dropdown {
-        spec: DropdownNodeSpec,
-    },
-    Select {
-        spec: SelectNodeSpec,
-    },
     DatePicker {
         spec: Box<DatePickerNodeSpec>,
     },
@@ -204,8 +197,6 @@ pub enum UiNodeKindTag {
     Image,
     DirectionalImage,
     Overlay,
-    Dropdown,
-    Select,
     DatePicker,
     ToastHost,
     VirtualCollection,
@@ -441,51 +432,6 @@ impl UiNode {
     }
 
     #[must_use]
-    pub fn dropdown(spec: DropdownNodeSpec) -> Self {
-        let key = spec.id.clone();
-        Self {
-            kind: UiNodeKind::Dropdown { spec },
-            key: Some(NodeKey::new(key)),
-            style: Style::new(),
-            part_styles: BTreeMap::new(),
-            source: None,
-            component_root: None,
-            attributes: BTreeMap::new(),
-            handlers: BTreeMap::new(),
-            handler_payloads: BTreeMap::new(),
-            animations: Vec::new(),
-            signal_bindings: BTreeMap::new(),
-            element_ref: None,
-        }
-    }
-
-    #[must_use]
-    pub fn select(spec: SelectNodeSpec) -> Self {
-        let key = spec.choice.id.clone();
-        let attributes = BTreeMap::from([
-            ("role".to_owned(), UiValue::String("combobox".to_owned())),
-            (
-                "option_count".to_owned(),
-                UiValue::Integer(INT::try_from(spec.choice.options.len()).unwrap_or(INT::MAX)),
-            ),
-        ]);
-        Self {
-            kind: UiNodeKind::Select { spec },
-            key: Some(NodeKey::new(key)),
-            style: Style::new(),
-            part_styles: BTreeMap::new(),
-            source: None,
-            component_root: None,
-            attributes,
-            handlers: BTreeMap::new(),
-            handler_payloads: BTreeMap::new(),
-            animations: Vec::new(),
-            signal_bindings: BTreeMap::new(),
-            element_ref: None,
-        }
-    }
-
-    #[must_use]
     pub fn date_picker(spec: DatePickerNodeSpec) -> Self {
         let key = spec.id.clone();
         let attributes = BTreeMap::from([
@@ -675,26 +621,6 @@ impl UiNode {
                 trigger.replace_component_subtree(component, replacement.clone())
                     || content.replace_component_subtree(component, replacement)
             }
-            UiNodeKind::Dropdown { spec } => replace_in_optional_nodes(
-                [
-                    &mut spec.trigger_slot,
-                    &mut spec.header_slot,
-                    &mut spec.footer_slot,
-                    &mut spec.empty_slot,
-                ],
-                component,
-                &replacement,
-            ),
-            UiNodeKind::Select { spec } => replace_in_optional_nodes(
-                [
-                    &mut spec.choice.trigger_slot,
-                    &mut spec.choice.header_slot,
-                    &mut spec.choice.footer_slot,
-                    &mut spec.choice.empty_slot,
-                ],
-                component,
-                &replacement,
-            ),
             UiNodeKind::VirtualCollection { spec } => {
                 replace_in_nodes(spec.realized.values_mut(), component, &replacement)
             }
@@ -873,24 +799,11 @@ impl UiNode {
             | UiNodeKind::Custom { .. }
             | UiNodeKind::Image { .. }
             | UiNodeKind::DirectionalImage { .. }
-            | UiNodeKind::Select { .. }
             | UiNodeKind::DatePicker { .. }
             | UiNodeKind::ToastHost { .. } => {}
             UiNodeKind::VirtualCollection { spec } => {
                 for item in spec.realized.values_mut() {
                     item.bind_generation(generation);
-                }
-            }
-            UiNodeKind::Dropdown { spec } => {
-                for slot in [
-                    &mut spec.trigger_slot,
-                    &mut spec.header_slot,
-                    &mut spec.footer_slot,
-                    &mut spec.empty_slot,
-                ] {
-                    if let Some(slot) = slot.as_mut() {
-                        slot.bind_generation(generation);
-                    }
                 }
             }
         }
@@ -933,19 +846,6 @@ impl UiNode {
                 trigger.bind_component_scope(component, events, native_context);
                 content.bind_component_scope(component, events, native_context);
             }
-            UiNodeKind::Dropdown { spec } => {
-                for slot in [
-                    &mut spec.trigger_slot,
-                    &mut spec.header_slot,
-                    &mut spec.footer_slot,
-                    &mut spec.empty_slot,
-                ]
-                .into_iter()
-                .flatten()
-                {
-                    slot.bind_component_scope(component, events, native_context);
-                }
-            }
             UiNodeKind::VirtualCollection { spec } => {
                 for item in spec.realized.values_mut() {
                     item.bind_component_scope(component, events, native_context);
@@ -956,7 +856,6 @@ impl UiNode {
             | UiNodeKind::Canvas { .. }
             | UiNodeKind::Image { .. }
             | UiNodeKind::DirectionalImage { .. }
-            | UiNodeKind::Select { .. }
             | UiNodeKind::DatePicker { .. }
             | UiNodeKind::ToastHost { .. } => {}
         }
@@ -1003,19 +902,6 @@ impl UiNode {
                 trigger.bind_callback_scope_by_name(names, component, events, native_context);
                 content.bind_callback_scope_by_name(names, component, events, native_context);
             }
-            UiNodeKind::Dropdown { spec } => {
-                for slot in [
-                    &mut spec.trigger_slot,
-                    &mut spec.header_slot,
-                    &mut spec.footer_slot,
-                    &mut spec.empty_slot,
-                ]
-                .into_iter()
-                .flatten()
-                {
-                    slot.bind_callback_scope_by_name(names, component, events, native_context);
-                }
-            }
             UiNodeKind::VirtualCollection { spec } => {
                 for item in spec.realized.values_mut() {
                     item.bind_callback_scope_by_name(names, component, events, native_context);
@@ -1026,7 +912,6 @@ impl UiNode {
             | UiNodeKind::Canvas { .. }
             | UiNodeKind::Image { .. }
             | UiNodeKind::DirectionalImage { .. }
-            | UiNodeKind::Select { .. }
             | UiNodeKind::DatePicker { .. }
             | UiNodeKind::ToastHost { .. } => {}
         }
@@ -1048,8 +933,6 @@ impl UiNode {
             UiNodeKind::Image { .. } => UiNodeKindTag::Image,
             UiNodeKind::DirectionalImage { .. } => UiNodeKindTag::DirectionalImage,
             UiNodeKind::Overlay { .. } => UiNodeKindTag::Overlay,
-            UiNodeKind::Dropdown { .. } => UiNodeKindTag::Dropdown,
-            UiNodeKind::Select { .. } => UiNodeKindTag::Select,
             UiNodeKind::DatePicker { .. } => UiNodeKindTag::DatePicker,
             UiNodeKind::ToastHost { .. } => UiNodeKindTag::ToastHost,
             UiNodeKind::VirtualCollection { .. } => UiNodeKindTag::VirtualCollection,
@@ -1085,8 +968,6 @@ impl UiNode {
                 ("trigger".to_owned(), vec![trigger.as_ref()]),
                 ("content".to_owned(), vec![content.as_ref()]),
             ],
-            UiNodeKind::Dropdown { spec } => dropdown_child_groups(spec),
-            UiNodeKind::Select { spec } => dropdown_child_groups(&spec.choice),
             UiNodeKind::VirtualCollection { spec } => {
                 vec![("items".to_owned(), spec.realized.values().collect())]
             }
@@ -1160,30 +1041,6 @@ fn replace_in_nodes<'a>(
         }
     }
     false
-}
-
-fn replace_in_optional_nodes<const N: usize>(
-    nodes: [&mut Option<Box<UiNode>>; N],
-    component: &ComponentInstancePath,
-    replacement: &UiNode,
-) -> bool {
-    replace_in_nodes(
-        nodes.into_iter().filter_map(Option::as_deref_mut),
-        component,
-        replacement,
-    )
-}
-
-fn dropdown_child_groups(spec: &DropdownNodeSpec) -> Vec<(String, Vec<&UiNode>)> {
-    [
-        ("trigger-slot", spec.trigger_slot.as_deref()),
-        ("header-slot", spec.header_slot.as_deref()),
-        ("footer-slot", spec.footer_slot.as_deref()),
-        ("empty-slot", spec.empty_slot.as_deref()),
-    ]
-    .into_iter()
-    .filter_map(|(name, node)| node.map(|node| (name.to_owned(), vec![node])))
-    .collect()
 }
 
 impl CustomType for UiNode {
@@ -1782,201 +1639,6 @@ pub(crate) fn overlay_node(
     ))
 }
 
-pub(crate) fn dropdown_node(
-    call: NativeCallContext<'_>,
-    mut config: Map,
-) -> Result<UiNode, Box<EvalAltResult>> {
-    let id = required_string(&mut config, "id")?;
-    if id.trim().is_empty() {
-        return overlay_config_error("dropdown ID cannot be empty");
-    }
-    let parent_overlay = optional_string(&mut config, "parent_overlay")?;
-    let options = parse_dropdown_options(&mut config)?;
-    let mode = match optional_string(&mut config, "mode")?.as_deref() {
-        None | Some("single") => DropdownMode::Single,
-        Some("multiple") => DropdownMode::Multiple,
-        Some(other) => return overlay_config_error(format!("unknown dropdown mode `{other}`")),
-    };
-    let selected = optional_string_array(&mut config, "selected")?;
-    let open = optional_bool(&mut config, "open")?;
-    let searchable = optional_bool(&mut config, "searchable")?.unwrap_or(false);
-    let query = optional_string(&mut config, "query")?;
-    let placeholder = optional_string(&mut config, "placeholder")?.unwrap_or_default();
-    let search_placeholder =
-        optional_string(&mut config, "search_placeholder")?.unwrap_or_default();
-    let empty_text = optional_string(&mut config, "empty_text")?.unwrap_or_default();
-    let trigger_slot = optional_node(&mut config, "trigger")?;
-    let header_slot = optional_node(&mut config, "header")?;
-    let footer_slot = optional_node(&mut config, "footer")?;
-    let empty_slot = optional_node(&mut config, "empty")?;
-    let disabled = optional_bool(&mut config, "disabled")?.unwrap_or(false);
-    let max_visible = optional_usize(&mut config, "max_visible")?.unwrap_or(8);
-    if !(1..=32).contains(&max_visible) {
-        return overlay_config_error("dropdown max_visible must be between 1 and 32");
-    }
-    let placement = match optional_string(&mut config, "placement")?.as_deref() {
-        None | Some("bottom") => OverlayPlacement::Bottom,
-        Some("top") => OverlayPlacement::Top,
-        Some("left") => OverlayPlacement::Left,
-        Some("right") => OverlayPlacement::Right,
-        Some(other) => {
-            return overlay_config_error(format!("unsupported dropdown placement `{other}`"));
-        }
-    };
-    let clearable = optional_bool(&mut config, "clearable")?.unwrap_or(false);
-    let reset_query_on_close = optional_bool(&mut config, "reset_query_on_close")?.unwrap_or(false);
-    let row_height = positive_config_number(&mut config, "row_height", 32.0)?;
-    let trigger_height = positive_config_number(&mut config, "trigger_height", 32.0)?;
-    let trigger_width = required_length(&mut config, "trigger_width")?;
-    let panel_width = positive_config_number(&mut config, "panel_width", 280.0)?;
-    let panel_extra_height = optional_nonnegative_number(&mut config, "panel_extra_height")?;
-    let overlay_gap = optional_nonnegative_number(&mut config, "overlay_gap")?.unwrap_or(0.0);
-    let clear_asset = required_asset(&mut config, "clear_asset")?;
-    let indicator_asset = required_asset(&mut config, "indicator_asset")?;
-    let check_asset = required_asset(&mut config, "check_asset")?;
-    if let Some((unknown, _)) = config.into_iter().next() {
-        return overlay_config_error(format!("unknown dropdown config field `{unknown}`"));
-    }
-    let spec = DropdownNodeSpec {
-        id,
-        parent_overlay,
-        options,
-        mode,
-        selected,
-        open,
-        behavior: ChoiceBehavior {
-            searchable,
-            clearable,
-            reset_query_on_close,
-        },
-        query,
-        placeholder,
-        search_placeholder,
-        empty_text,
-        trigger_slot,
-        header_slot,
-        footer_slot,
-        empty_slot,
-        disabled,
-        max_visible,
-        placement,
-        row_height,
-        trigger_height,
-        trigger_width,
-        panel_width,
-        panel_extra_height,
-        overlay_gap,
-        clear_asset,
-        indicator_asset,
-        check_asset,
-    };
-    DropdownState::new(
-        spec.options.clone(),
-        spec.mode,
-        spec.selected.clone().unwrap_or_default(),
-    )
-    .map_err(|error| {
-        Box::new(EvalAltResult::ErrorRuntime(
-            error.to_string().into(),
-            Position::NONE,
-        ))
-    })?;
-    Ok(with_call_source(UiNode::dropdown(spec), call))
-}
-
-pub(crate) fn select_node(
-    call: NativeCallContext<'_>,
-    mut config: Map,
-) -> Result<UiNode, Box<EvalAltResult>> {
-    let id = required_string(&mut config, "id")?;
-    if id.trim().is_empty() {
-        return overlay_config_error("select ID cannot be empty");
-    }
-    let parent_overlay = optional_string(&mut config, "parent_overlay")?;
-    let options = parse_dropdown_options(&mut config)?;
-    let value = optional_nullable_string(&mut config, "value")?;
-    let searchable = optional_bool(&mut config, "searchable")?.unwrap_or(false);
-    let clearable = optional_bool(&mut config, "clearable")?.unwrap_or(false);
-    let placeholder = optional_string(&mut config, "placeholder")?.unwrap_or_default();
-    let search_placeholder =
-        optional_string(&mut config, "search_placeholder")?.unwrap_or_default();
-    let empty_text = optional_string(&mut config, "empty_text")?.unwrap_or_default();
-    let disabled = optional_bool(&mut config, "disabled")?.unwrap_or(false);
-    let max_visible = optional_usize(&mut config, "max_visible")?.unwrap_or(8);
-    if !(1..=32).contains(&max_visible) {
-        return overlay_config_error("select max_visible must be between 1 and 32");
-    }
-    let placement = match optional_string(&mut config, "placement")?.as_deref() {
-        None | Some("bottom") => OverlayPlacement::Bottom,
-        Some("top") => OverlayPlacement::Top,
-        Some("left") => OverlayPlacement::Left,
-        Some("right") => OverlayPlacement::Right,
-        Some(other) => {
-            return overlay_config_error(format!("unsupported select placement `{other}`"));
-        }
-    };
-    let row_height = positive_config_number(&mut config, "row_height", 32.0)?;
-    let trigger_height = positive_config_number(&mut config, "trigger_height", 32.0)?;
-    let trigger_width = required_length(&mut config, "trigger_width")?;
-    let panel_width = positive_config_number(&mut config, "panel_width", 280.0)?;
-    let panel_extra_height = optional_nonnegative_number(&mut config, "panel_extra_height")?;
-    let overlay_gap = optional_nonnegative_number(&mut config, "overlay_gap")?.unwrap_or(0.0);
-    let clear_asset = required_asset(&mut config, "clear_asset")?;
-    let indicator_asset = required_asset(&mut config, "indicator_asset")?;
-    let check_asset = required_asset(&mut config, "check_asset")?;
-    if let Some((unknown, _)) = config.into_iter().next() {
-        return overlay_config_error(format!("unknown select config field `{unknown}`"));
-    }
-    let choice = DropdownNodeSpec {
-        id,
-        parent_overlay,
-        options,
-        mode: DropdownMode::Single,
-        selected: Some(value.into_iter().collect()),
-        open: None,
-        behavior: ChoiceBehavior {
-            searchable,
-            clearable,
-            reset_query_on_close: true,
-        },
-        query: None,
-        placeholder,
-        search_placeholder,
-        empty_text,
-        trigger_slot: None,
-        header_slot: None,
-        footer_slot: None,
-        empty_slot: None,
-        disabled,
-        max_visible,
-        placement,
-        row_height,
-        trigger_height,
-        trigger_width,
-        panel_width,
-        panel_extra_height,
-        overlay_gap,
-        clear_asset,
-        indicator_asset,
-        check_asset,
-    };
-    DropdownState::new(
-        choice.options.clone(),
-        DropdownMode::Single,
-        choice.selected.clone().unwrap_or_default(),
-    )
-    .map_err(|error| {
-        Box::new(EvalAltResult::ErrorRuntime(
-            error.to_string().into(),
-            Position::NONE,
-        ))
-    })?;
-    Ok(with_call_source(
-        UiNode::select(SelectNodeSpec { choice }),
-        call,
-    ))
-}
-
 pub(crate) fn date_picker_node(
     call: NativeCallContext<'_>,
     mut config: Map,
@@ -2061,24 +1723,6 @@ fn required_asset(config: &mut Map, name: &str) -> Result<AssetId, Box<EvalAltRe
         .remove(name)
         .and_then(Dynamic::try_cast::<AssetId>)
         .ok_or_else(|| Box::new(overlay_type_error(name, "an AssetId")))
-}
-
-fn required_length(config: &mut Map, name: &str) -> Result<crate::Length, Box<EvalAltResult>> {
-    config
-        .remove(name)
-        .and_then(Dynamic::try_cast::<crate::Length>)
-        .ok_or_else(|| Box::new(overlay_type_error(name, "a Length")))
-}
-
-fn optional_nonnegative_number(
-    config: &mut Map,
-    name: &str,
-) -> Result<Option<f64>, Box<EvalAltResult>> {
-    let value = optional_number(config, name)?;
-    if value.is_some_and(|value| !value.is_finite() || value < 0.0) {
-        return overlay_config_error(format!("{name} must be a finite non-negative number"));
-    }
-    Ok(value)
 }
 
 fn optional_date(
@@ -2270,50 +1914,6 @@ fn with_call_source(node: UiNode, call: NativeCallContext<'_>) -> UiNode {
     })
 }
 
-fn parse_dropdown_options(config: &mut Map) -> Result<Vec<DropdownOption>, Box<EvalAltResult>> {
-    let raw = config.remove("options").ok_or_else(|| {
-        Box::new(EvalAltResult::ErrorRuntime(
-            "dropdown config field `options` is required".into(),
-            Position::NONE,
-        ))
-    })?;
-    let options = raw
-        .try_cast::<Array>()
-        .ok_or_else(|| Box::new(overlay_type_error("options", "an array of option maps")))?;
-    if options.len() > 10_000 {
-        return overlay_config_error("dropdown options cannot exceed 10,000 items");
-    }
-    options
-        .into_iter()
-        .enumerate()
-        .map(|(index, option)| {
-            let mut option = option.try_cast::<Map>().ok_or_else(|| {
-                Box::new(EvalAltResult::ErrorRuntime(
-                    format!("dropdown option at index {index} must be a map").into(),
-                    Position::NONE,
-                ))
-            })?;
-            let value = required_string(&mut option, "value")?;
-            let label = required_string(&mut option, "label")?;
-            let keywords = optional_string_array(&mut option, "keywords")?.unwrap_or_default();
-            let disabled = optional_bool(&mut option, "disabled")?.unwrap_or(false);
-            let group = optional_string(&mut option, "group")?;
-            if let Some((unknown, _)) = option.into_iter().next() {
-                return overlay_config_error(format!(
-                    "unknown field `{unknown}` in dropdown option `{value}`"
-                ));
-            }
-            Ok(DropdownOption {
-                value,
-                label,
-                keywords,
-                disabled,
-                group,
-            })
-        })
-        .collect()
-}
-
 fn positive_config_number(
     config: &mut Map,
     name: &str,
@@ -2400,44 +2000,6 @@ fn optional_usize(config: &mut Map, name: &str) -> Result<Option<usize>, Box<Eva
         .and_then(|value| usize::try_from(value).ok())
         .map(Some)
         .ok_or_else(|| Box::new(overlay_type_error(name, "a non-negative integer")))
-}
-
-fn optional_string_array(
-    config: &mut Map,
-    name: &str,
-) -> Result<Option<Vec<String>>, Box<EvalAltResult>> {
-    let Some(value) = config.remove(name) else {
-        return Ok(None);
-    };
-    let values = value
-        .try_cast::<Array>()
-        .ok_or_else(|| Box::new(overlay_type_error(name, "an array of strings")))?;
-    values
-        .into_iter()
-        .enumerate()
-        .map(|(index, value)| {
-            value
-                .try_cast::<ImmutableString>()
-                .map(|value| value.to_string())
-                .ok_or_else(|| {
-                    Box::new(EvalAltResult::ErrorRuntime(
-                        format!("dropdown field `{name}` item {index} must be a string").into(),
-                        Position::NONE,
-                    ))
-                })
-        })
-        .collect::<Result<Vec<_>, _>>()
-        .map(Some)
-}
-
-fn optional_node(config: &mut Map, name: &str) -> Result<Option<Box<UiNode>>, Box<EvalAltResult>> {
-    let Some(value) = config.remove(name) else {
-        return Ok(None);
-    };
-    value
-        .try_cast::<UiNode>()
-        .map(|node| Some(Box::new(node)))
-        .ok_or_else(|| Box::new(overlay_type_error(name, "a UiNode")))
 }
 
 fn overlay_type_error(name: &str, expected: &str) -> EvalAltResult {

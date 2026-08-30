@@ -1,10 +1,11 @@
 use std::collections::BTreeMap;
 
-use gpui_rhai::{AssetData, EmbeddedScriptSource, EmbeddedScriptView, ModuleId, ScriptApplication};
+use gpui_rhai::{EmbeddedScriptSource, EmbeddedScriptView, ModuleId, ScriptApplication};
 
 const BUTTON: &str = include_str!("../../../registry/components/button.rhai");
 const LABEL: &str = include_str!("../../../registry/components/label.rhai");
 const DIVIDER: &str = include_str!("../../../registry/components/divider.rhai");
+const INPUT: &str = include_str!("../../../registry/components/input.rhai");
 const DROPDOWN: &str = include_str!("../../../registry/components/dropdown.rhai");
 const POPOVER: &str = include_str!("../../../registry/components/popover.rhai");
 const SWITCH: &str = include_str!("../../../registry/components/switch.rhai");
@@ -288,6 +289,7 @@ fn main() {
         module("components/button", BUTTON),
         module("components/label", LABEL),
         module("components/divider", DIVIDER),
+        module("components/input", INPUT),
         module("components/dropdown", DROPDOWN),
         module("components/popover", POPOVER),
         module("components/switch", SWITCH),
@@ -318,7 +320,6 @@ fn main() {
         ("zh_cn.rhai".to_owned(), ZH_CN.to_owned()),
         ("ar.rhai".to_owned(), AR.to_owned()),
     ])
-    .asset_sources(choice_assets())
     .development(true)
     .prepare()
     .and_then(|prepared| {
@@ -327,30 +328,4 @@ fn main() {
             .run()
     })
     .expect("settings_panel failed");
-}
-
-fn choice_assets() -> [(String, AssetData); 3] {
-    [
-        (
-            "icons/check".to_owned(),
-            svg(include_bytes!("../../../registry/assets/icons/check.svg")),
-        ),
-        (
-            "icons/close".to_owned(),
-            svg(include_bytes!("../../../registry/assets/icons/close.svg")),
-        ),
-        (
-            "icons/disclosure_down".to_owned(),
-            svg(include_bytes!(
-                "../../../registry/assets/icons/disclosure_down.svg"
-            )),
-        ),
-    ]
-}
-
-fn svg(bytes: &[u8]) -> AssetData {
-    AssetData {
-        mime_type: "image/svg+xml".to_owned(),
-        bytes: bytes.to_vec(),
-    }
 }

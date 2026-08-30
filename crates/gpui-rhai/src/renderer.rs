@@ -15,20 +15,16 @@ use gpui::{
 use crate::date_picker_element::{
     DateChangeHandler, DatePickerCallbacks, DatePickerEntityElement, DatePickerPalette,
 };
-use crate::dropdown_element::{
-    DropdownCallbacks, DropdownEntityElement, DropdownPalette, DropdownSlotRuntime, QueryHandler,
-    SelectionHandler,
-};
 use crate::overlay_element::{ScriptOverlayElement, WindowOverlayCoordinator};
+use crate::slot_runtime::NodeSlotRuntime;
 use crate::toast_element::{ToastDismissHandler, ToastHostElement, ToastPalette, ToastPartStyles};
 use crate::virtual_list_element::VirtualListEntityElement;
 use crate::{
     Align, AnimationKey, AnimationProperty, AssetRegistry, ColorValue, DatePickerNodeSpec,
-    DropdownNodeSpec, EventPropagation, EventResponse, FlexDirection, ImageSourceSpec,
-    InteractionState, Justify, Length, NodeId, OverflowMode, OverlayNodeSpec, PositionMode,
-    PrimitiveRegistry, PseudoState, RadiusToken, RetainedUiTree, Rgba8, ScriptCallback,
-    SpacingToken, Style, StyleProperties, TextDirection, ToastHostSpec, UiEventHandler, UiNode,
-    UiNodeKind, UiValue,
+    EventPropagation, EventResponse, FlexDirection, ImageSourceSpec, InteractionState, Justify,
+    Length, NodeId, OverflowMode, OverlayNodeSpec, PositionMode, PrimitiveRegistry, PseudoState,
+    RadiusToken, RetainedUiTree, Rgba8, ScriptCallback, SpacingToken, Style, StyleProperties,
+    TextDirection, ToastHostSpec, UiEventHandler, UiNode, UiNodeKind, UiValue,
 };
 
 type DispatchFn = dyn Fn(ScriptCallback, UiValue, &mut Window, &mut App) -> EventResponse;
@@ -1253,12 +1249,6 @@ impl GpuiNodeRenderer {
                     (path, retained_id),
                 ))
                 .into_any_element(),
-            UiNodeKind::Dropdown { spec } => element
-                .child(native_dropdown_element(node, spec, environment, path))
-                .into_any_element(),
-            UiNodeKind::Select { spec } => element
-                .child(native_select_element(node, &spec.choice, environment, path))
-                .into_any_element(),
             UiNodeKind::DatePicker { spec } => element
                 .child(native_date_picker_element(node, spec, environment, path))
                 .into_any_element(),
@@ -1664,26 +1654,6 @@ fn native_toast_element<C: ColorResolver>(
     )
 }
 
-fn native_dropdown_element<C: ColorResolver>(
-    node: &UiNode,
-    spec: &DropdownNodeSpec,
-    environment: &RenderEnvironment<'_, C>,
-    path: &str,
-) -> DropdownEntityElement {
-    let callbacks = dropdown_callbacks(node, environment.dispatcher);
-    native_choice_element(node, spec, callbacks, environment, path)
-}
-
-fn native_select_element<C: ColorResolver>(
-    node: &UiNode,
-    spec: &DropdownNodeSpec,
-    environment: &RenderEnvironment<'_, C>,
-    path: &str,
-) -> DropdownEntityElement {
-    let callbacks = select_callbacks(node, environment.dispatcher);
-    native_choice_element(node, spec, callbacks, environment, path)
-}
-
 fn native_date_picker_element<C: ColorResolver>(
     node: &UiNode,
     spec: &DatePickerNodeSpec,
@@ -1700,7 +1670,7 @@ fn native_date_picker_element<C: ColorResolver>(
         on_accent: semantic_color(environment.colors, "on_accent", 0x00ff_ffff),
         focus_ring: semantic_color(environment.colors, "focus_ring", 0x003b_82f6),
     };
-    let runtime = DropdownSlotRuntime {
+    let runtime = NodeSlotRuntime {
         colors: OwnedColorResolver::capture(environment.colors),
         primitives: environment.primitives.clone(),
         assets: environment.assets.cloned().unwrap_or_default(),
@@ -1731,58 +1701,12 @@ fn native_date_picker_element<C: ColorResolver>(
     )
 }
 
-fn native_choice_element<C: ColorResolver>(
-    node: &UiNode,
-    spec: &DropdownNodeSpec,
-    callbacks: DropdownCallbacks,
-    environment: &RenderEnvironment<'_, C>,
-    path: &str,
-) -> DropdownEntityElement {
-    let palette = DropdownPalette {
-        surface: semantic_color(environment.colors, "surface", 0x0018_181b),
-        hover: semantic_color(environment.colors, "surface_hover", 0x003f_3f46),
-        muted: semantic_color(environment.colors, "text_muted", 0x00a1_a1aa),
-        accent: semantic_color(environment.colors, "accent", 0x003b_82f6),
-        disabled: semantic_color(environment.colors, "disabled", 0x0052_525b),
-        focus_ring: semantic_color(environment.colors, "focus_ring", 0x003b_82f6),
-    };
-    let slot_runtime = DropdownSlotRuntime {
-        colors: OwnedColorResolver::capture(environment.colors),
-        primitives: environment.primitives.clone(),
-        assets: environment.assets.cloned().unwrap_or_default(),
-        dispatcher: environment
-            .dispatcher
-            .cloned()
-            .unwrap_or_else(|| NodeEventDispatcher::new(|_, _, _, _| EventPropagation::Handled)),
-        overlays: environment.overlays.clone(),
-        animations: environment.animations.clone(),
-        signals: environment.signals.clone(),
-        geometry: environment.geometry.clone(),
-        pointer_capture: environment.pointer_capture.clone(),
-        focus_handles: environment.focus_handles.clone(),
-        scroll_handles: environment.scroll_handles.clone(),
-        virtual_requests: environment.virtual_requests.clone(),
-        direction: environment.direction,
-        base_path: path.to_owned(),
-        view_id: environment.view_id.to_owned(),
-        part_styles: owned_part_styles(node),
-    };
-    DropdownEntityElement::new(
-        path,
-        spec.clone(),
-        callbacks,
-        palette,
-        environment.overlays.clone(),
-        slot_runtime,
-    )
-}
-
 fn native_virtual_collection_element<C: ColorResolver>(
     spec: &crate::VirtualCollectionNodeSpec,
     environment: &RenderEnvironment<'_, C>,
     path: &str,
 ) -> VirtualListEntityElement {
-    let runtime = DropdownSlotRuntime {
+    let runtime = NodeSlotRuntime {
         colors: OwnedColorResolver::capture(environment.colors),
         primitives: environment.primitives.clone(),
         assets: environment.assets.cloned().unwrap_or_default(),
@@ -2072,82 +1996,6 @@ impl IntoElement for TranslatedElement {
 
     fn into_element(self) -> Self::Element {
         self
-    }
-}
-
-fn dropdown_callbacks(
-    node: &UiNode,
-    dispatcher: Option<&NodeEventDispatcher>,
-) -> DropdownCallbacks {
-    let dispatcher = dispatcher.cloned();
-    let selection = node.handler("change").map(|handler| {
-        let handler = handler.clone();
-        let dispatcher = dispatcher.clone();
-        Rc::new(
-            move |values: Vec<String>, window: &mut Window, cx: &mut App| {
-                dispatch_ui_event(
-                    &handler,
-                    "change",
-                    UiValue::Array(values.into_iter().map(UiValue::String).collect()),
-                    window,
-                    cx,
-                    dispatcher.as_ref(),
-                );
-            },
-        ) as SelectionHandler
-    });
-    let open = node.handler("open_change").map(|handler| {
-        let handler = handler.clone();
-        let dispatcher = dispatcher.clone();
-        Rc::new(move |open, window: &mut Window, cx: &mut App| {
-            dispatch_ui_event(
-                &handler,
-                "open_change",
-                UiValue::Bool(open),
-                window,
-                cx,
-                dispatcher.as_ref(),
-            );
-        }) as crate::overlay_element::OpenChangeHandler
-    });
-    let query = node.handler("query_change").map(|handler| {
-        let handler = handler.clone();
-        Rc::new(move |query: String, window: &mut Window, cx: &mut App| {
-            dispatch_ui_event(
-                &handler,
-                "query_change",
-                UiValue::String(query),
-                window,
-                cx,
-                dispatcher.as_ref(),
-            );
-        }) as QueryHandler
-    });
-    DropdownCallbacks {
-        selection,
-        open,
-        query,
-    }
-}
-
-fn select_callbacks(node: &UiNode, dispatcher: Option<&NodeEventDispatcher>) -> DropdownCallbacks {
-    let dispatcher = dispatcher.cloned();
-    let selection = node.handler("change").map(|handler| {
-        let handler = handler.clone();
-        Rc::new(
-            move |values: Vec<String>, window: &mut Window, cx: &mut App| {
-                let payload = values
-                    .into_iter()
-                    .next()
-                    .map_or(UiValue::Null, UiValue::String);
-                dispatch_ui_event(&handler, "change", payload, window, cx, dispatcher.as_ref());
-            },
-        ) as SelectionHandler
-    });
-    DropdownCallbacks {
-        selection,
-        open: None,
-        query: None,
     }
 }
 

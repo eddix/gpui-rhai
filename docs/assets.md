@@ -30,8 +30,8 @@ Component metadata records the provider-relative files such as
 `icons/chevron_next.svg`; installed component source refers to them through the
 application asset namespace.
 Capability-provided image handles remain the path for dynamic application
-images. Dropdown, Select, DatePicker, Table, and Pagination ship only the
-minimal check/clear/disclosure/calendar/sort/directional SVGs they need;
+images. Dropdown, Select, and Table need no private assets; DatePicker and
+Pagination ship only the minimal calendar and directional SVGs they need;
 complete icon packs remain optional source packs.
 
 ## Dynamic loading

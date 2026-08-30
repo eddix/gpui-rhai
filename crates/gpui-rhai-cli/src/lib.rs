@@ -51,8 +51,6 @@ const CHEVRON_RIGHT_SVG: &str = include_str!("../../../registry/assets/icons/che
 const CALENDAR_SVG: &str = include_str!("../../../registry/assets/icons/calendar.svg");
 const DATE_PREVIOUS_SVG: &str = include_str!("../../../registry/assets/icons/date_previous.svg");
 const DATE_NEXT_SVG: &str = include_str!("../../../registry/assets/icons/date_next.svg");
-const DISCLOSURE_DOWN_SVG: &str =
-    include_str!("../../../registry/assets/icons/disclosure_down.svg");
 const DEFAULT_THEME: &str = include_str!("../../../registry/themes/default_dark.rhai");
 const DEFAULT_LIGHT_THEME: &str = include_str!("../../../registry/themes/default_light.rhai");
 const TOKYO_NIGHT_THEME: &str = include_str!("../../../registry/themes/tokyo_night.rhai");
@@ -117,20 +115,7 @@ const DATE_PICKER_ASSETS: &[RegistryAsset] = &[
     },
 ];
 
-const SELECT_ASSETS: &[RegistryAsset] = &[
-    RegistryAsset {
-        path: "icons/check.svg",
-        source: CHECK_SVG,
-    },
-    RegistryAsset {
-        path: "icons/close.svg",
-        source: CLOSE_SVG,
-    },
-    RegistryAsset {
-        path: "icons/disclosure_down.svg",
-        source: DISCLOSURE_DOWN_SVG,
-    },
-];
+const SELECT_ASSETS: &[RegistryAsset] = &[];
 
 const TABLE_ASSETS: &[RegistryAsset] = &[];
 
@@ -1570,10 +1555,12 @@ mod tests {
             .apply()
             .unwrap();
         let report = project.check().unwrap();
-        assert_eq!(report.components, 7);
+        assert_eq!(report.components, 9);
         for component in [
             "button.rhai",
             "icon.rhai",
+            "input.rhai",
+            "dropdown.rhai",
             "select.rhai",
             "pagination.rhai",
             "table.rhai",
@@ -1596,7 +1583,6 @@ mod tests {
             "icons/calendar.svg",
             "icons/date_previous.svg",
             "icons/date_next.svg",
-            "icons/disclosure_down.svg",
         ] {
             assert!(directory.path().join("ui/assets").join(asset).exists());
         }
@@ -1748,7 +1734,18 @@ mod tests {
         )
         .unwrap();
         let components = metadata["components"].as_array().unwrap();
-        assert_eq!(components.len(), 2);
+        let installed = components
+            .iter()
+            .map(|component| component["metadata"]["id"].as_str().unwrap())
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            installed,
+            BTreeSet::from([
+                "components/button",
+                "components/dropdown",
+                "components/input",
+            ])
+        );
         assert!(components.iter().any(|component| {
             component["metadata"]["id"] == "components/dropdown"
                 && component["schema"]["parts"]

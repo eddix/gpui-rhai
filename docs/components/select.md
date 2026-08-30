@@ -1,12 +1,8 @@
 # Select specification
 
-Select is a controlled, form-oriented, single-choice control. It shares a
-private native listbox/search/overlay core with Dropdown but deliberately has a
-smaller scalar API and a fixed Input-like trigger.
-
-Dropdown remains the advanced choice picker for multiple selection, controlled
-query/open state, custom trigger/header/footer/empty slots, and other menu-like
-composition. Popover owns arbitrary overlay content; Menu owns commands.
+Select is a controlled, form-oriented, single-choice Rhai component. It is a
+thin scalar adapter over the public Dropdown source component; neither Select
+nor Dropdown has a privileged Rust node or private state machine.
 
 ## Public contract
 
@@ -15,62 +11,47 @@ composition. Popover owns arbitrary overlay content; Menu owns commands.
 - required `key: string`;
 - `options: array<{ value, label, disabled?, group?, keywords? }>`;
 - `value: optional<string>`;
-- `placeholder`, `search_placeholder`, and `empty_text` strings;
-- `clearable` and `searchable` booleans;
-- `disabled`, `error`, `size`, `placement`, and `max_visible`;
-- optional `width: Length`, default `px(280)`;
+- `placeholder`, `search_placeholder`, `empty_text`, and `clear_label` strings;
+- `clearable`, `searchable`, `disabled`, and `error` booleans;
+- `size`, `placement`, `max_visible`, and optional `width: Length`;
 - optional `on_change`, whose payload is `optional<string>`.
 
 Rhai `()` is the only empty-value sentinel. Empty-string option values remain
-legal and distinct from null; all option values must be unique. An unknown
-controlled value is an error. A disabled option may remain selected and visible
+legal and distinct from null. Option values must be unique, an externally
+controlled value must name an option, and a disabled option may remain selected
 but cannot be newly selected.
 
-The optional `group` string is caller-localized display text and group identity.
-Groups appear in first-occurrence order and preserve input order within each
+Groups follow first-occurrence order and preserve input order within each
 group. Group headers are not selectable. Search matches case-insensitive
-substrings of label and keywords while preserving the same order.
+substrings of labels and keywords. The copied source uses data-backed,
+variable-height `virtual_collection`, so filtering a large option set does not
+build every option node.
 
-Style parts include at least `root`, `trigger`, `value`, `placeholder`,
-`indicator`, `clear`, `panel`, `search`, `list`, `group`, `option`,
-`option_selected`, `option_disabled`, and `empty`.
+## State and interaction
 
-## Controlled and transient state
+The caller owns `value`. Dropdown's formal component state owns open, query,
+and active-option transients under the stable Select key. Closing Select clears
+the query. Clearing emits `()`; selecting emits the scalar value and closes the
+panel.
 
-The caller owns `value`. The keyed native entity owns open state, focused
-option, type-ahead buffer, search query, scroll position, and focus restoration.
-Select does not expose controlled `open` or `query` props. Query text clears on
-selection, Escape, outside dismissal, and every close, so reopening shows the
-complete list.
+Arrow keys skip disabled options; Home and End move to the edges; Enter commits;
+Escape and outside click dismiss through the public Overlay mechanism. When
+search is disabled, letter keys cycle by the first label character. Searchable
+Select delegates editing, IME, selection, and clipboard behavior to the public
+Input source component and its generic native text-editing primitive.
 
-Clearing emits `()`. Selecting an enabled option emits its scalar value, closes
-the panel, and restores focus to the trigger.
-
-## Keyboard and accessibility
-
-- Enter, Space, ArrowUp, or ArrowDown opens the list.
-- Up/Down move between enabled options; Home/End move to edges.
-- Character input performs type-ahead when search is disabled.
-- Search input uses the shared native text input behavior when enabled.
-- Enter selects the focused option; Escape closes without a value change.
-- Tab closes and continues deterministic window traversal.
-
-The normalized root uses combobox semantics; the panel retains listbox, option,
-selected, disabled, expanded, invalid, label, and value metadata.
+Style parts are `root`, `trigger`, `value`, `placeholder`, `indicator`, `clear`,
+`panel`, `search`, `list`, `group`, `option`, `option_selected`,
+`option_active`, `option_disabled`, and `empty`. Virtual item renderers resolve
+the same validated component style snapshot through `ctx.component_style`.
 
 ## Native boundary
 
-Dropdown and Select must not copy two state machines. Rust extracts one private
-choice-list core for validation, grouping, filtering, focus movement,
-virtualized realization, type-ahead, and overlay coordination. Thin native
-adapters preserve their distinct public payloads and visual policy. Search and
-grouping ship in the first Select slice; remote asynchronous loading and
-multiple selection do not.
+Rust owns only generic platform mechanisms used by any script author: Overlay
+placement/dismissal, Input editing/IME, focus routing, and data-backed virtual
+collection measurement. Choice validation, grouping, filtering, selection,
+keyboard policy, rendering, and scalar adaptation are inspectable Rhai source.
 
-## Required evidence
-
-- duplicate/unknown values, groups, disabled options, and filtering tests;
-- controlled optional-value and clear behavior tests;
-- native mouse, keyboard, type-ahead, search, dismissal, and focus tests;
-- form error/disabled/placeholder snapshots and multi-theme baselines;
-- a country or region field in `form_showcase`.
+Required evidence covers identity validation, grouping/filtering, controlled
+payloads, keyboard routing, bounded realization, style propagation, CLI
+dependency installation, and multi-theme interaction baselines.

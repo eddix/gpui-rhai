@@ -5,8 +5,8 @@ use std::rc::Rc;
 use gpui_rhai::{
     AssetData, ComponentInstancePath, ComponentStateSchema, EmbeddedScriptSource, ExecutionPhase,
     InMemoryAssetProvider, ModuleId, OpaqueHandle, RestrictedModuleResolver, RuntimeEngine,
-    ScriptLifecycle, StateField, UiContext, UiNodeKind, UiRuntimeState, UiValue, ValueSchema,
-    parse_component_header,
+    ScriptCallback, ScriptLifecycle, StateField, UiContext, UiNodeKind, UiRuntimeState, UiValue,
+    ValueSchema, parse_component_header,
 };
 
 const BUTTON: &str = include_str!("../../../registry/components/button.rhai");
@@ -80,18 +80,86 @@ const TOKYO_STORM: &str = include_str!("../../../registry/themes/tokyo_storm.rha
 const CATPPUCCIN_LATTE: &str = include_str!("../../../registry/themes/catppuccin_latte.rhai");
 const CATPPUCCIN_MOCHA: &str = include_str!("../../../registry/themes/catppuccin_mocha.rhai");
 
-fn contains_select(node: &gpui_rhai::UiNode) -> bool {
+fn pagination_source() -> EmbeddedScriptSource {
+    EmbeddedScriptSource::new(BTreeMap::from([
+        (
+            ModuleId::parse("components/pagination").unwrap(),
+            PAGINATION.to_owned(),
+        ),
+        (
+            ModuleId::parse("components/button").unwrap(),
+            BUTTON.to_owned(),
+        ),
+        (ModuleId::parse("components/icon").unwrap(), ICON.to_owned()),
+        (
+            ModuleId::parse("components/select").unwrap(),
+            SELECT.to_owned(),
+        ),
+        (
+            ModuleId::parse("components/dropdown").unwrap(),
+            DROPDOWN.to_owned(),
+        ),
+        (
+            ModuleId::parse("components/input").unwrap(),
+            INPUT.to_owned(),
+        ),
+    ]))
+}
+
+fn dropdown_source() -> EmbeddedScriptSource {
+    EmbeddedScriptSource::new(BTreeMap::from([
+        (
+            ModuleId::parse("components/dropdown").unwrap(),
+            DROPDOWN.to_owned(),
+        ),
+        (
+            ModuleId::parse("components/input").unwrap(),
+            INPUT.to_owned(),
+        ),
+    ]))
+}
+
+fn target_handler(node: &gpui_rhai::UiNode, event: &str) -> (ScriptCallback, UiValue) {
+    (
+        node.handler(event)
+            .and_then(gpui_rhai::UiEventHandler::as_script)
+            .cloned()
+            .unwrap(),
+        node.handler_payload(event).cloned().unwrap(),
+    )
+}
+
+fn invoke_and_render(
+    lifecycle: &mut ScriptLifecycle,
+    engine: &mut RuntimeEngine,
+    callback: &ScriptCallback,
+    payload: UiValue,
+) {
+    let _ = lifecycle
+        .invoke_callback_transactional(engine, callback, payload)
+        .unwrap();
+    assert!(lifecycle.render_dirty(engine).unwrap());
+}
+
+fn contains_overlay(node: &gpui_rhai::UiNode) -> bool {
     match node.kind() {
-        UiNodeKind::Select { .. } => true,
-        UiNodeKind::Box { children } => children.iter().any(contains_select),
+        UiNodeKind::Overlay { .. } => true,
+        UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => {
+            children.iter().any(contains_overlay)
+        }
         _ => false,
     }
 }
 
-fn find_select(node: &gpui_rhai::UiNode) -> Option<&gpui_rhai::UiNode> {
+fn find_virtual_collection(node: &gpui_rhai::UiNode) -> Option<&gpui_rhai::UiNode> {
     match node.kind() {
-        UiNodeKind::Select { .. } => Some(node),
-        UiNodeKind::Box { children } => children.iter().find_map(find_select),
+        UiNodeKind::VirtualCollection { .. } => Some(node),
+        UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => {
+            children.iter().find_map(find_virtual_collection)
+        }
+        UiNodeKind::Overlay {
+            trigger, content, ..
+        } => find_virtual_collection(trigger).or_else(|| find_virtual_collection(content)),
         _ => None,
     }
 }
@@ -616,9 +684,15 @@ fn official_popover_and_dialog_use_native_overlay_nodes() {
 }
 
 #[test]
-fn official_dropdown_wraps_keyed_native_virtualized_entity() {
+fn official_dropdown_is_public_overlay_and_virtual_collection_composition() {
     let dropdown_id = ModuleId::parse("components/dropdown").unwrap();
-    let source = EmbeddedScriptSource::new(BTreeMap::from([(dropdown_id, DROPDOWN.to_owned())]));
+    let source = EmbeddedScriptSource::new(BTreeMap::from([
+        (dropdown_id, DROPDOWN.to_owned()),
+        (
+            ModuleId::parse("components/input").unwrap(),
+            INPUT.to_owned(),
+        ),
+    ]));
     let mut engine = RuntimeEngine::new();
     engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
     let compiled = engine
@@ -650,7 +724,7 @@ fn official_dropdown_wraps_keyed_native_virtualized_entity() {
                         header: text("Theme header"),
                         footer: text("Theme footer"),
                         empty: text("Custom empty state"),
-                        part_styles: #{ option: style().height(px(44)) },
+                        part_styles: #{ option: style().height(px(41)) },
                         on_change: Fn("selected"),
                         on_open_change: Fn("opened"),
                         on_query_change: Fn("queried")
@@ -659,41 +733,191 @@ fn official_dropdown_wraps_keyed_native_virtualized_entity() {
             "#,
         )
         .unwrap();
-    let context = UiContext::new(
-        Rc::new(RefCell::new(UiRuntimeState::new())),
+    let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+    let mut lifecycle = ScriptLifecycle::new(
+        compiled,
+        runtime,
         ComponentInstancePath::root("App", "root"),
         Some("main".to_owned()),
-        ExecutionPhase::Render,
         BTreeMap::new(),
-    );
-    let root = engine.render_with_context(&compiled, context).unwrap();
-    let UiNodeKind::Dropdown { spec } = root.kind() else {
-        panic!("Dropdown must render the native dropdown node");
+        &ComponentStateSchema::default(),
+    )
+    .unwrap();
+    lifecycle.start(&mut engine).unwrap();
+    let UiNodeKind::Overlay { spec, .. } = lifecycle.root().unwrap().kind() else {
+        panic!("Dropdown must compose the generic Overlay node");
     };
-    assert_eq!(root.key().map(gpui_rhai::NodeKey::as_str), Some("theme"));
-    assert_eq!(spec.mode, gpui_rhai::DropdownMode::Multiple);
+    assert_eq!(spec.id.as_str(), "theme");
+    assert!(spec.open);
+    let collection = find_virtual_collection(lifecycle.root().unwrap())
+        .expect("Dropdown must use public data-backed virtualization");
+    let UiNodeKind::VirtualCollection { spec } = collection.kind() else {
+        unreachable!()
+    };
+    assert_eq!(spec.data.len(), 1, "keyword search must preserve one match");
+    let option = spec.realized.values().next().unwrap();
     assert_eq!(
-        spec.selected.as_deref(),
-        Some(&["default".to_owned(), "tokyo".to_owned()][..])
+        option
+            .style()
+            .resolve(&gpui_rhai::InteractionState::default())
+            .height,
+        Some(gpui_rhai::Length::Pixels(41.0)),
+        "virtual item renderers must inherit the component part-style snapshot"
     );
-    assert_eq!(spec.query.as_deref(), Some("night"));
-    assert!(spec.trigger_slot.is_some());
-    assert!(spec.header_slot.is_some());
-    assert!(spec.footer_slot.is_some());
-    assert!(spec.empty_slot.is_some());
-    assert!(root.handlers().contains_key("change"));
-    assert!(root.handlers().contains_key("open_change"));
-    assert!(root.handlers().contains_key("query_change"));
+}
+
+#[test]
+fn official_dropdown_groups_and_routes_keyboard_in_rhai() {
+    let source = dropdown_source();
+    let mut engine = RuntimeEngine::new();
+    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
+    let compiled = engine
+        .compile_self_contained_named(
+            "ui/dropdown_keyboard.rhai",
+            r#"
+                import "components/dropdown" as dropdown;
+                fn view(ctx) {
+                    dropdown::Dropdown(#{
+                        key: "grouped", open: (), selected: (),
+                        options: [
+                            #{ value: "a", label: "Alpha", group: "Second" },
+                            #{ value: "b", label: "Beta", group: "First", disabled: true },
+                            #{ value: "c", label: "Charlie", group: "Second" },
+                            #{ value: "d", label: "Delta" }
+                        ]
+                    })
+                }
+            "#,
+        )
+        .unwrap();
+    let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+    let mut lifecycle = ScriptLifecycle::new(
+        compiled,
+        Rc::clone(&runtime),
+        ComponentInstancePath::root("App", "root"),
+        Some("main".to_owned()),
+        BTreeMap::new(),
+        &ComponentStateSchema::default(),
+    )
+    .unwrap();
+    lifecycle.start(&mut engine).unwrap();
+
+    let collection = find_virtual_collection(lifecycle.root().unwrap()).unwrap();
+    let UiNodeKind::VirtualCollection { spec } = collection.kind() else {
+        unreachable!()
+    };
+    let keys = spec
+        .data
+        .iter()
+        .map(|item| match item {
+            UiValue::Map(item) => match &item["key"] {
+                UiValue::String(key) => key.as_str(),
+                _ => unreachable!(),
+            },
+            _ => unreachable!(),
+        })
+        .collect::<Vec<_>>();
     assert_eq!(
-        root.part_style("option").unwrap().base.height,
-        Some(gpui_rhai::Length::Pixels(44.0))
+        keys,
+        [
+            "group:g:Second",
+            "option:a",
+            "option:c",
+            "group:g:First",
+            "option:b",
+            "option:d",
+        ]
     );
+
+    let component = lifecycle.root().unwrap().component_root().unwrap().clone();
+    let (callback, payload) = target_handler(lifecycle.root().unwrap(), "key:down");
+    invoke_and_render(&mut lifecycle, &mut engine, &callback, payload);
+    assert_eq!(
+        runtime.borrow().component_state.get(&component, "active"),
+        Some(&UiValue::String("a".to_owned()))
+    );
+    assert_eq!(
+        runtime.borrow().component_state.get(&component, "open"),
+        Some(&UiValue::Bool(true))
+    );
+
+    let UiNodeKind::Overlay { content, .. } = lifecycle.root().unwrap().kind() else {
+        unreachable!()
+    };
+    let (callback, payload) = target_handler(content, "key:down");
+    invoke_and_render(&mut lifecycle, &mut engine, &callback, payload);
+    assert_eq!(
+        runtime.borrow().component_state.get(&component, "active"),
+        Some(&UiValue::String("c".to_owned()))
+    );
+}
+
+#[test]
+fn official_dropdown_rejects_invalid_choice_identity() {
+    for (name, options, selected) in [
+        (
+            "duplicate",
+            r#"[
+                #{ value: "same", label: "One" },
+                #{ value: "same", label: "Two" }
+            ]"#,
+            "[]",
+        ),
+        (
+            "unknown",
+            r#"[#{ value: "known", label: "Known" }]"#,
+            r#"["missing"]"#,
+        ),
+        (
+            "empty_group",
+            r#"[#{ value: "known", label: "Known", group: " " }]"#,
+            "[]",
+        ),
+    ] {
+        let source = dropdown_source();
+        let mut engine = RuntimeEngine::new();
+        engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
+        let script = format!(
+            r#"
+                import "components/dropdown" as dropdown;
+                fn view(ctx) {{
+                    dropdown::Dropdown(#{{
+                        key: "invalid", options: {options}, selected: {selected}
+                    }})
+                }}
+            "#
+        );
+        let script_name = format!("ui/dropdown_{name}.rhai");
+        let compiled = engine
+            .compile_self_contained_named(&script_name, &script)
+            .unwrap();
+        let mut lifecycle = ScriptLifecycle::new(
+            compiled,
+            Rc::new(RefCell::new(UiRuntimeState::new())),
+            ComponentInstancePath::root("App", "root"),
+            Some("main".to_owned()),
+            BTreeMap::new(),
+            &ComponentStateSchema::default(),
+        )
+        .unwrap();
+        assert!(lifecycle.start(&mut engine).is_err(), "case {name}");
+    }
 }
 
 #[test]
 fn official_select_uses_scalar_controlled_choice_semantics() {
     let select_id = ModuleId::parse("components/select").unwrap();
-    let source = EmbeddedScriptSource::new(BTreeMap::from([(select_id, SELECT.to_owned())]));
+    let source = EmbeddedScriptSource::new(BTreeMap::from([
+        (select_id, SELECT.to_owned()),
+        (
+            ModuleId::parse("components/dropdown").unwrap(),
+            DROPDOWN.to_owned(),
+        ),
+        (
+            ModuleId::parse("components/input").unwrap(),
+            INPUT.to_owned(),
+        ),
+    ]));
     let mut engine = RuntimeEngine::new();
     engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
     let compiled = engine
@@ -716,27 +940,21 @@ fn official_select_uses_scalar_controlled_choice_semantics() {
             "#,
         )
         .unwrap();
-    let context = UiContext::new(
-        Rc::new(RefCell::new(UiRuntimeState::new())),
+    let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+    let mut lifecycle = ScriptLifecycle::new(
+        compiled,
+        runtime,
         ComponentInstancePath::root("App", "root"),
         Some("main".to_owned()),
-        ExecutionPhase::Render,
         BTreeMap::new(),
-    );
-    let root = engine.render_with_context(&compiled, context).unwrap();
-    let UiNodeKind::Select { spec } = root.kind() else {
-        panic!("Select must use the native scalar choice adapter");
+        &ComponentStateSchema::default(),
+    )
+    .unwrap();
+    lifecycle.start(&mut engine).unwrap();
+    let UiNodeKind::Overlay { spec, .. } = lifecycle.root().unwrap().kind() else {
+        panic!("Select must compose Dropdown over generic Overlay");
     };
-    assert_eq!(spec.choice.selected, Some(Vec::new()));
-    assert!(spec.choice.behavior.searchable);
-    assert!(spec.choice.behavior.clearable);
-    assert!(spec.choice.behavior.reset_query_on_close);
-    assert_eq!(spec.choice.options[0].group.as_deref(), Some("Asia"));
-    assert_eq!(spec.choice.check_asset.as_str(), "app/icons/check");
-    assert_eq!(
-        spec.choice.indicator_asset.as_str(),
-        "app/icons/disclosure_down"
-    );
+    assert_eq!(spec.id.as_str(), "country-dropdown");
 }
 
 #[test]
@@ -877,6 +1095,14 @@ fn official_pagination_is_pure_rhai_composition() {
             ModuleId::parse("components/select").unwrap(),
             SELECT.to_owned(),
         ),
+        (
+            ModuleId::parse("components/dropdown").unwrap(),
+            DROPDOWN.to_owned(),
+        ),
+        (
+            ModuleId::parse("components/input").unwrap(),
+            INPUT.to_owned(),
+        ),
     ]));
     let mut engine = RuntimeEngine::new();
     engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
@@ -903,19 +1129,23 @@ fn official_pagination_is_pure_rhai_composition() {
         include_str!("../../../registry/locales/en.rhai"),
     )
     .unwrap();
-    let mut state = UiRuntimeState::new();
-    state.locale = Some(gpui_rhai::LocaleManager::new([locale], "en", "en").unwrap());
-    let context = UiContext::new(
-        Rc::new(RefCell::new(state)),
+    let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+    runtime.borrow_mut().locale =
+        Some(gpui_rhai::LocaleManager::new([locale], "en", "en").unwrap());
+    let mut lifecycle = ScriptLifecycle::new(
+        compiled,
+        runtime,
         ComponentInstancePath::root("App", "root"),
         Some("main".to_owned()),
-        ExecutionPhase::Render,
         BTreeMap::new(),
-    );
-    let root = engine.render_with_context(&compiled, context).unwrap();
+        &ComponentStateSchema::default(),
+    )
+    .unwrap();
+    lifecycle.start(&mut engine).unwrap();
+    let root = lifecycle.root().unwrap();
     assert!(matches!(root.kind(), UiNodeKind::Box { .. }));
-    assert!(contains_select(&root));
-    let page = find_label(&root, "251").expect("page 251 button");
+    assert!(contains_overlay(root));
+    let page = find_label(root, "251").expect("page 251 button");
     assert_eq!(
         page.handler_payload("click"),
         Some(&UiValue::Map(BTreeMap::from([
@@ -940,6 +1170,14 @@ fn official_pagination_rejects_duplicate_page_sizes() {
         (
             ModuleId::parse("components/select").unwrap(),
             SELECT.to_owned(),
+        ),
+        (
+            ModuleId::parse("components/dropdown").unwrap(),
+            DROPDOWN.to_owned(),
+        ),
+        (
+            ModuleId::parse("components/input").unwrap(),
+            INPUT.to_owned(),
         ),
     ]));
     let mut engine = RuntimeEngine::new();
@@ -992,6 +1230,14 @@ fn official_pagination_page_window_covers_ellipsis_transitions() {
         (
             ModuleId::parse("components/select").unwrap(),
             SELECT.to_owned(),
+        ),
+        (
+            ModuleId::parse("components/dropdown").unwrap(),
+            DROPDOWN.to_owned(),
+        ),
+        (
+            ModuleId::parse("components/input").unwrap(),
+            INPUT.to_owned(),
         ),
     ]));
     let mut engine = RuntimeEngine::new();
@@ -1066,21 +1312,7 @@ fn official_pagination_page_window_covers_ellipsis_transitions() {
 
 #[test]
 fn official_pagination_page_size_emits_one_atomic_reset() {
-    let source = EmbeddedScriptSource::new(BTreeMap::from([
-        (
-            ModuleId::parse("components/pagination").unwrap(),
-            PAGINATION.to_owned(),
-        ),
-        (
-            ModuleId::parse("components/button").unwrap(),
-            BUTTON.to_owned(),
-        ),
-        (ModuleId::parse("components/icon").unwrap(), ICON.to_owned()),
-        (
-            ModuleId::parse("components/select").unwrap(),
-            SELECT.to_owned(),
-        ),
-    ]));
+    let source = pagination_source();
     let mut engine = RuntimeEngine::new();
     engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
     let compiled = engine
@@ -1130,20 +1362,43 @@ fn official_pagination_page_size_emits_one_atomic_reset() {
     )
     .unwrap();
     lifecycle.start(&mut engine).unwrap();
-    let callback = find_select(lifecycle.root().unwrap())
-        .and_then(|select| select.handler("change"))
+    let collection = find_virtual_collection(lifecycle.root().unwrap())
+        .expect("page-size Select virtual options");
+    let UiNodeKind::VirtualCollection { spec } = collection.kind() else {
+        unreachable!()
+    };
+    let option = spec
+        .realized
+        .values()
+        .find(|node| {
+            matches!(
+                node.handler_payload("click"),
+                Some(UiValue::Map(payload))
+                    if matches!(payload.get("selected"),
+                        Some(UiValue::Array(values))
+                            if values == &[UiValue::String("25".to_owned())])
+            )
+        })
+        .expect("page-size option 25");
+    let callback = option
+        .handler("click")
         .and_then(gpui_rhai::UiEventHandler::as_script)
         .cloned()
-        .expect("page-size Select change callback");
-    let _ = lifecycle
-        .invoke_callback_transactional(&engine, &callback, UiValue::String("25".to_owned()))
         .unwrap();
-    let events = runtime.borrow_mut().drain_batch().events;
-    assert_eq!(events.len(), 1);
-    for event in events {
-        let _ = lifecycle
-            .invoke_component_event_transactional(&engine, event)
-            .unwrap();
+    let payload = option.handler_payload("click").cloned().unwrap();
+    let _ = lifecycle
+        .invoke_callback_transactional(&engine, &callback, payload)
+        .unwrap();
+    for _ in 0..3 {
+        let events = runtime.borrow_mut().drain_batch().events;
+        if events.is_empty() {
+            break;
+        }
+        for event in events {
+            let _ = lifecycle
+                .invoke_component_event_transactional(&engine, event)
+                .unwrap();
+        }
     }
     assert_eq!(
         runtime.borrow().component_state.get(&path, "current_page"),

@@ -13,7 +13,8 @@ Accessibility and keyboard operation are release requirements.
   interaction styles rather than high-frequency Rhai rerenders.
 - Input and searchable Dropdown use the native GPUI input handler for IME,
   UTF-16 ranges, selection, and clipboard operations.
-- Dropdown supports arrows, Home, End, Enter, Escape, type-ahead, and disabled
+- The Rhai Dropdown source supports arrows, Home, End, Enter, Escape,
+  first-character type-ahead, and disabled
   option skipping. Dialog traps focus and the window overlay coordinator
   restores focus on dismissal.
 - Animation respects one central `MotionPreference`. Hosts may set it with
@@ -27,15 +28,14 @@ Accessibility and keyboard operation are release requirements.
 
 ## Complex-control behavior
 
-Native tests prove:
+Source/runtime tests prove:
 
-- Select exposes one combobox tab stop, skips group headers and disabled
-  options, clears transient search on close, and restores trigger focus;
+- Select uses public combobox/listbox metadata, skips group headers and disabled
+  options, clears transient search on close, and relies on Overlay focus restore;
 - DatePicker supports trigger opening, logical day/week/month navigation,
   locale week boundaries, disabled-range suppression, commit, Escape, and focus
   restoration;
-- Table exposes deterministic header/body traversal and row-level navigation;
-  Enter emits row activation and Space follows controlled selection mode;
+- Table retains table/row/header metadata and controlled selection payloads;
 - Pagination controls have localized labels, current-page state, disabled edge
   behavior, and explicit LTR/RTL directional resources;
 - Textarea retains multiline/read-only/invalid metadata, visible focus,

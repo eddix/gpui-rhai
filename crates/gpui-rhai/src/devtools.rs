@@ -223,8 +223,6 @@ fn inspect_node(node: &UiNode, path: &str) -> InspectorNode {
                 vec![trigger.as_ref(), content.as_ref()],
             )
         }
-        UiNodeKind::Dropdown { spec } => inspect_dropdown(spec, &mut props),
-        UiNodeKind::Select { spec } => inspect_select(spec, &mut props),
         UiNodeKind::DatePicker { spec } => inspect_date_picker(spec, &mut props),
         UiNodeKind::ToastHost { spec } => inspect_toast_host(spec, &mut props),
         UiNodeKind::VirtualCollection { spec } => inspect_virtual_collection(spec, &mut props),
@@ -329,54 +327,6 @@ fn inspect_directional_image<'a>(
         inspect_image_source(right_to_left),
     );
     ("directional_image".to_owned(), Vec::new())
-}
-
-fn inspect_select<'a>(
-    spec: &crate::SelectNodeSpec,
-    props: &mut BTreeMap<String, String>,
-) -> (String, Vec<&'a UiNode>) {
-    props.insert("id".to_owned(), spec.choice.id.clone());
-    props.insert("options".to_owned(), spec.choice.options.len().to_string());
-    props.insert(
-        "value".to_owned(),
-        spec.choice
-            .selected
-            .as_ref()
-            .and_then(|values| values.first())
-            .cloned()
-            .unwrap_or_else(|| "<null>".to_owned()),
-    );
-    ("select".to_owned(), Vec::new())
-}
-
-fn inspect_dropdown<'a>(
-    spec: &'a crate::DropdownNodeSpec,
-    props: &mut BTreeMap<String, String>,
-) -> (String, Vec<&'a UiNode>) {
-    props.insert("id".to_owned(), spec.id.clone());
-    props.insert("options".to_owned(), spec.options.len().to_string());
-    props.insert("mode".to_owned(), format!("{:?}", spec.mode));
-    props.insert(
-        "selected".to_owned(),
-        spec.selected
-            .as_ref()
-            .map_or_else(|| "<uncontrolled>".to_owned(), |value| format!("{value:?}")),
-    );
-    props.insert(
-        "open".to_owned(),
-        spec.open
-            .map_or_else(|| "<uncontrolled>".to_owned(), |value| value.to_string()),
-    );
-    let slots = [
-        spec.trigger_slot.as_deref(),
-        spec.header_slot.as_deref(),
-        spec.footer_slot.as_deref(),
-        spec.empty_slot.as_deref(),
-    ]
-    .into_iter()
-    .flatten()
-    .collect();
-    ("dropdown".to_owned(), slots)
 }
 
 fn inspect_date_picker<'a>(

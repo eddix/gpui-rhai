@@ -6,20 +6,20 @@ use gpui::{
     Window, div, list, point, px, rgba,
 };
 
-use crate::dropdown_element::DropdownSlotRuntime;
+use crate::slot_runtime::NodeSlotRuntime;
 use crate::{ColorResolver, ColorValue, Rgba8, VirtualCollectionNodeSpec, VirtualListState};
 
 pub(crate) struct VirtualListEntityElement {
     id: ElementId,
     content: VirtualCollectionNodeSpec,
-    runtime: DropdownSlotRuntime,
+    runtime: NodeSlotRuntime,
 }
 
 impl VirtualListEntityElement {
     pub(crate) fn new_collection(
         path: &str,
         spec: VirtualCollectionNodeSpec,
-        runtime: DropdownSlotRuntime,
+        runtime: NodeSlotRuntime,
     ) -> Self {
         Self {
             id: SharedString::from(format!("{path}/virtual-collection-entity")).into(),
@@ -110,12 +110,12 @@ impl IntoElement for VirtualListEntityElement {
 struct VirtualListView {
     content: VirtualCollectionNodeSpec,
     state: VirtualListState,
-    runtime: DropdownSlotRuntime,
+    runtime: NodeSlotRuntime,
     scroll: ListState,
 }
 
 impl VirtualListView {
-    fn new(content: VirtualCollectionNodeSpec, runtime: DropdownSlotRuntime) -> Self {
+    fn new(content: VirtualCollectionNodeSpec, runtime: NodeSlotRuntime) -> Self {
         let scroll = list_state(&content);
         let mut this = Self {
             content,
@@ -130,7 +130,7 @@ impl VirtualListView {
     fn synchronize(
         &mut self,
         content: VirtualCollectionNodeSpec,
-        runtime: DropdownSlotRuntime,
+        runtime: NodeSlotRuntime,
         cx: &mut Context<Self>,
     ) {
         let changed = self.content != content;

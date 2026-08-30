@@ -17,6 +17,7 @@ Start with the repository quick start, then use these guides by task:
 - [Native virtual lists](virtual-list.md)
 - Complex component specifications:
   [DatePicker](components/date-picker.md),
+  [Dropdown](components/dropdown.md),
   [Select](components/select.md),
   [Table](components/table.md),
   [Pagination](components/pagination.md), and
