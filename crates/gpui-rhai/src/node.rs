@@ -71,9 +71,83 @@ pub struct SourceLocation {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct Span {
+    text: ImmutableString,
+    color: Option<crate::ColorValue>,
+    bold: bool,
+    italic: bool,
+}
+
+impl Span {
+    #[must_use]
+    pub fn new(text: impl Into<ImmutableString>) -> Self {
+        Self {
+            text: text.into(),
+            color: None,
+            bold: false,
+            italic: false,
+        }
+    }
+
+    #[must_use]
+    pub fn color(mut self, color: crate::ColorValue) -> Self {
+        self.color = Some(color);
+        self
+    }
+
+    #[must_use]
+    pub const fn bold(mut self) -> Self {
+        self.bold = true;
+        self
+    }
+
+    #[must_use]
+    pub const fn italic(mut self) -> Self {
+        self.italic = true;
+        self
+    }
+
+    #[must_use]
+    pub fn text(&self) -> &str {
+        self.text.as_str()
+    }
+
+    #[must_use]
+    pub const fn color_value(&self) -> Option<&crate::ColorValue> {
+        self.color.as_ref()
+    }
+
+    #[must_use]
+    pub const fn is_bold(&self) -> bool {
+        self.bold
+    }
+
+    #[must_use]
+    pub const fn is_italic(&self) -> bool {
+        self.italic
+    }
+}
+
+impl CustomType for Span {
+    fn build(mut builder: TypeBuilder<Self>) {
+        builder
+            .with_name("Span")
+            .with_fn("color", |span: &mut Self, color: crate::ColorValue| {
+                span.clone().color(color)
+            })
+            .with_fn("bold", |span: &mut Self| span.clone().bold())
+            .with_fn("italic", |span: &mut Self| span.clone().italic());
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum UiNodeKind {
     Text {
         text: ImmutableString,
+    },
+    RichText {
+        text: ImmutableString,
+        spans: Vec<Span>,
     },
     Box {
         children: Vec<UiNode>,
@@ -163,6 +237,25 @@ impl UiNode {
     pub fn text(text: impl Into<ImmutableString>) -> Self {
         Self {
             kind: UiNodeKind::Text { text: text.into() },
+            key: None,
+            style: Style::new(),
+            part_styles: BTreeMap::new(),
+            source: None,
+            component_root: None,
+            attributes: BTreeMap::new(),
+            handlers: BTreeMap::new(),
+            handler_payloads: BTreeMap::new(),
+            animations: Vec::new(),
+            signal_bindings: BTreeMap::new(),
+            element_ref: None,
+        }
+    }
+
+    #[must_use]
+    pub fn rich_text(spans: Vec<Span>) -> Self {
+        let text = spans.iter().map(Span::text).collect::<String>().into();
+        Self {
+            kind: UiNodeKind::RichText { text, spans },
             key: None,
             style: Style::new(),
             part_styles: BTreeMap::new(),
@@ -652,6 +745,7 @@ impl UiNode {
                 &replacement,
             ),
             UiNodeKind::Text { .. }
+            | UiNodeKind::RichText { .. }
             | UiNodeKind::Image { .. }
             | UiNodeKind::DirectionalImage { .. }
             | UiNodeKind::DatePicker { .. }
@@ -770,6 +864,7 @@ impl UiNode {
                 content.bind_generation(generation);
             }
             UiNodeKind::Text { .. }
+            | UiNodeKind::RichText { .. }
             | UiNodeKind::Custom { .. }
             | UiNodeKind::Image { .. }
             | UiNodeKind::DirectionalImage { .. }
@@ -885,6 +980,7 @@ impl UiNode {
                 }
             }
             UiNodeKind::Text { .. }
+            | UiNodeKind::RichText { .. }
             | UiNodeKind::Image { .. }
             | UiNodeKind::DirectionalImage { .. }
             | UiNodeKind::Select { .. }
@@ -970,6 +1066,7 @@ impl UiNode {
                 }
             }
             UiNodeKind::Text { .. }
+            | UiNodeKind::RichText { .. }
             | UiNodeKind::Image { .. }
             | UiNodeKind::DirectionalImage { .. }
             | UiNodeKind::Select { .. }
@@ -986,7 +1083,7 @@ impl UiNode {
     #[must_use]
     pub const fn kind_tag(&self) -> UiNodeKindTag {
         match self.kind {
-            UiNodeKind::Text { .. } => UiNodeKindTag::Text,
+            UiNodeKind::Text { .. } | UiNodeKind::RichText { .. } => UiNodeKindTag::Text,
             UiNodeKind::Box { .. } => UiNodeKindTag::Box,
             UiNodeKind::Fragment { .. } => UiNodeKindTag::Fragment,
             UiNodeKind::Custom { .. } => UiNodeKindTag::Custom,
@@ -1069,6 +1166,7 @@ impl UiNode {
                 ("fallback".to_owned(), vec![fallback.as_ref()]),
             ],
             UiNodeKind::Text { .. }
+            | UiNodeKind::RichText { .. }
             | UiNodeKind::Image { .. }
             | UiNodeKind::DirectionalImage { .. }
             | UiNodeKind::DatePicker { .. }
@@ -1500,6 +1598,29 @@ fn dynamic_ui_value(value: Dynamic) -> Result<UiValue, Box<EvalAltResult>> {
 
 pub(crate) fn text_node(call: NativeCallContext<'_>, text: ImmutableString) -> UiNode {
     with_call_source(UiNode::text(text), call)
+}
+
+pub(crate) fn span_value(text: ImmutableString) -> Span {
+    Span::new(text)
+}
+
+pub(crate) fn rich_text_node(
+    call: NativeCallContext<'_>,
+    spans: Array,
+) -> Result<UiNode, Box<EvalAltResult>> {
+    let spans = spans
+        .into_iter()
+        .enumerate()
+        .map(|(index, value)| {
+            value.try_cast::<Span>().ok_or_else(|| {
+                Box::new(EvalAltResult::ErrorRuntime(
+                    format!("text span {index} must be Span").into(),
+                    Position::NONE,
+                ))
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(with_call_source(UiNode::rich_text(spans), call))
 }
 
 pub(crate) fn box_node(

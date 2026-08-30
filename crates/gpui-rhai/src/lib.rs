@@ -135,8 +135,8 @@ pub use native_handler::{
     NativeHandlerRegistry,
 };
 pub use node::{
-    ImageSourceSpec, NodeKey, OverlayDismissPolicy, OverlayNodeSpec, SourceLocation, TooltipDelays,
-    UiNode, UiNodeKind, UiNodeKindTag,
+    ImageSourceSpec, NodeKey, OverlayDismissPolicy, OverlayNodeSpec, SourceLocation, Span,
+    TooltipDelays, UiNode, UiNodeKind, UiNodeKindTag,
 };
 pub use overlay::{
     DismissReport, FocusToken, OverlayBounds, OverlayError, OverlayId, OverlayKind, OverlayManager,

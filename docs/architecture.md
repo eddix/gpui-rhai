@@ -22,6 +22,11 @@ Fragment may carry only children, source, key; nested fragments are flattened
 before GPUI layout, so style/handlers/ref on a fragment are rejected instead of
 silently introducing a wrapper.
 
+`text("plain")` keeps the cheap uniform path. `text([span(...), ...])` retains
+typed inline runs and renders one GPUI `StyledText` with byte-correct highlight
+ranges; Span currently exposes color, bold, and italic without splitting text
+into layout boxes or invoking Rhai during text layout.
+
 A trusted Rust Host may also build a tree directly and attach `HostCallback`
 closures. Structural node data remains declarative, but this Host-augmented
 subset contains opaque foreground event behavior and is not serializable pure

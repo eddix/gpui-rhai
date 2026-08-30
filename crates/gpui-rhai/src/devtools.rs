@@ -189,6 +189,11 @@ fn inspect_node(node: &UiNode, path: &str) -> InspectorNode {
             props.insert("text".to_owned(), truncate(text, 80));
             ("text".to_owned(), Vec::new())
         }
+        UiNodeKind::RichText { text, spans } => {
+            props.insert("text".to_owned(), truncate(text, 80));
+            props.insert("span_count".to_owned(), spans.len().to_string());
+            ("rich_text".to_owned(), Vec::new())
+        }
         UiNodeKind::Box { children } => ("box".to_owned(), children.iter().collect()),
         UiNodeKind::Fragment { children } => ("fragment".to_owned(), children.iter().collect()),
         UiNodeKind::Custom { primitive } => {

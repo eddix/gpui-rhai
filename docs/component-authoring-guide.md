@@ -135,6 +135,11 @@ for transparent snapshot grouping. Fragment cannot carry Style, handlers,
 signals, attributes, animations, or refs. `row`, `column`, and `stack` are Box
 helpers, not distinct privileged node kinds.
 
+Use `text([span("Label ").bold(), span(value).color(theme_color("accent"))])`
+for inline runs. Span is an immutable inline value, not a child node; current
+run refinements are color, bold, and italic and render through one GPUI
+`StyledText`.
+
 ## Events
 
 Bind callbacks to nodes rather than calling them during rendering:

@@ -18,8 +18,8 @@ use crate::node::{
     asset_image_node, box_node, column_node, date_picker_node, directional_asset_image_node,
     directional_image_node, dropdown_node, error_boundary_node, fragment_node,
     generic_directional_image_node, generic_image_node, image_node, lazy_error_boundary_node,
-    overlay_node, row_node, select_node, stack_node, table_node, text_node, toast_host_node,
-    virtual_list_node,
+    overlay_node, rich_text_node, row_node, select_node, span_value, stack_node, table_node,
+    text_node, toast_host_node, virtual_list_node,
 };
 use crate::primitive::{PrimitiveDescriptor, PrimitiveError, PrimitiveHandler, PrimitiveRegistry};
 use crate::style::register_style_api;
@@ -395,6 +395,7 @@ impl RuntimeEngine {
         engine.build_type::<crate::EventResponse>();
         engine.build_type::<crate::ElementRef>();
         engine.build_type::<crate::NativeHandlerRef>();
+        engine.build_type::<crate::Span>();
         register_ui_context_api(&mut engine);
         register_style_api(&mut engine);
         register_animation_api(&mut engine);
@@ -1196,6 +1197,12 @@ fn register_node_apis(engine: &mut Engine) {
     FuncRegistration::new("text")
         .in_global_namespace()
         .register_into_engine(engine, text_node);
+    FuncRegistration::new("text")
+        .in_global_namespace()
+        .register_into_engine(engine, rich_text_node);
+    FuncRegistration::new("span")
+        .in_global_namespace()
+        .register_into_engine(engine, span_value);
     FuncRegistration::new("box")
         .in_global_namespace()
         .register_into_engine(engine, box_node);
@@ -2207,6 +2214,31 @@ mod tests {
             children[1].kind(),
             crate::UiNodeKind::Fragment { children } if children.len() == 2
         ));
+    }
+
+    #[test]
+    fn text_accepts_typed_inline_span_runs() {
+        let mut runtime = RuntimeEngine::new();
+        let compiled = runtime
+            .compile(
+                r#"
+                    fn view() {
+                        text([
+                            span("Hello ").bold(),
+                            span("world").color(rgb(0x22cc88)).italic()
+                        ])
+                    }
+                "#,
+            )
+            .unwrap();
+        let root = runtime.render(&compiled).unwrap();
+        let crate::UiNodeKind::RichText { text, spans } = root.kind() else {
+            panic!("typed spans must produce rich text");
+        };
+        assert_eq!(text.as_str(), "Hello world");
+        assert_eq!(spans.len(), 2);
+        assert!(spans[0].is_bold());
+        assert!(spans[1].is_italic());
     }
 
     #[test]

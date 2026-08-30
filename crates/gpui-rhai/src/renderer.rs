@@ -5,10 +5,11 @@ use std::time::Instant;
 
 use gpui::{
     AnyElement, App, Bounds, BoxShadow, ClickEvent, Context, DispatchPhase, Div, Element,
-    ElementId, FocusHandle, GlobalElementId, InspectorElementId, InteractiveElement, IntoElement,
-    LayoutId, Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement,
-    Pixels, Point, Render, ScrollHandle, ScrollWheelEvent, SharedString, Stateful,
-    StatefulInteractiveElement, Styled, Window, div, img, point, px, relative, rems, rgba,
+    ElementId, FocusHandle, FontStyle, FontWeight, GlobalElementId, HighlightStyle,
+    InspectorElementId, InteractiveElement, IntoElement, LayoutId, Modifiers, MouseButton,
+    MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point, Render,
+    ScrollHandle, ScrollWheelEvent, SharedString, Stateful, StatefulInteractiveElement, Styled,
+    StyledText, Window, div, img, point, px, relative, rems, rgba,
 };
 
 use crate::date_picker_element::{
@@ -1197,6 +1198,9 @@ impl GpuiNodeRenderer {
     ) -> AnyElement {
         match node.kind() {
             UiNodeKind::Text { text } => element.child(text.as_str().to_owned()).into_any_element(),
+            UiNodeKind::RichText { text, spans } => element
+                .child(styled_text(text.as_str(), spans, environment.colors))
+                .into_any_element(),
             UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => element
                 .children(render_flattened_children(
                     children,
@@ -1319,6 +1323,25 @@ fn retained_child_id(
                 .nth(index)
         })
         .map(crate::RetainedChildLink::node)
+}
+
+fn styled_text(text: &str, spans: &[crate::Span], colors: &impl ColorResolver) -> StyledText {
+    let mut offset = 0usize;
+    let highlights = spans.iter().filter_map(|span| {
+        let start = offset;
+        offset = offset.saturating_add(span.text().len());
+        let style = HighlightStyle {
+            color: span
+                .color_value()
+                .and_then(|color| colors.resolve(color))
+                .map(|color| rgba(color.as_rgba_hex()).into()),
+            font_weight: span.is_bold().then_some(FontWeight::BOLD),
+            font_style: span.is_italic().then_some(FontStyle::Italic),
+            ..HighlightStyle::default()
+        };
+        (style != HighlightStyle::default()).then_some((start..offset, style))
+    });
+    StyledText::new(text.to_owned()).with_highlights(highlights)
 }
 
 fn render_image<C: ColorResolver>(
