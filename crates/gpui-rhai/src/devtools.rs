@@ -13,6 +13,7 @@ use crate::{
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RuntimeTraceKind {
+    Reconcile,
     Event,
     Action,
     Capability,

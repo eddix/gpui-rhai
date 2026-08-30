@@ -163,6 +163,7 @@ impl ScriptLifecycle {
         })();
         match result {
             Ok((root, retained)) => {
+                self.trace_reconcile("full", retained.last_report());
                 self.retained = retained;
                 self.state = LifecycleState::Running;
                 Ok(self.root.insert(root))
@@ -253,6 +254,7 @@ impl ScriptLifecycle {
         })();
         match result {
             Ok(()) => {
+                self.trace_reconcile("incremental", retained.last_report());
                 self.root = Some(root);
                 self.retained = retained;
                 self.state = LifecycleState::Running;
@@ -347,6 +349,7 @@ impl ScriptLifecycle {
         match result {
             Ok(changed) => {
                 if changed {
+                    self.trace_reconcile("virtual", retained.last_report());
                     self.root = Some(root);
                     self.retained = retained;
                 }
@@ -608,6 +611,7 @@ impl ScriptLifecycle {
         })();
         match result {
             Ok((root, retained)) => {
+                self.trace_reconcile("reload", retained.last_report());
                 self.compiled = candidate;
                 self.retained = retained;
                 self.state = LifecycleState::Running;
@@ -923,6 +927,49 @@ impl ScriptLifecycle {
         }
     }
 
+    fn trace_reconcile(&self, operation: &str, report: &crate::ReconcileReport) {
+        const ID_SAMPLE_LIMIT: usize = 16;
+
+        fn ids(values: &[crate::NodeId]) -> crate::UiValue {
+            crate::UiValue::Array(
+                values
+                    .iter()
+                    .take(ID_SAMPLE_LIMIT)
+                    .map(|id| crate::UiValue::Integer(i64::try_from(id.get()).unwrap_or(i64::MAX)))
+                    .collect(),
+            )
+        }
+
+        let metrics = report.metrics();
+        let truncated = [
+            &report.mounted,
+            &report.preserved,
+            &report.moved,
+            &report.unmounted,
+        ]
+        .into_iter()
+        .any(|nodes| nodes.len() > ID_SAMPLE_LIMIT);
+        let payload = crate::UiValue::Map(BTreeMap::from([
+            ("mounted".to_owned(), ids(&report.mounted)),
+            ("preserved".to_owned(), ids(&report.preserved)),
+            ("moved".to_owned(), ids(&report.moved)),
+            ("unmounted".to_owned(), ids(&report.unmounted)),
+            ("truncated".to_owned(), crate::UiValue::Bool(truncated)),
+        ]));
+        if let Ok(mut runtime) = self.runtime.try_borrow_mut() {
+            runtime.traces.push(
+                crate::RuntimeTraceKind::Reconcile,
+                self.root_path.to_string(),
+                format!(
+                    "{operation}: mounted={} preserved={} moved={} unmounted={}",
+                    metrics.mounted, metrics.preserved, metrics.moved, metrics.unmounted
+                ),
+                Some(payload),
+                false,
+            );
+        }
+    }
+
     fn context_for(&self, phase: ExecutionPhase, generation: ScriptGeneration) -> UiContext {
         UiContext::new(
             Rc::clone(&self.runtime),
@@ -1052,6 +1099,15 @@ mod tests {
             crate::UiNodeKind::Text { text } if text == "initialized"
         ));
         assert!(root.source().is_some());
+        let reconcile = runtime
+            .borrow()
+            .traces
+            .snapshot()
+            .into_iter()
+            .find(|trace| trace.kind == crate::RuntimeTraceKind::Reconcile)
+            .expect("successful initial render must trace retained mutations");
+        assert!(reconcile.message.contains("full: mounted=1"));
+        assert!(matches!(reconcile.payload, Some(UiValue::Map(_))));
         lifecycle.dispose(&mut engine).unwrap();
         assert_eq!(lifecycle.state(), LifecycleState::Disposed);
         assert_eq!(
@@ -1285,6 +1341,13 @@ mod tests {
         .unwrap();
         lifecycle.start(&mut engine).unwrap();
         let active_generation = lifecycle.generation();
+        let reconcile_trace_count = runtime
+            .borrow()
+            .traces
+            .snapshot()
+            .iter()
+            .filter(|trace| trace.kind == crate::RuntimeTraceKind::Reconcile)
+            .count();
 
         let rejected = engine
             .compile(
@@ -1314,6 +1377,16 @@ mod tests {
             lifecycle.root().unwrap().kind(),
             crate::UiNodeKind::Text { text } if text == "active"
         ));
+        assert_eq!(
+            runtime
+                .borrow()
+                .traces
+                .snapshot()
+                .iter()
+                .filter(|trace| trace.kind == crate::RuntimeTraceKind::Reconcile)
+                .count(),
+            reconcile_trace_count
+        );
     }
 
     #[test]

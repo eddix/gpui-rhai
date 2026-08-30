@@ -17,6 +17,11 @@ The inspector reports:
 - the selected theme and semantic color tokens;
 - pending invalidations, bounded runtime traces, and recent script timings.
 
+Every successful full, incremental, virtual-realization, or hot-reload commit
+adds one `Reconcile` trace with mounted/preserved/moved/unmounted counts and a
+bounded sample of stable `NodeId` values. Failed candidates emit no reconcile
+trace, so the trace stream describes only committed retained mutations.
+
 Opaque handles never reveal their numeric identity, and trace producers mark
 capability inputs and asynchronous work as sensitive by default. The overlay is
 owned by Rust and is not part of the Rhai node tree.
