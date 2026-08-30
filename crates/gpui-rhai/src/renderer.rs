@@ -5,10 +5,10 @@ use std::time::Instant;
 
 use gpui::{
     AnyElement, App, Bounds, BoxShadow, ClickEvent, Context, DispatchPhase, Div, Element,
-    ElementId, GlobalElementId, InspectorElementId, InteractiveElement, IntoElement, LayoutId,
-    Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels,
-    Point, Render, ScrollWheelEvent, SharedString, Stateful, StatefulInteractiveElement, Styled,
-    Window, div, img, point, px, relative, rems, rgba,
+    ElementId, FocusHandle, GlobalElementId, InspectorElementId, InteractiveElement, IntoElement,
+    LayoutId, Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement,
+    Pixels, Point, Render, ScrollWheelEvent, SharedString, Stateful, StatefulInteractiveElement,
+    Styled, Window, div, img, point, px, relative, rems, rgba,
 };
 
 use crate::date_picker_element::{
@@ -713,6 +713,7 @@ struct RenderEnvironment<'a, C> {
     signals: &'a crate::SignalRegistry,
     geometry: &'a crate::GeometryRegistry,
     pointer_capture: &'a crate::PointerCaptureRegistry,
+    focus_handles: &'a BTreeMap<NodeId, FocusHandle>,
     direction: TextDirection,
     view_id: &'a str,
     retained: Option<&'a RetainedUiTree>,
@@ -726,6 +727,7 @@ pub(crate) struct WindowRenderResources<'a> {
     pub signals: &'a crate::SignalRegistry,
     pub geometry: &'a crate::GeometryRegistry,
     pub pointer_capture: &'a crate::PointerCaptureRegistry,
+    pub focus_handles: &'a BTreeMap<NodeId, FocusHandle>,
     pub direction: TextDirection,
     pub root_path: &'a str,
     pub view_id: &'a str,
@@ -763,6 +765,7 @@ impl GpuiNodeRenderer {
         let signals = crate::SignalRegistry::new();
         let geometry = crate::GeometryRegistry::new();
         let pointer_capture = crate::PointerCaptureRegistry::new();
+        let focus_handles = BTreeMap::new();
         let environment = RenderEnvironment {
             colors,
             interaction,
@@ -774,6 +777,7 @@ impl GpuiNodeRenderer {
             signals: &signals,
             geometry: &geometry,
             pointer_capture: &pointer_capture,
+            focus_handles: &focus_handles,
             direction: TextDirection::LeftToRight,
             view_id: "standalone",
             retained: None,
@@ -793,6 +797,7 @@ impl GpuiNodeRenderer {
         let signals = crate::SignalRegistry::new();
         let geometry = crate::GeometryRegistry::new();
         let pointer_capture = crate::PointerCaptureRegistry::new();
+        let focus_handles = BTreeMap::new();
         let environment = RenderEnvironment {
             colors,
             interaction,
@@ -804,6 +809,7 @@ impl GpuiNodeRenderer {
             signals: &signals,
             geometry: &geometry,
             pointer_capture: &pointer_capture,
+            focus_handles: &focus_handles,
             direction: TextDirection::LeftToRight,
             view_id: "standalone",
             retained: Some(tree),
@@ -831,6 +837,7 @@ impl GpuiNodeRenderer {
         let signals = crate::SignalRegistry::new();
         let geometry = crate::GeometryRegistry::new();
         let pointer_capture = crate::PointerCaptureRegistry::new();
+        let focus_handles = BTreeMap::new();
         let environment = RenderEnvironment {
             colors,
             interaction,
@@ -842,6 +849,7 @@ impl GpuiNodeRenderer {
             signals: &signals,
             geometry: &geometry,
             pointer_capture: &pointer_capture,
+            focus_handles: &focus_handles,
             direction: TextDirection::LeftToRight,
             view_id: "standalone",
             retained: None,
@@ -863,6 +871,7 @@ impl GpuiNodeRenderer {
         let signals = crate::SignalRegistry::new();
         let geometry = crate::GeometryRegistry::new();
         let pointer_capture = crate::PointerCaptureRegistry::new();
+        let focus_handles = BTreeMap::new();
         let resources = WindowRenderResources {
             assets,
             dispatcher,
@@ -871,6 +880,7 @@ impl GpuiNodeRenderer {
             signals: &signals,
             geometry: &geometry,
             pointer_capture: &pointer_capture,
+            focus_handles: &focus_handles,
             direction: TextDirection::LeftToRight,
             root_path: "root",
             view_id: "standalone",
@@ -913,6 +923,7 @@ impl GpuiNodeRenderer {
             signals: resources.signals,
             geometry: resources.geometry,
             pointer_capture: resources.pointer_capture,
+            focus_handles: resources.focus_handles,
             direction: resources.direction,
             view_id: resources.view_id,
             retained: Some(tree),
@@ -954,6 +965,7 @@ impl GpuiNodeRenderer {
             signals: resources.signals,
             geometry: resources.geometry,
             pointer_capture: resources.pointer_capture,
+            focus_handles: resources.focus_handles,
             direction: resources.direction,
             view_id: resources.view_id,
             retained: None,
@@ -984,6 +996,9 @@ impl GpuiNodeRenderer {
             environment.colors,
             environment.direction,
         );
+        if let Some(handle) = retained_id.and_then(|node| environment.focus_handles.get(&node)) {
+            element = element.track_focus(handle);
+        }
         if matches!(node.kind(), UiNodeKind::Custom { .. }) {
             let focus_ring = semantic_color(environment.colors, "focus_ring", 0x003b_82f6);
             let focus_surface = semantic_color(environment.colors, "surface", 0x0018_181b);
@@ -1499,6 +1514,7 @@ fn native_date_picker_element<C: ColorResolver>(
         signals: environment.signals.clone(),
         geometry: environment.geometry.clone(),
         pointer_capture: environment.pointer_capture.clone(),
+        focus_handles: environment.focus_handles.clone(),
         direction: environment.direction,
         base_path: path.to_owned(),
         view_id: environment.view_id.to_owned(),
@@ -1544,6 +1560,7 @@ fn native_table_element<C: ColorResolver>(
         signals: environment.signals.clone(),
         geometry: environment.geometry.clone(),
         pointer_capture: environment.pointer_capture.clone(),
+        focus_handles: environment.focus_handles.clone(),
         direction: environment.direction,
         base_path: path.to_owned(),
         view_id: environment.view_id.to_owned(),
@@ -1580,6 +1597,7 @@ fn native_choice_element<C: ColorResolver>(
         signals: environment.signals.clone(),
         geometry: environment.geometry.clone(),
         pointer_capture: environment.pointer_capture.clone(),
+        focus_handles: environment.focus_handles.clone(),
         direction: environment.direction,
         base_path: path.to_owned(),
         view_id: environment.view_id.to_owned(),
@@ -1628,6 +1646,7 @@ fn native_virtual_list_element<C: ColorResolver>(
         signals: environment.signals.clone(),
         geometry: environment.geometry.clone(),
         pointer_capture: environment.pointer_capture.clone(),
+        focus_handles: environment.focus_handles.clone(),
         direction: environment.direction,
         base_path: path.to_owned(),
         view_id: environment.view_id.to_owned(),

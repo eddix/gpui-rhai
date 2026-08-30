@@ -68,6 +68,7 @@ pub struct UiRuntimeState {
     pending_events: Vec<PendingEvent>,
     pending_actions: Vec<ActionInvocation>,
     pending_async: Vec<crate::AsyncDelivery>,
+    pending_element_commands: Vec<crate::element_ref::ElementCommand>,
 }
 
 impl UiRuntimeState {
@@ -129,6 +130,8 @@ impl UiRuntimeState {
             AsyncScope::Window(id) => id != window,
             AsyncScope::Component(path) => !path.is_within(root),
         });
+        self.pending_element_commands
+            .retain(|command| command.window() != window);
         if let Some(theme) = self.theme.as_mut() {
             theme.remove_window(window);
             theme.remove_scope(root);
@@ -172,6 +175,18 @@ impl UiRuntimeState {
                 });
         self.pending_async = retained;
         accepted
+    }
+
+    pub(crate) fn take_window_element_commands(
+        &mut self,
+        window: &str,
+    ) -> Vec<crate::element_ref::ElementCommand> {
+        let commands = std::mem::take(&mut self.pending_element_commands);
+        let (selected, retained) = commands
+            .into_iter()
+            .partition(|command| command.window() == window);
+        self.pending_element_commands = retained;
+        selected
     }
 
     pub(crate) fn has_window_dirty(&self, root: &ComponentInstancePath) -> bool {
@@ -299,6 +314,7 @@ impl UiRuntimeState {
             pending_events: self.pending_events.clone(),
             pending_actions: self.pending_actions.clone(),
             pending_async: self.pending_async.clone(),
+            pending_element_commands: self.pending_element_commands.clone(),
             locale: self.locale.clone(),
             theme: self.theme.clone(),
             animations: self.animations.clone(),
@@ -333,6 +349,7 @@ impl UiRuntimeState {
         self.pending_events = snapshot.pending_events;
         self.pending_actions = snapshot.pending_actions;
         self.pending_async = snapshot.pending_async;
+        self.pending_element_commands = snapshot.pending_element_commands;
         self.locale = snapshot.locale;
         self.theme = snapshot.theme;
         self.animations = snapshot.animations;
@@ -358,6 +375,7 @@ pub struct UiStateSnapshot {
     pending_events: Vec<PendingEvent>,
     pending_actions: Vec<ActionInvocation>,
     pending_async: Vec<crate::AsyncDelivery>,
+    pending_element_commands: Vec<crate::element_ref::ElementCommand>,
     locale: Option<LocaleManager>,
     theme: Option<ThemeManager>,
     animations: AnimationRuntime,
@@ -655,6 +673,40 @@ impl UiContext {
                 geometry.clip.map_or(UiValue::Null, geometry_bounds_value),
             ),
         ])))
+    }
+
+    /// Queue focus for a mounted element ref in the current window.
+    ///
+    /// # Errors
+    ///
+    /// Returns during render, outside a window, or for a stale ref.
+    pub fn focus_element(&self, reference: &crate::ElementRef) -> Result<(), UiContextError> {
+        self.require_mutation()?;
+        let window = self.window.clone().ok_or(UiContextError::MissingWindow)?;
+        let mut runtime = self
+            .runtime
+            .try_borrow_mut()
+            .map_err(|_| UiContextError::Borrowed)?;
+        let node = runtime.element_refs.resolve(reference)?;
+        runtime
+            .pending_element_commands
+            .push(crate::element_ref::ElementCommand::Focus { window, node });
+        Ok(())
+    }
+
+    /// Resolve and queue focus for a component-local ref key.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same errors as [`Self::focus_element`] plus unknown keys.
+    pub fn focus_element_by_key(&self, key: &str) -> Result<(), UiContextError> {
+        let reference = self
+            .runtime
+            .try_borrow()
+            .map_err(|_| UiContextError::Borrowed)?
+            .element_refs
+            .resolve_key(&self.component, key)?;
+        self.focus_element(&reference)
     }
 
     /// Read and subscribe to an app-scoped store field.
@@ -1773,15 +1825,29 @@ fn register_signal_context_methods(builder: &mut TypeBuilder<UiContext>) {
 }
 
 fn register_element_ref_context_methods(builder: &mut TypeBuilder<UiContext>) {
-    builder.with_fn(
-        "element_bounds",
-        |context: &mut UiContext, reference: crate::ElementRef| {
+    builder
+        .with_fn(
+            "element_bounds",
+            |context: &mut UiContext, reference: crate::ElementRef| {
+                context
+                    .element_bounds(&reference)
+                    .map(UiValue::into_dynamic)
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        )
+        .with_fn(
+            "focus",
+            |context: &mut UiContext, reference: crate::ElementRef| {
+                context
+                    .focus_element(&reference)
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        )
+        .with_fn("focus", |context: &mut UiContext, key: ImmutableString| {
             context
-                .element_bounds(&reference)
-                .map(UiValue::into_dynamic)
+                .focus_element_by_key(key.as_str())
                 .map_err(|error| Box::new(context_runtime_error(&error)))
-        },
-    );
+        });
 }
 
 fn geometry_bounds_value(bounds: crate::GeometryBounds) -> UiValue {
@@ -2538,6 +2604,30 @@ mod tests {
             Err(AsyncRuntimeError::Closed {
                 reason: SubscriptionCloseReason::WorkReturned
             })
+        ));
+    }
+
+    #[test]
+    fn focus_by_ref_key_queues_a_window_scoped_retained_command() {
+        let context = mounted_context(ExecutionPhase::Event);
+        let mut tree = crate::RetainedUiTree::new();
+        tree.reconcile(crate::UiNode::text("field")).unwrap();
+        let reference = crate::ElementRef::new(
+            crate::ElementRefId::new(context.component_path().clone(), "field").unwrap(),
+        );
+        context.runtime().borrow_mut().element_refs.reconcile(
+            context.component_path(),
+            BTreeMap::from([(reference.id().clone(), tree.root_id().unwrap())]),
+        );
+        context.focus_element_by_key("field").unwrap();
+        let commands = context
+            .runtime()
+            .borrow_mut()
+            .take_window_element_commands("main");
+        assert!(matches!(
+            commands.as_slice(),
+            [crate::element_ref::ElementCommand::Focus { node, .. }]
+                if *node == tree.root_id().unwrap()
         ));
     }
 }

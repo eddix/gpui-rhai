@@ -160,6 +160,8 @@ Formal components may declare `element_ref("name")` during render and attach it
 to a stable keyed node with `with_ref`. `ctx.element_bounds(ref)` returns null
 before first committed prepaint and then the last committed layout/visual
 geometry; geometry changes dirty only components that read that exact ref.
+Event handlers can call `ctx.focus(ref)` or `ctx.focus("local_ref_key")`; focus
+is executed as a window-scoped retained command after the transaction commits.
 
 For structural responsive composition, branch only on
 `ctx.viewport_class()` (`compact`, `regular`, or `wide`). Hosts may replace the

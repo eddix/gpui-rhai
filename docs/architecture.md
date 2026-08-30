@@ -75,7 +75,9 @@ stable `UiValue` maps with logical window/local/content coordinates, buttons,
 modifiers, click count, precise delta, and a monotonic timestamp. Retained
 `ElementRef` declarations bind to stable `NodeId`; prepaint reports committed
 layout/visual geometry and exact geometry reads create component dependencies.
-Unmounted refs fail stale instead of rebinding by name.
+Unmounted refs fail stale instead of rebinding by name. `ctx.focus(ref)` queues
+a window-scoped retained command; the Host view owns the corresponding GPUI
+`FocusHandle` by `NodeId`, so no window/focus object crosses into Rhai.
 
 `error_boundary(child, fallback)` catches native subtree rendering failures.
 Use `error_boundary_lazy(Fn("child"), Fn("fallback"))` when Rhai construction

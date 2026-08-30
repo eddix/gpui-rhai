@@ -641,6 +641,36 @@ impl ScriptViewHandle {
         Ok(())
     }
 
+    /// Focus a mounted retained element without invoking Rhai.
+    ///
+    /// # Errors
+    ///
+    /// Returns after disposal, for a stale ref, or when the ref has no active
+    /// GPUI focus handle.
+    pub fn focus_element(
+        &self,
+        reference: &crate::ElementRef,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Result<(), ScriptViewError> {
+        if self.0.disposed.get() {
+            return Err(ScriptViewError::DisposedView(self.0.view_id.clone()));
+        }
+        self.0.entity.update(cx, |view, _| {
+            let node = view
+                .lifecycle
+                .runtime()
+                .borrow()
+                .element_refs
+                .resolve(reference)?;
+            let handle = view.focus_handles.get(&node).ok_or_else(|| {
+                ScriptViewError::ElementRef(crate::ElementRefError::Stale(reference.id().clone()))
+            })?;
+            handle.focus(window);
+            Ok::<_, ScriptViewError>(())
+        })
+    }
+
     #[cfg(feature = "dev-reload")]
     /// Open or close this view's isolated development inspector.
     ///
@@ -1616,6 +1646,7 @@ impl PreparedScriptView {
                 factory,
                 native_windows,
                 host_focus,
+                focus_handles: BTreeMap::new(),
                 disposed: false,
                 _async_task: async_task,
                 #[cfg(feature = "dev-reload")]
@@ -1855,6 +1886,7 @@ fn open_secondary_window(
                 factory: Rc::clone(&view_factory),
                 native_windows: Rc::clone(&view_native_windows),
                 host_focus,
+                focus_handles: BTreeMap::new(),
                 disposed: false,
                 _async_task: async_task,
                 #[cfg(feature = "dev-reload")]
@@ -2005,6 +2037,7 @@ struct ScriptHostView {
     factory: Rc<ScriptWindowFactory>,
     native_windows: Rc<RefCell<NativeWindowRegistry>>,
     host_focus: FocusHandle,
+    focus_handles: BTreeMap<crate::NodeId, FocusHandle>,
     disposed: bool,
     _async_task: Task<()>,
     #[cfg(feature = "dev-reload")]
@@ -2069,10 +2102,10 @@ fn build_host_root(
 fn script_node_dispatcher(cx: &Context<ScriptHostView>) -> NodeEventDispatcher {
     let script_entity = cx.entity().downgrade();
     let native_entity = script_entity.clone();
-    NodeEventDispatcher::new(move |callback, payload, _, app| {
+    NodeEventDispatcher::new(move |callback, payload, window, app| {
         script_entity
             .update(app, |view, cx| {
-                view.handle_node_event(&callback, payload, cx)
+                view.handle_node_event(&callback, payload, window, cx)
             })
             .unwrap_or_else(|_| crate::EventResponse::new().stop())
     })
@@ -2087,7 +2120,7 @@ fn script_node_dispatcher(cx: &Context<ScriptHostView>) -> NodeEventDispatcher {
 
 impl Render for ScriptHostView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        self.prepare_render(window);
+        self.prepare_host_render(window, cx);
         let dispatcher = script_node_dispatcher(cx);
         let runtime = self.lifecycle.runtime();
         let appearance = match window.appearance() {
@@ -2120,12 +2153,7 @@ impl Render for ScriptHostView {
                     .unwrap_or(TextDirection::LeftToRight),
             )
         };
-        crate::renderer::install_pointer_capture_router(
-            window,
-            self.lifecycle.retained(),
-            &dispatcher,
-            &pointer_capture,
-        );
+        self.install_pointer_capture_router(window, &dispatcher, &pointer_capture);
         let animation_root = format!("window:{}/view:{}/root", self.window_id, self.view_id);
         let render_resources = crate::renderer::WindowRenderResources {
             assets: &assets,
@@ -2135,6 +2163,7 @@ impl Render for ScriptHostView {
             signals: &signals,
             geometry: &geometry,
             pointer_capture: &pointer_capture,
+            focus_handles: &self.focus_handles,
             direction,
             root_path: &animation_root,
             view_id: &self.view_id,
@@ -2191,6 +2220,26 @@ impl Render for ScriptHostView {
 }
 
 impl ScriptHostView {
+    fn prepare_host_render(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.prepare_render(window);
+        self.sync_focus_handles(cx);
+        self.process_element_commands(window);
+    }
+
+    fn install_pointer_capture_router(
+        &self,
+        window: &mut Window,
+        dispatcher: &NodeEventDispatcher,
+        pointer_capture: &crate::PointerCaptureRegistry,
+    ) {
+        crate::renderer::install_pointer_capture_router(
+            window,
+            self.lifecycle.retained(),
+            dispatcher,
+            pointer_capture,
+        );
+    }
+
     fn set_content_bounds(&mut self, bounds: Bounds<Pixels>, cx: &mut Context<Self>) {
         if self.content_bounds != Some(bounds) {
             self.content_bounds = Some(bounds);
@@ -2207,6 +2256,43 @@ impl ScriptHostView {
         self.sync_viewport_class(window);
         debug_assert!(self.engine.is_current(self.lifecycle.generation()));
         self.reconcile_primitive_lifecycle();
+    }
+
+    fn sync_focus_handles(&mut self, cx: &mut Context<Self>) {
+        let active = self
+            .lifecycle
+            .retained()
+            .nodes()
+            .filter(|node| node.element_ref().is_some())
+            .map(crate::RetainedNode::id)
+            .collect::<BTreeSet<_>>();
+        self.focus_handles.retain(|node, _| active.contains(node));
+        for node in active {
+            self.focus_handles
+                .entry(node)
+                .or_insert_with(|| cx.focus_handle());
+        }
+    }
+
+    fn process_element_commands(&mut self, window: &mut Window) {
+        let commands = self
+            .lifecycle
+            .runtime()
+            .borrow_mut()
+            .take_window_element_commands(&self.window_id);
+        for command in commands {
+            match command {
+                crate::element_ref::ElementCommand::Focus { node, .. } => {
+                    if let Some(handle) = self.focus_handles.get(&node) {
+                        handle.focus(window);
+                    } else {
+                        self.last_error = Some(format!(
+                            "retained node {node} is not focusable or has been unmounted"
+                        ));
+                    }
+                }
+            }
+        }
     }
 
     fn reconcile_primitive_lifecycle(&mut self) {
@@ -2245,7 +2331,7 @@ impl ScriptHostView {
     fn dispatch_key_binding(
         &mut self,
         action: &DispatchScriptAction,
-        _: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         let result = ActionId::parse(&action.id).and_then(|id| {
@@ -2266,7 +2352,7 @@ impl ScriptHostView {
                         false,
                     );
                 }
-                self.handle_node_event(&invocation.callback, invocation.payload, cx);
+                self.handle_node_event(&invocation.callback, invocation.payload, window, cx);
             }
             Err(error) => {
                 self.last_error = Some(error.to_string());
@@ -2478,6 +2564,7 @@ impl ScriptHostView {
         &mut self,
         callback: &ScriptCallback,
         payload: UiValue,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> crate::EventResponse {
         if let Ok(mut runtime) = self.lifecycle.runtime().try_borrow_mut() {
@@ -2510,6 +2597,7 @@ impl ScriptHostView {
             Err(error) => self.last_error = Some(error),
         }
         self.process_window_commands(cx);
+        self.process_element_commands(window);
         self.collect_timings();
         cx.notify();
         if succeeded {
@@ -2557,6 +2645,7 @@ impl ScriptHostView {
             Ok(response) => {
                 self.last_error = None;
                 self.process_window_commands(cx);
+                self.process_element_commands(window);
                 self.collect_timings();
                 cx.notify();
                 response
@@ -3060,6 +3149,8 @@ pub enum ScriptViewError {
     Action(#[from] ActionError),
     #[error(transparent)]
     Signal(#[from] crate::SignalError),
+    #[error(transparent)]
+    ElementRef(#[from] crate::ElementRefError),
     #[error(transparent)]
     Overlay(#[from] crate::OverlayError),
     #[error("Rhai module path `{0}` is outside the UI root")]

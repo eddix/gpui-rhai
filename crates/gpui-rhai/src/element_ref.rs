@@ -105,6 +105,27 @@ impl ElementRefRegistry {
             .ok_or_else(|| ElementRefError::Stale(reference.id().clone()))
     }
 
+    /// Resolve a mounted component-local ref key.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ElementRefError::UnknownKey`] when no binding is committed.
+    pub fn resolve_key(
+        &self,
+        component: &ComponentInstancePath,
+        key: &str,
+    ) -> Result<ElementRef, ElementRefError> {
+        self.active
+            .keys()
+            .find(|id| id.component() == component && id.key() == key)
+            .cloned()
+            .map(ElementRef::new)
+            .ok_or_else(|| ElementRefError::UnknownKey {
+                component: component.clone(),
+                key: key.to_owned(),
+            })
+    }
+
     pub(crate) fn reconcile(
         &mut self,
         root: &ComponentInstancePath,
@@ -131,6 +152,24 @@ pub enum ElementRefError {
     DuplicateBinding(ElementRefId),
     #[error("element ref `{0:?}` requires a stable node key")]
     MissingNodeKey(ElementRefId),
+    #[error("component `{component}` has no mounted element ref `{key}`")]
+    UnknownKey {
+        component: ComponentInstancePath,
+        key: String,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum ElementCommand {
+    Focus { window: String, node: NodeId },
+}
+
+impl ElementCommand {
+    pub(crate) fn window(&self) -> &str {
+        match self {
+            Self::Focus { window, .. } => window,
+        }
+    }
 }
 
 #[cfg(test)]
