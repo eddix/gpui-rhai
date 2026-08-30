@@ -429,6 +429,11 @@ fn collect_node_animations(
                 collect_node_animations(&item.node, &format!("{path}/item:{}", item.key), output)?;
             }
         }
+        UiNodeKind::VirtualCollection { spec } => {
+            for (index, item) in &spec.realized {
+                collect_node_animations(item, &format!("{path}/item:{index}"), output)?;
+            }
+        }
         UiNodeKind::Table { spec } => {
             for column in &spec.columns {
                 for (index, cell) in column.custom_cells.iter().flatten().enumerate() {
