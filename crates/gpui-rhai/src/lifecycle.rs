@@ -141,6 +141,7 @@ impl ScriptLifecycle {
             let root = engine.render_with_context_staged(&self.compiled, context)?;
             let mut retained = self.retained.clone();
             retained.reconcile(root.clone())?;
+            self.validate_resource_budgets(engine, &retained)?;
             self.reconcile_animations(&root)?;
             self.reconcile_effects(
                 engine,
@@ -230,6 +231,7 @@ impl ScriptLifecycle {
                 }
             }
             retained.reconcile(root.clone())?;
+            self.validate_resource_budgets(engine, &retained)?;
             self.reconcile_animations(&root)?;
             self.reconcile_effects(
                 engine,
@@ -492,6 +494,7 @@ impl ScriptLifecycle {
             )?;
             let mut retained = self.retained.clone();
             retained.reconcile(root.clone())?;
+            self.validate_resource_budgets(engine, &retained)?;
             self.reconcile_animations(&root)?;
             self.reconcile_effects(
                 engine,
@@ -547,6 +550,48 @@ impl ScriptLifecycle {
             &self.animation_root_path(),
         )?;
         runtime.animation_values = values;
+        Ok(())
+    }
+
+    fn validate_resource_budgets(
+        &self,
+        engine: &RuntimeEngine,
+        retained: &crate::RetainedUiTree,
+    ) -> Result<(), LifecycleError> {
+        let budgets = self
+            .runtime
+            .try_borrow()
+            .map_err(|_| LifecycleError::Borrowed)?
+            .budgets
+            .clone();
+        budgets.validate()?;
+        crate::RuntimeBudgets::check("retained_nodes", retained.len(), budgets.retained_nodes)?;
+        let handlers = retained.nodes().fold(0usize, |total, node| {
+            total.saturating_add(node.handler_count())
+        });
+        crate::RuntimeBudgets::check("event_handlers", handlers, budgets.event_handlers)?;
+        crate::RuntimeBudgets::check(
+            "formal_components",
+            engine.component_invocations().len(),
+            budgets.formal_components,
+        )?;
+        crate::RuntimeBudgets::check(
+            "effects",
+            engine.component_effects_in_scope(&self.root_path).len(),
+            budgets.effects,
+        )?;
+        crate::RuntimeBudgets::check(
+            "signals",
+            engine.component_signals_in_scope(&self.root_path).len(),
+            budgets.signals,
+        )?;
+        crate::RuntimeBudgets::check(
+            "element_refs",
+            engine
+                .component_element_refs_in_scope(&self.root_path)
+                .len(),
+            budgets.element_refs,
+        )?;
         Ok(())
     }
 
@@ -808,6 +853,8 @@ pub enum LifecycleError {
     Signal(#[from] crate::SignalError),
     #[error(transparent)]
     ElementRef(#[from] crate::ElementRefError),
+    #[error(transparent)]
+    Budget(#[from] crate::RuntimeBudgetError),
 }
 
 fn topmost_paths(paths: &BTreeSet<ComponentInstancePath>) -> Vec<ComponentInstancePath> {
@@ -957,6 +1004,36 @@ mod tests {
         .unwrap();
         lifecycle.start(&mut engine).unwrap();
         lifecycle.dispose(&mut engine).unwrap();
+    }
+
+    #[test]
+    fn retained_candidate_over_host_budget_is_rejected_before_commit() {
+        let mut engine = RuntimeEngine::new();
+        let compiled = engine
+            .compile("fn view(ctx) { box([text(\"child\")]) }")
+            .unwrap();
+        let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+        runtime.borrow_mut().budgets.retained_nodes = 1;
+        let mut lifecycle = ScriptLifecycle::new(
+            compiled,
+            Rc::clone(&runtime),
+            ComponentInstancePath::root("App", "root"),
+            Some("main".to_owned()),
+            BTreeMap::new(),
+            &ComponentStateSchema::default(),
+        )
+        .unwrap();
+        assert!(matches!(
+            lifecycle.start(&mut engine),
+            Err(LifecycleError::Budget(
+                crate::RuntimeBudgetError::Exceeded {
+                    resource: "retained_nodes",
+                    actual: 2,
+                    limit: 1,
+                }
+            ))
+        ));
+        assert!(lifecycle.retained().is_empty());
     }
 
     #[test]

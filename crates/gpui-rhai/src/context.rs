@@ -59,6 +59,7 @@ pub struct UiRuntimeState {
     pub element_refs: crate::ElementRefRegistry,
     pub geometry: crate::GeometryRegistry,
     pub pointer_capture: crate::PointerCaptureRegistry,
+    pub budgets: crate::RuntimeBudgets,
     pub windows: WindowCommandRegistry,
     pub responsive: ResponsiveRuntime,
     pub animation_values: BTreeMap<AnimationKey, f64>,
@@ -323,6 +324,7 @@ impl UiRuntimeState {
             element_refs: self.element_refs.clone(),
             geometry: self.geometry.snapshot(),
             pointer_capture: self.pointer_capture.snapshot(),
+            budgets: self.budgets.clone(),
             animation_values: self.animation_values.clone(),
             windows: self.windows.clone(),
             responsive: self.responsive.clone(),
@@ -358,6 +360,7 @@ impl UiRuntimeState {
         self.element_refs = snapshot.element_refs;
         self.geometry.restore(snapshot.geometry);
         self.pointer_capture.restore(snapshot.pointer_capture);
+        self.budgets = snapshot.budgets;
         self.animation_values = snapshot.animation_values;
         self.windows = snapshot.windows;
         self.responsive = snapshot.responsive;
@@ -384,6 +387,7 @@ pub struct UiStateSnapshot {
     element_refs: crate::ElementRefRegistry,
     geometry: crate::geometry::GeometrySnapshot,
     pointer_capture: BTreeMap<u64, crate::NodeId>,
+    budgets: crate::RuntimeBudgets,
     animation_values: BTreeMap<AnimationKey, f64>,
     windows: WindowCommandRegistry,
     responsive: ResponsiveRuntime,

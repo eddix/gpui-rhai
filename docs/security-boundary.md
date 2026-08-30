@@ -12,17 +12,24 @@ contexts, arbitrary Rust values, filesystem paths, URLs, sockets, or process API
 - `UiValue` permits scalar data, arrays, string-keyed maps, and typed opaque
   handles. GPUI elements and arbitrary `Dynamic` Rust values cannot cross it.
 - Capability inputs and outputs are validated against their declared schemas.
-- Effects and mutations are rejected during `view(ctx)`.
+- Mutations and effect execution are rejected during `view(ctx)`; formal render
+  may only emit pure named effect descriptors.
 - Callbacks, tasks, subscriptions, and image decodes bind to an AST generation;
   stale work is discarded after hot reload.
 - Script operation, expression-depth, call-depth, array, and map limits are set
   by the runtime.
+- Host-configurable `RuntimeBudgets` independently reject an otherwise valid
+  candidate before commit when retained nodes, event handlers, formal
+  components, effects, signals, or element refs exceed their limits.
 - Window commands accept bounded sizes and validated stable IDs. Scripts cannot
   access native window handles.
 - Diagnostics redact fields marked `sensitive`; capability payloads should be
   treated as sensitive unless a host explicitly decides otherwise.
 - `HostCallback` can be constructed only by trusted Rust code. It cannot enter
   Rhai, `UiValue`, capabilities, serialization, or script callback schemas.
+- `NativeHandlerRef` is resolvable by Rhai only after trusted Rust registers a
+  namespaced descriptor; declared event payload schemas are checked before the
+  Rust handler runs.
 
 ## Host responsibilities
 

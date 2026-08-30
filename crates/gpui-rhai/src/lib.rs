@@ -52,6 +52,7 @@ pub mod animation;
 pub mod app;
 pub mod asset;
 pub mod async_runtime;
+pub mod budget;
 pub mod capability;
 
 pub use gpui;
@@ -75,6 +76,7 @@ pub use async_runtime::{
     AsyncDelivery, AsyncRuntimeError, AsyncScope, SubscriptionCloseReason, SubscriptionEmitter,
     SubscriptionHandle, SubscriptionRegistration, SubscriptionRegistry, TaskHandle, TaskRegistry,
 };
+pub use budget::{RuntimeBudgetError, RuntimeBudgets};
 pub use capability::{
     AppManifest, AsyncCapabilityHandler, CapabilityDescriptor, CapabilityError, CapabilityHandler,
     CapabilityId, CapabilityMethod, CapabilityRegistry, SubscriptionCapabilityHandler,

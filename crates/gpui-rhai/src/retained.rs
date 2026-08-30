@@ -99,6 +99,11 @@ impl RetainedNode {
     }
 
     #[must_use]
+    pub fn handler_count(&self) -> usize {
+        self.handlers.values().map(Vec::len).sum()
+    }
+
+    #[must_use]
     pub const fn scrollable(&self) -> bool {
         self.scrollable
     }
