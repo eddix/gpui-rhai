@@ -54,5 +54,18 @@ The custom number includes eager construction of 10,000 `UiNode` values and
 Table validation; it is intentionally separate from the 20-row native
 realization count.
 
+Post-runtime-v2 policy/reconciler probe on 2026-08-31, aarch64 macOS 26.6.2,
+`rustc 1.94.1`, release profile:
+
+```text
+variable_height_policy_100000=33.11ms realized=39 total=3247064
+retained_reverse_reorder_2000=3.46ms preserved=2001 moved=2000
+```
+
+This probe measures deterministic policy construction/measurement and retained
+diff only. It is not the required 120 Hz Mini Timeline total-frame measurement;
+GPUI flush/layout/paint and interaction p95 remain a separate certification
+gate.
+
 This result is evidence for the initial thresholds, not a cross-machine
 benchmark guarantee.

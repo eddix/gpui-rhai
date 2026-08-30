@@ -2,6 +2,7 @@
 set -eu
 
 examples=(
+  artistic_showcase
   component_gallery
   dashboard_layout
   data_table
@@ -12,11 +13,13 @@ examples=(
   hello_world
   host_owned_tree
   multi_window
+  mini_timeline
   native_overlay_smoke
   native_virtual_list_smoke
   performance_probe
   phase0_probe
   settings_panel
+  variable_height_chat
 )
 smoke_seconds="${GPUI_RHAI_SMOKE_SECONDS:-2}"
 clang_cache="${TMPDIR:-/tmp}/gpui-rhai-clang-module-cache"

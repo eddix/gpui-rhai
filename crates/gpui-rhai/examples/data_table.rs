@@ -8,6 +8,8 @@ const SKELETON: &str = include_str!("../../../registry/components/skeleton.rhai"
 const BUTTON: &str = include_str!("../../../registry/components/button.rhai");
 const ICON: &str = include_str!("../../../registry/components/icon.rhai");
 const SELECT: &str = include_str!("../../../registry/components/select.rhai");
+const DROPDOWN: &str = include_str!("../../../registry/components/dropdown.rhai");
+const INPUT: &str = include_str!("../../../registry/components/input.rhai");
 const TAG: &str = include_str!("../../../registry/components/tag.rhai");
 const DEFAULT_LIGHT: &str = include_str!("../../../registry/themes/default_light.rhai");
 const DEFAULT_DARK: &str = include_str!("../../../registry/themes/default_dark.rhai");
@@ -165,9 +167,20 @@ fn main() {
     let locale = std::env::var("GPUI_RHAI_VISUAL_LOCALE").unwrap_or_else(|_| "en".to_owned());
     let visual_state =
         std::env::var("GPUI_RHAI_VISUAL_STATE").unwrap_or_else(|_| "default".to_owned());
+    data_table_view(&theme, &locale, &visual_state)
+        .prepare()
+        .and_then(|prepared| {
+            ScriptApplication::new(prepared)
+                .window_size(980.0, 720.0)
+                .run()
+        })
+        .expect("data_table failed");
+}
+
+fn data_table_view(theme: &str, locale: &str, visual_state: &str) -> EmbeddedScriptView {
     let main_source = MAIN
-        .replace("__VISUAL_THEME__", &theme)
-        .replace("__VISUAL_LOCALE__", &locale)
+        .replace("__VISUAL_THEME__", theme)
+        .replace("__VISUAL_LOCALE__", locale)
         .replace(
             "__VISUAL_SELECTED__",
             if visual_state == "selected" {
@@ -196,6 +209,8 @@ fn main() {
         module("components/button", BUTTON),
         module("components/icon", ICON),
         module("components/select", SELECT),
+        module("components/dropdown", DROPDOWN),
+        module("components/input", INPUT),
         module("components/tag", TAG),
     ]));
     EmbeddedScriptView::new(ModuleId::parse("main").unwrap(), scripts, DEFAULT_LIGHT)
@@ -233,37 +248,26 @@ fn main() {
                     "../../../registry/assets/icons/chevron_right.svg"
                 )),
             ),
-            (
-                "icons/disclosure_down".to_owned(),
-                svg(include_bytes!(
-                    "../../../registry/assets/icons/disclosure_down.svg"
-                )),
-            ),
-            (
-                "icons/sort_ascending".to_owned(),
-                svg(include_bytes!(
-                    "../../../registry/assets/icons/sort_ascending.svg"
-                )),
-            ),
-            (
-                "icons/sort_descending".to_owned(),
-                svg(include_bytes!(
-                    "../../../registry/assets/icons/sort_descending.svg"
-                )),
-            ),
         ])
-        .prepare()
-        .and_then(|prepared| {
-            ScriptApplication::new(prepared)
-                .window_size(980.0, 720.0)
-                .run()
-        })
-        .expect("data_table failed");
 }
 
 fn svg(bytes: &[u8]) -> AssetData {
     AssetData {
         mime_type: "image/svg+xml".to_owned(),
         bytes: bytes.to_vec(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_data_table_visual_state_prepares() {
+        for state in ["default", "selected", "loading", "empty"] {
+            data_table_view("default-light", "en", state)
+                .prepare()
+                .unwrap_or_else(|error| panic!("state {state}: {error}"));
+        }
     }
 }

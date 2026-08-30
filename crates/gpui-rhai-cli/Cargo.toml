@@ -13,6 +13,7 @@ publish = false
 [[bin]]
 name = "gpui-rhai"
 path = "src/main.rs"
+doc = false
 
 [dependencies]
 clap.workspace = true
