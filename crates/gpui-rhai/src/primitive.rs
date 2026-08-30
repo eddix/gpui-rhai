@@ -727,6 +727,7 @@ fn collect_primitive_instances(node: &UiNode, active: &mut BTreeSet<PrimitiveIns
         }
         UiNodeKind::Text { .. }
         | UiNodeKind::RichText { .. }
+        | UiNodeKind::Canvas { .. }
         | UiNodeKind::Image { .. }
         | UiNodeKind::DirectionalImage { .. }
         | UiNodeKind::Select { .. }

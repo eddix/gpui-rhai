@@ -54,6 +54,7 @@ pub struct RetainedNode {
     handlers: BTreeMap<String, Vec<crate::UiEventBinding>>,
     handler_payloads: BTreeMap<String, crate::UiValue>,
     scrollable: bool,
+    canvas_commands: usize,
     children: Vec<RetainedChildLink>,
 }
 
@@ -106,6 +107,11 @@ impl RetainedNode {
     #[must_use]
     pub const fn scrollable(&self) -> bool {
         self.scrollable
+    }
+
+    #[must_use]
+    pub const fn canvas_command_count(&self) -> usize {
+        self.canvas_commands
     }
 
     pub fn children(&self) -> impl ExactSizeIterator<Item = &RetainedChildLink> {
@@ -390,6 +396,10 @@ impl ReconcileTransaction<'_> {
                 handlers: candidate.handlers().clone(),
                 handler_payloads: candidate.handler_payloads().clone(),
                 scrollable: snapshot_scrollable(candidate),
+                canvas_commands: match candidate.kind() {
+                    crate::UiNodeKind::Canvas { scene } => scene.commands().len(),
+                    _ => 0,
+                },
                 children,
             },
         );

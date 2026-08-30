@@ -140,6 +140,12 @@ for inline runs. Span is an immutable inline value, not a child node; current
 run refinements are color, bold, and italic and render through one GPUI
 `StyledText`.
 
+Use `canvas(canvas_scene([...]))` for retained vector drawing. Commands currently
+include `canvas_rect`, `canvas_circle`, and `canvas_line`; every command needs a
+stable unique key and finite logical geometry. Scene construction and Host
+budgets run before commit, while GPUI paint consumes only the accepted Rust
+scene.
+
 ## Events
 
 Bind callbacks to nodes rather than calling them during rendering:

@@ -453,6 +453,7 @@ fn collect_node_animations(
         }
         UiNodeKind::Text { .. }
         | UiNodeKind::RichText { .. }
+        | UiNodeKind::Canvas { .. }
         | UiNodeKind::Custom { .. }
         | UiNodeKind::Image { .. }
         | UiNodeKind::DirectionalImage { .. }

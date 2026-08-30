@@ -149,6 +149,9 @@ pub enum UiNodeKind {
         text: ImmutableString,
         spans: Vec<Span>,
     },
+    Canvas {
+        scene: crate::CanvasScene,
+    },
     Box {
         children: Vec<UiNode>,
     },
@@ -199,6 +202,7 @@ pub enum UiNodeKind {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum UiNodeKindTag {
     Text,
+    Canvas,
     Box,
     Fragment,
     Custom,
@@ -268,6 +272,13 @@ impl UiNode {
             signal_bindings: BTreeMap::new(),
             element_ref: None,
         }
+    }
+
+    #[must_use]
+    pub fn canvas(scene: crate::CanvasScene) -> Self {
+        let mut node = Self::text("");
+        node.kind = UiNodeKind::Canvas { scene };
+        node
     }
 
     #[must_use]
@@ -746,6 +757,7 @@ impl UiNode {
             ),
             UiNodeKind::Text { .. }
             | UiNodeKind::RichText { .. }
+            | UiNodeKind::Canvas { .. }
             | UiNodeKind::Image { .. }
             | UiNodeKind::DirectionalImage { .. }
             | UiNodeKind::DatePicker { .. }
@@ -865,6 +877,7 @@ impl UiNode {
             }
             UiNodeKind::Text { .. }
             | UiNodeKind::RichText { .. }
+            | UiNodeKind::Canvas { .. }
             | UiNodeKind::Custom { .. }
             | UiNodeKind::Image { .. }
             | UiNodeKind::DirectionalImage { .. }
@@ -981,6 +994,7 @@ impl UiNode {
             }
             UiNodeKind::Text { .. }
             | UiNodeKind::RichText { .. }
+            | UiNodeKind::Canvas { .. }
             | UiNodeKind::Image { .. }
             | UiNodeKind::DirectionalImage { .. }
             | UiNodeKind::Select { .. }
@@ -1067,6 +1081,7 @@ impl UiNode {
             }
             UiNodeKind::Text { .. }
             | UiNodeKind::RichText { .. }
+            | UiNodeKind::Canvas { .. }
             | UiNodeKind::Image { .. }
             | UiNodeKind::DirectionalImage { .. }
             | UiNodeKind::Select { .. }
@@ -1084,6 +1099,7 @@ impl UiNode {
     pub const fn kind_tag(&self) -> UiNodeKindTag {
         match self.kind {
             UiNodeKind::Text { .. } | UiNodeKind::RichText { .. } => UiNodeKindTag::Text,
+            UiNodeKind::Canvas { .. } => UiNodeKindTag::Canvas,
             UiNodeKind::Box { .. } => UiNodeKindTag::Box,
             UiNodeKind::Fragment { .. } => UiNodeKindTag::Fragment,
             UiNodeKind::Custom { .. } => UiNodeKindTag::Custom,
@@ -1167,6 +1183,7 @@ impl UiNode {
             ],
             UiNodeKind::Text { .. }
             | UiNodeKind::RichText { .. }
+            | UiNodeKind::Canvas { .. }
             | UiNodeKind::Image { .. }
             | UiNodeKind::DirectionalImage { .. }
             | UiNodeKind::DatePicker { .. }
@@ -1621,6 +1638,10 @@ pub(crate) fn rich_text_node(
         })
         .collect::<Result<Vec<_>, _>>()?;
     Ok(with_call_source(UiNode::rich_text(spans), call))
+}
+
+pub(crate) fn canvas_node(call: NativeCallContext<'_>, scene: crate::CanvasScene) -> UiNode {
+    with_call_source(UiNode::canvas(scene), call)
 }
 
 pub(crate) fn box_node(

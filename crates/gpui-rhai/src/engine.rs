@@ -12,14 +12,15 @@ use thiserror::Error;
 
 use crate::animation::register_animation_api;
 use crate::asset::{AssetId, ImageDecodeHandle, asset_id_from_script};
+use crate::canvas::register_canvas_api;
 use crate::component::{ComponentExportCollector, ComponentExportError, ComponentRegistry};
 use crate::context::{UiContext, register_ui_context_api};
 use crate::node::{
-    asset_image_node, box_node, column_node, date_picker_node, directional_asset_image_node,
-    directional_image_node, dropdown_node, error_boundary_node, fragment_node,
-    generic_directional_image_node, generic_image_node, image_node, lazy_error_boundary_node,
-    overlay_node, rich_text_node, row_node, select_node, span_value, stack_node, table_node,
-    text_node, toast_host_node, virtual_list_node,
+    asset_image_node, box_node, canvas_node, column_node, date_picker_node,
+    directional_asset_image_node, directional_image_node, dropdown_node, error_boundary_node,
+    fragment_node, generic_directional_image_node, generic_image_node, image_node,
+    lazy_error_boundary_node, overlay_node, rich_text_node, row_node, select_node, span_value,
+    stack_node, table_node, text_node, toast_host_node, virtual_list_node,
 };
 use crate::primitive::{PrimitiveDescriptor, PrimitiveError, PrimitiveHandler, PrimitiveRegistry};
 use crate::style::register_style_api;
@@ -401,6 +402,7 @@ impl RuntimeEngine {
         register_animation_api(&mut engine);
         register_text_area_api(&mut engine);
         register_virtual_list_api(&mut engine);
+        register_canvas_api(&mut engine);
         let evaluation_generation = Rc::new(Cell::new(ScriptGeneration::default()));
         let component_exports = ComponentExportCollector::new();
         let (component_render, component_renderers) = register_component_runtime_apis(
@@ -1203,6 +1205,9 @@ fn register_node_apis(engine: &mut Engine) {
     FuncRegistration::new("span")
         .in_global_namespace()
         .register_into_engine(engine, span_value);
+    FuncRegistration::new("canvas")
+        .in_global_namespace()
+        .register_into_engine(engine, canvas_node);
     FuncRegistration::new("box")
         .in_global_namespace()
         .register_into_engine(engine, box_node);
@@ -2239,6 +2244,29 @@ mod tests {
         assert_eq!(spans.len(), 2);
         assert!(spans[0].is_bold());
         assert!(spans[1].is_italic());
+    }
+
+    #[test]
+    fn canvas_scene_is_keyed_validated_and_script_constructible() {
+        let mut runtime = RuntimeEngine::new();
+        let compiled = runtime
+            .compile(
+                r#"
+                    fn view() {
+                        canvas(canvas_scene([
+                            canvas_rect("panel", 0.0, 0.0, 100.0, 40.0, rgb(0x112233)),
+                            canvas_circle("dot", 20.0, 20.0, 8.0, rgb(0xffcc00)),
+                            canvas_line("axis", 0.0, 39.0, 100.0, 39.0, 1.0, rgb(0xffffff))
+                        ]))
+                    }
+                "#,
+            )
+            .unwrap();
+        let root = runtime.render(&compiled).unwrap();
+        assert!(matches!(
+            root.kind(),
+            crate::UiNodeKind::Canvas { scene } if scene.commands().len() == 3
+        ));
     }
 
     #[test]

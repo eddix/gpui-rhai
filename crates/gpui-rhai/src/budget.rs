@@ -8,6 +8,7 @@ pub struct RuntimeBudgets {
     pub effects: usize,
     pub signals: usize,
     pub element_refs: usize,
+    pub canvas_commands: usize,
 }
 
 impl Default for RuntimeBudgets {
@@ -19,6 +20,7 @@ impl Default for RuntimeBudgets {
             effects: 4_096,
             signals: 16_384,
             element_refs: 16_384,
+            canvas_commands: 100_000,
         }
     }
 }
@@ -37,6 +39,7 @@ impl RuntimeBudgets {
             ("effects", self.effects),
             ("signals", self.signals),
             ("element_refs", self.element_refs),
+            ("canvas_commands", self.canvas_commands),
         ] {
             if limit == 0 {
                 return Err(RuntimeBudgetError::ZeroLimit(resource));

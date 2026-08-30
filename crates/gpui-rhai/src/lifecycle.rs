@@ -570,6 +570,10 @@ impl ScriptLifecycle {
             total.saturating_add(node.handler_count())
         });
         crate::RuntimeBudgets::check("event_handlers", handlers, budgets.event_handlers)?;
+        let canvas_commands = retained.nodes().fold(0usize, |total, node| {
+            total.saturating_add(node.canvas_command_count())
+        });
+        crate::RuntimeBudgets::check("canvas_commands", canvas_commands, budgets.canvas_commands)?;
         crate::RuntimeBudgets::check(
             "formal_components",
             engine.component_invocations().len(),

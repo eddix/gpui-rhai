@@ -53,6 +53,7 @@ pub mod app;
 pub mod asset;
 pub mod async_runtime;
 pub mod budget;
+pub mod canvas;
 pub mod capability;
 
 pub use gpui;
@@ -77,6 +78,7 @@ pub use async_runtime::{
     SubscriptionHandle, SubscriptionRegistration, SubscriptionRegistry, TaskHandle, TaskRegistry,
 };
 pub use budget::{RuntimeBudgetError, RuntimeBudgets};
+pub use canvas::{CanvasCommand, CanvasError, CanvasScene};
 pub use capability::{
     AppManifest, AsyncCapabilityHandler, CapabilityDescriptor, CapabilityError, CapabilityHandler,
     CapabilityId, CapabilityMethod, CapabilityRegistry, SubscriptionCapabilityHandler,

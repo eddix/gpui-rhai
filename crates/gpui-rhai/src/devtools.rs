@@ -190,10 +190,9 @@ fn inspect_node(node: &UiNode, path: &str) -> InspectorNode {
             ("text".to_owned(), Vec::new())
         }
         UiNodeKind::RichText { text, spans } => {
-            props.insert("text".to_owned(), truncate(text, 80));
-            props.insert("span_count".to_owned(), spans.len().to_string());
-            ("rich_text".to_owned(), Vec::new())
+            (inspect_rich_text(text, spans, &mut props), Vec::new())
         }
+        UiNodeKind::Canvas { scene } => (inspect_canvas(scene, &mut props), Vec::new()),
         UiNodeKind::Box { children } => ("box".to_owned(), children.iter().collect()),
         UiNodeKind::Fragment { children } => ("fragment".to_owned(), children.iter().collect()),
         UiNodeKind::Custom { primitive } => {
@@ -289,6 +288,24 @@ fn inspect_virtual_list<'a>(
         "virtual_list".to_owned(),
         spec.items.iter().map(|item| &item.node).collect(),
     )
+}
+
+fn inspect_rich_text(
+    text: &str,
+    spans: &[crate::Span],
+    props: &mut BTreeMap<String, String>,
+) -> String {
+    props.insert("text".to_owned(), truncate(text, 80));
+    props.insert("span_count".to_owned(), spans.len().to_string());
+    "rich_text".to_owned()
+}
+
+fn inspect_canvas(scene: &crate::CanvasScene, props: &mut BTreeMap<String, String>) -> String {
+    props.insert(
+        "command_count".to_owned(),
+        scene.commands().len().to_string(),
+    );
+    "canvas".to_owned()
 }
 
 fn inspect_image<'a>(

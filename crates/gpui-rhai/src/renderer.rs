@@ -1201,6 +1201,7 @@ impl GpuiNodeRenderer {
             UiNodeKind::RichText { text, spans } => element
                 .child(styled_text(text.as_str(), spans, environment.colors))
                 .into_any_element(),
+            UiNodeKind::Canvas { scene } => render_canvas(element, scene, environment.colors),
             UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => element
                 .children(render_flattened_children(
                     children,
@@ -1342,6 +1343,103 @@ fn styled_text(text: &str, spans: &[crate::Span], colors: &impl ColorResolver) -
         (style != HighlightStyle::default()).then_some((start..offset, style))
     });
     StyledText::new(text.to_owned()).with_highlights(highlights)
+}
+
+fn render_canvas(
+    element: impl ParentElement + IntoElement,
+    scene: &crate::CanvasScene,
+    colors: &impl ColorResolver,
+) -> AnyElement {
+    let scene = scene.clone();
+    let colors = OwnedColorResolver::capture(colors);
+    let canvas = gpui::canvas(
+        |_, _, _| (),
+        move |bounds, (), window, _| paint_canvas_scene(bounds, &scene, &colors, window),
+    )
+    .size_full();
+    element.child(canvas).into_any_element()
+}
+
+fn paint_canvas_scene(
+    bounds: Bounds<Pixels>,
+    scene: &crate::CanvasScene,
+    colors: &impl ColorResolver,
+    window: &mut Window,
+) {
+    for command in scene.commands() {
+        match command {
+            crate::CanvasCommand::Rect {
+                x,
+                y,
+                width,
+                height,
+                fill: color,
+                ..
+            } => {
+                if let Some(color) = colors.resolve(color) {
+                    window.paint_quad(gpui::fill(
+                        Bounds::new(
+                            point(
+                                bounds.origin.x + px(f64_to_f32(*x)),
+                                bounds.origin.y + px(f64_to_f32(*y)),
+                            ),
+                            gpui::size(px(f64_to_f32(*width)), px(f64_to_f32(*height))),
+                        ),
+                        rgba(color.as_rgba_hex()),
+                    ));
+                }
+            }
+            crate::CanvasCommand::Circle {
+                center_x,
+                center_y,
+                radius,
+                fill: color,
+                ..
+            } => {
+                if let Some(color) = colors.resolve(color) {
+                    let radius = px(f64_to_f32(*radius));
+                    window.paint_quad(gpui::quad(
+                        Bounds::new(
+                            point(
+                                bounds.origin.x + px(f64_to_f32(*center_x)) - radius,
+                                bounds.origin.y + px(f64_to_f32(*center_y)) - radius,
+                            ),
+                            gpui::size(radius * 2.0, radius * 2.0),
+                        ),
+                        radius,
+                        rgba(color.as_rgba_hex()),
+                        px(0.0),
+                        gpui::transparent_black(),
+                        gpui::BorderStyle::default(),
+                    ));
+                }
+            }
+            crate::CanvasCommand::Line {
+                from_x,
+                from_y,
+                to_x,
+                to_y,
+                width,
+                color,
+                ..
+            } => {
+                if let Some(color) = colors.resolve(color) {
+                    let mut path = gpui::PathBuilder::stroke(px(f64_to_f32(*width)));
+                    path.move_to(point(
+                        bounds.origin.x + px(f64_to_f32(*from_x)),
+                        bounds.origin.y + px(f64_to_f32(*from_y)),
+                    ));
+                    path.line_to(point(
+                        bounds.origin.x + px(f64_to_f32(*to_x)),
+                        bounds.origin.y + px(f64_to_f32(*to_y)),
+                    ));
+                    if let Ok(path) = path.build() {
+                        window.paint_path(path, rgba(color.as_rgba_hex()));
+                    }
+                }
+            }
+        }
+    }
 }
 
 fn render_image<C: ColorResolver>(
