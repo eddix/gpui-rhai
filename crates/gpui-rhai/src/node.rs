@@ -1664,8 +1664,12 @@ pub(crate) fn stack_node(
     call: NativeCallContext<'_>,
     children: Array,
 ) -> Result<UiNode, Box<rhai::EvalAltResult>> {
-    collect_children(children, "stack")
-        .map(|children| with_call_source(UiNode::box_node(children), call))
+    collect_children(children, "stack").map(|children| {
+        with_call_source(
+            UiNode::box_node(children).with_style(&Style::new().relative()),
+            call,
+        )
+    })
 }
 
 pub(crate) fn column_node(

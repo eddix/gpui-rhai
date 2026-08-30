@@ -177,7 +177,8 @@ pub use state::{
 pub use store::{StoreError, StoreId, StoreReadSession, StoreRegistry, StoreScope, StoreSnapshot};
 pub use style::{
     Align, ColorValue, EdgeLengths, FlexDirection, InteractionState, Justify, Length, LengthError,
-    OverflowMode, PseudoState, RadiusToken, Rgba8, SpacingToken, Style, StyleProperties,
+    OverflowMode, PositionMode, PseudoState, RadiusToken, Rgba8, SpacingToken, Style,
+    StyleProperties,
 };
 pub use table::{
     TableAlign, TableCellFormat, TableColumnSpec, TableColumnWidth, TableError, TableLayout,

@@ -21,6 +21,9 @@ The final atomic surface starts with `box(children)` and layout-transparent
 Fragment may carry only children, source, key; nested fragments are flattened
 before GPUI layout, so style/handlers/ref on a fragment are rejected instead of
 silently introducing a wrapper.
+`stack` establishes relative positioning; children may use typed
+`Style.absolute().left(...).top(...)`, including NativeSignal translation for
+hot playheads and drag surfaces.
 
 `text("plain")` keeps the cheap uniform path. `text([span(...), ...])` retains
 typed inline runs and renders one GPUI `StyledText` with byte-correct highlight

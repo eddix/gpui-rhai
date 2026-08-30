@@ -29,10 +29,10 @@ use crate::virtual_list_element::{VirtualFocusHandler, VirtualListEntityElement}
 use crate::{
     Align, AnimationKey, AnimationProperty, AssetRegistry, ColorValue, DatePickerNodeSpec,
     DropdownNodeSpec, EventPropagation, EventResponse, FlexDirection, ImageSourceSpec,
-    InteractionState, Justify, Length, NodeId, OverflowMode, OverlayNodeSpec, PrimitiveRegistry,
-    PseudoState, RadiusToken, RetainedUiTree, Rgba8, ScriptCallback, SpacingToken, Style,
-    StyleProperties, TableNodeSpec, TableSort, TableSortDirection, TextDirection, ToastHostSpec,
-    UiEventHandler, UiNode, UiNodeKind, UiValue,
+    InteractionState, Justify, Length, NodeId, OverflowMode, OverlayNodeSpec, PositionMode,
+    PrimitiveRegistry, PseudoState, RadiusToken, RetainedUiTree, Rgba8, ScriptCallback,
+    SpacingToken, Style, StyleProperties, TableNodeSpec, TableSort, TableSortDirection,
+    TextDirection, ToastHostSpec, UiEventHandler, UiNode, UiNodeKind, UiValue,
 };
 
 type DispatchFn = dyn Fn(ScriptCallback, UiValue, &mut Window, &mut App) -> EventResponse;
@@ -2403,6 +2403,8 @@ fn resolve_style_lengths(style: &mut StyleProperties, resolver: &impl ColorResol
         &mut style.border_width,
         &mut style.radius,
         &mut style.font_size,
+        &mut style.top,
+        &mut style.left,
     ] {
         resolve(value);
     }
@@ -2423,6 +2425,18 @@ pub(crate) fn apply_style_override(
 }
 
 fn apply_layout(mut element: Div, style: &StyleProperties, text_direction: TextDirection) -> Div {
+    if let Some(position) = style.position {
+        element = match position {
+            PositionMode::Relative => element.relative(),
+            PositionMode::Absolute => element.absolute(),
+        };
+    }
+    if let Some(value) = style.top {
+        element = inset_top(element, value);
+    }
+    if let Some(value) = style.left {
+        element = inset_left(element, value);
+    }
     if matches!(style.overflow_x, Some(OverflowMode::Hidden))
         || matches!(style.overflow_y, Some(OverflowMode::Hidden))
     {
@@ -2635,6 +2649,8 @@ definite_length_fn!(margin_top, mt);
 definite_length_fn!(margin_right, mr);
 definite_length_fn!(margin_bottom, mb);
 definite_length_fn!(margin_left, ml);
+definite_length_fn!(inset_top, top);
+definite_length_fn!(inset_left, left);
 
 fn border(element: Div, value: Length) -> Div {
     match value {

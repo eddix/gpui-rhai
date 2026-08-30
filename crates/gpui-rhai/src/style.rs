@@ -222,6 +222,13 @@ pub enum OverflowMode {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+pub enum PositionMode {
+    Relative,
+    Absolute,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Align {
     Start,
     Center,
@@ -322,6 +329,9 @@ pub struct StyleProperties {
     pub clip: Option<bool>,
     pub overflow_x: Option<OverflowMode>,
     pub overflow_y: Option<OverflowMode>,
+    pub position: Option<PositionMode>,
+    pub top: Option<Length>,
+    pub left: Option<Length>,
 }
 
 impl StyleProperties {
@@ -348,6 +358,9 @@ impl StyleProperties {
         merge_option(&mut self.clip, overlay.clip);
         merge_option(&mut self.overflow_x, overlay.overflow_x);
         merge_option(&mut self.overflow_y, overlay.overflow_y);
+        merge_option(&mut self.position, overlay.position);
+        merge_option(&mut self.top, overlay.top);
+        merge_option(&mut self.left, overlay.left);
     }
 }
 
@@ -608,6 +621,30 @@ impl Style {
     }
 
     #[must_use]
+    pub fn relative(mut self) -> Self {
+        self.base.position = Some(PositionMode::Relative);
+        self
+    }
+
+    #[must_use]
+    pub fn absolute(mut self) -> Self {
+        self.base.position = Some(PositionMode::Absolute);
+        self
+    }
+
+    #[must_use]
+    pub fn top(mut self, value: Length) -> Self {
+        self.base.top = Some(value);
+        self
+    }
+
+    #[must_use]
+    pub fn left(mut self, value: Length) -> Self {
+        self.base.left = Some(value);
+        self
+    }
+
+    #[must_use]
     pub fn hover(mut self, style: &Self) -> Self {
         merge_pseudo(&mut self.hover, Some(&style.base));
         self
@@ -720,6 +757,7 @@ impl CustomType for Style {
             })
             .with_fn("clip", |style: &mut Self| style.clone().clip());
         register_overflow_methods(&mut builder);
+        register_position_methods(&mut builder);
         builder
             .with_fn("hover", |style: &mut Self, state: Self| {
                 style.clone().hover(&state)
@@ -752,6 +790,18 @@ fn register_overflow_methods(builder: &mut TypeBuilder<Style>) {
         })
         .with_fn("overflow_hidden", |style: &mut Style| {
             style.clone().overflow_hidden()
+        });
+}
+
+fn register_position_methods(builder: &mut TypeBuilder<Style>) {
+    builder
+        .with_fn("relative", |style: &mut Style| style.clone().relative())
+        .with_fn("absolute", |style: &mut Style| style.clone().absolute())
+        .with_fn("top", |style: &mut Style, value: Length| {
+            style.clone().top(value)
+        })
+        .with_fn("left", |style: &mut Style, value: Length| {
+            style.clone().left(value)
         });
 }
 
