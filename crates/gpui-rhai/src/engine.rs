@@ -1159,6 +1159,26 @@ impl RuntimeEngine {
             .single_file()
     }
 
+    /// Validate statically visible direct and method call arities in an entry
+    /// script and its installed modules.
+    ///
+    /// This complements real lifecycle execution because Rhai resolves
+    /// functions dynamically and an initial render cannot cover every branch.
+    /// The catalog comes from the same registered Engine metadata used by
+    /// [`Self::definition_source`].
+    ///
+    /// # Errors
+    ///
+    /// Returns a metadata or parse error if the lint catalog cannot be built.
+    pub fn lint_known_calls(
+        &mut self,
+        entry_name: &str,
+        entry_source: &str,
+        modules: &BTreeMap<ModuleId, String>,
+    ) -> Result<Vec<crate::KnownCallDiagnostic>, crate::KnownCallLintError> {
+        crate::script_lint::lint_known_calls(&mut self.engine, entry_name, entry_source, modules)
+    }
+
     /// Return a snapshot of components exported through this engine.
     ///
     /// # Errors

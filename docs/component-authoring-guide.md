@@ -253,6 +253,11 @@ short usage example.
 `gpui-rhai check` resolves the copied module graph, loads the real
 theme/locale/assets, mounts the application state schema, and executes the
 initial `view(ctx)` through ScriptLifecycle and retained reconciliation.
+Before execution it walks unoptimized Rhai ASTs and validates direct, method,
+and imported-module call arities against the same Engine function metadata that
+generates editor definitions. This catches misspelled or wrong-arity calls in
+branches the initial view does not execute; runtime execution remains the
+type-sensitive authority because Rhai dispatch is dynamic.
 Render-time errors, duplicate keys, component-state failures, effects/timers,
 and retained budget violations therefore fail headless CI rather than waiting
 for a native window.

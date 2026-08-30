@@ -810,6 +810,16 @@ fn validate_entry(root: &Path, modules: &BTreeMap<ModuleId, String>) -> Result<(
     let entry = read(&entry_path)?;
     let source = EmbeddedScriptSource::new(modules.clone());
     let mut runtime = RuntimeEngine::new();
+    let call_diagnostics = runtime.lint_known_calls("ui/main.rhai", &entry, modules)?;
+    if !call_diagnostics.is_empty() {
+        return Err(ProjectError::KnownCalls(
+            call_diagnostics
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join("\n"),
+        ));
+    }
     runtime.set_module_resolver(RestrictedModuleResolver::from_source(&source)?);
     let compiled = runtime.compile_self_contained_named("ui/main.rhai", &entry)?;
     if !compiled.has_function("view", 1) {
@@ -1483,6 +1493,8 @@ pub enum ProjectError {
     },
     #[error("application entry must declare `view(ctx)`")]
     MissingView,
+    #[error("Rhai known-call validation failed:\n{0}")]
+    KnownCalls(String),
     #[error("manifest requires runtime API {required}, current API is {actual}")]
     ManifestRuntime { required: u32, actual: u32 },
     #[error("generated host requires manifest entry `main`, got `{0}`")]
@@ -1519,6 +1531,8 @@ pub enum ProjectError {
     Capability(#[from] gpui_rhai::CapabilityError),
     #[error(transparent)]
     Runtime(#[from] gpui_rhai::RuntimeError),
+    #[error(transparent)]
+    KnownCallLint(#[from] gpui_rhai::KnownCallLintError),
     #[error(transparent)]
     Lifecycle(#[from] gpui_rhai::LifecycleError),
     #[error(transparent)]
@@ -1594,6 +1608,28 @@ mod tests {
             project.check(),
             Err(ProjectError::Lifecycle(_) | ProjectError::Runtime(_))
         ));
+    }
+
+    #[test]
+    fn check_lints_known_calls_in_unexecuted_branches() {
+        let directory = fixture();
+        let project = Project::new(directory.path());
+        project.plan_init().unwrap().apply().unwrap();
+        fs::write(
+            directory.path().join("ui/main.rhai"),
+            r#"
+                fn view(ctx) {
+                    if false { text(); }
+                    text("still renders")
+                }
+            "#,
+        )
+        .unwrap();
+
+        let error = project.check().unwrap_err();
+        assert!(matches!(error, ProjectError::KnownCalls(_)));
+        assert!(error.to_string().contains("text/0"));
+        assert!(error.to_string().contains("expected 1"));
     }
 
     #[test]
@@ -1731,6 +1767,27 @@ mod tests {
         ] {
             assert!(directory.path().join("ui/assets").join(asset).exists());
         }
+    }
+
+    #[test]
+    fn every_bundled_component_passes_known_call_validation() {
+        let directory = fixture();
+        let project = Project::new(directory.path());
+        project.plan_init().unwrap().apply().unwrap();
+        let registry = BundledRegistry::load().unwrap();
+        let requested = registry
+            .entries
+            .keys()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>();
+        project
+            .plan_add(&registry, &requested)
+            .unwrap()
+            .apply()
+            .unwrap();
+
+        let report = project.check().unwrap();
+        assert_eq!(report.components, registry.entries.len());
     }
 
     #[test]

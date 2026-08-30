@@ -25,6 +25,7 @@ pub mod renderer;
 pub mod responsive;
 pub mod retained;
 pub mod schema;
+mod script_lint;
 pub mod script_source;
 pub mod signal;
 mod slot_runtime;
@@ -158,6 +159,7 @@ pub use retained::{
 pub use schema::{
     ObjectField, SchemaDefinitionError, SchemaIssue, SchemaValidationError, ValueSchema,
 };
+pub use script_lint::{KnownCallDiagnostic, KnownCallLintError};
 pub use script_source::{
     EmbeddedScriptSource, FileScriptSource, ScriptAsset, ScriptSource, ScriptSourceError,
 };

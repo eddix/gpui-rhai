@@ -11,6 +11,10 @@ gpui-rhai check
 gpui-rhai dev
 ```
 
+`check` 会用同一份 Engine 函数元数据检查所有 Rhai AST 中已知函数与参数数量
+（包括首帧未执行的分支），随后加载真实主题、locale、资源和状态，执行一次完整的
+无窗口首帧生命周期。Rhai 是动态分派语言，因此运行时的类型检查仍然是最终依据。
+
 在 `ui/main.rhai` 中通过别名导入组件，并从 `view(ctx)` 返回 `UiNode`：
 
 ```rhai
