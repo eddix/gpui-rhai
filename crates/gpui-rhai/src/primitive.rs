@@ -12,8 +12,8 @@ use thiserror::Error;
 use crate::{
     AssetId, ColorResolver, ColorValue, ComponentStateSchema, EventSchema, Length,
     NodeEventDispatcher, ObjectField, RadiusToken, Rgba8, SchemaDefinitionError,
-    SchemaValidationError, ScriptCallback, ScriptGeneration, SpacingToken, Style, UiNode,
-    UiNodeKind, UiValue, UiValueError, ValueSchema,
+    SchemaValidationError, ScriptCallback, ScriptGeneration, SpacingToken, Style, UiEventHandler,
+    UiNode, UiNodeKind, UiValue, UiValueError, ValueSchema,
 };
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -104,7 +104,7 @@ pub enum PrimitiveValue {
     Data(UiValue),
     Node(Box<UiNode>),
     Nodes(Vec<UiNode>),
-    Callback(ScriptCallback),
+    Callback(UiEventHandler),
     Style(Box<Style>),
     Length(Length),
     Asset(AssetId),
@@ -204,8 +204,27 @@ pub struct PrimitiveProps(BTreeMap<String, PrimitiveValue>);
 
 impl PrimitiveProps {
     #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    #[must_use]
     pub fn get(&self, name: &str) -> Option<&PrimitiveValue> {
         self.0.get(name)
+    }
+
+    pub fn insert(
+        &mut self,
+        name: impl Into<String>,
+        value: PrimitiveValue,
+    ) -> Option<PrimitiveValue> {
+        self.0.insert(name.into(), value)
+    }
+
+    #[must_use]
+    pub fn with(mut self, name: impl Into<String>, value: PrimitiveValue) -> Self {
+        self.insert(name, value);
+        self
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (&str, &PrimitiveValue)> {
@@ -221,9 +240,11 @@ impl PrimitiveProps {
         for value in self.0.values_mut() {
             match value {
                 PrimitiveValue::Callback(callback) => {
-                    callback.bind_component_if_unset(component.clone(), events.clone());
-                    if let Some(context) = native_context {
-                        callback.bind_native_context_if_unset(Rc::clone(context));
+                    if let Some(callback) = callback.as_script_mut() {
+                        callback.bind_component_if_unset(component.clone(), events.clone());
+                        if let Some(context) = native_context {
+                            callback.bind_native_context_if_unset(Rc::clone(context));
+                        }
                     }
                 }
                 PrimitiveValue::Node(node) => {
@@ -251,7 +272,14 @@ impl PrimitiveProps {
     ) {
         for value in self.0.values_mut() {
             match value {
-                PrimitiveValue::Callback(callback) if names.contains(callback.name()) => {
+                PrimitiveValue::Callback(handler)
+                    if handler
+                        .as_script()
+                        .is_some_and(|callback| names.contains(callback.name())) =>
+                {
+                    let callback = handler
+                        .as_script_mut()
+                        .expect("matched script callback handler");
                     callback.bind_component_if_unset(component.clone(), events.clone());
                     if let (Some(context), None) = (native_context, callback.native_context()) {
                         callback.bind_native_context_if_unset(Rc::clone(context));
@@ -298,7 +326,7 @@ pub struct PrimitiveInstance {
 pub struct PrimitiveEventEmitter {
     registry: PrimitiveRegistry,
     primitive: PrimitiveId,
-    callbacks: BTreeMap<String, ScriptCallback>,
+    callbacks: BTreeMap<String, UiEventHandler>,
     dispatcher: Option<NodeEventDispatcher>,
 }
 
@@ -319,10 +347,17 @@ impl PrimitiveEventEmitter {
         let payload = self
             .registry
             .normalize_event(&self.primitive, event, payload)?;
-        if let (Some(callback), Some(dispatcher)) =
-            (self.callbacks.get(event), self.dispatcher.as_ref())
-        {
-            dispatcher.dispatch(callback.clone(), payload, window, cx);
+        if let Some(handler) = self.callbacks.get(event) {
+            match handler {
+                UiEventHandler::Script(callback) => {
+                    if let Some(dispatcher) = self.dispatcher.as_ref() {
+                        dispatcher.dispatch(callback.clone(), payload, window, cx);
+                    }
+                }
+                UiEventHandler::Host(callback) => {
+                    callback.invoke(payload, window, cx);
+                }
+            }
         }
         Ok(())
     }
@@ -845,9 +880,8 @@ fn convert_prop(
             convert_prop(branch, value, generation)
         }
         ValueSchema::Node => Ok(PrimitiveValue::Node(Box::new(value.cast::<UiNode>()))),
-        ValueSchema::Callback => Ok(PrimitiveValue::Callback(ScriptCallback::from_fn_ptr(
-            value.cast::<FnPtr>(),
-            generation,
+        ValueSchema::Callback => Ok(PrimitiveValue::Callback(UiEventHandler::Script(
+            ScriptCallback::from_fn_ptr(value.cast::<FnPtr>(), generation),
         ))),
         ValueSchema::Array { items, .. } if matches!(items.as_ref(), ValueSchema::Node) => {
             Ok(PrimitiveValue::Nodes(

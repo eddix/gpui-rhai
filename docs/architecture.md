@@ -14,6 +14,11 @@ No GPUI `Window`, `App`, `Context`, `Div`, or `AnyElement` enters a Rhai
 `Dynamic`. Custom Rust primitives are the intentional extension point for
 mechanisms that require those types.
 
+A trusted Rust Host may also build a tree directly and attach `HostCallback`
+closures. Structural node data remains declarative, but this Host-augmented
+subset contains opaque foreground event behavior and is not serializable pure
+data. Rhai cannot construct or receive Host callbacks.
+
 Schemas validate public values before native construction. The complex-control
 line adds bounded numeric schemas, `one_of`, `Length`, and a schema that accepts
 only values convertible to `UiValue`; it does not add an unrestricted Dynamic
@@ -37,6 +42,11 @@ Formal Rhai components execute through `component_render`. A render-local stack
 derives nested instance paths and a scoped state transaction; returned handlers
 carry the component path, declared event schema, generation, and an internal
 Rhai module-call context so later callbacks resolve in their source module.
+
+`UiEventHandler` joins event targets only at the node/primitive boundary.
+Script handlers keep generation, component scope, Rhai context, transactions,
+and runtime traces. Host handlers execute their labeled Rust closure directly
+and retain ordinary Host-owned GPUI lifecycle semantics.
 
 `error_boundary(child, fallback)` catches native subtree rendering failures.
 Use `error_boundary_lazy(Fn("child"), Fn("fallback"))` when Rhai construction

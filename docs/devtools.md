@@ -20,3 +20,7 @@ The inspector reports:
 Opaque handles never reveal their numeric identity, and trace producers mark
 capability inputs and asynchronous work as sensitive by default. The overlay is
 owned by Rust and is not part of the Rhai node tree.
+
+Handler entries distinguish `script:<name>` from `host:<label>`. Inspector
+snapshots never retain or display a Host closure address or captured value, and
+Host callback executions do not enter the Script runtime trace automatically.

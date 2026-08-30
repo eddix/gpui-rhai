@@ -115,3 +115,22 @@ temporary page does not dispose it.
 See `cargo run -p gpui-rhai --example embedded_views` for three isolated views,
 automatic compact sizing, escaping Dropdown placement, duplicate local IDs,
 cross-view dismissal, a shared Toast queue, and explicit dispose/remount.
+
+## Host-owned interactive trees
+
+Embedding a script view is not required when the Host already owns the complete
+UI tree. Build `UiNode` values in Rust, attach `HostCallback` event closures, and
+apply controlled frames with `StaticUiView::set_root` or render through
+`GpuiNodeRenderer` directly.
+
+Host callbacks run synchronously on the GPUI foreground thread, receive the
+normalized `UiValue` payload plus `Window` and `App`, and return
+`EventPropagation`. They do not create a RuntimeEngine, lifecycle, capability,
+subscription, automatic trace, or frame scheduler. Send work to Host channels
+and capture `WeakEntity` rather than a strong reference to the Entity owning the
+tree.
+
+Callback-typed custom primitive props accept the same `UiEventHandler`, so a
+Host-built TextInput does not need a Rhai adapter function. See
+`cargo run --release -p gpui-rhai --example host_owned_tree` for the complete
+Rust frame → UiNode → Host event → worker → `set_root` cycle.

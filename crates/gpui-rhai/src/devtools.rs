@@ -249,7 +249,11 @@ fn inspect_node(node: &UiNode, path: &str) -> InspectorNode {
             .iter()
             .map(|(name, value)| (name.clone(), display_value(value, false)))
             .collect(),
-        handlers: node.handlers().keys().cloned().collect(),
+        handlers: node
+            .handlers()
+            .iter()
+            .map(|(event, handler)| format!("{event}={}", handler.diagnostic_label()))
+            .collect(),
         animations: node
             .animations()
             .iter()
@@ -400,7 +404,7 @@ fn primitive_value(value: &PrimitiveValue) -> String {
         PrimitiveValue::Data(value) => display_value(value, false),
         PrimitiveValue::Node(_) => "<node>".to_owned(),
         PrimitiveValue::Nodes(nodes) => format!("<{} nodes>", nodes.len()),
-        PrimitiveValue::Callback(callback) => format!("Fn({})", callback.name()),
+        PrimitiveValue::Callback(callback) => callback.diagnostic_label(),
         PrimitiveValue::Style(_) => "<style>".to_owned(),
         PrimitiveValue::Length(length) => format!("{length:?}"),
         PrimitiveValue::Asset(asset) => asset.as_str().to_owned(),
@@ -574,7 +578,20 @@ fn append_node_lines(node: &InspectorNode, depth: usize, lines: &mut Vec<String>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ComponentInstancePath, ComponentStateSchema, StateField, ValueSchema};
+    use crate::{
+        ComponentInstancePath, ComponentStateSchema, EventPropagation, HostCallback, StateField,
+        ValueSchema,
+    };
+
+    #[test]
+    fn inspector_reports_host_handler_label_without_opaque_details() {
+        let root = UiNode::text("Host").with_host_handler(
+            "click",
+            HostCallback::new("widget.select", |_, _, _| EventPropagation::Handled),
+        );
+        let inspected = inspect_node(&root, "root");
+        assert_eq!(inspected.handlers, vec!["click=host:widget.select"]);
+    }
 
     #[test]
     fn snapshot_captures_source_and_redacts_sensitive_state() {

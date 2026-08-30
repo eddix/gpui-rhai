@@ -109,7 +109,9 @@ pub use engine::{
     CompiledUi, ExecutionOperation, ExecutionTiming, RuntimeEngine, RuntimeError, ScriptCallback,
     ScriptGeneration,
 };
-pub use event::{EventDispatchReport, EventPropagation, EventRouter, UiEvent};
+pub use event::{
+    EventDispatchReport, EventPropagation, EventRouter, HostCallback, UiEvent, UiEventHandler,
+};
 pub use lifecycle::{LifecycleError, LifecycleState, ScriptLifecycle};
 pub use locale::{
     CalendarMetadata, CalendarNames, DatePatterns, DateStyle, LocaleBundle, LocaleError,

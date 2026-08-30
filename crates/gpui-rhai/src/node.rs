@@ -7,12 +7,12 @@ use rhai::{
 
 use crate::{
     AnimationSpec, AssetId, CalendarMetadata, ChoiceBehavior, DatePickerNodeSpec, DatePickerPreset,
-    DropdownMode, DropdownNodeSpec, DropdownOption, DropdownState, GregorianDate, NumberMetadata,
-    OpaqueHandle, OverlayId, OverlayKind, OverlayPlacement, PrimitiveNode, ScriptCallback,
-    ScriptGeneration, SelectNodeSpec, Style, TableAlign, TableCellFormat, TableColumnSpec,
-    TableColumnWidth, TableNodeSpec, TableRowSpec, TableSelectionMode, TableSort,
-    TableSortDirection, ToastHostSpec, ToastItemSpec, ToastRegion, ToastVariant, UiValue,
-    VirtualListItem, VirtualListNodeSpec,
+    DropdownMode, DropdownNodeSpec, DropdownOption, DropdownState, GregorianDate, HostCallback,
+    NumberMetadata, OpaqueHandle, OverlayId, OverlayKind, OverlayPlacement, PrimitiveNode,
+    ScriptCallback, ScriptGeneration, SelectNodeSpec, Style, TableAlign, TableCellFormat,
+    TableColumnSpec, TableColumnWidth, TableNodeSpec, TableRowSpec, TableSelectionMode, TableSort,
+    TableSortDirection, ToastHostSpec, ToastItemSpec, ToastRegion, ToastVariant, UiEventHandler,
+    UiValue, VirtualListItem, VirtualListNodeSpec,
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -116,7 +116,8 @@ pub enum UiNodeKind {
     },
 }
 
-/// A stable declarative UI node containing no GPUI values or lifetimes.
+/// A stable declarative UI node. Script-produced nodes contain no GPUI values
+/// or lifetimes; trusted Rust Hosts may attach opaque foreground callbacks.
 #[derive(Clone, Debug, PartialEq)]
 pub struct UiNode {
     kind: UiNodeKind,
@@ -125,7 +126,7 @@ pub struct UiNode {
     part_styles: BTreeMap<String, Style>,
     source: Option<SourceLocation>,
     attributes: BTreeMap<String, UiValue>,
-    handlers: BTreeMap<String, ScriptCallback>,
+    handlers: BTreeMap<String, UiEventHandler>,
     handler_payloads: BTreeMap<String, UiValue>,
     animations: Vec<AnimationSpec>,
 }
@@ -459,8 +460,19 @@ impl UiNode {
     }
 
     #[must_use]
-    pub fn with_handler(mut self, event: impl Into<String>, callback: ScriptCallback) -> Self {
-        self.handlers.insert(event.into(), callback);
+    pub fn with_handler(
+        mut self,
+        event: impl Into<String>,
+        handler: impl Into<UiEventHandler>,
+    ) -> Self {
+        self.handlers.insert(event.into(), handler.into());
+        self
+    }
+
+    #[must_use]
+    pub fn with_host_handler(mut self, event: impl Into<String>, callback: HostCallback) -> Self {
+        self.handlers
+            .insert(event.into(), UiEventHandler::Host(callback));
         self
     }
 
@@ -479,7 +491,7 @@ impl UiNode {
     }
 
     #[must_use]
-    pub fn handlers(&self) -> &BTreeMap<String, ScriptCallback> {
+    pub fn handlers(&self) -> &BTreeMap<String, UiEventHandler> {
         &self.handlers
     }
 
@@ -495,7 +507,9 @@ impl UiNode {
 
     pub(crate) fn bind_generation(&mut self, generation: ScriptGeneration) {
         for handler in self.handlers.values_mut() {
-            handler.bind_generation(generation);
+            if let Some(callback) = handler.as_script_mut() {
+                callback.bind_generation(generation);
+            }
         }
         match &mut self.kind {
             UiNodeKind::Container { children } => {
@@ -563,9 +577,11 @@ impl UiNode {
         native_context: Option<&crate::engine::ScriptNativeContext>,
     ) {
         for handler in self.handlers.values_mut() {
-            handler.bind_component_if_unset(component.clone(), events.clone());
-            if let Some(context) = native_context {
-                handler.bind_native_context_if_unset(std::rc::Rc::clone(context));
+            if let Some(callback) = handler.as_script_mut() {
+                callback.bind_component_if_unset(component.clone(), events.clone());
+                if let Some(context) = native_context {
+                    callback.bind_native_context_if_unset(std::rc::Rc::clone(context));
+                }
             }
         }
         match &mut self.kind {
@@ -641,10 +657,12 @@ impl UiNode {
         native_context: Option<&crate::engine::ScriptNativeContext>,
     ) {
         for handler in self.handlers.values_mut() {
-            if names.contains(handler.name()) {
-                handler.bind_component_if_unset(component.clone(), events.clone());
-                if let (Some(context), None) = (native_context, handler.native_context()) {
-                    handler.bind_native_context_if_unset(std::rc::Rc::clone(context));
+            if let Some(callback) = handler.as_script_mut()
+                && names.contains(callback.name())
+            {
+                callback.bind_component_if_unset(component.clone(), events.clone());
+                if let (Some(context), None) = (native_context, callback.native_context()) {
+                    callback.bind_native_context_if_unset(std::rc::Rc::clone(context));
                 }
             }
         }

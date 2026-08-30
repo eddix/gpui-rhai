@@ -21,6 +21,8 @@ contexts, arbitrary Rust values, filesystem paths, URLs, sockets, or process API
   access native window handles.
 - Diagnostics redact fields marked `sensitive`; capability payloads should be
   treated as sensitive unless a host explicitly decides otherwise.
+- `HostCallback` can be constructed only by trusted Rust code. It cannot enter
+  Rhai, `UiValue`, capabilities, serialization, or script callback schemas.
 
 ## Host responsibilities
 
@@ -32,3 +34,7 @@ Rust source; do not load unreviewed remote scripts at runtime.
 
 The runtime uses safe Rust. A custom primitive is native Rust code and therefore
 belongs to the host trust boundary, not the script sandbox.
+
+A Host-augmented `UiNode` may contain an opaque Rust event closure. The Host
+owns its blocking behavior, side effects, stale references, and retain cycles;
+scripts retain the existing generation-bound and transactional callback model.

@@ -27,7 +27,7 @@ use crate::{
     DropdownNodeSpec, EventPropagation, FlexDirection, ImageSourceSpec, InteractionState, Justify,
     Length, OverlayNodeSpec, PrimitiveRegistry, PseudoState, RadiusToken, Rgba8, ScriptCallback,
     SpacingToken, Style, StyleProperties, TableNodeSpec, TableSort, TableSortDirection,
-    TextDirection, ToastHostSpec, UiNode, UiNodeKind, UiValue,
+    TextDirection, ToastHostSpec, UiEventHandler, UiNode, UiNodeKind, UiValue,
 };
 
 type DispatchFn = dyn Fn(ScriptCallback, UiValue, &mut Window, &mut App) -> EventPropagation;
@@ -51,6 +51,22 @@ impl NodeEventDispatcher {
         cx: &mut App,
     ) -> EventPropagation {
         (self.0)(callback, payload, window, cx)
+    }
+}
+
+fn dispatch_ui_event(
+    handler: &UiEventHandler,
+    payload: UiValue,
+    window: &mut Window,
+    app: &mut App,
+    script_dispatcher: Option<&NodeEventDispatcher>,
+) -> EventPropagation {
+    match handler {
+        UiEventHandler::Script(callback) => script_dispatcher
+            .map_or(EventPropagation::Handled, |dispatcher| {
+                dispatcher.dispatch(callback.clone(), payload, window, app)
+            }),
+        UiEventHandler::Host(callback) => callback.invoke(payload, window, app),
     }
 }
 
@@ -345,6 +361,18 @@ impl GpuiNodeRenderer {
         if animation.clip_height.is_some() || resolved_style.clip == Some(true) {
             element = element.overflow_hidden();
         }
+        let populated =
+            Self::populate_with_interactions(element, node, environment, boundary_fallback, path);
+        translated(populated, animation.translate_x, animation.translate_y)
+    }
+
+    fn populate_with_interactions<C: ColorResolver>(
+        element: Div,
+        node: &UiNode,
+        environment: &RenderEnvironment<'_, C>,
+        boundary_fallback: Option<&UiNode>,
+        path: &str,
+    ) -> AnyElement {
         let click = node.handlers().get("click").map(|callback| {
             (
                 callback.clone(),
@@ -370,54 +398,61 @@ impl GpuiNodeRenderer {
                 })
             })
             .collect::<BTreeMap<_, _>>();
-        let text_direction = environment.direction;
-        let populated = if !is_disabled(node)
-            && (click.is_some() || !key_handlers.is_empty())
-            && let Some(dispatcher) = environment.dispatcher
-        {
-            let click_dispatcher = dispatcher.clone();
-            let keyboard_dispatcher = dispatcher.clone();
-            let keyboard_click = click.clone();
-            let tab_stop = match node.attributes().get("tab_stop") {
-                Some(UiValue::Bool(tab_stop)) => *tab_stop,
-                _ => true,
-            };
-            let element = apply_pseudo_backgrounds(
-                element
-                    .id(SharedString::from(path.to_owned()))
-                    .debug_selector(|| path.to_owned()),
-                node.style(),
-                environment.colors,
-            )
-            .tab_index(0)
-            .tab_stop(tab_stop)
-            .on_click(move |event, window, cx| {
-                if matches!(event, ClickEvent::Mouse(_))
-                    && let Some((callback, payload)) = &click
-                    && click_dispatcher.dispatch(callback.clone(), payload.clone(), window, cx)
-                        == EventPropagation::Handled
-                {
-                    cx.stop_propagation();
-                }
-            })
-            .on_key_down(move |event, window, cx| {
-                let semantic_key =
-                    logical_keyboard_key(event.keystroke.key.as_str(), text_direction);
-                let semantic = key_handlers.get(semantic_key).or_else(|| {
-                    matches!(event.keystroke.key.as_str(), "enter" | "space")
-                        .then_some(())
-                        .and(keyboard_click.as_ref())
-                });
-                if let Some((callback, payload)) = semantic {
-                    keyboard_dispatcher.dispatch(callback.clone(), payload.clone(), window, cx);
-                    cx.stop_propagation();
-                }
-            });
-            Self::populate(element, node, environment, boundary_fallback, path)
-        } else {
-            Self::populate(element, node, environment, boundary_fallback, path)
+        if is_disabled(node) || (click.is_none() && key_handlers.is_empty()) {
+            return Self::populate(element, node, environment, boundary_fallback, path);
+        }
+
+        let click_dispatcher = environment.dispatcher.cloned();
+        let keyboard_dispatcher = environment.dispatcher.cloned();
+        let keyboard_click = click.clone();
+        let tab_stop = match node.attributes().get("tab_stop") {
+            Some(UiValue::Bool(tab_stop)) => *tab_stop,
+            _ => true,
         };
-        translated(populated, animation.translate_x, animation.translate_y)
+        let text_direction = environment.direction;
+        let element = apply_pseudo_backgrounds(
+            element
+                .id(SharedString::from(path.to_owned()))
+                .debug_selector(|| path.to_owned()),
+            node.style(),
+            environment.colors,
+        )
+        .tab_index(0)
+        .tab_stop(tab_stop)
+        .on_click(move |event, window, cx| {
+            if matches!(event, ClickEvent::Mouse(_))
+                && let Some((callback, payload)) = &click
+                && dispatch_ui_event(
+                    callback,
+                    payload.clone(),
+                    window,
+                    cx,
+                    click_dispatcher.as_ref(),
+                ) == EventPropagation::Handled
+            {
+                cx.stop_propagation();
+            }
+        })
+        .on_key_down(move |event, window, cx| {
+            let semantic_key = logical_keyboard_key(event.keystroke.key.as_str(), text_direction);
+            let semantic = key_handlers.get(semantic_key).or_else(|| {
+                matches!(event.keystroke.key.as_str(), "enter" | "space")
+                    .then_some(())
+                    .and(keyboard_click.as_ref())
+            });
+            if let Some((callback, payload)) = semantic
+                && dispatch_ui_event(
+                    callback,
+                    payload.clone(),
+                    window,
+                    cx,
+                    keyboard_dispatcher.as_ref(),
+                ) == EventPropagation::Handled
+            {
+                cx.stop_propagation();
+            }
+        });
+        Self::populate(element, node, environment, boundary_fallback, path)
     }
 
     fn populate<C: ColorResolver>(
@@ -575,54 +610,59 @@ fn native_overlay_element<C: ColorResolver>(
         boundary_fallback,
         &format!("{path}/content"),
     );
-    let open_change = node.handlers().get("open_change").and_then(|callback| {
-        environment.dispatcher.cloned().map(|dispatcher| {
-            let callback = callback.clone();
-            Rc::new(move |open, window: &mut Window, cx: &mut App| {
-                dispatcher.dispatch(callback.clone(), UiValue::Bool(open), window, cx);
-            }) as crate::overlay_element::OpenChangeHandler
-        })
+    let open_change = node.handlers().get("open_change").map(|handler| {
+        let handler = handler.clone();
+        let dispatcher = environment.dispatcher.cloned();
+        Rc::new(move |open, window: &mut Window, cx: &mut App| {
+            dispatch_ui_event(
+                &handler,
+                UiValue::Bool(open),
+                window,
+                cx,
+                dispatcher.as_ref(),
+            );
+        }) as crate::overlay_element::OpenChangeHandler
     });
-    let panel_key = environment.dispatcher.cloned().and_then(|dispatcher| {
-        let handlers = node
+    let handlers = node
+        .handlers()
+        .iter()
+        .filter_map(|(event, callback)| {
+            event
+                .strip_prefix("key:")
+                .map(|key| (key.to_owned(), callback.clone()))
+        })
+        .collect::<BTreeMap<_, _>>();
+    let panel_key = (!handlers.is_empty()).then(|| {
+        let dispatcher = environment.dispatcher.cloned();
+        let payloads = node
             .handlers()
-            .iter()
-            .filter_map(|(event, callback)| {
+            .keys()
+            .filter_map(|event| {
                 event
                     .strip_prefix("key:")
-                    .map(|key| (key.to_owned(), callback.clone()))
+                    .map(|key| (key.to_owned(), node.handler_payload(event).cloned()))
             })
             .collect::<BTreeMap<_, _>>();
-        (!handlers.is_empty()).then(|| {
-            let payloads = node
-                .handlers()
-                .keys()
-                .filter_map(|event| {
-                    event
-                        .strip_prefix("key:")
-                        .map(|key| (key.to_owned(), node.handler_payload(event).cloned()))
-                })
-                .collect::<BTreeMap<_, _>>();
-            let direction = environment.direction;
-            Rc::new(
-                move |event: &gpui::KeyDownEvent, window: &mut Window, cx: &mut App| {
-                    let key = logical_keyboard_key(event.keystroke.key.as_str(), direction);
-                    let Some(callback) = handlers.get(key) else {
-                        return false;
-                    };
-                    dispatcher.dispatch(
-                        callback.clone(),
-                        payloads
-                            .get(key)
-                            .and_then(Clone::clone)
-                            .unwrap_or(UiValue::Null),
-                        window,
-                        cx,
-                    );
-                    true
-                },
-            ) as crate::overlay_element::PanelKeyHandler
-        })
+        let direction = environment.direction;
+        Rc::new(
+            move |event: &gpui::KeyDownEvent, window: &mut Window, cx: &mut App| {
+                let key = logical_keyboard_key(event.keystroke.key.as_str(), direction);
+                let Some(callback) = handlers.get(key) else {
+                    return false;
+                };
+                dispatch_ui_event(
+                    callback,
+                    payloads
+                        .get(key)
+                        .and_then(Clone::clone)
+                        .unwrap_or(UiValue::Null),
+                    window,
+                    cx,
+                    dispatcher.as_ref(),
+                );
+                true
+            },
+        ) as crate::overlay_element::PanelKeyHandler
     });
     let restore_focus_on_close = rendered_spec.kind == crate::OverlayKind::Menu;
     let overlay = ScriptOverlayElement::new(
@@ -658,18 +698,22 @@ fn native_toast_element<C: ColorResolver>(
     environment: &RenderEnvironment<'_, C>,
     path: &str,
 ) -> ToastHostElement {
-    let dismiss = node
-        .handlers()
-        .get("dismiss")
-        .and_then(|callback| {
-            environment.dispatcher.cloned().map(|dispatcher| {
-                let callback = callback.clone();
-                Rc::new(move |id: String, window: &mut Window, cx: &mut App| {
-                    dispatcher.dispatch(callback.clone(), UiValue::String(id), window, cx);
-                }) as ToastDismissHandler
-            })
-        })
-        .unwrap_or_else(|| Rc::new(|_, _, _| {}));
+    let dismiss = node.handlers().get("dismiss").map_or_else(
+        || Rc::new(|_: String, _: &mut Window, _: &mut App| {}) as ToastDismissHandler,
+        |handler| {
+            let handler = handler.clone();
+            let dispatcher = environment.dispatcher.cloned();
+            Rc::new(move |id: String, window: &mut Window, cx: &mut App| {
+                dispatch_ui_event(
+                    &handler,
+                    UiValue::String(id),
+                    window,
+                    cx,
+                    dispatcher.as_ref(),
+                );
+            }) as ToastDismissHandler
+        },
+    );
     ToastHostElement::new(
         path,
         spec.clone(),
@@ -847,13 +891,18 @@ fn native_virtual_list_element<C: ColorResolver>(
     environment: &RenderEnvironment<'_, C>,
     path: &str,
 ) -> VirtualListEntityElement {
-    let focus_change = node.handlers().get("change").and_then(|callback| {
-        environment.dispatcher.cloned().map(|dispatcher| {
-            let callback = callback.clone();
-            Rc::new(move |key: String, window: &mut Window, cx: &mut App| {
-                dispatcher.dispatch(callback.clone(), UiValue::String(key), window, cx);
-            }) as VirtualFocusHandler
-        })
+    let focus_change = node.handlers().get("change").map(|handler| {
+        let handler = handler.clone();
+        let dispatcher = environment.dispatcher.cloned();
+        Rc::new(move |key: String, window: &mut Window, cx: &mut App| {
+            dispatch_ui_event(
+                &handler,
+                UiValue::String(key),
+                window,
+                cx,
+                dispatcher.as_ref(),
+            );
+        }) as VirtualFocusHandler
     });
     let runtime = DropdownSlotRuntime {
         colors: OwnedColorResolver::capture(environment.colors),
@@ -1000,34 +1049,45 @@ fn dropdown_callbacks(
     node: &UiNode,
     dispatcher: Option<&NodeEventDispatcher>,
 ) -> DropdownCallbacks {
-    let Some(dispatcher) = dispatcher.cloned() else {
-        return DropdownCallbacks::default();
-    };
-    let selection = node.handlers().get("change").map(|callback| {
-        let callback = callback.clone();
+    let dispatcher = dispatcher.cloned();
+    let selection = node.handlers().get("change").map(|handler| {
+        let handler = handler.clone();
         let dispatcher = dispatcher.clone();
         Rc::new(
             move |values: Vec<String>, window: &mut Window, cx: &mut App| {
-                dispatcher.dispatch(
-                    callback.clone(),
+                dispatch_ui_event(
+                    &handler,
                     UiValue::Array(values.into_iter().map(UiValue::String).collect()),
                     window,
                     cx,
+                    dispatcher.as_ref(),
                 );
             },
         ) as SelectionHandler
     });
-    let open = node.handlers().get("open_change").map(|callback| {
-        let callback = callback.clone();
+    let open = node.handlers().get("open_change").map(|handler| {
+        let handler = handler.clone();
         let dispatcher = dispatcher.clone();
         Rc::new(move |open, window: &mut Window, cx: &mut App| {
-            dispatcher.dispatch(callback.clone(), UiValue::Bool(open), window, cx);
+            dispatch_ui_event(
+                &handler,
+                UiValue::Bool(open),
+                window,
+                cx,
+                dispatcher.as_ref(),
+            );
         }) as crate::overlay_element::OpenChangeHandler
     });
-    let query = node.handlers().get("query_change").map(|callback| {
-        let callback = callback.clone();
+    let query = node.handlers().get("query_change").map(|handler| {
+        let handler = handler.clone();
         Rc::new(move |query: String, window: &mut Window, cx: &mut App| {
-            dispatcher.dispatch(callback.clone(), UiValue::String(query), window, cx);
+            dispatch_ui_event(
+                &handler,
+                UiValue::String(query),
+                window,
+                cx,
+                dispatcher.as_ref(),
+            );
         }) as QueryHandler
     });
     DropdownCallbacks {
@@ -1038,18 +1098,16 @@ fn dropdown_callbacks(
 }
 
 fn select_callbacks(node: &UiNode, dispatcher: Option<&NodeEventDispatcher>) -> DropdownCallbacks {
-    let Some(dispatcher) = dispatcher.cloned() else {
-        return DropdownCallbacks::default();
-    };
-    let selection = node.handlers().get("change").map(|callback| {
-        let callback = callback.clone();
+    let dispatcher = dispatcher.cloned();
+    let selection = node.handlers().get("change").map(|handler| {
+        let handler = handler.clone();
         Rc::new(
             move |values: Vec<String>, window: &mut Window, cx: &mut App| {
                 let payload = values
                     .into_iter()
                     .next()
                     .map_or(UiValue::Null, UiValue::String);
-                dispatcher.dispatch(callback.clone(), payload, window, cx);
+                dispatch_ui_event(&handler, payload, window, cx, dispatcher.as_ref());
             },
         ) as SelectionHandler
     });
@@ -1064,18 +1122,17 @@ fn date_picker_callbacks(
     node: &UiNode,
     dispatcher: Option<&NodeEventDispatcher>,
 ) -> DatePickerCallbacks {
-    let Some(dispatcher) = dispatcher.cloned() else {
-        return DatePickerCallbacks::default();
-    };
-    let change = node.handlers().get("change").map(|callback| {
-        let callback = callback.clone();
+    let dispatcher = dispatcher.cloned();
+    let change = node.handlers().get("change").map(|handler| {
+        let handler = handler.clone();
         Rc::new(
             move |value: Option<String>, window: &mut Window, cx: &mut App| {
-                dispatcher.dispatch(
-                    callback.clone(),
+                dispatch_ui_event(
+                    &handler,
                     value.map_or(UiValue::Null, UiValue::String),
                     window,
                     cx,
+                    dispatcher.as_ref(),
                 );
             },
         ) as DateChangeHandler
@@ -1084,11 +1141,9 @@ fn date_picker_callbacks(
 }
 
 fn table_callbacks(node: &UiNode, dispatcher: Option<&NodeEventDispatcher>) -> TableCallbacks {
-    let Some(dispatcher) = dispatcher.cloned() else {
-        return TableCallbacks::default();
-    };
-    let sort = node.handlers().get("sort_change").map(|callback| {
-        let callback = callback.clone();
+    let dispatcher = dispatcher.cloned();
+    let sort = node.handlers().get("sort_change").map(|handler| {
+        let handler = handler.clone();
         let dispatcher = dispatcher.clone();
         Rc::new(
             move |sort: Option<TableSort>, window: &mut Window, cx: &mut App| {
@@ -1107,28 +1162,35 @@ fn table_callbacks(node: &UiNode, dispatcher: Option<&NodeEventDispatcher>) -> T
                         ),
                     ]))
                 });
-                dispatcher.dispatch(callback.clone(), payload, window, cx);
+                dispatch_ui_event(&handler, payload, window, cx, dispatcher.as_ref());
             },
         ) as TableSortHandler
     });
-    let selection = node.handlers().get("selection_change").map(|callback| {
-        let callback = callback.clone();
+    let selection = node.handlers().get("selection_change").map(|handler| {
+        let handler = handler.clone();
         let dispatcher = dispatcher.clone();
         Rc::new(
             move |values: Vec<String>, window: &mut Window, cx: &mut App| {
-                dispatcher.dispatch(
-                    callback.clone(),
+                dispatch_ui_event(
+                    &handler,
                     UiValue::Array(values.into_iter().map(UiValue::String).collect()),
                     window,
                     cx,
+                    dispatcher.as_ref(),
                 );
             },
         ) as TableSelectionHandler
     });
-    let row_click = node.handlers().get("row_click").map(|callback| {
-        let callback = callback.clone();
+    let row_click = node.handlers().get("row_click").map(|handler| {
+        let handler = handler.clone();
         Rc::new(move |key: String, window: &mut Window, cx: &mut App| {
-            dispatcher.dispatch(callback.clone(), UiValue::String(key), window, cx);
+            dispatch_ui_event(
+                &handler,
+                UiValue::String(key),
+                window,
+                cx,
+                dispatcher.as_ref(),
+            );
         }) as TableRowHandler
     });
     TableCallbacks {
@@ -1509,7 +1571,7 @@ fn to_f32(value: f64) -> f32 {
     value as f32
 }
 
-/// Minimal GPUI view for a previously evaluated Rhai tree.
+/// Minimal GPUI view for a previously evaluated Rhai tree or a Host-built tree.
 pub struct StaticUiView {
     root: UiNode,
     primitives: PrimitiveRegistry,

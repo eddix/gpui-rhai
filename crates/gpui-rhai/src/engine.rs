@@ -1188,7 +1188,10 @@ mod tests {
                     && spec.placement == crate::OverlayPlacement::Bottom
         ));
         assert_eq!(
-            root.handlers()["open_change"].generation(),
+            root.handlers()["open_change"]
+                .as_script()
+                .unwrap()
+                .generation(),
             compiled.generation()
         );
     }

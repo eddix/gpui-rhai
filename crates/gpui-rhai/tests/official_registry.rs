@@ -176,7 +176,10 @@ fn official_m0_components_compile_export_and_render_together() {
     );
     assert!(children[1].handlers().contains_key("click"));
     assert_eq!(
-        children[1].handlers()["click"].generation(),
+        children[1].handlers()["click"]
+            .as_script()
+            .unwrap()
+            .generation(),
         compiled.generation()
     );
     assert_eq!(runtime.component_exports().unwrap().len(), 2);
@@ -1146,6 +1149,7 @@ fn official_pagination_page_size_emits_one_atomic_reset() {
     lifecycle.start(&mut engine).unwrap();
     let callback = find_select(lifecycle.root().unwrap())
         .and_then(|select| select.handlers().get("change"))
+        .and_then(gpui_rhai::UiEventHandler::as_script)
         .cloned()
         .expect("page-size Select change callback");
     let _ = lifecycle

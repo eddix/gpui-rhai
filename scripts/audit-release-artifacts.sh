@@ -9,6 +9,7 @@ embedded_examples=(
   embedded_views
   extension_host
   form_showcase
+  host_owned_tree
   multi_window
   settings_panel
 )

@@ -100,6 +100,14 @@ This boundary exists to:
 - enable validation, diagnostics, reconciliation, and developer tooling;
 - maintain a clear safety and capability boundary.
 
+A trusted Rust Host may construct the same tree directly. It may attach a
+labeled `HostCallback` to ordinary node events or callback-typed primitive
+props. Host callbacks are opaque foreground Rust closures: they never enter
+Rhai, `UiValue`, capabilities, serialization, or script schemas, and their
+blocking, side effects, stale references, and ownership cycles remain the
+Host's responsibility. This is a supported renderer entry point, not a second
+Host runtime or Rust component product line.
+
 The runtime exposes both visual primitives and behavior primitives. Mechanisms
 that require native input, frame scheduling, or window coordinates belong in
 Rust. Examples include text input and IME, selection and clipboard behavior,
@@ -167,6 +175,10 @@ across process restarts. Persistence is an explicit capability.
 Rhai callbacks receive a restricted `UiContext` and normalized payloads. They
 may update state, emit declared semantic events, dispatch actions, or invoke
 declared capabilities. They cannot access raw GPUI contexts or events.
+
+Host callbacks receive an owned normalized `UiValue`, `Window`, and `App`, then
+return `EventPropagation`. They execute directly without ScriptLifecycle,
+generation checks, transactions, or automatic runtime traces.
 
 Pointer events bubble from the hit node toward its ancestors and may return
 `handled` or `propagate`. There is no DOM-style capture phase. Keyboard input is

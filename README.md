@@ -46,6 +46,7 @@ cargo run -p gpui-rhai --example form_showcase
 cargo run -p gpui-rhai --example data_table
 cargo run -p gpui-rhai --example component_gallery
 cargo run -p gpui-rhai --example extension_host
+cargo run -p gpui-rhai --example host_owned_tree
 cargo run -p gpui-rhai --example multi_window
 cargo run -p gpui-rhai --example embedded_views
 ```
@@ -60,6 +61,11 @@ gpui_rhai::ScriptApplication::new(view).run()?;
 
 Existing GPUI applications instead mount one or more isolated views through a
 shared `ScriptViewHost`; see the [embedding guide](docs/embedding.md).
+
+Hosts that already own a plain-data UI tree can render it without Rhai and
+attach trusted Rust event closures. The `host_owned_tree` example demonstrates
+`HostCallback`, callback-typed primitive props, a worker channel, and controlled
+`StaticUiView::set_root` updates without a script lifecycle or capability bridge.
 
 See the [documentation index](docs/README.md) or the
 [Simplified Chinese quick start](docs/quick-start.zh-CN.md).

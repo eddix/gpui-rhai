@@ -34,6 +34,11 @@ Rhai imports no Rust types and calls the generated namespace constructor:
 my_app::StatusCard(#{ message: "Ready" })
 ```
 
+Trusted Rust Hosts can construct `PrimitiveProps` directly. A callback-typed
+prop accepts `PrimitiveValue::Callback(UiEventHandler::Host(callback))`; emitted
+payloads still pass through the descriptor event schema before the Host closure
+runs. Rhai conversion of `ValueSchema::Callback` remains Script-only.
+
 Lifecycle primitives require a stable `key`. Emit only declared events through
 `PrimitiveEventEmitter`; the runtime validates payloads and dispatches the
 generation-bound callback. Use GPUI through `gpui_rhai::gpui` so the host and

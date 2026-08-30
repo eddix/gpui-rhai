@@ -1,4 +1,8 @@
 use std::collections::BTreeMap;
+use std::fmt;
+use std::rc::Rc;
+
+use gpui::{App, SharedString, Window};
 
 use crate::{ComponentInstancePath, ScriptCallback, UiValue};
 
@@ -12,6 +16,111 @@ pub struct UiEvent {
 pub enum EventPropagation {
     Handled,
     Propagate,
+}
+
+type HostCallbackFn = dyn Fn(UiValue, &mut Window, &mut App) -> EventPropagation;
+
+#[derive(Clone)]
+pub struct HostCallback {
+    label: SharedString,
+    handler: Rc<HostCallbackFn>,
+}
+
+impl HostCallback {
+    /// Construct one foreground Host event callback.
+    ///
+    /// # Panics
+    ///
+    /// Panics when the diagnostic label is empty or whitespace-only.
+    #[must_use]
+    pub fn new(
+        label: impl Into<SharedString>,
+        handler: impl Fn(UiValue, &mut Window, &mut App) -> EventPropagation + 'static,
+    ) -> Self {
+        let label = label.into();
+        assert!(
+            !label.as_ref().trim().is_empty(),
+            "HostCallback label cannot be empty"
+        );
+        Self {
+            label,
+            handler: Rc::new(handler),
+        }
+    }
+
+    #[must_use]
+    pub fn label(&self) -> &str {
+        self.label.as_ref()
+    }
+
+    pub(crate) fn invoke(
+        &self,
+        payload: UiValue,
+        window: &mut Window,
+        app: &mut App,
+    ) -> EventPropagation {
+        (self.handler)(payload, window, app)
+    }
+}
+
+impl fmt::Debug for HostCallback {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("HostCallback")
+            .field("label", &self.label)
+            .finish_non_exhaustive()
+    }
+}
+
+impl PartialEq for HostCallback {
+    fn eq(&self, other: &Self) -> bool {
+        self.label == other.label && Rc::ptr_eq(&self.handler, &other.handler)
+    }
+}
+
+impl Eq for HostCallback {}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum UiEventHandler {
+    Script(ScriptCallback),
+    Host(HostCallback),
+}
+
+impl UiEventHandler {
+    #[must_use]
+    pub fn diagnostic_label(&self) -> String {
+        match self {
+            Self::Script(callback) => format!("script:{}", callback.name()),
+            Self::Host(callback) => format!("host:{}", callback.label()),
+        }
+    }
+
+    pub(crate) const fn as_script_mut(&mut self) -> Option<&mut ScriptCallback> {
+        match self {
+            Self::Script(callback) => Some(callback),
+            Self::Host(_) => None,
+        }
+    }
+
+    #[must_use]
+    pub const fn as_script(&self) -> Option<&ScriptCallback> {
+        match self {
+            Self::Script(callback) => Some(callback),
+            Self::Host(_) => None,
+        }
+    }
+}
+
+impl From<ScriptCallback> for UiEventHandler {
+    fn from(callback: ScriptCallback) -> Self {
+        Self::Script(callback)
+    }
+}
+
+impl From<HostCallback> for UiEventHandler {
+    fn from(callback: HostCallback) -> Self {
+        Self::Host(callback)
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -88,8 +197,18 @@ pub struct EventDispatchReport {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::Cell;
+
     use super::*;
-    use crate::RuntimeEngine;
+    use crate::{RuntimeEngine, UiNode};
+
+    struct DropSentinel(Rc<Cell<bool>>);
+
+    impl Drop for DropSentinel {
+        fn drop(&mut self) {
+            self.0.set(true);
+        }
+    }
 
     #[test]
     fn events_bubble_until_explicitly_handled() {
@@ -134,5 +253,43 @@ mod tests {
 
         assert_eq!(order, vec![child, root.clone()]);
         assert_eq!(report.handled_by, Some(root));
+    }
+
+    #[test]
+    fn host_callback_identity_debug_and_tree_drop_follow_rc_ownership() {
+        let callback = HostCallback::new("widget.input", |_, _, _| EventPropagation::Handled);
+        let cloned = callback.clone();
+        let other = HostCallback::new("widget.input", |_, _, _| EventPropagation::Handled);
+        assert_eq!(callback, cloned);
+        assert_ne!(callback, other);
+        let debug = format!("{callback:?}");
+        assert!(debug.contains("widget.input"));
+        assert!(!debug.contains("0x"));
+
+        let dropped = Rc::new(Cell::new(false));
+        {
+            let sentinel = DropSentinel(Rc::clone(&dropped));
+            let callback = HostCallback::new("widget.drop", move |_, _, _| {
+                let _ = &sentinel;
+                EventPropagation::Handled
+            });
+            let _tree = UiNode::text("host-owned").with_host_handler("click", callback);
+        }
+        assert!(dropped.get());
+    }
+
+    #[test]
+    fn rhai_cannot_construct_host_callbacks() {
+        let mut runtime = RuntimeEngine::new();
+        let compiled = runtime
+            .compile(
+                r#"
+                    fn view() {
+                        text("host").with_host_handler("click", ())
+                    }
+                "#,
+            )
+            .unwrap();
+        assert!(runtime.render(&compiled).is_err());
     }
 }

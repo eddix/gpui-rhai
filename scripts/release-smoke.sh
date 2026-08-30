@@ -10,6 +10,7 @@ examples=(
   extension_host
   form_showcase
   hello_world
+  host_owned_tree
   multi_window
   native_overlay_smoke
   native_virtual_list_smoke

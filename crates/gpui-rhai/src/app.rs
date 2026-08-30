@@ -3344,7 +3344,10 @@ fn render_MissingAsset(ctx, props) { image(asset("app/icons/missing")) }
         )
         .unwrap();
         lifecycle.start(&mut engine).unwrap();
-        let fire = lifecycle.root().unwrap().handlers()["click"].clone();
+        let fire = lifecycle.root().unwrap().handlers()["click"]
+            .as_script()
+            .unwrap()
+            .clone();
         let _ = lifecycle
             .invoke_callback(&engine, &fire, UiValue::Null)
             .unwrap();

@@ -141,7 +141,10 @@ fn local_state_callback_scope_and_reload_cleanup_are_end_to_end() {
             .get(&component_path, "count"),
         Some(&UiValue::Integer(0))
     );
-    let click = lifecycle.root().unwrap().handlers()["click"].clone();
+    let click = lifecycle.root().unwrap().handlers()["click"]
+        .as_script()
+        .unwrap()
+        .clone();
     let _ = lifecycle
         .invoke_callback_transactional(&engine, &click, UiValue::Null)
         .unwrap();
@@ -275,7 +278,10 @@ fn callback_props_execute_in_the_caller_state_scope() {
     )
     .unwrap();
     lifecycle.start(&mut engine).unwrap();
-    let click = lifecycle.root().unwrap().handlers()["click"].clone();
+    let click = lifecycle.root().unwrap().handlers()["click"]
+        .as_script()
+        .unwrap()
+        .clone();
     let _ = lifecycle
         .invoke_callback_transactional(&engine, &click, UiValue::Null)
         .unwrap();
@@ -324,7 +330,10 @@ fn native_semantic_callback_props_execute_in_the_caller_state_scope() {
     )
     .unwrap();
     lifecycle.start(&mut engine).unwrap();
-    let open_change = lifecycle.root().unwrap().handlers()["open_change"].clone();
+    let open_change = lifecycle.root().unwrap().handlers()["open_change"]
+        .as_script()
+        .unwrap()
+        .clone();
     let _ = lifecycle
         .invoke_callback_transactional(&engine, &open_change, UiValue::Bool(false))
         .unwrap();
