@@ -16,6 +16,10 @@
    macOS with the Metal Toolchain installed.
 7. Run `scripts/audit-visual-baselines.sh` and complete the unlocked keyboard,
    focus, IME, clipboard, overlay, and multi-window interaction matrix.
+   Before manual work, run the independent `tests/native-keyboard` workspace's
+   tests and strict test-target Clippy; it is intentionally outside the main
+   Cargo workspace so GPUI `test-support` cannot enter release dependency
+   resolution.
 8. Run `scripts/audit-release-artifacts.sh` to reject workspace paths and
    development-only inspector strings in embedded example binaries.
 9. Run CLI clean and modified-project fixtures for init/add/check/dev metadata,

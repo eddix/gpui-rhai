@@ -49,6 +49,7 @@ pub struct RetainedNode {
     parent: Option<NodeId>,
     key: Option<String>,
     kind: UiNodeKindTag,
+    primitive: Option<crate::PrimitiveId>,
     component_root: Option<crate::ComponentInstancePath>,
     element_ref: Option<crate::ElementRef>,
     attributes: BTreeMap<String, crate::UiValue>,
@@ -82,6 +83,11 @@ impl RetainedNode {
     #[must_use]
     pub const fn kind(&self) -> UiNodeKindTag {
         self.kind
+    }
+
+    #[must_use]
+    pub const fn primitive(&self) -> Option<&crate::PrimitiveId> {
+        self.primitive.as_ref()
     }
 
     #[must_use]
@@ -447,6 +453,10 @@ impl ReconcileTransaction<'_> {
                 parent,
                 key: candidate.key().map(|key| key.as_str().to_owned()),
                 kind: candidate.kind_tag(),
+                primitive: match candidate.kind() {
+                    crate::UiNodeKind::Custom { primitive } => Some(primitive.primitive.clone()),
+                    _ => None,
+                },
                 component_root: candidate.component_root().cloned(),
                 element_ref: candidate.element_ref().cloned(),
                 attributes: candidate.attributes().clone(),

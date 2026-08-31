@@ -975,7 +975,7 @@ impl PrimitiveHandler for TextAreaPrimitiveHandler {
             .id
             .clone()
             .ok_or_else(|| "TextareaPrimitive requires a stable key".to_owned())?;
-        if id.key.trim().is_empty() {
+        if id.key().trim().is_empty() {
             return Err("TextareaPrimitive key cannot be empty".to_owned());
         }
         let value = string_prop(&instance.node.props, "value").unwrap_or_default();

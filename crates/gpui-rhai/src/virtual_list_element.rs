@@ -271,17 +271,15 @@ impl Render for VirtualListView {
                     app.stop_propagation();
                     return;
                 }
-                if let Ok(Some(_)) = weak.update(app, |view, cx| {
+                let _ = weak.update(app, |view, cx| {
                     view.handle_key(event.keystroke.key.as_str(), cx)
-                }) {
-                    app.stop_propagation();
-                }
+                });
             })
             .child(list)
     }
 }
 
-fn collection_item_key(spec: &VirtualCollectionNodeSpec, index: usize) -> Option<&str> {
+pub(crate) fn collection_item_key(spec: &VirtualCollectionNodeSpec, index: usize) -> Option<&str> {
     spec.data.get(index).and_then(|item| match item {
         crate::UiValue::Map(map) => match map.get("key") {
             Some(crate::UiValue::String(key)) => Some(key.as_str()),

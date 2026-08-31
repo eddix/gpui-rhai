@@ -108,7 +108,7 @@ fn visit_retained(
     let retained = tree
         .node(id)
         .ok_or(AccessibilityError::MissingRetainedNode(id))?;
-    let semantic = semantic_node(retained, semantic_parent, geometry, labels);
+    let semantic = semantic_node(tree, retained, semantic_parent, geometry, labels);
     let next_parent = if let Some(node) = semantic {
         if semantic_parent.is_none() {
             output.roots.push(id);
@@ -138,6 +138,7 @@ fn visit_retained(
 }
 
 fn semantic_node(
+    tree: &RetainedUiTree,
     node: &RetainedNode,
     parent: Option<NodeId>,
     geometry: &GeometryRegistry,
@@ -161,9 +162,24 @@ fn semantic_node(
         disabled: bool_attribute(node, "disabled"),
         invalid: bool_attribute(node, "invalid"),
         required: bool_attribute(node, "required"),
-        geometry: geometry.get(node.id()),
+        geometry: retained_geometry(tree, node, geometry),
         children: Vec::new(),
     })
+}
+
+fn retained_geometry(
+    tree: &RetainedUiTree,
+    node: &RetainedNode,
+    geometry: &GeometryRegistry,
+) -> Option<ElementGeometry> {
+    let mut current = Some(node.id());
+    while let Some(id) = current {
+        if let Some(bounds) = geometry.get(id) {
+            return Some(bounds);
+        }
+        current = tree.node(id).and_then(RetainedNode::parent);
+    }
+    None
 }
 
 fn referenced_text(
@@ -232,6 +248,42 @@ mod tests {
         assert_eq!(
             tree.find_by_semantic_id("project-label").unwrap().name,
             "Project name"
+        );
+    }
+
+    #[test]
+    fn semantic_descendant_inherits_nearest_realized_geometry() {
+        let root = crate::UiNode::box_node(vec![
+            crate::UiNode::text("Virtual row")
+                .with_key("row")
+                .with_attribute("role", UiValue::String("option".to_owned())),
+        ])
+        .with_key("realized-root");
+        let mut retained = RetainedUiTree::new();
+        retained.reconcile(root).unwrap();
+        let root_id = retained.root_id().unwrap();
+        let bounds = crate::GeometryBounds::new(4.0, 8.0, 100.0, 24.0).unwrap();
+        let geometry = GeometryRegistry::new();
+        geometry.update(
+            root_id,
+            ElementGeometry {
+                layout: bounds,
+                visual: bounds,
+                clip: None,
+            },
+        );
+
+        let tree = AccessibilityTree::from_retained(&retained, &geometry).unwrap();
+        assert_eq!(
+            tree.find_by_role_and_name("option", "Virtual row")
+                .next()
+                .unwrap()
+                .geometry,
+            Some(ElementGeometry {
+                layout: bounds,
+                visual: bounds,
+                clip: None,
+            })
         );
     }
 }

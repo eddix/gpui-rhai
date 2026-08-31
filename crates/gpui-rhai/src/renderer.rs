@@ -665,85 +665,180 @@ fn event_timestamp_ms() -> f64 {
     START.get_or_init(Instant::now).elapsed().as_secs_f64() * 1_000.0
 }
 
-pub(crate) fn install_pointer_capture_router(
-    window: &mut Window,
+pub(crate) fn pointer_capture_router_element(
+    child: AnyElement,
     tree: &RetainedUiTree,
     dispatcher: &NodeEventDispatcher,
     captures: &crate::PointerCaptureRegistry,
     geometry: &crate::GeometryRegistry,
-) {
-    let move_handlers = retained_handlers(tree, "pointer_move");
-    let up_handlers = retained_handlers(tree, "pointer_up");
-    let move_dispatcher = dispatcher.clone();
-    let up_dispatcher = dispatcher.clone();
-    let move_captures = captures.clone();
-    let up_captures = captures.clone();
-    let payload_contexts = tree
-        .nodes()
-        .map(|node| {
-            (
-                node.id(),
-                PointerPayloadContext::retained(
-                    node.id(),
-                    geometry.clone(),
-                    node.canvas_scene().cloned(),
-                ),
-            )
-        })
-        .collect::<BTreeMap<_, _>>();
-    let move_payload_contexts = payload_contexts.clone();
-    window.on_mouse_event(move |event: &MouseMoveEvent, phase, window, app| {
-        if phase != DispatchPhase::Capture {
-            return;
-        }
-        let Some(node) = move_captures.captured(0) else {
-            return;
-        };
-        let Some(bindings) = move_handlers.get(&node) else {
-            return;
-        };
-        let payload = move_payload_contexts.get(&node).map_or_else(
-            || mouse_move_payload_with_capture(event, true),
-            |context| context.enrich(mouse_move_payload_with_capture(event, true)),
-        );
-        let response = dispatch_ui_handler_phases(
-            bindings,
-            "pointer_move",
-            &[crate::EventPhase::Target, crate::EventPhase::Bubble],
-            &payload,
-            window,
-            app,
-            Some(&move_dispatcher),
-        );
-        apply_pointer_response(response, Some(node), 0, &move_captures, window, app);
-        app.stop_propagation();
-    });
-    window.on_mouse_event(move |event: &MouseUpEvent, phase, window, app| {
-        if phase != DispatchPhase::Capture {
-            return;
-        }
-        let Some(node) = up_captures.captured(0) else {
-            return;
-        };
-        if let Some(bindings) = up_handlers.get(&node) {
-            let payload = payload_contexts.get(&node).map_or_else(
-                || mouse_up_payload_with_capture(event, true),
-                |context| context.enrich(mouse_up_payload_with_capture(event, true)),
+) -> AnyElement {
+    PointerCaptureRouterElement {
+        child: Some(child),
+        routes: Some(PointerCaptureRoutes {
+            move_handlers: retained_handlers(tree, "pointer_move"),
+            up_handlers: retained_handlers(tree, "pointer_up"),
+            dispatcher: dispatcher.clone(),
+            captures: captures.clone(),
+            payload_contexts: tree
+                .nodes()
+                .map(|node| {
+                    (
+                        node.id(),
+                        PointerPayloadContext::retained(
+                            node.id(),
+                            geometry.clone(),
+                            node.canvas_scene().cloned(),
+                        ),
+                    )
+                })
+                .collect(),
+        }),
+    }
+    .into_any_element()
+}
+
+struct PointerCaptureRoutes {
+    move_handlers: BTreeMap<NodeId, Vec<crate::UiEventBinding>>,
+    up_handlers: BTreeMap<NodeId, Vec<crate::UiEventBinding>>,
+    dispatcher: NodeEventDispatcher,
+    captures: crate::PointerCaptureRegistry,
+    payload_contexts: BTreeMap<NodeId, PointerPayloadContext>,
+}
+
+impl PointerCaptureRoutes {
+    fn install(self, window: &mut Window) {
+        let Self {
+            move_handlers,
+            up_handlers,
+            dispatcher,
+            captures,
+            payload_contexts,
+        } = self;
+        let move_dispatcher = dispatcher.clone();
+        let up_dispatcher = dispatcher;
+        let move_captures = captures.clone();
+        let up_captures = captures;
+        let move_payload_contexts = payload_contexts.clone();
+        window.on_mouse_event(move |event: &MouseMoveEvent, phase, window, app| {
+            if phase != DispatchPhase::Capture {
+                return;
+            }
+            let Some(node) = move_captures.captured(0) else {
+                return;
+            };
+            let Some(bindings) = move_handlers.get(&node) else {
+                return;
+            };
+            let payload = move_payload_contexts.get(&node).map_or_else(
+                || mouse_move_payload_with_capture(event, true),
+                |context| context.enrich(mouse_move_payload_with_capture(event, true)),
             );
             let response = dispatch_ui_handler_phases(
                 bindings,
-                "pointer_up",
+                "pointer_move",
                 &[crate::EventPhase::Target, crate::EventPhase::Bubble],
                 &payload,
                 window,
                 app,
-                Some(&up_dispatcher),
+                Some(&move_dispatcher),
             );
-            apply_pointer_response(response, Some(node), 0, &up_captures, window, app);
-        }
-        up_captures.release(0);
-        app.stop_propagation();
-    });
+            apply_pointer_response(response, Some(node), 0, &move_captures, window, app);
+            app.stop_propagation();
+        });
+        window.on_mouse_event(move |event: &MouseUpEvent, phase, window, app| {
+            if phase != DispatchPhase::Capture {
+                return;
+            }
+            let Some(node) = up_captures.captured(0) else {
+                return;
+            };
+            if let Some(bindings) = up_handlers.get(&node) {
+                let payload = payload_contexts.get(&node).map_or_else(
+                    || mouse_up_payload_with_capture(event, true),
+                    |context| context.enrich(mouse_up_payload_with_capture(event, true)),
+                );
+                let response = dispatch_ui_handler_phases(
+                    bindings,
+                    "pointer_up",
+                    &[crate::EventPhase::Target, crate::EventPhase::Bubble],
+                    &payload,
+                    window,
+                    app,
+                    Some(&up_dispatcher),
+                );
+                apply_pointer_response(response, Some(node), 0, &up_captures, window, app);
+            }
+            up_captures.release(0);
+            app.stop_propagation();
+        });
+    }
+}
+
+struct PointerCaptureRouterElement {
+    child: Option<AnyElement>,
+    routes: Option<PointerCaptureRoutes>,
+}
+
+impl Element for PointerCaptureRouterElement {
+    type RequestLayoutState = AnyElement;
+    type PrepaintState = ();
+
+    fn id(&self) -> Option<ElementId> {
+        None
+    }
+
+    fn source_location(&self) -> Option<&'static core::panic::Location<'static>> {
+        None
+    }
+
+    fn request_layout(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> (LayoutId, Self::RequestLayoutState) {
+        let mut child = self.child.take().expect("pointer router renders once");
+        let layout = child.request_layout(window, cx);
+        (layout, child)
+    }
+
+    fn prepaint(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        _bounds: Bounds<Pixels>,
+        child: &mut Self::RequestLayoutState,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        child.prepaint(window, cx);
+    }
+
+    fn paint(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        _inspector_id: Option<&InspectorElementId>,
+        _bounds: Bounds<Pixels>,
+        child: &mut Self::RequestLayoutState,
+        _prepaint: &mut Self::PrepaintState,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        self.routes
+            .take()
+            .expect("pointer router paints once")
+            .install(window);
+        child.paint(window, cx);
+    }
+}
+
+impl IntoElement for PointerCaptureRouterElement {
+    type Element = Self;
+
+    fn into_element(self) -> Self::Element {
+        self
+    }
 }
 
 fn retained_handlers(
@@ -884,6 +979,7 @@ struct RenderEnvironment<'a, C> {
     direction: TextDirection,
     view_id: &'a str,
     retained: Option<&'a RetainedUiTree>,
+    retained_links: Option<&'a BTreeMap<NodeId, Vec<crate::RetainedChildLink>>>,
 }
 
 pub(crate) struct WindowRenderResources<'a> {
@@ -901,6 +997,12 @@ pub(crate) struct WindowRenderResources<'a> {
     pub direction: TextDirection,
     pub root_path: &'a str,
     pub view_id: &'a str,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct RetainedSubtree<'a> {
+    pub root: Option<NodeId>,
+    pub links: &'a BTreeMap<NodeId, Vec<crate::RetainedChildLink>>,
 }
 
 impl GpuiNodeRenderer {
@@ -957,6 +1059,7 @@ impl GpuiNodeRenderer {
             direction: TextDirection::LeftToRight,
             view_id: "standalone",
             retained: None,
+            retained_links: None,
         };
         Self::render_internal(node, &environment, None, "root", None)
     }
@@ -995,6 +1098,54 @@ impl GpuiNodeRenderer {
             direction: TextDirection::LeftToRight,
             view_id: "standalone",
             retained: Some(tree),
+            retained_links: None,
+        };
+        tree.root().map_or_else(
+            || {
+                div()
+                    .child("Retained UI tree has no root")
+                    .into_any_element()
+            },
+            |root| Self::render_internal(root, &environment, None, "root", tree.root_id()),
+        )
+    }
+
+    #[must_use]
+    pub fn render_retained_with_dispatcher(
+        tree: &RetainedUiTree,
+        colors: &impl ColorResolver,
+        interaction: &InteractionState,
+        primitives: &PrimitiveRegistry,
+        dispatcher: &NodeEventDispatcher,
+    ) -> AnyElement {
+        let overlays = WindowOverlayCoordinator::default();
+        let animations = BTreeMap::new();
+        let signals = crate::SignalRegistry::new();
+        let geometry = crate::GeometryRegistry::new();
+        let pointer_capture = crate::PointerCaptureRegistry::new();
+        let focus_handles = BTreeMap::new();
+        let scroll_handles = BTreeMap::new();
+        let scroll_anchors = BTreeMap::new();
+        let virtual_requests = crate::VirtualRequestRegistry::new();
+        let environment = RenderEnvironment {
+            colors,
+            interaction,
+            primitives,
+            dispatcher: Some(dispatcher),
+            assets: None,
+            overlays: &overlays,
+            animations: &animations,
+            signals: &signals,
+            geometry: &geometry,
+            pointer_capture: &pointer_capture,
+            focus_handles: &focus_handles,
+            scroll_handles: &scroll_handles,
+            scroll_anchors: &scroll_anchors,
+            virtual_requests: &virtual_requests,
+            direction: TextDirection::LeftToRight,
+            view_id: "standalone",
+            retained: Some(tree),
+            retained_links: None,
         };
         tree.root().map_or_else(
             || {
@@ -1041,6 +1192,7 @@ impl GpuiNodeRenderer {
             direction: TextDirection::LeftToRight,
             view_id: "standalone",
             retained: None,
+            retained_links: None,
         };
         Self::render_internal(node, &environment, None, "root", None)
     }
@@ -1124,6 +1276,7 @@ impl GpuiNodeRenderer {
             direction: resources.direction,
             view_id: resources.view_id,
             retained: Some(tree),
+            retained_links: None,
         };
         tree.root().map_or_else(
             || {
@@ -1169,8 +1322,41 @@ impl GpuiNodeRenderer {
             direction: resources.direction,
             view_id: resources.view_id,
             retained: None,
+            retained_links: None,
         };
         Self::render_internal(node, &environment, None, path, None)
+    }
+
+    pub(crate) fn render_subtree_with_window_runtime_at(
+        node: &UiNode,
+        colors: &impl ColorResolver,
+        interaction: &InteractionState,
+        primitives: &PrimitiveRegistry,
+        resources: &WindowRenderResources<'_>,
+        path: &str,
+        retained: RetainedSubtree<'_>,
+    ) -> AnyElement {
+        let environment = RenderEnvironment {
+            colors,
+            interaction,
+            primitives,
+            dispatcher: Some(resources.dispatcher),
+            assets: Some(resources.assets),
+            overlays: resources.overlays,
+            animations: resources.animations,
+            signals: resources.signals,
+            geometry: resources.geometry,
+            pointer_capture: resources.pointer_capture,
+            focus_handles: resources.focus_handles,
+            scroll_handles: resources.scroll_handles,
+            scroll_anchors: resources.scroll_anchors,
+            virtual_requests: resources.virtual_requests,
+            direction: resources.direction,
+            view_id: resources.view_id,
+            retained: None,
+            retained_links: Some(retained.links),
+        };
+        Self::render_internal(node, &environment, None, path, retained.root)
     }
 
     fn render_internal<C: ColorResolver>(
@@ -1375,6 +1561,7 @@ impl GpuiNodeRenderer {
             UiNodeKind::Custom { primitive } => element
                 .child(environment.primitives.element(
                     primitive.clone(),
+                    retained_id,
                     boundary_fallback.cloned(),
                     environment.dispatcher.cloned(),
                     crate::PrimitiveTheme::capture(environment.colors),
@@ -1412,7 +1599,13 @@ impl GpuiNodeRenderer {
                     environment,
                     boundary_fallback,
                     &format!("{path}/content"),
-                    retained_child_id(environment.retained, retained_id, "content", 0),
+                    retained_child_id(
+                        environment.retained,
+                        environment.retained_links,
+                        retained_id,
+                        "content",
+                        0,
+                    ),
                 );
                 element
                     .child(ScriptLayerElement::new(
@@ -1425,7 +1618,12 @@ impl GpuiNodeRenderer {
                     .into_any_element()
             }
             UiNodeKind::VirtualCollection { spec } => element
-                .child(native_virtual_collection_element(spec, environment, path))
+                .child(native_virtual_collection_element(
+                    spec,
+                    environment,
+                    path,
+                    retained_id,
+                ))
                 .into_any_element(),
             UiNodeKind::ErrorBoundary { child, fallback } => element
                 .child(Self::render_internal(
@@ -1433,7 +1631,13 @@ impl GpuiNodeRenderer {
                     environment,
                     Some(fallback),
                     &format!("{path}/boundary"),
-                    retained_child_id(environment.retained, retained_id, "child", 0),
+                    retained_child_id(
+                        environment.retained,
+                        environment.retained_links,
+                        retained_id,
+                        "child",
+                        0,
+                    ),
                 ))
                 .into_any_element(),
         }
@@ -1453,7 +1657,13 @@ fn render_flattened_children<C: ColorResolver>(
             || format!("{path}/{index}"),
             |key| format!("{path}/{}", key.as_str()),
         );
-        let child_id = retained_child_id(environment.retained, retained_id, "children", index);
+        let child_id = retained_child_id(
+            environment.retained,
+            environment.retained_links,
+            retained_id,
+            "children",
+            index,
+        );
         if let UiNodeKind::Fragment { children } = child.kind() {
             rendered.extend(render_flattened_children(
                 children,
@@ -1536,15 +1746,27 @@ fn interaction_element_id(retained_id: Option<NodeId>, path: &str) -> String {
 
 fn retained_child_id(
     tree: Option<&RetainedUiTree>,
+    links: Option<&BTreeMap<NodeId, Vec<crate::RetainedChildLink>>>,
     parent: Option<NodeId>,
     group: &str,
     index: usize,
 ) -> Option<NodeId> {
-    tree.and_then(|tree| tree.node(parent?))
+    let parent = parent?;
+    tree.and_then(|tree| tree.node(parent))
         .and_then(|node| {
             node.children()
                 .filter(|child| child.group() == group)
                 .nth(index)
+        })
+        .or_else(|| {
+            links
+                .and_then(|links| links.get(&parent))
+                .and_then(|children| {
+                    children
+                        .iter()
+                        .filter(|child| child.group() == group)
+                        .nth(index)
+                })
         })
         .map(crate::RetainedChildLink::node)
 }
@@ -1852,14 +2074,26 @@ fn native_overlay_element<C: ColorResolver>(
         environment,
         boundary_fallback,
         &format!("{path}/trigger"),
-        retained_child_id(environment.retained, retained_id, "trigger", 0),
+        retained_child_id(
+            environment.retained,
+            environment.retained_links,
+            retained_id,
+            "trigger",
+            0,
+        ),
     );
     let content = GpuiNodeRenderer::render_internal(
         content,
         environment,
         boundary_fallback,
         &format!("{path}/content"),
-        retained_child_id(environment.retained, retained_id, "content", 0),
+        retained_child_id(
+            environment.retained,
+            environment.retained_links,
+            retained_id,
+            "content",
+            0,
+        ),
     );
     let open_change = node.handler("open_change").map(|handler| {
         let handler = handler.clone();
@@ -1958,7 +2192,26 @@ fn native_virtual_collection_element<C: ColorResolver>(
     spec: &crate::VirtualCollectionNodeSpec,
     environment: &RenderEnvironment<'_, C>,
     path: &str,
+    retained_id: Option<NodeId>,
 ) -> VirtualListEntityElement {
+    let retained_roots: BTreeMap<String, NodeId> = environment
+        .retained
+        .and_then(|tree| retained_id.and_then(|id| tree.node(id)))
+        .map(|retained| {
+            retained
+                .children()
+                .filter(|child| child.group() == "items")
+                .zip(spec.realized.keys())
+                .filter_map(|(child, index)| {
+                    crate::virtual_list_element::collection_item_key(spec, *index)
+                        .map(|key| (format!("item:{key}"), child.node()))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let retained_links = environment.retained.map_or_else(BTreeMap::new, |tree| {
+        retained_link_subtrees(tree, retained_roots.values().copied())
+    });
     let runtime = NodeSlotRuntime {
         colors: OwnedColorResolver::capture(environment.colors),
         primitives: environment.primitives.clone(),
@@ -1979,8 +2232,27 @@ fn native_virtual_collection_element<C: ColorResolver>(
         direction: environment.direction,
         base_path: path.to_owned(),
         view_id: environment.view_id.to_owned(),
+        retained_roots,
+        retained_links,
     };
     VirtualListEntityElement::new_collection(path, spec.clone(), runtime)
+}
+
+fn retained_link_subtrees(
+    tree: &RetainedUiTree,
+    roots: impl IntoIterator<Item = NodeId>,
+) -> BTreeMap<NodeId, Vec<crate::RetainedChildLink>> {
+    let mut links = BTreeMap::new();
+    let mut pending = roots.into_iter().collect::<Vec<_>>();
+    while let Some(node) = pending.pop() {
+        let Some(retained) = tree.node(node) else {
+            continue;
+        };
+        let children = retained.children().cloned().collect::<Vec<_>>();
+        pending.extend(children.iter().map(crate::RetainedChildLink::node));
+        links.insert(node, children);
+    }
+    links
 }
 
 #[derive(Clone, Copy, Default)]
@@ -2887,6 +3159,11 @@ impl StaticUiView {
 
 impl Render for StaticUiView {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        if let Err(error) = self.primitives.retain_tree(&self.tree) {
+            return div()
+                .child(format!("Custom primitive lifecycle error: {error}"))
+                .into_any_element();
+        }
         self.root().map_or_else(
             || {
                 div()

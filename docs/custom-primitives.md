@@ -39,10 +39,19 @@ prop accepts `PrimitiveValue::Callback(UiEventHandler::Host(callback))`; emitted
 payloads still pass through the descriptor event schema before the Host closure
 runs. Rhai conversion of `ValueSchema::Callback` remains Script-only.
 
-Lifecycle primitives require a stable `key`. Emit only declared events through
-`PrimitiveEventEmitter`; the runtime validates payloads and dispatches the
-generation-bound callback. Use GPUI through `gpui_rhai::gpui` so the host and
-runtime cannot link incompatible GPUI type versions.
+Lifecycle/stateful primitives require a stable component-local `key` and must
+render through a `RetainedUiTree`. Reconciliation combines the primitive ID,
+key, and stable `NodeId` into `PrimitiveInstanceId`; identical local keys in
+different components therefore retain independent native Entities, while keyed
+reorder preserves them. Direct ephemeral rendering rejects lifecycle
+primitives instead of falling back to a view-global key.
+
+Emit only declared events through `PrimitiveEventEmitter`; the runtime validates
+payloads and dispatches the generation-bound callback. The emitter keeps only a
+weak reference back to the registry, so an Entity whose callbacks retain the
+emitter cannot form `Registry -> Entity -> Registry` ownership cycles. Use GPUI
+through `gpui_rhai::gpui` so the host and runtime cannot link incompatible GPUI
+type versions.
 
 See `extension_host.rs` for rendering and `tests/custom_primitive.rs` for the
 downstream registration contract.

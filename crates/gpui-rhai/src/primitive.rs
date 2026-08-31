@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::panic::{AssertUnwindSafe, catch_unwind};
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 
 use gpui::{AnyElement, App, IntoElement, ParentElement, RenderOnce, Window, div};
 use rhai::{Array, Dynamic, FnPtr, Map};
@@ -13,7 +13,7 @@ use crate::{
     AssetId, ColorResolver, ColorValue, ComponentStateSchema, EventSchema, Length,
     NodeEventDispatcher, ObjectField, RadiusToken, Rgba8, SchemaDefinitionError,
     SchemaValidationError, ScriptCallback, ScriptGeneration, SpacingToken, Style, UiEventHandler,
-    UiNode, UiNodeKind, UiValue, UiValueError, ValueSchema,
+    UiNode, UiValue, UiValueError, ValueSchema,
 };
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -311,8 +311,26 @@ impl PrimitiveProps {
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct PrimitiveInstanceId {
-    pub primitive: PrimitiveId,
-    pub key: String,
+    primitive: PrimitiveId,
+    key: String,
+    node: crate::NodeId,
+}
+
+impl PrimitiveInstanceId {
+    #[must_use]
+    pub const fn primitive(&self) -> &PrimitiveId {
+        &self.primitive
+    }
+
+    #[must_use]
+    pub fn key(&self) -> &str {
+        &self.key
+    }
+
+    #[must_use]
+    pub const fn node(&self) -> crate::NodeId {
+        self.node
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -330,7 +348,7 @@ pub struct PrimitiveInstance {
 
 #[derive(Clone)]
 pub struct PrimitiveEventEmitter {
-    registry: PrimitiveRegistry,
+    registry: Weak<RefCell<PrimitiveRegistryInner>>,
     primitive: PrimitiveId,
     callbacks: BTreeMap<String, UiEventHandler>,
     dispatcher: Option<NodeEventDispatcher>,
@@ -350,9 +368,13 @@ impl PrimitiveEventEmitter {
         window: &mut Window,
         cx: &mut App,
     ) -> Result<(), PrimitiveError> {
-        let payload = self
-            .registry
-            .normalize_event(&self.primitive, event, payload)?;
+        let registry = PrimitiveRegistry {
+            inner: self
+                .registry
+                .upgrade()
+                .ok_or(PrimitiveError::RegistryReleased)?,
+        };
+        let payload = registry.normalize_event(&self.primitive, event, payload)?;
         if let Some(handler) = self.callbacks.get(event) {
             match handler {
                 UiEventHandler::Script(callback) => {
@@ -609,15 +631,15 @@ impl PrimitiveRegistry {
     /// # Errors
     ///
     /// Returns borrow or panic-boundary errors from native unmount handlers.
-    pub fn retain_tree(&self, root: &UiNode) -> Result<(), PrimitiveError> {
-        let mut active = BTreeSet::new();
-        collect_primitive_instances(root, &mut active);
+    pub fn retain_tree(&self, tree: &crate::RetainedUiTree) -> Result<(), PrimitiveError> {
+        let active = collect_primitive_instances(tree);
         self.retain_mounted(&active)
     }
 
     pub(crate) fn element(
         &self,
         node: PrimitiveNode,
+        retained_id: Option<crate::NodeId>,
         fallback: Option<UiNode>,
         dispatcher: Option<NodeEventDispatcher>,
         theme: PrimitiveTheme,
@@ -625,6 +647,7 @@ impl PrimitiveRegistry {
         RegisteredPrimitiveElement {
             registry: self.clone(),
             node,
+            retained_id,
             fallback,
             dispatcher,
             theme,
@@ -635,6 +658,7 @@ impl PrimitiveRegistry {
     fn render_instance(
         &self,
         node: PrimitiveNode,
+        retained_id: Option<crate::NodeId>,
         events: &PrimitiveEventEmitter,
         theme: &PrimitiveTheme,
         window: &mut Window,
@@ -644,9 +668,29 @@ impl PrimitiveRegistry {
             .inner
             .try_borrow_mut()
             .map_err(|_| PrimitiveError::Borrowed)?;
-        let instance_id = node.key.as_ref().map(|key| PrimitiveInstanceId {
+        let retained_instance = inner
+            .entries
+            .get(&node.primitive)
+            .ok_or_else(|| PrimitiveError::Unknown(node.primitive.clone()))?
+            .descriptor
+            .lifecycle
+            || !inner
+                .entries
+                .get(&node.primitive)
+                .expect("primitive entry was just resolved")
+                .descriptor
+                .state
+                .is_empty();
+        if retained_instance && retained_id.is_none() {
+            return Err(PrimitiveError::MissingRetainedIdentity(node.primitive));
+        }
+        let instance_id = retained_instance.then(|| PrimitiveInstanceId {
             primitive: node.primitive.clone(),
-            key: key.clone(),
+            key: node
+                .key
+                .clone()
+                .expect("retained primitive descriptors require a key"),
+            node: retained_id.expect("retained primitive renderer supplies NodeId"),
         });
         let instance = PrimitiveInstance {
             id: instance_id.clone(),
@@ -661,7 +705,7 @@ impl PrimitiveRegistry {
             .entries
             .get_mut(&instance.node.primitive)
             .ok_or_else(|| PrimitiveError::Unknown(instance.node.primitive.clone()))?;
-        if needs_mount && entry.descriptor.lifecycle {
+        if needs_mount {
             guard_primitive_panic(&instance.node.primitive, "mount", || {
                 entry.handler.mount(&instance)
             })?
@@ -670,8 +714,7 @@ impl PrimitiveRegistry {
                 message,
             })?;
         }
-        if entry.descriptor.lifecycle
-            && let Some(previous) = &previous
+        if let Some(previous) = &previous
             && previous.node != instance.node
         {
             guard_primitive_panic(&instance.node.primitive, "update", || {
@@ -696,43 +739,16 @@ impl PrimitiveRegistry {
     }
 }
 
-fn collect_primitive_instances(node: &UiNode, active: &mut BTreeSet<PrimitiveInstanceId>) {
-    match node.kind() {
-        UiNodeKind::Custom { primitive } => {
-            if let Some(key) = &primitive.key {
-                active.insert(PrimitiveInstanceId {
-                    primitive: primitive.primitive.clone(),
-                    key: key.clone(),
-                });
-            }
-        }
-        UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => {
-            for child in children {
-                collect_primitive_instances(child, active);
-            }
-        }
-        UiNodeKind::Overlay {
-            trigger, content, ..
-        } => {
-            collect_primitive_instances(trigger, active);
-            collect_primitive_instances(content, active);
-        }
-        UiNodeKind::Layer { content, .. } => collect_primitive_instances(content, active),
-        UiNodeKind::ErrorBoundary { child, fallback } => {
-            collect_primitive_instances(child, active);
-            collect_primitive_instances(fallback, active);
-        }
-        UiNodeKind::VirtualCollection { spec } => {
-            for item in spec.realized.values() {
-                collect_primitive_instances(item, active);
-            }
-        }
-        UiNodeKind::Text { .. }
-        | UiNodeKind::RichText { .. }
-        | UiNodeKind::Canvas { .. }
-        | UiNodeKind::Image { .. }
-        | UiNodeKind::DirectionalImage { .. } => {}
-    }
+fn collect_primitive_instances(tree: &crate::RetainedUiTree) -> BTreeSet<PrimitiveInstanceId> {
+    tree.nodes()
+        .filter_map(|node| {
+            Some(PrimitiveInstanceId {
+                primitive: node.primitive()?.clone(),
+                key: node.key()?.to_owned(),
+                node: node.id(),
+            })
+        })
+        .collect()
 }
 
 fn guard_primitive_panic<T>(
@@ -750,6 +766,7 @@ fn guard_primitive_panic<T>(
 struct RegisteredPrimitiveElement {
     registry: PrimitiveRegistry,
     node: PrimitiveNode,
+    retained_id: Option<crate::NodeId>,
     fallback: Option<UiNode>,
     dispatcher: Option<NodeEventDispatcher>,
     theme: PrimitiveTheme,
@@ -772,12 +789,19 @@ impl RenderOnce for RegisteredPrimitiveElement {
             })
             .collect();
         let events = PrimitiveEventEmitter {
-            registry: registry.clone(),
+            registry: Rc::downgrade(&registry.inner),
             primitive: self.node.primitive.clone(),
             callbacks,
             dispatcher: self.dispatcher,
         };
-        match registry.render_instance(self.node, &events, &self.theme, window, cx) {
+        match registry.render_instance(
+            self.node,
+            self.retained_id,
+            &events,
+            &self.theme,
+            window,
+            cx,
+        ) {
             Ok(element) => element,
             Err(error) => self.fallback.map_or_else(
                 || {
@@ -952,6 +976,10 @@ pub enum PrimitiveError {
     Unknown(PrimitiveId),
     #[error("primitive `{0:?}` requires a stable key")]
     MissingKey(PrimitiveId),
+    #[error("primitive `{0:?}` requires a retained NodeId renderer")]
+    MissingRetainedIdentity(PrimitiveId),
+    #[error("primitive event emitter outlived its registry")]
+    RegistryReleased,
     #[error("props for primitive `{primitive:?}` are invalid: {source}")]
     InvalidProps {
         primitive: PrimitiveId,
@@ -1150,10 +1178,17 @@ mod tests {
 
         let registry = PrimitiveRegistry::new();
         let descriptor = descriptor();
-        let instance = PrimitiveInstanceId {
+        let node = PrimitiveNode {
             primitive: descriptor.id.clone(),
-            key: "editor".to_owned(),
+            key: Some("editor".to_owned()),
+            props: PrimitiveProps::new(),
         };
+        let mut tree = crate::RetainedUiTree::new();
+        tree.reconcile(UiNode::custom(node.clone())).unwrap();
+        let instance = collect_primitive_instances(&tree)
+            .into_iter()
+            .next()
+            .unwrap();
         let unmounted = Rc::new(Cell::new(0));
         registry
             .register(descriptor, UnmountCounter(Rc::clone(&unmounted)))
@@ -1162,14 +1197,61 @@ mod tests {
             instance.clone(),
             PrimitiveInstance {
                 id: Some(instance.clone()),
-                node: PrimitiveNode {
-                    primitive: instance.primitive.clone(),
-                    key: Some(instance.key.clone()),
-                    props: PrimitiveProps::new(),
-                },
+                node,
             },
         );
-        registry.retain_tree(&UiNode::text("removed")).unwrap();
+        tree.reconcile(UiNode::text("removed")).unwrap();
+        registry.retain_tree(&tree).unwrap();
         assert_eq!(unmounted.get(), 1);
+    }
+
+    #[test]
+    fn primitive_identity_uses_retained_node_not_component_local_key() {
+        let primitive = PrimitiveId::parse("my_app.editor").unwrap();
+        let branch = |branch: &str| {
+            UiNode::box_node(vec![UiNode::custom(PrimitiveNode {
+                primitive: primitive.clone(),
+                key: Some("editor".to_owned()),
+                props: PrimitiveProps::new().with(
+                    "branch",
+                    PrimitiveValue::Data(UiValue::String(branch.to_owned())),
+                ),
+            })])
+            .with_key(branch)
+        };
+        let mut tree = crate::RetainedUiTree::new();
+        tree.reconcile(UiNode::box_node(vec![branch("left"), branch("right")]))
+            .unwrap();
+        let before = collect_primitive_instances(&tree);
+        assert_eq!(before.len(), 2);
+        assert!(before.iter().all(|instance| instance.key() == "editor"));
+        assert_eq!(
+            before
+                .iter()
+                .map(PrimitiveInstanceId::node)
+                .collect::<BTreeSet<_>>()
+                .len(),
+            2
+        );
+
+        tree.reconcile(UiNode::box_node(vec![branch("right"), branch("left")]))
+            .unwrap();
+        assert_eq!(collect_primitive_instances(&tree), before);
+    }
+
+    #[test]
+    fn primitive_event_emitter_holds_only_a_weak_registry_reference() {
+        let registry = PrimitiveRegistry::new();
+        let weak = Rc::downgrade(&registry.inner);
+        let emitter = PrimitiveEventEmitter {
+            registry: Rc::downgrade(&registry.inner),
+            primitive: PrimitiveId::parse("my_app.editor").unwrap(),
+            callbacks: BTreeMap::new(),
+            dispatcher: None,
+        };
+        assert_eq!(Rc::strong_count(&registry.inner), 1);
+        drop(registry);
+        assert!(weak.upgrade().is_none());
+        drop(emitter);
     }
 }

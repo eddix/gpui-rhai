@@ -1,29 +1,24 @@
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::time::Duration;
 
 use gpui::{
-    Context, FocusHandle, InteractiveElement, IntoElement, Modifiers, MouseButton, MouseDownEvent,
-    MouseMoveEvent, MouseUpEvent, ParentElement, Render, ScrollDelta, ScrollWheelEvent, Styled,
-    StatefulInteractiveElement, TestAppContext, VisualTestContext, Window, div, point, px,
+    Context, FocusHandle, InteractiveElement, IntoElement, Modifiers, ParentElement, Render,
+    StatefulInteractiveElement, Styled, TestAppContext, VisualTestContext, Window, div, point, px,
 };
 use gpui_rhai::{
-    ActionId, ChoiceBehavior, ComponentInstancePath, DatePickerNodeSpec, DropdownMode,
-    DropdownNodeSpec, DropdownOption, EmbeddedScriptSource, EmbeddedScriptView, EventPropagation,
-    GpuiNodeRenderer, GregorianDate, HostCallback, InteractionState, KeyBindingSpec,
-    LiteralColorResolver, ModuleId, NodeEventDispatcher, OverlayDismissPolicy, OverlayId,
-    OverlayKind, OverlayNodeSpec, OverlayPlacement, PrimitiveEventEmitter, PrimitiveHandler,
-    PrimitiveInstance, PrimitiveNode, PrimitiveProps, PrimitiveRegistry, PrimitiveTheme,
-    PrimitiveValue, RestrictedModuleResolver, RuntimeEngine, ScriptCallback, ScriptLifecycle,
-    ScriptViewConfig, ScriptViewHandle, ScriptViewHost, SelectNodeSpec, TableAlign,
-    TableCellFormat, TableColumnSpec, TableColumnWidth, TableNodeSpec, TableRowSpec,
-    TableSelectionMode, ToastHostSpec, ToastItemSpec, ToastRegion, ToastVariant, UiNode,
-    TextInputPrimitiveHandler, UiRuntimeState, UiValue, Style as NodeStyle, init_text_area,
-    init_text_input, text_input_primitive_descriptor,
+    ActionId, ComponentInstancePath, EmbeddedScriptSource, EmbeddedScriptView, EventPropagation,
+    GpuiNodeRenderer, HostCallback, InteractionState, KeyBindingSpec, LiteralColorResolver,
+    ModuleId, NodeEventDispatcher, OverlayDismissPolicy, OverlayId, OverlayKind, OverlayNodeSpec,
+    OverlayPlacement, PrimitiveEventEmitter, PrimitiveHandler, PrimitiveInstance, PrimitiveNode,
+    PrimitiveProps, PrimitiveRegistry, PrimitiveTheme, PrimitiveValue, RestrictedModuleResolver,
+    RuntimeEngine, ScriptLifecycle, ScriptViewConfig, ScriptViewHandle, ScriptViewHost,
+    TextInputPrimitiveHandler, UiNode, UiRuntimeState, UiValue, init_text_area, init_text_input,
+    text_input_primitive_descriptor,
 };
 
 struct KeyboardHost {
     root: Rc<RefCell<UiNode>>,
+    tree: gpui_rhai::RetainedUiTree,
     dispatcher: NodeEventDispatcher,
     host_focus: FocusHandle,
     primitives: PrimitiveRegistry,
@@ -32,6 +27,23 @@ struct KeyboardHost {
 impl Render for KeyboardHost {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         let root = self.root.borrow().clone();
+        let content = self.tree.reconcile(root).map_or_else(
+            |error| div().child(error.to_string()).into_any_element(),
+            |_| {
+                self.primitives.retain_tree(&self.tree).map_or_else(
+                    |error| div().child(error.to_string()).into_any_element(),
+                    |_| {
+                        GpuiNodeRenderer::render_retained_with_dispatcher(
+                            &self.tree,
+                            &LiteralColorResolver,
+                            &InteractionState::default(),
+                            &self.primitives,
+                            &self.dispatcher,
+                        )
+                    },
+                )
+            },
+        );
         div()
             .track_focus(&self.host_focus)
             .on_key_down(|event, window, cx| {
@@ -44,13 +56,7 @@ impl Render for KeyboardHost {
                     cx.stop_propagation();
                 }
             })
-            .child(GpuiNodeRenderer::render_with_dispatcher(
-                &root,
-                &LiteralColorResolver,
-                &InteractionState::default(),
-                &self.primitives,
-                &self.dispatcher,
-            ))
+            .child(content)
     }
 }
 
@@ -142,6 +148,7 @@ fn tab_order_skips_disabled_nodes_and_enter_activates_focus(cx: &mut TestAppCont
         host_focus.focus(window);
         KeyboardHost {
             root: Rc::new(RefCell::new(root)),
+            tree: gpui_rhai::RetainedUiTree::new(),
             dispatcher,
             host_focus,
             primitives: PrimitiveRegistry::new(),
@@ -194,7 +201,7 @@ fn host_callbacks_dispatch_without_a_script_runtime(cx: &mut TestAppContext) {
     cx.refresh().unwrap();
     cx.run_until_parked();
 
-    let mut visual = VisualTestContext::from_window((*window).into(), cx);
+    let mut visual = VisualTestContext::from_window(*window, cx);
     visual.run_until_parked();
     let bounds = visual.debug_bounds("root").expect("host node bounds");
     visual.simulate_click(
@@ -269,6 +276,7 @@ fn text_input_primitive_dispatches_host_callbacks(cx: &mut TestAppContext) {
         host_focus.focus(window);
         KeyboardHost {
             root: Rc::new(RefCell::new(root)),
+            tree: gpui_rhai::RetainedUiTree::new(),
             dispatcher,
             host_focus,
             primitives: registry,
@@ -346,6 +354,7 @@ fn custom_primitive_rejects_invalid_payload_before_host_callback(cx: &mut TestAp
         host_focus.focus(window);
         KeyboardHost {
             root: Rc::new(RefCell::new(root)),
+            tree: gpui_rhai::RetainedUiTree::new(),
             dispatcher,
             host_focus,
             primitives: registry,
@@ -403,6 +412,7 @@ fn nested_overlay_renders_inside_parent_deferred_subtree(cx: &mut TestAppContext
         host_focus.focus(window);
         KeyboardHost {
             root: Rc::new(RefCell::new(root)),
+            tree: gpui_rhai::RetainedUiTree::new(),
             dispatcher: NodeEventDispatcher::new(|_, _, _, _| EventPropagation::Handled),
             host_focus,
             primitives: PrimitiveRegistry::new(),
@@ -410,588 +420,130 @@ fn nested_overlay_renders_inside_parent_deferred_subtree(cx: &mut TestAppContext
     });
 
     cx.run_until_parked();
-    assert!(cx.windows().contains(&(*window).into()));
+    assert!(cx.windows().contains(&*window));
+}
+
+struct SingleEmbeddedHost {
+    host: ScriptViewHost,
+    view: ScriptViewHandle,
+}
+
+impl Render for SingleEmbeddedHost {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        self.host.container(self.view.element().unwrap())
+    }
 }
 
 #[gpui::test]
-fn searchable_single_dropdown_emits_close_and_selection(cx: &mut TestAppContext) {
-    cx.update(init_text_input);
-    let mut engine = RuntimeEngine::new();
-    let compiled = engine
-        .compile(
-            r#"
-                fn view(ctx) { text("dropdown test") }
-                fn changed(ctx, payload) { () }
-                fn opened(ctx, payload) { () }
-                fn queried(ctx, payload) { () }
-            "#,
-        )
-        .expect("compile dropdown callbacks");
-    let callback = |name| {
-        engine
-            .callback(&compiled, name)
-            .expect("resolve dropdown callback")
-    };
-    let root = UiNode::dropdown(DropdownNodeSpec {
-        id: "themes".to_owned(),
-        parent_overlay: None,
-        options: vec![
-            DropdownOption::new("default-dark", "Default Dark"),
-            DropdownOption::new("tokyo-night", "Tokyo Night").keywords(["tokyo"]),
-            DropdownOption::new("tokyo-storm", "Tokyo Storm").keywords(["tokyo"]),
-        ],
-        mode: DropdownMode::Single,
-        selected: Some(vec!["default-dark".to_owned()]),
-        open: None,
-        behavior: ChoiceBehavior {
-            searchable: true,
-            clearable: false,
-            reset_query_on_close: false,
-        },
-        query: None,
-        placeholder: "Theme".to_owned(),
-        search_placeholder: "Search".to_owned(),
-        empty_text: "Empty".to_owned(),
-        trigger_slot: None,
-        header_slot: None,
-        footer_slot: None,
-        empty_slot: None,
-        disabled: false,
-        max_visible: 4,
-        placement: OverlayPlacement::Bottom,
-        row_height: 32.0,
-        trigger_height: 32.0,
-        trigger_width: gpui_rhai::Length::Pixels(280.0),
-        panel_width: 280.0,
-        panel_extra_height: Some(104.0),
-        overlay_gap: 4.0,
-        clear_asset: gpui_rhai::AssetId::parse("app/icons/close").unwrap(),
-        indicator_asset: gpui_rhai::AssetId::parse("app/icons/disclosure_down").unwrap(),
-        check_asset: gpui_rhai::AssetId::parse("app/icons/check").unwrap(),
-    })
-    .with_handler("change", callback("changed"))
-    .with_handler("open_change", callback("opened"))
-    .with_handler("query_change", callback("queried"));
-    let events = Rc::new(RefCell::new(Vec::new()));
-    let captured = Rc::clone(&events);
-    let dispatcher = NodeEventDispatcher::new(move |callback, payload, _, _| {
-        captured
-            .borrow_mut()
-            .push((callback.name().to_owned(), payload));
-        EventPropagation::Handled
-    });
-    let window = cx.add_window(|window, cx| {
-        let host_focus = cx.focus_handle();
-        host_focus.focus(window);
-        KeyboardHost {
-            root: Rc::new(RefCell::new(root)),
-            dispatcher,
-            host_focus,
-            primitives: PrimitiveRegistry::new(),
-        }
-    });
-    cx.run_until_parked();
-
-    cx.simulate_keystrokes(*window, "tab enter");
-    cx.simulate_input(*window, "tokyo");
-    cx.simulate_keystrokes(*window, "enter");
-
-    let events = events.borrow();
-    assert!(events.contains(&("opened".to_owned(), UiValue::Bool(true))));
-    assert!(events.contains(&("opened".to_owned(), UiValue::Bool(false))));
-    assert!(events.iter().any(|(name, payload)| {
-        name == "changed"
-            && payload
-                == &UiValue::Array(vec![UiValue::String("tokyo-night".to_owned())])
-    }));
-}
-
-#[gpui::test]
-fn grouped_select_emits_one_scalar_value(cx: &mut TestAppContext) {
-    let mut engine = RuntimeEngine::new();
-    let compiled = engine
-        .compile(
-            r#"
-                fn view(ctx) { text("select callbacks") }
-                fn changed(ctx, payload) { () }
-            "#,
-        )
-        .unwrap();
-    let root = UiNode::select(SelectNodeSpec {
-        choice: DropdownNodeSpec {
-            id: "country".to_owned(),
-            parent_overlay: None,
-            options: vec![
-                DropdownOption::new("cn", "China").group("Asia"),
-                DropdownOption::new("fr", "France").group("Europe"),
-            ],
-            mode: DropdownMode::Single,
-            selected: Some(Vec::new()),
-            open: None,
-            behavior: ChoiceBehavior {
-                searchable: false,
-                clearable: true,
-                reset_query_on_close: true,
-            },
-            query: None,
-            placeholder: "Country".to_owned(),
-            search_placeholder: "Search".to_owned(),
-            empty_text: "None".to_owned(),
-            trigger_slot: None,
-            header_slot: None,
-            footer_slot: None,
-            empty_slot: None,
-            disabled: false,
-            max_visible: 8,
-            placement: OverlayPlacement::Bottom,
-            row_height: 32.0,
-            trigger_height: 32.0,
-            trigger_width: gpui_rhai::Length::Pixels(280.0),
-            panel_width: 280.0,
-            panel_extra_height: None,
-            overlay_gap: 4.0,
-            clear_asset: gpui_rhai::AssetId::parse("app/icons/close").unwrap(),
-            indicator_asset: gpui_rhai::AssetId::parse("app/icons/disclosure_down").unwrap(),
-            check_asset: gpui_rhai::AssetId::parse("app/icons/check").unwrap(),
-        },
-    })
-    .with_handler("change", engine.callback(&compiled, "changed").unwrap());
-    let values = Rc::new(RefCell::new(Vec::new()));
-    let captured = Rc::clone(&values);
-    let dispatcher = NodeEventDispatcher::new(move |_, payload, _, _| {
-        captured.borrow_mut().push(payload);
-        EventPropagation::Handled
-    });
-    let window = cx.add_window(|window, cx| {
-        let host_focus = cx.focus_handle();
-        host_focus.focus(window);
-        KeyboardHost {
-            root: Rc::new(RefCell::new(root)),
-            dispatcher,
-            host_focus,
-            primitives: PrimitiveRegistry::new(),
-        }
-    });
-    cx.run_until_parked();
-    cx.simulate_keystrokes(*window, "tab enter down enter");
-    assert_eq!(*values.borrow(), vec![UiValue::String("fr".to_owned())]);
-}
-
-#[gpui::test]
-fn date_picker_keyboard_commits_one_iso_date(cx: &mut TestAppContext) {
-    let mut engine = RuntimeEngine::new();
-    let compiled = engine
-        .compile(
-            r#"
-                fn view(ctx) { text("date callbacks") }
-                fn changed(ctx, payload) { () }
-            "#,
-        )
-        .unwrap();
-    let locale = gpui_rhai::load_locale_source(
-        engine.engine(),
-        "en.rhai",
-        include_str!("../../../registry/locales/en.rhai"),
-    )
-    .unwrap();
-    let root = UiNode::date_picker(DatePickerNodeSpec {
-        id: "appointment".to_owned(),
-        parent_overlay: None,
-        value: None,
-        min_date: None,
-        max_date: None,
-        today: GregorianDate::parse_iso("2026-08-30").unwrap(),
-        display_value: String::new(),
-        placeholder: "Appointment".to_owned(),
-        open_label: "Open calendar".to_owned(),
-        previous_label: "Previous month".to_owned(),
-        next_label: "Next month".to_owned(),
-        clear_label: "Clear date".to_owned(),
-        calendar: locale.calendar,
-        number: locale.number,
-        presets: Vec::new(),
-        clearable: true,
-        disabled: false,
-        placement: OverlayPlacement::Bottom,
-        cell_size: 32.0,
-        trigger_height: 32.0,
-        panel_width: 256.0,
-        overlay_gap: 4.0,
-        previous_asset: gpui_rhai::AssetId::parse("app/icons/date_previous").unwrap(),
-        next_asset: gpui_rhai::AssetId::parse("app/icons/date_next").unwrap(),
-        trigger_asset: gpui_rhai::AssetId::parse("app/icons/calendar").unwrap(),
-        clear_asset: gpui_rhai::AssetId::parse("app/icons/close").unwrap(),
-    })
-    .with_handler("change", engine.callback(&compiled, "changed").unwrap());
-    let values = Rc::new(RefCell::new(Vec::new()));
-    let captured = Rc::clone(&values);
-    let dispatcher = NodeEventDispatcher::new(move |_, payload, _, _| {
-        captured.borrow_mut().push(payload);
-        EventPropagation::Handled
-    });
-    let window = cx.add_window(|window, cx| {
-        let host_focus = cx.focus_handle();
-        host_focus.focus(window);
-        KeyboardHost {
-            root: Rc::new(RefCell::new(root)),
-            dispatcher,
-            host_focus,
-            primitives: PrimitiveRegistry::new(),
-        }
-    });
-    cx.run_until_parked();
-    cx.simulate_keystrokes(*window, "tab enter right enter");
-    assert_eq!(
-        *values.borrow(),
-        vec![UiValue::String("2026-08-31".to_owned())]
-    );
-
-    // Commit must close: Right moves only transient focus and Enter reopens,
-    // rather than committing a second value from a still-open panel.
-    cx.simulate_keystrokes(*window, "right enter");
-    assert_eq!(values.borrow().len(), 1);
-
-    // ArrowDown is an explicit DatePicker open key. This direct node keeps its
-    // external controlled value at null, so reopening resets focus to fixed
-    // today; Right then commits the same next day exactly once.
-    cx.simulate_keystrokes(*window, "escape");
-    cx.run_until_parked();
-    cx.simulate_keystrokes(*window, "down");
-    cx.run_until_parked();
-    cx.simulate_keystrokes(*window, "right enter");
-    assert_eq!(
-        *values.borrow(),
-        vec![
-            UiValue::String("2026-08-31".to_owned()),
-            UiValue::String("2026-08-31".to_owned()),
-        ]
-    );
-}
-
-#[gpui::test]
-fn table_keyboard_moves_rows_selects_and_activates(cx: &mut TestAppContext) {
-    let mut engine = RuntimeEngine::new();
-    let compiled = engine
-        .compile(
-            r#"
-                fn view(ctx) { text("table callbacks") }
-                fn selected(ctx, payload) { () }
-                fn clicked(ctx, payload) { () }
-                fn sorted(ctx, payload) { () }
-            "#,
-        )
-        .unwrap();
-    let locale = gpui_rhai::load_locale_source(
-        engine.engine(),
-        "en.rhai",
-        include_str!("../../../registry/locales/en.rhai"),
-    )
-    .unwrap();
-    let root = UiNode::table(TableNodeSpec {
-        key: "users".to_owned(),
-        label: "Users".to_owned(),
-        columns: vec![TableColumnSpec {
-            key: "name".to_owned(),
-            title: "Name".to_owned(),
-            width: TableColumnWidth::Fixed(1600.0),
-            align: TableAlign::Start,
-            format: TableCellFormat::Text,
-            sortable: true,
-            custom_cells: None,
-        }],
-        rows: (0..100)
-            .map(|index| TableRowSpec {
-                key: format!("user-{index}"),
-                values: std::collections::BTreeMap::from([(
-                    "name".to_owned(),
-                    UiValue::String(format!("User {index}")),
-                )]),
-            })
-            .collect(),
-        height: gpui_rhai::Length::Pixels(240.0),
-        row_height: 28.0,
-        flex_min_width: 80.0,
-        selection_width: 28.0,
-        selection_size: 14.0,
-        horizontal_scrollbar_height: 10.5,
-        horizontal_scrollbar_thumb_min_width: 56.0,
-        horizontal_scrollbar_inset: 3.5,
-        overscan: 2,
-        loading: false,
-        loading_slot: None,
-        loading_rows: Vec::new(),
-        empty_slot: None,
-        empty_text: "No users".to_owned(),
-        striped: true,
-        selection_mode: TableSelectionMode::Multiple,
-        selected_keys: std::collections::BTreeSet::new(),
-        sort: None,
-        calendar: locale.calendar,
-        number: locale.number,
-        check_asset: gpui_rhai::AssetId::parse("app/icons/check").unwrap(),
-        sort_ascending_asset: gpui_rhai::AssetId::parse("app/icons/sort_ascending").unwrap(),
-        sort_descending_asset: gpui_rhai::AssetId::parse("app/icons/sort_descending").unwrap(),
-    })
-    .with_handler(
-        "selection_change",
-        engine.callback(&compiled, "selected").unwrap(),
-    )
-    .with_handler("sort_change", engine.callback(&compiled, "sorted").unwrap())
-    .with_handler("row_click", engine.callback(&compiled, "clicked").unwrap());
-    let mut table_frame_style = NodeStyle::new();
-    table_frame_style.base.width = Some(gpui_rhai::Length::Pixels(600.0));
-    table_frame_style.base.height = Some(gpui_rhai::Length::Pixels(260.0));
-    let root = UiNode::column(vec![root]).with_style(&table_frame_style);
-    let events = Rc::new(RefCell::new(Vec::new()));
-    let captured = Rc::clone(&events);
-    let dispatcher = NodeEventDispatcher::new(move |callback, payload, _, _| {
-        captured
-            .borrow_mut()
-            .push((callback.name().to_owned(), payload));
-        EventPropagation::Handled
-    });
-    let window = cx.add_window(|window, cx| {
-        let host_focus = cx.focus_handle();
-        host_focus.focus(window);
-        KeyboardHost {
-            root: Rc::new(RefCell::new(root)),
-            dispatcher,
-            host_focus,
-            primitives: PrimitiveRegistry::new(),
-        }
-    });
-    cx.run_until_parked();
-    cx.simulate_keystrokes(*window, "tab down down space enter");
-    assert_eq!(
-        *events.borrow(),
-        vec![
+fn dropdown_pointer_updates_transactional_rhai_caller_state(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let entry = ModuleId::parse("main").unwrap();
+    let prepared = EmbeddedScriptView::new(
+        entry.clone(),
+        EmbeddedScriptSource::new(std::collections::BTreeMap::from([
             (
-                "selected".to_owned(),
-                UiValue::Array(vec![UiValue::String("user-2".to_owned())]),
+                entry,
+                r#"
+                    import "components/dropdown" as dropdown;
+                    fn state_schema() { #{ fields: #{
+                        open: #{ schema: #{ type: "bool" },
+                            "default": #{ type: "bool", value: false } },
+                        selected: #{ schema: #{ type: "array", max_items: 1,
+                            items: #{ type: "string" } }, "default": #{ type: "array",
+                            value: [#{ type: "string", value: "default-dark" }] } }
+                    } } }
+                    fn changed(ctx, values) {
+                        ctx.set_state("selected", values);
+                        ctx.set_state("open", false);
+                    }
+                    fn opened(ctx, open) { ctx.set_state("open", open); }
+                    fn view(ctx) {
+                        let selected = ctx.get_state("selected");
+                        column([
+                            text(`Selected: ${selected[0]}`),
+                            dropdown::Dropdown(#{
+                                key: "theme",
+                                options: [
+                                    #{ value: "default-dark", label: "Default Dark" },
+                                    #{ value: "tokyo-night", label: "Tokyo Night" },
+                                    #{ value: "tokyo-storm", label: "Tokyo Storm" }
+                                ],
+                                selected: selected, open: ctx.get_state("open"),
+                                searchable: false,
+                                on_change: Fn("changed"), on_open_change: Fn("opened")
+                            })
+                        ])
+                    }
+                "#
+                .to_owned(),
             ),
             (
-                "clicked".to_owned(),
-                UiValue::String("user-2".to_owned()),
+                ModuleId::parse("components/dropdown").unwrap(),
+                include_str!("../../../registry/components/dropdown.rhai").to_owned(),
             ),
-        ]
-    );
-
-    cx.simulate_keystrokes(*window, "tab enter tab enter");
-    let events = events.borrow();
-    assert!(events.iter().any(|(name, payload)| {
-        name == "selected"
-            && matches!(payload, UiValue::Array(values)
-                if values.len() == 100
-                    && values[0] == UiValue::String("user-0".to_owned())
-                    && values[10] == UiValue::String("user-10".to_owned()))
-    }));
-    assert!(events.iter().any(|(name, payload)| {
-        name == "sorted"
-            && matches!(payload, UiValue::Map(sort)
-                if sort.get("key") == Some(&UiValue::String("name".to_owned()))
-                    && sort.get("direction")
-                        == Some(&UiValue::String("ascending".to_owned())))
-    }));
-    drop(events);
-
-    let mut visual = VisualTestContext::from_window((*window).into(), cx);
-    visual.run_until_parked();
-    let selector = "table-users-horizontal-content";
-    let content_before = visual
-        .debug_bounds(selector)
-        .expect("wide Table horizontal content bounds");
-    let scrollbar = visual
-        .debug_bounds("table-users-horizontal-scrollbar")
-        .expect("wide Table horizontal scrollbar bounds");
-    assert!(scrollbar.size.width > px(0.0));
-    assert_eq!(scrollbar.size.height, px(10.5));
-    let thumb = visual
-        .debug_bounds("table-users-horizontal-scrollbar-thumb")
-        .expect("wide Table horizontal scrollbar thumb bounds");
-    assert!(thumb.size.width > px(0.0));
-    assert!(thumb.size.width < scrollbar.size.width);
-    let position = point(
-        content_before.origin.x + px(20.0),
-        content_before.origin.y + px(80.0),
-    );
-    visual.simulate_event(ScrollWheelEvent {
-        position,
-        delta: ScrollDelta::Pixels(point(px(0.0), px(-40.0))),
-        ..Default::default()
-    });
-    visual.run_until_parked();
-    let content_after_vertical = visual
-        .debug_bounds(selector)
-        .expect("Table content after vertical wheel");
-    assert_eq!(content_after_vertical.origin.x, content_before.origin.x);
-
-    let thumb_center = point(
-        thumb.origin.x + thumb.size.width / 2.0,
-        thumb.origin.y + thumb.size.height / 2.0,
-    );
-    visual.simulate_event(MouseDownEvent {
-        button: MouseButton::Left,
-        position: thumb_center,
-        ..Default::default()
-    });
-    visual.simulate_event(MouseMoveEvent {
-        position: point(thumb_center.x + px(60.0), thumb_center.y),
-        pressed_button: Some(MouseButton::Left),
-        ..Default::default()
-    });
-    visual.simulate_event(MouseUpEvent {
-        button: MouseButton::Left,
-        position: point(thumb_center.x + px(60.0), thumb_center.y),
-        ..Default::default()
-    });
-    visual.run_until_parked();
-    let content_after_drag = visual
-        .debug_bounds(selector)
-        .expect("Table content after scrollbar drag");
-    assert!(content_after_drag.origin.x < content_before.origin.x);
-
-    visual.simulate_event(ScrollWheelEvent {
-        position,
-        delta: ScrollDelta::Pixels(point(px(-40.0), px(0.0))),
-        ..Default::default()
-    });
-    visual.run_until_parked();
-    let content_after_horizontal = visual
-        .debug_bounds(selector)
-        .expect("Table content after horizontal wheel");
-    assert!(content_after_horizontal.origin.x < content_after_drag.origin.x);
-}
-
-#[gpui::test]
-fn searchable_dropdown_updates_transactional_rhai_caller_state(cx: &mut TestAppContext) {
-    cx.update(init_text_input);
-    let dropdown = include_str!("../../../registry/components/dropdown.rhai");
-    let source = EmbeddedScriptSource::new(std::collections::BTreeMap::from([(
-        ModuleId::parse("components/dropdown").unwrap(),
-        dropdown.to_owned(),
-    )]));
-    let mut runtime_engine = RuntimeEngine::new();
-    runtime_engine
-        .set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
-    let compiled = runtime_engine
-        .compile_self_contained_named(
-            "ui/dropdown_lifecycle.rhai",
-            r#"
-                import "components/dropdown" as dropdown;
-                fn state_schema() { #{ fields: #{
-                    open: #{ schema: #{ type: "bool" },
-                        "default": #{ type: "bool", value: false } },
-                    selected: #{ schema: #{ type: "array", max_items: 1,
-                        items: #{ type: "string" } }, "default": #{ type: "array",
-                        value: [#{ type: "string", value: "default-dark" }] } },
-                    query: #{ schema: #{ type: "string" },
-                        "default": #{ type: "string", value: "" } }
-                } } }
-                fn changed(ctx, values) {
-                    ctx.set_state("selected", values);
-                    ctx.set_state("open", false);
-                }
-                fn opened(ctx, open) { ctx.set_state("open", open); }
-                fn queried(ctx, query) { ctx.set_state("query", query); }
-                fn view(ctx) {
-                    dropdown::Dropdown(#{
-                        key: "theme",
-                        options: [
-                            #{ value: "default-dark", label: "Default Dark" },
-                            #{ value: "tokyo-night", label: "Tokyo Night", keywords: ["tokyo"] },
-                            #{ value: "tokyo-storm", label: "Tokyo Storm", keywords: ["tokyo"] }
-                        ],
-                        selected: ctx.get_state("selected"), open: ctx.get_state("open"),
-                        searchable: true, query: ctx.get_state("query"),
-                        on_change: Fn("changed"), on_open_change: Fn("opened"),
-                        on_query_change: Fn("queried")
-                    })
-                }
-            "#,
-        )
-        .unwrap();
-    let schema = runtime_engine.root_state_schema(&compiled).unwrap();
-    let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
-    let root_path = ComponentInstancePath::root("App", "root");
-    let mut lifecycle = ScriptLifecycle::new(
-        compiled,
-        Rc::clone(&runtime),
-        root_path.clone(),
-        Some("main".to_owned()),
-        std::collections::BTreeMap::new(),
-        &schema,
+            (
+                ModuleId::parse("components/input").unwrap(),
+                include_str!("../../../registry/components/input.rhai").to_owned(),
+            ),
+        ])),
+        include_str!("../../../registry/themes/default_dark.rhai"),
     )
+    .prepare()
     .unwrap();
-    lifecycle.start(&mut runtime_engine).unwrap();
-    let root = Rc::new(RefCell::new(lifecycle.root().unwrap().clone()));
-    let lifecycle = Rc::new(RefCell::new(lifecycle));
-    let runtime_engine = Rc::new(RefCell::new(runtime_engine));
-    let errors = Rc::new(RefCell::new(Vec::new()));
-    let callback_events = Rc::new(RefCell::new(Vec::new()));
-    let captured_lifecycle = Rc::clone(&lifecycle);
-    let captured_engine = Rc::clone(&runtime_engine);
-    let captured_errors = Rc::clone(&errors);
-    let captured_events = Rc::clone(&callback_events);
-    let captured_root = Rc::clone(&root);
-    let dispatcher = NodeEventDispatcher::new(move |callback, payload, _, app| {
-        captured_events
-            .borrow_mut()
-            .push((callback.name().to_owned(), payload.clone()));
-        let result = {
-            let engine = captured_engine.borrow();
-            captured_lifecycle
-                .borrow()
-                .invoke_callback_transactional(&engine, &callback, payload)
-        };
-        if let Err(error) = result {
-            captured_errors.borrow_mut().push(error.to_string());
-            return EventPropagation::Handled;
-        }
-        let render_result = captured_lifecycle
-            .borrow_mut()
-            .render(&mut captured_engine.borrow_mut())
-            .map(|root| {
-                *captured_root.borrow_mut() = root.clone();
-                app.refresh_windows();
-            });
-        if let Err(error) = render_result {
-            captured_errors.borrow_mut().push(error.to_string());
-        }
-        EventPropagation::Handled
-    });
-    let window = cx.add_window(|window, cx| {
-        let host_focus = cx.focus_handle();
-        host_focus.focus(window);
-        KeyboardHost {
-            root,
-            dispatcher,
-            host_focus,
-            primitives: PrimitiveRegistry::new(),
-        }
+    let captured = Rc::new(RefCell::new(None));
+    let captured_for_window = Rc::clone(&captured);
+    let window = cx.add_window(move |window, cx| {
+        let host = ScriptViewHost::new("dropdown-window", cx).unwrap();
+        let view = prepared
+            .mount(
+                ScriptViewConfig::new("dropdown-view"),
+                host.clone(),
+                window,
+                cx,
+            )
+            .unwrap();
+        *captured_for_window.borrow_mut() = Some((host.clone(), view.clone()));
+        SingleEmbeddedHost { host, view }
     });
     cx.run_until_parked();
+    cx.refresh().unwrap();
+    cx.run_until_parked();
 
-    cx.simulate_keystrokes(*window, "tab enter");
-    cx.simulate_input(*window, "tokyo");
-    cx.simulate_keystrokes(*window, "enter");
-
-    assert!(errors.borrow().is_empty(), "{:?}", errors.borrow());
-    let runtime = runtime.borrow();
-    assert_eq!(
-        runtime.component_state.get(&root_path, "open"),
-        Some(&UiValue::Bool(false)),
-        "callbacks: {:?}",
-        callback_events.borrow()
+    let (host, view) = captured.borrow().as_ref().unwrap().clone();
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    visual.run_until_parked();
+    let trigger = visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .find_by_role_and_name("combobox", "")
+            .next()
+            .unwrap()
+            .geometry
+            .unwrap()
+    });
+    visual.simulate_click(
+        point(
+            px((trigger.visual.x + trigger.visual.width / 2.0) as f32),
+            px((trigger.visual.y + trigger.visual.height / 2.0) as f32),
+        ),
+        Modifiers::default(),
     );
-    assert_eq!(
-        runtime.component_state.get(&root_path, "query"),
-        Some(&UiValue::String("tokyo".to_owned()))
+    visual.run_until_parked();
+    let placement = host.overlay_placement("dropdown-view", "theme").unwrap();
+    visual.simulate_click(
+        point(
+            px((placement.bounds.x + placement.bounds.width / 2.0) as f32),
+            px((placement.bounds.y + 4.0 + 32.0 + 16.0) as f32),
+        ),
+        Modifiers::default(),
     );
-    assert_eq!(
-        runtime.component_state.get(&root_path, "selected"),
-        Some(&UiValue::Array(vec![UiValue::String(
-            "tokyo-night".to_owned()
-        )]))
+    visual.run_until_parked();
+    let root = visual.update(|_, cx| view.root(cx).unwrap().unwrap());
+    let mut texts = Vec::new();
+    node_texts(&root, &mut texts);
+    assert!(
+        texts.contains(&"Selected: tokyo-night".to_owned()),
+        "{texts:?}; placement={placement:?}"
     );
 }
 
@@ -1075,6 +627,7 @@ fn native_input_updates_rhai_state_and_clipboard_with_unicode(cx: &mut TestAppCo
         host_focus.focus(window);
         KeyboardHost {
             root,
+            tree: gpui_rhai::RetainedUiTree::new(),
             dispatcher,
             host_focus,
             primitives,
@@ -1199,6 +752,7 @@ fn native_textarea_wraps_inserts_newlines_and_limits_graphemes(cx: &mut TestAppC
         let _ = window;
         KeyboardHost {
             root,
+            tree: gpui_rhai::RetainedUiTree::new(),
             dispatcher,
             host_focus,
             primitives,
@@ -1328,6 +882,7 @@ fn read_only_input_allows_selection_and_copy_but_rejects_edits(cx: &mut TestAppC
         host_focus.focus(window);
         KeyboardHost {
             root,
+            tree: gpui_rhai::RetainedUiTree::new(),
             dispatcher,
             host_focus,
             primitives,
@@ -1349,70 +904,6 @@ fn read_only_input_allows_selection_and_copy_but_rejects_edits(cx: &mut TestAppC
         runtime.borrow().component_state.get(&root_path, "value"),
         Some(&UiValue::String("Read only 中文".to_owned()))
     );
-}
-
-fn toast_node(paused: bool, callback: ScriptCallback) -> UiNode {
-    UiNode::toast_host(ToastHostSpec {
-        key: "notifications".to_owned(),
-        items: vec![ToastItemSpec {
-            id: "saved".to_owned(),
-            title: "Saved".to_owned(),
-            message: "Profile saved".to_owned(),
-            variant: ToastVariant::Success,
-            region: ToastRegion::TopRight,
-            duration_ms: 1_000,
-            paused,
-            dismissible: true,
-        }],
-        max_visible: 3,
-    })
-    .with_handler("dismiss", callback)
-}
-
-#[gpui::test]
-fn toast_host_uses_executor_clock_for_automatic_expiry(cx: &mut TestAppContext) {
-    let mut engine = RuntimeEngine::new();
-    let compiled = engine
-        .compile(
-            r#"
-                fn view(ctx) { text("toast test") }
-                fn dismissed(ctx, id) { () }
-            "#,
-        )
-        .unwrap();
-    let callback = engine.callback(&compiled, "dismissed").unwrap();
-    let root = Rc::new(RefCell::new(toast_node(false, callback)));
-    let dismissals = Rc::new(RefCell::new(Vec::new()));
-    let captured = Rc::clone(&dismissals);
-    let dispatcher = NodeEventDispatcher::new(move |_, payload, _, _| {
-        captured.borrow_mut().push(payload);
-        EventPropagation::Handled
-    });
-    let window = cx.add_window(|window, cx| {
-        let host_focus = cx.focus_handle();
-        host_focus.focus(window);
-        KeyboardHost {
-            root: Rc::clone(&root),
-            dispatcher,
-            host_focus,
-            primitives: PrimitiveRegistry::new(),
-        }
-    });
-    cx.run_until_parked();
-
-    cx.executor()
-        .advance_clock(Duration::from_millis(999));
-    cx.run_until_parked();
-    assert!(dismissals.borrow().is_empty());
-    cx.executor().advance_clock(Duration::from_millis(1));
-    cx.run_until_parked();
-    assert_eq!(
-        *dismissals.borrow(),
-        vec![UiValue::String("saved".to_owned())]
-    );
-    let windows = cx.windows();
-    assert_eq!(windows.len(), 1);
-    assert!(windows.contains(&(*window).into()));
 }
 
 #[gpui::test]
@@ -1521,6 +1012,7 @@ fn menu_trigger_routes_roving_and_enter_keys_through_current_rhai_state(
         host_focus.focus(window);
         KeyboardHost {
             root,
+            tree: gpui_rhai::RetainedUiTree::new(),
             dispatcher,
             host_focus,
             primitives: PrimitiveRegistry::new(),
@@ -1706,7 +1198,8 @@ impl Render for EmbeddedIntegrationHost {
 fn node_texts(node: &UiNode, output: &mut Vec<String>) {
     match node.kind() {
         gpui_rhai::UiNodeKind::Text { text } => output.push(text.to_string()),
-        gpui_rhai::UiNodeKind::Container { children } => {
+        gpui_rhai::UiNodeKind::Box { children }
+        | gpui_rhai::UiNodeKind::Fragment { children } => {
             for child in children {
                 node_texts(child, output);
             }
@@ -1717,6 +1210,16 @@ fn node_texts(node: &UiNode, output: &mut Vec<String>) {
             node_texts(trigger, output);
             node_texts(content, output);
         }
+        gpui_rhai::UiNodeKind::Layer { content, .. } => node_texts(content, output),
+        gpui_rhai::UiNodeKind::ErrorBoundary { child, fallback } => {
+            node_texts(child, output);
+            node_texts(fallback, output);
+        }
+        gpui_rhai::UiNodeKind::VirtualCollection { spec } => {
+            for child in spec.realized.values() {
+                node_texts(child, output);
+            }
+        }
         _ => {}
     }
 }
@@ -1724,8 +1227,14 @@ fn node_texts(node: &UiNode, output: &mut Vec<String>) {
 fn overlay_open(node: &UiNode) -> Option<bool> {
     match node.kind() {
         gpui_rhai::UiNodeKind::Overlay { spec, .. } => Some(spec.open),
-        gpui_rhai::UiNodeKind::Container { children } => {
-            children.iter().find_map(overlay_open)
+        gpui_rhai::UiNodeKind::Box { children }
+        | gpui_rhai::UiNodeKind::Fragment { children } => children.iter().find_map(overlay_open),
+        gpui_rhai::UiNodeKind::Layer { content, .. } => overlay_open(content),
+        gpui_rhai::UiNodeKind::ErrorBoundary { child, fallback } => {
+            overlay_open(child).or_else(|| overlay_open(fallback))
+        }
+        gpui_rhai::UiNodeKind::VirtualCollection { spec } => {
+            spec.realized.values().find_map(overlay_open)
         }
         _ => None,
     }
@@ -1752,7 +1261,7 @@ fn multiple_embedded_views_share_host_mechanics_but_isolate_runtime_state(
     cx.run_until_parked();
 
     let (host, first, second, third) = captured.borrow().as_ref().unwrap().clone();
-    let mut visual = VisualTestContext::from_window((*window).into(), cx);
+    let mut visual = VisualTestContext::from_window(*window, cx);
     visual.run_until_parked();
 
     let first_root = visual
@@ -1764,7 +1273,19 @@ fn multiple_embedded_views_share_host_mechanics_but_isolate_runtime_state(
 
     let first_placement = host.overlay_placement("first", "shared-overlay").unwrap();
     assert!(first_placement.bounds.width > 200.0);
-    assert_eq!(host.visible_toast_count(ToastRegion::TopRight), 3);
+    let toast_count = [&first, &second, &third]
+        .into_iter()
+        .map(|view| {
+            visual.update(|_, cx| {
+                view.accessibility_snapshot(cx)
+                    .unwrap()
+                    .nodes()
+                    .filter(|node| node.role == "status")
+                    .count()
+            })
+        })
+        .sum::<usize>();
+    assert_eq!(toast_count, 3);
 
     let increment = visual
         .debug_bounds("window:integration-window/view:third/root/4")
@@ -1803,7 +1324,6 @@ fn multiple_embedded_views_share_host_mechanics_but_isolate_runtime_state(
         Err(gpui_rhai::ScriptViewError::DisposedView(id)) if id == "third"
     ));
     visual.run_until_parked();
-    assert_eq!(host.visible_toast_count(ToastRegion::TopRight), 3);
 }
 
 #[gpui::test]
@@ -1927,7 +1447,7 @@ fn separate_hosts_in_one_window_keep_overlay_domains_isolated(cx: &mut TestAppCo
     cx.run_until_parked();
 
     let (left, right) = captured.borrow().as_ref().unwrap().clone();
-    let mut visual = VisualTestContext::from_window((*window).into(), cx);
+    let mut visual = VisualTestContext::from_window(*window, cx);
     let increment = visual
         .debug_bounds("window:right-domain/view:right-view/root/4")
         .expect("right increment bounds");

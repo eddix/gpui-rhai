@@ -319,9 +319,10 @@ impl UiNode {
 
     #[must_use]
     pub fn custom(primitive: PrimitiveNode) -> Self {
+        let key = primitive.key.as_ref().map(NodeKey::new);
         Self {
             kind: UiNodeKind::Custom { primitive },
-            key: None,
+            key,
             style: Style::new(),
             part_styles: BTreeMap::new(),
             source: None,

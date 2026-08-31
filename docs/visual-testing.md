@@ -77,8 +77,18 @@ an open parent Dialog, guarding GPUI 0.2.x against nested `defer_draw` panics.
 Three-view embedding cases cover automatic bounds, runtime isolation, shared
 Host overlays, duplicate local IDs, click-through dismissal, key conflicts,
 and dispose/remount.
+The suite currently has 14 production-renderer cases and contains no deleted
+Table/choice/date/toast native constructor. It also guards that window-level
+pointer-capture listeners register during paint rather than GPUI layout.
 It guards keyboard/clipboard dispatch mechanics but does not replace platform
 IME candidate-window, focus-ring, or accessibility certification.
+
+Run its independent workspace explicitly:
+
+```text
+(cd tests/native-keyboard && cargo test -- --test-threads=1)
+(cd tests/native-keyboard && cargo clippy --tests -- -D warnings)
+```
 
 Runtime-only automation injects `ManualRuntimeClock` through the file or
 embedded view builder, advances it explicitly, and polls a frame. This gives

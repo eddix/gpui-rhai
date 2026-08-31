@@ -371,6 +371,26 @@ fn render_Dropdown(ctx, props) {
         .disabled(prop_or(props, "disabled", false)).tab_stop(true)
         .accessibility_role("combobox").accessibility_checked(open)
         .accessibility_label(placeholder).accessibility_value(selected_label);
+    if enabled.len > 0 {
+        trigger = trigger
+            .on_key_value("up", Fn("navigate_action"),
+                #{ active: if open { adjacent_value(enabled, active, -1) }
+                    else { edge_value(enabled, true) }, open: !open })
+            .on_key_value("down", Fn("navigate_action"),
+                #{ active: if open { adjacent_value(enabled, active, 1) }
+                    else { edge_value(enabled, false) }, open: !open })
+            .on_key_value("home", Fn("navigate_action"),
+                #{ active: edge_value(enabled, false), open: false })
+            .on_key_value("end", Fn("navigate_action"),
+                #{ active: edge_value(enabled, true), open: false });
+        if open {
+            for item in data {
+                if item.kind == "option" && item.value == active {
+                    trigger = trigger.on_key_value("enter", Fn("option_action"), item.action);
+                }
+            }
+        }
+    }
 
     let content = [];
     if "header" in props && props.header != () { content.push(props.header); }

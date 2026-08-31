@@ -2311,7 +2311,6 @@ impl Render for ScriptHostView {
             WindowAppearance::Light | WindowAppearance::VibrantLight => SystemAppearance::Light,
         };
         let snapshot = self.render_snapshot(appearance);
-        self.install_pointer_capture_router(window, &dispatcher, &snapshot.pointer_capture);
         let animation_root = format!("window:{}/view:{}/root", self.window_id, self.view_id);
         let render_resources = crate::renderer::WindowRenderResources {
             assets: &snapshot.assets,
@@ -2380,7 +2379,13 @@ impl Render for ScriptHostView {
         let root = root.on_action(cx.listener(Self::dispatch_key_binding));
         #[cfg(feature = "dev-reload")]
         let root = root.on_action(cx.listener(Self::toggle_inspector));
-        root.into_any_element()
+        crate::renderer::pointer_capture_router_element(
+            root.into_any_element(),
+            self.lifecycle.retained(),
+            &dispatcher,
+            &snapshot.pointer_capture,
+            &snapshot.geometry,
+        )
     }
 }
 
@@ -2419,22 +2424,6 @@ impl ScriptHostView {
         self.prepare_render(window);
         self.sync_focus_handles(cx);
         self.process_element_commands(window, cx);
-    }
-
-    fn install_pointer_capture_router(
-        &self,
-        window: &mut Window,
-        dispatcher: &NodeEventDispatcher,
-        pointer_capture: &crate::PointerCaptureRegistry,
-    ) {
-        let geometry = self.lifecycle.runtime().borrow().geometry.clone();
-        crate::renderer::install_pointer_capture_router(
-            window,
-            self.lifecycle.retained(),
-            dispatcher,
-            pointer_capture,
-            &geometry,
-        );
     }
 
     fn set_content_bounds(&mut self, bounds: Bounds<Pixels>, cx: &mut Context<Self>) {
@@ -2542,8 +2531,8 @@ impl ScriptHostView {
     }
 
     fn reconcile_primitive_lifecycle(&mut self) {
-        if let Some(root) = self.lifecycle.root()
-            && let Err(error) = self.primitives.retain_tree(root)
+        if !self.lifecycle.retained().is_empty()
+            && let Err(error) = self.primitives.retain_tree(self.lifecycle.retained())
         {
             self.last_error = Some(error.to_string());
         }

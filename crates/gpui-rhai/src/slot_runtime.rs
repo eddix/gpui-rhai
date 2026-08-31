@@ -26,6 +26,8 @@ pub(crate) struct NodeSlotRuntime {
     pub direction: crate::TextDirection,
     pub base_path: String,
     pub view_id: String,
+    pub retained_roots: BTreeMap<String, crate::NodeId>,
+    pub retained_links: BTreeMap<crate::NodeId, Vec<crate::RetainedChildLink>>,
 }
 
 impl NodeSlotRuntime {
@@ -46,13 +48,17 @@ impl NodeSlotRuntime {
             root_path: &self.base_path,
             view_id: &self.view_id,
         };
-        GpuiNodeRenderer::render_subtree_with_window_runtime(
+        GpuiNodeRenderer::render_subtree_with_window_runtime_at(
             node,
             &self.colors,
             &InteractionState::default(),
             &self.primitives,
             &resources,
             &format!("{}/{slot}", self.base_path),
+            crate::renderer::RetainedSubtree {
+                root: self.retained_roots.get(slot).copied(),
+                links: &self.retained_links,
+            },
         )
     }
 }
