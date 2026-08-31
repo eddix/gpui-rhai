@@ -20,8 +20,9 @@ contexts, arbitrary Rust values, filesystem paths, URLs, sockets, or process API
   by the runtime.
 - Host-configurable `RuntimeBudgets` independently reject an otherwise valid
   candidate before commit when retained nodes, event handlers, formal
-  components, effects, timers, signals, element refs, Canvas commands, or
-  virtual data/realization counts exceed their limits.
+  components, effects, timers, signals, element refs, generic Layers, Canvas
+  scenes/commands, or virtual data/realization counts exceed their independent
+  limits.
 - Window commands accept bounded sizes and validated stable IDs. Scripts cannot
   access native window handles.
 - Diagnostics redact fields marked `sensitive`; capability payloads should be

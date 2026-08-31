@@ -33,7 +33,9 @@ Transforms apply uniform scale, rotation about the Canvas origin, then logical
 translation. `clip_rect` is an axis-aligned Canvas-local content mask and does
 not rotate with the path. All coordinates/transforms are finite, sizes/scales
 are positive, and retained `canvas_commands` budget accounting includes every
-path segment so one command cannot hide unbounded work.
+path segment so one command cannot hide unbounded work. `canvas_scenes`
+separately caps the number of retained Canvas nodes, so many empty or tiny
+scenes cannot bypass the command budget.
 
 Pointer down/up/move payloads on a keyed Canvas use committed node geometry for
 `local`/`content` coordinates and add `canvas_key`, the topmost hit command in

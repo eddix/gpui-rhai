@@ -675,6 +675,16 @@ impl ScriptLifecycle {
             total.saturating_add(node.handler_count())
         });
         crate::RuntimeBudgets::check("event_handlers", handlers, budgets.event_handlers)?;
+        let layers = retained
+            .nodes()
+            .filter(|node| node.kind() == crate::UiNodeKindTag::Layer)
+            .count();
+        crate::RuntimeBudgets::check("layers", layers, budgets.layers)?;
+        let canvas_scenes = retained
+            .nodes()
+            .filter(|node| node.kind() == crate::UiNodeKindTag::Canvas)
+            .count();
+        crate::RuntimeBudgets::check("canvas_scenes", canvas_scenes, budgets.canvas_scenes)?;
         let canvas_commands = retained.nodes().fold(0usize, |total, node| {
             total.saturating_add(node.canvas_command_count())
         });
@@ -1264,6 +1274,90 @@ mod tests {
             Err(LifecycleError::Budget(
                 crate::RuntimeBudgetError::Exceeded {
                     resource: "retained_nodes",
+                    actual: 2,
+                    limit: 1,
+                }
+            ))
+        ));
+        assert!(lifecycle.retained().is_empty());
+    }
+
+    #[test]
+    fn layer_budget_rejects_candidate_before_commit() {
+        let mut engine = RuntimeEngine::new();
+        let compiled = engine
+            .compile(
+                r#"
+                    fn view(ctx) {
+                        box([
+                            layer(text("first"), #{ id: "first", placement: "top_right" }),
+                            layer(text("second"), #{ id: "second", placement: "bottom_right" })
+                        ])
+                    }
+                "#,
+            )
+            .unwrap();
+        let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+        runtime.borrow_mut().budgets.layers = 1;
+        let mut lifecycle = ScriptLifecycle::new(
+            compiled,
+            Rc::clone(&runtime),
+            ComponentInstancePath::root("App", "root"),
+            Some("main".to_owned()),
+            BTreeMap::new(),
+            &ComponentStateSchema::default(),
+        )
+        .unwrap();
+
+        assert!(matches!(
+            lifecycle.start(&mut engine),
+            Err(LifecycleError::Budget(
+                crate::RuntimeBudgetError::Exceeded {
+                    resource: "layers",
+                    actual: 2,
+                    limit: 1,
+                }
+            ))
+        ));
+        assert!(lifecycle.retained().is_empty());
+    }
+
+    #[test]
+    fn canvas_scene_budget_is_independent_from_command_budget() {
+        let mut engine = RuntimeEngine::new();
+        let compiled = engine
+            .compile(
+                r#"
+                    fn view(ctx) {
+                        box([
+                            canvas(canvas_scene([canvas_rect("a", 0.0, 0.0, 1.0, 1.0, rgb(0))])),
+                            canvas(canvas_scene([canvas_rect("b", 0.0, 0.0, 1.0, 1.0, rgb(0))]))
+                        ])
+                    }
+                "#,
+            )
+            .unwrap();
+        let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+        {
+            let mut runtime = runtime.borrow_mut();
+            runtime.budgets.canvas_scenes = 1;
+            runtime.budgets.canvas_commands = 10;
+        }
+        let mut lifecycle = ScriptLifecycle::new(
+            compiled,
+            Rc::clone(&runtime),
+            ComponentInstancePath::root("App", "root"),
+            Some("main".to_owned()),
+            BTreeMap::new(),
+            &ComponentStateSchema::default(),
+        )
+        .unwrap();
+
+        assert!(matches!(
+            lifecycle.start(&mut engine),
+            Err(LifecycleError::Budget(
+                crate::RuntimeBudgetError::Exceeded {
+                    resource: "canvas_scenes",
                     actual: 2,
                     limit: 1,
                 }
