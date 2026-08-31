@@ -9,6 +9,7 @@ pub mod diagnostic;
 pub mod effect;
 pub mod element_ref;
 pub mod engine;
+mod environment_dependency;
 pub mod event;
 pub mod font;
 pub mod geometry;

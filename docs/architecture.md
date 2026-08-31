@@ -58,7 +58,13 @@ escape hatch.
 
 `view(ctx)` returns a declarative snapshot. Formal component calls record
 generation-scoped invocation recipes, and state/store writes dirty only their
-tracked component boundaries. A candidate becomes active only after script
+tracked component boundaries. Locale formatter/message/direction reads and
+discrete viewport-class reads register the same exact component dependency;
+geometry reads already bind to a retained `NodeId`. Locale and viewport changes
+therefore rerender only readers, while a separate per-window repaint queue
+handles native direction/paint changes that require no Rhai execution. Theme
+Style values remain symbolic tokens and resolve in the renderer, so no script
+theme-token dependency is necessary. A candidate becomes active only after script
 evaluation, retained validation, staged component-state commit, effect
 transitions, signal reconciliation, and animation reconciliation succeed.
 Failed renders and reloads restore one runtime/Engine checkpoint and keep:

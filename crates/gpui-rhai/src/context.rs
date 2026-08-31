@@ -65,6 +65,8 @@ pub struct UiRuntimeState {
     pub virtual_requests: crate::VirtualRequestRegistry,
     pub windows: WindowCommandRegistry,
     pub responsive: ResponsiveRuntime,
+    pub(crate) environment_dependencies:
+        crate::environment_dependency::EnvironmentDependencyRegistry,
     pub animation_values: BTreeMap<AnimationKey, f64>,
     pub traces: crate::TraceBuffer,
     component_event_handlers: BTreeMap<(ComponentInstancePath, String), ScriptCallback>,
@@ -73,6 +75,7 @@ pub struct UiRuntimeState {
     pending_actions: Vec<ActionInvocation>,
     pending_async: Vec<crate::AsyncDelivery>,
     pending_element_commands: Vec<crate::element_ref::ElementCommand>,
+    repaint_windows: BTreeSet<String>,
 }
 
 impl UiRuntimeState {
@@ -137,6 +140,9 @@ impl UiRuntimeState {
         });
         self.pending_element_commands
             .retain(|command| command.window() != window);
+        self.environment_dependencies.remove_window(window);
+        self.environment_dependencies.remove_scope(root);
+        self.repaint_windows.remove(window);
         if let Some(theme) = self.theme.as_mut() {
             theme.remove_window(window);
             theme.remove_scope(root);
@@ -257,6 +263,25 @@ impl UiRuntimeState {
         );
     }
 
+    pub(crate) fn mark_dirty(
+        &mut self,
+        components: impl IntoIterator<Item = ComponentInstancePath>,
+    ) {
+        self.dirty.extend(components);
+    }
+
+    pub(crate) fn mark_all_windows_repaint(&mut self) {
+        self.repaint_windows.extend(self.windows.open_ids());
+    }
+
+    pub(crate) fn mark_window_repaint(&mut self, window: impl Into<String>) {
+        self.repaint_windows.insert(window.into());
+    }
+
+    pub(crate) fn take_window_repaint(&mut self, window: &str) -> bool {
+        self.repaint_windows.remove(window)
+    }
+
     pub(crate) fn reconcile_component_lifetimes(
         &mut self,
         root: &ComponentInstancePath,
@@ -290,6 +315,7 @@ impl UiRuntimeState {
             !event.target.is_within(root) || active.contains(&event.target) || event.target == *root
         });
         self.stores.retain_reader_scope(root, active);
+        self.environment_dependencies.retain_scope(root, active);
         self.dirty
             .retain(|path| !path.is_within(root) || path == root || active.contains(path));
         Ok(())
@@ -338,6 +364,8 @@ impl UiRuntimeState {
             animation_values: self.animation_values.clone(),
             windows: self.windows.clone(),
             responsive: self.responsive.clone(),
+            environment_dependencies: self.environment_dependencies.clone(),
+            repaint_windows: self.repaint_windows.clone(),
             task_ids: self.tasks.active_ids(),
             subscription_ids: self.subscriptions.active_ids(),
             timers: self.timers.clone(),
@@ -377,6 +405,8 @@ impl UiRuntimeState {
         self.animation_values = snapshot.animation_values;
         self.windows = snapshot.windows;
         self.responsive = snapshot.responsive;
+        self.environment_dependencies = snapshot.environment_dependencies;
+        self.repaint_windows = snapshot.repaint_windows;
         Ok(())
     }
 }
@@ -405,6 +435,8 @@ pub struct UiStateSnapshot {
     animation_values: BTreeMap<AnimationKey, f64>,
     windows: WindowCommandRegistry,
     responsive: ResponsiveRuntime,
+    environment_dependencies: crate::environment_dependency::EnvironmentDependencyRegistry,
+    repaint_windows: BTreeSet<String>,
     task_ids: BTreeSet<u64>,
     subscription_ids: BTreeSet<u64>,
     timers: crate::TimerRegistry,
@@ -469,6 +501,9 @@ impl UiContext {
             && let Ok(mut runtime) = context.runtime.try_borrow_mut()
         {
             runtime.stores.reset_reader(&context.component);
+            runtime
+                .environment_dependencies
+                .reset_reader(&context.component);
         }
         context
     }
@@ -512,6 +547,9 @@ impl UiContext {
             && let Ok(mut runtime) = context.runtime.try_borrow_mut()
         {
             runtime.stores.reset_reader(&context.component);
+            runtime
+                .environment_dependencies
+                .reset_reader(&context.component);
         }
         context
     }
@@ -1060,21 +1098,35 @@ impl UiContext {
         Ok(output)
     }
 
+    fn read_locale<T>(
+        &self,
+        read: impl FnOnce(
+            &LocaleManager,
+            Option<&str>,
+            &ComponentInstancePath,
+        ) -> Result<T, LocaleError>,
+    ) -> Result<T, UiContextError> {
+        let mut runtime = self
+            .runtime
+            .try_borrow_mut()
+            .map_err(|_| UiContextError::Borrowed)?;
+        runtime
+            .environment_dependencies
+            .track_locale(self.window.as_deref(), &self.component);
+        let locale = runtime
+            .locale
+            .as_ref()
+            .ok_or(UiContextError::LocaleUnavailable)?;
+        Ok(read(locale, self.window.as_deref(), &self.component)?)
+    }
+
     /// Resolve one localized message for this window/component scope.
     ///
     /// # Errors
     ///
     /// Returns [`UiContextError::LocaleUnavailable`], locale, or borrow errors.
     pub fn text(&self, key: &str) -> Result<String, UiContextError> {
-        let runtime = self
-            .runtime
-            .try_borrow()
-            .map_err(|_| UiContextError::Borrowed)?;
-        let locale = runtime
-            .locale
-            .as_ref()
-            .ok_or(UiContextError::LocaleUnavailable)?;
-        Ok(locale.text(self.window.as_deref(), Some(&self.component), key)?)
+        self.read_locale(|locale, window, component| locale.text(window, Some(component), key))
     }
 
     /// Resolve the logical text direction for this component scope.
@@ -1083,15 +1135,9 @@ impl UiContext {
     ///
     /// Returns [`UiContextError::LocaleUnavailable`], locale, or borrow errors.
     pub fn text_direction(&self) -> Result<String, UiContextError> {
-        let runtime = self
-            .runtime
-            .try_borrow()
-            .map_err(|_| UiContextError::Borrowed)?;
-        let locale = runtime
-            .locale
-            .as_ref()
-            .ok_or(UiContextError::LocaleUnavailable)?;
-        match locale.direction(self.window.as_deref(), Some(&self.component))? {
+        match self
+            .read_locale(|locale, window, component| locale.direction(window, Some(component)))?
+        {
             TextDirection::LeftToRight => Ok("ltr".to_owned()),
             TextDirection::RightToLeft => Ok("rtl".to_owned()),
         }
@@ -1120,20 +1166,10 @@ impl UiContext {
     ///
     /// Returns locale, date, style, or runtime borrow errors.
     pub fn format_date(&self, iso_date: &str, style: &str) -> Result<String, UiContextError> {
-        let runtime = self
-            .runtime
-            .try_borrow()
-            .map_err(|_| UiContextError::Borrowed)?;
-        let locale = runtime
-            .locale
-            .as_ref()
-            .ok_or(UiContextError::LocaleUnavailable)?;
-        Ok(locale.format_date(
-            self.window.as_deref(),
-            Some(&self.component),
-            iso_date,
-            DateStyle::parse(style)?,
-        )?)
+        let style = DateStyle::parse(style)?;
+        self.read_locale(|locale, window, component| {
+            locale.format_date(window, Some(component), iso_date, style)
+        })
     }
 
     /// Format a strict ISO date with the locale's month/year pattern.
@@ -1142,15 +1178,9 @@ impl UiContext {
     ///
     /// Returns locale, date, or runtime borrow errors.
     pub fn format_month_year(&self, iso_date: &str) -> Result<String, UiContextError> {
-        let runtime = self
-            .runtime
-            .try_borrow()
-            .map_err(|_| UiContextError::Borrowed)?;
-        let locale = runtime
-            .locale
-            .as_ref()
-            .ok_or(UiContextError::LocaleUnavailable)?;
-        Ok(locale.format_month_year(self.window.as_deref(), Some(&self.component), iso_date)?)
+        self.read_locale(|locale, window, component| {
+            locale.format_month_year(window, Some(component), iso_date)
+        })
     }
 
     /// Return a detached read-only copy of selected calendar metadata.
@@ -1159,15 +1189,9 @@ impl UiContext {
     ///
     /// Returns locale, serialization, or runtime borrow errors.
     pub fn calendar_metadata(&self) -> Result<Map, UiContextError> {
-        let runtime = self
-            .runtime
-            .try_borrow()
-            .map_err(|_| UiContextError::Borrowed)?;
-        let locale = runtime
-            .locale
-            .as_ref()
-            .ok_or(UiContextError::LocaleUnavailable)?;
-        let calendar = locale.calendar(self.window.as_deref(), Some(&self.component))?;
+        let calendar = self.read_locale(|locale, window, component| {
+            locale.calendar(window, Some(component)).cloned()
+        })?;
         let dynamic = rhai::serde::to_dynamic(calendar)
             .map_err(|error| LocaleError::Decode(error.to_string()))?;
         Ok(dynamic.cast::<Map>())
@@ -1179,15 +1203,9 @@ impl UiContext {
     ///
     /// Returns locale, serialization, or runtime borrow errors.
     pub fn number_metadata(&self) -> Result<Map, UiContextError> {
-        let runtime = self
-            .runtime
-            .try_borrow()
-            .map_err(|_| UiContextError::Borrowed)?;
-        let locale = runtime
-            .locale
-            .as_ref()
-            .ok_or(UiContextError::LocaleUnavailable)?;
-        let number = locale.number(self.window.as_deref(), Some(&self.component))?;
+        let number = self.read_locale(|locale, window, component| {
+            locale.number(window, Some(component)).cloned()
+        })?;
         let dynamic = rhai::serde::to_dynamic(number)
             .map_err(|error| LocaleError::Decode(error.to_string()))?;
         Ok(dynamic.cast::<Map>())
@@ -1203,20 +1221,9 @@ impl UiContext {
         value: INT,
         options: NumberFormatOptions,
     ) -> Result<String, UiContextError> {
-        let runtime = self
-            .runtime
-            .try_borrow()
-            .map_err(|_| UiContextError::Borrowed)?;
-        let locale = runtime
-            .locale
-            .as_ref()
-            .ok_or(UiContextError::LocaleUnavailable)?;
-        Ok(locale.format_integer(
-            self.window.as_deref(),
-            Some(&self.component),
-            value,
-            options,
-        )?)
+        self.read_locale(|locale, window, component| {
+            locale.format_integer(window, Some(component), value, options)
+        })
     }
 
     /// Format a finite decimal number through the selected locale.
@@ -1229,20 +1236,9 @@ impl UiContext {
         value: FLOAT,
         options: NumberFormatOptions,
     ) -> Result<String, UiContextError> {
-        let runtime = self
-            .runtime
-            .try_borrow()
-            .map_err(|_| UiContextError::Borrowed)?;
-        let locale = runtime
-            .locale
-            .as_ref()
-            .ok_or(UiContextError::LocaleUnavailable)?;
-        Ok(locale.format_number(
-            self.window.as_deref(),
-            Some(&self.component),
-            value,
-            options,
-        )?)
+        self.read_locale(|locale, window, component| {
+            locale.format_number(window, Some(component), value, options)
+        })
     }
 
     /// Change the app locale at runtime without changing component state.
@@ -1256,12 +1252,20 @@ impl UiContext {
             .runtime
             .try_borrow_mut()
             .map_err(|_| UiContextError::Borrowed)?;
-        runtime
-            .locale
-            .as_mut()
-            .ok_or(UiContextError::LocaleUnavailable)?
-            .set_app(locale)?;
-        runtime.mark_all_windows_dirty();
+        let changed = {
+            let locales = runtime
+                .locale
+                .as_mut()
+                .ok_or(UiContextError::LocaleUnavailable)?;
+            let previous = locales.generation();
+            locales.set_app(locale)?;
+            locales.generation() != previous
+        };
+        if changed {
+            let invalidated = runtime.environment_dependencies.invalidate_locale_app();
+            runtime.dirty.extend(invalidated);
+            runtime.mark_all_windows_repaint();
+        }
         runtime.traces.push(
             crate::RuntimeTraceKind::Locale,
             self.component.to_string(),
@@ -1329,14 +1333,14 @@ impl UiContext {
     /// Returns [`UiContextError::MissingWindow`] outside a window lifecycle.
     pub fn viewport_class(&self) -> Result<String, UiContextError> {
         let window = self.window.as_ref().ok_or(UiContextError::MissingWindow)?;
-        Ok(self
+        let mut runtime = self
             .runtime
-            .try_borrow()
-            .map_err(|_| UiContextError::Borrowed)?
-            .responsive
-            .class(window)
-            .as_str()
-            .to_owned())
+            .try_borrow_mut()
+            .map_err(|_| UiContextError::Borrowed)?;
+        runtime
+            .environment_dependencies
+            .track_viewport(window, &self.component);
+        Ok(runtime.responsive.class(window).as_str().to_owned())
     }
 
     /// Queue another native window running the same script entry.
@@ -1455,12 +1459,22 @@ impl UiContext {
             .runtime
             .try_borrow_mut()
             .map_err(|_| UiContextError::Borrowed)?;
-        runtime
-            .locale
-            .as_mut()
-            .ok_or(UiContextError::LocaleUnavailable)?
-            .set_window(window.clone(), locale)?;
-        runtime.dirty.insert(self.component.clone());
+        let changed = {
+            let locales = runtime
+                .locale
+                .as_mut()
+                .ok_or(UiContextError::LocaleUnavailable)?;
+            let previous = locales.generation();
+            locales.set_window(window.clone(), locale)?;
+            locales.generation() != previous
+        };
+        if changed {
+            let invalidated = runtime
+                .environment_dependencies
+                .invalidate_locale_window(&window);
+            runtime.dirty.extend(invalidated);
+            runtime.mark_window_repaint(window.clone());
+        }
         runtime.traces.push(
             crate::RuntimeTraceKind::Locale,
             self.component.to_string(),
@@ -1482,12 +1496,24 @@ impl UiContext {
             .runtime
             .try_borrow_mut()
             .map_err(|_| UiContextError::Borrowed)?;
-        runtime
-            .locale
-            .as_mut()
-            .ok_or(UiContextError::LocaleUnavailable)?
-            .set_scope(self.component.clone(), locale)?;
-        runtime.dirty.insert(self.component.clone());
+        let changed = {
+            let locales = runtime
+                .locale
+                .as_mut()
+                .ok_or(UiContextError::LocaleUnavailable)?;
+            let previous = locales.generation();
+            locales.set_scope(self.component.clone(), locale)?;
+            locales.generation() != previous
+        };
+        if changed {
+            let invalidated = runtime
+                .environment_dependencies
+                .invalidate_locale_scope(&self.component);
+            runtime.dirty.extend(invalidated);
+            if let Some(window) = &self.window {
+                runtime.mark_window_repaint(window.clone());
+            }
+        }
         runtime.traces.push(
             crate::RuntimeTraceKind::Locale,
             self.component.to_string(),
@@ -2636,6 +2662,60 @@ mod tests {
             .update_window("main", 480.0)
             .unwrap();
         assert_eq!(context.viewport_class().unwrap(), "compact");
+    }
+
+    #[test]
+    fn locale_and_viewport_reads_register_exact_component_dependencies() {
+        let engine = Engine::new();
+        let en = crate::load_locale_source(
+            &engine,
+            "en.rhai",
+            include_str!("../../../registry/locales/en.rhai"),
+        )
+        .unwrap();
+        let zh = crate::load_locale_source(
+            &engine,
+            "zh_cn.rhai",
+            include_str!("../../../registry/locales/zh_cn.rhai"),
+        )
+        .unwrap();
+        let mut state = UiRuntimeState::new();
+        state.locale = Some(LocaleManager::new([en, zh], "en", "en").unwrap());
+        state.responsive.update_window("main", 480.0).unwrap();
+        state.windows.register_open("main").unwrap();
+        let runtime = Rc::new(RefCell::new(state));
+        let reader = ComponentInstancePath::root("View", "main").child("Reader", "reader");
+        let unrelated = ComponentInstancePath::root("View", "main").child("Static", "static");
+        let render_context = UiContext::new(
+            Rc::clone(&runtime),
+            reader.clone(),
+            Some("main".to_owned()),
+            ExecutionPhase::Render,
+            BTreeMap::new(),
+        );
+        assert!(!render_context.text("common.loading").unwrap().is_empty());
+        assert_eq!(render_context.viewport_class().unwrap(), "compact");
+        let event = UiContext::new(
+            Rc::clone(&runtime),
+            unrelated,
+            Some("main".to_owned()),
+            ExecutionPhase::Event,
+            BTreeMap::new(),
+        );
+        event.set_locale("zh-CN").unwrap();
+
+        assert_eq!(
+            runtime.borrow_mut().drain_batch().dirty,
+            BTreeSet::from([reader.clone()])
+        );
+        assert_eq!(
+            runtime
+                .borrow()
+                .environment_dependencies
+                .invalidate_viewport("main"),
+            BTreeSet::from([reader])
+        );
+        assert!(runtime.borrow_mut().take_window_repaint("main"));
     }
 
     #[test]

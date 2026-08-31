@@ -63,6 +63,12 @@ pluralized prose belong to caller policy or a future complete formatter.
   app/window/subtree selection precedence.
 - `ctx.text_direction()` returns `ltr` or `rtl` for explicit policy branches.
 
+Every locale read registers the exact formal component and its window. App,
+window, and subtree locale changes dirty only matching readers. A separate
+window repaint marker updates native text direction even when no Rhai component
+read locale data; equal selections do neither work nor advance the locale
+generation.
+
 Pure global helpers keep calendar policy available to every Rhai author without
 a DatePicker-specific native node: `date_info`, `date_month_start`,
 `date_checked_add_days`, `date_checked_add_months`, `date_week_edge`,

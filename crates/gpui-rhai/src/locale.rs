@@ -302,8 +302,11 @@ impl LocaleManager {
     ) -> Result<(), LocaleError> {
         let locale = locale.into();
         self.require_locale(&locale)?;
-        self.windows.insert(window.into(), locale);
-        self.generation = self.generation.saturating_add(1);
+        let window = window.into();
+        if self.windows.get(&window) != Some(&locale) {
+            self.windows.insert(window, locale);
+            self.generation = self.generation.saturating_add(1);
+        }
         Ok(())
     }
 
@@ -337,8 +340,10 @@ impl LocaleManager {
     ) -> Result<(), LocaleError> {
         let locale = locale.into();
         self.require_locale(&locale)?;
-        self.scopes.insert(scope, locale);
-        self.generation = self.generation.saturating_add(1);
+        if self.scopes.get(&scope) != Some(&locale) {
+            self.scopes.insert(scope, locale);
+            self.generation = self.generation.saturating_add(1);
+        }
         Ok(())
     }
 
@@ -954,6 +959,13 @@ mod tests {
         let generation = locales.generation();
         locales.set_app("zh-CN").unwrap();
         assert_eq!(locales.generation(), generation + 1);
+        let generation = locales.generation();
+        locales.set_app("zh-CN").unwrap();
+        locales.set_window("main", "zh-CN").unwrap();
+        let window_generation = locales.generation();
+        locales.set_window("main", "zh-CN").unwrap();
+        assert_eq!(locales.generation(), window_generation);
+        assert_eq!(generation + 1, window_generation);
     }
 
     #[test]

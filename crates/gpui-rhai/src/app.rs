@@ -2544,16 +2544,24 @@ impl ScriptHostView {
             |bounds| f64::from(bounds.size.width),
         );
         let result = self.run_script_transaction(|view| {
-            let changed = view
-                .lifecycle
-                .runtime()
-                .borrow_mut()
-                .responsive
-                .update_window(&view.window_id, width)
-                .map_err(|error| error.to_string())?;
+            let runtime = view.lifecycle.runtime();
+            let changed = {
+                let mut runtime = runtime.borrow_mut();
+                let changed = runtime
+                    .responsive
+                    .update_window(&view.window_id, width)
+                    .map_err(|error| error.to_string())?;
+                if changed {
+                    let invalidated = runtime
+                        .environment_dependencies
+                        .invalidate_viewport(&view.window_id);
+                    runtime.mark_dirty(invalidated);
+                }
+                changed
+            };
             if changed {
                 view.lifecycle
-                    .render(&mut view.engine)
+                    .render_dirty(&mut view.engine)
                     .map_err(|error| error.to_string())?;
             }
             Ok(())
@@ -2948,7 +2956,7 @@ impl ScriptHostView {
         let generation = self.lifecycle.generation();
         let runtime = self.lifecycle.runtime();
         let root = self.lifecycle.root_path().clone();
-        let (deliveries, animation_active, dirty, pending_dispatch, virtual_requests) = {
+        let (deliveries, animation_active, dirty, pending_dispatch, virtual_requests, repaint) = {
             let mut runtime = runtime.borrow_mut();
             runtime.flush_geometry_dependencies();
             let _ = runtime.assets.retain_decode_generation(generation);
@@ -2970,11 +2978,12 @@ impl ScriptHostView {
                 runtime.has_window_dirty(&root),
                 runtime.has_pending_dispatch(),
                 runtime.has_virtual_requests(),
+                runtime.take_window_repaint(&self.window_id),
             )
         };
         let has_script_work =
             !deliveries.is_empty() || dirty || pending_dispatch || virtual_requests;
-        if !has_script_work && !animation_active {
+        if !has_script_work && !animation_active && !repaint {
             return;
         }
 

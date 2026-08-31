@@ -18,6 +18,9 @@ The budgets are diagnostics, not permission to move per-frame policy into Rhai.
 - Generic portal Layers, retained Canvas scenes, and Canvas command/segment
   complexity have independent Host-configurable limits; candidate trees cross
   all three gates before commit.
+- Store fields, locale reads, discrete viewport classes, and retained geometry
+  are exact formal-component dependencies. Native-only locale direction repaint
+  is queued separately, so it does not force an otherwise clean Rhai root.
 - A 5,000-item `VirtualList` must realize only the viewport plus configured
   overscan; tests enforce bounded realization and stable focus.
 - A 10,000-row scalar Table must retain row maps as data and realize only the
