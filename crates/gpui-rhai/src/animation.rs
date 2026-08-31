@@ -21,6 +21,18 @@ pub enum AnimationProperty {
 }
 
 impl AnimationProperty {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Opacity => "opacity",
+            Self::TranslateX => "translate_x",
+            Self::TranslateY => "translate_y",
+            Self::Width => "width",
+            Self::Height => "height",
+            Self::ClipHeight => "clip_height",
+        }
+    }
+
     fn parse(value: &str) -> Result<Self, AnimationError> {
         match value {
             "opacity" => Ok(Self::Opacity),
@@ -187,6 +199,19 @@ pub struct AnimationRuntime {
     preference: Option<MotionPreference>,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct AnimationSnapshot {
+    pub key: AnimationKey,
+    pub kind: String,
+    pub value: f64,
+    pub target: f64,
+    pub velocity: Option<f64>,
+    pub elapsed_ms: u64,
+    pub duration_ms: Option<u64>,
+    pub repeating: bool,
+    pub active: bool,
+}
+
 impl AnimationRuntime {
     #[must_use]
     pub fn new(preference: MotionPreference) -> Self {
@@ -314,6 +339,62 @@ impl AnimationRuntime {
     }
 
     #[must_use]
+    pub fn inspect(&self, now: Instant) -> Vec<AnimationSnapshot> {
+        let mut snapshots = self
+            .active
+            .iter()
+            .map(|(key, animation)| match animation {
+                ActiveAnimation::Transition {
+                    to,
+                    started,
+                    duration,
+                    repeat,
+                    ..
+                } => AnimationSnapshot {
+                    key: key.clone(),
+                    kind: "transition".to_owned(),
+                    value: sample_animation(animation, now),
+                    target: *to,
+                    velocity: None,
+                    elapsed_ms: duration_ms(now.saturating_duration_since(*started)),
+                    duration_ms: Some(duration_ms(*duration)),
+                    repeating: *repeat,
+                    active: true,
+                },
+                ActiveAnimation::Spring {
+                    velocity,
+                    target,
+                    last_tick,
+                    ..
+                } => AnimationSnapshot {
+                    key: key.clone(),
+                    kind: "spring".to_owned(),
+                    value: sample_animation(animation, now),
+                    target: *target,
+                    velocity: Some(*velocity),
+                    elapsed_ms: duration_ms(now.saturating_duration_since(*last_tick)),
+                    duration_ms: None,
+                    repeating: false,
+                    active: true,
+                },
+            })
+            .collect::<Vec<_>>();
+        snapshots.extend(self.settled.iter().map(|(key, value)| AnimationSnapshot {
+            key: key.clone(),
+            kind: "settled".to_owned(),
+            value: *value,
+            target: *value,
+            velocity: None,
+            elapsed_ms: 0,
+            duration_ms: None,
+            repeating: false,
+            active: false,
+        }));
+        snapshots.sort_by(|left, right| left.key.cmp(&right.key));
+        snapshots
+    }
+
+    #[must_use]
     pub fn sample(&self, key: &AnimationKey, now: Instant) -> Option<f64> {
         self.active
             .get(key)
@@ -343,6 +424,10 @@ impl AnimationRuntime {
             needs_frame: !self.active.is_empty(),
         }
     }
+}
+
+fn duration_ms(duration: Duration) -> u64 {
+    u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
 }
 
 /// Reconcile animation declarations from one successfully rendered node tree.

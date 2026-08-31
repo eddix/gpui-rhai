@@ -247,7 +247,9 @@ date wire format; locale formatters produce presentation strings. A
 `CalendarClock` supplies the current civil date and may be fixed by the Host.
 The separate monotonic `RuntimeClock` drives timers and animation and may be
 replaced with `ManualRuntimeClock` for deterministic automation. Neither clock
-is readable by Rhai.
+is readable by Rhai. Inspector snapshots report monotonic elapsed milliseconds
+plus active and settled animation sampling details without exposing platform
+`Instant` values.
 
 Component metadata declares small assets. Script preparation registers and
 preloads them into `AssetRegistry`; asset-backed image nodes therefore resolve

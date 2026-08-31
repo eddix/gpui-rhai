@@ -12,27 +12,37 @@ pub trait RuntimeClockSource {
 }
 
 #[derive(Clone)]
-pub struct RuntimeClock(Rc<dyn RuntimeClockSource>);
+pub struct RuntimeClock {
+    source: Rc<dyn RuntimeClockSource>,
+    origin: Instant,
+}
 
 impl RuntimeClock {
     #[must_use]
     pub fn system() -> Self {
-        Self(Rc::new(SystemRuntimeClock))
+        Self::from_source(SystemRuntimeClock)
     }
 
     #[must_use]
     pub fn from_source(source: impl RuntimeClockSource + 'static) -> Self {
-        Self(Rc::new(source))
+        let source: Rc<dyn RuntimeClockSource> = Rc::new(source);
+        let origin = source.now();
+        Self { source, origin }
     }
 
     #[must_use]
     pub fn now(&self) -> Instant {
-        self.0.now()
+        self.source.now()
+    }
+
+    #[must_use]
+    pub fn elapsed(&self) -> Duration {
+        self.now().saturating_duration_since(self.origin)
     }
 
     #[must_use]
     pub fn advance(&self, duration: Duration) -> bool {
-        self.0.advance(duration)
+        self.source.advance(duration)
     }
 }
 
@@ -106,5 +116,6 @@ mod tests {
         let clock = manual.clock();
         manual.advance(Duration::from_millis(16));
         assert_eq!(clock.now(), start + Duration::from_millis(16));
+        assert_eq!(clock.elapsed(), Duration::from_millis(16));
     }
 }

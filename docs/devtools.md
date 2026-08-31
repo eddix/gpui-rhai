@@ -17,8 +17,10 @@ The inspector reports:
 - the selected theme and semantic color tokens;
 - pending invalidations, bounded runtime traces, and recent script timings.
 - exact locale/viewport reader counts; native signals with value/revision/last
-  writer; effect dependencies and callbacks; timer deadline/pause/generation;
-  element-ref to `NodeId` bindings; committed geometry and pointer captures.
+  writer; effect dependencies, activation, and callbacks; monotonic clock
+  elapsed time; active/settled animation kind/value/target/velocity/progress/
+  repeat state; timer deadline/pause/generation; element-ref to `NodeId`
+  bindings; committed geometry and pointer captures.
 
 Every successful full, incremental, virtual-realization, or hot-reload commit
 adds one `Reconcile` trace with mounted/preserved/moved/unmounted counts and a

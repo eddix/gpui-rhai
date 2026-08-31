@@ -117,12 +117,14 @@ pub struct InspectorSnapshot {
     pub components: Vec<InspectorComponent>,
     pub signals: Vec<InspectorSignal>,
     pub effects: Vec<InspectorEffect>,
+    pub animations: Vec<InspectorAnimation>,
     pub timers: Vec<InspectorTimer>,
     pub element_refs: Vec<InspectorElementRef>,
     pub geometry_nodes: usize,
     pub pointer_captures: BTreeMap<u64, u64>,
     pub locale_readers: usize,
     pub viewport_readers: usize,
+    pub clock_elapsed_ms: u64,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -153,6 +155,19 @@ pub struct InspectorEffect {
     pub generation: u64,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct InspectorAnimation {
+    pub id: String,
+    pub kind: String,
+    pub value: f64,
+    pub target: f64,
+    pub velocity: Option<f64>,
+    pub elapsed_ms: u64,
+    pub duration_ms: Option<u64>,
+    pub repeating: bool,
+    pub active: bool,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct InspectorTimer {
     pub id: String,
@@ -173,12 +188,14 @@ pub struct InspectorElementRef {
 struct InspectorRuntimeMechanisms {
     signals: Vec<InspectorSignal>,
     effects: Vec<InspectorEffect>,
+    animations: Vec<InspectorAnimation>,
     timers: Vec<InspectorTimer>,
     element_refs: Vec<InspectorElementRef>,
     geometry_nodes: usize,
     pointer_captures: BTreeMap<u64, u64>,
     locale_readers: usize,
     viewport_readers: usize,
+    clock_elapsed_ms: u64,
 }
 
 impl InspectorSnapshot {
@@ -236,12 +253,14 @@ impl InspectorSnapshot {
                 .collect(),
             signals: mechanisms.signals,
             effects: mechanisms.effects,
+            animations: mechanisms.animations,
             timers: mechanisms.timers,
             element_refs: mechanisms.element_refs,
             geometry_nodes: mechanisms.geometry_nodes,
             pointer_captures: mechanisms.pointer_captures,
             locale_readers: mechanisms.locale_readers,
             viewport_readers: mechanisms.viewport_readers,
+            clock_elapsed_ms: mechanisms.clock_elapsed_ms,
         }
     }
 }
@@ -277,6 +296,26 @@ fn inspect_runtime_mechanisms(runtime: &UiRuntimeState) -> InspectorRuntimeMecha
                 generation: effect.generation().get(),
             })
             .collect(),
+        animations: runtime
+            .animations
+            .inspect(runtime.clock.now())
+            .into_iter()
+            .map(|animation| InspectorAnimation {
+                id: format!(
+                    "{}/{}",
+                    animation.key.component,
+                    animation.key.property.as_str()
+                ),
+                kind: animation.kind,
+                value: animation.value,
+                target: animation.target,
+                velocity: animation.velocity,
+                elapsed_ms: animation.elapsed_ms,
+                duration_ms: animation.duration_ms,
+                repeating: animation.repeating,
+                active: animation.active,
+            })
+            .collect(),
         timers: runtime
             .timers
             .inspect(runtime.clock.now())
@@ -308,6 +347,7 @@ fn inspect_runtime_mechanisms(runtime: &UiRuntimeState) -> InspectorRuntimeMecha
             .collect(),
         locale_readers: runtime.environment_dependencies.locale_reader_count(),
         viewport_readers: runtime.environment_dependencies.viewport_reader_count(),
+        clock_elapsed_ms: u64::try_from(runtime.clock.elapsed().as_millis()).unwrap_or(u64::MAX),
     }
 }
 
@@ -606,19 +646,21 @@ fn inspector_header(snapshot: &InspectorSnapshot) -> Vec<String> {
             snapshot.theme_family, snapshot.theme_name
         ),
         format!(
-            "nodes={} state={} stores={} signals={} effects={} timers={} refs={} geometry={} captures={} dirty={} traces={} timings={}",
+            "nodes={} state={} stores={} signals={} effects={} animations={} timers={} refs={} geometry={} captures={} dirty={} traces={} timings={} clock={}ms",
             snapshot.root.as_ref().map_or(0, count_nodes),
             snapshot.state.len(),
             snapshot.stores.len(),
             snapshot.signals.len(),
             snapshot.effects.len(),
+            snapshot.animations.len(),
             snapshot.timers.len(),
             snapshot.element_refs.len(),
             snapshot.geometry_nodes,
             snapshot.pointer_captures.len(),
             snapshot.dirty.len(),
             snapshot.traces.len(),
-            snapshot.timings.len()
+            snapshot.timings.len(),
+            snapshot.clock_elapsed_ms
         ),
     ]
 }
@@ -646,6 +688,21 @@ fn append_mechanism_lines(snapshot: &InspectorSnapshot, lines: &mut Vec<String>)
             effect.start,
             effect.cleanup,
             effect.generation
+        ));
+    }
+    lines.push("Animations".to_owned());
+    for animation in &snapshot.animations {
+        lines.push(format!(
+            "  {} {} value={:.4} target={:.4} velocity={:?} elapsed={}ms duration={:?} repeat={} active={}",
+            animation.id,
+            animation.kind,
+            animation.value,
+            animation.target,
+            animation.velocity,
+            animation.elapsed_ms,
+            animation.duration_ms,
+            animation.repeating,
+            animation.active
         ));
     }
     lines.push("Timers".to_owned());
@@ -790,6 +847,9 @@ mod tests {
     fn snapshot_includes_runtime_mechanism_identity_and_state() {
         let component = ComponentInstancePath::root("View", "main");
         let mut runtime = UiRuntimeState::new();
+        let now = Instant::now();
+        let clock = crate::ManualRuntimeClock::new(now);
+        runtime.clock = clock.clock();
         let signal_id =
             crate::SignalId::new(component.clone(), "progress", crate::SignalKind::Float).unwrap();
         runtime.signals.reconcile(
@@ -823,12 +883,26 @@ mod tests {
             UiValue::Null,
         )
         .unwrap();
-        let now = Instant::now();
         runtime.timers.reconcile(
             &component,
             BTreeMap::from([(timer.id().clone(), timer)]),
             now,
         );
+        runtime
+            .animations
+            .start(
+                component.clone(),
+                crate::AnimationSpec::Transition(crate::TransitionSpec {
+                    property: crate::AnimationProperty::Opacity,
+                    from: 0.0,
+                    to: 1.0,
+                    duration_ms: 1_000,
+                    easing: crate::Easing::Linear,
+                }),
+                now,
+            )
+            .unwrap();
+        clock.advance(Duration::from_millis(250));
 
         let mut retained = crate::RetainedUiTree::new();
         retained.reconcile(UiNode::text("target")).unwrap();
@@ -865,6 +939,10 @@ mod tests {
         assert_eq!(snapshot.signals[0].revision, 1);
         assert_eq!(snapshot.signals[0].last_writer, "Script");
         assert_eq!(snapshot.timers[0].callback, "fired");
+        assert_eq!(snapshot.clock_elapsed_ms, 250);
+        assert_eq!(snapshot.animations[0].kind, "transition");
+        assert!((snapshot.animations[0].value - 0.25).abs() < f64::EPSILON);
+        assert_eq!(snapshot.animations[0].duration_ms, Some(1_000));
         assert_eq!(snapshot.element_refs[0].node, node.get());
         assert_eq!(snapshot.geometry_nodes, 1);
         assert_eq!(snapshot.pointer_captures.get(&7), Some(&node.get()));

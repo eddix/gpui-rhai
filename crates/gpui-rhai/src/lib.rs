@@ -66,7 +66,7 @@ pub use action::{
 };
 pub use animation::{
     AnimationError, AnimationFrame, AnimationKey, AnimationProperty, AnimationRuntime,
-    AnimationSpec, Easing, MotionPreference, SpringSpec, TransitionSpec,
+    AnimationSnapshot, AnimationSpec, Easing, MotionPreference, SpringSpec, TransitionSpec,
 };
 pub use app::{
     EmbeddedScriptView, FileScriptView, PreparedScriptView, ScriptApplication, ScriptViewConfig,
