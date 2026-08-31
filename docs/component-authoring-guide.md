@@ -28,6 +28,14 @@ import "components/label" as label;
 label::Label(#{ text: "Project" })
 ```
 
+Imported module setup is declarative. At top level, use only static imports,
+literal `const` values and export declarations; a component module adds one
+direct `define_component(#{ ... })` call whose value is an inline literal Map
+plus named `Fn("...")` pointers. Mutable globals, control flow, arbitrary calls,
+and computed definition builders are rejected by the production module
+resolver before the AST is evaluated. Put application work in explicit
+lifecycle/event callbacks and component-owned work in a declared effect.
+
 ## Schema
 
 Declare every prop, local state field, semantic event, slot, styleable part,

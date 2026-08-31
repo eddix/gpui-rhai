@@ -24,7 +24,10 @@ named functions with UiValue-convertible curry; captured anonymous closures
 cannot escape a synchronous evaluation.
 
 Formal modules register their render function once with `define_component`.
-They hold no mutable global UI state. Effects and one-shot timers are pure
+The restricted resolver audits their top-level AST before evaluation: only
+imports, literal constants, exports, and one direct literal
+`define_component` declaration are accepted. They cannot hold mutable global UI
+state or run arbitrary module-init calls. Effects and one-shot timers are pure
 render descriptors reconciled after successful commit and cleaned on
 replacement/unmount/reload.
 

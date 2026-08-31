@@ -9,6 +9,9 @@ contexts, arbitrary Rust values, filesystem paths, URLs, sockets, or process API
 
 - Imports resolve only through `ScriptSource`; absolute paths, parent traversal,
   undeclared modules, and cycles are rejected.
+- Every imported module AST passes a pre-evaluation init-purity gate. Mutable
+  globals, control flow, arbitrary top-level calls, and computed component
+  registration are rejected before any module statement runs.
 - `UiValue` permits scalar data, arrays, string-keyed maps, and typed opaque
   handles. GPUI elements and arbitrary `Dynamic` Rust values cannot cross it.
 - Capability inputs and outputs are validated against their declared schemas.

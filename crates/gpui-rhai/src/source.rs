@@ -2,7 +2,10 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::Mutex;
 
-use rhai::{AST, Dynamic, Engine, EvalAltResult, Module, ModuleResolver, Position, Scope, Shared};
+use rhai::{
+    AST, ASTFlags, Dynamic, Engine, EvalAltResult, Expr, Module, ModuleResolver, Position, Scope,
+    Shared, Stmt,
+};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -237,6 +240,7 @@ impl ModuleResolver for RestrictedModuleResolver {
                 ast.set_source(path);
                 ast
             };
+            validate_module_init(&id, &ast, position)?;
             Module::eval_ast_as_new(Scope::new(), &ast, engine)
                 .map(Into::into)
                 .map_err(|error| {
@@ -252,6 +256,74 @@ impl ModuleResolver for RestrictedModuleResolver {
     }
 }
 
+fn validate_module_init(
+    id: &ModuleId,
+    ast: &AST,
+    import_position: Position,
+) -> Result<(), Box<EvalAltResult>> {
+    let mut definitions = 0_usize;
+    for statement in ast.statements() {
+        let accepted = match statement {
+            Stmt::Noop(_) | Stmt::Import(..) | Stmt::Export(..) => true,
+            Stmt::Var(variable, options, ..) => {
+                options.contains(ASTFlags::CONSTANT) && variable.1.get_literal_value(None).is_some()
+            }
+            Stmt::FnCall(call, ..) if call.name == "define_component" && !call.is_qualified() => {
+                definitions = definitions.saturating_add(1);
+                call.args.len() == 1 && pure_component_definition(&call.args[0])
+            }
+            _ => false,
+        };
+        if !accepted {
+            let position = statement.position();
+            let location = if position.is_none() {
+                String::new()
+            } else {
+                format!(" at {position}")
+            };
+            return Err(Box::new(runtime_error(
+                format!(
+                    "module `{id}` init must contain only imports, literal const values, exports, and one direct define_component declaration{location}"
+                ),
+                if position.is_none() {
+                    import_position
+                } else {
+                    position
+                },
+            )));
+        }
+    }
+    if definitions > 1 {
+        return Err(Box::new(runtime_error(
+            format!("module `{id}` declares {definitions} components; exactly one is allowed"),
+            import_position,
+        )));
+    }
+    Ok(())
+}
+
+fn pure_component_definition(expression: &Expr) -> bool {
+    if expression.get_literal_value(None).is_some() {
+        return true;
+    }
+    match expression {
+        Expr::Array(values, ..) => values.iter().all(pure_component_definition),
+        Expr::Map(entries, ..) => entries
+            .0
+            .iter()
+            .all(|(_, value)| pure_component_definition(value)),
+        Expr::FnCall(call, ..)
+            if call.name == "Fn"
+                && !call.is_qualified()
+                && call.args.len() == 1
+                && matches!(call.args[0], Expr::StringConstant(..)) =>
+        {
+            true
+        }
+        _ => false,
+    }
+}
+
 fn runtime_error(message: String, position: Position) -> EvalAltResult {
     EvalAltResult::ErrorRuntime(Dynamic::from(message), position)
 }
@@ -259,6 +331,8 @@ fn runtime_error(message: String, position: Position) -> EvalAltResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::Cell;
+    use std::rc::Rc;
 
     #[test]
     fn module_ids_reject_escape_paths() {
@@ -297,6 +371,63 @@ mod tests {
             )
             .unwrap();
         assert_eq!(value, "hello");
+    }
+
+    #[test]
+    fn module_init_rejects_effectful_calls_before_evaluation() {
+        let touched = Rc::new(Cell::new(false));
+        let observer = Rc::clone(&touched);
+        let mut resolver = RestrictedModuleResolver::new();
+        resolver
+            .insert(
+                "components/effectful",
+                "touch(); fn greeting() { \"hello\" }",
+            )
+            .unwrap();
+        let mut engine = Engine::new();
+        engine.register_fn("touch", move || observer.set(true));
+        engine.set_module_resolver(resolver);
+        let error = engine
+            .eval::<Dynamic>("import \"components/effectful\" as effectful;")
+            .unwrap_err();
+        assert!(
+            error.to_string().contains("init must contain only"),
+            "{error}"
+        );
+        assert!(!touched.get());
+    }
+
+    #[test]
+    fn module_init_accepts_literal_consts_and_direct_pure_definition() {
+        let engine = Engine::new();
+        let id = ModuleId::parse("components/pure").unwrap();
+        let ast = engine
+            .compile(
+                r#"
+                    const LIMITS = #{ min: 1, values: [2, 3] };
+                    define_component(#{
+                        metadata: #{ id: "components/pure" },
+                        render: Fn("render_Pure")
+                    });
+                    fn render_Pure(ctx, props) { () }
+                "#,
+            )
+            .unwrap();
+        validate_module_init(&id, &ast, Position::NONE).unwrap();
+    }
+
+    #[test]
+    fn module_init_rejects_mutable_globals_and_computed_definitions() {
+        let engine = Engine::new();
+        let id = ModuleId::parse("components/impure").unwrap();
+        for source in [
+            "let count = 0; fn read() { count }",
+            "fn build() { #{} } define_component(build());",
+            "define_component(#{}); define_component(#{});",
+        ] {
+            let ast = engine.compile(source).unwrap();
+            assert!(validate_module_init(&id, &ast, Position::NONE).is_err());
+        }
     }
 
     #[test]
