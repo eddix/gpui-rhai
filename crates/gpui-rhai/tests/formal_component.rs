@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
 use gpui_rhai::{
@@ -133,6 +133,48 @@ fn view(ctx) {
 }
 "#;
 
+const EQUIVALENCE_COUNTER: &str = r#"
+define_component(#{
+    metadata: #{
+        id: "components/equivalence_counter", "export": "EquivalenceCounter", version: "0.1.0",
+        runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
+        dependencies: [], capabilities: #{}
+    },
+    schema: #{
+        props: #{
+            key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+            label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+            step: #{ schema: #{ type: "integer" }, required: true, sensitive: false }
+        },
+        state: #{ fields: #{ count: #{ schema: #{ type: "integer" },
+            "default": #{ type: "integer", value: 0 } } } },
+        events: #{}, slots: #{}, parts: ["root"]
+    },
+    render: Fn("render_EquivalenceCounter")
+});
+fn increment_equivalence(step, ctx, payload) {
+    ctx.set_state("count", ctx.get_state("count") + step);
+}
+fn EquivalenceCounter(props) {
+    render_component("components/equivalence_counter", props)
+}
+fn render_EquivalenceCounter(ctx, props) {
+    text(`${props.label}:${ctx.get_state("count")}`)
+        .with_key(props.key)
+        .on_click(Fn("increment_equivalence").curry(props.step))
+}
+"#;
+
+const EQUIVALENCE_APP: &str = r#"
+import "components/equivalence_counter" as counter;
+fn view(ctx) {
+    row([
+        counter::EquivalenceCounter(#{ key: "left", label: "L", step: 1 }),
+        counter::EquivalenceCounter(#{ key: "right", label: "R", step: 3 })
+    ])
+}
+"#;
+
 const SIGNAL_PROBE: &str = r#"
 define_component(#{
     metadata: #{
@@ -206,6 +248,19 @@ fn source() -> EmbeddedScriptSource {
         ModuleId::parse("components/counter").unwrap(),
         COUNTER.to_owned(),
     )]))
+}
+
+fn equivalence_engine_and_compiled() -> (RuntimeEngine, gpui_rhai::CompiledUi) {
+    let source = EmbeddedScriptSource::new(BTreeMap::from([(
+        ModuleId::parse("components/equivalence_counter").unwrap(),
+        EQUIVALENCE_COUNTER.to_owned(),
+    )]));
+    let mut engine = RuntimeEngine::new();
+    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
+    let compiled = engine
+        .compile_self_contained_named("ui/equivalence.rhai", EQUIVALENCE_APP)
+        .unwrap();
+    (engine, compiled)
 }
 
 struct AsyncEcho;
@@ -320,6 +375,18 @@ fn script_handler(lifecycle: &ScriptLifecycle, event: &str) -> gpui_rhai::Script
         .root()
         .unwrap()
         .handler(event)
+        .unwrap()
+        .as_script()
+        .unwrap()
+        .clone()
+}
+
+fn child_script_handler(lifecycle: &ScriptLifecycle, index: usize) -> gpui_rhai::ScriptCallback {
+    let UiNodeKind::Box { children } = lifecycle.root().unwrap().kind() else {
+        panic!("equivalence root must be a Box");
+    };
+    children[index]
+        .handler("click")
         .unwrap()
         .as_script()
         .unwrap()
@@ -657,6 +724,104 @@ fn declarative_effects_start_restart_and_cleanup_in_imported_module_context() {
         effect_audit_values(&runtime)["last_cleanup"],
         UiValue::Integer(2)
     );
+}
+
+#[test]
+fn incremental_component_renders_match_forced_full_renders_over_event_sequences() {
+    let (mut incremental_engine, incremental_compiled) = equivalence_engine_and_compiled();
+    let (mut full_engine, full_compiled) = equivalence_engine_and_compiled();
+    let incremental_runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+    let full_runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+    let root = ComponentInstancePath::root("App", "root");
+    let mut incremental = ScriptLifecycle::new(
+        incremental_compiled,
+        Rc::clone(&incremental_runtime),
+        root.clone(),
+        Some("main".to_owned()),
+        BTreeMap::new(),
+        &ComponentStateSchema::default(),
+    )
+    .unwrap();
+    let mut full = ScriptLifecycle::new(
+        full_compiled,
+        Rc::clone(&full_runtime),
+        root.clone(),
+        Some("main".to_owned()),
+        BTreeMap::new(),
+        &ComponentStateSchema::default(),
+    )
+    .unwrap();
+    incremental.start(&mut incremental_engine).unwrap();
+    full.start(&mut full_engine).unwrap();
+    assert_eq!(incremental.root(), full.root());
+    let _ = incremental_engine.take_timings();
+    let _ = full_engine.take_timings();
+
+    let mut random = 0x9e37_79b9_7f4a_7c15_u64;
+    for batch in 0..128 {
+        random = random
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        let event_count = usize::try_from(random % 3 + 1).unwrap();
+        let mut selected = BTreeSet::new();
+        for _ in 0..event_count {
+            random = random
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            let index = usize::try_from(random & 1).unwrap();
+            selected.insert(index);
+            let incremental_callback = child_script_handler(&incremental, index);
+            let full_callback = child_script_handler(&full, index);
+            let _ = incremental
+                .invoke_callback_transactional(
+                    &incremental_engine,
+                    &incremental_callback,
+                    UiValue::Null,
+                )
+                .unwrap();
+            let _ = full
+                .invoke_callback_transactional(&full_engine, &full_callback, UiValue::Null)
+                .unwrap();
+        }
+
+        assert!(incremental.render_dirty(&mut incremental_engine).unwrap());
+        let incremental_renders = incremental_engine
+            .take_timings()
+            .into_iter()
+            .filter(|timing| matches!(timing.operation, gpui_rhai::ExecutionOperation::Render))
+            .collect::<Vec<_>>();
+        assert_eq!(incremental_renders.len(), selected.len());
+        assert!(
+            incremental_renders
+                .iter()
+                .all(|timing| timing.source == "components/equivalence_counter")
+        );
+        assert!(!full_runtime.borrow_mut().drain_batch().dirty.is_empty());
+        full.render(&mut full_engine).unwrap();
+        let _ = full_engine.take_timings();
+
+        assert_eq!(
+            incremental.root(),
+            full.root(),
+            "node snapshots diverged after event batch {batch}"
+        );
+        assert_eq!(
+            incremental_runtime.borrow().component_state.inspect(),
+            full_runtime.borrow().component_state.inspect(),
+            "component state diverged after event batch {batch}"
+        );
+        assert_eq!(
+            incremental_engine
+                .component_invocations()
+                .map(|recipe| recipe.path().clone())
+                .collect::<Vec<_>>(),
+            full_engine
+                .component_invocations()
+                .map(|recipe| recipe.path().clone())
+                .collect::<Vec<_>>(),
+            "invocation identities diverged after event batch {batch}"
+        );
+    }
 }
 
 #[test]
