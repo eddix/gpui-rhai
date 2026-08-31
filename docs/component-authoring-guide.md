@@ -231,7 +231,10 @@ binding. A handler may return `event_response()` refined with
 than GPUI event values.
 
 After committed prepaint, pointer maps use node-local coordinates derived from
-the retained geometry registry. Canvas pointer maps additionally include
+the retained geometry registry. `content` starts from `local` and subtracts the
+live GPUI offsets of the node and every scrollable ancestor, so nested native
+scrolling updates pointer coordinates without rerunning Rhai. Canvas pointer
+maps additionally include
 `canvas_key`, the topmost retained command hit or `()`; captured move/up events
 retain that production routing path.
 

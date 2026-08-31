@@ -229,6 +229,32 @@ fn node_scrollable(node: &UiNode) -> bool {
         || matches!(node.style().base.overflow_y, Some(OverflowMode::Scroll))
 }
 
+fn scroll_handles_for_node(
+    tree: Option<&RetainedUiTree>,
+    node: Option<NodeId>,
+    handles: &BTreeMap<NodeId, ScrollHandle>,
+) -> Vec<ScrollHandle> {
+    let (Some(tree), Some(mut node)) = (tree, node) else {
+        return Vec::new();
+    };
+    let mut resolved = Vec::new();
+    loop {
+        let Some(retained) = tree.node(node) else {
+            break;
+        };
+        if retained.scrollable()
+            && let Some(handle) = handles.get(&node)
+        {
+            resolved.push(handle.clone());
+        }
+        let Some(parent) = retained.parent() else {
+            break;
+        };
+        node = parent;
+    }
+    resolved
+}
+
 fn node_has_raw_pointer_handlers(node: &UiNode) -> bool {
     ["pointer_down", "pointer_up", "pointer_move", "wheel"]
         .into_iter()
@@ -240,10 +266,16 @@ struct PointerPayloadContext {
     node: Option<NodeId>,
     geometry: crate::GeometryRegistry,
     canvas: Option<crate::CanvasScene>,
+    scroll_handles: Vec<ScrollHandle>,
 }
 
 impl PointerPayloadContext {
-    fn new(node: &UiNode, retained_id: Option<NodeId>, geometry: crate::GeometryRegistry) -> Self {
+    fn new(
+        node: &UiNode,
+        retained_id: Option<NodeId>,
+        geometry: crate::GeometryRegistry,
+        scroll_handles: Vec<ScrollHandle>,
+    ) -> Self {
         let canvas = match node.kind() {
             UiNodeKind::Canvas { scene } => Some(scene.clone()),
             _ => None,
@@ -252,6 +284,7 @@ impl PointerPayloadContext {
             node: retained_id,
             geometry,
             canvas,
+            scroll_handles,
         }
     }
 
@@ -259,11 +292,13 @@ impl PointerPayloadContext {
         node: NodeId,
         geometry: crate::GeometryRegistry,
         canvas: Option<crate::CanvasScene>,
+        scroll_handles: Vec<ScrollHandle>,
     ) -> Self {
         Self {
             node: Some(node),
             geometry,
             canvas,
+            scroll_handles,
         }
     }
 
@@ -279,9 +314,18 @@ impl PointerPayloadContext {
                 window.map(|(x, y)| (x - geometry.visual.x, y - geometry.visual.y))
             });
         if let Some((x, y)) = local {
-            let point = logical_point_value(x, y);
-            payload.insert("local".to_owned(), point.clone());
-            payload.insert("content".to_owned(), point);
+            payload.insert("local".to_owned(), logical_point_value(x, y));
+            let offset = self
+                .scroll_handles
+                .iter()
+                .map(ScrollHandle::offset)
+                .fold(point(px(0.0), px(0.0)), |total, offset| {
+                    point(total.x + offset.x, total.y + offset.y)
+                });
+            payload.insert(
+                "content".to_owned(),
+                logical_point_value(x - f64::from(offset.x), y - f64::from(offset.y)),
+            );
             payload.insert(
                 "canvas_key".to_owned(),
                 self.canvas
@@ -340,8 +384,9 @@ fn apply_raw_pointer_handlers(
     retained_id: Option<NodeId>,
     captures: &crate::PointerCaptureRegistry,
     geometry: &crate::GeometryRegistry,
+    scroll_handles: Vec<ScrollHandle>,
 ) -> Stateful<Div> {
-    let payload = PointerPayloadContext::new(node, retained_id, geometry.clone());
+    let payload = PointerPayloadContext::new(node, retained_id, geometry.clone(), scroll_handles);
     let element =
         apply_pointer_down_handlers(element, node, dispatcher, retained_id, captures, &payload);
     let element =
@@ -672,6 +717,7 @@ pub(crate) fn pointer_capture_router_element(
     dispatcher: &NodeEventDispatcher,
     captures: &crate::PointerCaptureRegistry,
     geometry: &crate::GeometryRegistry,
+    scroll_handles: &BTreeMap<NodeId, ScrollHandle>,
 ) -> AnyElement {
     PointerCaptureRouterElement {
         child: Some(child),
@@ -689,6 +735,7 @@ pub(crate) fn pointer_capture_router_element(
                             node.id(),
                             geometry.clone(),
                             node.canvas_scene().cloned(),
+                            scroll_handles_for_node(Some(tree), Some(node.id()), scroll_handles),
                         ),
                     )
                 })
@@ -1519,14 +1566,7 @@ impl GpuiNodeRenderer {
                 apply_event_response(response, window, cx);
             }
         });
-        let element = apply_raw_pointer_handlers(
-            element,
-            node,
-            environment.dispatcher,
-            retained_id,
-            environment.pointer_capture,
-            environment.geometry,
-        );
+        let element = apply_environment_raw_pointer(element, node, retained_id, environment);
         Self::populate(
             element,
             node,
@@ -1735,6 +1775,27 @@ fn apply_environment_scroll<C: ColorResolver>(
         retained_id,
         environment.scroll_handles,
         environment.scroll_anchors,
+    )
+}
+
+fn apply_environment_raw_pointer<C: ColorResolver>(
+    element: Stateful<Div>,
+    node: &UiNode,
+    retained_id: Option<NodeId>,
+    environment: &RenderEnvironment<'_, C>,
+) -> Stateful<Div> {
+    apply_raw_pointer_handlers(
+        element,
+        node,
+        environment.dispatcher,
+        retained_id,
+        environment.pointer_capture,
+        environment.geometry,
+        scroll_handles_for_node(
+            environment.retained,
+            retained_id,
+            environment.scroll_handles,
+        ),
     )
 }
 
@@ -3511,7 +3572,16 @@ mod tests {
                 clip: None,
             },
         );
-        let context = PointerPayloadContext::retained(node, geometry, Some(scene));
+        let outer_scroll = ScrollHandle::new();
+        outer_scroll.set_offset(point(px(-10.0), px(-20.0)));
+        let inner_scroll = ScrollHandle::new();
+        inner_scroll.set_offset(point(px(-3.0), px(-4.0)));
+        let context = PointerPayloadContext::retained(
+            node,
+            geometry,
+            Some(scene),
+            vec![outer_scroll, inner_scroll],
+        );
         let payload = context.enrich(pointer_payload(
             point(px(112.0), px(68.0)),
             Some(MouseButton::Left),
@@ -3527,5 +3597,31 @@ mod tests {
         assert!(value_point(&payload["local"]).is_some_and(|(x, y)| {
             (x - 7.0).abs() < f64::EPSILON && (y - 14.0).abs() < f64::EPSILON
         }));
+        assert!(value_point(&payload["content"]).is_some_and(|(x, y)| {
+            (x - 20.0).abs() < f64::EPSILON && (y - 38.0).abs() < f64::EPSILON
+        }));
+
+        let scroll_style = Style::new().overflow_scroll();
+        let nested_root = UiNode::box_node(vec![
+            UiNode::box_node(vec![UiNode::text("target").with_key("target")])
+                .with_key("inner")
+                .with_style(&scroll_style),
+        ])
+        .with_key("outer")
+        .with_style(&scroll_style);
+        let mut nested = RetainedUiTree::new();
+        nested.reconcile(nested_root).unwrap();
+        let ids = nested
+            .nodes()
+            .filter_map(|node| node.key().map(|key| (key.to_owned(), node.id())))
+            .collect::<BTreeMap<_, _>>();
+        let handles = BTreeMap::from([
+            (ids["outer"], ScrollHandle::new()),
+            (ids["inner"], ScrollHandle::new()),
+        ]);
+        assert_eq!(
+            scroll_handles_for_node(Some(&nested), Some(ids["target"]), &handles).len(),
+            2
+        );
     }
 }

@@ -119,7 +119,9 @@ modifiers, click count, precise delta, and a monotonic timestamp. Retained
 `ElementRef` declarations bind to stable `NodeId`; prepaint reports committed
 layout geometry plus visual bounds after static/signal/animation translation;
 pointer local coordinates invert that visual translation before Canvas hit
-testing. Exact geometry reads create component dependencies.
+testing. Content coordinates additionally subtract the live sum of every
+retained scrollable ancestor's GPUI `ScrollHandle` offset, including during
+window-level pointer capture. Exact geometry reads create component dependencies.
 Unmounted refs fail stale instead of rebinding by name. `ctx.focus(ref)` queues
 a window-scoped retained command; the Host view owns the corresponding GPUI
 `FocusHandle` by `NodeId`, so no window/focus object crosses into Rhai.

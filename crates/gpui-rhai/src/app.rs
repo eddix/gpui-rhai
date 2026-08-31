@@ -2450,6 +2450,7 @@ impl Render for ScriptHostView {
             &dispatcher,
             &snapshot.pointer_capture,
             &snapshot.geometry,
+            &self.scroll_handles,
         )
     }
 }
