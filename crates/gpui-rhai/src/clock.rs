@@ -5,6 +5,10 @@ use std::time::{Duration, Instant};
 
 pub trait RuntimeClockSource {
     fn now(&self) -> Instant;
+
+    fn advance(&self, _duration: Duration) -> bool {
+        false
+    }
 }
 
 #[derive(Clone)]
@@ -24,6 +28,11 @@ impl RuntimeClock {
     #[must_use]
     pub fn now(&self) -> Instant {
         self.0.now()
+    }
+
+    #[must_use]
+    pub fn advance(&self, duration: Duration) -> bool {
+        self.0.advance(duration)
     }
 }
 
@@ -78,6 +87,11 @@ impl ManualRuntimeClock {
 impl RuntimeClockSource for ManualRuntimeClock {
     fn now(&self) -> Instant {
         self.now.get()
+    }
+
+    fn advance(&self, duration: Duration) -> bool {
+        self.advance(duration);
+        true
     }
 }
 

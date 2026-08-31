@@ -238,6 +238,11 @@ not an authorization mechanism or a replacement for modal Overlay policy.
 `#{ hovered: bool, value: UiValue }`, which lets source components pause keyed
 timers without retaining closures.
 
+Use `node.test_id("stable-id")` only for non-semantic automation identity.
+Accessible roles, labels, relationships, and IDs remain the user-facing
+contract; automation locators reject missing or duplicate test IDs rather than
+silently selecting the first match.
+
 For structural responsive composition, branch only on
 `ctx.viewport_class()` (`compact`, `regular`, or `wide`). Hosts may replace the
 default 600/1000 logical-pixel boundaries with a validated

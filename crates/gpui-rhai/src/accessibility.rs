@@ -12,6 +12,7 @@ pub struct AccessibilityNode {
     pub name: String,
     pub description: String,
     pub semantic_id: Option<String>,
+    pub test_id: Option<String>,
     pub value: Option<UiValue>,
     pub checked: Option<UiValue>,
     pub disabled: bool,
@@ -78,6 +79,15 @@ impl AccessibilityTree {
         self.nodes
             .values()
             .filter(move |node| node.role == role && node.name == name)
+    }
+
+    pub fn find_by_test_id<'a>(
+        &'a self,
+        id: &'a str,
+    ) -> impl Iterator<Item = &'a AccessibilityNode> + 'a {
+        self.nodes
+            .values()
+            .filter(move |node| node.test_id.as_deref() == Some(id))
     }
 }
 
@@ -157,6 +167,7 @@ fn semantic_node(
         name,
         description: referenced_text(node, "described_by", labels).unwrap_or_default(),
         semantic_id: string_attribute(node, "semantic_id"),
+        test_id: string_attribute(node, "test_id"),
         value: node.attributes().get("value").cloned(),
         checked: node.attributes().get("checked").cloned(),
         disabled: bool_attribute(node, "disabled"),

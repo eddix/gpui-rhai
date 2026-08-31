@@ -14,6 +14,7 @@ Start with the repository quick start, then use these guides by task:
 - [Hot reload and production embedding](hot-reload-and-production.md)
 - [Updating copied source](source-updates.md)
 - [Development inspector](devtools.md) and [accessibility status](accessibility.md)
+- [Retained automation and JSON-lines protocol](automation.md)
 - [macOS visual and interaction test matrix](visual-testing.md)
 - [Performance budgets and probe](performance.md)
 - [Native virtual lists](virtual-list.md)

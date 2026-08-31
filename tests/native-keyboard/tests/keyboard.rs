@@ -548,6 +548,123 @@ fn dropdown_pointer_updates_transactional_rhai_caller_state(cx: &mut TestAppCont
 }
 
 #[gpui::test]
+fn automation_commands_use_mounted_handlers_actions_and_clock(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let entry = ModuleId::parse("main").unwrap();
+    let manual = gpui_rhai::ManualRuntimeClock::new(std::time::Instant::now());
+    let prepared = EmbeddedScriptView::new(
+        entry.clone(),
+        EmbeddedScriptSource::new(std::collections::BTreeMap::from([(
+            entry,
+            r#"
+                fn state_schema() { #{ fields: #{
+                    count: #{ schema: #{ type: "integer" },
+                        "default": #{ type: "integer", value: 0 } }
+                } } }
+                fn increment(ctx, payload) {
+                    ctx.set_state("count", ctx.get_state("count") + 1);
+                }
+                fn tick(ctx, payload) { increment(ctx, payload); }
+                fn init(ctx) { ctx.register_action("counter.bump", Fn("increment")); }
+                fn view(ctx) {
+                    timeout("tick", 100, false, Fn("tick"), ());
+                    column([
+                        text(`Count: ${ctx.get_state("count")}`),
+                        text("Increment").with_key("increment")
+                            .test_id("increment")
+                            .accessibility_role("button")
+                            .accessibility_label("Increment")
+                            .on_click(Fn("increment"))
+                    ])
+                }
+            "#
+            .to_owned(),
+        )])),
+        include_str!("../../../registry/themes/default_dark.rhai"),
+    )
+    .runtime_clock(manual.clock())
+    .prepare()
+    .unwrap();
+    let captured = Rc::new(RefCell::new(None));
+    let captured_for_window = Rc::clone(&captured);
+    let window = cx.add_window(move |window, cx| {
+        let host = ScriptViewHost::new("automation-window", cx).unwrap();
+        let view = prepared
+            .mount(
+                ScriptViewConfig::new("automation-view"),
+                host.clone(),
+                window,
+                cx,
+            )
+            .unwrap();
+        *captured_for_window.borrow_mut() = Some(view.clone());
+        SingleEmbeddedHost { host, view }
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    cx.run_until_parked();
+
+    let view = captured.borrow().as_ref().unwrap().clone();
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    let locator = gpui_rhai::AutomationLocator::TestId {
+        id: "increment".to_owned(),
+    };
+    let query = visual
+        .update(|window, cx| {
+            view.automate(
+                gpui_rhai::AutomationCommand::Query {
+                    locator: locator.clone(),
+                },
+                window,
+                cx,
+            )
+        })
+        .unwrap();
+    assert!(matches!(query, gpui_rhai::AutomationResult::Node { .. }));
+
+    visual
+        .update(|window, cx| {
+            view.automate(
+                gpui_rhai::AutomationCommand::Dispatch {
+                    locator,
+                    event: "click".to_owned(),
+                    payload: None,
+                },
+                window,
+                cx,
+            )
+        })
+        .unwrap();
+    visual
+        .update(|window, cx| {
+            view.automate(
+                gpui_rhai::AutomationCommand::Action {
+                    id: "counter.bump".to_owned(),
+                    payload: None,
+                },
+                window,
+                cx,
+            )
+        })
+        .unwrap();
+    visual
+        .update(|window, cx| {
+            view.automate(
+                gpui_rhai::AutomationCommand::AdvanceTime { millis: 100 },
+                window,
+                cx,
+            )
+        })
+        .unwrap();
+    visual.run_until_parked();
+
+    let root = visual.update(|_, cx| view.root(cx).unwrap().unwrap());
+    let mut texts = Vec::new();
+    node_texts(&root, &mut texts);
+    assert!(texts.contains(&"Count: 3".to_owned()), "{texts:?}");
+}
+
+#[gpui::test]
 fn native_input_updates_rhai_state_and_clipboard_with_unicode(cx: &mut TestAppContext) {
     cx.update(init_text_input);
     let input = include_str!("../../../registry/components/input.rhai");

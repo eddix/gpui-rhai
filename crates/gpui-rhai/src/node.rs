@@ -1360,6 +1360,25 @@ fn register_accessibility_methods(builder: &mut TypeBuilder<UiNode>) {
             },
         )
         .with_fn(
+            "test_id",
+            |node: &mut UiNode, id: ImmutableString| -> Result<UiNode, Box<EvalAltResult>> {
+                let id = id.to_string();
+                if id.is_empty()
+                    || id.len() > 128
+                    || !id.chars().all(|character| {
+                        character.is_ascii_alphanumeric()
+                            || matches!(character, '_' | '-' | '.' | ':')
+                    })
+                {
+                    return Err(Box::new(EvalAltResult::ErrorRuntime(
+                        "test_id must be 1-128 safe identifier characters".into(),
+                        Position::NONE,
+                    )));
+                }
+                Ok(node.clone().with_attribute("test_id", UiValue::String(id)))
+            },
+        )
+        .with_fn(
             "accessibility_labelled_by",
             |node: &mut UiNode, id: ImmutableString| {
                 node.clone()

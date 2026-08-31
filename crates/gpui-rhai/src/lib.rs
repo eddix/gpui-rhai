@@ -50,6 +50,7 @@ pub mod animation;
 pub mod app;
 pub mod asset;
 pub mod async_runtime;
+pub mod automation;
 pub mod budget;
 pub mod canvas;
 pub mod capability;
@@ -76,6 +77,11 @@ pub use asset::{
 pub use async_runtime::{
     AsyncDelivery, AsyncRuntimeError, AsyncScope, SubscriptionCloseReason, SubscriptionEmitter,
     SubscriptionHandle, SubscriptionRegistration, SubscriptionRegistry, TaskHandle, TaskRegistry,
+};
+pub use automation::{
+    AutomationBounds, AutomationCommand, AutomationDispatchReport, AutomationError,
+    AutomationLocator, AutomationNode, AutomationRequest, AutomationResponse, AutomationResult,
+    AutomationSnapshot, handle_automation_json_line, run_automation_json_lines,
 };
 pub use budget::{RuntimeBudgetError, RuntimeBudgets};
 pub use canvas::{

@@ -629,6 +629,61 @@ impl ScriptViewHandle {
         )?)
     }
 
+    /// Snapshot the stable language-neutral automation tree.
+    ///
+    /// # Errors
+    ///
+    /// Returns after disposal or for an invalid retained semantic graph.
+    pub fn automation_snapshot(
+        &self,
+        cx: &App,
+    ) -> Result<crate::AutomationSnapshot, ScriptViewError> {
+        Ok(crate::AutomationSnapshot::from_accessibility(
+            &self.accessibility_snapshot(cx)?,
+        ))
+    }
+
+    /// Execute one automation command on the GPUI foreground thread.
+    ///
+    /// Dispatch and action commands use the mounted production handlers;
+    /// deterministic time advance requires an injected controllable clock.
+    ///
+    /// # Errors
+    ///
+    /// Returns after disposal, for locator/command failures, or runtime errors.
+    pub fn automate(
+        &self,
+        command: crate::AutomationCommand,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Result<crate::AutomationResult, ScriptViewError> {
+        if self.0.disposed.get() {
+            return Err(ScriptViewError::DisposedView(self.0.view_id.clone()));
+        }
+        match command {
+            crate::AutomationCommand::Snapshot => Ok(crate::AutomationResult::Snapshot {
+                snapshot: self.automation_snapshot(cx)?,
+            }),
+            crate::AutomationCommand::Query { locator } => {
+                let view = self.0.entity.read(cx);
+                let geometry = view.lifecycle.runtime().borrow().geometry.clone();
+                let tree =
+                    crate::AccessibilityTree::from_retained(view.lifecycle.retained(), &geometry)?;
+                let id = crate::automation::resolve_locator(&tree, &locator)?;
+                let node = tree
+                    .node(id)
+                    .ok_or_else(|| crate::AutomationError::StaleTarget(id.get()))?;
+                Ok(crate::AutomationResult::Node {
+                    node: Box::new(crate::AutomationNode::from(node)),
+                })
+            }
+            command => self
+                .0
+                .entity
+                .update(cx, |view, cx| view.execute_automation(command, window, cx)),
+        }
+    }
+
     /// Return the last successfully committed retained diff report.
     ///
     /// # Errors
@@ -2172,6 +2227,16 @@ fn event_response_from_dynamic(value: &rhai::Dynamic) -> crate::EventResponse {
     }
 }
 
+fn automation_pointer_id(payload: &UiValue) -> Option<u64> {
+    let UiValue::Map(payload) = payload else {
+        return None;
+    };
+    match payload.get("pointer_id") {
+        Some(UiValue::Integer(id)) => u64::try_from(*id).ok(),
+        _ => None,
+    }
+}
+
 #[allow(clippy::struct_excessive_bools)]
 struct ScriptHostView {
     view_id: String,
@@ -2390,6 +2455,119 @@ impl Render for ScriptHostView {
 }
 
 impl ScriptHostView {
+    fn execute_automation(
+        &mut self,
+        command: crate::AutomationCommand,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Result<crate::AutomationResult, ScriptViewError> {
+        match command {
+            crate::AutomationCommand::Dispatch {
+                locator,
+                event,
+                payload,
+            } => self.automation_dispatch(&locator, &event, payload, window, cx),
+            crate::AutomationCommand::Action { id, payload } => {
+                let action = ActionId::parse(&id)?;
+                let invocation = self
+                    .lifecycle
+                    .runtime()
+                    .borrow()
+                    .actions
+                    .dispatch(&action, payload.unwrap_or(UiValue::Null))?;
+                let _ =
+                    self.handle_node_event(&invocation.callback, invocation.payload, window, cx);
+                Ok(crate::AutomationResult::Action { id })
+            }
+            crate::AutomationCommand::AdvanceTime { millis } => {
+                let duration = Duration::from_millis(millis);
+                let clock = self.lifecycle.runtime().borrow().clock.clone();
+                if !clock.advance(duration) {
+                    return Err(crate::AutomationError::ClockNotControllable.into());
+                }
+                self.poll_async(cx);
+                Ok(crate::AutomationResult::Advanced { millis })
+            }
+            crate::AutomationCommand::Snapshot | crate::AutomationCommand::Query { .. } => {
+                unreachable!("read-only automation commands are handled by ScriptViewHandle")
+            }
+        }
+    }
+
+    fn automation_dispatch(
+        &mut self,
+        locator: &crate::AutomationLocator,
+        event: &str,
+        payload: Option<UiValue>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Result<crate::AutomationResult, ScriptViewError> {
+        let runtime = self.lifecycle.runtime();
+        let geometry = runtime.borrow().geometry.clone();
+        let accessibility =
+            crate::AccessibilityTree::from_retained(self.lifecycle.retained(), &geometry)?;
+        let target = crate::automation::resolve_locator(&accessibility, locator)?;
+        let target_node = self
+            .lifecycle
+            .retained()
+            .node(target)
+            .ok_or_else(|| crate::AutomationError::StaleTarget(target.get()))?;
+        let payload = payload
+            .or_else(|| target_node.handler_payload(event).cloned())
+            .unwrap_or(UiValue::Null);
+        let steps = crate::automation::dispatch_plan(self.lifecycle.retained(), target, event)?;
+        let mut response = crate::EventResponse::new();
+        let mut invoked = 0usize;
+        let mut visited = Vec::new();
+        let mut stop_after: Option<(crate::NodeId, crate::EventPhase)> = None;
+        for step in steps {
+            if stop_after.is_some_and(|phase| phase != (step.node, step.phase)) {
+                break;
+            }
+            if visited.last() != Some(&step.node) {
+                visited.push(step.node);
+            }
+            let current = match &step.handler {
+                crate::UiEventHandler::Script(callback) => {
+                    self.handle_node_event(callback, payload.clone(), window, cx)
+                }
+                crate::UiEventHandler::Host(callback) => {
+                    callback.invoke(payload.clone(), window, cx)
+                }
+                crate::UiEventHandler::Native(handler) => {
+                    self.handle_native_event(handler, event.to_owned(), payload.clone(), window, cx)
+                }
+            };
+            invoked = invoked.saturating_add(1);
+            response.merge(current);
+            match current.propagation() {
+                crate::PropagationControl::StopImmediate => break,
+                crate::PropagationControl::Stop => stop_after = Some((step.node, step.phase)),
+                crate::PropagationControl::Continue => {}
+            }
+            if let Some(pointer_id) = automation_pointer_id(&payload) {
+                match current.pointer_capture() {
+                    crate::PointerCaptureDirective::Capture => {
+                        runtime.borrow().pointer_capture.capture(pointer_id, target);
+                    }
+                    crate::PointerCaptureDirective::Release => {
+                        runtime.borrow().pointer_capture.release(pointer_id);
+                    }
+                    crate::PointerCaptureDirective::None => {}
+                }
+            }
+        }
+        Ok(crate::AutomationResult::Dispatch {
+            report: crate::AutomationDispatchReport {
+                target: target.get(),
+                visited: visited.into_iter().map(crate::NodeId::get).collect(),
+                invoked,
+                default_prevented: response.default_prevented(),
+                stopped: response.stops_propagation(),
+            },
+        })
+    }
+
     fn render_snapshot(&self, appearance: SystemAppearance) -> ScriptRenderSnapshot {
         let runtime = self.lifecycle.runtime();
         let runtime = runtime.borrow();
@@ -3415,6 +3593,8 @@ pub enum ScriptViewError {
     Font(#[from] crate::FontError),
     #[error(transparent)]
     Accessibility(#[from] crate::AccessibilityError),
+    #[error(transparent)]
+    Automation(#[from] crate::AutomationError),
     #[cfg(feature = "dev-reload")]
     #[error(transparent)]
     Watcher(#[from] crate::WatcherError),
