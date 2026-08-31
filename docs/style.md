@@ -51,9 +51,11 @@ same `ColorValue` path as solid fills and Canvas.
 
 `color(string)` accepts strict `#rgb/#rgba/#rrggbb/#rrggbbaa`, CSS basic named
 colors plus `transparent`, comma-form `rgb/rgba`, and `hsl/hsla` with explicit
-percentage saturation/lightness. Channels are range checked; malformed or
-unsupported strings are errors. `hwb`, Lab/LCH and OKLab/OKLCH remain explicit
-future extensions rather than silently approximated values.
+percentage saturation/lightness, plus comma-form `hwb` with percentage
+whiteness/blackness and optional alpha. Channels are range checked; malformed
+or unsupported strings are errors. Lab/LCH and OKLab/OKLCH remain explicit
+future extensions until the runtime defines color-space and gamut-mapping
+policy rather than silently approximating them.
 
 NativeSignal/animation bindings override literal opacity/translation/dimension
 values at frame sampling time without rerunning Rhai. Static translation uses

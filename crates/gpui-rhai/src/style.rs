@@ -210,7 +210,8 @@ impl ColorValue {
     ///
     /// Supported forms are `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`, the CSS
     /// basic named colors plus `transparent`, comma-separated `rgb/rgba`, and
-    /// `hsl/hsla` with percentage saturation/lightness.
+    /// `hsl/hsla` with percentage saturation/lightness, and comma-form `hwb`
+    /// with percentage whiteness/blackness plus optional alpha.
     ///
     /// # Errors
     ///
@@ -231,6 +232,9 @@ impl ColorValue {
         }
         if value.starts_with("hsl(") || value.starts_with("hsla(") {
             return parse_hsl_function(&value).map(Self::Literal);
+        }
+        if value.starts_with("hwb(") {
+            return parse_hwb_function(&value).map(Self::Literal);
         }
         Err(ColorParseError::Invalid(value))
     }
@@ -343,6 +347,21 @@ fn parse_hsl_function(value: &str) -> Result<Rgba8, ColorParseError> {
     Ok(rgba_channels(red, green, blue, alpha))
 }
 
+fn parse_hwb_function(value: &str) -> Result<Rgba8, ColorParseError> {
+    let parts = function_parts(value, "hwb")?;
+    if !(3..=4).contains(&parts.len()) {
+        return Err(ColorParseError::Invalid(value.to_owned()));
+    }
+    let hue = parse_finite(parts[0])?.rem_euclid(360.0) / 360.0;
+    let whiteness = parse_percent(parts[1])?;
+    let blackness = parse_percent(parts[2])?;
+    let alpha = parts
+        .get(3)
+        .map_or(Ok(u8::MAX), |alpha| parse_alpha(alpha))?;
+    let (red, green, blue) = hwb_to_rgb(hue, whiteness, blackness);
+    Ok(rgba_channels(red, green, blue, alpha))
+}
+
 fn parse_byte(value: &str) -> Result<u8, ColorParseError> {
     value
         .parse::<u16>()
@@ -394,6 +413,22 @@ fn hsl_to_rgb(hue: f64, saturation: f64, lightness: f64) -> (u8, u8, u8) {
         (value * 255.0).round() as u8
     };
     (channel(0.0), channel(8.0), channel(4.0))
+}
+
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn hwb_to_rgb(hue: f64, whiteness: f64, blackness: f64) -> (u8, u8, u8) {
+    let total = whiteness + blackness;
+    if total >= 1.0 {
+        let gray = (whiteness / total * 255.0).round() as u8;
+        return (gray, gray, gray);
+    }
+    let (red, green, blue) = hsl_to_rgb(hue, 1.0, 0.5);
+    let convert = |channel: u8| {
+        (f64::from(channel) / 255.0 * (1.0 - total) + whiteness)
+            .mul_add(255.0, 0.0)
+            .round() as u8
+    };
+    (convert(red), convert(green), convert(blue))
 }
 
 fn rgba_channels(red: u8, green: u8, blue: u8, alpha: u8) -> Rgba8 {
@@ -2399,6 +2434,14 @@ mod tests {
         assert_eq!(
             ColorValue::parse("hsl(120, 100%, 50%)").unwrap(),
             ColorValue::Literal(Rgba8::from_rgba_hex(0x00ff_00ff))
+        );
+        assert_eq!(
+            ColorValue::parse("hwb(0, 20%, 30%)").unwrap(),
+            ColorValue::Literal(Rgba8::from_rgba_hex(0xb333_33ff))
+        );
+        assert_eq!(
+            ColorValue::parse("hwb(120, 40%, 60%, 50%)").unwrap(),
+            ColorValue::Literal(Rgba8::from_rgba_hex(0x6666_6680))
         );
         assert_eq!(
             ColorValue::parse("transparent").unwrap(),
