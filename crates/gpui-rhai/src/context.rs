@@ -687,7 +687,10 @@ impl UiContext {
             .runtime
             .try_borrow_mut()
             .map_err(|_| UiContextError::Borrowed)?;
-        let changed = runtime.signals.write(signal, value.clone())?;
+        let changed =
+            runtime
+                .signals
+                .write_from(signal, value.clone(), crate::SignalWriter::Script)?;
         runtime.traces.push(
             crate::RuntimeTraceKind::Signal,
             signal.id().component().to_string(),

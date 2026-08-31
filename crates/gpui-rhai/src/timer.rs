@@ -122,6 +122,17 @@ struct TimerEntry {
     interaction_paused: bool,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct TimerSnapshot {
+    pub id: TimerId,
+    pub delay: Duration,
+    pub remaining: Duration,
+    pub declaration_paused: bool,
+    pub interaction_paused: bool,
+    pub callback: String,
+    pub generation: ScriptGeneration,
+}
+
 impl TimerEntry {
     fn new(descriptor: TimerDescriptor, now: Instant) -> Self {
         let signature = TimerSignature::from(&descriptor);
@@ -259,6 +270,24 @@ impl TimerRegistry {
     pub fn active_count(&self) -> usize {
         self.entries.len()
     }
+
+    #[must_use]
+    pub fn inspect(&self, now: Instant) -> Vec<TimerSnapshot> {
+        self.entries
+            .iter()
+            .map(|(id, entry)| TimerSnapshot {
+                id: id.clone(),
+                delay: entry.descriptor.delay,
+                remaining: entry
+                    .remaining
+                    .unwrap_or_else(|| entry.deadline.saturating_duration_since(now)),
+                declaration_paused: entry.declaration_paused,
+                interaction_paused: entry.interaction_paused,
+                callback: entry.descriptor.callback.name().to_owned(),
+                generation: entry.descriptor.callback.generation(),
+            })
+            .collect()
+    }
 }
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
@@ -309,6 +338,9 @@ mod tests {
             now,
         );
         assert!(timers.pause(running.id(), now + Duration::from_millis(40)));
+        let snapshot = timers.inspect(now + Duration::from_millis(90));
+        assert_eq!(snapshot[0].remaining, Duration::from_millis(60));
+        assert!(snapshot[0].interaction_paused);
         assert!(timers.resume(running.id(), now + Duration::from_millis(90)));
         assert!(
             timers

@@ -227,6 +227,22 @@ impl SignalDescriptor {
 struct SignalRecord {
     value: SignalValue,
     revision: u64,
+    last_writer: SignalWriter,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SignalWriter {
+    Declaration,
+    Script,
+    Host,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct SignalSnapshot {
+    pub id: SignalId,
+    pub value: SignalValue,
+    pub revision: u64,
+    pub last_writer: SignalWriter,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -301,6 +317,15 @@ impl SignalRegistry {
         signal: &NativeSignal,
         value: SignalValue,
     ) -> Result<bool, SignalError> {
+        self.write_from(signal, value, SignalWriter::Host)
+    }
+
+    pub(crate) fn write_from(
+        &mut self,
+        signal: &NativeSignal,
+        value: SignalValue,
+        writer: SignalWriter,
+    ) -> Result<bool, SignalError> {
         if signal.id.kind != value.kind() {
             return Err(SignalError::TypeMismatch {
                 expected: signal.id.kind,
@@ -316,7 +341,21 @@ impl SignalRegistry {
         }
         record.value = value;
         record.revision = record.revision.saturating_add(1);
+        record.last_writer = writer;
         Ok(true)
+    }
+
+    #[must_use]
+    pub fn inspect(&self) -> Vec<SignalSnapshot> {
+        self.active
+            .iter()
+            .map(|(id, record)| SignalSnapshot {
+                id: id.clone(),
+                value: record.value.clone(),
+                revision: record.revision,
+                last_writer: record.last_writer,
+            })
+            .collect()
     }
 
     pub(crate) fn reconcile(
@@ -330,6 +369,7 @@ impl SignalRegistry {
             self.active.entry(id).or_insert(SignalRecord {
                 value: descriptor.initial,
                 revision: 0,
+                last_writer: SignalWriter::Declaration,
             });
         }
     }
@@ -401,6 +441,7 @@ mod tests {
         );
         assert_eq!(registry.read(&signal).unwrap(), SignalValue::Float(0.5));
         assert_eq!(registry.revision(&signal).unwrap(), 1);
+        assert_eq!(registry.inspect()[0].last_writer, SignalWriter::Host);
     }
 
     #[test]

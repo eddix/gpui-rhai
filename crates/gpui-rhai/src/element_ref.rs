@@ -93,6 +93,10 @@ impl ElementRefRegistry {
         self.active.is_empty()
     }
 
+    pub fn iter(&self) -> impl ExactSizeIterator<Item = (&ElementRefId, &NodeId)> {
+        self.active.iter()
+    }
+
     /// Resolve the last committed retained identity.
     ///
     /// # Errors

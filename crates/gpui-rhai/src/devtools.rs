@@ -115,6 +115,14 @@ pub struct InspectorSnapshot {
     pub timings: Vec<ExecutionTiming>,
     pub dirty: Vec<String>,
     pub components: Vec<InspectorComponent>,
+    pub signals: Vec<InspectorSignal>,
+    pub effects: Vec<InspectorEffect>,
+    pub timers: Vec<InspectorTimer>,
+    pub element_refs: Vec<InspectorElementRef>,
+    pub geometry_nodes: usize,
+    pub pointer_captures: BTreeMap<u64, u64>,
+    pub locale_readers: usize,
+    pub viewport_readers: usize,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -126,6 +134,52 @@ pub struct InspectorComponent {
     pub parts: Vec<String>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct InspectorSignal {
+    pub id: String,
+    pub kind: String,
+    pub value: String,
+    pub revision: u64,
+    pub last_writer: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct InspectorEffect {
+    pub id: String,
+    pub dependencies: String,
+    pub start: String,
+    pub cleanup: String,
+    pub generation: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct InspectorTimer {
+    pub id: String,
+    pub delay_ms: u64,
+    pub remaining_ms: u64,
+    pub declaration_paused: bool,
+    pub interaction_paused: bool,
+    pub callback: String,
+    pub generation: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct InspectorElementRef {
+    pub id: String,
+    pub node: u64,
+}
+
+struct InspectorRuntimeMechanisms {
+    signals: Vec<InspectorSignal>,
+    effects: Vec<InspectorEffect>,
+    timers: Vec<InspectorTimer>,
+    element_refs: Vec<InspectorElementRef>,
+    geometry_nodes: usize,
+    pointer_captures: BTreeMap<u64, u64>,
+    locale_readers: usize,
+    viewport_readers: usize,
+}
+
 impl InspectorSnapshot {
     #[must_use]
     pub fn capture(
@@ -135,6 +189,7 @@ impl InspectorSnapshot {
         components: &ComponentRegistry,
         timings: Vec<ExecutionTiming>,
     ) -> Self {
+        let mechanisms = inspect_runtime_mechanisms(runtime);
         Self {
             root: root.map(|root| inspect_node(root, "root")),
             state: runtime.component_state.inspect(),
@@ -178,7 +233,79 @@ impl InspectorSnapshot {
                     parts: component.schema.parts.iter().cloned().collect(),
                 })
                 .collect(),
+            signals: mechanisms.signals,
+            effects: mechanisms.effects,
+            timers: mechanisms.timers,
+            element_refs: mechanisms.element_refs,
+            geometry_nodes: mechanisms.geometry_nodes,
+            pointer_captures: mechanisms.pointer_captures,
+            locale_readers: mechanisms.locale_readers,
+            viewport_readers: mechanisms.viewport_readers,
         }
+    }
+}
+
+fn inspect_runtime_mechanisms(runtime: &UiRuntimeState) -> InspectorRuntimeMechanisms {
+    InspectorRuntimeMechanisms {
+        signals: runtime
+            .signals
+            .inspect()
+            .into_iter()
+            .map(|signal| InspectorSignal {
+                id: format!(
+                    "{}/{}:{}",
+                    signal.id.component(),
+                    signal.id.key(),
+                    signal.id.kind().as_str()
+                ),
+                kind: signal.id.kind().as_str().to_owned(),
+                value: format!("{:?}", signal.value),
+                revision: signal.revision,
+                last_writer: format!("{:?}", signal.last_writer),
+            })
+            .collect(),
+        effects: runtime
+            .effects
+            .iter()
+            .map(|(id, effect)| InspectorEffect {
+                id: format!("{}/{}", id.component(), id.key()),
+                dependencies: display_value(effect.dependencies(), false),
+                start: effect.start().name().to_owned(),
+                cleanup: effect.cleanup().name().to_owned(),
+                generation: effect.generation().get(),
+            })
+            .collect(),
+        timers: runtime
+            .timers
+            .inspect(runtime.clock.now())
+            .into_iter()
+            .map(|timer| InspectorTimer {
+                id: format!("{}/{}", timer.id.component(), timer.id.key()),
+                delay_ms: u64::try_from(timer.delay.as_millis()).unwrap_or(u64::MAX),
+                remaining_ms: u64::try_from(timer.remaining.as_millis()).unwrap_or(u64::MAX),
+                declaration_paused: timer.declaration_paused,
+                interaction_paused: timer.interaction_paused,
+                callback: timer.callback,
+                generation: timer.generation.get(),
+            })
+            .collect(),
+        element_refs: runtime
+            .element_refs
+            .iter()
+            .map(|(id, node)| InspectorElementRef {
+                id: format!("{}/{}", id.component(), id.key()),
+                node: node.get(),
+            })
+            .collect(),
+        geometry_nodes: runtime.geometry.len(),
+        pointer_captures: runtime
+            .pointer_capture
+            .snapshot()
+            .into_iter()
+            .map(|(pointer, node)| (pointer, node.get()))
+            .collect(),
+        locale_readers: runtime.environment_dependencies.locale_reader_count(),
+        viewport_readers: runtime.environment_dependencies.viewport_reader_count(),
     }
 }
 
@@ -379,21 +506,7 @@ fn truncate(value: &str, max: usize) -> String {
 #[must_use]
 #[cfg(feature = "dev-reload")]
 pub(crate) fn inspector_element(snapshot: &InspectorSnapshot) -> AnyElement {
-    let mut lines = vec![
-        format!(
-            "GPUI Rhai Inspector — {} / {}",
-            snapshot.theme_family, snapshot.theme_name
-        ),
-        format!(
-            "nodes={} state={} stores={} dirty={} traces={} timings={}",
-            snapshot.root.as_ref().map_or(0, count_nodes),
-            snapshot.state.len(),
-            snapshot.stores.len(),
-            snapshot.dirty.len(),
-            snapshot.traces.len(),
-            snapshot.timings.len()
-        ),
-    ];
+    let mut lines = inspector_header(snapshot);
     if let Some(root) = &snapshot.root {
         append_node_lines(root, 0, &mut lines);
     }
@@ -404,6 +517,7 @@ pub(crate) fn inspector_element(snapshot: &InspectorSnapshot) -> AnyElement {
         lines.push(format!("    slots={:?}", component.slots));
         lines.push(format!("    parts={:?}", component.parts));
     }
+    append_mechanism_lines(snapshot, &mut lines);
     lines.push("State".to_owned());
     for instance in &snapshot.state {
         lines.push(format!("  {}", instance.path));
@@ -479,6 +593,73 @@ pub(crate) fn inspector_element(snapshot: &InspectorSnapshot) -> AnyElement {
 }
 
 #[cfg(feature = "dev-reload")]
+fn inspector_header(snapshot: &InspectorSnapshot) -> Vec<String> {
+    vec![
+        format!(
+            "GPUI Rhai Inspector — {} / {}",
+            snapshot.theme_family, snapshot.theme_name
+        ),
+        format!(
+            "nodes={} state={} stores={} signals={} effects={} timers={} refs={} geometry={} captures={} dirty={} traces={} timings={}",
+            snapshot.root.as_ref().map_or(0, count_nodes),
+            snapshot.state.len(),
+            snapshot.stores.len(),
+            snapshot.signals.len(),
+            snapshot.effects.len(),
+            snapshot.timers.len(),
+            snapshot.element_refs.len(),
+            snapshot.geometry_nodes,
+            snapshot.pointer_captures.len(),
+            snapshot.dirty.len(),
+            snapshot.traces.len(),
+            snapshot.timings.len()
+        ),
+    ]
+}
+
+#[cfg(feature = "dev-reload")]
+fn append_mechanism_lines(snapshot: &InspectorSnapshot, lines: &mut Vec<String>) {
+    lines.push(format!(
+        "Dependencies — locale={} viewport={}",
+        snapshot.locale_readers, snapshot.viewport_readers
+    ));
+    lines.push("Signals".to_owned());
+    for signal in &snapshot.signals {
+        lines.push(format!(
+            "  {} {}={} rev={} writer={}",
+            signal.id, signal.kind, signal.value, signal.revision, signal.last_writer
+        ));
+    }
+    lines.push("Effects".to_owned());
+    for effect in &snapshot.effects {
+        lines.push(format!(
+            "  {} deps={} start={} cleanup={} gen={}",
+            effect.id, effect.dependencies, effect.start, effect.cleanup, effect.generation
+        ));
+    }
+    lines.push("Timers".to_owned());
+    for timer in &snapshot.timers {
+        lines.push(format!(
+            "  {} remaining={}ms/{}ms paused={}/{} callback={} gen={}",
+            timer.id,
+            timer.remaining_ms,
+            timer.delay_ms,
+            timer.declaration_paused,
+            timer.interaction_paused,
+            timer.callback,
+            timer.generation
+        ));
+    }
+    lines.push("Element refs".to_owned());
+    for reference in &snapshot.element_refs {
+        lines.push(format!("  {} -> node {}", reference.id, reference.node));
+    }
+    if !snapshot.pointer_captures.is_empty() {
+        lines.push(format!("Pointer captures: {:?}", snapshot.pointer_captures));
+    }
+}
+
+#[cfg(feature = "dev-reload")]
 fn count_nodes(node: &InspectorNode) -> usize {
     1 + node.children.iter().map(count_nodes).sum::<usize>()
 }
@@ -524,6 +705,7 @@ mod tests {
         ComponentInstancePath, ComponentStateSchema, EventPropagation, HostCallback, StateField,
         ValueSchema,
     };
+    use std::time::{Duration, Instant};
 
     #[test]
     fn inspector_reports_host_handler_label_without_opaque_details() {
@@ -591,5 +773,89 @@ mod tests {
         assert_eq!(snapshot.len(), 2);
         assert_eq!(snapshot[0].sequence, 2);
         assert_eq!(snapshot[1].sequence, 3);
+    }
+
+    #[test]
+    fn snapshot_includes_runtime_mechanism_identity_and_state() {
+        let component = ComponentInstancePath::root("View", "main");
+        let mut runtime = UiRuntimeState::new();
+        let signal_id =
+            crate::SignalId::new(component.clone(), "progress", crate::SignalKind::Float).unwrap();
+        runtime.signals.reconcile(
+            &component,
+            BTreeMap::from([(
+                signal_id.clone(),
+                crate::signal::SignalDescriptor::new(crate::SignalValue::Float(0.25)),
+            )]),
+        );
+        let signal = crate::NativeSignal::new(signal_id);
+        runtime
+            .signals
+            .write_from(
+                &signal,
+                crate::SignalValue::Float(0.5),
+                crate::SignalWriter::Script,
+            )
+            .unwrap();
+
+        let mut callback = crate::ScriptCallback::try_from_fn_ptr(
+            rhai::FnPtr::new("fired").unwrap(),
+            crate::ScriptGeneration::initial(),
+        )
+        .unwrap();
+        callback.bind_component_if_unset(component.clone(), BTreeMap::new());
+        let timer = crate::TimerDescriptor::new(
+            crate::TimerId::new(component.clone(), "refresh").unwrap(),
+            Duration::from_secs(1),
+            false,
+            callback,
+            UiValue::Null,
+        )
+        .unwrap();
+        let now = Instant::now();
+        runtime.timers.reconcile(
+            &component,
+            BTreeMap::from([(timer.id().clone(), timer)]),
+            now,
+        );
+
+        let mut retained = crate::RetainedUiTree::new();
+        retained.reconcile(UiNode::text("target")).unwrap();
+        let node = retained.root_id().unwrap();
+        let reference = crate::ElementRefId::new(component.clone(), "target").unwrap();
+        runtime
+            .element_refs
+            .reconcile(&component, BTreeMap::from([(reference, node)]));
+        runtime.pointer_capture.capture(7, node);
+        let bounds = crate::GeometryBounds::new(0.0, 0.0, 10.0, 10.0).unwrap();
+        runtime.geometry.update(
+            node,
+            crate::ElementGeometry {
+                layout: bounds,
+                visual: bounds,
+                clip: None,
+            },
+        );
+
+        let engine = crate::RuntimeEngine::new();
+        let theme = crate::load_theme_source(
+            engine.engine(),
+            "theme.rhai",
+            include_str!("../../../registry/themes/default_dark.rhai"),
+        )
+        .unwrap();
+        let snapshot = InspectorSnapshot::capture(
+            retained.root(),
+            &runtime,
+            &theme,
+            &ComponentRegistry::default(),
+            Vec::new(),
+        );
+        assert_eq!(snapshot.signals[0].revision, 1);
+        assert_eq!(snapshot.signals[0].last_writer, "Script");
+        assert_eq!(snapshot.timers[0].callback, "fired");
+        assert_eq!(snapshot.element_refs[0].node, node.get());
+        assert_eq!(snapshot.geometry_nodes, 1);
+        assert_eq!(snapshot.pointer_captures.get(&7), Some(&node.get()));
     }
 }

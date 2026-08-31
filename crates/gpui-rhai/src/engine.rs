@@ -42,6 +42,11 @@ pub struct ScriptGeneration(u64);
 
 impl ScriptGeneration {
     #[must_use]
+    pub const fn get(self) -> u64 {
+        self.0
+    }
+
+    #[must_use]
     pub fn initial() -> Self {
         Self(1)
     }

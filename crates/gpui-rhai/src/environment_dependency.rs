@@ -15,6 +15,14 @@ pub(crate) struct EnvironmentDependencyRegistry {
 }
 
 impl EnvironmentDependencyRegistry {
+    pub fn locale_reader_count(&self) -> usize {
+        self.locale.len()
+    }
+
+    pub fn viewport_reader_count(&self) -> usize {
+        self.viewport.values().map(BTreeSet::len).sum()
+    }
+
     pub fn reset_reader(&mut self, component: &ComponentInstancePath) {
         self.locale.retain(|reader| &reader.component != component);
         for readers in self.viewport.values_mut() {

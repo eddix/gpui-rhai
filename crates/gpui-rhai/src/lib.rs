@@ -106,8 +106,8 @@ pub use dependency::{
 #[cfg(feature = "dev-reload")]
 pub use dependency::{FileChangeBatch, FileWatcher, WatcherError};
 pub use devtools::{
-    InspectorComponent, InspectorNode, InspectorSnapshot, RuntimeTrace, RuntimeTraceKind,
-    TraceBuffer,
+    InspectorComponent, InspectorEffect, InspectorElementRef, InspectorNode, InspectorSignal,
+    InspectorSnapshot, InspectorTimer, RuntimeTrace, RuntimeTraceKind, TraceBuffer,
 };
 pub use diagnostic::{
     Diagnostic, DiagnosticCode, DiagnosticContext, DiagnosticFrame, DiagnosticSeverity,
@@ -165,7 +165,8 @@ pub use script_source::{
     EmbeddedScriptSource, FileScriptSource, ScriptAsset, ScriptSource, ScriptSourceError,
 };
 pub use signal::{
-    NativeSignal, SignalError, SignalId, SignalKind, SignalProperty, SignalRegistry, SignalValue,
+    NativeSignal, SignalError, SignalId, SignalKind, SignalProperty, SignalRegistry,
+    SignalSnapshot, SignalValue, SignalWriter,
 };
 pub use source::{ModuleId, ModuleIdError, RestrictedModuleResolver};
 pub use state::{
@@ -187,7 +188,7 @@ pub use theme::{
     ResolvedTheme, SystemAppearance, ThemeError, ThemeFamily, ThemeManager, ThemeMode,
     ThemePreference, ThemeSelection, ThemeTokenValue, ThemeTokens, ThemeVariant, load_theme_source,
 };
-pub use timer::{TimerDescriptor, TimerError, TimerId, TimerRegistry};
+pub use timer::{TimerDescriptor, TimerError, TimerId, TimerRegistry, TimerSnapshot};
 pub use value::{OpaqueHandle, UiValue, UiValueError};
 pub use virtual_list::{
     VariableListSpec, VariableListState, VariableListWindow, VirtualCollectionId,

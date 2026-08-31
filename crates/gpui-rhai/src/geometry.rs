@@ -65,6 +65,16 @@ impl GeometryRegistry {
         Self::default()
     }
 
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.inner.borrow().committed.len()
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.inner.borrow().committed.is_empty()
+    }
+
     pub fn update(&self, node: NodeId, geometry: ElementGeometry) -> bool {
         let mut state = self.inner.borrow_mut();
         if state.committed.get(&node) == Some(&geometry) {
