@@ -238,10 +238,7 @@ fn scroll_handles_for_node(
         return Vec::new();
     };
     let mut resolved = Vec::new();
-    loop {
-        let Some(retained) = tree.node(node) else {
-            break;
-        };
+    while let Some(retained) = tree.node(node) {
         if retained.scrollable()
             && let Some(handle) = handles.get(&node)
         {

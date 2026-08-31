@@ -67,7 +67,7 @@ impl TimerDescriptor {
         callback: ScriptCallback,
         payload: UiValue,
     ) -> Result<Self, TimerError> {
-        if delay.is_zero() || delay > Duration::from_secs(24 * 60 * 60) {
+        if delay.is_zero() || delay > Duration::from_hours(24) {
             return Err(TimerError::InvalidDelay(delay));
         }
         Ok(Self {
