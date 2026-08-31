@@ -2257,6 +2257,7 @@ version = "0.0.0"
 dependencies = [
  "gpui",
  "gpui-rhai",
+ "semver",
 ]
 
 [[package]]

@@ -722,6 +722,188 @@ fn automation_commands_use_mounted_handlers_actions_and_clock(cx: &mut TestAppCo
 }
 
 #[gpui::test]
+fn async_task_and_subscription_deliver_through_the_real_poll_path(cx: &mut TestAppContext) {
+    // Regression guard for the embedded application delivery path. The only
+    // other end-to-end async test drains registries manually and therefore
+    // never exercises poll_async / take_window_async routing; a downstream
+    // host (gpui-rhai-ease, 2026-08-30) observed callbacks silently never
+    // arriving on this path. This test drives the production poll path via
+    // the automation clock: background work completes on real OS threads,
+    // then AdvanceTime polls one frame and the callbacks must land.
+    use gpui_rhai::{
+        AsyncCapabilityHandler, CapabilityDescriptor, CapabilityId, CapabilityMethod,
+        ScriptViewExtension, SubscriptionCapabilityHandler, SubscriptionWork, TaskWork,
+        ValueSchema,
+    };
+
+    struct DelayedText;
+    impl AsyncCapabilityHandler for DelayedText {
+        fn start(&mut self, _method: &str, input: UiValue) -> Result<TaskWork, String> {
+            let UiValue::String(value) = input else {
+                return Err("load expects a string".to_owned());
+            };
+            Ok(Box::new(move || {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+                Ok(UiValue::String(value.to_uppercase()))
+            }))
+        }
+    }
+
+    struct Ticker;
+    impl SubscriptionCapabilityHandler for Ticker {
+        fn subscribe(&mut self, _m: &str, _input: UiValue) -> Result<SubscriptionWork, String> {
+            let (sender, receiver) = std::sync::mpsc::channel();
+            std::thread::Builder::new()
+                .name("async-delivery-test-ticker".to_owned())
+                .spawn(move || {
+                    for tick in 1..=2 {
+                        std::thread::sleep(std::time::Duration::from_millis(10));
+                        if sender.send(UiValue::Integer(tick)).is_err() {
+                            break;
+                        }
+                    }
+                })
+                .map_err(|error| error.to_string())?;
+            Ok(SubscriptionWork::from_receiver(receiver))
+        }
+    }
+
+    struct AsyncExtension;
+    impl ScriptViewExtension for AsyncExtension {
+        fn configure_runtime(&self, runtime: &mut UiRuntimeState) -> Result<(), String> {
+            let delayed = CapabilityId::parse("app.delayed_text").map_err(|e| e.to_string())?;
+            runtime
+                .capabilities
+                .register_async(
+                    CapabilityDescriptor {
+                        id: delayed,
+                        version: semver::Version::new(1, 0, 0),
+                        methods: std::collections::BTreeMap::from([(
+                            "load".to_owned(),
+                            CapabilityMethod {
+                                input: ValueSchema::string(),
+                                output: ValueSchema::string(),
+                            },
+                        )]),
+                    },
+                    DelayedText,
+                )
+                .map_err(|e| e.to_string())?;
+            let ticker = CapabilityId::parse("app.ticker").map_err(|e| e.to_string())?;
+            runtime
+                .capabilities
+                .register_subscription(
+                    CapabilityDescriptor {
+                        id: ticker,
+                        version: semver::Version::new(1, 0, 0),
+                        methods: std::collections::BTreeMap::from([(
+                            "watch".to_owned(),
+                            CapabilityMethod {
+                                input: ValueSchema::Null,
+                                output: ValueSchema::integer(),
+                            },
+                        )]),
+                    },
+                    Ticker,
+                )
+                .map_err(|e| e.to_string())
+        }
+    }
+
+    cx.update(gpui_rhai::install);
+    let entry = ModuleId::parse("main").unwrap();
+    let manual = gpui_rhai::ManualRuntimeClock::new(std::time::Instant::now());
+    let manifest = gpui_rhai::AppManifest::new(entry.clone())
+        .with_capability("app.delayed_text", "*")
+        .unwrap()
+        .with_capability("app.ticker", "*")
+        .unwrap();
+    let prepared = EmbeddedScriptView::new(
+        entry.clone(),
+        EmbeddedScriptSource::new(std::collections::BTreeMap::from([(
+            entry,
+            r#"
+                fn state_schema() { #{ fields: #{
+                    message: #{ schema: #{ type: "string" },
+                        "default": #{ type: "string", value: "waiting" } },
+                    tick: #{ schema: #{ type: "integer" },
+                        "default": #{ type: "integer", value: 0 } }
+                } } }
+                fn loaded(ctx, value) { ctx.set_state("message", value); }
+                fn ticked(ctx, value) { ctx.set_state("tick", value); }
+                fn failed(ctx, error) { ctx.set_state("message", `error: ${error}`); }
+                fn init(ctx) {
+                    ctx.start_task("app.delayed_text", "load", "background ready",
+                        Fn("loaded"), Fn("failed"));
+                    ctx.start_subscription("app.ticker", "watch", (),
+                        Fn("ticked"), Fn("failed"), 0);
+                }
+                fn view(ctx) {
+                    column([
+                        text(`message: ${ctx.get_state("message")}`),
+                        text(`tick: ${ctx.get_state("tick")}`)
+                    ])
+                }
+            "#
+            .to_owned(),
+        )])),
+        include_str!("../../../registry/themes/default_dark.rhai"),
+    )
+    .manifest(manifest)
+    .extension(AsyncExtension)
+    .runtime_clock(manual.clock())
+    .prepare()
+    .unwrap();
+    let captured = Rc::new(RefCell::new(None));
+    let captured_for_window = Rc::clone(&captured);
+    let window = cx.add_window(move |window, cx| {
+        let host = ScriptViewHost::new("async-delivery-window", cx).unwrap();
+        let view = prepared
+            .mount(
+                ScriptViewConfig::new("async-delivery-view"),
+                host.clone(),
+                window,
+                cx,
+            )
+            .unwrap();
+        *captured_for_window.borrow_mut() = Some(view.clone());
+        SingleEmbeddedHost { host, view }
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    cx.run_until_parked();
+
+    let view = captured.borrow().as_ref().unwrap().clone();
+    let mut visual = VisualTestContext::from_window(*window, cx);
+
+    // Give the real background threads time to push their results into the
+    // registries' mpsc channels, then poll one production frame.
+    std::thread::sleep(std::time::Duration::from_millis(80));
+    visual
+        .update(|window, cx| {
+            view.automate(
+                gpui_rhai::AutomationCommand::AdvanceTime { millis: 1 },
+                window,
+                cx,
+            )
+        })
+        .unwrap();
+    visual.run_until_parked();
+
+    let root = visual.update(|_, cx| view.root(cx).unwrap().unwrap());
+    let mut texts = Vec::new();
+    node_texts(&root, &mut texts);
+    assert!(
+        texts.contains(&"message: BACKGROUND READY".to_owned()),
+        "async task callback did not deliver through the poll path: {texts:?}"
+    );
+    assert!(
+        texts.contains(&"tick: 2".to_owned()),
+        "subscription callback did not deliver through the poll path: {texts:?}"
+    );
+}
+
+#[gpui::test]
 fn native_input_updates_rhai_state_and_clipboard_with_unicode(cx: &mut TestAppContext) {
     cx.update(init_text_input);
     let input = include_str!("../../../registry/components/input.rhai");
