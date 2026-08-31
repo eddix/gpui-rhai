@@ -154,9 +154,7 @@ fn module(id: &str, source: &str) -> (ModuleId, String) {
 fn gallery_app() -> EmbeddedScriptView {
     let visual_theme = visual_theme("default-light");
     let visual_locale = visual_locale();
-    let menu_open = std::env::var("GPUI_RHAI_VISUAL_STATE")
-        .ok()
-        .is_some_and(|state| state == "menu");
+    let menu_open = std::env::var("GPUI_RHAI_VISUAL_STATE").is_ok_and(|state| state == "menu");
     let main_source = MAIN
         .replace("__VISUAL_THEME__", &visual_theme)
         .replace("__VISUAL_LOCALE__", &visual_locale)
