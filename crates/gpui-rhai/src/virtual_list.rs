@@ -84,19 +84,25 @@ impl VirtualRequestRegistry {
 
     pub fn request(&self, id: VirtualCollectionId, indices: impl IntoIterator<Item = usize>) {
         let indices = indices.into_iter().collect::<Vec<_>>();
-        self.requests
-            .borrow_mut()
-            .entry(id.clone())
-            .or_default()
-            .extend(indices.iter().copied());
+        let requested_count = {
+            let mut requests = self.requests.borrow_mut();
+            let requested = requests.entry(id.clone()).or_default();
+            requested.extend(indices.iter().copied());
+            requested.len()
+        };
+        let new_range = index_range(indices);
         let mut metrics = self.metrics.borrow_mut();
         let metrics = metrics
             .entry(id.clone())
             .or_insert_with(|| VirtualCollectionMetrics::new(id));
-        let requested = self.requests.borrow();
-        if let Some(indices) = requested.get(&metrics.id) {
-            metrics.requested_count = indices.len();
-            metrics.requested_range = index_range(indices.iter().copied());
+        metrics.requested_count = requested_count;
+        if !new_range.is_empty() {
+            metrics.requested_range = if metrics.requested_range.is_empty() {
+                new_range
+            } else {
+                metrics.requested_range.start.min(new_range.start)
+                    ..metrics.requested_range.end.max(new_range.end)
+            };
         }
     }
 
@@ -141,6 +147,7 @@ impl VirtualRequestRegistry {
         viewport_height: f64,
         scroll_item: usize,
         scroll_offset: f64,
+        measured_visible: Option<Range<usize>>,
     ) {
         let mut metrics = self.metrics.borrow_mut();
         let metrics = metrics
@@ -149,7 +156,9 @@ impl VirtualRequestRegistry {
         metrics.item_count = spec.data.len();
         metrics.realized_count = spec.realized.len();
         metrics.realized_range = index_range(spec.realized.keys().copied());
-        if metrics.visible_range.is_empty() {
+        if let Some(visible_range) = measured_visible {
+            metrics.visible_range = visible_range;
+        } else if metrics.visible_range.is_empty() {
             metrics.visible_range = metrics.realized_range.clone();
         } else {
             metrics.visible_range = metrics.visible_range.start.min(spec.data.len())
@@ -693,7 +702,7 @@ mod tests {
             follow_tail: true,
         };
         let registry = VirtualRequestRegistry::new();
-        registry.report_frame(&spec, 120.0, 1, 3.5);
+        registry.report_frame(&spec, 120.0, 1, 3.5, Some(1..3));
         registry.request(id.clone(), [3, 4]);
         registry.report_scroll(&id, 1..4, true);
         let metrics = &registry.inspect()[0];

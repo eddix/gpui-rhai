@@ -64,9 +64,12 @@ fn mount(&mut self, instance: &PrimitiveInstance) -> Result<(), String> {
 The same scope is preserved across keyed updates. Runtime unmount invokes the
 handler and then cancels all remaining resources in reverse registration order.
 Resources added by a mount/update/render attempt are rolled back if that attempt
-fails; one panicking cleanup is diagnosed but does not prevent later cleanups.
+fails; a newly mounted handler also receives `unmount` if its first render
+fails. One panicking cleanup is diagnosed but does not prevent later cleanups.
 Dropping the last scope is also a cleanup backstop. Do not capture the primitive
-registry itself in a cleanup closure.
+registry or resource scope itself in a cleanup closure. Native changes made by
+`update` cannot be cloned by the runtime: stage them until success or make
+`update(previous, next)` idempotent so a failed outer render can safely retry.
 
 Emit only declared events through `PrimitiveEventEmitter`; the runtime validates
 payloads and dispatches the generation-bound callback. The emitter keeps only a

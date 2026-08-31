@@ -208,11 +208,13 @@ impl Render for VirtualListView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let viewport = self.scroll.viewport_bounds();
         let scroll_top = self.scroll.logical_scroll_top();
+        let measured_visible = measured_visible_range(&self.scroll, &self.content, viewport);
         self.runtime.virtual_requests.report_frame(
             &self.content,
             f64::from(viewport.size.height),
             scroll_top.item_ix,
             f64::from(scroll_top.offset_in_item),
+            measured_visible,
         );
         let content = self.content.clone();
         let height = finite_to_f32(content.height);
@@ -295,6 +297,26 @@ impl Render for VirtualListView {
             })
             .child(list)
     }
+}
+
+fn measured_visible_range(
+    state: &ListState,
+    content: &VirtualCollectionNodeSpec,
+    viewport: Bounds<Pixels>,
+) -> Option<std::ops::Range<usize>> {
+    if viewport.size.height <= px(0.0) {
+        return None;
+    }
+    let mut visible = content.realized.keys().copied().filter(|index| {
+        state.bounds_for_item(*index).is_some_and(|bounds| {
+            bounds.bottom() > viewport.top() && bounds.top() < viewport.bottom()
+        })
+    });
+    let first = visible.next()?;
+    let (min, max) = visible.fold((first, first), |(min, max), index| {
+        (min.min(index), max.max(index))
+    });
+    Some(min..max.saturating_add(1))
 }
 
 pub(crate) fn collection_item_key(spec: &VirtualCollectionNodeSpec, index: usize) -> Option<&str> {

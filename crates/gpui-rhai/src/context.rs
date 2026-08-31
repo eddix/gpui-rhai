@@ -178,9 +178,9 @@ impl UiRuntimeState {
     }
 
     pub(crate) fn cancel_async_scope(&mut self, scope: &AsyncScope) -> Result<(), AssetError> {
+        self.assets.cancel_scope(scope)?;
         self.tasks.cancel_scope(scope);
         self.subscriptions.cancel_scope(scope);
-        self.assets.cancel_scope(scope)?;
         self.pending_async
             .retain(|delivery| &delivery.scope != scope);
         self.trace_subscription_closures();
@@ -2327,10 +2327,13 @@ fn rhai_value_path(values: Array) -> Result<UiValuePath, Box<EvalAltResult>> {
         .enumerate()
         .map(|(index, value)| {
             let actual = value.type_name().to_owned();
-            if let Some(key) = value.clone().try_cast::<ImmutableString>() {
-                return Ok(UiValuePathSegment::Key(key.to_string()));
+            if value.is::<ImmutableString>() {
+                return Ok(UiValuePathSegment::Key(
+                    value.cast::<ImmutableString>().to_string(),
+                ));
             }
-            if let Some(index_value) = value.clone().try_cast::<INT>() {
+            if value.is::<INT>() {
+                let index_value = value.cast::<INT>();
                 return usize::try_from(index_value)
                     .map(UiValuePathSegment::Index)
                     .map_err(|_| {

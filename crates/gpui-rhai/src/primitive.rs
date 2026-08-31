@@ -871,19 +871,7 @@ impl PrimitiveRegistry {
             .inner
             .try_borrow_mut()
             .map_err(|_| PrimitiveError::Borrowed)?;
-        let retained_instance = inner
-            .entries
-            .get(&node.primitive)
-            .ok_or_else(|| PrimitiveError::Unknown(node.primitive.clone()))?
-            .descriptor
-            .lifecycle
-            || !inner
-                .entries
-                .get(&node.primitive)
-                .expect("primitive entry was just resolved")
-                .descriptor
-                .state
-                .is_empty();
+        let retained_instance = primitive_is_retained(&inner, &node.primitive)?;
         if retained_instance && retained_id.is_none() {
             return Err(PrimitiveError::MissingRetainedIdentity(node.primitive));
         }
@@ -955,10 +943,14 @@ impl PrimitiveRegistry {
         let element = match operation {
             Ok(element) => element,
             Err(error) => {
-                if let (Some(resources), Some(checkpoint)) = (&resources, checkpoint) {
-                    resources.rollback(checkpoint)?;
-                }
-                return Err(error);
+                return Err(rollback_failed_primitive_operation(
+                    entry,
+                    &instance,
+                    needs_mount,
+                    resources.as_ref(),
+                    checkpoint,
+                    error,
+                ));
             }
         };
         if let Some(id) = instance_id {
@@ -966,6 +958,45 @@ impl PrimitiveRegistry {
         }
         Ok(element)
     }
+}
+
+fn rollback_failed_primitive_operation(
+    entry: &mut PrimitiveEntry,
+    instance: &PrimitiveInstance,
+    needs_unmount: bool,
+    resources: Option<&PrimitiveResourceScope>,
+    checkpoint: Option<u64>,
+    original: PrimitiveError,
+) -> PrimitiveError {
+    let mut rollback_error = None;
+    if needs_unmount
+        && let Some(instance_id) = instance.id.as_ref()
+        && let Err(error) =
+            guard_primitive_panic(&instance.node.primitive, "failed-mount unmount", || {
+                entry.handler.unmount(instance_id);
+            })
+    {
+        rollback_error = Some(error);
+    }
+    if let (Some(resources), Some(checkpoint)) = (resources, checkpoint)
+        && let Err(error) = resources.rollback(checkpoint)
+        && rollback_error.is_none()
+    {
+        rollback_error = Some(PrimitiveError::Resource(error));
+    }
+    rollback_error.unwrap_or(original)
+}
+
+fn primitive_is_retained(
+    inner: &PrimitiveRegistryInner,
+    primitive: &PrimitiveId,
+) -> Result<bool, PrimitiveError> {
+    let descriptor = &inner
+        .entries
+        .get(primitive)
+        .ok_or_else(|| PrimitiveError::Unknown(primitive.clone()))?
+        .descriptor;
+    Ok(descriptor.lifecycle || !descriptor.state.is_empty())
 }
 
 fn collect_primitive_instances(tree: &crate::RetainedUiTree) -> BTreeSet<PrimitiveInstanceId> {

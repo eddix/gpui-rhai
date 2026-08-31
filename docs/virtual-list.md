@@ -50,8 +50,9 @@ state cleanup, off-layout realization, and the 2,000-item Chat acceptance app.
 one transaction-aware `VirtualCollectionMetrics` record per retained
 collection: item/realized/requested counts and ranges, GPUI visible range,
 viewport height, logical top item/offset, scrolled state, alignment, and
-follow-tail policy. Before GPUI emits its first scroll event, visible range uses
-the pre-realized window; later reports come directly from `ListScrollEvent`.
+follow-tail policy. Frame reports derive visible range from measured GPUI item
+bounds when available and otherwise use the pre-realized window; scroll changes
+update it immediately from `ListScrollEvent`.
 Pending requested metrics clear when the foreground realization batch drains,
 and failed transactions restore the prior metric snapshot.
 
