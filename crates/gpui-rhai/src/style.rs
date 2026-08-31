@@ -495,6 +495,13 @@ pub enum CursorKind {
     ResizeVertical,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HitTestBehavior {
+    Block,
+    BlockExceptScroll,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ShadowSpec {
     pub x: f64,
@@ -735,6 +742,7 @@ pub struct StyleProperties {
     pub opacity: Option<f64>,
     pub visible: Option<bool>,
     pub cursor: Option<CursorKind>,
+    pub hit_test: Option<HitTestBehavior>,
     pub font_family: Option<String>,
     pub font_fallbacks: Option<Vec<String>>,
     pub font_features: Option<BTreeMap<String, u32>>,
@@ -791,6 +799,7 @@ impl StyleProperties {
         merge_option(&mut self.opacity, overlay.opacity);
         merge_option(&mut self.visible, overlay.visible);
         merge_option(&mut self.cursor, overlay.cursor);
+        merge_option(&mut self.hit_test, overlay.hit_test);
         merge_option(&mut self.font_family, overlay.font_family.clone());
         merge_option(&mut self.font_fallbacks, overlay.font_fallbacks.clone());
         merge_option(&mut self.font_features, overlay.font_features.clone());
@@ -1356,6 +1365,12 @@ impl Style {
         self
     }
 
+    #[must_use]
+    pub fn hit_test(mut self, behavior: HitTestBehavior) -> Self {
+        self.base.hit_test = Some(behavior);
+        self
+    }
+
     /// Set one validated platform font family name.
     ///
     /// # Errors
@@ -1865,6 +1880,12 @@ fn register_visual_methods(builder: &mut TypeBuilder<Style>) {
         .with_fn("cursor_resize_y", |style: &mut Style| {
             style.clone().cursor(CursorKind::ResizeVertical)
         })
+        .with_fn("occlude", |style: &mut Style| {
+            style.clone().hit_test(HitTestBehavior::Block)
+        })
+        .with_fn("occlude_except_scroll", |style: &mut Style| {
+            style.clone().hit_test(HitTestBehavior::BlockExceptScroll)
+        })
         .with_fn("shadow", |style: &mut Style, shadow: ShadowSpec| {
             style.clone().shadow(shadow)
         })
@@ -2319,7 +2340,7 @@ mod tests {
                         .shadow(shadow(#{ x: 0, y: 8, blur: 24, spread: 2,
                             color: rgba(0x00000066) }))
                         .opacity(0.85).translate_x(-12)
-                        .cursor_pointer().font_family("Avenir Next")
+                        .cursor_pointer().occlude_except_scroll().font_family("Avenir Next")
                         .font_fallbacks(["PingFang SC", "Noto Sans"])
                         .font_feature("liga", 0).font_feature("ss01", 1)
                         .font_weight(650).italic().line_height(px(24))
@@ -2337,6 +2358,10 @@ mod tests {
         assert_eq!(style.base.radii.top_left, Some(Length::Pixels(12.0)));
         assert_eq!(style.base.radii.bottom_right, Some(Length::Pixels(4.0)));
         assert_eq!(style.base.cursor, Some(CursorKind::Pointer));
+        assert_eq!(
+            style.base.hit_test,
+            Some(HitTestBehavior::BlockExceptScroll)
+        );
         assert_eq!(style.base.font_family.as_deref(), Some("Avenir Next"));
         assert_eq!(
             style.base.font_fallbacks.as_deref(),

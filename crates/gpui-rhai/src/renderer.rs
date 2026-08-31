@@ -19,11 +19,11 @@ use crate::slot_runtime::NodeSlotRuntime;
 use crate::virtual_list_element::VirtualListEntityElement;
 use crate::{
     Align, AnimationKey, AnimationProperty, AssetRegistry, ColorValue, CursorKind, DisplayMode,
-    EventPropagation, EventResponse, FlexDirection, FlexWrapMode, FontSlant, ImageSourceSpec,
-    InteractionState, Justify, Length, NodeId, OverflowMode, OverlayNodeSpec, PositionMode,
-    PrimitiveRegistry, PseudoState, RadiusToken, RetainedUiTree, Rgba8, ScriptCallback,
-    SpacingToken, Style, StyleProperties, TextAlignMode, TextDirection, UiEventHandler, UiNode,
-    UiNodeKind, UiValue, WhiteSpaceMode,
+    EventPropagation, EventResponse, FlexDirection, FlexWrapMode, FontSlant, HitTestBehavior,
+    ImageSourceSpec, InteractionState, Justify, Length, NodeId, OverflowMode, OverlayNodeSpec,
+    PositionMode, PrimitiveRegistry, PseudoState, RadiusToken, RetainedUiTree, Rgba8,
+    ScriptCallback, SpacingToken, Style, StyleProperties, TextAlignMode, TextDirection,
+    UiEventHandler, UiNode, UiNodeKind, UiValue, WhiteSpaceMode,
 };
 
 type DispatchFn = dyn Fn(ScriptCallback, UiValue, &mut Window, &mut App) -> EventResponse;
@@ -1451,12 +1451,12 @@ impl GpuiNodeRenderer {
             )
         });
         let key_handlers = key_handler_bindings(node);
-        if !node_needs_interaction_wrapper(
-            node,
-            click.is_some(),
-            hover.is_some(),
-            !key_handlers.is_empty(),
-        ) {
+        let hit_test = resolved_hit_test(node, environment);
+        let needs = u8::from(click.is_some())
+            | u8::from(hover.is_some()) << 1
+            | u8::from(!key_handlers.is_empty()) << 2
+            | u8::from(hit_test.is_some()) << 3;
+        if !node_needs_interaction_wrapper(node, needs) {
             return Self::populate(
                 element,
                 node,
@@ -1481,6 +1481,7 @@ impl GpuiNodeRenderer {
             node.style(),
             environment.colors,
         );
+        let element = apply_hit_test(element, hit_test);
         let element = apply_tab_behavior(element, node);
         let element = apply_environment_scroll(element, node, retained_id, environment);
         let element = element.on_click(move |event, window, cx| {
@@ -1687,14 +1688,33 @@ fn render_flattened_children<C: ColorResolver>(
     rendered
 }
 
-fn node_needs_interaction_wrapper(node: &UiNode, click: bool, hover: bool, keyboard: bool) -> bool {
-    !is_disabled(node)
-        && (click
-            || hover
-            || keyboard
-            || node_has_focus_declaration(node)
-            || node_has_raw_pointer_handlers(node)
-            || node_scrollable(node))
+fn node_needs_interaction_wrapper(node: &UiNode, needs: u8) -> bool {
+    needs & 0b1000 != 0
+        || !is_disabled(node)
+            && (needs & 0b0111 != 0
+                || node_has_focus_declaration(node)
+                || node_has_raw_pointer_handlers(node)
+                || node_scrollable(node))
+}
+
+fn resolved_hit_test<C: ColorResolver>(
+    node: &UiNode,
+    environment: &RenderEnvironment<'_, C>,
+) -> Option<HitTestBehavior> {
+    let interaction = if is_disabled(node) {
+        environment.interaction.clone().with(PseudoState::Disabled)
+    } else {
+        environment.interaction.clone()
+    };
+    node.style().resolve(&interaction).hit_test
+}
+
+fn apply_hit_test(element: Stateful<Div>, hit_test: Option<HitTestBehavior>) -> Stateful<Div> {
+    match hit_test {
+        Some(HitTestBehavior::Block) => element.occlude(),
+        Some(HitTestBehavior::BlockExceptScroll) => element.block_mouse_except_scroll(),
+        None => element,
+    }
 }
 
 fn node_has_focus_declaration(node: &UiNode) -> bool {

@@ -225,6 +225,63 @@ fn host_callbacks_dispatch_without_a_script_runtime(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn explicit_occlusion_blocks_pointer_hits_to_painted_siblings(
+    cx: &mut TestAppContext,
+) {
+    let clicks = Rc::new(RefCell::new(0usize));
+    let captured = Rc::clone(&clicks);
+    let back = UiNode::text("Back")
+        .with_key("back")
+        .with_style(
+            &gpui_rhai::Style::new()
+                .width(gpui_rhai::Length::Pixels(100.0))
+                .height(gpui_rhai::Length::Pixels(100.0)),
+        )
+        .with_host_handler(
+            "click",
+            HostCallback::new("back.click", move |_, _, _| {
+                *captured.borrow_mut() += 1;
+                EventPropagation::Handled
+            }),
+        );
+    let front = UiNode::text("Front").with_key("front").with_style(
+        &gpui_rhai::Style::new()
+            .absolute()
+            .top(gpui_rhai::Length::Pixels(0.0))
+            .left(gpui_rhai::Length::Pixels(0.0))
+            .width(gpui_rhai::Length::Pixels(100.0))
+            .height(gpui_rhai::Length::Pixels(100.0))
+            .hit_test(gpui_rhai::HitTestBehavior::Block),
+    );
+    let root = UiNode::box_node(vec![back, front])
+        .with_style(&gpui_rhai::Style::new().relative());
+    let window = cx.add_window(|window, cx| {
+        let host_focus = cx.focus_handle();
+        host_focus.focus(window);
+        KeyboardHost {
+            root: Rc::new(RefCell::new(root)),
+            tree: gpui_rhai::RetainedUiTree::new(),
+            dispatcher: NodeEventDispatcher::new(|_, _, _, _| EventPropagation::Handled),
+            host_focus,
+            primitives: PrimitiveRegistry::new(),
+        }
+    });
+    cx.run_until_parked();
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    visual.run_until_parked();
+    let bounds = visual.debug_bounds("root/front").unwrap();
+    visual.simulate_click(
+        point(
+            bounds.origin.x + bounds.size.width / 2.0,
+            bounds.origin.y + bounds.size.height / 2.0,
+        ),
+        Modifiers::default(),
+    );
+    visual.run_until_parked();
+    assert_eq!(*clicks.borrow(), 0);
+}
+
+#[gpui::test]
 fn text_input_primitive_dispatches_host_callbacks(cx: &mut TestAppContext) {
     cx.update(init_text_input);
     let registry = PrimitiveRegistry::new();

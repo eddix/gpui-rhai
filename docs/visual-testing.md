@@ -77,11 +77,13 @@ an open parent Dialog, guarding GPUI 0.2.x against nested `defer_draw` panics.
 Three-view embedding cases cover automatic bounds, runtime isolation, shared
 Host overlays, duplicate local IDs, click-through dismissal, key conflicts,
 and dispose/remount.
-The suite currently has 15 production-renderer cases and contains no deleted
+The suite currently has 16 production-renderer cases and contains no deleted
 Table/choice/date/toast native constructor. It also guards that window-level
 pointer-capture listeners register during paint rather than GPUI layout.
 One case drives a mounted view through test-ID query, retained event dispatch,
 semantic action, and deterministic time advance.
+Another verifies that explicit Style occlusion blocks pointer hits to painted
+sibling content behind the retained node.
 It guards keyboard/clipboard dispatch mechanics but does not replace platform
 IME candidate-window, focus-ring, or accessibility certification.
 
