@@ -1,8 +1,8 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use rhai::{
-    CustomType, Dynamic, Engine, EvalAltResult, FLOAT, FuncRegistration, INT, ImmutableString, Map,
-    Position, TypeBuilder,
+    Array, CustomType, Dynamic, Engine, EvalAltResult, FLOAT, FuncRegistration, INT,
+    ImmutableString, Map, Position, TypeBuilder,
 };
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -595,6 +595,12 @@ pub enum StyleValueError {
     InvalidFontWeight(i64),
     #[error("font family must be a non-empty string no longer than 256 bytes")]
     InvalidFontFamily,
+    #[error("font fallback list must contain 1-16 unique non-empty family names")]
+    InvalidFontFallbacks,
+    #[error("OpenType feature tag must be four ASCII alphanumeric characters")]
+    InvalidFontFeatureTag,
+    #[error("OpenType feature value must be between 0 and 65535, got {0}")]
+    InvalidFontFeatureValue(i64),
     #[error("line clamp must be between 1 and 10000, got {0}")]
     InvalidLineClamp(i64),
     #[error("grid count/span must be between 1 and 1024, got {0}")]
@@ -701,6 +707,8 @@ pub struct StyleProperties {
     pub visible: Option<bool>,
     pub cursor: Option<CursorKind>,
     pub font_family: Option<String>,
+    pub font_fallbacks: Option<Vec<String>>,
+    pub font_features: Option<BTreeMap<String, u32>>,
     pub font_weight: Option<u16>,
     pub font_slant: Option<FontSlant>,
     pub line_height: Option<Length>,
@@ -755,6 +763,8 @@ impl StyleProperties {
         merge_option(&mut self.visible, overlay.visible);
         merge_option(&mut self.cursor, overlay.cursor);
         merge_option(&mut self.font_family, overlay.font_family.clone());
+        merge_option(&mut self.font_fallbacks, overlay.font_fallbacks.clone());
+        merge_option(&mut self.font_features, overlay.font_features.clone());
         merge_option(&mut self.font_weight, overlay.font_weight);
         merge_option(&mut self.font_slant, overlay.font_slant);
         merge_option(&mut self.line_height, overlay.line_height);
@@ -1271,6 +1281,56 @@ impl Style {
         Ok(self)
     }
 
+    /// Set an ordered font fallback stack.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StyleValueError::InvalidFontFallbacks`] for empty, duplicate,
+    /// oversized, or invalid family names.
+    pub fn font_fallbacks(mut self, families: Vec<String>) -> Result<Self, StyleValueError> {
+        let unique = families.iter().collect::<BTreeSet<_>>();
+        if families.is_empty()
+            || families.len() > 16
+            || unique.len() != families.len()
+            || families
+                .iter()
+                .any(|family| family.trim().is_empty() || family.len() > 256)
+        {
+            return Err(StyleValueError::InvalidFontFallbacks);
+        }
+        self.base.font_fallbacks = Some(families);
+        Ok(self)
+    }
+
+    /// Set one OpenType feature tag value.
+    ///
+    /// # Errors
+    ///
+    /// Returns for invalid four-character tags or values outside 0..=65535.
+    pub fn font_feature(
+        mut self,
+        tag: impl Into<String>,
+        value: i64,
+    ) -> Result<Self, StyleValueError> {
+        let tag = tag.into();
+        if tag.len() != 4
+            || !tag
+                .chars()
+                .all(|character| character.is_ascii_alphanumeric())
+        {
+            return Err(StyleValueError::InvalidFontFeatureTag);
+        }
+        let value = u32::try_from(value)
+            .ok()
+            .filter(|value| *value <= 65_535)
+            .ok_or(StyleValueError::InvalidFontFeatureValue(value))?;
+        self.base
+            .font_features
+            .get_or_insert_with(BTreeMap::new)
+            .insert(tag, value);
+        Ok(self)
+    }
+
     /// Set a numeric font weight.
     ///
     /// # Errors
@@ -1726,6 +1786,40 @@ fn register_text_methods(builder: &mut TypeBuilder<Style>) {
                     .map_err(|error| Box::new(style_runtime_error(error.to_string())))
             },
         )
+        .with_fn(
+            "font_fallbacks",
+            |style: &mut Style, families: Array| -> Result<Style, Box<EvalAltResult>> {
+                let families = families
+                    .into_iter()
+                    .map(|family| {
+                        family
+                            .try_cast::<ImmutableString>()
+                            .map(|family| family.to_string())
+                    })
+                    .collect::<Option<Vec<_>>>()
+                    .ok_or_else(|| {
+                        Box::new(style_runtime_error(
+                            "font_fallbacks values must be strings".to_owned(),
+                        ))
+                    })?;
+                style
+                    .clone()
+                    .font_fallbacks(families)
+                    .map_err(|error| Box::new(style_runtime_error(error.to_string())))
+            },
+        )
+        .with_fn(
+            "font_feature",
+            |style: &mut Style,
+             tag: ImmutableString,
+             value: INT|
+             -> Result<Style, Box<EvalAltResult>> {
+                style
+                    .clone()
+                    .font_feature(tag.to_string(), value)
+                    .map_err(|error| Box::new(style_runtime_error(error.to_string())))
+            },
+        )
         .with_fn("font_weight", |style: &mut Style, weight: INT| {
             style
                 .clone()
@@ -2099,6 +2193,8 @@ mod tests {
                             color: rgba(0x00000066) }))
                         .opacity(0.85).translate_x(-12)
                         .cursor_pointer().font_family("Avenir Next")
+                        .font_fallbacks(["PingFang SC", "Noto Sans"])
+                        .font_feature("liga", 0).font_feature("ss01", 1)
                         .font_weight(650).italic().line_height(px(24))
                         .text_center().whitespace_nowrap().text_ellipsis().line_clamp(2)
                 "#,
@@ -2111,10 +2207,27 @@ mod tests {
         assert_eq!(style.base.translate_x, Some(-12.0));
         assert_eq!(style.base.cursor, Some(CursorKind::Pointer));
         assert_eq!(style.base.font_family.as_deref(), Some("Avenir Next"));
+        assert_eq!(
+            style.base.font_fallbacks.as_deref(),
+            Some(["PingFang SC".to_owned(), "Noto Sans".to_owned()].as_slice())
+        );
+        assert_eq!(
+            style.base.font_features,
+            Some(BTreeMap::from([
+                ("liga".to_owned(), 0),
+                ("ss01".to_owned(), 1)
+            ]))
+        );
         assert_eq!(style.base.font_weight, Some(650));
         assert_eq!(style.base.line_clamp, Some(2));
         assert!(style.base.gradient.is_some());
         assert_eq!(style.base.shadows.as_ref().map(Vec::len), Some(1));
+        assert!(
+            Style::new()
+                .font_fallbacks(vec!["Duplicate".to_owned(), "Duplicate".to_owned()])
+                .is_err()
+        );
+        assert!(Style::new().font_feature("bad", 1).is_err());
     }
 
     #[test]

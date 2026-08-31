@@ -13,8 +13,9 @@ The current public builder maps directly to stable GPUI 0.2.2 behavior:
 - solid or typed two-stop linear-gradient backgrounds, borders, radii,
   validated box shadows, opacity, visibility, and cursor policy;
 - paint translation with signed finite logical pixels;
-- font family, numeric weight, normal/italic style, size/line height, logical
-  text alignment, whitespace, ellipsis, and bounded line clamp.
+- font family, ordered fallback stack, bounded OpenType feature tags, numeric
+  weight, normal/italic style, size/line height, logical text alignment,
+  whitespace, ellipsis, and bounded line clamp.
 
 ```rhai
 style()
@@ -28,7 +29,10 @@ style()
         x: 0, y: 18, blur: 48, spread: 2,
         color: rgba(0x00000070)
     }))
-    .font_family("Avenir Next").font_weight(650)
+    .font_family("Avenir Next")
+    .font_fallbacks(["PingFang SC", "Noto Sans"])
+    .font_feature("liga", 1).font_feature("ss01", 1)
+    .font_weight(650)
     .opacity(0.92).cursor_pointer()
 ```
 
@@ -54,7 +58,7 @@ name. See `assets.md` for ownership and validation.
 
 The remaining final-style gaps are property-specific signed insets/margins,
 intrinsic/auto/fr/grid-track values, multi-stop gradients, rotation/scale and
-transform-origin, detailed border corners/sides, font aliases/fallback/features
-and hot replacement, selection styling, and explicit hit-testing/stacking-
-context controls. They are
+transform-origin, detailed border corners/sides, font aliases and hot
+replacement, selection styling, and explicit hit-testing/stacking-context
+controls. They are
 tracked as incomplete rather than silently ignored.

@@ -5,12 +5,13 @@ use std::time::Instant;
 
 use gpui::{
     AnyElement, App, Background, Bounds, BoxShadow, ClickEvent, ContentMask, Context, CursorStyle,
-    DispatchPhase, Div, Element, ElementId, FocusHandle, FontStyle, FontWeight, GlobalElementId,
-    HighlightStyle, Image, ImageFormat, InspectorElementId, InteractiveElement, IntoElement,
-    LayoutId, Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement,
-    Pixels, Point, Render, ScrollHandle, ScrollWheelEvent, SharedString, Stateful,
-    StatefulInteractiveElement, Styled, StyledText, TextAlign, Window, div, img, linear_color_stop,
-    linear_gradient, point, px, relative, rems, rgba,
+    DispatchPhase, Div, Element, ElementId, FocusHandle, FontFallbacks, FontFeatures, FontStyle,
+    FontWeight, GlobalElementId, HighlightStyle, Image, ImageFormat, InspectorElementId,
+    InteractiveElement, IntoElement, LayoutId, Modifiers, MouseButton, MouseDownEvent,
+    MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point, Render, ScrollHandle,
+    ScrollWheelEvent, SharedString, Stateful, StatefulInteractiveElement, Styled, StyledText,
+    TextAlign, Window, div, img, linear_color_stop, linear_gradient, point, px, relative, rems,
+    rgba,
 };
 
 use crate::overlay_element::{ScriptLayerElement, ScriptOverlayElement, WindowOverlayCoordinator};
@@ -2993,6 +2994,23 @@ fn apply_typography(mut element: Div, style: &StyleProperties, direction: TextDi
     if let Some(family) = &style.font_family {
         element = element.font_family(family.clone());
     }
+    if let Some(fallbacks) = &style.font_fallbacks {
+        element
+            .text_style()
+            .get_or_insert_with(Default::default)
+            .font_fallbacks = Some(FontFallbacks::from_fonts(fallbacks.clone()));
+    }
+    if let Some(features) = &style.font_features {
+        element
+            .text_style()
+            .get_or_insert_with(Default::default)
+            .font_features = Some(FontFeatures(Arc::new(
+            features
+                .iter()
+                .map(|(tag, value)| (tag.clone(), *value))
+                .collect(),
+        )));
+    }
     if let Some(weight) = style.font_weight {
         element = element.font_weight(FontWeight(f32::from(weight)));
     }
@@ -3229,8 +3247,7 @@ mod tests {
             UiNode::svg("<svg viewBox='0 0 1 1'><path fill='currentColor' d='M0 0L1 1'/></svg>")
                 .unwrap()
                 .with_style(
-                    &Style::new()
-                        .text_color(ColorValue::Literal(Rgba8::from_rgb_hex(0x00ff_ffff))),
+                    &Style::new().text_color(ColorValue::Literal(Rgba8::from_rgb_hex(0x00ff_ffff))),
                 ),
         ])
         .with_style(

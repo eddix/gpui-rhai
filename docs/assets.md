@@ -89,6 +89,8 @@ performs final parsing; failure aborts mount before the view is exposed. Rhai
 receives only the platform family name used through `Style.font_family`, never
 paths or bytes.
 
-Family aliases, fallback stacks/features, and development hot replacement
-remain incomplete. Until aliases land, `font_family` must use the internal
-family name declared by the font itself.
+`Style.font_fallbacks` supplies 1-16 ordered unique platform family names and
+`font_feature(tag, value)` maps validated four-character OpenType tags to GPUI.
+Family aliases and development hot replacement remain incomplete. Until aliases
+land, `font_family` must use the internal family name declared by the font
+itself.
