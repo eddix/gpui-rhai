@@ -120,6 +120,7 @@ pub struct InspectorSnapshot {
     pub animations: Vec<InspectorAnimation>,
     pub timers: Vec<InspectorTimer>,
     pub element_refs: Vec<InspectorElementRef>,
+    pub virtual_collections: Vec<InspectorVirtualCollection>,
     pub geometry_nodes: usize,
     pub pointer_captures: BTreeMap<u64, u64>,
     pub locale_readers: usize,
@@ -185,12 +186,30 @@ pub struct InspectorElementRef {
     pub node: u64,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct InspectorVirtualCollection {
+    pub id: String,
+    pub item_count: usize,
+    pub realized_count: usize,
+    pub realized_range: std::ops::Range<usize>,
+    pub requested_count: usize,
+    pub requested_range: std::ops::Range<usize>,
+    pub visible_range: std::ops::Range<usize>,
+    pub viewport_height: f64,
+    pub scroll_item: usize,
+    pub scroll_offset: f64,
+    pub is_scrolled: bool,
+    pub bottom_align: bool,
+    pub follow_tail: bool,
+}
+
 struct InspectorRuntimeMechanisms {
     signals: Vec<InspectorSignal>,
     effects: Vec<InspectorEffect>,
     animations: Vec<InspectorAnimation>,
     timers: Vec<InspectorTimer>,
     element_refs: Vec<InspectorElementRef>,
+    virtual_collections: Vec<InspectorVirtualCollection>,
     geometry_nodes: usize,
     pointer_captures: BTreeMap<u64, u64>,
     locale_readers: usize,
@@ -256,6 +275,7 @@ impl InspectorSnapshot {
             animations: mechanisms.animations,
             timers: mechanisms.timers,
             element_refs: mechanisms.element_refs,
+            virtual_collections: mechanisms.virtual_collections,
             geometry_nodes: mechanisms.geometry_nodes,
             pointer_captures: mechanisms.pointer_captures,
             locale_readers: mechanisms.locale_readers,
@@ -338,6 +358,7 @@ fn inspect_runtime_mechanisms(runtime: &UiRuntimeState) -> InspectorRuntimeMecha
                 node: node.get(),
             })
             .collect(),
+        virtual_collections: inspect_virtual_collections(runtime),
         geometry_nodes: runtime.geometry.len(),
         pointer_captures: runtime
             .pointer_capture
@@ -349,6 +370,29 @@ fn inspect_runtime_mechanisms(runtime: &UiRuntimeState) -> InspectorRuntimeMecha
         viewport_readers: runtime.environment_dependencies.viewport_reader_count(),
         clock_elapsed_ms: u64::try_from(runtime.clock.elapsed().as_millis()).unwrap_or(u64::MAX),
     }
+}
+
+fn inspect_virtual_collections(runtime: &UiRuntimeState) -> Vec<InspectorVirtualCollection> {
+    runtime
+        .virtual_requests
+        .inspect()
+        .into_iter()
+        .map(|metrics| InspectorVirtualCollection {
+            id: format!("{}/{}", metrics.id.component, metrics.id.key),
+            item_count: metrics.item_count,
+            realized_count: metrics.realized_count,
+            realized_range: metrics.realized_range,
+            requested_count: metrics.requested_count,
+            requested_range: metrics.requested_range,
+            visible_range: metrics.visible_range,
+            viewport_height: metrics.viewport_height,
+            scroll_item: metrics.scroll_item,
+            scroll_offset: metrics.scroll_offset,
+            is_scrolled: metrics.is_scrolled,
+            bottom_align: metrics.bottom_align,
+            follow_tail: metrics.follow_tail,
+        })
+        .collect()
 }
 
 fn inspect_node(node: &UiNode, path: &str) -> InspectorNode {
@@ -646,7 +690,7 @@ fn inspector_header(snapshot: &InspectorSnapshot) -> Vec<String> {
             snapshot.theme_family, snapshot.theme_name
         ),
         format!(
-            "nodes={} state={} stores={} signals={} effects={} animations={} timers={} refs={} geometry={} captures={} dirty={} traces={} timings={} clock={}ms",
+            "nodes={} state={} stores={} signals={} effects={} animations={} timers={} refs={} virtual={} geometry={} captures={} dirty={} traces={} timings={} clock={}ms",
             snapshot.root.as_ref().map_or(0, count_nodes),
             snapshot.state.len(),
             snapshot.stores.len(),
@@ -655,6 +699,7 @@ fn inspector_header(snapshot: &InspectorSnapshot) -> Vec<String> {
             snapshot.animations.len(),
             snapshot.timers.len(),
             snapshot.element_refs.len(),
+            snapshot.virtual_collections.len(),
             snapshot.geometry_nodes,
             snapshot.pointer_captures.len(),
             snapshot.dirty.len(),
@@ -721,6 +766,25 @@ fn append_mechanism_lines(snapshot: &InspectorSnapshot, lines: &mut Vec<String>)
     lines.push("Element refs".to_owned());
     for reference in &snapshot.element_refs {
         lines.push(format!("  {} -> node {}", reference.id, reference.node));
+    }
+    lines.push("Virtual collections".to_owned());
+    for collection in &snapshot.virtual_collections {
+        lines.push(format!(
+            "  {} items={} realized={}:{:?} requested={}:{:?} visible={:?} viewport={:.1} top={}:{} scrolled={} bottom={} follow_tail={}",
+            collection.id,
+            collection.item_count,
+            collection.realized_count,
+            collection.realized_range,
+            collection.requested_count,
+            collection.requested_range,
+            collection.visible_range,
+            collection.viewport_height,
+            collection.scroll_item,
+            collection.scroll_offset,
+            collection.is_scrolled,
+            collection.bottom_align,
+            collection.follow_tail
+        ));
     }
     if !snapshot.pointer_captures.is_empty() {
         lines.push(format!("Pointer captures: {:?}", snapshot.pointer_captures));
@@ -843,6 +907,16 @@ mod tests {
         assert_eq!(snapshot[1].sequence, 3);
     }
 
+    fn install_virtual_metrics_probe(runtime: &UiRuntimeState, component: &ComponentInstancePath) {
+        runtime.virtual_requests.request(
+            crate::VirtualCollectionId {
+                component: component.clone(),
+                key: "rows".to_owned(),
+            },
+            [4, 5],
+        );
+    }
+
     #[test]
     fn snapshot_includes_runtime_mechanism_identity_and_state() {
         let component = ComponentInstancePath::root("View", "main");
@@ -921,6 +995,7 @@ mod tests {
                 clip: None,
             },
         );
+        install_virtual_metrics_probe(&runtime, &component);
 
         let engine = crate::RuntimeEngine::new();
         let theme = crate::load_theme_source(
@@ -944,6 +1019,7 @@ mod tests {
         assert!((snapshot.animations[0].value - 0.25).abs() < f64::EPSILON);
         assert_eq!(snapshot.animations[0].duration_ms, Some(1_000));
         assert_eq!(snapshot.element_refs[0].node, node.get());
+        assert_eq!(snapshot.virtual_collections[0].requested_range, 4..6);
         assert_eq!(snapshot.geometry_nodes, 1);
         assert_eq!(snapshot.pointer_captures.get(&7), Some(&node.get()));
     }

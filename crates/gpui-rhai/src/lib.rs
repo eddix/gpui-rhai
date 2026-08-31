@@ -206,8 +206,8 @@ pub use value::{
 };
 pub use virtual_list::{
     VariableListSpec, VariableListState, VariableListWindow, VirtualCollectionId,
-    VirtualCollectionNodeSpec, VirtualListError, VirtualListMetrics, VirtualListSpec,
-    VirtualListState, VirtualRequestRegistry,
+    VirtualCollectionMetrics, VirtualCollectionNodeSpec, VirtualListError, VirtualListMetrics,
+    VirtualListSpec, VirtualListState, VirtualRequestRegistry,
 };
 pub use window::{
     ScriptWindowSpec, WindowCommand, WindowCommandError, WindowCommandPolicy, WindowCommandRegistry,

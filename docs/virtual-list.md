@@ -46,6 +46,15 @@ reorder/filter, return anchor scroll correction after remeasurement, and
 compute bottom/tail offsets. Tests cover 10,000 policy items, formal component
 state cleanup, off-layout realization, and the 2,000-item Chat acceptance app.
 
+`UiRuntimeState::virtual_requests.inspect()` and the development Inspector expose
+one transaction-aware `VirtualCollectionMetrics` record per retained
+collection: item/realized/requested counts and ranges, GPUI visible range,
+viewport height, logical top item/offset, scrolled state, alignment, and
+follow-tail policy. Before GPUI emits its first scroll event, visible range uses
+the pre-realized window; later reports come directly from `ListScrollEvent`.
+Pending requested metrics clear when the foreground realization batch drains,
+and failed transactions restore the prior metric snapshot.
+
 The old eager `virtual_list` Rhai constructor and `UiNodeKind` have been deleted.
 The remaining fixed-range policy types are internal helpers of the generic
 `virtual_collection` element; Table, Dropdown, and Select now consume only the

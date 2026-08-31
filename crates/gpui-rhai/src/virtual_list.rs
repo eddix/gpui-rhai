@@ -29,7 +29,51 @@ pub struct VirtualCollectionNodeSpec {
 
 #[derive(Clone, Debug, Default)]
 pub struct VirtualRequestRegistry {
-    inner: Rc<RefCell<BTreeMap<VirtualCollectionId, BTreeSet<usize>>>>,
+    requests: Rc<RefCell<BTreeMap<VirtualCollectionId, BTreeSet<usize>>>>,
+    metrics: Rc<RefCell<BTreeMap<VirtualCollectionId, VirtualCollectionMetrics>>>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct VirtualCollectionMetrics {
+    pub id: VirtualCollectionId,
+    pub item_count: usize,
+    pub realized_count: usize,
+    pub realized_range: Range<usize>,
+    pub requested_count: usize,
+    pub requested_range: Range<usize>,
+    pub visible_range: Range<usize>,
+    pub viewport_height: f64,
+    pub scroll_item: usize,
+    pub scroll_offset: f64,
+    pub is_scrolled: bool,
+    pub bottom_align: bool,
+    pub follow_tail: bool,
+}
+
+impl VirtualCollectionMetrics {
+    fn new(id: VirtualCollectionId) -> Self {
+        Self {
+            id,
+            item_count: 0,
+            realized_count: 0,
+            realized_range: 0..0,
+            requested_count: 0,
+            requested_range: 0..0,
+            visible_range: 0..0,
+            viewport_height: 0.0,
+            scroll_item: 0,
+            scroll_offset: 0.0,
+            is_scrolled: false,
+            bottom_align: false,
+            follow_tail: false,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct VirtualRequestSnapshot {
+    requests: BTreeMap<VirtualCollectionId, BTreeSet<usize>>,
+    metrics: BTreeMap<VirtualCollectionId, VirtualCollectionMetrics>,
 }
 
 impl VirtualRequestRegistry {
@@ -39,33 +83,114 @@ impl VirtualRequestRegistry {
     }
 
     pub fn request(&self, id: VirtualCollectionId, indices: impl IntoIterator<Item = usize>) {
-        self.inner
+        let indices = indices.into_iter().collect::<Vec<_>>();
+        self.requests
             .borrow_mut()
-            .entry(id)
+            .entry(id.clone())
             .or_default()
-            .extend(indices);
+            .extend(indices.iter().copied());
+        let mut metrics = self.metrics.borrow_mut();
+        let metrics = metrics
+            .entry(id.clone())
+            .or_insert_with(|| VirtualCollectionMetrics::new(id));
+        let requested = self.requests.borrow();
+        if let Some(indices) = requested.get(&metrics.id) {
+            metrics.requested_count = indices.len();
+            metrics.requested_range = index_range(indices.iter().copied());
+        }
     }
 
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.inner.borrow().is_empty()
+        self.requests.borrow().is_empty()
     }
 
     pub(crate) fn drain(&self) -> BTreeMap<VirtualCollectionId, BTreeSet<usize>> {
-        std::mem::take(&mut *self.inner.borrow_mut())
+        let requests = std::mem::take(&mut *self.requests.borrow_mut());
+        for metrics in self.metrics.borrow_mut().values_mut() {
+            metrics.requested_count = 0;
+            metrics.requested_range = 0..0;
+        }
+        requests
     }
 
-    pub(crate) fn snapshot(&self) -> BTreeMap<VirtualCollectionId, BTreeSet<usize>> {
-        self.inner.borrow().clone()
+    pub(crate) fn snapshot(&self) -> VirtualRequestSnapshot {
+        VirtualRequestSnapshot {
+            requests: self.requests.borrow().clone(),
+            metrics: self.metrics.borrow().clone(),
+        }
     }
 
-    pub(crate) fn restore(&self, snapshot: BTreeMap<VirtualCollectionId, BTreeSet<usize>>) {
-        *self.inner.borrow_mut() = snapshot;
+    pub(crate) fn restore(&self, snapshot: VirtualRequestSnapshot) {
+        *self.requests.borrow_mut() = snapshot.requests;
+        *self.metrics.borrow_mut() = snapshot.metrics;
     }
 
     pub(crate) fn retain(&self, active: &BTreeSet<VirtualCollectionId>) {
-        self.inner.borrow_mut().retain(|id, _| active.contains(id));
+        self.requests
+            .borrow_mut()
+            .retain(|id, _| active.contains(id));
+        self.metrics
+            .borrow_mut()
+            .retain(|id, _| active.contains(id));
     }
+
+    pub(crate) fn report_frame(
+        &self,
+        spec: &VirtualCollectionNodeSpec,
+        viewport_height: f64,
+        scroll_item: usize,
+        scroll_offset: f64,
+    ) {
+        let mut metrics = self.metrics.borrow_mut();
+        let metrics = metrics
+            .entry(spec.id.clone())
+            .or_insert_with(|| VirtualCollectionMetrics::new(spec.id.clone()));
+        metrics.item_count = spec.data.len();
+        metrics.realized_count = spec.realized.len();
+        metrics.realized_range = index_range(spec.realized.keys().copied());
+        if metrics.visible_range.is_empty() {
+            metrics.visible_range = metrics.realized_range.clone();
+        } else {
+            metrics.visible_range = metrics.visible_range.start.min(spec.data.len())
+                ..metrics.visible_range.end.min(spec.data.len());
+        }
+        metrics.viewport_height = viewport_height;
+        metrics.scroll_item = scroll_item;
+        metrics.scroll_offset = scroll_offset;
+        metrics.bottom_align = spec.bottom_align;
+        metrics.follow_tail = spec.follow_tail;
+    }
+
+    pub(crate) fn report_scroll(
+        &self,
+        id: &VirtualCollectionId,
+        visible_range: Range<usize>,
+        is_scrolled: bool,
+    ) {
+        let mut metrics = self.metrics.borrow_mut();
+        let metrics = metrics
+            .entry(id.clone())
+            .or_insert_with(|| VirtualCollectionMetrics::new(id.clone()));
+        metrics.visible_range = visible_range;
+        metrics.is_scrolled = is_scrolled;
+    }
+
+    #[must_use]
+    pub fn inspect(&self) -> Vec<VirtualCollectionMetrics> {
+        self.metrics.borrow().values().cloned().collect()
+    }
+}
+
+fn index_range(indices: impl IntoIterator<Item = usize>) -> Range<usize> {
+    let mut indices = indices.into_iter();
+    let Some(first) = indices.next() else {
+        return 0..0;
+    };
+    let (min, max) = indices.fold((first, first), |(min, max), index| {
+        (min.min(index), max.max(index))
+    });
+    min..max.saturating_add(1)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -542,5 +667,47 @@ mod tests {
             .unwrap();
         assert_eq!(list.measured_count(), 1);
         assert!((list.tail_offset(50.0) - 50.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn virtual_collection_metrics_track_frame_scroll_requests_and_rollback() {
+        let id = VirtualCollectionId {
+            component: ComponentInstancePath::root("Chat", "main"),
+            key: "messages".to_owned(),
+        };
+        let item = |key: &str| {
+            UiValue::Map(BTreeMap::from([(
+                "key".to_owned(),
+                UiValue::String(key.to_owned()),
+            )]))
+        };
+        let spec = VirtualCollectionNodeSpec {
+            id: id.clone(),
+            label: "Messages".to_owned(),
+            data: (0..5).map(|index| item(&format!("row-{index}"))).collect(),
+            realized: BTreeMap::from([(1, UiNode::text("one")), (2, UiNode::text("two"))]),
+            estimated_height: 24.0,
+            height: 120.0,
+            overdraw_pixels: 48.0,
+            bottom_align: true,
+            follow_tail: true,
+        };
+        let registry = VirtualRequestRegistry::new();
+        registry.report_frame(&spec, 120.0, 1, 3.5);
+        registry.request(id.clone(), [3, 4]);
+        registry.report_scroll(&id, 1..4, true);
+        let metrics = &registry.inspect()[0];
+        assert_eq!(metrics.realized_range, 1..3);
+        assert_eq!(metrics.requested_range, 3..5);
+        assert_eq!(metrics.visible_range, 1..4);
+        assert!(metrics.bottom_align && metrics.follow_tail && metrics.is_scrolled);
+
+        let snapshot = registry.snapshot();
+        let _ = registry.drain();
+        assert_eq!(registry.inspect()[0].requested_count, 0);
+        registry.restore(snapshot);
+        assert_eq!(registry.inspect()[0].requested_count, 2);
+        registry.retain(&BTreeSet::new());
+        assert!(registry.inspect().is_empty());
     }
 }

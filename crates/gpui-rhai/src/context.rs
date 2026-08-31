@@ -450,7 +450,7 @@ pub struct UiStateSnapshot {
     geometry: crate::geometry::GeometrySnapshot,
     pointer_capture: BTreeMap<u64, crate::NodeId>,
     budgets: crate::RuntimeBudgets,
-    virtual_requests: BTreeMap<crate::VirtualCollectionId, BTreeSet<usize>>,
+    virtual_requests: crate::virtual_list::VirtualRequestSnapshot,
     animation_values: BTreeMap<AnimationKey, f64>,
     windows: WindowCommandRegistry,
     responsive: ResponsiveRuntime,

@@ -124,6 +124,7 @@ impl VirtualListView {
             scroll,
         };
         this.install_keys();
+        this.install_metrics_handler();
         this
     }
 
@@ -139,6 +140,7 @@ impl VirtualListView {
         self.content = content;
         self.runtime = runtime;
         self.install_keys();
+        self.install_metrics_handler();
         if changed {
             if reset {
                 if alignment_changed {
@@ -170,6 +172,14 @@ impl VirtualListView {
         }
     }
 
+    fn install_metrics_handler(&self) {
+        let metrics = self.runtime.virtual_requests.clone();
+        let id = self.content.id.clone();
+        self.scroll.set_scroll_handler(move |event, _, _| {
+            metrics.report_scroll(&id, event.visible_range.clone(), event.is_scrolled);
+        });
+    }
+
     fn handle_key(&mut self, key: &str, cx: &mut Context<Self>) -> Option<String> {
         let previous = self.state.focused().map(ToOwned::to_owned);
         match key {
@@ -196,6 +206,14 @@ impl VirtualListView {
 
 impl Render for VirtualListView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let viewport = self.scroll.viewport_bounds();
+        let scroll_top = self.scroll.logical_scroll_top();
+        self.runtime.virtual_requests.report_frame(
+            &self.content,
+            f64::from(viewport.size.height),
+            scroll_top.item_ix,
+            f64::from(scroll_top.offset_in_item),
+        );
         let content = self.content.clone();
         let height = finite_to_f32(content.height);
         let runtime = self.runtime.clone();
