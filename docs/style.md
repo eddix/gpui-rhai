@@ -8,8 +8,10 @@ The current public builder maps directly to stable GPUI 0.2.2 behavior:
 
 - block, flex, and bounded explicit grid layout (`grid_cols/rows`, spans);
 - row/column direction, wrapping, grow/shrink/basis, alignment, justification;
-- min/max/fixed sizing, gaps, physical/logical padding and margins;
-- relative/absolute positioning with four insets and per-axis overflow;
+- min/max/fixed/auto sizing and flex basis, gaps, physical/logical padding and
+  definite/auto/signed margins;
+- relative/absolute positioning with definite/auto/signed four-edge insets and
+  per-axis overflow;
 - solid or typed two-stop linear-gradient backgrounds, physical/logical
   per-edge border widths, one uniform solid/dashed border style, per-corner
   radii, validated box shadows, opacity, visibility, and cursor policy;
@@ -37,6 +39,7 @@ style()
     .font_feature("liga", 1).font_feature("ss01", 1)
     .font_weight(650)
     .border_top(px(1)).border_start(px(2)).border_dashed()
+    .margin_x(auto()).top(offset_px(-8))
     .radius_top_left(px(12)).radius_bottom_right(px(4))
     .occlude_except_scroll()
     .opacity(0.92).cursor_pointer()
@@ -48,6 +51,15 @@ bounded before a GPUI element is built. Occlusion forces a retained interactive
 wrapper even without callbacks; disabled nodes may still deliberately occlude.
 Theme-backed colors resolve through the
 same `ColorValue` path as solid fills and Canvas.
+
+`px/rem/relative` remain non-negative `Length` values and are accepted by every
+compatible layout/paint property. `auto()` is a separate `AutoLength` accepted
+only by size, flex-basis, margin, and inset methods. `offset_px`, `offset_rem`,
+and bounded `offset_relative` return `SignedLength`, accepted only by margins
+and insets; passing one to padding, border, radius, gap, font size, or width is a
+Rhai type error. The retained `LayoutLength` preserves the distinction through
+serialization and maps directly to GPUI's `Length::Auto` or signed definite
+length rather than being approximated in paint.
 
 `color(string)` accepts strict `#rgb/#rgba/#rrggbb/#rrggbbaa`, CSS basic named
 colors plus `transparent`, comma-form `rgb/rgba`, and `hsl/hsla` with explicit
@@ -66,8 +78,8 @@ Hosts may register bounded in-memory TrueType/OpenType sources and file apps
 automatically discover `ui/fonts`; `font_family` selects the internal family
 name. See `assets.md` for ownership and validation.
 
-The remaining final-style gaps are property-specific signed insets/margins,
-intrinsic/auto/fr/grid-track values, multi-stop gradients, rotation/scale and
+The remaining final-style gaps are intrinsic/min-content/max-content and custom
+fr/grid-track values, multi-stop gradients, rotation/scale and
 transform-origin, per-edge border colors/styles (GPUI 0.2.2 stores only one
 quad-wide color/style), font aliases and hot
 replacement, selection styling, and explicit hit-testing/stacking-context

@@ -332,11 +332,11 @@ fn official_components_validate_props_and_merge_standard_style_overrides() {
     let root = engine.render(&compiled).unwrap();
     assert_eq!(
         root.style().base.width,
-        Some(gpui_rhai::Length::Pixels(333.0))
+        Some(gpui_rhai::Length::Pixels(333.0).into())
     );
     assert_eq!(
         root.style().base.height,
-        Some(gpui_rhai::Length::Pixels(77.0))
+        Some(gpui_rhai::Length::Pixels(77.0).into())
     );
     assert!(matches!(root.kind(), UiNodeKind::Box { children } if children.len() == 3));
 
@@ -661,11 +661,11 @@ fn official_divider_is_typed_decorative_layout() {
     );
     assert_eq!(
         children[0].style().base.width,
-        Some(gpui_rhai::Length::Relative(1.0))
+        Some(gpui_rhai::Length::Relative(1.0).into())
     );
     assert_eq!(
         children[1].style().base.width,
-        Some(gpui_rhai::Length::Pixels(2.0))
+        Some(gpui_rhai::Length::Pixels(2.0).into())
     );
 }
 
@@ -813,7 +813,7 @@ fn official_dropdown_is_public_overlay_and_virtual_collection_composition() {
             .style()
             .resolve(&gpui_rhai::InteractionState::default())
             .height,
-        Some(gpui_rhai::Length::Pixels(41.0)),
+        Some(gpui_rhai::Length::Pixels(41.0).into()),
         "virtual item renderers must inherit the component part-style snapshot"
     );
 }

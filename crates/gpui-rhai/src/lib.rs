@@ -184,11 +184,12 @@ pub use state::{
 };
 pub use store::{StoreError, StoreId, StoreReadSession, StoreRegistry, StoreScope, StoreSnapshot};
 pub use style::{
-    Align, BorderLineStyle, ColorParseError, ColorValue, CornerLengths, CursorKind, DisplayMode,
-    EdgeLengths, FlexDirection, FlexWrapMode, FontSlant, HitTestBehavior, InteractionState,
-    Justify, Length, LengthError, LinearGradientSpec, OverflowMode, PositionMode, PseudoState,
-    RadiusToken, Rgba8, ShadowSpec, SpacingToken, Style, StyleProperties, StyleValueError,
-    TextAlignMode, WhiteSpaceMode,
+    Align, AutoLength, BorderLineStyle, ColorParseError, ColorValue, CornerLengths, CursorKind,
+    DisplayMode, EdgeLengths, FlexDirection, FlexWrapMode, FontSlant, HitTestBehavior,
+    InteractionState, Justify, LayoutEdgeLengths, LayoutLength, Length, LengthError,
+    LinearGradientSpec, OverflowMode, PositionMode, PseudoState, RadiusToken, Rgba8, ShadowSpec,
+    SignedLength, SpacingToken, Style, StyleProperties, StyleValueError, TextAlignMode,
+    WhiteSpaceMode,
 };
 pub use text_area::{TextAreaPrimitiveHandler, init_text_area, text_area_primitive_descriptor};
 pub use text_input::{

@@ -7,7 +7,7 @@ use rhai::{
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
 #[serde(tag = "unit", content = "value", rename_all = "snake_case")]
 pub enum Length {
     Pixels(f64),
@@ -15,6 +15,130 @@ pub enum Length {
     Relative(f64),
     ThemeSpacing(SpacingToken),
     ThemeRadius(RadiusToken),
+}
+
+impl<'de> Deserialize<'de> for Length {
+    fn deserialize<Deserializer>(deserializer: Deserializer) -> Result<Self, Deserializer::Error>
+    where
+        Deserializer: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(tag = "unit", content = "value", rename_all = "snake_case")]
+        enum Repr {
+            Pixels(f64),
+            Rems(f64),
+            Relative(f64),
+            ThemeSpacing(SpacingToken),
+            ThemeRadius(RadiusToken),
+        }
+
+        match Repr::deserialize(deserializer)? {
+            Repr::Pixels(value) => Self::pixels(value),
+            Repr::Rems(value) => Self::rems(value),
+            Repr::Relative(value) => Self::relative(value),
+            Repr::ThemeSpacing(value) => Ok(Self::ThemeSpacing(value)),
+            Repr::ThemeRadius(value) => Ok(Self::ThemeRadius(value)),
+        }
+        .map_err(serde::de::Error::custom)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct AutoLength;
+
+impl CustomType for AutoLength {
+    fn build(mut builder: TypeBuilder<Self>) {
+        builder.with_name("AutoLength");
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+#[serde(tag = "unit", content = "value", rename_all = "snake_case")]
+pub enum SignedLength {
+    Pixels(f64),
+    Rems(f64),
+    Relative(f64),
+}
+
+impl<'de> Deserialize<'de> for SignedLength {
+    fn deserialize<Deserializer>(deserializer: Deserializer) -> Result<Self, Deserializer::Error>
+    where
+        Deserializer: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(tag = "unit", content = "value", rename_all = "snake_case")]
+        enum Repr {
+            Pixels(f64),
+            Rems(f64),
+            Relative(f64),
+        }
+
+        match Repr::deserialize(deserializer)? {
+            Repr::Pixels(value) => Self::pixels(value),
+            Repr::Rems(value) => Self::rems(value),
+            Repr::Relative(value) => Self::relative(value),
+        }
+        .map_err(serde::de::Error::custom)
+    }
+}
+
+impl SignedLength {
+    /// Create a finite signed pixel layout offset.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`LengthError`] for non-finite or unrepresentable values.
+    pub fn pixels(value: f64) -> Result<Self, LengthError> {
+        validate_signed(value).map(|()| Self::Pixels(value))
+    }
+
+    /// Create a finite signed rem layout offset.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`LengthError`] for non-finite or unrepresentable values.
+    pub fn rems(value: f64) -> Result<Self, LengthError> {
+        validate_signed(value).map(|()| Self::Rems(value))
+    }
+
+    /// Create a bounded signed parent-relative layout offset.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`LengthError`] outside -10 through 10 parent lengths.
+    pub fn relative(value: f64) -> Result<Self, LengthError> {
+        if value.is_finite() && (-10.0..=10.0).contains(&value) {
+            Ok(Self::Relative(value))
+        } else {
+            Err(LengthError::InvalidSignedRelative(value))
+        }
+    }
+}
+
+impl CustomType for SignedLength {
+    fn build(mut builder: TypeBuilder<Self>) {
+        builder.with_name("SignedLength");
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum LayoutLength {
+    Definite(Length),
+    Signed(SignedLength),
+    Auto,
+}
+
+impl From<Length> for LayoutLength {
+    fn from(value: Length) -> Self {
+        Self::Definite(value)
+    }
+}
+
+impl From<SignedLength> for LayoutLength {
+    fn from(value: SignedLength) -> Self {
+        Self::Signed(value)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -158,10 +282,20 @@ pub enum LengthError {
     InvalidLength(f64),
     #[error("relative length must be finite and between 0 and 1, got {0}")]
     InvalidRelative(f64),
+    #[error("signed relative length must be finite and between -10 and 10, got {0}")]
+    InvalidSignedRelative(f64),
     #[error("spacing token `{0}` is unknown; expected xs, sm, md, or lg")]
     UnknownSpacingToken(String),
     #[error("radius token `{0}` is unknown; expected sm, md, or lg")]
     UnknownRadiusToken(String),
+}
+
+fn validate_signed(value: f64) -> Result<(), LengthError> {
+    if value.is_finite() && value.abs() <= f64::from(f32::MAX) {
+        Ok(())
+    } else {
+        Err(LengthError::InvalidLength(value))
+    }
 }
 
 fn validate_non_negative(value: f64) -> Result<(), LengthError> {
@@ -714,6 +848,63 @@ impl EdgeLengths {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct LayoutEdgeLengths {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub top: Option<LayoutLength>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub right: Option<LayoutLength>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bottom: Option<LayoutLength>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub left: Option<LayoutLength>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start: Option<LayoutLength>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end: Option<LayoutLength>,
+}
+
+impl LayoutEdgeLengths {
+    #[must_use]
+    pub fn all(value: LayoutLength) -> Self {
+        Self {
+            top: Some(value),
+            right: Some(value),
+            bottom: Some(value),
+            left: Some(value),
+            start: None,
+            end: None,
+        }
+    }
+
+    #[must_use]
+    pub fn horizontal(value: LayoutLength) -> Self {
+        Self {
+            right: Some(value),
+            left: Some(value),
+            ..Self::default()
+        }
+    }
+
+    #[must_use]
+    pub fn vertical(value: LayoutLength) -> Self {
+        Self {
+            top: Some(value),
+            bottom: Some(value),
+            ..Self::default()
+        }
+    }
+
+    fn merge(&mut self, overlay: &Self) {
+        merge_option(&mut self.top, overlay.top);
+        merge_option(&mut self.right, overlay.right);
+        merge_option(&mut self.bottom, overlay.bottom);
+        merge_option(&mut self.left, overlay.left);
+        merge_option(&mut self.start, overlay.start);
+        merge_option(&mut self.end, overlay.end);
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct CornerLengths {
     pub top_left: Option<Length>,
     pub top_right: Option<Length>,
@@ -747,17 +938,17 @@ pub struct StyleProperties {
     pub flex_wrap: Option<FlexWrapMode>,
     pub align: Option<Align>,
     pub justify: Option<Justify>,
-    pub width: Option<Length>,
-    pub height: Option<Length>,
-    pub min_width: Option<Length>,
-    pub max_width: Option<Length>,
-    pub min_height: Option<Length>,
-    pub max_height: Option<Length>,
+    pub width: Option<LayoutLength>,
+    pub height: Option<LayoutLength>,
+    pub min_width: Option<LayoutLength>,
+    pub max_width: Option<LayoutLength>,
+    pub min_height: Option<LayoutLength>,
+    pub max_height: Option<LayoutLength>,
     pub gap: Option<Length>,
     #[serde(default)]
     pub padding: EdgeLengths,
     #[serde(default)]
-    pub margin: EdgeLengths,
+    pub margin: LayoutEdgeLengths,
     pub background: Option<ColorValue>,
     pub text_color: Option<ColorValue>,
     pub border_color: Option<ColorValue>,
@@ -769,7 +960,7 @@ pub struct StyleProperties {
     pub font_size: Option<Length>,
     pub flex_grow: Option<bool>,
     pub flex_shrink: Option<bool>,
-    pub flex_basis: Option<Length>,
+    pub flex_basis: Option<LayoutLength>,
     pub grid_columns: Option<u16>,
     pub grid_rows: Option<u16>,
     pub column_span: Option<u16>,
@@ -778,10 +969,10 @@ pub struct StyleProperties {
     pub overflow_x: Option<OverflowMode>,
     pub overflow_y: Option<OverflowMode>,
     pub position: Option<PositionMode>,
-    pub top: Option<Length>,
-    pub right: Option<Length>,
-    pub bottom: Option<Length>,
-    pub left: Option<Length>,
+    pub top: Option<LayoutLength>,
+    pub right: Option<LayoutLength>,
+    pub bottom: Option<LayoutLength>,
+    pub left: Option<LayoutLength>,
     pub opacity: Option<f64>,
     pub visible: Option<bool>,
     pub cursor: Option<CursorKind>,
@@ -925,37 +1116,37 @@ impl Style {
 
     #[must_use]
     pub fn width(mut self, value: Length) -> Self {
-        self.base.width = Some(value);
+        self.base.width = Some(value.into());
         self
     }
 
     #[must_use]
     pub fn height(mut self, value: Length) -> Self {
-        self.base.height = Some(value);
+        self.base.height = Some(value.into());
         self
     }
 
     #[must_use]
     pub fn min_width(mut self, value: Length) -> Self {
-        self.base.min_width = Some(value);
+        self.base.min_width = Some(value.into());
         self
     }
 
     #[must_use]
     pub fn min_height(mut self, value: Length) -> Self {
-        self.base.min_height = Some(value);
+        self.base.min_height = Some(value.into());
         self
     }
 
     #[must_use]
     pub fn max_height(mut self, value: Length) -> Self {
-        self.base.max_height = Some(value);
+        self.base.max_height = Some(value.into());
         self
     }
 
     #[must_use]
     pub fn max_width(mut self, value: Length) -> Self {
-        self.base.max_width = Some(value);
+        self.base.max_width = Some(value.into());
         self
     }
 
@@ -1009,43 +1200,47 @@ impl Style {
 
     #[must_use]
     pub fn margin(mut self, value: Length) -> Self {
-        self.base.margin = EdgeLengths::all(value);
+        self.base.margin = LayoutEdgeLengths::all(value.into());
         self
     }
 
     #[must_use]
     pub fn margin_x(mut self, value: Length) -> Self {
-        self.base.margin.merge(&EdgeLengths::horizontal(value));
+        self.base
+            .margin
+            .merge(&LayoutEdgeLengths::horizontal(value.into()));
         self
     }
 
     #[must_use]
     pub fn margin_y(mut self, value: Length) -> Self {
-        self.base.margin.merge(&EdgeLengths::vertical(value));
+        self.base
+            .margin
+            .merge(&LayoutEdgeLengths::vertical(value.into()));
         self
     }
 
     #[must_use]
     pub fn margin_top(mut self, value: Length) -> Self {
-        self.base.margin.top = Some(value);
+        self.base.margin.top = Some(value.into());
         self
     }
 
     #[must_use]
     pub fn margin_right(mut self, value: Length) -> Self {
-        self.base.margin.right = Some(value);
+        self.base.margin.right = Some(value.into());
         self
     }
 
     #[must_use]
     pub fn margin_bottom(mut self, value: Length) -> Self {
-        self.base.margin.bottom = Some(value);
+        self.base.margin.bottom = Some(value.into());
         self
     }
 
     #[must_use]
     pub fn margin_left(mut self, value: Length) -> Self {
-        self.base.margin.left = Some(value);
+        self.base.margin.left = Some(value.into());
         self
     }
 
@@ -1063,13 +1258,13 @@ impl Style {
 
     #[must_use]
     pub fn margin_start(mut self, value: Length) -> Self {
-        self.base.margin.start = Some(value);
+        self.base.margin.start = Some(value.into());
         self
     }
 
     #[must_use]
     pub fn margin_end(mut self, value: Length) -> Self {
-        self.base.margin.end = Some(value);
+        self.base.margin.end = Some(value.into());
         self
     }
 
@@ -1276,7 +1471,7 @@ impl Style {
 
     #[must_use]
     pub fn flex_basis(mut self, basis: Length) -> Self {
-        self.base.flex_basis = Some(basis);
+        self.base.flex_basis = Some(basis.into());
         self
     }
 
@@ -1374,25 +1569,25 @@ impl Style {
 
     #[must_use]
     pub fn top(mut self, value: Length) -> Self {
-        self.base.top = Some(value);
+        self.base.top = Some(value.into());
         self
     }
 
     #[must_use]
     pub fn right(mut self, value: Length) -> Self {
-        self.base.right = Some(value);
+        self.base.right = Some(value.into());
         self
     }
 
     #[must_use]
     pub fn bottom(mut self, value: Length) -> Self {
-        self.base.bottom = Some(value);
+        self.base.bottom = Some(value.into());
         self
     }
 
     #[must_use]
     pub fn left(mut self, value: Length) -> Self {
-        self.base.left = Some(value);
+        self.base.left = Some(value.into());
         self
     }
 
@@ -1631,6 +1826,106 @@ fn merge_pseudo(base: &mut Option<StyleProperties>, overlay: Option<&StyleProper
     }
 }
 
+#[derive(Clone, Copy)]
+enum LayoutSlot {
+    Width,
+    Height,
+    MinWidth,
+    MaxWidth,
+    MinHeight,
+    MaxHeight,
+    FlexBasis,
+    Margin,
+    MarginX,
+    MarginY,
+    MarginTop,
+    MarginRight,
+    MarginBottom,
+    MarginLeft,
+    MarginStart,
+    MarginEnd,
+    Top,
+    Right,
+    Bottom,
+    Left,
+}
+
+fn with_layout_value(mut style: Style, slot: LayoutSlot, value: LayoutLength) -> Style {
+    match slot {
+        LayoutSlot::Width => style.base.width = Some(value),
+        LayoutSlot::Height => style.base.height = Some(value),
+        LayoutSlot::MinWidth => style.base.min_width = Some(value),
+        LayoutSlot::MaxWidth => style.base.max_width = Some(value),
+        LayoutSlot::MinHeight => style.base.min_height = Some(value),
+        LayoutSlot::MaxHeight => style.base.max_height = Some(value),
+        LayoutSlot::FlexBasis => style.base.flex_basis = Some(value),
+        LayoutSlot::Margin => style.base.margin = LayoutEdgeLengths::all(value),
+        LayoutSlot::MarginX => style
+            .base
+            .margin
+            .merge(&LayoutEdgeLengths::horizontal(value)),
+        LayoutSlot::MarginY => style.base.margin.merge(&LayoutEdgeLengths::vertical(value)),
+        LayoutSlot::MarginTop => style.base.margin.top = Some(value),
+        LayoutSlot::MarginRight => style.base.margin.right = Some(value),
+        LayoutSlot::MarginBottom => style.base.margin.bottom = Some(value),
+        LayoutSlot::MarginLeft => style.base.margin.left = Some(value),
+        LayoutSlot::MarginStart => style.base.margin.start = Some(value),
+        LayoutSlot::MarginEnd => style.base.margin.end = Some(value),
+        LayoutSlot::Top => style.base.top = Some(value),
+        LayoutSlot::Right => style.base.right = Some(value),
+        LayoutSlot::Bottom => style.base.bottom = Some(value),
+        LayoutSlot::Left => style.base.left = Some(value),
+    }
+    style
+}
+
+fn register_layout_overloads(
+    builder: &mut TypeBuilder<Style>,
+    name: &'static str,
+    slot: LayoutSlot,
+    signed: bool,
+) {
+    builder.with_fn(name, move |style: &mut Style, _: AutoLength| {
+        with_layout_value(style.clone(), slot, LayoutLength::Auto)
+    });
+    if signed {
+        builder.with_fn(name, move |style: &mut Style, value: SignedLength| {
+            with_layout_value(style.clone(), slot, value.into())
+        });
+    }
+}
+
+fn register_property_specific_layout_methods(builder: &mut TypeBuilder<Style>) {
+    for (name, slot) in [
+        ("width", LayoutSlot::Width),
+        ("height", LayoutSlot::Height),
+        ("min_width", LayoutSlot::MinWidth),
+        ("max_width", LayoutSlot::MaxWidth),
+        ("min_height", LayoutSlot::MinHeight),
+        ("max_height", LayoutSlot::MaxHeight),
+        ("flex_basis", LayoutSlot::FlexBasis),
+    ] {
+        register_layout_overloads(builder, name, slot, false);
+    }
+    for (name, slot) in [
+        ("margin", LayoutSlot::Margin),
+        ("margin_x", LayoutSlot::MarginX),
+        ("margin_y", LayoutSlot::MarginY),
+        ("margin_top", LayoutSlot::MarginTop),
+        ("margin_right", LayoutSlot::MarginRight),
+        ("margin_bottom", LayoutSlot::MarginBottom),
+        ("margin_left", LayoutSlot::MarginLeft),
+        ("margin_start", LayoutSlot::MarginStart),
+        ("margin_end", LayoutSlot::MarginEnd),
+        ("top", LayoutSlot::Top),
+        ("right", LayoutSlot::Right),
+        ("bottom", LayoutSlot::Bottom),
+        ("left", LayoutSlot::Left),
+    ] {
+        register_layout_overloads(builder, name, slot, true);
+    }
+}
+
 impl CustomType for Style {
     fn build(mut builder: TypeBuilder<Self>) {
         builder
@@ -1707,6 +2002,7 @@ impl CustomType for Style {
         register_overflow_methods(&mut builder);
         register_position_methods(&mut builder);
         register_extended_layout_methods(&mut builder);
+        register_property_specific_layout_methods(&mut builder);
         register_visual_methods(&mut builder);
         register_text_methods(&mut builder);
         builder
@@ -2097,6 +2393,8 @@ impl InteractionState {
 
 pub(crate) fn register_style_api(engine: &mut Engine) {
     engine.build_type::<Length>();
+    engine.build_type::<AutoLength>();
+    engine.build_type::<SignedLength>();
     engine.build_type::<ColorValue>();
     engine.build_type::<ShadowSpec>();
     engine.build_type::<LinearGradientSpec>();
@@ -2108,6 +2406,12 @@ pub(crate) fn register_style_api(engine: &mut Engine) {
     register_length_constructor(engine, "px", Length::pixels);
     register_length_constructor(engine, "rem", Length::rems);
     register_length_constructor(engine, "relative", Length::relative);
+    FuncRegistration::new("auto")
+        .in_global_namespace()
+        .register_into_engine(engine, || AutoLength);
+    register_signed_length_constructor(engine, "offset_px", SignedLength::pixels);
+    register_signed_length_constructor(engine, "offset_rem", SignedLength::rems);
+    register_signed_length_constructor(engine, "offset_relative", SignedLength::relative);
     FuncRegistration::new("theme_spacing")
         .in_global_namespace()
         .register_into_engine(
@@ -2208,6 +2512,30 @@ fn register_length_constructor(
         .register_into_engine(
             engine,
             move |value: INT| -> Result<Length, Box<EvalAltResult>> {
+                constructor(numeric_to_f64(&value)?)
+                    .map_err(|error| Box::new(style_runtime_error(error.to_string())))
+            },
+        );
+}
+
+fn register_signed_length_constructor(
+    engine: &mut Engine,
+    name: &str,
+    constructor: fn(f64) -> Result<SignedLength, LengthError>,
+) {
+    FuncRegistration::new(name)
+        .in_global_namespace()
+        .register_into_engine(
+            engine,
+            move |value: FLOAT| -> Result<SignedLength, Box<EvalAltResult>> {
+                constructor(value).map_err(|error| Box::new(style_runtime_error(error.to_string())))
+            },
+        );
+    FuncRegistration::new(name)
+        .in_global_namespace()
+        .register_into_engine(
+            engine,
+            move |value: INT| -> Result<SignedLength, Box<EvalAltResult>> {
                 constructor(numeric_to_f64(&value)?)
                     .map_err(|error| Box::new(style_runtime_error(error.to_string())))
             },
@@ -2329,7 +2657,7 @@ mod tests {
             .text_color(ColorValue::Literal(Rgba8::from_rgb_hex(0x00ff_ffff)));
         let merged = base.merged(&caller);
 
-        assert_eq!(merged.base.width, Some(Length::Pixels(240.0)));
+        assert_eq!(merged.base.width, Some(Length::Pixels(240.0).into()));
         assert_eq!(
             merged.base.background,
             Some(ColorValue::Literal(Rgba8::from_rgb_hex(0x0011_1111)))
@@ -2456,6 +2784,50 @@ mod tests {
         let solid: Style = engine.eval("style().border_solid()").unwrap();
         assert_eq!(dashed.base.border_style, Some(BorderLineStyle::Dashed));
         assert_eq!(solid.base.border_style, Some(BorderLineStyle::Solid));
+    }
+
+    #[test]
+    fn script_layout_values_separate_auto_and_signed_offsets_from_lengths() {
+        let mut engine = Engine::new();
+        register_style_api(&mut engine);
+        let style: Style = engine
+            .eval(
+                r"
+                    style()
+                        .width(auto()).flex_basis(auto())
+                        .margin_x(auto()).margin_bottom(offset_relative(-0.5))
+                        .top(offset_px(-12)).left(offset_rem(1.5))
+                ",
+            )
+            .unwrap();
+        assert_eq!(style.base.width, Some(LayoutLength::Auto));
+        assert_eq!(style.base.flex_basis, Some(LayoutLength::Auto));
+        assert_eq!(style.base.margin.left, Some(LayoutLength::Auto));
+        assert_eq!(style.base.margin.right, Some(LayoutLength::Auto));
+        assert_eq!(
+            style.base.margin.bottom,
+            Some(LayoutLength::Signed(SignedLength::Relative(-0.5)))
+        );
+        assert_eq!(
+            style.base.top,
+            Some(LayoutLength::Signed(SignedLength::Pixels(-12.0)))
+        );
+        assert_eq!(
+            style.base.left,
+            Some(LayoutLength::Signed(SignedLength::Rems(1.5)))
+        );
+        assert!(
+            engine
+                .eval::<Style>("style().padding(offset_px(-1))")
+                .is_err()
+        );
+        assert!(
+            engine
+                .eval::<Style>("style().width(offset_px(-1))")
+                .is_err()
+        );
+        assert!(serde_json::from_str::<Length>(r#"{"unit":"pixels","value":-1}"#).is_err());
+        assert!(serde_json::from_str::<SignedLength>(r#"{"unit":"relative","value":11}"#).is_err());
     }
 
     #[test]

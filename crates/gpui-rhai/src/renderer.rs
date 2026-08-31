@@ -10,8 +10,8 @@ use gpui::{
     InteractiveElement, IntoElement, LayoutId, Modifiers, MouseButton, MouseDownEvent,
     MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point, Render, ScrollHandle,
     ScrollWheelEvent, SharedString, Stateful, StatefulInteractiveElement, Styled, StyledText,
-    TextAlign, Window, div, img, linear_color_stop, linear_gradient, point, px, relative, rems,
-    rgba,
+    TextAlign, Window, auto, div, img, linear_color_stop, linear_gradient, point, px, relative,
+    rems, rgba,
 };
 
 use crate::overlay_element::{ScriptLayerElement, ScriptOverlayElement, WindowOverlayCoordinator};
@@ -20,10 +20,10 @@ use crate::virtual_list_element::VirtualListEntityElement;
 use crate::{
     Align, AnimationKey, AnimationProperty, AssetRegistry, ColorValue, CursorKind, DisplayMode,
     EventPropagation, EventResponse, FlexDirection, FlexWrapMode, FontSlant, HitTestBehavior,
-    ImageSourceSpec, InteractionState, Justify, Length, NodeId, OverflowMode, OverlayNodeSpec,
-    PositionMode, PrimitiveRegistry, PseudoState, RadiusToken, RetainedUiTree, Rgba8,
-    ScriptCallback, SpacingToken, Style, StyleProperties, TextAlignMode, TextDirection,
-    UiEventHandler, UiNode, UiNodeKind, UiValue, WhiteSpaceMode,
+    ImageSourceSpec, InteractionState, Justify, LayoutLength, Length, NodeId, OverflowMode,
+    OverlayNodeSpec, PositionMode, PrimitiveRegistry, PseudoState, RadiusToken, RetainedUiTree,
+    Rgba8, ScriptCallback, SignedLength, SpacingToken, Style, StyleProperties, TextAlignMode,
+    TextDirection, UiEventHandler, UiNode, UiNodeKind, UiValue, WhiteSpaceMode,
 };
 
 type DispatchFn = dyn Fn(ScriptCallback, UiValue, &mut Window, &mut App) -> EventResponse;
@@ -2371,10 +2371,10 @@ fn node_signals(registry: &crate::SignalRegistry, node: &UiNode) -> NodeSignalVa
 
 fn apply_signal_style(style: &mut StyleProperties, values: &NodeSignalValues) {
     if let Some(width) = values.width {
-        style.width = Some(Length::Pixels(width.max(0.0)));
+        style.width = Some(Length::Pixels(width.max(0.0)).into());
     }
     if let Some(height) = values.height {
-        style.height = Some(Length::Pixels(height.max(0.0)));
+        style.height = Some(Length::Pixels(height.max(0.0)).into());
     }
     if let Some(background) = &values.background {
         style.background = Some(background.clone());
@@ -2401,13 +2401,13 @@ fn node_animation(values: &BTreeMap<AnimationKey, f64>, path: &str) -> NodeAnima
 
 fn apply_animated_dimensions(style: &mut StyleProperties, values: NodeAnimationValues) {
     if let Some(width) = values.width {
-        style.width = Some(Length::Pixels(width.max(0.0)));
+        style.width = Some(Length::Pixels(width.max(0.0)).into());
     }
     if let Some(height) = values.height {
-        style.height = Some(Length::Pixels(height.max(0.0)));
+        style.height = Some(Length::Pixels(height.max(0.0)).into());
     }
     if let Some(height) = values.clip_height {
-        style.height = Some(Length::Pixels(height.max(0.0)));
+        style.height = Some(Length::Pixels(height.max(0.0)).into());
     }
 }
 
@@ -2668,8 +2668,16 @@ fn apply_style(
 }
 
 fn resolve_style_lengths(style: &mut StyleProperties, resolver: &impl ColorResolver) {
-    let resolve = |value: &mut Option<Length>| {
+    let resolve_definite = |value: &mut Option<Length>| {
         *value = (*value).and_then(|value| resolver.resolve_length(value));
+    };
+    let resolve_layout = |value: &mut Option<LayoutLength>| {
+        *value = (*value).and_then(|value| match value {
+            LayoutLength::Definite(value) => {
+                resolver.resolve_length(value).map(LayoutLength::Definite)
+            }
+            LayoutLength::Signed(_) | LayoutLength::Auto => Some(value),
+        });
     };
     for value in [
         &mut style.width,
@@ -2678,24 +2686,32 @@ fn resolve_style_lengths(style: &mut StyleProperties, resolver: &impl ColorResol
         &mut style.max_width,
         &mut style.min_height,
         &mut style.max_height,
-        &mut style.gap,
         &mut style.flex_basis,
     ] {
-        resolve(value);
+        resolve_layout(value);
     }
     for value in [
-        &mut style.padding.top,
-        &mut style.padding.right,
-        &mut style.padding.bottom,
-        &mut style.padding.left,
-        &mut style.padding.start,
-        &mut style.padding.end,
         &mut style.margin.top,
         &mut style.margin.right,
         &mut style.margin.bottom,
         &mut style.margin.left,
         &mut style.margin.start,
         &mut style.margin.end,
+        &mut style.top,
+        &mut style.right,
+        &mut style.bottom,
+        &mut style.left,
+    ] {
+        resolve_layout(value);
+    }
+    for value in [
+        &mut style.gap,
+        &mut style.padding.top,
+        &mut style.padding.right,
+        &mut style.padding.bottom,
+        &mut style.padding.left,
+        &mut style.padding.start,
+        &mut style.padding.end,
         &mut style.border_widths.top,
         &mut style.border_widths.right,
         &mut style.border_widths.bottom,
@@ -2708,12 +2724,8 @@ fn resolve_style_lengths(style: &mut StyleProperties, resolver: &impl ColorResol
         &mut style.radii.bottom_left,
         &mut style.font_size,
         &mut style.line_height,
-        &mut style.top,
-        &mut style.right,
-        &mut style.bottom,
-        &mut style.left,
     ] {
-        resolve(value);
+        resolve_definite(value);
     }
 }
 
@@ -2915,13 +2927,13 @@ fn apply_spacing(mut element: Div, style: &StyleProperties, direction: TextDirec
     element
 }
 
-fn logical_horizontal_edges(
-    mut left: Option<Length>,
-    mut right: Option<Length>,
-    start: Option<Length>,
-    end: Option<Length>,
+fn logical_horizontal_edges<T: Copy>(
+    mut left: Option<T>,
+    mut right: Option<T>,
+    start: Option<T>,
+    end: Option<T>,
     direction: TextDirection,
-) -> (Option<Length>, Option<Length>) {
+) -> (Option<T>, Option<T>) {
     match direction {
         TextDirection::LeftToRight => {
             if start.is_some() {
@@ -3148,27 +3160,52 @@ macro_rules! definite_length_fn {
     };
 }
 
-definite_length_fn!(width, w);
-definite_length_fn!(height, h);
-definite_length_fn!(min_width, min_w);
-definite_length_fn!(max_width, max_w);
-definite_length_fn!(min_height, min_h);
-definite_length_fn!(max_height, max_h);
 definite_length_fn!(gap, gap);
 definite_length_fn!(padding_top, pt);
 definite_length_fn!(padding_right, pr);
 definite_length_fn!(padding_bottom, pb);
 definite_length_fn!(padding_left, pl);
-definite_length_fn!(margin_top, mt);
-definite_length_fn!(margin_right, mr);
-definite_length_fn!(margin_bottom, mb);
-definite_length_fn!(margin_left, ml);
-definite_length_fn!(inset_top, top);
-definite_length_fn!(inset_right, right);
-definite_length_fn!(inset_bottom, bottom);
-definite_length_fn!(inset_left, left);
 
-definite_length_fn!(flex_basis, flex_basis);
+macro_rules! layout_length_fn {
+    ($name:ident, $method:ident) => {
+        fn $name(element: Div, value: LayoutLength) -> Div {
+            match value {
+                LayoutLength::Definite(Length::Pixels(value)) => element.$method(px(to_f32(value))),
+                LayoutLength::Signed(SignedLength::Pixels(value)) => {
+                    element.$method(px(f64_to_f32(value)))
+                }
+                LayoutLength::Definite(Length::Rems(value)) => element.$method(rems(to_f32(value))),
+                LayoutLength::Signed(SignedLength::Rems(value)) => {
+                    element.$method(rems(f64_to_f32(value)))
+                }
+                LayoutLength::Definite(Length::Relative(value)) => {
+                    element.$method(relative(to_f32(value)))
+                }
+                LayoutLength::Signed(SignedLength::Relative(value)) => {
+                    element.$method(relative(f64_to_f32(value)))
+                }
+                LayoutLength::Auto => element.$method(auto()),
+                LayoutLength::Definite(Length::ThemeSpacing(_) | Length::ThemeRadius(_)) => element,
+            }
+        }
+    };
+}
+
+layout_length_fn!(width, w);
+layout_length_fn!(height, h);
+layout_length_fn!(min_width, min_w);
+layout_length_fn!(max_width, max_w);
+layout_length_fn!(min_height, min_h);
+layout_length_fn!(max_height, max_h);
+layout_length_fn!(margin_top, mt);
+layout_length_fn!(margin_right, mr);
+layout_length_fn!(margin_bottom, mb);
+layout_length_fn!(margin_left, ml);
+layout_length_fn!(inset_top, top);
+layout_length_fn!(inset_right, right);
+layout_length_fn!(inset_bottom, bottom);
+layout_length_fn!(inset_left, left);
+layout_length_fn!(flex_basis, flex_basis);
 
 macro_rules! absolute_length_fn {
     ($name:ident, $method:ident) => {
@@ -3350,8 +3387,8 @@ mod tests {
         let sampled = node_animation(&values, "root/card");
         let mut style = StyleProperties::default();
         apply_animated_dimensions(&mut style, sampled);
-        assert_eq!(style.width, Some(Length::Pixels(180.0)));
-        assert_eq!(style.height, Some(Length::Pixels(64.0)));
+        assert_eq!(style.width, Some(Length::Pixels(180.0).into()));
+        assert_eq!(style.height, Some(Length::Pixels(64.0).into()));
         assert_eq!(sampled.translate_x, Some(12.0));
     }
 
@@ -3378,7 +3415,19 @@ mod tests {
         let values = node_signals(&registry, &node);
         let mut style = StyleProperties::default();
         apply_signal_style(&mut style, &values);
-        assert_eq!(style.width, Some(Length::Pixels(144.0)));
+        assert_eq!(style.width, Some(Length::Pixels(144.0).into()));
+    }
+
+    #[test]
+    fn property_specific_layout_values_reach_gpui_without_loss() {
+        let mut automatic = width(div(), LayoutLength::Auto);
+        assert_eq!(automatic.style().size.width, Some(auto()));
+
+        let mut signed = margin_left(div(), LayoutLength::Signed(SignedLength::Pixels(-12.0)));
+        assert_eq!(
+            signed.style().margin.left,
+            Some(gpui::Length::from(px(-12.0)))
+        );
     }
 
     #[test]
