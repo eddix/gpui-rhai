@@ -665,6 +665,33 @@ impl EdgeLengths {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct CornerLengths {
+    pub top_left: Option<Length>,
+    pub top_right: Option<Length>,
+    pub bottom_right: Option<Length>,
+    pub bottom_left: Option<Length>,
+}
+
+impl CornerLengths {
+    #[must_use]
+    pub fn all(value: Length) -> Self {
+        Self {
+            top_left: Some(value),
+            top_right: Some(value),
+            bottom_right: Some(value),
+            bottom_left: Some(value),
+        }
+    }
+
+    fn merge(&mut self, overlay: &Self) {
+        merge_option(&mut self.top_left, overlay.top_left);
+        merge_option(&mut self.top_right, overlay.top_right);
+        merge_option(&mut self.bottom_right, overlay.bottom_right);
+        merge_option(&mut self.bottom_left, overlay.bottom_left);
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct StyleProperties {
     pub display: Option<DisplayMode>,
     pub direction: Option<FlexDirection>,
@@ -685,8 +712,10 @@ pub struct StyleProperties {
     pub background: Option<ColorValue>,
     pub text_color: Option<ColorValue>,
     pub border_color: Option<ColorValue>,
-    pub border_width: Option<Length>,
-    pub radius: Option<Length>,
+    #[serde(default)]
+    pub border_widths: EdgeLengths,
+    #[serde(default)]
+    pub radii: CornerLengths,
     pub font_size: Option<Length>,
     pub flex_grow: Option<bool>,
     pub flex_shrink: Option<bool>,
@@ -741,8 +770,8 @@ impl StyleProperties {
         merge_option(&mut self.background, overlay.background.clone());
         merge_option(&mut self.text_color, overlay.text_color.clone());
         merge_option(&mut self.border_color, overlay.border_color.clone());
-        merge_option(&mut self.border_width, overlay.border_width);
-        merge_option(&mut self.radius, overlay.radius);
+        self.border_widths.merge(&overlay.border_widths);
+        self.radii.merge(&overlay.radii);
         merge_option(&mut self.font_size, overlay.font_size);
         merge_option(&mut self.flex_grow, overlay.flex_grow);
         merge_option(&mut self.flex_shrink, overlay.flex_shrink);
@@ -1006,13 +1035,73 @@ impl Style {
 
     #[must_use]
     pub fn radius(mut self, value: Length) -> Self {
-        self.base.radius = Some(value);
+        self.base.radii = CornerLengths::all(value);
+        self
+    }
+
+    #[must_use]
+    pub fn radius_top_left(mut self, value: Length) -> Self {
+        self.base.radii.top_left = Some(value);
+        self
+    }
+
+    #[must_use]
+    pub fn radius_top_right(mut self, value: Length) -> Self {
+        self.base.radii.top_right = Some(value);
+        self
+    }
+
+    #[must_use]
+    pub fn radius_bottom_right(mut self, value: Length) -> Self {
+        self.base.radii.bottom_right = Some(value);
+        self
+    }
+
+    #[must_use]
+    pub fn radius_bottom_left(mut self, value: Length) -> Self {
+        self.base.radii.bottom_left = Some(value);
         self
     }
 
     #[must_use]
     pub fn border(mut self, value: Length) -> Self {
-        self.base.border_width = Some(value);
+        self.base.border_widths = EdgeLengths::all(value);
+        self
+    }
+
+    #[must_use]
+    pub fn border_top(mut self, value: Length) -> Self {
+        self.base.border_widths.top = Some(value);
+        self
+    }
+
+    #[must_use]
+    pub fn border_right(mut self, value: Length) -> Self {
+        self.base.border_widths.right = Some(value);
+        self
+    }
+
+    #[must_use]
+    pub fn border_bottom(mut self, value: Length) -> Self {
+        self.base.border_widths.bottom = Some(value);
+        self
+    }
+
+    #[must_use]
+    pub fn border_left(mut self, value: Length) -> Self {
+        self.base.border_widths.left = Some(value);
+        self
+    }
+
+    #[must_use]
+    pub fn border_start(mut self, value: Length) -> Self {
+        self.base.border_widths.start = Some(value);
+        self
+    }
+
+    #[must_use]
+    pub fn border_end(mut self, value: Length) -> Self {
+        self.base.border_widths.end = Some(value);
         self
     }
 
@@ -1516,16 +1605,9 @@ impl CustomType for Style {
             })
             .with_fn("text_color", |style: &mut Self, value: ColorValue| {
                 style.clone().text_color(value)
-            })
-            .with_fn("radius", |style: &mut Self, value: Length| {
-                style.clone().radius(value)
-            })
-            .with_fn("border", |style: &mut Self, value: Length| {
-                style.clone().border(value)
-            })
-            .with_fn("border_color", |style: &mut Self, value: ColorValue| {
-                style.clone().border_color(value)
-            })
+            });
+        register_border_methods(&mut builder);
+        builder
             .with_fn("font_size", |style: &mut Self, value: Length| {
                 style.clone().font_size(value)
             })
@@ -1573,6 +1655,49 @@ impl CustomType for Style {
                 style.clone().merged(&overlay)
             });
     }
+}
+
+fn register_border_methods(builder: &mut TypeBuilder<Style>) {
+    builder
+        .with_fn("radius", |style: &mut Style, value: Length| {
+            style.clone().radius(value)
+        })
+        .with_fn("radius_top_left", |style: &mut Style, value: Length| {
+            style.clone().radius_top_left(value)
+        })
+        .with_fn("radius_top_right", |style: &mut Style, value: Length| {
+            style.clone().radius_top_right(value)
+        })
+        .with_fn("radius_bottom_right", |style: &mut Style, value: Length| {
+            style.clone().radius_bottom_right(value)
+        })
+        .with_fn("radius_bottom_left", |style: &mut Style, value: Length| {
+            style.clone().radius_bottom_left(value)
+        })
+        .with_fn("border", |style: &mut Style, value: Length| {
+            style.clone().border(value)
+        })
+        .with_fn("border_top", |style: &mut Style, value: Length| {
+            style.clone().border_top(value)
+        })
+        .with_fn("border_right", |style: &mut Style, value: Length| {
+            style.clone().border_right(value)
+        })
+        .with_fn("border_bottom", |style: &mut Style, value: Length| {
+            style.clone().border_bottom(value)
+        })
+        .with_fn("border_left", |style: &mut Style, value: Length| {
+            style.clone().border_left(value)
+        })
+        .with_fn("border_start", |style: &mut Style, value: Length| {
+            style.clone().border_start(value)
+        })
+        .with_fn("border_end", |style: &mut Style, value: Length| {
+            style.clone().border_end(value)
+        })
+        .with_fn("border_color", |style: &mut Style, value: ColorValue| {
+            style.clone().border_color(value)
+        });
 }
 
 fn register_overflow_methods(builder: &mut TypeBuilder<Style>) {
@@ -2169,8 +2294,8 @@ mod tests {
         assert_eq!(style.base.direction, Some(FlexDirection::Column));
         assert_eq!(style.base.gap, Some(Length::ThemeSpacing(SpacingToken::Sm)));
         assert_eq!(
-            style.base.radius,
-            Some(Length::ThemeRadius(RadiusToken::Md))
+            style.base.radii,
+            CornerLengths::all(Length::ThemeRadius(RadiusToken::Md))
         );
         assert!(style.hover.is_some());
     }
@@ -2186,6 +2311,8 @@ mod tests {
                         .grid_cols(3).grid_rows(2).col_span(2)
                         .min_width(px(120)).max_height(px(480))
                         .margin_x(px(8)).padding_bottom(px(6))
+                        .border_top(px(1)).border_start(px(2))
+                        .radius_top_left(px(12)).radius_bottom_right(px(4))
                         .linear_gradient(linear_gradient(#{
                             angle: 135, from: rgb(0x112233), to: rgba(0x445566cc)
                         }))
@@ -2205,6 +2332,10 @@ mod tests {
         assert_eq!(style.base.column_span, Some(2));
         assert_eq!(style.base.opacity, Some(0.85));
         assert_eq!(style.base.translate_x, Some(-12.0));
+        assert_eq!(style.base.border_widths.top, Some(Length::Pixels(1.0)));
+        assert_eq!(style.base.border_widths.start, Some(Length::Pixels(2.0)));
+        assert_eq!(style.base.radii.top_left, Some(Length::Pixels(12.0)));
+        assert_eq!(style.base.radii.bottom_right, Some(Length::Pixels(4.0)));
         assert_eq!(style.base.cursor, Some(CursorKind::Pointer));
         assert_eq!(style.base.font_family.as_deref(), Some("Avenir Next"));
         assert_eq!(

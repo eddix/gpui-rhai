@@ -10,8 +10,9 @@ The current public builder maps directly to stable GPUI 0.2.2 behavior:
 - row/column direction, wrapping, grow/shrink/basis, alignment, justification;
 - min/max/fixed sizing, gaps, physical/logical padding and margins;
 - relative/absolute positioning with four insets and per-axis overflow;
-- solid or typed two-stop linear-gradient backgrounds, borders, radii,
-  validated box shadows, opacity, visibility, and cursor policy;
+- solid or typed two-stop linear-gradient backgrounds, physical/logical
+  per-edge border widths, per-corner radii, validated box shadows, opacity,
+  visibility, and cursor policy;
 - paint translation with signed finite logical pixels;
 - font family, ordered fallback stack, bounded OpenType feature tags, numeric
   weight, normal/italic style, size/line height, logical text alignment,
@@ -33,6 +34,8 @@ style()
     .font_fallbacks(["PingFang SC", "Noto Sans"])
     .font_feature("liga", 1).font_feature("ss01", 1)
     .font_weight(650)
+    .border_top(px(1)).border_start(px(2))
+    .radius_top_left(px(12)).radius_bottom_right(px(4))
     .opacity(0.92).cursor_pointer()
 ```
 
@@ -58,7 +61,7 @@ name. See `assets.md` for ownership and validation.
 
 The remaining final-style gaps are property-specific signed insets/margins,
 intrinsic/auto/fr/grid-track values, multi-stop gradients, rotation/scale and
-transform-origin, detailed border corners/sides, font aliases and hot
+transform-origin, per-edge border colors/styles, font aliases and hot
 replacement, selection styling, and explicit hit-testing/stacking-context
 controls. They are
 tracked as incomplete rather than silently ignored.

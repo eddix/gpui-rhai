@@ -2676,8 +2676,16 @@ fn resolve_style_lengths(style: &mut StyleProperties, resolver: &impl ColorResol
         &mut style.margin.left,
         &mut style.margin.start,
         &mut style.margin.end,
-        &mut style.border_width,
-        &mut style.radius,
+        &mut style.border_widths.top,
+        &mut style.border_widths.right,
+        &mut style.border_widths.bottom,
+        &mut style.border_widths.left,
+        &mut style.border_widths.start,
+        &mut style.border_widths.end,
+        &mut style.radii.top_left,
+        &mut style.radii.top_right,
+        &mut style.radii.bottom_right,
+        &mut style.radii.bottom_left,
         &mut style.font_size,
         &mut style.line_height,
         &mut style.top,
@@ -2929,12 +2937,17 @@ fn apply_paint_and_text(
     colors: &impl ColorResolver,
     direction: TextDirection,
 ) -> Div {
-    let element = apply_paint(element, style, colors);
+    let element = apply_paint(element, style, colors, direction);
     let element = apply_typography(element, style, direction);
     apply_shadows(element, style, colors)
 }
 
-fn apply_paint(mut element: Div, style: &StyleProperties, colors: &impl ColorResolver) -> Div {
+fn apply_paint(
+    mut element: Div,
+    style: &StyleProperties,
+    colors: &impl ColorResolver,
+    direction: TextDirection,
+) -> Div {
     if let Some(gradient) = &style.gradient
         && let (Some(from), Some(to)) =
             (colors.resolve(&gradient.from), colors.resolve(&gradient.to))
@@ -2965,11 +2978,36 @@ fn apply_paint(mut element: Div, style: &StyleProperties, colors: &impl ColorRes
     {
         element = element.border_color(rgba(color.as_rgba_hex()));
     }
-    if let Some(value) = style.border_width {
-        element = border(element, value);
+    if let Some(value) = style.border_widths.top {
+        element = border_top(element, value);
     }
-    if let Some(value) = style.radius {
-        element = radius(element, value);
+    let (border_left_value, border_right_value) = logical_horizontal_edges(
+        style.border_widths.left,
+        style.border_widths.right,
+        style.border_widths.start,
+        style.border_widths.end,
+        direction,
+    );
+    if let Some(value) = border_right_value {
+        element = border_right(element, value);
+    }
+    if let Some(value) = style.border_widths.bottom {
+        element = border_bottom(element, value);
+    }
+    if let Some(value) = border_left_value {
+        element = border_left(element, value);
+    }
+    if let Some(value) = style.radii.top_left {
+        element = radius_top_left(element, value);
+    }
+    if let Some(value) = style.radii.top_right {
+        element = radius_top_right(element, value);
+    }
+    if let Some(value) = style.radii.bottom_right {
+        element = radius_bottom_right(element, value);
+    }
+    if let Some(value) = style.radii.bottom_left {
+        element = radius_bottom_left(element, value);
     }
     if let Some(value) = style.font_size {
         element = font_size(element, value);
@@ -3102,21 +3140,26 @@ definite_length_fn!(inset_left, left);
 
 definite_length_fn!(flex_basis, flex_basis);
 
-fn border(element: Div, value: Length) -> Div {
-    match value {
-        Length::Pixels(value) => element.border(px(to_f32(value))),
-        Length::Rems(value) => element.border(rems(to_f32(value))),
-        Length::Relative(_) | Length::ThemeSpacing(_) | Length::ThemeRadius(_) => element,
-    }
+macro_rules! absolute_length_fn {
+    ($name:ident, $method:ident) => {
+        fn $name(element: Div, value: Length) -> Div {
+            match value {
+                Length::Pixels(value) => element.$method(px(to_f32(value))),
+                Length::Rems(value) => element.$method(rems(to_f32(value))),
+                Length::Relative(_) | Length::ThemeSpacing(_) | Length::ThemeRadius(_) => element,
+            }
+        }
+    };
 }
 
-fn radius(element: Div, value: Length) -> Div {
-    match value {
-        Length::Pixels(value) => element.rounded(px(to_f32(value))),
-        Length::Rems(value) => element.rounded(rems(to_f32(value))),
-        Length::Relative(_) | Length::ThemeSpacing(_) | Length::ThemeRadius(_) => element,
-    }
-}
+absolute_length_fn!(border_top, border_t);
+absolute_length_fn!(border_right, border_r);
+absolute_length_fn!(border_bottom, border_b);
+absolute_length_fn!(border_left, border_l);
+absolute_length_fn!(radius_top_left, rounded_tl);
+absolute_length_fn!(radius_top_right, rounded_tr);
+absolute_length_fn!(radius_bottom_right, rounded_br);
+absolute_length_fn!(radius_bottom_left, rounded_bl);
 
 fn font_size(element: Div, value: Length) -> Div {
     match value {
