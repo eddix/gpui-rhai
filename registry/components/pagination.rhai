@@ -150,7 +150,8 @@ fn render_Pagination(ctx, props) {
         prop_or(props, "sibling_count", 1)
     ) {
         if page == 0 {
-            controls.push(text("…").with_style(component_style(props, "ellipsis", style())));
+            controls.push(row([text("…")]).with_style(component_style(props, "ellipsis",
+                style().items_center().padding_x(px(4)))));
         } else {
             controls.push(page_button(props, page, props.current_page, size, callback));
         }
@@ -173,7 +174,8 @@ fn render_Pagination(ctx, props) {
         children.push(text(`${ctx.format_number(props.total_items)} ${ctx.t("pagination.items")} · ${ctx.t("pagination.page")} ${ctx.format_number(props.current_page)} / ${ctx.format_number(pages)}`)
             .with_style(component_style(props, "summary", style().text_color(theme_color("text_muted")))));
     }
-    children.push(row(controls).with_style(component_style(props, "controls", style().gap(theme_spacing("xs")))));
+    children.push(row(controls).with_style(component_style(props, "controls",
+        style().gap(theme_spacing("xs")).items_center())));
     if options.len > 0 {
         let select_options = [];
         for option in options {
