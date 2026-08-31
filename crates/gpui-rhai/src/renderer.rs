@@ -2998,6 +2998,16 @@ fn apply_paint(
     {
         element = element.border_color(rgba(color.as_rgba_hex()));
     }
+    if let Some(border_style) = style.border_style {
+        match border_style {
+            crate::BorderLineStyle::Solid => {
+                element.style().border_style = Some(gpui::BorderStyle::Solid);
+            }
+            crate::BorderLineStyle::Dashed => {
+                element = element.border_dashed();
+            }
+        }
+    }
     if let Some(value) = style.border_widths.top {
         element = border_top(element, value);
     }

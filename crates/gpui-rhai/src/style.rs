@@ -519,6 +519,13 @@ pub enum FontSlant {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+pub enum BorderLineStyle {
+    Solid,
+    Dashed,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum CursorKind {
     Default,
     Pointer,
@@ -754,6 +761,7 @@ pub struct StyleProperties {
     pub background: Option<ColorValue>,
     pub text_color: Option<ColorValue>,
     pub border_color: Option<ColorValue>,
+    pub border_style: Option<BorderLineStyle>,
     #[serde(default)]
     pub border_widths: EdgeLengths,
     #[serde(default)]
@@ -813,6 +821,7 @@ impl StyleProperties {
         merge_option(&mut self.background, overlay.background.clone());
         merge_option(&mut self.text_color, overlay.text_color.clone());
         merge_option(&mut self.border_color, overlay.border_color.clone());
+        merge_option(&mut self.border_style, overlay.border_style);
         self.border_widths.merge(&overlay.border_widths);
         self.radii.merge(&overlay.radii);
         merge_option(&mut self.font_size, overlay.font_size);
@@ -1152,6 +1161,18 @@ impl Style {
     #[must_use]
     pub fn border_color(mut self, value: ColorValue) -> Self {
         self.base.border_color = Some(value);
+        self
+    }
+
+    #[must_use]
+    pub fn border_solid(mut self) -> Self {
+        self.base.border_style = Some(BorderLineStyle::Solid);
+        self
+    }
+
+    #[must_use]
+    pub fn border_dashed(mut self) -> Self {
+        self.base.border_style = Some(BorderLineStyle::Dashed);
         self
     }
 
@@ -1747,6 +1768,12 @@ fn register_border_methods(builder: &mut TypeBuilder<Style>) {
         })
         .with_fn("border_color", |style: &mut Style, value: ColorValue| {
             style.clone().border_color(value)
+        })
+        .with_fn("border_solid", |style: &mut Style| {
+            style.clone().border_solid()
+        })
+        .with_fn("border_dashed", |style: &mut Style| {
+            style.clone().border_dashed()
         });
 }
 
@@ -2419,6 +2446,16 @@ mod tests {
                 .is_err()
         );
         assert!(Style::new().font_feature("bad", 1).is_err());
+    }
+
+    #[test]
+    fn script_selects_uniform_border_style() {
+        let mut engine = Engine::new();
+        register_style_api(&mut engine);
+        let dashed: Style = engine.eval("style().border_dashed()").unwrap();
+        let solid: Style = engine.eval("style().border_solid()").unwrap();
+        assert_eq!(dashed.base.border_style, Some(BorderLineStyle::Dashed));
+        assert_eq!(solid.base.border_style, Some(BorderLineStyle::Solid));
     }
 
     #[test]

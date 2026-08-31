@@ -11,8 +11,8 @@ The current public builder maps directly to stable GPUI 0.2.2 behavior:
 - min/max/fixed sizing, gaps, physical/logical padding and margins;
 - relative/absolute positioning with four insets and per-axis overflow;
 - solid or typed two-stop linear-gradient backgrounds, physical/logical
-  per-edge border widths, per-corner radii, validated box shadows, opacity,
-  visibility, and cursor policy;
+  per-edge border widths, one uniform solid/dashed border style, per-corner
+  radii, validated box shadows, opacity, visibility, and cursor policy;
 - paint translation with signed finite logical pixels;
 - explicit `occlude()` or `occlude_except_scroll()` hitbox policy for blocking
   pointer input to painted elements behind a node;
@@ -36,7 +36,7 @@ style()
     .font_fallbacks(["PingFang SC", "Noto Sans"])
     .font_feature("liga", 1).font_feature("ss01", 1)
     .font_weight(650)
-    .border_top(px(1)).border_start(px(2))
+    .border_top(px(1)).border_start(px(2)).border_dashed()
     .radius_top_left(px(12)).radius_bottom_right(px(4))
     .occlude_except_scroll()
     .opacity(0.92).cursor_pointer()
@@ -68,7 +68,8 @@ name. See `assets.md` for ownership and validation.
 
 The remaining final-style gaps are property-specific signed insets/margins,
 intrinsic/auto/fr/grid-track values, multi-stop gradients, rotation/scale and
-transform-origin, per-edge border colors/styles, font aliases and hot
+transform-origin, per-edge border colors/styles (GPUI 0.2.2 stores only one
+quad-wide color/style), font aliases and hot
 replacement, selection styling, and explicit hit-testing/stacking-context
 controls beyond GPUI's two occlusion policies. General z-index is not exposed;
 window-level ordering uses public Overlay/Layer priorities. They are
