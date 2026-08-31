@@ -23,6 +23,7 @@ const REQUIRED_COLORS: &[&str] = &[
     "on_success",
     "border",
     "focus_ring",
+    "selection",
     "disabled",
 ];
 const REQUIRED_SPACING: &[&str] = &["xs", "sm", "md", "lg"];

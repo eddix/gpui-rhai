@@ -10,7 +10,7 @@
 }
 */
 // Data-backed Table composed entirely from public Box/Text/virtual_collection APIs.
-// Height is a positive logical-pixel number. Rows remain UiValue data until realized.
+// Use either a positive logical-pixel height or fill_height for flex layouts.
 // Props: key, label, row_key, rows, columns, height, loading/empty, sort and selection.
 // Events: sort_change, selection_change, and row_click.
 // State: controlled values only; realized item component state is keyed by row.
@@ -42,7 +42,9 @@ define_component(#{
                         "default": #{ type: "bool", value: false } },
                 },
             } }, required: true, sensitive: false },
-            height: #{ schema: #{ type: "number", exclusive_min: 0.0 }, required: true, sensitive: false },
+            height: #{ schema: #{ type: "optional", value: #{ type: "number", exclusive_min: 0.0 } }, required: false, sensitive: false },
+            fill_height: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
+                "default": #{ type: "bool", value: false } },
             estimated_row_height: #{ schema: #{ type: "number", exclusive_min: 0.0 }, required: false, sensitive: false,
                 "default": #{ type: "float", value: 34.0 } },
             loading: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
@@ -110,9 +112,12 @@ fn render_table_row(ctx, payload) {
     let item = payload.item;
     let cells = [];
     for cell in item.cells {
-        cells.push(text(cell.text).with_key(cell.key).with_style(column_style(cell)));
+        cells.push(text(cell.text).with_key(cell.key).with_style(
+            column_style(cell).min_width(px(0)).whitespace_nowrap().text_ellipsis()
+        ));
     }
     let base = style().height(px(item.height)).items_center()
+        .overflow_hidden()
         .border_bottom(px(1)).border_color(theme_color("border"))
         .background(if item.selected { rgba(0x334155cc) }
             else if item.striped { theme_color("surface_raised") }
@@ -129,6 +134,13 @@ fn render_table_row(ctx, payload) {
 }
 
 fn render_Table(ctx, props) {
+    let fill_height = prop_or(props, "fill_height", false);
+    if fill_height && "height" in props {
+        throw "Table accepts either height or fill_height, not both";
+    }
+    if !fill_height && !("height" in props) {
+        throw "Table requires height or fill_height: true";
+    }
     let current_sort = if "sort" in props { props.sort } else { () };
     let headers = [];
     for column in props.columns {
@@ -136,7 +148,8 @@ fn render_Table(ctx, props) {
             `${column.title} ${if current_sort.direction == "ascending" { "↑" } else { "↓" }}`
         } else { column.title };
         let header = text(title).with_key(column.key)
-            .with_style(component_style(props, "header_cell", column_style(column)))
+            .with_style(component_style(props, "header_cell",
+                column_style(column).min_width(px(0)).whitespace_nowrap().text_ellipsis()))
             .accessibility_role("columnheader");
         headers.push(if prop_or(column, "sortable", false) {
             header.on_click_value(Fn("sort_action"), next_sort(current_sort, column.key))
@@ -192,13 +205,20 @@ fn render_Table(ctx, props) {
             striped: prop_or(props, "striped", false) && index % 2 == 1,
             height: prop_or(props, "estimated_row_height", 34.0) });
     }
-    let body = virtual_collection(#{
+    let collection = #{
         key: `${props.key}-body`, label: props.label, data: data,
         estimated_height: prop_or(props, "estimated_row_height", 34.0),
-        height: props.height, overdraw_pixels: prop_or(props, "estimated_row_height", 34.0) * 4.0,
+        overdraw_pixels: prop_or(props, "estimated_row_height", 34.0) * 4.0,
         alignment: "top", follow_tail: false
-    }, Fn("render_table_row")).with_style(component_style(props, "body", style()));
+    };
+    if fill_height { collection.fill_height = true; }
+    else { collection.height = props.height; }
+    let body_style = if fill_height { style().flex_grow().min_height(px(0)) } else { style() };
+    let body = virtual_collection(collection, Fn("render_table_row"))
+        .with_style(component_style(props, "body", body_style));
+    let root_style = if fill_height { style().flex_col().flex_grow().min_height(px(0)) }
+        else { style().flex_col() };
     box([header, body]).with_key(props.key)
-        .with_style(component_style(props, "root", style().flex_col().overflow_x_scroll()))
+        .with_style(component_style(props, "root", root_style.overflow_x_scroll()))
         .accessibility_role("table").accessibility_label(props.label)
 }

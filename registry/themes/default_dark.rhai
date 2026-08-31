@@ -22,6 +22,7 @@ fn theme() {
                 on_success: 0x18181bff,
                 border: 0x3f3f46ff,
                 focus_ring: 0x60a5faff,
+                selection: 0x3b82f666,
                 disabled: 0x52525bff,
             },
             spacing: #{

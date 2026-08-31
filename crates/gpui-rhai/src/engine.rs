@@ -2103,7 +2103,7 @@ struct DecodedVirtualCollection {
     label: String,
     data: Vec<UiValue>,
     estimated_height: f64,
-    height: f64,
+    height: Option<f64>,
     overdraw_pixels: f64,
     bottom_align: bool,
     follow_tail: bool,
@@ -2115,7 +2115,27 @@ fn decode_virtual_collection(
     let key = collection_string(&mut config, "key")?;
     let label = collection_optional_string(&mut config, "label")?.unwrap_or_default();
     let estimated_height = collection_positive(&mut config, "estimated_height")?;
-    let height = collection_positive(&mut config, "height")?;
+    let height = collection_optional_number(&mut config, "height")?;
+    let fill_height = collection_optional_bool(&mut config, "fill_height")?.unwrap_or(false);
+    let height = match (height, fill_height) {
+        (Some(_), true) => {
+            return Err(Box::new(component_render_error(
+                "virtual collection must specify either `height` or `fill_height`, not both",
+            )));
+        }
+        (None, false) => {
+            return Err(Box::new(component_render_error(
+                "virtual collection requires `height` or `fill_height: true`",
+            )));
+        }
+        (None, true) => None,
+        (Some(height), false) if height.is_finite() && height > 0.0 => Some(height),
+        (Some(_), false) => {
+            return Err(Box::new(component_render_error(
+                "virtual collection `height` must be finite and positive",
+            )));
+        }
+    };
     let overdraw_pixels = collection_optional_number(&mut config, "overdraw_pixels")?
         .unwrap_or(estimated_height * 2.0);
     if !overdraw_pixels.is_finite() || !(0.0..=10_000.0).contains(&overdraw_pixels) {
@@ -2197,9 +2217,11 @@ fn register_virtual_collection_api(engine: &mut Engine, active: &ActiveComponent
                 callback.bind_component_if_unset(component.clone(), events);
                 callback.bind_native_context_if_unset(native_context);
 
-                let initial_count =
-                    nonnegative_usize(((height + overdraw_pixels) / estimated_height).ceil() + 1.0)
-                        .min(data.len());
+                let initial_viewport = height.unwrap_or(estimated_height);
+                let initial_count = nonnegative_usize(
+                    ((initial_viewport + overdraw_pixels) / estimated_height).ceil() + 1.0,
+                )
+                .min(data.len());
                 enter_virtual_collection_scope(&active, collection_context.clone())?;
                 let realized = realize_initial_collection(
                     &call,

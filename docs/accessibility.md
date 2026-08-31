@@ -61,8 +61,8 @@ visual baselines.
 ## Pinned GPUI limitation
 
 The pinned GPUI 0.2.2 release uses AccessKit internally but does not expose a
-public element API for assigning arbitrary AccessKit roles, labels, checked
-state, or descriptions. GPUI Rhai therefore retains these semantics in UiNode
+public element API for assigning arbitrary AccessKit roles, labels, checked or
+current state, or descriptions. GPUI Rhai therefore retains these semantics in UiNode
 snapshots and the stable AccessibilityTree, but cannot yet forward all values to the
 platform accessibility tree without relying on GPUI internals.
 

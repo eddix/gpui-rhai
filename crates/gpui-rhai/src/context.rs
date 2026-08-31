@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use rhai::{
     Array, CustomType, Dynamic, Engine, EvalAltResult, FLOAT, FnPtr, INT, ImmutableString, Map,
-    Position, TypeBuilder,
+    NativeCallContext, Position, TypeBuilder,
 };
 use thiserror::Error;
 
@@ -2467,8 +2467,11 @@ fn register_action_context_methods(builder: &mut TypeBuilder<UiContext>) {
         )
         .with_fn(
             "register_action",
-            |context: &mut UiContext, action: ImmutableString, callback: FnPtr| {
-                context
+            |call: NativeCallContext<'_>,
+             context: &mut UiContext,
+             action: ImmutableString,
+             callback: FnPtr| {
+                context_at_call(context, &call)
                     .register_action(action.as_str(), callback)
                     .map_err(|error| Box::new(context_runtime_error(&error)))
             },
@@ -2519,20 +2522,22 @@ fn register_async_context_methods(builder: &mut TypeBuilder<UiContext>) {
     builder
         .with_fn(
             "start_task",
-            |context: &mut UiContext,
+            |call: NativeCallContext<'_>,
+             context: &mut UiContext,
              capability: ImmutableString,
              method: ImmutableString,
              input: Dynamic,
              success: FnPtr,
              error: FnPtr| {
-                context
+                context_at_call(context, &call)
                     .start_task(capability.as_str(), method.as_str(), input, success, error)
                     .map_err(|error| Box::new(context_runtime_error(&error)))
             },
         )
         .with_fn(
             "start_subscription",
-            |context: &mut UiContext,
+            |call: NativeCallContext<'_>,
+             context: &mut UiContext,
              capability: ImmutableString,
              method: ImmutableString,
              input: Dynamic,
@@ -2545,7 +2550,7 @@ fn register_async_context_methods(builder: &mut TypeBuilder<UiContext>) {
                         Position::NONE,
                     ))
                 })?;
-                context
+                context_at_call(context, &call)
                     .start_subscription(
                         capability.as_str(),
                         method.as_str(),
@@ -2811,8 +2816,12 @@ fn register_asset_context_methods(builder: &mut TypeBuilder<UiContext>) {
         })
         .with_fn(
             "start_image_decode",
-            |context: &mut UiContext, asset: AssetId, success: FnPtr, error: FnPtr| {
-                context
+            |call: NativeCallContext<'_>,
+             context: &mut UiContext,
+             asset: AssetId,
+             success: FnPtr,
+             error: FnPtr| {
+                context_at_call(context, &call)
                     .start_image_decode(&asset, success, error)
                     .map_err(|error| Box::new(context_runtime_error(&error)))
             },
@@ -2881,8 +2890,8 @@ fn register_window_context_methods(builder: &mut TypeBuilder<UiContext>) {
         )
         .with_fn(
             "set_close_handler",
-            |context: &mut UiContext, callback: FnPtr| {
-                context
+            |call: NativeCallContext<'_>, context: &mut UiContext, callback: FnPtr| {
+                context_at_call(context, &call)
                     .set_close_handler(callback)
                     .map_err(|error| Box::new(context_runtime_error(&error)))
             },
@@ -2908,6 +2917,14 @@ fn register_window_context_methods(builder: &mut TypeBuilder<UiContext>) {
                     .map_err(|error| Box::new(context_runtime_error(&error)))
             },
         );
+}
+
+fn context_at_call(context: &UiContext, call: &NativeCallContext<'_>) -> UiContext {
+    context
+        .clone()
+        .with_native_context(Some(crate::invocation::ScriptInvocationContext::capture(
+            call,
+        )))
 }
 
 pub(crate) fn register_ui_context_api(engine: &mut Engine) {

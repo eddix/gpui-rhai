@@ -10,7 +10,7 @@ Colors:
 ```text
 surface, surface_raised, surface_hover, text_primary, text_muted,
 accent, accent_hover, on_accent, danger, on_danger, warning, on_warning,
-success, on_success, border, focus_ring, disabled
+success, on_success, border, focus_ring, selection, disabled
 ```
 
 The `on_*` colors are foregrounds for text and marks rendered on their matching

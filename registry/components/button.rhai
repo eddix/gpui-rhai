@@ -10,7 +10,7 @@
 */
 // Button presents a desktop action.
 //
-// Props: text (required), prefix/suffix slots, variant, size, disabled, loading, loading_text, on_click.
+// Props: text (required), prefix/suffix slots, variant, size, disabled, loading, loading_text, hoverable, on_click.
 // Events: click(null).
 // State: stateless and controlled by caller props.
 // Parts: root, label, prefix, suffix.
@@ -78,6 +78,12 @@ define_component(#{
                 sensitive: false,
                 "default": #{ type: "string", value: "" },
             },
+            hoverable: #{
+                schema: #{ type: "bool" },
+                required: false,
+                sensitive: false,
+                "default": #{ type: "bool", value: true },
+            },
             on_click: #{
                 schema: #{ type: "optional", value: #{ type: "callback" } },
                 required: false,
@@ -127,6 +133,8 @@ fn render_Button(ctx, props) {
     let disabled = if "disabled" in props { props.disabled } else { false };
     let loading = if "loading" in props { props.loading } else { false };
     let loading_text = if "loading_text" in props { props.loading_text } else { "" };
+    let hoverable = if "hoverable" in props { props.hoverable } else { true };
+    let interactive = !disabled && !loading && "on_click" in props && props.on_click != ();
     let label = if loading && loading_text != "" {
         `${loading_text} ${props.text}`
     } else {
@@ -143,14 +151,17 @@ fn render_Button(ctx, props) {
         .radius(px(6))
         .background(button_background(variant))
         .text_color(button_foreground(variant))
-        .hover(style().background(theme_color("accent_hover")))
         .disabled(style().background(theme_color("disabled")));
+    if hoverable && !disabled && !loading {
+        base = base.hover(style().background(theme_color("accent_hover")));
+    }
 
     let children = [];
     if "prefix" in props && props.prefix != () {
         children.push(props.prefix.with_style(component_style(props, "prefix", style())));
     }
-    children.push(text(label).with_style(component_style(props, "label", style())));
+    children.push(text(label).with_style(component_style(props, "label",
+        style().line_height(px(button_height(size))))));
     if "suffix" in props && props.suffix != () {
         children.push(props.suffix.with_style(component_style(props, "suffix", style())));
     }
@@ -159,7 +170,7 @@ fn render_Button(ctx, props) {
         .disabled(disabled || loading)
         .accessibility_role("button")
         .accessibility_label(props.text);
-    if !disabled && !loading && "on_click" in props && props.on_click != () {
+    if interactive {
         button.on_click(props.on_click)
     } else {
         button

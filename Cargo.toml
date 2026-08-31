@@ -28,6 +28,7 @@ unicode-segmentation = "1.13.3"
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp", "tiff"] }
 jiff = { version = "0.2.35", default-features = false, features = ["std", "tz-system", "tzdb-zoneinfo"] }
 usvg = { version = "=0.45.1", default-features = false }
+event-listener = "5.4.2"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

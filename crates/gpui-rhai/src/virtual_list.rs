@@ -21,7 +21,9 @@ pub struct VirtualCollectionNodeSpec {
     pub data: Vec<UiValue>,
     pub realized: BTreeMap<usize, UiNode>,
     pub estimated_height: f64,
-    pub height: f64,
+    /// Fixed logical-pixel viewport height, or `None` to fill the resolved
+    /// height offered by the parent flex layout.
+    pub height: Option<f64>,
     pub overdraw_pixels: f64,
     pub bottom_align: bool,
     pub follow_tail: bool,
@@ -696,7 +698,7 @@ mod tests {
             data: (0..5).map(|index| item(&format!("row-{index}"))).collect(),
             realized: BTreeMap::from([(1, UiNode::text("one")), (2, UiNode::text("two"))]),
             estimated_height: 24.0,
-            height: 120.0,
+            height: Some(120.0),
             overdraw_pixels: 48.0,
             bottom_align: true,
             follow_tail: true,

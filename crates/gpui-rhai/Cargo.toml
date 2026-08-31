@@ -30,6 +30,7 @@ unicode-segmentation.workspace = true
 image.workspace = true
 jiff.workspace = true
 usvg.workspace = true
+event-listener.workspace = true
 
 [dev-dependencies]
 tempfile = "3"

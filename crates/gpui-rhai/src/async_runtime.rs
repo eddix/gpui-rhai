@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
 use std::time::{Duration, Instant};
 
+use event_listener::{Event, EventListener};
 use rhai::{CustomType, TypeBuilder};
 use thiserror::Error;
 
@@ -12,6 +13,26 @@ use crate::{
     ComponentInstancePath, SchemaValidationError, ScriptCallback, ScriptGeneration, UiValue,
     ValueSchema,
 };
+
+/// Thread-safe edge notification for foreground delivery pumps.
+///
+/// The message queues remain the source of truth. A wake may be coalesced or
+/// arrive before a view subscribes; each foreground pump therefore drains once
+/// before awaiting its first notification.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct AsyncWake {
+    event: Arc<Event>,
+}
+
+impl AsyncWake {
+    pub(crate) fn listen(&self) -> EventListener {
+        self.event.listen()
+    }
+
+    fn notify(&self) {
+        self.event.notify(usize::MAX);
+    }
+}
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum AsyncScope {
@@ -169,6 +190,7 @@ pub struct TaskRegistry {
     entries: BTreeMap<u64, TaskEntry>,
     sender: Sender<TaskMessage>,
     receiver: Receiver<TaskMessage>,
+    wake: AsyncWake,
 }
 
 impl Default for TaskRegistry {
@@ -179,6 +201,7 @@ impl Default for TaskRegistry {
             entries: BTreeMap::new(),
             sender,
             receiver,
+            wake: AsyncWake::default(),
         }
     }
 }
@@ -224,10 +247,13 @@ impl TaskRegistry {
             },
         );
         let sender = self.sender.clone();
+        let wake = self.wake.clone();
         if let Err(spawn_error) = std::thread::Builder::new()
             .name(format!("gpui-rhai-task-{id}"))
             .spawn(move || {
-                let _ = sender.send(TaskMessage { id, result: work() });
+                if sender.send(TaskMessage { id, result: work() }).is_ok() {
+                    wake.notify();
+                }
             })
         {
             self.entries.remove(&id);
@@ -277,6 +303,10 @@ impl TaskRegistry {
     pub(crate) fn retain_ids(&mut self, retained: &std::collections::BTreeSet<u64>) {
         self.entries.retain(|id, _| retained.contains(id));
     }
+
+    pub(crate) fn wake(&self) -> AsyncWake {
+        self.wake.clone()
+    }
 }
 
 fn task_delivery(entry: TaskEntry, result: Result<UiValue, String>) -> AsyncDelivery {
@@ -317,6 +347,7 @@ pub struct SubscriptionEmitter {
     id: u64,
     sender: Sender<SubscriptionMessage>,
     lifetime: Arc<SubscriptionLifetime>,
+    wake: AsyncWake,
 }
 
 impl SubscriptionEmitter {
@@ -351,6 +382,7 @@ impl SubscriptionEmitter {
                 id: self.id,
                 result,
             })
+            .map(|()| self.wake.notify())
             .map_err(|_| AsyncRuntimeError::Closed {
                 reason: self
                     .lifetime
@@ -371,11 +403,16 @@ impl SubscriptionEmitter {
     }
 
     pub(crate) fn close_with_reason(&self, reason: SubscriptionCloseReason) {
-        if self.lifetime.close(reason) {
-            let _ = self.sender.send(SubscriptionMessage::Closed {
-                id: self.id,
-                reason,
-            });
+        if self.lifetime.close(reason)
+            && self
+                .sender
+                .send(SubscriptionMessage::Closed {
+                    id: self.id,
+                    reason,
+                })
+                .is_ok()
+        {
+            self.wake.notify();
         }
     }
 }
@@ -443,6 +480,7 @@ pub struct SubscriptionRegistry {
     sender: Sender<SubscriptionMessage>,
     receiver: Receiver<SubscriptionMessage>,
     closures: Vec<SubscriptionClosure>,
+    wake: AsyncWake,
 }
 
 impl Default for SubscriptionRegistry {
@@ -454,6 +492,7 @@ impl Default for SubscriptionRegistry {
             sender,
             receiver,
             closures: Vec::new(),
+            wake: AsyncWake::default(),
         }
     }
 }
@@ -504,6 +543,7 @@ impl SubscriptionRegistry {
                 id,
                 sender: self.sender.clone(),
                 lifetime,
+                wake: self.wake.clone(),
             },
         )
     }
@@ -646,6 +686,10 @@ impl SubscriptionRegistry {
 
     pub(crate) fn take_closures(&mut self) -> Vec<SubscriptionClosure> {
         std::mem::take(&mut self.closures)
+    }
+
+    pub(crate) fn wake(&self) -> AsyncWake {
+        self.wake.clone()
     }
 }
 

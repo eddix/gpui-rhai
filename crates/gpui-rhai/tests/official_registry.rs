@@ -1129,7 +1129,7 @@ fn official_table_is_public_data_backed_rhai_composition() {
                 fn clicked(ctx, value) { () }
                 fn view(ctx) {
                     table::Table(#{
-                        key: "users", label: "Users", row_key: "id", height: 240,
+                        key: "users", label: "Users", row_key: "id", fill_height: true,
                         rows: [
                             #{ id: "u1", name: "Ada", score: 12.5, joined: "2026-08-30", status: "Active" },
                             #{ id: "u2", name: "Lin", score: 9, joined: "2026-08-31", status: "Away" }
@@ -1165,8 +1165,23 @@ fn official_table_is_public_data_backed_rhai_composition() {
     };
     assert!(
         matches!(children[1].kind(), UiNodeKind::VirtualCollection { spec }
-        if spec.data.len() == 2 && spec.realized.len() == 2)
+        if spec.data.len() == 2 && spec.height.is_none())
     );
+    let UiNodeKind::VirtualCollection { spec } = children[1].kind() else {
+        unreachable!()
+    };
+    let row = spec.realized.get(&0).expect("first table row");
+    assert_eq!(
+        row.style().base.overflow_x,
+        Some(gpui_rhai::OverflowMode::Hidden)
+    );
+    let UiNodeKind::Box { children: cells } = row.kind() else {
+        panic!("table row must remain a public row composition");
+    };
+    assert!(cells.iter().all(|cell| {
+        cell.style().base.white_space == Some(gpui_rhai::WhiteSpaceMode::NoWrap)
+            && cell.style().base.text_ellipsis == Some(true)
+    }));
 }
 
 #[test]
@@ -1243,6 +1258,18 @@ fn official_pagination_is_pure_rhai_composition() {
             ("page_size".to_owned(), UiValue::Integer(10)),
         ])))
     );
+    assert!(page.style().hover.is_some());
+    let current = find_label(root, "250").expect("current page button");
+    assert_eq!(
+        current.attributes().get("current"),
+        Some(&UiValue::String("page".to_owned()))
+    );
+    assert_eq!(
+        current.attributes().get("disabled"),
+        Some(&UiValue::Bool(false))
+    );
+    assert!(current.handler("click").is_none());
+    assert!(current.style().hover.is_none());
 }
 
 #[test]

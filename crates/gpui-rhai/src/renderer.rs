@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 use std::sync::{Arc, OnceLock};
@@ -1021,6 +1022,8 @@ struct RenderEnvironment<'a, C> {
     scroll_handles: &'a BTreeMap<NodeId, ScrollHandle>,
     scroll_anchors: &'a BTreeMap<NodeId, gpui::ScrollAnchor>,
     virtual_requests: &'a crate::VirtualRequestRegistry,
+    text_selection: &'a TextSelectionRegistry,
+    host_focus: Option<&'a FocusHandle>,
     direction: TextDirection,
     view_id: &'a str,
     retained: Option<&'a RetainedUiTree>,
@@ -1039,6 +1042,8 @@ pub(crate) struct WindowRenderResources<'a> {
     pub scroll_handles: &'a BTreeMap<NodeId, ScrollHandle>,
     pub scroll_anchors: &'a BTreeMap<NodeId, gpui::ScrollAnchor>,
     pub virtual_requests: &'a crate::VirtualRequestRegistry,
+    pub text_selection: &'a TextSelectionRegistry,
+    pub host_focus: Option<&'a FocusHandle>,
     pub direction: TextDirection,
     pub root_path: &'a str,
     pub view_id: &'a str,
@@ -1086,6 +1091,7 @@ impl GpuiNodeRenderer {
         let scroll_handles = BTreeMap::new();
         let scroll_anchors = BTreeMap::new();
         let virtual_requests = crate::VirtualRequestRegistry::new();
+        let text_selection = TextSelectionRegistry::default();
         let environment = RenderEnvironment {
             colors,
             interaction,
@@ -1101,6 +1107,8 @@ impl GpuiNodeRenderer {
             scroll_handles: &scroll_handles,
             scroll_anchors: &scroll_anchors,
             virtual_requests: &virtual_requests,
+            text_selection: &text_selection,
+            host_focus: None,
             direction: TextDirection::LeftToRight,
             view_id: "standalone",
             retained: None,
@@ -1125,6 +1133,7 @@ impl GpuiNodeRenderer {
         let scroll_handles = BTreeMap::new();
         let scroll_anchors = BTreeMap::new();
         let virtual_requests = crate::VirtualRequestRegistry::new();
+        let text_selection = TextSelectionRegistry::default();
         let environment = RenderEnvironment {
             colors,
             interaction,
@@ -1140,6 +1149,8 @@ impl GpuiNodeRenderer {
             scroll_handles: &scroll_handles,
             scroll_anchors: &scroll_anchors,
             virtual_requests: &virtual_requests,
+            text_selection: &text_selection,
+            host_focus: None,
             direction: TextDirection::LeftToRight,
             view_id: "standalone",
             retained: Some(tree),
@@ -1172,6 +1183,7 @@ impl GpuiNodeRenderer {
         let scroll_handles = BTreeMap::new();
         let scroll_anchors = BTreeMap::new();
         let virtual_requests = crate::VirtualRequestRegistry::new();
+        let text_selection = TextSelectionRegistry::default();
         let environment = RenderEnvironment {
             colors,
             interaction,
@@ -1187,6 +1199,8 @@ impl GpuiNodeRenderer {
             scroll_handles: &scroll_handles,
             scroll_anchors: &scroll_anchors,
             virtual_requests: &virtual_requests,
+            text_selection: &text_selection,
+            host_focus: None,
             direction: TextDirection::LeftToRight,
             view_id: "standalone",
             retained: Some(tree),
@@ -1219,6 +1233,7 @@ impl GpuiNodeRenderer {
         let scroll_handles = BTreeMap::new();
         let scroll_anchors = BTreeMap::new();
         let virtual_requests = crate::VirtualRequestRegistry::new();
+        let text_selection = TextSelectionRegistry::default();
         let environment = RenderEnvironment {
             colors,
             interaction,
@@ -1234,6 +1249,8 @@ impl GpuiNodeRenderer {
             scroll_handles: &scroll_handles,
             scroll_anchors: &scroll_anchors,
             virtual_requests: &virtual_requests,
+            text_selection: &text_selection,
+            host_focus: None,
             direction: TextDirection::LeftToRight,
             view_id: "standalone",
             retained: None,
@@ -1260,6 +1277,7 @@ impl GpuiNodeRenderer {
         let scroll_handles = BTreeMap::new();
         let scroll_anchors = BTreeMap::new();
         let virtual_requests = crate::VirtualRequestRegistry::new();
+        let text_selection = TextSelectionRegistry::default();
         let resources = WindowRenderResources {
             assets,
             dispatcher,
@@ -1272,6 +1290,8 @@ impl GpuiNodeRenderer {
             scroll_handles: &scroll_handles,
             scroll_anchors: &scroll_anchors,
             virtual_requests: &virtual_requests,
+            text_selection: &text_selection,
+            host_focus: None,
             direction: TextDirection::LeftToRight,
             root_path: "root",
             view_id: "standalone",
@@ -1318,6 +1338,8 @@ impl GpuiNodeRenderer {
             scroll_handles: resources.scroll_handles,
             scroll_anchors: resources.scroll_anchors,
             virtual_requests: resources.virtual_requests,
+            text_selection: resources.text_selection,
+            host_focus: resources.host_focus,
             direction: resources.direction,
             view_id: resources.view_id,
             retained: Some(tree),
@@ -1364,6 +1386,8 @@ impl GpuiNodeRenderer {
             scroll_handles: resources.scroll_handles,
             scroll_anchors: resources.scroll_anchors,
             virtual_requests: resources.virtual_requests,
+            text_selection: resources.text_selection,
+            host_focus: resources.host_focus,
             direction: resources.direction,
             view_id: resources.view_id,
             retained: None,
@@ -1396,6 +1420,8 @@ impl GpuiNodeRenderer {
             scroll_handles: resources.scroll_handles,
             scroll_anchors: resources.scroll_anchors,
             virtual_requests: resources.virtual_requests,
+            text_selection: resources.text_selection,
+            host_focus: resources.host_focus,
             direction: resources.direction,
             view_id: resources.view_id,
             retained: None,
@@ -1427,6 +1453,12 @@ impl GpuiNodeRenderer {
             environment.colors,
             environment.direction,
         );
+        if matches!(
+            node.kind(),
+            UiNodeKind::VirtualCollection { spec } if spec.height.is_none()
+        ) {
+            element = element.flex_1().min_h(px(0.0));
+        }
         if let Some(handle) = retained_id.and_then(|node| environment.focus_handles.get(&node)) {
             element = element.track_focus(handle);
         }
@@ -1584,17 +1616,7 @@ impl GpuiNodeRenderer {
     ) -> AnyElement {
         match node.kind() {
             UiNodeKind::Text { text } => {
-                if node_selectable(node) {
-                    let highlight = environment
-                        .colors
-                        .resolve(&ColorValue::Token("selection".to_owned()))
-                        .unwrap_or(Rgba8::from_rgba_hex(0x3b82_f655));
-                    element
-                        .child(SelectableText::new(path, text.as_str(), highlight))
-                        .into_any_element()
-                } else {
-                    element.child(text.as_str().to_owned()).into_any_element()
-                }
+                render_text_node(element, node, text.as_str(), environment, path, retained_id)
             }
             UiNodeKind::RichText { text, spans } => element
                 .child(styled_text(text.as_str(), spans, environment.colors))
@@ -1669,14 +1691,9 @@ impl GpuiNodeRenderer {
                     ))
                     .into_any_element()
             }
-            UiNodeKind::VirtualCollection { spec } => element
-                .child(native_virtual_collection_element(
-                    spec,
-                    environment,
-                    path,
-                    retained_id,
-                ))
-                .into_any_element(),
+            UiNodeKind::VirtualCollection { spec } => {
+                render_virtual_collection(element, spec, environment, path, retained_id)
+            }
             UiNodeKind::ErrorBoundary { child, fallback } => element
                 .child(Self::render_internal(
                     child,
@@ -1694,6 +1711,54 @@ impl GpuiNodeRenderer {
                 .into_any_element(),
         }
     }
+}
+
+fn render_text_node<C: ColorResolver>(
+    element: impl ParentElement + IntoElement,
+    node: &UiNode,
+    text: &str,
+    environment: &RenderEnvironment<'_, C>,
+    path: &str,
+    retained_id: Option<NodeId>,
+) -> AnyElement {
+    if !node_selectable(node) {
+        return element.child(text.to_owned()).into_any_element();
+    }
+    let highlight = environment
+        .colors
+        .resolve(&ColorValue::Token("selection".to_owned()))
+        .unwrap_or(Rgba8::from_rgba_hex(0x3b82_f655));
+    let selection_id = retained_id.map_or_else(
+        || path.to_owned(),
+        |node| format!("{}:{node}", environment.view_id),
+    );
+    element
+        .child(SelectableText::new(
+            selection_id,
+            retained_id,
+            text,
+            highlight,
+            environment.text_selection.clone(),
+            environment.host_focus.cloned(),
+        ))
+        .into_any_element()
+}
+
+fn render_virtual_collection<C: ColorResolver>(
+    element: impl ParentElement + IntoElement,
+    spec: &crate::VirtualCollectionNodeSpec,
+    environment: &RenderEnvironment<'_, C>,
+    path: &str,
+    retained_id: Option<NodeId>,
+) -> AnyElement {
+    element
+        .child(native_virtual_collection_element(
+            spec,
+            environment,
+            path,
+            retained_id,
+        ))
+        .into_any_element()
 }
 
 fn render_flattened_children<C: ColorResolver>(
@@ -2361,6 +2426,8 @@ fn native_virtual_collection_element<C: ColorResolver>(
         scroll_handles: environment.scroll_handles.clone(),
         scroll_anchors: environment.scroll_anchors.clone(),
         virtual_requests: environment.virtual_requests.clone(),
+        text_selection: environment.text_selection.clone(),
+        host_focus: environment.host_focus.cloned(),
         direction: environment.direction,
         base_path: path.to_owned(),
         view_id: environment.view_id.to_owned(),
@@ -2519,68 +2586,154 @@ struct TranslatedElement {
     offset: Point<Pixels>,
 }
 
-/// Drag-to-select text: a `text()` node marked `selectable(true)` renders
-/// through this element instead of a plain string child. Dragging inside
-/// the node highlights a byte range; releasing the mouse copies the
-/// selected slice to the system clipboard. Selection is per-node (no
-/// cross-node ranges) and lives in element state, so it survives
-/// re-renders as long as the element id (node path) is stable.
+#[derive(Clone, Debug)]
+struct ActiveTextSelection {
+    owner: String,
+    node: Option<NodeId>,
+    text: String,
+    range: Option<(usize, usize)>,
+    bounds: Bounds<Pixels>,
+}
+
+/// One active text selection per mounted script view.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct TextSelectionRegistry {
+    active: Rc<RefCell<Option<ActiveTextSelection>>>,
+}
+
+impl TextSelectionRegistry {
+    fn begin(&self, owner: String, node: Option<NodeId>, text: String, bounds: Bounds<Pixels>) {
+        self.active.borrow_mut().replace(ActiveTextSelection {
+            owner,
+            node,
+            text,
+            range: None,
+            bounds,
+        });
+    }
+
+    fn update(&self, owner: &str, text: &str, bounds: Bounds<Pixels>, range: (usize, usize)) {
+        let mut active = self.active.borrow_mut();
+        let Some(selection) = active.as_mut().filter(|selection| selection.owner == owner) else {
+            return;
+        };
+        text.clone_into(&mut selection.text);
+        selection.range = (range.1 > range.0).then_some(range);
+        selection.bounds = bounds;
+    }
+
+    fn range(&self, owner: &str, text: &str) -> Option<(usize, usize)> {
+        let mut active = self.active.borrow_mut();
+        let selection = active.as_ref()?;
+        if selection.owner != owner {
+            return None;
+        }
+        if selection.text != text {
+            active.take();
+            return None;
+        }
+        selection.range
+    }
+
+    pub(crate) fn selected_text(&self) -> Option<String> {
+        let active = self.active.borrow();
+        let selection = active.as_ref()?;
+        let (start, end) = selection.range?;
+        selection.text.get(start..end).map(ToOwned::to_owned)
+    }
+
+    pub(crate) fn clear_outside(&self, position: Point<Pixels>) -> bool {
+        let mut active = self.active.borrow_mut();
+        if active
+            .as_ref()
+            .is_some_and(|selection| !selection.bounds.contains(&position))
+        {
+            active.take();
+            true
+        } else {
+            false
+        }
+    }
+
+    pub(crate) fn retain(&self, tree: &RetainedUiTree) {
+        let mut active = self.active.borrow_mut();
+        if active
+            .as_ref()
+            .and_then(|selection| selection.node)
+            .is_some_and(|node| tree.node(node).is_none())
+        {
+            active.take();
+        }
+    }
+}
+
+/// Drag-to-select text for a `text().selectable(true)` node. Selection is
+/// single-node and retained by stable node identity. Clipboard mutation is
+/// deliberately handled by the host's normal copy action, not mouse-up.
 struct SelectableText {
     id: ElementId,
+    owner: String,
+    node: Option<NodeId>,
     text: StyledText,
     highlight: Rgba8,
+    selection: TextSelectionRegistry,
+    host_focus: Option<FocusHandle>,
 }
 
 #[derive(Default)]
 struct SelectableTextState {
     anchor: Rc<std::cell::Cell<Option<usize>>>,
-    selection: Rc<std::cell::Cell<Option<(usize, usize)>>>,
 }
 
 impl SelectableText {
-    fn new(path: &str, text: &str, highlight: Rgba8) -> Self {
+    fn new(
+        owner: String,
+        node: Option<NodeId>,
+        text: &str,
+        highlight: Rgba8,
+        selection: TextSelectionRegistry,
+        host_focus: Option<FocusHandle>,
+    ) -> Self {
         Self {
-            id: ElementId::Name(SharedString::from(format!("{path}/selectable"))),
+            id: ElementId::Name(SharedString::from(format!("{owner}/selectable"))),
+            owner,
+            node,
             text: StyledText::new(text.to_owned()),
             highlight,
+            selection,
+            host_focus,
         }
     }
 }
 
-/// Highlight rectangles for byte range [start, end): first-line partial,
-/// middle lines as one full-width block, last-line partial. Wrap width
-/// comes from the measured layout bounds (browser-style).
-fn selection_rects(
-    layout: &gpui::TextLayout,
-    start: usize,
-    end: usize,
-) -> Vec<Bounds<Pixels>> {
-    let (Some(p1), Some(p2)) = (
-        layout.position_for_index(start),
-        layout.position_for_index(end),
-    ) else {
+/// Build one tight highlight rectangle per visual line from UTF-8 character
+/// boundaries. This avoids painting trailing whitespace across wrapped lines.
+fn selection_rects(layout: &gpui::TextLayout, start: usize, end: usize) -> Vec<Bounds<Pixels>> {
+    let text = layout.text();
+    let Some(selected) = text.get(start..end) else {
         return Vec::new();
     };
+    let mut rows: Vec<(Pixels, Pixels, Pixels)> = Vec::new();
+    for index in selected
+        .char_indices()
+        .map(|(offset, _)| start + offset)
+        .chain(std::iter::once(end))
+    {
+        let Some(position) = layout.position_for_index(index) else {
+            continue;
+        };
+        if let Some((_, left, right)) = rows.iter_mut().find(|(y, _, _)| *y == position.y) {
+            *left = (*left).min(position.x);
+            *right = (*right).max(position.x);
+        } else {
+            rows.push((position.y, position.x, position.x));
+        }
+    }
     let line_height = layout.line_height();
-    let bounds = layout.bounds();
-    if p1.y == p2.y {
-        return vec![Bounds::from_corners(p1, point(p2.x, p1.y + line_height))];
-    }
-    let mut rects = vec![Bounds::from_corners(
-        p1,
-        point(bounds.right(), p1.y + line_height),
-    )];
-    if p2.y > p1.y + line_height {
-        rects.push(Bounds::from_corners(
-            point(bounds.left(), p1.y + line_height),
-            point(bounds.right(), p2.y),
-        ));
-    }
-    rects.push(Bounds::from_corners(
-        point(bounds.left(), p2.y),
-        point(p2.x, p2.y + line_height),
-    ));
-    rects
+    rows.into_iter()
+        .filter(|(_, left, right)| right > left)
+        .map(|(y, left, right)| Bounds::from_corners(point(left, y), point(right, y + line_height)))
+        .collect()
 }
 
 impl Element for SelectableText {
@@ -2635,17 +2788,15 @@ impl Element for SelectableText {
             return;
         };
         let layout = self.text.layout().clone();
+        let rendered_text = layout.text();
         let highlight = rgba(self.highlight.as_rgba_hex());
-        let (anchor, selection) =
-            window.with_element_state::<SelectableTextState, _>(global_id, |prev, _| {
-                let prev = prev.unwrap_or_default();
-                ((prev.anchor.clone(), prev.selection.clone()), prev)
-            });
+        let anchor = window.with_element_state::<SelectableTextState, _>(global_id, |prev, _| {
+            let prev = prev.unwrap_or_default();
+            (prev.anchor.clone(), prev)
+        });
 
         // Highlight under the glyphs: paint quads first, text second.
-        if let Some((start, end)) = selection.get()
-            && end > start
-        {
+        if let Some((start, end)) = self.selection.range(&self.owner, &rendered_text) {
             for rect in selection_rects(&layout, start, end) {
                 window.paint_quad(gpui::fill(rect, highlight));
             }
@@ -2660,51 +2811,54 @@ impl Element for SelectableText {
 
         {
             let anchor = anchor.clone();
-            let selection = selection.clone();
             let layout = layout.clone();
             let hitbox = hitbox.clone();
+            let owner = self.owner.clone();
+            let node = self.node;
+            let selection = self.selection.clone();
+            let host_focus = self.host_focus.clone();
             window.on_mouse_event(move |event: &MouseDownEvent, phase, window, _| {
-                if phase.bubble()
-                    && event.button == MouseButton::Left
-                    && hitbox.is_hovered(window)
+                if phase.bubble() && event.button == MouseButton::Left && hitbox.is_hovered(window)
                 {
-                    anchor.set(Some(clamp(layout.index_for_position(event.position))));
-                    selection.set(None);
+                    let index = clamp(layout.index_for_position(event.position));
+                    anchor.set(Some(index));
+                    selection.begin(owner.clone(), node, layout.text(), hitbox.bounds);
+                    if let Some(focus) = &host_focus {
+                        focus.focus(window);
+                    }
                     window.refresh();
                 }
             });
         }
         {
             let anchor = anchor.clone();
-            let selection = selection.clone();
             let layout = layout.clone();
-            window.on_mouse_event(move |event: &MouseMoveEvent, phase, window, _| {
+            let owner = self.owner.clone();
+            let selection = self.selection.clone();
+            window.on_mouse_event(move |event: &MouseMoveEvent, phase, window, cx| {
                 if phase.bubble()
                     && event.pressed_button == Some(MouseButton::Left)
                     && let Some(from) = anchor.get()
                 {
                     let to = clamp(layout.index_for_position(event.position));
-                    selection.set(Some((from.min(to), from.max(to))));
+                    let range = (from.min(to), from.max(to));
+                    selection.update(&owner, &layout.text(), layout.bounds(), range);
+                    if range.1 > range.0 {
+                        cx.stop_propagation();
+                    }
                     window.refresh();
                 }
             });
         }
         {
-            window.on_mouse_event(move |event: &MouseUpEvent, phase, _, cx| {
-                if phase.bubble() && event.button == MouseButton::Left {
-                    if anchor.take().is_some()
-                        && let Some((start, end)) = selection.get()
-                        && end > start
-                    {
-                        let copied = layout
-                            .text()
-                            .get(start..end)
-                            .unwrap_or_default()
-                            .to_owned();
-                        if !copied.is_empty() {
-                            cx.write_to_clipboard(gpui::ClipboardItem::new_string(copied));
-                        }
+            let owner = self.owner.clone();
+            let selection = self.selection.clone();
+            window.on_mouse_event(move |event: &MouseUpEvent, phase, window, cx| {
+                if phase.bubble() && event.button == MouseButton::Left && anchor.take().is_some() {
+                    if selection.range(&owner, &layout.text()).is_some() {
+                        cx.stop_propagation();
                     }
+                    window.refresh();
                 }
             });
         }

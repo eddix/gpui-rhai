@@ -108,6 +108,21 @@ handler registration immediately with `UnsupportedInEmbeddedView`. The
 standalone `ScriptApplication` adapter enables the existing restricted
 multi-window implementation.
 
+Trusted standalone hosts may customize the primary native window while keeping
+that authority out of Rhai:
+
+```rust
+ScriptApplication::new(prepared)
+    .window_options(|mut options, _cx| {
+        options.titlebar = None;
+        options
+    })
+    .run()?;
+```
+
+The callback receives the normal centered defaults, so it can change only the
+policies it owns or replace the options entirely.
+
 ## Key bindings
 
 Mounting never modifies the App keymap. Inspect `PreparedScriptView::key_bindings`

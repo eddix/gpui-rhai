@@ -492,6 +492,29 @@ impl Render for SingleEmbeddedHost {
     }
 }
 
+fn wait_for_view_text(
+    visual: &mut VisualTestContext,
+    view: &ScriptViewHandle,
+    expected: &str,
+    context: &str,
+) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    loop {
+        visual.run_until_parked();
+        let root = visual.update(|_, cx| view.root(cx).unwrap().unwrap());
+        let mut texts = Vec::new();
+        node_texts(&root, &mut texts);
+        if texts.iter().any(|text| text == expected) {
+            return;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "{context}; expected {expected:?}, got {texts:?}"
+        );
+        std::thread::yield_now();
+    }
+}
+
 #[gpui::test]
 fn dropdown_pointer_updates_transactional_rhai_caller_state(cx: &mut TestAppContext) {
     cx.update(gpui_rhai::install);
@@ -723,14 +746,9 @@ fn automation_commands_use_mounted_handlers_actions_and_clock(cx: &mut TestAppCo
 }
 
 #[gpui::test]
-fn async_task_and_subscription_deliver_through_the_real_poll_path(cx: &mut TestAppContext) {
-    // Regression guard for the embedded application delivery path. The only
-    // other end-to-end async test drains registries manually and therefore
-    // never exercises poll_async / take_window_async routing; a downstream
-    // host (gpui-rhai-ease, 2026-08-30) observed callbacks silently never
-    // arriving on this path. This test drives the production poll path via
-    // the automation clock: background work completes on real OS threads,
-    // then AdvanceTime polls one frame and the callbacks must land.
+fn async_workers_wake_the_view_without_input_or_manual_poll(cx: &mut TestAppContext) {
+    // This intentionally does not advance either the GPUI timer or the Rhai
+    // runtime clock. Worker completion itself must schedule the owning entity.
     use gpui_rhai::{
         AsyncCapabilityHandler, CapabilityDescriptor, CapabilityId, CapabilityMethod,
         ScriptViewExtension, SubscriptionCapabilityHandler, SubscriptionWork, TaskWork,
@@ -743,33 +761,35 @@ fn async_task_and_subscription_deliver_through_the_real_poll_path(cx: &mut TestA
             let UiValue::String(value) = input else {
                 return Err("load expects a string".to_owned());
             };
-            Ok(Box::new(move || {
-                std::thread::sleep(std::time::Duration::from_millis(10));
-                Ok(UiValue::String(value.to_uppercase()))
+            Ok(Box::new(move || Ok(UiValue::String(value.to_uppercase()))))
+        }
+    }
+
+    struct Ticker {
+        gate: std::sync::Arc<(std::sync::Mutex<u8>, std::sync::Condvar)>,
+    }
+    impl SubscriptionCapabilityHandler for Ticker {
+        fn subscribe(&mut self, _m: &str, _input: UiValue) -> Result<SubscriptionWork, String> {
+            let gate = std::sync::Arc::clone(&self.gate);
+            Ok(SubscriptionWork::new(move |emitter| {
+                for tick in 1..=2 {
+                    let (lock, ready) = &*gate;
+                    let mut released = lock.lock().unwrap();
+                    while *released < tick {
+                        released = ready.wait(released).unwrap();
+                    }
+                    drop(released);
+                    if emitter.emit(UiValue::Integer(i64::from(tick))).is_err() {
+                        break;
+                    }
+                }
             }))
         }
     }
 
-    struct Ticker;
-    impl SubscriptionCapabilityHandler for Ticker {
-        fn subscribe(&mut self, _m: &str, _input: UiValue) -> Result<SubscriptionWork, String> {
-            let (sender, receiver) = std::sync::mpsc::channel();
-            std::thread::Builder::new()
-                .name("async-delivery-test-ticker".to_owned())
-                .spawn(move || {
-                    for tick in 1..=2 {
-                        std::thread::sleep(std::time::Duration::from_millis(10));
-                        if sender.send(UiValue::Integer(tick)).is_err() {
-                            break;
-                        }
-                    }
-                })
-                .map_err(|error| error.to_string())?;
-            Ok(SubscriptionWork::from_receiver(receiver))
-        }
+    struct AsyncExtension {
+        gate: std::sync::Arc<(std::sync::Mutex<u8>, std::sync::Condvar)>,
     }
-
-    struct AsyncExtension;
     impl ScriptViewExtension for AsyncExtension {
         fn configure_runtime(&self, runtime: &mut UiRuntimeState) -> Result<(), String> {
             let delayed = CapabilityId::parse("app.delayed_text").map_err(|e| e.to_string())?;
@@ -805,7 +825,9 @@ fn async_task_and_subscription_deliver_through_the_real_poll_path(cx: &mut TestA
                             },
                         )]),
                     },
-                    Ticker,
+                    Ticker {
+                        gate: std::sync::Arc::clone(&self.gate),
+                    },
                 )
                 .map_err(|e| e.to_string())
         }
@@ -813,7 +835,8 @@ fn async_task_and_subscription_deliver_through_the_real_poll_path(cx: &mut TestA
 
     cx.update(gpui_rhai::install);
     let entry = ModuleId::parse("main").unwrap();
-    let manual = gpui_rhai::ManualRuntimeClock::new(std::time::Instant::now());
+    let helper = ModuleId::parse("helpers/state").unwrap();
+    let gate = std::sync::Arc::new((std::sync::Mutex::new(0), std::sync::Condvar::new()));
     let manifest = gpui_rhai::AppManifest::new(entry.clone())
         .with_capability("app.delayed_text", "*")
         .unwrap()
@@ -821,18 +844,29 @@ fn async_task_and_subscription_deliver_through_the_real_poll_path(cx: &mut TestA
         .unwrap();
     let prepared = EmbeddedScriptView::new(
         entry.clone(),
-        EmbeddedScriptSource::new(std::collections::BTreeMap::from([(
-            entry,
-            r#"
+        EmbeddedScriptSource::new(std::collections::BTreeMap::from([
+            (
+                helper,
+                r#"
+                fn set_message(ctx, value) { ctx.set_state("message", value); }
+                fn set_tick(ctx, value) { ctx.set_state("tick", value); }
+                "#
+                .to_owned(),
+            ),
+            (
+                entry,
+                r#"
+                import "helpers/state" as state;
                 fn state_schema() { #{ fields: #{
                     message: #{ schema: #{ type: "string" },
                         "default": #{ type: "string", value: "waiting" } },
                     tick: #{ schema: #{ type: "integer" },
                         "default": #{ type: "integer", value: 0 } }
                 } } }
-                fn loaded(ctx, value) { ctx.set_state("message", value); }
-                fn ticked(ctx, value) { ctx.set_state("tick", value); }
-                fn failed(ctx, error) { ctx.set_state("message", `error: ${error}`); }
+                fn loaded(ctx, value) { state::set_message(ctx, value); }
+                fn ticked(ctx, value) { state::set_tick(ctx, value); }
+                fn failed(ctx, error) { state::set_message(ctx, `error: ${error}`); }
+                fn clicked(ctx, value) { state::set_message(ctx, value); }
                 fn init(ctx) {
                     ctx.start_task("app.delayed_text", "load", "background ready",
                         Fn("loaded"), Fn("failed"));
@@ -841,18 +875,22 @@ fn async_task_and_subscription_deliver_through_the_real_poll_path(cx: &mut TestA
                 }
                 fn view(ctx) {
                     column([
-                        text(`message: ${ctx.get_state("message")}`),
+                        text(`message: ${ctx.get_state("message")}`)
+                            .test_id("message")
+                            .on_click_value(Fn("clicked"), "clicked through import"),
                         text(`tick: ${ctx.get_state("tick")}`)
                     ])
                 }
-            "#
-            .to_owned(),
-        )])),
+                "#
+                .to_owned(),
+            ),
+        ])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
     .manifest(manifest)
-    .extension(AsyncExtension)
-    .runtime_clock(manual.clock())
+    .extension(AsyncExtension {
+        gate: std::sync::Arc::clone(&gate),
+    })
     .prepare()
     .unwrap();
     let captured = Rc::new(RefCell::new(None));
@@ -877,30 +915,65 @@ fn async_task_and_subscription_deliver_through_the_real_poll_path(cx: &mut TestA
     let view = captured.borrow().as_ref().unwrap().clone();
     let mut visual = VisualTestContext::from_window(*window, cx);
 
-    // Give the real background threads time to push their results into the
-    // registries' mpsc channels, then poll one production frame.
-    std::thread::sleep(std::time::Duration::from_millis(80));
+    let release_tick = |tick: u8| {
+        let (lock, ready) = &*gate;
+        *lock.lock().unwrap() = tick;
+        ready.notify_all();
+    };
+    let wait_for = |visual: &mut VisualTestContext, expected: [&str; 2]| {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        loop {
+            visual.run_until_parked();
+            let root = visual.update(|_, cx| view.root(cx).unwrap().unwrap());
+            let mut texts = Vec::new();
+            node_texts(&root, &mut texts);
+            if expected
+                .iter()
+                .all(|expected| texts.iter().any(|text| text == expected))
+            {
+                return;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "worker completion did not wake the view; expected {expected:?}, got {texts:?}"
+            );
+            std::thread::yield_now();
+        }
+    };
+
+    release_tick(1);
+    wait_for(
+        &mut visual,
+        ["message: BACKGROUND READY", "tick: 1"],
+    );
+    release_tick(2);
+    wait_for(
+        &mut visual,
+        ["message: BACKGROUND READY", "tick: 2"],
+    );
+
     visual
         .update(|window, cx| {
             view.automate(
-                gpui_rhai::AutomationCommand::AdvanceTime { millis: 1 },
+                gpui_rhai::AutomationCommand::Dispatch {
+                    locator: gpui_rhai::AutomationLocator::TestId {
+                        id: "message".to_owned(),
+                    },
+                    event: "click".to_owned(),
+                    payload: None,
+                },
                 window,
                 cx,
             )
         })
         .unwrap();
     visual.run_until_parked();
-
     let root = visual.update(|_, cx| view.root(cx).unwrap().unwrap());
     let mut texts = Vec::new();
     node_texts(&root, &mut texts);
     assert!(
-        texts.contains(&"message: BACKGROUND READY".to_owned()),
-        "async task callback did not deliver through the poll path: {texts:?}"
-    );
-    assert!(
-        texts.contains(&"tick: 2".to_owned()),
-        "subscription callback did not deliver through the poll path: {texts:?}"
+        texts.contains(&"message: clicked through import".to_owned()),
+        "entry-module event callback lost its import context: {texts:?}"
     );
 }
 
@@ -919,10 +992,7 @@ fn effect_restart_still_delivers_async_task_results(cx: &mut TestAppContext) {
     struct Echo;
     impl AsyncCapabilityHandler for Echo {
         fn start(&mut self, _m: &str, input: UiValue) -> Result<TaskWork, String> {
-            Ok(Box::new(move || {
-                std::thread::sleep(std::time::Duration::from_millis(10));
-                Ok(input)
-            }))
+            Ok(Box::new(move || Ok(input)))
         }
     }
 
@@ -952,7 +1022,6 @@ fn effect_restart_still_delivers_async_task_results(cx: &mut TestAppContext) {
     cx.update(gpui_rhai::install);
     let entry = ModuleId::parse("main").unwrap();
     let widget = ModuleId::parse("widgets/loader").unwrap();
-    let manual = gpui_rhai::ManualRuntimeClock::new(std::time::Instant::now());
     let manifest = gpui_rhai::AppManifest::new(entry.clone())
         .with_capability("app.echo", "*")
         .unwrap();
@@ -1013,7 +1082,6 @@ fn effect_restart_still_delivers_async_task_results(cx: &mut TestAppContext) {
     )
     .manifest(manifest)
     .extension(EchoExtension)
-    .runtime_clock(manual.clock())
     .prepare()
     .unwrap();
     let captured = Rc::new(RefCell::new(None));
@@ -1038,24 +1106,11 @@ fn effect_restart_still_delivers_async_task_results(cx: &mut TestAppContext) {
     let view = captured.borrow().as_ref().unwrap().clone();
     let mut visual = VisualTestContext::from_window(*window, cx);
 
-    // First activation delivers.
-    std::thread::sleep(std::time::Duration::from_millis(60));
-    visual
-        .update(|window, cx| {
-            view.automate(
-                gpui_rhai::AutomationCommand::AdvanceTime { millis: 1 },
-                window,
-                cx,
-            )
-        })
-        .unwrap();
-    visual.run_until_parked();
-    let root = visual.update(|_, cx| view.root(cx).unwrap().unwrap());
-    let mut texts = Vec::new();
-    node_texts(&root, &mut texts);
-    assert!(
-        texts.contains(&"got echo:first".to_owned()),
-        "first activation should deliver: {texts:?}"
+    wait_for_view_text(
+        &mut visual,
+        &view,
+        "got echo:first",
+        "first activation should deliver",
     );
 
     // Dependency change restarts the effect; the replacement activation's
@@ -1075,24 +1130,11 @@ fn effect_restart_still_delivers_async_task_results(cx: &mut TestAppContext) {
             )
         })
         .unwrap();
-    visual.run_until_parked();
-    std::thread::sleep(std::time::Duration::from_millis(60));
-    visual
-        .update(|window, cx| {
-            view.automate(
-                gpui_rhai::AutomationCommand::AdvanceTime { millis: 1 },
-                window,
-                cx,
-            )
-        })
-        .unwrap();
-    visual.run_until_parked();
-    let root = visual.update(|_, cx| view.root(cx).unwrap().unwrap());
-    let mut texts = Vec::new();
-    node_texts(&root, &mut texts);
-    assert!(
-        texts.contains(&"got echo:second".to_owned()),
-        "replacement activation should deliver: {texts:?}"
+    wait_for_view_text(
+        &mut visual,
+        &view,
+        "got echo:second",
+        "replacement activation should deliver",
     );
 }
 
@@ -1110,10 +1152,7 @@ fn effect_start_state_write_restarts_sibling_effect_and_delivers(cx: &mut TestAp
     struct Echo;
     impl AsyncCapabilityHandler for Echo {
         fn start(&mut self, _m: &str, input: UiValue) -> Result<TaskWork, String> {
-            Ok(Box::new(move || {
-                std::thread::sleep(std::time::Duration::from_millis(10));
-                Ok(input)
-            }))
+            Ok(Box::new(move || Ok(input)))
         }
     }
     struct EchoExtension;
@@ -1142,7 +1181,6 @@ fn effect_start_state_write_restarts_sibling_effect_and_delivers(cx: &mut TestAp
     cx.update(gpui_rhai::install);
     let entry = ModuleId::parse("main").unwrap();
     let widget = ModuleId::parse("widgets/nested").unwrap();
-    let manual = gpui_rhai::ManualRuntimeClock::new(std::time::Instant::now());
     let manifest = gpui_rhai::AppManifest::new(entry.clone())
         .with_capability("app.echo", "*")
         .unwrap();
@@ -1204,7 +1242,6 @@ fn effect_start_state_write_restarts_sibling_effect_and_delivers(cx: &mut TestAp
     )
     .manifest(manifest)
     .extension(EchoExtension)
-    .runtime_clock(manual.clock())
     .prepare()
     .unwrap();
     let captured = Rc::new(RefCell::new(None));
@@ -1228,27 +1265,11 @@ fn effect_start_state_write_restarts_sibling_effect_and_delivers(cx: &mut TestAp
 
     let view = captured.borrow().as_ref().unwrap().clone();
     let mut visual = VisualTestContext::from_window(*window, cx);
-    // Poll a few frames: the state write happens in watch's start, the load
-    // restart happens on the following frame, the task 10ms later.
-    for _ in 0..5 {
-        std::thread::sleep(std::time::Duration::from_millis(30));
-        visual
-            .update(|window, cx| {
-                view.automate(
-                    gpui_rhai::AutomationCommand::AdvanceTime { millis: 1 },
-                    window,
-                    cx,
-                )
-            })
-            .unwrap();
-        visual.run_until_parked();
-    }
-    let root = visual.update(|_, cx| view.root(cx).unwrap().unwrap());
-    let mut texts = Vec::new();
-    node_texts(&root, &mut texts);
-    assert!(
-        texts.contains(&"got echo:selected".to_owned()),
-        "task started by a sibling-restarted effect must deliver: {texts:?}"
+    wait_for_view_text(
+        &mut visual,
+        &view,
+        "got echo:selected",
+        "task started by a sibling-restarted effect must deliver",
     );
 }
 
@@ -1266,24 +1287,15 @@ fn subscription_callback_state_write_restarts_effect_and_delivers(cx: &mut TestA
     struct Echo;
     impl AsyncCapabilityHandler for Echo {
         fn start(&mut self, _m: &str, input: UiValue) -> Result<TaskWork, String> {
-            Ok(Box::new(move || {
-                std::thread::sleep(std::time::Duration::from_millis(10));
-                Ok(input)
-            }))
+            Ok(Box::new(move || Ok(input)))
         }
     }
     struct Push;
     impl SubscriptionCapabilityHandler for Push {
         fn subscribe(&mut self, _m: &str, _input: UiValue) -> Result<SubscriptionWork, String> {
-            let (sender, receiver) = std::sync::mpsc::channel();
-            std::thread::Builder::new()
-                .name("push-once".to_owned())
-                .spawn(move || {
-                    std::thread::sleep(std::time::Duration::from_millis(20));
-                    let _ = sender.send(UiValue::String("selected".to_owned()));
-                })
-                .map_err(|error| error.to_string())?;
-            Ok(SubscriptionWork::from_receiver(receiver))
+            Ok(SubscriptionWork::new(|emitter| {
+                let _ = emitter.emit(UiValue::String("selected".to_owned()));
+            }))
         }
     }
     struct Extension;
@@ -1329,7 +1341,6 @@ fn subscription_callback_state_write_restarts_effect_and_delivers(cx: &mut TestA
     cx.update(gpui_rhai::install);
     let entry = ModuleId::parse("main").unwrap();
     let widget = ModuleId::parse("widgets/watcher").unwrap();
-    let manual = gpui_rhai::ManualRuntimeClock::new(std::time::Instant::now());
     let manifest = gpui_rhai::AppManifest::new(entry.clone())
         .with_capability("app.echo", "*")
         .unwrap()
@@ -1394,7 +1405,6 @@ fn subscription_callback_state_write_restarts_effect_and_delivers(cx: &mut TestA
     )
     .manifest(manifest)
     .extension(Extension)
-    .runtime_clock(manual.clock())
     .prepare()
     .unwrap();
     let captured = Rc::new(RefCell::new(None));
@@ -1418,25 +1428,11 @@ fn subscription_callback_state_write_restarts_effect_and_delivers(cx: &mut TestA
 
     let view = captured.borrow().as_ref().unwrap().clone();
     let mut visual = VisualTestContext::from_window(*window, cx);
-    for _ in 0..6 {
-        std::thread::sleep(std::time::Duration::from_millis(30));
-        visual
-            .update(|window, cx| {
-                view.automate(
-                    gpui_rhai::AutomationCommand::AdvanceTime { millis: 1 },
-                    window,
-                    cx,
-                )
-            })
-            .unwrap();
-        visual.run_until_parked();
-    }
-    let root = visual.update(|_, cx| view.root(cx).unwrap().unwrap());
-    let mut texts = Vec::new();
-    node_texts(&root, &mut texts);
-    assert!(
-        texts.contains(&"got echo:selected".to_owned()),
-        "task from a subscription-triggered effect restart must deliver: {texts:?}"
+    wait_for_view_text(
+        &mut visual,
+        &view,
+        "got echo:selected",
+        "task from a subscription-triggered effect restart must deliver",
     );
 }
 
@@ -2362,7 +2358,7 @@ fn separate_hosts_in_one_window_keep_overlay_domains_isolated(cx: &mut TestAppCo
 }
 
 #[gpui::test]
-fn selectable_text_drag_copies_selection_to_clipboard(cx: &mut TestAppContext) {
+fn selectable_text_uses_native_selection_and_copy_semantics(cx: &mut TestAppContext) {
     cx.update(gpui_rhai::install);
     let entry = ModuleId::parse("main").unwrap();
     let prepared = EmbeddedScriptView::new(
@@ -2370,14 +2366,22 @@ fn selectable_text_drag_copies_selection_to_clipboard(cx: &mut TestAppContext) {
         EmbeddedScriptSource::new(std::collections::BTreeMap::from([(
             entry,
             r#"
+                fn state_schema() { #{ fields: #{
+                    clicks: #{ schema: #{ type: "integer" },
+                        "default": #{ type: "integer", value: 0 } }
+                } } }
+                fn parent_clicked(ctx, payload) {
+                    ctx.set_state("clicks", ctx.get_state("clicks") + 1);
+                }
                 fn view(ctx) {
                     column([
-                        text("Copy this error text").selectable(true)
+                        text("Copy this 错误\nsecond line").selectable(true)
                             .with_key("err")
                             .test_id("err")
                             .accessibility_role("document")
-                            .accessibility_label("error text")
-                    ])
+                            .accessibility_label("error text"),
+                        text(`clicks: ${ctx.get_state("clicks")}`)
+                    ]).on_click(Fn("parent_clicked"))
                 }
             "#
             .to_owned(),
@@ -2427,9 +2431,9 @@ fn selectable_text_drag_copies_selection_to_clipboard(cx: &mut TestAppContext) {
     };
     let bounds = node.bounds.expect("selectable text has committed bounds");
 
-    // Drag across the whole node: down at the top-left corner of the glyphs,
-    // move past the bottom-right corner (indices clamp to the text length),
-    // release. The selected slice must land in the clipboard on mouse up.
+    cx.write_to_clipboard(gpui::ClipboardItem::new_string("sentinel".to_owned()));
+    // Selection itself must not mutate the clipboard or trigger the clickable
+    // ancestor. Copy remains a separate, focus-routed platform action.
     let start = point(px((bounds.x + 2.0) as f32), px((bounds.y + 2.0) as f32));
     let end = point(
         px((bounds.x + bounds.width - 1.0) as f32),
@@ -2444,6 +2448,106 @@ fn selectable_text_drag_copies_selection_to_clipboard(cx: &mut TestAppContext) {
 
     assert_eq!(
         cx.read_from_clipboard().and_then(|item| item.text()),
-        Some("Copy this error text".to_owned())
+        Some("sentinel".to_owned())
+    );
+    let root = visual.update(|_, cx| view.root(cx).unwrap().unwrap());
+    let mut texts = Vec::new();
+    node_texts(&root, &mut texts);
+    assert!(texts.contains(&"clicks: 0".to_owned()), "{texts:?}");
+
+    cx.simulate_keystrokes(*window, "cmd-c");
+    cx.run_until_parked();
+    assert_eq!(
+        cx.read_from_clipboard().and_then(|item| item.text()),
+        Some("Copy this 错误\nsecond line".to_owned())
+    );
+}
+
+#[gpui::test]
+fn virtual_collection_fill_height_uses_the_resolved_flex_viewport(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let entry = ModuleId::parse("main").unwrap();
+    let prepared = EmbeddedScriptView::new(
+        entry.clone(),
+        EmbeddedScriptSource::new(std::collections::BTreeMap::from([(
+            entry,
+            r#"
+                fn render_item(ctx, item) {
+                    text(item.item.label).with_style(style().height(px(24)))
+                }
+                fn view(ctx) {
+                    let data = [];
+                    for index in 0..40 {
+                        data.push(#{ key: `row-${index}`, label: `Row ${index}` });
+                    }
+                    column([
+                        text("Header").with_style(style().height(px(40))),
+                        virtual_collection(#{
+                            key: "fill", label: "Fill list", data: data,
+                            estimated_height: 24, fill_height: true,
+                            overdraw_pixels: 48, alignment: "top", follow_tail: false
+                        }, Fn("render_item"))
+                            .test_id("fill-list")
+                            .accessibility_role("list")
+                            .accessibility_label("Fill list")
+                    ]).with_style(style().width(px(320)).height(px(240)))
+                }
+            "#
+            .to_owned(),
+        )])),
+        include_str!("../../../registry/themes/default_dark.rhai"),
+    )
+    .prepare()
+    .unwrap();
+    let captured = Rc::new(RefCell::new(None));
+    let captured_for_window = Rc::clone(&captured);
+    let window = cx.add_window(move |window, cx| {
+        let host = ScriptViewHost::new("fill-list-window", cx).unwrap();
+        let view = prepared
+            .mount(
+                ScriptViewConfig::new("fill-list-view"),
+                host.clone(),
+                window,
+                cx,
+            )
+            .unwrap();
+        *captured_for_window.borrow_mut() = Some(view.clone());
+        SingleEmbeddedHost { host, view }
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    cx.run_until_parked();
+
+    let view = captured.borrow().as_ref().unwrap().clone();
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    visual.run_until_parked();
+    cx.background_executor
+        .advance_clock(std::time::Duration::from_millis(16));
+    wait_for_view_text(
+        &mut visual,
+        &view,
+        "Row 8",
+        "measured fill viewport should request and realize its visible window",
+    );
+    let result = visual
+        .update(|window, cx| {
+            view.automate(
+                gpui_rhai::AutomationCommand::Query {
+                    locator: gpui_rhai::AutomationLocator::TestId {
+                        id: "fill-list".to_owned(),
+                    },
+                },
+                window,
+                cx,
+            )
+        })
+        .unwrap();
+    let gpui_rhai::AutomationResult::Node { node } = result else {
+        panic!("expected virtual collection node");
+    };
+    let bounds = node.bounds.expect("fill list has committed bounds");
+    assert!(
+        (190.0..=205.0).contains(&bounds.height),
+        "fill viewport should consume 240px parent minus 40px header, got {bounds:?}"
     );
 }

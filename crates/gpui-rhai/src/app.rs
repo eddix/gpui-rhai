@@ -6,15 +6,13 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::Duration;
 
-#[cfg(feature = "dev-reload")]
 use gpui::KeyBinding;
-#[cfg(feature = "dev-reload")]
 use gpui::actions;
 use gpui::{
     AnyElement, AnyWindowHandle, App, AppContext, Application, Bounds, Context, DispatchPhase,
     Element, ElementId, Entity, FocusHandle, Global, GlobalElementId, InspectorElementId,
-    InteractiveElement, IntoElement, LayoutId, MouseDownEvent, ParentElement, Pixels, Render,
-    ScrollAnchor, ScrollHandle, SharedString, Styled, Task, Timer, TitlebarOptions, Window,
+    InteractiveElement, IntoElement, LayoutId, MouseButton, MouseDownEvent, ParentElement, Pixels,
+    Render, ScrollAnchor, ScrollHandle, SharedString, Styled, Task, Timer, TitlebarOptions, Window,
     WindowAppearance, WindowBounds, WindowOptions, deferred, div, px, rgba, size,
 };
 use thiserror::Error;
@@ -37,6 +35,7 @@ use crate::{
 
 #[cfg(feature = "dev-reload")]
 actions!(gpui_rhai_devtools, [ToggleInspector]);
+actions!(gpui_rhai_host, [CopySelectedText]);
 
 const HOST_KEY_CONTEXT: &str = "GPUIRhaiHost";
 
@@ -55,6 +54,11 @@ pub fn install(cx: &mut App) {
     }
     init_text_input(cx);
     init_text_area(cx);
+    cx.bind_keys([KeyBinding::new(
+        "cmd-c",
+        CopySelectedText,
+        Some(HOST_KEY_CONTEXT),
+    )]);
     cx.set_global(ScriptRuntimeInstallation::default());
 }
 
@@ -1829,7 +1833,7 @@ impl PreparedScriptView {
         let view_id = config.view_id.clone();
         let view_host = host.clone();
         let entity = cx.new(|entity_cx| {
-            let async_task = spawn_host_poll(entity_cx);
+            let runtime_tasks = spawn_host_runtime_tasks(entity_cx, &lifecycle);
             let host_focus = entity_cx.focus_handle();
             #[cfg(feature = "dev-reload")]
             let reload_task = watcher.as_ref().map(|_| spawn_host_reload_poll(entity_cx));
@@ -1856,8 +1860,9 @@ impl PreparedScriptView {
                 focus_handles: BTreeMap::new(),
                 scroll_handles: BTreeMap::new(),
                 scroll_anchors: BTreeMap::new(),
+                text_selection: crate::renderer::TextSelectionRegistry::default(),
                 disposed: false,
-                _async_task: async_task,
+                _runtime_tasks: runtime_tasks,
                 #[cfg(feature = "dev-reload")]
                 module_cache: self.module_cache,
                 #[cfg(feature = "dev-reload")]
@@ -1884,9 +1889,13 @@ impl PreparedScriptView {
     }
 }
 
+type WindowOptionsConfigurator =
+    Box<dyn FnOnce(WindowOptions, &mut App) -> WindowOptions + 'static>;
+
 pub struct ScriptApplication {
     prepared: PreparedScriptView,
     window_size: (f32, f32),
+    window_options: Option<WindowOptionsConfigurator>,
 }
 
 impl ScriptApplication {
@@ -1895,12 +1904,24 @@ impl ScriptApplication {
         Self {
             prepared,
             window_size: (720.0, 480.0),
+            window_options: None,
         }
     }
 
     #[must_use]
     pub const fn window_size(mut self, width: f32, height: f32) -> Self {
         self.window_size = (width, height);
+        self
+    }
+
+    /// Configure the trusted standalone window without exposing native window
+    /// authority to Rhai. The callback receives the centered default options.
+    #[must_use]
+    pub fn window_options(
+        mut self,
+        configure: impl FnOnce(WindowOptions, &mut App) -> WindowOptions + 'static,
+    ) -> Self {
+        self.window_options = Some(Box::new(configure));
         self
     }
 
@@ -1914,6 +1935,7 @@ impl ScriptApplication {
         let reported_error = Rc::clone(&error);
         let native_windows = Rc::new(RefCell::new(NativeWindowRegistry::default()));
         let window_size = self.window_size;
+        let window_options = self.window_options;
         let prepared = self.prepared;
         Application::new().run(move |cx: &mut App| {
             install(cx);
@@ -1939,7 +1961,7 @@ impl ScriptApplication {
                 KeyBinding::new("cmd-alt-i", ToggleInspector, Some(HOST_KEY_CONTEXT)),
                 KeyBinding::new("f12", ToggleInspector, Some(HOST_KEY_CONTEXT)),
             ]);
-            let bounds = Bounds::centered(None, size(px(window_size.0), px(window_size.1)), cx);
+            let window_options = standalone_window_options(window_size, window_options, cx);
             cx.on_window_closed(|cx| {
                 if cx.windows().is_empty() {
                     cx.quit();
@@ -1948,49 +1970,43 @@ impl ScriptApplication {
             .detach();
             let view_native_windows = Rc::clone(&native_windows);
             let mount_error = Rc::clone(&reported_error);
-            let result = cx.open_window(
-                WindowOptions {
-                    window_bounds: Some(WindowBounds::Windowed(bounds)),
-                    ..WindowOptions::default()
-                },
-                move |window, cx| {
-                    let root = cx.new(|_| ScriptApplicationRoot {
-                        host: host.clone(),
-                        view: None,
-                        error: None,
-                    });
-                    let weak_root = root.downgrade();
-                    window.defer(cx, move |window, cx| {
-                        let view = prepared.mount_with_registry(
-                            ScriptViewConfig::new("main").paint_background(true),
-                            host,
-                            Rc::clone(&view_native_windows),
-                            window,
-                            cx,
-                        );
-                        match view {
-                            Ok(view) => {
-                                let _ = view.focus(window, cx);
-                                install_close_interceptor(window, cx, &view.0.entity);
-                                let _ = weak_root.update(cx, |root, cx| {
-                                    root.view = Some(view);
-                                    cx.notify();
-                                });
-                            }
-                            Err(error) => {
-                                let message = error.to_string();
-                                *mount_error.borrow_mut() = Some(message.clone());
-                                let _ = weak_root.update(cx, |root, cx| {
-                                    root.error = Some(message);
-                                    cx.notify();
-                                });
-                                cx.defer(|cx| cx.quit());
-                            }
+            let result = cx.open_window(window_options, move |window, cx| {
+                let root = cx.new(|_| ScriptApplicationRoot {
+                    host: host.clone(),
+                    view: None,
+                    error: None,
+                });
+                let weak_root = root.downgrade();
+                window.defer(cx, move |window, cx| {
+                    let view = prepared.mount_with_registry(
+                        ScriptViewConfig::new("main").paint_background(true),
+                        host,
+                        Rc::clone(&view_native_windows),
+                        window,
+                        cx,
+                    );
+                    match view {
+                        Ok(view) => {
+                            let _ = view.focus(window, cx);
+                            install_close_interceptor(window, cx, &view.0.entity);
+                            let _ = weak_root.update(cx, |root, cx| {
+                                root.view = Some(view);
+                                cx.notify();
+                            });
                         }
-                    });
-                    root
-                },
-            );
+                        Err(error) => {
+                            let message = error.to_string();
+                            *mount_error.borrow_mut() = Some(message.clone());
+                            let _ = weak_root.update(cx, |root, cx| {
+                                root.error = Some(message);
+                                cx.notify();
+                            });
+                            cx.defer(|cx| cx.quit());
+                        }
+                    }
+                });
+                root
+            });
             match result {
                 Ok(handle) => {
                     native_windows
@@ -2009,6 +2025,22 @@ impl ScriptApplication {
             Some(message) => Err(ScriptViewError::Window(message)),
             None => Ok(()),
         }
+    }
+}
+
+fn standalone_window_options(
+    window_size: (f32, f32),
+    configure: Option<WindowOptionsConfigurator>,
+    cx: &mut App,
+) -> WindowOptions {
+    let bounds = Bounds::centered(None, size(px(window_size.0), px(window_size.1)), cx);
+    let options = WindowOptions {
+        window_bounds: Some(WindowBounds::Windowed(bounds)),
+        ..WindowOptions::default()
+    };
+    match configure {
+        Some(configure) => configure(options, cx),
+        None => options,
     }
 }
 
@@ -2073,7 +2105,7 @@ fn open_secondary_window(
     let view_host = host.clone();
     let result = cx.open_window(options, move |window, cx| {
         let entity = cx.new(|entity_cx| {
-            let async_task = spawn_host_poll(entity_cx);
+            let runtime_tasks = spawn_host_runtime_tasks(entity_cx, &lifecycle);
             let host_focus = entity_cx.focus_handle();
             ScriptHostView {
                 view_id: view_window_id.clone(),
@@ -2098,8 +2130,9 @@ fn open_secondary_window(
                 focus_handles: BTreeMap::new(),
                 scroll_handles: BTreeMap::new(),
                 scroll_anchors: BTreeMap::new(),
+                text_selection: crate::renderer::TextSelectionRegistry::default(),
                 disposed: false,
-                _async_task: async_task,
+                _runtime_tasks: runtime_tasks,
                 #[cfg(feature = "dev-reload")]
                 module_cache: ModuleCompileCache::new(),
                 #[cfg(feature = "dev-reload")]
@@ -2182,13 +2215,54 @@ fn install_close_interceptor(window: &Window, cx: &App, entity: &gpui::Entity<Sc
     });
 }
 
-fn spawn_host_poll(cx: &mut Context<ScriptHostView>) -> Task<()> {
+struct HostRuntimeTasks {
+    _frame_poll: Task<()>,
+    _task_delivery: Task<()>,
+    _subscription_delivery: Task<()>,
+}
+
+fn spawn_host_runtime_tasks(
+    cx: &mut Context<ScriptHostView>,
+    lifecycle: &ScriptLifecycle,
+) -> HostRuntimeTasks {
+    let (task_wake, subscription_wake) = {
+        let runtime = lifecycle.runtime();
+        let runtime = runtime.borrow();
+        (runtime.tasks.wake(), runtime.subscriptions.wake())
+    };
+    HostRuntimeTasks {
+        _frame_poll: spawn_host_frame_poll(cx),
+        _task_delivery: spawn_host_delivery_pump(cx, task_wake),
+        _subscription_delivery: spawn_host_delivery_pump(cx, subscription_wake),
+    }
+}
+
+fn spawn_host_frame_poll(cx: &mut Context<ScriptHostView>) -> Task<()> {
     cx.spawn(async move |entity: gpui::WeakEntity<ScriptHostView>, cx| {
         loop {
             Timer::after(Duration::from_millis(16)).await;
             if entity.update(cx, ScriptHostView::poll_async).is_err() {
                 break;
             }
+        }
+    })
+}
+
+fn spawn_host_delivery_pump(
+    cx: &mut Context<ScriptHostView>,
+    wake: crate::async_runtime::AsyncWake,
+) -> Task<()> {
+    // Register before the entity becomes externally visible. The first drain
+    // catches work that completed during lifecycle initialization; thereafter
+    // the listener closes the send/drain race without fixed-rate polling.
+    let mut listener = wake.listen();
+    cx.spawn(async move |entity: gpui::WeakEntity<ScriptHostView>, cx| {
+        loop {
+            if entity.update(cx, ScriptHostView::poll_async).is_err() {
+                break;
+            }
+            listener.await;
+            listener = wake.listen();
         }
     })
 }
@@ -2261,8 +2335,9 @@ struct ScriptHostView {
     focus_handles: BTreeMap<crate::NodeId, FocusHandle>,
     scroll_handles: BTreeMap<crate::NodeId, ScrollHandle>,
     scroll_anchors: BTreeMap<crate::NodeId, ScrollAnchor>,
+    text_selection: crate::renderer::TextSelectionRegistry,
     disposed: bool,
-    _async_task: Task<()>,
+    _runtime_tasks: HostRuntimeTasks,
     #[cfg(feature = "dev-reload")]
     module_cache: ModuleCompileCache,
     #[cfg(feature = "dev-reload")]
@@ -2389,6 +2464,8 @@ impl Render for ScriptHostView {
             scroll_handles: &self.scroll_handles,
             scroll_anchors: &self.scroll_anchors,
             virtual_requests: &snapshot.virtual_requests,
+            text_selection: &self.text_selection,
+            host_focus: Some(&self.host_focus),
             direction: snapshot.direction,
             root_path: &animation_root,
             view_id: &self.view_id,
@@ -2428,7 +2505,13 @@ impl Render for ScriptHostView {
         let runtime = self.lifecycle.runtime();
         #[cfg(feature = "dev-reload")]
         let inspector = self.inspector_element(&runtime, &snapshot.theme);
+        let text_selection = self.text_selection.clone();
         let root = build_host_root(&self.host_focus, &snapshot.theme, self.paint_background)
+            .on_mouse_down(MouseButton::Left, move |event, window, _| {
+                if text_selection.clear_outside(event.position) {
+                    window.refresh();
+                }
+            })
             .child(content)
             .children({
                 #[cfg(feature = "dev-reload")]
@@ -2441,7 +2524,9 @@ impl Render for ScriptHostView {
                 }
             });
         let root = apply_root_text_direction(root, snapshot.direction);
-        let root = root.on_action(cx.listener(Self::dispatch_key_binding));
+        let root = root
+            .on_action(cx.listener(Self::dispatch_key_binding))
+            .on_action(cx.listener(Self::copy_selected_text));
         #[cfg(feature = "dev-reload")]
         let root = root.on_action(cx.listener(Self::toggle_inspector));
         crate::renderer::pointer_capture_router_element(
@@ -2601,6 +2686,7 @@ impl ScriptHostView {
 
     fn prepare_host_render(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.prepare_render(window);
+        self.text_selection.retain(self.lifecycle.retained());
         self.sync_focus_handles(cx);
         self.process_element_commands(window, cx);
     }
@@ -2780,6 +2866,13 @@ impl ScriptHostView {
                 self.last_error = Some(error.to_string());
                 cx.notify();
             }
+        }
+    }
+
+    fn copy_selected_text(&mut self, _: &CopySelectedText, _: &mut Window, cx: &mut Context<Self>) {
+        if let Some(text) = self.text_selection.selected_text() {
+            cx.write_to_clipboard(gpui::ClipboardItem::new_string(text));
+            cx.stop_propagation();
         }
     }
 

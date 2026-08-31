@@ -1086,102 +1086,117 @@ impl CustomType for UiNode {
         register_value_event_methods(&mut builder);
         register_raw_event_methods(&mut builder);
         register_semantic_event_methods(&mut builder);
-        builder
-            .with_fn("animate", |node: &mut Self, animation: AnimationSpec| {
-                node.clone().with_animation(animation)
-            })
-            .with_fn("disabled", |node: &mut Self, disabled: bool| {
-                node.clone()
-                    .with_attribute("disabled", UiValue::Bool(disabled))
-            })
-            .with_fn("tab_stop", |node: &mut Self, tab_stop: bool| {
-                node.clone()
-                    .with_attribute("tab_stop", UiValue::Bool(tab_stop))
-            })
-            // Text nodes only: enable drag selection. Dragging highlights a
-            // range and releasing copies it to the system clipboard.
-            .with_fn("selectable", |node: &mut Self, selectable: bool| {
-                node.clone()
-                    .with_attribute("selectable", UiValue::Bool(selectable))
-            })
-            .with_fn(
-                "tab_index",
-                |node: &mut Self, index: INT| -> Result<Self, Box<EvalAltResult>> {
-                    if !(-32_768..=32_767).contains(&index) {
-                        return Err(Box::new(EvalAltResult::ErrorRuntime(
-                            "tab index must be between -32768 and 32767".into(),
-                            Position::NONE,
-                        )));
-                    }
-                    Ok(node
-                        .clone()
-                        .with_attribute("tab_index", UiValue::Integer(index)))
-                },
-            )
-            .with_fn("tab_group", |node: &mut Self| {
-                node.clone()
-                    .with_attribute("tab_group", UiValue::Bool(true))
-            })
-            .with_fn(
-                "on_key_value",
-                |node: &mut Self,
-                 key: ImmutableString,
-                 callback: FnPtr,
-                 payload: Dynamic|
-                 -> Result<Self, Box<EvalAltResult>> {
-                    let key = key.trim().to_ascii_lowercase();
-                    if key.is_empty()
-                        || !key
-                            .chars()
-                            .all(|character| character.is_ascii_alphanumeric() || character == '_')
-                    {
-                        return Err(Box::new(EvalAltResult::ErrorRuntime(
-                            "key handler name must be a non-empty key identifier".into(),
-                            Position::NONE,
-                        )));
-                    }
-                    let payload = UiValue::from_dynamic(payload).map_err(|error| {
-                        Box::new(EvalAltResult::ErrorRuntime(
-                            error.to_string().into(),
-                            Position::NONE,
-                        ))
-                    })?;
-                    let event = format!("key:{key}");
-                    Ok(node
-                        .clone()
-                        .with_handler(event.clone(), retained_script_callback(callback)?)
-                        .with_handler_payload(event, payload))
-                },
-            );
+        register_node_behavior_methods(&mut builder);
         register_accessibility_methods(&mut builder);
     }
+}
+
+fn register_node_behavior_methods(builder: &mut TypeBuilder<UiNode>) {
+    builder
+        .with_fn("animate", |node: &mut UiNode, animation: AnimationSpec| {
+            node.clone().with_animation(animation)
+        })
+        .with_fn("disabled", |node: &mut UiNode, disabled: bool| {
+            node.clone()
+                .with_attribute("disabled", UiValue::Bool(disabled))
+        })
+        .with_fn("tab_stop", |node: &mut UiNode, tab_stop: bool| {
+            node.clone()
+                .with_attribute("tab_stop", UiValue::Bool(tab_stop))
+        })
+        .with_fn(
+            "selectable",
+            |node: &mut UiNode, selectable: bool| -> Result<UiNode, Box<EvalAltResult>> {
+                if selectable && !matches!(node.kind(), UiNodeKind::Text { .. }) {
+                    return Err(Box::new(EvalAltResult::ErrorRuntime(
+                        "selectable(true) is supported only on text() nodes".into(),
+                        Position::NONE,
+                    )));
+                }
+                Ok(node
+                    .clone()
+                    .with_attribute("selectable", UiValue::Bool(selectable)))
+            },
+        )
+        .with_fn(
+            "tab_index",
+            |node: &mut UiNode, index: INT| -> Result<UiNode, Box<EvalAltResult>> {
+                if !(-32_768..=32_767).contains(&index) {
+                    return Err(Box::new(EvalAltResult::ErrorRuntime(
+                        "tab index must be between -32768 and 32767".into(),
+                        Position::NONE,
+                    )));
+                }
+                Ok(node
+                    .clone()
+                    .with_attribute("tab_index", UiValue::Integer(index)))
+            },
+        )
+        .with_fn("tab_group", |node: &mut UiNode| {
+            node.clone()
+                .with_attribute("tab_group", UiValue::Bool(true))
+        })
+        .with_fn(
+            "on_key_value",
+            |call: NativeCallContext<'_>,
+             node: &mut UiNode,
+             key: ImmutableString,
+             callback: FnPtr,
+             payload: Dynamic|
+             -> Result<UiNode, Box<EvalAltResult>> {
+                let key = key.trim().to_ascii_lowercase();
+                if key.is_empty()
+                    || !key
+                        .chars()
+                        .all(|character| character.is_ascii_alphanumeric() || character == '_')
+                {
+                    return Err(Box::new(EvalAltResult::ErrorRuntime(
+                        "key handler name must be a non-empty key identifier".into(),
+                        Position::NONE,
+                    )));
+                }
+                let payload = UiValue::from_dynamic(payload).map_err(|error| {
+                    Box::new(EvalAltResult::ErrorRuntime(
+                        error.to_string().into(),
+                        Position::NONE,
+                    ))
+                })?;
+                let event = format!("key:{key}");
+                Ok(node
+                    .clone()
+                    .with_handler(event.clone(), retained_script_callback(&call, callback)?)
+                    .with_handler_payload(event, payload))
+            },
+        );
 }
 
 fn register_value_event_methods(builder: &mut TypeBuilder<UiNode>) {
     builder
         .with_fn(
             "on_click_value",
-            |node: &mut UiNode,
+            |call: NativeCallContext<'_>,
+             node: &mut UiNode,
              callback: FnPtr,
              payload: Dynamic|
              -> Result<UiNode, Box<EvalAltResult>> {
                 let payload = dynamic_ui_value(payload)?;
                 Ok(node
                     .clone()
-                    .with_handler("click", retained_script_callback(callback)?)
+                    .with_handler("click", retained_script_callback(&call, callback)?)
                     .with_handler_payload("click", payload))
             },
         )
         .with_fn(
             "on_hover_value",
-            |node: &mut UiNode,
+            |call: NativeCallContext<'_>,
+             node: &mut UiNode,
              callback: FnPtr,
              payload: Dynamic|
              -> Result<UiNode, Box<EvalAltResult>> {
                 let payload = dynamic_ui_value(payload)?;
                 Ok(node
                     .clone()
-                    .with_handler("hover_change", retained_script_callback(callback)?)
+                    .with_handler("hover_change", retained_script_callback(&call, callback)?)
                     .with_handler_payload("hover_change", payload))
             },
         );
@@ -1191,27 +1206,33 @@ fn register_raw_event_methods(builder: &mut TypeBuilder<UiNode>) {
     builder
         .with_fn(
             "on_click",
-            |node: &mut UiNode, callback: FnPtr| -> Result<UiNode, Box<EvalAltResult>> {
+            |call: NativeCallContext<'_>,
+             node: &mut UiNode,
+             callback: FnPtr|
+             -> Result<UiNode, Box<EvalAltResult>> {
                 Ok(node
                     .clone()
-                    .with_handler("click", retained_script_callback(callback)?))
+                    .with_handler("click", retained_script_callback(&call, callback)?))
             },
         )
         .with_fn(
             "on",
-            |node: &mut UiNode,
+            |call: NativeCallContext<'_>,
+             node: &mut UiNode,
              event: ImmutableString,
              callback: FnPtr|
              -> Result<UiNode, Box<EvalAltResult>> {
                 validate_node_event_name(event.as_str())?;
-                Ok(node
-                    .clone()
-                    .with_handler(event.to_string(), retained_script_callback(callback)?))
+                Ok(node.clone().with_handler(
+                    event.to_string(),
+                    retained_script_callback(&call, callback)?,
+                ))
             },
         )
         .with_fn(
             "on_capture",
-            |node: &mut UiNode,
+            |call: NativeCallContext<'_>,
+             node: &mut UiNode,
              event: ImmutableString,
              callback: FnPtr|
              -> Result<UiNode, Box<EvalAltResult>> {
@@ -1219,13 +1240,14 @@ fn register_raw_event_methods(builder: &mut TypeBuilder<UiNode>) {
                 Ok(node.clone().with_handler_phase(
                     event.to_string(),
                     crate::EventPhase::Capture,
-                    retained_script_callback(callback)?,
+                    retained_script_callback(&call, callback)?,
                 ))
             },
         )
         .with_fn(
             "on_bubble",
-            |node: &mut UiNode,
+            |call: NativeCallContext<'_>,
+             node: &mut UiNode,
              event: ImmutableString,
              callback: FnPtr|
              -> Result<UiNode, Box<EvalAltResult>> {
@@ -1233,7 +1255,7 @@ fn register_raw_event_methods(builder: &mut TypeBuilder<UiNode>) {
                 Ok(node.clone().with_handler_phase(
                     event.to_string(),
                     crate::EventPhase::Bubble,
-                    retained_script_callback(callback)?,
+                    retained_script_callback(&call, callback)?,
                 ))
             },
         );
@@ -1327,25 +1349,40 @@ fn register_semantic_event_methods(builder: &mut TypeBuilder<UiNode>) {
         let event = event.to_owned();
         builder.with_fn(
             method,
-            move |node: &mut UiNode, callback: FnPtr| -> Result<UiNode, Box<EvalAltResult>> {
+            move |call: NativeCallContext<'_>,
+                  node: &mut UiNode,
+                  callback: FnPtr|
+                  -> Result<UiNode, Box<EvalAltResult>> {
                 Ok(node
                     .clone()
-                    .with_handler(event.clone(), retained_script_callback(callback)?))
+                    .with_handler(event.clone(), retained_script_callback(&call, callback)?))
             },
         );
     }
 }
 
-fn retained_script_callback(callback: FnPtr) -> Result<ScriptCallback, Box<EvalAltResult>> {
-    ScriptCallback::try_from_fn_ptr(callback, ScriptGeneration::default()).map_err(|error| {
-        Box::new(EvalAltResult::ErrorRuntime(
-            error.to_string().into(),
-            Position::NONE,
-        ))
-    })
+fn retained_script_callback(
+    call: &NativeCallContext<'_>,
+    callback: FnPtr,
+) -> Result<ScriptCallback, Box<EvalAltResult>> {
+    let mut callback = ScriptCallback::try_from_fn_ptr(callback, ScriptGeneration::default())
+        .map_err(|error| {
+            Box::new(EvalAltResult::ErrorRuntime(
+                error.to_string().into(),
+                Position::NONE,
+            ))
+        })?;
+    callback
+        .bind_native_context_if_unset(crate::invocation::ScriptInvocationContext::capture(call));
+    Ok(callback)
 }
 
 fn register_accessibility_methods(builder: &mut TypeBuilder<UiNode>) {
+    register_accessibility_state_methods(builder);
+    register_accessibility_reference_methods(builder);
+}
+
+fn register_accessibility_state_methods(builder: &mut TypeBuilder<UiNode>) {
     builder
         .with_fn(
             "accessibility_role",
@@ -1376,12 +1413,34 @@ fn register_accessibility_methods(builder: &mut TypeBuilder<UiNode>) {
             },
         )
         .with_fn(
+            "accessibility_current",
+            |node: &mut UiNode, value: ImmutableString| -> Result<UiNode, Box<EvalAltResult>> {
+                if !matches!(
+                    value.as_str(),
+                    "page" | "step" | "location" | "date" | "time" | "true"
+                ) {
+                    return Err(Box::new(EvalAltResult::ErrorRuntime(
+                        "accessibility_current must be page, step, location, date, time, or true"
+                            .into(),
+                        Position::NONE,
+                    )));
+                }
+                Ok(node
+                    .clone()
+                    .with_attribute("current", UiValue::String(value.to_string())))
+            },
+        )
+        .with_fn(
             "accessibility_invalid",
             |node: &mut UiNode, invalid: bool| {
                 node.clone()
                     .with_attribute("invalid", UiValue::Bool(invalid))
             },
-        )
+        );
+}
+
+fn register_accessibility_reference_methods(builder: &mut TypeBuilder<UiNode>) {
+    builder
         .with_fn(
             "accessibility_id",
             |node: &mut UiNode, id: ImmutableString| {
@@ -1889,6 +1948,21 @@ mod tests {
         assert_eq!(
             node.attributes().get("role"),
             Some(&UiValue::String("label".to_owned()))
+        );
+    }
+
+    #[test]
+    fn selectable_rejects_non_text_nodes_at_the_script_boundary() {
+        let mut runtime = crate::RuntimeEngine::new();
+        let compiled = runtime
+            .compile_named("selectable.rhai", "fn view() { row([]).selectable(true) }")
+            .unwrap();
+        let error = runtime.render(&compiled).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("selectable(true) is supported only on text() nodes"),
+            "{error}"
         );
     }
 }

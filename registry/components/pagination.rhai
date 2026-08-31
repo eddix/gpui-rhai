@@ -105,8 +105,10 @@ fn page_button(props, page, current, size, callback) {
     let node = button::Button(#{
         text: `${page}`, size: size,
         variant: if selected { "primary" } else { "outline" },
+        hoverable: !selected,
     }).with_style(component_style(props, if selected { "page_current" } else { "page" }, style()));
-    if callback == () || selected { node }
+    if selected { node.tab_stop(false).accessibility_current("page") }
+    else if callback == () { node }
     else { node.on_click_value(Fn("pagination_emit"), #{ current_page: page, page_size: props.page_size }) }
 }
 

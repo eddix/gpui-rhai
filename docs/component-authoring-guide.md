@@ -244,10 +244,11 @@ focusable while removing it from keyboard traversal. Modal focus trap/restore
 belongs to Overlay; ordinary components should prefer one group tab stop plus
 semantic arrow-key roving policy.
 
-`selectable(true)` on a text node enables drag selection: dragging inside the
-node highlights a byte range (painted with the `selection` theme token, falling
-back to translucent blue) and releasing the mouse copies the selected slice to
-the system clipboard. Selection is per-node; ranges never span nodes. Use it
+`selectable(true)` on a `text()` node enables single-node drag selection, painted
+with the required `selection` theme token. Dragging never mutates the clipboard;
+after selection, the normal platform copy action (`Cmd-C` on macOS) copies the
+selected slice. Selection suppresses ancestor click activation, follows stable
+retained node identity, and is cleared when its text or node disappears. Use it
 for error output and other copy-worthy text — editor components
 (`text_input`/`text_area`) keep their own richer selection.
 

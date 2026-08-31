@@ -66,7 +66,10 @@ impl Element for VirtualListEntityElement {
                 state.view.update(cx, |view, cx| {
                     view.synchronize(self.content.clone(), self.runtime.clone(), cx);
                 });
-                let mut element = state.view.clone().into_any_element();
+                let mut element = div()
+                    .size_full()
+                    .child(state.view.clone())
+                    .into_any_element();
                 let layout = element.request_layout(window, cx);
                 ((layout, VirtualListFrame { element }), state)
             },
@@ -77,11 +80,21 @@ impl Element for VirtualListEntityElement {
         &mut self,
         _id: Option<&GlobalElementId>,
         _inspector_id: Option<&InspectorElementId>,
-        _bounds: Bounds<Pixels>,
+        bounds: Bounds<Pixels>,
         frame: &mut Self::RequestLayoutState,
         window: &mut Window,
         cx: &mut App,
     ) {
+        if self.content.height.is_none() {
+            let missing = fill_viewport_indices(&self.content, f64::from(bounds.size.height))
+                .filter(|index| !self.content.realized.contains_key(index))
+                .collect::<Vec<_>>();
+            if !missing.is_empty() {
+                self.runtime
+                    .virtual_requests
+                    .request(self.content.id.clone(), missing);
+            }
+        }
         frame.element.prepaint(window, cx);
     }
 
@@ -97,6 +110,24 @@ impl Element for VirtualListEntityElement {
     ) {
         frame.element.paint(window, cx);
     }
+}
+
+fn fill_viewport_indices(
+    content: &VirtualCollectionNodeSpec,
+    viewport_height: f64,
+) -> impl Iterator<Item = usize> {
+    let count = (((viewport_height + content.overdraw_pixels) / content.estimated_height).ceil()
+        + 1.0)
+        .to_string()
+        .parse::<usize>()
+        .unwrap_or(usize::MAX)
+        .min(content.data.len());
+    let start = if content.bottom_align {
+        content.data.len().saturating_sub(count)
+    } else {
+        0
+    };
+    start..start.saturating_add(count)
 }
 
 impl IntoElement for VirtualListEntityElement {
@@ -217,7 +248,6 @@ impl Render for VirtualListView {
             measured_visible,
         );
         let content = self.content.clone();
-        let height = finite_to_f32(content.height);
         let runtime = self.runtime.clone();
         let focused = self.state.focused().map(ToOwned::to_owned);
         let focus_color = runtime
@@ -232,13 +262,16 @@ impl Render for VirtualListView {
             .colors
             .resolve(&ColorValue::Token("surface".to_owned()))
             .unwrap_or_else(|| Rgba8::from_rgb_hex(0x0018_181b));
+        let fixed_height = content.height.map(finite_to_f32);
         let list = list(self.scroll.clone(), move |index, _window, _cx| {
             let key = collection_item_key(&content, index)
                 .map_or_else(|| format!("item-{index}"), ToOwned::to_owned);
-            runtime
-                .virtual_requests
-                .request(content.id.clone(), [index]);
             let node = content.realized.get(&index);
+            if node.is_none() {
+                runtime
+                    .virtual_requests
+                    .request(content.id.clone(), [index]);
+            }
             let child = node.map_or_else(
                 || {
                     div()
@@ -255,8 +288,9 @@ impl Render for VirtualListView {
                 .child(child)
                 .into_any_element()
         })
-        .h(px(height))
-        .w_full();
+        .w_full()
+        .when_some(fixed_height, |list, height| list.h(px(height)))
+        .when(fixed_height.is_none(), |list| list.flex_1().min_h(px(0.0)));
         let weak = cx.entity().downgrade();
         div()
             .id(SharedString::from(format!(
@@ -295,6 +329,7 @@ impl Render for VirtualListView {
                     view.handle_key(event.keystroke.key.as_str(), cx)
                 });
             })
+            .when(fixed_height.is_none(), |root| root.flex_1().min_h(px(0.0)))
             .child(list)
     }
 }
@@ -336,7 +371,7 @@ fn collection_requires_reset(
     current.id != next.id
         || current.data != next.data
         || current.estimated_height.to_bits() != next.estimated_height.to_bits()
-        || current.height.to_bits() != next.height.to_bits()
+        || current.height.map(f64::to_bits) != next.height.map(f64::to_bits)
         || current.overdraw_pixels.to_bits() != next.overdraw_pixels.to_bits()
         || current.bottom_align != next.bottom_align
 }
