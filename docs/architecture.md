@@ -86,6 +86,12 @@ invocation updates. Returned handlers carry component path, declared event
 schema, generation, and an internal Rhai module-call context so later callbacks
 resolve in their source module.
 
+The AST interpreter remains the semantic oracle. Named entry/lifecycle/root
+calls cross a static execution-backend trait; stored imported callbacks remain
+behind the volatile invocation-context adapter. The optional `grain-backend`
+feature is a parity harness, not a production switch, and currently records a
+diagnostic-format blocker. See [Rhai execution backends](rhai-execution-backends.md).
+
 Formal render functions may declare named effects and typed native signals.
 Effects compare immutable `UiValue` dependencies, run old cleanup before new
 start, and retain original imported-module invocation context across event turns

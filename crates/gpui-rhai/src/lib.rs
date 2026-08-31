@@ -52,6 +52,7 @@ pub mod app;
 pub mod asset;
 pub mod async_runtime;
 pub mod automation;
+mod backend;
 pub mod budget;
 pub mod canvas;
 pub mod capability;

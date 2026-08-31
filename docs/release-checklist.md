@@ -25,6 +25,8 @@
 9. Run CLI clean and modified-project fixtures for init/add/check/dev metadata,
    diff/update, and embed behavior.
 10. Record the exact GPUI/Rhai versions and known accessibility/platform gaps.
+    When evaluating Grain, run the opt-in `grain-backend` tests and strict
+    Clippy separately; a compiling feature is not production parity.
 11. For the complex-control line, run fixed-Clock DatePicker locale cases, large
     scalar/custom Table probes, Select group/search cases, Pagination boundary
     transitions, and Textarea multiline IME/auto-grow cases.

@@ -14,6 +14,7 @@ use thiserror::Error;
 
 use crate::animation::register_animation_api;
 use crate::asset::{AssetId, ImageDecodeHandle, asset_id_from_script};
+use crate::backend::{AstInterpreter, ExecutionBackend};
 use crate::canvas::register_canvas_api;
 use crate::component::{ComponentExportCollector, ComponentExportError, ComponentRegistry};
 use crate::context::{UiContext, register_ui_context_api};
@@ -674,9 +675,13 @@ impl RuntimeEngine {
         .with_generation(compiled.generation);
         self.begin_component_render(context, compiled.generation, None)?;
         let started = self.begin_timing();
-        let result = self
-            .engine
-            .call_fn::<UiNode>(&mut Scope::new(), &compiled.ast, "view", ());
+        let result = AstInterpreter::call_fn::<UiNode, _>(
+            &self.engine,
+            &compiled.ast,
+            &mut Scope::new(),
+            "view",
+            (),
+        );
         self.record_timing(
             ExecutionOperation::Render,
             compiled.ast.source().unwrap_or("<script>"),
@@ -765,9 +770,13 @@ impl RuntimeEngine {
         self.evaluation_generation.set(compiled.generation);
         self.begin_component_render(context.clone(), compiled.generation, None)?;
         let started = self.begin_timing();
-        let result =
-            self.engine
-                .call_fn::<UiNode>(&mut Scope::new(), &compiled.ast, "view", (context,));
+        let result = AstInterpreter::call_fn::<UiNode, _>(
+            &self.engine,
+            &compiled.ast,
+            &mut Scope::new(),
+            "view",
+            (context,),
+        );
         self.record_timing(
             ExecutionOperation::Render,
             compiled.ast.source().unwrap_or("<script>"),
@@ -1032,9 +1041,13 @@ impl RuntimeEngine {
         }
         self.evaluation_generation.set(compiled.generation);
         let started = self.begin_timing();
-        let result =
-            self.engine
-                .call_fn::<Dynamic>(&mut Scope::new(), &compiled.ast, function, (context,));
+        let result = AstInterpreter::call_fn::<Dynamic, _>(
+            &self.engine,
+            &compiled.ast,
+            &mut Scope::new(),
+            function,
+            (context,),
+        );
         self.record_timing(
             ExecutionOperation::Lifecycle(function.to_owned()),
             compiled.ast.source().unwrap_or("<script>"),

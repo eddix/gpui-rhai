@@ -847,6 +847,7 @@ fn hot_reload_cleans_old_effect_context_before_starting_new_generation() {
     )
     .unwrap();
     lifecycle.start(&mut engine).unwrap();
+    assert_eq!(runtime.borrow().tasks.active_count(), 1);
 
     let candidate = engine
         .compile_self_contained_named("ui/effect_probe.rhai", EFFECT_APP)
@@ -854,6 +855,7 @@ fn hot_reload_cleans_old_effect_context_before_starting_new_generation() {
     let candidate_generation = candidate.generation();
     lifecycle.reload(&mut engine, candidate, &schema).unwrap();
     assert_eq!(lifecycle.generation(), candidate_generation);
+    assert_eq!(runtime.borrow().tasks.active_count(), 1);
     assert_eq!(effect_audit_values(&runtime)["starts"], UiValue::Integer(2));
     assert_eq!(
         effect_audit_values(&runtime)["cleanups"],
@@ -862,6 +864,7 @@ fn hot_reload_cleans_old_effect_context_before_starting_new_generation() {
 
     lifecycle.dispose(&mut engine).unwrap();
     assert!(runtime.borrow().effects.is_empty());
+    assert_eq!(runtime.borrow().tasks.active_count(), 0);
     assert_eq!(
         effect_audit_values(&runtime)["cleanups"],
         UiValue::Integer(2)
