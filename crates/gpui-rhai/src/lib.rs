@@ -155,7 +155,8 @@ pub use overlay::{
 pub use primitive::{
     PrimitiveDescriptor, PrimitiveError, PrimitiveEventEmitter, PrimitiveHandler, PrimitiveId,
     PrimitiveInstance, PrimitiveInstanceId, PrimitiveNode, PrimitiveProps, PrimitiveRegistry,
-    PrimitiveTheme, PrimitiveValue,
+    PrimitiveResourceError, PrimitiveResourceHandle, PrimitiveResourceScope, PrimitiveTheme,
+    PrimitiveValue,
 };
 pub use reload::{LiveScript, ReloadOutcome};
 pub use renderer::{

@@ -46,6 +46,28 @@ different components therefore retain independent native Entities, while keyed
 reorder preserves them. Direct ephemeral rendering rejects lifecycle
 primitives instead of falling back to a view-global key.
 
+Every retained `PrimitiveInstance` also exposes `instance.resources()`. Register
+each durable native task, subscription, watcher, capture helper, or other
+resource with a safe label and cancellation closure:
+
+```rust
+fn mount(&mut self, instance: &PrimitiveInstance) -> Result<(), String> {
+    let resources = instance.resources().expect("lifecycle primitive");
+    let cancel = self.start_watcher()?;
+    resources
+        .own("document_watcher", move || cancel())
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+```
+
+The same scope is preserved across keyed updates. Runtime unmount invokes the
+handler and then cancels all remaining resources in reverse registration order.
+Resources added by a mount/update/render attempt are rolled back if that attempt
+fails; one panicking cleanup is diagnosed but does not prevent later cleanups.
+Dropping the last scope is also a cleanup backstop. Do not capture the primitive
+registry itself in a cleanup closure.
+
 Emit only declared events through `PrimitiveEventEmitter`; the runtime validates
 payloads and dispatches the generation-bound callback. The emitter keeps only a
 weak reference back to the registry, so an Entity whose callbacks retain the

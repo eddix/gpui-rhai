@@ -344,6 +344,197 @@ pub struct PrimitiveNode {
 pub struct PrimitiveInstance {
     pub id: Option<PrimitiveInstanceId>,
     pub node: PrimitiveNode,
+    resources: Option<PrimitiveResourceScope>,
+}
+
+impl PrimitiveInstance {
+    /// Return the runtime-owned cancellation scope for a retained instance.
+    /// Ephemeral primitives have no resource scope and must not start durable
+    /// work from render.
+    #[must_use]
+    pub const fn resources(&self) -> Option<&PrimitiveResourceScope> {
+        self.resources.as_ref()
+    }
+}
+
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct PrimitiveResourceHandle(u64);
+
+struct PrimitiveResourceEntry {
+    label: String,
+    cleanup: Option<Box<dyn FnOnce()>>,
+}
+
+#[derive(Default)]
+struct PrimitiveResourceState {
+    next_id: u64,
+    entries: BTreeMap<u64, PrimitiveResourceEntry>,
+}
+
+impl Drop for PrimitiveResourceState {
+    fn drop(&mut self) {
+        let entries = std::mem::take(&mut self.entries);
+        for entry in entries.into_values().rev() {
+            let _ = run_resource_cleanup(entry);
+        }
+    }
+}
+
+#[derive(Clone, Default)]
+pub struct PrimitiveResourceScope {
+    inner: Rc<RefCell<PrimitiveResourceState>>,
+}
+
+impl fmt::Debug for PrimitiveResourceScope {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.inner.try_borrow() {
+            Ok(state) => formatter
+                .debug_struct("PrimitiveResourceScope")
+                .field(
+                    "active",
+                    &state
+                        .entries
+                        .values()
+                        .map(|entry| entry.label.as_str())
+                        .collect::<Vec<_>>(),
+                )
+                .finish(),
+            Err(_) => formatter.write_str("PrimitiveResourceScope(<borrowed>)"),
+        }
+    }
+}
+
+impl PrimitiveResourceScope {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Own one native task/subscription/resource cancellation callback.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PrimitiveResourceError`] for an unsafe label or conflicting
+    /// scope borrow.
+    pub fn own(
+        &self,
+        label: impl Into<String>,
+        cleanup: impl FnOnce() + 'static,
+    ) -> Result<PrimitiveResourceHandle, PrimitiveResourceError> {
+        let label = label.into();
+        if label.is_empty()
+            || label.len() > 128
+            || !label.chars().all(|character| {
+                character.is_ascii_alphanumeric() || matches!(character, '_' | '-' | '.' | ':')
+            })
+        {
+            return Err(PrimitiveResourceError::InvalidLabel(label));
+        }
+        let mut state = self
+            .inner
+            .try_borrow_mut()
+            .map_err(|_| PrimitiveResourceError::Borrowed)?;
+        let id = state.next_id.max(1);
+        state.next_id = id
+            .checked_add(1)
+            .ok_or(PrimitiveResourceError::IdExhausted)?;
+        state.entries.insert(
+            id,
+            PrimitiveResourceEntry {
+                label,
+                cleanup: Some(Box::new(cleanup)),
+            },
+        );
+        Ok(PrimitiveResourceHandle(id))
+    }
+
+    /// Cancel one owned resource early.
+    ///
+    /// # Errors
+    ///
+    /// Returns a borrow or cleanup-panic diagnostic.
+    pub fn cancel(&self, handle: &PrimitiveResourceHandle) -> Result<bool, PrimitiveResourceError> {
+        let entry = self
+            .inner
+            .try_borrow_mut()
+            .map_err(|_| PrimitiveResourceError::Borrowed)?
+            .entries
+            .remove(&handle.0);
+        let Some(entry) = entry else {
+            return Ok(false);
+        };
+        run_resource_cleanup(entry)?;
+        Ok(true)
+    }
+
+    #[must_use]
+    pub fn active_count(&self) -> usize {
+        self.inner.borrow().entries.len()
+    }
+
+    fn checkpoint(&self) -> Result<u64, PrimitiveResourceError> {
+        self.inner
+            .try_borrow()
+            .map(|state| state.next_id.max(1))
+            .map_err(|_| PrimitiveResourceError::Borrowed)
+    }
+
+    fn rollback(&self, checkpoint: u64) -> Result<(), PrimitiveResourceError> {
+        self.cleanup_where(|id| id >= checkpoint)
+    }
+
+    fn close(&self) -> Result<(), PrimitiveResourceError> {
+        self.cleanup_where(|_| true)
+    }
+
+    fn cleanup_where(&self, predicate: impl Fn(u64) -> bool) -> Result<(), PrimitiveResourceError> {
+        let mut entries = {
+            let mut state = self
+                .inner
+                .try_borrow_mut()
+                .map_err(|_| PrimitiveResourceError::Borrowed)?;
+            let ids = state
+                .entries
+                .keys()
+                .copied()
+                .filter(|id| predicate(*id))
+                .collect::<Vec<_>>();
+            ids.into_iter()
+                .rev()
+                .filter_map(|id| state.entries.remove(&id))
+                .collect::<Vec<_>>()
+        };
+        let mut first_error = None;
+        for entry in entries.drain(..) {
+            if let Err(error) = run_resource_cleanup(entry)
+                && first_error.is_none()
+            {
+                first_error = Some(error);
+            }
+        }
+        first_error.map_or(Ok(()), Err)
+    }
+}
+
+fn run_resource_cleanup(mut entry: PrimitiveResourceEntry) -> Result<(), PrimitiveResourceError> {
+    let label = entry.label;
+    let Some(cleanup) = entry.cleanup.take() else {
+        return Ok(());
+    };
+    catch_unwind(AssertUnwindSafe(cleanup))
+        .map_err(|_| PrimitiveResourceError::CleanupPanic { label })
+}
+
+#[derive(Clone, Debug, Error, Eq, PartialEq)]
+pub enum PrimitiveResourceError {
+    #[error("primitive resource label `{0}` must be 1-128 safe ASCII characters")]
+    InvalidLabel(String),
+    #[error("primitive resource scope is already borrowed")]
+    Borrowed,
+    #[error("primitive resource scope exhausted its handle identity space")]
+    IdExhausted,
+    #[error("primitive resource cleanup `{label}` panicked")]
+    CleanupPanic { label: String },
 }
 
 #[derive(Clone)]
@@ -613,17 +804,29 @@ impl PrimitiveRegistry {
             .filter(|instance| !active.contains(*instance))
             .cloned()
             .collect::<Vec<_>>();
+        let mut first_error = None;
         for instance in &removed {
-            if let Some(entry) = inner.entries.get_mut(&instance.primitive) {
-                guard_primitive_panic(&instance.primitive, "unmount", || {
+            let resources = inner
+                .mounted
+                .get(instance)
+                .and_then(|mounted| mounted.resources.clone());
+            if let Some(entry) = inner.entries.get_mut(&instance.primitive)
+                && let Err(error) = guard_primitive_panic(&instance.primitive, "unmount", || {
                     entry.handler.unmount(instance);
-                })?;
+                })
+                && first_error.is_none()
+            {
+                first_error = Some(error);
             }
+            if let Some(resources) = resources
+                && let Err(error) = resources.close()
+                && first_error.is_none()
+            {
+                first_error = Some(PrimitiveError::Resource(error));
+            }
+            inner.mounted.remove(instance);
         }
-        inner
-            .mounted
-            .retain(|instance, _| active.contains(instance));
-        Ok(())
+        first_error.map_or(Ok(()), Err)
     }
 
     /// Unmount keyed primitive instances absent from the current successful tree.
@@ -692,46 +895,72 @@ impl PrimitiveRegistry {
                 .expect("retained primitive descriptors require a key"),
             node: retained_id.expect("retained primitive renderer supplies NodeId"),
         });
-        let instance = PrimitiveInstance {
-            id: instance_id.clone(),
-            node,
-        };
         let previous = instance_id
             .as_ref()
             .and_then(|id| inner.mounted.get(id))
             .cloned();
+        let resources = if retained_instance {
+            Some(
+                previous
+                    .as_ref()
+                    .and_then(|instance| instance.resources.clone())
+                    .unwrap_or_default(),
+            )
+        } else {
+            None
+        };
+        let checkpoint = resources
+            .as_ref()
+            .map(PrimitiveResourceScope::checkpoint)
+            .transpose()?;
+        let instance = PrimitiveInstance {
+            id: instance_id.clone(),
+            node,
+            resources: resources.clone(),
+        };
         let needs_mount = instance_id.is_some() && previous.is_none();
         let entry = inner
             .entries
             .get_mut(&instance.node.primitive)
             .ok_or_else(|| PrimitiveError::Unknown(instance.node.primitive.clone()))?;
-        if needs_mount {
-            guard_primitive_panic(&instance.node.primitive, "mount", || {
-                entry.handler.mount(&instance)
+        let operation = (|| {
+            if needs_mount {
+                guard_primitive_panic(&instance.node.primitive, "mount", || {
+                    entry.handler.mount(&instance)
+                })?
+                .map_err(|message| PrimitiveError::Handler {
+                    primitive: instance.node.primitive.clone(),
+                    message,
+                })?;
+            }
+            if let Some(previous) = &previous
+                && previous.node != instance.node
+            {
+                guard_primitive_panic(&instance.node.primitive, "update", || {
+                    entry.handler.update(previous, &instance)
+                })?
+                .map_err(|message| PrimitiveError::Handler {
+                    primitive: instance.node.primitive.clone(),
+                    message,
+                })?;
+            }
+            guard_primitive_panic(&instance.node.primitive, "render", || {
+                entry.handler.render(&instance, events, theme, window, cx)
             })?
             .map_err(|message| PrimitiveError::Handler {
                 primitive: instance.node.primitive.clone(),
                 message,
-            })?;
-        }
-        if let Some(previous) = &previous
-            && previous.node != instance.node
-        {
-            guard_primitive_panic(&instance.node.primitive, "update", || {
-                entry.handler.update(previous, &instance)
-            })?
-            .map_err(|message| PrimitiveError::Handler {
-                primitive: instance.node.primitive.clone(),
-                message,
-            })?;
-        }
-        let element = guard_primitive_panic(&instance.node.primitive, "render", || {
-            entry.handler.render(&instance, events, theme, window, cx)
-        })?
-        .map_err(|message| PrimitiveError::Handler {
-            primitive: instance.node.primitive.clone(),
-            message,
-        })?;
+            })
+        })();
+        let element = match operation {
+            Ok(element) => element,
+            Err(error) => {
+                if let (Some(resources), Some(checkpoint)) = (&resources, checkpoint) {
+                    resources.rollback(checkpoint)?;
+                }
+                return Err(error);
+            }
+        };
         if let Some(id) = instance_id {
             inner.mounted.insert(id, instance);
         }
@@ -1018,6 +1247,8 @@ pub enum PrimitiveError {
         primitive: PrimitiveId,
         phase: &'static str,
     },
+    #[error(transparent)]
+    Resource(#[from] PrimitiveResourceError),
 }
 
 #[cfg(test)]
@@ -1157,6 +1388,36 @@ mod tests {
     }
 
     #[test]
+    fn primitive_resource_scope_rolls_back_and_continues_after_cleanup_panic() {
+        let scope = PrimitiveResourceScope::new();
+        let retained = Rc::new(Cell::new(0));
+        let retained_cleanup = Rc::clone(&retained);
+        scope
+            .own("retained", move || retained_cleanup.set(1))
+            .unwrap();
+        let checkpoint = scope.checkpoint().unwrap();
+        let order = Rc::new(RefCell::new(Vec::new()));
+        let first = Rc::clone(&order);
+        scope
+            .own("first", move || first.borrow_mut().push(1))
+            .unwrap();
+        scope.own("panic", || panic!("cleanup failed")).unwrap();
+        let last = Rc::clone(&order);
+        scope
+            .own("last", move || last.borrow_mut().push(3))
+            .unwrap();
+
+        assert!(matches!(
+            scope.rollback(checkpoint),
+            Err(PrimitiveResourceError::CleanupPanic { ref label }) if label == "panic"
+        ));
+        assert_eq!(*order.borrow(), vec![3, 1]);
+        assert_eq!(scope.active_count(), 1);
+        scope.close().unwrap();
+        assert_eq!(retained.get(), 1);
+    }
+
+    #[test]
     fn successful_tree_cleanup_unmounts_removed_keyed_instances() {
         struct UnmountCounter(Rc<Cell<usize>>);
         impl PrimitiveHandler for UnmountCounter {
@@ -1190,6 +1451,12 @@ mod tests {
             .next()
             .unwrap();
         let unmounted = Rc::new(Cell::new(0));
+        let cleaned = Rc::new(Cell::new(0));
+        let resources = PrimitiveResourceScope::new();
+        let cleanup = Rc::clone(&cleaned);
+        resources
+            .own("watcher", move || cleanup.set(cleanup.get() + 1))
+            .unwrap();
         registry
             .register(descriptor, UnmountCounter(Rc::clone(&unmounted)))
             .unwrap();
@@ -1198,11 +1465,13 @@ mod tests {
             PrimitiveInstance {
                 id: Some(instance.clone()),
                 node,
+                resources: Some(resources),
             },
         );
         tree.reconcile(UiNode::text("removed")).unwrap();
         registry.retain_tree(&tree).unwrap();
         assert_eq!(unmounted.get(), 1);
+        assert_eq!(cleaned.get(), 1);
     }
 
     #[test]
