@@ -1,16 +1,16 @@
 use std::collections::BTreeMap;
 use std::rc::Rc;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 use std::time::Instant;
 
 use gpui::{
     AnyElement, App, Background, Bounds, BoxShadow, ClickEvent, ContentMask, Context, CursorStyle,
     DispatchPhase, Div, Element, ElementId, FocusHandle, FontStyle, FontWeight, GlobalElementId,
-    HighlightStyle, InspectorElementId, InteractiveElement, IntoElement, LayoutId, Modifiers,
-    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point,
-    Render, ScrollHandle, ScrollWheelEvent, SharedString, Stateful, StatefulInteractiveElement,
-    Styled, StyledText, TextAlign, Window, div, img, linear_color_stop, linear_gradient, point, px,
-    relative, rems, rgba,
+    HighlightStyle, Image, ImageFormat, InspectorElementId, InteractiveElement, IntoElement,
+    LayoutId, Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement,
+    Pixels, Point, Render, ScrollHandle, ScrollWheelEvent, SharedString, Stateful,
+    StatefulInteractiveElement, Styled, StyledText, TextAlign, Window, div, img, linear_color_stop,
+    linear_gradient, point, px, relative, rems, rgba,
 };
 
 use crate::overlay_element::{ScriptLayerElement, ScriptOverlayElement, WindowOverlayCoordinator};
@@ -1549,6 +1549,7 @@ impl GpuiNodeRenderer {
                 .child(styled_text(text.as_str(), spans, environment.colors))
                 .into_any_element(),
             UiNodeKind::Canvas { scene } => render_canvas(element, scene, environment.colors),
+            UiNodeKind::Svg { source } => render_inline_svg(element, node, source, environment),
             UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => element
                 .children(render_flattened_children(
                     children,
@@ -2042,6 +2043,39 @@ fn render_image<C: ColorResolver>(
             }
         },
     )
+}
+
+fn render_inline_svg<C: ColorResolver>(
+    element: impl ParentElement + IntoElement,
+    node: &UiNode,
+    source: &crate::InlineSvg,
+    environment: &RenderEnvironment<'_, C>,
+) -> AnyElement {
+    let interaction = if is_disabled(node) {
+        environment.interaction.clone().with(PseudoState::Disabled)
+    } else {
+        environment.interaction.clone()
+    };
+    let color = node
+        .style()
+        .resolve(&interaction)
+        .text_color
+        .as_ref()
+        .and_then(|color| environment.colors.resolve(color));
+    let bytes = color.map_or_else(
+        || source.as_str().as_bytes().to_vec(),
+        |color| {
+            let rgb = color.as_rgba_hex() >> 8;
+            source
+                .as_str()
+                .replace("currentColor", &format!("#{rgb:06x}"))
+                .replace("currentcolor", &format!("#{rgb:06x}"))
+                .into_bytes()
+        },
+    );
+    element
+        .child(img(Arc::new(Image::from_bytes(ImageFormat::Svg, bytes))))
+        .into_any_element()
 }
 
 fn scoped_overlay_spec(spec: &OverlayNodeSpec, view_id: &str) -> OverlayNodeSpec {
@@ -3189,7 +3223,17 @@ mod tests {
 
     #[test]
     fn declarative_nodes_and_typed_styles_convert_without_a_gpui_context() {
-        let root = UiNode::column(vec![UiNode::text("one"), UiNode::text("two")]).with_style(
+        let root = UiNode::column(vec![
+            UiNode::text("one"),
+            UiNode::text("two"),
+            UiNode::svg("<svg viewBox='0 0 1 1'><path fill='currentColor' d='M0 0L1 1'/></svg>")
+                .unwrap()
+                .with_style(
+                    &Style::new()
+                        .text_color(ColorValue::Literal(Rgba8::from_rgb_hex(0x00ff_ffff))),
+                ),
+        ])
+        .with_style(
             &Style::new()
                 .gap(Length::pixels(8.0).unwrap())
                 .background(ColorValue::Literal(Rgba8::from_rgb_hex(0x0022_2222))),

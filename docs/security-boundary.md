@@ -18,6 +18,8 @@ contexts, arbitrary Rust values, filesystem paths, URLs, sockets, or process API
   stale work is discarded after hot reload.
 - Script operation, expression-depth, call-depth, array, and map limits are set
   by the runtime.
+- Inline SVG is size/element bounded, syntax-checked with GPUI's `usvg`, and
+  rejects active content plus every non-fragment resource reference.
 - Host-configurable `RuntimeBudgets` independently reject an otherwise valid
   candidate before commit when retained nodes, event handlers, formal
   components, effects, timers, signals, element refs, generic Layers, Canvas

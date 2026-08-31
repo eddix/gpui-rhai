@@ -53,6 +53,24 @@ SVG assets may use `currentColor`. The renderer resolves semantic text color,
 tints bytes, and caches by asset identity plus RGBA. Theme switching recolors
 icons without script recompilation or state loss.
 
+## Inline SVG atom
+
+For small application-authored vector art that should remain inside Rhai source,
+use the public `svg(markup)` atom. It accepts at most 64 KiB and 2,048 elements,
+parses through the same `usvg` version as GPUI, preserves local fragment
+gradients plus `currentColor`, and rejects DOCTYPE/entity declarations, scripts,
+foreign/object/embed/style content, event attributes, and external/data/file/URL
+references before a node is accepted.
+
+```rhai
+svg("<svg viewBox='0 0 16 16'><path fill='currentColor' d='M2 8L7 13L14 3'/></svg>")
+    .with_style(style().width(px(16)).height(px(16)).text_color(theme_color("accent")))
+```
+
+Inline SVG does not read paths, fetch resources, or replace declared assets for
+shared icons. GPUI remains the rendering backend; invalid markup is a script
+evaluation error and preserves the last-good tree.
+
 In file-backed development, supported asset changes refresh the provider
 transactionally. Existing logical identity remains stable, tinted cache entries
 are replaced, and affected windows invalidate.

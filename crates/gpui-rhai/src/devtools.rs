@@ -320,6 +320,10 @@ fn inspect_node(node: &UiNode, path: &str) -> InspectorNode {
             (inspect_rich_text(text, spans, &mut props), Vec::new())
         }
         UiNodeKind::Canvas { scene } => (inspect_canvas(scene, &mut props), Vec::new()),
+        UiNodeKind::Svg { source } => {
+            props.insert("bytes".to_owned(), source.len().to_string());
+            ("svg".to_owned(), Vec::new())
+        }
         UiNodeKind::Box { children } => ("box".to_owned(), children.iter().collect()),
         UiNodeKind::Fragment { children } => ("fragment".to_owned(), children.iter().collect()),
         UiNodeKind::Custom { primitive } => {

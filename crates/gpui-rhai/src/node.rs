@@ -165,6 +165,9 @@ pub enum UiNodeKind {
     Canvas {
         scene: crate::CanvasScene,
     },
+    Svg {
+        source: crate::InlineSvg,
+    },
     Box {
         children: Vec<UiNode>,
     },
@@ -205,6 +208,7 @@ pub enum UiNodeKind {
 pub enum UiNodeKindTag {
     Text,
     Canvas,
+    Svg,
     Box,
     Fragment,
     Custom,
@@ -277,6 +281,20 @@ impl UiNode {
         let mut node = Self::text("");
         node.kind = UiNodeKind::Canvas { scene };
         node
+    }
+
+    /// Construct a validated self-contained inline SVG atom.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`crate::InlineSvgError`] for active, external, or oversized
+    /// markup.
+    pub fn svg(source: impl Into<String>) -> Result<Self, crate::InlineSvgError> {
+        let mut node = Self::text("");
+        node.kind = UiNodeKind::Svg {
+            source: crate::InlineSvg::new(source)?,
+        };
+        Ok(node)
     }
 
     #[must_use]
@@ -605,6 +623,7 @@ impl UiNode {
             UiNodeKind::Text { .. }
             | UiNodeKind::RichText { .. }
             | UiNodeKind::Canvas { .. }
+            | UiNodeKind::Svg { .. }
             | UiNodeKind::Image { .. }
             | UiNodeKind::DirectionalImage { .. } => false,
         }
@@ -777,6 +796,7 @@ impl UiNode {
             UiNodeKind::Text { .. }
             | UiNodeKind::RichText { .. }
             | UiNodeKind::Canvas { .. }
+            | UiNodeKind::Svg { .. }
             | UiNodeKind::Custom { .. }
             | UiNodeKind::Image { .. }
             | UiNodeKind::DirectionalImage { .. } => {}
@@ -836,6 +856,7 @@ impl UiNode {
             UiNodeKind::Text { .. }
             | UiNodeKind::RichText { .. }
             | UiNodeKind::Canvas { .. }
+            | UiNodeKind::Svg { .. }
             | UiNodeKind::Image { .. }
             | UiNodeKind::DirectionalImage { .. } => {}
         }
@@ -893,6 +914,7 @@ impl UiNode {
             UiNodeKind::Text { .. }
             | UiNodeKind::RichText { .. }
             | UiNodeKind::Canvas { .. }
+            | UiNodeKind::Svg { .. }
             | UiNodeKind::Image { .. }
             | UiNodeKind::DirectionalImage { .. } => {}
         }
@@ -908,6 +930,7 @@ impl UiNode {
         match self.kind {
             UiNodeKind::Text { .. } | UiNodeKind::RichText { .. } => UiNodeKindTag::Text,
             UiNodeKind::Canvas { .. } => UiNodeKindTag::Canvas,
+            UiNodeKind::Svg { .. } => UiNodeKindTag::Svg,
             UiNodeKind::Box { .. } => UiNodeKindTag::Box,
             UiNodeKind::Fragment { .. } => UiNodeKindTag::Fragment,
             UiNodeKind::Custom { .. } => UiNodeKindTag::Custom,
@@ -961,6 +984,7 @@ impl UiNode {
             UiNodeKind::Text { .. }
             | UiNodeKind::RichText { .. }
             | UiNodeKind::Canvas { .. }
+            | UiNodeKind::Svg { .. }
             | UiNodeKind::Image { .. }
             | UiNodeKind::DirectionalImage { .. } => Vec::new(),
         }
@@ -1439,6 +1463,20 @@ pub(crate) fn rich_text_node(
 
 pub(crate) fn canvas_node(call: NativeCallContext<'_>, scene: crate::CanvasScene) -> UiNode {
     with_call_source(UiNode::canvas(scene), call)
+}
+
+pub(crate) fn svg_node(
+    call: NativeCallContext<'_>,
+    source: &str,
+) -> Result<UiNode, Box<EvalAltResult>> {
+    UiNode::svg(source)
+        .map(|node| with_call_source(node, call))
+        .map_err(|error| {
+            Box::new(EvalAltResult::ErrorRuntime(
+                error.to_string().into(),
+                Position::NONE,
+            ))
+        })
 }
 
 pub(crate) fn box_node(

@@ -13,6 +13,7 @@ mod environment_dependency;
 pub mod event;
 pub mod font;
 pub mod geometry;
+pub mod inline_svg;
 mod invocation;
 pub mod lifecycle;
 pub mod locale;
@@ -131,6 +132,7 @@ pub use event::{
 };
 pub use font::{FontError, FontSource, validate_font_sources};
 pub use geometry::{ElementGeometry, GeometryBounds, GeometryError, GeometryRegistry};
+pub use inline_svg::{InlineSvg, InlineSvgError};
 pub use lifecycle::{LifecycleError, LifecycleState, ScriptLifecycle};
 pub use locale::{
     CalendarMetadata, CalendarNames, DatePatterns, DateStyle, LocaleBundle, LocaleError,

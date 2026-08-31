@@ -22,7 +22,7 @@ use crate::node::{
     asset_image_node, box_node, canvas_node, column_node, directional_asset_image_node,
     directional_image_node, error_boundary_node, fragment_node, generic_directional_image_node,
     generic_image_node, image_node, layer_node, lazy_error_boundary_node, overlay_node,
-    rich_text_node, row_node, span_value, stack_node, text_node,
+    rich_text_node, row_node, span_value, stack_node, svg_node, text_node,
 };
 use crate::primitive::{PrimitiveDescriptor, PrimitiveError, PrimitiveHandler, PrimitiveRegistry};
 use crate::style::register_style_api;
@@ -1377,6 +1377,9 @@ fn register_node_apis(engine: &mut Engine) {
     FuncRegistration::new("canvas")
         .in_global_namespace()
         .register_into_engine(engine, canvas_node);
+    FuncRegistration::new("svg")
+        .in_global_namespace()
+        .register_into_engine(engine, svg_node);
     FuncRegistration::new("box")
         .in_global_namespace()
         .register_into_engine(engine, box_node);
@@ -2903,6 +2906,30 @@ mod tests {
             root.kind(),
             crate::UiNodeKind::Canvas { scene } if scene.commands().len() == 3
         ));
+    }
+
+    #[test]
+    fn inline_svg_atom_is_bounded_and_self_contained() {
+        let mut runtime = RuntimeEngine::new();
+        let compiled = runtime
+            .compile(
+                r#"
+                    fn view() {
+                        svg("<svg viewBox='0 0 10 10'><path fill='currentColor' d='M0 0L10 10'/></svg>")
+                    }
+                "#,
+            )
+            .unwrap();
+        let root = runtime.render(&compiled).unwrap();
+        assert!(matches!(
+            root.kind(),
+            crate::UiNodeKind::Svg { source } if source.as_str().contains("currentColor")
+        ));
+
+        let rejected = runtime
+            .compile(r#"fn view() { svg("<svg><image href='https://example.com/a.png'/></svg>") }"#)
+            .unwrap();
+        assert!(runtime.render(&rejected).is_err());
     }
 
     #[test]
