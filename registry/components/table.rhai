@@ -112,12 +112,17 @@ fn render_table_row(ctx, payload) {
     for cell in item.cells {
         cells.push(text(cell.text).with_key(cell.key).with_style(column_style(cell)));
     }
+    let base = style().height(px(item.height)).items_center()
+        .border_bottom(px(1)).border_color(theme_color("border"))
+        .background(if item.selected { rgba(0x334155cc) }
+            else if item.striped { theme_color("surface_raised") }
+            else { rgba(0x00000000) });
+    if !item.selected {
+        base = base.hover(style().background(theme_color("surface_hover")));
+    }
     let node = row(cells)
         .with_key(payload.key)
-        .with_style(style().height(px(item.height)).border_color(theme_color("border"))
-            .background(if item.selected { rgba(0x334155cc) }
-                else if item.striped { theme_color("surface_raised") }
-                else { rgba(0x00000000) }))
+        .with_style(base)
         .accessibility_role("row")
         .accessibility_label(item.label);
     node.on_click_value(Fn("row_action"), #{ key: payload.key, selection: item.selection })
@@ -139,7 +144,9 @@ fn render_Table(ctx, props) {
     }
     let header = row(headers).with_key(`${props.key}-header`)
         .with_style(component_style(props, "header",
-            style().height(px(36)).background(theme_color("surface_raised"))))
+            style().height(px(36)).items_center()
+                .border_bottom(px(1)).border_color(theme_color("border"))
+                .background(theme_color("surface_raised"))))
         .accessibility_role("row");
 
     if prop_or(props, "loading", false) {
