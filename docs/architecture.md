@@ -89,7 +89,10 @@ resolve in their source module.
 Formal render functions may declare named effects and typed native signals.
 Effects compare immutable `UiValue` dependencies, run old cleanup before new
 start, and retain original imported-module invocation context across event turns
-and hot reload. Signals are non-owning component/key/type handles; values live
+and hot reload. Every effect activation receives a distinct Host async scope;
+tasks, subscriptions, and image decodes started from that context are cancelled
+automatically only after a replacement successfully starts or the effect is
+removed. Signals are non-owning component/key/type handles; values live
 in Rust, writes never dirty a Rhai component, and approved style bindings are
 sampled by the GPUI renderer without per-frame Rhai execution.
 

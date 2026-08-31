@@ -127,6 +127,15 @@ rejected. Failed start/cleanup restores runtime state and keeps the last-good
 tree; external Rust side effects remain outside rollback and therefore need
 idempotent Host design.
 
+Tasks, subscriptions, and background image decodes started by an effect callback
+belong to that exact effect activation. Scripts do not need to retain their
+handles merely for lifecycle cleanup. After every cleanup and replacement start
+succeeds, the Host cancels the old activation scope; a replacement uses a new
+scope even when its effect key is unchanged. Failed replacement starts cancel
+new work through transaction rollback; the Host does not automatically cancel
+the prior activation. Explicit cancellation performed by cleanup and external
+capability side effects remain irreversible and should therefore be idempotent.
+
 ## Native signals
 
 Declare a component-local hot value during render and bind it only to an

@@ -18,6 +18,27 @@ pub enum AsyncScope {
     App,
     Window(String),
     Component(ComponentInstancePath),
+    Effect {
+        component: ComponentInstancePath,
+        key: String,
+        activation: u64,
+    },
+}
+
+impl AsyncScope {
+    #[must_use]
+    pub const fn component(&self) -> Option<&ComponentInstancePath> {
+        match self {
+            Self::Component(component) | Self::Effect { component, .. } => Some(component),
+            Self::App | Self::Window(_) => None,
+        }
+    }
+
+    #[must_use]
+    pub fn is_within_component(&self, root: &ComponentInstancePath) -> bool {
+        self.component()
+            .is_some_and(|component| component.is_within(root))
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -225,9 +246,8 @@ impl TaskRegistry {
     }
 
     pub fn cancel_component_scope(&mut self, component: &ComponentInstancePath) {
-        self.entries.retain(|_, entry| {
-            !matches!(&entry.scope, AsyncScope::Component(path) if path.is_within(component))
-        });
+        self.entries
+            .retain(|_, entry| !entry.scope.is_within_component(component));
     }
 
     #[must_use]
@@ -524,8 +544,7 @@ impl SubscriptionRegistry {
     pub fn cancel_component_scope(&mut self, component: &ComponentInstancePath) {
         let mut closures = Vec::new();
         self.entries.retain(|_, entry| {
-            let remove =
-                matches!(&entry.scope, AsyncScope::Component(path) if path.is_within(component));
+            let remove = entry.scope.is_within_component(component);
             if remove {
                 closures.push(close_subscription_entry(
                     entry,
@@ -786,6 +805,11 @@ mod tests {
             AsyncScope::App,
             AsyncScope::Window("settings".to_owned()),
             AsyncScope::Component(root.child("Panel", "root")),
+            AsyncScope::Effect {
+                component: root.child("Panel", "effect"),
+                key: "watch".to_owned(),
+                activation: 1,
+            },
         ] {
             tasks
                 .spawn(
@@ -801,6 +825,52 @@ mod tests {
         tasks.cancel_scope(&AsyncScope::Window("settings".to_owned()));
         tasks.cancel_component_scope(&root);
         assert_eq!(tasks.active_count(), 1);
+    }
+
+    #[test]
+    fn exact_effect_activation_cancellation_preserves_replacement_work() {
+        let (success, error, generation) = callbacks();
+        let component = ComponentInstancePath::root("App", "main").child("Probe", "primary");
+        let old = AsyncScope::Effect {
+            component: component.clone(),
+            key: "watch".to_owned(),
+            activation: 1,
+        };
+        let replacement = AsyncScope::Effect {
+            component,
+            key: "watch".to_owned(),
+            activation: 2,
+        };
+        let mut tasks = TaskRegistry::new();
+        for scope in [old.clone(), replacement.clone()] {
+            tasks
+                .spawn(
+                    scope,
+                    generation,
+                    success.clone(),
+                    error.clone(),
+                    ValueSchema::Null,
+                    || Ok(UiValue::Null),
+                )
+                .unwrap();
+        }
+        tasks.cancel_scope(&old);
+        assert_eq!(tasks.active_count(), 1);
+
+        let mut subscriptions = SubscriptionRegistry::new();
+        for scope in [old.clone(), replacement] {
+            let _ = subscriptions.subscribe(SubscriptionRegistration::new(
+                "app.stream.watch",
+                scope,
+                generation,
+                success.clone(),
+                error.clone(),
+                ValueSchema::Null,
+            ));
+        }
+        subscriptions.cancel_scope(&old);
+        assert_eq!(subscriptions.active_count(), 1);
+        assert_eq!(subscriptions.take_closures().len(), 1);
     }
 
     #[test]

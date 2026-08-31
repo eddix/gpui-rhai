@@ -146,6 +146,7 @@ pub struct InspectorSignal {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct InspectorEffect {
     pub id: String,
+    pub activation: u64,
     pub dependencies: String,
     pub start: String,
     pub cleanup: String,
@@ -266,9 +267,10 @@ fn inspect_runtime_mechanisms(runtime: &UiRuntimeState) -> InspectorRuntimeMecha
             .collect(),
         effects: runtime
             .effects
-            .iter()
-            .map(|(id, effect)| InspectorEffect {
+            .iter_active()
+            .map(|(id, effect, activation)| InspectorEffect {
                 id: format!("{}/{}", id.component(), id.key()),
+                activation,
                 dependencies: display_value(effect.dependencies(), false),
                 start: effect.start().name().to_owned(),
                 cleanup: effect.cleanup().name().to_owned(),
@@ -637,8 +639,13 @@ fn append_mechanism_lines(snapshot: &InspectorSnapshot, lines: &mut Vec<String>)
     lines.push("Effects".to_owned());
     for effect in &snapshot.effects {
         lines.push(format!(
-            "  {} deps={} start={} cleanup={} gen={}",
-            effect.id, effect.dependencies, effect.start, effect.cleanup, effect.generation
+            "  {} activation={} deps={} start={} cleanup={} gen={}",
+            effect.id,
+            effect.activation,
+            effect.dependencies,
+            effect.start,
+            effect.cleanup,
+            effect.generation
         ));
     }
     lines.push("Timers".to_owned());

@@ -77,7 +77,7 @@ define_component(#{
     metadata: #{
         id: "components/effect_probe", "export": "EffectProbe", version: "0.1.0",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
-        dependencies: [], capabilities: #{}
+        dependencies: [], capabilities: #{ "app.echo": "^1" }
     },
     schema: #{
         props: #{
@@ -94,7 +94,13 @@ fn start_sync(ctx, dependency) {
     let count = ctx.get_app_store("effect_audit", "starts");
     ctx.set_app_store("effect_audit", "starts", count + 1);
     ctx.set_app_store("effect_audit", "last_start", dependency);
+    ctx.start_task(
+        "app.echo", "echo", `${dependency}`,
+        Fn("effect_loaded"), Fn("effect_failed")
+    );
 }
+fn effect_loaded(ctx, value) { () }
+fn effect_failed(ctx, error) { () }
 fn cleanup_sync(ctx, dependency) {
     let count = ctx.get_app_store("effect_audit", "cleanups");
     ctx.set_app_store("effect_audit", "cleanups", count + 1);
@@ -254,6 +260,28 @@ fn effect_audit_runtime() -> Rc<RefCell<UiRuntimeState>> {
             StoreId::app("effect_audit"),
             ComponentStateSchema::new(fields).unwrap(),
         )
+        .unwrap();
+    let capability = CapabilityId::parse("app.echo").unwrap();
+    runtime
+        .capabilities
+        .register_async(
+            CapabilityDescriptor {
+                id: capability.clone(),
+                version: Version::new(1, 0, 0),
+                methods: BTreeMap::from([(
+                    "echo".to_owned(),
+                    CapabilityMethod {
+                        input: ValueSchema::string(),
+                        output: ValueSchema::string(),
+                    },
+                )]),
+            },
+            AsyncEcho,
+        )
+        .unwrap();
+    runtime
+        .capabilities
+        .activate(&BTreeMap::from([(capability, VersionReq::STAR)]))
         .unwrap();
     Rc::new(RefCell::new(runtime))
 }
@@ -565,6 +593,7 @@ fn declarative_effects_start_restart_and_cleanup_in_imported_module_context() {
     .unwrap();
     lifecycle.start(&mut engine).unwrap();
     assert_eq!(runtime.borrow().effects.len(), 1);
+    assert_eq!(runtime.borrow().tasks.active_count(), 1);
 
     assert_eq!(effect_audit_values(&runtime)["starts"], UiValue::Integer(1));
     assert_eq!(
@@ -578,6 +607,7 @@ fn declarative_effects_start_restart_and_cleanup_in_imported_module_context() {
         .unwrap();
     assert!(lifecycle.render_dirty(&mut engine).unwrap());
     assert_eq!(effect_audit_values(&runtime)["starts"], UiValue::Integer(2));
+    assert_eq!(runtime.borrow().tasks.active_count(), 1);
     assert_eq!(
         effect_audit_values(&runtime)["cleanups"],
         UiValue::Integer(1)
@@ -599,6 +629,7 @@ fn declarative_effects_start_restart_and_cleanup_in_imported_module_context() {
     assert_root_text(&lifecycle, "2");
     assert!(runtime.borrow().dirty_components().contains(&root));
     assert_eq!(runtime.borrow().effects.len(), 1);
+    assert_eq!(runtime.borrow().tasks.active_count(), 1);
     assert_eq!(effect_audit_values(&runtime)["starts"], UiValue::Integer(2));
     assert_eq!(
         effect_audit_values(&runtime)["cleanups"],
@@ -616,6 +647,7 @@ fn declarative_effects_start_restart_and_cleanup_in_imported_module_context() {
         .unwrap();
     assert!(lifecycle.render_dirty(&mut engine).unwrap());
     assert!(runtime.borrow().effects.is_empty());
+    assert_eq!(runtime.borrow().tasks.active_count(), 0);
     assert_eq!(effect_audit_values(&runtime)["starts"], UiValue::Integer(2));
     assert_eq!(
         effect_audit_values(&runtime)["cleanups"],

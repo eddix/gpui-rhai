@@ -473,16 +473,14 @@ impl ScriptLifecycle {
         engine: &RuntimeEngine,
         delivery: AsyncDelivery,
     ) -> Result<Dynamic, LifecycleError> {
-        let component =
-            delivery
-                .callback
-                .component()
-                .cloned()
-                .unwrap_or_else(|| match delivery.scope {
-                    AsyncScope::Component(component) => component,
-                    AsyncScope::App | AsyncScope::Window(_) => self.root_path.clone(),
-                });
+        let component = delivery
+            .callback
+            .component()
+            .cloned()
+            .or_else(|| delivery.scope.component().cloned())
+            .unwrap_or_else(|| self.root_path.clone());
         let events = delivery.callback.events().clone();
+        let scope = delivery.scope.clone();
         let context = UiContext::new(
             Rc::clone(&self.runtime),
             component,
@@ -492,7 +490,8 @@ impl ScriptLifecycle {
         )
         .with_optional_view_id(self.view.clone())
         .with_generation(self.compiled.generation())
-        .with_native_context(delivery.callback.native_context().cloned());
+        .with_native_context(delivery.callback.native_context().cloned())
+        .with_async_scope(scope);
         Ok(engine.invoke_callback(
             &self.compiled,
             &delivery.callback,
@@ -764,11 +763,11 @@ impl ScriptLifecycle {
             .map_err(|_| LifecycleError::Borrowed)?
             .effects
             .plan(&self.root_path, declarations.effects);
-        let transition_count = plan.cleanup().len().saturating_add(plan.start().len());
+        let transition_count = plan.transition_count();
         if transition_count > 64 {
             return Err(LifecycleError::EffectBudget(transition_count));
         }
-        if !plan.cleanup().is_empty()
+        if plan.has_cleanup()
             && let Some(previous_state) = previous_state
         {
             self.runtime
@@ -776,12 +775,13 @@ impl ScriptLifecycle {
                 .map_err(|_| LifecycleError::Borrowed)?
                 .component_state = previous_state;
         }
-        for descriptor in plan.cleanup() {
+        for (descriptor, scope) in plan.cleanup_descriptors() {
             self.invoke_effect_callback(
                 engine,
                 candidate,
                 descriptor.cleanup(),
                 descriptor.dependencies().clone(),
+                scope,
             )?;
         }
         let virtual_collections = engine.virtual_collection_ids_in_scope(&self.root_path);
@@ -803,19 +803,25 @@ impl ScriptLifecycle {
                 .reconcile(&self.root_path, declarations.element_refs);
             runtime.virtual_requests.retain(&virtual_collections);
         }
-        for descriptor in plan.start() {
+        for (descriptor, scope) in plan.start_descriptors() {
             self.invoke_effect_callback(
                 engine,
                 candidate,
                 descriptor.start(),
                 descriptor.dependencies().clone(),
+                scope,
             )?;
         }
-        self.runtime
-            .try_borrow_mut()
-            .map_err(|_| LifecycleError::Borrowed)?
-            .effects
-            .commit(plan);
+        {
+            let mut runtime = self
+                .runtime
+                .try_borrow_mut()
+                .map_err(|_| LifecycleError::Borrowed)?;
+            for (_, scope) in plan.cleanup_descriptors() {
+                runtime.cancel_async_scope(&scope)?;
+            }
+            runtime.effects.commit(plan);
+        }
         Ok(())
     }
 
@@ -825,6 +831,7 @@ impl ScriptLifecycle {
         candidate: &CompiledUi,
         callback: &ScriptCallback,
         dependencies: UiValue,
+        scope: AsyncScope,
     ) -> Result<(), LifecycleError> {
         let compiled = if callback.generation() == candidate.generation() {
             candidate
@@ -842,7 +849,8 @@ impl ScriptLifecycle {
             .map_or(root_context.clone(), |component| {
                 root_context.for_component(component.clone(), callback.events().clone())
             })
-            .with_native_context(callback.native_context().cloned());
+            .with_native_context(callback.native_context().cloned())
+            .with_async_scope(scope);
         let _ = engine.invoke_callback_for_generation(
             compiled,
             callback,

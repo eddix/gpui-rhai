@@ -91,6 +91,11 @@ impl UiRuntimeState {
                 AsyncScope::App => "/App".to_owned(),
                 AsyncScope::Window(window) => format!("window:{window}"),
                 AsyncScope::Component(component) => component.to_string(),
+                AsyncScope::Effect {
+                    component,
+                    key,
+                    activation,
+                } => format!("{component}/effect[{key}]#{activation}"),
             };
             self.traces.push(
                 crate::RuntimeTraceKind::Subscription,
@@ -137,7 +142,9 @@ impl UiRuntimeState {
         self.pending_async.retain(|delivery| match &delivery.scope {
             AsyncScope::App => true,
             AsyncScope::Window(id) => id != window,
-            AsyncScope::Component(path) => !path.is_within(root),
+            AsyncScope::Component(_) | AsyncScope::Effect { .. } => {
+                !delivery.scope.is_within_component(root)
+            }
         });
         self.pending_element_commands
             .retain(|command| command.window() != window);
@@ -170,6 +177,16 @@ impl UiRuntimeState {
         self.pending_async.extend(deliveries);
     }
 
+    pub(crate) fn cancel_async_scope(&mut self, scope: &AsyncScope) -> Result<(), AssetError> {
+        self.tasks.cancel_scope(scope);
+        self.subscriptions.cancel_scope(scope);
+        self.assets.cancel_scope(scope)?;
+        self.pending_async
+            .retain(|delivery| &delivery.scope != scope);
+        self.trace_subscription_closures();
+        Ok(())
+    }
+
     pub(crate) fn take_window_async(
         &mut self,
         window: &str,
@@ -183,7 +200,9 @@ impl UiRuntimeState {
                 .partition(|delivery| match &delivery.scope {
                     AsyncScope::App => app_owner.as_deref() == Some(window),
                     AsyncScope::Window(id) => id == window,
-                    AsyncScope::Component(path) => path.is_within(root),
+                    AsyncScope::Component(_) | AsyncScope::Effect { .. } => {
+                        delivery.scope.is_within_component(root)
+                    }
                 });
         self.pending_async = retained;
         accepted
@@ -300,11 +319,10 @@ impl UiRuntimeState {
             self.actions.remove_component_scope(removed);
         }
         self.pending_async.retain(|delivery| {
-            !matches!(
-                &delivery.scope,
-                AsyncScope::Component(path)
-                    if path.is_within(root) && !active.contains(path)
-            )
+            delivery
+                .scope
+                .component()
+                .is_none_or(|path| !path.is_within(root) || active.contains(path))
         });
         self.pending_actions.retain(|action| {
             !action
@@ -473,6 +491,7 @@ pub struct UiContext {
     events: BTreeMap<String, EventSchema>,
     generation: ScriptGeneration,
     native_context: Option<crate::invocation::ScriptInvocationContext>,
+    async_scope: Option<AsyncScope>,
     component_style: Option<crate::Style>,
     component_part_styles: BTreeMap<String, crate::Style>,
 }
@@ -495,6 +514,7 @@ impl UiContext {
             events,
             generation: ScriptGeneration::default(),
             native_context: None,
+            async_scope: None,
             component_style: None,
             component_part_styles: BTreeMap::new(),
         };
@@ -541,6 +561,7 @@ impl UiContext {
             events,
             generation: self.generation,
             native_context: self.native_context.clone(),
+            async_scope: self.async_scope.clone(),
             component_style: self.component_style.clone(),
             component_part_styles: self.component_part_styles.clone(),
         };
@@ -560,6 +581,11 @@ impl UiContext {
         native_context: Option<crate::invocation::ScriptInvocationContext>,
     ) -> Self {
         self.native_context = native_context;
+        self
+    }
+
+    pub(crate) fn with_async_scope(mut self, scope: AsyncScope) -> Self {
+        self.async_scope = Some(scope);
         self
     }
 
@@ -1861,7 +1887,9 @@ impl UiContext {
             .map_err(|_| UiContextError::Borrowed)?;
         let handle = runtime.assets.start_image_decode(
             asset,
-            AsyncScope::Component(self.component.clone()),
+            self.async_scope
+                .clone()
+                .unwrap_or_else(|| AsyncScope::Component(self.component.clone())),
             self.generation,
             success,
             error,
@@ -1994,7 +2022,9 @@ impl UiContext {
             .map_err(|_| UiContextError::Borrowed)?;
         let (work, output) = runtime.capabilities.start_task(&id, method, input)?;
         let handle = runtime.tasks.spawn(
-            AsyncScope::Component(self.component.clone()),
+            self.async_scope
+                .clone()
+                .unwrap_or_else(|| AsyncScope::Component(self.component.clone())),
             self.generation,
             success,
             error,
@@ -2040,7 +2070,9 @@ impl UiContext {
             .start_subscription(&id, method, input)?;
         let registration = SubscriptionRegistration::new(
             format!("{capability}.{method}"),
-            AsyncScope::Component(self.component.clone()),
+            self.async_scope
+                .clone()
+                .unwrap_or_else(|| AsyncScope::Component(self.component.clone())),
             self.generation,
             success,
             error,

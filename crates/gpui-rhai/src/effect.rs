@@ -97,7 +97,24 @@ impl EffectDescriptor {
 
 #[derive(Clone, Debug, Default)]
 pub struct EffectRegistry {
-    active: BTreeMap<EffectId, EffectDescriptor>,
+    active: BTreeMap<EffectId, ActiveEffect>,
+    next_activation: u64,
+}
+
+#[derive(Clone, Debug)]
+struct ActiveEffect {
+    descriptor: EffectDescriptor,
+    activation: u64,
+}
+
+impl ActiveEffect {
+    fn scope(&self) -> crate::AsyncScope {
+        crate::AsyncScope::Effect {
+            component: self.descriptor.id.component.clone(),
+            key: self.descriptor.id.key.clone(),
+            activation: self.activation,
+        }
+    }
 }
 
 impl EffectRegistry {
@@ -107,7 +124,17 @@ impl EffectRegistry {
     }
 
     pub fn iter(&self) -> impl ExactSizeIterator<Item = (&EffectId, &EffectDescriptor)> {
-        self.active.iter()
+        self.active
+            .iter()
+            .map(|(id, active)| (id, &active.descriptor))
+    }
+
+    pub(crate) fn iter_active(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (&EffectId, &EffectDescriptor, u64)> {
+        self.active
+            .iter()
+            .map(|(id, active)| (id, &active.descriptor, active.activation))
     }
 
     #[must_use]
@@ -127,34 +154,49 @@ impl EffectRegistry {
     ) -> EffectPlan {
         let mut next = self.active.clone();
         next.retain(|id, _| !id.component.is_within(root));
-        next.extend(candidate.clone());
 
         let mut cleanup = self
             .active
             .iter()
             .filter(|(id, active)| {
-                id.component.is_within(root) && candidate.get(*id) != Some(*active)
+                id.component.is_within(root) && candidate.get(*id) != Some(&active.descriptor)
             })
-            .map(|(_, descriptor)| descriptor.clone())
+            .map(|(_, active)| active.clone())
             .collect::<Vec<_>>();
-        cleanup.sort_by(|left, right| right.id.cmp(&left.id));
+        cleanup.sort_by(|left, right| right.descriptor.id.cmp(&left.descriptor.id));
 
-        let mut start = candidate
-            .into_iter()
-            .filter(|(id, descriptor)| self.active.get(id) != Some(descriptor))
-            .map(|(_, descriptor)| descriptor)
-            .collect::<Vec<_>>();
-        start.sort_by(|left, right| left.id.cmp(&right.id));
+        let mut activation = self.next_activation.max(1);
+        let mut start = Vec::new();
+        for (id, descriptor) in candidate {
+            if let Some(active) = self
+                .active
+                .get(&id)
+                .filter(|active| active.descriptor == descriptor)
+            {
+                next.insert(id, active.clone());
+            } else {
+                let active = ActiveEffect {
+                    descriptor,
+                    activation,
+                };
+                activation = activation.saturating_add(1);
+                start.push(active.clone());
+                next.insert(id, active);
+            }
+        }
+        start.sort_by(|left, right| left.descriptor.id.cmp(&right.descriptor.id));
 
         EffectPlan {
             cleanup,
             start,
             next,
+            next_activation: activation,
         }
     }
 
     pub(crate) fn commit(&mut self, plan: EffectPlan) {
         self.active = plan.next;
+        self.next_activation = plan.next_activation;
     }
 
     pub(crate) fn remove_scope(&mut self, root: &ComponentInstancePath) {
@@ -164,18 +206,35 @@ impl EffectRegistry {
 
 #[derive(Clone, Debug)]
 pub(crate) struct EffectPlan {
-    cleanup: Vec<EffectDescriptor>,
-    start: Vec<EffectDescriptor>,
-    next: BTreeMap<EffectId, EffectDescriptor>,
+    cleanup: Vec<ActiveEffect>,
+    start: Vec<ActiveEffect>,
+    next: BTreeMap<EffectId, ActiveEffect>,
+    next_activation: u64,
 }
 
 impl EffectPlan {
-    pub(crate) fn cleanup(&self) -> &[EffectDescriptor] {
-        &self.cleanup
+    pub(crate) fn transition_count(&self) -> usize {
+        self.cleanup.len().saturating_add(self.start.len())
     }
 
-    pub(crate) fn start(&self) -> &[EffectDescriptor] {
-        &self.start
+    pub(crate) fn has_cleanup(&self) -> bool {
+        !self.cleanup.is_empty()
+    }
+
+    pub(crate) fn cleanup_descriptors(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (&EffectDescriptor, crate::AsyncScope)> {
+        self.cleanup
+            .iter()
+            .map(|active| (&active.descriptor, active.scope()))
+    }
+
+    pub(crate) fn start_descriptors(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (&EffectDescriptor, crate::AsyncScope)> {
+        self.start
+            .iter()
+            .map(|active| (&active.descriptor, active.scope()))
     }
 }
 
@@ -229,19 +288,47 @@ mod tests {
             &root,
             BTreeMap::from([(active.id().clone(), active.clone())]),
         );
-        assert!(initial.cleanup().is_empty());
-        assert_eq!(initial.start(), std::slice::from_ref(&active));
+        assert!(!initial.has_cleanup());
+        assert_eq!(
+            initial
+                .start_descriptors()
+                .map(|(descriptor, _)| descriptor)
+                .collect::<Vec<_>>(),
+            vec![&active]
+        );
         registry.commit(initial);
 
         let unchanged = registry.plan(
             &root,
             BTreeMap::from([(active.id().clone(), active.clone())]),
         );
-        assert!(unchanged.cleanup().is_empty());
-        assert!(unchanged.start().is_empty());
+        assert_eq!(unchanged.transition_count(), 0);
 
         let removed = registry.plan(&root, BTreeMap::new());
-        assert_eq!(removed.cleanup(), std::slice::from_ref(&active));
-        assert!(removed.start().is_empty());
+        assert_eq!(
+            removed
+                .cleanup_descriptors()
+                .map(|(descriptor, _)| descriptor)
+                .collect::<Vec<_>>(),
+            vec![&active]
+        );
+        assert_eq!(removed.start_descriptors().len(), 0);
+    }
+
+    #[test]
+    fn restarted_effect_uses_a_distinct_async_activation_scope() {
+        let root = ComponentInstancePath::root("View", "main");
+        let old = descriptor(&root, "watch", 1);
+        let mut registry = EffectRegistry::new();
+        let initial = registry.plan(&root, BTreeMap::from([(old.id().clone(), old.clone())]));
+        let old_scope = initial.start_descriptors().next().unwrap().1;
+        registry.commit(initial);
+
+        let changed = descriptor(&root, "watch", 2);
+        let restart = registry.plan(&root, BTreeMap::from([(changed.id().clone(), changed)]));
+        let cleanup_scope = restart.cleanup_descriptors().next().unwrap().1;
+        let start_scope = restart.start_descriptors().next().unwrap().1;
+        assert_eq!(cleanup_scope, old_scope);
+        assert_ne!(start_scope, old_scope);
     }
 }

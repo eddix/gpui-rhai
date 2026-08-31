@@ -537,7 +537,9 @@ impl AssetRegistry {
         inner.pending_decodes.retain(|_, pending| {
             let remove = match &pending.scope {
                 AsyncScope::Window(id) => id == window,
-                AsyncScope::Component(path) => path.is_within(component),
+                AsyncScope::Component(_) | AsyncScope::Effect { .. } => {
+                    pending.scope.is_within_component(component)
+                }
                 AsyncScope::App => false,
             };
             if remove {
@@ -562,10 +564,27 @@ impl AssetRegistry {
             .try_borrow_mut()
             .map_err(|_| AssetError::Borrowed)?;
         inner.pending_decodes.retain(|_, pending| {
-            let remove = matches!(
-                &pending.scope,
-                AsyncScope::Component(path) if path.is_within(component)
-            );
+            let remove = pending.scope.is_within_component(component);
+            if remove {
+                pending.canceled.store(true, Ordering::Release);
+            }
+            !remove
+        });
+        Ok(())
+    }
+
+    /// Cancel pending image work owned by one exact asynchronous scope.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AssetError::Borrowed`] during conflicting registry access.
+    pub fn cancel_scope(&self, scope: &AsyncScope) -> Result<(), AssetError> {
+        let mut inner = self
+            .inner
+            .try_borrow_mut()
+            .map_err(|_| AssetError::Borrowed)?;
+        inner.pending_decodes.retain(|_, pending| {
+            let remove = &pending.scope == scope;
             if remove {
                 pending.canceled.store(true, Ordering::Release);
             }
@@ -1020,6 +1039,21 @@ mod tests {
             )
             .unwrap();
         assert!(registry.cancel_image_decode(handle).unwrap());
+        let effect_scope = AsyncScope::Effect {
+            component: crate::ComponentInstancePath::root("App", "root"),
+            key: "image".to_owned(),
+            activation: 1,
+        };
+        registry
+            .start_image_decode(
+                &AssetId::parse("app/pixel").unwrap(),
+                effect_scope.clone(),
+                generation,
+                ScriptCallback::try_from_fn_ptr(FnPtr::new("loaded").unwrap(), generation).unwrap(),
+                ScriptCallback::try_from_fn_ptr(FnPtr::new("failed").unwrap(), generation).unwrap(),
+            )
+            .unwrap();
+        registry.cancel_scope(&effect_scope).unwrap();
         registry
             .retain_decode_generation(generation.next())
             .unwrap();
