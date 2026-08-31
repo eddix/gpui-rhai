@@ -1583,7 +1583,19 @@ impl GpuiNodeRenderer {
         retained_id: Option<NodeId>,
     ) -> AnyElement {
         match node.kind() {
-            UiNodeKind::Text { text } => element.child(text.as_str().to_owned()).into_any_element(),
+            UiNodeKind::Text { text } => {
+                if node_selectable(node) {
+                    let highlight = environment
+                        .colors
+                        .resolve(&ColorValue::Token("selection".to_owned()))
+                        .unwrap_or(Rgba8::from_rgba_hex(0x3b82_f655));
+                    element
+                        .child(SelectableText::new(path, text.as_str(), highlight))
+                        .into_any_element()
+                } else {
+                    element.child(text.as_str().to_owned()).into_any_element()
+                }
+            }
             UiNodeKind::RichText { text, spans } => element
                 .child(styled_text(text.as_str(), spans, environment.colors))
                 .into_any_element(),
@@ -1800,6 +1812,13 @@ fn node_tab_stop(node: &UiNode) -> bool {
     !matches!(
         node.attributes().get("tab_stop"),
         Some(UiValue::Bool(false))
+    )
+}
+
+fn node_selectable(node: &UiNode) -> bool {
+    matches!(
+        node.attributes().get("selectable"),
+        Some(UiValue::Bool(true))
     )
 }
 
@@ -2498,6 +2517,206 @@ fn f64_to_f32(value: f64) -> f32 {
 struct TranslatedElement {
     child: Option<AnyElement>,
     offset: Point<Pixels>,
+}
+
+/// Drag-to-select text: a `text()` node marked `selectable(true)` renders
+/// through this element instead of a plain string child. Dragging inside
+/// the node highlights a byte range; releasing the mouse copies the
+/// selected slice to the system clipboard. Selection is per-node (no
+/// cross-node ranges) and lives in element state, so it survives
+/// re-renders as long as the element id (node path) is stable.
+struct SelectableText {
+    id: ElementId,
+    text: StyledText,
+    highlight: Rgba8,
+}
+
+#[derive(Default)]
+struct SelectableTextState {
+    anchor: Rc<std::cell::Cell<Option<usize>>>,
+    selection: Rc<std::cell::Cell<Option<(usize, usize)>>>,
+}
+
+impl SelectableText {
+    fn new(path: &str, text: &str, highlight: Rgba8) -> Self {
+        Self {
+            id: ElementId::Name(SharedString::from(format!("{path}/selectable"))),
+            text: StyledText::new(text.to_owned()),
+            highlight,
+        }
+    }
+}
+
+/// Highlight rectangles for byte range [start, end): first-line partial,
+/// middle lines as one full-width block, last-line partial. Wrap width
+/// comes from the measured layout bounds (browser-style).
+fn selection_rects(
+    layout: &gpui::TextLayout,
+    start: usize,
+    end: usize,
+) -> Vec<Bounds<Pixels>> {
+    let (Some(p1), Some(p2)) = (
+        layout.position_for_index(start),
+        layout.position_for_index(end),
+    ) else {
+        return Vec::new();
+    };
+    let line_height = layout.line_height();
+    let bounds = layout.bounds();
+    if p1.y == p2.y {
+        return vec![Bounds::from_corners(p1, point(p2.x, p1.y + line_height))];
+    }
+    let mut rects = vec![Bounds::from_corners(
+        p1,
+        point(bounds.right(), p1.y + line_height),
+    )];
+    if p2.y > p1.y + line_height {
+        rects.push(Bounds::from_corners(
+            point(bounds.left(), p1.y + line_height),
+            point(bounds.right(), p2.y),
+        ));
+    }
+    rects.push(Bounds::from_corners(
+        point(bounds.left(), p2.y),
+        point(p2.x, p2.y + line_height),
+    ));
+    rects
+}
+
+impl Element for SelectableText {
+    type RequestLayoutState = ();
+    type PrepaintState = gpui::Hitbox;
+
+    fn id(&self) -> Option<ElementId> {
+        Some(self.id.clone())
+    }
+
+    fn source_location(&self) -> Option<&'static core::panic::Location<'static>> {
+        None
+    }
+
+    fn request_layout(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        inspector_id: Option<&InspectorElementId>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> (LayoutId, Self::RequestLayoutState) {
+        self.text.request_layout(None, inspector_id, window, cx)
+    }
+
+    fn prepaint(
+        &mut self,
+        _id: Option<&GlobalElementId>,
+        inspector_id: Option<&InspectorElementId>,
+        bounds: Bounds<Pixels>,
+        state: &mut Self::RequestLayoutState,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> gpui::Hitbox {
+        self.text
+            .prepaint(None, inspector_id, bounds, state, window, cx);
+        window.insert_hitbox(bounds, gpui::HitboxBehavior::Normal)
+    }
+
+    fn paint(
+        &mut self,
+        global_id: Option<&GlobalElementId>,
+        inspector_id: Option<&InspectorElementId>,
+        bounds: Bounds<Pixels>,
+        state: &mut Self::RequestLayoutState,
+        hitbox: &mut Self::PrepaintState,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        let Some(global_id) = global_id else {
+            self.text
+                .paint(None, inspector_id, bounds, state, &mut (), window, cx);
+            return;
+        };
+        let layout = self.text.layout().clone();
+        let highlight = rgba(self.highlight.as_rgba_hex());
+        let (anchor, selection) =
+            window.with_element_state::<SelectableTextState, _>(global_id, |prev, _| {
+                let prev = prev.unwrap_or_default();
+                ((prev.anchor.clone(), prev.selection.clone()), prev)
+            });
+
+        // Highlight under the glyphs: paint quads first, text second.
+        if let Some((start, end)) = selection.get()
+            && end > start
+        {
+            for rect in selection_rects(&layout, start, end) {
+                window.paint_quad(gpui::fill(rect, highlight));
+            }
+        }
+        self.text
+            .paint(None, inspector_id, bounds, state, &mut (), window, cx);
+        window.set_cursor_style(CursorStyle::IBeam, hitbox);
+
+        let clamp = |index: Result<usize, usize>| match index {
+            Ok(ix) | Err(ix) => ix,
+        };
+
+        {
+            let anchor = anchor.clone();
+            let selection = selection.clone();
+            let layout = layout.clone();
+            let hitbox = hitbox.clone();
+            window.on_mouse_event(move |event: &MouseDownEvent, phase, window, _| {
+                if phase.bubble()
+                    && event.button == MouseButton::Left
+                    && hitbox.is_hovered(window)
+                {
+                    anchor.set(Some(clamp(layout.index_for_position(event.position))));
+                    selection.set(None);
+                    window.refresh();
+                }
+            });
+        }
+        {
+            let anchor = anchor.clone();
+            let selection = selection.clone();
+            let layout = layout.clone();
+            window.on_mouse_event(move |event: &MouseMoveEvent, phase, window, _| {
+                if phase.bubble()
+                    && event.pressed_button == Some(MouseButton::Left)
+                    && let Some(from) = anchor.get()
+                {
+                    let to = clamp(layout.index_for_position(event.position));
+                    selection.set(Some((from.min(to), from.max(to))));
+                    window.refresh();
+                }
+            });
+        }
+        {
+            window.on_mouse_event(move |event: &MouseUpEvent, phase, _, cx| {
+                if phase.bubble() && event.button == MouseButton::Left {
+                    if anchor.take().is_some()
+                        && let Some((start, end)) = selection.get()
+                        && end > start
+                    {
+                        let copied = layout
+                            .text()
+                            .get(start..end)
+                            .unwrap_or_default()
+                            .to_owned();
+                        if !copied.is_empty() {
+                            cx.write_to_clipboard(gpui::ClipboardItem::new_string(copied));
+                        }
+                    }
+                }
+            });
+        }
+    }
+}
+
+impl IntoElement for SelectableText {
+    type Element = Self;
+
+    fn into_element(self) -> Self::Element {
+        self
+    }
 }
 
 struct GeometryTrackedElement {

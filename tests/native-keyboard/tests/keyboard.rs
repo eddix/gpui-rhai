@@ -2,8 +2,9 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use gpui::{
-    Context, FocusHandle, InteractiveElement, IntoElement, Modifiers, ParentElement, Render,
-    StatefulInteractiveElement, Styled, TestAppContext, VisualTestContext, Window, div, point, px,
+    Context, FocusHandle, InteractiveElement, IntoElement, Modifiers, MouseButton, ParentElement,
+    Render, StatefulInteractiveElement, Styled, TestAppContext, VisualTestContext, Window, div,
+    point, px,
 };
 use gpui_rhai::{
     ActionId, ComponentInstancePath, EmbeddedScriptSource, EmbeddedScriptView, EventPropagation,
@@ -2358,4 +2359,91 @@ fn separate_hosts_in_one_window_keep_overlay_domains_isolated(cx: &mut TestAppCo
     let mut right_text = Vec::new();
     node_texts(&right_root, &mut right_text);
     assert!(right_text.contains(&"Count: 1".to_owned()));
+}
+
+#[gpui::test]
+fn selectable_text_drag_copies_selection_to_clipboard(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let entry = ModuleId::parse("main").unwrap();
+    let prepared = EmbeddedScriptView::new(
+        entry.clone(),
+        EmbeddedScriptSource::new(std::collections::BTreeMap::from([(
+            entry,
+            r#"
+                fn view(ctx) {
+                    column([
+                        text("Copy this error text").selectable(true)
+                            .with_key("err")
+                            .test_id("err")
+                            .accessibility_role("document")
+                            .accessibility_label("error text")
+                    ])
+                }
+            "#
+            .to_owned(),
+        )])),
+        include_str!("../../../registry/themes/default_dark.rhai"),
+    )
+    .prepare()
+    .unwrap();
+    let captured = Rc::new(RefCell::new(None));
+    let captured_for_window = Rc::clone(&captured);
+    let window = cx.add_window(move |window, cx| {
+        let host = ScriptViewHost::new("selectable-window", cx).unwrap();
+        let view = prepared
+            .mount(
+                ScriptViewConfig::new("selectable-view"),
+                host.clone(),
+                window,
+                cx,
+            )
+            .unwrap();
+        *captured_for_window.borrow_mut() = Some(view.clone());
+        SingleEmbeddedHost { host, view }
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    cx.run_until_parked();
+
+    let view = captured.borrow().as_ref().unwrap().clone();
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    visual.run_until_parked();
+
+    let result = visual
+        .update(|window, cx| {
+            view.automate(
+                gpui_rhai::AutomationCommand::Query {
+                    locator: gpui_rhai::AutomationLocator::TestId {
+                        id: "err".to_owned(),
+                    },
+                },
+                window,
+                cx,
+            )
+        })
+        .unwrap();
+    let gpui_rhai::AutomationResult::Node { node } = result else {
+        panic!("expected node result");
+    };
+    let bounds = node.bounds.expect("selectable text has committed bounds");
+
+    // Drag across the whole node: down at the top-left corner of the glyphs,
+    // move past the bottom-right corner (indices clamp to the text length),
+    // release. The selected slice must land in the clipboard on mouse up.
+    let start = point(px((bounds.x + 2.0) as f32), px((bounds.y + 2.0) as f32));
+    let end = point(
+        px((bounds.x + bounds.width - 1.0) as f32),
+        px((bounds.y + bounds.height - 1.0) as f32),
+    );
+    visual.simulate_mouse_down(start, MouseButton::Left, Modifiers::default());
+    visual.run_until_parked();
+    visual.simulate_mouse_move(end, MouseButton::Left, Modifiers::default());
+    visual.run_until_parked();
+    visual.simulate_mouse_up(end, MouseButton::Left, Modifiers::default());
+    visual.run_until_parked();
+
+    assert_eq!(
+        cx.read_from_clipboard().and_then(|item| item.text()),
+        Some("Copy this error text".to_owned())
+    );
 }

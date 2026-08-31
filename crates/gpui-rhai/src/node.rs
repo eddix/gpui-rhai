@@ -1098,6 +1098,12 @@ impl CustomType for UiNode {
                 node.clone()
                     .with_attribute("tab_stop", UiValue::Bool(tab_stop))
             })
+            // Text nodes only: enable drag selection. Dragging highlights a
+            // range and releasing copies it to the system clipboard.
+            .with_fn("selectable", |node: &mut Self, selectable: bool| {
+                node.clone()
+                    .with_attribute("selectable", UiValue::Bool(selectable))
+            })
             .with_fn(
                 "tab_index",
                 |node: &mut Self, index: INT| -> Result<Self, Box<EvalAltResult>> {

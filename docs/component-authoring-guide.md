@@ -244,6 +244,13 @@ focusable while removing it from keyboard traversal. Modal focus trap/restore
 belongs to Overlay; ordinary components should prefer one group tab stop plus
 semantic arrow-key roving policy.
 
+`selectable(true)` on a text node enables drag selection: dragging inside the
+node highlights a byte range (painted with the `selection` theme token, falling
+back to translucent blue) and releasing the mouse copies the selected slice to
+the system clipboard. Selection is per-node; ranges never span nodes. Use it
+for error output and other copy-worthy text — editor components
+(`text_input`/`text_area`) keep their own richer selection.
+
 Trusted Hosts can register a `NativeHandlerDescriptor` and Rust closure, then
 Rhai resolves it with `native_handler("namespace.name")` and attaches it through
 the same `on` methods. The descriptor limits accepted event names and validates
