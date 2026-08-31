@@ -4,8 +4,8 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use rhai::{
-    CustomType, Dynamic, Engine, EvalAltResult, FLOAT, FnPtr, INT, ImmutableString, Map, Position,
-    TypeBuilder,
+    Array, CustomType, Dynamic, Engine, EvalAltResult, FLOAT, FnPtr, INT, ImmutableString, Map,
+    Position, TypeBuilder,
 };
 use thiserror::Error;
 
@@ -18,7 +18,8 @@ use crate::{
     StateError, StateStore, StoreError, StoreId, StoreRegistry, SubscriptionCloseReason,
     SubscriptionHandle, SubscriptionRegistration, SubscriptionRegistry, TaskHandle, TaskRegistry,
     TextDirection, ThemeError, ThemeManager, ThemePreference, ThemeSelection, UiEvent, UiValue,
-    UiValueError, WindowCommandError, WindowCommandRegistry,
+    UiValueError, UiValuePath, UiValuePathError, UiValuePathSegment, WindowCommandError,
+    WindowCommandRegistry,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -625,6 +626,23 @@ impl UiContext {
             })
     }
 
+    /// Read one existing nested local-state path.
+    ///
+    /// Local state remains a component-scoped dependency: this accessor avoids
+    /// copying an entire collection into Rhai but does not create a smaller
+    /// rerender boundary than the owning component.
+    ///
+    /// # Errors
+    ///
+    /// Returns state, borrow, or nested-path errors.
+    pub fn get_state_path(
+        &self,
+        field: &str,
+        path: &UiValuePath,
+    ) -> Result<UiValue, UiContextError> {
+        Ok(self.get_state(field)?.get_path(path)?.clone())
+    }
+
     /// Queue a schema-checked local state mutation.
     ///
     /// # Errors
@@ -649,6 +667,47 @@ impl UiContext {
             crate::RuntimeTraceKind::State,
             self.component.to_string(),
             format!("set {field}"),
+            Some(value),
+            sensitive,
+        );
+        Ok(())
+    }
+
+    /// Replace one existing nested local-state path.
+    ///
+    /// # Errors
+    ///
+    /// Returns phase, state, conversion, borrow, or nested-path errors. The
+    /// complete resulting field is checked against its declared schema.
+    pub fn set_state_path(
+        &self,
+        field: &str,
+        path: &UiValuePath,
+        value: Dynamic,
+    ) -> Result<(), UiContextError> {
+        self.require_mutation()?;
+        let value = UiValue::from_dynamic(value)?;
+        let mut runtime = self
+            .runtime
+            .try_borrow_mut()
+            .map_err(|_| UiContextError::Borrowed)?;
+        let mut root = runtime
+            .component_state
+            .get(&self.component, field)
+            .cloned()
+            .ok_or_else(|| UiContextError::UnknownState {
+                component: self.component.clone(),
+                field: field.to_owned(),
+            })?;
+        root.set_path(path, value.clone())?;
+        let sensitive = runtime.component_state.is_sensitive(&self.component, field);
+        if runtime.component_state.set(&self.component, field, root)? {
+            runtime.dirty.insert(self.component.clone());
+        }
+        runtime.traces.push(
+            crate::RuntimeTraceKind::State,
+            self.component.to_string(),
+            format!("set nested {field}"),
             Some(value),
             sensitive,
         );
@@ -897,6 +956,26 @@ impl UiContext {
             .read_tracked(&self.component, &StoreId::app(store), field)?)
     }
 
+    /// Read and subscribe to one exact app-store path.
+    ///
+    /// # Errors
+    ///
+    /// Returns store, path, or borrow errors.
+    pub fn get_app_store_path(
+        &self,
+        store: &str,
+        field: &str,
+        path: &UiValuePath,
+    ) -> Result<UiValue, UiContextError> {
+        let mut runtime = self
+            .runtime
+            .try_borrow_mut()
+            .map_err(|_| UiContextError::Borrowed)?;
+        Ok(runtime
+            .stores
+            .read_path_tracked(&self.component, &StoreId::app(store), field, path)?)
+    }
+
     /// Queue a schema-checked app store mutation.
     ///
     /// # Errors
@@ -928,6 +1007,38 @@ impl UiContext {
         Ok(())
     }
 
+    /// Replace one exact app-store path and invalidate only affected readers.
+    ///
+    /// # Errors
+    ///
+    /// Returns phase, conversion, store, path, schema, or borrow errors.
+    pub fn set_app_store_path(
+        &self,
+        store: &str,
+        field: &str,
+        path: &UiValuePath,
+        value: Dynamic,
+    ) -> Result<(), UiContextError> {
+        self.require_mutation()?;
+        let value = UiValue::from_dynamic(value)?;
+        let mut runtime = self
+            .runtime
+            .try_borrow_mut()
+            .map_err(|_| UiContextError::Borrowed)?;
+        let id = StoreId::app(store);
+        let sensitive = runtime.stores.is_sensitive(&id, field);
+        let invalidated = runtime.stores.write_path(&id, field, path, value.clone())?;
+        runtime.dirty.extend(invalidated);
+        runtime.traces.push(
+            crate::RuntimeTraceKind::Store,
+            format!("app:{store}"),
+            format!("set nested {field}"),
+            Some(value),
+            sensitive,
+        );
+        Ok(())
+    }
+
     /// Read and subscribe to a store scoped to this context's window.
     ///
     /// # Errors
@@ -943,6 +1054,30 @@ impl UiContext {
         Ok(runtime
             .stores
             .read_tracked(&self.component, &StoreId::window(window, store), field)?)
+    }
+
+    /// Read and subscribe to one exact path in the current window's store.
+    ///
+    /// # Errors
+    ///
+    /// Returns missing-window, store, path, or borrow errors.
+    pub fn get_window_store_path(
+        &self,
+        store: &str,
+        field: &str,
+        path: &UiValuePath,
+    ) -> Result<UiValue, UiContextError> {
+        let window = self.window.as_ref().ok_or(UiContextError::MissingWindow)?;
+        let mut runtime = self
+            .runtime
+            .try_borrow_mut()
+            .map_err(|_| UiContextError::Borrowed)?;
+        Ok(runtime.stores.read_path_tracked(
+            &self.component,
+            &StoreId::window(window, store),
+            field,
+            path,
+        )?)
     }
 
     /// Queue a schema-checked mutation in the current window's store.
@@ -971,6 +1106,40 @@ impl UiContext {
             crate::RuntimeTraceKind::Store,
             format!("window:{window}:{store}"),
             format!("set {field}"),
+            Some(value),
+            sensitive,
+        );
+        Ok(())
+    }
+
+    /// Replace one exact path in the current window's store.
+    ///
+    /// # Errors
+    ///
+    /// Returns phase, missing-window, conversion, store, path, schema, or
+    /// borrow errors.
+    pub fn set_window_store_path(
+        &self,
+        store: &str,
+        field: &str,
+        path: &UiValuePath,
+        value: Dynamic,
+    ) -> Result<(), UiContextError> {
+        self.require_mutation()?;
+        let window = self.window.as_ref().ok_or(UiContextError::MissingWindow)?;
+        let value = UiValue::from_dynamic(value)?;
+        let mut runtime = self
+            .runtime
+            .try_borrow_mut()
+            .map_err(|_| UiContextError::Borrowed)?;
+        let id = StoreId::window(window, store);
+        let sensitive = runtime.stores.is_sensitive(&id, field);
+        let invalidated = runtime.stores.write_path(&id, field, path, value.clone())?;
+        runtime.dirty.extend(invalidated);
+        runtime.traces.push(
+            crate::RuntimeTraceKind::Store,
+            format!("window:{window}:{store}"),
+            format!("set nested {field}"),
             Some(value),
             sensitive,
         );
@@ -1929,20 +2098,6 @@ impl CustomType for UiContext {
     fn build(mut builder: TypeBuilder<Self>) {
         builder
             .with_name("UiContext")
-            .with_fn("get_state", |context: &mut Self, field: ImmutableString| {
-                context
-                    .get_state(field.as_str())
-                    .map(UiValue::into_dynamic)
-                    .map_err(|error| Box::new(context_runtime_error(&error)))
-            })
-            .with_fn(
-                "set_state",
-                |context: &mut Self, field: ImmutableString, value: Dynamic| {
-                    context
-                        .set_state(field.as_str(), value)
-                        .map_err(|error| Box::new(context_runtime_error(&error)))
-                },
-            )
             .with_fn(
                 "emit",
                 |context: &mut Self, event: ImmutableString, payload: Dynamic| {
@@ -1958,46 +2113,6 @@ impl CustomType for UiContext {
                 },
             )
             .with_fn(
-                "get_app_store",
-                |context: &mut Self, store: ImmutableString, field: ImmutableString| {
-                    context
-                        .get_app_store(store.as_str(), field.as_str())
-                        .map(UiValue::into_dynamic)
-                        .map_err(|error| Box::new(context_runtime_error(&error)))
-                },
-            )
-            .with_fn(
-                "set_app_store",
-                |context: &mut Self,
-                 store: ImmutableString,
-                 field: ImmutableString,
-                 value: Dynamic| {
-                    context
-                        .set_app_store(store.as_str(), field.as_str(), value)
-                        .map_err(|error| Box::new(context_runtime_error(&error)))
-                },
-            )
-            .with_fn(
-                "get_window_store",
-                |context: &mut Self, store: ImmutableString, field: ImmutableString| {
-                    context
-                        .get_window_store(store.as_str(), field.as_str())
-                        .map(UiValue::into_dynamic)
-                        .map_err(|error| Box::new(context_runtime_error(&error)))
-                },
-            )
-            .with_fn(
-                "set_window_store",
-                |context: &mut Self,
-                 store: ImmutableString,
-                 field: ImmutableString,
-                 value: Dynamic| {
-                    context
-                        .set_window_store(store.as_str(), field.as_str(), value)
-                        .map_err(|error| Box::new(context_runtime_error(&error)))
-                },
-            )
-            .with_fn(
                 "call_capability",
                 |context: &mut Self,
                  capability: ImmutableString,
@@ -2009,6 +2124,7 @@ impl CustomType for UiContext {
                         .map_err(|error| Box::new(context_runtime_error(&error)))
                 },
             );
+        register_state_store_context_methods(&mut builder);
         register_signal_context_methods(&mut builder);
         register_element_ref_context_methods(&mut builder);
         register_async_context_methods(&mut builder);
@@ -2019,6 +2135,218 @@ impl CustomType for UiContext {
         register_asset_context_methods(&mut builder);
         register_window_context_methods(&mut builder);
     }
+}
+
+fn register_state_store_context_methods(builder: &mut TypeBuilder<UiContext>) {
+    register_state_context_methods(builder);
+    register_app_store_context_methods(builder);
+    register_window_store_context_methods(builder);
+}
+
+fn register_state_context_methods(builder: &mut TypeBuilder<UiContext>) {
+    builder
+        .with_fn(
+            "get_state",
+            |context: &mut UiContext, field: ImmutableString| {
+                context
+                    .get_state(field.as_str())
+                    .map(UiValue::into_dynamic)
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        )
+        .with_fn(
+            "get_state_path",
+            |context: &mut UiContext, field: ImmutableString, path: Array| {
+                let path = rhai_value_path(path)?;
+                context
+                    .get_state_path(field.as_str(), &path)
+                    .map(UiValue::into_dynamic)
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        )
+        .with_fn(
+            "set_state",
+            |context: &mut UiContext, field: ImmutableString, value: Dynamic| {
+                context
+                    .set_state(field.as_str(), value)
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        )
+        .with_fn(
+            "set_state_path",
+            |context: &mut UiContext, field: ImmutableString, path: Array, value: Dynamic| {
+                let path = rhai_value_path(path)?;
+                context
+                    .set_state_path(field.as_str(), &path, value)
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        );
+}
+
+fn register_app_store_context_methods(builder: &mut TypeBuilder<UiContext>) {
+    builder
+        .with_fn(
+            "get_app_store",
+            |context: &mut UiContext, store: ImmutableString, field: ImmutableString| {
+                context
+                    .get_app_store(store.as_str(), field.as_str())
+                    .map(UiValue::into_dynamic)
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        )
+        .with_fn(
+            "get_app_store_path",
+            |context: &mut UiContext,
+             store: ImmutableString,
+             field: ImmutableString,
+             path: Array| {
+                let path = rhai_value_path(path)?;
+                context
+                    .get_app_store_path(store.as_str(), field.as_str(), &path)
+                    .map(UiValue::into_dynamic)
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        )
+        .with_fn(
+            "set_app_store",
+            |context: &mut UiContext,
+             store: ImmutableString,
+             field: ImmutableString,
+             value: Dynamic| {
+                context
+                    .set_app_store(store.as_str(), field.as_str(), value)
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        )
+        .with_fn(
+            "set_app_store_path",
+            |context: &mut UiContext,
+             store: ImmutableString,
+             field: ImmutableString,
+             path: Array,
+             value: Dynamic| {
+                let path = rhai_value_path(path)?;
+                context
+                    .set_app_store_path(store.as_str(), field.as_str(), &path, value)
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        );
+}
+
+fn register_window_store_context_methods(builder: &mut TypeBuilder<UiContext>) {
+    builder
+        .with_fn(
+            "get_window_store",
+            |context: &mut UiContext, store: ImmutableString, field: ImmutableString| {
+                context
+                    .get_window_store(store.as_str(), field.as_str())
+                    .map(UiValue::into_dynamic)
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        )
+        .with_fn(
+            "get_window_store_path",
+            |context: &mut UiContext,
+             store: ImmutableString,
+             field: ImmutableString,
+             path: Array| {
+                let path = rhai_value_path(path)?;
+                context
+                    .get_window_store_path(store.as_str(), field.as_str(), &path)
+                    .map(UiValue::into_dynamic)
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        )
+        .with_fn(
+            "set_window_store",
+            |context: &mut UiContext,
+             store: ImmutableString,
+             field: ImmutableString,
+             value: Dynamic| {
+                context
+                    .set_window_store(store.as_str(), field.as_str(), value)
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        )
+        .with_fn(
+            "set_window_store_path",
+            |context: &mut UiContext,
+             store: ImmutableString,
+             field: ImmutableString,
+             path: Array,
+             value: Dynamic| {
+                let path = rhai_value_path(path)?;
+                context
+                    .set_window_store_path(store.as_str(), field.as_str(), &path, value)
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        );
+}
+
+fn rhai_value_path(values: Array) -> Result<UiValuePath, Box<EvalAltResult>> {
+    if values.len() > 64 {
+        return Err(Box::new(EvalAltResult::ErrorRuntime(
+            "value path must have at most 64 segments".into(),
+            Position::NONE,
+        )));
+    }
+    let segments = values
+        .into_iter()
+        .enumerate()
+        .map(|(index, value)| {
+            let actual = value.type_name().to_owned();
+            if let Some(key) = value.clone().try_cast::<ImmutableString>() {
+                return Ok(UiValuePathSegment::Key(key.to_string()));
+            }
+            if let Some(index_value) = value.clone().try_cast::<INT>() {
+                return usize::try_from(index_value)
+                    .map(UiValuePathSegment::Index)
+                    .map_err(|_| {
+                        Box::new(EvalAltResult::ErrorRuntime(
+                            format!("value path segment {index} must be a non-negative integer")
+                                .into(),
+                            Position::NONE,
+                        ))
+                    });
+            }
+            if let Some(mut selector) = value.try_cast::<Map>() {
+                let by = selector
+                    .remove("by")
+                    .and_then(Dynamic::try_cast::<ImmutableString>);
+                let key = selector
+                    .remove("key")
+                    .and_then(Dynamic::try_cast::<ImmutableString>);
+                if selector.is_empty()
+                    && let (Some(by), Some(key)) = (by, key)
+                {
+                    return Ok(UiValuePathSegment::Item {
+                        key_field: by.to_string(),
+                        key: key.to_string(),
+                    });
+                }
+                return Err(Box::new(EvalAltResult::ErrorRuntime(
+                    format!(
+                        "value path segment {index} keyed selector must be exactly #{{ by: string, key: string }}"
+                    )
+                    .into(),
+                    Position::NONE,
+                )));
+            }
+            Err(Box::new(EvalAltResult::ErrorRuntime(
+                format!(
+                    "value path segment {index} must be a string, non-negative integer, or keyed selector map; got {actual}"
+                )
+                .into(),
+                Position::NONE,
+            )))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    UiValuePath::new(segments).map_err(|error| {
+        Box::new(EvalAltResult::ErrorRuntime(
+            error.to_string().into(),
+            Position::NONE,
+        ))
+    })
 }
 
 fn register_signal_context_methods(builder: &mut TypeBuilder<UiContext>) {
@@ -2603,6 +2931,8 @@ pub enum UiContextError {
     #[error(transparent)]
     Value(#[from] UiValueError),
     #[error(transparent)]
+    ValuePath(#[from] UiValuePathError),
+    #[error(transparent)]
     Signal(#[from] crate::SignalError),
     #[error(transparent)]
     ElementRef(#[from] crate::ElementRefError),
@@ -2623,10 +2953,22 @@ mod tests {
 
     fn mounted_context(phase: ExecutionPhase) -> UiContext {
         let path = ComponentInstancePath::root("Counter", "counter");
-        let schema = ComponentStateSchema::new(BTreeMap::from([(
-            "count".to_owned(),
-            StateField::new(ValueSchema::integer(), UiValue::Integer(0)),
-        )]))
+        let schema = ComponentStateSchema::new(BTreeMap::from([
+            (
+                "count".to_owned(),
+                StateField::new(ValueSchema::integer(), UiValue::Integer(0)),
+            ),
+            (
+                "profile".to_owned(),
+                StateField::new(
+                    ValueSchema::UiValue,
+                    UiValue::Map(BTreeMap::from([(
+                        "name".to_owned(),
+                        UiValue::String("Ada".to_owned()),
+                    )])),
+                ),
+            ),
+        ]))
         .unwrap();
         let mut state = UiRuntimeState::new();
         let mut render = state.component_state.begin_render();
@@ -2760,6 +3102,98 @@ mod tests {
             .invoke_callback(&compiled, &callback, (context.clone(),))
             .unwrap();
         assert_eq!(context.get_state("count").unwrap(), UiValue::Integer(1));
+    }
+
+    #[test]
+    fn scripts_use_bounded_nested_and_keyed_store_paths() {
+        let context = mounted_context(ExecutionPhase::Event);
+        let row = |id: &str, label: &str| {
+            UiValue::Map(BTreeMap::from([
+                ("id".to_owned(), UiValue::String(id.to_owned())),
+                ("label".to_owned(), UiValue::String(label.to_owned())),
+            ]))
+        };
+        context
+            .runtime()
+            .borrow_mut()
+            .stores
+            .declare(
+                StoreId::app("model"),
+                ComponentStateSchema::new(BTreeMap::from([(
+                    "data".to_owned(),
+                    StateField::new(
+                        ValueSchema::UiValue,
+                        UiValue::Map(BTreeMap::from([(
+                            "rows".to_owned(),
+                            UiValue::Array(vec![row("alpha", "Alpha"), row("beta", "Beta")]),
+                        )])),
+                    ),
+                )]))
+                .unwrap(),
+            )
+            .unwrap();
+        let mut runtime = RuntimeEngine::new();
+        let compiled = runtime
+            .compile(
+                r#"
+                    fn view() { text("paths") }
+                    fn update(ctx) {
+                        let name = ctx.get_state_path("profile", ["name"]);
+                        ctx.set_state_path("profile", ["name"], name + " Lovelace");
+                        let label = ctx.get_app_store_path(
+                            "model",
+                            "data",
+                            ["rows", #{ by: "id", key: "beta" }, "label"]
+                        );
+                        ctx.set_app_store_path(
+                            "model",
+                            "data",
+                            ["rows", #{ by: "id", key: "beta" }, "label"],
+                            label + "!"
+                        );
+                    }
+                "#,
+            )
+            .unwrap();
+        runtime.render(&compiled).unwrap();
+        let callback = runtime.callback(&compiled, "update").unwrap();
+        let _: Dynamic = runtime
+            .invoke_callback(&compiled, &callback, (context.clone(),))
+            .unwrap();
+
+        let profile = context.get_state("profile").unwrap();
+        assert_eq!(
+            profile
+                .get_path(
+                    &UiValuePath::new(vec![UiValuePathSegment::Key("name".to_owned())]).unwrap()
+                )
+                .unwrap(),
+            &UiValue::String("Ada Lovelace".to_owned())
+        );
+        let row_path = UiValuePath::new(vec![
+            UiValuePathSegment::Key("rows".to_owned()),
+            UiValuePathSegment::Item {
+                key_field: "id".to_owned(),
+                key: "beta".to_owned(),
+            },
+            UiValuePathSegment::Key("label".to_owned()),
+        ])
+        .unwrap();
+        assert_eq!(
+            context
+                .runtime()
+                .borrow_mut()
+                .stores
+                .read_path_tracked(
+                    &ComponentInstancePath::root("Test", "reader"),
+                    &StoreId::app("model"),
+                    "data",
+                    &row_path,
+                )
+                .unwrap(),
+            UiValue::String("Beta!".to_owned())
+        );
+        assert!(rhai_value_path(vec![Dynamic::from(-1_i64)]).is_err());
     }
 
     #[test]

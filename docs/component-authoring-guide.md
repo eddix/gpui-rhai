@@ -66,6 +66,37 @@ callbacks, or arbitrary Dynamic values to deferred rendering.
 Stateful components and lifecycle custom primitives require a stable caller
 `key`. Never store UI state in mutable script globals.
 
+### Nested state and store values
+
+`ctx.get_state(field)` and the whole-field store getters return complete values.
+For a Map or Array this is intentionally a broad read. Use the explicit path
+accessors when a component needs only one nested store value:
+
+```rhai
+let title = ctx.get_app_store_path("workspace", "model", ["document", "title"]);
+ctx.set_app_store_path("workspace", "model", ["document", "title"], "Renamed");
+```
+
+Path segments are bounded to 64 entries. A string selects a Map key and a
+non-negative integer selects an Array index. A keyed selector map selects an
+Array item by a stable string field, so reordering the Array does not invalidate
+that item dependency:
+
+```rhai
+let label = ctx.get_app_store_path(
+    "workspace",
+    "model",
+    ["rows", #{ by: "id", key: row_id }, "label"]
+);
+```
+
+Window stores expose the corresponding `get_window_store_path` and
+`set_window_store_path` methods. Local state also exposes `get_state_path` and
+`set_state_path` to avoid copying complete collections, but local state is
+already owned by one formal component, so its dependency boundary remains that
+component. Writes replace existing paths only, validate the complete resulting
+field against its schema, and never create typoed Map keys or grow Arrays.
+
 ## Effects
 
 Effects are declarations made during a formal component's pure render. Declare

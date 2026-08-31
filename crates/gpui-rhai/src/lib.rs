@@ -198,7 +198,9 @@ pub use theme::{
     ThemePreference, ThemeSelection, ThemeTokenValue, ThemeTokens, ThemeVariant, load_theme_source,
 };
 pub use timer::{TimerDescriptor, TimerError, TimerId, TimerRegistry, TimerSnapshot};
-pub use value::{OpaqueHandle, UiValue, UiValueError};
+pub use value::{
+    OpaqueHandle, UiValue, UiValueError, UiValuePath, UiValuePathError, UiValuePathSegment,
+};
 pub use virtual_list::{
     VariableListSpec, VariableListState, VariableListWindow, VirtualCollectionId,
     VirtualCollectionNodeSpec, VirtualListError, VirtualListMetrics, VirtualListSpec,
