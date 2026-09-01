@@ -102,6 +102,7 @@ struct TextInputConfig {
     placeholder: String,
     disabled: bool,
     read_only: bool,
+    autofocus: bool,
     selection_color: Rgba8,
     caret_color: Rgba8,
 }
@@ -706,6 +707,7 @@ impl PrimitiveHandler for TextInputPrimitiveHandler {
         let placeholder = string_prop(&instance.node.props, "placeholder").unwrap_or_default();
         let disabled = bool_prop(&instance.node.props, "disabled").unwrap_or(false);
         let read_only = bool_prop(&instance.node.props, "read_only").unwrap_or(false);
+        let autofocus = bool_prop(&instance.node.props, "autofocus").unwrap_or(false);
         let selection_color = theme
             .color("selection")
             .unwrap_or_else(|| Rgba8::from_rgba_hex(0x292e_42ff));
@@ -717,6 +719,7 @@ impl PrimitiveHandler for TextInputPrimitiveHandler {
             placeholder,
             disabled,
             read_only,
+            autofocus,
             selection_color,
             caret_color,
         };
@@ -739,6 +742,10 @@ impl PrimitiveHandler for TextInputPrimitiveHandler {
                     }
                 })
                 .detach();
+                // Matches TextArea: focus once on first mount when requested.
+                if config.autofocus && !config.disabled {
+                    input.focus.focus(window);
+                }
             });
             self.instances.insert(id, entity.clone());
             entity
@@ -816,6 +823,10 @@ pub fn text_input_primitive_descriptor() -> PrimitiveDescriptor {
             ),
             (
                 "read_only".to_owned(),
+                ObjectField::optional(ValueSchema::Bool).with_default(UiValue::Bool(false)),
+            ),
+            (
+                "autofocus".to_owned(),
                 ObjectField::optional(ValueSchema::Bool).with_default(UiValue::Bool(false)),
             ),
             ("on_change".to_owned(), optional_callback()),

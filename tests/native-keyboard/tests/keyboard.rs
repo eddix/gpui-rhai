@@ -2841,3 +2841,71 @@ fn table_1000_tracks_the_resized_window_viewport(cx: &mut TestAppContext) {
         "host collection replacement should invalidate its subscribed Table",
     );
 }
+
+#[gpui::test]
+fn autofocus_input_receives_typing_without_any_click(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let entry = ModuleId::parse("main").unwrap();
+    let prepared = EmbeddedScriptView::new(
+        entry.clone(),
+        EmbeddedScriptSource::new(std::collections::BTreeMap::from([(
+            entry,
+            r#"
+                fn state_schema() { #{ fields: #{
+                    text: #{ schema: #{ type: "string" },
+                        "default": #{ type: "string", value: "" } }
+                } } }
+                fn changed(ctx, value) { ctx.set_state("text", value); }
+                fn view(ctx) {
+                    column([
+                        gpui_rhai::TextInputPrimitive(#{
+                            key: "seek",
+                            value: ctx.get_state("text"),
+                            autofocus: true,
+                            on_change: Fn("changed"),
+                        }),
+                        text(`typed:${ctx.get_state("text")}`)
+                    ])
+                }
+            "#
+            .to_owned(),
+        )])),
+        include_str!("../../../registry/themes/default_dark.rhai"),
+    )
+    .prepare()
+    .unwrap();
+    let window = cx.add_window(move |window, cx| {
+        let host = ScriptViewHost::new("autofocus-window", cx).unwrap();
+        let view = prepared
+            .mount(
+                ScriptViewConfig::new("autofocus-view"),
+                host.clone(),
+                window,
+                cx,
+            )
+            .unwrap();
+        SingleEmbeddedHost { host, view }
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    cx.run_until_parked();
+
+    // The boundary under test: no click, no tab — typing must land in the
+    // input purely because autofocus took focus on first mount.
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    visual.simulate_input("hi");
+    visual.run_until_parked();
+
+    let texts = {
+        let root = window
+            .read_with(cx, |host, cx| host.view.root(cx).unwrap().unwrap())
+            .unwrap();
+        let mut out = Vec::new();
+        node_texts(&root, &mut out);
+        out
+    };
+    assert!(
+        texts.contains(&"typed:hi".to_owned()),
+        "autofocus input did not receive typing: {texts:?}"
+    );
+}

@@ -10,7 +10,7 @@
 */
 // Input is a controlled single-line native text input.
 //
-// Props: key, value, placeholder, disabled, read_only, error, callbacks.
+// Props: key, value, placeholder, disabled, read_only, error, autofocus, callbacks.
 // Events: change(string), submit(string), focus(null), blur(null).
 // State: native keyed TextInput Entity. Parts: root, input.
 // Example: Input(#{ key: "name", value: name, on_change: Fn("name_changed") })
@@ -48,6 +48,12 @@ define_component(#{
                 "default": #{ type: "bool", value: false },
             },
             read_only: #{
+                schema: #{ type: "bool" },
+                required: false,
+                sensitive: false,
+                "default": #{ type: "bool", value: false },
+            },
+            autofocus: #{
                 schema: #{ type: "bool" },
                 required: false,
                 sensitive: false,
@@ -109,6 +115,7 @@ fn render_Input(ctx, props) {
         placeholder: optional_prop(props, "placeholder"),
         disabled: disabled,
         read_only: read_only,
+        autofocus: if "autofocus" in props { props.autofocus } else { false },
         on_change: optional_prop(props, "on_change"),
         on_submit: optional_prop(props, "on_submit"),
         on_focus: optional_prop(props, "on_focus"),
