@@ -12,8 +12,9 @@ use gpui::{
 };
 
 use crate::{
-    FocusToken, LayerNodeSpec, LayerPlacement, OverlayBounds, OverlayId, OverlayKind,
-    OverlayManager, OverlayNodeSpec, OverlayPlacement, OverlaySpec, PlacementResult, Rgba8,
+    FocusToken, LayerNodeSpec, LayerPlacement, OverlayBounds, OverlayId, OverlayInitialFocus,
+    OverlayKind, OverlayManager, OverlayNodeSpec, OverlayPlacement, OverlaySpec, PlacementResult,
+    Rgba8,
 };
 
 pub(crate) type OpenChangeHandler = Rc<dyn Fn(bool, &mut Window, &mut App)>;
@@ -500,13 +501,38 @@ impl ScriptOverlayElement {
         self
     }
 
-    fn update_focus(&self, state: &mut OverlayElementState, window: &mut Window, cx: &App) {
+    fn update_focus(&self, state: &mut OverlayElementState, window: &mut Window, cx: &mut App) {
         if self.spec.open && !state.was_open {
             if self.restore_focus_on_close {
                 state.previous_focus = window.focused(cx).map(|focus| focus.downgrade());
             }
             if self.spec.modal || self.spec.kind == OverlayKind::Menu {
                 state.panel_focus.focus(window);
+                if self.spec.initial_focus == OverlayInitialFocus::First {
+                    // Initial focus is bound to the closed -> open presentation
+                    // cycle, never to render: controlled contents re-render on
+                    // every keystroke and re-grabbing focus there would fight
+                    // the user. Deferred so the panel contents have entered the
+                    // focus tree (the frame is built) before we walk it.
+                    let panel = state.panel_focus.clone();
+                    window.defer(cx, move |window, cx| {
+                        // Something else (user click, script focus) may have
+                        // claimed focus meanwhile; the contract only fills the
+                        // default, it never steals.
+                        if !panel.is_focused(window) {
+                            return;
+                        }
+                        window.focus_next();
+                        let inside = window
+                            .focused(cx)
+                            .is_some_and(|focused| panel.contains(&focused, window));
+                        if !inside {
+                            // No focusable content: fall back to the panel so
+                            // focus cannot escape the overlay.
+                            panel.focus(window);
+                        }
+                    });
+                }
             }
         } else if state.was_open && !self.spec.open && self.restore_focus_on_close {
             if self.spec.modal {

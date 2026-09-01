@@ -9,7 +9,8 @@
 }
 */
 // Controlled in-window menu with roving selection and nested submenu nodes.
-// Props: key, parent_overlay, trigger, open, active_value, items, callbacks.
+// Props: key, parent_overlay, trigger, open, active_value, items, placement,
+// initial_focus (panel|first: where focus lands on each open), callbacks.
 // Events: action(string), active_change(string), open_change(bool).
 // State: controlled open/active values.
 // Example: Menu(#{ key: "file", trigger: text("File"), open: true, active_value: "open", items: items })
@@ -31,6 +32,8 @@ define_component(#{
             active_value: #{ schema: #{ type: "string" }, required: true, sensitive: false },
             placement: #{ schema: #{ type: "string", allowed: ["top", "bottom", "left", "right"] }, required: false, sensitive: false,
                 "default": #{ type: "string", value: "bottom" } },
+            initial_focus: #{ schema: #{ type: "string", allowed: ["panel", "first"] }, required: false, sensitive: false,
+                "default": #{ type: "string", value: "panel" } },
             items: #{ schema: #{ type: "array", max_items: 512, items: #{
                 type: "object", allow_unknown: false, fields: #{
                     kind: #{ schema: #{ type: "string", allowed: ["item", "separator", "submenu"] }, required: true, sensitive: false },
@@ -175,6 +178,10 @@ fn render_Menu(ctx, props) {
     let config = #{
         id: props.key, kind: "menu", open: props.open,
         placement: if "placement" in props { props.placement } else { "bottom" },
+        // initial_focus "first" lands focus on the first focusable content
+        // element on every open (a filter input, say); "panel" keeps the
+        // historical panel-focus behavior for arrow-key menus.
+        initial_focus: if "initial_focus" in props { props.initial_focus } else { "panel" },
         gap: 4, modal: false, dismiss_on_escape: true, dismiss_on_outside: true,
     };
     if "parent_overlay" in props && props.parent_overlay != () { config.parent = props.parent_overlay; }

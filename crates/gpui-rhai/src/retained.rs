@@ -708,6 +708,7 @@ mod tests {
                 id: crate::OverlayId::new("overlay"),
                 parent: None,
                 kind: crate::OverlayKind::Popover,
+                initial_focus: crate::OverlayInitialFocus::Panel,
                 placement: crate::OverlayPlacement::Bottom,
                 open: true,
                 gap: 0.0,

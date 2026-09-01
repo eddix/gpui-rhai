@@ -121,6 +121,7 @@ fn tab_order_skips_disabled_nodes_and_enter_activates_focus(cx: &mut TestAppCont
             UiNode::text("overlay trigger"),
             UiNode::text("overlay content"),
             OverlayNodeSpec {
+                initial_focus: gpui_rhai::OverlayInitialFocus::Panel,
                 id: OverlayId::new("keyboard-overlay"),
                 parent: None,
                 kind: OverlayKind::Popover,
@@ -435,6 +436,7 @@ fn nested_overlay_renders_inside_parent_deferred_subtree(cx: &mut TestAppContext
         UiNode::text("Nested popover"),
         UiNode::text("Nested content"),
         OverlayNodeSpec {
+                initial_focus: gpui_rhai::OverlayInitialFocus::Panel,
             id: OverlayId::new("child-popover"),
             parent: Some(OverlayId::new("parent-dialog")),
             kind: OverlayKind::Popover,
@@ -454,6 +456,7 @@ fn nested_overlay_renders_inside_parent_deferred_subtree(cx: &mut TestAppContext
         UiNode::text("Open dialog"),
         child,
         OverlayNodeSpec {
+                initial_focus: gpui_rhai::OverlayInitialFocus::Panel,
             id: OverlayId::new("parent-dialog"),
             parent: None,
             kind: OverlayKind::Dialog,
@@ -2907,5 +2910,171 @@ fn autofocus_input_receives_typing_without_any_click(cx: &mut TestAppContext) {
     assert!(
         texts.contains(&"typed:hi".to_owned()),
         "autofocus input did not receive typing: {texts:?}"
+    );
+}
+
+// PR #11 review: overlays keep their semantic subtree (and thus primitive
+// identity) across close/reopen, so mount-time `autofocus` fires only on the
+// first open. The overlay-level `initial_focus: "first"` contract must land
+// focus in the content input on EVERY closed -> open cycle.
+const CONTROLLED_PALETTE_SCRIPT: &str = r#"
+import "components/input" as input;
+
+fn state_schema() {
+    #{ fields: #{
+        open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: false } },
+        value: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "" } },
+    } }
+}
+
+fn set_open(ctx, open) { ctx.set_state("open", open) }
+fn value_changed(ctx, value) { ctx.set_state("value", value) }
+
+fn view(ctx) {
+    column([
+        text(`typed:${ctx.get_state("value")}`),
+        overlay(
+            text("open palette")
+                .with_style(style().height(px(28)))
+                .accessibility_role("button")
+                .accessibility_label("open palette"),
+            column([
+                input::Input(#{ key: "filter", value: ctx.get_state("value"),
+                    placeholder: "filter", on_change: Fn("value_changed") })
+            ]).with_style(style().width(px(320)).padding(px(8))),
+            #{ id: "palette", kind: "dialog", placement: "center",
+               open: ctx.get_state("open"), modal: true__INITIAL_FOCUS__ }
+        ).with_key("palette").on_open_change(Fn("set_open"))
+    ]).with_style(style().width(relative(1.0)).height(relative(1.0)).gap(px(4)))
+}
+"#;
+
+fn mount_controlled_palette(
+    cx: &mut TestAppContext,
+    initial_focus: Option<&str>,
+) -> (
+    gpui::WindowHandle<SingleEmbeddedHost>,
+    ScriptViewHost,
+    ScriptViewHandle,
+) {
+    cx.update(gpui_rhai::install);
+    let entry = ModuleId::parse("main").unwrap();
+    let script = CONTROLLED_PALETTE_SCRIPT.replace(
+        "__INITIAL_FOCUS__",
+        &initial_focus
+            .map(|policy| format!(", initial_focus: \"{policy}\""))
+            .unwrap_or_default(),
+    );
+    let prepared = EmbeddedScriptView::new(
+        entry.clone(),
+        EmbeddedScriptSource::new(std::collections::BTreeMap::from([
+            (entry, script),
+            (
+                ModuleId::parse("components/input").unwrap(),
+                include_str!("../../../registry/components/input.rhai").to_owned(),
+            ),
+        ])),
+        include_str!("../../../registry/themes/default_dark.rhai"),
+    )
+    .prepare()
+    .unwrap();
+    let captured = Rc::new(RefCell::new(None));
+    let captured_for_window = Rc::clone(&captured);
+    let window = cx.add_window(move |window, cx| {
+        let host = ScriptViewHost::new("palette-window", cx).unwrap();
+        let view = prepared
+            .mount(
+                ScriptViewConfig::new("palette-view"),
+                host.clone(),
+                window,
+                cx,
+            )
+            .unwrap();
+        *captured_for_window.borrow_mut() = Some((host.clone(), view.clone()));
+        SingleEmbeddedHost { host, view }
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    cx.run_until_parked();
+    let (host, view) = captured.borrow().as_ref().unwrap().clone();
+    (window, host, view)
+}
+
+fn click_palette_trigger(visual: &mut VisualTestContext, view: &ScriptViewHandle) {
+    let trigger = visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .find_by_role_and_name("button", "open palette")
+            .next()
+            .unwrap()
+            .geometry
+            .unwrap()
+    });
+    visual.simulate_click(
+        point(
+            px((trigger.visual.x + trigger.visual.width / 2.0) as f32),
+            px((trigger.visual.y + trigger.visual.height / 2.0) as f32),
+        ),
+        Modifiers::default(),
+    );
+    visual.run_until_parked();
+}
+
+fn palette_texts(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> Vec<String> {
+    let root = visual.update(|_, cx| view.root(cx).unwrap().unwrap());
+    let mut texts = Vec::new();
+    node_texts(&root, &mut texts);
+    texts
+}
+
+#[gpui::test]
+fn overlay_initial_focus_first_reaches_input_on_every_open(cx: &mut TestAppContext) {
+    let (window, _host, view) = mount_controlled_palette(cx, Some("first"));
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    visual.run_until_parked();
+
+    // Cycle 1: open -> type without any click or tab.
+    click_palette_trigger(&mut visual, &view);
+    visual.simulate_input("hi");
+    visual.run_until_parked();
+    let texts = palette_texts(&mut visual, &view);
+    assert!(
+        texts.contains(&"typed:hi".to_owned()),
+        "first open must focus the input: {texts:?}"
+    );
+
+    // Close via Escape: the overlay dismisses and reports open_change(false),
+    // the controlled state closes it, and the subtree identity is retained.
+    visual.simulate_keystrokes("escape");
+    visual.run_until_parked();
+
+    // Cycle 2: reopen -> type again. This is the exact boundary from the
+    // review: entity reuse used to leave focus on the overlay panel.
+    click_palette_trigger(&mut visual, &view);
+    visual.simulate_input("x");
+    visual.run_until_parked();
+    let texts = palette_texts(&mut visual, &view);
+    assert!(
+        texts.contains(&"typed:hix".to_owned()),
+        "reopen must focus the input again: {texts:?}"
+    );
+}
+
+#[gpui::test]
+fn overlay_default_panel_focus_keeps_keyboard_on_panel(cx: &mut TestAppContext) {
+    // Control experiment: without `initial_focus: "first"` the panel takes
+    // focus and typing never reaches the input. If this ever starts passing
+    // text through, the default has changed and the test above proves nothing.
+    let (window, _host, view) = mount_controlled_palette(cx, None);
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    visual.run_until_parked();
+
+    click_palette_trigger(&mut visual, &view);
+    visual.simulate_input("hi");
+    visual.run_until_parked();
+    let texts = palette_texts(&mut visual, &view);
+    assert!(
+        texts.contains(&"typed:".to_owned()),
+        "panel default must not route typing into the input: {texts:?}"
     );
 }
