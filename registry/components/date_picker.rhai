@@ -77,7 +77,7 @@ fn optional_prop(props, name) { if name in props && props[name] != () { props[na
 fn date_picker_size(size) {
     if size == "xs" { 24 }
     else if size == "sm" { 28 }
-    else if size == "lg" { 40 }
+    else if size == "lg" { 36 }
     else { 32 }
 }
 fn weekday_index(name) {
@@ -205,27 +205,43 @@ fn render_DatePicker(ctx, props) {
         else { ctx.format_date(value, prop_or(props, "display_style", "short")) };
     let error = prop_or(props, "error", false);
 
-    let trigger_children = [
-        text(display).with_style(component_style(props,
-            if value == () { "trigger_value" } else { "trigger_value" },
-            style().text_color(if value == () { theme_color("text_muted") }
-                else { theme_color("text_primary") })))
-    ];
+    let trigger_value = text(display).with_style(component_style(props, "trigger_value",
+        style().flex_grow().text_color(if value == () { theme_color("text_muted") }
+            else { theme_color("text_primary") })));
+    let trigger_actions = [];
     if prop_or(props, "clearable", false) && value != () {
-        trigger_children.push(image_source(asset("app/icons/close"))
-            .with_style(component_style(props, "clear", style().width(px(14)).height(px(14))))
+        trigger_actions.push(row([image_source(asset("app/icons/close"))
+            .with_style(style().width(px(12)).height(px(12))
+                .text_color(theme_color("text_primary")))])
+            .with_style(component_style(props, "clear", style()
+                .width(px(20)).height(px(20)).items_center().justify_center()
+                .radius(theme_radius("sm"))
+                .hover(style().background(theme_color("surface_hover")))))
             .accessibility_role("button").accessibility_label(ctx.t("calendar.clear"))
             .on_click_value(Fn("clear_date"), #{ changed: true }));
     }
-    trigger_children.push(image_source(asset("app/icons/calendar"))
-        .with_style(component_style(props, "trigger_icon", style().width(px(16)).height(px(16))))
+    trigger_actions.push(row([image_source(asset("app/icons/calendar"))
+        .with_style(style().width(px(14)).height(px(14))
+            .text_color(theme_color("text_muted")))])
+        .with_style(component_style(props, "trigger_icon", style()
+            .width(px(20)).height(px(20)).items_center().justify_center()
+            .text_color(theme_color("text_muted"))))
         .accessibility_role("image").accessibility_label(ctx.t("calendar.open")));
+    let trigger_children = [trigger_value, row(trigger_actions)
+        .with_style(style().gap(px(4)).items_center())];
+    let trigger_border = if error { theme_color("danger") }
+        else if open { theme_color("focus_ring") } else { theme_color("border") };
+    let trigger_style = style().width(width).height(px(size)).padding_x(px(10)).gap(px(8))
+        .items_center().border(px(1)).border_color(trigger_border)
+        .radius(theme_radius("md"))
+        .background(if open { theme_color("surface_raised") } else { theme_color("surface") })
+        .font_size(px(12)).line_height(px(16))
+        .hover(style().background(theme_color("surface_raised")))
+        .focus(style().border_color(theme_color("focus_ring")))
+        .disabled(style().background(theme_color("surface_raised"))
+            .text_color(theme_color("disabled")).opacity(0.72));
     let trigger = row(trigger_children).with_key(`${props.key}-trigger`)
-        .with_style(component_style(props, "trigger",
-            style().width(width).height(px(size)).padding_x(theme_spacing("sm"))
-                .items_center().justify_between().border(px(1))
-                .border_color(if error { theme_color("danger") } else { theme_color("border") })
-                .radius(theme_radius("md")).background(theme_color("surface"))))
+        .with_style(component_style(props, "trigger", trigger_style))
         .disabled(prop_or(props, "disabled", false)).tab_stop(true)
         .accessibility_role("combobox").accessibility_checked(open)
         .accessibility_label(placeholder).accessibility_value(value)
@@ -237,8 +253,13 @@ fn render_DatePicker(ctx, props) {
     let can_next = next != () && date_month_intersects(next, min_date, max_date);
     let previous_node = row([icon_node(
         "app/icons/date_previous", "app/icons/date_next", ctx.t("calendar.previous_month"), 16,
-        component_style(props, "previous", style())
-    )]).with_key(`${props.key}-previous`).disabled(!can_previous)
+        component_style(props, "previous", style().text_color(theme_color("text_muted")))
+    )]).with_key(`${props.key}-previous`).with_style(style()
+        .width(px(28)).height(px(28)).items_center().justify_center()
+        .border(px(1)).border_color(rgba(0x00000000)).radius(theme_radius("sm"))
+        .hover(style().background(theme_color("surface_hover")))
+        .focus(style().border_color(theme_color("focus_ring")))
+        .disabled(style().opacity(0.55))).disabled(!can_previous)
         .accessibility_role("button").accessibility_label(ctx.t("calendar.previous_month"));
     if can_previous {
         previous_node = previous_node.on_click_value(Fn("move_month"),
@@ -246,8 +267,13 @@ fn render_DatePicker(ctx, props) {
     }
     let next_node = row([icon_node(
         "app/icons/date_next", "app/icons/date_previous", ctx.t("calendar.next_month"), 16,
-        component_style(props, "next", style())
-    )]).with_key(`${props.key}-next`).disabled(!can_next)
+        component_style(props, "next", style().text_color(theme_color("text_muted")))
+    )]).with_key(`${props.key}-next`).with_style(style()
+        .width(px(28)).height(px(28)).items_center().justify_center()
+        .border(px(1)).border_color(rgba(0x00000000)).radius(theme_radius("sm"))
+        .hover(style().background(theme_color("surface_hover")))
+        .focus(style().border_color(theme_color("focus_ring")))
+        .disabled(style().opacity(0.55))).disabled(!can_next)
         .accessibility_role("button").accessibility_label(ctx.t("calendar.next_month"));
     if can_next {
         next_node = next_node.on_click_value(Fn("move_month"),
@@ -256,7 +282,8 @@ fn render_DatePicker(ctx, props) {
     let header = row([
         previous_node,
         text(ctx.format_month_year(visible_month))
-            .with_style(component_style(props, "month_title", style())),
+            .with_style(component_style(props, "month_title",
+                style().font_size(px(12)).line_height(px(16)).font_weight(700))),
         next_node,
     ]).with_style(component_style(props, "header",
         style().items_center().justify_between().padding_x(theme_spacing("xs"))));
@@ -267,7 +294,9 @@ fn render_DatePicker(ctx, props) {
         let label = calendar.weekdays.short[(first_weekday + offset) % 7];
         weekday_nodes.push(text(label)
             .with_style(component_style(props, "weekday",
-                style().width(px(size)).height(px(size)).text_color(theme_color("text_muted"))))
+                style().width(px(size)).height(px(24)).items_center().justify_center()
+                    .font_size(px(10)).font_weight(700)
+                    .text_color(theme_color("text_muted"))))
             .accessibility_role("columnheader").accessibility_label(label));
     }
     let weekdays = row(weekday_nodes)
@@ -285,9 +314,13 @@ fn render_DatePicker(ctx, props) {
             let is_focused = cell.date != () && cell.date == focused_date;
             let day_style = component_style(props, "day",
                 style().width(px(size)).height(px(size)).items_center().justify_center()
-                    .radius(theme_radius("sm")));
+                    .radius(theme_radius("sm")).font_size(px(11)).line_height(px(14))
+                    .border(px(1)).border_color(rgba(0x00000000))
+                    .hover(style().background(theme_color("surface_hover")))
+                    .focus(style().border_color(theme_color("focus_ring"))));
             let day_style = if cell.outside {
-                component_style(props, "day_outside", day_style.text_color(theme_color("text_muted")))
+                component_style(props, "day_outside",
+                    day_style.text_color(theme_color("text_muted")).opacity(0.62))
             } else { day_style };
             let day_style = if is_today {
                 component_style(props, "day_today",
@@ -299,7 +332,9 @@ fn render_DatePicker(ctx, props) {
             } else { day_style };
             let day_style = if selected {
                 component_style(props, "day_selected",
-                    day_style.background(theme_color("accent")).text_color(theme_color("on_accent")))
+                    day_style.background(theme_color("accent")).border_color(theme_color("accent"))
+                        .text_color(theme_color("on_accent"))
+                        .hover(style().background(theme_color("accent_hover"))))
             } else { day_style };
             let day_style = if disabled {
                 component_style(props, "day_disabled", day_style.text_color(theme_color("disabled")))
@@ -328,7 +363,11 @@ fn render_DatePicker(ctx, props) {
         let preset_disabled = prop_or(preset, "disabled", false)
             || !date_enabled(preset.value, min_date, max_date);
         let preset_node = text(preset.label).with_key(`preset-${preset.value}`)
-            .with_style(component_style(props, "preset", style().padding(px(4))))
+            .with_style(component_style(props, "preset", style()
+                .height(px(28)).padding_x(px(8)).items_center()
+                .font_size(px(11)).border(px(1)).border_color(theme_color("border"))
+                .radius(theme_radius("sm")).hover(style().background(theme_color("surface_hover")))
+                .disabled(style().opacity(0.55))))
             .disabled(preset_disabled).accessibility_role("button")
             .accessibility_label(preset.label).accessibility_value(preset.value);
         if !preset_disabled {
@@ -340,13 +379,16 @@ fn render_DatePicker(ctx, props) {
     let panel_children = [header, weekdays, grid];
     if footer_nodes.len > 0 {
         panel_children.push(row(footer_nodes)
-            .with_style(component_style(props, "footer", style().gap(px(4)))));
+            .with_style(component_style(props, "footer", style().gap(px(4))
+                .padding_top(px(6)).border_top(px(1)).border_color(theme_color("border")))));
     }
     let panel = column(panel_children).with_key(`${props.key}-panel`)
         .with_style(component_style(props, "panel",
             style().width(px(panel_width)).gap(px(4)).padding(theme_spacing("sm"))
                 .border(px(1)).border_color(theme_color("border"))
-                .radius(theme_radius("md")).background(theme_color("surface_raised"))))
+                .radius(theme_radius("md")).background(theme_color("surface"))
+                .font_size(px(12)).line_height(px(16))
+                .focus(style().border_color(theme_color("focus_ring")))))
         .tab_stop(true).accessibility_role("dialog")
         .accessibility_label(ctx.format_month_year(visible_month));
 

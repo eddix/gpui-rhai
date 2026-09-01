@@ -92,6 +92,33 @@ const TOKYO_NIGHT: &str = include_str!("../../../registry/themes/tokyo_night.rha
 const TOKYO_STORM: &str = include_str!("../../../registry/themes/tokyo_storm.rhai");
 const CATPPUCCIN_LATTE: &str = include_str!("../../../registry/themes/catppuccin_latte.rhai");
 const CATPPUCCIN_MOCHA: &str = include_str!("../../../registry/themes/catppuccin_mocha.rhai");
+const ETHEREAL: &str = include_str!("../../../registry/themes/ethereal.rhai");
+const EVERFOREST: &str = include_str!("../../../registry/themes/everforest.rhai");
+const GRUVBOX: &str = include_str!("../../../registry/themes/gruvbox.rhai");
+const HACKERMAN: &str = include_str!("../../../registry/themes/hackerman.rhai");
+const NORD: &str = include_str!("../../../registry/themes/nord.rhai");
+const RETRO_82: &str = include_str!("../../../registry/themes/retro_82.rhai");
+const HERMARCHY: &str = include_str!("../../../registry/themes/hermarchy.rhai");
+const FUTURISM: &str = include_str!("../../../registry/themes/futurism.rhai");
+const AETHERIA: &str = include_str!("../../../registry/themes/aetheria.rhai");
+
+const BUNDLED_THEMES: &[(&str, &str)] = &[
+    ("default_light", DEFAULT_LIGHT),
+    ("default_dark", DEFAULT_DARK),
+    ("tokyo_night", TOKYO_NIGHT),
+    ("tokyo_storm", TOKYO_STORM),
+    ("catppuccin_latte", CATPPUCCIN_LATTE),
+    ("catppuccin_mocha", CATPPUCCIN_MOCHA),
+    ("ethereal", ETHEREAL),
+    ("everforest", EVERFOREST),
+    ("gruvbox", GRUVBOX),
+    ("hackerman", HACKERMAN),
+    ("nord", NORD),
+    ("retro_82", RETRO_82),
+    ("hermarchy", HERMARCHY),
+    ("futurism", FUTURISM),
+    ("aetheria", AETHERIA),
+];
 
 fn pagination_source() -> EmbeddedScriptSource {
     EmbeddedScriptSource::new(BTreeMap::from([
@@ -368,6 +395,122 @@ fn official_default_theme_pair_satisfies_one_semantic_contract() {
         light.tokens.colors.keys().collect::<Vec<_>>(),
         dark.tokens.colors.keys().collect::<Vec<_>>()
     );
+}
+
+#[test]
+fn bundled_themes_share_the_dense_square_metric_contract() {
+    let engine = RuntimeEngine::new();
+    for &(name, source) in BUNDLED_THEMES {
+        let theme =
+            gpui_rhai::load_theme_source(engine.engine(), &format!("{name}.rhai"), source).unwrap();
+        assert_eq!(theme.tokens.radii["sm"], gpui_rhai::Length::Pixels(2.0));
+        assert_eq!(theme.tokens.radii["md"], gpui_rhai::Length::Pixels(4.0));
+        assert_eq!(theme.tokens.radii["lg"], gpui_rhai::Length::Pixels(6.0));
+        assert_ne!(
+            theme.tokens.colors["surface"],
+            theme.tokens.colors["surface_raised"]
+        );
+        assert_ne!(
+            theme.tokens.colors["surface"],
+            theme.tokens.colors["surface_hover"]
+        );
+    }
+}
+
+fn linear_channel(channel: u8) -> f64 {
+    let channel = f64::from(channel) / 255.0;
+    if channel <= 0.040_45 {
+        channel / 12.92
+    } else {
+        ((channel + 0.055) / 1.055).powf(2.4)
+    }
+}
+
+fn luminance(color: gpui_rhai::Rgba8) -> f64 {
+    let [red, green, blue, _alpha] = color.as_rgba_hex().to_be_bytes();
+    0.2126 * linear_channel(red) + 0.7152 * linear_channel(green) + 0.0722 * linear_channel(blue)
+}
+
+fn contrast(first: gpui_rhai::Rgba8, second: gpui_rhai::Rgba8) -> f64 {
+    let first = luminance(first);
+    let second = luminance(second);
+    (first.max(second) + 0.05) / (first.min(second) + 0.05)
+}
+
+#[test]
+fn bundled_theme_text_pairs_meet_small_text_contrast() {
+    let engine = RuntimeEngine::new();
+    for &(name, source) in BUNDLED_THEMES {
+        let theme =
+            gpui_rhai::load_theme_source(engine.engine(), &format!("{name}.rhai"), source).unwrap();
+        for (foreground, background) in [
+            ("text_primary", "surface"),
+            ("text_muted", "surface"),
+            ("on_accent", "accent"),
+            ("on_danger", "danger"),
+            ("on_warning", "warning"),
+            ("on_success", "success"),
+        ] {
+            let ratio = contrast(
+                theme.tokens.colors[foreground],
+                theme.tokens.colors[background],
+            );
+            assert!(
+                ratio >= 4.5,
+                "{name}: {foreground} on {background} contrast is {ratio:.2}:1"
+            );
+        }
+        assert!(
+            contrast(
+                theme.tokens.colors["focus_ring"],
+                theme.tokens.colors["surface"]
+            ) >= 3.0,
+            "{name}: focus ring does not reach 3:1 against the surface"
+        );
+    }
+}
+
+#[test]
+fn official_component_sources_reject_decorative_visual_drift() {
+    for (id, source) in [
+        ("button", BUTTON),
+        ("checkbox", CHECKBOX),
+        ("radio", RADIO),
+        ("switch", SWITCH),
+        ("tag", TAG),
+        ("input", INPUT),
+        ("textarea", TEXTAREA),
+        ("dropdown", DROPDOWN),
+        ("select", SELECT),
+        ("date_picker", DATE_PICKER),
+        ("table", TABLE),
+        ("pagination", PAGINATION),
+        ("dialog", DIALOG),
+        ("popover", POPOVER),
+        ("tooltip", TOOLTIP),
+        ("menu", MENU),
+        ("toast", TOAST),
+        ("tabs", TABS),
+        ("accordion", ACCORDION),
+    ] {
+        for prohibited in [
+            "shadow(",
+            "linear_gradient(",
+            "radius(px(10",
+            "radius(px(12",
+        ] {
+            assert!(
+                !source.contains(prohibited),
+                "official component {id} contains prohibited visual pattern {prohibited}"
+            );
+        }
+        for line in source.lines().filter(|line| line.contains("rgba(0x")) {
+            assert!(
+                line.contains("rgba(0x00000000)"),
+                "official component {id} hard-codes a palette color: {line}"
+            );
+        }
+    }
 }
 
 #[test]
@@ -796,11 +939,23 @@ fn official_dropdown_is_public_overlay_and_virtual_collection_composition() {
     )
     .unwrap();
     lifecycle.start(&mut engine).unwrap();
-    let UiNodeKind::Overlay { spec, .. } = lifecycle.root().unwrap().kind() else {
+    let UiNodeKind::Overlay { trigger, spec, .. } = lifecycle.root().unwrap().kind() else {
         panic!("Dropdown must compose the generic Overlay node");
     };
     assert_eq!(spec.id.as_str(), "theme");
     assert!(spec.open);
+    assert!(
+        matches!(trigger.kind(), UiNodeKind::Text { text } if text == "Custom theme trigger"),
+        "a custom trigger must be the interactive trigger, not a child of default trigger chrome"
+    );
+    assert_eq!(
+        trigger
+            .style()
+            .resolve(&gpui_rhai::InteractionState::default())
+            .width,
+        None,
+        "default Dropdown width must not wrap a custom trigger"
+    );
     let collection = find_virtual_collection(lifecycle.root().unwrap())
         .expect("Dropdown must use public data-backed virtualization");
     let UiNodeKind::VirtualCollection { spec } = collection.kind() else {

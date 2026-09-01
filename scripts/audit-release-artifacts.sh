@@ -2,7 +2,6 @@
 set -eu
 
 embedded_examples=(
-  component_gallery
   dashboard_layout
   data_table
   embedded_hello_world

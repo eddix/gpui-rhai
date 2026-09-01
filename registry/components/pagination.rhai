@@ -173,7 +173,8 @@ fn render_Pagination(ctx, props) {
     let children = [];
     if prop_or(props, "show_summary", true) {
         children.push(text(`${ctx.format_number(props.total_items)} ${ctx.t("pagination.items")} · ${ctx.t("pagination.page")} ${ctx.format_number(props.current_page)} / ${ctx.format_number(pages)}`)
-            .with_style(component_style(props, "summary", style().text_color(theme_color("text_muted")))));
+            .with_style(component_style(props, "summary", style()
+                .font_size(px(11)).line_height(px(14)).text_color(theme_color("text_muted")))));
     }
     children.push(row(controls).with_style(component_style(props, "controls",
         style().gap(theme_spacing("xs")).items_center())));
@@ -189,9 +190,12 @@ fn render_Pagination(ctx, props) {
                 value: `${props.page_size}`, size: size, width: px(96),
                 on_change: Fn("pagination_size")
             }).with_style(component_style(props, "page_size", style()))
-        ]).with_style(style().gap(theme_spacing("xs"))));
+        ]).with_style(style().gap(theme_spacing("xs")).items_center()
+            .font_size(px(11)).line_height(px(14))));
     }
     row(children).with_key(props.key)
-        .with_style(component_style(props, "root", style().items_center().justify_between().gap(theme_spacing("sm"))))
+        .with_style(component_style(props, "root", style()
+            .items_center().justify_between().gap(theme_spacing("sm"))
+            .font_size(px(12)).line_height(px(16))))
         .accessibility_role("navigation")
 }

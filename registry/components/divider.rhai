@@ -61,7 +61,7 @@ fn render_Divider(ctx, props) {
     } else {
         requested_thickness
     };
-    let base = style().background(theme_color("border"));
+    let base = style().background(theme_color("border")).opacity(0.72);
     let divider_style = if orientation == "vertical" {
         base.width(px(thickness)).height(relative(1.0))
     } else {

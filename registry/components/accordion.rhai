@@ -68,13 +68,24 @@ fn render_Accordion(ctx, props) {
     for item in props.items {
         let open = has_value(props.expanded, item.key);
         let item_disabled = all_disabled || ("disabled" in item && item.disabled);
+        let toggle_color = if open { theme_color("accent") } else { theme_color("text_muted") };
+        let trigger_background = if open { theme_color("surface_raised") }
+            else { rgba(0x00000000) };
+        let trigger_style = style().height(px(32)).padding_x(px(10))
+            .justify_between().items_center().font_size(px(12)).line_height(px(16))
+            .font_weight(700).background(trigger_background)
+            .border(px(1)).border_color(rgba(0x00000000));
+        trigger_style = trigger_style.hover(style().background(theme_color("surface_hover")));
+        trigger_style = trigger_style.focus(style().border_color(theme_color("focus_ring")));
+        trigger_style = trigger_style.disabled(style()
+            .text_color(theme_color("disabled")).opacity(0.72));
         let trigger = row([
             text(item.title),
-            text(if open { "−" } else { "+" })
+            text(if open { "−" } else { "+" }).with_style(style()
+                .width(px(14)).text_color(toggle_color))
         ])
             .with_key(`${item.key}-trigger`)
-            .with_style(component_style(props, "trigger",
-                style().padding(px(8)).justify_between().items_center()))
+            .with_style(component_style(props, "trigger", trigger_style))
             .disabled(item_disabled)
             .accessibility_role("button")
             .accessibility_checked(open);
@@ -82,13 +93,18 @@ fn render_Accordion(ctx, props) {
             trigger = trigger.on_click_value(callback, toggled(props.expanded, item.key, mode));
         }
         let height = item.content_height;
-        let panel = column([item.content])
+        let panel_content = item.content.with_style(component_style(props, "content", style()
+            .padding(px(10)).font_size(px(12)).line_height(px(16))));
+        let panel = column([panel_content])
             .with_key(`${item.key}-content`)
-            .with_style(component_style(props, "content", style().padding_x(px(8)).clip()))
-            .animate(transition("clip_height", 0.0, if open { height * 1.0 } else { 0.0 }, 180, "ease_out"));
+            .with_style(style().height(px(if open { height } else { 0 })).clip())
+            .animate(transition("clip_height", 0.0, if open { height * 1.0 } else { 0.0 }, 150, "ease_out"));
         items.push(column([trigger, panel]).with_key(item.key)
-            .with_style(component_style(props, "item", style())));
+            .with_style(component_style(props, "item", style()
+                .border_bottom(px(1)).border_color(theme_color("border")))));
     }
     column(items).with_key(props.key)
-        .with_style(component_style(props, "root", style().gap(px(2))))
+        .with_style(component_style(props, "root", style()
+            .border(px(1)).border_color(theme_color("border"))
+            .radius(theme_radius("md")).clip()))
 }

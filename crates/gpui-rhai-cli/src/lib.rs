@@ -19,6 +19,8 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use toml_edit::{Array, DocumentMut, InlineTable, Item, Value};
 
+pub mod theme_studio;
+
 const BUTTON_SOURCE: &str = include_str!("../../../registry/components/button.rhai");
 const LABEL_SOURCE: &str = include_str!("../../../registry/components/label.rhai");
 const ICON_SOURCE: &str = include_str!("../../../registry/components/icon.rhai");
@@ -60,9 +62,36 @@ const TOKYO_NIGHT_THEME: &str = include_str!("../../../registry/themes/tokyo_nig
 const TOKYO_STORM_THEME: &str = include_str!("../../../registry/themes/tokyo_storm.rhai");
 const CATPPUCCIN_LATTE_THEME: &str = include_str!("../../../registry/themes/catppuccin_latte.rhai");
 const CATPPUCCIN_MOCHA_THEME: &str = include_str!("../../../registry/themes/catppuccin_mocha.rhai");
+const ETHEREAL_THEME: &str = include_str!("../../../registry/themes/ethereal.rhai");
+const EVERFOREST_THEME: &str = include_str!("../../../registry/themes/everforest.rhai");
+const GRUVBOX_THEME: &str = include_str!("../../../registry/themes/gruvbox.rhai");
+const HACKERMAN_THEME: &str = include_str!("../../../registry/themes/hackerman.rhai");
+const NORD_THEME: &str = include_str!("../../../registry/themes/nord.rhai");
+const RETRO_82_THEME: &str = include_str!("../../../registry/themes/retro_82.rhai");
+const HERMARCHY_THEME: &str = include_str!("../../../registry/themes/hermarchy.rhai");
+const FUTURISM_THEME: &str = include_str!("../../../registry/themes/futurism.rhai");
+const AETHERIA_THEME: &str = include_str!("../../../registry/themes/aetheria.rhai");
 const EN_LOCALE: &str = include_str!("../../../registry/locales/en.rhai");
 const ZH_CN_LOCALE: &str = include_str!("../../../registry/locales/zh_cn.rhai");
 const AR_LOCALE: &str = include_str!("../../../registry/locales/ar.rhai");
+
+const BUNDLED_THEME_SOURCES: &[(&str, &str)] = &[
+    ("default_dark.rhai", DEFAULT_THEME),
+    ("default_light.rhai", DEFAULT_LIGHT_THEME),
+    ("tokyo_night.rhai", TOKYO_NIGHT_THEME),
+    ("tokyo_storm.rhai", TOKYO_STORM_THEME),
+    ("catppuccin_latte.rhai", CATPPUCCIN_LATTE_THEME),
+    ("catppuccin_mocha.rhai", CATPPUCCIN_MOCHA_THEME),
+    ("ethereal.rhai", ETHEREAL_THEME),
+    ("everforest.rhai", EVERFOREST_THEME),
+    ("gruvbox.rhai", GRUVBOX_THEME),
+    ("hackerman.rhai", HACKERMAN_THEME),
+    ("nord.rhai", NORD_THEME),
+    ("retro_82.rhai", RETRO_82_THEME),
+    ("hermarchy.rhai", HERMARCHY_THEME),
+    ("futurism.rhai", FUTURISM_THEME),
+    ("aetheria.rhai", AETHERIA_THEME),
+];
 
 #[derive(Clone, Debug)]
 struct RegistryEntry {
@@ -300,13 +329,10 @@ impl Project {
         }
         plan.create(self.root.join("ui/main.rhai"), starter_ui())?;
         plan.create(self.root.join("ui/theme.rhai"), DEFAULT_THEME.to_owned())?;
-        for (name, source) in [
-            ("default_light.rhai", DEFAULT_LIGHT_THEME),
-            ("tokyo_night.rhai", TOKYO_NIGHT_THEME),
-            ("tokyo_storm.rhai", TOKYO_STORM_THEME),
-            ("catppuccin_latte.rhai", CATPPUCCIN_LATTE_THEME),
-            ("catppuccin_mocha.rhai", CATPPUCCIN_MOCHA_THEME),
-        ] {
+        for &(name, source) in BUNDLED_THEME_SOURCES
+            .iter()
+            .filter(|(name, _)| *name != "default_dark.rhai")
+        {
             plan.create(self.root.join("ui/themes").join(name), source.to_owned())?;
         }
         plan.create(self.root.join("ui/locales/en.rhai"), EN_LOCALE.to_owned())?;
@@ -583,6 +609,15 @@ impl Project {
                 "{:016x}",
                 ScriptAsset::new(id, upstream.source.to_owned()).content_hash
             );
+        }
+        for &(name, source) in BUNDLED_THEME_SOURCES
+            .iter()
+            .filter(|(name, _)| *name != "default_dark.rhai")
+        {
+            let path = self.root.join("ui/themes").join(name);
+            if !path.exists() {
+                plan.create(path, source.to_owned())?;
+            }
         }
         plan.update(
             manifest_path,
@@ -1543,6 +1578,8 @@ pub enum ProjectError {
     TomlDeserialize(#[from] toml::de::Error),
     #[error(transparent)]
     JsonSerialize(#[from] serde_json::Error),
+    #[error("Theme Studio failed: {0}")]
+    ThemeStudio(String),
 }
 
 #[cfg(test)]
@@ -1558,6 +1595,29 @@ mod tests {
         )
         .unwrap();
         directory
+    }
+
+    #[test]
+    fn bundled_component_icons_share_an_explicit_24px_coordinate_space() {
+        for (name, source) in [
+            ("check", CHECK_SVG),
+            ("close", CLOSE_SVG),
+            ("chevron_left", CHEVRON_LEFT_SVG),
+            ("chevron_right", CHEVRON_RIGHT_SVG),
+            ("calendar", CALENDAR_SVG),
+            ("date_previous", DATE_PREVIOUS_SVG),
+            ("date_next", DATE_NEXT_SVG),
+        ] {
+            assert!(source.contains("width=\"24\""), "{name} has no 24px width");
+            assert!(
+                source.contains("height=\"24\""),
+                "{name} has no 24px height"
+            );
+            assert!(
+                source.contains("viewBox=\"0 0 24 24\""),
+                "{name} has a non-standard viewBox"
+            );
+        }
     }
 
     #[test]
@@ -1860,6 +1920,26 @@ mod tests {
             .unwrap(),
             registry.entries[&ModuleId::parse("components/button").unwrap()].source
         );
+    }
+
+    #[test]
+    fn update_adds_missing_bundled_themes_without_overwriting_owned_sources() {
+        let directory = fixture();
+        let project = Project::new(directory.path());
+        project.plan_init().unwrap().apply().unwrap();
+        let owned = directory.path().join("ui/themes/nord.rhai");
+        fs::write(&owned, "// application-owned Nord\n").unwrap();
+        let missing = directory.path().join("ui/themes/ethereal.rhai");
+        fs::remove_file(&missing).unwrap();
+
+        project
+            .plan_update(&BundledRegistry::load().unwrap())
+            .unwrap()
+            .apply()
+            .unwrap();
+
+        assert_eq!(read(&owned).unwrap(), "// application-owned Nord\n");
+        assert_eq!(read(&missing).unwrap(), ETHEREAL_THEME);
     }
 
     #[test]

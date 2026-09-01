@@ -109,18 +109,27 @@ fn render_Menu(ctx, props) {
             let checked = "checked" in item && item.checked;
             let shortcut = if "shortcut" in item && item.shortcut != () { item.shortcut } else { "" };
             let label = if "label" in item && item.label != () { item.label } else { "" };
-            let item_background = if item.value == props.active_value {
-                theme_color("surface_hover")
+            let active = item.value == props.active_value;
+            let item_background = if active {
+                theme_color("selection")
             } else { rgba(0x00000000) };
             let item_text = if item_disabled(item) { theme_color("disabled") }
                 else { theme_color("text_primary") };
+            let item_border = if active { theme_color("accent") } else { rgba(0x00000000) };
+            let hover_background = if active { theme_color("selection") }
+                else { theme_color("surface_hover") };
             let item_style = style().height(px(28)).padding_x(px(8)).gap(px(8))
-                .items_center().justify_between().background(item_background).text_color(item_text);
+                .items_center().background(item_background).text_color(item_text)
+                .font_size(px(12)).line_height(px(16))
+                .border_start(px(2)).border_color(item_border);
+            item_style = item_style.hover(style().background(hover_background));
+            item_style = item_style.disabled(style().opacity(0.66));
             let row_node = row([
-                text(if checked { "✓" } else { "" }),
-                text(label),
+                text(if checked { "✓" } else { "" }).with_style(style()
+                    .width(px(14)).text_color(theme_color("accent"))),
+                text(label).with_style(style().flex_grow()),
                 text(shortcut).with_style(component_style(props, "shortcut",
-                    style().text_color(theme_color("text_muted"))))
+                    style().font_size(px(10)).text_color(theme_color("text_muted"))))
             ])
                 .with_key(item.value)
                 .with_style(component_style(props, "item", item_style))
@@ -138,9 +147,10 @@ fn render_Menu(ctx, props) {
     let content = column(children)
         .with_key(`${props.key}-content`)
         .with_style(component_style(props, "content",
-            style().width(px(240)).padding(px(4)).gap(px(2)).radius(px(8))
+            style().width(px(240)).padding(px(4)).gap(px(2)).radius(theme_radius("md"))
                 .border(px(1)).border_color(theme_color("border"))
-                .background(theme_color("surface_raised"))
+                .background(theme_color("surface"))
+                .focus(style().border_color(theme_color("focus_ring")))
         ))
         .tab_stop(true)
         .accessibility_role("menu");

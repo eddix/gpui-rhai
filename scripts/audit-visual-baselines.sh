@@ -39,11 +39,6 @@ form_cases=(
   tokyo-night.en.ltr
   tokyo-storm.en.ltr
 )
-gallery_cases=(
-  catppuccin-mocha.ar.rtl
-  default-dark.en.tooltip.reduced
-  default-light.en.menu
-)
 embedded_view_cases=(
   default-dark.shared-host
 )
@@ -86,16 +81,13 @@ done
 for case_name in "${data_table_cases[@]}"; do
   check_case "tests/visual/macos/data_table/${case_name}.png" 980 752
 done
-for case_name in "${gallery_cases[@]}"; do
-  check_case "tests/visual/macos/component_gallery/${case_name}.png" 720 552
-done
 for case_name in "${embedded_view_cases[@]}"; do
   check_case "tests/visual/macos/embedded_views/${case_name}.png" 900 452
 done
 
 actual_count="$(find tests/visual/macos -type f -name '*.png' | wc -l | tr -d ' ')"
-if [[ "${actual_count}" != "41" ]]; then
-  echo "unexpected visual baseline count: ${actual_count} (expected 41)" >&2
+if [[ "${actual_count}" != "38" ]]; then
+  echo "unexpected visual baseline count: ${actual_count} (expected 38)" >&2
   exit 1
 fi
 

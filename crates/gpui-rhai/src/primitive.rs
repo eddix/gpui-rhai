@@ -1182,8 +1182,13 @@ fn convert_prop(
             convert_prop(branch, value, generation)
         }
         ValueSchema::Node => Ok(PrimitiveValue::Node(Box::new(value.cast::<UiNode>()))),
-        ValueSchema::Callback => Ok(PrimitiveValue::Callback(UiEventHandler::Script(
-            ScriptCallback::try_from_fn_ptr(value.cast::<FnPtr>(), generation)?,
+        ValueSchema::Callback if value.is::<FnPtr>() => {
+            Ok(PrimitiveValue::Callback(UiEventHandler::Script(
+                ScriptCallback::try_from_fn_ptr(value.cast::<FnPtr>(), generation)?,
+            )))
+        }
+        ValueSchema::Callback => Ok(PrimitiveValue::Callback(UiEventHandler::Native(
+            value.cast::<crate::NativeHandlerRef>(),
         ))),
         ValueSchema::Array { items, .. } if matches!(items.as_ref(), ValueSchema::Node) => {
             Ok(PrimitiveValue::Nodes(

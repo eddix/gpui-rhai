@@ -85,6 +85,43 @@ impl UiRuntimeState {
         Self::default()
     }
 
+    /// Set one mounted component field from trusted host code and schedule its
+    /// retained subtree for reevaluation.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same schema and identity errors as [`StateStore::set`].
+    pub fn set_component_state_from_host(
+        &mut self,
+        component: &ComponentInstancePath,
+        field: &str,
+        value: UiValue,
+    ) -> Result<bool, crate::StateError> {
+        let changed = self.component_state.set(component, field, value)?;
+        if changed {
+            self.dirty.insert(component.clone());
+        }
+        Ok(changed)
+    }
+
+    /// Replace the active editable theme variant and invalidate mounted
+    /// component subtrees without recompiling Rhai.
+    ///
+    /// # Errors
+    ///
+    /// Returns when no theme manager is installed or the variant is invalid.
+    pub fn replace_theme_variant_from_host(
+        &mut self,
+        variant: crate::ThemeVariant,
+    ) -> Result<(), crate::ThemeError> {
+        self.theme
+            .as_mut()
+            .ok_or(crate::ThemeError::NoVariants)?
+            .replace_variant(variant)?;
+        self.dirty.extend(self.component_state.paths());
+        Ok(())
+    }
+
     pub(crate) fn trace_subscription_closures(&mut self) {
         for closure in self.subscriptions.take_closures() {
             let scope = match closure.scope {

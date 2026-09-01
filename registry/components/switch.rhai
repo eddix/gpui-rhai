@@ -49,19 +49,32 @@ fn render_Switch(ctx, props) {
     let disabled = if "disabled" in props { props.disabled } else { false };
     let loading = if "loading" in props { props.loading } else { false };
     let blocked = disabled || loading;
-    let thumb = text(if loading { "…" } else { "" }).with_style(component_style(props, "thumb",
+    let thumb = text(if loading { "·" } else { "" }).with_style(component_style(props, "thumb",
         style()
-            .width(px(18)).height(px(18)).radius(px(9))
-            .background(theme_color("text_primary"))
-            .text_color(theme_color("surface"))
+            .width(px(12)).height(px(12)).radius(px(1))
+            .items_center().justify_center().font_size(px(10))
+            .background(if props.checked { theme_color("on_accent") }
+                else { theme_color("text_primary") })
+            .text_color(if props.checked { theme_color("accent") }
+                else { theme_color("surface") })
     ));
     let track_style = style()
-        .width(px(38)).height(px(22)).padding(px(2)).radius(px(11))
-        .background(if props.checked { theme_color("accent") } else { theme_color("surface_hover") });
+        .width(px(34)).height(px(18)).padding(px(2)).radius(theme_radius("sm"))
+        .border(px(1)).border_color(if props.checked { theme_color("accent") }
+            else { theme_color("border") })
+        .background(if props.checked { theme_color("accent") } else { theme_color("surface") });
     track_style = if props.checked { track_style.justify_end() } else { track_style.justify_start() };
     let track = row([thumb]).with_style(component_style(props, "track", track_style));
     let node = row([track, text(props.label).with_style(component_style(props, "label", style()))])
-        .with_style(component_style(props, "root", style().gap(px(8)).items_center()))
+        .with_style(component_style(props, "root",
+            style().gap(px(8)).items_center().self_start().padding(px(3))
+                .radius(theme_radius("sm"))
+                .border(px(1)).border_color(rgba(0x00000000))
+                .font_size(px(12)).line_height(px(16))
+                .hover(style().background(theme_color("surface_hover")))
+                .focus(style().border_color(theme_color("focus_ring")))
+                .active(style().opacity(0.82))
+                .disabled(style().opacity(0.72))))
         .disabled(blocked)
         .accessibility_role("switch")
         .accessibility_label(props.label)

@@ -5,14 +5,14 @@ use std::sync::{Arc, OnceLock};
 use std::time::Instant;
 
 use gpui::{
-    AnyElement, App, Background, Bounds, BoxShadow, ClickEvent, ContentMask, Context, CursorStyle,
-    DispatchPhase, Div, Element, ElementId, FocusHandle, FontFallbacks, FontFeatures, FontStyle,
-    FontWeight, GlobalElementId, HighlightStyle, Image, ImageFormat, InspectorElementId,
-    InteractiveElement, IntoElement, LayoutId, Modifiers, MouseButton, MouseDownEvent,
-    MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point, Render, ScrollHandle,
-    ScrollWheelEvent, SharedString, Stateful, StatefulInteractiveElement, Styled, StyledText,
-    TextAlign, Window, auto, div, img, linear_color_stop, linear_gradient, point, px, relative,
-    rems, rgba,
+    AlignSelf as GpuiAlignSelf, AnyElement, App, Background, Bounds, BoxShadow, ClickEvent,
+    ContentMask, Context, CursorStyle, DispatchPhase, Div, Element, ElementId, FocusHandle,
+    FontFallbacks, FontFeatures, FontStyle, FontWeight, GlobalElementId, HighlightStyle, Image,
+    ImageFormat, InspectorElementId, InteractiveElement, IntoElement, LayoutId, Modifiers,
+    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point,
+    Render, ScrollHandle, ScrollWheelEvent, SharedString, Stateful, StatefulInteractiveElement,
+    Styled, StyledText, TextAlign, Window, auto, div, img, linear_color_stop, linear_gradient,
+    point, px, relative, rems, rgba,
 };
 
 use crate::overlay_element::{ScriptLayerElement, ScriptOverlayElement, WindowOverlayCoordinator};
@@ -1447,6 +1447,7 @@ impl GpuiNodeRenderer {
         let mut resolved_style = node.style().resolve(&local_interaction);
         apply_animated_dimensions(&mut resolved_style, animation);
         apply_signal_style(&mut resolved_style, &signals);
+        normalize_text_content_layout(node, &mut resolved_style);
         let mut element = apply_style(
             div(),
             &resolved_style,
@@ -1461,12 +1462,6 @@ impl GpuiNodeRenderer {
         }
         if let Some(handle) = retained_id.and_then(|node| environment.focus_handles.get(&node)) {
             element = element.track_focus(handle);
-        }
-        if matches!(node.kind(), UiNodeKind::Custom { .. }) {
-            let focus_ring = semantic_color(environment.colors, "focus_ring", 0x003b_82f6);
-            let focus_surface = semantic_color(environment.colors, "surface", 0x0018_181b);
-            element =
-                element.in_focus(move |style| focus_ring_shadow(style, focus_ring, focus_surface));
         }
         if let Some(opacity) = signals.opacity.or(animation.opacity) {
             element = element.opacity(f64_to_f32(opacity.clamp(0.0, 1.0)));
@@ -1710,6 +1705,17 @@ impl GpuiNodeRenderer {
                 ))
                 .into_any_element(),
         }
+    }
+}
+
+fn normalize_text_content_layout(node: &UiNode, style: &mut StyleProperties) {
+    if matches!(
+        node.kind(),
+        UiNodeKind::Text { .. } | UiNodeKind::RichText { .. }
+    ) && style.display.is_none()
+        && (style.align.is_some() || style.justify.is_some())
+    {
+        style.display = Some(DisplayMode::Flex);
     }
 }
 
@@ -2199,7 +2205,7 @@ fn render_image<C: ColorResolver>(
                     .map(|image| image.opaque().clone()),
             };
             match handle.and_then(|handle| assets.image_source_tinted(&handle, tint)) {
-                Ok(source) => element.child(img(source)).into_any_element(),
+                Ok(source) => element.child(img(source).size_full()).into_any_element(),
                 Err(error) => div()
                     .child(format!("Image error: {error}"))
                     .into_any_element(),
@@ -3004,7 +3010,7 @@ impl Element for TranslatedElement {
         window: &mut Window,
         cx: &mut App,
     ) {
-        window.with_element_offset(self.offset, |window| child.paint(window, cx));
+        child.paint(window, cx);
     }
 }
 
@@ -3022,63 +3028,71 @@ fn semantic_color(colors: &impl ColorResolver, token: &str, fallback: u32) -> Rg
         .unwrap_or_else(|| Rgba8::from_rgb_hex(fallback))
 }
 
+#[derive(Clone, Copy, Default)]
+struct PseudoPaint {
+    background: Option<Rgba8>,
+    border: Option<Rgba8>,
+    text: Option<Rgba8>,
+    opacity: Option<f32>,
+}
+
+fn pseudo_paint(properties: Option<&StyleProperties>, colors: &impl ColorResolver) -> PseudoPaint {
+    let Some(properties) = properties else {
+        return PseudoPaint::default();
+    };
+    PseudoPaint {
+        background: properties
+            .background
+            .as_ref()
+            .and_then(|color| colors.resolve(color)),
+        border: properties
+            .border_color
+            .as_ref()
+            .and_then(|color| colors.resolve(color)),
+        text: properties
+            .text_color
+            .as_ref()
+            .and_then(|color| colors.resolve(color)),
+        opacity: properties
+            .opacity
+            .map(|opacity| f64_to_f32(opacity.clamp(0.0, 1.0))),
+    }
+}
+
+fn apply_pseudo_paint(
+    mut style: gpui::StyleRefinement,
+    paint: PseudoPaint,
+) -> gpui::StyleRefinement {
+    if let Some(color) = paint.background {
+        style = style.bg(rgba(color.as_rgba_hex()));
+    }
+    if let Some(color) = paint.border {
+        style.style().border_color = Some(rgba(color.as_rgba_hex()).into());
+    }
+    if let Some(color) = paint.text {
+        style = style.text_color(rgba(color.as_rgba_hex()));
+    }
+    if let Some(opacity) = paint.opacity {
+        style = style.opacity(opacity);
+    }
+    style
+}
+
 fn apply_pseudo_backgrounds(
     mut element: Stateful<Div>,
     style: &Style,
     colors: &impl ColorResolver,
 ) -> Stateful<Div> {
-    if let Some(color) = style
-        .hover
-        .as_ref()
-        .and_then(|properties| properties.background.as_ref())
-        .and_then(|color| colors.resolve(color))
-    {
-        element = element.hover(move |style| style.bg(rgba(color.as_rgba_hex())));
+    let hover = pseudo_paint(style.hover.as_ref(), colors);
+    let active = pseudo_paint(style.active.as_ref(), colors);
+    let mut focus = pseudo_paint(style.focus.as_ref(), colors);
+    if focus.border.is_none() {
+        focus.border = Some(semantic_color(colors, "focus_ring", 0x003b_82f6));
     }
-    if let Some(color) = style
-        .active
-        .as_ref()
-        .and_then(|properties| properties.background.as_ref())
-        .and_then(|color| colors.resolve(color))
-    {
-        element = element.active(move |style| style.bg(rgba(color.as_rgba_hex())));
-    }
-    let focus_background = style
-        .focus
-        .as_ref()
-        .and_then(|properties| properties.background.as_ref())
-        .and_then(|color| colors.resolve(color));
-    let focus_ring = semantic_color(colors, "focus_ring", 0x003b_82f6);
-    let focus_surface = semantic_color(colors, "surface", 0x0018_181b);
-    element = element.focus(move |style| {
-        let style = match focus_background {
-            Some(color) => style.bg(rgba(color.as_rgba_hex())),
-            None => style,
-        };
-        focus_ring_shadow(style, focus_ring, focus_surface)
-    });
+    element = element.hover(move |style| apply_pseudo_paint(style, hover));
+    element = element.active(move |style| apply_pseudo_paint(style, active));
+    element = element.focus(move |style| apply_pseudo_paint(style, focus));
     element
-}
-
-fn focus_ring_shadow(
-    style: gpui::StyleRefinement,
-    color: Rgba8,
-    surface: Rgba8,
-) -> gpui::StyleRefinement {
-    style.shadow(vec![
-        BoxShadow {
-            color: rgba(color.as_rgba_hex()).into(),
-            offset: point(px(0.0), px(0.0)),
-            blur_radius: px(0.0),
-            spread_radius: px(4.0),
-        },
-        BoxShadow {
-            color: rgba(surface.as_rgba_hex()).into(),
-            offset: point(px(0.0), px(0.0)),
-            blur_radius: px(0.0),
-            spread_radius: px(2.0),
-        },
-    ])
 }
 
 fn is_disabled(node: &UiNode) -> bool {
@@ -3234,6 +3248,23 @@ fn apply_flex_alignment(
             FlexWrapMode::Wrap => element.flex_wrap(),
             FlexWrapMode::WrapReverse => element.flex_wrap_reverse(),
         };
+    }
+    if let Some(align) = style.align_self {
+        let align = if text_direction == TextDirection::RightToLeft {
+            match align {
+                Align::Start => Align::End,
+                Align::End => Align::Start,
+                other => other,
+            }
+        } else {
+            align
+        };
+        element.style().align_self = Some(match align {
+            Align::Start => GpuiAlignSelf::Start,
+            Align::Center => GpuiAlignSelf::Center,
+            Align::End => GpuiAlignSelf::End,
+            Align::Stretch => GpuiAlignSelf::Stretch,
+        });
     }
     if let Some(align) = style.align {
         let align = if style.direction == Some(FlexDirection::Column)
@@ -3797,6 +3828,38 @@ mod tests {
                 .background(ColorValue::Literal(Rgba8::from_rgb_hex(0x0022_2222))),
         );
         let _element = GpuiNodeRenderer::render(&root);
+    }
+
+    #[test]
+    fn pseudo_paint_preserves_native_border_text_and_opacity_states() {
+        let hover = Style::new()
+            .background(ColorValue::Literal(Rgba8::from_rgb_hex(0x0011_2233)))
+            .border_color(ColorValue::Literal(Rgba8::from_rgb_hex(0x0044_5566)))
+            .text_color(ColorValue::Literal(Rgba8::from_rgb_hex(0x0077_8899)))
+            .opacity(0.625)
+            .unwrap();
+        let paint = pseudo_paint(Some(&hover.base), &LiteralColorResolver);
+        assert_eq!(paint.background, Some(Rgba8::from_rgb_hex(0x0011_2233)));
+        assert_eq!(paint.border, Some(Rgba8::from_rgb_hex(0x0044_5566)));
+        assert_eq!(paint.text, Some(Rgba8::from_rgb_hex(0x0077_8899)));
+        assert_eq!(paint.opacity, Some(0.625));
+    }
+
+    #[test]
+    fn aligned_text_nodes_become_flex_content_boxes() {
+        let node = UiNode::text("Centered").with_style(
+            &Style::new()
+                .items_center()
+                .justify_center()
+                .height(Length::pixels(32.0).unwrap()),
+        );
+        let mut resolved = node.style().resolve(&InteractionState::default());
+
+        normalize_text_content_layout(&node, &mut resolved);
+
+        assert_eq!(resolved.display, Some(DisplayMode::Flex));
+        assert_eq!(resolved.align, Some(Align::Center));
+        assert_eq!(resolved.justify, Some(Justify::Center));
     }
 
     #[test]

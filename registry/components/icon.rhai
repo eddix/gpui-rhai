@@ -85,6 +85,7 @@ fn render_Icon(ctx, props) {
                 .width(px(icon_size(size)))
                 .height(px(icon_size(size)))
                 .text_color(theme_color("text_primary"))
+                .opacity(0.92)
         ))
         .accessibility_role("image")
         .accessibility_label(label)

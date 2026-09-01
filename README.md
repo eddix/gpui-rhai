@@ -1,5 +1,8 @@
 # GPUI Rhai
 
+Start with the [User Guide](USER_GUIDE.md) for the complete application and
+agent workflow.
+
 GPUI Rhai is a desktop UI system in which editable Rhai source builds a stable
 declarative `UiNode` tree and a thin Rust runtime renders that tree with GPUI.
 
@@ -40,6 +43,11 @@ actual exported prop, event, slot, and part schemas. It also writes
 extensions can call `RuntimeEngine::definition_source()` after configuration to
 emit the same format including their custom APIs.
 
+`theme-studio [path]` opens the first-party semantic theme editor and canonical
+all-component specimen. It creates, opens, imports-as-copy, validates, previews,
+and saves gpui-rhai `.rhai` themes; see [Theme Studio](docs/theme-studio.md) and
+the [bundled theme catalog](docs/bundled-themes.md).
+
 Run the repository example with:
 
 ```text
@@ -48,7 +56,7 @@ cargo run -p gpui-rhai --example settings_panel
 cargo run -p gpui-rhai --example dashboard_layout
 cargo run -p gpui-rhai --example form_showcase
 cargo run -p gpui-rhai --example data_table
-cargo run -p gpui-rhai --example component_gallery
+cargo run -p gpui-rhai-cli -- theme-studio
 cargo run -p gpui-rhai --example extension_host
 cargo run -p gpui-rhai --example host_owned_tree
 cargo run -p gpui-rhai --example multi_window

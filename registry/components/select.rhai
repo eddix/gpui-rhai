@@ -77,7 +77,7 @@ fn select_values(ctx, values) { ctx.emit("change", if values.len == 0 { () } els
 fn select_height(size) {
     if size == "xs" { 24 }
     else if size == "sm" { 28 }
-    else if size == "lg" { 40 }
+    else if size == "lg" { 36 }
     else { 32 }
 }
 
@@ -99,7 +99,7 @@ fn render_Select(ctx, props) {
         disabled: prop_or(props, "disabled", false),
         max_visible: prop_or(props, "max_visible", 8),
         placement: prop_or(props, "placement", "bottom"),
-        row_height: height, trigger_height: height,
+        row_height: 28, trigger_height: height,
         width: if "width" in props { props.width } else { px(280) },
         on_change: Fn("select_values"),
         style: component_style(props, "root", style()),

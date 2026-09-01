@@ -1265,6 +1265,38 @@ fn register_raw_event_methods(builder: &mut TypeBuilder<UiNode>) {
 fn register_native_event_methods(builder: &mut TypeBuilder<UiNode>) {
     builder
         .with_fn(
+            "on_click",
+            |node: &mut UiNode,
+             handler: crate::NativeHandlerRef|
+             -> Result<UiNode, Box<EvalAltResult>> {
+                handler.validate_event("click").map_err(|error| {
+                    Box::new(EvalAltResult::ErrorRuntime(
+                        error.to_string().into(),
+                        Position::NONE,
+                    ))
+                })?;
+                Ok(node.clone().with_handler("click", handler))
+            },
+        )
+        .with_fn(
+            "on_click_value",
+            |node: &mut UiNode,
+             handler: crate::NativeHandlerRef,
+             payload: Dynamic|
+             -> Result<UiNode, Box<EvalAltResult>> {
+                handler.validate_event("click").map_err(|error| {
+                    Box::new(EvalAltResult::ErrorRuntime(
+                        error.to_string().into(),
+                        Position::NONE,
+                    ))
+                })?;
+                Ok(node
+                    .clone()
+                    .with_handler("click", handler)
+                    .with_handler_payload("click", dynamic_ui_value(payload)?))
+            },
+        )
+        .with_fn(
             "on",
             |node: &mut UiNode,
              event: ImmutableString,

@@ -8,10 +8,10 @@ fn theme() {
         tokens: #{
             colors: #{
                 surface: 0xeff1f5ff,
-                surface_raised: 0xe6e9efff,
-                surface_hover: 0xdce0e8ff,
+                surface_raised: 0xf8f9fbff,
+                surface_hover: 0xe6e9efff,
                 text_primary: 0x4c4f69ff,
-                text_muted: 0x6c6f85ff,
+                text_muted: 0x686b80ff,
                 accent: 0x1e66f5ff,
                 accent_hover: 0x1a5ad7ff,
                 on_accent: 0xffffffff,
@@ -23,7 +23,7 @@ fn theme() {
                 on_success: 0x1e1e2eff,
                 border: 0xbcc0ccff,
                 focus_ring: 0x1e66f5ff,
-                selection: 0x1e66f566,
+                selection: 0xdce7fcff,
                 disabled: 0x9ca0b0ff,
             },
             spacing: #{
@@ -33,9 +33,9 @@ fn theme() {
                 lg: #{ unit: "pixels", value: 16.0 },
             },
             radii: #{
-                sm: #{ unit: "pixels", value: 4.0 },
-                md: #{ unit: "pixels", value: 8.0 },
-                lg: #{ unit: "pixels", value: 12.0 },
+                sm: #{ unit: "pixels", value: 2.0 },
+                md: #{ unit: "pixels", value: 4.0 },
+                lg: #{ unit: "pixels", value: 6.0 },
             },
         },
     }

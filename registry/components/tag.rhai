@@ -49,19 +49,23 @@ define_component(#{
 });
 
 fn tag_color(variant) {
+    theme_color("surface_raised")
+}
+
+fn tag_foreground(variant) {
     if variant == "accent" { theme_color("accent") }
     else if variant == "success" { theme_color("success") }
     else if variant == "warning" { theme_color("warning") }
     else if variant == "danger" { theme_color("danger") }
-    else { theme_color("surface_hover") }
+    else { theme_color("text_primary") }
 }
 
-fn tag_foreground(variant) {
-    if variant == "accent" { theme_color("on_accent") }
-    else if variant == "success" { theme_color("on_success") }
-    else if variant == "warning" { theme_color("on_warning") }
-    else if variant == "danger" { theme_color("on_danger") }
-    else { theme_color("text_primary") }
+fn tag_border(variant) {
+    if variant == "accent" { theme_color("accent") }
+    else if variant == "success" { theme_color("success") }
+    else if variant == "warning" { theme_color("warning") }
+    else if variant == "danger" { theme_color("danger") }
+    else { theme_color("border") }
 }
 
 fn Tag(props) { render_component("components/tag", props) }
@@ -72,7 +76,9 @@ fn render_Tag(ctx, props) {
     let children = [text(props.text).with_style(component_style(props, "label", style()))];
     if closable {
         let close = text("×")
-            .with_style(component_style(props, "close", style()))
+            .with_style(component_style(props, "close", style()
+                .width(px(14)).height(px(14)).items_center().justify_center()
+                .radius(theme_radius("sm")).hover(style().background(theme_color("surface_hover")))))
             .accessibility_role("button")
             .accessibility_label(props.text);
         if !disabled && "on_close" in props && props.on_close != () {
@@ -82,9 +88,13 @@ fn render_Tag(ctx, props) {
     }
     row(children)
         .with_style(component_style(props, "root",
-            style().height(px(24)).padding_x(px(8)).gap(px(6)).items_center()
-                .radius(px(12)).background(tag_color(variant))
+            style().height(px(22)).padding_x(px(6)).gap(px(6)).items_center()
+                .radius(theme_radius("sm"))
+                .border(px(1)).border_color(tag_border(variant))
+                .background(tag_color(variant))
+                .font_size(px(11)).line_height(px(14)).font_weight(700)
                 .text_color(if disabled { theme_color("disabled") } else { tag_foreground(variant) })
+                .disabled(style().opacity(0.68))
         ))
         .disabled(disabled)
         .accessibility_role("status")

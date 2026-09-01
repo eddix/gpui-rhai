@@ -49,7 +49,8 @@ fn render_Tooltip(ctx, props) {
     let show_delay = if "show_delay_ms" in props && props.show_delay_ms > 0 { props.show_delay_ms } else { 0 };
     let hide_delay = if "hide_delay_ms" in props && props.hide_delay_ms > 0 { props.hide_delay_ms } else { 0 };
     let content = row([props.content]).with_style(component_style(props, "content",
-        style().max_width(px(320)).padding(px(8)).radius(px(6))
+        style().max_width(px(320)).padding_x(px(7)).padding_y(px(5))
+            .radius(theme_radius("sm")).font_size(px(11)).line_height(px(14))
             .background(theme_color("text_primary"))
             .text_color(theme_color("surface"))
     )).accessibility_role("tooltip");
@@ -58,7 +59,7 @@ fn render_Tooltip(ctx, props) {
         kind: "tooltip",
         placement: if "placement" in props { props.placement } else { "top" },
         open: false,
-        gap: 6,
+        gap: 4,
         modal: false,
         dismiss_on_escape: false,
         dismiss_on_outside: false,

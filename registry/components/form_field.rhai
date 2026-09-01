@@ -61,16 +61,19 @@ fn render_FormField(ctx, props) {
     ];
     if description != () {
         children.push(text(description)
-            .with_style(component_style(props, "description", style()))
+            .with_style(component_style(props, "description",
+                style().font_size(px(11)).line_height(px(15))
+                    .text_color(theme_color("text_muted"))))
             .accessibility_id(description_id));
     }
     if error != () {
         children.push(text(error).with_style(component_style(props, "error",
-            style().text_color(theme_color("danger"))))
+            style().font_size(px(11)).line_height(px(15))
+                .text_color(theme_color("danger"))))
             .accessibility_id(error_id).accessibility_role("alert"));
     }
     column(children).with_key(props.id)
-        .with_style(component_style(props, "root", style().gap(px(6))))
+        .with_style(component_style(props, "root", style().gap(px(4))))
         .accessibility_role("group")
         .accessibility_label(props.label)
         .accessibility_invalid(error != ())

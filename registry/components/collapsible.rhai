@@ -43,7 +43,15 @@ fn Collapsible(props) { render_component("components/collapsible", props) }
 fn render_Collapsible(ctx, props) {
     let disabled = if "disabled" in props { props.disabled } else { false };
     let trigger = props.trigger
-        .with_style(component_style(props, "trigger", style()))
+        .with_style(component_style(props, "trigger", style()
+            .min_height(px(32)).padding_x(px(10)).items_center()
+            .border(px(1)).border_color(rgba(0x00000000))
+            .radius(theme_radius("sm"))
+            .font_size(px(12)).line_height(px(16)).font_weight(700)
+            .hover(style().background(theme_color("surface_hover")))
+            .focus(style().border_color(theme_color("focus_ring")))
+            .active(style().opacity(0.82))
+            .disabled(style().text_color(theme_color("disabled")).opacity(0.72))))
         .disabled(disabled)
         .accessibility_role("button")
         .accessibility_checked(props.open);
@@ -51,10 +59,15 @@ fn render_Collapsible(ctx, props) {
         trigger = trigger.on_click_value(props.on_open_change, !props.open);
     }
     let height = props.content_height;
-    let panel = column([props.content])
+    let panel_content = props.content.with_style(component_style(props, "content", style()
+        .padding(px(10)).font_size(px(12)).line_height(px(16))));
+    let panel = column([panel_content])
         .with_key(`${props.key}-content`)
-        .with_style(component_style(props, "content", style().clip()))
-        .animate(transition("clip_height", 0.0, if props.open { height * 1.0 } else { 0.0 }, 180, "ease_out"));
+        .with_style(style().height(px(if props.open { height } else { 0 })).clip()
+            .border_top(px(1)).border_color(theme_color("border")))
+        .animate(transition("clip_height", 0.0, if props.open { height * 1.0 } else { 0.0 }, 150, "ease_out"));
     column([trigger, panel]).with_key(props.key)
-        .with_style(component_style(props, "root", style()))
+        .with_style(component_style(props, "root", style()
+            .border(px(1)).border_color(theme_color("border"))
+            .radius(theme_radius("md")).clip()))
 }

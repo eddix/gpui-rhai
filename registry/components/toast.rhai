@@ -81,21 +81,25 @@ fn toast_node(props, item) {
         .with_style(component_style(props, "title", style()))];
     if prop_or(item, "dismissible", true) {
         header.push(text("×").with_key(`${item.id}-close`)
-            .with_style(component_style(props, "close", style().padding_x(px(4))))
+            .with_style(component_style(props, "close", style()
+                .width(px(18)).height(px(18)).items_center().justify_center()
+                .radius(theme_radius("sm")).hover(style().background(theme_color("surface_hover")))))
             .accessibility_role("button").accessibility_label("Dismiss")
             .on_click_value(Fn("toast_manual_dismiss"), item.id));
     }
-    let children = [row(header).with_style(style().items_center().justify_between())];
+    let children = [row(header).with_style(style().items_center().justify_between()
+        .font_size(px(12)).line_height(px(16)).font_weight(700))];
     if prop_or(item, "message", "") != "" {
         children.push(text(item.message).with_style(component_style(props, "message",
-            style().text_color(theme_color("text_muted")))));
+            style().font_size(px(11)).line_height(px(15))
+                .text_color(theme_color("text_muted")))));
     }
     column(children).with_key(item.id)
         .with_style(component_style(props, `toast_${variant}`,
             component_style(props, "toast",
-                style().width(px(320)).gap(px(4)).padding(px(12))
+                style().width(px(320)).gap(px(4)).padding(px(10))
                     .border(px(1)).border_color(variant_color(variant))
-                    .radius(theme_radius("md")).background(theme_color("surface_raised"))
+                    .radius(theme_radius("md")).background(theme_color("surface"))
                     .text_color(theme_color("text_primary")))))
         .on_hover_value(Fn("toast_hover"), item.id)
         .accessibility_role(if variant == "danger" { "alert" } else { "status" })
@@ -105,8 +109,8 @@ fn toast_node(props, item) {
 fn region_layer(props, key, placement, children) {
     if children.len == 0 { return (); }
     layer(column(children).with_key(`${key}-column`)
-        .with_style(component_style(props, "region", style().width(px(320)).gap(px(8)))),
-        #{ id: key, placement: placement, inset: 12, priority: 9000 })
+        .with_style(component_style(props, "region", style().width(px(320)).gap(px(6)))),
+        #{ id: key, placement: placement, inset: 10, priority: 9000 })
 }
 
 fn render_Toast(ctx, props) {

@@ -937,6 +937,7 @@ pub struct StyleProperties {
     pub direction: Option<FlexDirection>,
     pub flex_wrap: Option<FlexWrapMode>,
     pub align: Option<Align>,
+    pub align_self: Option<Align>,
     pub justify: Option<Justify>,
     pub width: Option<LayoutLength>,
     pub height: Option<LayoutLength>,
@@ -999,6 +1000,7 @@ impl StyleProperties {
         merge_option(&mut self.direction, overlay.direction);
         merge_option(&mut self.flex_wrap, overlay.flex_wrap);
         merge_option(&mut self.align, overlay.align);
+        merge_option(&mut self.align_self, overlay.align_self);
         merge_option(&mut self.justify, overlay.justify);
         merge_option(&mut self.width, overlay.width);
         merge_option(&mut self.height, overlay.height);
@@ -1424,6 +1426,30 @@ impl Style {
     #[must_use]
     pub fn items_end(mut self) -> Self {
         self.base.align = Some(Align::End);
+        self
+    }
+
+    #[must_use]
+    pub fn self_start(mut self) -> Self {
+        self.base.align_self = Some(Align::Start);
+        self
+    }
+
+    #[must_use]
+    pub fn self_center(mut self) -> Self {
+        self.base.align_self = Some(Align::Center);
+        self
+    }
+
+    #[must_use]
+    pub fn self_end(mut self) -> Self {
+        self.base.align_self = Some(Align::End);
+        self
+    }
+
+    #[must_use]
+    pub fn self_stretch(mut self) -> Self {
+        self.base.align_self = Some(Align::Stretch);
         self
     }
 
@@ -1999,6 +2025,7 @@ impl CustomType for Style {
                 style.clone().justify_between()
             })
             .with_fn("clip", |style: &mut Self| style.clone().clip());
+        register_self_alignment_methods(&mut builder);
         register_overflow_methods(&mut builder);
         register_position_methods(&mut builder);
         register_extended_layout_methods(&mut builder);
@@ -2070,6 +2097,18 @@ fn register_border_methods(builder: &mut TypeBuilder<Style>) {
         })
         .with_fn("border_dashed", |style: &mut Style| {
             style.clone().border_dashed()
+        });
+}
+
+fn register_self_alignment_methods(builder: &mut TypeBuilder<Style>) {
+    builder
+        .with_fn("self_start", |style: &mut Style| style.clone().self_start())
+        .with_fn("self_center", |style: &mut Style| {
+            style.clone().self_center()
+        })
+        .with_fn("self_end", |style: &mut Style| style.clone().self_end())
+        .with_fn("self_stretch", |style: &mut Style| {
+            style.clone().self_stretch()
         });
 }
 
@@ -2694,6 +2733,7 @@ mod tests {
                 r#"
                     style()
                         .flex_col()
+                        .self_start()
                         .gap(theme_spacing("sm"))
                         .padding_x(rem(1.5))
                         .radius(theme_radius("md"))
@@ -2703,6 +2743,7 @@ mod tests {
             )
             .unwrap();
         assert_eq!(style.base.direction, Some(FlexDirection::Column));
+        assert_eq!(style.base.align_self, Some(Align::Start));
         assert_eq!(style.base.gap, Some(Length::ThemeSpacing(SpacingToken::Sm)));
         assert_eq!(
             style.base.radii,

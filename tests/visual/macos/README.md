@@ -7,6 +7,7 @@ evidence tied to an explicit environment, not portable pixel-perfect promises.
 
 - Original capture: 2026-08-28
 - Complex-control refresh: 2026-08-30
+- Registry design-system refresh: 2026-09-01
 - macOS: 26.6.2 (25G83)
 - GPUI: 0.2.2
 - Rust: 1.94.1
@@ -15,7 +16,7 @@ evidence tied to an explicit environment, not portable pixel-perfect promises.
 - Dashboard viewport/capture: 760 × 560 points / 760 × 592 pixels
 - Form viewport/capture: 760 × 720 points / 760 × 752 pixels
 - Data Table viewport/capture: 980 × 720 points / 980 × 752 pixels
-- Component Gallery viewport/capture: 720 × 520 points / 720 × 552 pixels
+- Theme Studio planned viewport/capture: 1280 × 820 points / 1280 × 852 pixels
 - Embedded Views viewport/capture: 900 × 420 points / 900 × 452 pixels
 
 ## Recorded cases
@@ -46,11 +47,11 @@ Dark selected rows, and Catppuccin Mocha Arabic RTL. These cases cover scalar
 and custom cells, horizontal overflow, localized number/date formatting,
 selection indicators, bounded skeleton rows, empty copy, and Pagination.
 
-Component Gallery closes the remaining product-line screenshot gaps with a
-Default Light open Menu, Catppuccin Mocha Arabic RTL directional Icon, and a
-Default Dark reduced-motion Skeleton plus pointer-triggered Tooltip. Together
-the four product examples and this mechanism gallery render every official
-component in at least one recorded macOS state.
+Theme Studio replaced the old Component Gallery on 2026-09-01. Its 15-theme
+component-specimen matrix, Menu, RTL, Tooltip, editing, and file-operation
+captures are intentionally pending an unlocked Mac session. Obsolete Gallery
+PNGs were removed rather than relabeled as Studio evidence. The 38 currently
+recorded PNGs remain product-context and shared-Host evidence.
 
 `embedded_views/default-dark.shared-host.png` records three independent Rhai
 views inside one host-owned GPUI layout. It proves compact responsive sizing for
@@ -69,6 +70,19 @@ Switch, RadioGroup, Accordion, and progress content. These initial baselines
 were recorded after fixing the host surface gutter, semantic default/on-fill
 text colors, native Tab stops, theme-token focus rings, native Input placeholder,
 Checkbox mark centering, and reduced-motion looping transitions.
+
+The 38 retained product/Host baselines were refreshed on 2026-09-01 after applying the shared
+registry design system across all six themes. The accepted change covers
+square terminal-native geometry, compact control metrics, border-led state
+hierarchy, flat tab rails, consistent icon sizing/tint, content-sized choice
+focus rings, clipped and caret-following single-line Input, and corrected
+trigger action grouping. The two Settings focus cases were recaptured through
+real Tab traversal after the content-sized Switch focus fix.
+
+The same-day alignment correction makes fixed-height Text nodes honor their
+declared cross/main-axis centering, centers the native Input line box, removes
+default Dropdown chrome around custom triggers, and normalizes every bundled
+component SVG to an explicit 24 × 24 coordinate space.
 
 The platform CJK candidate/composition case listed in
 `docs/visual-testing.md` passed manual certification on 2026-08-30, alongside
@@ -126,7 +140,7 @@ single-select query/change/close callbacks through a real `ScriptLifecycle`,
 Unicode (`中文😀é`) controlled Input, Cmd-A/C/X/V clipboard behavior, and
 read-only selection/copy with edit suppression.
 
-The same sixteen-case native suite now verifies executor-clock Toast expiry, Menu
+The same 22-case native suite now verifies executor-clock Toast expiry, Menu
 trigger→panel focus, separator-skipping roving selection, Enter action/close,
 and nested parent/child overlay painting. It also verifies App installation and
 key conflicts, shared Host mechanics with isolated runtime state, duplicate

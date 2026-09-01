@@ -230,13 +230,14 @@ fn main() {
         })
         .unwrap_or_else(|| "default".to_owned());
     let main_source = visual_source(&visual_theme, &visual_locale, &visual_state);
+    let date_picker_source = visual_date_picker_source(&visual_state);
     let scripts = EmbeddedScriptSource::new(BTreeMap::from([
         module("main", &main_source),
         module("components/input", INPUT),
         module("components/textarea", TEXTAREA),
         module("components/select", SELECT),
         module("components/dropdown", DROPDOWN),
-        module("components/date_picker", DATE_PICKER),
+        module("components/date_picker", &date_picker_source),
         module("components/label", LABEL),
         module("components/form_field", FORM_FIELD),
         module("components/checkbox", CHECKBOX),
@@ -304,6 +305,17 @@ fn main() {
                 .run()
         })
         .expect("form_showcase failed");
+}
+
+fn visual_date_picker_source(state: &str) -> String {
+    if state == "date-picker" {
+        DATE_PICKER.replace(
+            "open: #{ schema: #{ type: \"bool\" }, \"default\": #{ type: \"bool\", value: false } },",
+            "open: #{ schema: #{ type: \"bool\" }, \"default\": #{ type: \"bool\", value: true } },",
+        )
+    } else {
+        DATE_PICKER.to_owned()
+    }
 }
 
 fn visual_source(theme: &str, locale: &str, state: &str) -> String {
@@ -384,5 +396,22 @@ fn svg(bytes: &[u8]) -> AssetData {
     AssetData {
         mime_type: "image/svg+xml".to_owned(),
         bytes: bytes.to_vec(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn date_picker_visual_state_opens_the_real_component_panel() {
+        let source = visual_date_picker_source("date-picker");
+        assert!(source.contains(
+            "open: #{ schema: #{ type: \"bool\" }, \"default\": #{ type: \"bool\", value: true } },"
+        ));
+        assert_eq!(
+            source.matches("value: true } },").count(),
+            DATE_PICKER.matches("value: true } },").count() + 1
+        );
     }
 }

@@ -37,7 +37,7 @@ fn Skeleton(props) { render_component("components/skeleton", props) }
 fn render_Skeleton(ctx, props) {
     let width = props.width;
     let height = props.height;
-    let requested_radius = if "radius" in props { props.radius } else { 6 };
+    let requested_radius = if "radius" in props { props.radius } else { 2 };
     let radius = requested_radius;
     let node = row([])
         .with_key(props.key)
@@ -48,6 +48,6 @@ fn render_Skeleton(ctx, props) {
         ))
         .accessibility_role("presentation");
     if !("animated" in props) || props.animated {
-        node.animate(loop_transition("opacity", 0.35, 0.85, 900, "ease_in_out"))
+        node.animate(loop_transition("opacity", 0.42, 0.72, 1100, "ease_in_out"))
     } else { node }
 }

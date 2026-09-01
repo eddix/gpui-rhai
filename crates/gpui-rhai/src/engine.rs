@@ -2865,6 +2865,24 @@ mod tests {
                 if reference.descriptor().id.as_str() == "timeline.drag"
         ));
 
+        let input = runtime
+            .compile(
+                r#"
+                    fn view() {
+                        gpui_rhai::TextInputPrimitive(#{
+                            key: "native-input", value: "", placeholder: "Edit",
+                            disabled: false, read_only: false,
+                            on_change: native_handler("timeline.drag")
+                        })
+                    }
+                "#,
+            )
+            .unwrap();
+        assert!(
+            runtime.render(&input).is_ok(),
+            "native handlers must cross formal component and primitive callback props"
+        );
+
         let missing = runtime
             .compile(
                 "fn view() { text(\"x\").on(\"pointer_down\", native_handler(\"app.missing\")) }",

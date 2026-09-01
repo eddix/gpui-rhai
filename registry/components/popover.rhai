@@ -89,12 +89,13 @@ fn render_Popover(ctx, props) {
         .with_style(component_style(props, "content",
             style()
                 .width(px(240))
-                .padding(px(12))
+                .padding(px(10))
                 .gap(px(8))
-                .radius(px(8))
+                .radius(theme_radius("md"))
                 .border(px(1))
                 .border_color(theme_color("border"))
-                .background(theme_color("surface_raised"))
+                .background(theme_color("surface"))
+                .font_size(px(12)).line_height(px(16))
         ))
         .accessibility_role("dialog");
     let config = #{

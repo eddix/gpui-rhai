@@ -1,9 +1,11 @@
 # macOS visual and interaction testing
 
 Visual baselines supplement logic and semantic tests; they never replace
-keyboard, focus, or accessibility assertions. `component_gallery` supplements
-the four product examples with Collapsible, Icon, Menu, Skeleton, and Tooltip
-coverage.
+keyboard, focus, or accessibility assertions. Theme Studio owns one dense,
+canonical matrix for every official component: actions, form controls, choices,
+status/loading, navigation, data/virtualization, assets, and overlays. The
+default metrics and state vocabulary are defined in
+`registry-design-system.md`.
 
 ## Deterministic matrix
 
@@ -16,8 +18,10 @@ declared viewport sizes across the main matrix:
 - English LTR and Arabic RTL;
 - normal and reduced motion at a settled frame.
 
-Capture `component_gallery` for its fixed open-Menu state, Arabic RTL
-directional Icon state, and reduced-motion pointer-triggered Tooltip state.
+Capture Theme Studio across all 15 bundled themes, plus its fixed open-Menu
+state, Arabic RTL directional Icon state, reduced-motion pointer-triggered
+Tooltip state, and New/Open/Import/Save editing paths. This capture is pending
+an unlocked Mac after the Studio replaced Component Gallery.
 Capture `embedded_views` once with the small view's Dropdown open and duplicate
 local Toast IDs visible in the shared Host queue.
 
@@ -77,7 +81,7 @@ an open parent Dialog, guarding GPUI 0.2.x against nested `defer_draw` panics.
 Three-view embedding cases cover automatic bounds, runtime isolation, shared
 Host overlays, duplicate local IDs, click-through dismissal, key conflicts,
 and dispose/remount.
-The suite currently has 16 production-renderer cases and contains no deleted
+The suite currently has 22 production-renderer cases and contains no deleted
 Table/choice/date/toast native constructor. It also guards that window-level
 pointer-capture listeners register during paint rather than GPUI layout.
 One case drives a mounted view through test-ID query, retained event dispatch,
@@ -109,7 +113,7 @@ bash scripts/build-macos-test-app.sh settings_panel
 bash scripts/build-macos-test-app.sh settings_panel catppuccin-mocha ar
 bash scripts/build-macos-test-app.sh form_showcase default-light en dialog
 bash scripts/build-macos-test-app.sh dashboard_layout tokyo-night en default reduced
-bash scripts/build-macos-test-app.sh component_gallery default-light en menu
+bash scripts/build-macos-theme-studio-app.sh
 bash scripts/build-macos-test-app.sh data_table default-dark en selected
 bash scripts/build-macos-test-app.sh form_showcase default-light zh-CN date-picker
 ```

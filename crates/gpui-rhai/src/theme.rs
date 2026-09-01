@@ -388,6 +388,47 @@ impl ThemeManager {
         Ok(())
     }
 
+    /// Replace one already-registered variant and advance the theme generation.
+    ///
+    /// This is the host-facing path for live theme editors. Identity cannot be
+    /// changed in place; callers create a new manager when families are added or
+    /// removed.
+    ///
+    /// # Errors
+    ///
+    /// Returns validation or unknown-selection errors.
+    pub fn replace_variant(&mut self, variant: ThemeVariant) -> Result<(), ThemeError> {
+        variant.validate()?;
+        let selection = ThemeSelection::new(variant.family.clone(), variant.name.clone());
+        let family = self
+            .families
+            .get_mut(&variant.family)
+            .ok_or_else(|| ThemeError::UnknownSelection(selection.clone()))?;
+        if !family.variants.contains_key(&variant.name) {
+            return Err(ThemeError::UnknownSelection(selection));
+        }
+        family.variants.insert(variant.name.clone(), variant);
+        let fallback = family
+            .variants
+            .keys()
+            .next()
+            .cloned()
+            .ok_or(ThemeError::NoVariants)?;
+        family.default_light = family
+            .variants
+            .values()
+            .find(|candidate| candidate.mode == ThemeMode::Light)
+            .map_or_else(|| fallback.clone(), |candidate| candidate.name.clone());
+        family.default_dark = family
+            .variants
+            .values()
+            .find(|candidate| candidate.mode == ThemeMode::Dark)
+            .map_or(fallback, |candidate| candidate.name.clone());
+        family.validate()?;
+        self.generation = self.generation.saturating_add(1);
+        Ok(())
+    }
+
     /// Change the application fallback preference.
     ///
     /// # Errors
@@ -785,6 +826,46 @@ mod tests {
             })
             .unwrap();
         assert_eq!(manager.generation(), initial + 1);
+    }
+
+    #[test]
+    fn replacing_a_variant_preserves_identity_and_advances_generation() {
+        let mut manager = ThemeManager::new(
+            [family()],
+            ThemePreference::Fixed {
+                selection: ThemeSelection::new("Default", "Dark"),
+            },
+        )
+        .unwrap();
+        let before = manager.generation();
+        manager
+            .replace_variant(ThemeVariant {
+                family: "Default".to_owned(),
+                name: "Dark".to_owned(),
+                mode: ThemeMode::Dark,
+                tokens: tokens(0x00ff_00ff),
+            })
+            .unwrap();
+
+        assert_eq!(manager.generation(), before + 1);
+        assert_eq!(
+            manager
+                .resolve(None, None, SystemAppearance::Dark)
+                .unwrap()
+                .variant()
+                .tokens
+                .colors["accent"],
+            Rgba8::from_rgb_hex(0x00ff_00ff)
+        );
+        assert!(matches!(
+            manager.replace_variant(ThemeVariant {
+                family: "Missing".to_owned(),
+                name: "Dark".to_owned(),
+                mode: ThemeMode::Dark,
+                tokens: tokens(0x0000_00ff),
+            }),
+            Err(ThemeError::UnknownSelection(_))
+        ));
     }
 
     #[test]

@@ -45,7 +45,7 @@ fn render_Progress(ctx, props) {
         .with_key(`${props.key}-indicator`)
         .with_style(component_style(props, "indicator",
             style().width(px(if indeterminate { 72 } else { ratio * 200 }))
-                .height(px(8)).radius(px(4)).background(theme_color("accent"))
+                .height(px(4)).radius(px(1)).background(theme_color("accent"))
         ));
     indicator = if indeterminate {
         indicator.animate(loop_transition("translate_x", -72.0, 200.0, 900, "ease_in_out"))
@@ -55,7 +55,7 @@ fn render_Progress(ctx, props) {
     row([indicator])
         .with_key(props.key)
         .with_style(component_style(props, "root", component_style(props, "track",
-            style().width(px(200)).height(px(8)).radius(px(4)).clip()
+            style().width(px(200)).height(px(4)).radius(px(1)).clip()
                 .background(theme_color("surface_hover"))
         )))
         .accessibility_role("progressbar")

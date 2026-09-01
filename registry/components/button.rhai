@@ -104,9 +104,11 @@ define_component(#{
 fn button_height(size) {
     if size == "xs" { 24 }
     else if size == "sm" { 28 }
-    else if size == "lg" { 40 }
+    else if size == "lg" { 36 }
     else { 32 }
 }
+
+fn button_font_size(size) { if size == "xs" { 11 } else { 12 } }
 
 fn button_background(variant) {
     if variant == "danger" { theme_color("danger") }
@@ -115,6 +117,22 @@ fn button_background(variant) {
     else if variant == "secondary" { theme_color("surface_raised") }
     else if variant == "ghost" || variant == "outline" { rgba(0x00000000) }
     else { theme_color("accent") }
+}
+
+fn button_border(variant) {
+    if variant == "danger" { theme_color("danger") }
+    else if variant == "warning" { theme_color("warning") }
+    else if variant == "success" { theme_color("success") }
+    else if variant == "primary" { theme_color("accent") }
+    else if variant == "ghost" { rgba(0x00000000) }
+    else { theme_color("border") }
+}
+
+fn button_hover(variant) {
+    if variant == "primary" { theme_color("accent_hover") }
+    else if variant == "secondary" || variant == "ghost" || variant == "outline" {
+        theme_color("surface_hover")
+    } else { button_background(variant) }
 }
 
 fn button_foreground(variant) {
@@ -146,14 +164,25 @@ fn render_Button(ctx, props) {
         .items_center()
         .justify_center()
         .height(px(button_height(size)))
-        .padding_x(px(12))
-        .gap(px(6))
-        .radius(px(6))
+        .padding_x(px(10))
+        .gap(px(8))
+        .radius(theme_radius("md"))
+        .border(px(1))
+        .border_color(button_border(variant))
         .background(button_background(variant))
         .text_color(button_foreground(variant))
-        .disabled(style().background(theme_color("disabled")));
+        .font_size(px(button_font_size(size)))
+        .line_height(px(16))
+        .font_weight(700)
+        .focus(style().border_color(theme_color("focus_ring")))
+        .active(style().opacity(0.86))
+        .disabled(style()
+            .background(theme_color("surface_raised"))
+            .border_color(theme_color("border"))
+            .text_color(theme_color("disabled"))
+            .opacity(0.72));
     if hoverable && !disabled && !loading {
-        base = base.hover(style().background(theme_color("accent_hover")));
+        base = base.hover(style().background(button_hover(variant)));
     }
 
     let children = [];
@@ -161,7 +190,7 @@ fn render_Button(ctx, props) {
         children.push(props.prefix.with_style(component_style(props, "prefix", style())));
     }
     children.push(text(label).with_style(component_style(props, "label",
-        style().line_height(px(button_height(size))))));
+        style().line_height(px(16)))));
     if "suffix" in props && props.suffix != () {
         children.push(props.suffix.with_style(component_style(props, "suffix", style())));
     }

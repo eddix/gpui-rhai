@@ -65,16 +65,27 @@ fn render_Tabs(ctx, props) {
     let panel = row([]);
     for tab in props.tabs {
         let selected = tab.value == props.value;
+        let tab_style = style().height(px(32)).padding_x(px(10)).items_center()
+            .font_size(px(12)).line_height(px(16)).font_weight(700)
+            .border_color(rgba(0x00000000))
+            .text_color(if tab_disabled(tab) { theme_color("disabled") }
+                else if selected { theme_color("accent") }
+                else { theme_color("text_primary") })
+            .background(if selected { theme_color("selection") }
+                else { rgba(0x00000000) })
+            .focus(style().border_color(theme_color("focus_ring")))
+            .disabled(style().opacity(0.68));
+        let tab_style = if orientation == "vertical" {
+            tab_style.border_start(px(2))
+        } else { tab_style.border_bottom(px(2)) };
+        let tab_style = if selected {
+            tab_style.border_color(theme_color("accent"))
+                .hover(style().background(theme_color("selection")))
+        } else { tab_style.hover(style().background(theme_color("surface_hover"))) };
         let header = text(tab.label)
             .with_key(tab.value)
             .with_style(component_style(props, "tab",
-                style().padding(px(8)).radius(px(6))
-                    .background(if selected { theme_color("accent") } else { rgba(0x00000000) })
-                    .text_color(if tab_disabled(tab) {
-                        theme_color("disabled")
-                    } else if selected {
-                        theme_color("on_accent")
-                    } else { theme_color("text_primary") })
+                tab_style
             ))
             .tab_stop(false)
             .disabled(tab_disabled(tab))
@@ -84,11 +95,13 @@ fn render_Tabs(ctx, props) {
             header = header.on_click_value(callback, tab.value);
         }
         headers.push(header);
-        if selected { panel = tab.content.with_style(component_style(props, "panel", style())); }
+        if selected { panel = tab.content.with_style(component_style(props, "panel", style()
+            .padding(px(12)).border(px(1)).border_color(theme_color("border"))
+            .background(theme_color("surface")).font_size(px(12)).line_height(px(16)))); }
     }
     let list = if orientation == "vertical" { column(headers) } else { row(headers) };
     list = list
-        .with_style(component_style(props, "list", style().gap(px(4))))
+        .with_style(component_style(props, "list", style().gap(px(2))))
         .accessibility_role("tablist")
         .accessibility_label(props.label)
         .accessibility_value(props.value);
@@ -103,6 +116,6 @@ fn render_Tabs(ctx, props) {
         }
     }
     let root = if orientation == "vertical" { row([list, panel]) } else { column([list, panel]) };
-    root.with_style(component_style(props, "root", style().gap(px(12))))
+    root.with_style(component_style(props, "root", style().gap(px(6))))
         .accessibility_role("group").accessibility_label(props.label)
 }

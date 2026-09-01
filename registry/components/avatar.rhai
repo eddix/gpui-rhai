@@ -47,7 +47,7 @@ define_component(#{
 });
 
 fn avatar_size(size) {
-    if size == "sm" { 28 } else if size == "lg" { 48 } else { 36 }
+    if size == "sm" { 28 } else if size == "lg" { 44 } else { 36 }
 }
 
 fn presence_color(presence) {
@@ -71,20 +71,23 @@ fn render_Avatar(ctx, props) {
         text(initials).with_style(component_style(props, "initials",
             style().text_color(theme_color("text_primary"))))
     };
-    let children = [
-        row([content]).with_style(
-            style().width(px(size)).height(px(size)).padding(px(6))
-                .items_center().justify_center().radius(px(size / 2))
-                .background(theme_color("surface_hover"))
-        )
-    ];
+    let face = row([content]).with_style(
+        style().width(px(size)).height(px(size)).clip()
+            .items_center().justify_center().radius(theme_radius("md"))
+            .border(px(1)).border_color(theme_color("border"))
+            .background(theme_color("surface_raised"))
+            .font_size(px(if size < 36 { 11 } else { 12 })).font_weight(700));
+    let children = [face];
     let presence = if "presence" in props { props.presence } else { "none" };
     if presence != "none" {
-        children.push(text("●").with_style(component_style(props, "presence",
-            style().text_color(presence_color(presence)))));
+        children.push(row([]).with_style(component_style(props, "presence",
+            style().width(px(8)).height(px(8)).absolute().right(px(0)).bottom(px(0))
+                .radius(px(1)).border(px(2)).border_color(theme_color("surface"))
+                .background(presence_color(presence)))));
     }
-    row(children)
-        .with_style(component_style(props, "root", style().gap(px(2)).items_center()))
+    stack(children)
+        .with_style(component_style(props, "root",
+            style().width(px(size)).height(px(size))))
         .accessibility_role("image")
         .accessibility_label(props.name)
 }

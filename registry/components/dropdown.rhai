@@ -255,23 +255,32 @@ fn render_dropdown_row(ctx, payload) {
     if item.kind == "group" {
         return text(item.label).with_key(payload.key)
             .with_style(ctx.component_style("group",
-                style().height(px(item.height)).padding_x(theme_spacing("sm"))
+                style().height(px(24)).padding_x(px(10)).items_center()
+                    .font_size(px(10)).line_height(px(14)).font_weight(700)
                     .text_color(theme_color("text_muted"))))
             .accessibility_role("presentation").accessibility_label(item.label);
     }
     let row_style = ctx.component_style("option",
-        style().height(px(item.height)).padding_x(theme_spacing("sm"))
-            .radius(theme_radius("sm")).items_center().gap(px(6)));
+        style().height(px(item.height)).padding_x(px(8))
+            .items_center().gap(px(8)).font_size(px(12)).line_height(px(16))
+            .border_start(px(2)).border_color(rgba(0x00000000))
+            .hover(style().background(theme_color("surface_hover"))));
     let row_style = if item.selected {
-        ctx.component_style("option_selected", row_style.text_color(theme_color("accent")))
+        ctx.component_style("option_selected", row_style
+            .background(theme_color("selection")).text_color(theme_color("accent")))
     } else { row_style.text_color(theme_color("text_primary")) };
     let row_style = if item.active {
-        ctx.component_style("option_active", row_style.background(theme_color("surface_hover")))
+        ctx.component_style("option_active", row_style
+            .background(theme_color("surface_hover")).border_color(theme_color("accent")))
     } else { row_style };
     let row_style = if item.disabled {
         ctx.component_style("option_disabled", row_style.text_color(theme_color("disabled")))
     } else { row_style };
-    let node = row([text(if item.selected { "✓" } else { "" }), text(item.label)])
+    let node = row([
+        text(if item.selected { "✓" } else { "" }).with_style(style()
+            .width(px(14)).text_color(theme_color("accent"))),
+        text(item.label).with_style(style().flex_grow())
+    ])
         .with_key(payload.key).with_style(row_style)
         .disabled(item.disabled).tab_stop(false)
         .accessibility_role("option")
@@ -292,7 +301,7 @@ fn render_Dropdown(ctx, props) {
     let query_lower = query.to_lower();
     let mode = prop_or(props, "mode", "single");
     let reset_query = prop_or(props, "reset_query_on_close", false);
-    let row_height = prop_or(props, "row_height", 32);
+    let row_height = prop_or(props, "row_height", 28);
     let width = if "width" in props && props.width != () { props.width } else { px(280) };
 
     let group_order = [];
@@ -341,33 +350,51 @@ fn render_Dropdown(ctx, props) {
     let placeholder = prop_or(props, "placeholder", "");
     let custom_trigger = "trigger" in props && props.trigger != ();
     let trigger_children = [];
-    if custom_trigger {
-        trigger_children.push(props.trigger);
-    } else {
+    if !custom_trigger {
         trigger_children.push(text(if selected_label == "" { placeholder } else { selected_label })
             .with_key(`${props.key}-trigger-value`)
             .with_style(component_style(props,
                 if selected_label == "" { "placeholder" } else { "value" },
-                style().text_color(if selected_label == "" { theme_color("text_muted") }
+                style().flex_grow().text_color(if selected_label == "" { theme_color("text_muted") }
                     else { theme_color("text_primary") }))));
+        let trigger_actions = [];
         if prop_or(props, "clearable", false) && selected.len > 0 {
-            trigger_children.push(text("×").with_key(`${props.key}-clear`)
-                .with_style(component_style(props, "clear", style().padding_x(px(4))))
+            trigger_actions.push(text("×").with_key(`${props.key}-clear`)
+                .with_style(component_style(props, "clear", style()
+                    .width(px(16)).height(px(16)).items_center().justify_center()
+                    .radius(theme_radius("sm"))
+                    .hover(style().background(theme_color("surface_hover")))))
                 .accessibility_role("button").accessibility_label(prop_or(props, "clear_label", "Clear selection"))
                 .on_click_value(Fn("clear_action"),
                     #{ changed: true, reset_query: reset_query }));
         }
-        trigger_children.push(text(if open { "▴" } else { "▾" })
+        trigger_actions.push(text(if open { "▴" } else { "▾" })
             .with_key(`${props.key}-indicator`)
             .with_style(component_style(props, "indicator",
-                style().text_color(theme_color("text_muted")))));
+                style().width(px(16)).height(px(16)).items_center().justify_center()
+                    .font_size(px(10)).text_color(theme_color("text_muted")))));
+        trigger_children.push(row(trigger_actions).with_style(style().gap(px(4)).items_center()));
     }
-    let trigger = row(trigger_children).with_key(`${props.key}-trigger`)
-        .with_style(component_style(props, "trigger",
-            style().width(width).height(px(prop_or(props, "trigger_height", 32)))
-                .padding_x(theme_spacing("sm")).justify_between().items_center()
-                .border(px(1)).border_color(theme_color("border"))
-                .radius(theme_radius("md")).background(theme_color("surface"))))
+    let trigger_background = if open { theme_color("surface_raised") } else { theme_color("surface") };
+    let trigger_style = if custom_trigger {
+        style()
+            .focus(style().border_color(theme_color("focus_ring")))
+            .disabled(style().text_color(theme_color("disabled")).opacity(0.72))
+    } else {
+        style().width(width).height(px(prop_or(props, "trigger_height", 32)))
+            .padding_x(px(10)).gap(px(8)).items_center()
+            .border(px(1)).border_color(if open { theme_color("focus_ring") }
+                else { theme_color("border") })
+            .radius(theme_radius("md")).background(trigger_background)
+            .font_size(px(12)).line_height(px(16))
+            .hover(style().background(theme_color("surface_raised")))
+            .focus(style().border_color(theme_color("focus_ring")))
+            .disabled(style().background(theme_color("surface_raised"))
+                .text_color(theme_color("disabled")).opacity(0.72))
+    };
+    let trigger = if custom_trigger { props.trigger } else { row(trigger_children) };
+    trigger = trigger.with_key(`${props.key}-trigger`)
+        .with_style(component_style(props, "trigger", trigger_style))
         .disabled(prop_or(props, "disabled", false)).tab_stop(true)
         .accessibility_role("combobox").accessibility_checked(open)
         .accessibility_label(placeholder).accessibility_value(selected_label);
@@ -404,7 +431,8 @@ fn render_Dropdown(ctx, props) {
     if ordered.len == 0 {
         content.push(if "empty" in props && props.empty != () { props.empty }
             else { text(prop_or(props, "empty_text", "No results"))
-                .with_style(component_style(props, "empty", style().padding(px(8)))) });
+                .with_style(component_style(props, "empty", style().padding(px(8))
+                    .font_size(px(11)).text_color(theme_color("text_muted")))) });
     } else {
         content.push(virtual_collection(#{
             key: `${props.key}-options`, label: placeholder,
@@ -418,7 +446,8 @@ fn render_Dropdown(ctx, props) {
         .with_style(component_style(props, "panel",
             style().width(width).gap(px(4)).padding(px(4))
                 .border(px(1)).border_color(theme_color("border"))
-                .radius(theme_radius("md")).background(theme_color("surface_raised"))))
+                .radius(theme_radius("md")).background(theme_color("surface"))
+                .focus(style().border_color(theme_color("focus_ring")))))
         .tab_stop(true).accessibility_role("listbox").accessibility_label(placeholder);
 
     if enabled.len > 0 {

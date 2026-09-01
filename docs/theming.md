@@ -18,9 +18,15 @@ filled semantic color. Themes choose them independently; deriving them from
 `text_primary` is not reliably accessible across light and dark palettes.
 
 Spacing uses `xs`, `sm`, `md`, and `lg`. Radii use `sm`, `md`, and `lg`.
+Official themes map those radii to `2px`, `4px`, and `6px`; see the
+[registry visual system](registry-design-system.md) for component metrics and
+state rules.
 
 `registry/themes/default_light.rhai` and `default_dark.rhai` demonstrate the
 serialized `ThemeVariant` shape.
+
+See [bundled themes](bundled-themes.md) for the installed catalog and source
+attribution.
 
 ## Theme families
 

@@ -18,6 +18,15 @@ const TOKYO_NIGHT: &str = include_str!("../../../registry/themes/tokyo_night.rha
 const TOKYO_STORM: &str = include_str!("../../../registry/themes/tokyo_storm.rhai");
 const CATPPUCCIN_LATTE: &str = include_str!("../../../registry/themes/catppuccin_latte.rhai");
 const CATPPUCCIN_MOCHA: &str = include_str!("../../../registry/themes/catppuccin_mocha.rhai");
+const ETHEREAL: &str = include_str!("../../../registry/themes/ethereal.rhai");
+const EVERFOREST: &str = include_str!("../../../registry/themes/everforest.rhai");
+const GRUVBOX: &str = include_str!("../../../registry/themes/gruvbox.rhai");
+const HACKERMAN: &str = include_str!("../../../registry/themes/hackerman.rhai");
+const NORD: &str = include_str!("../../../registry/themes/nord.rhai");
+const RETRO_82: &str = include_str!("../../../registry/themes/retro_82.rhai");
+const HERMARCHY: &str = include_str!("../../../registry/themes/hermarchy.rhai");
+const FUTURISM: &str = include_str!("../../../registry/themes/futurism.rhai");
+const AETHERIA: &str = include_str!("../../../registry/themes/aetheria.rhai");
 const EN: &str = include_str!("../../../registry/locales/en.rhai");
 const ZH_CN: &str = include_str!("../../../registry/locales/zh_cn.rhai");
 const AR: &str = include_str!("../../../registry/locales/ar.rhai");
@@ -85,6 +94,15 @@ fn choose_theme(ctx, values) {
     else if choice == "tokyo-storm" { ctx.set_theme("Tokyo Night", "Storm"); }
     else if choice == "catppuccin-latte" { ctx.set_theme("Catppuccin", "Latte"); }
     else if choice == "catppuccin-mocha" { ctx.set_theme("Catppuccin", "Mocha"); }
+    else if choice == "ethereal" { ctx.set_theme("Ethereal", "Dark"); }
+    else if choice == "everforest" { ctx.set_theme("Everforest", "Dark"); }
+    else if choice == "gruvbox" { ctx.set_theme("Gruvbox", "Dark"); }
+    else if choice == "hackerman" { ctx.set_theme("Hackerman", "Dark"); }
+    else if choice == "nord" { ctx.set_theme("Nord", "Dark"); }
+    else if choice == "retro-82" { ctx.set_theme("Retro 82", "Dark"); }
+    else if choice == "hermarchy" { ctx.set_theme("Hermarchy", "Dark"); }
+    else if choice == "futurism" { ctx.set_theme("Futurism", "Dark"); }
+    else if choice == "aetheria" { ctx.set_theme("Aetheria", "Dark"); }
 }
 
 fn set_theme_open(ctx, open) { ctx.set_state("theme_open", open); }
@@ -103,6 +121,16 @@ fn set_notifications(ctx, checked) { ctx.set_state("notifications", checked); }
 fn set_density(ctx, value) { ctx.set_state("density", value); }
 fn set_expanded(ctx, values) { ctx.set_state("expanded", values); }
 
+fn help_trigger() {
+    text("?").with_style(style()
+        .width(px(28)).height(px(28)).items_center().justify_center()
+        .font_size(px(16)).line_height(px(16))
+        .text_color(theme_color("text_muted"))
+        .radius(px(14)).background(theme_color("surface_raised")))
+        .with_key("help-trigger")
+        .accessibility_role("button").accessibility_label("Help")
+}
+
 fn init(ctx) {
     choose_theme(ctx, ["__VISUAL_THEME__"]);
     ctx.set_locale("__VISUAL_LOCALE__");
@@ -118,15 +146,7 @@ fn view(ctx) {
             }),
             popover::Popover(#{
                 key: "settings-help",
-                trigger: text("?").with_style(
-                    style()
-                        .width(px(28))
-                        .height(px(28))
-                        .padding(px(6))
-                        .radius(px(14))
-                        .background(theme_color("surface_raised"))
-                )
-                    .with_key("help-trigger")
+                trigger: help_trigger()
                     .animate(transition("opacity", 0.65, help_opacity, 180, "ease_out")),
                 content: text("Theme changes preserve keyed state and the compiled Rhai AST."),
                 open: ctx.get_state("help_open"),
@@ -147,7 +167,16 @@ fn view(ctx) {
                 #{ value: "tokyo-night", label: "Tokyo Night", keywords: ["dark", "blue"] },
                 #{ value: "tokyo-storm", label: "Tokyo Storm", keywords: ["dark", "blue"] },
                 #{ value: "catppuccin-latte", label: "Catppuccin Latte", keywords: ["light"] },
-                #{ value: "catppuccin-mocha", label: "Catppuccin Mocha", keywords: ["dark"] }
+                #{ value: "catppuccin-mocha", label: "Catppuccin Mocha", keywords: ["dark"] },
+                #{ value: "ethereal", label: "Ethereal", keywords: ["dark", "blue"] },
+                #{ value: "everforest", label: "Everforest", keywords: ["dark", "green"] },
+                #{ value: "gruvbox", label: "Gruvbox", keywords: ["dark", "warm"] },
+                #{ value: "hackerman", label: "Hackerman", keywords: ["dark", "green"] },
+                #{ value: "nord", label: "Nord", keywords: ["dark", "blue"] },
+                #{ value: "retro-82", label: "Retro 82", keywords: ["dark", "retro"] },
+                #{ value: "hermarchy", label: "Hermarchy", keywords: ["dark", "cyan"] },
+                #{ value: "futurism", label: "Futurism", keywords: ["dark", "magenta"] },
+                #{ value: "aetheria", label: "Aetheria", keywords: ["dark", "teal"] }
             ],
             mode: "single",
             selected: ctx.get_state("theme"),
@@ -274,6 +303,15 @@ fn main() {
                     | "tokyo-storm"
                     | "catppuccin-latte"
                     | "catppuccin-mocha"
+                    | "ethereal"
+                    | "everforest"
+                    | "gruvbox"
+                    | "hackerman"
+                    | "nord"
+                    | "retro-82"
+                    | "hermarchy"
+                    | "futurism"
+                    | "aetheria"
             )
         })
         .unwrap_or_else(|| "default-dark".to_owned());
@@ -314,6 +352,15 @@ fn main() {
             "catppuccin_mocha.rhai".to_owned(),
             CATPPUCCIN_MOCHA.to_owned(),
         ),
+        ("ethereal.rhai".to_owned(), ETHEREAL.to_owned()),
+        ("everforest.rhai".to_owned(), EVERFOREST.to_owned()),
+        ("gruvbox.rhai".to_owned(), GRUVBOX.to_owned()),
+        ("hackerman.rhai".to_owned(), HACKERMAN.to_owned()),
+        ("nord.rhai".to_owned(), NORD.to_owned()),
+        ("retro_82.rhai".to_owned(), RETRO_82.to_owned()),
+        ("hermarchy.rhai".to_owned(), HERMARCHY.to_owned()),
+        ("futurism.rhai".to_owned(), FUTURISM.to_owned()),
+        ("aetheria.rhai".to_owned(), AETHERIA.to_owned()),
     ])
     .locale_sources([
         ("en.rhai".to_owned(), EN.to_owned()),

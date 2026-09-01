@@ -74,15 +74,18 @@ fn Dialog(props) { render_component("components/dialog", props) }
 fn render_Dialog(ctx, props) {
     let children = [
         text(props.title).with_style(component_style(props, "title",
-            style().font_size(rem(1.125)).text_color(theme_color("text_primary"))
+            style().font_size(px(14)).line_height(px(20)).font_weight(700)
+                .text_color(theme_color("text_primary"))
         )),
-        props.content.with_style(component_style(props, "content", style())),
+        props.content.with_style(component_style(props, "content",
+            style().font_size(px(12)).line_height(px(16)))),
     ];
     if "actions" in props && props.actions != () {
         children.push(
             row(props.actions)
                 .with_style(component_style(props, "actions",
-                    style().gap(px(8)).justify_end().padding_top(px(8))))
+                    style().gap(px(8)).justify_end().padding_top(px(4))
+                        .border_top(px(1)).border_color(theme_color("border"))))
         );
     }
     let panel = column(children)
@@ -90,12 +93,12 @@ fn render_Dialog(ctx, props) {
             style()
                 .width(px(420))
                 .max_width(relative(0.9))
-                .padding(px(20))
-                .gap(px(16))
-                .radius(px(10))
+                .padding(px(16))
+                .gap(px(12))
+                .radius(theme_radius("md"))
                 .border(px(1))
                 .border_color(theme_color("border"))
-                .background(theme_color("surface_raised"))
+                .background(theme_color("surface"))
         ))
         .accessibility_role("dialog")
         .accessibility_label(props.title);

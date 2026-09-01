@@ -108,7 +108,7 @@ fn render_RadioGroup(ctx, props) {
     }
     let group = if orientation == "horizontal" { row(options) } else { column(options) };
     group = group
-        .with_style(component_style(props, "root", style().gap(px(8))))
+        .with_style(component_style(props, "root", style().gap(px(4))))
         .accessibility_role("radiogroup")
         .accessibility_label(props.label)
         .accessibility_value(props.value);

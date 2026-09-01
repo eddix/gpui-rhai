@@ -2,6 +2,8 @@
 
 Start with the repository quick start, then use these guides by task:
 
+- [User Guide](../USER_GUIDE.md) for the end-to-end human and agent workflow
+
 - [Architecture](architecture.md) and [security boundary](security-boundary.md)
 - [Component authoring](component-authoring-guide.md)
 - [Theming](theming.md), [locale and RTL](locale-and-rtl.md), and [assets](assets.md)

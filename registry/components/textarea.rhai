@@ -66,17 +66,15 @@ fn optional_prop(props, name) {
 }
 
 fn textarea_line_height(size) {
-    if size == "xs" { 16 }
-    else if size == "sm" { 18 }
-    else if size == "lg" { 24 }
-    else { 20 }
+    if size == "xs" { 14 }
+    else if size == "lg" { 18 }
+    else { 16 }
 }
 
 fn textarea_font_size(size) {
-    if size == "xs" { 12 }
-    else if size == "sm" { 13 }
-    else if size == "lg" { 16 }
-    else { 14 }
+    if size == "xs" { 11 }
+    else if size == "lg" { 13 }
+    else { 12 }
 }
 
 fn Textarea(props) { render_component("components/textarea", props) }
@@ -101,7 +99,8 @@ fn render_Textarea(ctx, props) {
         on_blur: optional_prop(props, "on_blur"),
         placeholder_style: component_style(props, "placeholder",
             style().text_color(theme_color("text_muted"))),
-        selection_style: component_style(props, "selection", style()),
+        selection_style: component_style(props, "selection",
+            style().background(theme_color("selection"))),
         caret_style: component_style(props, "caret",
             style().background(theme_color("accent"))),
         scroll_style: component_style(props, "scroll", style()),
@@ -117,8 +116,13 @@ fn render_Textarea(ctx, props) {
                 .radius(theme_radius("md"))
                 .border(px(1))
                 .border_color(border)
-                .background(theme_color("surface_raised"))
+                .background(theme_color("surface"))
                 .text_color(theme_color("text_primary"))
+                .focus(style().border_color(theme_color("focus_ring")))
+                .disabled(style()
+                    .background(theme_color("surface_raised"))
+                    .text_color(theme_color("disabled"))
+                    .opacity(0.72))
         ))
         .accessibility_role("text_field")
         .accessibility_label(if "placeholder" in props { props.placeholder } else { "" })
@@ -136,7 +140,8 @@ fn render_Textarea(ctx, props) {
         };
         let reached = max != () && count >= max;
         let counter_style = component_style(props, "counter",
-            style().text_color(theme_color("text_muted")));
+            style().font_size(px(11)).line_height(px(14))
+                .text_color(theme_color("text_muted")));
         let counter_style = if reached {
             component_style(props, "limit", counter_style.text_color(theme_color("danger")))
         } else { counter_style };

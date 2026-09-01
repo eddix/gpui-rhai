@@ -3,7 +3,6 @@ set -eu
 
 examples=(
   artistic_showcase
-  component_gallery
   dashboard_layout
   data_table
   embedded_hello_world
@@ -30,6 +29,7 @@ export GPUI_RHAI_STRIP_METAL_DEBUG=1
 export PATH="${PWD}/scripts/tool-wrappers:${PATH}"
 
 cargo build --release -p gpui-rhai --examples
+cargo build --release -p gpui-rhai-cli
 
 for example in "${examples[@]}"; do
   log="${TMPDIR:-/tmp}/gpui-rhai-${example}-smoke.log"
@@ -60,6 +60,29 @@ for example in "${examples[@]}"; do
   fi
   echo "release smoke passed: ${example}"
 done
+
+theme_studio_log="${TMPDIR:-/tmp}/gpui-rhai-theme-studio-smoke.log"
+GPUI_RHAI_THEME_STUDIO=1 target/release/gpui-rhai >"${theme_studio_log}" 2>&1 &
+theme_studio_pid=$!
+sleep "${smoke_seconds}"
+theme_studio_status=0
+if kill -0 "${theme_studio_pid}" 2>/dev/null; then
+  kill "${theme_studio_pid}" 2>/dev/null || true
+  wait "${theme_studio_pid}" || theme_studio_status=$?
+else
+  wait "${theme_studio_pid}" || theme_studio_status=$?
+fi
+if [[ "${theme_studio_status}" != "0" && "${theme_studio_status}" != "143" ]]; then
+  echo "theme studio exited unexpectedly with status ${theme_studio_status}"
+  sed -n '1,160p' "${theme_studio_log}"
+  exit 1
+fi
+if grep -Eiq 'panicked at|thread .* panicked|failed to initialize|failed to compile' "${theme_studio_log}"; then
+  echo "theme studio reported a panic or initialization failure"
+  sed -n '1,160p' "${theme_studio_log}"
+  exit 1
+fi
+echo "release smoke passed: theme studio"
 
 for state in selected loading empty; do
   log="${TMPDIR:-/tmp}/gpui-rhai-data_table-${state}-smoke.log"

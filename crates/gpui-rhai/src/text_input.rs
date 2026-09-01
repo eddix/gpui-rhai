@@ -5,11 +5,12 @@ use std::ops::Range;
 use std::rc::Rc;
 
 use gpui::{
-    App, Bounds, ClipboardItem, Context, CursorStyle, Element, ElementId, ElementInputHandler,
-    Entity, EntityInputHandler, FocusHandle, Focusable, GlobalElementId, IntoElement, KeyBinding,
-    KeyDownEvent, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad,
-    Pixels, Point, Render, ShapedLine, SharedString, Style as GpuiStyle, TextRun, UTF16Selection,
-    UnderlineStyle, Window, actions, div, fill, point, prelude::*, px, relative, rgba, size,
+    App, Bounds, ClipboardItem, ContentMask, Context, CursorStyle, Element, ElementId,
+    ElementInputHandler, Entity, EntityInputHandler, FocusHandle, Focusable, GlobalElementId,
+    IntoElement, KeyBinding, KeyDownEvent, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent,
+    MouseUpEvent, PaintQuad, Pixels, Point, Render, ShapedLine, SharedString, Style as GpuiStyle,
+    TextRun, UTF16Selection, UnderlineStyle, Window, actions, div, fill, point, prelude::*, px,
+    relative, rgba, size,
 };
 
 pub use crate::text_edit::TextBuffer;
@@ -17,7 +18,7 @@ pub use crate::text_edit::TextBuffer;
 use crate::{
     ComponentStateSchema, EventSchema, ObjectField, PrimitiveDescriptor, PrimitiveEventEmitter,
     PrimitiveHandler, PrimitiveId, PrimitiveInstance, PrimitiveInstanceId, PrimitiveProps,
-    PrimitiveValue, UiValue, ValueSchema,
+    PrimitiveValue, Rgba8, UiValue, ValueSchema,
 };
 
 actions!(
@@ -86,48 +87,56 @@ pub(crate) struct TextInputEntity {
     placeholder: SharedString,
     disabled: bool,
     read_only: bool,
+    selection_color: Rgba8,
+    caret_color: Rgba8,
     callbacks: TextInputCallbacks,
     last_layout: Option<ShapedLine>,
     last_bounds: Option<Bounds<Pixels>>,
+    scroll_x: Pixels,
     selecting: bool,
 }
 
+#[derive(Clone)]
+struct TextInputConfig {
+    value: String,
+    placeholder: String,
+    disabled: bool,
+    read_only: bool,
+    selection_color: Rgba8,
+    caret_color: Rgba8,
+}
+
 impl TextInputEntity {
-    pub(crate) fn new(
-        value: &str,
-        placeholder: &str,
-        disabled: bool,
-        read_only: bool,
-        callbacks: TextInputCallbacks,
-        cx: &mut Context<Self>,
-    ) -> Self {
+    fn new(config: TextInputConfig, callbacks: TextInputCallbacks, cx: &mut Context<Self>) -> Self {
         Self {
-            focus: cx.focus_handle().tab_stop(!disabled),
-            buffer: TextBuffer::new(value),
-            placeholder: placeholder.to_owned().into(),
-            disabled,
-            read_only,
+            focus: cx.focus_handle().tab_stop(!config.disabled),
+            buffer: TextBuffer::new(&config.value),
+            placeholder: config.placeholder.into(),
+            disabled: config.disabled,
+            read_only: config.read_only,
+            selection_color: config.selection_color,
+            caret_color: config.caret_color,
             callbacks,
             last_layout: None,
             last_bounds: None,
+            scroll_x: px(0.0),
             selecting: false,
         }
     }
 
-    pub(crate) fn update_props(
+    fn update_props(
         &mut self,
-        value: &str,
-        placeholder: &str,
-        disabled: bool,
-        read_only: bool,
+        config: &TextInputConfig,
         callbacks: TextInputCallbacks,
         cx: &mut Context<Self>,
     ) {
-        self.buffer.set_controlled(value);
-        self.focus = self.focus.clone().tab_stop(!disabled);
-        self.placeholder = placeholder.to_owned().into();
-        self.disabled = disabled;
-        self.read_only = read_only;
+        self.buffer.set_controlled(&config.value);
+        self.focus = self.focus.clone().tab_stop(!config.disabled);
+        self.placeholder = config.placeholder.clone().into();
+        self.disabled = config.disabled;
+        self.read_only = config.read_only;
+        self.selection_color = config.selection_color;
+        self.caret_color = config.caret_color;
         self.callbacks = callbacks;
         cx.notify();
     }
@@ -285,7 +294,7 @@ impl TextInputEntity {
         } else if position.y > bounds.bottom() {
             self.buffer.content.len()
         } else {
-            line.closest_index_for_x(position.x - bounds.left())
+            line.closest_index_for_x(position.x - bounds.left() + self.scroll_x)
         }
     }
 
@@ -395,8 +404,14 @@ impl EntityInputHandler for TextInputEntity {
         let line = self.last_layout.as_ref()?;
         let range = self.buffer.range_from_utf16(&range_utf16);
         Some(Bounds::from_corners(
-            point(bounds.left() + line.x_for_index(range.start), bounds.top()),
-            point(bounds.left() + line.x_for_index(range.end), bounds.bottom()),
+            point(
+                bounds.left() + line.x_for_index(range.start) - self.scroll_x,
+                bounds.top(),
+            ),
+            point(
+                bounds.left() + line.x_for_index(range.end) - self.scroll_x,
+                bounds.bottom(),
+            ),
         ))
     }
 
@@ -406,9 +421,12 @@ impl EntityInputHandler for TextInputEntity {
         _: &mut Window,
         _: &mut Context<Self>,
     ) -> Option<usize> {
-        let local = self.last_bounds?.localize(&point)?;
+        let bounds = self.last_bounds?;
+        if !bounds.contains(&point) {
+            return None;
+        }
         let line = self.last_layout.as_ref()?;
-        let index = line.index_for_x(point.x - local.x)?;
+        let index = line.index_for_x(point.x - bounds.left() + self.scroll_x)?;
         Some(self.buffer.offset_to_utf16(index))
     }
 }
@@ -421,6 +439,25 @@ struct TextPrepaint {
     line: Option<ShapedLine>,
     cursor: Option<PaintQuad>,
     selection: Option<PaintQuad>,
+    origin: Point<Pixels>,
+    scroll_x: Pixels,
+}
+
+fn horizontal_scroll_for_cursor(
+    line_width: Pixels,
+    cursor_x: Pixels,
+    viewport_width: Pixels,
+    current: Pixels,
+) -> Pixels {
+    let viewport_width = viewport_width.max(px(0.0));
+    let max_scroll = (line_width - viewport_width).max(px(0.0));
+    let mut scroll_x = current.min(max_scroll);
+    if cursor_x < scroll_x {
+        scroll_x = cursor_x;
+    } else if cursor_x > scroll_x + viewport_width - px(2.0) {
+        scroll_x = (cursor_x - viewport_width + px(2.0)).min(max_scroll);
+    }
+    scroll_x.max(px(0.0))
 }
 
 impl IntoElement for TextElement {
@@ -514,31 +551,28 @@ impl Element for TextElement {
             .text_system()
             .shape_line(display, font_size, &runs, None);
         let cursor_x = line.x_for_index(cursor);
+        let scroll_x =
+            horizontal_scroll_for_cursor(line.width, cursor_x, bounds.size.width, input.scroll_x);
+        let origin = point(bounds.left() - scroll_x, bounds.top());
         let (selection, cursor) = if selected.is_empty() {
             (
                 None,
                 Some(fill(
                     Bounds::new(
-                        point(bounds.left() + cursor_x, bounds.top()),
+                        point(origin.x + cursor_x, bounds.top()),
                         size(px(1.5), bounds.size.height),
                     ),
-                    gpui::blue(),
+                    rgba(input.caret_color.as_rgba_hex()),
                 )),
             )
         } else {
             (
                 Some(fill(
                     Bounds::from_corners(
-                        point(
-                            bounds.left() + line.x_for_index(selected.start),
-                            bounds.top(),
-                        ),
-                        point(
-                            bounds.left() + line.x_for_index(selected.end),
-                            bounds.bottom(),
-                        ),
+                        point(origin.x + line.x_for_index(selected.start), bounds.top()),
+                        point(origin.x + line.x_for_index(selected.end), bounds.bottom()),
                     ),
-                    rgba(0x337a_a2f7),
+                    rgba(input.selection_color.as_rgba_hex()),
                 )),
                 None,
             )
@@ -547,6 +581,8 @@ impl Element for TextElement {
             line: Some(line),
             cursor,
             selection,
+            origin,
+            scroll_x,
         }
     }
 
@@ -566,21 +602,24 @@ impl Element for TextElement {
             ElementInputHandler::new(bounds, self.input.clone()),
             cx,
         );
-        if let Some(selection) = state.selection.take() {
-            window.paint_quad(selection);
-        }
         let Some(line) = state.line.take() else {
             return;
         };
-        let _ = line.paint(bounds.origin, window.line_height(), window, cx);
-        if focus.is_focused(window)
-            && let Some(cursor) = state.cursor.take()
-        {
-            window.paint_quad(cursor);
-        }
+        window.with_content_mask(Some(ContentMask { bounds }), |window| {
+            if let Some(selection) = state.selection.take() {
+                window.paint_quad(selection);
+            }
+            let _ = line.paint(state.origin, window.line_height(), window, cx);
+            if focus.is_focused(window)
+                && let Some(cursor) = state.cursor.take()
+            {
+                window.paint_quad(cursor);
+            }
+        });
         self.input.update(cx, |input, _| {
             input.last_layout = Some(line);
             input.last_bounds = Some(bounds);
+            input.scroll_x = state.scroll_x;
         });
     }
 }
@@ -591,6 +630,8 @@ impl Render for TextInputEntity {
         let submit_enabled = self.callbacks.submit.is_some();
         div()
             .flex()
+            .size_full()
+            .items_center()
             .key_context("GPUIRhaiTextInput")
             .track_focus(&self.focus)
             .on_key_down(move |event: &KeyDownEvent, window, cx| {
@@ -630,16 +671,10 @@ impl Render for TextInputEntity {
             .on_mouse_up(MouseButton::Left, cx.listener(Self::mouse_up))
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::mouse_up))
             .on_mouse_move(cx.listener(Self::mouse_move))
-            .line_height(px(20.0))
-            .text_size(px(14.0))
+            .line_height(px(16.0))
+            .text_size(px(12.0))
             .opacity(if self.disabled { 0.55 } else { 1.0 })
-            .child(
-                div()
-                    .h(px(32.0))
-                    .w_full()
-                    .px_2()
-                    .child(TextElement { input: cx.entity() }),
-            )
+            .child(TextElement { input: cx.entity() })
     }
 }
 
@@ -659,7 +694,7 @@ impl PrimitiveHandler for TextInputPrimitiveHandler {
         &mut self,
         instance: &PrimitiveInstance,
         events: &PrimitiveEventEmitter,
-        _: &crate::PrimitiveTheme,
+        theme: &crate::PrimitiveTheme,
         window: &mut Window,
         cx: &mut App,
     ) -> Result<gpui::AnyElement, String> {
@@ -671,20 +706,25 @@ impl PrimitiveHandler for TextInputPrimitiveHandler {
         let placeholder = string_prop(&instance.node.props, "placeholder").unwrap_or_default();
         let disabled = bool_prop(&instance.node.props, "disabled").unwrap_or(false);
         let read_only = bool_prop(&instance.node.props, "read_only").unwrap_or(false);
+        let selection_color = theme
+            .color("selection")
+            .unwrap_or_else(|| Rgba8::from_rgba_hex(0x292e_42ff));
+        let caret_color = theme
+            .color("accent")
+            .unwrap_or_else(|| Rgba8::from_rgba_hex(0x7aa2_f7ff));
+        let config = TextInputConfig {
+            value,
+            placeholder,
+            disabled,
+            read_only,
+            selection_color,
+            caret_color,
+        };
         let callbacks = primitive_callbacks(events);
         let entity = if let Some(entity) = self.instances.get(&id) {
             entity.clone()
         } else {
-            let entity = cx.new(|cx| {
-                TextInputEntity::new(
-                    &value,
-                    &placeholder,
-                    disabled,
-                    read_only,
-                    callbacks.clone(),
-                    cx,
-                )
-            });
+            let entity = cx.new(|cx| TextInputEntity::new(config.clone(), callbacks.clone(), cx));
             entity.update(cx, |input, cx| {
                 let focus = input.focus.clone();
                 cx.on_focus(&focus, window, |input, window, cx| {
@@ -704,7 +744,7 @@ impl PrimitiveHandler for TextInputPrimitiveHandler {
             entity
         };
         entity.update(cx, |input, cx| {
-            input.update_props(&value, &placeholder, disabled, read_only, callbacks, cx);
+            input.update_props(&config, callbacks, cx);
         });
         Ok(entity.into_any_element())
     }
@@ -835,6 +875,22 @@ mod tests {
             let utf16 = buffer.offset_to_utf16(offset);
             assert_eq!(buffer.offset_from_utf16(utf16), offset);
         }
+    }
+
+    #[test]
+    fn horizontal_scroll_keeps_the_active_cursor_inside_the_viewport() {
+        assert_eq!(
+            horizontal_scroll_for_cursor(px(200.0), px(150.0), px(100.0), px(0.0)),
+            px(52.0)
+        );
+        assert_eq!(
+            horizontal_scroll_for_cursor(px(200.0), px(10.0), px(100.0), px(50.0)),
+            px(10.0)
+        );
+        assert_eq!(
+            horizontal_scroll_for_cursor(px(80.0), px(80.0), px(100.0), px(30.0)),
+            px(0.0)
+        );
     }
 
     #[test]

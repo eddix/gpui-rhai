@@ -46,7 +46,7 @@ define_component(#{
             fill_height: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: false } },
             estimated_row_height: #{ schema: #{ type: "number", exclusive_min: 0.0 }, required: false, sensitive: false,
-                "default": #{ type: "float", value: 34.0 } },
+                "default": #{ type: "float", value: 30.0 } },
             loading: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: false } },
             loading_content: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false },
@@ -114,12 +114,13 @@ fn render_table_row(ctx, payload) {
     for cell in item.cells {
         cells.push(text(cell.text).with_key(cell.key).with_style(
             column_style(cell).min_width(px(0)).whitespace_nowrap().text_ellipsis()
+                .font_size(px(12)).line_height(px(16))
         ));
     }
     let base = style().height(px(item.height)).items_center()
         .overflow_hidden()
         .border_bottom(px(1)).border_color(theme_color("border"))
-        .background(if item.selected { rgba(0x334155cc) }
+        .background(if item.selected { theme_color("selection") }
             else if item.striped { theme_color("surface_raised") }
             else { rgba(0x00000000) });
     if !item.selected {
@@ -149,7 +150,10 @@ fn render_Table(ctx, props) {
         } else { column.title };
         let header = text(title).with_key(column.key)
             .with_style(component_style(props, "header_cell",
-                column_style(column).min_width(px(0)).whitespace_nowrap().text_ellipsis()))
+                column_style(column).min_width(px(0)).height(px(30)).items_center()
+                    .whitespace_nowrap().text_ellipsis()
+                    .font_size(px(11)).line_height(px(14)).font_weight(700)
+                    .hover(style().background(theme_color("surface_hover")))))
             .accessibility_role("columnheader");
         headers.push(if prop_or(column, "sortable", false) {
             header.on_click_value(Fn("sort_action"), next_sort(current_sort, column.key))
@@ -157,7 +161,7 @@ fn render_Table(ctx, props) {
     }
     let header = row(headers).with_key(`${props.key}-header`)
         .with_style(component_style(props, "header",
-            style().height(px(36)).items_center()
+            style().height(px(30)).items_center()
                 .border_bottom(px(1)).border_color(theme_color("border"))
                 .background(theme_color("surface_raised"))))
         .accessibility_role("row");
@@ -166,15 +170,19 @@ fn render_Table(ctx, props) {
         let loading = if "loading_content" in props && props.loading_content != () {
             props.loading_content
         } else { text("Loading…") };
-        return box([header, loading.with_style(component_style(props, "loading", style().padding(px(12)) ))])
-            .with_key(props.key).with_style(component_style(props, "root", style().flex_col()))
+        return box([header, loading.with_style(component_style(props, "loading", style()
+            .padding(px(12)).font_size(px(11)).text_color(theme_color("text_muted"))))])
+            .with_key(props.key).with_style(component_style(props, "root", style().flex_col()
+                .border(px(1)).border_color(theme_color("border"))))
             .accessibility_role("table").accessibility_label(props.label);
     }
     if props.rows.len == 0 {
         let empty = if "empty" in props && props.empty != () { props.empty }
             else { text(prop_or(props, "empty_text", "No results")) };
-        return box([header, empty.with_style(component_style(props, "empty", style().padding(px(12)) ))])
-            .with_key(props.key).with_style(component_style(props, "root", style().flex_col()))
+        return box([header, empty.with_style(component_style(props, "empty", style()
+            .padding(px(12)).font_size(px(11)).text_color(theme_color("text_muted"))))])
+            .with_key(props.key).with_style(component_style(props, "root", style().flex_col()
+                .border(px(1)).border_color(theme_color("border"))))
             .accessibility_role("table").accessibility_label(props.label);
     }
 
@@ -203,12 +211,12 @@ fn render_Table(ctx, props) {
         data.push(#{ key: key, label: `${props.label} row ${index + 1}`, cells: cells,
             selected: is_selected, selection: next_selection,
             striped: prop_or(props, "striped", false) && index % 2 == 1,
-            height: prop_or(props, "estimated_row_height", 34.0) });
+            height: prop_or(props, "estimated_row_height", 30.0) });
     }
     let collection = #{
         key: `${props.key}-body`, label: props.label, data: data,
-        estimated_height: prop_or(props, "estimated_row_height", 34.0),
-        overdraw_pixels: prop_or(props, "estimated_row_height", 34.0) * 4.0,
+        estimated_height: prop_or(props, "estimated_row_height", 30.0),
+        overdraw_pixels: prop_or(props, "estimated_row_height", 30.0) * 4.0,
         alignment: "top", follow_tail: false
     };
     if fill_height { collection.fill_height = true; }
@@ -219,6 +227,7 @@ fn render_Table(ctx, props) {
     let root_style = if fill_height { style().flex_col().flex_grow().min_height(px(0)) }
         else { style().flex_col() };
     box([header, body]).with_key(props.key)
-        .with_style(component_style(props, "root", root_style.overflow_x_scroll()))
+        .with_style(component_style(props, "root", root_style.overflow_x_scroll()
+            .border(px(1)).border_color(theme_color("border"))))
         .accessibility_role("table").accessibility_label(props.label)
 }
