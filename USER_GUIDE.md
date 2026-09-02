@@ -364,14 +364,17 @@ let root = host.container(
     gpui::div()
         .flex()
         .child(rust_owned_sidebar)
-        .child(view.element()?)
+        .child(view.flex_item()?)
 );
 ```
 
 The Rust application continues to own the window and surrounding tree. The
 Rhai view owns only its declared view. Use one `ScriptViewHost` for sibling
 views that should share overlay dismissal, Escape routing, portal placement,
-and focus fallback.
+and focus fallback. `flex_item()` is the normal direct child for Rust flex
+layouts: it supplies a zero basis and `min-width/min-height: 0`, preventing a
+wide scrollable Table from becoming the host column's automatic min-content
+width. Use `element()` for fixed, absolute, grid, or manually styled placement.
 
 Call `view.dispose(cx)?` when removing a mounted view permanently. Merely not
 rendering it for one frame does not dispose its tasks, overlays, and scoped

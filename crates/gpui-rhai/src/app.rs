@@ -677,6 +677,25 @@ impl ScriptViewHandle {
         .into_any_element())
     }
 
+    /// Return the measured view as a zero-basis, shrinkable host flex item.
+    ///
+    /// Use this as the direct child of a Rust flex row or column. It prevents
+    /// horizontally scrollable script content from contributing an automatic
+    /// min-content width that expands the surrounding host layout.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ScriptViewError::DisposedView`] after explicit disposal.
+    pub fn flex_item(&self) -> Result<AnyElement, ScriptViewError> {
+        Ok(div()
+            .flex_1()
+            .min_w(px(0.0))
+            .min_h(px(0.0))
+            .debug_selector(|| format!("gpui-rhai-flex-item:{}", self.view_id()))
+            .child(self.element()?)
+            .into_any_element())
+    }
+
     /// Dispose this view immediately. The operation is idempotent.
     ///
     /// # Errors

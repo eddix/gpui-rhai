@@ -493,6 +493,23 @@ struct SingleEmbeddedHost {
     view: ScriptViewHandle,
 }
 
+struct AutoMinWidthTableHost {
+    host: ScriptViewHost,
+    view: ScriptViewHandle,
+}
+
+impl Render for AutoMinWidthTableHost {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        self.host.container(
+            div()
+                .flex()
+                .size_full()
+                .child(self.view.flex_item().unwrap())
+                .child(div().w(px(200.0)).h_full()),
+        )
+    }
+}
+
 impl Render for SingleEmbeddedHost {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         self.host.container(self.view.element().unwrap())
@@ -2607,6 +2624,86 @@ fn virtual_collection_fill_height_uses_the_resolved_flex_viewport(cx: &mut TestA
     assert!(
         (190.0..=205.0).contains(&bounds.height),
         "fill viewport should consume 240px parent minus 40px header, got {bounds:?}"
+    );
+}
+
+#[gpui::test]
+fn table_does_not_expand_an_auto_min_width_host_flex_column_across_frames(
+    cx: &mut TestAppContext,
+) {
+    cx.update(gpui_rhai::install);
+    let entry = ModuleId::parse("main").unwrap();
+    let prepared = EmbeddedScriptView::new(
+        entry.clone(),
+        EmbeddedScriptSource::new(std::collections::BTreeMap::from([
+            (
+                entry,
+                r#"
+                    import "components/table" as table;
+                    fn row_clicked(ctx, key) { () }
+                    fn view(ctx) {
+                        table::Table(#{
+                            key: "runaway", label: "Runaway probe", row_key: "id",
+                            rows: [#{ id: "row-1", left: "Left", middle: "Middle", right: "Right" }],
+                            columns: [
+                                #{ key: "left", title: "Left", width: #{ kind: "fixed", value: 320 } },
+                                #{ key: "middle", title: "Middle", width: #{ kind: "fixed", value: 320 } },
+                                #{ key: "right", title: "Right", width: #{ kind: "fixed", value: 320 } },
+                            ],
+                            height: 240, selection_mode: "single", on_row_click: Fn("row_clicked"),
+                        })
+                    }
+                "#
+                .to_owned(),
+            ),
+            (
+                ModuleId::parse("components/table").unwrap(),
+                include_str!("../../../registry/components/table.rhai").to_owned(),
+            ),
+        ])),
+        include_str!("../../../registry/themes/default_dark.rhai"),
+    )
+    .prepare()
+    .unwrap();
+    let window = cx.add_window(move |window, cx| {
+        let host = ScriptViewHost::new("auto-min-table-window", cx).unwrap();
+        let view = prepared
+            .mount(
+                ScriptViewConfig::new("auto-min-table-view"),
+                host.clone(),
+                window,
+                cx,
+            )
+            .unwrap();
+        AutoMinWidthTableHost { host, view }
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    cx.run_until_parked();
+
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    visual.simulate_resize(size(px(1_000.0), px(600.0)));
+    visual.run_until_parked();
+    let mut widths = Vec::new();
+    for _ in 0..8 {
+        cx.refresh().unwrap();
+        visual.run_until_parked();
+        widths.push(
+            visual
+                .debug_bounds("gpui-rhai-flex-item:auto-min-table-view")
+                .unwrap()
+                .size
+                .width,
+        );
+    }
+    let first = widths[0];
+    assert!(
+        (799.0..=801.0).contains(&f32::from(first)),
+        "Table min-content escaped the 800px host flex allocation: {widths:?}"
+    );
+    assert!(
+        widths.iter().all(|width| (*width - first).abs() < px(0.1)),
+        "Table fed its bordered min-content width back into the host flex column: {widths:?}"
     );
 }
 

@@ -234,11 +234,14 @@ fn render_Table(ctx, props) {
     };
     if fill_height { collection.fill_height = true; }
     else { collection.height = props.height; }
-    let body_style = if fill_height { style().flex_grow().min_height(px(0)) } else { style() };
+    let body_style = if fill_height {
+        style().flex_grow().min_width(px(0)).min_height(px(0))
+    } else { style().min_width(px(0)) };
     let body = virtual_collection(collection, Fn("render_table_row"))
         .with_style(component_style(props, "body", body_style));
-    let root_style = if fill_height { style().flex_col().flex_grow().min_height(px(0)) }
-        else { style().flex_col() };
+    let root_style = if fill_height {
+        style().flex_col().flex_grow().min_width(px(0)).min_height(px(0))
+    } else { style().flex_col().min_width(px(0)) };
     box([header, body]).with_key(props.key)
         .with_style(component_style(props, "root", root_style.overflow_x_scroll()
             .border(px(1)).border_color(theme_color("border"))))

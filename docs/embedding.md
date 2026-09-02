@@ -64,15 +64,21 @@ The Rust root must wrap the complete layout containing all sibling views:
 ```rust
 host.container(
     row()
-        .child(first.element()?)
-        .child(second.element()?)
-        .child(third.element()?)
+        .child(first.flex_item()?)
+        .child(second.flex_item()?)
+        .child(third.flex_item()?)
 )
 ```
 
 The container is layout-transparent. It initializes the shared Host once per
 frame and installs native capture routing. Rendering a handle outside its Host
 container produces a visible diagnostic.
+
+Use `flex_item()` when the view is a direct child of a Rust flex row or column.
+It supplies a zero flex basis and `min-width/min-height: 0`, so wide scrollable
+script content cannot become the host item's automatic min-content size. Use
+the lower-level `element()` for fixed, absolute, grid, or manually styled
+placements.
 
 Several Hosts may intentionally coexist in one window. Capture routing is
 limited to each Host container, so their Overlay domains do not dismiss one
