@@ -43,6 +43,11 @@ pub enum OverlayInitialFocus {
     Panel,
     /// Focus the first focusable element inside the panel once the content
     /// has entered the focus tree.
+    ///
+    /// Note: any node with interaction handlers (click/hover/key) gets an
+    /// interaction wrapper, and wrappers are tab stops by default. A content
+    /// container that listens for keys (arrow navigation, say) will itself
+    /// be "first" unless it opts out with `tab_stop(false)`.
     First,
 }
 

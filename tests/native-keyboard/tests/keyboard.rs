@@ -3078,3 +3078,111 @@ fn overlay_default_panel_focus_keeps_keyboard_on_panel(cx: &mut TestAppContext) 
         "panel default must not route typing into the input: {texts:?}"
     );
 }
+
+// Palette live-preview shape: cursor movement calls set_theme, which marks
+// every window dirty (full re-render). Focus must survive that, or typing
+// dies after the first character. Reuses the proven overlay keyboard path.
+const THEME_SWAP_PALETTE_SCRIPT: &str = r#"
+import "components/input" as input;
+
+fn state_schema() {
+    #{ fields: #{
+        open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: false } },
+        value: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "" } },
+        flip: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: false } },
+    } }
+}
+
+fn set_open(ctx, open) { ctx.set_state("open", open) }
+
+fn value_changed(ctx, value) { ctx.set_state("value", value) }
+
+// Arrow-down swaps the whole theme -- the palette live-preview shape
+// (cursor moves onto a theme entry and set_theme fires).
+fn theme_step(ctx, payload) {
+    let flip = !ctx.get_state("flip");
+    ctx.set_state("flip", flip);
+    ctx.set_theme("Default", if flip { "Light" } else { "Dark" });
+}
+
+fn view(ctx) {
+    column([
+        text(`typed:${ctx.get_state("value")}`),
+        overlay(
+            text("open palette")
+                .with_style(style().height(px(28)))
+                .accessibility_role("button")
+                .accessibility_label("open palette"),
+            column([
+                input::Input(#{ key: "filter", value: ctx.get_state("value"),
+                    placeholder: "filter", on_change: Fn("value_changed") })
+            // key handlers force an interaction wrapper, and wrappers are
+            // tab stops by default -- without tab_stop(false) the overlay's
+            // initial_focus "first" lands on this column instead of the
+            // input (the exact palette bug this test guards).
+            ]).with_style(style().width(px(320)).padding(px(8)))
+                .on("key:down", Fn("theme_step")).tab_stop(false),
+            #{ id: "palette", kind: "dialog", placement: "center",
+               open: ctx.get_state("open"), modal: true, initial_focus: "first" }
+        ).with_key("palette").on_open_change(Fn("set_open"))
+    ]).with_style(style().width(relative(1.0)).height(relative(1.0)).gap(px(4)))
+}
+"#;
+
+#[gpui::test]
+fn set_theme_during_typing_keeps_input_focus(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let entry = ModuleId::parse("main").unwrap();
+    let prepared = EmbeddedScriptView::new(
+        entry.clone(),
+        EmbeddedScriptSource::new(std::collections::BTreeMap::from([
+            (entry, THEME_SWAP_PALETTE_SCRIPT.to_owned()),
+            (
+                ModuleId::parse("components/input").unwrap(),
+                include_str!("../../../registry/components/input.rhai").to_owned(),
+            ),
+        ])),
+        include_str!("../../../registry/themes/default_dark.rhai"),
+    )
+    .prepare()
+    .unwrap();
+    let captured = Rc::new(RefCell::new(None));
+    let captured_for_window = Rc::clone(&captured);
+    let window = cx.add_window(move |window, cx| {
+        let host = ScriptViewHost::new("theme-swap-window", cx).unwrap();
+        let view = prepared
+            .mount(
+                ScriptViewConfig::new("theme-swap-view"),
+                host.clone(),
+                window,
+                cx,
+            )
+            .unwrap();
+        *captured_for_window.borrow_mut() = Some((host.clone(), view.clone()));
+        SingleEmbeddedHost { host, view }
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    cx.run_until_parked();
+    let (_host, view) = captured.borrow().as_ref().unwrap().clone();
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    visual.run_until_parked();
+
+    // Open the palette: initial_focus "first" lands focus in the input
+    // (keyboard path proven by overlay_initial_focus_first_...).
+    click_palette_trigger(&mut visual, &view);
+
+    // The real palette sequence: type, arrow-down (theme swap fires),
+    // type again. If the full re-render drops focus, "b" never arrives.
+    visual.simulate_input("a");
+    visual.run_until_parked();
+    visual.simulate_keystrokes("down");
+    visual.run_until_parked();
+    visual.simulate_input("b");
+    visual.run_until_parked();
+    let texts = palette_texts(&mut visual, &view);
+    assert!(
+        texts.contains(&"typed:ab".to_owned()),
+        "focus must survive theme swaps: {texts:?}"
+    );
+}
