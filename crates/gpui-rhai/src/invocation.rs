@@ -13,14 +13,24 @@ use rhai::{FnPtr, FuncArgs, NativeCallContext};
 pub(crate) struct ScriptInvocationContext {
     #[allow(deprecated)]
     stored: Rc<rhai::NativeCallContextStore>,
+    operation_base: u64,
 }
 
 impl ScriptInvocationContext {
     #[allow(deprecated)]
     pub(crate) fn capture(context: &NativeCallContext<'_>) -> Self {
+        let stored = Rc::new(context.store_data());
         Self {
-            stored: Rc::new(context.store_data()),
+            // Rhai clones this absolute counter into every later
+            // `call_within_context`. Timings must subtract it to report the
+            // delayed invocation rather than repeatedly charging the parent.
+            operation_base: stored.global.num_operations,
+            stored,
         }
+    }
+
+    pub(crate) const fn operation_base(&self) -> u64 {
+        self.operation_base
     }
 
     #[allow(deprecated)]

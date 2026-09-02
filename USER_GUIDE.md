@@ -485,6 +485,8 @@ Guidelines:
 - Keep `view` and ordinary callbacks short; 16 ms is the default slow warning.
 - Do not parse files, access the network, or perform blocking work in `view`.
 - Use `virtual_collection` for large lists and Tables.
+- Keep large stable row sets in `NativeCollection`; let Rhai declare the Table
+  and controlled state while Rust sorts and projects only visible rows.
 - Use native pointer/wheel handlers and `NativeSignal` for coalesced or
   per-frame values such as playheads, drags, and animation parameters.
 - A native handler bypasses Rhai dispatch, but if it dirties a Rhai component,
@@ -495,7 +497,8 @@ Guidelines:
   GPUI layout, prepaint, and paint.
 
 See [Performance](docs/performance.md), [Virtual lists](docs/virtual-list.md),
-and [Custom primitives](docs/custom-primitives.md).
+[Rust-owned collections](docs/native-collections.md), and
+[Custom primitives](docs/custom-primitives.md).
 
 ## 12. Hot reload, errors, and production
 

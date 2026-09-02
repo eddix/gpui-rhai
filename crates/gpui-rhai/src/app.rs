@@ -477,6 +477,19 @@ impl IntoElement for SharedLayerPortalElement {
 #[derive(Clone)]
 pub struct ScriptViewHandle(Rc<ScriptViewHandleInner>);
 
+/// Drainable execution diagnostics for one mounted script view.
+///
+/// Taking a snapshot does not invoke Rhai or alter the mounted UI. Timings are
+/// drained so benchmark samples never double-count earlier work.
+#[derive(Clone, Debug)]
+pub struct ScriptViewPerformanceSnapshot {
+    pub timings: Vec<crate::ExecutionTiming>,
+    pub virtual_collections: Vec<crate::VirtualCollectionMetrics>,
+    pub retained_nodes: usize,
+    pub dirty_components: usize,
+    pub pending_virtual_requests: bool,
+}
+
 struct ScriptViewHandleInner {
     entity: Entity<ScriptHostView>,
     host: ScriptViewHost,
@@ -509,6 +522,38 @@ impl ScriptViewHandle {
             return Err(ScriptViewError::DisposedView(self.0.view_id.clone()));
         }
         Ok(self.0.entity.read(cx).lifecycle.root().cloned())
+    }
+
+    /// Drain execution timings and snapshot retained/virtual metrics.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ScriptViewError::DisposedView`] after disposal.
+    pub fn take_performance_snapshot(
+        &self,
+        cx: &mut App,
+    ) -> Result<ScriptViewPerformanceSnapshot, ScriptViewError> {
+        if self.0.disposed.get() {
+            return Err(ScriptViewError::DisposedView(self.0.view_id.clone()));
+        }
+        Ok(self.0.entity.update(cx, |view, _| {
+            let (virtual_collections, dirty_components, pending_virtual_requests) = {
+                let runtime_handle = view.lifecycle.runtime();
+                let runtime = runtime_handle.borrow();
+                (
+                    runtime.virtual_requests.inspect(),
+                    runtime.dirty_components().len(),
+                    runtime.has_virtual_requests(),
+                )
+            };
+            ScriptViewPerformanceSnapshot {
+                timings: std::mem::take(&mut view.timings),
+                virtual_collections,
+                retained_nodes: view.lifecycle.retained().len(),
+                dirty_components,
+                pending_virtual_requests,
+            }
+        }))
     }
 
     /// Read one mounted native hot value without invoking Rhai.
@@ -558,6 +603,36 @@ impl ScriptViewHandle {
                 .borrow_mut()
                 .signals
                 .write(signal, value)?;
+            if changed {
+                cx.notify();
+            }
+            Ok::<_, ScriptViewError>(changed)
+        })
+    }
+
+    /// Replace one registered Rust-owned collection on the GPUI foreground thread.
+    ///
+    /// Only components that read this collection are marked dirty. The
+    /// replacement is immutable and can be prepared away from the Rhai runtime.
+    ///
+    /// # Errors
+    ///
+    /// Returns after disposal or when the collection name is unknown.
+    pub fn replace_native_collection(
+        &self,
+        name: &str,
+        collection: crate::NativeCollection,
+        cx: &mut App,
+    ) -> Result<bool, ScriptViewError> {
+        if self.0.disposed.get() {
+            return Err(ScriptViewError::DisposedView(self.0.view_id.clone()));
+        }
+        self.0.entity.update(cx, |view, cx| {
+            let changed = view
+                .lifecycle
+                .runtime()
+                .borrow_mut()
+                .replace_native_collection_from_host(name, collection)?;
             if changed {
                 cx.notify();
             }
@@ -3261,34 +3336,42 @@ impl ScriptHostView {
 
         let result = if has_script_work {
             self.run_script_transaction(|view| {
-                view.invoke_pending_effects()?;
+                let mut changed = view.invoke_pending_effects()?;
                 for delivery in deliveries {
                     let _ = view
                         .lifecycle
                         .invoke_async_delivery(&view.engine, delivery)
                         .map_err(|error| error.to_string())?;
                 }
-                view.invoke_pending_effects()?;
-                view.lifecycle
+                changed |= view.invoke_pending_effects()?;
+                changed |= view
+                    .lifecycle
                     .realize_virtual_requests(&mut view.engine)
                     .map_err(|error| error.to_string())?;
-                view.lifecycle
+                changed |= view
+                    .lifecycle
                     .render_dirty(&mut view.engine)
                     .map_err(|error| error.to_string())?;
-                Ok(())
+                Ok(changed)
             })
         } else {
-            Ok(())
+            Ok(false)
         };
-        match result {
-            Ok(()) => {
+        let notify = match result {
+            Ok(changed) => {
                 self.last_error = None;
                 self.process_window_commands(cx);
+                changed || animation_active || repaint
             }
-            Err(error) => self.last_error = Some(error),
-        }
+            Err(error) => {
+                self.last_error = Some(error);
+                true
+            }
+        };
         self.collect_timings();
-        cx.notify();
+        if notify {
+            cx.notify();
+        }
     }
 
     fn sync_program(&mut self) {
@@ -3671,6 +3754,8 @@ pub enum ScriptViewError {
     Action(#[from] ActionError),
     #[error(transparent)]
     Signal(#[from] crate::SignalError),
+    #[error(transparent)]
+    NativeCollection(#[from] crate::NativeCollectionError),
     #[error(transparent)]
     ElementRef(#[from] crate::ElementRefError),
     #[error(transparent)]

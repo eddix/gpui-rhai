@@ -1,3 +1,7 @@
+use std::cell::RefCell;
+use std::collections::BTreeSet;
+use std::rc::Rc;
+
 use gpui::prelude::FluentBuilder;
 use gpui::{
     AnyElement, App, AppContext, Bounds, BoxShadow, Context, Element, ElementId, Entity,
@@ -35,6 +39,7 @@ struct VirtualListElementState {
 
 pub(crate) struct VirtualListFrame {
     element: AnyElement,
+    view: Entity<VirtualListView>,
 }
 
 impl Element for VirtualListEntityElement {
@@ -67,11 +72,22 @@ impl Element for VirtualListEntityElement {
                     view.synchronize(self.content.clone(), self.runtime.clone(), cx);
                 });
                 let mut element = div()
+                    .flex()
+                    .flex_col()
                     .size_full()
                     .child(state.view.clone())
                     .into_any_element();
                 let layout = element.request_layout(window, cx);
-                ((layout, VirtualListFrame { element }), state)
+                (
+                    (
+                        layout,
+                        VirtualListFrame {
+                            element,
+                            view: state.view.clone(),
+                        },
+                    ),
+                    state,
+                )
             },
         )
     }
@@ -80,22 +96,28 @@ impl Element for VirtualListEntityElement {
         &mut self,
         _id: Option<&GlobalElementId>,
         _inspector_id: Option<&InspectorElementId>,
-        bounds: Bounds<Pixels>,
+        _bounds: Bounds<Pixels>,
         frame: &mut Self::RequestLayoutState,
         window: &mut Window,
         cx: &mut App,
     ) {
-        if self.content.height.is_none() {
-            let missing = fill_viewport_indices(&self.content, f64::from(bounds.size.height))
-                .filter(|index| !self.content.realized.contains_key(index))
-                .collect::<Vec<_>>();
-            if !missing.is_empty() {
-                self.runtime
-                    .virtual_requests
-                    .request(self.content.id.clone(), missing);
-            }
-        }
         frame.element.prepaint(window, cx);
+        let required = frame.view.read(cx).frame_indices.borrow().clone();
+        let realized = self
+            .content
+            .realized
+            .keys()
+            .copied()
+            .collect::<BTreeSet<_>>();
+        let halo = overdraw_item_count(&self.content);
+        let target = retained_frame_target(&required, &realized, self.content.data.len(), halo);
+        if target.is_empty() || target == realized {
+            self.runtime.virtual_requests.clear_target(&self.content.id);
+        } else {
+            self.runtime
+                .virtual_requests
+                .request_target(self.content.id.clone(), target);
+        }
     }
 
     fn paint(
@@ -112,22 +134,30 @@ impl Element for VirtualListEntityElement {
     }
 }
 
-fn fill_viewport_indices(
-    content: &VirtualCollectionNodeSpec,
-    viewport_height: f64,
-) -> impl Iterator<Item = usize> {
-    let count = (((viewport_height + content.overdraw_pixels) / content.estimated_height).ceil()
-        + 1.0)
+fn overdraw_item_count(content: &VirtualCollectionNodeSpec) -> usize {
+    (content.overdraw_pixels / content.estimated_height)
+        .ceil()
         .to_string()
-        .parse::<usize>()
+        .parse()
         .unwrap_or(usize::MAX)
-        .min(content.data.len());
-    let start = if content.bottom_align {
-        content.data.len().saturating_sub(count)
-    } else {
-        0
-    };
-    start..start.saturating_add(count)
+}
+
+fn retained_frame_target(
+    required: &BTreeSet<usize>,
+    realized: &BTreeSet<usize>,
+    item_count: usize,
+    halo: usize,
+) -> BTreeSet<usize> {
+    if required.is_empty() {
+        return BTreeSet::new();
+    }
+    let mut target = required.clone();
+    for index in required {
+        let retain_start = index.saturating_sub(halo);
+        let retain_end = index.saturating_add(halo).saturating_add(1).min(item_count);
+        target.extend(realized.range(retain_start..retain_end).copied());
+    }
+    target
 }
 
 impl IntoElement for VirtualListEntityElement {
@@ -143,6 +173,7 @@ struct VirtualListView {
     state: VirtualListState,
     runtime: NodeSlotRuntime,
     scroll: ListState,
+    frame_indices: Rc<RefCell<BTreeSet<usize>>>,
 }
 
 impl VirtualListView {
@@ -153,6 +184,7 @@ impl VirtualListView {
             state: VirtualListState::default(),
             runtime,
             scroll,
+            frame_indices: Rc::new(RefCell::new(BTreeSet::new())),
         };
         this.install_keys();
         this.install_metrics_handler();
@@ -249,6 +281,8 @@ impl Render for VirtualListView {
         );
         let content = self.content.clone();
         let runtime = self.runtime.clone();
+        let frame_indices = Rc::new(RefCell::new(BTreeSet::new()));
+        self.frame_indices = Rc::clone(&frame_indices);
         let focused = self.state.focused().map(ToOwned::to_owned);
         let focus_color = runtime
             .colors
@@ -264,14 +298,10 @@ impl Render for VirtualListView {
             .unwrap_or_else(|| Rgba8::from_rgb_hex(0x0018_181b));
         let fixed_height = content.height.map(finite_to_f32);
         let list = list(self.scroll.clone(), move |index, _window, _cx| {
+            frame_indices.borrow_mut().insert(index);
             let key = collection_item_key(&content, index)
                 .map_or_else(|| format!("item-{index}"), ToOwned::to_owned);
             let node = content.realized.get(&index);
-            if node.is_none() {
-                runtime
-                    .virtual_requests
-                    .request(content.id.clone(), [index]);
-            }
             let child = node.map_or_else(
                 || {
                     div()
@@ -293,6 +323,8 @@ impl Render for VirtualListView {
         .when(fixed_height.is_none(), |list| list.flex_1().min_h(px(0.0)));
         let weak = cx.entity().downgrade();
         div()
+            .flex()
+            .flex_col()
             .id(SharedString::from(format!(
                 "virtual-list-root-{}",
                 self.content.id.key
@@ -355,13 +387,7 @@ fn measured_visible_range(
 }
 
 pub(crate) fn collection_item_key(spec: &VirtualCollectionNodeSpec, index: usize) -> Option<&str> {
-    spec.data.get(index).and_then(|item| match item {
-        crate::UiValue::Map(map) => match map.get("key") {
-            Some(crate::UiValue::String(key)) => Some(key.as_str()),
-            _ => None,
-        },
-        _ => None,
-    })
+    spec.data.key(index)
 }
 
 fn collection_requires_reset(
@@ -392,4 +418,45 @@ fn list_state(spec: &VirtualCollectionNodeSpec) -> ListState {
 fn finite_to_f32(value: f64) -> f32 {
     debug_assert!(value.is_finite() && value >= 0.0 && value <= f64::from(f32::MAX));
     value as f32
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn indices(range: std::ops::Range<usize>) -> BTreeSet<usize> {
+        range.collect()
+    }
+
+    #[test]
+    fn frame_target_retains_cached_overdraw_without_oscillation() {
+        assert_eq!(
+            retained_frame_target(&indices(0..22), &indices(0..26), 1_000, 4),
+            indices(0..26)
+        );
+    }
+
+    #[test]
+    fn frame_target_prunes_items_outside_the_current_halo() {
+        assert_eq!(
+            retained_frame_target(&indices(0..10), &indices(0..26), 1_000, 4),
+            indices(0..14)
+        );
+        assert_eq!(
+            retained_frame_target(&indices(20..30), &indices(0..26), 1_000, 4),
+            indices(16..30)
+        );
+    }
+
+    #[test]
+    fn frame_target_does_not_fill_the_gap_to_an_offscreen_focused_item() {
+        let mut required = indices(20..30);
+        required.insert(0);
+        let mut expected = indices(0..5);
+        expected.extend(indices(16..30));
+        assert_eq!(
+            retained_frame_target(&required, &indices(0..26), 1_000, 4),
+            expected
+        );
+    }
 }

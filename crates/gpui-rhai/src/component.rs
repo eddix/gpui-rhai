@@ -272,6 +272,7 @@ pub enum ComponentPropValue {
     Length(Length),
     Asset(AssetId),
     Signal(crate::NativeSignal),
+    Collection(crate::NativeCollection),
     Ref(crate::ElementRef),
 }
 
@@ -397,6 +398,9 @@ fn convert_component_prop(
         ValueSchema::Asset => Ok(ComponentPropValue::Asset(value.cast::<AssetId>())),
         ValueSchema::Signal => Ok(ComponentPropValue::Signal(
             value.cast::<crate::NativeSignal>(),
+        )),
+        ValueSchema::Collection => Ok(ComponentPropValue::Collection(
+            value.cast::<crate::NativeCollection>(),
         )),
         ValueSchema::Ref => Ok(ComponentPropValue::Ref(value.cast::<crate::ElementRef>())),
         _ => UiValue::from_dynamic(value)

@@ -50,6 +50,12 @@ map or defer every constraint to native construction. Component-specific tagged
 maps, such as Table column widths, still receive semantic validation after their
 outer schema succeeds.
 
+The `collection` schema accepts only `NativeCollection`. Use it in a `one_of`
+with the ordinary Array schema when a source component supports both small
+script-owned inputs and a Rust-backed large-data path. Do not expose indexing on
+the collection or immediately convert it back to an Array; pass it to a
+collection-aware mechanism such as `virtual_collection`.
+
 Every formal component automatically receives optional `key`, `style: Style`
 and `part_styles: map<Style>` props. Route the PascalCase constructor through
 the runtime wrapper, then validate normalized props in its render function:

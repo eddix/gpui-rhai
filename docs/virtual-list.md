@@ -5,6 +5,11 @@ one-dimensional collection path. Data crosses the retained boundary as
 `UiValue`; item `UiNode` snapshots do not exist until their viewport window is
 requested.
 
+`config.data` may be a Rhai Array of keyed maps or a Rust-owned
+`NativeCollection`. Array values remain appropriate for small script-owned
+lists. A native collection keeps the complete source out of `Dynamic` and
+projects an owned `UiValue` only when the viewport requests that index.
+
 ```rhai
 fn render_message(ctx, payload) {
     let message = payload.item;
@@ -26,14 +31,21 @@ virtual_collection(#{
 ```
 
 The constructor validates every data key and executes only the estimated first
-window. GPUI's variable-height `list/ListState` requests indices while laying
-out, but that callback never invokes Rhai: it queues indices and returns a
-height-estimated placeholder for a missing item. The next foreground runtime
-turn invokes the retained named renderer in its original module/component
-context, renders formal item components inside a stable
-`VirtualCollection[key]` state scope, reconciles the realized window, runs
-effects, and notifies GPUI. Existing requested nodes are reused when no index is
-missing, so ordinary layout cannot create an evaluation loop.
+window. GPUI's variable-height `list/ListState` asks for items while laying out,
+but that callback never invokes Rhai: it records the indices participating in
+one complete prepaint and returns a height-estimated placeholder for a missing
+item. After prepaint, the renderer constructs one atomic target containing the
+required indices plus already-measured items inside each required index's
+overdraw halo. Treating each halo independently is important because GPUI may
+also request a disconnected offscreen focused item.
+
+The next foreground runtime turn invokes the retained named renderer only for
+missing target indices in its original module/component context, renders formal
+item components inside a stable `VirtualCollection[key]` state scope, prunes
+items outside the target, reconciles once, runs effects, and notifies GPUI.
+When the same target is already realized, no request is queued and the frame
+poll does not notify, so cached overdraw cannot create an evaluation or repaint
+loop.
 
 Realized windows replace offscreen item subtrees and clean their component
 state/tasks/effects. The GPUI `ListState` is not reset when only the realized map

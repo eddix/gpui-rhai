@@ -3,10 +3,13 @@
 The official Table is a copied Rhai source component. It has no native Table
 node, renderer, Entity, private scrollbar, or asset privilege.
 
-Its header and cells are public Box/Text atoms. Root render normalizes row maps
-into UiValue data only; `virtual_collection` invokes `render_table_row` for the
-estimated/visible window outside GPUI layout and paint. Realized rows use stable
-row keys and component semantic events for sort, selection, and row-click.
+Its header and cells are public Box/Text atoms. `rows` accepts either the
+original Rhai Array of maps or a Rust-owned `NativeCollection`. The Array path
+normalizes all row maps in Rhai. The native path keeps the complete keyed source
+in Rust, caches controlled scalar-field sort orders, and projects selection,
+striping and cell payloads only for the GPUI viewport. Both paths feed the same
+public `virtual_collection` and `render_table_row` Rhai function, retain stable
+row keys, and emit the same semantic sort, selection, and row-click events.
 
 The current contract requires exactly one of a positive logical-pixel `height`
 or `fill_height: true`; fill mode participates in a parent flex layout and uses
@@ -22,3 +25,7 @@ source component over `virtual_collection`.
 Table currently exposes source parts for root/header/header_cell/body/loading/
 empty. Lazy row/cell part overrides require the future structural item-context
 API and are intentionally not faked through UiValue.
+
+See [Rust-owned collections](../native-collections.md) for host registration,
+live replacement, dependency tracking, and the exact Rust/Rhai ownership
+boundary.

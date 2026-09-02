@@ -312,19 +312,23 @@ impl ScriptLifecycle {
         let result = (|| {
             let mut changed = false;
             for (id, indices) in selected {
-                let existing = root
+                let mut items = root
                     .virtual_collection_items(&id)
                     .cloned()
                     .ok_or_else(|| LifecycleError::MissingVirtualCollection(id.clone()))?;
                 let missing = indices
                     .iter()
-                    .filter(|index| !existing.contains_key(index))
+                    .filter(|index| !items.contains_key(index))
                     .copied()
                     .collect::<BTreeSet<_>>();
-                if missing.is_empty() {
+                let previous_indices = items.keys().copied().collect::<BTreeSet<_>>();
+                if missing.is_empty() && previous_indices == indices {
                     continue;
                 }
-                let items = engine.realize_virtual_collection(&id, &indices)?;
+                items.retain(|index, _| indices.contains(index));
+                if !missing.is_empty() {
+                    items.extend(engine.realize_virtual_collection(&id, &missing)?);
+                }
                 if !root.replace_virtual_collection_items(&id, items) {
                     return Err(LifecycleError::MissingVirtualCollection(id));
                 }
@@ -1069,8 +1073,8 @@ mod tests {
     use super::*;
     use crate::{
         AssetData, AsyncCapabilityHandler, CapabilityDescriptor, CapabilityId, CapabilityMethod,
-        InMemoryAssetProvider, OpaqueHandle, StateField, SubscriptionCapabilityHandler,
-        SubscriptionWork, TaskWork, UiValue, ValueSchema,
+        ExecutionOperation, InMemoryAssetProvider, OpaqueHandle, StateField,
+        SubscriptionCapabilityHandler, SubscriptionWork, TaskWork, UiValue, ValueSchema,
     };
     use semver::{Version, VersionReq};
     use std::time::{Duration, Instant};
@@ -1185,6 +1189,125 @@ mod tests {
         assert_eq!(
             frame.values.values().copied().collect::<Vec<_>>(),
             vec![50.0]
+        );
+    }
+
+    #[test]
+    #[allow(clippy::too_many_lines)]
+    fn virtual_realization_commits_the_complete_target_window_and_prunes_old_items() {
+        let mut engine = RuntimeEngine::new();
+        let compiled = engine
+            .compile(
+                r#"
+                    fn render_item(ctx, payload) {
+                        text(payload.item.label).with_key(payload.key)
+                    }
+                    fn view(ctx) {
+                        let data = [];
+                        for index in 0..32 {
+                            data.push(#{ key: `row-${index}`, label: `Row ${index}` });
+                        }
+                        virtual_collection(#{
+                            key: "rows", label: "Rows", data: data,
+                            estimated_height: 24, height: 96,
+                            overdraw_pixels: 24, alignment: "top", follow_tail: false
+                        }, Fn("render_item"))
+                    }
+                "#,
+            )
+            .unwrap();
+        let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+        let path = ComponentInstancePath::root("App", "root");
+        let mut lifecycle = ScriptLifecycle::new(
+            compiled,
+            Rc::clone(&runtime),
+            path.clone(),
+            Some("main".to_owned()),
+            BTreeMap::new(),
+            &ComponentStateSchema::default(),
+        )
+        .unwrap();
+        lifecycle.start(&mut engine).unwrap();
+        let id = engine
+            .virtual_collection_ids_in_scope(&path)
+            .into_iter()
+            .next()
+            .unwrap();
+        let initial_indices = lifecycle
+            .root()
+            .unwrap()
+            .virtual_collection_items(&id)
+            .unwrap()
+            .keys()
+            .copied()
+            .collect::<Vec<_>>();
+        let retained = *initial_indices.last().unwrap();
+        let first_new = retained + 1;
+        let second_new = first_new + 1;
+        let _ = engine.take_timings();
+
+        runtime
+            .borrow()
+            .virtual_requests
+            .request(id.clone(), [retained, first_new]);
+        assert!(lifecycle.realize_virtual_requests(&mut engine).unwrap());
+        assert_eq!(
+            lifecycle
+                .root()
+                .unwrap()
+                .virtual_collection_items(&id)
+                .unwrap()
+                .keys()
+                .copied()
+                .collect::<Vec<_>>(),
+            vec![retained, first_new]
+        );
+        let timings = engine.take_timings();
+        assert_eq!(
+            timings
+                .iter()
+                .filter(|timing| matches!(
+                    timing.operation,
+                    ExecutionOperation::VirtualCollection(_)
+                ))
+                .count(),
+            1
+        );
+        assert!(timings.iter().all(|timing| timing.operations > 0));
+
+        runtime
+            .borrow()
+            .virtual_requests
+            .request(id.clone(), [retained, first_new]);
+        assert!(!lifecycle.realize_virtual_requests(&mut engine).unwrap());
+        assert!(engine.take_timings().is_empty());
+
+        runtime
+            .borrow()
+            .virtual_requests
+            .request(id.clone(), [first_new, second_new]);
+        assert!(lifecycle.realize_virtual_requests(&mut engine).unwrap());
+        assert_eq!(
+            lifecycle
+                .root()
+                .unwrap()
+                .virtual_collection_items(&id)
+                .unwrap()
+                .keys()
+                .copied()
+                .collect::<Vec<_>>(),
+            vec![first_new, second_new]
+        );
+        assert_eq!(
+            engine
+                .take_timings()
+                .iter()
+                .filter(|timing| matches!(
+                    timing.operation,
+                    ExecutionOperation::VirtualCollection(_)
+                ))
+                .count(),
+            1
         );
     }
 

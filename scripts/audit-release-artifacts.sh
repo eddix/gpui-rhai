@@ -11,6 +11,7 @@ embedded_examples=(
   host_owned_tree
   multi_window
   settings_panel
+  table_1000
 )
 
 for example in "${embedded_examples[@]}"; do

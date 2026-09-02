@@ -18,6 +18,7 @@ examples=(
   performance_probe
   phase0_probe
   settings_panel
+  table_1000
   variable_height_chat
 )
 smoke_seconds="${GPUI_RHAI_SMOKE_SECONDS:-2}"
@@ -47,8 +48,8 @@ for example in "${examples[@]}"; do
     fi
   else
     wait "${pid}" || status=$?
-    if [[ "${status}" != "0" ]]; then
-      echo "${example} exited with status ${status}"
+    if [[ "${example}" != "performance_probe" || "${status}" != "0" ]]; then
+      echo "${example} exited before the smoke window with status ${status}"
       sed -n '1,160p' "${log}"
       exit 1
     fi
@@ -71,6 +72,9 @@ if kill -0 "${theme_studio_pid}" 2>/dev/null; then
   wait "${theme_studio_pid}" || theme_studio_status=$?
 else
   wait "${theme_studio_pid}" || theme_studio_status=$?
+  echo "theme studio exited before the smoke window with status ${theme_studio_status}"
+  sed -n '1,160p' "${theme_studio_log}"
+  exit 1
 fi
 if [[ "${theme_studio_status}" != "0" && "${theme_studio_status}" != "143" ]]; then
   echo "theme studio exited unexpectedly with status ${theme_studio_status}"
@@ -101,11 +105,9 @@ for state in selected loading empty; do
     fi
   else
     wait "${pid}" || status=$?
-    if [[ "${status}" != "0" ]]; then
-      echo "data_table ${state} exited with status ${status}"
-      sed -n '1,160p' "${log}"
-      exit 1
-    fi
+    echo "data_table ${state} exited before the smoke window with status ${status}"
+    sed -n '1,160p' "${log}"
+    exit 1
   fi
   if grep -Eiq 'panicked at|thread .* panicked|failed to initialize|failed to compile' "${log}"; then
     echo "data_table ${state} reported a panic or initialization failure"

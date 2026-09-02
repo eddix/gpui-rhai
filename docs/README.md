@@ -20,6 +20,7 @@ Start with the repository quick start, then use these guides by task:
 - [macOS visual and interaction test matrix](visual-testing.md)
 - [Performance budgets and probe](performance.md)
 - [Native virtual lists](virtual-list.md)
+- [Rust-owned collections](native-collections.md)
 - Complex component specifications:
   [DatePicker](components/date-picker.md),
   [Dropdown](components/dropdown.md),

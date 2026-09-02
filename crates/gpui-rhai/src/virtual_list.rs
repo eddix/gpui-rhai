@@ -6,7 +6,7 @@ use std::rc::Rc;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::{ComponentInstancePath, UiNode, UiValue};
+use crate::{ComponentInstancePath, UiNode};
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct VirtualCollectionId {
@@ -18,7 +18,7 @@ pub struct VirtualCollectionId {
 pub struct VirtualCollectionNodeSpec {
     pub id: VirtualCollectionId,
     pub label: String,
-    pub data: Vec<UiValue>,
+    pub data: crate::VirtualCollectionData,
     pub realized: BTreeMap<usize, UiNode>,
     pub estimated_height: f64,
     /// Fixed logical-pixel viewport height, or `None` to fill the resolved
@@ -105,6 +105,37 @@ impl VirtualRequestRegistry {
                 metrics.requested_range.start.min(new_range.start)
                     ..metrics.requested_range.end.max(new_range.end)
             };
+        }
+    }
+
+    /// Replace one collection's pending request with a complete atomic target.
+    ///
+    /// Unlike [`Self::request`], this does not union partial layout callbacks.
+    /// The virtual element calls it only after collecting a complete prepaint.
+    pub(crate) fn request_target(
+        &self,
+        id: VirtualCollectionId,
+        indices: impl IntoIterator<Item = usize>,
+    ) {
+        let indices = indices.into_iter().collect::<BTreeSet<_>>();
+        let requested_count = indices.len();
+        self.requests
+            .borrow_mut()
+            .insert(id.clone(), indices.clone());
+        let requested_range = index_range(indices);
+        let mut metrics = self.metrics.borrow_mut();
+        let metrics = metrics
+            .entry(id.clone())
+            .or_insert_with(|| VirtualCollectionMetrics::new(id));
+        metrics.requested_count = requested_count;
+        metrics.requested_range = requested_range;
+    }
+
+    pub(crate) fn clear_target(&self, id: &VirtualCollectionId) {
+        self.requests.borrow_mut().remove(id);
+        if let Some(metrics) = self.metrics.borrow_mut().get_mut(id) {
+            metrics.requested_count = 0;
+            metrics.requested_range = 0..0;
         }
     }
 
@@ -619,6 +650,7 @@ pub enum VirtualListError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::UiValue;
 
     #[test]
     fn five_thousand_items_have_bounded_realization() {

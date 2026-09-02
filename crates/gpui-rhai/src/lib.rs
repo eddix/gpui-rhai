@@ -17,6 +17,7 @@ pub mod inline_svg;
 mod invocation;
 pub mod lifecycle;
 pub mod locale;
+pub mod native_collection;
 pub mod native_handler;
 pub mod node;
 pub mod overlay;
@@ -70,7 +71,8 @@ pub use animation::{
 };
 pub use app::{
     EmbeddedScriptView, FileScriptView, PreparedScriptView, ScriptApplication, ScriptViewConfig,
-    ScriptViewError, ScriptViewExtension, ScriptViewHandle, ScriptViewHost, install,
+    ScriptViewError, ScriptViewExtension, ScriptViewHandle, ScriptViewHost,
+    ScriptViewPerformanceSnapshot, install,
 };
 pub use asset::{
     AssetData, AssetError, AssetId, AssetProvider, AssetRegistry, DirectoryAssetProvider,
@@ -139,6 +141,9 @@ pub use locale::{
     CalendarMetadata, CalendarNames, DatePatterns, DateStyle, LocaleBundle, LocaleError,
     LocaleManager, NumberFormatOptions, NumberMetadata, TextDirection, format_date_with_metadata,
     format_integer_with_metadata, format_number_with_metadata, load_locale_source,
+};
+pub use native_collection::{
+    NativeCollection, NativeCollectionError, NativeCollectionRegistry, VirtualCollectionData,
 };
 pub use native_handler::{
     NativeEvent, NativeHandlerDescriptor, NativeHandlerError, NativeHandlerId, NativeHandlerRef,

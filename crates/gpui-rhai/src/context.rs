@@ -46,6 +46,7 @@ impl ExecutionPhase {
 pub struct UiRuntimeState {
     pub component_state: StateStore,
     pub stores: StoreRegistry,
+    pub native_collections: crate::NativeCollectionRegistry,
     pub actions: ActionRegistry,
     pub capabilities: CapabilityRegistry,
     pub tasks: TaskRegistry,
@@ -101,6 +102,22 @@ impl UiRuntimeState {
         if changed {
             self.dirty.insert(component.clone());
         }
+        Ok(changed)
+    }
+
+    /// Replace one Rust-owned collection and invalidate only subscribed components.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the collection name is not registered.
+    pub fn replace_native_collection_from_host(
+        &mut self,
+        name: &str,
+        collection: crate::NativeCollection,
+    ) -> Result<bool, crate::NativeCollectionError> {
+        let invalidated = self.native_collections.replace(name, collection)?;
+        let changed = !invalidated.is_empty();
+        self.dirty.extend(invalidated);
         Ok(changed)
     }
 
@@ -163,6 +180,7 @@ impl UiRuntimeState {
         self.subscriptions.cancel_component_scope(root);
         self.assets.cancel_window_scope(window, root)?;
         self.stores.remove_window(window);
+        self.native_collections.remove_reader_scope(root);
         self.component_state.remove_scope(root);
         self.component_event_handlers
             .retain(|(path, _), _| !path.is_within(root));
@@ -371,6 +389,7 @@ impl UiRuntimeState {
             !event.target.is_within(root) || active.contains(&event.target) || event.target == *root
         });
         self.stores.retain_reader_scope(root, active);
+        self.native_collections.retain_reader_scope(root, active);
         self.environment_dependencies.retain_scope(root, active);
         self.dirty
             .retain(|path| !path.is_within(root) || path == root || active.contains(path));
@@ -400,6 +419,7 @@ impl UiRuntimeState {
         Ok(UiStateSnapshot {
             component_state: self.component_state.clone(),
             stores: self.stores.clone(),
+            native_collections: self.native_collections.clone(),
             actions: self.actions.clone(),
             component_event_handlers: self.component_event_handlers.clone(),
             dirty: self.dirty.clone(),
@@ -441,6 +461,7 @@ impl UiRuntimeState {
         self.assets.retain_decode_ids(&snapshot.decode_ids)?;
         self.component_state = snapshot.component_state;
         self.stores = snapshot.stores;
+        self.native_collections = snapshot.native_collections;
         self.actions = snapshot.actions;
         self.component_event_handlers = snapshot.component_event_handlers;
         self.dirty = snapshot.dirty;
@@ -471,6 +492,7 @@ impl UiRuntimeState {
 pub struct UiStateSnapshot {
     component_state: StateStore,
     stores: StoreRegistry,
+    native_collections: crate::NativeCollectionRegistry,
     actions: ActionRegistry,
     component_event_handlers: BTreeMap<(ComponentInstancePath, String), ScriptCallback>,
     dirty: BTreeSet<ComponentInstancePath>,
@@ -559,6 +581,7 @@ impl UiContext {
             && let Ok(mut runtime) = context.runtime.try_borrow_mut()
         {
             runtime.stores.reset_reader(&context.component);
+            runtime.native_collections.reset_reader(&context.component);
             runtime
                 .environment_dependencies
                 .reset_reader(&context.component);
@@ -606,6 +629,7 @@ impl UiContext {
             && let Ok(mut runtime) = context.runtime.try_borrow_mut()
         {
             runtime.stores.reset_reader(&context.component);
+            runtime.native_collections.reset_reader(&context.component);
             runtime
                 .environment_dependencies
                 .reset_reader(&context.component);
@@ -1017,6 +1041,27 @@ impl UiContext {
         Ok(runtime
             .stores
             .read_tracked(&self.component, &StoreId::app(store), field)?)
+    }
+
+    /// Read one Rust-owned collection and subscribe the current component.
+    ///
+    /// The returned value is an opaque collection view: Rhai can pass it to
+    /// collection-aware components but cannot enumerate and materialize all rows.
+    ///
+    /// # Errors
+    ///
+    /// Returns collection or borrow errors.
+    pub fn get_native_collection(
+        &self,
+        name: &str,
+    ) -> Result<crate::NativeCollection, UiContextError> {
+        let mut runtime = self
+            .runtime
+            .try_borrow_mut()
+            .map_err(|_| UiContextError::Borrowed)?;
+        Ok(runtime
+            .native_collections
+            .read_tracked(&self.component, name)?)
     }
 
     /// Read and subscribe to one exact app-store path.
@@ -2194,6 +2239,7 @@ impl CustomType for UiContext {
                 },
             );
         register_state_store_context_methods(&mut builder);
+        register_native_collection_context_methods(&mut builder);
         register_signal_context_methods(&mut builder);
         register_element_ref_context_methods(&mut builder);
         register_async_context_methods(&mut builder);
@@ -2204,6 +2250,17 @@ impl CustomType for UiContext {
         register_asset_context_methods(&mut builder);
         register_window_context_methods(&mut builder);
     }
+}
+
+fn register_native_collection_context_methods(builder: &mut TypeBuilder<UiContext>) {
+    builder.with_fn(
+        "get_native_collection",
+        |context: &mut UiContext, name: ImmutableString| {
+            context
+                .get_native_collection(name.as_str())
+                .map_err(|error| Box::new(context_runtime_error(&error)))
+        },
+    );
 }
 
 fn register_state_store_context_methods(builder: &mut TypeBuilder<UiContext>) {
@@ -3005,6 +3062,8 @@ pub enum UiContextError {
     State(#[from] StateError),
     #[error(transparent)]
     Store(#[from] StoreError),
+    #[error(transparent)]
+    NativeCollection(#[from] crate::NativeCollectionError),
     #[error(transparent)]
     Action(#[from] ActionError),
     #[error(transparent)]

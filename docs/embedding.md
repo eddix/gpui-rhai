@@ -15,8 +15,9 @@ GPUI Window
 ```
 
 Views never share Rhai state, app/window stores, themes, locales, tasks,
-subscriptions, assets, capabilities, or diagnostics. Share business data only
-through explicit host capabilities. The Host shares native interaction
+subscriptions, assets, capabilities, or diagnostics. Share service behavior
+through explicit host capabilities and large immutable row sets through
+registered `NativeCollection` values. The Host shares native interaction
 mechanisms that must coordinate across components: Overlay, Tooltip, Layer,
 outside dismissal, Escape routing, focus fallback, and approved key bindings.
 

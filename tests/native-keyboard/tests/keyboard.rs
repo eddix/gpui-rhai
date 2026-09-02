@@ -3,19 +3,23 @@ use std::rc::Rc;
 
 use gpui::{
     Context, FocusHandle, InteractiveElement, IntoElement, Modifiers, MouseButton, ParentElement,
-    Render, StatefulInteractiveElement, Styled, TestAppContext, VisualTestContext, Window, div,
-    point, px,
+    Render, ScrollDelta, ScrollWheelEvent, StatefulInteractiveElement, Styled, TestAppContext,
+    VisualTestContext, Window, div, point, px, size,
 };
 use gpui_rhai::{
     ActionId, ComponentInstancePath, EmbeddedScriptSource, EmbeddedScriptView, EventPropagation,
-    GpuiNodeRenderer, HostCallback, InteractionState, KeyBindingSpec, LiteralColorResolver,
-    ModuleId, NodeEventDispatcher, OverlayDismissPolicy, OverlayId, OverlayKind, OverlayNodeSpec,
-    OverlayPlacement, PrimitiveEventEmitter, PrimitiveHandler, PrimitiveInstance, PrimitiveNode,
-    PrimitiveProps, PrimitiveRegistry, PrimitiveTheme, PrimitiveValue, RestrictedModuleResolver,
-    RuntimeEngine, ScriptLifecycle, ScriptViewConfig, ScriptViewHandle, ScriptViewHost,
-    TextInputPrimitiveHandler, UiNode, UiRuntimeState, UiValue, init_text_area, init_text_input,
-    text_input_primitive_descriptor,
+    ExecutionOperation, GpuiNodeRenderer, HostCallback, InteractionState, KeyBindingSpec,
+    LiteralColorResolver, ModuleId, NodeEventDispatcher, OverlayDismissPolicy, OverlayId,
+    OverlayKind, OverlayNodeSpec, OverlayPlacement, PrimitiveEventEmitter, PrimitiveHandler,
+    PrimitiveInstance, PrimitiveNode, PrimitiveProps, PrimitiveRegistry, PrimitiveTheme,
+    PrimitiveValue, RestrictedModuleResolver, RuntimeEngine, ScriptLifecycle, ScriptViewConfig,
+    ScriptViewHandle, ScriptViewHost, TextInputPrimitiveHandler, UiNode, UiRuntimeState, UiValue,
+    init_text_area, init_text_input, text_input_primitive_descriptor,
 };
+
+#[allow(dead_code)]
+#[path = "../../../crates/gpui-rhai/examples/table_1000.rs"]
+mod table_1000_example;
 
 struct KeyboardHost {
     root: Rc<RefCell<UiNode>>,
@@ -513,6 +517,30 @@ fn wait_for_view_text(
         );
         std::thread::yield_now();
     }
+}
+
+fn dispatch_script_button(
+    visual: &mut VisualTestContext,
+    view: &ScriptViewHandle,
+    label: &str,
+) {
+    visual
+        .update(|window, cx| {
+            view.automate(
+                gpui_rhai::AutomationCommand::Dispatch {
+                    locator: gpui_rhai::AutomationLocator::RoleName {
+                        role: "button".to_owned(),
+                        name: label.to_owned(),
+                    },
+                    event: "click".to_owned(),
+                    payload: None,
+                },
+                window,
+                cx,
+            )
+        })
+        .unwrap();
+    visual.run_until_parked();
 }
 
 #[gpui::test]
@@ -2113,6 +2141,33 @@ fn node_texts(node: &UiNode, output: &mut Vec<String>) {
     }
 }
 
+fn virtual_realized_window(node: &UiNode) -> Option<(std::ops::Range<usize>, usize)> {
+    match node.kind() {
+        gpui_rhai::UiNodeKind::Box { children }
+        | gpui_rhai::UiNodeKind::Fragment { children } => {
+            children.iter().find_map(virtual_realized_window)
+        }
+        gpui_rhai::UiNodeKind::Overlay {
+            trigger, content, ..
+        } => virtual_realized_window(trigger).or_else(|| virtual_realized_window(content)),
+        gpui_rhai::UiNodeKind::Layer { content, .. } => virtual_realized_window(content),
+        gpui_rhai::UiNodeKind::ErrorBoundary { child, fallback } => {
+            virtual_realized_window(child).or_else(|| virtual_realized_window(fallback))
+        }
+        gpui_rhai::UiNodeKind::VirtualCollection { spec } => {
+            let mut indices = spec.realized.keys().copied();
+            let Some(first) = indices.next() else {
+                return Some((0..0, 0));
+            };
+            let (min, max) = indices.fold((first, first), |(min, max), index| {
+                (min.min(index), max.max(index))
+            });
+            Some((min..max.saturating_add(1), spec.realized.len()))
+        }
+        _ => None,
+    }
+}
+
 fn overlay_open(node: &UiNode) -> Option<bool> {
     match node.kind() {
         gpui_rhai::UiNodeKind::Overlay { spec, .. } => Some(spec.open),
@@ -2549,5 +2604,240 @@ fn virtual_collection_fill_height_uses_the_resolved_flex_viewport(cx: &mut TestA
     assert!(
         (190.0..=205.0).contains(&bounds.height),
         "fill viewport should consume 240px parent minus 40px header, got {bounds:?}"
+    );
+}
+
+#[gpui::test]
+fn table_1000_tracks_the_resized_window_viewport(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let prepared = table_1000_example::table_1000_view().prepare().unwrap();
+    let captured = Rc::new(RefCell::new(None));
+    let captured_for_window = Rc::clone(&captured);
+    let window = cx.add_window(move |window, cx| {
+        let host = ScriptViewHost::new("table-1000-resize-window", cx).unwrap();
+        let view = prepared
+            .mount(
+                ScriptViewConfig::new("table-1000-resize-view"),
+                host.clone(),
+                window,
+                cx,
+            )
+            .unwrap();
+        *captured_for_window.borrow_mut() = Some(view.clone());
+        SingleEmbeddedHost { host, view }
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    cx.run_until_parked();
+
+    let view = captured.borrow().as_ref().unwrap().clone();
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    for _ in 0..4 {
+        cx.background_executor
+            .advance_clock(std::time::Duration::from_millis(16));
+        visual.run_until_parked();
+    }
+    wait_for_view_text(
+        &mut visual,
+        &view,
+        "Account 0000",
+        "the complete virtual target window should settle with visible rows",
+    );
+    let settled = visual
+        .update(|_, cx| view.take_performance_snapshot(cx))
+        .unwrap();
+    assert!(!settled.pending_virtual_requests);
+    let virtual_operations = settled
+        .timings
+        .iter()
+        .filter_map(|timing| {
+            matches!(timing.operation, ExecutionOperation::VirtualCollection(_))
+                .then_some(timing.operations)
+        })
+        .collect::<Vec<_>>();
+    assert!(!virtual_operations.is_empty());
+    assert!(
+        virtual_operations
+            .iter()
+            .all(|operations| (1..10_000).contains(operations)),
+        "stored Rhai callback contexts must report per-invocation operation deltas: {virtual_operations:?}"
+    );
+    let settled_ranges = settled
+        .virtual_collections
+        .iter()
+        .map(|collection| collection.realized_range.clone())
+        .collect::<Vec<_>>();
+    for _ in 0..2 {
+        cx.background_executor
+            .advance_clock(std::time::Duration::from_millis(16));
+        visual.run_until_parked();
+        let next = visual
+            .update(|_, cx| view.take_performance_snapshot(cx))
+            .unwrap();
+        assert!(!next.pending_virtual_requests);
+        assert_eq!(
+            next.virtual_collections
+                .iter()
+                .map(|collection| collection.realized_range.clone())
+                .collect::<Vec<_>>(),
+            settled_ranges
+        );
+        assert!(
+            next.timings.iter().all(|timing| !matches!(
+                timing.operation,
+                ExecutionOperation::VirtualCollection(_)
+            )),
+            "stable frames must not keep invoking virtual item Rhai renderers"
+        );
+    }
+    dispatch_script_button(&mut visual, &view, "Reverse 1,000 rows");
+    for _ in 0..4 {
+        cx.background_executor
+            .advance_clock(std::time::Duration::from_millis(16));
+        visual.run_until_parked();
+    }
+    wait_for_view_text(
+        &mut visual,
+        &view,
+        "Account 0999",
+        "native Table sorting should project the descending Rust order",
+    );
+    dispatch_script_button(&mut visual, &view, "Reverse 1,000 rows");
+    for _ in 0..4 {
+        cx.background_executor
+            .advance_clock(std::time::Duration::from_millis(16));
+        visual.run_until_parked();
+    }
+    wait_for_view_text(
+        &mut visual,
+        &view,
+        "Account 0000",
+        "native Table sorting should restore ascending order",
+    );
+    let node_bounds = |visual: &mut VisualTestContext, role: &str, name: &str| {
+        let result = visual
+            .update(|window, cx| {
+                view.automate(
+                    gpui_rhai::AutomationCommand::Query {
+                        locator: gpui_rhai::AutomationLocator::RoleName {
+                            role: role.to_owned(),
+                            name: name.to_owned(),
+                        },
+                    },
+                    window,
+                    cx,
+                )
+            })
+            .unwrap();
+        let gpui_rhai::AutomationResult::Node { node } = result else {
+            panic!("expected {role} node named {name}");
+        };
+        node.bounds.expect("node has committed bounds")
+    };
+    visual.simulate_resize(size(px(820.0), px(620.0)));
+    for _ in 0..3 {
+        cx.background_executor
+            .advance_clock(std::time::Duration::from_millis(16));
+        visual.run_until_parked();
+    }
+    let compact = node_bounds(
+        &mut visual,
+        "table",
+        "One thousand deterministic accounts",
+    );
+    let compact_email = node_bounds(&mut visual, "columnheader", "Email");
+    let compact_root = visual.update(|_, cx| view.root(cx).unwrap().unwrap());
+    let (_, compact_realized) = virtual_realized_window(&compact_root).unwrap();
+
+    visual.simulate_resize(size(px(1_180.0), px(820.0)));
+    for _ in 0..3 {
+        cx.background_executor
+            .advance_clock(std::time::Duration::from_millis(16));
+        visual.run_until_parked();
+    }
+    let expanded = node_bounds(
+        &mut visual,
+        "table",
+        "One thousand deterministic accounts",
+    );
+    let expanded_email = node_bounds(&mut visual, "columnheader", "Email");
+    let expanded_root = visual.update(|_, cx| view.root(cx).unwrap().unwrap());
+    let (expanded_range, expanded_realized) = virtual_realized_window(&expanded_root).unwrap();
+
+    assert!(
+        expanded.width > compact.width + 300.0,
+        "table width did not follow the window resize: compact={compact:?}, expanded={expanded:?}"
+    );
+    assert!(
+        expanded.height > compact.height + 150.0,
+        "table height did not follow the window resize: compact={compact:?}, expanded={expanded:?}"
+    );
+    assert!(
+        expanded_email.width > compact_email.width + 90.0,
+        "percentage column did not relayout after resize: compact={compact_email:?}, expanded={expanded_email:?}"
+    );
+    assert!(
+        expanded_realized > compact_realized + 2,
+        "the virtual row window did not follow the taller viewport: compact={compact_realized}, expanded={expanded_realized}"
+    );
+
+    let coordinate = |value: f64| px(value.to_string().parse::<f32>().unwrap());
+    visual.simulate_event(ScrollWheelEvent {
+        position: point(
+            coordinate(expanded.x + expanded.width / 2.0),
+            coordinate(expanded.y + expanded.height / 2.0),
+        ),
+        delta: ScrollDelta::Pixels(point(px(0.0), px(-600.0))),
+        ..ScrollWheelEvent::default()
+    });
+    for _ in 0..4 {
+        cx.background_executor
+            .advance_clock(std::time::Duration::from_millis(16));
+        visual.run_until_parked();
+    }
+    let scrolled_root = visual.update(|_, cx| view.root(cx).unwrap().unwrap());
+    let (scrolled_range, scrolled_realized) = virtual_realized_window(&scrolled_root).unwrap();
+    assert!(
+        scrolled_realized < 64,
+        "scrolling must keep realization bounded, got {scrolled_realized} rows"
+    );
+    let scrolled = visual
+        .update(|_, cx| view.take_performance_snapshot(cx))
+        .unwrap();
+    let scrolled_metrics = scrolled.virtual_collections.first().unwrap();
+    assert!(
+        scrolled_metrics.scroll_item > 0 || scrolled_metrics.visible_range.start > 0,
+        "vertical wheel input did not advance the virtual viewport: before={expanded_range:?}, after={scrolled_range:?}, metrics={scrolled_metrics:?}"
+    );
+
+    let replacement = gpui_rhai::NativeCollection::new(
+        "id",
+        [std::collections::BTreeMap::from([
+            (
+                "id".to_owned(),
+                UiValue::String("row-replacement".to_owned()),
+            ),
+            (
+                "account".to_owned(),
+                UiValue::String("Replacement account".to_owned()),
+            ),
+        ])],
+    )
+    .unwrap();
+    assert!(
+        visual
+            .update(|_, cx| view.replace_native_collection("accounts", replacement, cx))
+            .unwrap()
+    );
+    for _ in 0..4 {
+        cx.background_executor
+            .advance_clock(std::time::Duration::from_millis(16));
+        visual.run_until_parked();
+    }
+    wait_for_view_text(
+        &mut visual,
+        &view,
+        "Replacement account",
+        "host collection replacement should invalidate its subscribed Table",
     );
 }

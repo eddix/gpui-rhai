@@ -11,7 +11,8 @@
 */
 // Data-backed Table composed entirely from public Box/Text/virtual_collection APIs.
 // Use either a positive logical-pixel height or fill_height for flex layouts.
-// Props: key, label, row_key, rows, columns, height, loading/empty, sort and selection.
+// Props: key, label, row_key, Array-or-NativeCollection rows, columns,
+// height, loading/empty, sort and selection.
 // Events: sort_change, selection_change, and row_click.
 // State: controlled values only; realized item component state is keyed by row.
 // Example: Table(#{ key: "users", label: "Users", row_key: "id", rows: rows,
@@ -26,9 +27,11 @@ define_component(#{
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
             label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
             row_key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-            rows: #{ schema: #{ type: "array", max_items: 100000,
-                items: #{ type: "map", values: #{ type: "ui_value" } } },
-                required: true, sensitive: false },
+            rows: #{ schema: #{ type: "one_of", variants: [
+                #{ type: "array", max_items: 100000,
+                    items: #{ type: "map", values: #{ type: "ui_value" } } },
+                #{ type: "collection" },
+            ] }, required: true, sensitive: false },
             columns: #{ schema: #{ type: "array", max_items: 256, items: #{
                 type: "object", allow_unknown: false, fields: #{
                     key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
@@ -188,35 +191,45 @@ fn render_Table(ctx, props) {
 
     let selected = prop_or(props, "selected_keys", []);
     let selection_mode = prop_or(props, "selection_mode", "none");
-    let data = [];
-    for index in 0..props.rows.len {
-        let source = props.rows[index];
-        let key = `${source[props.row_key]}`;
-        let is_selected = key in selected;
-        let next_selection = if selection_mode == "none" { () }
-            else if selection_mode == "single" { if is_selected { [] } else { [key] } }
-            else {
-                let result = [];
-                for candidate in selected { if candidate != key { result.push(candidate); } }
-                if !is_selected { result.push(key); }
-                result
-            };
-        let cells = [];
-        for column in props.columns {
-            cells.push(#{
-                key: column.key, text: if column.key in source { `${source[column.key]}` } else { "" },
-                width: column.width, align: prop_or(column, "align", "start")
-            });
+    let row_height = prop_or(props, "estimated_row_height", 30.0);
+    let striped = prop_or(props, "striped", false);
+    let data;
+    if is_native_collection(props.rows) {
+        data = native_table_view(props.rows, #{
+            row_key: props.row_key, label: props.label, columns: props.columns,
+            selected_keys: selected, selection_mode: selection_mode,
+            striped: striped, row_height: row_height, sort: current_sort,
+        });
+    } else {
+        data = [];
+        for index in 0..props.rows.len {
+            let source = props.rows[index];
+            let key = `${source[props.row_key]}`;
+            let is_selected = key in selected;
+            let next_selection = if selection_mode == "none" { () }
+                else if selection_mode == "single" { if is_selected { [] } else { [key] } }
+                else {
+                    let result = [];
+                    for candidate in selected { if candidate != key { result.push(candidate); } }
+                    if !is_selected { result.push(key); }
+                    result
+                };
+            let cells = [];
+            for column in props.columns {
+                cells.push(#{
+                    key: column.key, text: if column.key in source { `${source[column.key]}` } else { "" },
+                    width: column.width, align: prop_or(column, "align", "start")
+                });
+            }
+            data.push(#{ key: key, label: `${props.label} row ${index + 1}`, cells: cells,
+                selected: is_selected, selection: next_selection,
+                striped: striped && index % 2 == 1, height: row_height });
         }
-        data.push(#{ key: key, label: `${props.label} row ${index + 1}`, cells: cells,
-            selected: is_selected, selection: next_selection,
-            striped: prop_or(props, "striped", false) && index % 2 == 1,
-            height: prop_or(props, "estimated_row_height", 30.0) });
     }
     let collection = #{
         key: `${props.key}-body`, label: props.label, data: data,
-        estimated_height: prop_or(props, "estimated_row_height", 30.0),
-        overdraw_pixels: prop_or(props, "estimated_row_height", 30.0) * 4.0,
+        estimated_height: row_height,
+        overdraw_pixels: row_height * 4.0,
         alignment: "top", follow_tail: false
     };
     if fill_height { collection.fill_height = true; }

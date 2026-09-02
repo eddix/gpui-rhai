@@ -229,11 +229,14 @@ coalescing, IME-as-one-revision, and external-controlled reset. Their layout ele
 single line, while Textarea owns wrapped multiline layout, vertical hit testing,
 multi-line selection paint, caret scrolling, and auto-grow measurement.
 
-Table is now a copied Rhai composition over Box/Text and data-backed
+Table is a copied Rhai composition over Box/Text and data-backed
 `virtual_collection`. Its former native constructor, UiNodeKind, Entity,
-fixed-height renderer, private scrollbar fields, eager cell renderers, and Rust
-public model were deleted. GPUI layout only queues indices; named/formal Rhai
-row renderers execute on the next foreground runtime transaction.
+fixed-height renderer, private scrollbar fields, and eager cell renderers remain
+deleted. Small inputs may stay as Rhai Arrays. Large inputs use the generic
+`NativeCollection` data plane: Rust retains keyed `UiValue` rows, cached sort
+orders and tracked host replacement, while the same Rhai Table source declares
+columns, controlled state and callbacks and renders only projected viewport
+items. This is a public collection mechanism, not a privileged native Table.
 
 Short-lived render elements never enter persistent runtime state.
 

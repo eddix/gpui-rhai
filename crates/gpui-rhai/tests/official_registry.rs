@@ -1013,8 +1013,10 @@ fn official_dropdown_groups_and_routes_keyboard_in_rhai() {
     let UiNodeKind::VirtualCollection { spec } = collection.kind() else {
         unreachable!()
     };
-    let keys = spec
-        .data
+    let gpui_rhai::VirtualCollectionData::Values(data) = &spec.data else {
+        panic!("Dropdown fixture uses eager Rhai values");
+    };
+    let keys = data
         .iter()
         .map(|item| match item {
             UiValue::Map(item) => match &item["key"] {

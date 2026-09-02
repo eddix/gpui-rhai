@@ -40,6 +40,87 @@ Run on a release build:
 cargo run --release -p gpui-rhai --example performance_probe
 ```
 
+## Interactive 1,000-row Table baseline
+
+`table_1000` is the end-to-end interactive baseline for the official copied
+Table component:
+
+```text
+cargo run --release -p gpui-rhai --example table_1000
+```
+
+The workload is intentionally fixed at 1,000 deterministic rows and seven
+columns. Rust registers one immutable keyed `NativeCollection`; Rhai declares
+the official copied-source Table, columns, controlled sort/selection state and
+callbacks. The native data plane caches sort orders and projects normalized
+cell payloads only for the `virtual_collection` viewport plus overscan. This
+measures the intended large-data architecture rather than hiding an eager Rhai
+pass before the timer starts.
+
+Use these repeatable interactions when comparing changes:
+
+1. cold launch until the first complete table frame;
+2. scroll vertically from the first row to the last row and back;
+3. resize the window across the table's horizontal-overflow breakpoint, then
+   scroll across the full column width;
+4. press **Re-render same data** repeatedly to measure unchanged-data rebuilds;
+5. press **Reverse 1,000 rows** repeatedly to exercise keyed moves and diffing;
+6. select and clear row 500 to measure a small controlled-state update against
+   the same 1,000-row input.
+
+Run release builds on the same machine, display configuration, power state,
+and window size. Record the commit, Rust toolchain, macOS version, hardware,
+and whether the process was sampled under Instruments. Development Inspector
+timings and virtual-collection metrics are useful for attribution, but debug
+or `dev-reload` runs are not comparable performance numbers.
+
+## Automated end-to-end baseline
+
+The release benchmark mounts the same `table_1000` fixture in GPUI's test
+platform and measures cold prepare/mount plus unchanged rerender, reverse,
+selection, and native resize scenarios:
+
+```text
+bash scripts/benchmark.sh
+```
+
+Override the sample counts or write the complete JSON report when needed:
+
+```text
+GPUI_RHAI_BENCH_SAMPLES=50 \
+GPUI_RHAI_BENCH_WARMUP=10 \
+GPUI_RHAI_BENCH_OUTPUT=/tmp/gpui-rhai-table-1000.json \
+bash scripts/benchmark.sh
+```
+
+Each `gpui-rhai-e2e-v2` report retains raw samples and p50/p95/p99 summaries
+together with commit, dirty state, Rust/macOS/hardware metadata, retained node
+counts, data backend, and virtual-collection data/realization metrics. Rhai
+duration and operation totals are split into root/component work and delayed
+virtual-item work. Persisted `NativeCallContext` calls report an operation delta
+from the stored parent counter; the absolute parent value is never charged once
+per item.
+
+Resize is a structural gate: it may execute virtual item renderers for rows that
+newly enter a taller viewport, but it must not rerun the root or ordinary
+components. Shared CI must not enforce absolute wall-clock thresholds; use a
+controlled Mac for timing comparisons.
+
+Reference native-collection run on 2026-09-02, Macmini9,1, macOS 26.6.2,
+`rustc 1.94.0`, release profile, 5 warmups and 30 samples:
+
+```text
+cold mount+first frame = 31.78ms; root=4.23ms/255 ops; virtual=3.11ms/15096 ops
+unchanged p95 = 13.99ms; root=2.27ms/266 ops; virtual=2.12ms/10064 ops
+reverse p95   = 14.76ms; root=2.19ms/287 ops; virtual=2.57ms/12580 ops
+selection p95 = 15.15ms; root=2.25ms/265 ops; virtual=2.57ms/12580 ops
+resize p95    = 11.68ms; root=0; virtual=0.47ms/1887 ops
+```
+
+The report was produced from a dirty development tree and is an architectural
+checkpoint, not a release guarantee. Compare only reports whose
+`data_backend` and environment metadata match.
+
 Record toolchain, hardware, and power state when comparing results. The 16 ms
 foreground threshold is enforced as a trace warning; the standalone probe is
 advisory until CI has a dedicated, uncontended performance runner.

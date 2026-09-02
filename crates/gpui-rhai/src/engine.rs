@@ -68,6 +68,7 @@ impl fmt::Display for ScriptGeneration {
 pub enum ExecutionOperation {
     Compile,
     Render,
+    VirtualCollection(String),
     Lifecycle(String),
     Callback(String),
 }
@@ -265,7 +266,7 @@ struct ActiveComponentRender {
 #[derive(Clone, Debug)]
 struct VirtualCollectionRecipe {
     id: crate::VirtualCollectionId,
-    data: Vec<UiValue>,
+    data: crate::VirtualCollectionData,
     renderer: ScriptCallback,
     context: UiContext,
     event_context: UiContext,
@@ -427,6 +428,7 @@ impl RuntimeEngine {
         engine.build_type::<crate::EventResponse>();
         engine.build_type::<crate::ElementRef>();
         engine.build_type::<crate::NativeHandlerRef>();
+        crate::native_collection::register_native_collection_api(&mut engine);
         engine.build_type::<crate::Span>();
         register_ui_context_api(&mut engine);
         register_date_api(&mut engine);
@@ -858,11 +860,12 @@ impl RuntimeEngine {
             node.bind_generation(recipe.generation);
             Ok(node)
         })();
-        self.record_timing(
+        self.record_timing_from_base(
             ExecutionOperation::Render,
             recipe.component.as_str(),
             started,
             result.is_ok(),
+            recipe.context.operation_base(),
         );
         self.finish_component_render(result.is_ok())?;
         result
@@ -996,21 +999,36 @@ impl RuntimeEngine {
                 .copied()
                 .filter(|index| *index < recipe.data.len())
             {
-                let (key, payload) = collection_payload(&recipe.data[index], index)
-                    .map_err(RuntimeError::Evaluate)?;
+                let item = recipe
+                    .data
+                    .item(index)
+                    .map_err(|error| RuntimeError::ComponentRuntime(error.to_string()))?
+                    .ok_or_else(|| {
+                        RuntimeError::ComponentRuntime(format!(
+                            "virtual collection item {index} disappeared"
+                        ))
+                    })?;
+                let (key, payload) =
+                    collection_payload(&item, index).map_err(RuntimeError::Evaluate)?;
                 let invocation = recipe.renderer.native_context.as_ref().ok_or_else(|| {
                     RuntimeError::ComponentRuntime(
                         "virtual collection renderer lost its module context".to_owned(),
                     )
                 })?;
-                let mut node = invocation
-                    .call::<UiNode>(
-                        self.engine(),
-                        &recipe.renderer.function,
-                        (context.clone(), Dynamic::from_map(payload)),
-                    )
-                    .map_err(RuntimeError::Evaluate)?
-                    .with_key(key);
+                let started = self.begin_timing();
+                let item = invocation.call::<UiNode>(
+                    self.engine(),
+                    &recipe.renderer.function,
+                    (context.clone(), Dynamic::from_map(payload)),
+                );
+                self.record_timing_from_base(
+                    ExecutionOperation::VirtualCollection(id.key.clone()),
+                    id.key.as_str(),
+                    started,
+                    item.is_ok(),
+                    invocation.operation_base(),
+                );
+                let mut node = item.map_err(RuntimeError::Evaluate)?.with_key(key);
                 node.bind_generation(recipe.generation);
                 node.bind_component_scope(
                     recipe.event_context.component_path(),
@@ -1146,11 +1164,16 @@ impl RuntimeEngine {
         } else {
             callback.function.call(self.engine(), &compiled.ast, args)
         };
-        self.record_timing(
+        let operation_base = callback.native_context.as_ref().map_or(
+            0,
+            crate::invocation::ScriptInvocationContext::operation_base,
+        );
+        self.record_timing_from_base(
             ExecutionOperation::Callback(callback.name().to_owned()),
             compiled.ast.source().unwrap_or("<script>"),
             started,
             result.is_ok(),
+            operation_base,
         );
         result.map_err(RuntimeError::Evaluate)
     }
@@ -1352,12 +1375,26 @@ impl RuntimeEngine {
         started: Instant,
         succeeded: bool,
     ) {
+        self.record_timing_from_base(operation, source, started, succeeded, 0);
+    }
+
+    fn record_timing_from_base(
+        &self,
+        operation: ExecutionOperation,
+        source: &str,
+        started: Instant,
+        succeeded: bool,
+        operation_base: u64,
+    ) {
         let duration = started.elapsed();
         self.timings.borrow_mut().push(ExecutionTiming {
             operation,
             source: source.to_owned(),
             duration,
-            operations: self.operation_counter.load(Ordering::Relaxed),
+            operations: self
+                .operation_counter
+                .load(Ordering::Relaxed)
+                .saturating_sub(operation_base),
             slow: duration >= self.slow_threshold,
             succeeded,
         });
@@ -2101,7 +2138,7 @@ fn register_element_ref_api(engine: &mut Engine, active: &ActiveComponentRenderS
 struct DecodedVirtualCollection {
     key: String,
     label: String,
-    data: Vec<UiValue>,
+    data: crate::VirtualCollectionData,
     estimated_height: f64,
     height: Option<f64>,
     overdraw_pixels: f64,
@@ -2291,12 +2328,20 @@ fn realize_initial_collection(
     call: &rhai::NativeCallContext<'_>,
     renderer: &FnPtr,
     context: &UiContext,
-    data: &[UiValue],
+    data: &crate::VirtualCollectionData,
     count: usize,
 ) -> Result<BTreeMap<usize, UiNode>, Box<EvalAltResult>> {
     let mut realized = BTreeMap::new();
-    for (index, item) in data.iter().enumerate().take(count) {
-        let (item_key, payload) = collection_payload(item, index)?;
+    for index in 0..count.min(data.len()) {
+        let item = data
+            .item(index)
+            .map_err(|error| Box::new(component_render_error(error.to_string())))?
+            .ok_or_else(|| {
+                Box::new(component_render_error(format!(
+                    "virtual collection item {index} disappeared"
+                )))
+            })?;
+        let (item_key, payload) = collection_payload(&item, index)?;
         let node = renderer
             .call_within_context::<UiNode>(call, (context.clone(), payload))?
             .with_key(item_key);
@@ -2444,15 +2489,22 @@ fn collection_optional_bool(
         .transpose()
 }
 
-fn collection_data(config: &mut Map) -> Result<Vec<UiValue>, Box<EvalAltResult>> {
-    let data = config
-        .remove("data")
-        .and_then(Dynamic::try_cast::<Array>)
-        .ok_or_else(|| {
-            Box::new(component_render_error(
-                "virtual collection `data` is required",
-            ))
-        })?;
+fn collection_data(config: &mut Map) -> Result<crate::VirtualCollectionData, Box<EvalAltResult>> {
+    let data = config.remove("data").ok_or_else(|| {
+        Box::new(component_render_error(
+            "virtual collection `data` is required",
+        ))
+    })?;
+    if data.is::<crate::NativeCollection>() {
+        return Ok(crate::VirtualCollectionData::Native(
+            data.cast::<crate::NativeCollection>(),
+        ));
+    }
+    let data = data.try_cast::<Array>().ok_or_else(|| {
+        Box::new(component_render_error(
+            "virtual collection `data` must be an array or NativeCollection",
+        ))
+    })?;
     let data = data
         .into_iter()
         .map(|value| {
@@ -2469,7 +2521,7 @@ fn collection_data(config: &mut Map) -> Result<Vec<UiValue>, Box<EvalAltResult>>
             ))));
         }
     }
-    Ok(data)
+    Ok(crate::VirtualCollectionData::Values(data))
 }
 
 fn collection_payload(item: &UiValue, index: usize) -> Result<(String, Map), Box<EvalAltResult>> {
