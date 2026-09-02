@@ -266,6 +266,10 @@ impl StateStore {
         self.instances.len()
     }
 
+    pub(crate) fn contains_instance(&self, path: &ComponentInstancePath) -> bool {
+        self.instances.contains_key(path)
+    }
+
     #[must_use]
     pub fn paths(&self) -> BTreeSet<ComponentInstancePath> {
         self.instances.keys().cloned().collect()

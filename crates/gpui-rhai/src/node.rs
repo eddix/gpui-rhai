@@ -259,6 +259,156 @@ pub struct UiNode {
     element_ref: Option<crate::ElementRef>,
 }
 
+#[derive(Clone, Debug)]
+pub(crate) struct ComponentSubtreeIndex {
+    addresses: BTreeMap<ComponentInstancePath, Vec<ComponentSubtreeStep>>,
+}
+
+#[derive(Clone, Debug)]
+enum ComponentSubtreeStep {
+    Child(usize),
+    CustomNode(String),
+    CustomNodes(String, usize),
+    OverlayTrigger,
+    OverlayContent,
+    LayerContent,
+    VirtualItem(usize),
+    ErrorChild,
+    ErrorFallback,
+}
+
+impl ComponentSubtreeIndex {
+    pub(crate) fn new(root: &UiNode) -> Self {
+        let mut index = Self {
+            addresses: BTreeMap::new(),
+        };
+        index.visit(root, &mut Vec::new());
+        index
+    }
+
+    pub(crate) fn get<'a>(
+        &self,
+        root: &'a UiNode,
+        component: &ComponentInstancePath,
+    ) -> Option<&'a UiNode> {
+        let mut node = root;
+        for step in self.addresses.get(component)? {
+            node = match (step, &node.kind) {
+                (
+                    ComponentSubtreeStep::Child(index),
+                    UiNodeKind::Box { children } | UiNodeKind::Fragment { children },
+                ) => children.get(*index)?,
+                (ComponentSubtreeStep::CustomNode(name), UiNodeKind::Custom { primitive }) => {
+                    match primitive.props.get(name.as_str())? {
+                        crate::PrimitiveValue::Node(node) => node,
+                        _ => return None,
+                    }
+                }
+                (
+                    ComponentSubtreeStep::CustomNodes(name, index),
+                    UiNodeKind::Custom { primitive },
+                ) => match primitive.props.get(name.as_str())? {
+                    crate::PrimitiveValue::Nodes(nodes) => nodes.get(*index)?,
+                    _ => return None,
+                },
+                (ComponentSubtreeStep::OverlayTrigger, UiNodeKind::Overlay { trigger, .. }) => {
+                    trigger
+                }
+                (ComponentSubtreeStep::OverlayContent, UiNodeKind::Overlay { content, .. }) => {
+                    content
+                }
+                (ComponentSubtreeStep::LayerContent, UiNodeKind::Layer { content, .. }) => content,
+                (
+                    ComponentSubtreeStep::VirtualItem(index),
+                    UiNodeKind::VirtualCollection { spec },
+                ) => spec.realized.get(index)?,
+                (ComponentSubtreeStep::ErrorChild, UiNodeKind::ErrorBoundary { child, .. }) => {
+                    child
+                }
+                (
+                    ComponentSubtreeStep::ErrorFallback,
+                    UiNodeKind::ErrorBoundary { fallback, .. },
+                ) => fallback,
+                _ => return None,
+            };
+        }
+        Some(node)
+    }
+
+    fn visit(&mut self, node: &UiNode, address: &mut Vec<ComponentSubtreeStep>) {
+        if let Some(component) = node.component_root() {
+            self.addresses.insert(component.clone(), address.clone());
+        }
+        match &node.kind {
+            UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => {
+                for (index, child) in children.iter().enumerate() {
+                    address.push(ComponentSubtreeStep::Child(index));
+                    self.visit(child, address);
+                    address.pop();
+                }
+            }
+            UiNodeKind::Custom { primitive } => {
+                for (name, value) in primitive.props.iter() {
+                    match value {
+                        crate::PrimitiveValue::Node(node) => {
+                            address.push(ComponentSubtreeStep::CustomNode(name.to_string()));
+                            self.visit(node.as_ref(), address);
+                            address.pop();
+                        }
+                        crate::PrimitiveValue::Nodes(nodes) => {
+                            for (index, node) in nodes.iter().enumerate() {
+                                address.push(ComponentSubtreeStep::CustomNodes(
+                                    name.to_string(),
+                                    index,
+                                ));
+                                self.visit(node, address);
+                                address.pop();
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            UiNodeKind::Overlay {
+                trigger, content, ..
+            } => {
+                address.push(ComponentSubtreeStep::OverlayTrigger);
+                self.visit(trigger, address);
+                address.pop();
+                address.push(ComponentSubtreeStep::OverlayContent);
+                self.visit(content, address);
+                address.pop();
+            }
+            UiNodeKind::Layer { content, .. } => {
+                address.push(ComponentSubtreeStep::LayerContent);
+                self.visit(content, address);
+                address.pop();
+            }
+            UiNodeKind::VirtualCollection { spec } => {
+                for (index, node) in &spec.realized {
+                    address.push(ComponentSubtreeStep::VirtualItem(*index));
+                    self.visit(node, address);
+                    address.pop();
+                }
+            }
+            UiNodeKind::ErrorBoundary { child, fallback } => {
+                address.push(ComponentSubtreeStep::ErrorChild);
+                self.visit(child, address);
+                address.pop();
+                address.push(ComponentSubtreeStep::ErrorFallback);
+                self.visit(fallback, address);
+                address.pop();
+            }
+            UiNodeKind::Text { .. }
+            | UiNodeKind::RichText { .. }
+            | UiNodeKind::Canvas { .. }
+            | UiNodeKind::Svg { .. }
+            | UiNodeKind::Image { .. }
+            | UiNodeKind::DirectionalImage { .. } => {}
+        }
+    }
+}
+
 impl UiNode {
     #[must_use]
     pub fn text(text: impl Into<ImmutableString>) -> Self {

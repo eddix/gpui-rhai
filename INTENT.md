@@ -117,6 +117,13 @@ render function and module context, normalized structural props, parent context,
 generation, dependency set, and prior subtree. Rhai itself does not provide this
 reactivity; it is a gpui-rhai host runtime.
 
+When the root view reruns, formal components bail out before Rhai execution if
+their normalized non-node props and render environment are unchanged and no
+dirty component lies in the retained subtree. Node-valued props are
+conservatively unequal. Bailout retains the complete subtree ownership bundle,
+including component state, dependencies, callbacks, effects, timers, signals,
+refs, and virtual collections; it is not only a `UiNode` splice.
+
 ## 5. Rhai execution and component model
 
 ### 5.1 Invocation adapter

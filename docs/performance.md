@@ -99,7 +99,9 @@ counts, data backend, and virtual-collection data/realization metrics. Rhai
 duration and operation totals are split into root/component work and delayed
 virtual-item work. Persisted `NativeCallContext` calls report an operation delta
 from the stored parent counter; the absolute parent value is never charged once
-per item.
+per item. Samples also report `reused_component_subtrees` and
+`reused_components`. The unchanged-data scenario requires the four stable
+buttons and Table to survive a root-state rerender through component bailout.
 
 Resize is a structural gate: it may execute virtual item renderers for rows that
 newly enter a taller viewport, but it must not rerun the root or ordinary
@@ -116,6 +118,22 @@ reverse p95   = 14.76ms; root=2.19ms/287 ops; virtual=2.57ms/12580 ops
 selection p95 = 15.15ms; root=2.25ms/265 ops; virtual=2.57ms/12580 ops
 resize p95    = 11.68ms; root=0; virtual=0.47ms/1887 ops
 ```
+
+After root-dirty formal-component bailout, the same machine/toolchain with 5
+warmups and 30 samples produced:
+
+```text
+unchanged p95 =  5.03ms; root=0.86ms/266 ops; virtual=0; reused=5
+reverse p95   = 13.03ms; root=1.83ms/287 ops; virtual=2.35ms/12580 ops; reused=4
+selection p95 = 12.97ms; root=1.79ms/265 ops; virtual=2.34ms/12580 ops; reused=4
+resize p95    = 10.41ms; root=0; virtual=0.41ms/1887 ops; reused=0
+```
+
+The unchanged-data end-to-end p95 fell by about 64%, and its measured Rhai
+root/native-call duration fell by about 62%; every sample reused exactly the
+four Button instances and Table. Operation counts do not fall because Rhai's
+progress counter counts the `render_component` native calls themselves, while
+the removed work is the Rust-hosted component render reached through each call.
 
 The report was produced from a dirty development tree and is an architectural
 checkpoint, not a release guarantee. Compare only reports whose

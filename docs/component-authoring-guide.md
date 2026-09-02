@@ -77,6 +77,15 @@ props. They resolve the same validated Style-only snapshot with
 `ctx.component_style("part_name", base_style)`, which cannot expose nodes,
 callbacks, or arbitrary Dynamic values to deferred rendering.
 
+Formal render is pure and is also the automatic reuse boundary. A root `view`
+rerun can return the previous component subtree without calling its Rhai render
+when normalized props and the render environment are unchanged and neither the
+component nor a descendant is dirty. A reused subtree keeps its state,
+dependencies, callbacks, effects, timers, signals, refs, and virtual
+collections. Slots and other node-valued props intentionally opt out because
+node equality is not a safe ownership proof. Do not rely on render call counts
+for behavior; put effects in declarations and mutations in callbacks.
+
 Stateful components and lifecycle custom primitives require a stable caller
 `key`. Never store UI state in mutable script globals.
 
@@ -180,6 +189,11 @@ hot reload preserve the current value; unmount makes old handles explicitly
 stale. Signal reads do not establish component dependencies and writes do not
 rerun Rhai. Trusted Rust can update a mounted handle through
 `ScriptViewHandle::write_signal` on the GPUI foreground thread.
+
+Sampling `ctx.get_signal(...)` during formal render makes that component subtree
+ineligible for automatic bailout, because signal reads intentionally create no
+dirty edge. Prefer `bind_signal` for visual properties; reserve `get_signal`
+for event handlers.
 
 ## Styling
 

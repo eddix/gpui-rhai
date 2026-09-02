@@ -309,6 +309,45 @@ impl ComponentProps {
     pub fn iter(&self) -> impl Iterator<Item = (&str, &ComponentPropValue)> {
         self.0.iter().map(|(name, value)| (name.as_str(), value))
     }
+
+    /// Compare props for component-render reuse.
+    ///
+    /// Node-valued props are deliberately never reusable. A node or slot can
+    /// carry callbacks and component ownership whose structural equality does
+    /// not prove that retaining the previous subtree is semantically safe.
+    pub(crate) fn reusable_eq(&self, other: &Self) -> bool {
+        self.0.len() == other.0.len()
+            && self.0.iter().all(|(name, value)| {
+                other
+                    .0
+                    .get(name)
+                    .is_some_and(|other| value.reusable_eq(other))
+            })
+    }
+}
+
+impl ComponentPropValue {
+    fn reusable_eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Node(_) | Self::Nodes(_), _) | (_, Self::Node(_) | Self::Nodes(_)) => false,
+            (Self::Array(left), Self::Array(right)) => {
+                left.len() == right.len()
+                    && left
+                        .iter()
+                        .zip(right)
+                        .all(|(left, right)| left.reusable_eq(right))
+            }
+            (Self::Map(left), Self::Map(right)) => {
+                left.len() == right.len()
+                    && left.iter().all(|(name, value)| {
+                        right
+                            .get(name)
+                            .is_some_and(|other| value.reusable_eq(other))
+                    })
+            }
+            _ => self == other,
+        }
+    }
 }
 
 fn convert_component_prop(
@@ -1187,5 +1226,29 @@ fn render_button(props) { text(props.text) }
             ComponentDefinition::new(metadata("components/pager", "Pager"), schema),
             Err(ComponentError::InvalidSchemaDefinition { .. })
         ));
+    }
+
+    #[test]
+    fn component_reuse_equality_is_conservative_for_nested_nodes() {
+        let data = ComponentProps(BTreeMap::from([(
+            "label".to_owned(),
+            ComponentPropValue::Data(UiValue::String("same".to_owned())),
+        )]));
+        assert!(data.reusable_eq(&data.clone()));
+
+        let slot = ComponentProps(BTreeMap::from([(
+            "content".to_owned(),
+            ComponentPropValue::Node(Box::new(UiNode::text("same"))),
+        )]));
+        assert!(!slot.reusable_eq(&slot.clone()));
+
+        let nested_slot = ComponentProps(BTreeMap::from([(
+            "payload".to_owned(),
+            ComponentPropValue::Array(vec![ComponentPropValue::Map(BTreeMap::from([(
+                "content".to_owned(),
+                ComponentPropValue::Node(Box::new(UiNode::text("same"))),
+            )]))]),
+        )]));
+        assert!(!nested_slot.reusable_eq(&nested_slot.clone()));
     }
 }

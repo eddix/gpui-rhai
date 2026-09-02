@@ -68,6 +68,10 @@ impl fmt::Display for ScriptGeneration {
 pub enum ExecutionOperation {
     Compile,
     Render,
+    /// A formal-component subtree returned without executing its Rhai render.
+    /// The payload is the number of retained formal component instances in the
+    /// reused subtree, including its root.
+    ComponentReuse(usize),
     VirtualCollection(String),
     Lifecycle(String),
     Callback(String),
@@ -261,6 +265,51 @@ struct ActiveComponentRender {
     signals: BTreeMap<crate::SignalId, crate::signal::SignalDescriptor>,
     element_refs: BTreeSet<crate::ElementRefId>,
     virtual_collections: BTreeMap<crate::VirtualCollectionId, VirtualCollectionRecipe>,
+    environment: ComponentRenderEnvironment,
+    reuse: Option<ComponentReuseSnapshot>,
+    reused: Vec<(String, usize)>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ComponentRenderEnvironment {
+    theme_generation: Option<u64>,
+    locale_generation: Option<u64>,
+    calendar_day: crate::GregorianDate,
+}
+
+#[derive(Clone)]
+struct ComponentReusePlan {
+    previous_root: Rc<UiNode>,
+    dirty: BTreeSet<ComponentInstancePath>,
+}
+
+#[derive(Clone)]
+struct ComponentReuseSnapshot {
+    previous_root: Rc<UiNode>,
+    subtrees: crate::node::ComponentSubtreeIndex,
+    dirty: BTreeSet<ComponentInstancePath>,
+    invocations: BTreeMap<ComponentInstancePath, ComponentInvocationRecipe>,
+    event_handlers: BTreeMap<(ComponentInstancePath, String), ScriptCallback>,
+    effects: BTreeMap<crate::EffectId, crate::EffectDescriptor>,
+    timers: BTreeMap<crate::TimerId, crate::TimerDescriptor>,
+    signals: BTreeMap<crate::SignalId, crate::signal::SignalDescriptor>,
+    element_refs: BTreeSet<crate::ElementRefId>,
+    virtual_collections: BTreeMap<crate::VirtualCollectionId, VirtualCollectionRecipe>,
+}
+
+struct ReusedComponentScope {
+    node: UiNode,
+    invocations: BTreeMap<ComponentInstancePath, ComponentInvocationRecipe>,
+    event_handlers: BTreeMap<(ComponentInstancePath, String), ScriptCallback>,
+    resources: ReusedComponentResources,
+}
+
+struct ReusedComponentResources {
+    effects: BTreeMap<crate::EffectId, crate::EffectDescriptor>,
+    timers: BTreeMap<crate::TimerId, crate::TimerDescriptor>,
+    signals: BTreeMap<crate::SignalId, crate::signal::SignalDescriptor>,
+    element_refs: BTreeSet<crate::ElementRefId>,
+    virtual_collections: BTreeMap<crate::VirtualCollectionId, VirtualCollectionRecipe>,
 }
 
 #[derive(Clone, Debug)]
@@ -303,6 +352,8 @@ pub struct ComponentInvocationRecipe {
     render: FnPtr,
     context: crate::invocation::ScriptInvocationContext,
     generation: ScriptGeneration,
+    environment: ComponentRenderEnvironment,
+    reusable: bool,
 }
 
 #[derive(Clone)]
@@ -560,21 +611,78 @@ impl RuntimeEngine {
         context: UiContext,
         generation: ScriptGeneration,
         root_effects: Option<BTreeSet<String>>,
+        reuse_plan: Option<ComponentReusePlan>,
     ) -> Result<(), RuntimeError> {
         let root = context.component_path().clone();
+        context.reset_non_reusable_render_reads();
+        let (state_snapshot, environment, event_handlers) = {
+            let runtime = context.runtime().try_borrow().map_err(|_| {
+                RuntimeError::ComponentRuntime("UI state is already borrowed".to_owned())
+            })?;
+            (
+                runtime.component_state.clone(),
+                ComponentRenderEnvironment {
+                    theme_generation: runtime.theme.as_ref().map(crate::ThemeManager::generation),
+                    locale_generation: runtime
+                        .locale
+                        .as_ref()
+                        .map(crate::LocaleManager::generation),
+                    calendar_day: runtime.calendar_clock.today(),
+                },
+                reuse_plan
+                    .as_ref()
+                    .map(|_| runtime.component_event_handlers_in_scope(&root)),
+            )
+        };
         let mut transaction = context
             .runtime()
             .try_borrow()
             .map_err(|_| RuntimeError::ComponentRuntime("UI state is already borrowed".to_owned()))?
             .component_state
             .begin_render_scope(root.clone());
-        let state_snapshot = context
-            .runtime()
-            .try_borrow()
-            .map_err(|_| RuntimeError::ComponentRuntime("UI state is already borrowed".to_owned()))?
-            .component_state
-            .clone();
         let _ = transaction.retain_existing(&root);
+        let reuse = reuse_plan.map(|plan| ComponentReuseSnapshot {
+            subtrees: crate::node::ComponentSubtreeIndex::new(&plan.previous_root),
+            previous_root: plan.previous_root,
+            dirty: plan.dirty,
+            invocations: self
+                .component_invocations
+                .iter()
+                .filter(|(path, _)| path.is_within(&root))
+                .map(|(path, recipe)| (path.clone(), recipe.clone()))
+                .collect(),
+            event_handlers: event_handlers.unwrap_or_default(),
+            effects: self
+                .component_effects
+                .iter()
+                .filter(|(id, _)| id.component().is_within(&root))
+                .map(|(id, descriptor)| (id.clone(), descriptor.clone()))
+                .collect(),
+            timers: self
+                .component_timers
+                .iter()
+                .filter(|(id, _)| id.component().is_within(&root))
+                .map(|(id, descriptor)| (id.clone(), descriptor.clone()))
+                .collect(),
+            signals: self
+                .component_signals
+                .iter()
+                .filter(|(id, _)| id.component().is_within(&root))
+                .map(|(id, descriptor)| (id.clone(), descriptor.clone()))
+                .collect(),
+            element_refs: self
+                .component_element_refs
+                .iter()
+                .filter(|id| id.component().is_within(&root))
+                .cloned()
+                .collect(),
+            virtual_collections: self
+                .virtual_collections
+                .iter()
+                .filter(|(id, _)| id.component.is_within(&root))
+                .map(|(id, recipe)| (id.clone(), recipe.clone()))
+                .collect(),
+        });
         let mut active = self.component_render.try_borrow_mut().map_err(|_| {
             RuntimeError::ComponentRuntime("component render stack is already borrowed".to_owned())
         })?;
@@ -595,6 +703,9 @@ impl RuntimeEngine {
             signals: BTreeMap::new(),
             element_refs: BTreeSet::new(),
             virtual_collections: BTreeMap::new(),
+            environment,
+            reuse,
+            reused: Vec::new(),
         });
         Ok(())
     }
@@ -613,6 +724,21 @@ impl RuntimeEngine {
             return Ok(());
         };
         if commit {
+            self.timings
+                .borrow_mut()
+                .extend(
+                    active
+                        .reused
+                        .iter()
+                        .map(|(source, components)| ExecutionTiming {
+                            operation: ExecutionOperation::ComponentReuse(*components),
+                            source: source.clone(),
+                            duration: Duration::ZERO,
+                            operations: 0,
+                            slow: false,
+                            succeeded: true,
+                        }),
+                );
             let root = active.root_context.component_path().clone();
             let previous = active.state_snapshot.paths();
             self.pending_component_commits.insert(
@@ -675,7 +801,7 @@ impl RuntimeEngine {
             BTreeMap::new(),
         )
         .with_generation(compiled.generation);
-        self.begin_component_render(context, compiled.generation, None)?;
+        self.begin_component_render(context, compiled.generation, None, None)?;
         let started = self.begin_timing();
         let result = AstInterpreter::call_fn::<UiNode, _>(
             &self.engine,
@@ -769,8 +895,34 @@ impl RuntimeEngine {
         compiled: &CompiledUi,
         context: UiContext,
     ) -> Result<UiNode, RuntimeError> {
+        self.render_with_context_staged_impl(compiled, context, None)
+    }
+
+    pub(crate) fn render_with_context_staged_reusing(
+        &mut self,
+        compiled: &CompiledUi,
+        context: UiContext,
+        previous_root: Rc<UiNode>,
+        dirty: &BTreeSet<ComponentInstancePath>,
+    ) -> Result<UiNode, RuntimeError> {
+        self.render_with_context_staged_impl(
+            compiled,
+            context,
+            Some(ComponentReusePlan {
+                previous_root,
+                dirty: dirty.clone(),
+            }),
+        )
+    }
+
+    fn render_with_context_staged_impl(
+        &mut self,
+        compiled: &CompiledUi,
+        context: UiContext,
+        reuse: Option<ComponentReusePlan>,
+    ) -> Result<UiNode, RuntimeError> {
         self.evaluation_generation.set(compiled.generation);
-        self.begin_component_render(context.clone(), compiled.generation, None)?;
+        self.begin_component_render(context.clone(), compiled.generation, None, reuse)?;
         let started = self.begin_timing();
         let result = AstInterpreter::call_fn::<UiNode, _>(
             &self.engine,
@@ -795,6 +947,8 @@ impl RuntimeEngine {
     pub(crate) fn rerender_component(
         &mut self,
         component: &ComponentInstancePath,
+        previous_root: &UiNode,
+        dirty: &BTreeSet<ComponentInstancePath>,
     ) -> Result<UiNode, RuntimeError> {
         let recipe = self
             .component_invocations
@@ -813,12 +967,15 @@ impl RuntimeEngine {
             .runtime()
             .try_borrow_mut()
             .map_err(|_| RuntimeError::ComponentRuntime("UI state is already borrowed".to_owned()))?
-            .stores
-            .reset_reader(component);
+            .reset_component_readers(component);
         self.begin_component_render(
             recipe.component_context.clone(),
             recipe.generation,
             Some(recipe.declared_effects.clone()),
+            Some(ComponentReusePlan {
+                previous_root: Rc::new(previous_root.clone()),
+                dirty: dirty.clone(),
+            }),
         )?;
         register_component_invocation(&self.component_render, recipe.clone())
             .map_err(RuntimeError::Evaluate)?;
@@ -860,6 +1017,20 @@ impl RuntimeEngine {
             node.bind_generation(recipe.generation);
             Ok(node)
         })();
+        {
+            let mut active = self.component_render.try_borrow_mut().map_err(|_| {
+                RuntimeError::ComponentRuntime(
+                    "component render stack is already borrowed".to_owned(),
+                )
+            })?;
+            if let Some(active) = active.as_mut() {
+                let environment = active.environment;
+                if let Some(retained) = active.invocations.get_mut(&recipe.path) {
+                    retained.environment = environment;
+                    retained.reusable = recipe.component_context.component_render_is_reusable();
+                }
+            }
+        }
         self.record_timing_from_base(
             ExecutionOperation::Render,
             recipe.component.as_str(),
@@ -991,7 +1162,7 @@ impl RuntimeEngine {
             .context
             .for_component(scope, BTreeMap::new())
             .with_generation(recipe.generation);
-        self.begin_component_render(context.clone(), recipe.generation, None)?;
+        self.begin_component_render(context.clone(), recipe.generation, None, None)?;
         let result = (|| {
             let mut realized = BTreeMap::new();
             for index in indices
@@ -1689,8 +1860,18 @@ fn execute_component_render(
     let script_props = invocation.props.clone();
     let declared_key = invocation.key.clone();
     let render_recipe = render.clone();
-    let (path, context, caller_context) =
-        enter_component_render(call, &component, &invocation, active)?;
+    let (path, caller_context) = reserve_component_path(call, &component, &invocation, active)?;
+    if let Some(node) = try_reuse_component_subtree(
+        active,
+        &path,
+        &caller_context,
+        &component,
+        &invocation,
+        render,
+    )? {
+        return Ok(node);
+    }
+    let context = enter_component_render(&path, &component, &invocation, active)?;
     let recipe_component_context = context.clone();
     let result = render.call_within_context::<UiNode>(call, (context, invocation.props));
     let native_context = crate::invocation::ScriptInvocationContext::capture(call);
@@ -1701,6 +1882,7 @@ fn execute_component_render(
         event_callbacks,
         &native_context,
     )?;
+    let (environment, reusable) = component_render_metadata(active, &recipe_component_context)?;
     register_component_invocation(
         active,
         ComponentInvocationRecipe {
@@ -1721,6 +1903,8 @@ fn execute_component_render(
             render: render_recipe,
             context: native_context.clone(),
             generation,
+            environment,
+            reusable,
         },
     )?;
     leave_component_render(active)?;
@@ -1735,6 +1919,161 @@ fn execute_component_render(
     );
     node.bind_component_scope(&path, &component.schema.events, Some(&native_context));
     Ok(node)
+}
+
+fn component_render_metadata(
+    active: &ActiveComponentRenderState,
+    context: &UiContext,
+) -> Result<(ComponentRenderEnvironment, bool), Box<EvalAltResult>> {
+    let guard = active.try_borrow().map_err(|_| {
+        Box::new(component_render_error(
+            "component render stack is already borrowed",
+        ))
+    })?;
+    let render = guard.as_ref().ok_or_else(|| {
+        Box::new(component_render_error(
+            "formal component rendering may run only inside view",
+        ))
+    })?;
+    Ok((render.environment, context.component_render_is_reusable()))
+}
+
+fn try_reuse_component_subtree(
+    shared: &ActiveComponentRenderState,
+    path: &ComponentInstancePath,
+    caller_context: &UiContext,
+    component: &crate::ComponentDefinition,
+    invocation: &crate::ComponentInvocation,
+    render: &FnPtr,
+) -> Result<Option<UiNode>, Box<EvalAltResult>> {
+    let mut guard = shared.try_borrow_mut().map_err(|_| {
+        Box::new(component_render_error(
+            "component render stack is already borrowed",
+        ))
+    })?;
+    let active = guard.as_mut().ok_or_else(|| {
+        Box::new(component_render_error(
+            "formal component rendering may run only inside view",
+        ))
+    })?;
+    let Some(scope) =
+        reusable_component_scope(active, path, caller_context, component, invocation, render)
+    else {
+        return Ok(None);
+    };
+
+    let reused_components = scope.invocations.len();
+    for candidate in scope.invocations.keys() {
+        let retained = active.transaction.retain_existing(candidate);
+        debug_assert!(
+            retained,
+            "reuse candidates were checked against the state snapshot"
+        );
+    }
+    active.seen.extend(scope.invocations.keys().cloned());
+    active.invocations.extend(scope.invocations);
+    active.event_handlers.extend(scope.event_handlers);
+    active.effects.extend(scope.resources.effects);
+    active.timers.extend(scope.resources.timers);
+    active.signals.extend(scope.resources.signals);
+    active.element_refs.extend(scope.resources.element_refs);
+    active
+        .virtual_collections
+        .extend(scope.resources.virtual_collections);
+    active
+        .reused
+        .push((component.metadata.id.to_string(), reused_components));
+    Ok(Some(scope.node))
+}
+
+fn reusable_component_scope(
+    active: &ActiveComponentRender,
+    path: &ComponentInstancePath,
+    caller_context: &UiContext,
+    component: &crate::ComponentDefinition,
+    invocation: &crate::ComponentInvocation,
+    render: &FnPtr,
+) -> Option<ReusedComponentScope> {
+    let reuse = active.reuse.as_ref()?;
+    if reuse.dirty.iter().any(|dirty| dirty.is_within(path)) {
+        return None;
+    }
+    let recipe = reuse.invocations.get(path)?;
+    if !recipe.reusable
+        || recipe.generation != active.generation
+        || recipe.environment != active.environment
+        || recipe.parent != *caller_context.component_path()
+        || recipe.component != component.metadata.id
+        || recipe.export != component.metadata.export
+        || recipe.declared_key != invocation.key
+        || recipe.render.fn_name() != render.fn_name()
+        || !recipe.props.reusable_eq(&invocation.retained_props)
+    {
+        return None;
+    }
+    let invocations = reuse
+        .invocations
+        .range(path.clone()..)
+        .take_while(|(candidate, _)| candidate.is_within(path))
+        .map(|(candidate, recipe)| (candidate.clone(), recipe.clone()))
+        .collect::<BTreeMap<_, _>>();
+    if invocations.is_empty()
+        || invocations.values().any(|recipe| !recipe.reusable)
+        || invocations
+            .keys()
+            .any(|candidate| !active.state_snapshot.contains_instance(candidate))
+    {
+        return None;
+    }
+    Some(ReusedComponentScope {
+        node: reuse.subtrees.get(&reuse.previous_root, path)?.clone(),
+        invocations,
+        event_handlers: reuse
+            .event_handlers
+            .range((path.clone(), String::new())..)
+            .take_while(|((candidate, _), _)| candidate.is_within(path))
+            .map(|(id, callback)| (id.clone(), callback.clone()))
+            .collect(),
+        resources: reused_component_resources(reuse, path),
+    })
+}
+
+fn reused_component_resources(
+    reuse: &ComponentReuseSnapshot,
+    path: &ComponentInstancePath,
+) -> ReusedComponentResources {
+    ReusedComponentResources {
+        effects: reuse
+            .effects
+            .iter()
+            .filter(|(id, _)| id.component().is_within(path))
+            .map(|(id, descriptor)| (id.clone(), descriptor.clone()))
+            .collect(),
+        timers: reuse
+            .timers
+            .iter()
+            .filter(|(id, _)| id.component().is_within(path))
+            .map(|(id, descriptor)| (id.clone(), descriptor.clone()))
+            .collect(),
+        signals: reuse
+            .signals
+            .iter()
+            .filter(|(id, _)| id.component().is_within(path))
+            .map(|(id, descriptor)| (id.clone(), descriptor.clone()))
+            .collect(),
+        element_refs: reuse
+            .element_refs
+            .iter()
+            .filter(|id| id.component().is_within(path))
+            .cloned()
+            .collect(),
+        virtual_collections: reuse
+            .virtual_collections
+            .iter()
+            .filter(|(id, _)| id.component.is_within(path))
+            .map(|(id, recipe)| (id.clone(), recipe.clone()))
+            .collect(),
+    }
 }
 
 fn register_component_invocation(
@@ -1783,12 +2122,12 @@ fn resolve_component_invocation(
     Ok((component, invocation))
 }
 
-fn enter_component_render(
+fn reserve_component_path(
     call: &rhai::NativeCallContext<'_>,
     component: &crate::ComponentDefinition,
     invocation: &crate::ComponentInvocation,
     shared: &ActiveComponentRenderState,
-) -> Result<(ComponentInstancePath, UiContext, UiContext), Box<EvalAltResult>> {
+) -> Result<(ComponentInstancePath, UiContext), Box<EvalAltResult>> {
     let mut guard = shared.try_borrow_mut().map_err(|_| {
         Box::new(component_render_error(
             "component render stack is already borrowed",
@@ -1829,6 +2168,25 @@ fn enter_component_render(
             "duplicate component instance path `{path}`; add a stable key"
         ))));
     }
+    Ok((path, caller_context))
+}
+
+fn enter_component_render(
+    path: &ComponentInstancePath,
+    component: &crate::ComponentDefinition,
+    invocation: &crate::ComponentInvocation,
+    shared: &ActiveComponentRenderState,
+) -> Result<UiContext, Box<EvalAltResult>> {
+    let mut guard = shared.try_borrow_mut().map_err(|_| {
+        Box::new(component_render_error(
+            "component render stack is already borrowed",
+        ))
+    })?;
+    let active = guard.as_mut().ok_or_else(|| {
+        Box::new(component_render_error(
+            "formal component rendering may run only inside view",
+        ))
+    })?;
     active
         .transaction
         .mount(path.clone(), &component.schema.state)
@@ -1854,7 +2212,7 @@ fn enter_component_render(
     active
         .effect_keys
         .push(Some(component.schema.effects.clone()));
-    Ok((path, context, caller_context))
+    Ok(context)
 }
 
 fn leave_component_render(active: &ActiveComponentRenderState) -> Result<(), Box<EvalAltResult>> {

@@ -27,7 +27,7 @@ pub struct ScriptLifecycle {
     view: Option<String>,
     events: BTreeMap<String, EventSchema>,
     state: LifecycleState,
-    root: Option<UiNode>,
+    root: Option<Rc<UiNode>>,
     retained: crate::RetainedUiTree,
 }
 
@@ -84,7 +84,7 @@ impl ScriptLifecycle {
 
     #[must_use]
     pub fn root(&self) -> Option<&UiNode> {
-        self.root.as_ref()
+        self.root.as_deref()
     }
 
     #[must_use]
@@ -129,6 +129,14 @@ impl ScriptLifecycle {
     /// Returns [`LifecycleError::InvalidTransition`] before initialization or
     /// after disposal, or a script evaluation error.
     pub fn render(&mut self, engine: &mut RuntimeEngine) -> Result<&UiNode, LifecycleError> {
+        self.render_impl(engine, None)
+    }
+
+    fn render_impl(
+        &mut self,
+        engine: &mut RuntimeEngine,
+        reuse_dirty: Option<&BTreeSet<ComponentInstancePath>>,
+    ) -> Result<&UiNode, LifecycleError> {
         if !matches!(
             self.state,
             LifecycleState::Initialized | LifecycleState::Running
@@ -144,9 +152,18 @@ impl ScriptLifecycle {
             .map_err(|_| LifecycleError::Borrowed)?
             .snapshot()?;
         let engine_checkpoint = engine.execution_checkpoint();
+        let previous_root = reuse_dirty.and_then(|_| self.root.clone());
         let result = (|| {
             let context = self.context(ExecutionPhase::Render);
-            let root = engine.render_with_context_staged(&self.compiled, context)?;
+            let root = match (previous_root.as_ref(), reuse_dirty) {
+                (Some(previous_root), Some(dirty)) => engine.render_with_context_staged_reusing(
+                    &self.compiled,
+                    context,
+                    Rc::clone(previous_root),
+                    dirty,
+                )?,
+                _ => engine.render_with_context_staged(&self.compiled, context)?,
+            };
             let mut retained = self.retained.clone();
             retained.reconcile(root.clone())?;
             self.validate_resource_budgets(engine, &retained)?;
@@ -166,7 +183,8 @@ impl ScriptLifecycle {
                 self.trace_reconcile("full", retained.last_report());
                 self.retained = retained;
                 self.state = LifecycleState::Running;
-                Ok(self.root.insert(root))
+                self.root = Some(Rc::new(root));
+                self.root.as_deref().ok_or(LifecycleError::MissingRoot)
             }
             Err(error) => {
                 self.runtime
@@ -209,15 +227,15 @@ impl ScriptLifecycle {
             .map_err(|_| LifecycleError::Borrowed)?
             .take_window_dirty_components(&self.root_path);
         debug_assert!(!dirty.is_empty());
-        let dirty = topmost_paths(&dirty);
-        if dirty.iter().any(|path| path == &self.root_path)
-            || dirty.iter().any(|path| {
+        let topmost = topmost_paths(&dirty);
+        if topmost.iter().any(|path| path == &self.root_path)
+            || topmost.iter().any(|path| {
                 engine
                     .component_invocations()
                     .all(|recipe| recipe.path() != path)
             })
         {
-            return match self.render(engine) {
+            return match self.render_impl(engine, Some(&dirty)) {
                 Ok(_) => Ok(true),
                 Err(error) => {
                     self.runtime
@@ -230,11 +248,15 @@ impl ScriptLifecycle {
             };
         }
 
-        let mut root = self.root.clone().ok_or(LifecycleError::MissingRoot)?;
+        let mut root = self
+            .root
+            .as_deref()
+            .cloned()
+            .ok_or(LifecycleError::MissingRoot)?;
         let mut retained = self.retained.clone();
         let result = (|| {
-            for path in dirty {
-                let subtree = engine.rerender_component(&path)?;
+            for path in topmost {
+                let subtree = engine.rerender_component(&path, &root, &dirty)?;
                 if !root.replace_component_subtree(&path, subtree) {
                     return Err(LifecycleError::MissingComponentSubtree(path));
                 }
@@ -255,7 +277,7 @@ impl ScriptLifecycle {
         match result {
             Ok(()) => {
                 self.trace_reconcile("incremental", retained.last_report());
-                self.root = Some(root);
+                self.root = Some(Rc::new(root));
                 self.retained = retained;
                 self.state = LifecycleState::Running;
                 Ok(true)
@@ -307,7 +329,11 @@ impl ScriptLifecycle {
         if selected.is_empty() {
             return Ok(false);
         }
-        let mut root = self.root.clone().ok_or(LifecycleError::MissingRoot)?;
+        let mut root = self
+            .root
+            .as_deref()
+            .cloned()
+            .ok_or(LifecycleError::MissingRoot)?;
         let mut retained = self.retained.clone();
         let result = (|| {
             let mut changed = false;
@@ -354,7 +380,7 @@ impl ScriptLifecycle {
             Ok(changed) => {
                 if changed {
                     self.trace_reconcile("virtual", retained.last_report());
-                    self.root = Some(root);
+                    self.root = Some(Rc::new(root));
                     self.retained = retained;
                 }
                 Ok(changed)
@@ -618,7 +644,8 @@ impl ScriptLifecycle {
                 self.compiled = candidate;
                 self.retained = retained;
                 self.state = LifecycleState::Running;
-                Ok(self.root.insert(root))
+                self.root = Some(Rc::new(root));
+                self.root.as_deref().ok_or(LifecycleError::MissingRoot)
             }
             Err(error) => {
                 self.runtime

@@ -3,10 +3,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
 use gpui_rhai::{
-    ActionId, AsyncCapabilityHandler, CapabilityDescriptor, CapabilityId, CapabilityMethod,
-    ComponentInstancePath, ComponentStateSchema, EmbeddedScriptSource, ModuleId,
-    RestrictedModuleResolver, RuntimeEngine, ScriptLifecycle, StateField, StoreId, TaskWork,
-    UiNodeKind, UiRuntimeState, UiValue, ValueSchema,
+    ActionId, AsyncCapabilityHandler, CalendarClock, CapabilityDescriptor, CapabilityId,
+    CapabilityMethod, ComponentInstancePath, ComponentStateSchema, EmbeddedScriptSource,
+    GregorianDate, ModuleId, RestrictedModuleResolver, RuntimeEngine, ScriptLifecycle, StateField,
+    StoreId, TaskWork, UiNodeKind, UiRuntimeState, UiValue, ValueSchema,
 };
 use semver::{Version, VersionReq};
 
@@ -109,8 +109,10 @@ fn cleanup_sync(ctx, dependency) {
 fn EffectProbe(props) { render_component("components/effect_probe", props) }
 fn render_EffectProbe(ctx, props) {
     effect("sync", props.dependency, Fn("start_sync"), Fn("cleanup_sync"));
+    timeout("probe", 1000, false, Fn("timeout_fired"), ());
     text(`${props.dependency}`)
 }
+fn timeout_fired(ctx, payload) { () }
 "#;
 
 const EFFECT_APP: &str = r#"
@@ -130,6 +132,20 @@ fn view(ctx) {
     } else {
         text("hidden")
     }
+}
+"#;
+
+const EFFECT_REUSE_APP: &str = r#"
+import "components/effect_probe" as probe;
+fn state_schema() { #{ fields: #{
+    revision: #{ schema: #{ type: "integer" },
+        "default": #{ type: "integer", value: 0 } }
+} } }
+fn view(ctx) {
+    column([
+        text(`revision:${ctx.get_state("revision")}`),
+        probe::EffectProbe(#{ key: "primary", dependency: 1 })
+    ])
 }
 "#;
 
@@ -175,6 +191,75 @@ fn view(ctx) {
 }
 "#;
 
+const COUNTER_PANEL: &str = r#"
+import "components/equivalence_counter" as counter;
+define_component(#{
+    metadata: #{
+        id: "components/counter_panel", "export": "CounterPanel", version: "0.1.0",
+        runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
+        dependencies: ["components/equivalence_counter"], capabilities: #{}
+    },
+    schema: #{
+        props: #{ key: #{ schema: #{ type: "string" }, required: true, sensitive: false } },
+        state: #{ fields: #{} }, events: #{}, slots: #{}, parts: ["root"]
+    },
+    render: Fn("render_CounterPanel")
+});
+fn CounterPanel(props) { render_component("components/counter_panel", props) }
+fn render_CounterPanel(ctx, props) {
+    row([
+        counter::EquivalenceCounter(#{ key: "left", label: "L", step: 1 }),
+        counter::EquivalenceCounter(#{ key: "right", label: "R", step: 3 })
+    ])
+}
+"#;
+
+const ROOT_DIRTY_APP: &str = r#"
+import "components/counter_panel" as panel;
+fn state_schema() { #{ fields: #{
+    revision: #{ schema: #{ type: "integer" },
+        "default": #{ type: "integer", value: 0 } }
+} } }
+fn view(ctx) {
+    column([
+        text(`revision:${ctx.get_state("revision")}`),
+        panel::CounterPanel(#{ key: "panel" })
+    ])
+}
+"#;
+
+const STORE_READER: &str = r#"
+define_component(#{
+    metadata: #{
+        id: "components/store_reader", "export": "StoreReader", version: "0.1.0",
+        runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
+        dependencies: [], capabilities: #{}
+    },
+    schema: #{
+        props: #{ key: #{ schema: #{ type: "string" }, required: true, sensitive: false } },
+        state: #{ fields: #{} }, events: #{}, slots: #{}, parts: ["root"]
+    },
+    render: Fn("render_StoreReader")
+});
+fn StoreReader(props) { render_component("components/store_reader", props) }
+fn render_StoreReader(ctx, props) { text(ctx.get_app_store("model", "label")) }
+"#;
+
+const STORE_REUSE_APP: &str = r#"
+import "components/store_reader" as reader;
+fn state_schema() { #{ fields: #{
+    revision: #{ schema: #{ type: "integer" },
+        "default": #{ type: "integer", value: 0 } }
+} } }
+fn change_model(ctx, payload) { ctx.set_app_store("model", "label", "beta"); }
+fn view(ctx) {
+    column([
+        text(`revision:${ctx.get_state("revision")}`),
+        reader::StoreReader(#{ key: "reader" })
+    ])
+}
+"#;
+
 const SIGNAL_PROBE: &str = r#"
 define_component(#{
     metadata: #{
@@ -200,8 +285,12 @@ fn render_SignalProbe(ctx, props) {
 
 const SIGNAL_APP: &str = r#"
 import "components/signal_probe" as probe;
-fn state_schema() { #{ fields: #{ visible: #{ schema: #{ type: "bool" },
-    "default": #{ type: "bool", value: true } } } } }
+fn state_schema() { #{ fields: #{
+    visible: #{ schema: #{ type: "bool" },
+        "default": #{ type: "bool", value: true } },
+    revision: #{ schema: #{ type: "integer" },
+        "default": #{ type: "integer", value: 0 } }
+} } }
 fn hide(ctx, payload) { ctx.set_state("visible", false); }
 fn view(ctx) {
     if ctx.get_state("visible") {
@@ -234,8 +323,12 @@ fn render_RefProbe(ctx, props) {
 
 const REF_APP: &str = r#"
 import "components/ref_probe" as probe;
-fn state_schema() { #{ fields: #{ visible: #{ schema: #{ type: "bool" },
-    "default": #{ type: "bool", value: true } } } } }
+fn state_schema() { #{ fields: #{
+    visible: #{ schema: #{ type: "bool" },
+        "default": #{ type: "bool", value: true } },
+    revision: #{ schema: #{ type: "integer" },
+        "default": #{ type: "integer", value: 0 } }
+} } }
 fn hide(ctx, payload) { ctx.set_state("visible", false); }
 fn view(ctx) {
     if ctx.get_state("visible") { probe::RefProbe(#{ key: "primary" }) }
@@ -261,6 +354,59 @@ fn equivalence_engine_and_compiled() -> (RuntimeEngine, gpui_rhai::CompiledUi) {
         .compile_self_contained_named("ui/equivalence.rhai", EQUIVALENCE_APP)
         .unwrap();
     (engine, compiled)
+}
+
+struct RootDirtyFixture {
+    engine: RuntimeEngine,
+    runtime: Rc<RefCell<UiRuntimeState>>,
+    lifecycle: ScriptLifecycle,
+    root: ComponentInstancePath,
+    panel: ComponentInstancePath,
+    left: ComponentInstancePath,
+    right: ComponentInstancePath,
+}
+
+fn root_dirty_fixture() -> RootDirtyFixture {
+    let source = EmbeddedScriptSource::new(BTreeMap::from([
+        (
+            ModuleId::parse("components/equivalence_counter").unwrap(),
+            EQUIVALENCE_COUNTER.to_owned(),
+        ),
+        (
+            ModuleId::parse("components/counter_panel").unwrap(),
+            COUNTER_PANEL.to_owned(),
+        ),
+    ]));
+    let mut engine = RuntimeEngine::new();
+    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
+    let compiled = engine
+        .compile_self_contained_named("ui/root_dirty.rhai", ROOT_DIRTY_APP)
+        .unwrap();
+    let schema = engine.root_state_schema(&compiled).unwrap();
+    let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+    let root = ComponentInstancePath::root("App", "root");
+    let panel = root.child("CounterPanel", "panel");
+    let left = panel.child("EquivalenceCounter", "left");
+    let right = panel.child("EquivalenceCounter", "right");
+    let mut lifecycle = ScriptLifecycle::new(
+        compiled,
+        Rc::clone(&runtime),
+        root.clone(),
+        Some("main".to_owned()),
+        BTreeMap::new(),
+        &schema,
+    )
+    .unwrap();
+    lifecycle.start(&mut engine).unwrap();
+    RootDirtyFixture {
+        engine,
+        runtime,
+        lifecycle,
+        root,
+        panel,
+        left,
+        right,
+    }
 }
 
 struct AsyncEcho;
@@ -384,6 +530,21 @@ fn script_handler(lifecycle: &ScriptLifecycle, event: &str) -> gpui_rhai::Script
 fn child_script_handler(lifecycle: &ScriptLifecycle, index: usize) -> gpui_rhai::ScriptCallback {
     let UiNodeKind::Box { children } = lifecycle.root().unwrap().kind() else {
         panic!("equivalence root must be a Box");
+    };
+    children[index]
+        .handler("click")
+        .unwrap()
+        .as_script()
+        .unwrap()
+        .clone()
+}
+
+fn panel_counter_handler(lifecycle: &ScriptLifecycle, index: usize) -> gpui_rhai::ScriptCallback {
+    let UiNodeKind::Box { children } = lifecycle.root().unwrap().kind() else {
+        panic!("root-dirty test root must be a Box");
+    };
+    let UiNodeKind::Box { children } = children[1].kind() else {
+        panic!("counter panel must be a Box");
     };
     children[index]
         .handler("click")
@@ -661,6 +822,7 @@ fn declarative_effects_start_restart_and_cleanup_in_imported_module_context() {
     lifecycle.start(&mut engine).unwrap();
     assert_eq!(runtime.borrow().effects.len(), 1);
     assert_eq!(runtime.borrow().tasks.active_count(), 1);
+    assert_eq!(runtime.borrow().timers.active_count(), 1);
 
     assert_eq!(effect_audit_values(&runtime)["starts"], UiValue::Integer(1));
     assert_eq!(
@@ -697,6 +859,7 @@ fn declarative_effects_start_restart_and_cleanup_in_imported_module_context() {
     assert!(runtime.borrow().dirty_components().contains(&root));
     assert_eq!(runtime.borrow().effects.len(), 1);
     assert_eq!(runtime.borrow().tasks.active_count(), 1);
+    assert_eq!(runtime.borrow().timers.active_count(), 1);
     assert_eq!(effect_audit_values(&runtime)["starts"], UiValue::Integer(2));
     assert_eq!(
         effect_audit_values(&runtime)["cleanups"],
@@ -715,6 +878,7 @@ fn declarative_effects_start_restart_and_cleanup_in_imported_module_context() {
     assert!(lifecycle.render_dirty(&mut engine).unwrap());
     assert!(runtime.borrow().effects.is_empty());
     assert_eq!(runtime.borrow().tasks.active_count(), 0);
+    assert_eq!(runtime.borrow().timers.active_count(), 0);
     assert_eq!(effect_audit_values(&runtime)["starts"], UiValue::Integer(2));
     assert_eq!(
         effect_audit_values(&runtime)["cleanups"],
@@ -825,6 +989,248 @@ fn incremental_component_renders_match_forced_full_renders_over_event_sequences(
 }
 
 #[test]
+fn root_dirty_render_reuses_unchanged_components_and_respects_dirty_descendants() {
+    let RootDirtyFixture {
+        mut engine,
+        runtime,
+        mut lifecycle,
+        root,
+        panel,
+        left,
+        right,
+    } = root_dirty_fixture();
+    let retained_ids = [panel.clone(), left.clone(), right.clone()]
+        .map(|path| lifecycle.retained().component_node(&path).unwrap());
+    let _ = engine.take_timings();
+
+    assert!(
+        runtime
+            .borrow_mut()
+            .set_component_state_from_host(&root, "revision", UiValue::Integer(1))
+            .unwrap()
+    );
+    assert!(lifecycle.render_dirty(&mut engine).unwrap());
+    let reuse = engine
+        .take_timings()
+        .into_iter()
+        .filter_map(|timing| match timing.operation {
+            gpui_rhai::ExecutionOperation::ComponentReuse(components) => {
+                Some((timing.source, components))
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(reuse, [("components/counter_panel".to_owned(), 3)]);
+    assert_eq!(
+        retained_ids,
+        [panel.clone(), left.clone(), right.clone()]
+            .map(|path| lifecycle.retained().component_node(&path).unwrap())
+    );
+    let UiNodeKind::Box { children } = lifecycle.root().unwrap().kind() else {
+        panic!("root-dirty test root must be a Box");
+    };
+    assert!(matches!(&children[0].kind(), UiNodeKind::Text { text } if text == "revision:1"));
+
+    let increment_left = panel_counter_handler(&lifecycle, 0);
+    let _ = lifecycle
+        .invoke_callback_transactional(&engine, &increment_left, UiValue::Null)
+        .unwrap();
+    assert!(
+        runtime
+            .borrow_mut()
+            .set_component_state_from_host(&root, "revision", UiValue::Integer(2))
+            .unwrap()
+    );
+    assert!(runtime.borrow().dirty_components().contains(&left));
+    assert!(runtime.borrow().dirty_components().contains(&root));
+    assert!(lifecycle.render_dirty(&mut engine).unwrap());
+    let reuse = engine
+        .take_timings()
+        .into_iter()
+        .filter_map(|timing| match timing.operation {
+            gpui_rhai::ExecutionOperation::ComponentReuse(components) => {
+                Some((timing.source, components))
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(reuse, [("components/equivalence_counter".to_owned(), 1)]);
+    assert_eq!(
+        runtime.borrow().component_state.get(&left, "count"),
+        Some(&UiValue::Integer(1))
+    );
+    assert_eq!(
+        runtime.borrow().component_state.get(&right, "count"),
+        Some(&UiValue::Integer(0))
+    );
+    let UiNodeKind::Box { children } = lifecycle.root().unwrap().kind() else {
+        panic!("root-dirty test root must be a Box");
+    };
+    let UiNodeKind::Box { children } = children[1].kind() else {
+        panic!("counter panel must be a Box");
+    };
+    assert!(matches!(&children[0].kind(), UiNodeKind::Text { text } if text == "L:1"));
+    assert!(matches!(&children[1].kind(), UiNodeKind::Text { text } if text == "R:0"));
+}
+
+#[test]
+fn component_reuse_invalidates_on_calendar_environment_change() {
+    let RootDirtyFixture {
+        mut engine,
+        runtime,
+        mut lifecycle,
+        root,
+        ..
+    } = root_dirty_fixture();
+    let _ = engine.take_timings();
+    runtime.borrow_mut().calendar_clock =
+        CalendarClock::fixed(GregorianDate::new(2026, 9, 3).unwrap());
+    assert!(
+        runtime
+            .borrow_mut()
+            .set_component_state_from_host(&root, "revision", UiValue::Integer(1))
+            .unwrap()
+    );
+    assert!(lifecycle.render_dirty(&mut engine).unwrap());
+    assert!(!engine.take_timings().iter().any(|timing| {
+        matches!(
+            timing.operation,
+            gpui_rhai::ExecutionOperation::ComponentReuse(_)
+        )
+    }));
+
+    assert!(
+        runtime
+            .borrow_mut()
+            .set_component_state_from_host(&root, "revision", UiValue::Integer(2))
+            .unwrap()
+    );
+    assert!(lifecycle.render_dirty(&mut engine).unwrap());
+    assert!(engine.take_timings().iter().any(|timing| {
+        timing.operation == gpui_rhai::ExecutionOperation::ComponentReuse(3)
+            && timing.source == "components/counter_panel"
+    }));
+}
+
+#[test]
+fn reused_component_preserves_effect_and_async_ownership() {
+    let source = EmbeddedScriptSource::new(BTreeMap::from([(
+        ModuleId::parse("components/effect_probe").unwrap(),
+        EFFECT_PROBE.to_owned(),
+    )]));
+    let mut engine = RuntimeEngine::new();
+    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
+    let compiled = engine
+        .compile_self_contained_named("ui/effect_reuse.rhai", EFFECT_REUSE_APP)
+        .unwrap();
+    let schema = engine.root_state_schema(&compiled).unwrap();
+    let runtime = effect_audit_runtime();
+    let root = ComponentInstancePath::root("App", "root");
+    let mut lifecycle = ScriptLifecycle::new(
+        compiled,
+        Rc::clone(&runtime),
+        root.clone(),
+        Some("main".to_owned()),
+        BTreeMap::new(),
+        &schema,
+    )
+    .unwrap();
+    lifecycle.start(&mut engine).unwrap();
+    assert_eq!(effect_audit_values(&runtime)["starts"], UiValue::Integer(1));
+    assert_eq!(runtime.borrow().effects.len(), 1);
+    assert_eq!(runtime.borrow().tasks.active_count(), 1);
+    assert_eq!(runtime.borrow().timers.active_count(), 1);
+    let _ = runtime.borrow_mut().drain_batch();
+    let _ = engine.take_timings();
+
+    assert!(
+        runtime
+            .borrow_mut()
+            .set_component_state_from_host(&root, "revision", UiValue::Integer(1))
+            .unwrap()
+    );
+    assert!(lifecycle.render_dirty(&mut engine).unwrap());
+    let timings = engine.take_timings();
+    assert!(
+        timings.iter().any(|timing| {
+            timing.operation == gpui_rhai::ExecutionOperation::ComponentReuse(1)
+                && timing.source == "components/effect_probe"
+        }),
+        "{timings:#?}"
+    );
+    assert_eq!(effect_audit_values(&runtime)["starts"], UiValue::Integer(1));
+    assert_eq!(
+        effect_audit_values(&runtime)["cleanups"],
+        UiValue::Integer(0)
+    );
+    assert_eq!(runtime.borrow().effects.len(), 1);
+    assert_eq!(runtime.borrow().tasks.active_count(), 1);
+    assert_eq!(runtime.borrow().timers.active_count(), 1);
+}
+
+#[test]
+fn reused_component_keeps_store_reader_dependency() {
+    let source = EmbeddedScriptSource::new(BTreeMap::from([(
+        ModuleId::parse("components/store_reader").unwrap(),
+        STORE_READER.to_owned(),
+    )]));
+    let mut engine = RuntimeEngine::new();
+    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
+    let compiled = engine
+        .compile_self_contained_named("ui/store_reuse.rhai", STORE_REUSE_APP)
+        .unwrap();
+    let schema = engine.root_state_schema(&compiled).unwrap();
+    let mut state = UiRuntimeState::new();
+    state
+        .stores
+        .declare(
+            StoreId::app("model"),
+            ComponentStateSchema::new(BTreeMap::from([(
+                "label".to_owned(),
+                StateField::new(ValueSchema::string(), UiValue::String("alpha".to_owned())),
+            )]))
+            .unwrap(),
+        )
+        .unwrap();
+    let runtime = Rc::new(RefCell::new(state));
+    let root = ComponentInstancePath::root("App", "root");
+    let reader = root.child("StoreReader", "reader");
+    let mut lifecycle = ScriptLifecycle::new(
+        compiled.clone(),
+        Rc::clone(&runtime),
+        root.clone(),
+        Some("main".to_owned()),
+        BTreeMap::new(),
+        &schema,
+    )
+    .unwrap();
+    lifecycle.start(&mut engine).unwrap();
+
+    assert!(
+        runtime
+            .borrow_mut()
+            .set_component_state_from_host(&root, "revision", UiValue::Integer(1))
+            .unwrap()
+    );
+    assert!(lifecycle.render_dirty(&mut engine).unwrap());
+    let UiNodeKind::Box { children } = lifecycle.root().unwrap().kind() else {
+        panic!("store reuse root must be a Box");
+    };
+    assert!(matches!(&children[1].kind(), UiNodeKind::Text { text } if text == "alpha"));
+
+    let change_model = engine.callback(&compiled, "change_model").unwrap();
+    let _ = lifecycle
+        .invoke_callback_transactional(&engine, &change_model, UiValue::Null)
+        .unwrap();
+    assert!(runtime.borrow().dirty_components().contains(&reader));
+    assert!(lifecycle.render_dirty(&mut engine).unwrap());
+    let UiNodeKind::Box { children } = lifecycle.root().unwrap().kind() else {
+        panic!("store reuse root must remain a Box");
+    };
+    assert!(matches!(&children[1].kind(), UiNodeKind::Text { text } if text == "beta"));
+}
+
+#[test]
 fn hot_reload_cleans_old_effect_context_before_starting_new_generation() {
     let source = EmbeddedScriptSource::new(BTreeMap::from([(
         ModuleId::parse("components/effect_probe").unwrap(),
@@ -912,7 +1318,13 @@ fn native_signal_updates_preserve_identity_without_component_invalidation() {
     );
     assert!(runtime.borrow().dirty_components().is_empty());
 
-    lifecycle.render(&mut engine).unwrap();
+    assert!(
+        runtime
+            .borrow_mut()
+            .set_component_state_from_host(&root, "revision", UiValue::Integer(1))
+            .unwrap()
+    );
+    assert!(lifecycle.render_dirty(&mut engine).unwrap());
     assert_eq!(
         runtime.borrow().signals.read(&signal).unwrap(),
         gpui_rhai::SignalValue::Float(0.25)
@@ -943,7 +1355,7 @@ fn element_refs_follow_retained_node_identity_and_fail_stale_after_unmount() {
     let mut lifecycle = ScriptLifecycle::new(
         compiled.clone(),
         Rc::clone(&runtime),
-        root_path,
+        root_path.clone(),
         Some("main".to_owned()),
         BTreeMap::new(),
         &schema,
@@ -954,7 +1366,13 @@ fn element_refs_follow_retained_node_identity_and_fail_stale_after_unmount() {
     let node_id = runtime.borrow().element_refs.resolve(&reference).unwrap();
     assert_eq!(Some(node_id), lifecycle.retained().root_id());
 
-    lifecycle.render(&mut engine).unwrap();
+    assert!(
+        runtime
+            .borrow_mut()
+            .set_component_state_from_host(&root_path, "revision", UiValue::Integer(1))
+            .unwrap()
+    );
+    assert!(lifecycle.render_dirty(&mut engine).unwrap());
     assert_eq!(
         runtime.borrow().element_refs.resolve(&reference).unwrap(),
         node_id

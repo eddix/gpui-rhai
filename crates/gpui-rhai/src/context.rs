@@ -319,6 +319,23 @@ impl UiRuntimeState {
             .cloned()
     }
 
+    pub(crate) fn reset_component_readers(&mut self, component: &ComponentInstancePath) {
+        self.stores.reset_reader(component);
+        self.native_collections.reset_reader(component);
+        self.environment_dependencies.reset_reader(component);
+    }
+
+    pub(crate) fn component_event_handlers_in_scope(
+        &self,
+        root: &ComponentInstancePath,
+    ) -> BTreeMap<(ComponentInstancePath, String), ScriptCallback> {
+        self.component_event_handlers
+            .iter()
+            .filter(|((path, _), _)| path.is_within(root))
+            .map(|(id, callback)| (id.clone(), callback.clone()))
+            .collect()
+    }
+
     pub(crate) fn replace_component_event_handlers(
         &mut self,
         root: &ComponentInstancePath,
@@ -553,6 +570,7 @@ pub struct UiContext {
     async_scope: Option<AsyncScope>,
     component_style: Option<crate::Style>,
     component_part_styles: BTreeMap<String, crate::Style>,
+    non_reusable_render_reads: Rc<RefCell<BTreeSet<ComponentInstancePath>>>,
 }
 
 impl UiContext {
@@ -576,15 +594,12 @@ impl UiContext {
             async_scope: None,
             component_style: None,
             component_part_styles: BTreeMap::new(),
+            non_reusable_render_reads: Rc::new(RefCell::new(BTreeSet::new())),
         };
         if phase == ExecutionPhase::Render
             && let Ok(mut runtime) = context.runtime.try_borrow_mut()
         {
-            runtime.stores.reset_reader(&context.component);
-            runtime.native_collections.reset_reader(&context.component);
-            runtime
-                .environment_dependencies
-                .reset_reader(&context.component);
+            runtime.reset_component_readers(&context.component);
         }
         context
     }
@@ -624,15 +639,12 @@ impl UiContext {
             async_scope: self.async_scope.clone(),
             component_style: self.component_style.clone(),
             component_part_styles: self.component_part_styles.clone(),
+            non_reusable_render_reads: Rc::clone(&self.non_reusable_render_reads),
         };
         if context.phase == ExecutionPhase::Render
             && let Ok(mut runtime) = context.runtime.try_borrow_mut()
         {
-            runtime.stores.reset_reader(&context.component);
-            runtime.native_collections.reset_reader(&context.component);
-            runtime
-                .environment_dependencies
-                .reset_reader(&context.component);
+            runtime.reset_component_readers(&context.component);
         }
         context
     }
@@ -658,6 +670,25 @@ impl UiContext {
         self.component_style = style;
         self.component_part_styles = part_styles;
         self
+    }
+
+    pub(crate) fn reset_non_reusable_render_reads(&self) {
+        self.non_reusable_render_reads.borrow_mut().clear();
+    }
+
+    pub(crate) fn component_render_is_reusable(&self) -> bool {
+        !self
+            .non_reusable_render_reads
+            .borrow()
+            .contains(&self.component)
+    }
+
+    fn mark_non_reusable_render_read(&self) {
+        if self.phase == ExecutionPhase::Render {
+            self.non_reusable_render_reads
+                .borrow_mut()
+                .insert(self.component.clone());
+        }
     }
 
     fn resolve_component_style(&self, part: &str, mut base: crate::Style) -> crate::Style {
@@ -807,6 +838,7 @@ impl UiContext {
     ///
     /// Returns a stale-signal or runtime borrow error.
     pub fn get_signal(&self, signal: &crate::NativeSignal) -> Result<Dynamic, UiContextError> {
+        self.mark_non_reusable_render_read();
         Ok(self
             .runtime
             .try_borrow()
@@ -858,6 +890,7 @@ impl UiContext {
     ///
     /// Returns when the key is not mounted or runtime state is borrowed.
     pub fn get_signal_by_key(&self, key: &str) -> Result<Dynamic, UiContextError> {
+        self.mark_non_reusable_render_read();
         let runtime = self
             .runtime
             .try_borrow()
@@ -3134,6 +3167,21 @@ mod tests {
                 },
             )]),
         )
+    }
+
+    #[test]
+    fn render_signal_reads_disable_component_reuse() {
+        let context = mounted_context(ExecutionPhase::Render);
+        let signal = crate::NativeSignal::new(
+            crate::SignalId::new(
+                context.component_path().clone(),
+                "hot",
+                crate::SignalKind::Float,
+            )
+            .unwrap(),
+        );
+        assert!(context.get_signal(&signal).is_err());
+        assert!(!context.component_render_is_reusable());
     }
 
     #[test]

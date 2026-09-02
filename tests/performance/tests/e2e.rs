@@ -43,7 +43,7 @@ struct BenchmarkMetadata {
     window: [f64; 2],
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 struct Sample {
     total_us: u64,
     recorded_rhai_us: u64,
@@ -53,6 +53,8 @@ struct Sample {
     root_operations: u64,
     virtual_operations: u64,
     timing_count: usize,
+    reused_component_subtrees: usize,
+    reused_components: usize,
     retained_nodes: usize,
     dirty_components: usize,
     virtual_items: usize,
@@ -195,6 +197,21 @@ fn sample_from(total_us: u64, snapshot: &ScriptViewPerformanceSnapshot) -> Sampl
         .iter()
         .map(|collection| collection.realized_count)
         .sum();
+    let reused_component_subtrees = snapshot
+        .timings
+        .iter()
+        .filter(|timing| {
+            matches!(timing.operation, ExecutionOperation::ComponentReuse(_))
+        })
+        .count();
+    let reused_components = snapshot
+        .timings
+        .iter()
+        .filter_map(|timing| match timing.operation {
+            ExecutionOperation::ComponentReuse(components) => Some(components),
+            _ => None,
+        })
+        .sum();
     Sample {
         total_us,
         recorded_rhai_us,
@@ -204,6 +221,8 @@ fn sample_from(total_us: u64, snapshot: &ScriptViewPerformanceSnapshot) -> Sampl
         root_operations,
         virtual_operations,
         timing_count: snapshot.timings.len(),
+        reused_component_subtrees,
+        reused_components,
         retained_nodes: snapshot.retained_nodes,
         dirty_components: snapshot.dirty_components,
         virtual_items,
@@ -349,7 +368,14 @@ fn button_scenario(
         let snapshot = settle(cx, visual, view);
         let total_us = micros(started);
         assert_eq!(snapshot.dirty_components, 0, "{name} did not settle");
-        measured.push(sample_from(total_us, &snapshot));
+        let sample = sample_from(total_us, &snapshot);
+        if name == "unchanged_data_rerender" {
+            assert!(
+                sample.reused_components >= 5,
+                "unchanged root render did not reuse the four buttons and Table: {sample:#?}"
+            );
+        }
+        measured.push(sample);
     }
     summarize(name, measured)
 }

@@ -200,6 +200,13 @@ Component schemas define required/optional props, event payloads, slots, parts,
 state, dependencies, assets, and supported runtime API range. Unknown props and
 invalid values fail before the component is committed.
 
+Formal component render functions are pure automatic reuse boundaries. When
+root state changes, unchanged non-slot props and a clean component subtree let
+the runtime reuse the prior component before calling Rhai. State, dependency
+subscriptions, callbacks, effects, timers, signals, refs, and virtual
+collections remain attached. Node/slot props are compared conservatively and
+rerender. Behavior must never depend on how often a render function executes.
+
 Use `part_styles` for an intended component customization point. Edit the
 copied `.rhai` source when the product needs a structural change. Do not hide a
 structural fork behind a growing stack of arbitrary overrides.
@@ -489,8 +496,10 @@ stored invocation contexts stay on the GPUI foreground thread. Background work
 must move typed Rust data, not Rhai runtime objects.
 
 The retained Rust diff makes GPUI updates efficient, but Rhai still constructs
-the declarative tree for every component that reruns. A Rust-side diff does not
-make arbitrary script work free.
+the declarative tree for every component that actually reruns. Root-dirty
+renders bail out unchanged formal component subtrees before Rhai execution;
+the retained node diff then handles native changes after rendering. Helper
+functions remain part of their owning component boundary.
 
 Guidelines:
 
@@ -501,6 +510,9 @@ Guidelines:
   and controlled state while Rust sorts and projects only visible rows.
 - Use native pointer/wheel handlers and `NativeSignal` for coalesced or
   per-frame values such as playheads, drags, and animation parameters.
+- Bind native signals directly to supported properties. Sampling a signal with
+  `ctx.get_signal` during render disables bailout for that component subtree,
+  because signal reads intentionally do not create rerender dependencies.
 - A native handler bypasses Rhai dispatch, but if it dirties a Rhai component,
   that component still runs on the update path.
 - Use a retained native subtree or signal-bound property when Rhai must leave

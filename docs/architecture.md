@@ -76,6 +76,17 @@ Failed renders and reloads restore one runtime/Engine checkpoint and keep:
 - component definitions/render functions and retained invocation recipes;
 - effect and native-signal ownership.
 
+When root state requires `view(ctx)` to run again, each formal component is a
+Rust-side bailout boundary before its Rhai render function is called. The
+runtime reuses the prior subtree only when normalized non-node props are equal,
+the component has no dirty descendant, and the script/theme/locale/calendar
+environment still matches. Node-valued props are conservatively unequal.
+Reuse carries the complete component scope—descendant recipes and state,
+reader edges, event callbacks, effects, timers, signals, refs, and virtual
+collections—into the candidate transaction. An untracked native-signal read
+makes the containing subtree ineligible for bailout; bind signals to approved
+native properties instead of sampling them during render.
+
 State schema changes are reconciled by stable component keys. Compatible fields
 survive; incompatible fields reset to their declared defaults.
 
