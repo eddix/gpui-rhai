@@ -466,6 +466,15 @@ Rhai supplies stable local IDs, controlled open state when appropriate,
 content, placement policy, and callbacks. IDs are automatically namespaced by
 `view_id` inside a shared host.
 
+`Input.autofocus` and `Textarea.autofocus` apply when their keyed native entity
+is first mounted. Overlays retain their content identity while closed, so a
+reopen must use the overlay lifecycle policy instead: set
+`initial_focus: "first"` to move from the panel to its first focusable
+descendant on every closed → open edge. The historical default is
+`initial_focus: "panel"`. A structural container with key/click handlers gets
+an interaction wrapper and is a tab stop by default; use `tab_stop(false)` when
+that container should not precede an inner filter input in the focus order.
+
 Do not simulate overlays by absolutely positioning a child inside a clipped
 component. Use the generic Overlay/Layer path so the Host can coordinate the
 whole window.
