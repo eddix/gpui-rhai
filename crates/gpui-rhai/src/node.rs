@@ -28,6 +28,27 @@ pub struct OverlayNodeSpec {
     pub modal: bool,
     pub dismiss: OverlayDismissPolicy,
     pub tooltip_delays: Option<TooltipDelays>,
+    pub initial_focus: OverlayInitialFocus,
+}
+
+/// Where focus lands on each closed -> open presentation cycle of a modal
+/// or menu overlay. This is an overlay-lifecycle contract, deliberately not
+/// tied to entity mount: overlays keep their semantic subtree (and thus
+/// primitive identity) across close/reopen, so mount-time mechanisms like
+/// input `autofocus` fire only on the first open.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum OverlayInitialFocus {
+    /// Focus the overlay panel itself (historical behavior).
+    #[default]
+    Panel,
+    /// Focus the first focusable element inside the panel once the content
+    /// has entered the focus tree.
+    ///
+    /// Note: any node with interaction handlers (click/hover/key) gets an
+    /// interaction wrapper, and wrappers are tab stops by default. A content
+    /// container that listens for keys (arrow navigation, say) will itself
+    /// be "first" unless it opts out with `tab_stop(false)`.
+    First,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1766,6 +1787,15 @@ pub(crate) fn overlay_node(
         return overlay_config_error("overlay gap must be finite and non-negative");
     }
     let modal = optional_bool(&mut config, "modal")?.unwrap_or(kind == OverlayKind::Dialog);
+    let initial_focus = match optional_string(&mut config, "initial_focus")?.as_deref() {
+        None | Some("panel") => OverlayInitialFocus::Panel,
+        Some("first") => OverlayInitialFocus::First,
+        Some(other) => {
+            return overlay_config_error(format!(
+                "unknown overlay initial_focus `{other}` (expected `panel` or `first`)"
+            ));
+        }
+    };
     let dismiss_on_escape = optional_bool(&mut config, "dismiss_on_escape")?.unwrap_or(true);
     let dismiss_on_outside = optional_bool(&mut config, "dismiss_on_outside")?.unwrap_or(true);
     let show_delay_ms = optional_usize(&mut config, "show_delay_ms")?;
@@ -1794,6 +1824,7 @@ pub(crate) fn overlay_node(
                     outside: dismiss_on_outside,
                 },
                 tooltip_delays,
+                initial_focus,
             },
         ),
         call,

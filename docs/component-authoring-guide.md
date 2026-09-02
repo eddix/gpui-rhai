@@ -80,6 +80,12 @@ callbacks, or arbitrary Dynamic values to deferred rendering.
 Stateful components and lifecycle custom primitives require a stable caller
 `key`. Never store UI state in mutable script globals.
 
+Autofocus belongs to the lifecycle that owns presentation. Input/Textarea
+`autofocus` is a first-mount primitive policy. For retained content inside a
+reopenable Overlay, use `initial_focus: "first"` so every closed → open cycle
+walks to the first descendant tab stop; keep non-target key-handler containers
+out of that order with `tab_stop(false)`.
+
 ### Nested state and store values
 
 `ctx.get_state(field)` and the whole-field store getters return complete values.
