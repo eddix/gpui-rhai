@@ -145,6 +145,16 @@ actions, overlays, tooltips, layers, and declarative timers, and frees the
 Dropping the final handle is a fallback. Merely omitting `view.element()` from a
 temporary page does not dispose it.
 
+## Last-good trees and host-visible failures
+
+Rendering is transactional. When a callback, delivery, or rerender fails,
+`ScriptViewHandle::root` continues to return the last successfully committed
+tree so the host never observes a partial candidate. Embedding hosts must pair
+that snapshot with `ScriptViewHandle::last_error`: a non-`None` error means the
+tree is last-good fallback state rather than the result of the latest attempted
+update. Successful script work clears the error; native-only repaint and
+animation frames do not hide it.
+
 See `cargo run -p gpui-rhai --example embedded_views` for three isolated views,
 automatic compact sizing, escaping Dropdown placement, duplicate local IDs,
 cross-view dismissal, shared Layer placement, and explicit dispose/remount.

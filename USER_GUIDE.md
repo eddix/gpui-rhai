@@ -518,6 +518,11 @@ Development reload is transactional:
 - failure keeps the last-good AST, callbacks, tree, effects, and state;
 - old callbacks and asynchronous deliveries become stale.
 
+Embedded hosts should read `ScriptViewHandle::last_error()` alongside
+`root()`. After a failed callback, delivery, or render, `root()` intentionally
+remains the last-good tree and `last_error()` explains why the latest candidate
+was not committed.
+
 Use the development inspector (`Command + Option + I` or `F12`) for source
 locations, state, semantics, traces, timings, and last errors.
 

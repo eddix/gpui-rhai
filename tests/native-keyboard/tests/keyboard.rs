@@ -2846,6 +2846,87 @@ fn table_1000_tracks_the_resized_window_viewport(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn mounted_view_exposes_failed_render_while_retaining_last_good_root(
+    cx: &mut TestAppContext,
+) {
+    cx.update(gpui_rhai::install);
+    let entry = ModuleId::parse("main").unwrap();
+    let prepared = EmbeddedScriptView::new(
+        entry.clone(),
+        EmbeddedScriptSource::new(std::collections::BTreeMap::from([(
+            entry,
+            r#"
+                fn state_schema() { #{ fields: #{
+                    broken: #{ schema: #{ type: "bool" },
+                        "default": #{ type: "bool", value: false } }
+                } } }
+                fn break_render(ctx, payload) { ctx.set_state("broken", true); }
+                fn view(ctx) {
+                    if ctx.get_state("broken") { throw "dogfood render failure"; }
+                    text("last-good tree")
+                        .accessibility_role("button")
+                        .accessibility_label("Break render")
+                        .on_click(Fn("break_render"))
+                }
+            "#
+            .to_owned(),
+        )])),
+        include_str!("../../../registry/themes/default_dark.rhai"),
+    )
+    .prepare()
+    .unwrap();
+    let captured = Rc::new(RefCell::new(None));
+    let captured_for_window = Rc::clone(&captured);
+    let window = cx.add_window(move |window, cx| {
+        let host = ScriptViewHost::new("failure-window", cx).unwrap();
+        let view = prepared
+            .mount(
+                ScriptViewConfig::new("failure-view"),
+                host.clone(),
+                window,
+                cx,
+            )
+            .unwrap();
+        *captured_for_window.borrow_mut() = Some(view.clone());
+        SingleEmbeddedHost { host, view }
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    cx.run_until_parked();
+
+    let view = captured.borrow().as_ref().unwrap().clone();
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    assert_eq!(
+        visual.update(|_, cx| view.last_error(cx).unwrap()),
+        None
+    );
+    visual
+        .update(|window, cx| {
+            view.automate(
+                gpui_rhai::AutomationCommand::Dispatch {
+                    locator: gpui_rhai::AutomationLocator::RoleName {
+                        role: "button".to_owned(),
+                        name: "Break render".to_owned(),
+                    },
+                    event: "click".to_owned(),
+                    payload: None,
+                },
+                window,
+                cx,
+            )
+        })
+        .unwrap();
+    visual.run_until_parked();
+
+    let error = visual.update(|_, cx| view.last_error(cx).unwrap().unwrap());
+    assert!(error.contains("dogfood render failure"), "{error}");
+    let root = visual.update(|_, cx| view.root(cx).unwrap().unwrap());
+    let mut texts = Vec::new();
+    node_texts(&root, &mut texts);
+    assert_eq!(texts, ["last-good tree"]);
+}
+
+#[gpui::test]
 fn autofocus_input_receives_typing_without_any_click(cx: &mut TestAppContext) {
     cx.update(gpui_rhai::install);
     let entry = ModuleId::parse("main").unwrap();

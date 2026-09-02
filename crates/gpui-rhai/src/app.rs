@@ -517,11 +517,32 @@ impl ScriptViewHandle {
     /// # Errors
     ///
     /// Returns [`ScriptViewError::DisposedView`] after disposal.
+    /// Return the last successfully committed declarative tree.
+    ///
+    /// A failed render deliberately preserves this last-good tree. Pair this
+    /// method with [`Self::last_error`] when the caller must distinguish a
+    /// current successful tree from a rollback after failure.
     pub fn root(&self, cx: &App) -> Result<Option<crate::UiNode>, ScriptViewError> {
         if self.0.disposed.get() {
             return Err(ScriptViewError::DisposedView(self.0.view_id.clone()));
         }
         Ok(self.0.entity.read(cx).lifecycle.root().cloned())
+    }
+
+    /// Return the latest mounted-view render, callback, delivery, or reload error.
+    ///
+    /// Errors remain available while the last-good tree continues to render.
+    /// A later successful script transaction clears the value; native-only
+    /// repaint and animation frames do not.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ScriptViewError::DisposedView`] after disposal.
+    pub fn last_error(&self, cx: &App) -> Result<Option<String>, ScriptViewError> {
+        if self.0.disposed.get() {
+            return Err(ScriptViewError::DisposedView(self.0.view_id.clone()));
+        }
+        Ok(self.0.entity.read(cx).last_error.clone())
     }
 
     /// Drain execution timings and snapshot retained/virtual metrics.
@@ -3359,7 +3380,9 @@ impl ScriptHostView {
         };
         let notify = match result {
             Ok(changed) => {
-                self.last_error = None;
+                if has_script_work {
+                    self.last_error = None;
+                }
                 self.process_window_commands(cx);
                 changed || animation_active || repaint
             }
