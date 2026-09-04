@@ -44,7 +44,13 @@ See [Architecture](docs/architecture.md) for the complete runtime design.
 
 ## 2. Start a project
 
-From a Cargo application root:
+The CLI and runtime are not published yet. Install the CLI from a checkout:
+
+```text
+cargo install --path crates/gpui-rhai-cli
+```
+
+Then, from a Cargo application root:
 
 ```text
 gpui-rhai init
@@ -79,7 +85,27 @@ ui/
 
 The files under `ui/` belong to the application. The files under
 `.gpui-rhai/baselines/` let the CLI distinguish local edits from later bundled
-source updates.
+source updates. `init` never overwrites an existing `src/main.rs`; when one is
+present it writes `gpui-rhai-host-snippet.rs` for deliberate integration.
+
+Until `0.1.0` is explicitly released, replace the generated
+`gpui-rhai = { version = "0.1", ... }` dependency with the checkout you are
+dogfooding:
+
+```toml
+gpui-rhai = { path = "/path/to/gpui-rhai/crates/gpui-rhai", features = ["dev-reload"] }
+```
+
+For another machine with access to this private repository, pin the exact
+tested commit rather than silently following a moving branch:
+
+```toml
+gpui-rhai = { git = "https://github.com/eddix/gpui-rhai", rev = "<commit>", features = ["dev-reload"] }
+```
+
+Disable `dev-reload` in production builds unless source watching is an explicit
+product requirement. The version-only dependency becomes the normal path only
+after the runtime crate is published.
 
 Useful commands:
 
@@ -148,6 +174,18 @@ Do not perform effects in `view`. Rendering may be retried, rolled back, or run
 because a dependency changed. Use callbacks, effects, capabilities, tasks, or
 subscriptions for effectful work.
 
+Imported Rhai modules are declarations, not miniature applications. Their
+top-level statements may contain imports, named functions, literal constants,
+and direct component declarations. Mutable globals, control flow, arbitrary
+calls, and computed registration are rejected before evaluation. Put mutable UI
+state in `UiContext` and start work through lifecycle/event APIs.
+
+Rhai compilation validates syntax, not every dynamic overload. The
+`gpui-rhai check` command also lints known calls and executes the real initial
+lifecycle, but event branches still need tests with representative runtime
+value types. Rhai maps are key-sorted maps, not insertion-ordered records, and
+scripts do not define Rust-like struct or class types.
+
 ## 4. State and controlled components
 
 State is declared, schema-checked, and scoped to a stable component instance.
@@ -175,8 +213,11 @@ Best practices:
   infer payload shapes from labels or visual implementation.
 - Keep one source of truth. Do not mirror the same value in a Rhai state field,
   a Rust store, and an uncontrolled native widget.
-- Use exact nested state paths or typed store fields when partial updates
-  matter. Ordinary Rhai Map indexing is not transparently observable.
+- Use nested state paths for bounded, schema-checked access, but remember that
+  local state still dirties its owning component; the path does not create a
+  smaller component boundary. App/window store path accessors additionally
+  provide exact nested dependency tracking. Ordinary Rhai Map indexing is not
+  transparently observable.
 
 Compatible state survives keyed rerenders and successful hot reloads.
 Incompatible schema changes reset only the affected field to its default.
@@ -206,6 +247,21 @@ the runtime reuse the prior component before calling Rhai. State, dependency
 subscriptions, callbacks, effects, timers, signals, refs, and virtual
 collections remain attached. Node/slot props are compared conservatively and
 rerender. Behavior must never depend on how often a render function executes.
+
+The main read paths have deliberately different invalidation semantics:
+
+| Read | Runtime behavior |
+|---|---|
+| `ctx.get_state(...)` / `get_state_path(...)` | Component-local; a changed field dirties the owning component |
+| `ctx.get_app_store(...)` / `get_window_store(...)` | Whole-field dependency |
+| `ctx.get_app_store_path(...)` / `get_window_store_path(...)` | Exact bounded path dependency, including keyed-array selectors |
+| `ctx.element_bounds(ref)` | Tracked last-committed layout/visual/clip geometry; first render may return `()` |
+| `ctx.event_target_bounds()` | Event-only, untracked current-target visual snapshot |
+| `ctx.get_signal(...)` during render | Untracked hot value, but makes that component ineligible for render bailout |
+| `node.bind_signal(...)` | Native property sampling without a Rhai rerender |
+
+Prefer declarative props and tracked state/store reads for ordinary UI. Prefer
+signal bindings or retained native work for values that change every frame.
 
 Use `part_styles` for an intended component customization point. Edit the
 copied `.rhai` source when the product needs a structural change. Do not hide a
@@ -250,29 +306,67 @@ The runtime binds the callback to:
 - its script generation;
 - the owning component instance path;
 - the declared event schema;
-- its imported-module invocation context, closure environment, and curried
-  values when applicable.
+- its imported-module invocation context;
+- any `UiValue`-convertible curried arguments.
 
 This is why a callback defined inside an imported component module continues to
 resolve that module's helpers later. Do not reduce callbacks to a function-name
 string or call a retained FnPtr against an unrelated AST.
 
+Durable callbacks must be named, non-capturing functions. gpui-rhai rejects
+anonymous/capturing closures and curry values that cannot cross the `UiValue`
+boundary. Pass durable data in component props, state/store fields, or explicit
+`Fn("name").curry(value)` arguments instead of relying on a closure environment.
+
 The first callback parameter is gpui-rhai `UiContext`, not GPUI `Context`.
 `UiContext` exposes the safe runtime surface: state, stores, locale, themes,
 effects, tasks, subscriptions, refs, signals, and validated commands.
 
-Inside a retained node handler, `ctx.event_target_bounds()` returns the current
-handler node's committed visual bounds as `{ x, y, width, height }` in window
-coordinates. It is an event-time snapshot and creates no render dependency;
-callbacks not dispatched from a node receive `()` and render/init/dispose calls
-are rejected. Raw pointer and wheel payload maps expose the same value as
-`payload.target`. This lets a click position a native window without maintaining
-a resize-to-store geometry channel.
-
 Old callbacks are rejected after reload. Deliveries after unmount or disposal
 are discarded by generation/scope ownership.
 
-### 6.2 Rust native handlers callable from Rhai
+### 6.2 Events, propagation, and geometry
+
+Atomic nodes accept `on(event, handler)`, `on_capture(event, handler)`, and
+`on_bubble(event, handler)`. Dispatch order is capture → target → bubble.
+Handlers may return `event_response()` and refine it with `prevent_default()`,
+`stop()`, `stop_immediate()`, `capture_pointer()`, or `release_pointer()`.
+
+Raw `pointer_down`, `pointer_up`, and `pointer_move` payloads contain pointer
+identity/type, `window`, `local`, and scroll-adjusted `content` coordinates,
+movement, buttons, modifiers, click count, timestamp, capture state, optional
+pressure/tilt, and `target`. Raw `wheel` payloads contain those three coordinate
+spaces, delta, precision, modifiers, timestamp, and `target`.
+
+`target` is `{ x, y, width, height }` in window coordinates: the committed
+visual bounds of the node owning the currently executing handler. This is
+`currentTarget` semantics, not a guessed logical card or the deepest painted
+child. The value is captured when the event is dispatched.
+
+Click and component events keep their declared payload type. They do not gain a
+hidden map wrapper. Read the same geometry from the callback context instead:
+
+```rhai
+fn float_clicked(ctx, payload) {
+    let bounds = ctx.event_target_bounds();
+    if bounds != () {
+        // Pass `#{ id: payload, bounds }` to the app's declared bridge.
+    }
+}
+```
+
+`ctx.event_target_bounds()` is event-only and untracked. Callbacks not
+dispatched from a retained node—including actions and custom primitive
+emissions—receive `()`. Calling it from render/init/dispose is an error. This is
+the correct path for low-frequency geometry use such as positioning a detached
+window; do not maintain a resize → store → Rhai geometry channel for it.
+
+Use `element_ref(...)` plus `ctx.element_bounds(ref)` only when rendering must
+react to another retained element's last committed geometry. That read creates
+an exact dependency, returns `#{ layout, visual, clip }`, and may initially be
+`()`. It cannot provide synchronous same-layout feedback.
+
+### 6.3 Rust native handlers callable from Rhai
 
 Use a `NativeHandlerRef` when a Rhai-authored component should call trusted Rust
 directly:
@@ -280,7 +374,7 @@ directly:
 ```rust
 use std::collections::BTreeMap;
 use gpui_rhai::{
-    EventResponse, NativeHandlerDescriptor, NativeHandlerId,
+    EventResponse, FileScriptView, NativeHandlerDescriptor, NativeHandlerId,
     ScriptViewExtension, ValueSchema,
 };
 
@@ -293,19 +387,24 @@ impl ScriptViewExtension for HostBridge {
     ) -> Result<(), String> {
         let descriptor = NativeHandlerDescriptor::new(
             NativeHandlerId::parse("host.refresh").map_err(|e| e.to_string())?,
-            BTreeMap::from([("click".to_owned(), ValueSchema::UiValue)]),
+            BTreeMap::from([("click".to_owned(), ValueSchema::Null)]),
         ).map_err(|e| e.to_string())?;
 
         engine.register_native_handler(
             descriptor,
             |event, runtime, window, app| {
-                // Trusted foreground Rust. Validate ownership and keep work short.
-                let _ = (&event, runtime, window, app);
+                // `event.payload` has already passed the declared schema.
+                // `event.target` is the optional event-time visual bounds.
+                let _ = (event.target, runtime, window, app);
                 Ok(EventResponse::new().stop())
             },
         ).map_err(|e| e.to_string())
     }
 }
+
+let prepared = FileScriptView::new("ui/main.rhai")
+    .extension(HostBridge)
+    .prepare()?;
 ```
 
 Rhai resolves only pre-registered namespaced IDs:
@@ -334,7 +433,7 @@ Do not block the foreground thread. Start async or background work in Rust and
 deliver validated data back through host state, tasks, subscriptions, or
 signals.
 
-### 6.3 HostCallback and custom primitives
+### 6.4 HostCallback and custom primitives
 
 `HostCallback` is for a Rust-built `UiNode` tree. Rhai cannot construct or
 receive it. A custom primitive is trusted Rust implementing a mechanism that
@@ -590,14 +689,29 @@ See [Security boundary](docs/security-boundary.md) and
 
 ## 14. Testing checklist
 
-Run before shipping:
+Run the portable checks before shipping:
 
 ```text
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-targets --all-features
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
+cargo test --manifest-path tests/native-keyboard/Cargo.toml
+bash scripts/audit-visual-baselines.sh
 gpui-rhai check
 ```
+
+The hosted workflow runs these checks on a standard Linux runner. A private
+repository receives a limited monthly allowance; removing macOS runners lowers
+the multiplier but does not make hosted compute unconditionally free. If the
+allowance is exhausted or billing is blocked, jobs stop before their first
+step. A public repository or a configured self-hosted runner is required for a
+permanently no-GitHub-charge runner path.
+
+On macOS, also build release targets and run `scripts/release-smoke.sh` with the
+Metal Toolchain installed. Screenshot, candidate-window IME, native
+accessibility, and real input certification require an unlocked interactive
+Mac and are intentionally not claimed by portable CI.
 
 Also exercise:
 
@@ -620,22 +734,27 @@ When an agent modifies a gpui-rhai application:
    files before proposing a design.
 2. Inspect the pinned gpui-rhai and Rhai versions. Do not rely on remembered
    Rhai APIs when crate source or a small execution probe can decide.
-3. Keep product composition and business state in Rhai unless the Host boundary
+3. Use named, non-capturing callbacks and `UiValue`-convertible curry data;
+   never assume an arbitrary closure can survive the render that created it.
+4. Keep product composition and business state in Rhai unless the Host boundary
    provides a concrete reason not to.
-4. Keep GPUI/platform mechanisms, privileged services, and sustained hot paths
+5. Keep GPUI/platform mechanisms, privileged services, and sustained hot paths
    in Rust.
-5. Prefer existing public Box/Text/Style/Overlay/Layer/Canvas primitives before
+6. Prefer existing public Box/Text/Style/Overlay/Layer/Canvas primitives before
    inventing a specialized native constructor.
-6. Use official source components; do not add `gpui-component` as a hidden
+7. Use official source components; do not add `gpui-component` as a hidden
    dependency.
-7. Preserve stable keys, controlled props, semantic theme roles, locale/RTL,
+8. Preserve stable keys, controlled props, semantic theme roles, locale/RTL,
    keyboard paths, and accessibility labels.
-8. Register NativeHandlerRef descriptors before compiling scripts and declare
+9. Register NativeHandlerRef descriptors before compiling scripts and declare
    exact event schemas. Never invent an adapter Rhai script merely because the
    Rust path was not inspected.
-9. Evaluate representative script branches. Rhai compilation alone does not
+10. Distinguish tracked `element_bounds(ref)` from event-only untracked
+    `event_target_bounds()`; do not create a resize/store feedback channel for
+    one click-time geometry read.
+11. Evaluate representative script branches. Rhai compilation alone does not
    prove dynamic function overloads exist.
-10. Verify changes with logic tests, native interaction tests, release smoke,
+12. Verify changes with logic tests, native interaction tests, release smoke,
     and real visual inspection in proportion to risk.
 
 ## 16. Troubleshooting
@@ -650,6 +769,8 @@ runtime type. Compilation alone may succeed.
 
 Do not call a stored FnPtr by name against a fresh unrelated scope. Let formal
 component props and gpui-rhai retain the callback's module invocation context.
+Also replace anonymous/capturing closures with named functions and durable curry
+data.
 
 ### NativeHandlerRef fails to resolve
 
@@ -672,6 +793,14 @@ shows the active draft and contrast diagnostics.
 
 Mount every related view under the same `ScriptViewHost::container`, use unique
 local overlay IDs, and declare parent overlay IDs for nested ownership.
+
+### click-time bounds are missing or stale
+
+For a node event, read `ctx.event_target_bounds()` or `NativeEvent::target`
+inside that callback. Do not cache `ctx.element_bounds(ref)` in state on every
+resize merely to service a later click. Custom primitive emissions currently
+have no renderer-owned event target, so include any primitive-measured geometry
+in their declared payload when the mechanism requires it.
 
 ### application exits immediately in release
 

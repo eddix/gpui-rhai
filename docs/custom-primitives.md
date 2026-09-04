@@ -78,5 +78,12 @@ emitter cannot form `Registry -> Entity -> Registry` ownership cycles. Use GPUI
 through `gpui_rhai::gpui` so the host and runtime cannot link incompatible GPUI
 type versions.
 
+Primitive emissions do not currently receive renderer-owned target geometry:
+`ctx.event_target_bounds()` and `NativeEvent::target` are `()`/`None` on that
+path. When a native mechanism owns meaningful coordinates, measure them in the
+primitive and include a bounded, schema-checked geometry value in its declared
+event payload. Do not fabricate an `ElementRef` or start a global resize/store
+channel merely to imitate atomic-node event geometry.
+
 See `extension_host.rs` for rendering and `tests/custom_primitive.rs` for the
 downstream registration contract.

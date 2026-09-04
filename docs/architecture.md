@@ -95,7 +95,9 @@ constructors call `render_component(id, props)`. A render-local stack derives
 nested instance paths and stages scoped state, event, effect, signal, and
 invocation updates. Returned handlers carry component path, declared event
 schema, generation, and an internal Rhai module-call context so later callbacks
-resolve in their source module.
+resolve in their source module. Durable handlers are named non-capturing
+functions with `UiValue`-convertible curry; arbitrary captured environments are
+rejected at the retained boundary.
 
 The AST interpreter remains the semantic oracle. Named entry/lifecycle/root
 calls cross a static execution-backend trait; stored imported callbacks remain
@@ -129,9 +131,10 @@ stable `UiValue` maps with logical window/local/content coordinates, buttons,
 modifiers, click count, precise delta, a monotonic timestamp, and the current
 handler node's committed visual bounds. Script event contexts and trusted
 `NativeEvent` values carry the same event-time current-target geometry without
-registering a dependency; callbacks without a retained node expose no target.
-Retained
-`ElementRef` declarations bind to stable `NodeId`; prepaint reports committed
+registering a dependency; click/custom payload schemas remain unchanged, and
+callbacks without retained-node dispatch—including custom primitive
+emissions—expose no target. Retained `ElementRef` declarations bind to stable
+`NodeId`; prepaint reports committed
 layout geometry plus visual bounds after static/signal/animation translation;
 pointer local coordinates invert that visual translation before Canvas hit
 testing. Content coordinates additionally subtract the live sum of every

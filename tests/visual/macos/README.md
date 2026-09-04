@@ -140,15 +140,17 @@ single-select query/change/close callbacks through a real `ScriptLifecycle`,
 Unicode (`中文😀é`) controlled Input, Cmd-A/C/X/V clipboard behavior, and
 read-only selection/copy with edit suppression.
 
-The same 22-case native suite now verifies executor-clock Toast expiry, Menu
-trigger→panel focus, separator-skipping roving selection, Enter action/close,
-and nested parent/child overlay painting. It also verifies App installation and
-key conflicts, shared Host mechanics with isolated runtime state, duplicate
-local Overlay ID namespacing, automatic bounds, click-through dismissal, and
-dispose/remount. Separate Host domains in one window are also proven not to
-dismiss each other's overlays. Official source tests preserve nested
-submenu parent IDs, while OverlayManager tests prove top-down parent/child
-dismissal and topmost Escape behavior.
+The independent native workspace now has 31 tests: 30 GPUI integration cases
+plus one `table_1000` fixture-preparation guard. It verifies executor-clock Toast
+expiry, Menu trigger→panel focus, separator-skipping roving selection, Enter
+action/close, nested parent/child overlay painting, and event-time target bounds
+from a real click. It also verifies App installation and key conflicts, shared
+Host mechanics with isolated runtime state, duplicate local Overlay ID
+namespacing, automatic bounds, click-through dismissal, and dispose/remount.
+Separate Host domains in one window are also proven not to dismiss each other's
+overlays. Official source tests preserve nested submenu parent IDs, while
+OverlayManager tests prove top-down parent/child dismissal and topmost Escape
+behavior.
 
 This interaction pass found and fixed three release-only failures: a child
 overlay attempting `defer_draw` during its parent's deferred prepaint, secondary

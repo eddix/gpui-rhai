@@ -28,10 +28,11 @@ and last committed visual bounds. `Dispatch` follows retained
 capture/target/bubble order and invokes the same Script, Host, or
 `NativeHandlerRef` callbacks used by mounted nodes. `Action` uses the mounted
 semantic action registry. Script and Native callbacks receive the dispatched
-handler node's current visual bounds through their event-target context, while
-the explicit payload remains unchanged. These commands do not fabricate GPUI platform input
-or browser-style default behavior; platform keyboard, IME, pointer, and focus
-certification continues through GPUI test support and unlocked macOS tests.
+handler node's current visual bounds through their event-target context. This is
+`currentTarget` geometry, and the explicit payload remains unchanged. These
+commands do not fabricate GPUI platform input or browser-style default
+behavior; platform keyboard, IME, pointer, and focus certification continues
+through GPUI test support and unlocked macOS tests.
 
 `AdvanceTime` advances an injected controllable `RuntimeClock`, then polls the
 mounted view so timers and animation observe one deterministic timeline. It

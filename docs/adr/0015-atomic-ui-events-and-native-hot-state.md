@@ -21,6 +21,14 @@ pointer/window/local/content coordinates, default prevention, propagation
 control, and pointer capture. Trusted Rust may register schema-checked
 `NativeHandlerRef` values that Rhai binds to ordinary nodes.
 
+The dispatcher snapshots the current handler node's committed visual bounds at
+event time. Raw pointer/wheel payloads carry the snapshot as `target`, Script
+handlers read it through untracked `ctx.event_target_bounds()`, and trusted Rust
+handlers receive `NativeEvent::target`. Click and semantic payload schemas stay
+unchanged. The snapshot follows `currentTarget` rather than inferred logical
+ancestry; callbacks with no retained-node dispatch receive no target. Tracked
+cross-render geometry remains the separate `ElementRef` API.
+
 `NativeSignal<T>` is the only approved high-frequency imperative property path.
 It updates typed Style/transform/scroll/Canvas properties without component
 rerender. Animation uses the same property-source model and remains native per
@@ -37,6 +45,5 @@ This ADR supersedes ADR 0012's rejection of named Host handlers and multiple
 handlers. Direct Rust HostCallback remains supported as one handler variant.
 
 Protected by atomic-only visual examples, pure-Rhai Timeline, Rust fast-path
-parity, pointer capture/propagation, Canvas hit, and deterministic animation
-tests.
-
+parity, pointer capture/propagation, Canvas hit, a real GPUI click-to-Rhai
+geometry comparison, and deterministic animation tests.

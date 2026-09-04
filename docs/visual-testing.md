@@ -68,10 +68,17 @@ under `tests/visual/macos/<example>/<case>.png` once captured.
 
 `scripts/release-smoke.sh` is the unattended local macOS gate: it verifies that
 all examples enter an event loop without panic. The hosted private-repository
-workflow intentionally runs its portable checks on a standard Linux runner so
-CI does not depend on paid macOS minutes. Screenshot and input certification
-requires an unlocked interactive Mac session. Computer Use must inspect fresh
-accessibility state after every action and must not bypass the lock screen.
+workflow intentionally runs its portable checks on a standard Linux runner,
+avoids the higher macOS multiplier, and cancels superseded runs. Private hosted
+Linux still consumes the account's included Actions allowance and will not
+start after that allowance is exhausted when spending is disabled. A public
+repository or a configured self-hosted runner is the permanently
+no-GitHub-charge path. See GitHub's
+[Actions billing](https://docs.github.com/en/billing/concepts/product-billing/github-actions)
+and [self-hosted runner](https://docs.github.com/en/actions/concepts/runners/self-hosted-runners)
+documentation. Screenshot and input certification requires an unlocked
+interactive Mac session. Computer Use must inspect fresh accessibility state
+after every action and must not bypass the lock screen.
 
 `tests/native-keyboard` separately uses GPUI's non-release `test-support` window
 to synthesize Tab, Shift-Tab, Enter, Unicode text input, and clipboard
@@ -83,13 +90,16 @@ an open parent Dialog, guarding GPUI 0.2.x against nested `defer_draw` panics.
 Three-view embedding cases cover automatic bounds, runtime isolation, shared
 Host overlays, duplicate local IDs, click-through dismissal, key conflicts,
 and dispose/remount.
-The suite currently has 22 production-renderer cases and contains no deleted
-Table/choice/date/toast native constructor. It also guards that window-level
+The independent workspace currently has 31 tests: 30 GPUI integration cases
+plus one `table_1000` fixture-preparation guard. It contains no deleted
+Table/choice/date/toast native constructor and also guards that window-level
 pointer-capture listeners register during paint rather than GPUI layout.
 One case drives a mounted view through test-ID query, retained event dispatch,
 semantic action, and deterministic time advance.
 Another verifies that explicit Style occlusion blocks pointer hits to painted
 sibling content behind the retained node.
+Another compares `ctx.event_target_bounds()` from a real click against the
+same node's committed automation bounds without creating a render dependency.
 It guards keyboard/clipboard dispatch mechanics but does not replace platform
 IME candidate-window, focus-ring, or accessibility certification.
 

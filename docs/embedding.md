@@ -104,6 +104,28 @@ positioned Layer elements share the Host portal.
 Non-modal outside clicks dismiss the topmost Host overlay during native capture
 and continue to the clicked sibling control. Modal backdrops consume the click.
 
+## Event-time geometry bridges
+
+Do not stream host resize measurements into a store merely so one later click
+can position native UI. Every retained node event carries an immutable snapshot
+of the current handler node's committed visual bounds in window coordinates:
+
+- Rhai handlers read `ctx.event_target_bounds()`;
+- raw pointer/wheel maps also expose `payload.target`;
+- registered Rust handlers read `NativeEvent::target`.
+
+The shape is `{ x, y, width, height } | ()`. It uses `currentTarget` semantics:
+capture and bubble handlers see the bounds of the node that owns the currently
+running handler, not an inferred application-level card. Click and custom
+component payloads keep their declared schema; their geometry remains separate
+in the callback context or `NativeEvent`.
+
+This snapshot is event-only and untracked, so reading it cannot dirty a
+component. By contrast, `ctx.element_bounds(ref)` reads tracked last-committed
+`layout`, `visual`, and `clip` geometry for a retained `ElementRef`. Use that API
+only when a render truly depends on another element's previous committed
+geometry; it cannot create same-layout synchronous feedback.
+
 ## Identity and window commands
 
 `ctx.window_id()` identifies the actual host window and is shared by sibling
@@ -178,6 +200,11 @@ normalized `UiValue` payload plus `Window` and `App`, and return
 subscription, automatic trace, or frame scheduler. Send work to Host channels
 and capture `WeakEntity` rather than a strong reference to the Entity owning the
 tree.
+
+Unlike `NativeHandlerRef`, `HostCallback` has no `NativeEvent` wrapper or
+script `UiContext`. Raw pointer/wheel geometry is available in the normalized
+payload; semantic click payloads remain exactly what the Host placed on the
+node.
 
 Callback-typed custom primitive props accept the same `UiEventHandler`, so a
 Host-built TextInput does not need a Rhai adapter function. See

@@ -297,8 +297,12 @@ for error output and other copy-worthy text — editor components
 Trusted Hosts can register a `NativeHandlerDescriptor` and Rust closure, then
 Rhai resolves it with `native_handler("namespace.name")` and attaches it through
 the same `on` methods. The descriptor limits accepted event names and validates
-payloads before Rust runs. Native and Script handlers share transaction and
-response semantics.
+payloads before Rust runs. `NativeEvent::target` carries the optional event-time
+current-target bounds separately, so adding geometry does not weaken or wrap the
+declared payload schema. Native and Script handlers share transaction and
+response semantics. Events emitted by a custom primitive currently have no
+renderer-owned target; a primitive that needs its own measured coordinates must
+declare them in its validated payload.
 
 Formal components may declare `element_ref("name")` during render and attach it
 to a stable keyed node with `with_ref`. `ctx.element_bounds(ref)` returns null

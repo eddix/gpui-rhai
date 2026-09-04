@@ -31,6 +31,11 @@ cargo run -p gpui-rhai-cli -- --root /path/to/app metadata
 theme, and manifests without overwriting an existing `main.rs`. `add` copies
 editable source plus a committed update baseline.
 
+Neither crate is published yet. During dogfooding, replace the generated
+version-only runtime dependency with a local checkout path or an exact Git
+commit accessible to the application. The complete pre-release setup is in the
+[User Guide](USER_GUIDE.md#2-start-a-project).
+
 `update` performs an offline three-way merge between the installed baseline,
 the application-owned source, and the bundled registry. Conflicts never
 overwrite local source; inspect them under `.gpui-rhai/conflicts/`.
