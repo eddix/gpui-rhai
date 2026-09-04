@@ -454,13 +454,24 @@ impl ScriptLifecycle {
         callback: &ScriptCallback,
         payload: UiValue,
     ) -> Result<Dynamic, LifecycleError> {
+        self.invoke_callback_with_event_target(engine, callback, payload, None)
+    }
+
+    pub(crate) fn invoke_callback_with_event_target(
+        &self,
+        engine: &RuntimeEngine,
+        callback: &ScriptCallback,
+        payload: UiValue,
+        event_target: Option<crate::GeometryBounds>,
+    ) -> Result<Dynamic, LifecycleError> {
         let root_context = self.context(ExecutionPhase::Event);
         let context = callback
             .component()
             .map_or(root_context.clone(), |component| {
                 root_context.for_component(component.clone(), callback.events().clone())
             })
-            .with_native_context(callback.native_context().cloned());
+            .with_native_context(callback.native_context().cloned())
+            .with_event_target(event_target);
         Ok(engine.invoke_callback(&self.compiled, callback, (context, payload.into_dynamic()))?)
     }
 

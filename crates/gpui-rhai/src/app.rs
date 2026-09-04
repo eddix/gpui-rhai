@@ -2541,17 +2541,17 @@ fn build_host_root(
 fn script_node_dispatcher(cx: &Context<ScriptHostView>) -> NodeEventDispatcher {
     let script_entity = cx.entity().downgrade();
     let native_entity = script_entity.clone();
-    NodeEventDispatcher::new(move |callback, payload, window, app| {
+    NodeEventDispatcher::new(move |callback, payload, target, window, app| {
         script_entity
             .update(app, |view, cx| {
-                view.handle_node_event(&callback, payload, window, cx)
+                view.handle_node_event(&callback, payload, target, window, cx)
             })
             .unwrap_or_else(|_| crate::EventResponse::new().stop())
     })
-    .with_native(move |handler, event, payload, window, app| {
+    .with_native(move |handler, event, payload, target, window, app| {
         native_entity
             .update(app, |view, cx| {
-                view.handle_native_event(&handler, event, payload, window, cx)
+                view.handle_native_event(&handler, event, payload, target, window, cx)
             })
             .unwrap_or_else(|_| crate::EventResponse::new().stop())
     })
@@ -2676,8 +2676,13 @@ impl ScriptHostView {
                     .borrow()
                     .actions
                     .dispatch(&action, payload.unwrap_or(UiValue::Null))?;
-                let _ =
-                    self.handle_node_event(&invocation.callback, invocation.payload, window, cx);
+                let _ = self.handle_node_event(
+                    &invocation.callback,
+                    invocation.payload,
+                    None,
+                    window,
+                    cx,
+                );
                 Ok(crate::AutomationResult::Action { id })
             }
             crate::AutomationCommand::AdvanceTime { millis } => {
@@ -2728,16 +2733,22 @@ impl ScriptHostView {
             if visited.last() != Some(&step.node) {
                 visited.push(step.node);
             }
+            let event_target = geometry.get(step.node).map(|geometry| geometry.visual);
             let current = match &step.handler {
                 crate::UiEventHandler::Script(callback) => {
-                    self.handle_node_event(callback, payload.clone(), window, cx)
+                    self.handle_node_event(callback, payload.clone(), event_target, window, cx)
                 }
                 crate::UiEventHandler::Host(callback) => {
                     callback.invoke(payload.clone(), window, cx)
                 }
-                crate::UiEventHandler::Native(handler) => {
-                    self.handle_native_event(handler, event.to_owned(), payload.clone(), window, cx)
-                }
+                crate::UiEventHandler::Native(handler) => self.handle_native_event(
+                    handler,
+                    event.to_owned(),
+                    payload.clone(),
+                    event_target,
+                    window,
+                    cx,
+                ),
             };
             invoked = invoked.saturating_add(1);
             response.merge(current);
@@ -2975,7 +2986,7 @@ impl ScriptHostView {
                         false,
                     );
                 }
-                self.handle_node_event(&invocation.callback, invocation.payload, window, cx);
+                self.handle_node_event(&invocation.callback, invocation.payload, None, window, cx);
             }
             Err(error) => {
                 self.last_error = Some(error.to_string());
@@ -3194,6 +3205,7 @@ impl ScriptHostView {
         &mut self,
         callback: &ScriptCallback,
         payload: UiValue,
+        event_target: Option<crate::GeometryBounds>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> crate::EventResponse {
@@ -3209,7 +3221,7 @@ impl ScriptHostView {
         let callback_result = self.run_script_transaction(|view| {
             let value = view
                 .lifecycle
-                .invoke_callback(&view.engine, callback, payload)
+                .invoke_callback_with_event_target(&view.engine, callback, payload, event_target)
                 .map_err(|error| error.to_string())?;
             view.invoke_pending_effects()?;
             view.lifecycle
@@ -3242,6 +3254,7 @@ impl ScriptHostView {
         handler: &crate::NativeHandlerRef,
         event: String,
         payload: UiValue,
+        event_target: Option<crate::GeometryBounds>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> crate::EventResponse {
@@ -3258,6 +3271,7 @@ impl ScriptHostView {
                         crate::NativeEvent {
                             name: event,
                             payload,
+                            target: event_target,
                         },
                         &mut runtime,
                         window,

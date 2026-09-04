@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use thiserror::Error;
 
-use crate::{ComponentInstancePath, NodeId};
+use crate::{ComponentInstancePath, NodeId, UiValue};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct GeometryBounds {
@@ -37,6 +37,16 @@ impl GeometryBounds {
                 height,
             })
         }
+    }
+
+    #[must_use]
+    pub fn into_value(self) -> UiValue {
+        UiValue::Map(BTreeMap::from([
+            ("x".to_owned(), UiValue::Float(self.x)),
+            ("y".to_owned(), UiValue::Float(self.y)),
+            ("width".to_owned(), UiValue::Float(self.width)),
+            ("height".to_owned(), UiValue::Float(self.height)),
+        ]))
     }
 }
 

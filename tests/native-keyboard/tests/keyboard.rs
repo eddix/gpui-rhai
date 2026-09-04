@@ -143,7 +143,7 @@ fn tab_order_skips_disabled_nodes_and_enter_activates_focus(cx: &mut TestAppCont
     ]);
     let activations = Rc::new(RefCell::new(Vec::new()));
     let captured = Rc::clone(&activations);
-    let dispatcher = NodeEventDispatcher::new(move |_, payload, _, _| {
+    let dispatcher = NodeEventDispatcher::new(move |_, payload, _, _, _| {
         if let UiValue::Integer(value) = payload {
             captured.borrow_mut().push(value);
         }
@@ -267,7 +267,7 @@ fn explicit_occlusion_blocks_pointer_hits_to_painted_siblings(
         KeyboardHost {
             root: Rc::new(RefCell::new(root)),
             tree: gpui_rhai::RetainedUiTree::new(),
-            dispatcher: NodeEventDispatcher::new(|_, _, _, _| EventPropagation::Handled),
+            dispatcher: NodeEventDispatcher::new(|_, _, _, _, _| EventPropagation::Handled),
             host_focus,
             primitives: PrimitiveRegistry::new(),
         }
@@ -333,7 +333,7 @@ fn text_input_primitive_dispatches_host_callbacks(cx: &mut TestAppContext) {
         key: Some("host-input".to_owned()),
         props,
     });
-    let dispatcher = NodeEventDispatcher::new(|_, _, _, _| EventPropagation::Handled);
+    let dispatcher = NodeEventDispatcher::new(|_, _, _, _, _| EventPropagation::Handled);
     let window = cx.add_window(|window, cx| {
         let host_focus = cx.focus_handle();
         host_focus.focus(window);
@@ -411,7 +411,7 @@ fn custom_primitive_rejects_invalid_payload_before_host_callback(cx: &mut TestAp
         key: Some("invalid-payload".to_owned()),
         props,
     });
-    let dispatcher = NodeEventDispatcher::new(|_, _, _, _| EventPropagation::Handled);
+    let dispatcher = NodeEventDispatcher::new(|_, _, _, _, _| EventPropagation::Handled);
     let _window = cx.add_window(|window, cx| {
         let host_focus = cx.focus_handle();
         host_focus.focus(window);
@@ -478,7 +478,7 @@ fn nested_overlay_renders_inside_parent_deferred_subtree(cx: &mut TestAppContext
         KeyboardHost {
             root: Rc::new(RefCell::new(root)),
             tree: gpui_rhai::RetainedUiTree::new(),
-            dispatcher: NodeEventDispatcher::new(|_, _, _, _| EventPropagation::Handled),
+            dispatcher: NodeEventDispatcher::new(|_, _, _, _, _| EventPropagation::Handled),
             host_focus,
             primitives: PrimitiveRegistry::new(),
         }
@@ -674,6 +674,106 @@ fn dropdown_pointer_updates_transactional_rhai_caller_state(cx: &mut TestAppCont
         texts.contains(&"Selected: tokyo-night".to_owned()),
         "{texts:?}; placement={placement:?}"
     );
+}
+
+#[gpui::test]
+fn click_context_exposes_untracked_event_target_visual_bounds(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let entry = ModuleId::parse("main").unwrap();
+    let prepared = EmbeddedScriptView::new(
+        entry.clone(),
+        EmbeddedScriptSource::new(std::collections::BTreeMap::from([(
+            entry,
+            r#"
+                fn state_schema() { #{ fields: #{
+                    summary: #{ schema: #{ type: "string" },
+                        "default": #{ type: "string", value: "waiting" } }
+                } } }
+                fn capture_bounds(ctx, payload) {
+                    let bounds = ctx.event_target_bounds();
+                    ctx.set_state("summary",
+                        `${bounds.x},${bounds.y},${bounds.width},${bounds.height}`);
+                }
+                fn view(ctx) {
+                    text(ctx.get_state("summary"))
+                        .with_key("geometry-target")
+                        .test_id("geometry-target")
+                        .accessibility_role("button")
+                        .accessibility_label("Geometry target")
+                        .with_style(style().width(px(180)).height(px(72)).padding(px(8)))
+                        .on_click(Fn("capture_bounds"))
+                }
+            "#
+            .to_owned(),
+        )])),
+        include_str!("../../../registry/themes/default_dark.rhai"),
+    )
+    .prepare()
+    .unwrap();
+    let captured = Rc::new(RefCell::new(None));
+    let captured_for_window = Rc::clone(&captured);
+    let window = cx.add_window(move |window, cx| {
+        let host = ScriptViewHost::new("event-target-window", cx).unwrap();
+        let view = prepared
+            .mount(
+                ScriptViewConfig::new("event-target-view"),
+                host.clone(),
+                window,
+                cx,
+            )
+            .unwrap();
+        *captured_for_window.borrow_mut() = Some(view.clone());
+        SingleEmbeddedHost { host, view }
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    cx.run_until_parked();
+
+    let view = captured.borrow().as_ref().unwrap().clone();
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    let query = visual
+        .update(|window, cx| {
+            view.automate(
+                gpui_rhai::AutomationCommand::Query {
+                    locator: gpui_rhai::AutomationLocator::TestId {
+                        id: "geometry-target".to_owned(),
+                    },
+                },
+                window,
+                cx,
+            )
+        })
+        .unwrap();
+    let gpui_rhai::AutomationResult::Node { node } = query else {
+        panic!("geometry target query must return one node");
+    };
+    let expected = node.bounds.expect("target must have committed geometry");
+    visual.simulate_click(
+        point(
+            px((expected.x + expected.width / 2.0) as f32),
+            px((expected.y + expected.height / 2.0) as f32),
+        ),
+        Modifiers::default(),
+    );
+    visual.run_until_parked();
+
+    let root = visual.update(|_, cx| view.root(cx).unwrap().unwrap());
+    let gpui_rhai::UiNodeKind::Text { text } = root.kind() else {
+        panic!("geometry target root must remain text");
+    };
+    let actual = text
+        .split(',')
+        .map(|value| value.parse::<f64>().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(actual.len(), 4);
+    for (actual, expected) in actual.into_iter().zip([
+        expected.x,
+        expected.y,
+        expected.width,
+        expected.height,
+    ]) {
+        assert!((actual - expected).abs() < 0.01, "{actual} != {expected}");
+    }
 }
 
 #[gpui::test]
@@ -1536,7 +1636,7 @@ fn native_input_updates_rhai_state_and_clipboard_with_unicode(cx: &mut TestAppCo
     let captured_engine = Rc::clone(&runtime_engine);
     let errors = Rc::new(RefCell::new(Vec::new()));
     let captured_errors = Rc::clone(&errors);
-    let dispatcher = NodeEventDispatcher::new(move |callback, payload, _, app| {
+    let dispatcher = NodeEventDispatcher::new(move |callback, payload, _, _, app| {
         let result = {
             let engine = captured_engine.borrow();
             captured_lifecycle
@@ -1661,7 +1761,7 @@ fn native_textarea_wraps_inserts_newlines_and_limits_graphemes(cx: &mut TestAppC
     let captured_engine = Rc::clone(&runtime_engine);
     let errors = Rc::new(RefCell::new(Vec::new()));
     let captured_errors = Rc::clone(&errors);
-    let dispatcher = NodeEventDispatcher::new(move |callback, payload, _, app| {
+    let dispatcher = NodeEventDispatcher::new(move |callback, payload, _, _, app| {
         let result = {
             let engine = captured_engine.borrow();
             captured_lifecycle
@@ -1791,7 +1891,7 @@ fn read_only_input_allows_selection_and_copy_but_rejects_edits(cx: &mut TestAppC
     let captured_lifecycle = Rc::clone(&lifecycle);
     let captured_engine = Rc::clone(&runtime_engine);
     let captured_errors = Rc::clone(&errors);
-    let dispatcher = NodeEventDispatcher::new(move |callback, payload, _, app| {
+    let dispatcher = NodeEventDispatcher::new(move |callback, payload, _, _, app| {
         let result = {
             let engine = captured_engine.borrow();
             captured_lifecycle
@@ -1918,7 +2018,7 @@ fn menu_trigger_routes_roving_and_enter_keys_through_current_rhai_state(
     let captured_engine = Rc::clone(&runtime_engine);
     let captured_errors = Rc::clone(&errors);
     let captured_events = Rc::clone(&events);
-    let dispatcher = NodeEventDispatcher::new(move |callback, payload, _, app| {
+    let dispatcher = NodeEventDispatcher::new(move |callback, payload, _, _, app| {
         captured_events
             .borrow_mut()
             .push((callback.name().to_owned(), payload.clone()));

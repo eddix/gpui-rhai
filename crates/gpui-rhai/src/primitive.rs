@@ -570,7 +570,7 @@ impl PrimitiveEventEmitter {
             match handler {
                 UiEventHandler::Script(callback) => {
                     if let Some(dispatcher) = self.dispatcher.as_ref() {
-                        dispatcher.dispatch(callback.clone(), payload, window, cx);
+                        dispatcher.dispatch(callback.clone(), payload, None, window, cx);
                     }
                 }
                 UiEventHandler::Host(callback) => {
@@ -582,6 +582,7 @@ impl PrimitiveEventEmitter {
                             reference.clone(),
                             event.to_owned(),
                             payload,
+                            None,
                             window,
                             cx,
                         );

@@ -27,9 +27,21 @@ use crate::{
     TextDirection, UiEventHandler, UiNode, UiNodeKind, UiValue, WhiteSpaceMode,
 };
 
-type DispatchFn = dyn Fn(ScriptCallback, UiValue, &mut Window, &mut App) -> EventResponse;
-type NativeDispatchFn =
-    dyn Fn(crate::NativeHandlerRef, String, UiValue, &mut Window, &mut App) -> EventResponse;
+type DispatchFn = dyn Fn(
+    ScriptCallback,
+    UiValue,
+    Option<crate::GeometryBounds>,
+    &mut Window,
+    &mut App,
+) -> EventResponse;
+type NativeDispatchFn = dyn Fn(
+    crate::NativeHandlerRef,
+    String,
+    UiValue,
+    Option<crate::GeometryBounds>,
+    &mut Window,
+    &mut App,
+) -> EventResponse;
 
 #[derive(Clone)]
 pub struct NodeEventDispatcher {
@@ -40,30 +52,44 @@ pub struct NodeEventDispatcher {
 impl NodeEventDispatcher {
     #[must_use]
     pub fn new<R>(
-        dispatch: impl Fn(ScriptCallback, UiValue, &mut Window, &mut App) -> R + 'static,
+        dispatch: impl Fn(
+            ScriptCallback,
+            UiValue,
+            Option<crate::GeometryBounds>,
+            &mut Window,
+            &mut App,
+        ) -> R
+        + 'static,
     ) -> Self
     where
         R: Into<EventResponse>,
     {
         Self {
-            script: Rc::new(move |callback, payload, window, app| {
-                dispatch(callback, payload, window, app).into()
+            script: Rc::new(move |callback, payload, target, window, app| {
+                dispatch(callback, payload, target, window, app).into()
             }),
-            native: Rc::new(|_, _, _, _, _| EventResponse::new().stop()),
+            native: Rc::new(|_, _, _, _, _, _| EventResponse::new().stop()),
         }
     }
 
     #[must_use]
     pub fn with_native<R>(
         mut self,
-        dispatch: impl Fn(crate::NativeHandlerRef, String, UiValue, &mut Window, &mut App) -> R
+        dispatch: impl Fn(
+            crate::NativeHandlerRef,
+            String,
+            UiValue,
+            Option<crate::GeometryBounds>,
+            &mut Window,
+            &mut App,
+        ) -> R
         + 'static,
     ) -> Self
     where
         R: Into<EventResponse>,
     {
-        self.native = Rc::new(move |handler, event, payload, window, app| {
-            dispatch(handler, event, payload, window, app).into()
+        self.native = Rc::new(move |handler, event, payload, target, window, app| {
+            dispatch(handler, event, payload, target, window, app).into()
         });
         self
     }
@@ -72,10 +98,11 @@ impl NodeEventDispatcher {
         &self,
         callback: ScriptCallback,
         payload: UiValue,
+        target: Option<crate::GeometryBounds>,
         window: &mut Window,
         cx: &mut App,
     ) -> EventResponse {
-        (self.script)(callback, payload, window, cx)
+        (self.script)(callback, payload, target, window, cx)
     }
 
     pub(crate) fn dispatch_native(
@@ -83,10 +110,11 @@ impl NodeEventDispatcher {
         handler: crate::NativeHandlerRef,
         event: String,
         payload: UiValue,
+        target: Option<crate::GeometryBounds>,
         window: &mut Window,
         app: &mut App,
     ) -> EventResponse {
-        (self.native)(handler, event, payload, window, app)
+        (self.native)(handler, event, payload, target, window, app)
     }
 }
 
@@ -94,6 +122,7 @@ fn dispatch_ui_event(
     handler: &UiEventHandler,
     event: &str,
     payload: UiValue,
+    target: Option<crate::GeometryBounds>,
     window: &mut Window,
     app: &mut App,
     script_dispatcher: Option<&NodeEventDispatcher>,
@@ -101,7 +130,7 @@ fn dispatch_ui_event(
     match handler {
         UiEventHandler::Script(callback) => script_dispatcher.map_or_else(
             || EventResponse::new().stop(),
-            |dispatcher| dispatcher.dispatch(callback.clone(), payload, window, app),
+            |dispatcher| dispatcher.dispatch(callback.clone(), payload, target, window, app),
         ),
         UiEventHandler::Host(callback) => callback.invoke(payload, window, app),
         UiEventHandler::Native(reference) => script_dispatcher.map_or_else(
@@ -111,6 +140,7 @@ fn dispatch_ui_event(
                     reference.clone(),
                     event.to_owned(),
                     payload,
+                    target,
                     window,
                     app,
                 )
@@ -123,6 +153,7 @@ fn dispatch_ui_handlers(
     bindings: &[crate::UiEventBinding],
     event: &str,
     payload: &UiValue,
+    target: Option<crate::GeometryBounds>,
     window: &mut Window,
     app: &mut App,
     script_dispatcher: Option<&NodeEventDispatcher>,
@@ -132,10 +163,25 @@ fn dispatch_ui_handlers(
         event,
         &[crate::EventPhase::Target],
         payload,
+        EventRoute::new(target, script_dispatcher),
         window,
         app,
-        script_dispatcher,
     )
+}
+
+#[derive(Clone, Copy)]
+struct EventRoute<'a> {
+    target: Option<crate::GeometryBounds>,
+    dispatcher: Option<&'a NodeEventDispatcher>,
+}
+
+impl<'a> EventRoute<'a> {
+    const fn new(
+        target: Option<crate::GeometryBounds>,
+        dispatcher: Option<&'a NodeEventDispatcher>,
+    ) -> Self {
+        Self { target, dispatcher }
+    }
 }
 
 fn dispatch_ui_handler_phases(
@@ -143,9 +189,9 @@ fn dispatch_ui_handler_phases(
     event: &str,
     phases: &[crate::EventPhase],
     payload: &UiValue,
+    route: EventRoute<'_>,
     window: &mut Window,
     app: &mut App,
-    script_dispatcher: Option<&NodeEventDispatcher>,
 ) -> EventResponse {
     let mut combined = EventResponse::new();
     for phase in phases {
@@ -155,9 +201,10 @@ fn dispatch_ui_handler_phases(
                 binding.handler(),
                 event,
                 payload.clone(),
+                route.target,
                 window,
                 app,
-                script_dispatcher,
+                route.dispatcher,
             );
             combined.merge(response);
             if matches!(
@@ -267,7 +314,31 @@ struct PointerPayloadContext {
     scroll_handles: Vec<ScrollHandle>,
 }
 
+#[derive(Clone)]
+struct EventTargetContext {
+    node: Option<NodeId>,
+    geometry: crate::GeometryRegistry,
+}
+
+impl EventTargetContext {
+    fn new(node: Option<NodeId>, geometry: crate::GeometryRegistry) -> Self {
+        Self { node, geometry }
+    }
+
+    fn snapshot(&self) -> Option<crate::GeometryBounds> {
+        self.node
+            .and_then(|node| self.geometry.get(node))
+            .map(|geometry| geometry.visual)
+    }
+}
+
 impl PointerPayloadContext {
+    fn target_bounds(&self) -> Option<crate::GeometryBounds> {
+        self.node
+            .and_then(|node| self.geometry.get(node))
+            .map(|geometry| geometry.visual)
+    }
+
     fn new(
         node: &UiNode,
         retained_id: Option<NodeId>,
@@ -304,13 +375,15 @@ impl PointerPayloadContext {
         let UiValue::Map(mut payload) = payload else {
             return payload;
         };
+        let geometry = self.node.and_then(|node| self.geometry.get(node));
+        payload.insert(
+            "target".to_owned(),
+            geometry.map_or(UiValue::Null, |geometry| geometry.visual.into_value()),
+        );
         let window = payload.get("window").and_then(value_point);
-        let local = self
-            .node
-            .and_then(|node| self.geometry.get(node))
-            .and_then(|geometry| {
-                window.map(|(x, y)| (x - geometry.visual.x, y - geometry.visual.y))
-            });
+        let local = geometry.and_then(|geometry| {
+            window.map(|(x, y)| (x - geometry.visual.x, y - geometry.visual.y))
+        });
         if let Some((x, y)) = local {
             payload.insert("local".to_owned(), logical_point_value(x, y));
             let offset = self
@@ -403,6 +476,7 @@ fn apply_hover_handler(
     element: Stateful<Div>,
     hover: Option<(Vec<crate::UiEventBinding>, Option<UiValue>)>,
     dispatcher: Option<NodeEventDispatcher>,
+    target: EventTargetContext,
 ) -> Stateful<Div> {
     element.on_hover(move |hovered, window, cx| {
         if let Some((bindings, value)) = &hover {
@@ -419,6 +493,7 @@ fn apply_hover_handler(
                 bindings,
                 "hover_change",
                 &payload,
+                target.snapshot(),
                 window,
                 cx,
                 dispatcher.as_ref(),
@@ -452,9 +527,9 @@ fn apply_pointer_down_handlers(
                 "pointer_down",
                 &[crate::EventPhase::Capture],
                 &payload,
+                EventRoute::new(payload_context.target_bounds(), dispatcher.as_ref()),
                 window,
                 app,
-                dispatcher.as_ref(),
             );
             apply_pointer_response(response, retained_id, 0, &captures, window, app);
         });
@@ -476,9 +551,9 @@ fn apply_pointer_down_handlers(
                 "pointer_down",
                 &[crate::EventPhase::Target, crate::EventPhase::Bubble],
                 &payload,
+                EventRoute::new(payload_context.target_bounds(), dispatcher.as_ref()),
                 window,
                 app,
-                dispatcher.as_ref(),
             );
             apply_pointer_response(response, retained_id, 0, &captures, window, app);
         });
@@ -510,9 +585,9 @@ fn apply_pointer_up_handlers(
                 "pointer_up",
                 &[crate::EventPhase::Capture],
                 &payload,
+                EventRoute::new(payload_context.target_bounds(), dispatcher.as_ref()),
                 window,
                 app,
-                dispatcher.as_ref(),
             );
             apply_pointer_response(response, retained_id, 0, &captures, window, app);
             captures.release(0);
@@ -536,9 +611,9 @@ fn apply_pointer_up_handlers(
                     "pointer_up",
                     &[crate::EventPhase::Target, crate::EventPhase::Bubble],
                     &payload,
+                    EventRoute::new(payload_context.target_bounds(), dispatcher.as_ref()),
                     window,
                     app,
-                    dispatcher.as_ref(),
                 );
                 apply_pointer_response(response, retained_id, 0, &captures, window, app);
                 captures.release(0);
@@ -568,9 +643,9 @@ fn apply_pointer_motion_handlers(
                 "pointer_move",
                 &[crate::EventPhase::Target, crate::EventPhase::Bubble],
                 &payload,
+                EventRoute::new(payload_context.target_bounds(), dispatcher.as_ref()),
                 window,
                 app,
-                dispatcher.as_ref(),
             );
             apply_pointer_response(response, retained_id, 0, &captures, window, app);
         });
@@ -578,15 +653,17 @@ fn apply_pointer_motion_handlers(
 
     let wheel = node.event_handlers("wheel").to_vec();
     if !wheel.is_empty() {
+        let payload_context = (*payload_context).clone();
         element = element.on_scroll_wheel(move |event, window, app| {
+            let payload = payload_context.enrich(wheel_payload(event));
             let response = dispatch_ui_handler_phases(
                 &wheel,
                 "wheel",
                 &[crate::EventPhase::Target, crate::EventPhase::Bubble],
-                &wheel_payload(event),
+                &payload,
+                EventRoute::new(payload_context.target_bounds(), dispatcher.as_ref()),
                 window,
                 app,
-                dispatcher.as_ref(),
             );
             apply_pointer_response(response, retained_id, 0, &captures, window, app);
         });
@@ -657,6 +734,7 @@ fn pointer_payload(
         click_count,
         timestamp_ms: event_timestamp_ms(),
         captured,
+        target: None,
     }
     .into_value()
 }
@@ -672,6 +750,7 @@ fn wheel_payload(event: &ScrollWheelEvent) -> UiValue {
         precise: event.delta.precise(),
         modifiers: event_modifiers(event.modifiers),
         timestamp_ms: event_timestamp_ms(),
+        target: None,
     }
     .into_value()
 }
@@ -779,14 +858,17 @@ impl PointerCaptureRoutes {
                 || mouse_move_payload_with_capture(event, true),
                 |context| context.enrich(mouse_move_payload_with_capture(event, true)),
             );
+            let target = move_payload_contexts
+                .get(&node)
+                .and_then(PointerPayloadContext::target_bounds);
             let response = dispatch_ui_handler_phases(
                 bindings,
                 "pointer_move",
                 &[crate::EventPhase::Target, crate::EventPhase::Bubble],
                 &payload,
+                EventRoute::new(target, Some(&move_dispatcher)),
                 window,
                 app,
-                Some(&move_dispatcher),
             );
             apply_pointer_response(response, Some(node), 0, &move_captures, window, app);
             app.stop_propagation();
@@ -803,14 +885,17 @@ impl PointerCaptureRoutes {
                     || mouse_up_payload_with_capture(event, true),
                     |context| context.enrich(mouse_up_payload_with_capture(event, true)),
                 );
+                let target = payload_contexts
+                    .get(&node)
+                    .and_then(PointerPayloadContext::target_bounds);
                 let response = dispatch_ui_handler_phases(
                     bindings,
                     "pointer_up",
                     &[crate::EventPhase::Target, crate::EventPhase::Bubble],
                     &payload,
+                    EventRoute::new(target, Some(&up_dispatcher)),
                     window,
                     app,
-                    Some(&up_dispatcher),
                 );
                 apply_pointer_response(response, Some(node), 0, &up_captures, window, app);
             }
@@ -1541,6 +1626,10 @@ impl GpuiNodeRenderer {
         let click_dispatcher = environment.dispatcher.cloned();
         let hover_dispatcher = environment.dispatcher.cloned();
         let keyboard_dispatcher = environment.dispatcher.cloned();
+        let event_target = EventTargetContext::new(retained_id, environment.geometry.clone());
+        let click_target = event_target.clone();
+        let hover_target = event_target.clone();
+        let keyboard_target = event_target;
         let keyboard_click = click.clone();
         let text_direction = environment.direction;
         let stable_id = interaction_element_id(retained_id, path);
@@ -1563,6 +1652,7 @@ impl GpuiNodeRenderer {
                     bindings,
                     "click",
                     payload,
+                    click_target.snapshot(),
                     window,
                     cx,
                     click_dispatcher.as_ref(),
@@ -1570,7 +1660,7 @@ impl GpuiNodeRenderer {
                 apply_event_response(response, window, cx);
             }
         });
-        let element = apply_hover_handler(element, hover, hover_dispatcher);
+        let element = apply_hover_handler(element, hover, hover_dispatcher, hover_target);
         let element = element.on_key_down(move |event, window, cx| {
             let semantic_key = logical_keyboard_key(event.keystroke.key.as_str(), text_direction);
             let semantic = key_handlers.get(semantic_key).or_else(|| {
@@ -1583,6 +1673,7 @@ impl GpuiNodeRenderer {
                     bindings,
                     "key",
                     payload,
+                    keyboard_target.snapshot(),
                     window,
                     cx,
                     keyboard_dispatcher.as_ref(),
@@ -2298,6 +2389,8 @@ fn native_overlay_element<C: ColorResolver>(
             0,
         ),
     );
+    let event_target = EventTargetContext::new(retained_id, environment.geometry.clone());
+    let open_target = event_target.clone();
     let open_change = node.handler("open_change").map(|handler| {
         let handler = handler.clone();
         let dispatcher = environment.dispatcher.cloned();
@@ -2306,13 +2399,19 @@ fn native_overlay_element<C: ColorResolver>(
                 &handler,
                 "open_change",
                 UiValue::Bool(open),
+                open_target.snapshot(),
                 window,
                 cx,
                 dispatcher.as_ref(),
             );
         }) as crate::overlay_element::OpenChangeHandler
     });
-    let panel_key = overlay_panel_key(node, environment.dispatcher, environment.direction);
+    let panel_key = overlay_panel_key(
+        node,
+        environment.dispatcher,
+        environment.direction,
+        event_target,
+    );
     let restore_focus_on_close = rendered_spec.kind == crate::OverlayKind::Menu;
     let overlay = ScriptOverlayElement::new(
         path,
@@ -2345,6 +2444,7 @@ fn overlay_panel_key(
     node: &UiNode,
     dispatcher: Option<&NodeEventDispatcher>,
     direction: TextDirection,
+    target: EventTargetContext,
 ) -> Option<crate::overlay_element::PanelKeyHandler> {
     let handlers = node
         .handlers()
@@ -2381,6 +2481,7 @@ fn overlay_panel_key(
                         .get(key)
                         .and_then(Clone::clone)
                         .unwrap_or(UiValue::Null),
+                    target.snapshot(),
                     window,
                     cx,
                     dispatcher.as_ref(),
@@ -2422,7 +2523,7 @@ fn native_virtual_collection_element<C: ColorResolver>(
         dispatcher: environment
             .dispatcher
             .cloned()
-            .unwrap_or_else(|| NodeEventDispatcher::new(|_, _, _, _| EventPropagation::Handled)),
+            .unwrap_or_else(|| NodeEventDispatcher::new(|_, _, _, _, _| EventPropagation::Handled)),
         overlays: environment.overlays.clone(),
         animations: environment.animations.clone(),
         signals: environment.signals.clone(),
@@ -4027,6 +4128,12 @@ mod tests {
             unreachable!()
         };
         assert_eq!(payload["canvas_key"], UiValue::String("clip".to_owned()));
+        assert_eq!(
+            payload["target"],
+            crate::GeometryBounds::new(105.0, 54.0, 200.0, 120.0)
+                .unwrap()
+                .into_value()
+        );
         assert!(value_point(&payload["local"]).is_some_and(|(x, y)| {
             (x - 7.0).abs() < f64::EPSILON && (y - 14.0).abs() < f64::EPSILON
         }));

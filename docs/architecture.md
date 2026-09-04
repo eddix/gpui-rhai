@@ -126,7 +126,11 @@ the captured node until release, pointer-up, or unmount.
 
 Pointer down/up/move and wheel input are normalized at the GPUI boundary into
 stable `UiValue` maps with logical window/local/content coordinates, buttons,
-modifiers, click count, precise delta, and a monotonic timestamp. Retained
+modifiers, click count, precise delta, a monotonic timestamp, and the current
+handler node's committed visual bounds. Script event contexts and trusted
+`NativeEvent` values carry the same event-time current-target geometry without
+registering a dependency; callbacks without a retained node expose no target.
+Retained
 `ElementRef` declarations bind to stable `NodeId`; prepaint reports committed
 layout geometry plus visual bounds after static/signal/animation translation;
 pointer local coordinates invert that visual translation before Canvas hit

@@ -57,6 +57,7 @@ pub struct PointerEventData {
     pub click_count: usize,
     pub timestamp_ms: f64,
     pub captured: bool,
+    pub target: Option<crate::GeometryBounds>,
 }
 
 impl PointerEventData {
@@ -90,6 +91,11 @@ impl PointerEventData {
             ),
             ("timestamp_ms".to_owned(), UiValue::Float(self.timestamp_ms)),
             ("captured".to_owned(), UiValue::Bool(self.captured)),
+            (
+                "target".to_owned(),
+                self.target
+                    .map_or(UiValue::Null, crate::GeometryBounds::into_value),
+            ),
             ("pressure".to_owned(), UiValue::Null),
             ("tilt_x".to_owned(), UiValue::Null),
             ("tilt_y".to_owned(), UiValue::Null),
@@ -106,6 +112,7 @@ pub struct WheelEventData {
     pub precise: bool,
     pub modifiers: EventModifiers,
     pub timestamp_ms: f64,
+    pub target: Option<crate::GeometryBounds>,
 }
 
 impl WheelEventData {
@@ -119,6 +126,11 @@ impl WheelEventData {
             ("precise".to_owned(), UiValue::Bool(self.precise)),
             ("modifiers".to_owned(), self.modifiers.into_value()),
             ("timestamp_ms".to_owned(), UiValue::Float(self.timestamp_ms)),
+            (
+                "target".to_owned(),
+                self.target
+                    .map_or(UiValue::Null, crate::GeometryBounds::into_value),
+            ),
         ]))
     }
 }

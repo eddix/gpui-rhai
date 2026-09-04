@@ -27,7 +27,9 @@ let result = view.automate(
 and last committed visual bounds. `Dispatch` follows retained
 capture/target/bubble order and invokes the same Script, Host, or
 `NativeHandlerRef` callbacks used by mounted nodes. `Action` uses the mounted
-semantic action registry. These commands do not fabricate GPUI platform input
+semantic action registry. Script and Native callbacks receive the dispatched
+handler node's current visual bounds through their event-target context, while
+the explicit payload remains unchanged. These commands do not fabricate GPUI platform input
 or browser-style default behavior; platform keyboard, IME, pointer, and focus
 certification continues through GPUI test support and unlocked macOS tests.
 

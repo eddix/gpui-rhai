@@ -571,6 +571,7 @@ pub struct UiContext {
     component_style: Option<crate::Style>,
     component_part_styles: BTreeMap<String, crate::Style>,
     non_reusable_render_reads: Rc<RefCell<BTreeSet<ComponentInstancePath>>>,
+    event_target: Option<crate::GeometryBounds>,
 }
 
 impl UiContext {
@@ -595,6 +596,7 @@ impl UiContext {
             component_style: None,
             component_part_styles: BTreeMap::new(),
             non_reusable_render_reads: Rc::new(RefCell::new(BTreeSet::new())),
+            event_target: None,
         };
         if phase == ExecutionPhase::Render
             && let Ok(mut runtime) = context.runtime.try_borrow_mut()
@@ -640,6 +642,7 @@ impl UiContext {
             component_style: self.component_style.clone(),
             component_part_styles: self.component_part_styles.clone(),
             non_reusable_render_reads: Rc::clone(&self.non_reusable_render_reads),
+            event_target: self.event_target,
         };
         if context.phase == ExecutionPhase::Render
             && let Ok(mut runtime) = context.runtime.try_borrow_mut()
@@ -654,6 +657,11 @@ impl UiContext {
         native_context: Option<crate::invocation::ScriptInvocationContext>,
     ) -> Self {
         self.native_context = native_context;
+        self
+    }
+
+    pub(crate) const fn with_event_target(mut self, target: Option<crate::GeometryBounds>) -> Self {
+        self.event_target = target;
         self
     }
 
@@ -940,6 +948,25 @@ impl UiContext {
                 geometry.clip.map_or(UiValue::Null, geometry_bounds_value),
             ),
         ])))
+    }
+
+    /// Read the current handler node's committed visual bounds without
+    /// establishing a render dependency.
+    ///
+    /// This event-time snapshot is `null` for callbacks that were not
+    /// dispatched from a retained node or whose geometry is unavailable.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`UiContextError::EventTargetOutsideEvent`] during render,
+    /// initialization, or disposal.
+    pub fn event_target_bounds(&self) -> Result<UiValue, UiContextError> {
+        if self.phase != ExecutionPhase::Event {
+            return Err(UiContextError::EventTargetOutsideEvent);
+        }
+        Ok(self
+            .event_target
+            .map_or(UiValue::Null, crate::GeometryBounds::into_value))
     }
 
     /// Queue focus for a mounted element ref in the current window.
@@ -2558,6 +2585,12 @@ fn register_element_ref_context_methods(builder: &mut TypeBuilder<UiContext>) {
                     .map_err(|error| Box::new(context_runtime_error(&error)))
             },
         )
+        .with_fn("event_target_bounds", |context: &mut UiContext| {
+            context
+                .event_target_bounds()
+                .map(UiValue::into_dynamic)
+                .map_err(|error| Box::new(context_runtime_error(&error)))
+        })
         .with_fn(
             "focus",
             |context: &mut UiContext, reference: crate::ElementRef| {
@@ -2574,12 +2607,7 @@ fn register_element_ref_context_methods(builder: &mut TypeBuilder<UiContext>) {
 }
 
 fn geometry_bounds_value(bounds: crate::GeometryBounds) -> UiValue {
-    UiValue::Map(BTreeMap::from([
-        ("x".to_owned(), UiValue::Float(bounds.x)),
-        ("y".to_owned(), UiValue::Float(bounds.y)),
-        ("width".to_owned(), UiValue::Float(bounds.width)),
-        ("height".to_owned(), UiValue::Float(bounds.height)),
-    ]))
+    bounds.into_value()
 }
 
 fn register_action_context_methods(builder: &mut TypeBuilder<UiContext>) {
@@ -3068,6 +3096,8 @@ pub enum UiContextError {
     Borrowed,
     #[error("state mutation and effects are forbidden during view rendering")]
     MutationDuringRender,
+    #[error("event target geometry is available only during event callbacks")]
+    EventTargetOutsideEvent,
     #[error("async work requires a bound script generation")]
     MissingGeneration,
     #[error("no locale manager is configured for this application")]
@@ -3191,6 +3221,31 @@ mod tests {
             context.set_state("count", Dynamic::from(1_i64)),
             Err(UiContextError::MutationDuringRender)
         ));
+    }
+
+    #[test]
+    fn event_target_bounds_are_untracked_and_event_only() {
+        let context = mounted_context(ExecutionPhase::Event).with_event_target(Some(
+            crate::GeometryBounds::new(13.0, 24.0, 90.0, 40.0).unwrap(),
+        ));
+        assert_eq!(
+            context.event_target_bounds().unwrap(),
+            crate::GeometryBounds::new(13.0, 24.0, 90.0, 40.0)
+                .unwrap()
+                .into_value()
+        );
+        assert!(context.runtime().borrow().geometry.take_dirty().is_empty());
+
+        assert!(matches!(
+            mounted_context(ExecutionPhase::Render).event_target_bounds(),
+            Err(UiContextError::EventTargetOutsideEvent)
+        ));
+        assert_eq!(
+            mounted_context(ExecutionPhase::Event)
+                .event_target_bounds()
+                .unwrap(),
+            UiValue::Null
+        );
     }
 
     #[test]

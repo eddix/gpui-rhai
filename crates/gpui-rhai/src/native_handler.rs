@@ -126,6 +126,8 @@ impl CustomType for NativeHandlerRef {
 pub struct NativeEvent {
     pub name: String,
     pub payload: UiValue,
+    /// Event-time visual bounds of the retained node owning the handler.
+    pub target: Option<crate::GeometryBounds>,
 }
 
 type NativeHandlerFn = dyn FnMut(

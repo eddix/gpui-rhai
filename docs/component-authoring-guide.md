@@ -256,6 +256,22 @@ binding. A handler may return `event_response()` refined with
 `release_pointer()`. Pointer and wheel handlers receive normalized maps rather
 than GPUI event values.
 
+Every raw pointer/wheel map includes `target`, the committed visual bounds of
+the retained node whose handler is running, in window coordinates:
+
+```rhai
+#{ x: 24.0, y: 80.0, width: 320.0, height: 96.0 }
+```
+
+Click and custom-value handlers keep their declared payload type. They read the
+same event-time geometry with `ctx.event_target_bounds()`. The value is `()` for
+actions, effects, semantic follow-up callbacks, and other work not dispatched
+from a retained node. Calling it outside an event is an error. The lookup is
+untracked: resizing does not dirty the component merely because a handler may
+read its bounds later. In capture/bubble dispatch, target means the node owning
+the currently executing handler, matching `currentTarget` semantics rather than
+guessing a logical ancestor.
+
 After committed prepaint, pointer maps use node-local coordinates derived from
 the retained geometry registry. `content` starts from `local` and subtracts the
 live GPUI offsets of the node and every scrollable ancestor, so nested native

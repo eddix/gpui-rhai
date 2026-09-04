@@ -261,6 +261,14 @@ The first callback parameter is gpui-rhai `UiContext`, not GPUI `Context`.
 `UiContext` exposes the safe runtime surface: state, stores, locale, themes,
 effects, tasks, subscriptions, refs, signals, and validated commands.
 
+Inside a retained node handler, `ctx.event_target_bounds()` returns the current
+handler node's committed visual bounds as `{ x, y, width, height }` in window
+coordinates. It is an event-time snapshot and creates no render dependency;
+callbacks not dispatched from a node receive `()` and render/init/dispose calls
+are rejected. Raw pointer and wheel payload maps expose the same value as
+`payload.target`. This lets a click position a native window without maintaining
+a resize-to-store geometry channel.
+
 Old callbacks are rejected after reload. Deliveries after unmount or disposal
 are discarded by generation/scope ownership.
 
@@ -311,7 +319,8 @@ button::Button(#{
 
 Native handlers work through formal component callback props and native
 primitive callback props. Their declared event names and payload schemas are
-checked before Rust runs.
+checked before Rust runs. `NativeEvent::target` contains the same optional
+event-time visual bounds without changing the schema-checked payload.
 
 Use native handlers for:
 

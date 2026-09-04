@@ -211,8 +211,10 @@ Atomic nodes expose normalized pointer, click/aux-click, wheel, hover,
 focus/blur, keyboard, layout, scroll, outside-press, and semantic events.
 Pointer payloads include pointer identity/type, logical window/local/content
 coordinates, movement, buttons, modifiers, click count, timestamp, capture
-state, and available pressure/tilt data. Coordinates account for committed
-layout, scrolling, and invertible 2D transforms.
+state, the current handler node's event-time visual bounds, and available
+pressure/tilt data. Coordinates account for committed layout, scrolling, and
+invertible 2D transforms. Event callbacks can query the same current-target
+bounds without creating a render dependency; non-node callbacks return null.
 
 Propagation is capture -> target -> bubble. Each node/phase may have an ordered
 list of Script and Host handlers. Responses independently control default

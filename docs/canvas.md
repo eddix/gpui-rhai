@@ -38,8 +38,9 @@ separately caps the number of retained Canvas nodes, so many empty or tiny
 scenes cannot bypass the command budget.
 
 Pointer down/up/move payloads on a keyed Canvas use committed node geometry for
-`local`/`content` coordinates and add `canvas_key`, the topmost hit command in
-reverse paint order or `()`. Rect/circle/line use analytic tests; paths flatten
+`local`/`content` coordinates, include the Canvas visual bounds as `target`, and
+add `canvas_key`, the topmost hit command in reverse paint order or `()`.
+Rect/circle/line use analytic tests; paths flatten
 quadratic/cubic curves deterministically and test fill/stroke plus clip. The
 window capture router preserves the same local coordinates and key after a
 handler captures the pointer. Rhai attaches an ordinary node handler; no
