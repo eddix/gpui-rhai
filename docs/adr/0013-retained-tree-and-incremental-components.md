@@ -34,6 +34,14 @@ dependency edges. Node-valued props compare conservatively as unequal.
 Components that sample an untracked native signal during render are not
 reusable; signal-bound native properties remain the intended hot path.
 
+Some source adapters intentionally return and decorate another formal
+component's root node, so a single `component_root` marker cannot represent both
+boundaries. If a dirty child has no independently replaceable address in the
+accepted snapshot, incremental dispatch promotes it to the nearest active
+ancestor that does. Rerendering that ancestor replays its decoration and the
+dirty descendant while preserving unrelated siblings; falling back to the root
+remains the final safe case.
+
 GPUI elements remain immediate values rebuilt from retained state; the runtime
 does not cache `AnyElement`.
 
@@ -45,5 +53,6 @@ Rhai execution. Stateful/interactive nodes require explicit keys. Failed
 candidates preserve the last-good generation.
 
 Protected by keyed reorder/removal tests, incremental/full-render equivalence,
-root-dirty nested bailout tests, retained dependency/resource tests, failure
-rollback, retained primitive lifecycle, and end-to-end performance probes.
+root-dirty nested bailout and transparent Select/Dropdown promotion tests,
+retained dependency/resource tests, failure rollback, retained primitive
+lifecycle, and end-to-end performance probes.

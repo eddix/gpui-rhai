@@ -32,6 +32,12 @@ ancestor instead of failing when a parent and child share one `UiNode` root.
 Runtime-error banners are selectable monospace text and can be suppressed by a
 Host that surfaces `ScriptViewHandle::last_error` itself.
 
+The generic virtual collection accepts explicit sticky section-header indices,
+retains exactly one active header, and pushes it off as the next section enters.
+The source Table adds controlled `group_by`/`collapsed_groups` with counts,
+toggle events, source parts, Array parity, and cached NativeCollection
+sort/group/collapse projection.
+
 The source registry now includes the complete official component specimen,
 fifteen bundled theme variants, and Theme Studio for creating, importing,
 editing, validating, previewing, and saving gpui-rhai themes.

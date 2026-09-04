@@ -317,7 +317,7 @@ event, focus, scroll, overlay, or virtualization privilege remains.
   text infrastructure where complete.
 - Rust fast-path Timeline: identical UI/event semantics using NativeHandlerRef
   and NativeSignal for comparison.
-- Keep product examples and component gallery independently runnable.
+- Keep product examples and Theme Studio independently runnable.
 
 **I gate:** automation drives every final app without manual input and records
 deterministic state/geometry/performance assertions plus curated screenshots.

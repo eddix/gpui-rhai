@@ -65,6 +65,15 @@ row as `Dynamic`. The native Table path validates its projection configuration,
 caches scalar-field sort orders in Rust, and constructs normalized cell payloads
 only for indices requested by GPUI.
 
+When Table declares `group_by`, the native projection also owns the flattened
+group-header/row order. Controlled sorting runs first; the projection then
+partitions rows by a non-empty string field, retains first appearance of each
+group in the sorted order, records counts, removes rows belonging to controlled
+`collapsed_groups`, and publishes immutable sticky-header indices to the
+generic virtual collection. Sort/group/collapse orders are cached independently
+of selection, so a row selection update does not scan the full source again.
+The per-source structural-order cache is capped at 64 policy combinations.
+
 ## Replace live data
 
 Prepare a new immutable collection in Rust, then replace it on the GPUI
@@ -85,7 +94,9 @@ frame pumps.
 - With Array rows, Table preserves the existing source-component behavior: the
   caller owns row ordering and Table normalizes the complete Array in Rhai.
 - With `NativeCollection`, Table applies its controlled scalar-field sort in
-  Rust and performs selection/striping/cell projection only for visible rows.
+  Rust, optionally groups/collapses in the same cached data plane, and performs
+  selection/striping/cell projection only for visible rows. Group headers are
+  synthetic projected items; they never become source rows or selectable keys.
 - Domain formatting should still happen before the Table boundary. Compound
   values are not implicitly serialized into cell strings.
 - `NativeCollection` contains typed `UiValue`, not `Dynamic`, `FnPtr`, Engine,

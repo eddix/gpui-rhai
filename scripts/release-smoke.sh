@@ -88,7 +88,7 @@ if grep -Eiq 'panicked at|thread .* panicked|failed to initialize|failed to comp
 fi
 echo "release smoke passed: theme studio"
 
-for state in selected loading empty; do
+for state in selected loading empty grouped; do
   log="${TMPDIR:-/tmp}/gpui-rhai-data_table-${state}-smoke.log"
   GPUI_RHAI_VISUAL_STATE="${state}" \
     "target/release/examples/data_table" >"${log}" 2>&1 &

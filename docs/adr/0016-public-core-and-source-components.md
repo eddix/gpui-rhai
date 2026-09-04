@@ -20,8 +20,11 @@ lifecycle.
 
 Table, DatePicker, Select/Dropdown, Menu, Tabs, Toast presentation, Pagination,
 and other high-level components are Rhai source. Generic virtualization supports
-data-backed variable-height item components so large controls need no private
-native Table API.
+data-backed variable-height item components plus explicit sticky section-header
+indices, single-instance presentation, and push-off. Table grouping/collapse,
+counts, events, semantics, and styling remain source policy; NativeCollection
+may cache its flattened sort/group/collapse data order without becoming a
+private native Table API.
 
 Dogfooding migration is destructive: old component declarations, Style/atomic
 APIs, specialized native UI nodes, and compatibility shims are deleted. Version
@@ -36,4 +39,3 @@ together.
 
 Protected by registry API-surface audit, copied-source examples, CLI snapshots,
 and final component/visual/interaction matrices.
-

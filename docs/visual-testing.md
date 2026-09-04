@@ -30,7 +30,7 @@ The complex-control expansion adds:
 - `form_showcase` states for searchable/grouped Select, fixed-Clock DatePicker
   in English and Simplified Chinese, and Textarea empty/multiline/error/limit/
   auto-grow states;
-- `data_table` states for scalar/custom cells, sorting, single/multiple
+- `data_table` states for scalar cells, sorting, single/multiple
   selection, loading, empty, striped rows, horizontal overflow, Pagination, and
   RTL logical alignment;
 - a fixed Clock, fixed generated row data, and settled scroll offsets recorded
@@ -57,9 +57,10 @@ under `tests/visual/macos/<example>/<case>.png` once captured.
   fixed rows, and auto-grow under width changes.
 - Exercise Select groups/search/clear, DatePicker day/week/month/year-boundary
   navigation and min/max, and locale switching while their panels are open.
-- Exercise Table row navigation, sorting, select-all semantics, custom-cell Tab
-  order, synchronized horizontal scrolling, draggable overflow scrollbar,
-  vertical-wheel axis isolation, sticky header, and bounded visible rows.
+- Exercise Table row navigation, sorting, select-all semantics, synchronized
+  horizontal scrolling, draggable overflow scrollbar,
+  vertical-wheel axis isolation, grouped counts/collapse, group-header sticky
+  push-off, and bounded visible rows.
   Exercise every Pagination ellipsis/edge transition and page-size reset.
 - Open/focus/confirm-close a secondary window; verify app-store propagation and
   per-window theme/locale/state cleanup.
@@ -90,7 +91,7 @@ an open parent Dialog, guarding GPUI 0.2.x against nested `defer_draw` panics.
 Three-view embedding cases cover automatic bounds, runtime isolation, shared
 Host overlays, duplicate local IDs, click-through dismissal, key conflicts,
 and dispose/remount.
-The independent workspace currently has 31 tests: 30 GPUI integration cases
+The independent workspace currently has 33 tests: 32 GPUI integration cases
 plus one `table_1000` fixture-preparation guard. It contains no deleted
 Table/choice/date/toast native constructor and also guards that window-level
 pointer-capture listeners register during paint rather than GPUI layout.
@@ -100,6 +101,9 @@ Another verifies that explicit Style occlusion blocks pointer hits to painted
 sibling content behind the retained node.
 Another compares `ctx.event_target_bounds()` from a real click against the
 same node's committed automation bounds without creating a render dependency.
+The grouped-Table case scrolls through two sections and verifies that the
+runtime-owned sticky layer changes to the next retained header at the viewport
+edge. Runtime-error cases verify both native selection/copy and Host opt-out.
 It guards keyboard/clipboard dispatch mechanics but does not replace platform
 IME candidate-window, focus-ring, or accessibility certification.
 

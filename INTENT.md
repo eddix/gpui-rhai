@@ -350,10 +350,12 @@ occlusion, focus trap/restore, tooltip timing, and toast queues.
 
 Generic data-backed one-dimensional virtualization supports stable keys,
 variable measured heights, estimates, overdraw, bottom alignment, follow-tail,
-prepend anchoring, remeasure, focus retention, and programmatic scrolling. Rhai
-item renderers are formal components scheduled outside GPUI layout/paint and
-only instantiated for the window plus overdraw. Arbitrary two-dimensional
-spreadsheet virtualization remains a separate future mechanism.
+prepend anchoring, remeasure, focus retention, programmatic scrolling, and
+explicit section-header indices with one retained sticky presentation plus
+push-off by the next section. Rhai item renderers are formal components
+scheduled outside GPUI layout/paint and only instantiated for the window plus
+overdraw. Arbitrary two-dimensional spreadsheet virtualization remains a
+separate future mechanism.
 
 A retained native TextEditor mechanism provides controlled and uncontrolled
 single/multiline modes, immediate native edits, revision-safe reconciliation,

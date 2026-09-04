@@ -30,6 +30,37 @@ virtual_collection(#{
 }, Fn("render_message"))
 ```
 
+## Sticky sections
+
+Top-aligned collections may declare sorted, unique item indices as section
+headers:
+
+```rhai
+virtual_collection(#{
+    key: "grouped-items",
+    label: "Grouped items",
+    data: items,
+    estimated_height: 30,
+    height: 420,
+    sticky_headers: [0, 12, 28],
+}, Fn("render_item"))
+```
+
+Indices must be in range and cannot be combined with bottom alignment. A
+NativeCollection projection may carry the same immutable index set internally;
+omitting `sticky_headers` adopts that metadata, while an explicit empty array
+disables it.
+
+The active header is the last declared index at or before GPUI's logical top
+item. The runtime keeps it in the realization target even after its natural row
+is offscreen. When its natural row would also be drawn, a same-height
+placeholder preserves ListState measurement and the one retained header is
+rendered only in the sticky layer—there are no duplicate element IDs, handlers,
+or geometry records. The next measured header pushes the current one upward.
+Header surfaces that block clicks should use `occlude_except_scroll()` rather
+than `occlude()`, allowing wheel input to continue to the GPUI list behind the
+sticky presentation.
+
 The constructor validates every data key and executes only the estimated first
 window. GPUI's variable-height `list/ListState` asks for items while laying out,
 but that callback never invokes Rhai: it records the indices participating in
@@ -62,9 +93,10 @@ state cleanup, off-layout realization, and the 2,000-item Chat acceptance app.
 one transaction-aware `VirtualCollectionMetrics` record per retained
 collection: item/realized/requested counts and ranges, GPUI visible range,
 viewport height, logical top item/offset, scrolled state, alignment, and
-follow-tail policy. Frame reports derive visible range from measured GPUI item
-bounds when available and otherwise use the pre-realized window; scroll changes
-update it immediately from `ListScrollEvent`.
+follow-tail policy, plus the active sticky-header index. Frame reports derive
+visible range from measured GPUI item bounds when available and otherwise use
+the pre-realized window; scroll changes update it immediately from
+`ListScrollEvent`.
 Pending requested metrics clear when the foreground realization batch drains,
 and failed transactions restore the prior metric snapshot.
 

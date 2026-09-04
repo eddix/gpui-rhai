@@ -12,8 +12,8 @@
 // Data-backed Table composed entirely from public Box/Text/virtual_collection APIs.
 // Use either a positive logical-pixel height or fill_height for flex layouts.
 // Props: key, label, row_key, Array-or-NativeCollection rows, columns,
-// height, loading/empty, sort and selection.
-// Events: sort_change, selection_change, and row_click.
+// height, loading/empty, sort, selection, and optional controlled row grouping.
+// Events: sort_change, selection_change, row_click, and group_toggle.
 // State: controlled values only; realized item component state is keyed by row.
 // Example: Table(#{ key: "users", label: "Users", row_key: "id", rows: rows,
 //     columns: columns, height: 420 })
@@ -66,9 +66,15 @@ define_component(#{
                 key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
                 direction: #{ schema: #{ type: "string", allowed: ["ascending", "descending"] }, required: true, sensitive: false },
             } } }, required: false, sensitive: false },
+            group_by: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
+            collapsed_groups: #{ schema: #{ type: "array", max_items: 100000, items: #{ type: "string" } }, required: false, sensitive: false,
+                "default": #{ type: "array", value: [] } },
+            sticky_group_headers: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
+                "default": #{ type: "bool", value: true } },
             on_sort_change: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false },
             on_selection_change: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false },
             on_row_click: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false },
+            on_group_toggle: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false },
         },
         state: #{ fields: #{} },
         events: #{
@@ -78,12 +84,14 @@ define_component(#{
             } } } },
             selection_change: #{ payload: #{ type: "array", max_items: 100000, items: #{ type: "string" } } },
             row_click: #{ payload: #{ type: "string" } },
+            group_toggle: #{ payload: #{ type: "string" } },
         },
         slots: #{
             loading_content: #{ required: false, multiple: false },
             empty: #{ required: false, multiple: false },
         },
-        parts: ["root", "header", "header_cell", "body", "loading", "empty"],
+        parts: ["root", "header", "header_cell", "body", "group_header",
+            "group_indicator", "group_label", "group_count", "loading", "empty"],
     },
     render: Fn("render_Table")
 });
@@ -110,9 +118,34 @@ fn row_action(ctx, payload) {
     ctx.emit("row_click", payload.key);
     if payload.selection != () { ctx.emit("selection_change", payload.selection); }
 }
+fn group_action(ctx, group) { ctx.emit("group_toggle", group); }
 
 fn render_table_row(ctx, payload) {
     let item = payload.item;
+    if item.kind == "group" {
+        let indicator = text(if item.collapsed { "▸" } else { "▾" })
+            .with_key(`${payload.key}-indicator`)
+            .with_style(ctx.component_style("group_indicator",
+                style().width(px(14)).font_size(px(10)).text_color(theme_color("text_muted"))));
+        let label = text(item.group).with_key(`${payload.key}-label`)
+            .with_style(ctx.component_style("group_label",
+                style().flex_grow().font_size(px(11)).line_height(px(14)).font_weight(700)));
+        let count = text(`${item.count}`).with_key(`${payload.key}-count`)
+            .with_style(ctx.component_style("group_count",
+                style().font_size(px(10)).line_height(px(14)).text_color(theme_color("text_muted"))));
+        let node = row([indicator, label, count])
+            .with_key(payload.key)
+            .with_style(ctx.component_style("group_header",
+                style().height(px(item.height)).padding_x(theme_spacing("sm")).gap(px(6))
+                    .items_center().border_bottom(px(1)).border_color(theme_color("border"))
+                    .background(theme_color("surface_raised")).occlude_except_scroll()))
+            .accessibility_role("rowheader")
+            .accessibility_label(`${item.group}, ${item.count}`)
+            .accessibility_checked(item.collapsed);
+        return if item.toggle {
+            node.on_click_value(Fn("group_action"), item.group)
+        } else { node.tab_stop(false) };
+    }
     let cells = [];
     for cell in item.cells {
         cells.push(text(cell.text).with_key(cell.key).with_style(
@@ -135,6 +168,36 @@ fn render_table_row(ctx, payload) {
         .accessibility_role("row")
         .accessibility_label(item.label);
     node.on_click_value(Fn("row_action"), #{ key: payload.key, selection: item.selection })
+}
+
+fn table_row_item(source, source_index, columns, row_key, label, selected,
+        selection_mode, striped, row_height, display_index) {
+    let key = `${source[row_key]}`;
+    let is_selected = key in selected;
+    let next_selection = if selection_mode == "none" { () }
+        else if selection_mode == "single" { if is_selected { [] } else { [key] } }
+        else {
+            let result = [];
+            for candidate in selected { if candidate != key { result.push(candidate); } }
+            if !is_selected { result.push(key); }
+            result
+        };
+    let cells = [];
+    for column in columns {
+        cells.push(#{
+            key: column.key, text: if column.key in source { `${source[column.key]}` } else { "" },
+            width: column.width, align: prop_or(column, "align", "start")
+        });
+    }
+    #{ kind: "row", key: key, label: `${label} row ${source_index + 1}`, cells: cells,
+        selected: is_selected, selection: next_selection,
+        striped: striped && display_index % 2 == 1, height: row_height }
+}
+
+fn unique_group_header_key(value, row_keys, header_keys) {
+    let key = `__gpui_rhai_group__:${value}`;
+    while key in row_keys || key in header_keys { key = `_${key}`; }
+    key
 }
 
 fn render_Table(ctx, props) {
@@ -193,37 +256,72 @@ fn render_Table(ctx, props) {
     let selection_mode = prop_or(props, "selection_mode", "none");
     let row_height = prop_or(props, "estimated_row_height", 30.0);
     let striped = prop_or(props, "striped", false);
+    let group_by = if "group_by" in props { props.group_by } else { () };
+    let collapsed = prop_or(props, "collapsed_groups", []);
+    if group_by == () && collapsed.len > 0 {
+        throw "Table collapsed_groups requires group_by";
+    }
+    if group_by != () {
+        let found = false;
+        for column in props.columns { if column.key == group_by { found = true; } }
+        if !found { throw `Table group_by ${group_by} is not a declared column`; }
+    }
+    let group_toggle = "on_group_toggle" in props && props.on_group_toggle != ();
+    let sticky_groups = prop_or(props, "sticky_group_headers", true);
+    let native_data = is_native_collection(props.rows);
     let data;
-    if is_native_collection(props.rows) {
+    let sticky_headers = [];
+    if native_data {
         data = native_table_view(props.rows, #{
             row_key: props.row_key, label: props.label, columns: props.columns,
             selected_keys: selected, selection_mode: selection_mode,
             striped: striped, row_height: row_height, sort: current_sort,
+            group_by: group_by, collapsed_groups: collapsed, group_toggle: group_toggle,
         });
-    } else {
+    } else if group_by == () {
         data = [];
         for index in 0..props.rows.len {
+            data.push(table_row_item(props.rows[index], index, props.columns, props.row_key,
+                props.label, selected, selection_mode, striped, row_height, index));
+        }
+    } else {
+        data = [];
+        let group_order = [];
+        let buckets = #{};
+        let row_keys = [];
+        for index in 0..props.rows.len {
             let source = props.rows[index];
-            let key = `${source[props.row_key]}`;
-            let is_selected = key in selected;
-            let next_selection = if selection_mode == "none" { () }
-                else if selection_mode == "single" { if is_selected { [] } else { [key] } }
-                else {
-                    let result = [];
-                    for candidate in selected { if candidate != key { result.push(candidate); } }
-                    if !is_selected { result.push(key); }
-                    result
-                };
-            let cells = [];
-            for column in props.columns {
-                cells.push(#{
-                    key: column.key, text: if column.key in source { `${source[column.key]}` } else { "" },
-                    width: column.width, align: prop_or(column, "align", "start")
-                });
+            let group = if group_by in source { source[group_by] } else { () };
+            if type_of(group) != "string" || group == "" {
+                throw `Table row ${index} group field ${group_by} must be a non-empty string`;
             }
-            data.push(#{ key: key, label: `${props.label} row ${index + 1}`, cells: cells,
-                selected: is_selected, selection: next_selection,
-                striped: striped && index % 2 == 1, height: row_height });
+            let key = `${source[props.row_key]}`;
+            row_keys.push(key);
+            if !(group in buckets) {
+                group_order.push(group);
+                buckets[group] = [];
+            }
+            let bucket = buckets[group];
+            bucket.push(#{ source: source, index: index });
+            buckets[group] = bucket;
+        }
+        let header_keys = [];
+        let display_index = 0;
+        for group in group_order {
+            let rows = buckets[group];
+            let header_key = unique_group_header_key(group, row_keys, header_keys);
+            header_keys.push(header_key);
+            sticky_headers.push(data.len);
+            let is_collapsed = group in collapsed;
+            data.push(#{ kind: "group", key: header_key, group: group, count: rows.len,
+                collapsed: is_collapsed, toggle: group_toggle, height: row_height });
+            if !is_collapsed {
+                for row in rows {
+                    data.push(table_row_item(row.source, row.index, props.columns, props.row_key,
+                        props.label, selected, selection_mode, striped, row_height, display_index));
+                    display_index += 1;
+                }
+            }
         }
     }
     let collection = #{
@@ -232,6 +330,7 @@ fn render_Table(ctx, props) {
         overdraw_pixels: row_height * 4.0,
         alignment: "top", follow_tail: false
     };
+    if !native_data || !sticky_groups { collection.sticky_headers = if sticky_groups { sticky_headers } else { [] }; }
     if fill_height { collection.fill_height = true; }
     else { collection.height = props.height; }
     let body_style = if fill_height {

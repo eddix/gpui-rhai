@@ -2493,6 +2493,7 @@ fn register_element_ref_api(engine: &mut Engine, active: &ActiveComponentRenderS
         );
 }
 
+#[derive(Debug)]
 struct DecodedVirtualCollection {
     key: String,
     label: String,
@@ -2502,6 +2503,28 @@ struct DecodedVirtualCollection {
     overdraw_pixels: f64,
     bottom_align: bool,
     follow_tail: bool,
+    sticky_headers: Arc<BTreeSet<usize>>,
+}
+
+impl DecodedVirtualCollection {
+    fn into_spec(
+        self,
+        id: crate::VirtualCollectionId,
+        realized: BTreeMap<usize, UiNode>,
+    ) -> crate::VirtualCollectionNodeSpec {
+        crate::VirtualCollectionNodeSpec {
+            id,
+            label: self.label,
+            data: self.data,
+            realized,
+            estimated_height: self.estimated_height,
+            height: self.height,
+            overdraw_pixels: self.overdraw_pixels,
+            bottom_align: self.bottom_align,
+            follow_tail: self.follow_tail,
+            sticky_headers: self.sticky_headers,
+        }
+    }
 }
 
 fn decode_virtual_collection(
@@ -2551,6 +2574,19 @@ fn decode_virtual_collection(
     };
     let follow_tail = collection_optional_bool(&mut config, "follow_tail")?.unwrap_or(false);
     let data = collection_data(&mut config)?;
+    let sticky_headers = collection_optional_indices(&mut config, "sticky_headers")?
+        .map_or_else(|| data.sticky_headers(), Arc::new);
+    if let Some(index) = sticky_headers.iter().find(|index| **index >= data.len()) {
+        return Err(Box::new(component_render_error(format!(
+            "virtual collection sticky header index {index} is outside {} items",
+            data.len()
+        ))));
+    }
+    if bottom_align && !sticky_headers.is_empty() {
+        return Err(Box::new(component_render_error(
+            "sticky headers require top-aligned virtual collections",
+        )));
+    }
     if let Some((unknown, _)) = config.into_iter().next() {
         return Err(Box::new(component_render_error(format!(
             "unknown virtual collection field `{unknown}`"
@@ -2565,6 +2601,7 @@ fn decode_virtual_collection(
         overdraw_pixels,
         bottom_align,
         follow_tail,
+        sticky_headers,
     })
 }
 
@@ -2579,16 +2616,7 @@ fn register_virtual_collection_api(engine: &mut Engine, active: &ActiveComponent
                   renderer: FnPtr|
                   -> Result<UiNode, Box<EvalAltResult>> {
                 validate_virtual_renderer(&renderer)?;
-                let DecodedVirtualCollection {
-                    key,
-                    label,
-                    data,
-                    estimated_height,
-                    height,
-                    overdraw_pixels,
-                    bottom_align,
-                    follow_tail,
-                } = decode_virtual_collection(config)?;
+                let decoded = decode_virtual_collection(config)?;
 
                 let VirtualCollectionContext {
                     component,
@@ -2598,11 +2626,11 @@ fn register_virtual_collection_api(engine: &mut Engine, active: &ActiveComponent
                 } = virtual_collection_context(&active)?;
                 let id = crate::VirtualCollectionId {
                     component: component.clone(),
-                    key: key.clone(),
+                    key: decoded.key.clone(),
                 };
                 let collection_context = context
                     .for_component(
-                        component.child("VirtualCollection", key.clone()),
+                        component.child("VirtualCollection", decoded.key.clone()),
                         BTreeMap::new(),
                     )
                     .with_generation(generation);
@@ -2612,24 +2640,26 @@ fn register_virtual_collection_api(engine: &mut Engine, active: &ActiveComponent
                 callback.bind_component_if_unset(component.clone(), events);
                 callback.bind_native_context_if_unset(native_context);
 
-                let initial_viewport = height.unwrap_or(estimated_height);
+                let initial_viewport = decoded.height.unwrap_or(decoded.estimated_height);
                 let initial_count = nonnegative_usize(
-                    ((initial_viewport + overdraw_pixels) / estimated_height).ceil() + 1.0,
+                    ((initial_viewport + decoded.overdraw_pixels) / decoded.estimated_height)
+                        .ceil()
+                        + 1.0,
                 )
-                .min(data.len());
+                .min(decoded.data.len());
                 enter_virtual_collection_scope(&active, collection_context.clone())?;
                 let realized = realize_initial_collection(
                     &call,
                     &renderer,
                     &collection_context,
-                    &data,
+                    &decoded.data,
                     initial_count,
                 );
                 leave_component_render(&active)?;
                 let realized = realized?;
                 let recipe = VirtualCollectionRecipe {
                     id: id.clone(),
-                    data: data.clone(),
+                    data: decoded.data.clone(),
                     renderer: callback,
                     context: collection_context,
                     event_context: context,
@@ -2651,23 +2681,11 @@ fn register_virtual_collection_api(engine: &mut Engine, active: &ActiveComponent
                     .is_some()
                 {
                     return Err(Box::new(component_render_error(format!(
-                        "virtual collection `{key}` is declared more than once in `{}`",
-                        id.component
+                        "virtual collection `{}` is declared more than once in `{}`",
+                        decoded.key, id.component
                     ))));
                 }
-                Ok(UiNode::virtual_collection(
-                    crate::VirtualCollectionNodeSpec {
-                        id,
-                        label,
-                        data,
-                        realized,
-                        estimated_height,
-                        height,
-                        overdraw_pixels,
-                        bottom_align,
-                        follow_tail,
-                    },
-                ))
+                Ok(UiNode::virtual_collection(decoded.into_spec(id, realized)))
             },
         );
 }
@@ -2847,6 +2865,39 @@ fn collection_optional_bool(
         .transpose()
 }
 
+fn collection_optional_indices(
+    config: &mut Map,
+    name: &str,
+) -> Result<Option<BTreeSet<usize>>, Box<EvalAltResult>> {
+    let Some(value) = config.remove(name) else {
+        return Ok(None);
+    };
+    let values = value.try_cast::<Array>().ok_or_else(|| {
+        Box::new(component_render_error(format!(
+            "virtual collection `{name}` must be an array of non-negative integers"
+        )))
+    })?;
+    let mut indices = BTreeSet::new();
+    for (position, value) in values.into_iter().enumerate() {
+        let index = value.try_cast::<rhai::INT>().ok_or_else(|| {
+            Box::new(component_render_error(format!(
+                "virtual collection `{name}` item {position} must be an integer"
+            )))
+        })?;
+        let index = usize::try_from(index).map_err(|_| {
+            Box::new(component_render_error(format!(
+                "virtual collection `{name}` item {position} must be non-negative"
+            )))
+        })?;
+        if !indices.insert(index) {
+            return Err(Box::new(component_render_error(format!(
+                "virtual collection `{name}` contains duplicate index {index}"
+            ))));
+        }
+    }
+    Ok(Some(indices))
+}
+
 fn collection_data(config: &mut Map) -> Result<crate::VirtualCollectionData, Box<EvalAltResult>> {
     let data = config.remove("data").ok_or_else(|| {
         Box::new(component_render_error(
@@ -2999,6 +3050,40 @@ fn component_render_error(message: impl Into<String>) -> EvalAltResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn virtual_config(sticky: &[i64], alignment: &str) -> Map {
+        let mut item = Map::new();
+        item.insert("key".into(), Dynamic::from("header"));
+        let mut config = Map::new();
+        config.insert("key".into(), Dynamic::from("sections"));
+        config.insert(
+            "data".into(),
+            Dynamic::from_array(vec![Dynamic::from_map(item)]),
+        );
+        config.insert("estimated_height".into(), Dynamic::from_float(30.0));
+        config.insert("height".into(), Dynamic::from_float(120.0));
+        config.insert("alignment".into(), Dynamic::from(alignment.to_owned()));
+        config.insert(
+            "sticky_headers".into(),
+            Dynamic::from_array(sticky.iter().copied().map(Dynamic::from_int).collect()),
+        );
+        config
+    }
+
+    #[test]
+    fn sticky_virtual_collection_indices_are_bounded_unique_and_top_aligned() {
+        let decoded = decode_virtual_collection(virtual_config(&[0], "top")).unwrap();
+        assert_eq!(decoded.sticky_headers.as_ref(), &BTreeSet::from([0]));
+
+        for (sticky, alignment, expected) in [
+            (&[1][..], "top", "outside 1 items"),
+            (&[0, 0][..], "top", "duplicate index 0"),
+            (&[0][..], "bottom", "require top-aligned"),
+        ] {
+            let error = decode_virtual_collection(virtual_config(sticky, alignment)).unwrap_err();
+            assert!(error.to_string().contains(expected), "{error}");
+        }
+    }
 
     #[test]
     fn script_builds_a_declarative_tree() {

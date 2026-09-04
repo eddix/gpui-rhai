@@ -2756,6 +2756,198 @@ fn virtual_collection_fill_height_uses_the_resolved_flex_viewport(cx: &mut TestA
 }
 
 #[gpui::test]
+fn grouped_table_headers_stick_through_the_native_virtual_list(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let entry = ModuleId::parse("main").unwrap();
+    let table = ModuleId::parse("components/table").unwrap();
+    let prepared = EmbeddedScriptView::new(
+        entry.clone(),
+        EmbeddedScriptSource::new(std::collections::BTreeMap::from([
+            (
+                entry,
+                r#"
+                    import "components/table" as table;
+                    fn toggled(ctx, group) { () }
+                    fn view(ctx) {
+                        let rows = [];
+                        for index in 0..40 {
+                            rows.push(#{
+                                id: `row-${index}`,
+                                track: if index < 20 { "alpha" } else { "beta" },
+                                state: if index % 2 == 0 { "Ready" } else { "Drift" }
+                            });
+                        }
+                        table::Table(#{
+                            key: "groups", label: "Grouped clusters", row_key: "id",
+                            height: 150, rows: rows, group_by: "track",
+                            columns: [
+                                #{ key: "id", title: "ID",
+                                    width: #{ kind: "fixed", value: 100 } },
+                                #{ key: "track", title: "Track",
+                                    width: #{ kind: "fixed", value: 180 } },
+                                #{ key: "state", title: "State",
+                                    width: #{ kind: "fixed", value: 120 } }
+                            ],
+                            on_group_toggle: Fn("toggled")
+                        })
+                    }
+                "#
+                .to_owned(),
+            ),
+            (
+                table,
+                include_str!("../../../registry/components/table.rhai").to_owned(),
+            ),
+        ])),
+        include_str!("../../../registry/themes/default_dark.rhai"),
+    )
+    .prepare()
+    .unwrap();
+    let captured = Rc::new(RefCell::new(None));
+    let captured_for_window = Rc::clone(&captured);
+    let window = cx.add_window(move |window, cx| {
+        let host = ScriptViewHost::new("sticky-table-window", cx).unwrap();
+        let view = prepared
+            .mount(
+                ScriptViewConfig::new("sticky-table-view"),
+                host.clone(),
+                window,
+                cx,
+            )
+            .unwrap();
+        *captured_for_window.borrow_mut() = Some(view.clone());
+        SingleEmbeddedHost { host, view }
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    cx.run_until_parked();
+
+    let view = captured.borrow().as_ref().unwrap().clone();
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    for _ in 0..4 {
+        cx.background_executor
+            .advance_clock(std::time::Duration::from_millis(16));
+        visual.run_until_parked();
+    }
+    let viewport = visual
+        .debug_bounds("virtual-list:groups-body")
+        .expect("grouped Table virtual viewport");
+    let bounds_for_group = |visual: &mut VisualTestContext, name: &str| {
+        let result = visual
+            .update(|window, cx| {
+                view.automate(
+                    gpui_rhai::AutomationCommand::Query {
+                        locator: gpui_rhai::AutomationLocator::RoleName {
+                            role: "rowheader".to_owned(),
+                            name: name.to_owned(),
+                        },
+                    },
+                    window,
+                    cx,
+                )
+            })
+            .unwrap();
+        let gpui_rhai::AutomationResult::Node { node } = result else {
+            panic!("expected grouped Table rowheader {name}");
+        };
+        node.bounds.expect("sticky group header has committed bounds")
+    };
+    let scroll = |visual: &mut VisualTestContext, delta: f32| {
+        visual.simulate_event(ScrollWheelEvent {
+            position: point(
+                viewport.origin.x + viewport.size.width / 2.0,
+                viewport.origin.y + viewport.size.height / 2.0,
+            ),
+            delta: ScrollDelta::Pixels(point(px(0.0), px(delta))),
+            ..ScrollWheelEvent::default()
+        });
+    };
+
+    let sticky_bounds = visual
+        .debug_bounds("virtual-list-sticky:groups-body")
+        .expect("initial group header must use the sticky layer");
+    visual.simulate_event(ScrollWheelEvent {
+        position: point(
+            sticky_bounds.origin.x + sticky_bounds.size.width / 2.0,
+            sticky_bounds.origin.y + sticky_bounds.size.height / 2.0,
+        ),
+        delta: ScrollDelta::Pixels(point(px(0.0), px(-300.0))),
+        ..ScrollWheelEvent::default()
+    });
+    cx.background_executor
+        .advance_clock(std::time::Duration::from_millis(16));
+    wait_for_view_text(
+        &mut visual,
+        &view,
+        "row-10",
+        "the first scroll target must realize before the next wheel event",
+    );
+    let alpha = bounds_for_group(&mut visual, "alpha, 20");
+    assert!(
+        (alpha.y - f64::from(viewport.origin.y)).abs() < 1.0,
+        "first group did not remain pinned: header={alpha:?}, viewport={viewport:?}"
+    );
+
+    scroll(&mut visual, -300.0);
+    cx.background_executor
+        .advance_clock(std::time::Duration::from_millis(16));
+    wait_for_view_text(
+        &mut visual,
+        &view,
+        "row-15",
+        "the next virtual target must settle before crossing the group",
+    );
+    scroll(&mut visual, -300.0);
+    cx.background_executor
+        .advance_clock(std::time::Duration::from_millis(16));
+    wait_for_view_text(
+        &mut visual,
+        &view,
+        "row-19",
+        "the last row of the first group must enter the realized window",
+    );
+    scroll(&mut visual, -100.0);
+    cx.background_executor
+        .advance_clock(std::time::Duration::from_millis(16));
+    wait_for_view_text(
+        &mut visual,
+        &view,
+        "beta",
+        "the second group must enter the realized virtual window",
+    );
+    scroll(&mut visual, -200.0);
+    cx.background_executor
+        .advance_clock(std::time::Duration::from_millis(16));
+    wait_for_view_text(
+        &mut visual,
+        &view,
+        "row-25",
+        "rows inside the second group must settle before asserting its sticky position",
+    );
+    scroll(&mut visual, -60.0);
+    for _ in 0..4 {
+        cx.background_executor
+            .advance_clock(std::time::Duration::from_millis(16));
+        visual.run_until_parked();
+    }
+    let beta = bounds_for_group(&mut visual, "beta, 20");
+    assert!(
+        (beta.y - f64::from(viewport.origin.y)).abs() < 1.0,
+        "next group did not replace the sticky header: header={beta:?}, viewport={viewport:?}"
+    );
+    assert!(
+        visual
+            .debug_bounds("virtual-list-sticky:groups-body")
+            .is_some(),
+        "the native virtual list must own one sticky presentation layer"
+    );
+    let metrics = visual
+        .update(|_, cx| view.take_performance_snapshot(cx))
+        .unwrap();
+    assert_eq!(metrics.virtual_collections[0].sticky_header, Some(21));
+}
+
+#[gpui::test]
 fn table_does_not_expand_an_auto_min_width_host_flex_column_across_frames(
     cx: &mut TestAppContext,
 ) {

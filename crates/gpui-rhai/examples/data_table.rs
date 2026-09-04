@@ -10,7 +10,6 @@ const ICON: &str = include_str!("../../../registry/components/icon.rhai");
 const SELECT: &str = include_str!("../../../registry/components/select.rhai");
 const DROPDOWN: &str = include_str!("../../../registry/components/dropdown.rhai");
 const INPUT: &str = include_str!("../../../registry/components/input.rhai");
-const TAG: &str = include_str!("../../../registry/components/tag.rhai");
 const DEFAULT_LIGHT: &str = include_str!("../../../registry/themes/default_light.rhai");
 const DEFAULT_DARK: &str = include_str!("../../../registry/themes/default_dark.rhai");
 const TOKYO_NIGHT: &str = include_str!("../../../registry/themes/tokyo_night.rhai");
@@ -22,7 +21,6 @@ const AR: &str = include_str!("../../../registry/locales/ar.rhai");
 const MAIN: &str = r#"
 import "components/table" as table;
 import "components/pagination" as pagination;
-import "components/tag" as tag;
 import "components/button" as button;
 
 fn state_schema() {
@@ -32,10 +30,12 @@ fn state_schema() {
         sort: #{ schema: #{ type: "optional", value: #{ type: "map", values: #{ type: "ui_value" } } }, "default": #{ type: "null" } },
         selected: #{ schema: #{ type: "array", max_items: 500, items: #{ type: "string" } }, "default": #{ type: "array", value: __VISUAL_SELECTED__ } },
         loading: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: __VISUAL_LOADING__ } },
-        last_action: #{ schema: #{ type: "optional", value: #{ type: "string" } },
-            "default": #{ type: "null" } },
         selection_mode: #{ schema: #{ type: "string", allowed: ["single", "multiple"] },
             "default": #{ type: "string", value: "multiple" } },
+        group_by: #{ schema: #{ type: "optional", value: #{ type: "string" } },
+            "default": __VISUAL_GROUP_BY__ },
+        collapsed_groups: #{ schema: #{ type: "array", max_items: 16,
+            items: #{ type: "string" } }, "default": #{ type: "array", value: [] } },
     } }
 }
 
@@ -71,18 +71,6 @@ fn page_rows(ctx) {
     page
 }
 
-fn status_cell(cell) {
-    tag::Tag(#{
-        text: cell.value,
-        variant: if cell.value == "Active" { "success" }
-            else if cell.value == "Away" { "warning" } else { "neutral" }
-    })
-}
-fn action_cell(cell) {
-    button::Button(#{ text: "View", size: "xs", variant: "ghost" })
-        .on_click_value(Fn("open_row"), cell.row_key)
-}
-
 fn set_sort(ctx, value) {
     ctx.set_state("sort", value);
     ctx.set_state("current_page", 1);
@@ -90,7 +78,6 @@ fn set_sort(ctx, value) {
 }
 fn set_selection(ctx, value) { ctx.set_state("selected", value); }
 fn row_clicked(ctx, key) { () }
-fn open_row(ctx, key) { ctx.set_state("last_action", key); }
 fn set_selection_mode(ctx, mode) {
     ctx.set_state("selection_mode", mode);
     ctx.set_state("selected", []);
@@ -101,6 +88,21 @@ fn set_pagination(ctx, value) {
     ctx.set_state("selected", []);
 }
 fn toggle_loading(ctx, payload) { ctx.set_state("loading", !ctx.get_state("loading")); }
+fn toggle_grouping(ctx, payload) {
+    ctx.set_state("group_by", if ctx.get_state("group_by") == () { "status" } else { () });
+    ctx.set_state("collapsed_groups", []);
+}
+fn toggle_group(ctx, group) {
+    let collapsed = ctx.get_state("collapsed_groups");
+    let next = [];
+    let found = false;
+    for value in collapsed {
+        if value == group { found = true; }
+        else { next.push(value); }
+    }
+    if !found { next.push(group); }
+    ctx.set_state("collapsed_groups", next);
+}
 
 fn init(ctx) {
     let theme = "__VISUAL_THEME__";
@@ -111,8 +113,8 @@ fn init(ctx) {
     ctx.set_locale("__VISUAL_LOCALE__");
 }
 
-fn view(ctx) {
-    let columns = [
+fn table_columns() {
+    [
         #{ key: "name", title: "Name", width: #{ kind: "fixed", value: 220 }, sortable: true },
         #{ key: "email", title: "Email", width: #{ kind: "fixed", value: 320 } },
         #{ key: "score", title: "Score", width: #{ kind: "flex", value: 100 }, align: "end" },
@@ -120,29 +122,45 @@ fn view(ctx) {
         #{ key: "status", title: "Status", width: #{ kind: "fixed", value: 110 } },
         #{ key: "id", title: "Action", width: #{ kind: "fixed", value: 80 },
             align: "center" },
-    ];
-    column([
+    ]
+}
+
+fn table_controls(ctx) {
+    row([
+        text("Data table").with_style(style().font_size(rem(1.25))),
         row([
-            text("Data table").with_style(style().font_size(rem(1.25))),
-            row([
-                button::Button(#{ text: "Single", size: "xs", variant: "ghost" })
-                    .on_click_value(Fn("set_selection_mode"), "single"),
-                button::Button(#{ text: "Multiple", size: "xs", variant: "ghost" })
-                    .on_click_value(Fn("set_selection_mode"), "multiple"),
-                text(if ctx.get_state("loading") { "Show data" } else { "Show loading" })
-                    .with_style(style().padding(theme_spacing("sm")).radius(theme_radius("md"))
-                        .border(px(1)).border_color(theme_color("border")))
-                    .on_click(Fn("toggle_loading"))
-            ]).with_style(style().gap(theme_spacing("xs")).items_center())
-        ]).with_style(style().justify_between().items_center()),
+            button::Button(#{ text: "Single", size: "xs", variant: "ghost" })
+                .on_click_value(Fn("set_selection_mode"), "single"),
+            button::Button(#{ text: "Multiple", size: "xs", variant: "ghost" })
+                .on_click_value(Fn("set_selection_mode"), "multiple"),
+            text(if ctx.get_state("loading") { "Show data" } else { "Show loading" })
+                .with_style(style().padding(theme_spacing("sm")).radius(theme_radius("md"))
+                    .border(px(1)).border_color(theme_color("border")))
+                .on_click(Fn("toggle_loading")),
+            if __GROUP_CONTROL__ {
+                button::Button(#{
+                    text: if ctx.get_state("group_by") == () { "Group status" } else { "Ungroup" },
+                    size: "xs", variant: "outline", on_click: Fn("toggle_grouping")
+                })
+            } else { fragment([]) }
+        ]).with_style(style().gap(theme_spacing("xs")).items_center())
+    ]).with_style(style().justify_between().items_center())
+}
+
+fn view(ctx) {
+    let columns = table_columns();
+    column([
+        table_controls(ctx),
         table::Table(#{
             key: "users", label: "Users", rows: page_rows(ctx), row_key: "id",
             columns: columns, height: 470, striped: true,
             loading: ctx.get_state("loading"),
             selection_mode: ctx.get_state("selection_mode"),
             selected_keys: ctx.get_state("selected"), sort: ctx.get_state("sort"),
+            group_by: ctx.get_state("group_by"),
+            collapsed_groups: ctx.get_state("collapsed_groups"),
             on_sort_change: Fn("set_sort"), on_selection_change: Fn("set_selection"),
-            on_row_click: Fn("row_clicked")
+            on_row_click: Fn("row_clicked"), on_group_toggle: Fn("toggle_group")
         }),
         pagination::Pagination(#{
             key: "users-pages", total_items: __ROW_COUNT__,
@@ -198,6 +216,18 @@ fn data_table_view(theme: &str, locale: &str, visual_state: &str) -> EmbeddedScr
             },
         )
         .replace(
+            "__VISUAL_GROUP_BY__",
+            if visual_state == "grouped" {
+                "#{ type: \"string\", value: \"status\" }"
+            } else {
+                "#{ type: \"null\" }"
+            },
+        )
+        .replace(
+            "__GROUP_CONTROL__",
+            if visual_state == "grouped" { "true" } else { "false" },
+        )
+        .replace(
             "__ROW_COUNT__",
             if visual_state == "empty" { "0" } else { "500" },
         );
@@ -211,7 +241,6 @@ fn data_table_view(theme: &str, locale: &str, visual_state: &str) -> EmbeddedScr
         module("components/select", SELECT),
         module("components/dropdown", DROPDOWN),
         module("components/input", INPUT),
-        module("components/tag", TAG),
     ]));
     EmbeddedScriptView::new(ModuleId::parse("main").unwrap(), scripts, DEFAULT_LIGHT)
         .theme_sources([
@@ -264,7 +293,7 @@ mod tests {
 
     #[test]
     fn every_data_table_visual_state_prepares() {
-        for state in ["default", "selected", "loading", "empty"] {
+        for state in ["default", "selected", "loading", "empty", "grouped"] {
             data_table_view("default-light", "en", state)
                 .prepare()
                 .unwrap_or_else(|error| panic!("state {state}: {error}"));

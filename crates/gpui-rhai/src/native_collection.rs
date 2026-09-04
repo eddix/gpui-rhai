@@ -11,11 +11,34 @@ use thiserror::Error;
 
 use crate::{ComponentInstancePath, UiValue};
 
+const MAX_TABLE_ORDER_CACHE_ENTRIES: usize = 64;
+
 #[derive(Clone)]
 pub struct NativeCollection {
     source: Arc<NativeCollectionSource>,
-    order: Arc<Vec<usize>>,
+    order: Arc<Vec<NativeCollectionEntry>>,
+    sticky_headers: Arc<BTreeSet<usize>>,
     projection: Option<Arc<TableProjection>>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum NativeCollectionEntry {
+    Row(usize),
+    Group(GroupEntry),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct GroupEntry {
+    key: String,
+    value: String,
+    count: usize,
+    collapsed: bool,
+}
+
+#[derive(Clone)]
+struct TableOrder {
+    entries: Arc<Vec<NativeCollectionEntry>>,
+    sticky_headers: Arc<BTreeSet<usize>>,
 }
 
 struct NativeCollectionSource {
@@ -23,6 +46,7 @@ struct NativeCollectionSource {
     rows: Vec<UiValue>,
     keys: Vec<String>,
     sorted_orders: Mutex<BTreeMap<SortSpec, Arc<Vec<usize>>>>,
+    table_orders: Mutex<BTreeMap<TableOrderSpec, TableOrder>>,
 }
 
 impl fmt::Debug for NativeCollectionSource {
@@ -50,6 +74,8 @@ impl PartialEq for NativeCollection {
     fn eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.source, &other.source)
             && (Arc::ptr_eq(&self.order, &other.order) || self.order == other.order)
+            && (Arc::ptr_eq(&self.sticky_headers, &other.sticky_headers)
+                || self.sticky_headers == other.sticky_headers)
             && self.projection == other.projection
     }
 }
@@ -109,15 +135,17 @@ impl NativeCollection {
                 Ok(key)
             })
             .collect::<Result<Vec<_>, _>>()?;
-        let order = Arc::new((0..rows.len()).collect());
+        let order = Arc::new((0..rows.len()).map(NativeCollectionEntry::Row).collect());
         Ok(Self {
             source: Arc::new(NativeCollectionSource {
                 key_field,
                 rows,
                 keys,
                 sorted_orders: Mutex::new(BTreeMap::new()),
+                table_orders: Mutex::new(BTreeMap::new()),
             }),
             order,
+            sticky_headers: Arc::new(BTreeSet::new()),
             projection: None,
         })
     }
@@ -138,40 +166,104 @@ impl NativeCollection {
     }
 
     pub(crate) fn key(&self, index: usize) -> Option<&str> {
-        self.order
-            .get(index)
-            .and_then(|source| self.source.keys.get(*source))
-            .map(String::as_str)
+        match self.order.get(index)? {
+            NativeCollectionEntry::Row(source) => self.source.keys.get(*source).map(String::as_str),
+            NativeCollectionEntry::Group(group) => Some(group.key.as_str()),
+        }
     }
 
     pub(crate) fn item(&self, index: usize) -> Result<Option<UiValue>, NativeCollectionError> {
-        let Some(source_index) = self.order.get(index).copied() else {
+        let Some(entry) = self.order.get(index) else {
             return Ok(None);
         };
-        let row = self
-            .source
-            .rows
-            .get(source_index)
-            .ok_or(NativeCollectionError::CorruptOrder(source_index))?;
-        self.projection.as_ref().map_or_else(
-            || Ok(Some(row.clone())),
-            |projection| projection.project(row, index).map(Some),
-        )
+        match entry {
+            NativeCollectionEntry::Row(source_index) => {
+                let row = self
+                    .source
+                    .rows
+                    .get(*source_index)
+                    .ok_or(NativeCollectionError::CorruptOrder(*source_index))?;
+                self.projection.as_ref().map_or_else(
+                    || Ok(Some(row.clone())),
+                    |projection| projection.project_row(row, index).map(Some),
+                )
+            }
+            NativeCollectionEntry::Group(group) => self
+                .projection
+                .as_ref()
+                .ok_or(NativeCollectionError::UnexpectedGroupEntry)
+                .map(|projection| Some(projection.project_group(group))),
+        }
+    }
+
+    pub(crate) fn sticky_headers(&self) -> Arc<BTreeSet<usize>> {
+        Arc::clone(&self.sticky_headers)
     }
 
     pub(crate) fn table_view(&self, config: Map) -> Result<Self, NativeCollectionError> {
         let config = UiValue::from_dynamic(Dynamic::from_map(config))
             .map_err(|error| NativeCollectionError::InvalidTableConfig(error.to_string()))?;
         let projection = TableProjection::decode(config, self.key_field())?;
-        let order = projection.sort.as_ref().map_or_else(
-            || Ok(Arc::clone(&self.order)),
-            |sort| self.sorted_order(sort),
-        )?;
+        let order = self.table_order(&projection)?;
         Ok(Self {
             source: Arc::clone(&self.source),
-            order,
+            order: order.entries,
+            sticky_headers: order.sticky_headers,
             projection: Some(Arc::new(projection)),
         })
+    }
+
+    fn table_order(
+        &self,
+        projection: &TableProjection,
+    ) -> Result<TableOrder, NativeCollectionError> {
+        if self.projection.is_none() && projection.sort.is_none() && projection.group_by.is_none() {
+            return Ok(TableOrder {
+                entries: Arc::clone(&self.order),
+                sticky_headers: Arc::clone(&self.sticky_headers),
+            });
+        }
+        let spec = TableOrderSpec::from(projection);
+        if let Some(order) = self
+            .source
+            .table_orders
+            .lock()
+            .map_err(|_| NativeCollectionError::Poisoned)?
+            .get(&spec)
+            .cloned()
+        {
+            return Ok(order);
+        }
+        let rows = projection.sort.as_ref().map_or_else(
+            || Ok(Arc::new((0..self.source.rows.len()).collect())),
+            |sort| self.sorted_order(sort),
+        )?;
+        let entries = Arc::new(projection.grouped_order(&self.source, rows.as_ref())?);
+        let sticky_headers = Arc::new(
+            entries
+                .iter()
+                .enumerate()
+                .filter_map(|(index, entry)| {
+                    matches!(entry, NativeCollectionEntry::Group(_)).then_some(index)
+                })
+                .collect(),
+        );
+        let order = TableOrder {
+            entries,
+            sticky_headers,
+        };
+        let mut cache = self
+            .source
+            .table_orders
+            .lock()
+            .map_err(|_| NativeCollectionError::Poisoned)?;
+        if cache.len() >= MAX_TABLE_ORDER_CACHE_ENTRIES
+            && let Some(victim) = cache.keys().next().cloned()
+        {
+            cache.remove(&victim);
+        }
+        cache.insert(spec, order.clone());
+        Ok(order)
     }
 
     fn sorted_order(&self, sort: &SortSpec) -> Result<Arc<Vec<usize>>, NativeCollectionError> {
@@ -265,6 +357,23 @@ struct SortSpec {
     descending: bool,
 }
 
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct TableOrderSpec {
+    sort: Option<SortSpec>,
+    group_by: Option<String>,
+    collapsed_groups: BTreeSet<String>,
+}
+
+impl From<&TableProjection> for TableOrderSpec {
+    fn from(projection: &TableProjection) -> Self {
+        Self {
+            sort: projection.sort.clone(),
+            group_by: projection.group_by.clone(),
+            collapsed_groups: projection.collapsed_groups.clone(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 struct TableProjection {
     label: String,
@@ -276,6 +385,9 @@ struct TableProjection {
     striped: bool,
     row_height: f64,
     sort: Option<SortSpec>,
+    group_by: Option<String>,
+    collapsed_groups: BTreeSet<String>,
+    group_toggle: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -339,35 +451,8 @@ impl TableProjection {
                 "row_height must be finite and positive".to_owned(),
             ));
         }
-        let sort = match config.remove("sort") {
-            None | Some(UiValue::Null) => None,
-            Some(UiValue::Map(mut sort)) => {
-                let key = take_string(&mut sort, "key")?;
-                let direction = take_string(&mut sort, "direction")?;
-                if !sort.is_empty() {
-                    return Err(NativeCollectionError::InvalidTableConfig(
-                        "sort contains unknown fields".to_owned(),
-                    ));
-                }
-                Some(SortSpec {
-                    key,
-                    descending: match direction.as_str() {
-                        "ascending" => false,
-                        "descending" => true,
-                        _ => {
-                            return Err(NativeCollectionError::InvalidTableConfig(format!(
-                                "unknown sort direction `{direction}`"
-                            )));
-                        }
-                    },
-                })
-            }
-            Some(_) => {
-                return Err(NativeCollectionError::InvalidTableConfig(
-                    "sort must be null or a map".to_owned(),
-                ));
-            }
-        };
+        let sort = decode_sort(config.remove("sort"))?;
+        let (group_by, collapsed_groups, group_toggle) = decode_grouping(&mut config, &columns)?;
         if !config.is_empty() {
             return Err(NativeCollectionError::InvalidTableConfig(format!(
                 "unknown configuration fields: {}",
@@ -384,10 +469,70 @@ impl TableProjection {
             striped,
             row_height,
             sort,
+            group_by,
+            collapsed_groups,
+            group_toggle,
         })
     }
 
-    fn project(&self, row: &UiValue, index: usize) -> Result<UiValue, NativeCollectionError> {
+    fn grouped_order(
+        &self,
+        source: &NativeCollectionSource,
+        rows: &[usize],
+    ) -> Result<Vec<NativeCollectionEntry>, NativeCollectionError> {
+        let Some(group_by) = &self.group_by else {
+            return Ok(rows
+                .iter()
+                .copied()
+                .map(NativeCollectionEntry::Row)
+                .collect());
+        };
+        let mut order = Vec::new();
+        let mut groups = BTreeMap::<String, Vec<usize>>::new();
+        for source_index in rows {
+            let row = source
+                .rows
+                .get(*source_index)
+                .ok_or(NativeCollectionError::CorruptOrder(*source_index))?;
+            let value = match row_field(row, group_by) {
+                Some(UiValue::String(value)) if !value.is_empty() => value.clone(),
+                _ => {
+                    return Err(NativeCollectionError::InvalidGroupField {
+                        index: *source_index,
+                        field: group_by.clone(),
+                    });
+                }
+            };
+            if !groups.contains_key(&value) {
+                order.push(value.clone());
+            }
+            groups.entry(value).or_default().push(*source_index);
+        }
+        let source_keys = source
+            .keys
+            .iter()
+            .map(String::as_str)
+            .collect::<BTreeSet<_>>();
+        let mut header_keys = BTreeSet::new();
+        let mut entries = Vec::with_capacity(rows.len().saturating_add(order.len()));
+        for value in order {
+            let rows = groups.remove(&value).unwrap_or_default();
+            let key = unique_group_key(&value, &source_keys, &mut header_keys);
+            let collapsed = self.collapsed_groups.contains(&value);
+            entries.push(NativeCollectionEntry::Group(GroupEntry {
+                key,
+                value,
+                count: rows.len(),
+                collapsed,
+            }));
+            if !collapsed {
+                entries.extend(rows.into_iter().map(NativeCollectionEntry::Row));
+            }
+        }
+        Ok(entries)
+    }
+
+    fn project_row(&self, row: &UiValue, index: usize) -> Result<UiValue, NativeCollectionError> {
         let UiValue::Map(row) = row else {
             return Err(NativeCollectionError::RowNotMap(index));
         };
@@ -430,6 +575,7 @@ impl TableProjection {
             }
         };
         Ok(UiValue::Map(BTreeMap::from([
+            ("kind".to_owned(), UiValue::String("row".to_owned())),
             ("key".to_owned(), UiValue::String(key.clone())),
             (
                 "label".to_owned(),
@@ -445,6 +591,94 @@ impl TableProjection {
             ("height".to_owned(), UiValue::Float(self.row_height)),
         ])))
     }
+
+    fn project_group(&self, group: &GroupEntry) -> UiValue {
+        UiValue::Map(BTreeMap::from([
+            ("kind".to_owned(), UiValue::String("group".to_owned())),
+            ("key".to_owned(), UiValue::String(group.key.clone())),
+            ("group".to_owned(), UiValue::String(group.value.clone())),
+            (
+                "count".to_owned(),
+                UiValue::Integer(i64::try_from(group.count).unwrap_or(i64::MAX)),
+            ),
+            ("collapsed".to_owned(), UiValue::Bool(group.collapsed)),
+            ("toggle".to_owned(), UiValue::Bool(self.group_toggle)),
+            ("height".to_owned(), UiValue::Float(self.row_height)),
+        ]))
+    }
+}
+
+fn decode_sort(value: Option<UiValue>) -> Result<Option<SortSpec>, NativeCollectionError> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    let UiValue::Map(mut sort) = value else {
+        if value == UiValue::Null {
+            return Ok(None);
+        }
+        return Err(NativeCollectionError::InvalidTableConfig(
+            "sort must be null or a map".to_owned(),
+        ));
+    };
+    let key = take_string(&mut sort, "key")?;
+    let direction = take_string(&mut sort, "direction")?;
+    if !sort.is_empty() {
+        return Err(NativeCollectionError::InvalidTableConfig(
+            "sort contains unknown fields".to_owned(),
+        ));
+    }
+    let descending = match direction.as_str() {
+        "ascending" => false,
+        "descending" => true,
+        _ => {
+            return Err(NativeCollectionError::InvalidTableConfig(format!(
+                "unknown sort direction `{direction}`"
+            )));
+        }
+    };
+    Ok(Some(SortSpec { key, descending }))
+}
+
+fn decode_grouping(
+    config: &mut BTreeMap<String, UiValue>,
+    columns: &[TableColumn],
+) -> Result<(Option<String>, BTreeSet<String>, bool), NativeCollectionError> {
+    let group_by = take_optional_string(config, "group_by")?;
+    if let Some(group_by) = &group_by
+        && !columns.iter().any(|column| &column.key == group_by)
+    {
+        return Err(NativeCollectionError::InvalidTableConfig(format!(
+            "group_by `{group_by}` is not a declared column"
+        )));
+    }
+    let collapsed = if config.contains_key("collapsed_groups") {
+        take_string_set(config, "collapsed_groups")?
+    } else {
+        BTreeSet::new()
+    };
+    if group_by.is_none() && !collapsed.is_empty() {
+        return Err(NativeCollectionError::InvalidTableConfig(
+            "collapsed_groups requires group_by".to_owned(),
+        ));
+    }
+    let toggle = if config.contains_key("group_toggle") {
+        take_bool(config, "group_toggle")?
+    } else {
+        false
+    };
+    Ok((group_by, collapsed, toggle))
+}
+
+fn unique_group_key(
+    value: &str,
+    source_keys: &BTreeSet<&str>,
+    header_keys: &mut BTreeSet<String>,
+) -> String {
+    let mut key = format!("__gpui_rhai_group__:{value}");
+    while source_keys.contains(key.as_str()) || !header_keys.insert(key.clone()) {
+        key.insert(0, '_');
+    }
+    key
 }
 
 impl TableColumn {
@@ -532,6 +766,35 @@ fn take_string(
             "{name} must be a string"
         ))),
     }
+}
+
+fn take_optional_string(
+    values: &mut BTreeMap<String, UiValue>,
+    name: &str,
+) -> Result<Option<String>, NativeCollectionError> {
+    match values.remove(name) {
+        None | Some(UiValue::Null) => Ok(None),
+        Some(UiValue::String(value)) if !value.is_empty() => Ok(Some(value)),
+        _ => Err(NativeCollectionError::InvalidTableConfig(format!(
+            "{name} must be null or a non-empty string"
+        ))),
+    }
+}
+
+fn take_string_set(
+    values: &mut BTreeMap<String, UiValue>,
+    name: &str,
+) -> Result<BTreeSet<String>, NativeCollectionError> {
+    take_array(values, name)?
+        .into_iter()
+        .enumerate()
+        .map(|(index, value)| match value {
+            UiValue::String(value) if !value.is_empty() => Ok(value),
+            _ => Err(NativeCollectionError::InvalidTableConfig(format!(
+                "{name}[{index}] must be a non-empty string"
+            ))),
+        })
+        .collect()
 }
 
 fn take_array(
@@ -724,6 +987,13 @@ impl VirtualCollectionData {
         self.len() == 0
     }
 
+    pub(crate) fn sticky_headers(&self) -> Arc<BTreeSet<usize>> {
+        match self {
+            Self::Values(_) => Arc::new(BTreeSet::new()),
+            Self::Native(collection) => collection.sticky_headers(),
+        }
+    }
+
     pub(crate) fn item(&self, index: usize) -> Result<Option<UiValue>, NativeCollectionError> {
         match self {
             Self::Values(values) => Ok(values.get(index).cloned()),
@@ -774,6 +1044,10 @@ pub enum NativeCollectionError {
     UnsortableField(String),
     #[error("native collection order references missing source row {0}")]
     CorruptOrder(usize),
+    #[error("native collection contains a group header outside a table projection")]
+    UnexpectedGroupEntry,
+    #[error("native collection row {index} group field `{field}` must be a non-empty string")]
+    InvalidGroupField { index: usize, field: String },
     #[error("invalid native Table configuration: {0}")]
     InvalidTableConfig(String),
     #[error("native collection cache is poisoned")]
@@ -799,6 +1073,77 @@ mod tests {
             ],
         )
         .unwrap()
+    }
+
+    fn grouped_rows() -> NativeCollection {
+        NativeCollection::new(
+            "id",
+            [
+                BTreeMap::from([
+                    ("id".to_owned(), UiValue::String("b".to_owned())),
+                    ("track".to_owned(), UiValue::String("track-b".to_owned())),
+                    ("score".to_owned(), UiValue::Integer(2)),
+                ]),
+                BTreeMap::from([
+                    ("id".to_owned(), UiValue::String("a".to_owned())),
+                    ("track".to_owned(), UiValue::String("track-a".to_owned())),
+                    ("score".to_owned(), UiValue::Integer(3)),
+                ]),
+                BTreeMap::from([
+                    ("id".to_owned(), UiValue::String("c".to_owned())),
+                    ("track".to_owned(), UiValue::String("track-b".to_owned())),
+                    ("score".to_owned(), UiValue::Integer(1)),
+                ]),
+            ],
+        )
+        .unwrap()
+    }
+
+    fn table_config(collapsed: &[&str]) -> Map {
+        let columns = ["id", "track", "score"]
+            .into_iter()
+            .map(|key| {
+                UiValue::Map(BTreeMap::from([
+                    ("key".to_owned(), UiValue::String(key.to_owned())),
+                    ("width".to_owned(), UiValue::Integer(80)),
+                ]))
+            })
+            .collect();
+        UiValue::Map(BTreeMap::from([
+            ("row_key".to_owned(), UiValue::String("id".to_owned())),
+            ("label".to_owned(), UiValue::String("Clusters".to_owned())),
+            ("columns".to_owned(), UiValue::Array(columns)),
+            ("selected_keys".to_owned(), UiValue::Array(Vec::new())),
+            (
+                "selection_mode".to_owned(),
+                UiValue::String("multiple".to_owned()),
+            ),
+            ("striped".to_owned(), UiValue::Bool(true)),
+            ("row_height".to_owned(), UiValue::Float(30.0)),
+            (
+                "sort".to_owned(),
+                UiValue::Map(BTreeMap::from([
+                    ("key".to_owned(), UiValue::String("score".to_owned())),
+                    (
+                        "direction".to_owned(),
+                        UiValue::String("ascending".to_owned()),
+                    ),
+                ])),
+            ),
+            ("group_by".to_owned(), UiValue::String("track".to_owned())),
+            (
+                "collapsed_groups".to_owned(),
+                UiValue::Array(
+                    collapsed
+                        .iter()
+                        .map(|value| UiValue::String((*value).to_owned()))
+                        .collect(),
+                ),
+            ),
+            ("group_toggle".to_owned(), UiValue::Bool(true)),
+        ]))
+        .into_dynamic()
+        .cast::<Map>()
     }
 
     #[test]
@@ -834,5 +1179,56 @@ mod tests {
             registry.replace("accounts", changed).unwrap(),
             [reader].into()
         );
+    }
+
+    #[test]
+    fn grouped_table_projection_flattens_headers_and_sorted_rows() {
+        let source = grouped_rows();
+        let grouped = source.table_view(table_config(&[])).unwrap();
+        let mut selected_config = table_config(&[]);
+        selected_config.insert(
+            "selected_keys".into(),
+            Dynamic::from_array(vec![Dynamic::from("a")]),
+        );
+        let reused = source.table_view(selected_config).unwrap();
+        assert!(Arc::ptr_eq(&grouped.order, &reused.order));
+        assert_eq!(grouped.len(), 5);
+        assert_eq!(grouped.sticky_headers().as_ref(), &BTreeSet::from([0, 3]));
+        let values = (0..grouped.len())
+            .map(|index| grouped.item(index).unwrap().unwrap())
+            .collect::<Vec<_>>();
+        let field = |value: &UiValue, name: &str| match value {
+            UiValue::Map(value) => value[name].clone(),
+            _ => panic!("projected table item must be a map"),
+        };
+        assert_eq!(field(&values[0], "kind"), UiValue::String("group".into()));
+        assert_eq!(
+            field(&values[0], "group"),
+            UiValue::String("track-b".into())
+        );
+        assert_eq!(field(&values[0], "count"), UiValue::Integer(2));
+        assert_eq!(field(&values[1], "key"), UiValue::String("c".into()));
+        assert_eq!(field(&values[2], "key"), UiValue::String("b".into()));
+        assert_eq!(
+            field(&values[3], "group"),
+            UiValue::String("track-a".into())
+        );
+        assert_eq!(field(&values[4], "key"), UiValue::String("a".into()));
+    }
+
+    #[test]
+    fn grouped_table_projection_collapses_rows_but_retains_header_counts() {
+        let grouped = grouped_rows()
+            .table_view(table_config(&["track-b"]))
+            .unwrap();
+        assert_eq!(grouped.len(), 3);
+        assert_eq!(grouped.sticky_headers().as_ref(), &BTreeSet::from([0, 1]));
+        let UiValue::Map(first) = grouped.item(0).unwrap().unwrap() else {
+            panic!("group header must be a map");
+        };
+        assert_eq!(first["group"], UiValue::String("track-b".into()));
+        assert_eq!(first["count"], UiValue::Integer(2));
+        assert_eq!(first["collapsed"], UiValue::Bool(true));
+        assert_eq!(grouped.key(2), Some("a"));
     }
 }

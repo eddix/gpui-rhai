@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
 use gpui_rhai::{
@@ -1339,6 +1339,179 @@ fn official_table_is_public_data_backed_rhai_composition() {
         cell.style().base.white_space == Some(gpui_rhai::WhiteSpaceMode::NoWrap)
             && cell.style().base.text_ellipsis == Some(true)
     }));
+}
+
+#[test]
+fn official_table_groups_array_rows_with_controlled_collapse() {
+    let source = EmbeddedScriptSource::new(BTreeMap::from([(
+        ModuleId::parse("components/table").unwrap(),
+        TABLE.to_owned(),
+    )]));
+    let mut engine = RuntimeEngine::new();
+    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
+    let compiled = engine
+        .compile_self_contained_named(
+            "ui/grouped_table_test.rhai",
+            r#"
+                import "components/table" as table;
+                fn state_schema() { #{ fields: #{
+                    collapsed: #{ schema: #{ type: "array", max_items: 8,
+                        items: #{ type: "string" } },
+                        "default": #{ type: "array", value: [] } }
+                } } }
+                fn toggled(ctx, group) { ctx.set_state("collapsed", [group]); }
+                fn view(ctx) {
+                    table::Table(#{
+                        key: "clusters", label: "Clusters", row_key: "id", height: 120,
+                        rows: [
+                            #{ id: "a", track: "alpha", state: "Ready" },
+                            #{ id: "b", track: "beta", state: "Drift" },
+                            #{ id: "c", track: "alpha", state: "Drift" }
+                        ],
+                        columns: [
+                            #{ key: "track", title: "Track",
+                                width: #{ kind: "fixed", value: 120 } },
+                            #{ key: "state", title: "State",
+                                width: #{ kind: "fixed", value: 100 } }
+                        ],
+                        group_by: "track",
+                        collapsed_groups: ctx.get_state("collapsed"),
+                        on_group_toggle: Fn("toggled")
+                    })
+                }
+            "#,
+        )
+        .unwrap();
+    let schema = engine.root_state_schema(&compiled).unwrap();
+    let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+    let mut lifecycle = ScriptLifecycle::new(
+        compiled,
+        Rc::clone(&runtime),
+        ComponentInstancePath::root("App", "root"),
+        Some("main".to_owned()),
+        BTreeMap::new(),
+        &schema,
+    )
+    .unwrap();
+    lifecycle.start(&mut engine).unwrap();
+
+    let UiNodeKind::VirtualCollection { spec } = find_virtual_collection(lifecycle.root().unwrap())
+        .expect("grouped Table must use virtual_collection")
+        .kind()
+    else {
+        unreachable!()
+    };
+    assert_eq!(spec.data.len(), 5);
+    assert_eq!(spec.sticky_headers.as_ref(), &BTreeSet::from([0, 3]));
+    let first_group = spec.realized.get(&0).expect("first group header");
+    assert_eq!(
+        first_group.attributes().get("label"),
+        Some(&UiValue::String("alpha, 2".to_owned()))
+    );
+    let (toggle, payload) = target_handler(first_group, "click");
+    let _ = lifecycle
+        .invoke_callback_transactional(&engine, &toggle, payload)
+        .unwrap();
+    let events = runtime.borrow_mut().drain_batch().events;
+    assert!(events.iter().any(|event| {
+        event.event.name == "group_toggle"
+            && event.event.payload == UiValue::String("alpha".to_owned())
+    }));
+    for event in events {
+        let _ = lifecycle
+            .invoke_component_event_transactional(&engine, event)
+            .unwrap();
+    }
+    assert!(lifecycle.render_dirty(&mut engine).unwrap());
+
+    let UiNodeKind::VirtualCollection { spec } = find_virtual_collection(lifecycle.root().unwrap())
+        .expect("collapsed Table must retain virtual_collection")
+        .kind()
+    else {
+        unreachable!()
+    };
+    assert_eq!(spec.data.len(), 3);
+    assert_eq!(spec.sticky_headers.as_ref(), &BTreeSet::from([0, 1]));
+}
+
+#[test]
+fn official_table_groups_native_collection_without_materializing_rows_in_rhai() {
+    let source = EmbeddedScriptSource::new(BTreeMap::from([(
+        ModuleId::parse("components/table").unwrap(),
+        TABLE.to_owned(),
+    )]));
+    let mut engine = RuntimeEngine::new();
+    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
+    let compiled = engine
+        .compile_self_contained_named(
+            "ui/native_grouped_table_test.rhai",
+            r#"
+                import "components/table" as table;
+                fn view(ctx) {
+                    table::Table(#{
+                        key: "clusters", label: "Clusters", row_key: "id", height: 120,
+                        rows: ctx.get_native_collection("clusters"), group_by: "track",
+                        columns: [
+                            #{ key: "track", title: "Track",
+                                width: #{ kind: "fixed", value: 120 } },
+                            #{ key: "state", title: "State",
+                                width: #{ kind: "fixed", value: 100 } }
+                        ]
+                    })
+                }
+            "#,
+        )
+        .unwrap();
+    let rows = gpui_rhai::NativeCollection::new(
+        "id",
+        [
+            BTreeMap::from([
+                ("id".to_owned(), UiValue::String("a".to_owned())),
+                ("track".to_owned(), UiValue::String("alpha".to_owned())),
+                ("state".to_owned(), UiValue::String("Ready".to_owned())),
+            ]),
+            BTreeMap::from([
+                ("id".to_owned(), UiValue::String("b".to_owned())),
+                ("track".to_owned(), UiValue::String("beta".to_owned())),
+                ("state".to_owned(), UiValue::String("Drift".to_owned())),
+            ]),
+            BTreeMap::from([
+                ("id".to_owned(), UiValue::String("c".to_owned())),
+                ("track".to_owned(), UiValue::String("alpha".to_owned())),
+                ("state".to_owned(), UiValue::String("Drift".to_owned())),
+            ]),
+        ],
+    )
+    .unwrap();
+    let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+    runtime
+        .borrow_mut()
+        .native_collections
+        .register("clusters", rows)
+        .unwrap();
+    let mut lifecycle = ScriptLifecycle::new(
+        compiled,
+        runtime,
+        ComponentInstancePath::root("App", "root"),
+        Some("main".to_owned()),
+        BTreeMap::new(),
+        &ComponentStateSchema::default(),
+    )
+    .unwrap();
+    lifecycle.start(&mut engine).unwrap();
+
+    let UiNodeKind::VirtualCollection { spec } = find_virtual_collection(lifecycle.root().unwrap())
+        .expect("native grouped Table must use virtual_collection")
+        .kind()
+    else {
+        unreachable!()
+    };
+    assert_eq!(spec.data.len(), 5);
+    assert_eq!(spec.sticky_headers.as_ref(), &BTreeSet::from([0, 3]));
+    assert_eq!(
+        spec.realized[&0].attributes().get("label"),
+        Some(&UiValue::String("alpha, 2".to_owned()))
+    );
 }
 
 #[test]

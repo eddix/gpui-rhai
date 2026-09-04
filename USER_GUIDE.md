@@ -274,7 +274,8 @@ The bundled catalog includes:
 - choices: Checkbox, Radio/RadioGroup, Switch;
 - forms: Input, Textarea, FormField, Dropdown, Select, DatePicker;
 - navigation: Tabs, Accordion, Collapsible, Menu, Pagination;
-- data: Table and native virtual collections;
+- data: Table with controlled grouping/collapse and generic sticky-section
+  virtual collections;
 - overlays: Popover, Dialog, Tooltip, Toast;
 - primitives for Box/Text/Image/SVG/Canvas, layout, scrolling, refs, signals,
   layers, and generic overlays.
@@ -615,7 +616,12 @@ Guidelines:
 - Do not parse files, access the network, or perform blocking work in `view`.
 - Use `virtual_collection` for large lists and Tables.
 - Keep large stable row sets in `NativeCollection`; let Rhai declare the Table
-  and controlled state while Rust sorts and projects only visible rows.
+  and controlled state while Rust caches sort/group/collapse order and projects
+  only visible rows.
+- Use Table's `group_by`, `collapsed_groups`, and `on_group_toggle` contract for
+  row grouping. Group values are non-empty strings from a declared column;
+  headers count as virtual items, skip selection, and stick by default through
+  the generic virtual-collection mechanism.
 - Use native pointer/wheel handlers and `NativeSignal` for coalesced or
   per-frame values such as playheads, drags, and animation parameters.
 - Bind native signals directly to supported properties. Sampling a signal with

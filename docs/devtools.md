@@ -21,7 +21,7 @@ The inspector reports:
   elapsed time; active/settled animation kind/value/target/velocity/progress/
   repeat state; timer deadline/pause/generation; element-ref to `NodeId`
   bindings; virtual item/realized/requested/visible windows and tail policy;
-  committed geometry and pointer captures.
+  active sticky-section index; committed geometry and pointer captures.
 
 Every successful full, incremental, virtual-realization, or hot-reload commit
 adds one `Reconcile` trace with mounted/preserved/moved/unmounted counts and a

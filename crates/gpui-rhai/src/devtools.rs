@@ -199,6 +199,7 @@ pub struct InspectorVirtualCollection {
     pub scroll_item: usize,
     pub scroll_offset: f64,
     pub is_scrolled: bool,
+    pub sticky_header: Option<usize>,
     pub bottom_align: bool,
     pub follow_tail: bool,
 }
@@ -389,6 +390,7 @@ fn inspect_virtual_collections(runtime: &UiRuntimeState) -> Vec<InspectorVirtual
             scroll_item: metrics.scroll_item,
             scroll_offset: metrics.scroll_offset,
             is_scrolled: metrics.is_scrolled,
+            sticky_header: metrics.sticky_header,
             bottom_align: metrics.bottom_align,
             follow_tail: metrics.follow_tail,
         })
@@ -770,7 +772,7 @@ fn append_mechanism_lines(snapshot: &InspectorSnapshot, lines: &mut Vec<String>)
     lines.push("Virtual collections".to_owned());
     for collection in &snapshot.virtual_collections {
         lines.push(format!(
-            "  {} items={} realized={}:{:?} requested={}:{:?} visible={:?} viewport={:.1} top={}:{} scrolled={} bottom={} follow_tail={}",
+            "  {} items={} realized={}:{:?} requested={}:{:?} visible={:?} viewport={:.1} top={}:{} sticky={:?} scrolled={} bottom={} follow_tail={}",
             collection.id,
             collection.item_count,
             collection.realized_count,
@@ -781,6 +783,7 @@ fn append_mechanism_lines(snapshot: &InspectorSnapshot, lines: &mut Vec<String>)
             collection.viewport_height,
             collection.scroll_item,
             collection.scroll_offset,
+            collection.sticky_header,
             collection.is_scrolled,
             collection.bottom_align,
             collection.follow_tail

@@ -236,6 +236,13 @@ construction and Host budgets count path segments before commit, while GPUI
 paint consumes only the accepted Rust
 scene.
 
+Data-backed source components may pass explicit `sticky_headers: [indices]` to
+a top-aligned `virtual_collection`. NativeCollection projections can carry the
+same immutable index metadata without exposing source rows to Rhai. The generic
+runtime keeps one header realized and pushes it off with the next; component
+source remains responsible for section identity, controlled collapse, semantic
+labels, and styling. Do not duplicate a realized header as a second UiNode.
+
 ## Events
 
 Bind callbacks to nodes rather than calling them during rendering:

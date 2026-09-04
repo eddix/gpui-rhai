@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -27,6 +28,8 @@ pub struct VirtualCollectionNodeSpec {
     pub overdraw_pixels: f64,
     pub bottom_align: bool,
     pub follow_tail: bool,
+    /// Item indices whose realized nodes act as top-pinned section headers.
+    pub sticky_headers: Arc<BTreeSet<usize>>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -48,6 +51,7 @@ pub struct VirtualCollectionMetrics {
     pub scroll_item: usize,
     pub scroll_offset: f64,
     pub is_scrolled: bool,
+    pub sticky_header: Option<usize>,
     pub bottom_align: bool,
     pub follow_tail: bool,
 }
@@ -66,6 +70,7 @@ impl VirtualCollectionMetrics {
             scroll_item: 0,
             scroll_offset: 0.0,
             is_scrolled: false,
+            sticky_header: None,
             bottom_align: false,
             follow_tail: false,
         }
@@ -200,6 +205,11 @@ impl VirtualRequestRegistry {
         metrics.viewport_height = viewport_height;
         metrics.scroll_item = scroll_item;
         metrics.scroll_offset = scroll_offset;
+        metrics.sticky_header = spec
+            .sticky_headers
+            .range(..=scroll_item)
+            .next_back()
+            .copied();
         metrics.bottom_align = spec.bottom_align;
         metrics.follow_tail = spec.follow_tail;
     }
@@ -734,6 +744,7 @@ mod tests {
             overdraw_pixels: 48.0,
             bottom_align: true,
             follow_tail: true,
+            sticky_headers: Arc::new(BTreeSet::new()),
         };
         let registry = VirtualRequestRegistry::new();
         registry.report_frame(&spec, 120.0, 1, 3.5, Some(1..3));
@@ -744,6 +755,7 @@ mod tests {
         assert_eq!(metrics.requested_range, 3..5);
         assert_eq!(metrics.visible_range, 1..4);
         assert!(metrics.bottom_align && metrics.follow_tail && metrics.is_scrolled);
+        assert_eq!(metrics.sticky_header, None);
 
         let snapshot = registry.snapshot();
         let _ = registry.drain();

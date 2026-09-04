@@ -37,9 +37,9 @@ Leading `//` attribution comments are preserved.
 
 The right pane renders every official component from the same source shipped to
 applications. It includes action variants and sizes, form controls, choices,
-status and loading states, navigation, virtualized Table, Pagination, assets,
-and interactive Menu, Tooltip, Popover, Dialog, DatePicker, Dropdown, Select,
-and Toast surfaces.
+status and loading states, navigation, grouped/sticky virtualized Table,
+Pagination, assets, and interactive Menu, Tooltip, Popover, Dialog, DatePicker,
+Dropdown, Select, and Toast surfaces.
 
 Product examples remain responsible for realistic application composition;
 Theme Studio is the single exhaustive component/theme contract.

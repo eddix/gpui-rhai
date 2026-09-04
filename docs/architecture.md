@@ -254,7 +254,12 @@ deleted. Small inputs may stay as Rhai Arrays. Large inputs use the generic
 `NativeCollection` data plane: Rust retains keyed `UiValue` rows, cached sort
 orders and tracked host replacement, while the same Rhai Table source declares
 columns, controlled state and callbacks and renders only projected viewport
-items. This is a public collection mechanism, not a privileged native Table.
+items. Optional grouping produces cached flattened section-header/row orders in
+Rust for NativeCollection and the equivalent data shape in Rhai for small
+Arrays. The generic virtual collection owns sticky section realization and
+push-off; Table contributes only group policy, controlled collapse, semantics,
+and styling. This is a public collection mechanism, not a privileged native
+Table.
 
 Short-lived render elements never enter persistent runtime state.
 

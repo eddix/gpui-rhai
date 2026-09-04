@@ -176,6 +176,13 @@ struct VirtualListView {
     frame_indices: Rc<RefCell<BTreeSet<usize>>>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct StickyHeaderFrame {
+    index: usize,
+    height: Pixels,
+    offset: Pixels,
+}
+
 impl VirtualListView {
     fn new(content: VirtualCollectionNodeSpec, runtime: NodeSlotRuntime) -> Self {
         let scroll = list_state(&content);
@@ -283,70 +290,50 @@ impl Render for VirtualListView {
         let runtime = self.runtime.clone();
         let frame_indices = Rc::new(RefCell::new(BTreeSet::new()));
         self.frame_indices = Rc::clone(&frame_indices);
+        let sticky = sticky_header_frame(&self.scroll, &content, &runtime, viewport);
+        if let Some(sticky) = sticky {
+            frame_indices.borrow_mut().insert(sticky.index);
+        }
         let focused = self.state.focused().map(ToOwned::to_owned);
-        let focus_color = runtime
-            .colors
-            .resolve(&ColorValue::Token("surface_hover".to_owned()))
-            .unwrap_or_else(|| Rgba8::from_rgba_hex(0x0000_0000));
-        let focus_ring = runtime
-            .colors
-            .resolve(&ColorValue::Token("focus_ring".to_owned()))
-            .unwrap_or_else(|| Rgba8::from_rgb_hex(0x003b_82f6));
-        let focus_surface = runtime
-            .colors
-            .resolve(&ColorValue::Token("surface".to_owned()))
-            .unwrap_or_else(|| Rgba8::from_rgb_hex(0x0018_181b));
+        let (focus_color, focus_shadows) = virtual_focus_style(&runtime);
         let fixed_height = content.height.map(finite_to_f32);
+        let list_content = content.clone();
+        let list_runtime = runtime.clone();
+        let list_frame_indices = Rc::clone(&frame_indices);
         let list = list(self.scroll.clone(), move |index, _window, _cx| {
-            frame_indices.borrow_mut().insert(index);
-            let key = collection_item_key(&content, index)
-                .map_or_else(|| format!("item-{index}"), ToOwned::to_owned);
-            let node = content.realized.get(&index);
-            let child = node.map_or_else(
-                || {
-                    div()
-                        .h(px(finite_to_f32(content.estimated_height)))
-                        .into_any_element()
-                },
-                |node| runtime.render(node, &format!("item:{key}")),
-            );
-            div()
-                .id(("virtual-list-row", index))
-                .when(focused.as_deref() == Some(key.as_str()), |row| {
-                    row.bg(rgba(focus_color.as_rgba_hex()))
-                })
-                .child(child)
-                .into_any_element()
+            list_frame_indices.borrow_mut().insert(index);
+            render_virtual_item(
+                &list_content,
+                &list_runtime,
+                focused.as_deref(),
+                focus_color,
+                sticky,
+                index,
+            )
         })
         .w_full()
         .when_some(fixed_height, |list, height| list.h(px(height)))
         .when(fixed_height.is_none(), |list| list.flex_1().min_h(px(0.0)));
+        let sticky = sticky.and_then(|sticky| {
+            let key = collection_item_key(&content, sticky.index)?;
+            let node = content.realized.get(&sticky.index)?;
+            Some((sticky, runtime.render(node, &format!("item:{key}"))))
+        });
+        let root_selector = format!("virtual-list:{}", self.content.id.key);
+        let sticky_selector = format!("virtual-list-sticky:{}", self.content.id.key);
         let weak = cx.entity().downgrade();
         div()
+            .relative()
             .flex()
             .flex_col()
             .id(SharedString::from(format!(
                 "virtual-list-root-{}",
                 self.content.id.key
             )))
+            .debug_selector(move || root_selector.clone())
             .tab_index(0)
             .tab_stop(true)
-            .focus(move |style| {
-                style.shadow(vec![
-                    BoxShadow {
-                        color: rgba(focus_ring.as_rgba_hex()).into(),
-                        offset: point(px(0.0), px(0.0)),
-                        blur_radius: px(0.0),
-                        spread_radius: px(4.0),
-                    },
-                    BoxShadow {
-                        color: rgba(focus_surface.as_rgba_hex()).into(),
-                        offset: point(px(0.0), px(0.0)),
-                        blur_radius: px(0.0),
-                        spread_radius: px(2.0),
-                    },
-                ])
-            })
+            .focus(move |style| style.shadow(focus_shadows.clone()))
             .on_key_down(move |event: &KeyDownEvent, window, app| {
                 if event.keystroke.key.as_str() == "tab" {
                     if event.keystroke.modifiers.shift {
@@ -363,7 +350,137 @@ impl Render for VirtualListView {
             })
             .when(fixed_height.is_none(), |root| root.flex_1().min_h(px(0.0)))
             .child(list)
+            .when_some(sticky, |root, (sticky, element)| {
+                root.child(
+                    div()
+                        .id(("virtual-list-sticky-header", sticky.index))
+                        .debug_selector(move || sticky_selector.clone())
+                        .absolute()
+                        .top(sticky.offset)
+                        .left_0()
+                        .right_0()
+                        .h(sticky.height)
+                        .child(element),
+                )
+            })
     }
+}
+
+fn virtual_focus_style(runtime: &NodeSlotRuntime) -> (Rgba8, Vec<BoxShadow>) {
+    let focus_color = runtime
+        .colors
+        .resolve(&ColorValue::Token("surface_hover".to_owned()))
+        .unwrap_or_else(|| Rgba8::from_rgba_hex(0x0000_0000));
+    let focus_ring = runtime
+        .colors
+        .resolve(&ColorValue::Token("focus_ring".to_owned()))
+        .unwrap_or_else(|| Rgba8::from_rgb_hex(0x003b_82f6));
+    let focus_surface = runtime
+        .colors
+        .resolve(&ColorValue::Token("surface".to_owned()))
+        .unwrap_or_else(|| Rgba8::from_rgb_hex(0x0018_181b));
+    (
+        focus_color,
+        vec![
+            BoxShadow {
+                color: rgba(focus_ring.as_rgba_hex()).into(),
+                offset: point(px(0.0), px(0.0)),
+                blur_radius: px(0.0),
+                spread_radius: px(4.0),
+            },
+            BoxShadow {
+                color: rgba(focus_surface.as_rgba_hex()).into(),
+                offset: point(px(0.0), px(0.0)),
+                blur_radius: px(0.0),
+                spread_radius: px(2.0),
+            },
+        ],
+    )
+}
+
+fn render_virtual_item(
+    content: &VirtualCollectionNodeSpec,
+    runtime: &NodeSlotRuntime,
+    focused: Option<&str>,
+    focus_color: Rgba8,
+    sticky: Option<StickyHeaderFrame>,
+    index: usize,
+) -> AnyElement {
+    if sticky.is_some_and(|sticky| sticky.index == index) {
+        return div()
+            .id(("virtual-list-row", index))
+            .h(sticky.map_or(px(0.0), |sticky| sticky.height))
+            .into_any_element();
+    }
+    let key = collection_item_key(content, index)
+        .map_or_else(|| format!("item-{index}"), ToOwned::to_owned);
+    let child = content.realized.get(&index).map_or_else(
+        || {
+            div()
+                .h(px(finite_to_f32(content.estimated_height)))
+                .into_any_element()
+        },
+        |node| runtime.render(node, &format!("item:{key}")),
+    );
+    div()
+        .id(("virtual-list-row", index))
+        .when(focused == Some(key.as_str()), |row| {
+            row.bg(rgba(focus_color.as_rgba_hex()))
+        })
+        .child(child)
+        .into_any_element()
+}
+
+fn sticky_header_frame(
+    state: &ListState,
+    content: &VirtualCollectionNodeSpec,
+    runtime: &NodeSlotRuntime,
+    viewport: Bounds<Pixels>,
+) -> Option<StickyHeaderFrame> {
+    let scroll_top = state.logical_scroll_top();
+    let index = active_sticky_header(&content.sticky_headers, scroll_top.item_ix)?;
+    let height = sticky_header_height(content, runtime, index);
+    let next = content
+        .sticky_headers
+        .range(index.saturating_add(1)..)
+        .next()
+        .and_then(|next| state.bounds_for_item(*next));
+    let offset = sticky_push_offset(height, viewport.top(), next);
+    Some(StickyHeaderFrame {
+        index,
+        height,
+        offset,
+    })
+}
+
+fn active_sticky_header(headers: &BTreeSet<usize>, item: usize) -> Option<usize> {
+    headers.range(..=item).next_back().copied()
+}
+
+fn sticky_push_offset(
+    height: Pixels,
+    viewport_top: Pixels,
+    next: Option<Bounds<Pixels>>,
+) -> Pixels {
+    next.map_or(px(0.0), |next| {
+        (next.top() - viewport_top - height)
+            .min(px(0.0))
+            .max(-height)
+    })
+}
+
+fn sticky_header_height(
+    content: &VirtualCollectionNodeSpec,
+    runtime: &NodeSlotRuntime,
+    index: usize,
+) -> Pixels {
+    collection_item_key(content, index)
+        .and_then(|key| runtime.retained_roots.get(&format!("item:{key}")))
+        .and_then(|node| runtime.geometry.get(*node))
+        .map_or_else(
+            || px(finite_to_f32(content.estimated_height)),
+            |geometry| px(finite_to_f32(geometry.visual.height)),
+        )
 }
 
 fn measured_visible_range(
@@ -458,5 +575,25 @@ mod tests {
             retained_frame_target(&required, &indices(0..26), 1_000, 4),
             expected
         );
+    }
+
+    #[test]
+    fn sticky_sections_select_the_latest_header_and_push_before_the_next() {
+        let headers = BTreeSet::from([0, 8, 20]);
+        assert_eq!(active_sticky_header(&headers, 0), Some(0));
+        assert_eq!(active_sticky_header(&headers, 19), Some(8));
+        assert_eq!(active_sticky_header(&headers, 20), Some(20));
+        assert_eq!(
+            sticky_push_offset(
+                px(30.0),
+                px(100.0),
+                Some(Bounds::new(
+                    point(px(0.0), px(110.0)),
+                    gpui::size(px(200.0), px(30.0))
+                ))
+            ),
+            px(-20.0)
+        );
+        assert_eq!(sticky_push_offset(px(30.0), px(100.0), None), px(0.0));
     }
 }

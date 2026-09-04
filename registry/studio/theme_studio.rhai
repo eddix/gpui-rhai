@@ -288,7 +288,8 @@ fn specimen_data() {
         table::Table(#{ key: "specimen-table", label: "Users", row_key: "id",
             rows: rows, columns: columns, height: 126, striped: true,
             selection_mode: "multiple", selected_keys: ["two"],
-            sort: #{ key: "name", direction: "ascending" } }),
+            sort: #{ key: "name", direction: "ascending" }, group_by: "state",
+            on_group_toggle: Fn("noop") }),
         pagination::Pagination(#{ key: "specimen-pages", total_items: 128,
             current_page: 3, page_size: 10, page_size_options: [10, 25, 50] })
     ]).with_style(style().gap(px(7)))

@@ -44,8 +44,10 @@ duration come from the visual-test environment, not pointer automation.
 
 Data Table records Default Light populated, loading, and empty states, Default
 Dark selected rows, and Catppuccin Mocha Arabic RTL. These cases cover scalar
-and custom cells, horizontal overflow, localized number/date formatting,
-selection indicators, bounded skeleton rows, empty copy, and Pagination.
+cells, horizontal overflow, controlled sorting/selection, selection indicators,
+bounded skeleton rows, empty copy, and Pagination.
+The new deterministic `grouped` state exercises counted/collapsible sticky
+sections; its refreshed screenshot is pending the next unlocked visual pass.
 
 Theme Studio replaced the old Component Gallery on 2026-09-01. Its 15-theme
 component-specimen matrix, Menu, RTL, Tooltip, editing, and file-operation
@@ -140,11 +142,12 @@ single-select query/change/close callbacks through a real `ScriptLifecycle`,
 Unicode (`中文😀é`) controlled Input, Cmd-A/C/X/V clipboard behavior, and
 read-only selection/copy with edit suppression.
 
-The independent native workspace now has 31 tests: 30 GPUI integration cases
+The independent native workspace now has 33 tests: 32 GPUI integration cases
 plus one `table_1000` fixture-preparation guard. It verifies executor-clock Toast
 expiry, Menu trigger→panel focus, separator-skipping roving selection, Enter
-action/close, nested parent/child overlay painting, and event-time target bounds
-from a real click. It also verifies App installation and key conflicts, shared
+action/close, nested parent/child overlay painting, event-time target bounds
+from a real click, grouped Table sticky-header replacement, and selectable or
+Host-suppressed runtime errors. It also verifies App installation and key conflicts, shared
 Host mechanics with isolated runtime state, duplicate local Overlay ID
 namespacing, automatic bounds, click-through dismissal, and dispose/remount.
 Separate Host domains in one window are also proven not to dismiss each other's

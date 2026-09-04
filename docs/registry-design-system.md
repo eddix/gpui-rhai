@@ -77,13 +77,15 @@ border, text, and opacity; adding a state in source must produce native paint.
 - Popover, Dialog, Tooltip, Toast, and menus use opaque theme surfaces and thin
   borders. They do not add glass, elevation shadows, or exaggerated rounding.
 - Tables use compact clipped cells, low-contrast separators, one selected fill,
-  and local horizontal scrolling. Progress and Skeleton match final geometry.
+  local horizontal scrolling, and raised section headers whose sticky copy is
+  visually indistinguishable from its natural row. Progress and Skeleton match
+  final geometry.
 
 ## Verification
 
 Visual review covers Default Light/Dark, Tokyo Night/Storm, and Catppuccin
 Latte/Mocha. At minimum inspect idle, hover/cursor, focus, selected/current,
-active, disabled, loading, error, empty, and open overlay states. The component
-gallery is the compact drift detector; form, settings, and data-table examples
+active, disabled, loading, error, empty, and open overlay states. Theme Studio
+is the compact drift detector; form, settings, and data-table examples
 remain the product-context checks. Logic, keyboard, accessibility, and native
 interaction tests remain mandatory and are never replaced by screenshots.
