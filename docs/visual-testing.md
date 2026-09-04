@@ -66,8 +66,10 @@ under `tests/visual/macos/<example>/<case>.png` once captured.
 
 ## Automation split
 
-`scripts/release-smoke.sh` is safe for unattended macOS CI: it verifies that all
-examples enter an event loop without panic. Screenshot and input certification
+`scripts/release-smoke.sh` is the unattended local macOS gate: it verifies that
+all examples enter an event loop without panic. The hosted private-repository
+workflow intentionally runs its portable checks on a standard Linux runner so
+CI does not depend on paid macOS minutes. Screenshot and input certification
 requires an unlocked interactive Mac session. Computer Use must inspect fresh
 accessibility state after every action and must not bypass the lock screen.
 

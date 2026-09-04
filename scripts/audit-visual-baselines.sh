@@ -58,11 +58,18 @@ check_case() {
     echo "missing or empty visual baseline: ${file}" >&2
     exit 1
   fi
-  dimensions="$(sips -g pixelWidth -g pixelHeight "${file}" 2>/dev/null | awk '
-    /pixelWidth:/ { width = $2 }
-    /pixelHeight:/ { height = $2 }
-    END { print width "x" height }
-  ')"
+  dimensions="$(python3 - "${file}" <<'PY'
+import struct
+import sys
+
+with open(sys.argv[1], "rb") as image:
+    header = image.read(24)
+if len(header) != 24 or header[:8] != b"\x89PNG\r\n\x1a\n" or header[12:16] != b"IHDR":
+    raise SystemExit("not a valid PNG header")
+width, height = struct.unpack(">II", header[16:24])
+print(f"{width}x{height}")
+PY
+)"
   if [[ "${dimensions}" != "${expected_width}x${expected_height}" ]]; then
     echo "unexpected visual baseline size: ${file} is ${dimensions}" >&2
     exit 1

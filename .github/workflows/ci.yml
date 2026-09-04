@@ -2,22 +2,26 @@ name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
-  macos:
-    runs-on: macos-26
+  portable:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.94.0
           components: clippy,rustfmt
-      - name: Install Metal Toolchain
-        run: xcodebuild -downloadComponent MetalToolchain
       - name: Reject gpui-component dependencies
         run: |
           if cargo tree --workspace | grep -q 'gpui-component'; then
@@ -48,7 +52,13 @@ jobs:
           cargo doc -p gpui-rhai-cli --lib --no-deps
       - name: Package runtime crate
         run: cargo package -p gpui-rhai
-      - name: Release example smoke
-        run: bash scripts/release-smoke.sh
+      - name: Release build
+        run: |
+          cargo build --release -p gpui-rhai --examples
+          cargo build --release -p gpui-rhai-cli
       - name: Audit release artifacts
         run: bash scripts/audit-release-artifacts.sh
+      # macOS launch, Metal, screenshot and unlocked-input gates run locally.
+      # Private-repository GitHub-hosted macOS minutes require paid usage after
+      # the account's included quota, while this portable job stays within the
+      # standard Linux allowance.
