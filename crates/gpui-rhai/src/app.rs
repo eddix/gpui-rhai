@@ -66,6 +66,7 @@ pub fn install(cx: &mut App) {
 pub struct ScriptViewConfig {
     view_id: String,
     paint_background: bool,
+    show_error_banner: bool,
 }
 
 impl ScriptViewConfig {
@@ -74,12 +75,23 @@ impl ScriptViewConfig {
         Self {
             view_id: view_id.into(),
             paint_background: false,
+            show_error_banner: true,
         }
     }
 
     #[must_use]
     pub const fn paint_background(mut self, paint: bool) -> Self {
         self.paint_background = paint;
+        self
+    }
+
+    /// Control the built-in selectable runtime-error banner for this view.
+    ///
+    /// Hosts that disable it must surface [`ScriptViewHandle::last_error`]
+    /// themselves so failed candidates are not silent.
+    #[must_use]
+    pub const fn show_error_banner(mut self, show: bool) -> Self {
+        self.show_error_banner = show;
         self
     }
 
@@ -1137,6 +1149,7 @@ impl FileScriptView {
             runtime,
             extensions,
             theme: theme.clone(),
+            show_error_banner: Cell::new(true),
             #[cfg(feature = "dev-reload")]
             development: self.development,
         });
@@ -1334,6 +1347,7 @@ impl EmbeddedScriptView {
             runtime,
             extensions,
             theme: theme.clone(),
+            show_error_banner: Cell::new(true),
             #[cfg(feature = "dev-reload")]
             development: self.development,
         });
@@ -1761,6 +1775,7 @@ struct ScriptWindowFactory {
     runtime: Rc<RefCell<UiRuntimeState>>,
     extensions: Rc<Vec<Box<dyn ScriptViewExtension>>>,
     theme: ThemeVariant,
+    show_error_banner: Cell<bool>,
     #[cfg(feature = "dev-reload")]
     development: bool,
 }
@@ -1968,6 +1983,7 @@ impl PreparedScriptView {
                 overlays,
                 host: view_host,
                 paint_background: config.paint_background,
+                show_error_banner: config.show_error_banner,
                 content_bounds: None,
                 factory,
                 native_windows,
@@ -2011,6 +2027,7 @@ pub struct ScriptApplication {
     prepared: PreparedScriptView,
     window_size: (f32, f32),
     window_options: Option<WindowOptionsConfigurator>,
+    show_error_banner: bool,
 }
 
 impl ScriptApplication {
@@ -2020,12 +2037,23 @@ impl ScriptApplication {
             prepared,
             window_size: (720.0, 480.0),
             window_options: None,
+            show_error_banner: true,
         }
     }
 
     #[must_use]
     pub const fn window_size(mut self, width: f32, height: f32) -> Self {
         self.window_size = (width, height);
+        self
+    }
+
+    /// Control built-in runtime-error banners in standalone script windows.
+    ///
+    /// Applications that disable them must provide another visible surface for
+    /// [`ScriptViewHandle::last_error`].
+    #[must_use]
+    pub const fn show_error_banner(mut self, show: bool) -> Self {
+        self.show_error_banner = show;
         self
     }
 
@@ -2052,6 +2080,8 @@ impl ScriptApplication {
         let window_size = self.window_size;
         let window_options = self.window_options;
         let prepared = self.prepared;
+        let show_error_banner = self.show_error_banner;
+        prepared.factory.show_error_banner.set(show_error_banner);
         Application::new().run(move |cx: &mut App| {
             install(cx);
             let host = match ScriptViewHost::new_with_policy(
@@ -2094,7 +2124,9 @@ impl ScriptApplication {
                 let weak_root = root.downgrade();
                 window.defer(cx, move |window, cx| {
                     let view = prepared.mount_with_registry(
-                        ScriptViewConfig::new("main").paint_background(true),
+                        ScriptViewConfig::new("main")
+                            .paint_background(true)
+                            .show_error_banner(show_error_banner),
                         host,
                         Rc::clone(&view_native_windows),
                         window,
@@ -2238,6 +2270,7 @@ fn open_secondary_window(
                 overlays: view_host.overlays(),
                 host: view_host.clone(),
                 paint_background: true,
+                show_error_banner: view_factory.show_error_banner.get(),
                 content_bounds: None,
                 factory: Rc::clone(&view_factory),
                 native_windows: Rc::clone(&view_native_windows),
@@ -2443,6 +2476,7 @@ struct ScriptHostView {
     overlays: WindowOverlayCoordinator,
     host: ScriptViewHost,
     paint_background: bool,
+    show_error_banner: bool,
     content_bounds: Option<Bounds<Pixels>>,
     factory: Rc<ScriptWindowFactory>,
     native_windows: Rc<RefCell<NativeWindowRegistry>>,
@@ -2538,6 +2572,59 @@ fn build_host_root(
     }
 }
 
+#[cfg(target_os = "macos")]
+const fn error_banner_font_family() -> &'static str {
+    "Menlo"
+}
+
+#[cfg(target_os = "windows")]
+const fn error_banner_font_family() -> &'static str {
+    "Consolas"
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+const fn error_banner_font_family() -> &'static str {
+    "DejaVu Sans Mono"
+}
+
+fn build_error_banner(
+    view_id: &str,
+    window_id: &str,
+    error: &str,
+    theme: &ThemeVariant,
+    selection: crate::renderer::TextSelectionRegistry,
+    host_focus: FocusHandle,
+    content: AnyElement,
+) -> AnyElement {
+    let selector = format!("gpui-rhai-error-banner:{view_id}");
+    let owner = format!("window:{window_id}/view:{view_id}/error-banner");
+    let error_text = crate::renderer::selectable_text_element(
+        owner,
+        error,
+        theme.tokens.colors["selection"],
+        selection,
+        Some(host_focus),
+    );
+    div()
+        .flex()
+        .flex_col()
+        .child(
+            div()
+                .debug_selector(move || selector.clone())
+                .p_2()
+                .font_family(error_banner_font_family())
+                .text_size(px(12.0))
+                .line_height(px(18.0))
+                .bg(rgba(theme.tokens.colors["surface_raised"].as_rgba_hex()))
+                .text_color(rgba(theme.tokens.colors["danger"].as_rgba_hex()))
+                .border_1()
+                .border_color(rgba(theme.tokens.colors["danger"].as_rgba_hex()))
+                .child(error_text),
+        )
+        .child(content)
+        .into_any_element()
+}
+
 fn script_node_dispatcher(cx: &Context<ScriptHostView>) -> NodeEventDispatcher {
     let script_entity = cx.entity().downgrade();
     let native_entity = script_entity.clone();
@@ -2597,24 +2684,17 @@ impl Render for ScriptHostView {
                 )
             },
         );
-        let content = match &self.last_error {
-            None => content,
-            Some(error) => div()
-                .flex()
-                .flex_col()
-                .child(
-                    div()
-                        .p_2()
-                        .bg(rgba(
-                            snapshot.theme.tokens.colors["surface_raised"].as_rgba_hex(),
-                        ))
-                        .text_color(rgba(snapshot.theme.tokens.colors["danger"].as_rgba_hex()))
-                        .border_1()
-                        .border_color(rgba(snapshot.theme.tokens.colors["danger"].as_rgba_hex()))
-                        .child(error.clone()),
-                )
-                .child(content)
-                .into_any_element(),
+        let content = match (&self.last_error, self.show_error_banner) {
+            (Some(error), true) => build_error_banner(
+                &self.view_id,
+                &self.window_id,
+                error,
+                &snapshot.theme,
+                self.text_selection.clone(),
+                self.host_focus.clone(),
+                content,
+            ),
+            _ => content,
         };
         #[cfg(feature = "dev-reload")]
         let runtime = self.lifecycle.runtime();
@@ -3866,6 +3946,16 @@ mod tests {
             )
             .unwrap();
         (prepared.engine, lifecycle)
+    }
+
+    #[test]
+    fn error_banner_policy_defaults_on_and_can_be_disabled() {
+        assert!(ScriptViewConfig::new("default").show_error_banner);
+        assert!(
+            !ScriptViewConfig::new("custom")
+                .show_error_banner(false)
+                .show_error_banner
+        );
     }
 
     #[test]

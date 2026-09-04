@@ -183,6 +183,16 @@ tree is last-good fallback state rather than the result of the latest attempted
 update. Successful script work clears the error; native-only repaint and
 animation frames do not hide it.
 
+The built-in banner is monospace and selectable through the normal Host copy
+action. An application with its own error panel may opt out per mounted view:
+
+```rust
+let config = ScriptViewConfig::new("user-view").show_error_banner(false);
+```
+
+The opt-out changes presentation only; `last_error` continues to report the
+failure and the last-good tree remains mounted.
+
 See `cargo run -p gpui-rhai --example embedded_views` for three isolated views,
 automatic compact sizing, escaping Dropdown placement, duplicate local IDs,
 cross-view dismissal, shared Layer placement, and explicit dispose/remount.

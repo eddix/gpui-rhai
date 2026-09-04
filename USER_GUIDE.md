@@ -646,6 +646,14 @@ Embedded hosts should read `ScriptViewHandle::last_error()` alongside
 remains the last-good tree and `last_error()` explains why the latest candidate
 was not committed.
 
+The default runtime-error banner uses compact monospace text and the same native
+drag-selection/`Cmd-C` path as `text(...).selectable(true)`. A Host that owns a
+better error surface may mount with
+`ScriptViewConfig::new(id).show_error_banner(false)`; standalone applications
+use `ScriptApplication::show_error_banner(false)`. Disabling the banner never
+clears `last_error`, so the Host remains responsible for making the failure
+visible.
+
 Use the development inspector (`Command + Option + I` or `F12`) for source
 locations, state, semantics, traces, timings, and last errors.
 

@@ -27,6 +27,11 @@ visual bounds through `ctx.event_target_bounds()`, raw pointer/wheel
 `payload.target`, or `NativeEvent::target`. The application no longer needs a
 resize/store channel merely to position native UI after a click.
 
+Transparent formal-component rerenders promote to the nearest replaceable
+ancestor instead of failing when a parent and child share one `UiNode` root.
+Runtime-error banners are selectable monospace text and can be suppressed by a
+Host that surfaces `ScriptViewHandle::last_error` itself.
+
 The source registry now includes the complete official component specimen,
 fifteen bundled theme variants, and Theme Studio for creating, importing,
 editing, validating, previewing, and saving gpui-rhai themes.

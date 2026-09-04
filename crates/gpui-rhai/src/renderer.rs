@@ -2813,6 +2813,16 @@ impl SelectableText {
     }
 }
 
+pub(crate) fn selectable_text_element(
+    owner: String,
+    text: &str,
+    highlight: Rgba8,
+    selection: TextSelectionRegistry,
+    host_focus: Option<FocusHandle>,
+) -> AnyElement {
+    SelectableText::new(owner, None, text, highlight, selection, host_focus).into_any_element()
+}
+
 /// Build one tight highlight rectangle per visual line from UTF-8 character
 /// boundaries. This avoids painting trailing whitespace across wrapped lines.
 fn selection_rects(layout: &gpui::TextLayout, start: usize, end: usize) -> Vec<Bounds<Pixels>> {

@@ -10,6 +10,12 @@ the entry is then compiled self-contained for atomic commit. Failed candidates k
 callbacks, state, and component metadata. Successful reloads preserve compatible
 state and invalidate callbacks from the previous generation.
 
+Mounted views surface the latest failed callback/render/reload above the
+last-good tree as selectable monospace text. Embedded Hosts that render their
+own error UI may set `ScriptViewConfig::show_error_banner(false)` and continue
+reading `ScriptViewHandle::last_error`; standalone adapters expose the matching
+`ScriptApplication` option.
+
 The inspector is available only in development and opens with Command-Option-I
 or F12. It shows source locations, redacted state, computed semantics, traces,
 and execution timings.
