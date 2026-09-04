@@ -15,7 +15,7 @@ include = ["src/**/*.rs", "README.md", "Cargo.toml"]
 [features]
 default = []
 dev-reload = ["dep:notify"]
-grain-backend = ["rhai/grain"]
+experimental-backend = []
 
 [dependencies]
 gpui.workspace = true

@@ -1,3 +1,5 @@
+#[cfg(feature = "experimental-backend")]
+use std::any::type_name;
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -14,7 +16,11 @@ use thiserror::Error;
 
 use crate::animation::register_animation_api;
 use crate::asset::{AssetId, ImageDecodeHandle, asset_id_from_script};
-use crate::backend::{AstInterpreter, ExecutionBackend};
+use crate::backend::AstInterpreter;
+#[cfg(feature = "experimental-backend")]
+use crate::backend::{
+    ExperimentalCompiledScript, ExperimentalOperationObserver, ExperimentalScriptBackend,
+};
 use crate::canvas::register_canvas_api;
 use crate::component::{ComponentExportCollector, ComponentExportError, ComponentRegistry};
 use crate::context::{UiContext, register_ui_context_api};
@@ -135,6 +141,9 @@ pub enum ScriptCallbackDefinitionError {
 pub struct CompiledUi {
     ast: AST,
     generation: ScriptGeneration,
+    /// Generation-bound implementation selected before this script compiled.
+    #[cfg(feature = "experimental-backend")]
+    backend: Option<Rc<dyn ExperimentalCompiledScript>>,
 }
 
 #[derive(Clone, Debug)]
@@ -238,6 +247,41 @@ impl CompiledUi {
     #[must_use]
     pub fn generation(&self) -> ScriptGeneration {
         self.generation
+    }
+
+    /// Run one named function through the generation's selected executor.
+    /// Everything else goes through the AST oracle.
+    #[inline]
+    pub(crate) fn call_named<T, Args>(
+        &self,
+        engine: &Engine,
+        name: &str,
+        args: Args,
+    ) -> Result<T, Box<rhai::EvalAltResult>>
+    where
+        T: rhai::Variant + Clone,
+        Args: rhai::FuncArgs,
+    {
+        #[cfg(feature = "experimental-backend")]
+        if let Some(backend) = &self.backend {
+            let mut values = Vec::new();
+            args.parse(&mut values);
+            return backend.call_fn(engine, name, values).and_then(|result| {
+                result.try_cast_result().map_err(|result| {
+                    let result_type = engine.map_type_name(result.type_name());
+                    let cast_type = match type_name::<T>() {
+                        typ if typ.contains("::") => engine.map_type_name(typ),
+                        typ => typ,
+                    };
+                    Box::new(EvalAltResult::ErrorMismatchOutputType(
+                        cast_type.into(),
+                        result_type.into(),
+                        Position::NONE,
+                    ))
+                })
+            });
+        }
+        AstInterpreter::call_fn(engine, &self.ast, &mut rhai::Scope::new(), name, args)
     }
 
     #[must_use]
@@ -423,6 +467,9 @@ pub struct RuntimeEngine {
     operation_counter: Arc<AtomicU64>,
     slow_threshold: Duration,
     component_render: ActiveComponentRenderState,
+    /// Optional alternate executor attached to future compiled generations.
+    #[cfg(feature = "experimental-backend")]
+    experimental_backend: Option<Rc<dyn ExperimentalScriptBackend>>,
     component_invocations: BTreeMap<ComponentInstancePath, ComponentInvocationRecipe>,
     component_effects: BTreeMap<crate::EffectId, crate::EffectDescriptor>,
     component_timers: BTreeMap<crate::TimerId, crate::TimerDescriptor>,
@@ -513,6 +560,8 @@ impl RuntimeEngine {
             operation_counter,
             slow_threshold: Duration::from_millis(16),
             component_render,
+            #[cfg(feature = "experimental-backend")]
+            experimental_backend: None,
             component_invocations: BTreeMap::new(),
             component_effects: BTreeMap::new(),
             component_timers: BTreeMap::new(),
@@ -571,7 +620,45 @@ impl RuntimeEngine {
         );
         let mut ast = result.map_err(|error| RuntimeError::Compile(error.into()))?;
         ast.set_source(source_name);
-        Ok(CompiledUi { ast, generation })
+        Ok(self.finish_compiled(ast, generation))
+    }
+
+    /// Select an alternate executor for subsequently compiled generations.
+    ///
+    /// Passing `None` restores exact official-Rhai progress observation.
+    #[cfg(feature = "experimental-backend")]
+    pub fn set_experimental_script_backend(
+        &mut self,
+        backend: Option<Rc<dyn ExperimentalScriptBackend>>,
+    ) {
+        if let Some(backend) = &backend {
+            backend.configure_engine(
+                &mut self.engine,
+                ExperimentalOperationObserver(Arc::clone(&self.operation_counter)),
+            );
+        } else {
+            let progress = Arc::clone(&self.operation_counter);
+            self.engine.on_progress(move |operations| {
+                progress.store(operations, Ordering::Relaxed);
+                None
+            });
+        }
+        self.experimental_backend = backend;
+    }
+
+    /// Bind an optional executor to one immutable compiled generation.
+    fn finish_compiled(&self, ast: AST, generation: ScriptGeneration) -> CompiledUi {
+        #[cfg(feature = "experimental-backend")]
+        let backend = self
+            .experimental_backend
+            .as_ref()
+            .map(|backend| backend.compile(&self.engine, &ast));
+        CompiledUi {
+            ast,
+            generation,
+            #[cfg(feature = "experimental-backend")]
+            backend,
+        }
     }
 
     /// Compile source while eagerly resolving and embedding literal imports.
@@ -599,7 +686,7 @@ impl RuntimeEngine {
         );
         let mut ast = result.map_err(RuntimeError::Compile)?;
         ast.set_source(source_name);
-        Ok(CompiledUi { ast, generation })
+        Ok(self.finish_compiled(ast, generation))
     }
 
     pub fn set_module_resolver(&mut self, resolver: impl ModuleResolver + 'static) {
@@ -803,13 +890,7 @@ impl RuntimeEngine {
         .with_generation(compiled.generation);
         self.begin_component_render(context, compiled.generation, None, None)?;
         let started = self.begin_timing();
-        let result = AstInterpreter::call_fn::<UiNode, _>(
-            &self.engine,
-            &compiled.ast,
-            &mut Scope::new(),
-            "view",
-            (),
-        );
+        let result = compiled.call_named::<UiNode, _>(&self.engine, "view", ());
         self.record_timing(
             ExecutionOperation::Render,
             compiled.ast.source().unwrap_or("<script>"),
@@ -924,13 +1005,7 @@ impl RuntimeEngine {
         self.evaluation_generation.set(compiled.generation);
         self.begin_component_render(context.clone(), compiled.generation, None, reuse)?;
         let started = self.begin_timing();
-        let result = AstInterpreter::call_fn::<UiNode, _>(
-            &self.engine,
-            &compiled.ast,
-            &mut Scope::new(),
-            "view",
-            (context,),
-        );
+        let result = compiled.call_named::<UiNode, _>(&self.engine, "view", (context,));
         self.record_timing(
             ExecutionOperation::Render,
             compiled.ast.source().unwrap_or("<script>"),
@@ -1230,13 +1305,7 @@ impl RuntimeEngine {
         }
         self.evaluation_generation.set(compiled.generation);
         let started = self.begin_timing();
-        let result = AstInterpreter::call_fn::<Dynamic, _>(
-            &self.engine,
-            &compiled.ast,
-            &mut Scope::new(),
-            function,
-            (context,),
-        );
+        let result = compiled.call_named::<Dynamic, _>(&self.engine, function, (context,));
         self.record_timing(
             ExecutionOperation::Lifecycle(function.to_owned()),
             compiled.ast.source().unwrap_or("<script>"),

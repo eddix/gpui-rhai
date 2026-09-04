@@ -367,6 +367,10 @@ struct RootDirtyFixture {
 }
 
 fn root_dirty_fixture() -> RootDirtyFixture {
+    root_dirty_fixture_with_engine(|_| {})
+}
+
+fn root_dirty_fixture_with_engine(configure: impl FnOnce(&mut RuntimeEngine)) -> RootDirtyFixture {
     let source = EmbeddedScriptSource::new(BTreeMap::from([
         (
             ModuleId::parse("components/equivalence_counter").unwrap(),
@@ -378,12 +382,15 @@ fn root_dirty_fixture() -> RootDirtyFixture {
         ),
     ]));
     let mut engine = RuntimeEngine::new();
+    configure(&mut engine);
     engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
     let compiled = engine
         .compile_self_contained_named("ui/root_dirty.rhai", ROOT_DIRTY_APP)
         .unwrap();
     let schema = engine.root_state_schema(&compiled).unwrap();
     let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+    runtime.borrow_mut().calendar_clock =
+        CalendarClock::fixed(GregorianDate::new(2026, 9, 2).unwrap());
     let root = ComponentInstancePath::root("App", "root");
     let panel = root.child("CounterPanel", "panel");
     let left = panel.child("EquivalenceCounter", "left");

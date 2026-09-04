@@ -61,6 +61,11 @@ pub mod clock;
 
 pub use gpui;
 
+#[cfg(feature = "experimental-backend")]
+pub use backend::{
+    ExperimentalCompiledScript, ExperimentalOperationObserver, ExperimentalScriptBackend,
+};
+
 pub use accessibility::{AccessibilityError, AccessibilityNode, AccessibilityTree};
 pub use action::{
     ActionError, ActionId, ActionInvocation, ActionRegistry, DispatchScriptAction, KeyBindingSpec,
