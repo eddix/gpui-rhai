@@ -235,17 +235,7 @@ impl ScriptLifecycle {
                     .all(|recipe| recipe.path() != path)
             })
         {
-            return match self.render_impl(engine, Some(&dirty)) {
-                Ok(_) => Ok(true),
-                Err(error) => {
-                    self.runtime
-                        .try_borrow_mut()
-                        .map_err(|_| LifecycleError::Borrowed)?
-                        .restore(runtime_snapshot)?;
-                    engine.restore_execution_checkpoint(engine_checkpoint);
-                    Err(error)
-                }
-            };
+            return self.render_dirty_full(engine, &dirty, runtime_snapshot, engine_checkpoint);
         }
 
         let mut root = self
@@ -253,6 +243,14 @@ impl ScriptLifecycle {
             .as_deref()
             .cloned()
             .ok_or(LifecycleError::MissingRoot)?;
+        let active = engine
+            .component_invocations()
+            .map(|recipe| recipe.path().clone())
+            .collect::<BTreeSet<_>>();
+        let Some(topmost) = replaceable_component_paths(&root, &self.root_path, topmost, &active)
+        else {
+            return self.render_dirty_full(engine, &dirty, runtime_snapshot, engine_checkpoint);
+        };
         let mut retained = self.retained.clone();
         let result = (|| {
             for path in topmost {
@@ -282,6 +280,26 @@ impl ScriptLifecycle {
                 self.state = LifecycleState::Running;
                 Ok(true)
             }
+            Err(error) => {
+                self.runtime
+                    .try_borrow_mut()
+                    .map_err(|_| LifecycleError::Borrowed)?
+                    .restore(runtime_snapshot)?;
+                engine.restore_execution_checkpoint(engine_checkpoint);
+                Err(error)
+            }
+        }
+    }
+
+    fn render_dirty_full(
+        &mut self,
+        engine: &mut RuntimeEngine,
+        dirty: &BTreeSet<ComponentInstancePath>,
+        runtime_snapshot: crate::UiStateSnapshot,
+        engine_checkpoint: crate::engine::RuntimeEngineCheckpoint,
+    ) -> Result<bool, LifecycleError> {
+        match self.render_impl(engine, Some(dirty)) {
+            Ok(_) => Ok(true),
             Err(error) => {
                 self.runtime
                     .try_borrow_mut()
@@ -1104,6 +1122,30 @@ fn topmost_paths(paths: &BTreeSet<ComponentInstancePath>) -> Vec<ComponentInstan
         })
         .cloned()
         .collect()
+}
+
+fn replaceable_component_paths(
+    root: &UiNode,
+    root_path: &ComponentInstancePath,
+    paths: Vec<ComponentInstancePath>,
+    active: &BTreeSet<ComponentInstancePath>,
+) -> Option<Vec<ComponentInstancePath>> {
+    let index = crate::node::ComponentSubtreeIndex::new(root);
+    let mut replaceable = BTreeSet::new();
+    for path in paths {
+        let mut candidate = path;
+        loop {
+            if active.contains(&candidate) && index.get(root, &candidate).is_some() {
+                replaceable.insert(candidate);
+                break;
+            }
+            candidate = candidate.parent()?;
+            if &candidate == root_path {
+                return None;
+            }
+        }
+    }
+    Some(topmost_paths(&replaceable))
 }
 
 #[cfg(test)]

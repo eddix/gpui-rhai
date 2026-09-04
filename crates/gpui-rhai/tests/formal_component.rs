@@ -799,6 +799,77 @@ fn composed_semantic_callback_props_execute_in_the_caller_state_scope() {
 }
 
 #[test]
+fn dirty_transparent_child_promotes_to_the_nearest_replaceable_component() {
+    let source = EmbeddedScriptSource::new(BTreeMap::from([
+        (
+            ModuleId::parse("components/select").unwrap(),
+            include_str!("../../../registry/components/select.rhai").to_owned(),
+        ),
+        (
+            ModuleId::parse("components/dropdown").unwrap(),
+            include_str!("../../../registry/components/dropdown.rhai").to_owned(),
+        ),
+        (
+            ModuleId::parse("components/input").unwrap(),
+            include_str!("../../../registry/components/input.rhai").to_owned(),
+        ),
+    ]));
+    let mut engine = RuntimeEngine::new();
+    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
+    let compiled = engine
+        .compile_self_contained_named(
+            "ui/transparent_select.rhai",
+            r#"
+                import "components/select" as select;
+                fn view(ctx) {
+                    select::Select(#{
+                        key: "region",
+                        options: [#{ value: "cn", label: "China" }],
+                        value: (),
+                        empty_text: "No regions",
+                    })
+                }
+            "#,
+        )
+        .unwrap();
+    let schema = engine.root_state_schema(&compiled).unwrap();
+    let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+    let root = ComponentInstancePath::root("App", "root");
+    let select = root.child("Select", "region");
+    let dropdown = select.child("Dropdown", "region-dropdown");
+    let mut lifecycle = ScriptLifecycle::new(
+        compiled,
+        Rc::clone(&runtime),
+        root,
+        Some("main".to_owned()),
+        BTreeMap::new(),
+        &schema,
+    )
+    .unwrap();
+    lifecycle.start(&mut engine).unwrap();
+
+    assert_eq!(lifecycle.root().unwrap().component_root(), Some(&select));
+    assert!(
+        engine
+            .component_invocations()
+            .any(|recipe| recipe.path() == &dropdown)
+    );
+    let open = script_handler(&lifecycle, "open_change");
+    let _ = lifecycle
+        .invoke_callback_transactional(&engine, &open, UiValue::Bool(true))
+        .unwrap();
+    assert!(runtime.borrow().dirty_components().contains(&dropdown));
+
+    assert!(lifecycle.render_dirty(&mut engine).unwrap());
+    assert!(runtime.borrow().dirty_components().is_empty());
+    assert_eq!(lifecycle.root().unwrap().component_root(), Some(&select));
+    let UiNodeKind::Overlay { spec, .. } = lifecycle.root().unwrap().kind() else {
+        panic!("Select must continue to render its Dropdown overlay root");
+    };
+    assert!(spec.open);
+}
+
+#[test]
 fn declarative_effects_start_restart_and_cleanup_in_imported_module_context() {
     let module = ModuleId::parse("components/effect_probe").unwrap();
     let source = EmbeddedScriptSource::new(BTreeMap::from([(module, EFFECT_PROBE.to_owned())]));
