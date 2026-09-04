@@ -38,6 +38,12 @@ The source Table adds controlled `group_by`/`collapsed_groups` with counts,
 toggle events, source parts, Array parity, and cached NativeCollection
 sort/group/collapse projection.
 
+Composite component callbacks now cross each formal boundary through declared
+events: RadioGroup forwards both pointer and roving-key changes to its caller,
+and Dialog explicitly emits `open_change`. Modal Overlay focus is enforced as a
+per-frame invariant, including initially-open dialogs and one-off ancestor focus
+requests from embedding Hosts, so Escape dismissal remains reachable.
+
 The source registry now includes the complete official component specimen,
 fifteen bundled theme variants, and Theme Studio for creating, importing,
 editing, validating, previewing, and saving gpui-rhai themes.

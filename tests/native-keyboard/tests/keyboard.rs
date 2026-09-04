@@ -493,6 +493,12 @@ struct SingleEmbeddedHost {
     view: ScriptViewHandle,
 }
 
+struct ExternalFocusEmbeddedHost {
+    host: ScriptViewHost,
+    view: ScriptViewHandle,
+    external_focus: FocusHandle,
+}
+
 struct AutoMinWidthTableHost {
     host: ScriptViewHost,
     view: ScriptViewHandle,
@@ -513,6 +519,15 @@ impl Render for AutoMinWidthTableHost {
 impl Render for SingleEmbeddedHost {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         self.host.container(self.view.element().unwrap())
+    }
+}
+
+impl Render for ExternalFocusEmbeddedHost {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .size_full()
+            .track_focus(&self.external_focus)
+            .child(self.host.container(self.view.element().unwrap()))
     }
 }
 
@@ -3627,6 +3642,86 @@ fn overlay_default_panel_focus_keeps_keyboard_on_panel(cx: &mut TestAppContext) 
     assert!(
         texts.contains(&"typed:".to_owned()),
         "panel default must not route typing into the input: {texts:?}"
+    );
+}
+
+#[gpui::test]
+fn modal_dialog_reclaims_focus_stolen_by_an_embedding_host(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let entry = ModuleId::parse("main").unwrap();
+    let prepared = EmbeddedScriptView::new(
+        entry.clone(),
+        EmbeddedScriptSource::new(std::collections::BTreeMap::from([
+            (
+                entry,
+                r#"
+                    import "components/dialog" as dialog;
+                    fn state_schema() { #{ fields: #{
+                        open: #{ schema: #{ type: "bool" },
+                            "default": #{ type: "bool", value: true } }
+                    } } }
+                    fn changed(ctx, open) { ctx.set_state("open", open); }
+                    fn view(ctx) {
+                        column([
+                            text(`PROBE open=${ctx.get_state("open")}`),
+                            dialog::Dialog(#{
+                                key: "probe-dialog",
+                                open: ctx.get_state("open"),
+                                title: "Probe dialog",
+                                content: text("Press Escape"),
+                                on_open_change: Fn("changed")
+                            })
+                        ])
+                    }
+                "#
+                .to_owned(),
+            ),
+            (
+                ModuleId::parse("components/dialog").unwrap(),
+                include_str!("../../../registry/components/dialog.rhai").to_owned(),
+            ),
+        ])),
+        include_str!("../../../registry/themes/default_dark.rhai"),
+    )
+    .prepare()
+    .unwrap();
+    let captured = Rc::new(RefCell::new(None));
+    let captured_for_window = Rc::clone(&captured);
+    let window = cx.add_window(move |window, cx| {
+        let host = ScriptViewHost::new("dialog-focus-window", cx).unwrap();
+        let view = prepared
+            .mount(
+                ScriptViewConfig::new("dialog-focus-view"),
+                host.clone(),
+                window,
+                cx,
+            )
+            .unwrap();
+        let external_focus = cx.focus_handle();
+        *captured_for_window.borrow_mut() = Some((view.clone(), external_focus.clone()));
+        ExternalFocusEmbeddedHost {
+            host,
+            view,
+            external_focus,
+        }
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    cx.run_until_parked();
+
+    let (view, external_focus) = captured.borrow().as_ref().unwrap().clone();
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    visual.update(|window, _| external_focus.focus(window));
+    // The Host focus request dirties the window. During that frame, the modal
+    // invariant sees that focus is outside its panel and reclaims it.
+    visual.run_until_parked();
+    visual.simulate_keystrokes("escape");
+    visual.run_until_parked();
+
+    let texts = palette_texts(&mut visual, &view);
+    assert!(
+        texts.contains(&"PROBE open=false".to_owned()),
+        "Escape must dismiss after an embedding host moves focus: {texts:?}"
     );
 }
 

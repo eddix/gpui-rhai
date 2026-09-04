@@ -256,6 +256,21 @@ action, emit an event, or call a manifest-declared capability. They may not
 access GPUI contexts. Pointer callbacks are handled by default; return
 `propagate()` to allow the normalized event to continue to an ancestor handler.
 
+Do not forward a callback prop through another formal component. Callback
+ownership is rebound at each formal boundary, so a two-hop pass-through can run
+against the intermediate component's state path. Instead, give the child a
+component-local named handler and emit the composite's declared event:
+
+```rhai
+fn option_selected(ctx, value) { ctx.emit("change", value); }
+
+radio::Radio(#{ on_select: Fn("option_selected"), /* ... */ })
+```
+
+The runtime validates the emitted payload and invokes the caller's `on_change`
+in the caller context. Use the same forwarding action for pointer and keyboard
+paths so their semantics cannot diverge.
+
 `on(event, handler)`, `on_capture(event, handler)`, and
 `on_bubble(event, handler)` append ordered handlers; they do not replace a prior
 binding. A handler may return `event_response()` refined with

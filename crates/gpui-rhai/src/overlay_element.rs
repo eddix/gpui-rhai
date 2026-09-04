@@ -547,6 +547,15 @@ impl ScriptOverlayElement {
                 state.trigger_focus.focus(window);
             }
         }
+        if self.spec.open && self.spec.modal && !state.panel_focus.contains_focused(window, cx) {
+            // A modal is a focus boundary, including when an embedding Host
+            // programmatically focuses an ancestor after mount. `focus()`
+            // dirties the GPUI window, so this invariant is rechecked in that
+            // very frame instead of relying on a focus-out listener (whose old
+            // path is not observable for every programmatic focus transfer in
+            // GPUI 0.2.x).
+            state.panel_focus.focus(window);
+        }
         state.was_open = self.spec.open;
     }
 

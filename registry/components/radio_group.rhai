@@ -90,6 +90,11 @@ fn next_value(options, value, step) {
 }
 
 fn RadioGroup(props) { render_component("components/radio_group", props) }
+
+fn change_action(ctx, value) {
+    ctx.emit("change", value);
+}
+
 fn render_RadioGroup(ctx, props) {
     let disabled = if "disabled" in props { props.disabled } else { false };
     let orientation = if "orientation" in props { props.orientation } else { "vertical" };
@@ -102,7 +107,7 @@ fn render_RadioGroup(ctx, props) {
                 selected: option.value == props.value,
                 label: option.label,
                 disabled: disabled || option_disabled(option),
-                on_select: callback,
+                on_select: if callback == () { () } else { Fn("change_action") },
             }).with_style(component_style(props, "option", style())).tab_stop(false)
         );
     }
@@ -117,9 +122,9 @@ fn render_RadioGroup(ctx, props) {
         let next = next_value(props.options, props.value, 1);
         group
             .tab_stop(true)
-            .on_key_value("left", callback, previous)
-            .on_key_value("up", callback, previous)
-            .on_key_value("right", callback, next)
-            .on_key_value("down", callback, next)
+            .on_key_value("left", Fn("change_action"), previous)
+            .on_key_value("up", Fn("change_action"), previous)
+            .on_key_value("right", Fn("change_action"), next)
+            .on_key_value("down", Fn("change_action"), next)
     } else { group.disabled(true) }
 }

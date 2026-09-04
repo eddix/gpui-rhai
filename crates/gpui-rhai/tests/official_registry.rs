@@ -1960,6 +1960,99 @@ fn m2_control_sources_emit_typed_values_and_roving_keys() {
 }
 
 #[test]
+fn radio_group_forwards_pointer_and_keyboard_changes_to_its_caller() {
+    let source = EmbeddedScriptSource::new(BTreeMap::from([
+        (
+            ModuleId::parse("components/radio").unwrap(),
+            RADIO.to_owned(),
+        ),
+        (
+            ModuleId::parse("components/radio_group").unwrap(),
+            RADIO_GROUP.to_owned(),
+        ),
+    ]));
+    let mut engine = RuntimeEngine::new();
+    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
+    let compiled = engine
+        .compile_self_contained_named(
+            "ui/radio_group_event_boundary.rhai",
+            r#"
+                import "components/radio_group" as radio_group;
+                fn state_schema() { #{ fields: #{
+                    region: #{ schema: #{ type: "string" },
+                        "default": #{ type: "string", value: "b" } }
+                } } }
+                fn changed(ctx, value) { ctx.set_state("region", value); }
+                fn view(ctx) {
+                    radio_group::RadioGroup(#{
+                        value: ctx.get_state("region"), label: "Region",
+                        options: [
+                            #{ value: "a", label: "A" },
+                            #{ value: "b", label: "B" },
+                            #{ value: "c", label: "C" }
+                        ],
+                        on_change: Fn("changed")
+                    })
+                }
+            "#,
+        )
+        .unwrap();
+    let schema = engine.root_state_schema(&compiled).unwrap();
+    let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+    let path = ComponentInstancePath::root("App", "root");
+    let mut lifecycle = ScriptLifecycle::new(
+        compiled,
+        Rc::clone(&runtime),
+        path.clone(),
+        Some("main".to_owned()),
+        BTreeMap::new(),
+        &schema,
+    )
+    .unwrap();
+    lifecycle.start(&mut engine).unwrap();
+
+    let UiNodeKind::Box { children } = lifecycle.root().unwrap().kind() else {
+        panic!("RadioGroup must render its Radio options in a Box");
+    };
+    let (select, payload) = target_handler(&children[0], "click");
+    let _ = lifecycle
+        .invoke_callback_transactional(&engine, &select, payload)
+        .unwrap();
+    let events = runtime.borrow_mut().drain_batch().events;
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].event.name, "change");
+    assert_eq!(events[0].event.payload, UiValue::String("a".to_owned()));
+    for event in events {
+        let _ = lifecycle
+            .invoke_component_event_transactional(&engine, event)
+            .unwrap();
+    }
+    assert!(lifecycle.render_dirty(&mut engine).unwrap());
+    assert_eq!(
+        runtime.borrow().component_state.get(&path, "region"),
+        Some(&UiValue::String("a".to_owned()))
+    );
+
+    let (right, payload) = target_handler(lifecycle.root().unwrap(), "key:right");
+    let _ = lifecycle
+        .invoke_callback_transactional(&engine, &right, payload)
+        .unwrap();
+    let events = runtime.borrow_mut().drain_batch().events;
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].event.payload, UiValue::String("b".to_owned()));
+    for event in events {
+        let _ = lifecycle
+            .invoke_component_event_transactional(&engine, event)
+            .unwrap();
+    }
+    assert!(lifecycle.render_dirty(&mut engine).unwrap());
+    assert_eq!(
+        runtime.borrow().component_state.get(&path, "region"),
+        Some(&UiValue::String("b".to_owned()))
+    );
+}
+
+#[test]
 fn m2_visual_primitives_export_fallbacks_and_rust_animations() {
     let source = EmbeddedScriptSource::new(BTreeMap::from([
         (

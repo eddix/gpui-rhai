@@ -216,6 +216,11 @@ flipping/clamping, the parent-child dismiss stack, outside-click routing,
 Escape routing, modal policy, and per-frame cleanup. Rhai supplies only stable
 IDs, parent IDs, content, and controlled policy callbacks.
 
+Modal focus is a per-frame invariant rather than a one-shot mount side effect.
+Programmatic Host focus changes dirty the window; the Overlay element checks the
+committed focus path during that frame and returns focus to the panel before
+keyboard dispatch can escape the modal domain.
+
 Generic Layer nodes place arbitrary content at a window corner, center, or fill
 region with a bounded priority. In an embedded Host they register a view-ID-
 namespaced element with one shared deferred portal; standalone views render the

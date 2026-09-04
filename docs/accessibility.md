@@ -19,8 +19,9 @@ Accessibility and keyboard operation are release requirements.
   UTF-16 ranges, selection, and clipboard operations.
 - The Rhai Dropdown source supports arrows, Home, End, Enter, Escape,
   first-character type-ahead, and disabled
-  option skipping. Dialog traps focus and the window overlay coordinator
-  restores focus on dismissal.
+  option skipping. Dialog traps focus, reclaims it after an embedding Host's
+  accidental ancestor-focus request, and the window overlay coordinator
+  restores the previous focus on dismissal.
 - Animation respects one central `MotionPreference`. Hosts may set it with
   `.motion_preference(...)`, applications may call
   `ctx.set_reduced_motion(bool)`, and `GPUI_RHAI_REDUCED_MOTION=1` provides a

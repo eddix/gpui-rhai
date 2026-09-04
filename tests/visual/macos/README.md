@@ -142,7 +142,7 @@ single-select query/change/close callbacks through a real `ScriptLifecycle`,
 Unicode (`中文😀é`) controlled Input, Cmd-A/C/X/V clipboard behavior, and
 read-only selection/copy with edit suppression.
 
-The independent native workspace now has 33 tests: 32 GPUI integration cases
+The independent native workspace now has 34 tests: 33 GPUI integration cases
 plus one `table_1000` fixture-preparation guard. It verifies executor-clock Toast
 expiry, Menu trigger→panel focus, separator-skipping roving selection, Enter
 action/close, nested parent/child overlay painting, event-time target bounds

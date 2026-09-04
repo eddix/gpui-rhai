@@ -71,6 +71,11 @@ fn optional_bool(props, name, fallback) {
 }
 
 fn Dialog(props) { render_component("components/dialog", props) }
+
+fn forward_open_change(ctx, open) {
+    ctx.emit("open_change", open);
+}
+
 fn render_Dialog(ctx, props) {
     let children = [
         text(props.title).with_style(component_style(props, "title",
@@ -118,7 +123,7 @@ fn render_Dialog(ctx, props) {
     ).with_key(props.key)
         .with_style(component_style(props, "root", style()));
     if "on_open_change" in props && props.on_open_change != () {
-        node.on_open_change(props.on_open_change)
+        node.on_open_change(Fn("forward_open_change"))
     } else {
         node
     }

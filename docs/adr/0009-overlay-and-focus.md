@@ -15,5 +15,12 @@ layout, while an independent absolute Host viewport drives overlays. The Host
 root element initializes the coordinator exactly once per GPUI frame and owns
 capture-phase outside-click routing.
 
+An open modal enforces containment during each focus-driven frame. This covers
+initially-open content and embedding Hosts that programmatically focus an
+ancestor after mount; Escape and Tab therefore remain routed through the modal.
+The check is frame-based because GPUI 0.2.x focus-out listeners do not expose the
+old path for every programmatic focus transfer. Closing disables containment
+before the coordinator restores the prior focus.
+
 Official components consume these public mechanisms and receive no private
 placement, queue, or timer privileges.

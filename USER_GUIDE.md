@@ -314,6 +314,22 @@ This is why a callback defined inside an imported component module continues to
 resolve that module's helpers later. Do not reduce callbacks to a function-name
 string or call a retained FnPtr against an unrelated AST.
 
+A formal component may bind a caller callback to a node it owns, but it must not
+pass that callback through another formal component's callback prop. The child
+would bind it to its immediate caller, not to the original state owner. A
+composite component must receive the child event with its own named handler and
+then emit its declared event:
+
+```rhai
+fn child_changed(ctx, value) { ctx.emit("change", value); }
+
+child::Child(#{ on_change: Fn("child_changed") })
+```
+
+The runtime then dispatches `change` to the composite's `on_change` prop in the
+original caller context. This event boundary applies equally to pointer and
+keyboard handlers.
+
 Durable callbacks must be named, non-capturing functions. gpui-rhai rejects
 anonymous/capturing closures and curry values that cannot cross the `UiValue`
 boundary. Pass durable data in component props, state/store fields, or explicit
@@ -593,6 +609,12 @@ descendant on every closed → open edge. The historical default is
 `initial_focus: "panel"`. A structural container with key/click handlers gets
 an interaction wrapper and is a tab stop by default; use `tab_stop(false)` when
 that container should not precede an inner filter input in the focus order.
+
+While a modal is open, Overlay reasserts that focus remains inside its panel on
+every focus-driven GPUI frame. An embedding Host must not repeatedly focus an
+ancestor to keep shortcuts alive; register Host shortcuts on the surrounding
+interaction domain instead. If a one-off Host focus request races with mount,
+the modal reclaims focus so Escape and Tab continue through the modal path.
 
 Do not simulate overlays by absolutely positioning a child inside a clipped
 component. Use the generic Overlay/Layer path so the Host can coordinate the

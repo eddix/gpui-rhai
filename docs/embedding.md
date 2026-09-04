@@ -103,6 +103,10 @@ positioned Layer elements share the Host portal.
 
 Non-modal outside clicks dismiss the topmost Host overlay during native capture
 and continue to the clicked sibling control. Modal backdrops consume the click.
+An open modal also reclaims focus when Host code moves it to an ancestor, so
+Escape and Tab stay in the modal path. Do not refocus a Host root after each
+embedded render; attach global shortcuts to the Host interaction domain and let
+Overlay own focus while a modal is presented.
 
 ## Event-time geometry bridges
 
