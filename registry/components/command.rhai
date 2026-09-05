@@ -10,7 +10,7 @@
 */
 // Embeddable keyboard-first command search with deterministic fuzzy ranking.
 // Props: key, label, query, items, placeholders, sizing, disabled, and callbacks.
-// Events: query_change(string) and action(string).
+// Events: query_change(string), active_change(string), and action(string).
 // State: caller owns query; component owns only the roving active command.
 // Parts: root, search, list, group, item, item_active, label, shortcut, empty.
 // Example: Command(#{ key: "palette", label: "Commands", query: query, items: items, on_query_change: Fn("queried"), on_action: Fn("run") })
@@ -55,11 +55,13 @@ define_component(#{
             autofocus: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: false } },
             on_query_change: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false },
+            on_active_change: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false },
             on_action: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false },
         },
         state: #{ fields: #{ active: #{ schema: #{ type: "string" },
             "default": #{ type: "string", value: "" } } } },
-        events: #{ query_change: #{ payload: #{ type: "string" } }, action: #{ payload: #{ type: "string" } } },
+        events: #{ query_change: #{ payload: #{ type: "string" } },
+            active_change: #{ payload: #{ type: "string" } }, action: #{ payload: #{ type: "string" } } },
         slots: #{}, parts: ["root", "search", "list", "group", "item", "item_active", "label", "shortcut", "empty"],
     },
     render: Fn("render_Command")
@@ -139,7 +141,16 @@ fn adjacent(values, active, step) {
 }
 
 fn query_action(ctx, query) { ctx.set_state("active", ""); ctx.emit("query_change", query); }
-fn active_action(ctx, value) { ctx.set_state("active", value); handled() }
+fn active_action(ctx, value) {
+    if ctx.get_state("active") != value {
+        ctx.set_state("active", value);
+        ctx.emit("active_change", value);
+    }
+    handled()
+}
+fn active_hover(ctx, payload) {
+    if payload.hovered { active_action(ctx, payload.value) } else { handled() }
+}
 fn action_value(ctx, value) { ctx.emit("action", value); handled() }
 fn submit_action(value, ctx, query) {
     if value != "" { ctx.emit("action", value); }
@@ -172,7 +183,10 @@ fn render_command_row(ctx, payload) {
         .tab_stop(false).disabled(item.disabled)
         .accessibility_role("option").accessibility_label(item.label)
         .accessibility_checked(item.active);
-    if item.disabled { node } else { node.on_click_value(Fn("action_value"), item.value) }
+    if item.disabled { node } else {
+        node.on_hover_value(Fn("active_hover"), item.value)
+            .on_click_value(Fn("action_value"), item.value)
+    }
 }
 
 fn array_command_model(items, query, row_height, stored) {

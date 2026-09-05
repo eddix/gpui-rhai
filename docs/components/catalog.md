@@ -70,11 +70,18 @@ deterministic fuzzy matching over labels and keywords, preserves group order,
 sorts matches stably within groups, skips disabled items during navigation, and
 virtualizes the result.
 
+`active_change(string)` reports explicit roving movement from Up/Down/Home/End
+or pointer entry. It is distinct from `action(string)`: use the former for a
+reversible preview and the latter for confirmation. Repeated movement onto the
+same value is deduplicated. Initial render and query-driven fallback selection
+remain pure and do not emit an implicit event.
+
 Array inputs are ranked in component Rhai. Large NativeCollection inputs are
 filtered, grouped, ranked, and navigated in Rust; only visible projected rows
 cross into Rhai. `CommandDialog` composes the same behavior with Dialog and
-does not register a global shortcut. The Host action/keybinding system owns the
-shortcut that changes its controlled `open` value.
+forwards `query_change`, `active_change`, and `action` through formal component
+events. It does not register a global shortcut. The Host action/keybinding
+system owns the shortcut that changes its controlled `open` value.
 
 ## Overlay family
 

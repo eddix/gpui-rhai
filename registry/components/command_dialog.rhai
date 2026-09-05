@@ -10,7 +10,7 @@
 */
 // Controlled modal presentation of Command without registering a global shortcut.
 // Props: Command props plus open, close_on_action, and on_open_change.
-// Events: query_change(string), action(string), and open_change(bool).
+// Events: query_change(string), active_change(string), action(string), and open_change(bool).
 // State: caller owns open/query; Command owns only transient roving state.
 // Parts: root, dialog, command.
 // Example: CommandDialog(#{ key: "palette", open: open, query: query, label: "Commands", items: items, on_open_change: Fn("opened"), on_query_change: Fn("queried"), on_action: Fn("run") })
@@ -56,11 +56,13 @@ define_component(#{
             close_on_action: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: true } },
             on_query_change: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false },
+            on_active_change: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false },
             on_action: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false },
             on_open_change: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false },
         },
         state: #{ fields: #{} }, events: #{ query_change: #{ payload: #{ type: "string" } },
-            action: #{ payload: #{ type: "string" } }, open_change: #{ payload: #{ type: "bool" } } },
+            active_change: #{ payload: #{ type: "string" } }, action: #{ payload: #{ type: "string" } },
+            open_change: #{ payload: #{ type: "bool" } } },
         slots: #{}, parts: ["root", "dialog", "command"],
     },
     render: Fn("render_CommandDialog")
@@ -68,6 +70,7 @@ define_component(#{
 
 fn CommandDialog(props) { render_component("components/command_dialog", props) }
 fn query_action(ctx, query) { ctx.emit("query_change", query); }
+fn active_action(ctx, value) { ctx.emit("active_change", value); }
 fn open_action(ctx, open) { ctx.emit("open_change", open); }
 fn command_action(close, ctx, value) {
     ctx.emit("action", value);
@@ -85,6 +88,7 @@ fn render_CommandDialog(ctx, props) {
         disabled: prop_or(props, "disabled", false),
         autofocus: true,
         on_query_change: Fn("query_action"),
+        on_active_change: Fn("active_action"),
         on_action: Fn("command_action").curry(prop_or(props, "close_on_action", true)) })
         .with_style(component_style(props, "command", style().border(px(0))));
     dialog::Dialog(#{ key: props.key, open: props.open, title: props.label,
