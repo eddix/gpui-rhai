@@ -102,5 +102,5 @@ and failed transactions restore the prior metric snapshot.
 
 The old eager `virtual_list` Rhai constructor and `UiNodeKind` have been deleted.
 The remaining fixed-range policy types are internal helpers of the generic
-`virtual_collection` element; Table, Dropdown, and Select now consume only the
+`virtual_collection` element; Table, Combobox, and Select now consume only the
 same public data-backed API available to application Rhai.

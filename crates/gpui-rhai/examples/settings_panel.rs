@@ -6,7 +6,7 @@ const BUTTON: &str = include_str!("../../../registry/components/button.rhai");
 const LABEL: &str = include_str!("../../../registry/components/label.rhai");
 const DIVIDER: &str = include_str!("../../../registry/components/divider.rhai");
 const INPUT: &str = include_str!("../../../registry/components/input.rhai");
-const DROPDOWN: &str = include_str!("../../../registry/components/dropdown.rhai");
+const COMBOBOX: &str = include_str!("../../../registry/components/combobox.rhai");
 const POPOVER: &str = include_str!("../../../registry/components/popover.rhai");
 const SWITCH: &str = include_str!("../../../registry/components/switch.rhai");
 const RADIO: &str = include_str!("../../../registry/components/radio.rhai");
@@ -35,7 +35,7 @@ const MAIN: &str = r#"
 import "components/button" as button;
 import "components/label" as label;
 import "components/divider" as divider;
-import "components/dropdown" as dropdown_component;
+import "components/combobox" as combobox_component;
 import "components/popover" as popover;
 import "components/switch" as switch_component;
 import "components/radio_group" as radio_group;
@@ -159,7 +159,7 @@ fn view(ctx) {
             text: "Color theme",
             description: "Search or use arrows, Enter, Escape, Home and End"
         }),
-        dropdown_component::Dropdown(#{
+        combobox_component::Combobox(#{
             key: "theme-picker",
             options: [
                 #{ value: "default-light", label: "Default Light", keywords: ["light"] },
@@ -328,7 +328,7 @@ fn main() {
         module("components/label", LABEL),
         module("components/divider", DIVIDER),
         module("components/input", INPUT),
-        module("components/dropdown", DROPDOWN),
+        module("components/combobox", COMBOBOX),
         module("components/popover", POPOVER),
         module("components/switch", SWITCH),
         module("components/radio", RADIO),

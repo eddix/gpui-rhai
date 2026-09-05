@@ -275,7 +275,7 @@ IME, selection, undo/redo, and retained primitive lifecycle tests pass.
 - Rewrite every compositional component using public atoms and headless behavior.
 - Rebuild Table on generic virtualization/scroll/focus/Canvas or atoms; remove
   the native Table node.
-- Rebuild DatePicker, Select/Dropdown, Menu, Tabs, Toast presentation, and
+- Rebuild DatePicker, Select/Combobox, Menu, Tabs, Toast presentation, and
   overlays without private native UI nodes.
 - Keep native TextEditor, generic virtual collection, layer/focus/scroll/input
   routing, Canvas, animation, and accessibility as generic mechanisms only.
@@ -358,3 +358,70 @@ Final cleanup requirements:
 
 Only after every gate passes is the complete delivery presented for maintainer
 review.
+
+## 13. Public-launch P0 component completion
+
+This is one final delivery, not a sequence of preview releases. Keep version
+`0.1.0` and runtime API 1 while accepting destructive source/API migration.
+
+### P0.1 Public taxonomy
+
+- Rename `Dropdown`/`components/dropdown`/Overlay kind `dropdown` to
+  `Combobox`/`components/combobox`/`combobox` with no alias or compatibility
+  path.
+- Keep `Select` for scalar choice, `Combobox` for searchable single/multiple
+  choice, `Menu` for action menus, and `ContextMenu` for pointer-anchored action
+  menus.
+
+### P0.2 Generic runtime mechanisms
+
+- Add generic range-input behavior for single-value Slider: pointer capture,
+  keyboard stepping, min/max/step normalization, native hot interaction, and
+  range accessibility semantics without invoking Rhai for every pointer move.
+- Extend generic Overlay with validated event-coordinate anchors and modal
+  viewport-edge placement used by ContextMenu and Sheet.
+- Add themeable overlay scrollbars to generic retained scrolling, including
+  per-axis `auto`/`always`/`hidden`, thumb dragging, track paging, wheel and
+  touchpad coexistence, RTL, and scroll refs/signals.
+- Add normal-node rotation as a generic native animation/property source for
+  Spinner and application-owned Rhai components.
+- Add missing generic semantic attributes such as pressed and range values.
+- Add no private high-level component constructor or node kind.
+
+### P0.3 Official Rhai source components
+
+- Add Alert, AlertDialog, Badge, Card, GroupBox, Empty, Kbd, Spinner,
+  ButtonGroup, InputGroup, Toggle, ToggleGroup, Slider, ContextMenu, Sheet,
+  ScrollArea, Command, and CommandDialog.
+- Keep application values and open/query state strictly controlled. Retain only
+  transient pointer geometry, drag state, and roving active state in generic
+  native/runtime mechanisms.
+- Command owns deterministic fuzzy matching/ranking for label and keywords;
+  Array data stays appropriate for small command sets and NativeCollection owns
+  filtering/projection for large sets.
+- Command is an embeddable searchable action list. CommandDialog composes
+  Command with Dialog and never registers a global shortcut.
+- ContextMenu reuses Menu item schemas, nesting, roving focus, typeahead, and
+  action events; only activation and anchor policy differ.
+- Sheet is a temporary controlled modal on logical start/end or physical
+  top/bottom, never a persistent Sidebar.
+- Slider is single-value only; a future dual-value control is a distinct
+  RangeSlider.
+
+### P0.4 Distribution and macOS certification
+
+- Register every component and transitive dependency in the CLI, metadata,
+  definitions, copied-source update path, and Theme Studio.
+- Add one polished `component_gallery` example that interactively exercises all
+  45 official components, category navigation, all theme hot switches, and
+  important controlled states. Theme Studio remains the exhaustive theme-state
+  contract; the gallery is the user-facing experience demo.
+- Update User Guide, component authoring/API docs, examples, release notes,
+  source audit, and component count assertions.
+- Certify pointer, keyboard, focus, accessibility, RTL, reduced motion, resize,
+  and every bundled theme on macOS. Linux and Windows are explicitly outside
+  the first public release gate until hardware or public CI is available.
+
+**P0 gate:** no component is experimental; the full workspace, CLI, native
+macOS interaction, registry, Theme Studio, gallery preparation/smoke, Clippy,
+rustdoc, package, release build, and checked-in visual baseline audits pass.

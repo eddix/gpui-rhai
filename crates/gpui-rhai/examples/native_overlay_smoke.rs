@@ -5,7 +5,7 @@ use gpui_rhai::{EmbeddedScriptSource, EmbeddedScriptView, ModuleId, ScriptApplic
 const POPOVER: &str = include_str!("../../../registry/components/popover.rhai");
 const DIALOG: &str = include_str!("../../../registry/components/dialog.rhai");
 const INPUT: &str = include_str!("../../../registry/components/input.rhai");
-const DROPDOWN: &str = include_str!("../../../registry/components/dropdown.rhai");
+const COMBOBOX: &str = include_str!("../../../registry/components/combobox.rhai");
 const TOAST: &str = include_str!("../../../registry/components/toast.rhai");
 const TOOLTIP: &str = include_str!("../../../registry/components/tooltip.rhai");
 const THEME: &str = include_str!("../../../registry/themes/default_dark.rhai");
@@ -15,7 +15,7 @@ const CATPPUCCIN_MOCHA: &str = include_str!("../../../registry/themes/catppuccin
 const MAIN: &str = r#"
 import "components/popover" as popover;
 import "components/dialog" as dialog;
-import "components/dropdown" as dropdown_component;
+import "components/combobox" as combobox_component;
 import "components/toast" as toast;
 import "components/tooltip" as tooltip;
 
@@ -34,7 +34,7 @@ fn state_schema() {
                 schema: #{ type: "bool" },
                 "default": #{ type: "bool", value: true },
             },
-            dropdown_open: #{
+            combobox_open: #{
                 schema: #{ type: "bool" },
                 "default": #{ type: "bool", value: true },
             },
@@ -62,11 +62,11 @@ fn set_nested(ctx, open) { ctx.set_state("nested_open", open); }
 fn set_dialog(ctx, open) { ctx.set_state("dialog_open", open); }
 fn use_tokyo_night(ctx, payload) { ctx.set_theme("Tokyo Night", "Night"); }
 fn set_selection(ctx, values) { ctx.set_state("selected", values); }
-fn set_dropdown_open(ctx, open) { ctx.set_state("dropdown_open", open); }
+fn set_combobox_open(ctx, open) { ctx.set_state("combobox_open", open); }
 fn set_query(ctx, query) { ctx.set_state("query", query); }
 fn dismiss_toast(ctx, id) { ctx.set_state("toast_visible", false); }
 
-fn dropdown_options() {
+fn combobox_options() {
     let options = [];
     for index in 0..250 {
         options.push(#{
@@ -94,12 +94,12 @@ fn view(ctx) {
             on_dismiss: Fn("dismiss_toast")
         }),
         text("Switch to Tokyo Night").on_click(Fn("use_tokyo_night")),
-        dropdown_component::Dropdown(#{
+        combobox_component::Combobox(#{
             key: "theme-picker",
-            options: dropdown_options(),
+            options: combobox_options(),
             mode: "single",
             selected: ctx.get_state("selected"),
-            open: ctx.get_state("dropdown_open"),
+            open: ctx.get_state("combobox_open"),
             searchable: true,
             query: ctx.get_state("query"),
             placeholder: "Choose a theme",
@@ -107,7 +107,7 @@ fn view(ctx) {
             empty_text: "No matching themes",
             max_visible: 8,
             on_change: Fn("set_selection"),
-            on_open_change: Fn("set_dropdown_open"),
+            on_open_change: Fn("set_combobox_open"),
             on_query_change: Fn("set_query")
         }),
         popover::Popover(#{
@@ -177,8 +177,8 @@ fn main() {
             INPUT.to_owned(),
         ),
         (
-            ModuleId::parse("components/dropdown").expect("dropdown module"),
-            DROPDOWN.to_owned(),
+            ModuleId::parse("components/combobox").expect("combobox module"),
+            COMBOBOX.to_owned(),
         ),
         (
             ModuleId::parse("components/toast").expect("toast module"),

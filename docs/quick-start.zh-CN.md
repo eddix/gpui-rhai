@@ -14,7 +14,7 @@ cargo install --path crates/gpui-rhai-cli
 
 ```text
 gpui-rhai init
-gpui-rhai add button input dropdown dialog
+gpui-rhai add button input combobox dialog
 gpui-rhai check
 gpui-rhai dev
 ```

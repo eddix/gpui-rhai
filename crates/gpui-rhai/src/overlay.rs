@@ -21,7 +21,7 @@ impl OverlayId {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum OverlayKind {
     Popover,
-    Dropdown,
+    Combobox,
     Tooltip,
     Dialog,
     Menu,

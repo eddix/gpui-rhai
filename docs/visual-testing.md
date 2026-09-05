@@ -22,7 +22,7 @@ Capture Theme Studio across all 15 bundled themes, plus its fixed open-Menu
 state, Arabic RTL directional Icon state, reduced-motion pointer-triggered
 Tooltip state, and New/Open/Import/Save editing paths. This capture is pending
 an unlocked Mac after the Studio replaced Component Gallery.
-Capture `embedded_views` once with the small view's Dropdown open and duplicate
+Capture `embedded_views` once with the small view's Combobox open and duplicate
 local Toast IDs visible in the shared Host queue.
 
 The complex-control expansion adds:
@@ -46,7 +46,7 @@ under `tests/visual/macos/<example>/<case>.png` once captured.
   visible and modal dialogs must trap then restore it.
 - Activate controls with Enter/Space and validate disabled/loading suppression.
 - Exercise RadioGroup and Tabs in horizontal LTR/RTL plus vertical modes.
-- Exercise Dropdown search, arrows, Home/End, type-ahead, Enter, Escape, outside
+- Exercise Combobox search, arrows, Home/End, type-ahead, Enter, Escape, outside
   click, and 5,000-item virtualization.
 - Exercise nested Popover/Dialog/Menu dismissal and submenu parent ownership.
 - Hover Tooltip delays and Toast pause/resume/automatic/manual dismissal.

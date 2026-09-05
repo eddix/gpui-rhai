@@ -30,7 +30,7 @@ security, testing, and troubleshooting.
 Complex component contracts:
 
 - [DatePicker](components/date-picker.md)
-- [Dropdown](components/dropdown.md)
+- [Combobox](components/combobox.md)
 - [Select](components/select.md)
 - [Textarea](components/textarea.md)
 - [Table](components/table.md)

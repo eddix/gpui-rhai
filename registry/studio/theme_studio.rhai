@@ -6,7 +6,7 @@ import "components/collapsible" as collapsible;
 import "components/date_picker" as date_picker;
 import "components/dialog" as dialog;
 import "components/divider" as divider;
-import "components/dropdown" as dropdown;
+import "components/combobox" as combobox;
 import "components/form_field" as form_field;
 import "components/icon" as icon;
 import "components/input" as input;
@@ -110,7 +110,7 @@ fn editor(ctx) {
             button::Button(#{ text: "Save", size: "sm", variant: "primary",
                 on_click: native_handler("theme_studio.save") }),
         ]).with_style(style().gap(px(4))),
-        dropdown::Dropdown(#{
+        combobox::Combobox(#{
             key: "studio-builtin", placeholder: "Load a bundled theme", searchable: true,
             options: __BUILTIN_OPTIONS__, on_change: native_handler("theme_studio.builtin")
         }),
@@ -208,7 +208,7 @@ fn specimen_inputs() {
         row([
             select::Select(#{ key: "specimen-select", value: "nord", clearable: true,
                 options: [#{ value: "nord", label: "Nord" }, #{ value: "gruvbox", label: "Gruvbox" }] }),
-            dropdown::Dropdown(#{ key: "specimen-dropdown", selected: ["dark"],
+            combobox::Combobox(#{ key: "specimen-combobox", selected: ["dark"],
                 options: [#{ value: "dark", label: "Dark" }, #{ value: "light", label: "Light" }] }),
             date_picker::DatePicker(#{ key: "specimen-date", value: "2026-09-01",
                 placeholder: "Date", presets: [#{ label: "Today", value: "2026-09-01" }] }),

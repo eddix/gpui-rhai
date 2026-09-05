@@ -8,7 +8,7 @@ const SKELETON: &str = include_str!("../../../registry/components/skeleton.rhai"
 const BUTTON: &str = include_str!("../../../registry/components/button.rhai");
 const ICON: &str = include_str!("../../../registry/components/icon.rhai");
 const SELECT: &str = include_str!("../../../registry/components/select.rhai");
-const DROPDOWN: &str = include_str!("../../../registry/components/dropdown.rhai");
+const COMBOBOX: &str = include_str!("../../../registry/components/combobox.rhai");
 const INPUT: &str = include_str!("../../../registry/components/input.rhai");
 const DEFAULT_LIGHT: &str = include_str!("../../../registry/themes/default_light.rhai");
 const DEFAULT_DARK: &str = include_str!("../../../registry/themes/default_dark.rhai");
@@ -239,7 +239,7 @@ fn data_table_view(theme: &str, locale: &str, visual_state: &str) -> EmbeddedScr
         module("components/button", BUTTON),
         module("components/icon", ICON),
         module("components/select", SELECT),
-        module("components/dropdown", DROPDOWN),
+        module("components/combobox", COMBOBOX),
         module("components/input", INPUT),
     ]));
     EmbeddedScriptView::new(ModuleId::parse("main").unwrap(), scripts, DEFAULT_LIGHT)

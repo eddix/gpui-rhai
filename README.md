@@ -22,7 +22,7 @@ and Textarea.
 
 ```text
 cargo run -p gpui-rhai-cli -- --root /path/to/app init
-cargo run -p gpui-rhai-cli -- --root /path/to/app add button label input icon divider popover dropdown dialog
+cargo run -p gpui-rhai-cli -- --root /path/to/app add button label input icon divider popover combobox dialog
 cargo run -p gpui-rhai-cli -- --root /path/to/app check
 cargo run -p gpui-rhai-cli -- --root /path/to/app metadata
 ```

@@ -1,6 +1,6 @@
-# Dropdown specification
+# Combobox specification
 
-Dropdown is the public Rhai choice-composition component used directly for
+Combobox is the public Rhai choice-composition component used directly for
 single or multiple selection and indirectly by Select.
 
 It combines generic `overlay`, Input, Box/Text atoms, semantic events, formal

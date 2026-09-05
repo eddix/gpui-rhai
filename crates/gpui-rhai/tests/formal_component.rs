@@ -736,12 +736,12 @@ fn callback_props_execute_in_the_caller_state_scope() {
 
 #[test]
 fn composed_semantic_callback_props_execute_in_the_caller_state_scope() {
-    let dropdown = include_str!("../../../registry/components/dropdown.rhai");
+    let combobox = include_str!("../../../registry/components/combobox.rhai");
     let input = include_str!("../../../registry/components/input.rhai");
     let source = EmbeddedScriptSource::new(BTreeMap::from([
         (
-            ModuleId::parse("components/dropdown").unwrap(),
-            dropdown.to_owned(),
+            ModuleId::parse("components/combobox").unwrap(),
+            combobox.to_owned(),
         ),
         (
             ModuleId::parse("components/input").unwrap(),
@@ -754,14 +754,14 @@ fn composed_semantic_callback_props_execute_in_the_caller_state_scope() {
         .compile_self_contained_named(
             "ui/native_caller_scope.rhai",
             r#"
-                import "components/dropdown" as dropdown;
+                import "components/combobox" as combobox;
                 fn state_schema() {
                     #{ fields: #{ open: #{ schema: #{ type: "bool" },
                         "default": #{ type: "bool", value: true } } } }
                 }
                 fn set_open(ctx, value) { ctx.set_state("open", value); }
                 fn view(ctx) {
-                    dropdown::Dropdown(#{
+                    combobox::Combobox(#{
                         key: "theme", options: [#{ value: "dark", label: "Dark" }],
                         open: ctx.get_state("open"), on_open_change: Fn("set_open")
                     })
@@ -806,8 +806,8 @@ fn dirty_transparent_child_promotes_to_the_nearest_replaceable_component() {
             include_str!("../../../registry/components/select.rhai").to_owned(),
         ),
         (
-            ModuleId::parse("components/dropdown").unwrap(),
-            include_str!("../../../registry/components/dropdown.rhai").to_owned(),
+            ModuleId::parse("components/combobox").unwrap(),
+            include_str!("../../../registry/components/combobox.rhai").to_owned(),
         ),
         (
             ModuleId::parse("components/input").unwrap(),
@@ -836,7 +836,7 @@ fn dirty_transparent_child_promotes_to_the_nearest_replaceable_component() {
     let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
     let root = ComponentInstancePath::root("App", "root");
     let select = root.child("Select", "region");
-    let dropdown = select.child("Dropdown", "region-dropdown");
+    let combobox = select.child("Combobox", "region-combobox");
     let mut lifecycle = ScriptLifecycle::new(
         compiled,
         Rc::clone(&runtime),
@@ -852,19 +852,19 @@ fn dirty_transparent_child_promotes_to_the_nearest_replaceable_component() {
     assert!(
         engine
             .component_invocations()
-            .any(|recipe| recipe.path() == &dropdown)
+            .any(|recipe| recipe.path() == &combobox)
     );
     let open = script_handler(&lifecycle, "open_change");
     let _ = lifecycle
         .invoke_callback_transactional(&engine, &open, UiValue::Bool(true))
         .unwrap();
-    assert!(runtime.borrow().dirty_components().contains(&dropdown));
+    assert!(runtime.borrow().dirty_components().contains(&combobox));
 
     assert!(lifecycle.render_dirty(&mut engine).unwrap());
     assert!(runtime.borrow().dirty_components().is_empty());
     assert_eq!(lifecycle.root().unwrap().component_root(), Some(&select));
     let UiNodeKind::Overlay { spec, .. } = lifecycle.root().unwrap().kind() else {
-        panic!("Select must continue to render its Dropdown overlay root");
+        panic!("Select must continue to render its Combobox overlay root");
     };
     assert!(spec.open);
 }

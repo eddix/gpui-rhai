@@ -209,7 +209,7 @@ app stores are shared. Window stores, theme/locale overrides, overlays, and
 window/component async scopes are released together on close. Rhai submits
 validated commands and never receives a GPUI window handle.
 
-Each standalone script window or embedded Host owns one Rust overlay coordinator. Generic Overlay nodes used by Popover, Dropdown, Dialog,
+Each standalone script window or embedded Host owns one Rust overlay coordinator. Generic Overlay nodes used by Popover, Combobox, Dialog,
 Menu, and Tooltip reserve their portal order during layout and
 register measured anchor/panel bounds during prepaint. The coordinator owns
 flipping/clamping, the parent-child dismiss stack, outside-click routing,
@@ -236,7 +236,7 @@ remain controlled Rhai props; only interaction transients such as focus,
 selection ranges, open panels, visible months, search text, and scroll offsets
 live in the native Entity.
 
-Dropdown is copied Rhai source over public Overlay, Input, semantic events, and
+Combobox is copied Rhai source over public Overlay, Input, semantic events, and
 data-backed `virtual_collection`; Select is its scalar Rhai adapter. Validation,
 grouping, filtering, keyboard navigation, selection, and presentation remain
 inspectable source. Rust contributes only the same generic overlay placement,

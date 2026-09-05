@@ -446,7 +446,7 @@ production embeds the same validated graph and assets.
 
 The registry includes the existing component product line—Button, Input,
 Textarea, Checkbox, Radio/RadioGroup, Switch, Label, Tag, Avatar, Icon, Divider,
-Progress, Skeleton, Dropdown, Select, DatePicker, Popover, Tooltip, Dialog,
+Progress, Skeleton, Combobox, Select, DatePicker, Popover, Tooltip, Dialog,
 Accordion, Collapsible, Tabs, Menu, Toast, FormField, Table, and Pagination—but
 all compositional implementations migrate to public Core Runtime v2 mechanisms.
 

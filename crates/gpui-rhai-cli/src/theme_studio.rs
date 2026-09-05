@@ -14,8 +14,8 @@ use gpui_rhai::{
 
 use super::{
     ACCORDION_SOURCE, AR_LOCALE, AVATAR_SOURCE, BUNDLED_THEME_SOURCES, BUTTON_SOURCE, CHECK_SVG,
-    CHECKBOX_SOURCE, CLOSE_SVG, COLLAPSIBLE_SOURCE, DATE_NEXT_SVG, DATE_PICKER_SOURCE,
-    DATE_PREVIOUS_SVG, DEFAULT_THEME, DIALOG_SOURCE, DIVIDER_SOURCE, DROPDOWN_SOURCE, EN_LOCALE,
+    CHECKBOX_SOURCE, CLOSE_SVG, COLLAPSIBLE_SOURCE, COMBOBOX_SOURCE, DATE_NEXT_SVG,
+    DATE_PICKER_SOURCE, DATE_PREVIOUS_SVG, DEFAULT_THEME, DIALOG_SOURCE, DIVIDER_SOURCE, EN_LOCALE,
     FORM_FIELD_SOURCE, ICON_SOURCE, INPUT_SOURCE, LABEL_SOURCE, MENU_SOURCE, PAGINATION_SOURCE,
     POPOVER_SOURCE, PROGRESS_SOURCE, RADIO_GROUP_SOURCE, RADIO_SOURCE, SELECT_SOURCE,
     SKELETON_SOURCE, SWITCH_SOURCE, TABLE_SOURCE, TABS_SOURCE, TAG_SOURCE, TEXTAREA_SOURCE,
@@ -775,7 +775,7 @@ fn studio_scripts(main: &str) -> EmbeddedScriptSource {
         module("components/date_picker", DATE_PICKER_SOURCE),
         module("components/dialog", DIALOG_SOURCE),
         module("components/divider", DIVIDER_SOURCE),
-        module("components/dropdown", DROPDOWN_SOURCE),
+        module("components/combobox", COMBOBOX_SOURCE),
         module("components/form_field", FORM_FIELD_SOURCE),
         module("components/icon", ICON_SOURCE),
         module("components/input", INPUT_SOURCE),
@@ -992,7 +992,7 @@ mod tests {
             "date_picker",
             "dialog",
             "divider",
-            "dropdown",
+            "combobox",
             "form_field",
             "icon",
             "input",

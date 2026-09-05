@@ -1,7 +1,7 @@
 /* gpui-rhai
 {
-  "id": "components/dropdown",
-  "export": "Dropdown",
+  "id": "components/combobox",
+  "export": "Combobox",
   "version": "0.1.0",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": ["components/input"],
@@ -13,12 +13,12 @@
 // Props: key/options/mode, optional controlled selected/open/query, search and slots.
 // Events: change(array<string>), open_change(bool), query_change(string).
 // State: keyed selection, open, query, and active-option state when not controlled.
-// Example: Dropdown(#{ key: "country", options: options, selected: ["uk"], on_change: Fn("changed") })
+// Example: Combobox(#{ key: "country", options: options, selected: ["uk"], on_change: Fn("changed") })
 
 import "components/input" as input;
 
 define_component(#{
-    metadata: #{ id: "components/dropdown", "export": "Dropdown", version: "0.1.0",
+    metadata: #{ id: "components/combobox", "export": "Combobox", version: "0.1.0",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
         dependencies: ["components/input"], capabilities: #{}, assets: [] },
     schema: #{
@@ -94,36 +94,36 @@ define_component(#{
             "panel", "search", "list", "group", "option", "option_selected",
             "option_active", "option_disabled", "empty"],
     },
-    render: Fn("render_Dropdown")
+    render: Fn("render_Combobox")
 });
 
-fn Dropdown(props) { render_component("components/dropdown", props) }
+fn Combobox(props) { render_component("components/combobox", props) }
 fn prop_or(props, name, fallback) { if name in props { props[name] } else { fallback } }
 fn option_disabled(option) { prop_or(option, "disabled", false) }
 fn option_group(option) {
     if "group" in option && option.group != () { option.group } else { () }
 }
 
-fn validate_dropdown(props, selected) {
+fn validate_combobox(props, selected) {
     let values = #{};
     for option in props.options {
         let label = option.label;
         label.trim();
-        if label == "" { throw `dropdown option '${option.value}' has an empty label`; }
-        if option.value in values { throw `dropdown option value '${option.value}' is duplicated`; }
+        if label == "" { throw `combobox option '${option.value}' has an empty label`; }
+        if option.value in values { throw `combobox option value '${option.value}' is duplicated`; }
         values[option.value] = true;
         let group = option_group(option);
         if group != () {
             let normalized_group = group;
             normalized_group.trim();
-            if normalized_group == "" { throw `dropdown option '${option.value}' has an empty group`; }
+            if normalized_group == "" { throw `combobox option '${option.value}' has an empty group`; }
         }
     }
     if prop_or(props, "mode", "single") == "single" && selected.len > 1 {
-        throw "single-select dropdown cannot contain multiple selected values";
+        throw "single-select combobox cannot contain multiple selected values";
     }
     for value in selected {
-        if !(value in values) { throw `dropdown selection '${value}' does not match an option`; }
+        if !(value in values) { throw `combobox selection '${value}' does not match an option`; }
     }
 }
 
@@ -250,7 +250,7 @@ fn clear_action(ctx, payload) {
     handled()
 }
 
-fn render_dropdown_row(ctx, payload) {
+fn render_combobox_row(ctx, payload) {
     let item = payload.item;
     if item.kind == "group" {
         return text(item.label).with_key(payload.key)
@@ -291,11 +291,11 @@ fn render_dropdown_row(ctx, payload) {
     else { node.on_click_value(Fn("option_action"), item.action) }
 }
 
-fn render_Dropdown(ctx, props) {
+fn render_Combobox(ctx, props) {
     let selected = if "selected" in props && props.selected != () {
         props.selected
     } else { ctx.get_state("selected") };
-    validate_dropdown(props, selected);
+    validate_combobox(props, selected);
     let open = if "open" in props && props.open != () { props.open } else { ctx.get_state("open") };
     let query = if "query" in props && props.query != () { props.query } else { ctx.get_state("query") };
     let query_lower = query.to_lower();
@@ -439,7 +439,7 @@ fn render_Dropdown(ctx, props) {
             data: data, estimated_height: row_height,
             height: prop_or(props, "max_visible", 8) * row_height,
             overdraw_pixels: row_height * 2, alignment: "top", follow_tail: false
-        }, Fn("render_dropdown_row")).with_style(component_style(props, "list", style())));
+        }, Fn("render_combobox_row")).with_style(component_style(props, "list", style())));
     }
     if "footer" in props && props.footer != () { content.push(props.footer); }
     let panel = column(content).with_key(`${props.key}-panel`)

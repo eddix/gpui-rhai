@@ -110,7 +110,7 @@ after the runtime crate is published.
 Useful commands:
 
 ```text
-gpui-rhai add dropdown select date_picker
+gpui-rhai add combobox select date_picker
 gpui-rhai diff
 gpui-rhai update
 gpui-rhai metadata
@@ -272,7 +272,7 @@ The bundled catalog includes:
 - foundations: Label, Divider, Icon;
 - actions and status: Button, Tag, Avatar, Progress, Skeleton;
 - choices: Checkbox, Radio/RadioGroup, Switch;
-- forms: Input, Textarea, FormField, Dropdown, Select, DatePicker;
+- forms: Input, Textarea, FormField, Combobox, Select, DatePicker;
 - navigation: Tabs, Accordion, Collapsible, Menu, Pagination;
 - data: Table with controlled grouping/collapse and generic sticky-section
   virtual collections;
@@ -585,7 +585,7 @@ Aetheria variants. See [Bundled themes](docs/bundled-themes.md),
 
 ## 10. Overlays, focus, and multiple views
 
-Dropdown, Select, DatePicker, Menu, Popover, Dialog, and Tooltip use the generic
+Combobox, Select, DatePicker, Menu, Popover, Dialog, and Tooltip use the generic
 Overlay mechanism. Toast uses the generic Layer mechanism plus declarative
 timers.
 

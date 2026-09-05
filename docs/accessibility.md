@@ -15,9 +15,9 @@ Accessibility and keyboard operation are release requirements.
   semantic attributes independently of GPUI.
 - Focus, hover, active, and disabled visuals are represented by native GPUI
   interaction styles rather than high-frequency Rhai rerenders.
-- Input and searchable Dropdown use the native GPUI input handler for IME,
+- Input and searchable Combobox use the native GPUI input handler for IME,
   UTF-16 ranges, selection, and clipboard operations.
-- The Rhai Dropdown source supports arrows, Home, End, Enter, Escape,
+- The Rhai Combobox source supports arrows, Home, End, Enter, Escape,
   first-character type-ahead, and disabled
   option skipping. Dialog traps focus, reclaims it after an embedding Host's
   accidental ancestor-focus request, and the window overlay coordinator

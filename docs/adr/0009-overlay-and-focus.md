@@ -2,7 +2,7 @@
 
 Status: Accepted
 
-All Popover, Dropdown, Menu, Dialog, and Tooltip implementations use one generic
+All Popover, Combobox, Menu, Dialog, and Tooltip implementations use one generic
 Rust OverlayManager per `ScriptViewHost` interaction domain. Toast uses the
 same Host's generic Layer portal plus runtime timers. The normal mapping
 is one Host per GPUI window, while an advanced host may create explicit isolated

@@ -1915,7 +1915,7 @@ pub(crate) fn overlay_node(
     let parent = optional_string(&mut config, "parent")?;
     let kind = match optional_string(&mut config, "kind")?.as_deref() {
         None | Some("popover") => OverlayKind::Popover,
-        Some("dropdown") => OverlayKind::Dropdown,
+        Some("combobox") => OverlayKind::Combobox,
         Some("tooltip") => OverlayKind::Tooltip,
         Some("dialog") => OverlayKind::Dialog,
         Some("menu") => OverlayKind::Menu,

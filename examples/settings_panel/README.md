@@ -1,7 +1,7 @@
 # settings_panel
 
 This M1 composition example uses only public `gpui-rhai` APIs and importable
-Rhai source components. It exercises `Button`, `Label`, `Divider`, `Dropdown`,
+Rhai source components. It exercises `Button`, `Label`, `Divider`, `Combobox`,
 `Popover`, native search input, the overlay portal, and live theme switching.
 
 Run it from the workspace root:

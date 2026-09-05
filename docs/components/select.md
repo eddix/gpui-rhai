@@ -1,8 +1,8 @@
 # Select specification
 
 Select is a controlled, form-oriented, single-choice Rhai component. It is a
-thin scalar adapter over the public Dropdown source component; neither Select
-nor Dropdown has a privileged Rust node or private state machine.
+thin scalar adapter over the public Combobox source component; neither Select
+nor Combobox has a privileged Rust node or private state machine.
 
 ## Public contract
 
@@ -29,7 +29,7 @@ build every option node.
 
 ## State and interaction
 
-The caller owns `value`. Dropdown's formal component state owns open, query,
+The caller owns `value`. Combobox's formal component state owns open, query,
 and active-option transients under the stable Select key. Closing Select clears
 the query. Clearing emits `()`; selecting emits the scalar value and closes the
 panel.

@@ -17,7 +17,7 @@ const TEXTAREA: &str = include_str!("../../../registry/components/textarea.rhai"
 const DIVIDER: &str = include_str!("../../../registry/components/divider.rhai");
 const POPOVER: &str = include_str!("../../../registry/components/popover.rhai");
 const DIALOG: &str = include_str!("../../../registry/components/dialog.rhai");
-const DROPDOWN: &str = include_str!("../../../registry/components/dropdown.rhai");
+const COMBOBOX: &str = include_str!("../../../registry/components/combobox.rhai");
 const SELECT: &str = include_str!("../../../registry/components/select.rhai");
 const DATE_PICKER: &str = include_str!("../../../registry/components/date_picker.rhai");
 const TABLE: &str = include_str!("../../../registry/components/table.rhai");
@@ -136,8 +136,8 @@ fn pagination_source() -> EmbeddedScriptSource {
             SELECT.to_owned(),
         ),
         (
-            ModuleId::parse("components/dropdown").unwrap(),
-            DROPDOWN.to_owned(),
+            ModuleId::parse("components/combobox").unwrap(),
+            COMBOBOX.to_owned(),
         ),
         (
             ModuleId::parse("components/input").unwrap(),
@@ -160,14 +160,14 @@ fn contains_global_call(source: &str, name: &str) -> bool {
 fn official_registry_has_no_privileged_component_constructors() {
     let forbidden = [
         "table",
-        "dropdown",
+        "combobox",
         "select",
         "date_picker",
         "toast_host",
         "virtual_list",
     ];
     for (id, source) in [
-        ("dropdown", DROPDOWN),
+        ("combobox", COMBOBOX),
         ("select", SELECT),
         ("date_picker", DATE_PICKER),
         ("table", TABLE),
@@ -185,11 +185,11 @@ fn official_registry_has_no_privileged_component_constructors() {
     }
 }
 
-fn dropdown_source() -> EmbeddedScriptSource {
+fn combobox_source() -> EmbeddedScriptSource {
     EmbeddedScriptSource::new(BTreeMap::from([
         (
-            ModuleId::parse("components/dropdown").unwrap(),
-            DROPDOWN.to_owned(),
+            ModuleId::parse("components/combobox").unwrap(),
+            COMBOBOX.to_owned(),
         ),
         (
             ModuleId::parse("components/input").unwrap(),
@@ -480,7 +480,7 @@ fn official_component_sources_reject_decorative_visual_drift() {
         ("tag", TAG),
         ("input", INPUT),
         ("textarea", TEXTAREA),
-        ("dropdown", DROPDOWN),
+        ("combobox", COMBOBOX),
         ("select", SELECT),
         ("date_picker", DATE_PICKER),
         ("table", TABLE),
@@ -879,10 +879,10 @@ fn official_popover_and_dialog_use_native_overlay_nodes() {
 }
 
 #[test]
-fn official_dropdown_is_public_overlay_and_virtual_collection_composition() {
-    let dropdown_id = ModuleId::parse("components/dropdown").unwrap();
+fn official_combobox_is_public_overlay_and_virtual_collection_composition() {
+    let combobox_id = ModuleId::parse("components/combobox").unwrap();
     let source = EmbeddedScriptSource::new(BTreeMap::from([
-        (dropdown_id, DROPDOWN.to_owned()),
+        (combobox_id, COMBOBOX.to_owned()),
         (
             ModuleId::parse("components/input").unwrap(),
             INPUT.to_owned(),
@@ -892,14 +892,14 @@ fn official_dropdown_is_public_overlay_and_virtual_collection_composition() {
     engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
     let compiled = engine
         .compile_self_contained_named(
-            "ui/dropdown_test.rhai",
+            "ui/combobox_test.rhai",
             r#"
-                import "components/dropdown" as dropdown_component;
+                import "components/combobox" as combobox_component;
                 fn selected(ctx, values) { () }
                 fn opened(ctx, open) { () }
                 fn queried(ctx, query) { () }
                 fn view(ctx) {
-                    dropdown_component::Dropdown(#{
+                    combobox_component::Combobox(#{
                         key: "theme",
                         options: [
                             #{ value: "default", label: "Default" },
@@ -940,7 +940,7 @@ fn official_dropdown_is_public_overlay_and_virtual_collection_composition() {
     .unwrap();
     lifecycle.start(&mut engine).unwrap();
     let UiNodeKind::Overlay { trigger, spec, .. } = lifecycle.root().unwrap().kind() else {
-        panic!("Dropdown must compose the generic Overlay node");
+        panic!("Combobox must compose the generic Overlay node");
     };
     assert_eq!(spec.id.as_str(), "theme");
     assert!(spec.open);
@@ -954,10 +954,10 @@ fn official_dropdown_is_public_overlay_and_virtual_collection_composition() {
             .resolve(&gpui_rhai::InteractionState::default())
             .width,
         None,
-        "default Dropdown width must not wrap a custom trigger"
+        "default Combobox width must not wrap a custom trigger"
     );
     let collection = find_virtual_collection(lifecycle.root().unwrap())
-        .expect("Dropdown must use public data-backed virtualization");
+        .expect("Combobox must use public data-backed virtualization");
     let UiNodeKind::VirtualCollection { spec } = collection.kind() else {
         unreachable!()
     };
@@ -974,17 +974,17 @@ fn official_dropdown_is_public_overlay_and_virtual_collection_composition() {
 }
 
 #[test]
-fn official_dropdown_groups_and_routes_keyboard_in_rhai() {
-    let source = dropdown_source();
+fn official_combobox_groups_and_routes_keyboard_in_rhai() {
+    let source = combobox_source();
     let mut engine = RuntimeEngine::new();
     engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
     let compiled = engine
         .compile_self_contained_named(
-            "ui/dropdown_keyboard.rhai",
+            "ui/combobox_keyboard.rhai",
             r#"
-                import "components/dropdown" as dropdown;
+                import "components/combobox" as combobox;
                 fn view(ctx) {
-                    dropdown::Dropdown(#{
+                    combobox::Combobox(#{
                         key: "grouped", open: (), selected: (),
                         options: [
                             #{ value: "a", label: "Alpha", group: "Second" },
@@ -1014,7 +1014,7 @@ fn official_dropdown_groups_and_routes_keyboard_in_rhai() {
         unreachable!()
     };
     let gpui_rhai::VirtualCollectionData::Values(data) = &spec.data else {
-        panic!("Dropdown fixture uses eager Rhai values");
+        panic!("Combobox fixture uses eager Rhai values");
     };
     let keys = data
         .iter()
@@ -1062,7 +1062,7 @@ fn official_dropdown_groups_and_routes_keyboard_in_rhai() {
 }
 
 #[test]
-fn official_dropdown_rejects_invalid_choice_identity() {
+fn official_combobox_rejects_invalid_choice_identity() {
     for (name, options, selected) in [
         (
             "duplicate",
@@ -1083,20 +1083,20 @@ fn official_dropdown_rejects_invalid_choice_identity() {
             "[]",
         ),
     ] {
-        let source = dropdown_source();
+        let source = combobox_source();
         let mut engine = RuntimeEngine::new();
         engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
         let script = format!(
             r#"
-                import "components/dropdown" as dropdown;
+                import "components/combobox" as combobox;
                 fn view(ctx) {{
-                    dropdown::Dropdown(#{{
+                    combobox::Combobox(#{{
                         key: "invalid", options: {options}, selected: {selected}
                     }})
                 }}
             "#
         );
-        let script_name = format!("ui/dropdown_{name}.rhai");
+        let script_name = format!("ui/combobox_{name}.rhai");
         let compiled = engine
             .compile_self_contained_named(&script_name, &script)
             .unwrap();
@@ -1119,8 +1119,8 @@ fn official_select_uses_scalar_controlled_choice_semantics() {
     let source = EmbeddedScriptSource::new(BTreeMap::from([
         (select_id, SELECT.to_owned()),
         (
-            ModuleId::parse("components/dropdown").unwrap(),
-            DROPDOWN.to_owned(),
+            ModuleId::parse("components/combobox").unwrap(),
+            COMBOBOX.to_owned(),
         ),
         (
             ModuleId::parse("components/input").unwrap(),
@@ -1161,9 +1161,9 @@ fn official_select_uses_scalar_controlled_choice_semantics() {
     .unwrap();
     lifecycle.start(&mut engine).unwrap();
     let UiNodeKind::Overlay { spec, .. } = lifecycle.root().unwrap().kind() else {
-        panic!("Select must compose Dropdown over generic Overlay");
+        panic!("Select must compose Combobox over generic Overlay");
     };
-    assert_eq!(spec.id.as_str(), "country-dropdown");
+    assert_eq!(spec.id.as_str(), "country-combobox");
 }
 
 #[test]
@@ -1531,8 +1531,8 @@ fn official_pagination_is_pure_rhai_composition() {
             SELECT.to_owned(),
         ),
         (
-            ModuleId::parse("components/dropdown").unwrap(),
-            DROPDOWN.to_owned(),
+            ModuleId::parse("components/combobox").unwrap(),
+            COMBOBOX.to_owned(),
         ),
         (
             ModuleId::parse("components/input").unwrap(),
@@ -1619,8 +1619,8 @@ fn official_pagination_rejects_duplicate_page_sizes() {
             SELECT.to_owned(),
         ),
         (
-            ModuleId::parse("components/dropdown").unwrap(),
-            DROPDOWN.to_owned(),
+            ModuleId::parse("components/combobox").unwrap(),
+            COMBOBOX.to_owned(),
         ),
         (
             ModuleId::parse("components/input").unwrap(),
@@ -1679,8 +1679,8 @@ fn official_pagination_page_window_covers_ellipsis_transitions() {
             SELECT.to_owned(),
         ),
         (
-            ModuleId::parse("components/dropdown").unwrap(),
-            DROPDOWN.to_owned(),
+            ModuleId::parse("components/combobox").unwrap(),
+            COMBOBOX.to_owned(),
         ),
         (
             ModuleId::parse("components/input").unwrap(),

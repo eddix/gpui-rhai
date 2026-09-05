@@ -29,7 +29,7 @@ const TEXTAREA_SOURCE: &str = include_str!("../../../registry/components/textare
 const DIVIDER_SOURCE: &str = include_str!("../../../registry/components/divider.rhai");
 const POPOVER_SOURCE: &str = include_str!("../../../registry/components/popover.rhai");
 const DIALOG_SOURCE: &str = include_str!("../../../registry/components/dialog.rhai");
-const DROPDOWN_SOURCE: &str = include_str!("../../../registry/components/dropdown.rhai");
+const COMBOBOX_SOURCE: &str = include_str!("../../../registry/components/combobox.rhai");
 const SELECT_SOURCE: &str = include_str!("../../../registry/components/select.rhai");
 const DATE_PICKER_SOURCE: &str = include_str!("../../../registry/components/date_picker.rhai");
 const TABLE_SOURCE: &str = include_str!("../../../registry/components/table.rhai");
@@ -174,7 +174,7 @@ impl BundledRegistry {
             (DIVIDER_SOURCE, &[][..]),
             (POPOVER_SOURCE, &[][..]),
             (DIALOG_SOURCE, &[][..]),
-            (DROPDOWN_SOURCE, SELECT_ASSETS),
+            (COMBOBOX_SOURCE, SELECT_ASSETS),
             (SELECT_SOURCE, SELECT_ASSETS),
             (DATE_PICKER_SOURCE, DATE_PICKER_ASSETS),
             (TABLE_SOURCE, TABLE_ASSETS),
@@ -1801,7 +1801,7 @@ mod tests {
             "button.rhai",
             "icon.rhai",
             "input.rhai",
-            "dropdown.rhai",
+            "combobox.rhai",
             "select.rhai",
             "pagination.rhai",
             "table.rhai",
@@ -2002,7 +2002,7 @@ mod tests {
         project
             .plan_add(
                 &BundledRegistry::load().unwrap(),
-                &["dropdown".to_owned(), "button".to_owned()],
+                &["combobox".to_owned(), "button".to_owned()],
             )
             .unwrap()
             .apply()
@@ -2024,18 +2024,18 @@ mod tests {
             installed,
             BTreeSet::from([
                 "components/button",
-                "components/dropdown",
+                "components/combobox",
                 "components/input",
             ])
         );
         assert!(components.iter().any(|component| {
-            component["metadata"]["id"] == "components/dropdown"
+            component["metadata"]["id"] == "components/combobox"
                 && component["schema"]["parts"]
                     .as_array()
                     .is_some_and(|parts| parts.iter().any(|part| part == "option"))
         }));
         let snippets = read(&directory.path().join(".gpui-rhai/editor/snippets.json")).unwrap();
-        assert!(snippets.contains("import \\\"components/dropdown\\\" as dropdown;"));
+        assert!(snippets.contains("import \\\"components/combobox\\\" as combobox;"));
         assert!(snippets.contains("${1:key}"));
         assert!(snippets.contains("${2:options}"));
         let definitions = read(

@@ -57,7 +57,7 @@ recorded PNGs remain product-context and shared-Host evidence.
 
 `embedded_views/default-dark.shared-host.png` records three independent Rhai
 views inside one host-owned GPUI layout. It proves compact responsive sizing for
-the 200-point view, a 280-point Dropdown escaping that view, two same-local-ID
+the 200-point view, a 280-point Combobox escaping that view, two same-local-ID
 Toasts stacked by the shared Host queue, and distinct `view_id` values sharing
 one `window_id`.
 
@@ -67,7 +67,7 @@ focus survived the keyed rerenders. The Switch case also guards transparent
 controls against a focus shadow filling their whole hit area.
 
 The Arabic cases prove logical row reversal, text alignment, and start/end
-placement across headers, Dropdown, Tabs, tags, FormField, language buttons,
+placement across headers, Combobox, Tabs, tags, FormField, language buttons,
 Switch, RadioGroup, Accordion, and progress content. These initial baselines
 were recorded after fixing the host surface gutter, semantic default/on-fill
 text colors, native Tab stops, theme-token focus rings, native Input placeholder,
@@ -83,7 +83,7 @@ real Tab traversal after the content-sized Switch focus fix.
 
 The same-day alignment correction makes fixed-height Text nodes honor their
 declared cross/main-axis centering, centers the native Input line box, removes
-default Dropdown chrome around custom triggers, and normalizes every bundled
+default Combobox chrome around custom triggers, and normalizes every bundled
 component SVG to an explicit 24 × 24 coordinate space.
 
 The platform CJK candidate/composition case listed in
@@ -97,12 +97,12 @@ Passed on the real macOS window:
 - initial host focus enters the first control; Tab/Shift-Tab traverse keyed
   controls with visible rings;
 - Enter changes locale, Space toggles Switch, and state survives rerender;
-- searchable Dropdown opens from the keyboard, accepts native text, filters,
+- searchable Combobox opens from the keyboard, accepts native text, filters,
   handles Escape, and restores its stable trigger focus; option click closes
   and commits the controlled theme selection;
 - Dialog traps forward/reverse focus across actions, Escape closes it, and the
   next Tab reaches Input after restoring the prior host focus;
-- pointer clicks outside concurrent Dialog/child Popover/Popover/Dropdown
+- pointer clicks outside concurrent Dialog/child Popover/Popover/Combobox
   dismiss exactly one ownership layer at a time, then restore trigger focus;
 - Tooltip pointer enter shows after its 250 ms executor timer and pointer leave
   hides after its 100 ms timer, with placement verified beside the trigger;
@@ -111,9 +111,9 @@ Passed on the real macOS window:
   cancels a native close request, and closes after explicit confirmation while
   the main window remains alive;
 - three independent ScriptViews render in one host-owned window; the 200-point
-  view reports `compact`, its 280-point Dropdown escapes into its neighbour,
+  view reports `compact`, its 280-point Combobox escapes into its neighbour,
   two same-local-ID Toasts stack in one Host queue, and clicking the neighbour
-  both dismisses the Dropdown and increments that view;
+  both dismisses the Combobox and increments that view;
 - explicit disposal removes the third view and its resources, and remounting
   the same `view_id` starts from fresh state.
 - DatePicker opens with ArrowDown, navigates by day, commits with Return without

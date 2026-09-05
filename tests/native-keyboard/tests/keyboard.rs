@@ -607,7 +607,7 @@ fn dispatch_script_button(
 }
 
 #[gpui::test]
-fn dropdown_pointer_updates_transactional_rhai_caller_state(cx: &mut TestAppContext) {
+fn combobox_pointer_updates_transactional_rhai_caller_state(cx: &mut TestAppContext) {
     cx.update(gpui_rhai::install);
     let entry = ModuleId::parse("main").unwrap();
     let prepared = EmbeddedScriptView::new(
@@ -616,7 +616,7 @@ fn dropdown_pointer_updates_transactional_rhai_caller_state(cx: &mut TestAppCont
             (
                 entry,
                 r#"
-                    import "components/dropdown" as dropdown;
+                    import "components/combobox" as combobox;
                     fn state_schema() { #{ fields: #{
                         open: #{ schema: #{ type: "bool" },
                             "default": #{ type: "bool", value: false } },
@@ -633,7 +633,7 @@ fn dropdown_pointer_updates_transactional_rhai_caller_state(cx: &mut TestAppCont
                         let selected = ctx.get_state("selected");
                         column([
                             text(`Selected: ${selected[0]}`),
-                            dropdown::Dropdown(#{
+                            combobox::Combobox(#{
                                 key: "theme",
                                 options: [
                                     #{ value: "default-dark", label: "Default Dark" },
@@ -650,8 +650,8 @@ fn dropdown_pointer_updates_transactional_rhai_caller_state(cx: &mut TestAppCont
                 .to_owned(),
             ),
             (
-                ModuleId::parse("components/dropdown").unwrap(),
-                include_str!("../../../registry/components/dropdown.rhai").to_owned(),
+                ModuleId::parse("components/combobox").unwrap(),
+                include_str!("../../../registry/components/combobox.rhai").to_owned(),
             ),
             (
                 ModuleId::parse("components/input").unwrap(),
@@ -665,10 +665,10 @@ fn dropdown_pointer_updates_transactional_rhai_caller_state(cx: &mut TestAppCont
     let captured = Rc::new(RefCell::new(None));
     let captured_for_window = Rc::clone(&captured);
     let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("dropdown-window", cx).unwrap();
+        let host = ScriptViewHost::new("combobox-window", cx).unwrap();
         let view = prepared
             .mount(
-                ScriptViewConfig::new("dropdown-view"),
+                ScriptViewConfig::new("combobox-view"),
                 host.clone(),
                 window,
                 cx,
@@ -701,7 +701,7 @@ fn dropdown_pointer_updates_transactional_rhai_caller_state(cx: &mut TestAppCont
         Modifiers::default(),
     );
     visual.run_until_parked();
-    let placement = host.overlay_placement("dropdown-view", "theme").unwrap();
+    let placement = host.overlay_placement("combobox-view", "theme").unwrap();
     visual.simulate_click(
         point(
             px((placement.bounds.x + placement.bounds.width / 2.0) as f32),
@@ -2154,7 +2154,7 @@ fn view(ctx) {
                 style().width(px(280)).height(px(64)).padding(px(8))
                     .background(theme_color("surface_raised"))
             ),
-            #{ id: "shared-overlay", kind: "dropdown", open: ctx.get_state("open"),
+            #{ id: "shared-overlay", kind: "combobox", open: ctx.get_state("open"),
                 placement: "bottom", dismiss_on_escape: true, dismiss_on_outside: true }
         ).with_key("shared-overlay").on_open_change(Fn("set_open"))
     ]).with_style(style().width(relative(1.0)).height(relative(1.0)).gap(px(4)))

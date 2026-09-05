@@ -459,7 +459,7 @@ mod tests {
 
     #[test]
     fn failed_render_does_not_change_committed_state() {
-        let path = ComponentInstancePath::root("App", "root").child("Dropdown", "country");
+        let path = ComponentInstancePath::root("App", "root").child("Combobox", "country");
         let bool_schema = schema(ValueSchema::Bool, UiValue::Bool(false));
         let mut store = StateStore::new();
 

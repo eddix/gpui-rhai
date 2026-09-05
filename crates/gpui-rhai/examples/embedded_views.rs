@@ -11,13 +11,13 @@ use gpui_rhai::{
 
 const BUTTON: &str = include_str!("../../../registry/components/button.rhai");
 const INPUT: &str = include_str!("../../../registry/components/input.rhai");
-const DROPDOWN: &str = include_str!("../../../registry/components/dropdown.rhai");
+const COMBOBOX: &str = include_str!("../../../registry/components/combobox.rhai");
 const TOAST: &str = include_str!("../../../registry/components/toast.rhai");
 const THEME: &str = include_str!("../../../registry/themes/default_dark.rhai");
 
 const WIDGET: &str = r#"
 import "components/button" as button;
-import "components/dropdown" as dropdown;
+import "components/combobox" as combobox;
 import "components/toast" as toast;
 
 fn state_schema() {
@@ -51,10 +51,10 @@ fn view(ctx) {
         text(`Responsive: ${ctx.viewport_class()}`),
         text(`Count: ${ctx.get_state("count")}`),
         button::Button(#{ text: "Increment", size: "sm", on_click: Fn("increment") }),
-        dropdown::Dropdown(#{
-            key: "shared-dropdown",
+        combobox::Combobox(#{
+            key: "shared-combobox",
             options: [
-                #{ value: "one", label: "A deliberately wide dropdown option" },
+                #{ value: "one", label: "A deliberately wide combobox option" },
                 #{ value: "two", label: "Second option" }
             ],
             selected: [], open: ctx.get_state("open"),
@@ -82,8 +82,8 @@ fn prepared_widget(open: bool, toast: bool) -> gpui_rhai::PreparedScriptView {
             INPUT.to_owned(),
         ),
         (
-            ModuleId::parse("components/dropdown").unwrap(),
-            DROPDOWN.to_owned(),
+            ModuleId::parse("components/combobox").unwrap(),
+            COMBOBOX.to_owned(),
         ),
         (
             ModuleId::parse("components/toast").unwrap(),

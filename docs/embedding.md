@@ -92,7 +92,7 @@ the host layout. The measured width drives the view's own
 view render; ordinary pixel resizing remains native GPUI layout.
 
 The Overlay viewport is separate. It defaults to the complete GPUI window, so a
-Dropdown in a 200-point widget can render at its measured 280-point width and
+Combobox in a 200-point widget can render at its measured 280-point width and
 flip/clamp against window edges. `ScriptViewHost::set_overlay_viewport` may set
 an explicit absolute rectangle for an intentionally isolated domain.
 
@@ -198,7 +198,7 @@ The opt-out changes presentation only; `last_error` continues to report the
 failure and the last-good tree remains mounted.
 
 See `cargo run -p gpui-rhai --example embedded_views` for three isolated views,
-automatic compact sizing, escaping Dropdown placement, duplicate local IDs,
+automatic compact sizing, escaping Combobox placement, duplicate local IDs,
 cross-view dismissal, shared Layer placement, and explicit dispose/remount.
 
 ## Host-owned interactive trees

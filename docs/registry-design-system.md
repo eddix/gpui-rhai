@@ -72,7 +72,7 @@ border, text, and opacity; adding a state in source must produce native paint.
   font ascent and descent provide the normal slight optical bias below center.
 - Checkbox, Radio, and Switch expose state through geometry and fill, not text
   color alone. Radio remains circular; Switch uses a compact rectangular track.
-- Tabs use a selected rail, Accordion uses tiled rows, and Menu/Dropdown use a
+- Tabs use a selected rail, Accordion uses tiled rows, and Menu/Combobox use a
   fixed check column plus one cursor border.
 - Popover, Dialog, Tooltip, Toast, and menus use opaque theme surfaces and thin
   borders. They do not add glass, elevation shadows, or exaggerated rounding.

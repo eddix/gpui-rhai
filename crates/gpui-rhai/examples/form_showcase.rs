@@ -8,7 +8,7 @@ use gpui_rhai::{
 const INPUT: &str = include_str!("../../../registry/components/input.rhai");
 const TEXTAREA: &str = include_str!("../../../registry/components/textarea.rhai");
 const SELECT: &str = include_str!("../../../registry/components/select.rhai");
-const DROPDOWN: &str = include_str!("../../../registry/components/dropdown.rhai");
+const COMBOBOX: &str = include_str!("../../../registry/components/combobox.rhai");
 const DATE_PICKER: &str = include_str!("../../../registry/components/date_picker.rhai");
 const LABEL: &str = include_str!("../../../registry/components/label.rhai");
 const FORM_FIELD: &str = include_str!("../../../registry/components/form_field.rhai");
@@ -236,7 +236,7 @@ fn main() {
         module("components/input", INPUT),
         module("components/textarea", TEXTAREA),
         module("components/select", SELECT),
-        module("components/dropdown", DROPDOWN),
+        module("components/combobox", COMBOBOX),
         module("components/date_picker", &date_picker_source),
         module("components/label", LABEL),
         module("components/form_field", FORM_FIELD),

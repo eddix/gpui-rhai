@@ -18,7 +18,7 @@ scrolling, focus/accessibility, deferred layers, generic virtualization,
 Canvas, animation/signals, input routing, assets/fonts, and retained primitive
 lifecycle.
 
-Table, DatePicker, Select/Dropdown, Menu, Tabs, Toast presentation, Pagination,
+Table, DatePicker, Select/Combobox, Menu, Tabs, Toast presentation, Pagination,
 and other high-level components are Rhai source. Generic virtualization supports
 data-backed variable-height item components plus explicit sticky section-header
 indices, single-instance presentation, and push-off. Table grouping/collapse,

@@ -4,23 +4,23 @@
   "export": "Select",
   "version": "0.1.0",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
-  "dependencies": ["components/dropdown"],
+  "dependencies": ["components/combobox"],
   "capabilities": {},
   "assets": []
 }
 */
-// Scalar controlled Select composed from the public Rhai Dropdown component.
+// Scalar controlled Select composed from the public Rhai Combobox component.
 // Props: key/options/value/placeholder/searchable/disabled/error/size/width and on_change.
 // Events: change(optional<string>).
-// State: Dropdown owns keyed open/query interaction; value remains controlled by caller.
+// State: Combobox owns keyed open/query interaction; value remains controlled by caller.
 // Example: Select(#{ key: "country", options: countries, value: "cn", on_change: Fn("changed") })
 
-import "components/dropdown" as dropdown;
+import "components/combobox" as combobox;
 
 define_component(#{
     metadata: #{ id: "components/select", "export": "Select", version: "0.1.0",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
-        dependencies: ["components/dropdown"], capabilities: #{}, assets: [] },
+        dependencies: ["components/combobox"], capabilities: #{}, assets: [] },
     schema: #{
         props: #{
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
@@ -88,8 +88,8 @@ fn render_Select(ctx, props) {
         theme_color("danger")
     } else { theme_color("border") };
     let empty_text = prop_or(props, "empty_text", "");
-    let node = dropdown::Dropdown(#{
-        key: `${props.key}-dropdown`, options: props.options, mode: "single",
+    let node = combobox::Combobox(#{
+        key: `${props.key}-combobox`, options: props.options, mode: "single",
         selected: selected, searchable: prop_or(props, "searchable", false),
         placeholder: prop_or(props, "placeholder", ""),
         search_placeholder: prop_or(props, "search_placeholder", ""),

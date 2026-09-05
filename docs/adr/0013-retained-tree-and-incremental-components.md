@@ -53,6 +53,6 @@ Rhai execution. Stateful/interactive nodes require explicit keys. Failed
 candidates preserve the last-good generation.
 
 Protected by keyed reorder/removal tests, incremental/full-render equivalence,
-root-dirty nested bailout and transparent Select/Dropdown promotion tests,
+root-dirty nested bailout and transparent Select/Combobox promotion tests,
 retained dependency/resource tests, failure rollback, retained primitive
 lifecycle, and end-to-end performance probes.
