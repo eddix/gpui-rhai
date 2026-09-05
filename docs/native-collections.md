@@ -106,3 +106,18 @@ frame pumps.
 Use the Array path for small or highly custom script-owned data. Use
 `NativeCollection` when a repeated O(n) Rhai pass would dominate interaction
 latency.
+
+## Command fuzzy views
+
+Command accepts the same Array-or-NativeCollection split. A native command row
+uses its collection key as the action value and supplies `label`, optional
+`keywords`, `group`, `shortcut`, and `disabled` fields. The generic
+`native_fuzzy_view` data plane performs Unicode lowercase normalization,
+exact/prefix/substring/subsequence scoring, stable group-local ranking, group
+projection, and disabled-aware edge/adjacent navigation in Rust.
+
+The structural order cache excludes the active command, so arrow movement
+reuses filtering/ranking and changes only visible-row projection. The official
+Command source invokes these generic functions and sends only the projected
+virtual window into Rhai. Applications should not call them merely to enumerate
+a NativeCollection; the no-enumeration boundary remains intact.

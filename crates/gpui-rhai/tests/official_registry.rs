@@ -1183,6 +1183,115 @@ fn command_fuzzy_search_and_keyboard_action_are_composable_and_controlled() {
 }
 
 #[test]
+#[allow(clippy::too_many_lines)]
+fn command_filters_native_collection_and_keeps_large_rows_out_of_rhai() {
+    let source = EmbeddedScriptSource::new(BTreeMap::from([
+        (
+            ModuleId::parse("components/command").unwrap(),
+            COMMAND.to_owned(),
+        ),
+        (
+            ModuleId::parse("components/input").unwrap(),
+            INPUT.to_owned(),
+        ),
+        (ModuleId::parse("components/kbd").unwrap(), KBD.to_owned()),
+    ]));
+    let mut engine = RuntimeEngine::new();
+    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
+    let compiled = engine
+        .compile_self_contained_named(
+            "ui/native_command.rhai",
+            r#"
+                import "components/command" as command;
+                fn state_schema() { #{ fields: #{
+                    action: #{ schema: #{ type: "string" },
+                        "default": #{ type: "string", value: "" } }
+                } } }
+                fn run(ctx, value) { ctx.set_state("action", value); }
+                fn queried(ctx, value) { () }
+                fn view(ctx) {
+                    command::Command(#{ key: "native-palette", label: "Commands", query: "opn",
+                        items: ctx.get_native_collection("commands"),
+                        on_query_change: Fn("queried"), on_action: Fn("run") })
+                }
+            "#,
+        )
+        .unwrap();
+    let rows = gpui_rhai::NativeCollection::new(
+        "id",
+        [
+            BTreeMap::from([
+                ("id".to_owned(), UiValue::String("new".to_owned())),
+                ("label".to_owned(), UiValue::String("New file".to_owned())),
+                ("group".to_owned(), UiValue::String("File".to_owned())),
+                ("keywords".to_owned(), UiValue::Array(Vec::new())),
+                ("shortcut".to_owned(), UiValue::String("⌘N".to_owned())),
+                ("disabled".to_owned(), UiValue::Bool(false)),
+            ]),
+            BTreeMap::from([
+                ("id".to_owned(), UiValue::String("open".to_owned())),
+                ("label".to_owned(), UiValue::String("Open file".to_owned())),
+                ("group".to_owned(), UiValue::String("File".to_owned())),
+                (
+                    "keywords".to_owned(),
+                    UiValue::Array(vec![UiValue::String("load document".to_owned())]),
+                ),
+                ("shortcut".to_owned(), UiValue::String("⌘O".to_owned())),
+                ("disabled".to_owned(), UiValue::Bool(false)),
+            ]),
+        ],
+    )
+    .unwrap();
+    let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+    runtime
+        .borrow_mut()
+        .native_collections
+        .register("commands", rows)
+        .unwrap();
+    let schema = engine.root_state_schema(&compiled).unwrap();
+    let path = ComponentInstancePath::root("App", "root");
+    let mut lifecycle = ScriptLifecycle::new(
+        compiled,
+        Rc::clone(&runtime),
+        path.clone(),
+        Some("main".to_owned()),
+        BTreeMap::new(),
+        &schema,
+    )
+    .unwrap();
+    lifecycle.start(&mut engine).unwrap();
+    let collection = find_virtual_collection(lifecycle.root().unwrap()).unwrap();
+    let UiNodeKind::VirtualCollection { spec } = collection.kind() else {
+        unreachable!()
+    };
+    assert!(matches!(
+        &spec.data,
+        gpui_rhai::VirtualCollectionData::Native(_)
+    ));
+    assert_eq!(
+        spec.data.len(),
+        2,
+        "one group header plus one native fuzzy match"
+    );
+
+    let (enter, payload) = target_handler(lifecycle.root().unwrap(), "key:enter");
+    let _ = lifecycle
+        .invoke_callback_transactional(&engine, &enter, payload)
+        .unwrap();
+    let events = runtime.borrow_mut().drain_batch().events;
+    assert_eq!(events.len(), 1);
+    for event in events {
+        let _ = lifecycle
+            .invoke_component_event_transactional(&engine, event)
+            .unwrap();
+    }
+    assert_eq!(
+        runtime.borrow().component_state.get(&path, "action"),
+        Some(&UiValue::String("open".to_owned()))
+    );
+}
+
+#[test]
 fn official_combobox_is_public_overlay_and_virtual_collection_composition() {
     let combobox_id = ModuleId::parse("components/combobox").unwrap();
     let source = EmbeddedScriptSource::new(BTreeMap::from([

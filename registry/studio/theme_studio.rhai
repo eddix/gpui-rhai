@@ -103,6 +103,11 @@ fn state_schema() {
         p0_alert_open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: false } },
         p0_context_open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: false } },
         p0_context_active: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "copy" } },
+        gallery_theme: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: __GALLERY_THEME__ } },
+        gallery_theme_open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: false } },
+        gallery_theme_query: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "" } },
+        gallery_category: #{ schema: #{ type: "string", allowed: ["all", "foundations", "forms", "navigation", "overlays"] },
+            "default": #{ type: "string", value: __GALLERY_CATEGORY__ } },
     } }
 }
 
@@ -125,6 +130,31 @@ fn set_p0_context_active(ctx, value) { ctx.set_state("p0_context_active", value)
 fn open_p0_command(ctx, payload) { ctx.set_state("p0_command_open", true); }
 fn open_p0_sheet(ctx, payload) { ctx.set_state("p0_sheet_open", true); }
 fn open_p0_alert(ctx, payload) { ctx.set_state("p0_alert_open", true); }
+fn set_gallery_theme_open(ctx, value) { ctx.set_state("gallery_theme_open", value); }
+fn set_gallery_theme_query(ctx, value) { ctx.set_state("gallery_theme_query", value); }
+fn set_gallery_category(category, ctx, payload) { ctx.set_state("gallery_category", category); }
+fn set_gallery_theme(ctx, values) {
+    if values.len == 0 { return; }
+    let value = values[0];
+    if value == "default_dark" { ctx.set_theme("Default", "Dark"); }
+    else if value == "default_light" { ctx.set_theme("Default", "Light"); }
+    else if value == "tokyo_night" { ctx.set_theme("Tokyo Night", "Night"); }
+    else if value == "tokyo_storm" { ctx.set_theme("Tokyo Night", "Storm"); }
+    else if value == "catppuccin_latte" { ctx.set_theme("Catppuccin", "Latte"); }
+    else if value == "catppuccin_mocha" { ctx.set_theme("Catppuccin", "Mocha"); }
+    else if value == "ethereal" { ctx.set_theme("Ethereal", "Dark"); }
+    else if value == "everforest" { ctx.set_theme("Everforest", "Dark"); }
+    else if value == "gruvbox" { ctx.set_theme("Gruvbox", "Dark"); }
+    else if value == "hackerman" { ctx.set_theme("Hackerman", "Dark"); }
+    else if value == "nord" { ctx.set_theme("Nord", "Dark"); }
+    else if value == "retro_82" { ctx.set_theme("Retro 82", "Dark"); }
+    else if value == "hermarchy" { ctx.set_theme("Hermarchy", "Dark"); }
+    else if value == "futurism" { ctx.set_theme("Futurism", "Dark"); }
+    else if value == "aetheria" { ctx.set_theme("Aetheria", "Dark"); }
+    ctx.set_state("gallery_theme", value);
+    ctx.set_state("gallery_theme_open", false);
+    ctx.set_state("gallery_theme_query", "");
+}
 fn noop(ctx, payload) { handled() }
 
 fn init(ctx) {
@@ -481,10 +511,68 @@ fn specimen(ctx) {
         .font_size(px(12)).line_height(px(16)))
 }
 
+fn gallery_theme_options() {
+    [
+        #{ value: "default_dark", label: "Default Dark" }, #{ value: "default_light", label: "Default Light" },
+        #{ value: "tokyo_night", label: "Tokyo Night" }, #{ value: "tokyo_storm", label: "Tokyo Storm" },
+        #{ value: "catppuccin_latte", label: "Catppuccin Latte" }, #{ value: "catppuccin_mocha", label: "Catppuccin Mocha" },
+        #{ value: "ethereal", label: "Ethereal" }, #{ value: "everforest", label: "Everforest" },
+        #{ value: "gruvbox", label: "Gruvbox" }, #{ value: "hackerman", label: "Hackerman" },
+        #{ value: "nord", label: "Nord" }, #{ value: "retro_82", label: "Retro 82" },
+        #{ value: "hermarchy", label: "Hermarchy" }, #{ value: "futurism", label: "Futurism" },
+        #{ value: "aetheria", label: "Aetheria" }
+    ]
+}
+
+fn gallery_header(ctx) {
+    let categories = [];
+    for entry in [#{ value: "all", label: "All" }, #{ value: "foundations", label: "Foundations" },
+        #{ value: "forms", label: "Forms" }, #{ value: "navigation", label: "Navigation & data" },
+        #{ value: "overlays", label: "Commands & overlays" }] {
+        categories.push(button::Button(#{ text: entry.label, size: "sm",
+            variant: if ctx.get_state("gallery_category") == entry.value { "primary" } else { "ghost" } })
+            .on_click_value(Fn("set_gallery_category").curry(entry.value), ()));
+    }
+    let root = row([
+        column([text("GPUI RHAI COMPONENT GALLERY").with_style(style().font_size(px(18)).font_weight(700)),
+            text("46 source-owned components · native GPUI behavior · live themes")
+                .with_style(style().font_size(px(11)).text_color(theme_color("text_muted")))])
+            .with_style(style().gap(px(2)).flex_grow()),
+        combobox::Combobox(#{ key: "gallery-theme", options: gallery_theme_options(), mode: "single",
+            selected: [ctx.get_state("gallery_theme")], open: ctx.get_state("gallery_theme_open"),
+            query: ctx.get_state("gallery_theme_query"), searchable: true, placeholder: "Theme",
+            on_change: Fn("set_gallery_theme"), on_open_change: Fn("set_gallery_theme_open"),
+            on_query_change: Fn("set_gallery_theme_query") })
+    ]).with_style(style().items_center().gap(px(12)).padding_bottom(px(10))
+        .border_bottom(px(1)).border_color(theme_color("border")));
+    column([root, row(categories).with_style(style().gap(px(4)))])
+        .with_style(style().gap(px(8)).padding(px(14)).background(theme_color("surface")))
+}
+
+fn gallery_content(ctx) {
+    let category = ctx.get_state("gallery_category");
+    if category == "foundations" {
+        column([specimen_actions(), specimen_status(), specimen_p0(ctx)]).with_style(style().gap(px(14)))
+    } else if category == "forms" {
+        column([specimen_inputs(), specimen_choices()]).with_style(style().gap(px(14)))
+    } else if category == "navigation" {
+        column([specimen_navigation(), specimen_data()]).with_style(style().gap(px(14)))
+    } else if category == "overlays" {
+        column([specimen_overlays(ctx), specimen_p0(ctx)]).with_style(style().gap(px(14)))
+    } else { specimen(ctx) }
+}
+
 fn view(ctx) {
-    row([
-        editor(ctx),
-        column([specimen(ctx)]).with_style(style().flex_grow().overflow_y_scroll())
-    ]).with_style(style().width(relative(1.0)).height(relative(1.0))
-        .background(theme_color("surface")))
+    if __GALLERY_ONLY__ {
+        column([
+            gallery_header(ctx),
+            column([gallery_content(ctx)]).with_style(style().flex_grow().overflow_y_scroll())
+        ]).with_style(style().width(relative(1.0)).height(relative(1.0)).background(theme_color("surface")))
+    } else {
+        row([
+            editor(ctx),
+            column([specimen(ctx)]).with_style(style().flex_grow().overflow_y_scroll())
+        ]).with_style(style().width(relative(1.0)).height(relative(1.0))
+            .background(theme_color("surface")))
+    }
 }

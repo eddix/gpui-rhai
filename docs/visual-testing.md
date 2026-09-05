@@ -24,6 +24,9 @@ Tooltip state, and New/Open/Import/Save editing paths. This capture is pending
 an unlocked Mac after the Studio replaced Component Gallery.
 Capture `embedded_views` once with the small view's Combobox open and duplicate
 local Toast IDs visible in the shared Host queue.
+Capture `component_gallery` in every category under Default Light/Dark, one
+community theme, reduced motion, and Arabic RTL. Its theme selector must switch
+all visible components without recompiling or resetting controlled state.
 
 The complex-control expansion adds:
 
@@ -62,6 +65,12 @@ under `tests/visual/macos/<example>/<case>.png` once captured.
   vertical-wheel axis isolation, grouped counts/collapse, group-header sticky
   push-off, and bounded visible rows.
   Exercise every Pagination ellipsis/edge transition and page-size reset.
+- Exercise Slider pointer preview/one-shot commit and RTL keyboard stepping;
+  drag both ScrollArea thumbs and verify auto/always/hidden visibility.
+- Open ContextMenu by secondary click at several coordinates; verify Menu
+  navigation reuse, Sheet start/end placement, and AlertDialog cancellation.
+- Type, fuzzy-filter, rove, and execute Array- and NativeCollection-backed
+  Command data; verify CommandDialog registers no global shortcut.
 - Open/focus/confirm-close a secondary window; verify app-store propagation and
   per-window theme/locale/state cleanup.
 
@@ -91,10 +100,13 @@ an open parent Dialog, guarding GPUI 0.2.x against nested `defer_draw` panics.
 Three-view embedding cases cover automatic bounds, runtime isolation, shared
 Host overlays, duplicate local IDs, click-through dismissal, key conflicts,
 and dispose/remount.
-The independent workspace currently has 34 tests: 33 GPUI integration cases
-plus one `table_1000` fixture-preparation guard. It contains no deleted
-Table/choice/date/toast native constructor and also guards that window-level
+The independent workspace currently has 42 tests: 40 GPUI integration cases
+plus `table_1000` and Component Gallery preparation guards. It contains no
+deleted Table/choice/date/toast native constructor and also guards that window-level
 pointer-capture listeners register during paint rather than GPUI layout.
+The launch additions cover CommandDialog autofocus/filter/Enter execution,
+RTL Slider pointer and arrow semantics, and live Component Gallery category and
+theme switching.
 One case drives a mounted view through test-ID query, retained event dispatch,
 semantic action, and deterministic time advance.
 Another verifies that explicit Style occlusion blocks pointer hits to painted

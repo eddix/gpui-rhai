@@ -11,10 +11,11 @@ nor Combobox has a privileged Rust node or private state machine.
 - required `key: string`;
 - `options: array<{ value, label, disabled?, group?, keywords? }>`;
 - `value: optional<string>`;
+- required controlled `open: bool` and `query: string`;
 - `placeholder`, `search_placeholder`, `empty_text`, and `clear_label` strings;
 - `clearable`, `searchable`, `disabled`, and `error` booleans;
 - `size`, `placement`, `max_visible`, and optional `width: Length`;
-- optional `on_change`, whose payload is `optional<string>`.
+- optional `on_change`, `on_open_change`, and `on_query_change` callbacks.
 
 Rhai `()` is the only empty-value sentinel. Empty-string option values remain
 legal and distinct from null. Option values must be unique, an externally
@@ -29,10 +30,10 @@ build every option node.
 
 ## State and interaction
 
-The caller owns `value`. Combobox's formal component state owns open, query,
-and active-option transients under the stable Select key. Closing Select clears
-the query. Clearing emits `()`; selecting emits the scalar value and closes the
-panel.
+The caller owns `value`, `open`, and `query`. Combobox retains only the
+active-option navigation transient under the stable Select key. Closing Select
+requests `open_change(false)` and query reset through `query_change("")`.
+Clearing emits `()`; selecting emits the scalar value and requests panel close.
 
 Arrow keys skip disabled options; Home and End move to the edges; Enter commits;
 Escape and outside click dismiss through the public Overlay mechanism. When

@@ -719,6 +719,9 @@ fn source_with_state(theme: &ThemeVariant, path: &str, status: &str) -> String {
         .unwrap_or_else(|| "en".to_owned());
     source
         .replace("__BUILTIN_OPTIONS__", &builtin_options_source())
+        .replace("__GALLERY_ONLY__", "false")
+        .replace("__GALLERY_THEME__", &json_string("default_dark"))
+        .replace("__GALLERY_CATEGORY__", &json_string("all"))
         .replace(
             "__VISUAL_MENU__",
             if visual_state == "menu" {

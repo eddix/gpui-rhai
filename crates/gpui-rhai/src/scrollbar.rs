@@ -534,4 +534,14 @@ mod tests {
         assert_eq!(spec.vertical(), ScrollbarVisibility::Always);
         assert!(ScrollbarSpec::new("platform", "auto").is_err());
     }
+
+    #[test]
+    fn vertical_track_uses_the_logical_end_edge() {
+        let viewport = Bounds::new(point(px(20.0), px(30.0)), size(px(200.0), px(100.0)));
+        let ltr = axis_track(viewport, Axis::Vertical, TextDirection::LeftToRight);
+        let rtl = axis_track(viewport, Axis::Vertical, TextDirection::RightToLeft);
+        assert_eq!(ltr.origin.x, viewport.right() - TRACK_WIDTH);
+        assert_eq!(rtl.origin.x, viewport.origin.x);
+        assert_eq!(ltr.size, rtl.size);
+    }
 }

@@ -142,9 +142,9 @@ single-select query/change/close callbacks through a real `ScriptLifecycle`,
 Unicode (`中文😀é`) controlled Input, Cmd-A/C/X/V clipboard behavior, and
 read-only selection/copy with edit suppression.
 
-The independent native workspace now has 34 tests: 33 GPUI integration cases
-plus one `table_1000` fixture-preparation guard. It verifies executor-clock Toast
-expiry, Menu trigger→panel focus, separator-skipping roving selection, Enter
+The independent native workspace now has 42 tests: 40 GPUI integration cases
+plus `table_1000` and Component Gallery preparation guards. It verifies
+executor-clock Toast expiry, Menu trigger→panel focus, separator-skipping roving selection, Enter
 action/close, nested parent/child overlay painting, event-time target bounds
 from a real click, grouped Table sticky-header replacement, and selectable or
 Host-suppressed runtime errors. It also verifies App installation and key conflicts, shared
@@ -152,6 +152,9 @@ Host mechanics with isolated runtime state, duplicate local Overlay ID
 namespacing, automatic bounds, click-through dismissal, and dispose/remount.
 Separate Host domains in one window are also proven not to dismiss each other's
 overlays. Official source tests preserve nested submenu parent IDs, while
+CommandDialog autofocus/filter/Enter execution, RTL Slider pointer and arrow
+semantics, and live Component Gallery category/theme switching now run through
+real GPUI windows as well.
 OverlayManager tests prove top-down parent/child dismissal and topmost Escape
 behavior.
 

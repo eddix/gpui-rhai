@@ -267,18 +267,25 @@ Use `part_styles` for an intended component customization point. Edit the
 copied `.rhai` source when the product needs a structural change. Do not hide a
 structural fork behind a growing stack of arbitrary overrides.
 
-The bundled catalog includes:
+The bundled catalog contains 46 official source components:
 
-- foundations: Label, Divider, Icon;
-- actions and status: Button, Tag, Avatar, Progress, Skeleton;
-- choices: Checkbox, Radio/RadioGroup, Switch;
-- forms: Input, Textarea, FormField, Combobox, Select, DatePicker;
-- navigation: Tabs, Accordion, Collapsible, Menu, Pagination;
-- data: Table with controlled grouping/collapse and generic sticky-section
-  virtual collections;
-- overlays: Popover, Dialog, Tooltip, Toast;
+- foundations and status: Label, Divider, Icon, Avatar, Badge, Tag, Alert,
+  Card, GroupBox, Empty, Kbd, Progress, Spinner, and Skeleton;
+- actions and choices: Button, ButtonGroup, Checkbox, Radio, RadioGroup,
+  Switch, Toggle, ToggleGroup, and Slider;
+- forms: Input, InputGroup, Textarea, FormField, Combobox, Select, and
+  DatePicker;
+- navigation and data: Tabs, Accordion, Collapsible, Menu, Pagination, Table,
+  and ScrollArea;
+- commands and overlays: Command, CommandDialog, ContextMenu, Popover, Dialog,
+  AlertDialog, Sheet, Tooltip, and Toast;
 - primitives for Box/Text/Image/SVG/Canvas, layout, scrolling, refs, signals,
   layers, and generic overlays.
+
+Run `cargo run -p gpui-rhai --example component_gallery` for the interactive
+catalog with category navigation and live switching across all bundled themes.
+See [the component catalog](docs/components/catalog.md) for ownership and
+behavior distinctions that similar-looking controls must preserve.
 
 Use [Component authoring](docs/component-authoring-guide.md) and the component
 specifications under `docs/components/` when modifying or creating components.
@@ -297,8 +304,12 @@ fn selected(ctx, value) {
 select::Select(#{
     key: "country",
     value: ctx.get_state("country"),
+    open: ctx.get_state("country_open"),
+    query: ctx.get_state("country_query"),
     options: countries,
     on_change: Fn("selected"),
+    on_open_change: Fn("country_opened"),
+    on_query_change: Fn("country_queried"),
 })
 ```
 
@@ -315,10 +326,10 @@ resolve that module's helpers later. Do not reduce callbacks to a function-name
 string or call a retained FnPtr against an unrelated AST.
 
 A formal component may bind a caller callback to a node it owns, but it must not
-pass that callback through another formal component's callback prop. The child
-would bind it to its immediate caller, not to the original state owner. A
-composite component must receive the child event with its own named handler and
-then emit its declared event:
+pass that callback through another formal component's callback prop. Although
+the runtime preserves its original scope, doing so bypasses the composite's
+declared event contract. A composite component must receive the child event
+with its own named handler and then emit its declared event:
 
 ```rhai
 fn child_changed(ctx, value) { ctx.emit("change", value); }

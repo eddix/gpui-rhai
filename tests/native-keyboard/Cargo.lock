@@ -2259,6 +2259,7 @@ dependencies = [
  "gpui",
  "gpui-rhai",
  "semver",
+ "serde_json",
 ]
 
 [[package]]

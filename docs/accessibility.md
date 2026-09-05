@@ -22,6 +22,13 @@ Accessibility and keyboard operation are release requirements.
   option skipping. Dialog traps focus, reclaims it after an embedding Host's
   accidental ancestor-focus request, and the window overlay coordinator
   restores the previous focus on dismissal.
+- Toggle and ToggleGroup preserve pressed state and orientation. Slider exposes
+  value/min/max/orientation, commits pointer changes once, and supports logical
+  arrow plus Home/End keyboard control.
+- Command exposes listbox/option/group semantics, skips disabled commands, and
+  shares the same keyboard model for Array and NativeCollection data.
+- ContextMenu reuses Menu semantics at a secondary-click anchor; Sheet and
+  AlertDialog use the modal focus boundary.
 - Animation respects one central `MotionPreference`. Hosts may set it with
   `.motion_preference(...)`, applications may call
   `ctx.set_reduced_motion(bool)`, and `GPUI_RHAI_REDUCED_MOTION=1` provides a

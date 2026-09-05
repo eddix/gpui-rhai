@@ -4185,6 +4185,45 @@ mod tests {
     }
 
     #[test]
+    fn logical_overlay_edges_resolve_against_text_direction() {
+        let spec = |placement| crate::OverlayNodeSpec {
+            id: crate::OverlayId::new("logical-sheet"),
+            parent: None,
+            kind: crate::OverlayKind::Sheet,
+            placement,
+            anchor: None,
+            open: true,
+            gap: 0.0,
+            modal: true,
+            dismiss: crate::OverlayDismissPolicy {
+                escape: true,
+                outside: true,
+            },
+            tooltip_delays: None,
+            initial_focus: crate::OverlayInitialFocus::Panel,
+            activate_on_trigger: false,
+        };
+        assert_eq!(
+            scoped_overlay_spec(
+                &spec(crate::OverlayPlacement::Start),
+                "view",
+                TextDirection::RightToLeft,
+            )
+            .placement,
+            crate::OverlayPlacement::Right
+        );
+        assert_eq!(
+            scoped_overlay_spec(
+                &spec(crate::OverlayPlacement::End),
+                "view",
+                TextDirection::RightToLeft,
+            )
+            .placement,
+            crate::OverlayPlacement::Left
+        );
+    }
+
+    #[test]
     fn retained_tab_order_reads_explicit_group_indices() {
         let node = UiNode::text("tab")
             .with_attribute("tab_index", UiValue::Integer(7))

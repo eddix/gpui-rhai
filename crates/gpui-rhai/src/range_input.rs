@@ -228,16 +228,13 @@ impl Render for RangeInputEntity {
         );
         let track = match self.orientation {
             RangeOrientation::Horizontal => {
-                let visual_ratio = if direction == TextDirection::RightToLeft {
-                    1.0 - ratio
+                let visual_ratio = horizontal_thumb_ratio(ratio, direction);
+                fill = fill.top(px(0.0)).bottom(px(0.0));
+                fill = if direction == TextDirection::RightToLeft {
+                    fill.right(px(0.0)).w(relative(fraction_f32(ratio)))
                 } else {
-                    ratio
+                    fill.left(px(0.0)).w(relative(fraction_f32(ratio)))
                 };
-                fill = fill
-                    .left(px(0.0))
-                    .top(px(0.0))
-                    .bottom(px(0.0))
-                    .w(relative(fraction_f32(visual_ratio)));
                 thumb = thumb
                     .left(relative(fraction_f32(visual_ratio)))
                     .top(relative(0.5))
@@ -433,6 +430,14 @@ fn normalize_value(value: f64, min: f64, max: f64, step: f64) -> f64 {
     snapped.clamp(min, max)
 }
 
+fn horizontal_thumb_ratio(ratio: f64, direction: TextDirection) -> f64 {
+    if direction == TextDirection::RightToLeft {
+        1.0 - ratio
+    } else {
+        ratio
+    }
+}
+
 fn fraction_f32(value: f64) -> f32 {
     value.to_string().parse().unwrap_or(0.0)
 }
@@ -540,5 +545,17 @@ mod tests {
         assert!(normalize_value(-2.0, 0.0, 10.0, 0.5).abs() < f64::EPSILON);
         assert!((normalize_value(3.26, 0.0, 10.0, 0.5) - 3.5).abs() < f64::EPSILON);
         assert!((normalize_value(12.0, 0.0, 10.0, 0.5) - 10.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn horizontal_rtl_geometry_keeps_the_fill_between_minimum_and_thumb() {
+        let ratio = 0.2;
+        let ltr_thumb = horizontal_thumb_ratio(ratio, TextDirection::LeftToRight);
+        let rtl_thumb = horizontal_thumb_ratio(ratio, TextDirection::RightToLeft);
+        assert!((ltr_thumb - 0.2_f64).abs() < f64::EPSILON);
+        assert!((rtl_thumb - 0.8_f64).abs() < f64::EPSILON);
+        // The LTR fill occupies [0, thumb]. The RTL fill is right-anchored and
+        // occupies [thumb, 1], so both represent the same semantic value.
+        assert!((ratio - (1.0 - rtl_thumb)).abs() < f64::EPSILON);
     }
 }

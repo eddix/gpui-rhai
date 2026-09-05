@@ -1,0 +1,82 @@
+# Official component catalog
+
+gpui-rhai ships 46 editable Rhai source components. They all use the same
+public atoms and generic runtime mechanisms available to application code; no
+official component receives a private high-level node constructor.
+
+Run the interactive catalog from this repository:
+
+```text
+cargo run -p gpui-rhai --example component_gallery
+```
+
+Theme Studio renders the same exhaustive specimen while editing a theme.
+
+## Foundations and status
+
+- `Label`, `Divider`, and `Icon` provide semantic text and visual structure.
+- `Avatar`, `Badge`, and `Tag` are distinct: Badge is read-only status,
+  while Tag may represent removable application metadata.
+- `Alert` is persistent inline feedback; `Toast` is transient layered feedback.
+- `Card`, `GroupBox`, and `Empty` standardize common composition without hiding
+  their node slots.
+- `Kbd`, `Progress`, `Spinner`, and `Skeleton` cover shortcut, determinate,
+  indeterminate, and placeholder presentation. Spinner animation runs on the
+  native runtime clock and settles visibly under reduced motion.
+
+## Actions, choices, and forms
+
+- `Button` and `ButtonGroup` express actions; `Toggle`/`ToggleGroup` express
+  pressed tool state; `Checkbox`, `Radio`/`RadioGroup`, and `Switch` retain
+  their separate selection and setting semantics.
+- `Input`, `InputGroup`, `Textarea`, and `FormField` use the retained native
+  editing core and explicit semantic relationships.
+- `Select` is scalar choice. `Combobox` is searchable single/multiple choice.
+  Both are strictly controlled for value, open state, and query.
+- `DatePicker` remains a controlled ISO-date composition over public calendar
+  helpers and Overlay.
+
+## Native interaction foundations
+
+`Slider` is single-value and strictly controlled. Pointer movement updates a
+retained Rust preview without invoking Rhai for each move; pointer release and
+keyboard steps emit one schema-checked `change(number)` request.
+
+`ScrollArea` decorates an ordinary retained scrollable Box. GPUI owns wheel and
+trackpad scrolling; the generic runtime owns themed overlay tracks/thumbs,
+dragging, RTL edge placement, and per-axis `auto`, `always`, or `hidden`
+visibility. The normal element-ref scroll commands remain available.
+
+## Navigation and data
+
+`Tabs`, `Accordion`, `Collapsible`, `Menu`, and `Pagination` implement their
+documented keyboard policies. `Table` and public `virtual_collection` accept
+Array or Rust-owned NativeCollection data. `ScrollArea` handles arbitrary
+non-virtual content.
+
+## Command and CommandDialog
+
+`Command` is an embeddable keyboard-first action search. It performs
+deterministic fuzzy matching over labels and keywords, preserves group order,
+sorts matches stably within groups, skips disabled items during navigation, and
+virtualizes the result.
+
+Array inputs are ranked in component Rhai. Large NativeCollection inputs are
+filtered, grouped, ranked, and navigated in Rust; only visible projected rows
+cross into Rhai. `CommandDialog` composes the same behavior with Dialog and
+does not register a global shortcut. The Host action/keybinding system owns the
+shortcut that changes its controlled `open` value.
+
+## Overlay family
+
+- `Popover` and `Tooltip` are anchored non-modal surfaces.
+- `Menu` is a trigger-based action menu; `ContextMenu` reuses the same item,
+  submenu, typeahead, and roving model while anchoring at a secondary click.
+- `Dialog` is a general modal; `AlertDialog` adds explicit confirmation and
+  cancellation semantics.
+- `Sheet` is a temporary modal attached to logical start/end or physical
+  top/bottom. Persistent sidebars remain normal application layout.
+
+Overlay open values are controlled. Portal order, outside/Escape dismissal,
+focus containment/restoration, pointer coordinates, and viewport placement are
+generic Host behavior.

@@ -3,6 +3,7 @@ set -eu
 
 examples=(
   artistic_showcase
+  component_gallery
   dashboard_layout
   data_table
   embedded_hello_world

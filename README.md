@@ -61,6 +61,7 @@ cargo run -p gpui-rhai --example settings_panel
 cargo run -p gpui-rhai --example dashboard_layout
 cargo run -p gpui-rhai --example form_showcase
 cargo run -p gpui-rhai --example data_table
+cargo run -p gpui-rhai --example component_gallery
 cargo run --release -p gpui-rhai --example table_1000
 cargo run -p gpui-rhai-cli -- theme-studio
 cargo run -p gpui-rhai --example extension_host

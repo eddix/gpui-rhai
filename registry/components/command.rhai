@@ -27,18 +27,21 @@ define_component(#{
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
             label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
             query: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-            items: #{ schema: #{ type: "array", max_items: 4096, items: #{
-                type: "object", allow_unknown: false, fields: #{
-                    value: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-                    label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-                    keywords: #{ schema: #{ type: "array", max_items: 32, items: #{ type: "string" } },
-                        required: false, sensitive: false, "default": #{ type: "array", value: [] } },
-                    group: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
-                    shortcut: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
-                    disabled: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                        "default": #{ type: "bool", value: false } },
-                }
-            } }, required: true, sensitive: false },
+            items: #{ schema: #{ type: "one_of", variants: [
+                #{ type: "array", max_items: 4096, items: #{
+                    type: "object", allow_unknown: false, fields: #{
+                        value: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+                        label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+                        keywords: #{ schema: #{ type: "array", max_items: 32, items: #{ type: "string" } },
+                            required: false, sensitive: false, "default": #{ type: "array", value: [] } },
+                        group: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
+                        shortcut: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
+                        disabled: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
+                            "default": #{ type: "bool", value: false } },
+                    }
+                } },
+                #{ type: "collection" }
+            ] }, required: true, sensitive: false },
             placeholder: #{ schema: #{ type: "string" }, required: false, sensitive: false,
                 "default": #{ type: "string", value: "Type a command" } },
             empty_text: #{ schema: #{ type: "string" }, required: false, sensitive: false,
@@ -48,6 +51,8 @@ define_component(#{
             row_height: #{ schema: #{ type: "integer", min: 24, max: 64 }, required: false, sensitive: false,
                 "default": #{ type: "integer", value: 32 } },
             disabled: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
+                "default": #{ type: "bool", value: false } },
+            autofocus: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: false } },
             on_query_change: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false },
             on_action: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false },
@@ -115,6 +120,16 @@ fn includes(values, value) {
     found
 }
 
+fn validate_array_items(items) {
+    let seen = #{};
+    for item in items {
+        if item.value == "" { throw "Command item value must not be empty"; }
+        if item.label == "" { throw `Command item ${item.value} label must not be empty`; }
+        if item.value in seen { throw `duplicate Command item value ${item.value}`; }
+        seen[item.value] = true;
+    }
+}
+
 fn adjacent(values, active, step) {
     if values.len == 0 { return ""; }
     let index = 0;
@@ -160,13 +175,11 @@ fn render_command_row(ctx, payload) {
     if item.disabled { node } else { node.on_click_value(Fn("action_value"), item.value) }
 }
 
-fn render_Command(ctx, props) {
-    let query = props.query;
-    let row_height = prop_or(props, "row_height", 32);
+fn array_command_model(items, query, row_height, stored) {
     let groups = [];
     let buckets = #{};
-    for index in 0..props.items.len {
-        let item = props.items[index];
+    for index in 0..items.len {
+        let item = items[index];
         let score = item_score(item, query);
         if score >= 0 {
             let group = item_group(item);
@@ -189,15 +202,50 @@ fn render_Command(ctx, props) {
         }
     }
     let enabled = enabled_values(data);
-    let stored = ctx.get_state("active");
     let active = if includes(enabled, stored) { stored }
         else if enabled.len > 0 { enabled[0] } else { "" };
     for index in 0..data.len {
         if data[index].kind == "item" { data[index].active = data[index].value == active; }
     }
+    #{ data: data, active: active, enabled: enabled.len > 0,
+        previous: if enabled.len > 0 { adjacent(enabled, active, -1) } else { "" },
+        next: if enabled.len > 0 { adjacent(enabled, active, 1) } else { "" },
+        first: if enabled.len > 0 { enabled[0] } else { "" },
+        last: if enabled.len > 0 { enabled[enabled.len - 1] } else { "" } }
+}
+
+fn native_command_model(items, query, row_height, stored) {
+    let config = #{ query: query, label_field: "label", keywords_field: "keywords",
+        group_field: "group", shortcut_field: "shortcut", disabled_field: "disabled",
+        active: stored, row_height: row_height };
+    let data = native_fuzzy_view(items, config);
+    let active = native_fuzzy_adjacent(data, stored, 0);
+    if active != stored {
+        config.active = active;
+        data = native_fuzzy_view(items, config);
+    }
+    #{ data: data, active: active, enabled: active != "",
+        previous: native_fuzzy_adjacent(data, active, -1),
+        next: native_fuzzy_adjacent(data, active, 1),
+        first: native_fuzzy_edge(data, false), last: native_fuzzy_edge(data, true) }
+}
+
+fn render_Command(ctx, props) {
+    let query = props.query;
+    let row_height = prop_or(props, "row_height", 32);
+    let stored = ctx.get_state("active");
+    let model = if is_native_collection(props.items) {
+        native_command_model(props.items, query, row_height, stored)
+    } else {
+        validate_array_items(props.items);
+        array_command_model(props.items, query, row_height, stored)
+    };
+    let data = model.data;
+    let active = model.active;
     let search = input::Input(#{ key: `${props.key}-search`, value: query,
         placeholder: prop_or(props, "placeholder", "Type a command"),
         disabled: prop_or(props, "disabled", false),
+        autofocus: prop_or(props, "autofocus", false),
         on_change: Fn("query_action"), on_submit: Fn("submit_action").curry(active) })
         .with_style(component_style(props, "search", style()));
     let body = if data.len == 0 {
@@ -218,11 +266,11 @@ fn render_Command(ctx, props) {
             .border(px(1)).border_color(theme_color("border"))
             .background(theme_color("surface"))))
         .tab_stop(false).accessibility_role("listbox").accessibility_label(props.label);
-    if !prop_or(props, "disabled", false) && enabled.len > 0 {
-        root.on_key_value("up", Fn("active_action"), adjacent(enabled, active, -1))
-            .on_key_value("down", Fn("active_action"), adjacent(enabled, active, 1))
-            .on_key_value("home", Fn("active_action"), enabled[0])
-            .on_key_value("end", Fn("active_action"), enabled[enabled.len - 1])
+    if !prop_or(props, "disabled", false) && model.enabled {
+        root.on_key_value("up", Fn("active_action"), model.previous)
+            .on_key_value("down", Fn("active_action"), model.next)
+            .on_key_value("home", Fn("active_action"), model.first)
+            .on_key_value("end", Fn("active_action"), model.last)
             .on_key_value("enter", Fn("action_value"), active)
     } else { root }
 }

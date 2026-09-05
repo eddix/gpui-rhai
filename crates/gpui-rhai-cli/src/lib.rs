@@ -1872,6 +1872,7 @@ mod tests {
         let project = Project::new(directory.path());
         project.plan_init().unwrap().apply().unwrap();
         let registry = BundledRegistry::load().unwrap();
+        assert_eq!(registry.entries.len(), 46);
         let requested = registry
             .entries
             .keys()

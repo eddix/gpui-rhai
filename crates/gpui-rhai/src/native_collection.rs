@@ -12,19 +12,26 @@ use thiserror::Error;
 use crate::{ComponentInstancePath, UiValue};
 
 const MAX_TABLE_ORDER_CACHE_ENTRIES: usize = 64;
+const MAX_FUZZY_ORDER_CACHE_ENTRIES: usize = 64;
 
 #[derive(Clone)]
 pub struct NativeCollection {
     source: Arc<NativeCollectionSource>,
     order: Arc<Vec<NativeCollectionEntry>>,
     sticky_headers: Arc<BTreeSet<usize>>,
-    projection: Option<Arc<TableProjection>>,
+    projection: Option<Arc<CollectionProjection>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum NativeCollectionEntry {
     Row(usize),
     Group(GroupEntry),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+enum CollectionProjection {
+    Table(TableProjection),
+    Fuzzy(FuzzyProjection),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -47,6 +54,7 @@ struct NativeCollectionSource {
     keys: Vec<String>,
     sorted_orders: Mutex<BTreeMap<SortSpec, Arc<Vec<usize>>>>,
     table_orders: Mutex<BTreeMap<TableOrderSpec, TableOrder>>,
+    fuzzy_orders: Mutex<BTreeMap<FuzzyOrderSpec, Arc<Vec<NativeCollectionEntry>>>>,
 }
 
 impl fmt::Debug for NativeCollectionSource {
@@ -143,6 +151,7 @@ impl NativeCollection {
                 keys,
                 sorted_orders: Mutex::new(BTreeMap::new()),
                 table_orders: Mutex::new(BTreeMap::new()),
+                fuzzy_orders: Mutex::new(BTreeMap::new()),
             }),
             order,
             sticky_headers: Arc::new(BTreeSet::new()),
@@ -185,7 +194,11 @@ impl NativeCollection {
                     .ok_or(NativeCollectionError::CorruptOrder(*source_index))?;
                 self.projection.as_ref().map_or_else(
                     || Ok(Some(row.clone())),
-                    |projection| projection.project_row(row, index).map(Some),
+                    |projection| {
+                        projection
+                            .project_row(row, index, self.key(index))
+                            .map(Some)
+                    },
                 )
             }
             NativeCollectionEntry::Group(group) => self
@@ -209,8 +222,113 @@ impl NativeCollection {
             source: Arc::clone(&self.source),
             order: order.entries,
             sticky_headers: order.sticky_headers,
-            projection: Some(Arc::new(projection)),
+            projection: Some(Arc::new(CollectionProjection::Table(projection))),
         })
+    }
+
+    pub(crate) fn fuzzy_view(&self, config: Map) -> Result<Self, NativeCollectionError> {
+        let projection = FuzzyProjection::decode(config)?;
+        let order = self.fuzzy_order(&projection)?;
+        Ok(Self {
+            source: Arc::clone(&self.source),
+            order,
+            sticky_headers: Arc::new(BTreeSet::new()),
+            projection: Some(Arc::new(CollectionProjection::Fuzzy(projection))),
+        })
+    }
+
+    fn fuzzy_order(
+        &self,
+        projection: &FuzzyProjection,
+    ) -> Result<Arc<Vec<NativeCollectionEntry>>, NativeCollectionError> {
+        let spec = FuzzyOrderSpec::from(projection);
+        if let Some(order) = self
+            .source
+            .fuzzy_orders
+            .lock()
+            .map_err(|_| NativeCollectionError::Poisoned)?
+            .get(&spec)
+            .cloned()
+        {
+            return Ok(order);
+        }
+        let order = Arc::new(projection.grouped_order(&self.source)?);
+        let mut cache = self
+            .source
+            .fuzzy_orders
+            .lock()
+            .map_err(|_| NativeCollectionError::Poisoned)?;
+        if cache.len() >= MAX_FUZZY_ORDER_CACHE_ENTRIES
+            && let Some(victim) = cache.keys().next().cloned()
+        {
+            cache.remove(&victim);
+        }
+        cache.insert(spec, Arc::clone(&order));
+        Ok(order)
+    }
+
+    pub(crate) fn fuzzy_edge(&self, last: bool) -> Result<String, NativeCollectionError> {
+        let projection = self.fuzzy_projection()?;
+        let rows = if last {
+            Box::new(self.order.iter().rev()) as Box<dyn Iterator<Item = &NativeCollectionEntry>>
+        } else {
+            Box::new(self.order.iter()) as Box<dyn Iterator<Item = &NativeCollectionEntry>>
+        };
+        for entry in rows {
+            if let NativeCollectionEntry::Row(index) = entry
+                && !projection.row_disabled(&self.source, *index)?
+            {
+                return self
+                    .source
+                    .keys
+                    .get(*index)
+                    .cloned()
+                    .ok_or(NativeCollectionError::CorruptOrder(*index));
+            }
+        }
+        Ok(String::new())
+    }
+
+    pub(crate) fn fuzzy_adjacent(
+        &self,
+        active: &str,
+        step: i64,
+    ) -> Result<String, NativeCollectionError> {
+        let projection = self.fuzzy_projection()?;
+        let mut enabled = Vec::new();
+        for entry in self.order.iter() {
+            if let NativeCollectionEntry::Row(index) = entry
+                && !projection.row_disabled(&self.source, *index)?
+            {
+                enabled.push(*index);
+            }
+        }
+        if enabled.is_empty() {
+            return Ok(String::new());
+        }
+        let current = enabled.iter().position(|index| {
+            self.source
+                .keys
+                .get(*index)
+                .is_some_and(|key| key == active)
+        });
+        let next = match step.cmp(&0) {
+            Ordering::Equal => current.unwrap_or(0),
+            Ordering::Less => (current.unwrap_or(0) + enabled.len() - 1) % enabled.len(),
+            Ordering::Greater => (current.unwrap_or(0) + 1) % enabled.len(),
+        };
+        self.source
+            .keys
+            .get(enabled[next])
+            .cloned()
+            .ok_or(NativeCollectionError::CorruptOrder(enabled[next]))
+    }
+
+    fn fuzzy_projection(&self) -> Result<&FuzzyProjection, NativeCollectionError> {
+        match self.projection.as_deref() {
+            Some(CollectionProjection::Fuzzy(projection)) => Ok(projection),
+            _ => Err(NativeCollectionError::NotFuzzyProjection),
+        }
     }
 
     fn table_order(
@@ -349,6 +467,366 @@ pub(crate) fn register_native_collection_api(engine: &mut rhai::Engine) {
                 })
             },
         );
+    FuncRegistration::new("native_fuzzy_view")
+        .in_global_namespace()
+        .register_into_engine(
+            engine,
+            |collection: NativeCollection,
+             config: Map|
+             -> Result<NativeCollection, Box<EvalAltResult>> {
+                collection
+                    .fuzzy_view(config)
+                    .map_err(|error| Box::new(native_collection_runtime_error(&error)))
+            },
+        );
+    FuncRegistration::new("native_fuzzy_edge")
+        .in_global_namespace()
+        .register_into_engine(
+            engine,
+            |collection: NativeCollection,
+             last: bool|
+             -> Result<ImmutableString, Box<EvalAltResult>> {
+                collection
+                    .fuzzy_edge(last)
+                    .map(ImmutableString::from)
+                    .map_err(|error| Box::new(native_collection_runtime_error(&error)))
+            },
+        );
+    FuncRegistration::new("native_fuzzy_adjacent")
+        .in_global_namespace()
+        .register_into_engine(
+            engine,
+            |collection: NativeCollection,
+             active: ImmutableString,
+             step: i64|
+             -> Result<ImmutableString, Box<EvalAltResult>> {
+                collection
+                    .fuzzy_adjacent(active.as_str(), step)
+                    .map(ImmutableString::from)
+                    .map_err(|error| Box::new(native_collection_runtime_error(&error)))
+            },
+        );
+}
+
+fn native_collection_runtime_error(error: &NativeCollectionError) -> EvalAltResult {
+    EvalAltResult::ErrorRuntime(error.to_string().into(), Position::NONE)
+}
+
+impl CollectionProjection {
+    fn project_row(
+        &self,
+        row: &UiValue,
+        index: usize,
+        key: Option<&str>,
+    ) -> Result<UiValue, NativeCollectionError> {
+        match self {
+            Self::Table(projection) => projection.project_row(row, index),
+            Self::Fuzzy(projection) => projection.project_row(row, index, key),
+        }
+    }
+
+    fn project_group(&self, group: &GroupEntry) -> UiValue {
+        match self {
+            Self::Table(projection) => projection.project_group(group),
+            Self::Fuzzy(_) => FuzzyProjection::project_group(group),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct FuzzyOrderSpec {
+    query: String,
+    label_field: String,
+    keywords_field: String,
+    group_field: String,
+}
+
+impl From<&FuzzyProjection> for FuzzyOrderSpec {
+    fn from(projection: &FuzzyProjection) -> Self {
+        Self {
+            query: projection.query.clone(),
+            label_field: projection.label_field.clone(),
+            keywords_field: projection.keywords_field.clone(),
+            group_field: projection.group_field.clone(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct FuzzyProjection {
+    query: String,
+    label_field: String,
+    keywords_field: String,
+    group_field: String,
+    shortcut_field: String,
+    disabled_field: String,
+    active: String,
+    row_height: f64,
+}
+
+impl FuzzyProjection {
+    fn decode(config: Map) -> Result<Self, NativeCollectionError> {
+        let UiValue::Map(mut config) = UiValue::from_dynamic(Dynamic::from_map(config))
+            .map_err(|error| NativeCollectionError::InvalidFuzzyConfig(error.to_string()))?
+        else {
+            return Err(NativeCollectionError::InvalidFuzzyConfig(
+                "configuration must be a map".to_owned(),
+            ));
+        };
+        let query = fuzzy_take_string(&mut config, "query")?.to_lowercase();
+        let label_field = fuzzy_take_string(&mut config, "label_field")?;
+        let keywords_field = fuzzy_take_string(&mut config, "keywords_field")?;
+        let group_field = fuzzy_take_string(&mut config, "group_field")?;
+        let shortcut_field = fuzzy_take_string(&mut config, "shortcut_field")?;
+        let disabled_field = fuzzy_take_string(&mut config, "disabled_field")?;
+        let active = fuzzy_take_string(&mut config, "active")?;
+        let row_height = fuzzy_take_number(&mut config, "row_height")?;
+        if !row_height.is_finite() || row_height <= 0.0 {
+            return Err(NativeCollectionError::InvalidFuzzyConfig(
+                "row_height must be finite and positive".to_owned(),
+            ));
+        }
+        for (field, label) in [
+            (&label_field, "label field"),
+            (&keywords_field, "keywords field"),
+            (&group_field, "group field"),
+            (&shortcut_field, "shortcut field"),
+            (&disabled_field, "disabled field"),
+        ] {
+            validate_name(field, label)?;
+        }
+        if !config.is_empty() {
+            return Err(NativeCollectionError::InvalidFuzzyConfig(format!(
+                "unknown configuration fields: {}",
+                config.keys().cloned().collect::<Vec<_>>().join(", ")
+            )));
+        }
+        Ok(Self {
+            query,
+            label_field,
+            keywords_field,
+            group_field,
+            shortcut_field,
+            disabled_field,
+            active,
+            row_height,
+        })
+    }
+
+    fn grouped_order(
+        &self,
+        source: &NativeCollectionSource,
+    ) -> Result<Vec<NativeCollectionEntry>, NativeCollectionError> {
+        let mut group_order = Vec::new();
+        let mut groups = BTreeMap::<String, Vec<(usize, i64)>>::new();
+        for (index, row) in source.rows.iter().enumerate() {
+            let label = Self::row_string(row, index, &self.label_field, true)?;
+            let keywords = self.row_keywords(row, index)?;
+            let score = fuzzy_score(&label, &keywords, &self.query);
+            if score < 0 {
+                continue;
+            }
+            let group = Self::row_string(row, index, &self.group_field, false)?;
+            if !groups.contains_key(&group) {
+                group_order.push(group.clone());
+            }
+            groups.entry(group).or_default().push((index, score));
+        }
+        let source_keys = source
+            .keys
+            .iter()
+            .map(String::as_str)
+            .collect::<BTreeSet<_>>();
+        let mut header_keys = BTreeSet::new();
+        let mut entries = Vec::new();
+        for group in group_order {
+            let mut rows = groups.remove(&group).unwrap_or_default();
+            rows.sort_by(|(left_index, left_score), (right_index, right_score)| {
+                right_score
+                    .cmp(left_score)
+                    .then_with(|| left_index.cmp(right_index))
+            });
+            if !group.is_empty() {
+                let key =
+                    unique_group_key(&format!("command:{group}"), &source_keys, &mut header_keys);
+                entries.push(NativeCollectionEntry::Group(GroupEntry {
+                    key,
+                    value: group,
+                    count: rows.len(),
+                    collapsed: false,
+                }));
+            }
+            entries.extend(
+                rows.into_iter()
+                    .map(|(index, _)| NativeCollectionEntry::Row(index)),
+            );
+        }
+        Ok(entries)
+    }
+
+    fn project_row(
+        &self,
+        row: &UiValue,
+        index: usize,
+        key: Option<&str>,
+    ) -> Result<UiValue, NativeCollectionError> {
+        let key = key.ok_or(NativeCollectionError::CorruptOrder(index))?;
+        let label = Self::row_string(row, index, &self.label_field, true)?;
+        let shortcut = Self::row_string(row, index, &self.shortcut_field, false)?;
+        let disabled = self.row_disabled_value(row, index)?;
+        Ok(UiValue::Map(BTreeMap::from([
+            ("kind".to_owned(), UiValue::String("item".to_owned())),
+            ("key".to_owned(), UiValue::String(format!("item:{key}"))),
+            ("value".to_owned(), UiValue::String(key.to_owned())),
+            ("label".to_owned(), UiValue::String(label)),
+            ("shortcut".to_owned(), UiValue::String(shortcut)),
+            ("disabled".to_owned(), UiValue::Bool(disabled)),
+            ("active".to_owned(), UiValue::Bool(self.active == key)),
+            ("height".to_owned(), UiValue::Float(self.row_height)),
+        ])))
+    }
+
+    fn project_group(group: &GroupEntry) -> UiValue {
+        UiValue::Map(BTreeMap::from([
+            ("kind".to_owned(), UiValue::String("group".to_owned())),
+            ("key".to_owned(), UiValue::String(group.key.clone())),
+            ("label".to_owned(), UiValue::String(group.value.clone())),
+            ("height".to_owned(), UiValue::Float(24.0)),
+        ]))
+    }
+
+    fn row_disabled(
+        &self,
+        source: &NativeCollectionSource,
+        index: usize,
+    ) -> Result<bool, NativeCollectionError> {
+        let row = source
+            .rows
+            .get(index)
+            .ok_or(NativeCollectionError::CorruptOrder(index))?;
+        self.row_disabled_value(row, index)
+    }
+
+    fn row_disabled_value(
+        &self,
+        row: &UiValue,
+        index: usize,
+    ) -> Result<bool, NativeCollectionError> {
+        match row_field(row, &self.disabled_field) {
+            None | Some(UiValue::Null) => Ok(false),
+            Some(UiValue::Bool(value)) => Ok(*value),
+            Some(_) => Err(NativeCollectionError::InvalidFuzzyConfig(format!(
+                "row {index} field `{}` must be bool when present",
+                self.disabled_field
+            ))),
+        }
+    }
+
+    fn row_string(
+        row: &UiValue,
+        index: usize,
+        field: &str,
+        required: bool,
+    ) -> Result<String, NativeCollectionError> {
+        match row_field(row, field) {
+            Some(UiValue::String(value)) if !required || !value.is_empty() => Ok(value.clone()),
+            None | Some(UiValue::Null) if !required => Ok(String::new()),
+            _ => Err(NativeCollectionError::InvalidFuzzyConfig(format!(
+                "row {index} field `{field}` must be {}string",
+                if required { "a non-empty " } else { "a " }
+            ))),
+        }
+    }
+
+    fn row_keywords(
+        &self,
+        row: &UiValue,
+        index: usize,
+    ) -> Result<Vec<String>, NativeCollectionError> {
+        match row_field(row, &self.keywords_field) {
+            None | Some(UiValue::Null) => Ok(Vec::new()),
+            Some(UiValue::Array(values)) => values
+                .iter()
+                .enumerate()
+                .map(|(keyword, value)| match value {
+                    UiValue::String(value) => Ok(value.clone()),
+                    _ => Err(NativeCollectionError::InvalidFuzzyConfig(format!(
+                        "row {index} field `{}` item {keyword} must be a string",
+                        self.keywords_field
+                    ))),
+                })
+                .collect(),
+            Some(_) => Err(NativeCollectionError::InvalidFuzzyConfig(format!(
+                "row {index} field `{}` must be an array of strings",
+                self.keywords_field
+            ))),
+        }
+    }
+}
+
+fn fuzzy_score(label: &str, keywords: &[String], query: &str) -> i64 {
+    std::iter::once((label, 0))
+        .chain(keywords.iter().map(|keyword| (keyword.as_str(), -100)))
+        .map(|(candidate, penalty)| fuzzy_candidate_score(candidate, query) + penalty)
+        .max()
+        .unwrap_or(-1)
+}
+
+fn fuzzy_candidate_score(candidate: &str, query: &str) -> i64 {
+    if query.is_empty() {
+        return 0;
+    }
+    let candidate = candidate.to_lowercase();
+    if candidate == query {
+        return 10_000;
+    }
+    let length = i64::try_from(candidate.chars().count()).unwrap_or(i64::MAX);
+    if candidate.starts_with(query) {
+        return 8_000 - length;
+    }
+    if let Some(position) = candidate.find(query) {
+        let position = i64::try_from(candidate[..position].chars().count()).unwrap_or(i64::MAX);
+        return 6_000 - position.saturating_mul(8) - length;
+    }
+    let chars = candidate.chars().collect::<Vec<_>>();
+    let mut position = 0usize;
+    let mut gaps = 0i64;
+    for needle in query.chars() {
+        let Some(found) = chars[position..]
+            .iter()
+            .position(|candidate| *candidate == needle)
+        else {
+            return -1;
+        };
+        gaps = gaps.saturating_add(i64::try_from(found).unwrap_or(i64::MAX));
+        position = position.saturating_add(found).saturating_add(1);
+    }
+    4_000 - gaps.saturating_mul(12) - length
+}
+
+fn fuzzy_take_string(
+    values: &mut BTreeMap<String, UiValue>,
+    name: &str,
+) -> Result<String, NativeCollectionError> {
+    match values.remove(name) {
+        Some(UiValue::String(value)) => Ok(value),
+        _ => Err(NativeCollectionError::InvalidFuzzyConfig(format!(
+            "{name} must be a string"
+        ))),
+    }
+}
+
+fn fuzzy_take_number(
+    values: &mut BTreeMap<String, UiValue>,
+    name: &str,
+) -> Result<f64, NativeCollectionError> {
+    match values.remove(name) {
+        Some(UiValue::Float(value)) => Ok(value),
+        Some(UiValue::Integer(value)) => Ok(integer_float(value)),
+        _ => Err(NativeCollectionError::InvalidFuzzyConfig(format!(
+            "{name} must be a number"
+        ))),
+    }
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -1046,10 +1524,14 @@ pub enum NativeCollectionError {
     CorruptOrder(usize),
     #[error("native collection contains a group header outside a table projection")]
     UnexpectedGroupEntry,
+    #[error("native collection is not a fuzzy projection")]
+    NotFuzzyProjection,
     #[error("native collection row {index} group field `{field}` must be a non-empty string")]
     InvalidGroupField { index: usize, field: String },
     #[error("invalid native Table configuration: {0}")]
     InvalidTableConfig(String),
+    #[error("invalid native fuzzy-view configuration: {0}")]
+    InvalidFuzzyConfig(String),
     #[error("native collection cache is poisoned")]
     Poisoned,
 }
@@ -1144,6 +1626,108 @@ mod tests {
         ]))
         .into_dynamic()
         .cast::<Map>()
+    }
+
+    fn fuzzy_rows() -> NativeCollection {
+        NativeCollection::new(
+            "id",
+            [
+                BTreeMap::from([
+                    ("id".to_owned(), UiValue::String("new".to_owned())),
+                    ("label".to_owned(), UiValue::String("New file".to_owned())),
+                    ("group".to_owned(), UiValue::String("File".to_owned())),
+                    (
+                        "keywords".to_owned(),
+                        UiValue::Array(vec![UiValue::String("create document".to_owned())]),
+                    ),
+                    ("shortcut".to_owned(), UiValue::String("⌘N".to_owned())),
+                    ("disabled".to_owned(), UiValue::Bool(false)),
+                ]),
+                BTreeMap::from([
+                    ("id".to_owned(), UiValue::String("open".to_owned())),
+                    ("label".to_owned(), UiValue::String("Open file".to_owned())),
+                    ("group".to_owned(), UiValue::String("File".to_owned())),
+                    (
+                        "keywords".to_owned(),
+                        UiValue::Array(vec![UiValue::String("load document".to_owned())]),
+                    ),
+                    ("shortcut".to_owned(), UiValue::String("⌘O".to_owned())),
+                    ("disabled".to_owned(), UiValue::Bool(false)),
+                ]),
+                BTreeMap::from([
+                    ("id".to_owned(), UiValue::String("close".to_owned())),
+                    (
+                        "label".to_owned(),
+                        UiValue::String("Close window".to_owned()),
+                    ),
+                    ("group".to_owned(), UiValue::String("Window".to_owned())),
+                    ("keywords".to_owned(), UiValue::Array(Vec::new())),
+                    ("shortcut".to_owned(), UiValue::String("⌘W".to_owned())),
+                    ("disabled".to_owned(), UiValue::Bool(true)),
+                ]),
+            ],
+        )
+        .unwrap()
+    }
+
+    fn fuzzy_config(query: &str, active: &str) -> Map {
+        UiValue::Map(BTreeMap::from([
+            ("query".to_owned(), UiValue::String(query.to_owned())),
+            (
+                "label_field".to_owned(),
+                UiValue::String("label".to_owned()),
+            ),
+            (
+                "keywords_field".to_owned(),
+                UiValue::String("keywords".to_owned()),
+            ),
+            (
+                "group_field".to_owned(),
+                UiValue::String("group".to_owned()),
+            ),
+            (
+                "shortcut_field".to_owned(),
+                UiValue::String("shortcut".to_owned()),
+            ),
+            (
+                "disabled_field".to_owned(),
+                UiValue::String("disabled".to_owned()),
+            ),
+            ("active".to_owned(), UiValue::String(active.to_owned())),
+            ("row_height".to_owned(), UiValue::Float(32.0)),
+        ]))
+        .into_dynamic()
+        .cast::<Map>()
+    }
+
+    #[test]
+    fn fuzzy_projection_filters_groups_projects_and_reuses_structural_order() {
+        let source = fuzzy_rows();
+        let view = source.fuzzy_view(fuzzy_config("opn", "")).unwrap();
+        assert_eq!(view.len(), 2);
+        assert_eq!(view.fuzzy_edge(false).unwrap(), "open");
+        assert_eq!(view.fuzzy_adjacent("", 0).unwrap(), "open");
+        let UiValue::Map(group) = view.item(0).unwrap().unwrap() else {
+            panic!("first fuzzy entry must be a group");
+        };
+        assert_eq!(group["kind"], UiValue::String("group".to_owned()));
+        let UiValue::Map(item) = view.item(1).unwrap().unwrap() else {
+            panic!("second fuzzy entry must be a command");
+        };
+        assert_eq!(item["value"], UiValue::String("open".to_owned()));
+        assert_eq!(item["active"], UiValue::Bool(false));
+
+        let active = source.fuzzy_view(fuzzy_config("opn", "open")).unwrap();
+        assert!(Arc::ptr_eq(&view.order, &active.order));
+        let UiValue::Map(item) = active.item(1).unwrap().unwrap() else {
+            unreachable!()
+        };
+        assert_eq!(item["active"], UiValue::Bool(true));
+
+        let all = source.fuzzy_view(fuzzy_config("", "new")).unwrap();
+        assert_eq!(all.fuzzy_edge(true).unwrap(), "open");
+        assert_eq!(all.fuzzy_adjacent("new", 1).unwrap(), "open");
+        assert_eq!(all.fuzzy_adjacent("open", 1).unwrap(), "new");
     }
 
     #[test]

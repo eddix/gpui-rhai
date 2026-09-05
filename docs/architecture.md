@@ -97,7 +97,10 @@ invocation updates. Returned handlers carry component path, declared event
 schema, generation, and an internal Rhai module-call context so later callbacks
 resolve in their source module. Durable handlers are named non-capturing
 functions with `UiValue`-convertible curry; arbitrary captured environments are
-rejected at the retained boundary.
+rejected at the retained boundary. Callback props carry a private scope marker
+through component composition and strip it before retention; ownership is never
+guessed from the function name, so entry and nested component modules may use
+the same private handler names safely.
 
 The AST interpreter remains the semantic oracle. Named entry/lifecycle/root
 calls cross a static execution-backend trait; stored imported callbacks remain
@@ -152,6 +155,17 @@ Per-axis `Style.overflow_x_scroll/y_scroll` creates a retained GPUI
 visible offsets and applies them only after transaction commit. Ref descendants
 also retain a GPUI `ScrollAnchor` for nearest-ancestor `scroll_into_view`
 without assuming they are direct children.
+
+The generic `scrollbars(horizontal, vertical)` node decoration overlays themed
+tracks and draggable thumbs on that same ScrollHandle. `auto`, `always`, and
+`hidden` affect presentation only; wheel/trackpad physics, programmatic refs,
+and content coordinates continue to use one native viewport. RTL places the
+vertical track on the logical end edge.
+
+The retained `gpui_rhai.range_input` primitive owns single-value pointer drag
+preview and keyboard steps. Pointer motion remains inside its GPUI Entity and
+one schema-checked value is delivered to Rhai on pointer commit; official
+Slider supplies only source-owned presentation and controlled value policy.
 
 `error_boundary(child, fallback)` catches native subtree rendering failures.
 Use `error_boundary_lazy(Fn("child"), Fn("fallback"))` when Rhai construction
@@ -210,11 +224,16 @@ window/component async scopes are released together on close. Rhai submits
 validated commands and never receives a GPUI window handle.
 
 Each standalone script window or embedded Host owns one Rust overlay coordinator. Generic Overlay nodes used by Popover, Combobox, Dialog,
-Menu, and Tooltip reserve their portal order during layout and
+Sheet, Menu, ContextMenu, and Tooltip reserve their portal order during layout and
 register measured anchor/panel bounds during prepaint. The coordinator owns
 flipping/clamping, the parent-child dismiss stack, outside-click routing,
 Escape routing, modal policy, and per-frame cleanup. Rhai supplies only stable
 IDs, parent IDs, content, and controlled policy callbacks.
+
+An Overlay may use its trigger bounds or one validated event-coordinate anchor.
+ContextMenu records the last secondary-click point as component-local transient
+geometry. Sheet uses the same modal host and logical start/end placement but a
+viewport-edge surface rather than an anchored popup.
 
 Modal focus is a per-frame invariant rather than a one-shot mount side effect.
 Programmatic Host focus changes dirty the window; the Overlay element checks the

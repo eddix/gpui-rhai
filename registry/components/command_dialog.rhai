@@ -28,22 +28,31 @@ define_component(#{
             open: #{ schema: #{ type: "bool" }, required: true, sensitive: false },
             query: #{ schema: #{ type: "string" }, required: true, sensitive: false },
             label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-            items: #{ schema: #{ type: "array", max_items: 4096, items: #{
-                type: "object", allow_unknown: false, fields: #{
-                    value: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-                    label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-                    keywords: #{ schema: #{ type: "array", max_items: 32, items: #{ type: "string" } },
-                        required: false, sensitive: false, "default": #{ type: "array", value: [] } },
-                    group: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
-                    shortcut: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
-                    disabled: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                        "default": #{ type: "bool", value: false } },
-                }
-            } }, required: true, sensitive: false },
+            items: #{ schema: #{ type: "one_of", variants: [
+                #{ type: "array", max_items: 4096, items: #{
+                    type: "object", allow_unknown: false, fields: #{
+                        value: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+                        label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+                        keywords: #{ schema: #{ type: "array", max_items: 32, items: #{ type: "string" } },
+                            required: false, sensitive: false, "default": #{ type: "array", value: [] } },
+                        group: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
+                        shortcut: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
+                        disabled: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
+                            "default": #{ type: "bool", value: false } },
+                    }
+                } },
+                #{ type: "collection" }
+            ] }, required: true, sensitive: false },
             placeholder: #{ schema: #{ type: "string" }, required: false, sensitive: false,
                 "default": #{ type: "string", value: "Type a command" } },
             empty_text: #{ schema: #{ type: "string" }, required: false, sensitive: false,
                 "default": #{ type: "string", value: "No commands found" } },
+            max_visible: #{ schema: #{ type: "integer", min: 1, max: 24 }, required: false, sensitive: false,
+                "default": #{ type: "integer", value: 8 } },
+            row_height: #{ schema: #{ type: "integer", min: 24, max: 64 }, required: false, sensitive: false,
+                "default": #{ type: "integer", value: 32 } },
+            disabled: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
+                "default": #{ type: "bool", value: false } },
             close_on_action: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: true } },
             on_query_change: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false },
@@ -71,6 +80,10 @@ fn render_CommandDialog(ctx, props) {
         query: props.query, items: props.items,
         placeholder: prop_or(props, "placeholder", "Type a command"),
         empty_text: prop_or(props, "empty_text", "No commands found"),
+        max_visible: prop_or(props, "max_visible", 8),
+        row_height: prop_or(props, "row_height", 32),
+        disabled: prop_or(props, "disabled", false),
+        autofocus: true,
         on_query_change: Fn("query_action"),
         on_action: Fn("command_action").curry(prop_or(props, "close_on_action", true)) })
         .with_style(component_style(props, "command", style().border(px(0))));

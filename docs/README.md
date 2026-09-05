@@ -26,6 +26,7 @@ security, testing, and troubleshooting.
 - [Retained Canvas scenes](canvas.md)
 - [Native virtual collections](virtual-list.md) and [Rust-owned collection data](native-collections.md)
 - [Accessibility status](accessibility.md)
+- [Official component catalog](components/catalog.md)
 
 Complex component contracts:
 
@@ -36,6 +37,8 @@ Complex component contracts:
 - [Table](components/table.md)
 - [Pagination](components/pagination.md)
 - [Toast](components/toast.md)
+- [Command and CommandDialog](components/catalog.md#command-and-commanddialog)
+- [Slider and ScrollArea](components/catalog.md#native-interaction-foundations)
 
 ## Develop the framework
 
