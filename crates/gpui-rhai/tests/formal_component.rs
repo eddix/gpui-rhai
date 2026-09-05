@@ -800,6 +800,99 @@ fn composed_semantic_callback_props_execute_in_the_caller_state_scope() {
 }
 
 #[test]
+fn nested_callback_scope_is_never_inferred_from_a_private_function_name() {
+    let inner = r#"
+        define_component(#{
+            metadata: #{ id: "components/inner_collision", "export": "InnerCollision",
+                version: "0.1.0", runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
+                dependencies: [], capabilities: #{} },
+            schema: #{ props: #{ on_change: #{ schema: #{ type: "callback" },
+                    required: true, sensitive: false } },
+                state: #{ fields: #{} }, events: #{ change: #{ payload: #{ type: "integer" } } },
+                slots: #{}, parts: ["root"] },
+            render: Fn("render_InnerCollision")
+        });
+        fn InnerCollision(props) { render_component("components/inner_collision", props) }
+        fn collide(ctx, value) { ctx.emit("change", value + 100); }
+        fn render_InnerCollision(ctx, props) { text("inner").on_click_value(Fn("collide"), 1) }
+    "#;
+    let outer = r#"
+        import "components/inner_collision" as inner;
+        define_component(#{
+            metadata: #{ id: "components/outer_collision", "export": "OuterCollision",
+                version: "0.1.0", runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
+                dependencies: ["components/inner_collision"], capabilities: #{} },
+            schema: #{ props: #{ on_change: #{ schema: #{ type: "callback" },
+                    required: true, sensitive: false } },
+                state: #{ fields: #{} }, events: #{ change: #{ payload: #{ type: "integer" } } },
+                slots: #{}, parts: ["root"] },
+            render: Fn("render_OuterCollision")
+        });
+        fn OuterCollision(props) { render_component("components/outer_collision", props) }
+        fn collide(ctx, value) { ctx.emit("change", value + 10); }
+        fn render_OuterCollision(ctx, props) {
+            inner::InnerCollision(#{ on_change: Fn("collide") })
+        }
+    "#;
+    let source = EmbeddedScriptSource::new(BTreeMap::from([
+        (
+            ModuleId::parse("components/inner_collision").unwrap(),
+            inner.to_owned(),
+        ),
+        (
+            ModuleId::parse("components/outer_collision").unwrap(),
+            outer.to_owned(),
+        ),
+    ]));
+    let mut engine = RuntimeEngine::new();
+    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
+    let compiled = engine
+        .compile_self_contained_named(
+            "ui/callback_name_collision.rhai",
+            r#"
+                import "components/outer_collision" as outer;
+                fn state_schema() { #{ fields: #{ observed: #{ schema: #{ type: "integer" },
+                    "default": #{ type: "integer", value: 0 } } } } }
+                fn collide(offset, ctx, value) { ctx.set_state("observed", value + offset); }
+                fn view(ctx) { outer::OuterCollision(#{ on_change: Fn("collide").curry(1000) }) }
+            "#,
+        )
+        .unwrap();
+    let schema = engine.root_state_schema(&compiled).unwrap();
+    let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+    let root = ComponentInstancePath::root("App", "root");
+    let mut lifecycle = ScriptLifecycle::new(
+        compiled,
+        Rc::clone(&runtime),
+        root.clone(),
+        Some("main".to_owned()),
+        BTreeMap::new(),
+        &schema,
+    )
+    .unwrap();
+    lifecycle.start(&mut engine).unwrap();
+    let click = script_handler(&lifecycle, "click");
+    let _ = lifecycle
+        .invoke_callback_transactional(&engine, &click, UiValue::Integer(1))
+        .unwrap();
+    loop {
+        let events = runtime.borrow_mut().drain_batch().events;
+        if events.is_empty() {
+            break;
+        }
+        for event in events {
+            let _ = lifecycle
+                .invoke_component_event_transactional(&engine, event)
+                .unwrap();
+        }
+    }
+    assert_eq!(
+        runtime.borrow().component_state.get(&root, "observed"),
+        Some(&UiValue::Integer(1111))
+    );
+}
+
+#[test]
 fn dirty_transparent_child_promotes_to_the_nearest_replaceable_component() {
     let source = EmbeddedScriptSource::new(BTreeMap::from([
         (

@@ -29,6 +29,29 @@ impl ScriptInvocationContext {
         }
     }
 
+    /// Capture the entry-module frame from a formal component constructor
+    /// call. Rhai keeps the entry library first and appends the current imported
+    /// module while evaluating that constructor.
+    #[allow(deprecated)]
+    pub(crate) fn capture_entry(context: &NativeCallContext<'_>) -> Self {
+        let mut stored = context.store_data();
+        stored.global.lib.truncate(1);
+        if let Some(source) = stored
+            .global
+            .lib
+            .first()
+            .and_then(|module| module.id())
+            .map(str::to_owned)
+        {
+            stored.source = Some(source.clone());
+            stored.global.source = Some(source.into());
+        }
+        Self {
+            operation_base: stored.global.num_operations,
+            stored: Rc::new(stored),
+        }
+    }
+
     pub(crate) const fn operation_base(&self) -> u64 {
         self.operation_base
     }

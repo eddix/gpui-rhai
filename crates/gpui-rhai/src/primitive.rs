@@ -304,45 +304,6 @@ impl PrimitiveProps {
             }
         }
     }
-
-    pub(crate) fn bind_callback_scope_by_name(
-        &mut self,
-        names: &BTreeSet<String>,
-        component: &crate::ComponentInstancePath,
-        events: &BTreeMap<String, EventSchema>,
-        native_context: Option<&crate::invocation::ScriptInvocationContext>,
-    ) {
-        for value in self.0.values_mut() {
-            match value {
-                PrimitiveValue::Callback(handler)
-                    if handler
-                        .as_script()
-                        .is_some_and(|callback| names.contains(callback.name())) =>
-                {
-                    let callback = handler
-                        .as_script_mut()
-                        .expect("matched script callback handler");
-                    callback.bind_component_if_unset(component.clone(), events.clone());
-                    if let (Some(context), None) = (native_context, callback.native_context()) {
-                        callback.bind_native_context_if_unset(context.clone());
-                    }
-                }
-                PrimitiveValue::Node(node) => {
-                    node.bind_callback_scope_by_name(names, component, events, native_context);
-                }
-                PrimitiveValue::Nodes(nodes) => {
-                    for node in nodes {
-                        node.bind_callback_scope_by_name(names, component, events, native_context);
-                    }
-                }
-                PrimitiveValue::Data(_)
-                | PrimitiveValue::Style(_)
-                | PrimitiveValue::Length(_)
-                | PrimitiveValue::Asset(_)
-                | PrimitiveValue::Callback(_) => {}
-            }
-        }
-    }
 }
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

@@ -132,6 +132,18 @@ pub enum ScriptCallbackDefinitionError {
     },
 }
 
+/// Private provenance carried inside a callback prop while a formal component
+/// renders. Rhai clones curried values when a callback is forwarded, so this
+/// survives arbitrary component depth without adding a public constructor or
+/// type. Components treat callback props as opaque; the marker is stripped
+/// before the callback crosses the retained boundary.
+#[derive(Clone, Debug)]
+struct ComponentCallbackBinding {
+    component: ComponentInstancePath,
+    events: BTreeMap<String, EventSchema>,
+    context: Option<crate::invocation::ScriptInvocationContext>,
+}
+
 #[derive(Clone)]
 pub struct CompiledUi {
     ast: AST,
@@ -178,23 +190,31 @@ impl ScriptCallback {
         if function.is_anonymous() {
             return Err(ScriptCallbackDefinitionError::Anonymous);
         }
-        let curry = function
-            .iter_curry()
-            .cloned()
-            .enumerate()
-            .map(|(index, value)| {
-                UiValue::from_dynamic(value)
-                    .map_err(|source| ScriptCallbackDefinitionError::InvalidCurry { index, source })
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+        let mut binding = None;
+        let mut curry = Vec::new();
+        for (index, value) in function.iter_curry().cloned().enumerate() {
+            if value.is::<ComponentCallbackBinding>() {
+                binding = Some(value.cast::<ComponentCallbackBinding>());
+                continue;
+            }
+            curry.push(
+                UiValue::from_dynamic(value).map_err(|source| {
+                    ScriptCallbackDefinitionError::InvalidCurry { index, source }
+                })?,
+            );
+        }
         function.set_curry(curry.iter().cloned().map(UiValue::into_dynamic));
+        let (component, events, native_context) = binding.map_or_else(
+            || (None, BTreeMap::new(), None),
+            |binding| (Some(binding.component), binding.events, binding.context),
+        );
         Ok(Self {
             function,
             curry,
             generation,
-            component: None,
-            events: BTreeMap::new(),
-            native_context: None,
+            component,
+            events,
+            native_context,
         })
     }
 
@@ -346,7 +366,6 @@ pub struct ComponentInvocationRecipe {
     component_context: UiContext,
     caller_context: UiContext,
     part_styles: BTreeMap<String, crate::Style>,
-    caller_callbacks: BTreeSet<String>,
     event_callbacks: Vec<(String, FnPtr)>,
     component_events: BTreeMap<String, EventSchema>,
     declared_effects: BTreeSet<String>,
@@ -1009,12 +1028,6 @@ impl RuntimeEngine {
             .map_err(RuntimeError::Evaluate)?;
             node = node.with_part_styles(recipe.part_styles.clone());
             node = node.with_component_root(recipe.path.clone());
-            node.bind_callback_scope_by_name(
-                &recipe.caller_callbacks,
-                recipe.caller_context.component_path(),
-                recipe.caller_context.event_schemas(),
-                Some(&recipe.context),
-            );
             node.bind_component_scope(
                 &recipe.path,
                 &recipe.component_events,
@@ -1852,18 +1865,14 @@ fn execute_component_render(
             ))
         })?
         .generation;
-    let (component, invocation) = resolve_component_invocation(exports, id, props, generation)?;
+    let (component, mut invocation) = resolve_component_invocation(exports, id, props, generation)?;
     if render.is_anonymous() || render.is_curried() {
         return Err(Box::new(component_render_error(
             "formal component render must be an uncurried named function",
         )));
     }
-    let event_callbacks = component_event_callbacks(&component, &invocation.props);
-    let recipe_event_callbacks = event_callbacks.clone();
-    let caller_callbacks = component_callback_names(&invocation.props);
     let part_styles = component_part_styles(&invocation.props);
     let recipe_props = invocation.retained_props.clone();
-    let script_props = invocation.props.clone();
     let declared_key = invocation.key.clone();
     let render_recipe = render.clone();
     let (path, caller_context) = reserve_component_path(call, &component, &invocation, active)?;
@@ -1877,10 +1886,30 @@ fn execute_component_render(
     )? {
         return Ok(node);
     }
-    let context = enter_component_render(&path, &component, &invocation, active)?;
+    let native_context = crate::invocation::ScriptInvocationContext::capture(call);
+    bind_component_callback_props(
+        &mut invocation.props,
+        &component.schema.props,
+        &ComponentCallbackBinding {
+            component: caller_context.component_path().clone(),
+            events: caller_context.event_schemas().clone(),
+            context: Some(caller_context.native_context().cloned().unwrap_or_else(|| {
+                crate::invocation::ScriptInvocationContext::capture_entry(call)
+            })),
+        },
+    );
+    let event_callbacks = component_event_callbacks(&component, &invocation.props);
+    let recipe_event_callbacks = event_callbacks.clone();
+    let script_props = invocation.props.clone();
+    let context = enter_component_render(
+        &path,
+        &component,
+        &invocation,
+        native_context.clone(),
+        active,
+    )?;
     let recipe_component_context = context.clone();
     let result = render.call_within_context::<UiNode>(call, (context, invocation.props));
-    let native_context = crate::invocation::ScriptInvocationContext::capture(call);
     register_component_event_callbacks(
         active,
         &path,
@@ -1902,7 +1931,6 @@ fn execute_component_render(
             component_context: recipe_component_context,
             caller_context: caller_context.clone(),
             part_styles: part_styles.clone(),
-            caller_callbacks: caller_callbacks.clone(),
             event_callbacks: recipe_event_callbacks,
             component_events: component.schema.events.clone(),
             declared_effects: component.schema.effects.clone(),
@@ -1917,12 +1945,6 @@ fn execute_component_render(
     let mut node = result?;
     node = node.with_part_styles(part_styles);
     node = node.with_component_root(path.clone());
-    node.bind_callback_scope_by_name(
-        &caller_callbacks,
-        caller_context.component_path(),
-        caller_context.event_schemas(),
-        Some(&native_context),
-    );
     node.bind_component_scope(&path, &component.schema.events, Some(&native_context));
     Ok(node)
 }
@@ -2181,6 +2203,7 @@ fn enter_component_render(
     path: &ComponentInstancePath,
     component: &crate::ComponentDefinition,
     invocation: &crate::ComponentInvocation,
+    native_context: crate::invocation::ScriptInvocationContext,
     shared: &ActiveComponentRenderState,
 ) -> Result<UiContext, Box<EvalAltResult>> {
     let mut guard = shared.try_borrow_mut().map_err(|_| {
@@ -2212,6 +2235,7 @@ fn enter_component_render(
             component_root_style(&invocation.props),
             component_part_styles(&invocation.props),
         )
+        .with_native_context(Some(native_context))
         .with_generation(active.generation);
     active.stack.push(path.clone());
     active.contexts.push(context.clone());
@@ -2987,12 +3011,92 @@ fn component_event_callbacks(
         .collect()
 }
 
-fn component_callback_names(props: &Map) -> BTreeSet<String> {
-    props
-        .values()
-        .filter(|value| value.is::<FnPtr>())
-        .map(|value| value.clone_cast::<FnPtr>().fn_name().to_owned())
-        .collect()
+fn bind_component_callback_props(
+    props: &mut Map,
+    schema: &BTreeMap<String, crate::ObjectField>,
+    binding: &ComponentCallbackBinding,
+) {
+    for (name, field) in schema {
+        if schema_contains_callback(&field.schema)
+            && let Some(value) = props.get_mut(name.as_str())
+        {
+            bind_component_callback_value(&field.schema, value, binding);
+        }
+    }
+}
+
+fn schema_contains_callback(schema: &crate::ValueSchema) -> bool {
+    match schema {
+        crate::ValueSchema::Callback => true,
+        crate::ValueSchema::Array { items, .. }
+        | crate::ValueSchema::Map { values: items }
+        | crate::ValueSchema::Optional { value: items } => schema_contains_callback(items),
+        crate::ValueSchema::Object { fields, .. } => fields
+            .values()
+            .any(|field| schema_contains_callback(&field.schema)),
+        crate::ValueSchema::OneOf { variants } => variants.iter().any(schema_contains_callback),
+        _ => false,
+    }
+}
+
+fn bind_component_callback_value(
+    schema: &crate::ValueSchema,
+    value: &mut Dynamic,
+    binding: &ComponentCallbackBinding,
+) {
+    match schema {
+        crate::ValueSchema::Callback if value.is::<FnPtr>() => {
+            let mut function = value.clone_cast::<FnPtr>();
+            if !function
+                .iter_curry()
+                .any(Dynamic::is::<ComponentCallbackBinding>)
+            {
+                function.add_curry(Dynamic::from(binding.clone()));
+                *value = Dynamic::from(function);
+            }
+        }
+        crate::ValueSchema::Optional { value: inner } if !value.is_unit() => {
+            bind_component_callback_value(inner, value, binding);
+        }
+        crate::ValueSchema::OneOf { variants } => {
+            if let Some(variant) = variants
+                .iter()
+                .find(|variant| variant.validate(value).is_ok())
+            {
+                bind_component_callback_value(variant, value, binding);
+            }
+        }
+        crate::ValueSchema::Array { items, .. }
+            if schema_contains_callback(items) && value.is::<Array>() =>
+        {
+            let mut values = value.clone_cast::<Array>();
+            for value in &mut values {
+                bind_component_callback_value(items, value, binding);
+            }
+            *value = Dynamic::from_array(values);
+        }
+        crate::ValueSchema::Map {
+            values: item_schema,
+        } if schema_contains_callback(item_schema) && value.is::<Map>() => {
+            let mut values = value.clone_cast::<Map>();
+            for value in values.values_mut() {
+                bind_component_callback_value(item_schema, value, binding);
+            }
+            *value = Dynamic::from_map(values);
+        }
+        crate::ValueSchema::Object { fields, .. } if value.is::<Map>() => {
+            let mut values = value.clone_cast::<Map>();
+            for (name, field) in fields {
+                if schema_contains_callback(&field.schema)
+                    && let Some(value) = values.get_mut(name.as_str())
+                {
+                    bind_component_callback_value(&field.schema, value, binding);
+                }
+            }
+            *value = Dynamic::from_map(values);
+        }
+        _ => {}
+    }
 }
 
 fn component_part_styles(props: &Map) -> BTreeMap<String, crate::Style> {

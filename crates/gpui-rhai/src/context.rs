@@ -733,6 +733,10 @@ impl UiContext {
         &self.events
     }
 
+    pub(crate) fn native_context(&self) -> Option<&crate::invocation::ScriptInvocationContext> {
+        self.native_context.as_ref()
+    }
+
     /// Read declared local component state.
     ///
     /// # Errors

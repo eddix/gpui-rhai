@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use rhai::{
     Array, CustomType, Dynamic, EvalAltResult, FLOAT, FnPtr, INT, ImmutableString, Map,
@@ -1037,64 +1037,6 @@ impl UiNode {
             UiNodeKind::VirtualCollection { spec } => {
                 for item in spec.realized.values_mut() {
                     item.bind_component_scope(component, events, native_context);
-                }
-            }
-            UiNodeKind::Text { .. }
-            | UiNodeKind::RichText { .. }
-            | UiNodeKind::Canvas { .. }
-            | UiNodeKind::Svg { .. }
-            | UiNodeKind::Image { .. }
-            | UiNodeKind::DirectionalImage { .. } => {}
-        }
-    }
-
-    pub(crate) fn bind_callback_scope_by_name(
-        &mut self,
-        names: &BTreeSet<String>,
-        component: &crate::ComponentInstancePath,
-        events: &BTreeMap<String, crate::EventSchema>,
-        native_context: Option<&crate::invocation::ScriptInvocationContext>,
-    ) {
-        for bindings in self.handlers.values_mut() {
-            for binding in bindings {
-                if let Some(callback) = binding.handler_mut().as_script_mut()
-                    && names.contains(callback.name())
-                {
-                    callback.bind_component_if_unset(component.clone(), events.clone());
-                    if let (Some(context), None) = (native_context, callback.native_context()) {
-                        callback.bind_native_context_if_unset(context.clone());
-                    }
-                }
-            }
-        }
-        match &mut self.kind {
-            UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => {
-                for child in children {
-                    child.bind_callback_scope_by_name(names, component, events, native_context);
-                }
-            }
-            UiNodeKind::Custom { primitive } => primitive.props.bind_callback_scope_by_name(
-                names,
-                component,
-                events,
-                native_context,
-            ),
-            UiNodeKind::ErrorBoundary { child, fallback } => {
-                child.bind_callback_scope_by_name(names, component, events, native_context);
-                fallback.bind_callback_scope_by_name(names, component, events, native_context);
-            }
-            UiNodeKind::Overlay {
-                trigger, content, ..
-            } => {
-                trigger.bind_callback_scope_by_name(names, component, events, native_context);
-                content.bind_callback_scope_by_name(names, component, events, native_context);
-            }
-            UiNodeKind::Layer { content, .. } => {
-                content.bind_callback_scope_by_name(names, component, events, native_context);
-            }
-            UiNodeKind::VirtualCollection { spec } => {
-                for item in spec.realized.values_mut() {
-                    item.bind_callback_scope_by_name(names, component, events, native_context);
                 }
             }
             UiNodeKind::Text { .. }
