@@ -5,7 +5,8 @@
   "version": "0.1.0",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": [],
-  "capabilities": {}
+  "capabilities": {},
+  "assets": ["icons/minus.svg", "icons/plus.svg"]
 }
 */
 // Controlled single/multiple accordion with Rust-side clip animations.
@@ -17,6 +18,7 @@ define_component(#{
     metadata: #{
         id: "components/accordion", "export": "Accordion", version: "0.1.0",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 }, dependencies: [], capabilities: #{},
+        assets: ["icons/minus.svg", "icons/plus.svg"],
     },
     schema: #{
         props: #{
@@ -72,7 +74,7 @@ fn render_Accordion(ctx, props) {
         let trigger_background = if open { theme_color("surface_raised") }
             else { rgba(0x00000000) };
         let trigger_style = style().height(px(32)).padding_x(px(10))
-            .justify_between().items_center().font_size(px(12)).line_height(px(16))
+            .justify_between().items_center().typography("body")
             .font_weight(700).background(trigger_background)
             .border(px(1)).border_color(rgba(0x00000000));
         trigger_style = trigger_style.hover(style().background(theme_color("surface_hover")));
@@ -81,8 +83,8 @@ fn render_Accordion(ctx, props) {
             .text_color(theme_color("disabled")).opacity(0.72));
         let trigger = row([
             text(item.title),
-            text(if open { "−" } else { "+" }).with_style(style()
-                .width(px(14)).text_color(toggle_color))
+            image_source(asset(if open { "app/icons/minus" } else { "app/icons/plus" }))
+                .with_style(style().width(px(14)).height(px(14)).text_color(toggle_color))
         ])
             .with_key(`${item.key}-trigger`)
             .with_style(component_style(props, "trigger", trigger_style))
@@ -94,7 +96,7 @@ fn render_Accordion(ctx, props) {
         }
         let height = item.content_height;
         let panel_content = item.content.with_style(component_style(props, "content", style()
-            .padding(px(10)).font_size(px(12)).line_height(px(16))));
+            .padding(px(10)).typography("body")));
         let panel = column([panel_content])
             .with_key(`${item.key}-content`)
             .with_style(style().height(px(if open { height } else { 0 })).clip())

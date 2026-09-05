@@ -62,13 +62,13 @@ fn render_FormField(ctx, props) {
     if description != () {
         children.push(text(description)
             .with_style(component_style(props, "description",
-                style().font_size(px(11)).line_height(px(15))
+                style().typography("body_small")
                     .text_color(theme_color("text_muted"))))
             .accessibility_id(description_id));
     }
     if error != () {
         children.push(text(error).with_style(component_style(props, "error",
-            style().font_size(px(11)).line_height(px(15))
+            style().typography("body_small")
                 .text_color(theme_color("danger"))))
             .accessibility_id(error_id).accessibility_role("alert"));
     }

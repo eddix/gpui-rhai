@@ -55,6 +55,8 @@ const COMMAND: &str = include_str!("../../../registry/components/command.rhai");
 const COMMAND_DIALOG: &str = include_str!("../../../registry/components/command_dialog.rhai");
 const SPINNER: &str = include_str!("../../../registry/components/spinner.rhai");
 const SCROLL_AREA: &str = include_str!("../../../registry/components/scroll_area.rhai");
+const TITLE_BAR: &str = include_str!("../../../registry/components/title_bar.rhai");
+const STATUS_BAR: &str = include_str!("../../../registry/components/status_bar.rhai");
 const DATE_PICKER_TEST_APP: &str = r#"
     import "components/date_picker" as date_picker;
     fn changed(ctx, value) { () }
@@ -421,9 +423,17 @@ fn bundled_themes_share_the_dense_square_metric_contract() {
     for &(name, source) in BUNDLED_THEMES {
         let theme =
             gpui_rhai::load_theme_source(engine.engine(), &format!("{name}.rhai"), source).unwrap();
-        assert_eq!(theme.tokens.radii["sm"], gpui_rhai::Length::Pixels(2.0));
-        assert_eq!(theme.tokens.radii["md"], gpui_rhai::Length::Pixels(4.0));
-        assert_eq!(theme.tokens.radii["lg"], gpui_rhai::Length::Pixels(6.0));
+        assert_eq!(theme.tokens.radii["sm"], gpui_rhai::Length::Pixels(0.0));
+        assert_eq!(theme.tokens.radii["md"], gpui_rhai::Length::Pixels(0.0));
+        assert_eq!(theme.tokens.radii["lg"], gpui_rhai::Length::Pixels(0.0));
+        assert_eq!(
+            theme.tokens.typography.roles["body"].size,
+            gpui_rhai::Length::Pixels(12.0)
+        );
+        assert_eq!(
+            theme.tokens.typography.roles["body"].line_height,
+            gpui_rhai::Length::Pixels(16.0)
+        );
         assert_ne!(
             theme.tokens.colors["surface"],
             theme.tokens.colors["surface_raised"]
@@ -528,12 +538,16 @@ fn official_component_sources_reject_decorative_visual_drift() {
         ("command_dialog", COMMAND_DIALOG),
         ("spinner", SPINNER),
         ("scroll_area", SCROLL_AREA),
+        ("title_bar", TITLE_BAR),
+        ("status_bar", STATUS_BAR),
     ] {
         for prohibited in [
             "shadow(",
             "linear_gradient(",
             "radius(px(10",
             "radius(px(12",
+            "font_size(px(",
+            "line_height(px(",
         ] {
             assert!(
                 !source.contains(prohibited),
@@ -546,6 +560,68 @@ fn official_component_sources_reject_decorative_visual_drift() {
                 "official component {id} hard-codes a palette color: {line}"
             );
         }
+    }
+}
+
+#[test]
+fn window_bars_are_source_owned_compositions_without_native_authority() {
+    let source = EmbeddedScriptSource::new(BTreeMap::from([
+        (
+            ModuleId::parse("components/title_bar").unwrap(),
+            TITLE_BAR.to_owned(),
+        ),
+        (
+            ModuleId::parse("components/status_bar").unwrap(),
+            STATUS_BAR.to_owned(),
+        ),
+    ]));
+    let mut engine = RuntimeEngine::new();
+    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
+    let compiled = engine
+        .compile_self_contained_named(
+            "ui/window_bars.rhai",
+            r#"
+                import "components/title_bar" as title_bar;
+                import "components/status_bar" as status_bar;
+                fn view(ctx) {
+                    column([
+                        title_bar::TitleBar(#{ title: "Workbench", inset_start: 70,
+                            center: [text("Editor")], end: [text("Run")] }),
+                        text("Content"),
+                        status_bar::StatusBar(#{ label: "Editor status",
+                            start: [text("Ready")], center: [text("main")],
+                            end: [text("UTF-8")] })
+                    ])
+                }
+            "#,
+        )
+        .unwrap();
+    let root = engine
+        .render_with_context(
+            &compiled,
+            UiContext::new(
+                Rc::new(RefCell::new(UiRuntimeState::new())),
+                ComponentInstancePath::root("App", "root"),
+                Some("main".to_owned()),
+                ExecutionPhase::Render,
+                BTreeMap::new(),
+            ),
+        )
+        .unwrap();
+    let UiNodeKind::Box { children } = root.kind() else {
+        panic!("window bar specimen must render a column");
+    };
+    assert_eq!(children.len(), 3);
+    assert_eq!(
+        children[0].attributes().get("role"),
+        Some(&UiValue::String("toolbar".to_owned()))
+    );
+    assert_eq!(
+        children[2].attributes().get("role"),
+        Some(&UiValue::String("statusbar".to_owned()))
+    );
+    for bar in [children[0].clone(), children[2].clone()] {
+        assert!(bar.handlers().is_empty());
     }
 }
 

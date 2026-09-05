@@ -24,7 +24,7 @@ define_component(#{
             width: #{ schema: #{ type: "integer", min: 0 }, required: true, sensitive: false },
             height: #{ schema: #{ type: "integer", min: 0 }, required: true, sensitive: false },
             radius: #{ schema: #{ type: "integer", min: 0 }, required: false, sensitive: false,
-                "default": #{ type: "integer", value: 6 } },
+                "default": #{ type: "integer", value: 0 } },
             animated: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: true } },
         },
@@ -37,7 +37,7 @@ fn Skeleton(props) { render_component("components/skeleton", props) }
 fn render_Skeleton(ctx, props) {
     let width = props.width;
     let height = props.height;
-    let requested_radius = if "radius" in props { props.radius } else { 2 };
+    let requested_radius = if "radius" in props { props.radius } else { 0 };
     let radius = requested_radius;
     let node = row([])
         .with_key(props.key)

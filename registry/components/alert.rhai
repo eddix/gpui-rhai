@@ -5,7 +5,8 @@
   "version": "0.1.0",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": [],
-  "capabilities": {}
+  "capabilities": {},
+  "assets": ["icons/check.svg", "icons/close.svg", "icons/info.svg", "icons/warning.svg"]
 }
 */
 // Persistent inline feedback with semantic variants and composable actions.
@@ -16,7 +17,8 @@
 
 define_component(#{
     metadata: #{ id: "components/alert", "export": "Alert", version: "0.1.0",
-        runtime_api: #{ min_inclusive: 1, max_exclusive: 2 }, dependencies: [], capabilities: #{} },
+        runtime_api: #{ min_inclusive: 1, max_exclusive: 2 }, dependencies: [], capabilities: #{},
+        assets: ["icons/check.svg", "icons/close.svg", "icons/info.svg", "icons/warning.svg"] },
     schema: #{
         props: #{
             title: #{ schema: #{ type: "string" }, required: true, sensitive: false },
@@ -44,10 +46,10 @@ fn alert_color(variant) {
 }
 
 fn alert_icon(variant) {
-    if variant == "success" { "✓" }
-    else if variant == "warning" { "!" }
-    else if variant == "danger" { "×" }
-    else { "i" }
+    if variant == "success" { "app/icons/check" }
+    else if variant == "warning" { "app/icons/warning" }
+    else if variant == "danger" { "app/icons/close" }
+    else { "app/icons/info" }
 }
 
 fn alert_foreground(variant) {
@@ -65,11 +67,11 @@ fn Alert(props) { render_component("components/alert", props) }
 fn render_Alert(ctx, props) {
     let variant = if "variant" in props { props.variant } else { "info" };
     let body = [text(props.title).with_style(component_style(props, "title", style()
-        .font_size(px(12)).line_height(px(16)).font_weight(700)
+        .typography("body").font_weight(700)
         .text_color(theme_color("text_primary"))))];
     if "description" in props && props.description != () {
         body.push(text(props.description).with_style(component_style(props, "description", style()
-            .font_size(px(11)).line_height(px(16)).text_color(theme_color("text_muted")))));
+            .typography("body_small").text_color(theme_color("text_muted")))));
     }
     if "content" in props && props.content != () {
         body.push(props.content.with_style(component_style(props, "content", style())));
@@ -80,12 +82,12 @@ fn render_Alert(ctx, props) {
             .width(px(18)).height(px(18)).items_center().justify_center()
             .text_color(alert_color(variant)))));
     } else {
-        children.push(text(alert_icon(variant))
+        children.push(row([image_source(asset(alert_icon(variant))).with_style(style()
+                .width(px(12)).height(px(12)).text_color(alert_foreground(variant)))])
             .with_style(component_style(props, "icon", style()
                 .width(px(18)).height(px(18)).items_center().justify_center()
                 .radius(px(9)).background(alert_color(variant))
-                .text_color(alert_foreground(variant))
-                .font_size(px(11)).line_height(px(14)).font_weight(700))));
+                .text_color(alert_foreground(variant)))));
     }
     children.push(column(body).with_style(component_style(props, "body", style().gap(px(2)).flex_grow())));
     if "actions" in props && props.actions.len > 0 {

@@ -43,7 +43,8 @@ free of provenance metadata.
 
 ## Quality contract
 
-Bundled variants use the shared `2 / 4 / 6px` radius scale and pass automated
-contrast checks for primary/muted text, filled semantic states, and focus. The
-Theme Studio renders the canonical component specimen under the active variant;
-product examples remain contextual checks rather than the component catalog.
+Bundled variants use the shared square `0 / 0 / 0px` radius scale, the same
+eight typography roles, and pass automated contrast checks for primary/muted
+text, filled semantic states, and focus. The Theme Studio renders typography
+and the canonical component specimen under the active variant; product examples
+remain contextual checks rather than the component catalog.

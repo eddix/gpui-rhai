@@ -51,8 +51,8 @@ fn render_Switch(ctx, props) {
     let blocked = disabled || loading;
     let thumb = text(if loading { "·" } else { "" }).with_style(component_style(props, "thumb",
         style()
-            .width(px(12)).height(px(12)).radius(px(1))
-            .items_center().justify_center().font_size(px(10))
+            .width(px(12)).height(px(12)).radius(px(0))
+            .items_center().justify_center().typography("caption")
             .background(if props.checked { theme_color("on_accent") }
                 else { theme_color("text_primary") })
             .text_color(if props.checked { theme_color("accent") }
@@ -70,7 +70,7 @@ fn render_Switch(ctx, props) {
             style().gap(px(8)).items_center().self_start().padding(px(3))
                 .radius(theme_radius("sm"))
                 .border(px(1)).border_color(rgba(0x00000000))
-                .font_size(px(12)).line_height(px(16))
+                .typography("body")
                 .hover(style().background(theme_color("surface_hover")))
                 .focus(style().border_color(theme_color("focus_ring")))
                 .active(style().opacity(0.82))

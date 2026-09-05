@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use gpui_rhai::gpui::{TitlebarOptions, point, px};
 use gpui_rhai::{
     AssetData, EmbeddedScriptSource, EmbeddedScriptView, ModuleId, RuntimeEngine,
     ScriptApplication, ThemeVariant, load_theme_source,
@@ -152,6 +153,8 @@ fn scripts(main: &str) -> EmbeddedScriptSource {
         component!("toggle", "toggle"),
         component!("toggle_group", "toggle_group"),
         component!("tooltip", "tooltip"),
+        component!("title_bar", "title_bar"),
+        component!("status_bar", "status_bar"),
     ]))
 }
 
@@ -275,6 +278,82 @@ fn svg(bytes: &'static [u8]) -> AssetData {
     }
 }
 
+fn gallery_assets() -> Vec<(String, AssetData)> {
+    [
+        (
+            "check",
+            include_bytes!("../../../registry/assets/icons/check.svg").as_slice(),
+        ),
+        (
+            "close",
+            include_bytes!("../../../registry/assets/icons/close.svg").as_slice(),
+        ),
+        (
+            "chevron_left",
+            include_bytes!("../../../registry/assets/icons/chevron_left.svg").as_slice(),
+        ),
+        (
+            "chevron_right",
+            include_bytes!("../../../registry/assets/icons/chevron_right.svg").as_slice(),
+        ),
+        (
+            "calendar",
+            include_bytes!("../../../registry/assets/icons/calendar.svg").as_slice(),
+        ),
+        (
+            "date_previous",
+            include_bytes!("../../../registry/assets/icons/date_previous.svg").as_slice(),
+        ),
+        (
+            "date_next",
+            include_bytes!("../../../registry/assets/icons/date_next.svg").as_slice(),
+        ),
+        (
+            "disclosure_down",
+            include_bytes!("../../../registry/assets/icons/disclosure_down.svg").as_slice(),
+        ),
+        (
+            "sort_ascending",
+            include_bytes!("../../../registry/assets/icons/sort_ascending.svg").as_slice(),
+        ),
+        (
+            "sort_descending",
+            include_bytes!("../../../registry/assets/icons/sort_descending.svg").as_slice(),
+        ),
+        (
+            "chevron_down",
+            include_bytes!("../../../registry/assets/icons/chevron_down.svg").as_slice(),
+        ),
+        (
+            "chevron_up",
+            include_bytes!("../../../registry/assets/icons/chevron_up.svg").as_slice(),
+        ),
+        (
+            "minus",
+            include_bytes!("../../../registry/assets/icons/minus.svg").as_slice(),
+        ),
+        (
+            "plus",
+            include_bytes!("../../../registry/assets/icons/plus.svg").as_slice(),
+        ),
+        (
+            "search",
+            include_bytes!("../../../registry/assets/icons/search.svg").as_slice(),
+        ),
+        (
+            "info",
+            include_bytes!("../../../registry/assets/icons/info.svg").as_slice(),
+        ),
+        (
+            "warning",
+            include_bytes!("../../../registry/assets/icons/warning.svg").as_slice(),
+        ),
+    ]
+    .into_iter()
+    .map(|(name, bytes)| (format!("icons/{name}"), svg(bytes)))
+    .collect()
+}
+
 pub(crate) fn prepared(
     category: &str,
 ) -> Result<gpui_rhai::PreparedScriptView, gpui_rhai::ScriptViewError> {
@@ -305,46 +384,7 @@ fn prepared_with_environment(
         ("ar.rhai".to_owned(), AR.to_owned()),
         ("zh_cn.rhai".to_owned(), ZH_CN.to_owned()),
     ])
-    .asset_sources([
-        (
-            "icons/check".to_owned(),
-            svg(include_bytes!("../../../registry/assets/icons/check.svg")),
-        ),
-        (
-            "icons/close".to_owned(),
-            svg(include_bytes!("../../../registry/assets/icons/close.svg")),
-        ),
-        (
-            "icons/chevron_left".to_owned(),
-            svg(include_bytes!(
-                "../../../registry/assets/icons/chevron_left.svg"
-            )),
-        ),
-        (
-            "icons/chevron_right".to_owned(),
-            svg(include_bytes!(
-                "../../../registry/assets/icons/chevron_right.svg"
-            )),
-        ),
-        (
-            "icons/calendar".to_owned(),
-            svg(include_bytes!(
-                "../../../registry/assets/icons/calendar.svg"
-            )),
-        ),
-        (
-            "icons/date_previous".to_owned(),
-            svg(include_bytes!(
-                "../../../registry/assets/icons/date_previous.svg"
-            )),
-        ),
-        (
-            "icons/date_next".to_owned(),
-            svg(include_bytes!(
-                "../../../registry/assets/icons/date_next.svg"
-            )),
-        ),
-    ])
+    .asset_sources(gallery_assets())
     .prepare()
 }
 
@@ -388,6 +428,14 @@ fn main() {
     };
     ScriptApplication::new(prepared.expect("component gallery prepares"))
         .window_size(width, height)
+        .window_options(|mut options, _cx| {
+            options.titlebar = Some(TitlebarOptions {
+                title: None,
+                appears_transparent: true,
+                traffic_light_position: Some(point(px(9.0), px(9.0))),
+            });
+            options
+        })
         .run()
         .expect("component gallery runs");
 }
@@ -415,7 +463,7 @@ mod tests {
                 "default"
             )))
             .len(),
-            47
+            49
         );
         assert_eq!(gallery_category(None, "forms"), "forms");
         assert_eq!(

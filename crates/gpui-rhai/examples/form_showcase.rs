@@ -273,34 +273,7 @@ fn main() {
             ("zh_cn.rhai".to_owned(), ZH_CN.to_owned()),
             ("ar.rhai".to_owned(), AR.to_owned()),
         ])
-        .asset_sources([
-            (
-                "icons/calendar".to_owned(),
-                svg(include_bytes!(
-                    "../../../registry/assets/icons/calendar.svg"
-                )),
-            ),
-            (
-                "icons/date_previous".to_owned(),
-                svg(include_bytes!(
-                    "../../../registry/assets/icons/date_previous.svg"
-                )),
-            ),
-            (
-                "icons/date_next".to_owned(),
-                svg(include_bytes!(
-                    "../../../registry/assets/icons/date_next.svg"
-                )),
-            ),
-            (
-                "icons/close".to_owned(),
-                svg(include_bytes!("../../../registry/assets/icons/close.svg")),
-            ),
-            (
-                "icons/check".to_owned(),
-                svg(include_bytes!("../../../registry/assets/icons/check.svg")),
-            ),
-        ])
+        .asset_sources(form_assets())
         .calendar_clock(CalendarClock::fixed(
             GregorianDate::parse_iso("2026-08-30").expect("fixed visual date"),
         ))
@@ -403,6 +376,46 @@ fn svg(bytes: &[u8]) -> AssetData {
         mime_type: "image/svg+xml".to_owned(),
         bytes: bytes.to_vec(),
     }
+}
+
+fn form_assets() -> Vec<(String, AssetData)> {
+    [
+        (
+            "calendar",
+            include_bytes!("../../../registry/assets/icons/calendar.svg").as_slice(),
+        ),
+        (
+            "date_previous",
+            include_bytes!("../../../registry/assets/icons/date_previous.svg").as_slice(),
+        ),
+        (
+            "date_next",
+            include_bytes!("../../../registry/assets/icons/date_next.svg").as_slice(),
+        ),
+        (
+            "close",
+            include_bytes!("../../../registry/assets/icons/close.svg").as_slice(),
+        ),
+        (
+            "check",
+            include_bytes!("../../../registry/assets/icons/check.svg").as_slice(),
+        ),
+        (
+            "minus",
+            include_bytes!("../../../registry/assets/icons/minus.svg").as_slice(),
+        ),
+        (
+            "chevron_down",
+            include_bytes!("../../../registry/assets/icons/chevron_down.svg").as_slice(),
+        ),
+        (
+            "chevron_up",
+            include_bytes!("../../../registry/assets/icons/chevron_up.svg").as_slice(),
+        ),
+    ]
+    .into_iter()
+    .map(|(name, bytes)| (format!("icons/{name}"), svg(bytes)))
+    .collect()
 }
 
 #[cfg(test)]

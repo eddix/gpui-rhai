@@ -392,7 +392,7 @@ This is one final delivery, not a sequence of preview releases. Keep version
 
 - Add Alert, AlertDialog, Badge, Card, GroupBox, Empty, Kbd, Spinner,
   ButtonGroup, InputGroup, Toggle, ToggleGroup, Slider, ContextMenu, Sheet,
-  ScrollArea, Command, and CommandDialog.
+  ScrollArea, Command, CommandDialog, TitleBar, and StatusBar.
 - Keep application values and open/query state strictly controlled. Retain only
   transient pointer geometry, drag state, and roving active state in generic
   native/runtime mechanisms.
@@ -413,7 +413,7 @@ This is one final delivery, not a sequence of preview releases. Keep version
 - Register every component and transitive dependency in the CLI, metadata,
   definitions, copied-source update path, and Theme Studio.
 - Add one polished `component_gallery` example that interactively exercises all
-  46 official components, category navigation, all theme hot switches, and
+  48 official components, category navigation, all theme hot switches, and
   important controlled states. Theme Studio remains the exhaustive theme-state
   contract; the gallery is the user-facing experience demo.
 - Update User Guide, component authoring/API docs, examples, release notes,

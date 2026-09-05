@@ -68,6 +68,8 @@ const COMMAND_DIALOG_SOURCE: &str =
     include_str!("../../../registry/components/command_dialog.rhai");
 const SPINNER_SOURCE: &str = include_str!("../../../registry/components/spinner.rhai");
 const SCROLL_AREA_SOURCE: &str = include_str!("../../../registry/components/scroll_area.rhai");
+const TITLE_BAR_SOURCE: &str = include_str!("../../../registry/components/title_bar.rhai");
+const STATUS_BAR_SOURCE: &str = include_str!("../../../registry/components/status_bar.rhai");
 const CHECK_SVG: &str = include_str!("../../../registry/assets/icons/check.svg");
 const CLOSE_SVG: &str = include_str!("../../../registry/assets/icons/close.svg");
 const CHEVRON_LEFT_SVG: &str = include_str!("../../../registry/assets/icons/chevron_left.svg");
@@ -75,6 +77,18 @@ const CHEVRON_RIGHT_SVG: &str = include_str!("../../../registry/assets/icons/che
 const CALENDAR_SVG: &str = include_str!("../../../registry/assets/icons/calendar.svg");
 const DATE_PREVIOUS_SVG: &str = include_str!("../../../registry/assets/icons/date_previous.svg");
 const DATE_NEXT_SVG: &str = include_str!("../../../registry/assets/icons/date_next.svg");
+const DISCLOSURE_DOWN_SVG: &str =
+    include_str!("../../../registry/assets/icons/disclosure_down.svg");
+const SORT_ASCENDING_SVG: &str = include_str!("../../../registry/assets/icons/sort_ascending.svg");
+const SORT_DESCENDING_SVG: &str =
+    include_str!("../../../registry/assets/icons/sort_descending.svg");
+const CHEVRON_DOWN_SVG: &str = include_str!("../../../registry/assets/icons/chevron_down.svg");
+const CHEVRON_UP_SVG: &str = include_str!("../../../registry/assets/icons/chevron_up.svg");
+const MINUS_SVG: &str = include_str!("../../../registry/assets/icons/minus.svg");
+const PLUS_SVG: &str = include_str!("../../../registry/assets/icons/plus.svg");
+const SEARCH_SVG: &str = include_str!("../../../registry/assets/icons/search.svg");
+const INFO_SVG: &str = include_str!("../../../registry/assets/icons/info.svg");
+const WARNING_SVG: &str = include_str!("../../../registry/assets/icons/warning.svg");
 const DEFAULT_THEME: &str = include_str!("../../../registry/themes/default_dark.rhai");
 const DEFAULT_LIGHT_THEME: &str = include_str!("../../../registry/themes/default_light.rhai");
 const TOKYO_NIGHT_THEME: &str = include_str!("../../../registry/themes/tokyo_night.rhai");
@@ -134,6 +148,10 @@ const ICON_ASSETS: &[RegistryAsset] = &[
         path: "icons/close.svg",
         source: CLOSE_SVG,
     },
+    RegistryAsset {
+        path: "icons/search.svg",
+        source: SEARCH_SVG,
+    },
 ];
 
 const PAGINATION_ASSETS: &[RegistryAsset] = &[
@@ -168,7 +186,94 @@ const DATE_PICKER_ASSETS: &[RegistryAsset] = &[
 
 const SELECT_ASSETS: &[RegistryAsset] = &[];
 
-const TABLE_ASSETS: &[RegistryAsset] = &[];
+const TABLE_ASSETS: &[RegistryAsset] = &[
+    RegistryAsset {
+        path: "icons/disclosure_down.svg",
+        source: DISCLOSURE_DOWN_SVG,
+    },
+    RegistryAsset {
+        path: "icons/chevron_right.svg",
+        source: CHEVRON_RIGHT_SVG,
+    },
+    RegistryAsset {
+        path: "icons/sort_ascending.svg",
+        source: SORT_ASCENDING_SVG,
+    },
+    RegistryAsset {
+        path: "icons/sort_descending.svg",
+        source: SORT_DESCENDING_SVG,
+    },
+];
+
+const COMBOBOX_ASSETS: &[RegistryAsset] = &[
+    RegistryAsset {
+        path: "icons/check.svg",
+        source: CHECK_SVG,
+    },
+    RegistryAsset {
+        path: "icons/close.svg",
+        source: CLOSE_SVG,
+    },
+    RegistryAsset {
+        path: "icons/chevron_down.svg",
+        source: CHEVRON_DOWN_SVG,
+    },
+    RegistryAsset {
+        path: "icons/chevron_up.svg",
+        source: CHEVRON_UP_SVG,
+    },
+];
+
+const CHECKBOX_ASSETS: &[RegistryAsset] = &[
+    RegistryAsset {
+        path: "icons/check.svg",
+        source: CHECK_SVG,
+    },
+    RegistryAsset {
+        path: "icons/minus.svg",
+        source: MINUS_SVG,
+    },
+];
+
+const ACCORDION_ASSETS: &[RegistryAsset] = &[
+    RegistryAsset {
+        path: "icons/minus.svg",
+        source: MINUS_SVG,
+    },
+    RegistryAsset {
+        path: "icons/plus.svg",
+        source: PLUS_SVG,
+    },
+];
+
+const CLOSE_ASSETS: &[RegistryAsset] = &[RegistryAsset {
+    path: "icons/close.svg",
+    source: CLOSE_SVG,
+}];
+
+const MENU_ASSETS: &[RegistryAsset] = &[RegistryAsset {
+    path: "icons/check.svg",
+    source: CHECK_SVG,
+}];
+
+const ALERT_ASSETS: &[RegistryAsset] = &[
+    RegistryAsset {
+        path: "icons/check.svg",
+        source: CHECK_SVG,
+    },
+    RegistryAsset {
+        path: "icons/close.svg",
+        source: CLOSE_SVG,
+    },
+    RegistryAsset {
+        path: "icons/info.svg",
+        source: INFO_SVG,
+    },
+    RegistryAsset {
+        path: "icons/warning.svg",
+        source: WARNING_SVG,
+    },
+];
 
 #[derive(Clone, Debug, Default)]
 pub struct BundledRegistry {
@@ -193,27 +298,27 @@ impl BundledRegistry {
             (DIVIDER_SOURCE, &[][..]),
             (POPOVER_SOURCE, &[][..]),
             (DIALOG_SOURCE, &[][..]),
-            (COMBOBOX_SOURCE, SELECT_ASSETS),
+            (COMBOBOX_SOURCE, COMBOBOX_ASSETS),
             (SELECT_SOURCE, SELECT_ASSETS),
             (DATE_PICKER_SOURCE, DATE_PICKER_ASSETS),
             (TABLE_SOURCE, TABLE_ASSETS),
             (PAGINATION_SOURCE, PAGINATION_ASSETS),
-            (CHECKBOX_SOURCE, &[][..]),
+            (CHECKBOX_SOURCE, CHECKBOX_ASSETS),
             (RADIO_SOURCE, &[][..]),
             (RADIO_GROUP_SOURCE, &[][..]),
             (SWITCH_SOURCE, &[][..]),
-            (TAG_SOURCE, &[][..]),
+            (TAG_SOURCE, CLOSE_ASSETS),
             (AVATAR_SOURCE, &[][..]),
             (PROGRESS_SOURCE, &[][..]),
             (SKELETON_SOURCE, &[][..]),
             (FORM_FIELD_SOURCE, &[][..]),
             (COLLAPSIBLE_SOURCE, &[][..]),
-            (ACCORDION_SOURCE, &[][..]),
+            (ACCORDION_SOURCE, ACCORDION_ASSETS),
             (TABS_SOURCE, &[][..]),
             (TOOLTIP_SOURCE, &[][..]),
-            (MENU_SOURCE, &[][..]),
-            (TOAST_SOURCE, &[][..]),
-            (ALERT_SOURCE, &[][..]),
+            (MENU_SOURCE, MENU_ASSETS),
+            (TOAST_SOURCE, CLOSE_ASSETS),
+            (ALERT_SOURCE, ALERT_ASSETS),
             (ALERT_DIALOG_SOURCE, &[][..]),
             (BADGE_SOURCE, &[][..]),
             (BUTTON_GROUP_SOURCE, &[][..]),
@@ -231,6 +336,8 @@ impl BundledRegistry {
             (COMMAND_DIALOG_SOURCE, &[][..]),
             (SPINNER_SOURCE, &[][..]),
             (SCROLL_AREA_SOURCE, &[][..]),
+            (TITLE_BAR_SOURCE, &[][..]),
+            (STATUS_BAR_SOURCE, &[][..]),
         ] {
             let metadata = parse_component_header(source)?;
             let id = metadata.id.clone();
@@ -1644,6 +1751,20 @@ mod tests {
             ("calendar", CALENDAR_SVG),
             ("date_previous", DATE_PREVIOUS_SVG),
             ("date_next", DATE_NEXT_SVG),
+            ("disclosure_down", DISCLOSURE_DOWN_SVG),
+            ("sort_ascending", SORT_ASCENDING_SVG),
+            ("sort_descending", SORT_DESCENDING_SVG),
+            ("chevron_down", CHEVRON_DOWN_SVG),
+            ("chevron_up", CHEVRON_UP_SVG),
+            ("minus", MINUS_SVG),
+            ("plus", PLUS_SVG),
+            ("search", SEARCH_SVG),
+            ("info", INFO_SVG),
+            ("warning", WARNING_SVG),
+            (
+                "help",
+                include_str!("../../../registry/assets/icons/help.svg"),
+            ),
         ] {
             assert!(source.contains("width=\"24\""), "{name} has no 24px width");
             assert!(
@@ -1794,7 +1915,7 @@ mod tests {
     }
 
     #[test]
-    fn adding_icon_installs_minimal_svg_asset_pack() {
+    fn adding_icon_installs_core_svg_asset_pack() {
         let directory = fixture();
         let project = Project::new(directory.path());
         project.plan_init().unwrap().apply().unwrap();
@@ -1806,6 +1927,7 @@ mod tests {
         project.check().unwrap();
         assert!(directory.path().join("ui/assets/icons/check.svg").exists());
         assert!(directory.path().join("ui/assets/icons/close.svg").exists());
+        assert!(directory.path().join("ui/assets/icons/search.svg").exists());
         assert!(
             directory
                 .path()
@@ -1856,11 +1978,17 @@ mod tests {
         for asset in [
             "icons/check.svg",
             "icons/close.svg",
+            "icons/search.svg",
             "icons/chevron_left.svg",
             "icons/chevron_right.svg",
+            "icons/chevron_down.svg",
+            "icons/chevron_up.svg",
             "icons/calendar.svg",
             "icons/date_previous.svg",
             "icons/date_next.svg",
+            "icons/disclosure_down.svg",
+            "icons/sort_ascending.svg",
+            "icons/sort_descending.svg",
         ] {
             assert!(directory.path().join("ui/assets").join(asset).exists());
         }
@@ -1872,7 +2000,7 @@ mod tests {
         let project = Project::new(directory.path());
         project.plan_init().unwrap().apply().unwrap();
         let registry = BundledRegistry::load().unwrap();
-        assert_eq!(registry.entries.len(), 46);
+        assert_eq!(registry.entries.len(), 48);
         let requested = registry
             .entries
             .keys()

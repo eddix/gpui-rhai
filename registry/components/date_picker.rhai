@@ -235,7 +235,7 @@ fn render_DatePicker(ctx, props) {
         .items_center().border(px(1)).border_color(trigger_border)
         .radius(theme_radius("md"))
         .background(if open { theme_color("surface_raised") } else { theme_color("surface") })
-        .font_size(px(12)).line_height(px(16))
+        .typography("body")
         .hover(style().background(theme_color("surface_raised")))
         .focus(style().border_color(theme_color("focus_ring")))
         .disabled(style().background(theme_color("surface_raised"))
@@ -283,7 +283,7 @@ fn render_DatePicker(ctx, props) {
         previous_node,
         text(ctx.format_month_year(visible_month))
             .with_style(component_style(props, "month_title",
-                style().font_size(px(12)).line_height(px(16)).font_weight(700))),
+                style().typography("body").font_weight(700))),
         next_node,
     ]).with_style(component_style(props, "header",
         style().items_center().justify_between().padding_x(theme_spacing("xs"))));
@@ -295,7 +295,7 @@ fn render_DatePicker(ctx, props) {
         weekday_nodes.push(text(label)
             .with_style(component_style(props, "weekday",
                 style().width(px(size)).height(px(24)).items_center().justify_center()
-                    .font_size(px(10)).font_weight(700)
+                    .typography("caption").font_weight(700)
                     .text_color(theme_color("text_muted"))))
             .accessibility_role("columnheader").accessibility_label(label));
     }
@@ -314,7 +314,7 @@ fn render_DatePicker(ctx, props) {
             let is_focused = cell.date != () && cell.date == focused_date;
             let day_style = component_style(props, "day",
                 style().width(px(size)).height(px(size)).items_center().justify_center()
-                    .radius(theme_radius("sm")).font_size(px(11)).line_height(px(14))
+                    .radius(theme_radius("sm")).typography("body_small")
                     .border(px(1)).border_color(rgba(0x00000000))
                     .hover(style().background(theme_color("surface_hover")))
                     .focus(style().border_color(theme_color("focus_ring"))));
@@ -365,7 +365,7 @@ fn render_DatePicker(ctx, props) {
         let preset_node = text(preset.label).with_key(`preset-${preset.value}`)
             .with_style(component_style(props, "preset", style()
                 .height(px(28)).padding_x(px(8)).items_center()
-                .font_size(px(11)).border(px(1)).border_color(theme_color("border"))
+                .typography("body_small").border(px(1)).border_color(theme_color("border"))
                 .radius(theme_radius("sm")).hover(style().background(theme_color("surface_hover")))
                 .disabled(style().opacity(0.55))))
             .disabled(preset_disabled).accessibility_role("button")
@@ -387,7 +387,7 @@ fn render_DatePicker(ctx, props) {
             style().width(px(panel_width)).gap(px(4)).padding(theme_spacing("sm"))
                 .border(px(1)).border_color(theme_color("border"))
                 .radius(theme_radius("md")).background(theme_color("surface"))
-                .font_size(px(12)).line_height(px(16))
+                .typography("body")
                 .focus(style().border_color(theme_color("focus_ring")))))
         .tab_stop(true).accessibility_role("dialog")
         .accessibility_label(ctx.format_month_year(visible_month));

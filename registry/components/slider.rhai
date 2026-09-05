@@ -63,9 +63,9 @@ fn render_Slider(ctx, props) {
         track_style: component_style(props, "track", style()
             .width(if orientation == "horizontal" { relative(1.0) } else { px(4) })
             .height(if orientation == "horizontal" { px(4) } else { relative(1.0) })
-            .radius(px(2)).background(theme_color("surface_hover"))),
+            .radius(px(0)).background(theme_color("surface_hover"))),
         fill_style: component_style(props, "fill", style()
-            .radius(px(2)).background(theme_color("accent"))),
+            .radius(px(0)).background(theme_color("accent"))),
         thumb_style: component_style(props, "thumb", style()
             .width(px(14)).height(px(14)).radius(px(7))
             .border(px(2)).border_color(theme_color("accent"))
@@ -82,10 +82,10 @@ fn render_Slider(ctx, props) {
         props.value_label
     } else { `${props.value}` };
     let header = [text(props.label).with_style(component_style(props, "label", style()
-        .font_size(px(12)).line_height(px(16)).font_weight(700)))];
+        .typography("body").font_weight(700)))];
     if prop_or(props, "show_value", true) {
         header.push(text(value_label).with_style(component_style(props, "value", style()
-            .font_size(px(11)).line_height(px(15)).text_color(theme_color("text_muted")))));
+            .typography("body_small").text_color(theme_color("text_muted")))));
     }
     column([
         row(header).with_style(component_style(props, "header", style()

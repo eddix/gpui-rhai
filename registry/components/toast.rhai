@@ -5,7 +5,8 @@
   "version": "0.1.0",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": [],
-  "capabilities": {}
+  "capabilities": {},
+  "assets": ["icons/close.svg"]
 }
 */
 // Controlled Toast composition over public Layer, declarative timeout, atoms, and hover events.
@@ -17,6 +18,7 @@ define_component(#{
     metadata: #{
         id: "components/toast", "export": "Toast", version: "0.1.0",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 }, dependencies: [], capabilities: #{},
+        assets: ["icons/close.svg"],
     },
     schema: #{
         props: #{
@@ -80,18 +82,19 @@ fn toast_node(props, item) {
     let header = [text(item.title)
         .with_style(component_style(props, "title", style()))];
     if prop_or(item, "dismissible", true) {
-        header.push(text("×").with_key(`${item.id}-close`)
+        header.push(image_source(asset("app/icons/close")).with_key(`${item.id}-close`)
             .with_style(component_style(props, "close", style()
                 .width(px(18)).height(px(18)).items_center().justify_center()
+                .text_color(theme_color("text_muted"))
                 .radius(theme_radius("sm")).hover(style().background(theme_color("surface_hover")))))
             .accessibility_role("button").accessibility_label("Dismiss")
             .on_click_value(Fn("toast_manual_dismiss"), item.id));
     }
     let children = [row(header).with_style(style().items_center().justify_between()
-        .font_size(px(12)).line_height(px(16)).font_weight(700))];
+        .typography("body").font_weight(700))];
     if prop_or(item, "message", "") != "" {
         children.push(text(item.message).with_style(component_style(props, "message",
-            style().font_size(px(11)).line_height(px(15))
+            style().typography("body_small")
                 .text_color(theme_color("text_muted")))));
     }
     column(children).with_key(item.id)

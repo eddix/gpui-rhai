@@ -22,6 +22,13 @@ The current public builder maps directly to stable GPUI 0.2.2 behavior:
   weight, normal/italic style, size/line height, logical text alignment,
   whitespace, ellipsis, and bounded line clamp.
 
+`style().typography("body")` applies one of the theme's eight validated semantic
+roles (`caption`, `body_small`, `body`, `subtitle`, `title`, `heading`,
+`display`, `display_large`). Resolution happens against the active theme during
+render, so a live theme switch updates text without recompiling Rhai. Explicit
+family, fallbacks, size, line height, or weight chained onto the style override
+that field while retaining the rest of the role.
+
 ```rhai
 style()
     .grid_cols(3).gap(px(12)).padding(px(20))

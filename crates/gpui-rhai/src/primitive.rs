@@ -120,6 +120,7 @@ pub struct PrimitiveTheme {
     colors: BTreeMap<String, Rgba8>,
     spacing: BTreeMap<SpacingToken, Length>,
     radii: BTreeMap<RadiusToken, Length>,
+    typography: BTreeMap<String, crate::ResolvedTypography>,
     direction: crate::TextDirection,
 }
 
@@ -129,6 +130,7 @@ impl Default for PrimitiveTheme {
             colors: BTreeMap::new(),
             spacing: BTreeMap::new(),
             radii: BTreeMap::new(),
+            typography: BTreeMap::new(),
             direction: crate::TextDirection::LeftToRight,
         }
     }
@@ -193,6 +195,14 @@ impl PrimitiveTheme {
                         .map(|value| (token, value))
                 })
                 .collect(),
+            typography: crate::REQUIRED_TYPOGRAPHY
+                .iter()
+                .filter_map(|role| {
+                    colors
+                        .resolve_typography(role)
+                        .map(|value| ((*role).to_owned(), value))
+                })
+                .collect(),
             direction,
         }
     }
@@ -223,6 +233,11 @@ impl PrimitiveTheme {
     pub const fn direction(&self) -> crate::TextDirection {
         self.direction
     }
+
+    #[must_use]
+    pub fn typography(&self, role: &str) -> Option<crate::ResolvedTypography> {
+        self.typography.get(role).cloned()
+    }
 }
 
 impl ColorResolver for PrimitiveTheme {
@@ -232,6 +247,10 @@ impl ColorResolver for PrimitiveTheme {
 
     fn resolve_length(&self, length: Length) -> Option<Length> {
         PrimitiveTheme::resolve_length(self, length)
+    }
+
+    fn resolve_typography(&self, role: &str) -> Option<crate::ResolvedTypography> {
+        self.typography(role)
     }
 }
 
@@ -1304,6 +1323,16 @@ mod tests {
         fn resolve_length(&self, length: Length) -> Option<Length> {
             (length == Length::ThemeSpacing(SpacingToken::Sm)).then_some(Length::Pixels(6.0))
         }
+
+        fn resolve_typography(&self, role: &str) -> Option<crate::ResolvedTypography> {
+            (role == "body").then(|| crate::ResolvedTypography {
+                family: Some("JetBrains Mono".to_owned()),
+                fallbacks: vec!["PingFang SC".to_owned()],
+                size: Length::Pixels(12.0),
+                line_height: Length::Pixels(16.0),
+                weight: 400,
+            })
+        }
     }
 
     impl PrimitiveHandler for TestHandler {
@@ -1334,6 +1363,10 @@ mod tests {
         assert_eq!(
             theme.resolve_length(Length::ThemeSpacing(SpacingToken::Sm)),
             Some(Length::Pixels(6.0))
+        );
+        assert_eq!(
+            theme.typography("body").unwrap().family.as_deref(),
+            Some("JetBrains Mono")
         );
     }
 

@@ -44,6 +44,8 @@ import "components/spinner" as spinner;
 import "components/toggle" as toggle;
 import "components/toggle_group" as toggle_group;
 import "components/scroll_area" as scroll_area;
+import "components/title_bar" as title_bar;
+import "components/status_bar" as status_bar;
 
 fn color_field(name, value) {
     row([
@@ -51,7 +53,7 @@ fn color_field(name, value) {
             .border(px(1)).border_color(theme_color("border"))
             .background(theme_color(name))),
         column([
-            text(name).with_style(style().font_size(px(10)).font_weight(700)
+            text(name).with_style(style().typography("caption").font_weight(700)
                 .text_color(theme_color("text_muted"))),
             input::Input(#{
                 key: `studio-${name}`, value: value, placeholder: "#rrggbb",
@@ -166,9 +168,9 @@ fn editor(ctx) {
     let mode = ctx.get_state("mode");
     column([
         column([
-            text("THEME STUDIO").with_style(style().font_size(px(16)).font_weight(700)),
+            text("THEME STUDIO").with_style(style().typography("heading")),
             text("Edit semantic tokens. Preview real components.")
-                .with_style(style().font_size(px(10)).text_color(theme_color("text_muted")))
+                .with_style(style().typography("caption").text_color(theme_color("text_muted")))
         ]).with_style(style().gap(px(2)).padding_bottom(px(8))
             .border_bottom(px(1)).border_color(theme_color("border"))),
         label::Label(#{ text: "Theme file", description: "Open edits the file; Import creates a copy." }),
@@ -226,7 +228,7 @@ fn editor(ctx) {
         color_field("disabled", ctx.get_state("color_disabled")),
         text(ctx.get_state("status")).with_style(style().padding(px(8))
             .border(px(1)).border_color(theme_color("border"))
-            .font_size(px(10)).line_height(px(14)).text_color(theme_color("text_muted")))
+            .typography("caption").text_color(theme_color("text_muted")))
     ]).with_style(style().width(px(340)).height(relative(1.0)).min_height(px(0))
         .flex_shrink(false).overflow_y_scroll().padding(px(14)).gap(px(7))
         .border_end(px(1)).border_color(theme_color("border"))
@@ -236,11 +238,25 @@ fn editor(ctx) {
 
 fn specimen_title(title, detail) {
     column([
-        text(title).with_style(style().font_size(px(12)).font_weight(700)),
-        text(detail).with_style(style().font_size(px(10)).line_height(px(14))
+        text(title).with_style(style().typography("body").font_weight(700)),
+        text(detail).with_style(style().typography("caption")
             .text_color(theme_color("text_muted")))
     ]).with_style(style().gap(px(2)).padding_bottom(px(4))
         .border_bottom(px(1)).border_color(theme_color("border")))
+}
+
+fn specimen_typography() {
+    column([
+        specimen_title("TYPOGRAPHY", "Eight semantic roles share one theme-owned rhythm."),
+        text("Display Large · 28 / 34").with_style(style().typography("display_large")),
+        text("Display · 24 / 30").with_style(style().typography("display")),
+        text("Heading · 16 / 22").with_style(style().typography("heading")),
+        text("Title · 14 / 20").with_style(style().typography("title")),
+        text("Subtitle · 13 / 18").with_style(style().typography("subtitle")),
+        text("Body · 12 / 16").with_style(style().typography("body")),
+        text("Body Small · 11 / 14").with_style(style().typography("body_small")),
+        text("CAPTION · 10 / 14").with_style(style().typography("caption")),
+    ]).with_style(style().gap(px(4)))
 }
 
 fn specimen_actions() {
@@ -336,6 +352,23 @@ fn specimen_status() {
     ]).with_style(style().gap(px(7)))
 }
 
+fn specimen_chrome() {
+    column([
+        specimen_title("APPLICATION CHROME", "Composable title and status bars; native window authority stays in Rust."),
+        column([
+            title_bar::TitleBar(#{ title: "Workbench", subtitle: "main",
+                center: [text("Editor")],
+                end: [button::Button(#{ text: "Run", size: "xs", variant: "ghost" })] }),
+            row([text("Application content")]).with_style(style()
+                .height(px(42)).padding_x(px(10)).items_center()
+                .background(theme_color("surface"))),
+            status_bar::StatusBar(#{ label: "Workbench status",
+                start: [text("Ready")], center: [text("main")],
+                end: [text("Ln 24, Col 8"), kbd::Kbd(#{ text: "UTF-8" })] })
+        ]).with_style(style().border(px(1)).border_color(theme_color("border")))
+    ]).with_style(style().gap(px(7)))
+}
+
 fn specimen_navigation() {
     column([
         specimen_title("NAVIGATION", "Tabs, accordion and collapsible use tiled state."),
@@ -392,7 +425,8 @@ fn specimen_p0(ctx) {
         button::Button(#{ text: "Center", variant: "outline", size: "sm" }),
         button::Button(#{ text: "Right", variant: "outline", size: "sm" })
     ] });
-    let grouped_input = input_group::InputGroup(#{ label: "Search", prefix: text("⌕"),
+    let grouped_input = input_group::InputGroup(#{ label: "Search", prefix: icon::Icon(#{
+            source: asset("app/icons/search"), size: "md", label: "Search" }),
         suffix: kbd::Kbd(#{ text: "⌘ K" }),
         control: input::Input(#{ key: "p0-input", value: "", placeholder: "Search" }) });
     let contextual = context_menu::ContextMenu(#{ key: "p0-context",
@@ -494,7 +528,7 @@ fn specimen_overlays(ctx) {
 }
 
 fn specimen(ctx) {
-    let left = column([specimen_actions(), specimen_choices(), specimen_status()])
+    let left = column([specimen_typography(), specimen_actions(), specimen_choices(), specimen_status(), specimen_chrome()])
         .with_style(style().flex_grow().min_width(px(0)).gap(px(14)));
     let right = column([specimen_inputs(), specimen_navigation(), specimen_overlays(ctx)])
         .with_style(style().flex_grow().min_width(px(0)).gap(px(14)));
@@ -506,9 +540,9 @@ fn specimen(ctx) {
     column([
         row([
             column([
-                text("COMPONENT SPECIMEN").with_style(style().font_size(px(16)).font_weight(700)),
+                text("COMPONENT SPECIMEN").with_style(style().typography("heading")),
                 text("Every official component · one live semantic contract")
-                    .with_style(style().font_size(px(10)).text_color(theme_color("text_muted")))
+                    .with_style(style().typography("caption").text_color(theme_color("text_muted")))
             ]).with_style(style().gap(px(2))),
             tag::Tag(#{ text: `${ctx.get_state("family")} / ${ctx.get_state("variant")}`, variant: "accent" })
         ]).with_style(style().justify_between().items_center().padding_bottom(px(8))
@@ -517,7 +551,7 @@ fn specimen(ctx) {
         specimen_data(),
         specimen_p0(ctx)
     ]).with_style(style().padding(px(16)).gap(px(14)).background(theme_color("surface"))
-        .font_size(px(12)).line_height(px(16)))
+        .typography("body"))
 }
 
 fn gallery_theme_options() {
@@ -542,31 +576,35 @@ fn gallery_header(ctx) {
             variant: if ctx.get_state("gallery_category") == entry.value { "primary" } else { "ghost" } })
             .on_click_value(Fn("set_gallery_category").curry(entry.value), ()));
     }
-    let heading = column([text("GPUI RHAI COMPONENT GALLERY").with_style(style().font_size(px(18)).font_weight(700)),
-            text("46 source-owned components · native GPUI behavior · live themes")
-                .with_style(style().font_size(px(11)).text_color(theme_color("text_muted")))])
-            .with_style(style().gap(px(2)).flex_grow());
+    row(categories).with_style(style().gap(px(4)).padding_x(px(14)).padding_y(px(8))
+        .flex_wrap().border_bottom(px(1)).border_color(theme_color("border"))
+        .background(theme_color("surface")))
+}
+
+fn gallery_title_bar(ctx) {
+    let compact = ctx.viewport_class() == "compact";
     let themes = combobox::Combobox(#{ key: "gallery-theme", options: gallery_theme_options(), mode: "single",
             selected: [ctx.get_state("gallery_theme")], open: ctx.get_state("gallery_theme_open"),
             query: ctx.get_state("gallery_theme_query"), searchable: true, placeholder: "Theme",
-            width: px(240),
+            width: px(if compact { 150 } else { 240 }), trigger_height: 26,
             on_change: Fn("set_gallery_theme"), on_open_change: Fn("set_gallery_theme_open"),
             on_query_change: Fn("set_gallery_theme_query") });
-    let root = if ctx.viewport_class() == "compact" {
-        column([heading, themes]).with_style(style().gap(px(8)))
-    } else {
-        row([heading, themes]).with_style(style().items_center().gap(px(12)))
-    };
-    root = root.with_style(style().padding_bottom(px(10))
-        .border_bottom(px(1)).border_color(theme_color("border")));
-    column([root, row(categories).with_style(style().gap(px(4)).flex_wrap())])
-        .with_style(style().gap(px(8)).padding(px(14)).background(theme_color("surface")))
+    let config = #{ title: "GPUI RHAI COMPONENT GALLERY", inset_start: 70, end: [themes] };
+    if !compact { config.subtitle = "48 source-owned components · native GPUI behavior · live themes"; }
+    title_bar::TitleBar(config)
+}
+
+fn gallery_status_bar(ctx) {
+    status_bar::StatusBar(#{ label: "Component Gallery status",
+        start: [text("48 components")],
+        center: [text(ctx.get_state("gallery_theme"))],
+        end: [text(ctx.get_state("gallery_category")), text(ctx.viewport_class())] })
 }
 
 fn gallery_content(ctx) {
     let category = ctx.get_state("gallery_category");
     if category == "foundations" {
-        column([specimen_actions(), specimen_status(), specimen_p0(ctx)])
+        column([specimen_actions(), specimen_status(), specimen_chrome(), specimen_p0(ctx)])
             .with_style(style().padding(px(14)).gap(px(14)))
     } else if category == "forms" {
         column([specimen_inputs(), specimen_choices()])
@@ -583,8 +621,10 @@ fn gallery_content(ctx) {
 fn view(ctx) {
     if __GALLERY_ONLY__ {
         column([
+            gallery_title_bar(ctx),
             gallery_header(ctx),
-            column([gallery_content(ctx)]).with_style(style().flex_grow().overflow_y_scroll())
+            column([gallery_content(ctx)]).with_style(style().flex_grow().min_height(px(0)).overflow_y_scroll()),
+            gallery_status_bar(ctx)
         ]).with_style(style().width(relative(1.0)).height(relative(1.0)).background(theme_color("surface")))
     } else {
         row([

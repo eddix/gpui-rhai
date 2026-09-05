@@ -5,7 +5,8 @@
   "version": "0.1.0",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": [],
-  "capabilities": {}
+  "capabilities": {},
+  "assets": ["icons/check.svg", "icons/minus.svg"]
 }
 */
 // Controlled checkbox with checked, unchecked, and indeterminate states.
@@ -18,7 +19,7 @@ define_component(#{
     metadata: #{
         id: "components/checkbox", "export": "Checkbox", version: "0.1.0",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
-        dependencies: [], capabilities: #{},
+        dependencies: [], capabilities: #{}, assets: ["icons/check.svg", "icons/minus.svg"],
     },
     schema: #{
         props: #{
@@ -60,11 +61,11 @@ fn render_Checkbox(ctx, props) {
     let mixed = if "indeterminate" in props { props.indeterminate } else { false };
     let disabled = if "disabled" in props { props.disabled } else { false };
     let active = props.checked || mixed;
-    let mark = if mixed { "−" } else if props.checked { "✓" } else { "" };
     let box_background = if active { theme_color("accent") } else { theme_color("surface") };
-    let mark_node = text(mark).with_style(component_style(props, "mark",
-        style().text_color(theme_color("on_accent"))
-    ));
+    let mark_node = image_source(asset(if mixed { "app/icons/minus" } else { "app/icons/check" }))
+        .with_style(component_style(props, "mark", style()
+            .width(px(12)).height(px(12)).text_color(theme_color("on_accent"))
+            .opacity(if active { 1.0 } else { 0.0 })));
     let box_node = row([mark_node]).with_style(component_style(props, "box",
         style()
                 .width(px(16)).height(px(16))
@@ -81,7 +82,7 @@ fn render_Checkbox(ctx, props) {
             style().gap(px(8)).items_center().self_start().padding(px(3))
                 .radius(theme_radius("sm"))
                 .border(px(1)).border_color(rgba(0x00000000))
-                .font_size(px(12)).line_height(px(16))
+                .typography("body")
                 .text_color(if disabled { theme_color("disabled") } else { theme_color("text_primary") })
                 .hover(style().background(theme_color("surface_hover")))
                 .focus(style().border_color(theme_color("focus_ring")))

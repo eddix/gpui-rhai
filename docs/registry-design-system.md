@@ -10,8 +10,9 @@ copy. Applications continue to own the copied source and active theme.
 - Dense, keyboard-first desktop UI rather than touch-sized web controls.
 - Tiled structure, thin borders, and explicit hierarchy instead of floating
   cards, blur, glow, or decorative shadows.
-- Near-square geometry. Semantic circles remain valid for Radio and presence;
-  Tag, Button, panel, and input defaults are not pills.
+- Square geometry. Semantic circles remain valid for Avatar, Radio, presence
+  dots, and slider thumbs; Tag, Button, panel, and input defaults have
+  no corner radius.
 - One semantic accent connects focus, selection, current navigation, and the
   primary action. Status colors are reserved for actual status meaning.
 - Short labels and aligned values. Component defaults do not invent marketing
@@ -21,26 +22,36 @@ copy. Applications continue to own the copied source and active theme.
 
 | Role | Default |
 |---|---:|
-| UI text / line | `12px / 16px` |
-| Secondary text / line | `11px / 14–15px` |
-| Section metadata | `10px / 14px`, bold |
+| Caption | `10px / 14px` |
+| Body small | `11px / 14px` |
+| Body | `12px / 16px` |
+| Subtitle | `13px / 18px` |
+| Title | `14px / 20px`, bold |
+| Heading | `16px / 22px`, bold |
+| Display | `24px / 30px`, bold |
+| Display large | `28px / 34px`, bold |
 | List and menu row | `28px` |
 | Default control | `32px` |
 | Control sizes | `24 / 28 / 32 / 36px` |
 | Border | `1px` |
-| Radius scale | `2 / 4 / 6px` |
+| Radius scale | `0 / 0 / 0px` |
 | Inline control gap | `6–8px` |
 | Panel padding | `10–16px` |
 
-Official components express these structural values in their copied Rhai
-source. Themes own semantic colors, spacing, and the radius scale; they do not
-accumulate component-specific dimensions.
+Official components express structural values in their copied Rhai source.
+Themes own semantic colors, spacing, radii, and the eight typography roles;
+they do not accumulate component-specific dimensions.
 
 JetBrains Mono is the intended Omarchy-family typeface. The runtime does not
-silently bundle or force a font into host applications: hosts that need exact
-typography register JetBrains Mono as a `FontSource` and apply it at their view
-root. Component metrics remain stable with the platform font fallback, and CJK
+silently bundle or force it: hosts register the font as a `FontSource`, then a
+theme may set `typography.family` and `fallbacks`. Built-in themes leave the
+family unset. Component metrics remain stable with the platform font, and CJK
 must be checked with an appropriate host-provided fallback.
+
+Functional icons use SVG rather than font glyphs. Assets share a centered
+`24×24` coordinate space and `2px` stroke. Control icons use a `12–16px` box
+chosen against the active text line box, so they read at the same optical scale
+and align through `items_center`.
 
 ## Surfaces and states
 
@@ -71,7 +82,8 @@ border, text, and opacity; adding a state in source must produce native paint.
   control height. Native single-line Input uses the same centered line box;
   font ascent and descent provide the normal slight optical bias below center.
 - Checkbox, Radio, and Switch expose state through geometry and fill, not text
-  color alone. Radio remains circular; Switch uses a compact rectangular track.
+  color alone. Radio remains circular; Switch uses a compact rectangular track
+  and thumb.
 - Tabs use a selected rail, Accordion uses tiled rows, and Menu/Combobox use a
   fixed check column plus one cursor border.
 - Popover, Dialog, Tooltip, Toast, and menus use opaque theme surfaces and thin

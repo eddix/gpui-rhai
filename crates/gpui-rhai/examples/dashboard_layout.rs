@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use gpui_rhai::{EmbeddedScriptSource, EmbeddedScriptView, ModuleId, ScriptApplication};
+use gpui_rhai::{AssetData, EmbeddedScriptSource, EmbeddedScriptView, ModuleId, ScriptApplication};
 
 const TABS: &str = include_str!("../../../registry/components/tabs.rhai");
 const TAG: &str = include_str!("../../../registry/components/tag.rhai");
@@ -145,6 +145,13 @@ fn main() {
             ("zh_cn.rhai".to_owned(), ZH_CN.to_owned()),
             ("ar.rhai".to_owned(), AR.to_owned()),
         ])
+        .asset_sources([(
+            "icons/close".to_owned(),
+            AssetData {
+                mime_type: "image/svg+xml".to_owned(),
+                bytes: include_bytes!("../../../registry/assets/icons/close.svg").to_vec(),
+            },
+        )])
         .prepare()
         .and_then(|prepared| {
             ScriptApplication::new(prepared)

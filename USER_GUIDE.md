@@ -152,7 +152,7 @@ fn view(ctx) {
             description: "State remains owned by the mounted Rhai view",
         }),
         text(`${ctx.get_state("count")}`)
-            .with_style(style().font_size(px(24)).font_weight(700)),
+            .with_style(style().typography("display")),
         button::Button(#{
             text: "Increment",
             on_click: Fn("increment"),
@@ -267,10 +267,11 @@ Use `part_styles` for an intended component customization point. Edit the
 copied `.rhai` source when the product needs a structural change. Do not hide a
 structural fork behind a growing stack of arbitrary overrides.
 
-The bundled catalog contains 46 official source components:
+The bundled catalog contains 48 official source components:
 
 - foundations and status: Label, Divider, Icon, Avatar, Badge, Tag, Alert,
-  Card, GroupBox, Empty, Kbd, Progress, Spinner, and Skeleton;
+  Card, GroupBox, Empty, Kbd, Progress, Spinner, Skeleton, TitleBar, and
+  StatusBar;
 - actions and choices: Button, ButtonGroup, Checkbox, Radio, RadioGroup,
   Switch, Toggle, ToggleGroup, and Slider;
 - forms: Input, InputGroup, Textarea, FormField, Combobox, Select, and
@@ -286,6 +287,30 @@ Run `cargo run -p gpui-rhai --example component_gallery` for the interactive
 catalog with category navigation and live switching across all bundled themes.
 See [the component catalog](docs/components/catalog.md) for ownership and
 behavior distinctions that similar-looking controls must preserve.
+
+`TitleBar` and `StatusBar` are application chrome compositions, not a window
+authority escape hatch. An embedded view can render either but cannot move,
+minimize, or close its Host window. A trusted standalone Rust Host that wants
+content under the native macOS titlebar configures transparent chrome itself:
+
+```rust
+use gpui_rhai::gpui::{TitlebarOptions, point, px};
+
+ScriptApplication::new(prepared)
+    .window_options(|mut options, _cx| {
+        options.titlebar = Some(TitlebarOptions {
+            title: None,
+            appears_transparent: true,
+            traffic_light_position: Some(point(px(9.0), px(9.0))),
+        });
+        options
+    })
+    .run()?;
+```
+
+The corresponding Rhai `TitleBar` may reserve the traffic-light area with
+`inset_start: 70`. Native dragging and window actions remain Rust-owned and can
+be connected through explicitly registered native handlers when required.
 
 Use [Component authoring](docs/component-authoring-guide.md) and the component
 specifications under `docs/components/` when modifying or creating components.
@@ -568,9 +593,13 @@ theme_color("surface")
 theme_color("text_primary")
 theme_color("accent")
 theme_color("focus_ring")
+theme_typography("body")
 ```
 
-Theme values remain symbolic until rendering. Switching a ThemeVariant advances
+Use `style().typography("caption" | "body_small" | "body" | "subtitle" |
+"title" | "heading" | "display" | "display_large")` instead of copying font
+sizes and line heights into components. Theme values remain symbolic until
+rendering. Switching a ThemeVariant advances
 the theme generation and repaints/rerenders affected native content without
 recompiling Rhai or discarding component state.
 

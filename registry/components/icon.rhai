@@ -6,7 +6,7 @@
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": [],
   "capabilities": {},
-  "assets": ["icons/check.svg", "icons/close.svg"]
+  "assets": ["icons/check.svg", "icons/close.svg", "icons/search.svg"]
 }
 */
 // Icon wraps a declarative AssetId or a runtime image handle with consistent sizing.
@@ -23,7 +23,7 @@ define_component(#{
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
         dependencies: [],
         capabilities: #{},
-        assets: ["icons/check.svg", "icons/close.svg"],
+        assets: ["icons/check.svg", "icons/close.svg", "icons/search.svg"],
     },
     schema: #{
         props: #{

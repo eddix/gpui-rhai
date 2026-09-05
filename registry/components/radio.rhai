@@ -58,7 +58,7 @@ fn render_Radio(ctx, props) {
             style().gap(px(8)).items_center().self_start().padding(px(3))
                 .radius(theme_radius("sm"))
                 .border(px(1)).border_color(rgba(0x00000000))
-                .font_size(px(12)).line_height(px(16))
+                .typography("body")
                 .text_color(if disabled { theme_color("disabled") } else { theme_color("text_primary") })
                 .hover(style().background(theme_color("surface_hover")))
                 .focus(style().border_color(theme_color("focus_ring")))

@@ -57,13 +57,14 @@ fn render_Label(ctx, props) {
     let title = if required { `${props.text} *` } else { props.text };
     let children = [
         text(title).with_style(component_style(props, "required", component_style(props, "text",
-            style().text_color(theme_color("text_primary")))))
+            style().typography("body").font_weight(700)
+                .text_color(theme_color("text_primary")))))
     ];
     if description != () {
         children.push(
             text(description)
                 .with_style(component_style(props, "description",
-                    style().text_color(theme_color("text_muted"))))
+                    style().typography("body_small").text_color(theme_color("text_muted"))))
         );
     }
     column(children)

@@ -59,13 +59,13 @@ fn render_Label(ctx, props) {
     } else { text([span(props.text).bold()]) };
     let children = [title.with_style(component_style(props, "required",
         component_style(props, "text", style()
-            .font_size(px(12)).line_height(px(16))
+            .typography("body")
             .text_color(theme_color("text_primary")))))] ;
     if description != () {
         children.push(
             text(description)
                 .with_style(component_style(props, "description",
-                    style().font_size(px(11)).line_height(px(15))
+                    style().typography("body_small")
                         .text_color(theme_color("text_muted"))))
         );
     }

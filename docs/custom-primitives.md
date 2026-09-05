@@ -11,8 +11,10 @@ The `PrimitiveHandler` receives a validated `PrimitiveInstance`, normalized
 event emitter, read-only `PrimitiveTheme`, `Window`, and `App`, then returns
 `AnyElement`. Resolve component-owned native paint through `PrimitiveTheme`;
 handlers must not cache a mutable theme manager or hard-code palette colors.
-The snapshot resolves required semantic colors plus spacing/radius `Length`
-tokens and changes on the next render after a live theme switch.
+The snapshot resolves required semantic colors, spacing/radius `Length` tokens,
+and typography roles. It changes on the next render after a live theme switch.
+Use `PrimitiveTheme::typography(role)` for native text shaping so custom
+primitives share the same family, fallback stack, size, line height, and weight.
 
 ```rust
 engine.register_primitive(

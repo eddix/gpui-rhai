@@ -33,7 +33,7 @@ fn render_Kbd(ctx, props) {
         .min_width(px(20)).height(px(20)).padding_x(px(5)).items_center().justify_center()
         .radius(theme_radius("sm")).border(px(1)).border_color(theme_color("border"))
         .background(theme_color("surface_raised")).text_color(theme_color("text_muted"))
-        .font_size(px(10)).line_height(px(14)).font_weight(700))))
+        .typography("caption").font_weight(700))))
         .accessibility_role("text").accessibility_label(
             if "label" in props && props.label != () { props.label } else { props.text })
 }

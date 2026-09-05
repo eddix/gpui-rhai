@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use gpui_rhai::{EmbeddedScriptSource, EmbeddedScriptView, ModuleId, ScriptApplication};
+use gpui_rhai::{AssetData, EmbeddedScriptSource, EmbeddedScriptView, ModuleId, ScriptApplication};
 
 const BUTTON: &str = include_str!("../../../registry/components/button.rhai");
 const LABEL: &str = include_str!("../../../registry/components/label.rhai");
@@ -122,11 +122,11 @@ fn set_density(ctx, value) { ctx.set_state("density", value); }
 fn set_expanded(ctx, values) { ctx.set_state("expanded", values); }
 
 fn help_trigger() {
-    text("?").with_style(style()
-        .width(px(28)).height(px(28)).items_center().justify_center()
-        .font_size(px(16)).line_height(px(16))
-        .text_color(theme_color("text_muted"))
-        .radius(px(14)).background(theme_color("surface_raised")))
+    row([image_source(asset("app/icons/help")).with_style(style()
+            .width(px(16)).height(px(16)))])
+        .with_style(style().width(px(28)).height(px(28)).items_center().justify_center()
+            .text_color(theme_color("text_muted"))
+            .radius(px(14)).background(theme_color("surface_raised")))
         .with_key("help-trigger")
         .accessibility_role("button").accessibility_label("Help")
 }
@@ -367,6 +367,7 @@ fn main() {
         ("zh_cn.rhai".to_owned(), ZH_CN.to_owned()),
         ("ar.rhai".to_owned(), AR.to_owned()),
     ])
+    .asset_sources(settings_assets())
     .development(true)
     .prepare()
     .and_then(|prepared| {
@@ -375,4 +376,47 @@ fn main() {
             .run()
     })
     .expect("settings_panel failed");
+}
+
+fn svg(bytes: &[u8]) -> AssetData {
+    AssetData {
+        mime_type: "image/svg+xml".to_owned(),
+        bytes: bytes.to_vec(),
+    }
+}
+
+fn settings_assets() -> Vec<(String, AssetData)> {
+    [
+        (
+            "check",
+            include_bytes!("../../../registry/assets/icons/check.svg").as_slice(),
+        ),
+        (
+            "close",
+            include_bytes!("../../../registry/assets/icons/close.svg").as_slice(),
+        ),
+        (
+            "chevron_down",
+            include_bytes!("../../../registry/assets/icons/chevron_down.svg").as_slice(),
+        ),
+        (
+            "chevron_up",
+            include_bytes!("../../../registry/assets/icons/chevron_up.svg").as_slice(),
+        ),
+        (
+            "minus",
+            include_bytes!("../../../registry/assets/icons/minus.svg").as_slice(),
+        ),
+        (
+            "plus",
+            include_bytes!("../../../registry/assets/icons/plus.svg").as_slice(),
+        ),
+        (
+            "help",
+            include_bytes!("../../../registry/assets/icons/help.svg").as_slice(),
+        ),
+    ]
+    .into_iter()
+    .map(|(name, bytes)| (format!("icons/{name}"), svg(bytes)))
+    .collect()
 }

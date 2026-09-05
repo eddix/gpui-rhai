@@ -207,8 +207,9 @@ pub use text_input::{
     TextBuffer, TextInputPrimitiveHandler, init_text_input, text_input_primitive_descriptor,
 };
 pub use theme::{
-    ResolvedTheme, SystemAppearance, ThemeError, ThemeFamily, ThemeManager, ThemeMode,
-    ThemePreference, ThemeSelection, ThemeTokenValue, ThemeTokens, ThemeVariant, load_theme_source,
+    REQUIRED_TYPOGRAPHY, ResolvedTheme, ResolvedTypography, SystemAppearance, ThemeError,
+    ThemeFamily, ThemeManager, ThemeMode, ThemePreference, ThemeSelection, ThemeTokenValue,
+    ThemeTokens, ThemeTypography, ThemeVariant, TypographyToken, load_theme_source,
 };
 pub use timer::{TimerDescriptor, TimerError, TimerId, TimerRegistry, TimerSnapshot};
 pub use value::{

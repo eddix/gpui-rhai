@@ -109,6 +109,7 @@ fn render_Input(ctx, props) {
         placeholder: optional_prop(props, "placeholder"),
         disabled: disabled,
         read_only: read_only,
+        typography: "body",
         on_change: optional_prop(props, "on_change"),
         on_submit: optional_prop(props, "on_submit"),
         on_focus: optional_prop(props, "on_focus"),
@@ -118,10 +119,12 @@ fn render_Input(ctx, props) {
             style()
                 .height(px(32))
                 .padding_x(px(8))
-                .radius(px(6))
+                .items_center()
+                .radius(theme_radius("md"))
                 .border(px(1))
                 .border_color(border)
                 .background(theme_color("surface_raised"))
+                .typography("body")
         )))
         .accessibility_role("text_field")
         .accessibility_label(

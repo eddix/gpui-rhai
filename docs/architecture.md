@@ -309,7 +309,8 @@ only cached `AssetId` values during render. Capability-provided image handles
 remain supported for dynamic application images.
 
 Theme selection uses the same app/window/subtree precedence and generation
-switch. Required semantic colors/spacing/radii remain the base typed schema;
+switch. Required semantic colors/spacing/radii and eight typography roles form
+the base typed schema;
 families may add namespaced typed maps such as `charts.series_a` with
 color/length/number/string values. Namespace/name/type and finite/non-nested
 length rules are validated before an atomic theme generation becomes active.

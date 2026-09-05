@@ -18,9 +18,27 @@ filled semantic color. Themes choose them independently; deriving them from
 `text_primary` is not reliably accessible across light and dark palettes.
 
 Spacing uses `xs`, `sm`, `md`, and `lg`. Radii use `sm`, `md`, and `lg`.
-Official themes map those radii to `2px`, `4px`, and `6px`; see the
-[registry visual system](registry-design-system.md) for component metrics and
-state rules.
+Official themes map all three radii to `0px`: rectangular controls and panels
+are square by default. Components give explicit half-size radii only to
+semantic circles such as Avatar, Radio, presence dots, and slider thumbs.
+
+Typography requires eight semantic roles:
+
+| Role | Size / line | Weight |
+|---|---:|---:|
+| `caption` | `10 / 14px` | 400 |
+| `body_small` | `11 / 14px` | 400 |
+| `body` | `12 / 16px` | 400 |
+| `subtitle` | `13 / 18px` | 400 |
+| `title` | `14 / 20px` | 700 |
+| `heading` | `16 / 22px` | 700 |
+| `display` | `24 / 30px` | 700 |
+| `display_large` | `28 / 34px` | 700 |
+
+The typography block may also select one shared `family` and ordered
+`fallbacks`. Built-in themes leave both unset so the host's platform font
+policy remains intact. Components call `style().typography("body")`; explicit
+font properties chained afterward override individual role values.
 
 `registry/themes/default_light.rhai` and `default_dark.rhai` demonstrate the
 serialized `ThemeVariant` shape.
@@ -49,14 +67,14 @@ should use `theme_color("semantic_name")`.
 ## Token and component-metric boundary
 
 Themes own values whose meaning crosses component boundaries: semantic colors,
-the standard spacing scale, and radii. They must not grow one required token for
-every row height, calendar cell, or control-specific width. Adding a component
-must not force unrelated application themes to migrate.
+the standard spacing and radius scales, and typography. They must not grow one
+required token for every row height, calendar cell, or control-specific width.
+Adding a component must not force unrelated application themes to migrate.
 
 Source-owned `.rhai` components define structural metrics such as control
-height, fixed Table row height, calendar cell size, and Textarea line-height
-mapping through named `xs`/`sm`/`md`/`lg` helper functions. They pass those
-values to native behavior; Rust must not hide component visual constants.
+height, fixed Table row height, and calendar cell size. Textarea and Input pass
+a semantic typography role into native shaping so their metrics cannot drift
+from ordinary text. Rust must not hide component visual constants.
 Applications own the copied source and may change these metrics directly.
 
 Official components never hard-code palette colors. New semantic color tokens

@@ -780,6 +780,8 @@ pub enum StyleValueError {
     InvalidFontFamily,
     #[error("font fallback list must contain 1-16 unique non-empty family names")]
     InvalidFontFallbacks,
+    #[error("unknown typography role `{0}`")]
+    UnknownTypographyRole(String),
     #[error("OpenType feature tag must be four ASCII alphanumeric characters")]
     InvalidFontFeatureTag,
     #[error("OpenType feature value must be between 0 and 65535, got {0}")]
@@ -958,6 +960,7 @@ pub struct StyleProperties {
     pub border_widths: EdgeLengths,
     #[serde(default)]
     pub radii: CornerLengths,
+    pub typography: Option<String>,
     pub font_size: Option<Length>,
     pub flex_grow: Option<bool>,
     pub flex_shrink: Option<bool>,
@@ -1017,6 +1020,7 @@ impl StyleProperties {
         merge_option(&mut self.border_style, overlay.border_style);
         self.border_widths.merge(&overlay.border_widths);
         self.radii.merge(&overlay.radii);
+        merge_option(&mut self.typography, overlay.typography.clone());
         merge_option(&mut self.font_size, overlay.font_size);
         merge_option(&mut self.flex_grow, overlay.flex_grow);
         merge_option(&mut self.flex_shrink, overlay.flex_shrink);
@@ -1646,6 +1650,22 @@ impl Style {
     pub fn hit_test(mut self, behavior: HitTestBehavior) -> Self {
         self.base.hit_test = Some(behavior);
         self
+    }
+
+    /// Apply one symbolic typography role from the active theme.
+    ///
+    /// Explicit font properties on the same composed style override the role.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StyleValueError::UnknownTypographyRole`] for non-core roles.
+    pub fn typography(mut self, role: impl Into<String>) -> Result<Self, StyleValueError> {
+        let role = role.into();
+        if !crate::REQUIRED_TYPOGRAPHY.contains(&role.as_str()) {
+            return Err(StyleValueError::UnknownTypographyRole(role));
+        }
+        self.base.typography = Some(role);
+        Ok(self)
     }
 
     /// Set one validated platform font family name.
@@ -2320,6 +2340,12 @@ fn register_visual_methods(builder: &mut TypeBuilder<Style>) {
 
 fn register_text_methods(builder: &mut TypeBuilder<Style>) {
     builder
+        .with_fn("typography", |style: &mut Style, role: ImmutableString| {
+            style
+                .clone()
+                .typography(role.to_string())
+                .map_err(|error| Box::new(style_runtime_error(error.to_string())))
+        })
         .with_fn(
             "font_family",
             |style: &mut Style, family: ImmutableString| {
@@ -2442,6 +2468,16 @@ pub(crate) fn register_style_api(engine: &mut Engine) {
     FuncRegistration::new("style")
         .in_global_namespace()
         .register_into_engine(engine, Style::new);
+    FuncRegistration::new("theme_typography")
+        .in_global_namespace()
+        .register_into_engine(
+            engine,
+            |role: ImmutableString| -> Result<Style, Box<EvalAltResult>> {
+                Style::new()
+                    .typography(role.to_string())
+                    .map_err(|error| Box::new(style_runtime_error(error.to_string())))
+            },
+        );
     register_length_constructor(engine, "px", Length::pixels);
     register_length_constructor(engine, "rem", Length::rems);
     register_length_constructor(engine, "relative", Length::relative);
@@ -2815,6 +2851,22 @@ mod tests {
                 .is_err()
         );
         assert!(Style::new().font_feature("bad", 1).is_err());
+    }
+
+    #[test]
+    fn script_uses_validated_symbolic_typography_roles() {
+        let mut engine = Engine::new();
+        register_style_api(&mut engine);
+        let style: Style = engine
+            .eval(r#"theme_typography("body").font_weight(650)"#)
+            .unwrap();
+        assert_eq!(style.base.typography.as_deref(), Some("body"));
+        assert_eq!(style.base.font_weight, Some(650));
+        assert!(
+            engine
+                .eval::<Style>(r#"style().typography("bodyish")"#)
+                .is_err()
+        );
     }
 
     #[test]

@@ -47,7 +47,7 @@ fn render_Collapsible(ctx, props) {
             .min_height(px(32)).padding_x(px(10)).items_center()
             .border(px(1)).border_color(rgba(0x00000000))
             .radius(theme_radius("sm"))
-            .font_size(px(12)).line_height(px(16)).font_weight(700)
+            .typography("body").font_weight(700)
             .hover(style().background(theme_color("surface_hover")))
             .focus(style().border_color(theme_color("focus_ring")))
             .active(style().opacity(0.82))
@@ -60,7 +60,7 @@ fn render_Collapsible(ctx, props) {
     }
     let height = props.content_height;
     let panel_content = props.content.with_style(component_style(props, "content", style()
-        .padding(px(10)).font_size(px(12)).line_height(px(16))));
+        .padding(px(10)).typography("body")));
     let panel = column([panel_content])
         .with_key(`${props.key}-content`)
         .with_style(style().height(px(if props.open { height } else { 0 })).clip()

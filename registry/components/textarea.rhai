@@ -65,16 +65,10 @@ fn optional_prop(props, name) {
     if name in props { props[name] } else { () }
 }
 
-fn textarea_line_height(size) {
-    if size == "xs" { 14 }
-    else if size == "lg" { 18 }
-    else { 16 }
-}
-
-fn textarea_font_size(size) {
-    if size == "xs" { 11 }
-    else if size == "lg" { 13 }
-    else { 12 }
+fn textarea_typography(size) {
+    if size == "xs" { "body_small" }
+    else if size == "lg" { "subtitle" }
+    else { "body" }
 }
 
 fn Textarea(props) { render_component("components/textarea", props) }
@@ -91,8 +85,7 @@ fn render_Textarea(ctx, props) {
         read_only: read_only,
         min_rows: if "min_rows" in props { props.min_rows } else { 3 },
         max_rows: if "max_rows" in props { props.max_rows } else { 8 },
-        line_height: textarea_line_height(size) * 1.0,
-        font_size: textarea_font_size(size) * 1.0,
+        typography: textarea_typography(size),
         autofocus: if "autofocus" in props { props.autofocus } else { false },
         on_change: optional_prop(props, "on_change"),
         on_focus: optional_prop(props, "on_focus"),
@@ -140,7 +133,7 @@ fn render_Textarea(ctx, props) {
         };
         let reached = max != () && count >= max;
         let counter_style = component_style(props, "counter",
-            style().font_size(px(11)).line_height(px(14))
+            style().typography("body_small")
                 .text_color(theme_color("text_muted")));
         let counter_style = if reached {
             component_style(props, "limit", counter_style.text_color(theme_color("danger")))

@@ -53,7 +53,7 @@ fn render_Sheet(ctx, props) {
     let side = prop_or(props, "side", "end");
     let size = prop_or(props, "size", 360);
     let children = [text(props.title).with_style(component_style(props, "title", style()
-        .font_size(px(14)).line_height(px(20)).font_weight(700)
+        .typography("title").font_weight(700)
         .text_color(theme_color("text_primary"))))];
     children.push(props.content.with_style(component_style(props, "content", style().flex_grow())));
     if "actions" in props && props.actions.len > 0 {

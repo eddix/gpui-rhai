@@ -9,20 +9,22 @@ use gpui_rhai::{
     AssetData, ColorValue, ComponentInstancePath, EmbeddedScriptSource, EmbeddedScriptView,
     EventResponse, Length, ModuleId, NativeEvent, NativeHandlerDescriptor, NativeHandlerId, Rgba8,
     RuntimeEngine, ScriptApplication, ScriptViewExtension, ThemeMode, ThemeTokenValue,
-    ThemeVariant, UiRuntimeState, UiValue, ValueSchema, load_theme_source,
+    ThemeTypography, ThemeVariant, UiRuntimeState, UiValue, ValueSchema, load_theme_source,
 };
 
 use super::{
     ACCORDION_SOURCE, ALERT_DIALOG_SOURCE, ALERT_SOURCE, AR_LOCALE, AVATAR_SOURCE, BADGE_SOURCE,
     BUNDLED_THEME_SOURCES, BUTTON_GROUP_SOURCE, BUTTON_SOURCE, CARD_SOURCE, CHECK_SVG,
-    CHECKBOX_SOURCE, CLOSE_SVG, COLLAPSIBLE_SOURCE, COMBOBOX_SOURCE, COMMAND_DIALOG_SOURCE,
-    COMMAND_SOURCE, CONTEXT_MENU_SOURCE, DATE_NEXT_SVG, DATE_PICKER_SOURCE, DATE_PREVIOUS_SVG,
-    DEFAULT_THEME, DIALOG_SOURCE, DIVIDER_SOURCE, EMPTY_SOURCE, EN_LOCALE, FORM_FIELD_SOURCE,
-    GROUP_BOX_SOURCE, ICON_SOURCE, INPUT_GROUP_SOURCE, INPUT_SOURCE, KBD_SOURCE, LABEL_SOURCE,
-    MENU_SOURCE, PAGINATION_SOURCE, POPOVER_SOURCE, PROGRESS_SOURCE, RADIO_GROUP_SOURCE,
-    RADIO_SOURCE, SCROLL_AREA_SOURCE, SELECT_SOURCE, SHEET_SOURCE, SKELETON_SOURCE, SLIDER_SOURCE,
-    SPINNER_SOURCE, SWITCH_SOURCE, TABLE_SOURCE, TABS_SOURCE, TAG_SOURCE, TEXTAREA_SOURCE,
-    TOAST_SOURCE, TOGGLE_GROUP_SOURCE, TOGGLE_SOURCE, TOOLTIP_SOURCE, ZH_CN_LOCALE,
+    CHECKBOX_SOURCE, CHEVRON_DOWN_SVG, CHEVRON_UP_SVG, CLOSE_SVG, COLLAPSIBLE_SOURCE,
+    COMBOBOX_SOURCE, COMMAND_DIALOG_SOURCE, COMMAND_SOURCE, CONTEXT_MENU_SOURCE, DATE_NEXT_SVG,
+    DATE_PICKER_SOURCE, DATE_PREVIOUS_SVG, DEFAULT_THEME, DIALOG_SOURCE, DISCLOSURE_DOWN_SVG,
+    DIVIDER_SOURCE, EMPTY_SOURCE, EN_LOCALE, FORM_FIELD_SOURCE, GROUP_BOX_SOURCE, ICON_SOURCE,
+    INFO_SVG, INPUT_GROUP_SOURCE, INPUT_SOURCE, KBD_SOURCE, LABEL_SOURCE, MENU_SOURCE, MINUS_SVG,
+    PAGINATION_SOURCE, PLUS_SVG, POPOVER_SOURCE, PROGRESS_SOURCE, RADIO_GROUP_SOURCE, RADIO_SOURCE,
+    SCROLL_AREA_SOURCE, SEARCH_SVG, SELECT_SOURCE, SHEET_SOURCE, SKELETON_SOURCE, SLIDER_SOURCE,
+    SORT_ASCENDING_SVG, SORT_DESCENDING_SVG, SPINNER_SOURCE, STATUS_BAR_SOURCE, SWITCH_SOURCE,
+    TABLE_SOURCE, TABS_SOURCE, TAG_SOURCE, TEXTAREA_SOURCE, TITLE_BAR_SOURCE, TOAST_SOURCE,
+    TOGGLE_GROUP_SOURCE, TOGGLE_SOURCE, TOOLTIP_SOURCE, WARNING_SVG, ZH_CN_LOCALE,
 };
 
 const STUDIO_SOURCE: &str = include_str!("../../../registry/studio/theme_studio.rhai");
@@ -617,6 +619,7 @@ fn canonical_source(theme: &ThemeVariant, attribution: &[String]) -> String {
     output.push_str("            },\n");
     write_length_map(&mut output, "spacing", &theme.tokens.spacing);
     write_length_map(&mut output, "radii", &theme.tokens.radii);
+    write_typography(&mut output, &theme.tokens.typography);
     if !theme.tokens.namespaces.is_empty() {
         output.push_str("            namespaces: #{\n");
         for (namespace, tokens) in &theme.tokens.namespaces {
@@ -648,6 +651,34 @@ fn canonical_source(theme: &ThemeVariant, attribution: &[String]) -> String {
     }
     output.push_str("        },\n    }\n}\n");
     output
+}
+
+fn write_typography(output: &mut String, typography: &ThemeTypography) {
+    output.push_str("            typography: #{\n");
+    if let Some(family) = &typography.family {
+        let _ = writeln!(output, "                family: {},", json_string(family));
+    }
+    if !typography.fallbacks.is_empty() {
+        let fallbacks = typography
+            .fallbacks
+            .iter()
+            .map(|family| json_string(family))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let _ = writeln!(output, "                fallbacks: [{fallbacks}],");
+    }
+    output.push_str("                roles: #{\n");
+    for role in gpui_rhai::REQUIRED_TYPOGRAPHY {
+        let token = &typography.roles[*role];
+        let _ = writeln!(
+            output,
+            "                    {role}: #{{ size: {}, line_height: {}, weight: {} }},",
+            encoded_length(token.size),
+            encoded_length(token.line_height),
+            token.weight
+        );
+    }
+    output.push_str("                },\n            },\n");
 }
 
 fn write_length_map(output: &mut String, name: &str, values: &BTreeMap<String, Length>) {
@@ -859,6 +890,8 @@ fn studio_scripts(main: &str) -> EmbeddedScriptSource {
         module("components/toggle", TOGGLE_SOURCE),
         module("components/toggle_group", TOGGLE_GROUP_SOURCE),
         module("components/scroll_area", SCROLL_AREA_SOURCE),
+        module("components/title_bar", TITLE_BAR_SOURCE),
+        module("components/status_bar", STATUS_BAR_SOURCE),
     ]))
 }
 
@@ -994,6 +1027,31 @@ fn launch(
                 "icons/date_next".to_owned(),
                 asset(DATE_NEXT_SVG.as_bytes()),
             ),
+            (
+                "icons/disclosure_down".to_owned(),
+                asset(DISCLOSURE_DOWN_SVG.as_bytes()),
+            ),
+            (
+                "icons/sort_ascending".to_owned(),
+                asset(SORT_ASCENDING_SVG.as_bytes()),
+            ),
+            (
+                "icons/sort_descending".to_owned(),
+                asset(SORT_DESCENDING_SVG.as_bytes()),
+            ),
+            (
+                "icons/chevron_down".to_owned(),
+                asset(CHEVRON_DOWN_SVG.as_bytes()),
+            ),
+            (
+                "icons/chevron_up".to_owned(),
+                asset(CHEVRON_UP_SVG.as_bytes()),
+            ),
+            ("icons/minus".to_owned(), asset(MINUS_SVG.as_bytes())),
+            ("icons/plus".to_owned(), asset(PLUS_SVG.as_bytes())),
+            ("icons/search".to_owned(), asset(SEARCH_SVG.as_bytes())),
+            ("icons/info".to_owned(), asset(INFO_SVG.as_bytes())),
+            ("icons/warning".to_owned(), asset(WARNING_SVG.as_bytes())),
         ])
         .extension(ThemeStudioExtension { session, builtins })
         .development(true)
@@ -1094,6 +1152,8 @@ mod tests {
             "toggle",
             "toggle_group",
             "scroll_area",
+            "title_bar",
+            "status_bar",
         ] {
             assert!(
                 STUDIO_SOURCE.contains(&format!("{component}::")),

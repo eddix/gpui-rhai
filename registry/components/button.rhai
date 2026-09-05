@@ -108,7 +108,7 @@ fn button_height(size) {
     else { 32 }
 }
 
-fn button_font_size(size) { if size == "xs" { 11 } else { 12 } }
+fn button_typography(size) { if size == "xs" { "body_small" } else { "body" } }
 
 fn button_background(variant) {
     if variant == "danger" { theme_color("danger") }
@@ -171,8 +171,7 @@ fn render_Button(ctx, props) {
         .border_color(button_border(variant))
         .background(button_background(variant))
         .text_color(button_foreground(variant))
-        .font_size(px(button_font_size(size)))
-        .line_height(px(16))
+        .typography(button_typography(size))
         .font_weight(700)
         .focus(style().border_color(theme_color("focus_ring")))
         .active(style().opacity(0.86))
@@ -189,8 +188,7 @@ fn render_Button(ctx, props) {
     if "prefix" in props && props.prefix != () {
         children.push(props.prefix.with_style(component_style(props, "prefix", style())));
     }
-    children.push(text(label).with_style(component_style(props, "label",
-        style().line_height(px(16)))));
+    children.push(text(label).with_style(component_style(props, "label", style())));
     if "suffix" in props && props.suffix != () {
         children.push(props.suffix.with_style(component_style(props, "suffix", style())));
     }

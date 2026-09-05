@@ -987,12 +987,37 @@ fn retained_handlers(
 pub trait ColorResolver {
     fn resolve(&self, color: &ColorValue) -> Option<Rgba8>;
 
+    fn resolve_typography(&self, role: &str) -> Option<crate::ResolvedTypography> {
+        default_typography(role)
+    }
+
     fn resolve_length(&self, length: Length) -> Option<Length> {
         match length {
             Length::Pixels(_) | Length::Rems(_) | Length::Relative(_) => Some(length),
             Length::ThemeSpacing(_) | Length::ThemeRadius(_) => None,
         }
     }
+}
+
+fn default_typography(role: &str) -> Option<crate::ResolvedTypography> {
+    let (size, line_height, weight) = match role {
+        "caption" => (10.0, 14.0, 400),
+        "body_small" => (11.0, 14.0, 400),
+        "body" => (12.0, 16.0, 400),
+        "subtitle" => (13.0, 18.0, 400),
+        "title" => (14.0, 20.0, 700),
+        "heading" => (16.0, 22.0, 700),
+        "display" => (24.0, 30.0, 700),
+        "display_large" => (28.0, 34.0, 700),
+        _ => return None,
+    };
+    Some(crate::ResolvedTypography {
+        family: None,
+        fallbacks: Vec::new(),
+        size: Length::Pixels(size),
+        line_height: Length::Pixels(line_height),
+        weight,
+    })
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -1012,6 +1037,7 @@ pub(crate) struct OwnedColorResolver {
     tokens: BTreeMap<String, Rgba8>,
     spacing: BTreeMap<SpacingToken, Length>,
     radii: BTreeMap<RadiusToken, Length>,
+    typography: BTreeMap<String, crate::ResolvedTypography>,
 }
 
 impl OwnedColorResolver {
@@ -1056,6 +1082,14 @@ impl OwnedColorResolver {
                     .map(|value| (token, value))
             })
             .collect();
+        let typography = crate::REQUIRED_TYPOGRAPHY
+            .iter()
+            .filter_map(|role| {
+                colors
+                    .resolve_typography(role)
+                    .map(|value| ((*role).to_owned(), value))
+            })
+            .collect();
         Self {
             tokens: TOKENS
                 .iter()
@@ -1067,6 +1101,7 @@ impl OwnedColorResolver {
                 .collect(),
             spacing,
             radii,
+            typography,
         }
     }
 }
@@ -1085,6 +1120,10 @@ impl ColorResolver for OwnedColorResolver {
             Length::ThemeRadius(token) => self.radii.get(&token).copied(),
             Length::Pixels(_) | Length::Rems(_) | Length::Relative(_) => Some(length),
         }
+    }
+
+    fn resolve_typography(&self, role: &str) -> Option<crate::ResolvedTypography> {
+        self.typography.get(role).cloned()
     }
 }
 
@@ -3320,10 +3359,35 @@ fn apply_style(
     direction: TextDirection,
 ) -> Div {
     let mut style = style.clone();
+    resolve_typography_role(&mut style, colors);
     resolve_style_lengths(&mut style, colors);
     let element = apply_layout(element, &style, direction);
     let element = apply_spacing(element, &style, direction);
     apply_paint_and_text(element, &style, colors, direction)
+}
+
+fn resolve_typography_role(style: &mut StyleProperties, resolver: &impl ColorResolver) {
+    let Some(role) = style.typography.as_deref() else {
+        return;
+    };
+    let Some(typography) = resolver.resolve_typography(role) else {
+        return;
+    };
+    if style.font_family.is_none() {
+        style.font_family = typography.family;
+    }
+    if style.font_fallbacks.is_none() && !typography.fallbacks.is_empty() {
+        style.font_fallbacks = Some(typography.fallbacks);
+    }
+    if style.font_size.is_none() {
+        style.font_size = Some(typography.size);
+    }
+    if style.line_height.is_none() {
+        style.line_height = Some(typography.line_height);
+    }
+    if style.font_weight.is_none() {
+        style.font_weight = Some(typography.weight);
+    }
 }
 
 fn resolve_style_lengths(style: &mut StyleProperties, resolver: &impl ColorResolver) {
@@ -4025,6 +4089,24 @@ mod tests {
     use super::*;
     use crate::{ColorValue, Length, Rgba8, Style};
 
+    struct TypographyResolver;
+
+    impl ColorResolver for TypographyResolver {
+        fn resolve(&self, color: &ColorValue) -> Option<Rgba8> {
+            LiteralColorResolver.resolve(color)
+        }
+
+        fn resolve_typography(&self, role: &str) -> Option<crate::ResolvedTypography> {
+            (role == "body").then(|| crate::ResolvedTypography {
+                family: Some("JetBrains Mono".to_owned()),
+                fallbacks: vec!["PingFang SC".to_owned()],
+                size: Length::Pixels(12.0),
+                line_height: Length::Pixels(16.0),
+                weight: 400,
+            })
+        }
+    }
+
     #[test]
     fn declarative_nodes_and_typed_styles_convert_without_a_gpui_context() {
         let root = UiNode::column(vec![
@@ -4042,6 +4124,25 @@ mod tests {
                 .background(ColorValue::Literal(Rgba8::from_rgb_hex(0x0022_2222))),
         );
         let _element = GpuiNodeRenderer::render(&root);
+    }
+
+    #[test]
+    fn symbolic_typography_resolves_and_explicit_fields_win() {
+        let mut style = Style::new()
+            .typography("body")
+            .unwrap()
+            .font_weight(650)
+            .unwrap()
+            .base;
+        resolve_typography_role(&mut style, &TypographyResolver);
+        assert_eq!(style.font_family.as_deref(), Some("JetBrains Mono"));
+        assert_eq!(
+            style.font_fallbacks.as_deref(),
+            Some(["PingFang SC".to_owned()].as_slice())
+        );
+        assert_eq!(style.font_size, Some(Length::Pixels(12.0)));
+        assert_eq!(style.line_height, Some(Length::Pixels(16.0)));
+        assert_eq!(style.font_weight, Some(650));
     }
 
     #[test]

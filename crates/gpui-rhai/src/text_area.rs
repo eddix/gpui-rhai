@@ -4,16 +4,16 @@ use std::rc::Rc;
 
 use gpui::{
     App, Bounds, ClipboardItem, Context, CursorStyle, Element, ElementId, ElementInputHandler,
-    Entity, EntityInputHandler, FocusHandle, Focusable, GlobalElementId, IntoElement, KeyBinding,
-    KeyDownEvent, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad,
-    Pixels, Point, Render, ScrollHandle, SharedString, Style as GpuiStyle, TextAlign, TextRun,
-    UTF16Selection, UnderlineStyle, Window, WrappedLine, actions, div, fill, point, prelude::*, px,
-    relative, rgba, size,
+    Entity, EntityInputHandler, FocusHandle, Focusable, FontFallbacks, FontWeight, GlobalElementId,
+    IntoElement, KeyBinding, KeyDownEvent, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent,
+    MouseUpEvent, PaintQuad, Pixels, Point, Render, ScrollHandle, SharedString, Style as GpuiStyle,
+    TextAlign, TextRun, UTF16Selection, UnderlineStyle, Window, WrappedLine, actions, div, fill,
+    point, prelude::*, px, relative, rgba, size,
 };
 use rhai::{Engine, FuncRegistration, INT, ImmutableString};
 
 use crate::text_edit::TextBuffer;
-use crate::text_input::TextInputCallbacks;
+use crate::text_input::{NativeTypography, TextInputCallbacks, native_typography};
 use crate::{
     ComponentStateSchema, EventSchema, ObjectField, PrimitiveDescriptor, PrimitiveEventEmitter,
     PrimitiveHandler, PrimitiveId, PrimitiveInstance, PrimitiveInstanceId, PrimitiveProps,
@@ -98,8 +98,7 @@ struct TextAreaConfig {
     max_rows: usize,
     rows: Option<usize>,
     max_length: Option<usize>,
-    line_height: Pixels,
-    font_size: Pixels,
+    typography: NativeTypography,
     autofocus: bool,
     placeholder_color: Rgba8,
     selection_color: Rgba8,
@@ -188,12 +187,13 @@ impl TextAreaEntity {
         let Some(position) = layout.position_for_index(self.buffer.cursor_offset()) else {
             return;
         };
-        let viewport = self.config.line_height * self.config.viewport_rows(self.measured_rows);
+        let viewport =
+            self.config.typography.line_height * self.config.viewport_rows(self.measured_rows);
         let mut top = (-self.scroll.offset().y).max(px(0.0));
         if position.y < top {
             top = position.y;
-        } else if position.y + self.config.line_height > top + viewport {
-            top = position.y + self.config.line_height - viewport;
+        } else if position.y + self.config.typography.line_height > top + viewport {
+            top = position.y + self.config.typography.line_height - viewport;
         }
         self.scroll.set_offset(point(px(0.0), -top));
     }
@@ -269,9 +269,9 @@ impl TextAreaEntity {
         let x = self.preferred_x.unwrap_or(position.x);
         self.preferred_x = Some(x);
         let target_y = if step.is_negative() {
-            position.y - self.config.line_height
+            position.y - self.config.typography.line_height
         } else {
-            position.y + self.config.line_height
+            position.y + self.config.typography.line_height
         };
         let offset = layout.closest_index_for_position(point(x, target_y));
         if extend {
@@ -534,7 +534,7 @@ impl EntityInputHandler for TextAreaEntity {
             bounds.origin
                 + point(
                     end.x.max(start.x + px(1.0)),
-                    end.y + self.config.line_height,
+                    end.y + self.config.typography.line_height,
                 ),
         ))
     }
@@ -727,7 +727,7 @@ impl Element for TextAreaElement {
             .map_or(input.measured_rows, TextAreaLayout::visual_rows);
         let mut style = GpuiStyle::default();
         style.size.width = relative(1.0).into();
-        style.size.height = (input.config.line_height * rows).into();
+        style.size.height = (input.config.typography.line_height * rows).into();
         (window.request_layout(style, [], cx), ())
     }
 
@@ -765,7 +765,7 @@ impl Element for TextAreaElement {
             .text_system()
             .shape_text(
                 content,
-                input.config.font_size,
+                input.config.typography.font_size,
                 &runs,
                 Some(bounds.size.width),
                 None,
@@ -777,7 +777,7 @@ impl Element for TextAreaElement {
                 .text_system()
                 .shape_text(
                     " ".into(),
-                    input.config.font_size,
+                    input.config.typography.font_size,
                     &[base],
                     Some(bounds.size.width),
                     None,
@@ -787,7 +787,11 @@ impl Element for TextAreaElement {
         } else {
             lines
         };
-        let layout = TextAreaLayout::new(lines, &input.buffer.content, input.config.line_height);
+        let layout = TextAreaLayout::new(
+            lines,
+            &input.buffer.content,
+            input.config.typography.line_height,
+        );
         let selection = layout.selection_quads(
             &input.buffer.selected,
             bounds.origin,
@@ -802,7 +806,7 @@ impl Element for TextAreaElement {
                 fill(
                     Bounds::new(
                         bounds.origin + position,
-                        size(px(1.5), input.config.line_height),
+                        size(px(1.5), input.config.typography.line_height),
                     ),
                     rgba(input.config.caret_color.as_rgba_hex()),
                 )
@@ -836,7 +840,7 @@ impl Element for TextAreaElement {
     ) {
         let input = self.input.read(cx);
         let focus = input.focus.clone();
-        let line_height = input.config.line_height;
+        let line_height = input.config.typography.line_height;
         window.handle_input(
             &focus,
             ElementInputHandler::new(bounds, self.input.clone()),
@@ -893,9 +897,19 @@ fn marked_runs(base: &TextRun, marked: Option<&Range<usize>>, len: usize) -> Vec
 impl Render for TextAreaEntity {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let viewport_rows = self.config.viewport_rows(self.measured_rows);
-        let viewport_height = self.config.line_height * viewport_rows;
-        div()
-            .flex()
+        let viewport_height = self.config.typography.line_height * viewport_rows;
+        let mut root = div().flex();
+        if let Some(family) = &self.config.typography.family {
+            root = root.font_family(family.clone());
+        }
+        if !self.config.typography.fallbacks.is_empty() {
+            root.text_style()
+                .get_or_insert_with(Default::default)
+                .font_fallbacks = Some(FontFallbacks::from_fonts(
+                self.config.typography.fallbacks.clone(),
+            ));
+        }
+        root.font_weight(FontWeight(f32::from(self.config.typography.weight)))
             .key_context("GPUIRhaiTextarea")
             .track_focus(&self.focus)
             .on_key_down(|event: &KeyDownEvent, window, cx| {
@@ -933,8 +947,8 @@ impl Render for TextAreaEntity {
             .on_mouse_up(MouseButton::Left, cx.listener(Self::mouse_up))
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::mouse_up))
             .on_mouse_move(cx.listener(Self::mouse_move))
-            .line_height(self.config.line_height)
-            .text_size(self.config.font_size)
+            .line_height(self.config.typography.line_height)
+            .text_size(self.config.typography.font_size)
             .opacity(if self.config.disabled { 0.55 } else { 1.0 })
             .child(
                 div()
@@ -979,7 +993,7 @@ impl PrimitiveHandler for TextAreaPrimitiveHandler {
             return Err("TextareaPrimitive key cannot be empty".to_owned());
         }
         let value = string_prop(&instance.node.props, "value").unwrap_or_default();
-        let config = config_from_props(&instance.node.props, theme)?;
+        let config = config_from_props(&instance.node.props, theme, window)?;
         let callbacks = primitive_callbacks(events);
         let entity = if let Some(entity) = self.instances.get(&id) {
             entity.clone()
@@ -1040,6 +1054,7 @@ fn validate_text_area_value(value: &str, config: &TextAreaConfig) -> Result<(), 
 fn config_from_props(
     props: &PrimitiveProps,
     theme: &crate::PrimitiveTheme,
+    window: &Window,
 ) -> Result<TextAreaConfig, String> {
     let accent = theme
         .color("accent")
@@ -1052,8 +1067,11 @@ fn config_from_props(
         max_rows: usize_prop(props, "max_rows")?.unwrap_or(8),
         rows: usize_prop(props, "rows")?,
         max_length: usize_prop(props, "max_length")?,
-        line_height: px(float_prop(props, "line_height").unwrap_or(20.0)),
-        font_size: px(float_prop(props, "font_size").unwrap_or(14.0)),
+        typography: native_typography(
+            theme,
+            &string_prop(props, "typography").unwrap_or_else(|| "body".to_owned()),
+            window,
+        )?,
         autofocus: bool_prop(props, "autofocus").unwrap_or(false),
         placeholder_color: part_color(props, "placeholder_style", theme, false)
             .or_else(|| theme.color("text_muted"))
@@ -1136,14 +1154,6 @@ fn usize_prop(props: &PrimitiveProps, name: &str) -> Result<Option<usize>, Strin
     }
 }
 
-fn float_prop(props: &PrimitiveProps, name: &str) -> Option<f32> {
-    match props.get(name) {
-        Some(PrimitiveValue::Data(UiValue::Float(value))) => value.to_string().parse().ok(),
-        Some(PrimitiveValue::Data(UiValue::Integer(value))) => value.to_string().parse().ok(),
-        _ => None,
-    }
-}
-
 fn pixels_to_usize(value: f32) -> usize {
     value.max(0.0).to_string().parse().unwrap_or(usize::MAX)
 }
@@ -1207,12 +1217,13 @@ pub fn text_area_primitive_descriptor() -> PrimitiveDescriptor {
                 ))),
             ),
             (
-                "line_height".to_owned(),
-                ObjectField::required(ValueSchema::bounded_number(Some(1.0), Some(2_048.0))),
-            ),
-            (
-                "font_size".to_owned(),
-                ObjectField::required(ValueSchema::bounded_number(Some(1.0), Some(512.0))),
+                "typography".to_owned(),
+                ObjectField::required(ValueSchema::String {
+                    allowed: crate::REQUIRED_TYPOGRAPHY
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect(),
+                }),
             ),
             (
                 "autofocus".to_owned(),
@@ -1294,8 +1305,13 @@ mod tests {
             max_rows: 8,
             rows: None,
             max_length: Some(1),
-            line_height: px(20.0),
-            font_size: px(14.0),
+            typography: NativeTypography {
+                family: None,
+                fallbacks: Vec::new(),
+                font_size: px(14.0),
+                line_height: px(20.0),
+                weight: 400,
+            },
             autofocus: false,
             placeholder_color: Rgba8::from_rgba_hex(0xa1a1_aaff),
             selection_color: Rgba8::from_rgba_hex(0x3b82_f655),

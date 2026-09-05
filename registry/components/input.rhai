@@ -115,6 +115,7 @@ fn render_Input(ctx, props) {
         placeholder: optional_prop(props, "placeholder"),
         disabled: disabled,
         read_only: read_only,
+        typography: "body",
         autofocus: if "autofocus" in props { props.autofocus } else { false },
         on_change: optional_prop(props, "on_change"),
         on_submit: optional_prop(props, "on_submit"),
@@ -130,8 +131,7 @@ fn render_Input(ctx, props) {
                 .border(px(1))
                 .border_color(border)
                 .background(theme_color("surface"))
-                .font_size(px(12))
-                .line_height(px(16))
+                .typography("body")
                 .focus(style().border_color(theme_color("focus_ring")))
                 .disabled(style()
                     .background(theme_color("surface_raised"))

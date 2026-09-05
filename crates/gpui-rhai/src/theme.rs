@@ -28,6 +28,16 @@ const REQUIRED_COLORS: &[&str] = &[
 ];
 const REQUIRED_SPACING: &[&str] = &["xs", "sm", "md", "lg"];
 const REQUIRED_RADII: &[&str] = &["sm", "md", "lg"];
+pub const REQUIRED_TYPOGRAPHY: &[&str] = &[
+    "caption",
+    "body_small",
+    "body",
+    "subtitle",
+    "title",
+    "heading",
+    "display",
+    "display_large",
+];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -41,8 +51,34 @@ pub struct ThemeTokens {
     pub colors: BTreeMap<String, Rgba8>,
     pub spacing: BTreeMap<String, Length>,
     pub radii: BTreeMap<String, Length>,
+    pub typography: ThemeTypography,
     #[serde(default)]
     pub namespaces: BTreeMap<String, BTreeMap<String, ThemeTokenValue>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ThemeTypography {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub family: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub fallbacks: Vec<String>,
+    pub roles: BTreeMap<String, TypographyToken>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct TypographyToken {
+    pub size: Length,
+    pub line_height: Length,
+    pub weight: u16,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ResolvedTypography {
+    pub family: Option<String>,
+    pub fallbacks: Vec<String>,
+    pub size: Length,
+    pub line_height: Length,
+    pub weight: u16,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -64,6 +100,7 @@ impl ThemeTokens {
         require_tokens("color", REQUIRED_COLORS, &self.colors)?;
         require_tokens("spacing", REQUIRED_SPACING, &self.spacing)?;
         require_tokens("radius", REQUIRED_RADII, &self.radii)?;
+        self.typography.validate()?;
         for (name, value) in self.spacing.iter().chain(&self.radii) {
             if value.is_theme_token() {
                 return Err(ThemeError::NestedLengthToken(name.clone()));
@@ -134,6 +171,96 @@ impl ThemeTokens {
     }
 }
 
+impl ThemeTypography {
+    /// Validate the shared family/fallback stack and every required type role.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ThemeError`] for missing roles or invalid font metrics.
+    pub fn validate(&self) -> Result<(), ThemeError> {
+        require_tokens("typography", REQUIRED_TYPOGRAPHY, &self.roles)?;
+        if self
+            .family
+            .as_ref()
+            .is_some_and(|family| !valid_font_family(family))
+        {
+            return Err(ThemeError::InvalidTypographyFamily);
+        }
+        let mut families = std::collections::BTreeSet::new();
+        for family in &self.fallbacks {
+            if !valid_font_family(family) || !families.insert(family) {
+                return Err(ThemeError::InvalidTypographyFallbacks);
+            }
+        }
+        if self
+            .family
+            .as_ref()
+            .is_some_and(|family| families.contains(family))
+        {
+            return Err(ThemeError::InvalidTypographyFallbacks);
+        }
+        for (role, token) in &self.roles {
+            if !REQUIRED_TYPOGRAPHY.contains(&role.as_str()) {
+                return Err(ThemeError::UnknownTypographyRole(role.clone()));
+            }
+            validate_typography_length(role, "size", token.size)?;
+            validate_typography_length(role, "line_height", token.line_height)?;
+            if !(1..=1_000).contains(&token.weight) {
+                return Err(ThemeError::InvalidTypographyWeight {
+                    role: role.clone(),
+                    weight: token.weight,
+                });
+            }
+            match (token.size, token.line_height) {
+                (Length::Pixels(size), Length::Pixels(line_height))
+                | (Length::Rems(size), Length::Rems(line_height))
+                    if line_height < size =>
+                {
+                    return Err(ThemeError::InvalidTypographyLineHeight(role.clone()));
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
+    #[must_use]
+    pub fn resolve(&self, role: &str) -> Option<ResolvedTypography> {
+        let token = self.roles.get(role)?;
+        Some(ResolvedTypography {
+            family: self.family.clone(),
+            fallbacks: self.fallbacks.clone(),
+            size: token.size,
+            line_height: token.line_height,
+            weight: token.weight,
+        })
+    }
+}
+
+fn valid_font_family(family: &str) -> bool {
+    let trimmed = family.trim();
+    !trimmed.is_empty() && trimmed.len() <= 256
+}
+
+fn validate_typography_length(
+    role: &str,
+    field: &'static str,
+    value: Length,
+) -> Result<(), ThemeError> {
+    let positive = match value {
+        Length::Pixels(value) | Length::Rems(value) => value.is_finite() && value > 0.0,
+        Length::Relative(_) | Length::ThemeSpacing(_) | Length::ThemeRadius(_) => false,
+    };
+    if positive {
+        Ok(())
+    } else {
+        Err(ThemeError::InvalidTypographyLength {
+            role: role.to_owned(),
+            field,
+        })
+    }
+}
+
 fn valid_token_segment(value: &str) -> bool {
     !value.is_empty()
         && !value.starts_with('_')
@@ -181,6 +308,11 @@ impl ThemeVariant {
         }
         self.tokens.validate()
     }
+
+    #[must_use]
+    pub fn typography(&self, role: &str) -> Option<ResolvedTypography> {
+        self.tokens.typography.resolve(role)
+    }
 }
 
 impl ColorResolver for ThemeVariant {
@@ -197,6 +329,10 @@ impl ColorResolver for ThemeVariant {
             Length::ThemeRadius(token) => self.tokens.radii.get(token.as_str()).copied(),
             Length::Pixels(_) | Length::Rems(_) | Length::Relative(_) => Some(length),
         }
+    }
+
+    fn resolve_typography(&self, role: &str) -> Option<ResolvedTypography> {
+        self.typography(role)
     }
 }
 
@@ -601,6 +737,10 @@ impl ColorResolver for ResolvedTheme<'_> {
     fn resolve_length(&self, length: Length) -> Option<Length> {
         self.variant.resolve_length(length)
     }
+
+    fn resolve_typography(&self, role: &str) -> Option<ResolvedTypography> {
+        self.variant.typography(role)
+    }
 }
 
 /// Compile and evaluate a Rhai theme source exporting `theme() -> map`.
@@ -651,6 +791,18 @@ pub enum ThemeError {
     NestedNamespacedLength { namespace: String, name: String },
     #[error("theme number token `{namespace}.{name}` must be finite")]
     NonFiniteNumber { namespace: String, name: String },
+    #[error("theme typography family must be a non-empty name no longer than 256 bytes")]
+    InvalidTypographyFamily,
+    #[error("theme typography fallbacks must contain unique non-empty family names")]
+    InvalidTypographyFallbacks,
+    #[error("unknown theme typography role `{0}`")]
+    UnknownTypographyRole(String),
+    #[error("theme typography `{role}.{field}` must be a positive px or rem length")]
+    InvalidTypographyLength { role: String, field: &'static str },
+    #[error("theme typography `{0}` line height cannot be smaller than its font size")]
+    InvalidTypographyLineHeight(String),
+    #[error("theme typography `{role}` weight must be between 1 and 1000, got {weight}")]
+    InvalidTypographyWeight { role: String, weight: u16 },
     #[error("variant `{key}` does not match family `{family}` or its map key")]
     VariantIdentity { family: String, key: String },
     #[error("family `{family}` has no default variant `{variant}`")]
@@ -681,6 +833,31 @@ pub enum ThemeError {
 mod tests {
     use super::*;
 
+    fn typography() -> ThemeTypography {
+        ThemeTypography {
+            family: None,
+            fallbacks: Vec::new(),
+            roles: BTreeMap::from([
+                ("caption".to_owned(), type_token(10.0, 14.0, 400)),
+                ("body_small".to_owned(), type_token(11.0, 14.0, 400)),
+                ("body".to_owned(), type_token(12.0, 16.0, 400)),
+                ("subtitle".to_owned(), type_token(13.0, 18.0, 400)),
+                ("title".to_owned(), type_token(14.0, 20.0, 700)),
+                ("heading".to_owned(), type_token(16.0, 22.0, 700)),
+                ("display".to_owned(), type_token(24.0, 30.0, 700)),
+                ("display_large".to_owned(), type_token(28.0, 34.0, 700)),
+            ]),
+        }
+    }
+
+    fn type_token(size: f64, line_height: f64, weight: u16) -> TypographyToken {
+        TypographyToken {
+            size: Length::Pixels(size),
+            line_height: Length::Pixels(line_height),
+            weight,
+        }
+    }
+
     fn tokens(accent: u32) -> ThemeTokens {
         ThemeTokens {
             colors: REQUIRED_COLORS
@@ -707,6 +884,7 @@ mod tests {
                 ("md".to_owned(), Length::Pixels(8.0)),
                 ("lg".to_owned(), Length::Pixels(12.0)),
             ]),
+            typography: typography(),
             namespaces: BTreeMap::new(),
         }
     }
@@ -878,6 +1056,48 @@ mod tests {
                 category: "color",
                 ..
             })
+        ));
+    }
+
+    #[test]
+    fn typography_roles_are_required_validated_and_resolved() {
+        let mut theme_tokens = tokens(0x0033_66ff);
+        theme_tokens.typography.family = Some("JetBrains Mono".to_owned());
+        theme_tokens.typography.fallbacks = vec!["PingFang SC".to_owned()];
+        let body = theme_tokens.typography.resolve("body").unwrap();
+        assert_eq!(body.family.as_deref(), Some("JetBrains Mono"));
+        assert_eq!(body.fallbacks, ["PingFang SC"]);
+        assert_eq!(body.size, Length::Pixels(12.0));
+        assert_eq!(body.line_height, Length::Pixels(16.0));
+        assert_eq!(body.weight, 400);
+
+        theme_tokens.typography.roles.remove("caption");
+        assert!(matches!(
+            theme_tokens.validate(),
+            Err(ThemeError::MissingTokens {
+                category: "typography",
+                ..
+            })
+        ));
+
+        let mut invalid = tokens(0x0033_66ff);
+        invalid
+            .typography
+            .roles
+            .insert("body".to_owned(), type_token(16.0, 12.0, 400));
+        assert!(matches!(
+            invalid.validate(),
+            Err(ThemeError::InvalidTypographyLineHeight(role)) if role == "body"
+        ));
+
+        let mut invalid = tokens(0x0033_66ff);
+        invalid
+            .typography
+            .roles
+            .insert("bodyish".to_owned(), type_token(12.0, 16.0, 400));
+        assert!(matches!(
+            invalid.validate(),
+            Err(ThemeError::UnknownTypographyRole(role)) if role == "bodyish"
         ));
     }
 

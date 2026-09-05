@@ -35,8 +35,9 @@ Leading `//` attribution comments are preserved.
 
 ## Component specimen
 
-The right pane renders all 46 official components from the same source shipped
-to applications. It includes action variants and sizes, form controls, choices,
+The right pane renders all 48 official components from the same source shipped
+to applications. It begins with all eight live typography roles, then includes
+action variants and sizes, form controls, choices,
 status and loading states, navigation, grouped/sticky virtualized Table,
 Pagination, themed ScrollArea, Slider, Command, ContextMenu, Sheet, assets, and
 the complete overlay family.

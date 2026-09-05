@@ -6,7 +6,7 @@
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": [],
   "capabilities": {},
-  "assets": []
+  "assets": ["icons/disclosure_down.svg", "icons/chevron_right.svg", "icons/sort_ascending.svg", "icons/sort_descending.svg"]
 }
 */
 // Data-backed Table composed entirely from public Box/Text/virtual_collection APIs.
@@ -21,7 +21,8 @@
 define_component(#{
     metadata: #{ id: "components/table", "export": "Table", version: "0.1.0",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
-        dependencies: [], capabilities: #{}, assets: [] },
+        dependencies: [], capabilities: #{},
+        assets: ["icons/disclosure_down.svg", "icons/chevron_right.svg", "icons/sort_ascending.svg", "icons/sort_descending.svg"] },
     schema: #{
         props: #{
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
@@ -123,16 +124,18 @@ fn group_action(ctx, group) { ctx.emit("group_toggle", group); }
 fn render_table_row(ctx, payload) {
     let item = payload.item;
     if item.kind == "group" {
-        let indicator = text(if item.collapsed { "▸" } else { "▾" })
+        let indicator = image_source(asset(if item.collapsed {
+                "app/icons/chevron_right"
+            } else { "app/icons/disclosure_down" }))
             .with_key(`${payload.key}-indicator`)
             .with_style(ctx.component_style("group_indicator",
-                style().width(px(14)).font_size(px(10)).text_color(theme_color("text_muted"))));
+                style().width(px(14)).height(px(14)).text_color(theme_color("text_muted"))));
         let label = text(item.group).with_key(`${payload.key}-label`)
             .with_style(ctx.component_style("group_label",
-                style().flex_grow().font_size(px(11)).line_height(px(14)).font_weight(700)));
+                style().flex_grow().typography("body_small").font_weight(700)));
         let count = text(`${item.count}`).with_key(`${payload.key}-count`)
             .with_style(ctx.component_style("group_count",
-                style().font_size(px(10)).line_height(px(14)).text_color(theme_color("text_muted"))));
+                style().typography("caption").text_color(theme_color("text_muted"))));
         let node = row([indicator, label, count])
             .with_key(payload.key)
             .with_style(ctx.component_style("group_header",
@@ -150,7 +153,7 @@ fn render_table_row(ctx, payload) {
     for cell in item.cells {
         cells.push(text(cell.text).with_key(cell.key).with_style(
             column_style(cell).min_width(px(0)).whitespace_nowrap().text_ellipsis()
-                .font_size(px(12)).line_height(px(16))
+                .typography("body")
         ));
     }
     let base = style().height(px(item.height)).items_center()
@@ -211,16 +214,22 @@ fn render_Table(ctx, props) {
     let current_sort = if "sort" in props { props.sort } else { () };
     let headers = [];
     for column in props.columns {
-        let title = if current_sort != () && current_sort.key == column.key {
-            `${column.title} ${if current_sort.direction == "ascending" { "↑" } else { "↓" }}`
-        } else { column.title };
-        let header = text(title).with_key(column.key)
+        let header_children = [text(column.title).with_style(style()
+            .min_width(px(0)).whitespace_nowrap().text_ellipsis())];
+        if current_sort != () && current_sort.key == column.key {
+            header_children.push(image_source(asset(if current_sort.direction == "ascending" {
+                    "app/icons/sort_ascending"
+                } else { "app/icons/sort_descending" }))
+                .with_style(style().width(px(14)).height(px(14))
+                    .text_color(theme_color("text_primary"))));
+        }
+        let header = row(header_children).with_key(column.key)
             .with_style(component_style(props, "header_cell",
                 column_style(column).min_width(px(0)).height(px(30)).items_center()
-                    .whitespace_nowrap().text_ellipsis()
-                    .font_size(px(11)).line_height(px(14)).font_weight(700)
+                    .gap(px(5))
+                    .typography("body_small").font_weight(700)
                     .hover(style().background(theme_color("surface_hover")))))
-            .accessibility_role("columnheader");
+            .accessibility_role("columnheader").accessibility_label(column.title);
         headers.push(if prop_or(column, "sortable", false) {
             header.on_click_value(Fn("sort_action"), next_sort(current_sort, column.key))
         } else { header });
@@ -237,7 +246,7 @@ fn render_Table(ctx, props) {
             props.loading_content
         } else { text("Loading…") };
         return box([header, loading.with_style(component_style(props, "loading", style()
-            .padding(px(12)).font_size(px(11)).text_color(theme_color("text_muted"))))])
+            .padding(px(12)).typography("body_small").text_color(theme_color("text_muted"))))])
             .with_key(props.key).with_style(component_style(props, "root", style().flex_col()
                 .border(px(1)).border_color(theme_color("border"))))
             .accessibility_role("table").accessibility_label(props.label);
@@ -246,7 +255,7 @@ fn render_Table(ctx, props) {
         let empty = if "empty" in props && props.empty != () { props.empty }
             else { text(prop_or(props, "empty_text", "No results")) };
         return box([header, empty.with_style(component_style(props, "empty", style()
-            .padding(px(12)).font_size(px(11)).text_color(theme_color("text_muted"))))])
+            .padding(px(12)).typography("body_small").text_color(theme_color("text_muted"))))])
             .with_key(props.key).with_style(component_style(props, "root", style().flex_col()
                 .border(px(1)).border_color(theme_color("border"))))
             .accessibility_role("table").accessibility_label(props.label);

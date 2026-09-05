@@ -85,11 +85,11 @@ fn forward_open_change(ctx, open) {
 fn render_Dialog(ctx, props) {
     let children = [
         text(props.title).with_style(component_style(props, "title",
-            style().font_size(px(14)).line_height(px(20)).font_weight(700)
+            style().typography("title").font_weight(700)
                 .text_color(theme_color("text_primary"))
         )),
         props.content.with_style(component_style(props, "content",
-            style().font_size(px(12)).line_height(px(16)))),
+            style().typography("body"))),
     ];
     if "actions" in props && props.actions != () {
         children.push(

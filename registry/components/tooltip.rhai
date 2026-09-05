@@ -50,7 +50,7 @@ fn render_Tooltip(ctx, props) {
     let hide_delay = if "hide_delay_ms" in props && props.hide_delay_ms > 0 { props.hide_delay_ms } else { 0 };
     let content = row([props.content]).with_style(component_style(props, "content",
         style().max_width(px(320)).padding_x(px(7)).padding_y(px(5))
-            .radius(theme_radius("sm")).font_size(px(11)).line_height(px(14))
+            .radius(theme_radius("sm")).typography("body_small")
             .background(theme_color("text_primary"))
             .text_color(theme_color("surface"))
     )).accessibility_role("tooltip");

@@ -62,7 +62,7 @@ fn render_Badge(ctx, props) {
         .padding_x(px(if size == "sm" { 5 } else { 7 })).gap(px(5)).items_center()
         .radius(theme_radius("sm")).background(theme_color("surface_raised"))
         .border(px(1)).border_color(theme_color("border"))
-        .font_size(px(if size == "sm" { 10 } else { 11 })).line_height(px(14)).font_weight(700)
+        .typography(if size == "sm" { "caption" } else { "body_small" }).font_weight(700)
         .text_color(badge_color(variant))))
         .accessibility_role("status").accessibility_label(props.text)
 }

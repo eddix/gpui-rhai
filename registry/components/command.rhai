@@ -151,7 +151,7 @@ fn render_command_row(ctx, payload) {
         return text(item.label).with_key(payload.key)
             .with_style(ctx.component_style("group", style()
                 .height(px(24)).padding_x(px(9)).items_center()
-                .font_size(px(10)).line_height(px(14)).font_weight(700)
+                .typography("caption").font_weight(700)
                 .text_color(theme_color("text_muted"))))
             .accessibility_role("heading").accessibility_label(item.label);
     }
@@ -165,7 +165,7 @@ fn render_command_row(ctx, payload) {
             .radius(theme_radius("sm"))
             .background(if item.active { theme_color("selection") } else { rgba(0x00000000) })
             .border_start(px(2)).border_color(if item.active { theme_color("accent") } else { rgba(0x00000000) })
-            .font_size(px(12)).line_height(px(16))
+            .typography("body")
             .text_color(if item.disabled { theme_color("disabled") } else { theme_color("text_primary") })
             .hover(style().background(theme_color("surface_hover")))
             .disabled(style().opacity(0.66))))
@@ -252,7 +252,7 @@ fn render_Command(ctx, props) {
         text(prop_or(props, "empty_text", "No commands found"))
             .with_style(component_style(props, "empty", style()
                 .min_height(px(88)).padding(px(16)).items_center().justify_center()
-                .font_size(px(11)).line_height(px(16)).text_color(theme_color("text_muted"))))
+                .typography("body_small").text_color(theme_color("text_muted"))))
             .accessibility_role("status")
     } else {
         let max_visible = prop_or(props, "max_visible", 8);

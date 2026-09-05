@@ -6,7 +6,7 @@
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": ["components/input"],
   "capabilities": {},
-  "assets": []
+  "assets": ["icons/check.svg", "icons/close.svg", "icons/chevron_down.svg", "icons/chevron_up.svg"]
 }
 */
 // Public Rhai choice composition over Overlay, Input, and virtual_collection.
@@ -20,7 +20,8 @@ import "components/input" as input;
 define_component(#{
     metadata: #{ id: "components/combobox", "export": "Combobox", version: "0.1.0",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
-        dependencies: ["components/input"], capabilities: #{}, assets: [] },
+        dependencies: ["components/input"], capabilities: #{},
+        assets: ["icons/check.svg", "icons/close.svg", "icons/chevron_down.svg", "icons/chevron_up.svg"] },
     schema: #{
         props: #{
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
@@ -242,13 +243,13 @@ fn render_combobox_row(ctx, payload) {
         return text(item.label).with_key(payload.key)
             .with_style(ctx.component_style("group",
                 style().height(px(24)).padding_x(px(10)).items_center()
-                    .font_size(px(10)).line_height(px(14)).font_weight(700)
+                    .typography("caption").font_weight(700)
                     .text_color(theme_color("text_muted"))))
             .accessibility_role("presentation").accessibility_label(item.label);
     }
     let row_style = ctx.component_style("option",
         style().height(px(item.height)).padding_x(px(8))
-            .items_center().gap(px(8)).font_size(px(12)).line_height(px(16))
+            .items_center().gap(px(8)).typography("body")
             .border_start(px(2)).border_color(rgba(0x00000000))
             .hover(style().background(theme_color("surface_hover"))));
     let row_style = if item.selected {
@@ -263,8 +264,9 @@ fn render_combobox_row(ctx, payload) {
         ctx.component_style("option_disabled", row_style.text_color(theme_color("disabled")))
     } else { row_style };
     let node = row([
-        text(if item.selected { "✓" } else { "" }).with_style(style()
-            .width(px(14)).text_color(theme_color("accent"))),
+        image_source(asset("app/icons/check")).with_style(style()
+            .width(px(14)).height(px(14)).text_color(theme_color("accent"))
+            .opacity(if item.selected { 1.0 } else { 0.0 })),
         text(item.label).with_style(style().flex_grow())
     ])
         .with_key(payload.key).with_style(row_style)
@@ -343,20 +345,24 @@ fn render_Combobox(ctx, props) {
                     else { theme_color("text_primary") }))));
         let trigger_actions = [];
         if prop_or(props, "clearable", false) && selected.len > 0 {
-            trigger_actions.push(text("×").with_key(`${props.key}-clear`)
-                .with_style(component_style(props, "clear", style()
-                    .width(px(16)).height(px(16)).items_center().justify_center()
-                    .radius(theme_radius("sm"))
-                    .hover(style().background(theme_color("surface_hover")))))
+            let clear_style = component_style(props, "clear", style()
+                .width(px(16)).height(px(16)).items_center().justify_center()
+                .text_color(theme_color("text_muted")).radius(theme_radius("sm"))
+                .hover(style().background(theme_color("surface_hover"))));
+            let clear = image_source(asset("app/icons/close"))
+                .with_key(`${props.key}-clear`).with_style(clear_style)
                 .accessibility_role("button").accessibility_label(prop_or(props, "clear_label", "Clear selection"))
                 .on_click_value(Fn("clear_action"),
-                    #{ changed: true, reset_query: reset_query }));
+                    #{ changed: true, reset_query: reset_query });
+            trigger_actions.push(clear);
         }
-        trigger_actions.push(text(if open { "▴" } else { "▾" })
+        trigger_actions.push(image_source(asset(if open {
+                "app/icons/chevron_up"
+            } else { "app/icons/chevron_down" }))
             .with_key(`${props.key}-indicator`)
             .with_style(component_style(props, "indicator",
                 style().width(px(16)).height(px(16)).items_center().justify_center()
-                    .font_size(px(10)).text_color(theme_color("text_muted")))));
+                    .text_color(theme_color("text_muted")))));
         trigger_children.push(row(trigger_actions).with_style(style().gap(px(4)).items_center()));
     }
     let trigger_background = if open { theme_color("surface_raised") } else { theme_color("surface") };
@@ -370,7 +376,7 @@ fn render_Combobox(ctx, props) {
             .border(px(1)).border_color(if open { theme_color("focus_ring") }
                 else { theme_color("border") })
             .radius(theme_radius("md")).background(trigger_background)
-            .font_size(px(12)).line_height(px(16))
+            .typography("body")
             .hover(style().background(theme_color("surface_raised")))
             .focus(style().border_color(theme_color("focus_ring")))
             .disabled(style().background(theme_color("surface_raised"))
@@ -416,7 +422,7 @@ fn render_Combobox(ctx, props) {
         content.push(if "empty" in props && props.empty != () { props.empty }
             else { text(prop_or(props, "empty_text", "No results"))
                 .with_style(component_style(props, "empty", style().padding(px(8))
-                    .font_size(px(11)).text_color(theme_color("text_muted")))) });
+                    .typography("body_small").text_color(theme_color("text_muted")))) });
     } else {
         content.push(virtual_collection(#{
             key: `${props.key}-options`, label: placeholder,

@@ -95,7 +95,7 @@ fn render_Popover(ctx, props) {
                 .border(px(1))
                 .border_color(theme_color("border"))
                 .background(theme_color("surface"))
-                .font_size(px(12)).line_height(px(16))
+                .typography("body")
         ))
         .accessibility_role("dialog");
     let config = #{

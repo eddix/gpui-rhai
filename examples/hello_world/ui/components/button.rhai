@@ -139,9 +139,11 @@ fn render_Button(ctx, props) {
         .height(px(button_height(size)))
         .padding_x(px(12))
         .gap(px(6))
-        .radius(px(6))
+        .radius(theme_radius("md"))
         .background(button_background(variant))
         .text_color(button_foreground(variant))
+        .typography(if size == "xs" { "body_small" } else { "body" })
+        .font_weight(700)
         .hover(style().background(theme_color("accent_hover")))
         .disabled(style().background(theme_color("disabled")));
 

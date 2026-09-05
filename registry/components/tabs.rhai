@@ -66,7 +66,7 @@ fn render_Tabs(ctx, props) {
     for tab in props.tabs {
         let selected = tab.value == props.value;
         let tab_style = style().height(px(32)).padding_x(px(10)).items_center()
-            .font_size(px(12)).line_height(px(16)).font_weight(700)
+            .typography("body").font_weight(700)
             .border_color(rgba(0x00000000))
             .text_color(if tab_disabled(tab) { theme_color("disabled") }
                 else if selected { theme_color("accent") }
@@ -97,7 +97,7 @@ fn render_Tabs(ctx, props) {
         headers.push(header);
         if selected { panel = tab.content.with_style(component_style(props, "panel", style()
             .padding(px(12)).border(px(1)).border_color(theme_color("border"))
-            .background(theme_color("surface")).font_size(px(12)).line_height(px(16)))); }
+            .background(theme_color("surface")).typography("body"))); }
     }
     let list = if orientation == "vertical" { column(headers) } else { row(headers) };
     list = list

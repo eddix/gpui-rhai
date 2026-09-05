@@ -213,6 +213,12 @@ default cursor for controls. Attach normalized accessibility role/label data to
 the root node. Use `padding_start/end` and `margin_start/end` for asymmetric
 inline spacing so caller locale direction remains correct.
 
+Choose a semantic typography role with `style().typography(...)`; do not repeat
+numeric font-size/line-height pairs across component sources. Use `body` for
+ordinary controls, `body_small`/`caption` for compact metadata, and the named
+title/display roles for hierarchy. Native text primitives receive the same role
+so their shaping metrics stay aligned with surrounding nodes.
+
 Application/theme families may declare typed namespaced tokens. Components
 resolve colors with `theme_color("charts.series_a")`; unknown or wrong-typed
 paths do not fall back to arbitrary strings. Namespaced lengths/numbers/strings

@@ -1,6 +1,6 @@
 # Official component catalog
 
-gpui-rhai ships 46 editable Rhai source components. They all use the same
+gpui-rhai ships 48 editable Rhai source components. They all use the same
 public atoms and generic runtime mechanisms available to application code; no
 official component receives a private high-level node constructor.
 
@@ -11,6 +11,12 @@ cargo run -p gpui-rhai --example component_gallery
 ```
 
 Theme Studio renders the same exhaustive specimen while editing a theme.
+
+For a custom macOS titlebar, configure GPUI's transparent `TitlebarOptions` in
+the trusted Host and pass `inset_start: 70` to the Rhai `TitleBar`. Rendering a
+bar alone deliberately does not change native window behavior. This keeps an
+embedded user-authored view from turning ordinary content into a window-control
+surface.
 
 ## Foundations and status
 
@@ -23,6 +29,9 @@ Theme Studio renders the same exhaustive specimen while editing a theme.
 - `Kbd`, `Progress`, `Spinner`, and `Skeleton` cover shortcut, determinate,
   indeterminate, and placeholder presentation. Spinner animation runs on the
   native runtime clock and settles visibly under reduced motion.
+- `TitleBar` and `StatusBar` provide source-owned application chrome with
+  logical start/center/end slots. They do not acquire native window authority;
+  the Rust Host still owns window configuration, movement, and closing.
 
 ## Actions, choices, and forms
 

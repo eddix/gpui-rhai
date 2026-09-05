@@ -256,28 +256,7 @@ fn data_table_view(theme: &str, locale: &str, visual_state: &str) -> EmbeddedScr
             ("zh_cn.rhai".to_owned(), ZH_CN.to_owned()),
             ("ar.rhai".to_owned(), AR.to_owned()),
         ])
-        .asset_sources([
-            (
-                "icons/check".to_owned(),
-                svg(include_bytes!("../../../registry/assets/icons/check.svg")),
-            ),
-            (
-                "icons/close".to_owned(),
-                svg(include_bytes!("../../../registry/assets/icons/close.svg")),
-            ),
-            (
-                "icons/chevron_left".to_owned(),
-                svg(include_bytes!(
-                    "../../../registry/assets/icons/chevron_left.svg"
-                )),
-            ),
-            (
-                "icons/chevron_right".to_owned(),
-                svg(include_bytes!(
-                    "../../../registry/assets/icons/chevron_right.svg"
-                )),
-            ),
-        ])
+        .asset_sources(data_table_assets())
 }
 
 fn svg(bytes: &[u8]) -> AssetData {
@@ -285,6 +264,54 @@ fn svg(bytes: &[u8]) -> AssetData {
         mime_type: "image/svg+xml".to_owned(),
         bytes: bytes.to_vec(),
     }
+}
+
+fn data_table_assets() -> Vec<(String, AssetData)> {
+    [
+        (
+            "check",
+            include_bytes!("../../../registry/assets/icons/check.svg").as_slice(),
+        ),
+        (
+            "close",
+            include_bytes!("../../../registry/assets/icons/close.svg").as_slice(),
+        ),
+        (
+            "search",
+            include_bytes!("../../../registry/assets/icons/search.svg").as_slice(),
+        ),
+        (
+            "chevron_left",
+            include_bytes!("../../../registry/assets/icons/chevron_left.svg").as_slice(),
+        ),
+        (
+            "chevron_right",
+            include_bytes!("../../../registry/assets/icons/chevron_right.svg").as_slice(),
+        ),
+        (
+            "disclosure_down",
+            include_bytes!("../../../registry/assets/icons/disclosure_down.svg").as_slice(),
+        ),
+        (
+            "sort_ascending",
+            include_bytes!("../../../registry/assets/icons/sort_ascending.svg").as_slice(),
+        ),
+        (
+            "sort_descending",
+            include_bytes!("../../../registry/assets/icons/sort_descending.svg").as_slice(),
+        ),
+        (
+            "chevron_down",
+            include_bytes!("../../../registry/assets/icons/chevron_down.svg").as_slice(),
+        ),
+        (
+            "chevron_up",
+            include_bytes!("../../../registry/assets/icons/chevron_up.svg").as_slice(),
+        ),
+    ]
+    .into_iter()
+    .map(|(name, bytes)| (format!("icons/{name}"), svg(bytes)))
+    .collect()
 }
 
 #[cfg(test)]

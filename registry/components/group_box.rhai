@@ -35,11 +35,11 @@ define_component(#{
 fn GroupBox(props) { render_component("components/group_box", props) }
 fn render_GroupBox(ctx, props) {
     let header = [text(props.label).with_style(component_style(props, "label", style()
-        .font_size(px(12)).line_height(px(16)).font_weight(700)
+        .typography("body").font_weight(700)
         .text_color(theme_color("text_primary"))))];
     if "description" in props && props.description != () {
         header.push(text(props.description).with_style(component_style(props, "description", style()
-            .font_size(px(11)).line_height(px(15)).text_color(theme_color("text_muted")))));
+            .typography("body_small").text_color(theme_color("text_muted")))));
     }
     column([
         column(header).with_style(style().gap(px(2))),

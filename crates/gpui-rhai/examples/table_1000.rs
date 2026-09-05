@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
 use gpui_rhai::{
-    EmbeddedScriptSource, EmbeddedScriptView, ModuleId, NativeCollection, ScriptApplication,
-    ScriptViewExtension, UiRuntimeState, UiValue,
+    AssetData, EmbeddedScriptSource, EmbeddedScriptView, ModuleId, NativeCollection,
+    ScriptApplication, ScriptViewExtension, UiRuntimeState, UiValue,
 };
 
 const ROW_COUNT: usize = 1_000;
@@ -123,11 +123,43 @@ pub(crate) fn table_1000_view() -> EmbeddedScriptView {
         module("components/table", TABLE),
         module("components/button", BUTTON),
     ]));
-    EmbeddedScriptView::new(ModuleId::parse("main").unwrap(), scripts, THEME).extension(
-        TableDataExtension {
+    EmbeddedScriptView::new(ModuleId::parse("main").unwrap(), scripts, THEME)
+        .asset_sources(table_assets())
+        .extension(TableDataExtension {
             rows: benchmark_collection(),
-        },
-    )
+        })
+}
+
+fn table_assets() -> Vec<(String, AssetData)> {
+    [
+        (
+            "icons/disclosure_down",
+            include_bytes!("../../../registry/assets/icons/disclosure_down.svg").as_slice(),
+        ),
+        (
+            "icons/chevron_right",
+            include_bytes!("../../../registry/assets/icons/chevron_right.svg").as_slice(),
+        ),
+        (
+            "icons/sort_ascending",
+            include_bytes!("../../../registry/assets/icons/sort_ascending.svg").as_slice(),
+        ),
+        (
+            "icons/sort_descending",
+            include_bytes!("../../../registry/assets/icons/sort_descending.svg").as_slice(),
+        ),
+    ]
+    .into_iter()
+    .map(|(name, bytes)| {
+        (
+            name.to_owned(),
+            AssetData {
+                mime_type: "image/svg+xml".to_owned(),
+                bytes: bytes.to_vec(),
+            },
+        )
+    })
+    .collect()
 }
 
 struct TableDataExtension {

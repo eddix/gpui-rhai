@@ -6,11 +6,11 @@ use std::rc::Rc;
 
 use gpui::{
     App, Bounds, ClipboardItem, ContentMask, Context, CursorStyle, Element, ElementId,
-    ElementInputHandler, Entity, EntityInputHandler, FocusHandle, Focusable, GlobalElementId,
-    IntoElement, KeyBinding, KeyDownEvent, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent,
-    MouseUpEvent, PaintQuad, Pixels, Point, Render, ShapedLine, SharedString, Style as GpuiStyle,
-    TextRun, UTF16Selection, UnderlineStyle, Window, actions, div, fill, point, prelude::*, px,
-    relative, rgba, size,
+    ElementInputHandler, Entity, EntityInputHandler, FocusHandle, Focusable, FontFallbacks,
+    FontWeight, GlobalElementId, IntoElement, KeyBinding, KeyDownEvent, LayoutId, MouseButton,
+    MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad, Pixels, Point, Render, ShapedLine,
+    SharedString, Style as GpuiStyle, TextRun, UTF16Selection, UnderlineStyle, Window, actions,
+    div, fill, point, prelude::*, px, relative, rgba, size,
 };
 
 pub use crate::text_edit::TextBuffer;
@@ -89,6 +89,7 @@ pub(crate) struct TextInputEntity {
     read_only: bool,
     selection_color: Rgba8,
     caret_color: Rgba8,
+    typography: NativeTypography,
     callbacks: TextInputCallbacks,
     last_layout: Option<ShapedLine>,
     last_bounds: Option<Bounds<Pixels>>,
@@ -105,6 +106,63 @@ struct TextInputConfig {
     autofocus: bool,
     selection_color: Rgba8,
     caret_color: Rgba8,
+    typography: NativeTypography,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct NativeTypography {
+    pub(crate) family: Option<String>,
+    pub(crate) fallbacks: Vec<String>,
+    pub(crate) font_size: Pixels,
+    pub(crate) line_height: Pixels,
+    pub(crate) weight: u16,
+}
+
+pub(crate) fn native_typography(
+    theme: &crate::PrimitiveTheme,
+    role: &str,
+    window: &Window,
+) -> Result<NativeTypography, String> {
+    let typography = theme
+        .typography(role)
+        .ok_or_else(|| format!("native text primitive cannot resolve typography role `{role}`"))?;
+    Ok(NativeTypography {
+        family: typography.family,
+        fallbacks: typography.fallbacks,
+        font_size: native_length(typography.size, window.rem_size(), role, "size")?,
+        line_height: native_length(
+            typography.line_height,
+            window.rem_size(),
+            role,
+            "line_height",
+        )?,
+        weight: typography.weight,
+    })
+}
+
+fn native_length(
+    value: crate::Length,
+    rem_size: Pixels,
+    role: &str,
+    field: &str,
+) -> Result<Pixels, String> {
+    match value {
+        crate::Length::Pixels(value) => value
+            .to_string()
+            .parse()
+            .map(px)
+            .map_err(|_| format!("typography `{role}.{field}` cannot fit native f32 pixels")),
+        crate::Length::Rems(value) => value
+            .to_string()
+            .parse::<f32>()
+            .map(|value| rem_size * value)
+            .map_err(|_| format!("typography `{role}.{field}` cannot fit native f32 rems")),
+        crate::Length::Relative(_)
+        | crate::Length::ThemeSpacing(_)
+        | crate::Length::ThemeRadius(_) => Err(format!(
+            "typography `{role}.{field}` must resolve to pixels or rems"
+        )),
+    }
 }
 
 impl TextInputEntity {
@@ -117,6 +175,7 @@ impl TextInputEntity {
             read_only: config.read_only,
             selection_color: config.selection_color,
             caret_color: config.caret_color,
+            typography: config.typography,
             callbacks,
             last_layout: None,
             last_bounds: None,
@@ -138,6 +197,7 @@ impl TextInputEntity {
         self.read_only = config.read_only;
         self.selection_color = config.selection_color;
         self.caret_color = config.caret_color;
+        self.typography = config.typography.clone();
         self.callbacks = callbacks;
         cx.notify();
     }
@@ -629,10 +689,17 @@ impl Render for TextInputEntity {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let tab = self.callbacks.tab.clone();
         let submit_enabled = self.callbacks.submit.is_some();
-        div()
-            .flex()
-            .size_full()
-            .items_center()
+        let mut root = div().flex().size_full().items_center();
+        if let Some(family) = &self.typography.family {
+            root = root.font_family(family.clone());
+        }
+        if !self.typography.fallbacks.is_empty() {
+            root.text_style()
+                .get_or_insert_with(Default::default)
+                .font_fallbacks =
+                Some(FontFallbacks::from_fonts(self.typography.fallbacks.clone()));
+        }
+        root.font_weight(FontWeight(f32::from(self.typography.weight)))
             .key_context("GPUIRhaiTextInput")
             .track_focus(&self.focus)
             .on_key_down(move |event: &KeyDownEvent, window, cx| {
@@ -672,8 +739,8 @@ impl Render for TextInputEntity {
             .on_mouse_up(MouseButton::Left, cx.listener(Self::mouse_up))
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::mouse_up))
             .on_mouse_move(cx.listener(Self::mouse_move))
-            .line_height(px(16.0))
-            .text_size(px(12.0))
+            .line_height(self.typography.line_height)
+            .text_size(self.typography.font_size)
             .opacity(if self.disabled { 0.55 } else { 1.0 })
             .child(TextElement { input: cx.entity() })
     }
@@ -708,6 +775,8 @@ impl PrimitiveHandler for TextInputPrimitiveHandler {
         let disabled = bool_prop(&instance.node.props, "disabled").unwrap_or(false);
         let read_only = bool_prop(&instance.node.props, "read_only").unwrap_or(false);
         let autofocus = bool_prop(&instance.node.props, "autofocus").unwrap_or(false);
+        let typography_role =
+            string_prop(&instance.node.props, "typography").unwrap_or_else(|| "body".to_owned());
         let selection_color = theme
             .color("selection")
             .unwrap_or_else(|| Rgba8::from_rgba_hex(0x292e_42ff));
@@ -722,6 +791,7 @@ impl PrimitiveHandler for TextInputPrimitiveHandler {
             autofocus,
             selection_color,
             caret_color,
+            typography: native_typography(theme, &typography_role, window)?,
         };
         let callbacks = primitive_callbacks(events);
         let entity = if let Some(entity) = self.instances.get(&id) {
@@ -828,6 +898,15 @@ pub fn text_input_primitive_descriptor() -> PrimitiveDescriptor {
             (
                 "autofocus".to_owned(),
                 ObjectField::optional(ValueSchema::Bool).with_default(UiValue::Bool(false)),
+            ),
+            (
+                "typography".to_owned(),
+                ObjectField::required(ValueSchema::String {
+                    allowed: crate::REQUIRED_TYPOGRAPHY
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect(),
+                }),
             ),
             ("on_change".to_owned(), optional_callback()),
             ("on_submit".to_owned(), optional_callback()),

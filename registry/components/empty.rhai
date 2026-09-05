@@ -46,11 +46,11 @@ fn render_Empty(ctx, props) {
             .text_color(theme_color("text_muted")))));
     }
     children.push(text(props.title).with_style(component_style(props, "title", style()
-        .font_size(px(14)).line_height(px(20)).font_weight(700)
+        .typography("title").font_weight(700)
         .text_color(theme_color("text_primary")))));
     if "description" in props && props.description != () {
         children.push(text(props.description).with_style(component_style(props, "description", style()
-            .max_width(px(420)).font_size(px(12)).line_height(px(17)).text_center()
+            .max_width(px(420)).typography("body").text_center()
             .text_color(theme_color("text_muted")))));
     }
     if "content" in props && props.content != () {

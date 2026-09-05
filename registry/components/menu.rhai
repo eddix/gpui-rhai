@@ -5,7 +5,8 @@
   "version": "0.1.0",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": ["components/divider"],
-  "capabilities": {}
+  "capabilities": {},
+  "assets": ["icons/check.svg"]
 }
 */
 // Controlled in-window menu with roving selection and nested submenu nodes.
@@ -21,7 +22,7 @@ define_component(#{
     metadata: #{
         id: "components/menu", "export": "Menu", version: "0.1.0",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
-        dependencies: ["components/divider"], capabilities: #{},
+        dependencies: ["components/divider"], capabilities: #{}, assets: ["icons/check.svg"],
     },
     schema: #{
         props: #{
@@ -140,16 +141,17 @@ fn render_Menu(ctx, props) {
                 else { theme_color("surface_hover") };
             let item_style = style().height(px(28)).padding_x(px(8)).gap(px(8))
                 .items_center().background(item_background).text_color(item_text)
-                .font_size(px(12)).line_height(px(16))
+                .typography("body")
                 .border_start(px(2)).border_color(item_border);
             item_style = item_style.hover(style().background(hover_background));
             item_style = item_style.disabled(style().opacity(0.66));
             let row_node = row([
-                text(if checked { "✓" } else { "" }).with_style(style()
-                    .width(px(14)).text_color(theme_color("accent"))),
+                image_source(asset("app/icons/check")).with_style(style()
+                    .width(px(14)).height(px(14)).text_color(theme_color("accent"))
+                    .opacity(if checked { 1.0 } else { 0.0 })),
                 text(label).with_style(style().flex_grow()),
                 text(shortcut).with_style(component_style(props, "shortcut",
-                    style().font_size(px(10)).text_color(theme_color("text_muted"))))
+                    style().typography("caption").text_color(theme_color("text_muted"))))
             ])
                 .with_key(item.value)
                 .with_style(component_style(props, "item", item_style))

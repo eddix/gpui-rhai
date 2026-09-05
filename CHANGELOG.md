@@ -52,16 +52,23 @@ The source registry now includes the complete official component specimen,
 fifteen bundled theme variants, and Theme Studio for creating, importing,
 editing, validating, previewing, and saving gpui-rhai themes.
 
-The public-launch registry expands to 46 official components. Dropdown is
+The public-launch registry expands to 48 official components. Dropdown is
 destructively renamed to the strictly controlled Combobox. New source-owned
 families include Alert/AlertDialog, Badge, Card/GroupBox/Empty, Kbd/Spinner,
 ButtonGroup/InputGroup, Toggle/ToggleGroup, Slider, ScrollArea, ContextMenu,
-Sheet, and Command/CommandDialog. Generic Rust mechanisms provide native range
+Sheet, Command/CommandDialog, and application-chrome TitleBar/StatusBar.
+Generic Rust mechanisms provide native range
 preview with commit-only Rhai delivery, event-coordinate overlay anchors,
 logical viewport-edge sheets, themed draggable overlay scrollbars, Canvas
 rotation, and NativeCollection fuzzy filtering/navigation. The interactive
 `component_gallery` shares Theme Studio's exhaustive specimen and switches all
 bundled themes live.
+
+Themes now require eight semantic typography roles. Official source components
+and native Input/Textarea shaping consume the same live role values, functional
+glyphs use a centered 24px SVG asset system, and the default radius scale is
+square. Only elements that are semantically circular retain explicit radii;
+Switch tracks and thumbs are rectangular.
 
 The unlocked macOS visual pass tightened responsive specimen wrapping, gave
 Theme Studio an independently scrollable token editor, made small Command lists

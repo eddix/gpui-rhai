@@ -7,14 +7,15 @@ use gpui::{
     VisualTestContext, Window, div, point, px, size,
 };
 use gpui_rhai::{
-    ActionId, ComponentInstancePath, EmbeddedScriptSource, EmbeddedScriptView, EventPropagation,
-    ExecutionOperation, GpuiNodeRenderer, HostCallback, InteractionState, KeyBindingSpec,
-    LiteralColorResolver, ModuleId, NodeEventDispatcher, OverlayDismissPolicy, OverlayId,
-    OverlayKind, OverlayNodeSpec, OverlayPlacement, PrimitiveEventEmitter, PrimitiveHandler,
-    PrimitiveInstance, PrimitiveNode, PrimitiveProps, PrimitiveRegistry, PrimitiveTheme,
-    PrimitiveValue, RestrictedModuleResolver, RuntimeEngine, ScriptLifecycle, ScriptViewConfig,
-    ScriptViewHandle, ScriptViewHost, TextInputPrimitiveHandler, UiNode, UiNodeKind,
-    UiRuntimeState, UiValue, init_text_area, init_text_input, text_input_primitive_descriptor,
+    ActionId, AssetData, ComponentInstancePath, EmbeddedScriptSource, EmbeddedScriptView,
+    EventPropagation, ExecutionOperation, GpuiNodeRenderer, HostCallback, InteractionState,
+    KeyBindingSpec, LiteralColorResolver, ModuleId, NodeEventDispatcher, OverlayDismissPolicy,
+    OverlayId, OverlayKind, OverlayNodeSpec, OverlayPlacement, PrimitiveEventEmitter,
+    PrimitiveHandler, PrimitiveInstance, PrimitiveNode, PrimitiveProps, PrimitiveRegistry,
+    PrimitiveTheme, PrimitiveValue, RestrictedModuleResolver, RuntimeEngine, ScriptLifecycle,
+    ScriptViewConfig, ScriptViewHandle, ScriptViewHost, TextInputPrimitiveHandler, UiNode,
+    UiNodeKind, UiRuntimeState, UiValue, init_text_area, init_text_input,
+    text_input_primitive_descriptor,
 };
 
 #[allow(dead_code)]
@@ -24,6 +25,39 @@ mod table_1000_example;
 #[allow(dead_code)]
 #[path = "../../../crates/gpui-rhai/examples/component_gallery.rs"]
 mod component_gallery_example;
+
+fn official_icon_assets() -> Vec<(String, AssetData)> {
+    [
+        ("check", include_bytes!("../../../registry/assets/icons/check.svg").as_slice()),
+        ("close", include_bytes!("../../../registry/assets/icons/close.svg").as_slice()),
+        ("chevron_left", include_bytes!("../../../registry/assets/icons/chevron_left.svg").as_slice()),
+        ("chevron_right", include_bytes!("../../../registry/assets/icons/chevron_right.svg").as_slice()),
+        ("chevron_down", include_bytes!("../../../registry/assets/icons/chevron_down.svg").as_slice()),
+        ("chevron_up", include_bytes!("../../../registry/assets/icons/chevron_up.svg").as_slice()),
+        ("calendar", include_bytes!("../../../registry/assets/icons/calendar.svg").as_slice()),
+        ("date_previous", include_bytes!("../../../registry/assets/icons/date_previous.svg").as_slice()),
+        ("date_next", include_bytes!("../../../registry/assets/icons/date_next.svg").as_slice()),
+        ("disclosure_down", include_bytes!("../../../registry/assets/icons/disclosure_down.svg").as_slice()),
+        ("sort_ascending", include_bytes!("../../../registry/assets/icons/sort_ascending.svg").as_slice()),
+        ("sort_descending", include_bytes!("../../../registry/assets/icons/sort_descending.svg").as_slice()),
+        ("minus", include_bytes!("../../../registry/assets/icons/minus.svg").as_slice()),
+        ("plus", include_bytes!("../../../registry/assets/icons/plus.svg").as_slice()),
+        ("search", include_bytes!("../../../registry/assets/icons/search.svg").as_slice()),
+        ("info", include_bytes!("../../../registry/assets/icons/info.svg").as_slice()),
+        ("warning", include_bytes!("../../../registry/assets/icons/warning.svg").as_slice()),
+    ]
+    .into_iter()
+    .map(|(name, bytes)| {
+        (
+            format!("icons/{name}"),
+            AssetData {
+                mime_type: "image/svg+xml".to_owned(),
+                bytes: bytes.to_vec(),
+            },
+        )
+    })
+    .collect()
+}
 
 struct KeyboardHost {
     root: Rc<RefCell<UiNode>>,
@@ -585,6 +619,7 @@ fn prepared_failure_view() -> gpui_rhai::PreparedScriptView {
         )])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+    .asset_sources(official_icon_assets())
     .prepare()
     .unwrap()
 }
@@ -663,6 +698,7 @@ fn combobox_pointer_updates_transactional_rhai_caller_state(cx: &mut TestAppCont
         ])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+    .asset_sources(official_icon_assets())
     .prepare()
     .unwrap();
     let captured = Rc::new(RefCell::new(None));
@@ -754,6 +790,7 @@ fn click_context_exposes_untracked_event_target_visual_bounds(cx: &mut TestAppCo
         )])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+    .asset_sources(official_icon_assets())
     .prepare()
     .unwrap();
     let captured = Rc::new(RefCell::new(None));
@@ -857,6 +894,7 @@ fn automation_commands_use_mounted_handlers_actions_and_clock(cx: &mut TestAppCo
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
     .runtime_clock(manual.clock())
+    .asset_sources(official_icon_assets())
     .prepare()
     .unwrap();
     let captured = Rc::new(RefCell::new(None));
@@ -1084,6 +1122,7 @@ fn async_workers_wake_the_view_without_input_or_manual_poll(cx: &mut TestAppCont
     .extension(AsyncExtension {
         gate: std::sync::Arc::clone(&gate),
     })
+    .asset_sources(official_icon_assets())
     .prepare()
     .unwrap();
     let captured = Rc::new(RefCell::new(None));
@@ -1269,6 +1308,7 @@ fn effect_restart_still_delivers_async_task_results(cx: &mut TestAppContext) {
     )
     .manifest(manifest)
     .extension(EchoExtension)
+    .asset_sources(official_icon_assets())
     .prepare()
     .unwrap();
     let captured = Rc::new(RefCell::new(None));
@@ -1429,6 +1469,7 @@ fn effect_start_state_write_restarts_sibling_effect_and_delivers(cx: &mut TestAp
     )
     .manifest(manifest)
     .extension(EchoExtension)
+    .asset_sources(official_icon_assets())
     .prepare()
     .unwrap();
     let captured = Rc::new(RefCell::new(None));
@@ -1592,6 +1633,7 @@ fn subscription_callback_state_write_restarts_effect_and_delivers(cx: &mut TestA
     )
     .manifest(manifest)
     .extension(Extension)
+    .asset_sources(official_icon_assets())
     .prepare()
     .unwrap();
     let captured = Rc::new(RefCell::new(None));
@@ -2165,6 +2207,7 @@ fn prepared_embedded_test_view(open: bool) -> gpui_rhai::PreparedScriptView {
         ])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+    .asset_sources(official_icon_assets())
     .prepare()
     .unwrap()
 }
@@ -2562,6 +2605,7 @@ fn selectable_text_uses_native_selection_and_copy_semantics(cx: &mut TestAppCont
         )])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+    .asset_sources(official_icon_assets())
     .prepare()
     .unwrap();
     let captured = Rc::new(RefCell::new(None));
@@ -2671,6 +2715,7 @@ fn virtual_collection_fill_height_uses_the_resolved_flex_viewport(cx: &mut TestA
         )])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+    .asset_sources(official_icon_assets())
     .prepare()
     .unwrap();
     let captured = Rc::new(RefCell::new(None));
@@ -2772,6 +2817,7 @@ fn grouped_table_headers_stick_through_the_native_virtual_list(cx: &mut TestAppC
         ])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+    .asset_sources(official_icon_assets())
     .prepare()
     .unwrap();
     let captured = Rc::new(RefCell::new(None));
@@ -2953,6 +2999,7 @@ fn table_does_not_expand_an_auto_min_width_host_flex_column_across_frames(cx: &m
         ])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+    .asset_sources(official_icon_assets())
     .prepare()
     .unwrap();
     let window = cx.add_window(move |window, cx| {
@@ -3371,6 +3418,7 @@ fn autofocus_input_receives_typing_without_any_click(cx: &mut TestAppContext) {
                             key: "seek",
                             value: ctx.get_state("text"),
                             autofocus: true,
+                            typography: "body",
                             on_change: Fn("changed"),
                         }),
                         text(`typed:${ctx.get_state("text")}`)
@@ -3381,6 +3429,7 @@ fn autofocus_input_receives_typing_without_any_click(cx: &mut TestAppContext) {
         )])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+    .asset_sources(official_icon_assets())
     .prepare()
     .unwrap();
     let window = cx.add_window(move |window, cx| {
@@ -3482,6 +3531,7 @@ fn mount_controlled_palette(
         ])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+    .asset_sources(official_icon_assets())
     .prepare()
     .unwrap();
     let captured = Rc::new(RefCell::new(None));
@@ -3623,6 +3673,7 @@ fn modal_dialog_reclaims_focus_stolen_by_an_embedding_host(cx: &mut TestAppConte
         ])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+    .asset_sources(official_icon_assets())
     .prepare()
     .unwrap();
     let captured = Rc::new(RefCell::new(None));
@@ -3704,6 +3755,7 @@ fn slider_previews_drag_natively_and_commits_once_before_keyboard_steps(cx: &mut
         ])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+    .asset_sources(official_icon_assets())
     .prepare()
     .unwrap();
     let captured = Rc::new(RefCell::new(None));
@@ -3801,6 +3853,7 @@ fn slider_reverses_horizontal_pointer_and_arrow_semantics_in_rtl(cx: &mut TestAp
         "ar.rhai".to_owned(),
         include_str!("../../../registry/locales/ar.rhai").to_owned(),
     )])
+    .asset_sources(official_icon_assets())
     .prepare()
     .unwrap();
     let captured = Rc::new(RefCell::new(None));
@@ -3879,6 +3932,7 @@ fn scroll_area_thumb_drag_updates_the_retained_scroll_handle(cx: &mut TestAppCon
         ])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+    .asset_sources(official_icon_assets())
     .prepare()
     .unwrap();
     let captured = Rc::new(RefCell::new(None));
@@ -3999,6 +4053,7 @@ fn context_menu_anchors_at_the_right_click_and_closes_with_escape(cx: &mut TestA
         ])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+    .asset_sources(official_icon_assets())
     .prepare()
     .unwrap();
     let captured = Rc::new(RefCell::new(None));
@@ -4096,6 +4151,7 @@ fn sheet_uses_the_viewport_end_edge_and_restores_controlled_open_state(cx: &mut 
         ])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+    .asset_sources(official_icon_assets())
     .prepare()
     .unwrap();
     let captured = Rc::new(RefCell::new(None));
@@ -4200,6 +4256,7 @@ fn command_dialog_filters_from_native_input_and_executes_with_enter(cx: &mut Tes
         ])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+    .asset_sources(official_icon_assets())
     .prepare()
     .unwrap();
     let captured = Rc::new(RefCell::new(None));
@@ -4423,6 +4480,7 @@ fn set_theme_during_typing_keeps_input_focus(cx: &mut TestAppContext) {
         ])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+    .asset_sources(official_icon_assets())
     .prepare()
     .unwrap();
     let captured = Rc::new(RefCell::new(None));

@@ -12,7 +12,7 @@
 // Props: control, optional prefix/suffix nodes, disabled, and accessible label.
 // Events/state: stateless and emits no events; the control owns editing events.
 // Parts: root, prefix, control, suffix.
-// Example: InputGroup(#{ label: "Search", prefix: text("⌕"), control: input_node })
+// Example: InputGroup(#{ label: "Search", prefix: search_icon, control: input_node })
 
 define_component(#{
     metadata: #{ id: "components/input_group", "export": "InputGroup", version: "0.1.0",

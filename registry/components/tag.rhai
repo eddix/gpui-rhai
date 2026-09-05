@@ -5,7 +5,8 @@
   "version": "0.1.0",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": [],
-  "capabilities": {}
+  "capabilities": {},
+  "assets": ["icons/close.svg"]
 }
 */
 // Compact semantic label with optional close action.
@@ -18,7 +19,7 @@ define_component(#{
     metadata: #{
         id: "components/tag", "export": "Tag", version: "0.1.0",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
-        dependencies: [], capabilities: #{},
+        dependencies: [], capabilities: #{}, assets: ["icons/close.svg"],
     },
     schema: #{
         props: #{
@@ -75,9 +76,10 @@ fn render_Tag(ctx, props) {
     let disabled = if "disabled" in props { props.disabled } else { false };
     let children = [text(props.text).with_style(component_style(props, "label", style()))];
     if closable {
-        let close = text("×")
+        let close = image_source(asset("app/icons/close"))
             .with_style(component_style(props, "close", style()
                 .width(px(14)).height(px(14)).items_center().justify_center()
+                .text_color(if disabled { theme_color("disabled") } else { tag_foreground(variant) })
                 .radius(theme_radius("sm")).hover(style().background(theme_color("surface_hover")))))
             .accessibility_role("button")
             .accessibility_label(props.text);
@@ -92,7 +94,7 @@ fn render_Tag(ctx, props) {
                 .radius(theme_radius("sm"))
                 .border(px(1)).border_color(tag_border(variant))
                 .background(tag_color(variant))
-                .font_size(px(11)).line_height(px(14)).font_weight(700)
+                .typography("body_small").font_weight(700)
                 .text_color(if disabled { theme_color("disabled") } else { tag_foreground(variant) })
                 .disabled(style().opacity(0.68))
         ))

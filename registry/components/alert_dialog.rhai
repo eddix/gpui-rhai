@@ -57,7 +57,7 @@ fn render_AlertDialog(ctx, props) {
     let body = [];
     if "description" in props && props.description != () {
         body.push(text(props.description).with_style(component_style(props, "description", style()
-            .font_size(px(12)).line_height(px(17)).text_color(theme_color("text_muted")))));
+            .typography("body").text_color(theme_color("text_muted")))));
     }
     if "content" in props && props.content != () {
         body.push(props.content.with_style(component_style(props, "content", style())));

@@ -73,16 +73,16 @@ fn render_Avatar(ctx, props) {
     };
     let face = row([content]).with_style(
         style().width(px(size)).height(px(size)).clip()
-            .items_center().justify_center().radius(theme_radius("md"))
+            .items_center().justify_center().radius(px(size / 2))
             .border(px(1)).border_color(theme_color("border"))
             .background(theme_color("surface_raised"))
-            .font_size(px(if size < 36 { 11 } else { 12 })).font_weight(700));
+            .typography(if size < 36 { "body_small" } else { "body" }).font_weight(700));
     let children = [face];
     let presence = if "presence" in props { props.presence } else { "none" };
     if presence != "none" {
         children.push(row([]).with_style(component_style(props, "presence",
             style().width(px(8)).height(px(8)).absolute().right(px(0)).bottom(px(0))
-                .radius(px(1)).border(px(2)).border_color(theme_color("surface"))
+                .radius(px(4)).border(px(2)).border_color(theme_color("surface"))
                 .background(presence_color(presence)))));
     }
     stack(children)

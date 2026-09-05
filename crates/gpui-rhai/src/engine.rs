@@ -3476,7 +3476,7 @@ mod tests {
                     fn view() {
                         gpui_rhai::TextInputPrimitive(#{
                             key: "native-input", value: "", placeholder: "Edit",
-                            disabled: false, read_only: false,
+                            disabled: false, read_only: false, typography: "body",
                             on_change: native_handler("timeline.drag")
                         })
                     }
