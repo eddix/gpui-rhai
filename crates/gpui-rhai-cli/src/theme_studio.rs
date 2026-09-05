@@ -723,6 +723,46 @@ fn source_with_state(theme: &ThemeVariant, path: &str, status: &str) -> String {
         .replace("__GALLERY_THEME__", &json_string("default_dark"))
         .replace("__GALLERY_CATEGORY__", &json_string("all"))
         .replace(
+            "__VISUAL_DIALOG__",
+            if visual_state == "dialog" {
+                "true"
+            } else {
+                "false"
+            },
+        )
+        .replace(
+            "__VISUAL_POPOVER__",
+            if visual_state == "popover" {
+                "true"
+            } else {
+                "false"
+            },
+        )
+        .replace(
+            "__VISUAL_COMMAND__",
+            if visual_state == "command-dialog" {
+                "true"
+            } else {
+                "false"
+            },
+        )
+        .replace(
+            "__VISUAL_SHEET__",
+            if visual_state == "sheet" {
+                "true"
+            } else {
+                "false"
+            },
+        )
+        .replace(
+            "__VISUAL_ALERT__",
+            if visual_state == "alert-dialog" {
+                "true"
+            } else {
+                "false"
+            },
+        )
+        .replace(
             "__VISUAL_MENU__",
             if visual_state == "menu" {
                 "true"

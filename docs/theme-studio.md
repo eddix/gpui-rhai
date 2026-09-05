@@ -49,3 +49,9 @@ navigation and live switching across every bundled theme:
 ```text
 cargo run -p gpui-rhai --example component_gallery
 ```
+
+The editor and specimen panes scroll independently. Gallery visual runs also
+accept `GPUI_RHAI_VISUAL_THEME`, `GPUI_RHAI_VISUAL_LOCALE`, and
+`GPUI_RHAI_VISUAL_STATE`; states include the five categories, `compact`,
+`regular`, `dialog`, `popover`, `menu`, `toast`, `command-dialog`, `sheet`, and
+`alert-dialog`.

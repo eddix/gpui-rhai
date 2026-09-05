@@ -20,13 +20,24 @@ declared viewport sizes across the main matrix:
 
 Capture Theme Studio across all 15 bundled themes, plus its fixed open-Menu
 state, Arabic RTL directional Icon state, reduced-motion pointer-triggered
-Tooltip state, and New/Open/Import/Save editing paths. This capture is pending
-an unlocked Mac after the Studio replaced Component Gallery.
+Tooltip state, and New/Open/Import/Save editing paths. The unlocked 2026-09-05
+manual pass verified its independent editor/specimen scrolling and the shared
+specimen; checked-in Studio PNG expansion remains separate baseline work.
 Capture `embedded_views` once with the small view's Combobox open and duplicate
 local Toast IDs visible in the shared Host queue.
 Capture `component_gallery` in every category under Default Light/Dark, one
 community theme, reduced motion, and Arabic RTL. Its theme selector must switch
 all visible components without recompiling or resetting controlled state.
+The 2026-09-05 manual pass covered every category, all 15 themes, 560-point
+compact and 900-point regular windows, Arabic RTL, reduced motion, Sheet,
+CommandDialog, and AlertDialog. Reproduce deterministic launch states with:
+
+```sh
+bash scripts/build-macos-test-app.sh component_gallery default-light en forms
+bash scripts/build-macos-test-app.sh component_gallery catppuccin-mocha ar forms
+bash scripts/build-macos-test-app.sh component_gallery tokyo-night en sheet
+bash scripts/build-macos-test-app.sh component_gallery default-dark en compact reduced
+```
 
 The complex-control expansion adds:
 

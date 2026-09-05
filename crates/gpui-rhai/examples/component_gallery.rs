@@ -6,8 +6,9 @@ use gpui_rhai::{
 };
 
 const STUDIO: &str = include_str!("../../../registry/studio/theme_studio.rhai");
-const DEFAULT_DARK: &str = include_str!("../../../registry/themes/default_dark.rhai");
 const EN: &str = include_str!("../../../registry/locales/en.rhai");
+const AR: &str = include_str!("../../../registry/locales/ar.rhai");
+const ZH_CN: &str = include_str!("../../../registry/locales/zh_cn.rhai");
 
 const THEMES: &[(&str, &str)] = &[
     (
@@ -165,10 +166,26 @@ fn color_source(theme: &ThemeVariant, token: &str) -> String {
     ))
 }
 
-fn gallery_source(category: &str) -> String {
+fn theme_entry(slug: &str) -> (&'static str, &'static str) {
+    let normalized = slug.replace('-', "_");
+    THEMES
+        .iter()
+        .copied()
+        .find(|(name, _)| name.strip_suffix(".rhai") == Some(normalized.as_str()))
+        .unwrap_or(THEMES[0])
+}
+
+fn gallery_source(category: &str, theme_slug: &str, locale: &str, visual_state: &str) -> String {
     let engine = RuntimeEngine::new();
-    let theme = load_theme_source(engine.engine(), "default_dark.rhai", DEFAULT_DARK)
-        .expect("bundled default theme is valid");
+    let (theme_file, theme_source) = theme_entry(theme_slug);
+    let theme = load_theme_source(engine.engine(), theme_file, theme_source)
+        .expect("bundled gallery theme is valid");
+    let selected = theme_file.strip_suffix(".rhai").unwrap_or("default_dark");
+    let locale = if matches!(locale, "en" | "ar" | "zh-CN") {
+        locale
+    } else {
+        "en"
+    };
     let mut source = STUDIO.to_owned();
     for (placeholder, value) in [
         ("__PATH__", json("")),
@@ -178,7 +195,7 @@ fn gallery_source(category: &str) -> String {
         ("__STATUS__", json("Component Gallery")),
         ("__PREVIEW_FAMILY__", json(&theme.family)),
         ("__PREVIEW_VARIANT__", json(&theme.name)),
-        ("__GALLERY_THEME__", json("default_dark")),
+        ("__GALLERY_THEME__", json(selected)),
         ("__GALLERY_CATEGORY__", json(category)),
     ] {
         source = source.replace(placeholder, &value);
@@ -191,9 +208,63 @@ fn gallery_source(category: &str) -> String {
     }
     source
         .replace("__BUILTIN_OPTIONS__", "[]")
-        .replace("__VISUAL_MENU__", "false")
-        .replace("__VISUAL_TOAST__", "false")
-        .replace("__VISUAL_LOCALE__", &json("en"))
+        .replace(
+            "__VISUAL_DIALOG__",
+            if visual_state == "dialog" {
+                "true"
+            } else {
+                "false"
+            },
+        )
+        .replace(
+            "__VISUAL_POPOVER__",
+            if visual_state == "popover" {
+                "true"
+            } else {
+                "false"
+            },
+        )
+        .replace(
+            "__VISUAL_COMMAND__",
+            if visual_state == "command-dialog" {
+                "true"
+            } else {
+                "false"
+            },
+        )
+        .replace(
+            "__VISUAL_SHEET__",
+            if visual_state == "sheet" {
+                "true"
+            } else {
+                "false"
+            },
+        )
+        .replace(
+            "__VISUAL_ALERT__",
+            if visual_state == "alert-dialog" {
+                "true"
+            } else {
+                "false"
+            },
+        )
+        .replace(
+            "__VISUAL_MENU__",
+            if visual_state == "menu" {
+                "true"
+            } else {
+                "false"
+            },
+        )
+        .replace(
+            "__VISUAL_TOAST__",
+            if visual_state == "toast" {
+                "true"
+            } else {
+                "false"
+            },
+        )
+        .replace("__VISUAL_LOCALE__", &json(locale))
         .replace("__GALLERY_ONLY__", "true")
 }
 
@@ -207,19 +278,33 @@ fn svg(bytes: &'static [u8]) -> AssetData {
 pub(crate) fn prepared(
     category: &str,
 ) -> Result<gpui_rhai::PreparedScriptView, gpui_rhai::ScriptViewError> {
-    let main = gallery_source(category);
+    prepared_with_environment(category, "default_dark", "en", "default")
+}
+
+fn prepared_with_environment(
+    category: &str,
+    theme_slug: &str,
+    locale: &str,
+    visual_state: &str,
+) -> Result<gpui_rhai::PreparedScriptView, gpui_rhai::ScriptViewError> {
+    let (theme_file, theme_source) = theme_entry(theme_slug);
+    let main = gallery_source(category, theme_slug, locale, visual_state);
     EmbeddedScriptView::new(
         ModuleId::parse("main").unwrap(),
         scripts(&main),
-        DEFAULT_DARK,
+        theme_source,
     )
     .theme_sources(
         THEMES
             .iter()
-            .skip(1)
+            .filter(|(name, _)| *name != theme_file)
             .map(|(name, source)| ((*name).to_owned(), (*source).to_owned())),
     )
-    .locale_sources([("en.rhai".to_owned(), EN.to_owned())])
+    .locale_sources([
+        ("en.rhai".to_owned(), EN.to_owned()),
+        ("ar.rhai".to_owned(), AR.to_owned()),
+        ("zh_cn.rhai".to_owned(), ZH_CN.to_owned()),
+    ])
     .asset_sources([
         (
             "icons/check".to_owned(),
@@ -263,18 +348,46 @@ pub(crate) fn prepared(
     .prepare()
 }
 
-fn main() {
-    let category = std::env::var("GPUI_RHAI_GALLERY_CATEGORY")
-        .ok()
+fn gallery_category(explicit: Option<String>, visual_state: &str) -> String {
+    explicit
         .filter(|category| {
             matches!(
                 category.as_str(),
                 "all" | "foundations" | "forms" | "navigation" | "overlays"
             )
         })
-        .unwrap_or_else(|| "all".to_owned());
-    ScriptApplication::new(prepared(&category).expect("component gallery prepares"))
-        .window_size(1280.0, 860.0)
+        .or_else(|| {
+            matches!(
+                visual_state,
+                "all" | "foundations" | "forms" | "navigation" | "overlays"
+            )
+            .then(|| visual_state.to_owned())
+        })
+        .unwrap_or_else(|| "all".to_owned())
+}
+
+fn main() {
+    let visual_state =
+        std::env::var("GPUI_RHAI_VISUAL_STATE").unwrap_or_else(|_| "default".to_owned());
+    let category = gallery_category(
+        std::env::var("GPUI_RHAI_GALLERY_CATEGORY").ok(),
+        &visual_state,
+    );
+    let theme =
+        std::env::var("GPUI_RHAI_VISUAL_THEME").unwrap_or_else(|_| "default-dark".to_owned());
+    let locale = std::env::var("GPUI_RHAI_VISUAL_LOCALE").unwrap_or_else(|_| "en".to_owned());
+    let prepared = if theme == "default-dark" && locale == "en" && visual_state == "default" {
+        prepared(&category)
+    } else {
+        prepared_with_environment(&category, &theme, &locale, &visual_state)
+    };
+    let (width, height) = match visual_state.as_str() {
+        "compact" => (560.0, 760.0),
+        "regular" => (900.0, 800.0),
+        _ => (1280.0, 860.0),
+    };
+    ScriptApplication::new(prepared.expect("component gallery prepares"))
+        .window_size(width, height)
         .run()
         .expect("component gallery runs");
 }
@@ -288,9 +401,30 @@ mod tests {
         for category in ["all", "foundations", "forms", "navigation", "overlays"] {
             prepared(category).unwrap_or_else(|error| panic!("{category}: {error}"));
         }
+        for theme in ["default-light", "catppuccin-mocha", "nord"] {
+            prepared_with_environment("foundations", theme, "en", "default")
+                .unwrap_or_else(|error| panic!("{theme}: {error}"));
+        }
+        prepared_with_environment("forms", "catppuccin-mocha", "ar", "default").unwrap();
+        prepared_with_environment("overlays", "tokyo-night", "en", "sheet").unwrap();
         assert_eq!(
-            gpui_rhai::ScriptSource::module_ids(&scripts(&gallery_source("all"))).len(),
+            gpui_rhai::ScriptSource::module_ids(&scripts(&gallery_source(
+                "all",
+                "default_dark",
+                "en",
+                "default"
+            )))
+            .len(),
             47
+        );
+        assert_eq!(gallery_category(None, "forms"), "forms");
+        assert_eq!(
+            gallery_category(Some("navigation".to_owned()), "compact"),
+            "navigation"
+        );
+        assert_eq!(
+            gallery_category(Some("unknown".to_owned()), "default"),
+            "all"
         );
     }
 }

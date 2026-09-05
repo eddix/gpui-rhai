@@ -49,11 +49,13 @@ bounded skeleton rows, empty copy, and Pagination.
 The new deterministic `grouped` state exercises counted/collapsible sticky
 sections; its refreshed screenshot is pending the next unlocked visual pass.
 
-Theme Studio replaced the old Component Gallery on 2026-09-01. Its 15-theme
-component-specimen matrix, Menu, RTL, Tooltip, editing, and file-operation
-captures are intentionally pending an unlocked Mac session. Obsolete Gallery
-PNGs were removed rather than relabeled as Studio evidence. The 38 currently
-recorded PNGs remain product-context and shared-Host evidence.
+Theme Studio replaced the old Component Gallery on 2026-09-01. An unlocked
+manual pass on 2026-09-05 verified its independent editor/specimen scrolling
+and the shared specimen across the Gallery's 15-theme, category, compact,
+regular, RTL, reduced-motion, Sheet, CommandDialog, and AlertDialog matrix.
+Checked-in Studio/Gallery PNG expansion remains pending; obsolete Gallery PNGs
+were not relabeled as Studio evidence. The 38 recorded PNGs remain
+product-context and shared-Host evidence.
 
 `embedded_views/default-dark.shared-host.png` records three independent Rhai
 views inside one host-owned GPUI layout. It proves compact responsive sizing for

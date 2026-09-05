@@ -255,8 +255,10 @@ fn render_Command(ctx, props) {
                 .font_size(px(11)).line_height(px(16)).text_color(theme_color("text_muted"))))
             .accessibility_role("status")
     } else {
+        let max_visible = prop_or(props, "max_visible", 8);
+        let visible_rows = if data.len < max_visible { data.len } else { max_visible };
         virtual_collection(#{ key: `${props.key}-list`, label: props.label, data: data,
-            estimated_height: row_height, height: prop_or(props, "max_visible", 8) * row_height + 24,
+            estimated_height: row_height, height: visible_rows * row_height,
             overdraw_pixels: row_height * 2, alignment: "top", follow_tail: false },
             Fn("render_command_row")).with_style(component_style(props, "list", style()))
     };

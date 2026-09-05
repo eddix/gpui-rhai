@@ -87,8 +87,8 @@ fn state_schema() {
         color_focus_ring: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: __COLOR_FOCUS_RING__ } },
         color_selection: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: __COLOR_SELECTION__ } },
         color_disabled: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: __COLOR_DISABLED__ } },
-        dialog_open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: false } },
-        popover_open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: false } },
+        dialog_open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: __VISUAL_DIALOG__ } },
+        popover_open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: __VISUAL_POPOVER__ } },
         menu_open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: __VISUAL_MENU__ } },
         toast_visible: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: __VISUAL_TOAST__ } },
         builtin_open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: false } },
@@ -98,9 +98,9 @@ fn state_schema() {
         p0_slider: #{ schema: #{ type: "number", min: 0.0, max: 100.0 },
             "default": #{ type: "float", value: 42.0 } },
         p0_query: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "" } },
-        p0_command_open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: false } },
-        p0_sheet_open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: false } },
-        p0_alert_open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: false } },
+        p0_command_open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: __VISUAL_COMMAND__ } },
+        p0_sheet_open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: __VISUAL_SHEET__ } },
+        p0_alert_open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: __VISUAL_ALERT__ } },
         p0_context_open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: false } },
         p0_context_active: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "copy" } },
         gallery_theme: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: __GALLERY_THEME__ } },
@@ -227,9 +227,11 @@ fn editor(ctx) {
         text(ctx.get_state("status")).with_style(style().padding(px(8))
             .border(px(1)).border_color(theme_color("border"))
             .font_size(px(10)).line_height(px(14)).text_color(theme_color("text_muted")))
-    ]).with_style(style().width(px(340)).padding(px(14)).gap(px(7))
+    ]).with_style(style().width(px(340)).height(relative(1.0)).min_height(px(0))
+        .flex_shrink(false).overflow_y_scroll().padding(px(14)).gap(px(7))
         .border_end(px(1)).border_color(theme_color("border"))
         .background(theme_color("surface")))
+        .scrollbars("hidden", "auto")
 }
 
 fn specimen_title(title, detail) {
@@ -274,22 +276,25 @@ fn specimen_inputs() {
     column([
         specimen_title("INPUTS", "Idle, populated, error, read-only and multiline."),
         row([
-            input::Input(#{ key: "specimen-input", value: "", placeholder: "Placeholder" }),
-            input::Input(#{ key: "specimen-error", value: "Invalid", error: true }),
-            input::Input(#{ key: "specimen-readonly", value: "Read only", read_only: true }),
-        ]).with_style(style().gap(px(6))),
+            input::Input(#{ key: "specimen-input", value: "", placeholder: "Placeholder" })
+                .with_style(style().width(px(160))),
+            input::Input(#{ key: "specimen-error", value: "Invalid", error: true })
+                .with_style(style().width(px(160))),
+            input::Input(#{ key: "specimen-readonly", value: "Read only", read_only: true })
+                .with_style(style().width(px(160))),
+        ]).with_style(style().gap(px(6)).flex_wrap()),
         form_field::FormField(#{ id: "specimen-name", label: "Name", required: true,
             control: field, description: "One shared field contract", error: "Example error" }),
         textarea::Textarea(#{ key: "specimen-textarea", value: "Two lines\nof themed text",
             rows: 2, max_length: 120, show_count: true }),
         row([
             select::Select(#{ key: "specimen-select", value: "nord", open: false, query: "", clearable: true,
-                options: [#{ value: "nord", label: "Nord" }, #{ value: "gruvbox", label: "Gruvbox" }] }),
+                width: px(160), options: [#{ value: "nord", label: "Nord" }, #{ value: "gruvbox", label: "Gruvbox" }] }),
             combobox::Combobox(#{ key: "specimen-combobox", selected: ["dark"], open: false, query: "",
-                options: [#{ value: "dark", label: "Dark" }, #{ value: "light", label: "Light" }] }),
+                width: px(160), options: [#{ value: "dark", label: "Dark" }, #{ value: "light", label: "Light" }] }),
             date_picker::DatePicker(#{ key: "specimen-date", value: "2026-09-01",
-                placeholder: "Date", presets: [#{ label: "Today", value: "2026-09-01" }] }),
-        ]).with_style(style().gap(px(6)))
+                width: px(160), placeholder: "Date", presets: [#{ label: "Today", value: "2026-09-01" }] }),
+        ]).with_style(style().gap(px(6)).flex_wrap())
     ]).with_style(style().gap(px(7)))
 }
 
@@ -406,7 +411,7 @@ fn specimen_p0(ctx) {
             badge::Badge(#{ text: "WARNING", variant: "warning" }),
             spinner::Spinner(#{ key: "p0-spinner", label: "Loading", size: "sm" }),
             kbd::Kbd(#{ text: "⌘ ⇧ P", label: "Command Shift P" })
-        ]).with_style(style().gap(px(6)).items_center()),
+        ]).with_style(style().gap(px(6)).items_center().flex_wrap()),
         joined,
         grouped_input,
         scroll_area::ScrollArea(#{ key: "p0-scroll", label: "Scrollable specimen", height: px(96), vertical_scrollbar: "always",
@@ -425,22 +430,22 @@ fn specimen_p0(ctx) {
                 on_change: Fn("set_p0_toggles") }),
             slider::Slider(#{ key: "p0-slider", label: "Volume", value: ctx.get_state("p0_slider"),
                 min: 0.0, max: 100.0, step: 1.0, on_change: Fn("set_p0_slider") })
-        ]).with_style(style().gap(px(10)).items_center()),
+        ]).with_style(style().gap(px(10)).items_center().flex_wrap()),
         row([
             card::Card(#{ header: text("Card"), content: text("Composable content surface"), elevated: true }),
             group_box::GroupBox(#{ label: "Group box", description: "Related desktop controls",
                 content: text("Persistent layout content") }),
             empty::Empty(#{ title: "Nothing here", description: "An empty state with a clear next action.",
                 actions: [button::Button(#{ text: "Create", size: "sm" })] })
-        ]).with_style(style().gap(px(8)).items_start()),
+        ]).with_style(style().gap(px(8)).items_start().flex_wrap()),
         command::Command(#{ key: "p0-command", label: "Commands", query: ctx.get_state("p0_query"),
-            items: p0_commands(), max_visible: 4, on_query_change: Fn("set_p0_query"), on_action: Fn("noop") }),
+            items: p0_commands(), max_visible: 5, on_query_change: Fn("set_p0_query"), on_action: Fn("noop") }),
         contextual,
         row([
             button::Button(#{ text: "Command dialog", size: "sm", variant: "outline", on_click: Fn("open_p0_command") }),
             button::Button(#{ text: "Sheet", size: "sm", variant: "outline", on_click: Fn("open_p0_sheet") }),
             button::Button(#{ text: "Alert dialog", size: "sm", variant: "danger", on_click: Fn("open_p0_alert") })
-        ]).with_style(style().gap(px(6))),
+        ]).with_style(style().gap(px(6)).flex_wrap()),
         command_dialog::CommandDialog(#{ key: "p0-command-dialog", open: ctx.get_state("p0_command_open"),
             query: ctx.get_state("p0_query"), label: "Command palette", items: p0_commands(),
             on_query_change: Fn("set_p0_query"), on_action: Fn("noop"), on_open_change: Fn("set_p0_command_open") }),
@@ -489,6 +494,15 @@ fn specimen_overlays(ctx) {
 }
 
 fn specimen(ctx) {
+    let left = column([specimen_actions(), specimen_choices(), specimen_status()])
+        .with_style(style().flex_grow().min_width(px(0)).gap(px(14)));
+    let right = column([specimen_inputs(), specimen_navigation(), specimen_overlays(ctx)])
+        .with_style(style().flex_grow().min_width(px(0)).gap(px(14)));
+    let columns = if ctx.viewport_class() == "wide" {
+        row([left, right]).with_style(style().gap(px(14)).items_start())
+    } else {
+        column([left, right]).with_style(style().gap(px(14)))
+    };
     column([
         row([
             column([
@@ -499,12 +513,7 @@ fn specimen(ctx) {
             tag::Tag(#{ text: `${ctx.get_state("family")} / ${ctx.get_state("variant")}`, variant: "accent" })
         ]).with_style(style().justify_between().items_center().padding_bottom(px(8))
             .border_bottom(px(1)).border_color(theme_color("border"))),
-        row([
-            column([specimen_actions(), specimen_choices(), specimen_status()])
-                .with_style(style().width(relative(0.5)).gap(px(14))),
-            column([specimen_inputs(), specimen_navigation(), specimen_overlays(ctx)])
-                .with_style(style().width(relative(0.5)).gap(px(14)))
-        ]).with_style(style().gap(px(14)).items_start()),
+        columns,
         specimen_data(),
         specimen_p0(ctx)
     ]).with_style(style().padding(px(16)).gap(px(14)).background(theme_color("surface"))
@@ -533,32 +542,41 @@ fn gallery_header(ctx) {
             variant: if ctx.get_state("gallery_category") == entry.value { "primary" } else { "ghost" } })
             .on_click_value(Fn("set_gallery_category").curry(entry.value), ()));
     }
-    let root = row([
-        column([text("GPUI RHAI COMPONENT GALLERY").with_style(style().font_size(px(18)).font_weight(700)),
+    let heading = column([text("GPUI RHAI COMPONENT GALLERY").with_style(style().font_size(px(18)).font_weight(700)),
             text("46 source-owned components · native GPUI behavior · live themes")
                 .with_style(style().font_size(px(11)).text_color(theme_color("text_muted")))])
-            .with_style(style().gap(px(2)).flex_grow()),
-        combobox::Combobox(#{ key: "gallery-theme", options: gallery_theme_options(), mode: "single",
+            .with_style(style().gap(px(2)).flex_grow());
+    let themes = combobox::Combobox(#{ key: "gallery-theme", options: gallery_theme_options(), mode: "single",
             selected: [ctx.get_state("gallery_theme")], open: ctx.get_state("gallery_theme_open"),
             query: ctx.get_state("gallery_theme_query"), searchable: true, placeholder: "Theme",
+            width: px(240),
             on_change: Fn("set_gallery_theme"), on_open_change: Fn("set_gallery_theme_open"),
-            on_query_change: Fn("set_gallery_theme_query") })
-    ]).with_style(style().items_center().gap(px(12)).padding_bottom(px(10))
+            on_query_change: Fn("set_gallery_theme_query") });
+    let root = if ctx.viewport_class() == "compact" {
+        column([heading, themes]).with_style(style().gap(px(8)))
+    } else {
+        row([heading, themes]).with_style(style().items_center().gap(px(12)))
+    };
+    root = root.with_style(style().padding_bottom(px(10))
         .border_bottom(px(1)).border_color(theme_color("border")));
-    column([root, row(categories).with_style(style().gap(px(4)))])
+    column([root, row(categories).with_style(style().gap(px(4)).flex_wrap())])
         .with_style(style().gap(px(8)).padding(px(14)).background(theme_color("surface")))
 }
 
 fn gallery_content(ctx) {
     let category = ctx.get_state("gallery_category");
     if category == "foundations" {
-        column([specimen_actions(), specimen_status(), specimen_p0(ctx)]).with_style(style().gap(px(14)))
+        column([specimen_actions(), specimen_status(), specimen_p0(ctx)])
+            .with_style(style().padding(px(14)).gap(px(14)))
     } else if category == "forms" {
-        column([specimen_inputs(), specimen_choices()]).with_style(style().gap(px(14)))
+        column([specimen_inputs(), specimen_choices()])
+            .with_style(style().padding(px(14)).gap(px(14)))
     } else if category == "navigation" {
-        column([specimen_navigation(), specimen_data()]).with_style(style().gap(px(14)))
+        column([specimen_navigation(), specimen_data()])
+            .with_style(style().padding(px(14)).gap(px(14)))
     } else if category == "overlays" {
-        column([specimen_overlays(ctx), specimen_p0(ctx)]).with_style(style().gap(px(14)))
+        column([specimen_overlays(ctx), specimen_p0(ctx)])
+            .with_style(style().padding(px(14)).gap(px(14)))
     } else { specimen(ctx) }
 }
 

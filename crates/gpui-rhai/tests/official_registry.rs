@@ -1165,6 +1165,7 @@ fn command_fuzzy_search_and_keyboard_action_are_composable_and_controlled() {
         unreachable!()
     };
     assert_eq!(spec.data.len(), 2, "one group header plus one fuzzy match");
+    assert_eq!(spec.height, Some(64.0), "small command sets must shrink");
     let (enter, payload) = target_handler(command, "key:enter");
     let _ = lifecycle
         .invoke_callback_transactional(&engine, &enter, payload)

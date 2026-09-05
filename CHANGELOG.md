@@ -63,6 +63,11 @@ rotation, and NativeCollection fuzzy filtering/navigation. The interactive
 `component_gallery` shares Theme Studio's exhaustive specimen and switches all
 bundled themes live.
 
+The unlocked macOS visual pass tightened responsive specimen wrapping, gave
+Theme Studio an independently scrollable token editor, made small Command lists
+shrink to their result count, and added deterministic Gallery theme, locale,
+category, overlay, compact, regular, and reduced-motion launch states.
+
 The initial theme contract includes explicit `on_accent`, `on_danger`,
 `on_warning`, and `on_success` foregrounds. Reduced motion renders looping
 indicators at a static midpoint rather than moving them out of view.
