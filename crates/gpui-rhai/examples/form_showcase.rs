@@ -51,6 +51,8 @@ fn state_schema() {
         updates: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: true } },
         country: #{ schema: #{ type: "optional", value: #{ type: "string" } },
             "default": __VISUAL_COUNTRY__ },
+        country_open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: false } },
+        country_query: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "" } },
         appointment: #{ schema: #{ type: "optional", value: #{ type: "string" } },
             "default": __VISUAL_APPOINTMENT__ },
         notes: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "__VISUAL_NOTES__" } },
@@ -68,6 +70,8 @@ fn set_accepted(ctx, value) { ctx.set_state("accepted", value.checked); }
 fn set_plan(ctx, value) { ctx.set_state("plan", value); }
 fn set_updates(ctx, value) { ctx.set_state("updates", value); }
 fn set_country(ctx, value) { ctx.set_state("country", value); }
+fn set_country_open(ctx, value) { ctx.set_state("country_open", value); }
+fn set_country_query(ctx, value) { ctx.set_state("country_query", value); }
 fn set_appointment(ctx, value) { ctx.set_state("appointment", value); }
 fn set_notes(ctx, value) { ctx.set_state("notes", value); }
 fn set_limit_note(ctx, value) { ctx.set_state("limit_note", value); }
@@ -132,14 +136,16 @@ fn advanced_fields(ctx) {
         ]).with_style(style().gap(theme_spacing("xs"))),
         text("Country or region"),
         select::Select(#{
-            key: "country", value: ctx.get_state("country"), searchable: true,
+            key: "country", value: ctx.get_state("country"),
+            open: ctx.get_state("country_open"), query: ctx.get_state("country_query"), searchable: true,
             clearable: true, placeholder: "Choose a country",
             options: [
                 #{ value: "cn", label: "China", group: "Asia", keywords: ["zhongguo"] },
                 #{ value: "jp", label: "Japan", group: "Asia" },
                 #{ value: "fr", label: "France", group: "Europe" },
                 #{ value: "de", label: "Germany", group: "Europe" }
-            ], on_change: Fn("set_country")
+            ], on_change: Fn("set_country"), on_open_change: Fn("set_country_open"),
+            on_query_change: Fn("set_country_query")
         }),
         text("Appointment date"),
         date_picker::DatePicker(#{

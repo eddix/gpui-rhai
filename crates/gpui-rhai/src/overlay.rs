@@ -24,6 +24,7 @@ pub enum OverlayKind {
     Combobox,
     Tooltip,
     Dialog,
+    Sheet,
     Menu,
 }
 
@@ -33,6 +34,8 @@ pub enum OverlayPlacement {
     Bottom,
     Left,
     Right,
+    Start,
+    End,
     Center,
 }
 
@@ -43,6 +46,8 @@ impl OverlayPlacement {
             Self::Bottom => Self::Top,
             Self::Left => Self::Right,
             Self::Right => Self::Left,
+            Self::Start => Self::End,
+            Self::End => Self::Start,
             Self::Center => Self::Center,
         }
     }
@@ -450,7 +455,10 @@ fn fits_primary_axis(
         OverlayPlacement::Top | OverlayPlacement::Bottom => {
             bounds.y >= viewport.y && bounds.y + bounds.height <= viewport.y + viewport.height
         }
-        OverlayPlacement::Left | OverlayPlacement::Right => {
+        OverlayPlacement::Left
+        | OverlayPlacement::Right
+        | OverlayPlacement::Start
+        | OverlayPlacement::End => {
             bounds.x >= viewport.x && bounds.x + bounds.width <= viewport.x + viewport.width
         }
         OverlayPlacement::Center => true,
@@ -487,6 +495,8 @@ fn candidate_bounds(
             width: spec.width,
             height: spec.height,
         },
+        OverlayPlacement::Start => candidate_bounds(spec, OverlayPlacement::Left, viewport),
+        OverlayPlacement::End => candidate_bounds(spec, OverlayPlacement::Right, viewport),
         OverlayPlacement::Center => OverlayBounds {
             x: viewport.x + (viewport.width - spec.width) / 2.0,
             y: viewport.y + (viewport.height - spec.height) / 2.0,

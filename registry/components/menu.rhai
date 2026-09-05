@@ -34,6 +34,16 @@ define_component(#{
                 "default": #{ type: "string", value: "bottom" } },
             initial_focus: #{ schema: #{ type: "string", allowed: ["panel", "first"] }, required: false, sensitive: false,
                 "default": #{ type: "string", value: "panel" } },
+            anchor: #{ schema: #{ type: "optional", value: #{ type: "object", allow_unknown: false, fields: #{
+                x: #{ schema: #{ type: "number" }, required: true, sensitive: false },
+                y: #{ schema: #{ type: "number" }, required: true, sensitive: false },
+                width: #{ schema: #{ type: "number", min: 0.0 }, required: false, sensitive: false,
+                    "default": #{ type: "float", value: 0.0 } },
+                height: #{ schema: #{ type: "number", min: 0.0 }, required: false, sensitive: false,
+                    "default": #{ type: "float", value: 0.0 } },
+            } } }, required: false, sensitive: false },
+            activate_on_trigger: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
+                "default": #{ type: "bool", value: true } },
             items: #{ schema: #{ type: "array", max_items: 512, items: #{
                 type: "object", allow_unknown: false, fields: #{
                     kind: #{ schema: #{ type: "string", allowed: ["item", "separator", "submenu"] }, required: true, sensitive: false },
@@ -50,12 +60,14 @@ define_component(#{
             on_action: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false },
             on_active_change: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false },
             on_open_change: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false },
+            on_context_request: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false },
         },
         state: #{ fields: #{} },
         events: #{
             action: #{ payload: #{ type: "string" } },
             active_change: #{ payload: #{ type: "string" } },
             open_change: #{ payload: #{ type: "bool" } },
+            context_request: #{ payload: #{ type: "ui_value" } },
         },
         slots: #{ trigger: #{ required: true, multiple: false } },
         parts: ["root", "trigger", "content", "item", "separator", "shortcut", "submenu"],
@@ -97,6 +109,11 @@ fn next_typeahead(items, value, key) {
 }
 
 fn Menu(props) { render_component("components/menu", props) }
+fn context_request(ctx, event) {
+    if event.button != "right" { return propagate(); }
+    ctx.emit("context_request", event);
+    event_response().prevent_default().stop()
+}
 fn render_Menu(ctx, props) {
     let action = if "on_action" in props { props.on_action } else { () };
     let active_change = if "on_active_change" in props { props.on_active_change } else { () };
@@ -183,10 +200,16 @@ fn render_Menu(ctx, props) {
         // historical panel-focus behavior for arrow-key menus.
         initial_focus: if "initial_focus" in props { props.initial_focus } else { "panel" },
         gap: 4, modal: false, dismiss_on_escape: true, dismiss_on_outside: true,
+        activate_on_trigger: if "activate_on_trigger" in props { props.activate_on_trigger } else { true },
     };
     if "parent_overlay" in props && props.parent_overlay != () { config.parent = props.parent_overlay; }
+    if "anchor" in props && props.anchor != () { config.anchor = props.anchor; }
+    let trigger = props.trigger.with_style(component_style(props, "trigger", style()));
+    if "on_context_request" in props && props.on_context_request != () {
+        trigger = trigger.on("pointer_down", Fn("context_request"));
+    }
     let node = overlay(
-        props.trigger.with_style(component_style(props, "trigger", style())),
+        trigger,
         content, config
     ).with_key(props.key)
         .with_style(component_style(props, "root", style()));

@@ -23,6 +23,7 @@ pub mod node;
 pub mod overlay;
 mod overlay_element;
 pub mod primitive;
+pub mod range_input;
 pub mod reload;
 pub mod renderer;
 pub mod responsive;
@@ -30,6 +31,7 @@ pub mod retained;
 pub mod schema;
 mod script_lint;
 pub mod script_source;
+pub mod scrollbar;
 pub mod signal;
 mod slot_runtime;
 pub mod source;
@@ -164,6 +166,7 @@ pub use primitive::{
     PrimitiveResourceError, PrimitiveResourceHandle, PrimitiveResourceScope, PrimitiveTheme,
     PrimitiveValue,
 };
+pub use range_input::{RangeInputPrimitiveHandler, range_input_primitive_descriptor};
 pub use reload::{LiveScript, ReloadOutcome};
 pub use renderer::{
     ColorResolver, GpuiNodeRenderer, LiteralColorResolver, NodeEventDispatcher, StaticUiView,
@@ -180,6 +183,7 @@ pub use script_lint::{KnownCallDiagnostic, KnownCallLintError};
 pub use script_source::{
     EmbeddedScriptSource, FileScriptSource, ScriptAsset, ScriptSource, ScriptSourceError,
 };
+pub use scrollbar::{ScrollbarSpec, ScrollbarVisibility};
 pub use signal::{
     NativeSignal, SignalError, SignalId, SignalKind, SignalProperty, SignalRegistry,
     SignalSnapshot, SignalValue, SignalWriter,

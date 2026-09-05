@@ -570,17 +570,18 @@ impl ScriptOverlayElement {
         let hover_id = self.spec.id.clone();
         let tooltip_delays = self.spec.tooltip_delays;
         let open = self.spec.open;
+        let activate_on_trigger = self.spec.activate_on_trigger;
         let dismiss_on_escape = self.spec.dismiss.escape;
         let focus_ring = self.focus_ring;
         let focus_surface = self.focus_surface;
         div()
             .id(SharedString::from(format!("{}-trigger", self.id)))
             .track_focus(trigger_focus)
-            .tab_stop(click_callback.is_some())
+            .tab_stop(activate_on_trigger && click_callback.is_some())
             .focus(move |style| overlay_focus_shadow(style, focus_ring, focus_surface))
             .child(self.trigger.take().expect("overlay trigger rendered once"))
             .on_click(move |event, window, cx| {
-                if !matches!(event, ClickEvent::Mouse(_)) {
+                if !activate_on_trigger || !matches!(event, ClickEvent::Mouse(_)) {
                     return;
                 }
                 if open {
@@ -609,7 +610,7 @@ impl ScriptOverlayElement {
                     return;
                 }
                 let next = if matches!(key, "enter" | "space") {
-                    Some(!open)
+                    activate_on_trigger.then_some(!open)
                 } else if key == "escape" && open && dismiss_on_escape {
                     if key_coordinator.dismiss_escape(window, cx) {
                         cx.stop_propagation();
@@ -706,8 +707,8 @@ impl ScriptOverlayElement {
             })
             .child(self.content.take().expect("overlay content rendered once"));
 
-        let overlay = if self.spec.kind == OverlayKind::Dialog {
-            self.build_dialog_backdrop(panel, viewport)
+        let overlay = if matches!(self.spec.kind, OverlayKind::Dialog | OverlayKind::Sheet) {
+            self.build_modal_backdrop(panel, viewport)
         } else {
             div().absolute().child(panel).into_any_element()
         };
@@ -722,11 +723,7 @@ impl ScriptOverlayElement {
         }
     }
 
-    fn build_dialog_backdrop(
-        &self,
-        panel: impl IntoElement,
-        viewport: OverlayBounds,
-    ) -> AnyElement {
+    fn build_modal_backdrop(&self, panel: impl IntoElement, viewport: OverlayBounds) -> AnyElement {
         let dismiss_on_outside = self.spec.dismiss.outside;
         let modal = self.spec.modal;
         let coordinator = self.coordinator.clone();
@@ -738,9 +735,14 @@ impl ScriptOverlayElement {
             .w(pixel_from_f64(viewport.width))
             .h(pixel_from_f64(viewport.height))
             .flex()
-            .items_center()
-            .justify_center()
             .bg(rgba(0x0000_0066));
+        let backdrop = match (self.spec.kind, self.spec.placement) {
+            (OverlayKind::Sheet, OverlayPlacement::Left) => backdrop.justify_start(),
+            (OverlayKind::Sheet, OverlayPlacement::Right) => backdrop.justify_end(),
+            (OverlayKind::Sheet, OverlayPlacement::Top) => backdrop.flex_col().justify_start(),
+            (OverlayKind::Sheet, OverlayPlacement::Bottom) => backdrop.flex_col().justify_end(),
+            _ => backdrop.items_center().justify_center(),
+        };
         let backdrop = if let Some(style) = &self.backdrop_style {
             style(backdrop)
         } else {
@@ -905,7 +907,7 @@ impl Element for ScriptOverlayElement {
                     self.coordinator.viewport_or_window(window.viewport_size()),
                 )
             });
-        let desired = if self.spec.kind == OverlayKind::Dialog {
+        let desired = if matches!(self.spec.kind, OverlayKind::Dialog | OverlayKind::Sheet) {
             placement_bounds(PlacementResult {
                 bounds: self.coordinator.viewport_or_window(window.viewport_size()),
                 placement: OverlayPlacement::Center,
@@ -969,12 +971,12 @@ fn native_overlay_spec(
         id: node.id.clone(),
         parent: node.parent.clone(),
         kind: node.kind,
-        anchor: OverlayBounds {
+        anchor: node.anchor.unwrap_or(OverlayBounds {
             x: f64::from(trigger.origin.x),
             y: f64::from(trigger.origin.y),
             width: f64::from(trigger.size.width),
             height: f64::from(trigger.size.height),
-        },
+        }),
         width: f64::from(panel.width),
         height: f64::from(panel.height),
         preferred: node.placement,

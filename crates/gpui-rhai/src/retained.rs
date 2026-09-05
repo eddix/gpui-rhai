@@ -710,6 +710,7 @@ mod tests {
                 kind: crate::OverlayKind::Popover,
                 initial_focus: crate::OverlayInitialFocus::Panel,
                 placement: crate::OverlayPlacement::Bottom,
+                anchor: None,
                 open: true,
                 gap: 0.0,
                 modal: false,
@@ -718,6 +719,7 @@ mod tests {
                     outside: true,
                 },
                 tooltip_delays: None,
+                activate_on_trigger: true,
             },
         );
         tree.reconcile(overlay).unwrap();

@@ -10,10 +10,10 @@
 }
 */
 // Scalar controlled Select composed from the public Rhai Combobox component.
-// Props: key/options/value/placeholder/searchable/disabled/error/size/width and on_change.
-// Events: change(optional<string>).
-// State: Combobox owns keyed open/query interaction; value remains controlled by caller.
-// Example: Select(#{ key: "country", options: countries, value: "cn", on_change: Fn("changed") })
+// Props: key/options/value/open/query/placeholder/searchable/disabled/error/size/width and callbacks.
+// Events: change(optional<string>), open_change(bool), and query_change(string).
+// State: caller owns value/open/query; Combobox owns only active-option navigation.
+// Example: Select(#{ key: "country", options: countries, value: "cn", open: false, query: "", on_change: Fn("changed") })
 
 import "components/combobox" as combobox;
 
@@ -36,6 +36,8 @@ define_component(#{
                 },
             } }, required: true, sensitive: false },
             value: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
+            open: #{ schema: #{ type: "bool" }, required: true, sensitive: false },
+            query: #{ schema: #{ type: "string" }, required: true, sensitive: false },
             placeholder: #{ schema: #{ type: "string" }, required: false, sensitive: false,
                 "default": #{ type: "string", value: "" } },
             search_placeholder: #{ schema: #{ type: "string" }, required: false, sensitive: false,
@@ -60,9 +62,12 @@ define_component(#{
             placement: #{ schema: #{ type: "string", allowed: ["top", "bottom", "left", "right"] }, required: false, sensitive: false,
                 "default": #{ type: "string", value: "bottom" } },
             on_change: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false },
+            on_open_change: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false },
+            on_query_change: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false },
         },
         state: #{ fields: #{} },
-        events: #{ change: #{ payload: #{ type: "optional", value: #{ type: "string" } } } },
+        events: #{ change: #{ payload: #{ type: "optional", value: #{ type: "string" } } },
+            open_change: #{ payload: #{ type: "bool" } }, query_change: #{ payload: #{ type: "string" } } },
         slots: #{},
         parts: ["root", "trigger", "value", "placeholder", "indicator", "clear",
             "panel", "search", "list", "group", "option", "option_selected",
@@ -74,6 +79,8 @@ define_component(#{
 fn Select(props) { render_component("components/select", props) }
 fn prop_or(props, name, fallback) { if name in props { props[name] } else { fallback } }
 fn select_values(ctx, values) { ctx.emit("change", if values.len == 0 { () } else { values[0] }); }
+fn select_open(ctx, open) { ctx.emit("open_change", open); }
+fn select_query(ctx, query) { ctx.emit("query_change", query); }
 fn select_height(size) {
     if size == "xs" { 24 }
     else if size == "sm" { 28 }
@@ -90,7 +97,8 @@ fn render_Select(ctx, props) {
     let empty_text = prop_or(props, "empty_text", "");
     let node = combobox::Combobox(#{
         key: `${props.key}-combobox`, options: props.options, mode: "single",
-        selected: selected, searchable: prop_or(props, "searchable", false),
+        selected: selected, open: props.open, query: props.query,
+        searchable: prop_or(props, "searchable", false),
         placeholder: prop_or(props, "placeholder", ""),
         search_placeholder: prop_or(props, "search_placeholder", ""),
         empty_text: if empty_text == "" { ctx.t("common.no_results") } else { empty_text },
@@ -102,6 +110,7 @@ fn render_Select(ctx, props) {
         row_height: 28, trigger_height: height,
         width: if "width" in props { props.width } else { px(280) },
         on_change: Fn("select_values"),
+        on_open_change: Fn("select_open"), on_query_change: Fn("select_query"),
         style: component_style(props, "root", style()),
         part_styles: #{
             trigger: component_style(props, "trigger", style().border_color(border)),

@@ -413,7 +413,7 @@ This is one final delivery, not a sequence of preview releases. Keep version
 - Register every component and transitive dependency in the CLI, metadata,
   definitions, copied-source update path, and Theme Studio.
 - Add one polished `component_gallery` example that interactively exercises all
-  45 official components, category navigation, all theme hot switches, and
+  46 official components, category navigation, all theme hot switches, and
   important controlled states. Theme Studio remains the exhaustive theme-state
   contract; the gallery is the user-facing experience demo.
 - Update User Guide, component authoring/API docs, examples, release notes,

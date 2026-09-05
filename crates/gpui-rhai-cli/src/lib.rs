@@ -49,6 +49,25 @@ const TABS_SOURCE: &str = include_str!("../../../registry/components/tabs.rhai")
 const TOOLTIP_SOURCE: &str = include_str!("../../../registry/components/tooltip.rhai");
 const MENU_SOURCE: &str = include_str!("../../../registry/components/menu.rhai");
 const TOAST_SOURCE: &str = include_str!("../../../registry/components/toast.rhai");
+const ALERT_SOURCE: &str = include_str!("../../../registry/components/alert.rhai");
+const ALERT_DIALOG_SOURCE: &str = include_str!("../../../registry/components/alert_dialog.rhai");
+const BADGE_SOURCE: &str = include_str!("../../../registry/components/badge.rhai");
+const BUTTON_GROUP_SOURCE: &str = include_str!("../../../registry/components/button_group.rhai");
+const CARD_SOURCE: &str = include_str!("../../../registry/components/card.rhai");
+const EMPTY_SOURCE: &str = include_str!("../../../registry/components/empty.rhai");
+const GROUP_BOX_SOURCE: &str = include_str!("../../../registry/components/group_box.rhai");
+const INPUT_GROUP_SOURCE: &str = include_str!("../../../registry/components/input_group.rhai");
+const KBD_SOURCE: &str = include_str!("../../../registry/components/kbd.rhai");
+const TOGGLE_SOURCE: &str = include_str!("../../../registry/components/toggle.rhai");
+const TOGGLE_GROUP_SOURCE: &str = include_str!("../../../registry/components/toggle_group.rhai");
+const SLIDER_SOURCE: &str = include_str!("../../../registry/components/slider.rhai");
+const CONTEXT_MENU_SOURCE: &str = include_str!("../../../registry/components/context_menu.rhai");
+const SHEET_SOURCE: &str = include_str!("../../../registry/components/sheet.rhai");
+const COMMAND_SOURCE: &str = include_str!("../../../registry/components/command.rhai");
+const COMMAND_DIALOG_SOURCE: &str =
+    include_str!("../../../registry/components/command_dialog.rhai");
+const SPINNER_SOURCE: &str = include_str!("../../../registry/components/spinner.rhai");
+const SCROLL_AREA_SOURCE: &str = include_str!("../../../registry/components/scroll_area.rhai");
 const CHECK_SVG: &str = include_str!("../../../registry/assets/icons/check.svg");
 const CLOSE_SVG: &str = include_str!("../../../registry/assets/icons/close.svg");
 const CHEVRON_LEFT_SVG: &str = include_str!("../../../registry/assets/icons/chevron_left.svg");
@@ -194,6 +213,24 @@ impl BundledRegistry {
             (TOOLTIP_SOURCE, &[][..]),
             (MENU_SOURCE, &[][..]),
             (TOAST_SOURCE, &[][..]),
+            (ALERT_SOURCE, &[][..]),
+            (ALERT_DIALOG_SOURCE, &[][..]),
+            (BADGE_SOURCE, &[][..]),
+            (BUTTON_GROUP_SOURCE, &[][..]),
+            (CARD_SOURCE, &[][..]),
+            (EMPTY_SOURCE, &[][..]),
+            (GROUP_BOX_SOURCE, &[][..]),
+            (INPUT_GROUP_SOURCE, &[][..]),
+            (KBD_SOURCE, &[][..]),
+            (TOGGLE_SOURCE, &[][..]),
+            (TOGGLE_GROUP_SOURCE, &[][..]),
+            (SLIDER_SOURCE, &[][..]),
+            (CONTEXT_MENU_SOURCE, &[][..]),
+            (SHEET_SOURCE, &[][..]),
+            (COMMAND_SOURCE, &[][..]),
+            (COMMAND_DIALOG_SOURCE, &[][..]),
+            (SPINNER_SOURCE, &[][..]),
+            (SCROLL_AREA_SOURCE, &[][..]),
         ] {
             let metadata = parse_component_header(source)?;
             let id = metadata.id.clone();
@@ -2037,7 +2074,7 @@ mod tests {
         let snippets = read(&directory.path().join(".gpui-rhai/editor/snippets.json")).unwrap();
         assert!(snippets.contains("import \\\"components/combobox\\\" as combobox;"));
         assert!(snippets.contains("${1:key}"));
-        assert!(snippets.contains("${2:options}"));
+        assert!(snippets.contains("options: ${3:options}"));
         let definitions = read(
             &directory
                 .path()

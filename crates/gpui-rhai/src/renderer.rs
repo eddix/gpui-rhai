@@ -1561,6 +1561,7 @@ impl GpuiNodeRenderer {
             boundary_fallback,
             path,
             retained_id,
+            animation.rotate,
         );
         let translate_x = signals
             .translate_x
@@ -1591,6 +1592,7 @@ impl GpuiNodeRenderer {
         boundary_fallback: Option<&UiNode>,
         path: &str,
         retained_id: Option<NodeId>,
+        rotation: Option<f64>,
     ) -> AnyElement {
         let click = (!node.event_handlers("click").is_empty()).then(|| {
             (
@@ -1620,6 +1622,7 @@ impl GpuiNodeRenderer {
                 boundary_fallback,
                 path,
                 retained_id,
+                rotation,
             );
         }
 
@@ -1689,6 +1692,7 @@ impl GpuiNodeRenderer {
             boundary_fallback,
             path,
             retained_id,
+            rotation,
         )
     }
 
@@ -1699,6 +1703,7 @@ impl GpuiNodeRenderer {
         boundary_fallback: Option<&UiNode>,
         path: &str,
         retained_id: Option<NodeId>,
+        rotation: Option<f64>,
     ) -> AnyElement {
         match node.kind() {
             UiNodeKind::Text { text } => {
@@ -1707,24 +1712,31 @@ impl GpuiNodeRenderer {
             UiNodeKind::RichText { text, spans } => element
                 .child(styled_text(text.as_str(), spans, environment.colors))
                 .into_any_element(),
-            UiNodeKind::Canvas { scene } => render_canvas(element, scene, environment.colors),
+            UiNodeKind::Canvas { scene } => {
+                render_canvas(element, scene, environment.colors, rotation)
+            }
             UiNodeKind::Svg { source } => render_inline_svg(element, node, source, environment),
-            UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => element
-                .children(render_flattened_children(
+            UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => {
+                let element = element.children(render_flattened_children(
                     children,
                     environment,
                     boundary_fallback,
                     path,
                     retained_id,
-                ))
-                .into_any_element(),
+                ));
+                decorate_scrollbars(element, node, environment, path, retained_id)
+                    .into_any_element()
+            }
             UiNodeKind::Custom { primitive } => element
                 .child(environment.primitives.element(
                     primitive.clone(),
                     retained_id,
                     boundary_fallback.cloned(),
                     environment.dispatcher.cloned(),
-                    crate::PrimitiveTheme::capture(environment.colors),
+                    crate::PrimitiveTheme::capture_with_direction(
+                        environment.colors,
+                        environment.direction,
+                    ),
                 ))
                 .into_any_element(),
             UiNodeKind::Image { source } => render_image(element, node, source, environment),
@@ -1753,30 +1765,15 @@ impl GpuiNodeRenderer {
                     (path, retained_id),
                 ))
                 .into_any_element(),
-            UiNodeKind::Layer { content, spec } => {
-                let content = Self::render_internal(
-                    content,
-                    environment,
-                    boundary_fallback,
-                    &format!("{path}/content"),
-                    retained_child_id(
-                        environment.retained,
-                        environment.retained_links,
-                        retained_id,
-                        "content",
-                        0,
-                    ),
-                );
-                element
-                    .child(ScriptLayerElement::new(
-                        path,
-                        content,
-                        spec.clone(),
-                        environment.overlays.clone(),
-                        environment.view_id,
-                    ))
-                    .into_any_element()
-            }
+            UiNodeKind::Layer { content, spec } => render_layer_node(
+                element,
+                content,
+                spec,
+                environment,
+                boundary_fallback,
+                path,
+                retained_id,
+            ),
             UiNodeKind::VirtualCollection { spec } => {
                 render_virtual_collection(element, spec, environment, path, retained_id)
             }
@@ -1797,6 +1794,78 @@ impl GpuiNodeRenderer {
                 .into_any_element(),
         }
     }
+}
+
+fn render_layer_node<C: ColorResolver>(
+    element: impl ParentElement + IntoElement,
+    content: &UiNode,
+    spec: &crate::LayerNodeSpec,
+    environment: &RenderEnvironment<'_, C>,
+    boundary_fallback: Option<&UiNode>,
+    path: &str,
+    retained_id: Option<NodeId>,
+) -> AnyElement {
+    let content = GpuiNodeRenderer::render_internal(
+        content,
+        environment,
+        boundary_fallback,
+        &format!("{path}/content"),
+        retained_child_id(
+            environment.retained,
+            environment.retained_links,
+            retained_id,
+            "content",
+            0,
+        ),
+    );
+    element
+        .child(ScriptLayerElement::new(
+            path,
+            content,
+            spec.clone(),
+            environment.overlays.clone(),
+            environment.view_id,
+        ))
+        .into_any_element()
+}
+
+fn decorate_scrollbars<C, E>(
+    element: E,
+    node: &UiNode,
+    environment: &RenderEnvironment<'_, C>,
+    path: &str,
+    retained_id: Option<NodeId>,
+) -> E
+where
+    C: ColorResolver,
+    E: ParentElement + IntoElement,
+{
+    let (Some(spec), Some(handle)) = (
+        crate::ScrollbarSpec::from_node(node),
+        retained_id.and_then(|node| environment.scroll_handles.get(&node)),
+    ) else {
+        return element;
+    };
+    let part_color = |part, token, fallback| {
+        node.part_style(part)
+            .and_then(|style| {
+                style
+                    .resolve(&InteractionState::default())
+                    .background
+                    .as_ref()
+                    .and_then(|color| environment.colors.resolve(color))
+            })
+            .unwrap_or_else(|| semantic_color(environment.colors, token, fallback))
+    };
+    element.child(crate::scrollbar::ThemedScrollbar::new(
+        format!("{path}/scrollbars"),
+        handle.clone(),
+        spec,
+        environment.direction,
+        part_color("scrollbar_track", "surface_raised", 0x0027_272aff),
+        part_color("scrollbar_thumb", "text_muted", 0x0071_717aff),
+        part_color("scrollbar_thumb_hover", "accent", 0x003b_82f6ff),
+    ))
 }
 
 fn normalize_text_content_layout(node: &UiNode, style: &mut StyleProperties) {
@@ -2055,12 +2124,15 @@ fn render_canvas(
     element: impl ParentElement + IntoElement,
     scene: &crate::CanvasScene,
     colors: &impl ColorResolver,
+    rotate: Option<f64>,
 ) -> AnyElement {
     let scene = scene.clone();
     let colors = OwnedColorResolver::capture(colors);
     let canvas = gpui::canvas(
         |_, _, _| (),
-        move |bounds, (), window, _| paint_canvas_scene(bounds, &scene, &colors, window),
+        move |bounds, (), window, _| {
+            paint_canvas_scene(bounds, &scene, &colors, rotate.unwrap_or(0.0), window);
+        },
     )
     .size_full();
     element.child(canvas).into_any_element()
@@ -2070,6 +2142,7 @@ fn paint_canvas_scene(
     bounds: Bounds<Pixels>,
     scene: &crate::CanvasScene,
     colors: &impl ColorResolver,
+    rotate: f64,
     window: &mut Window,
 ) {
     for command in scene.commands() {
@@ -2131,21 +2204,15 @@ fn paint_canvas_scene(
             } => {
                 if let Some(color) = colors.resolve(color) {
                     let mut path = gpui::PathBuilder::stroke(px(f64_to_f32(*width)));
-                    path.move_to(point(
-                        bounds.origin.x + px(f64_to_f32(*from_x)),
-                        bounds.origin.y + px(f64_to_f32(*from_y)),
-                    ));
-                    path.line_to(point(
-                        bounds.origin.x + px(f64_to_f32(*to_x)),
-                        bounds.origin.y + px(f64_to_f32(*to_y)),
-                    ));
+                    path.move_to(rotated_canvas_point(bounds, *from_x, *from_y, rotate));
+                    path.line_to(rotated_canvas_point(bounds, *to_x, *to_y, rotate));
                     if let Ok(path) = path.build() {
                         window.paint_path(path, rgba(color.as_rgba_hex()));
                     }
                 }
             }
             crate::CanvasCommand::Path { .. } => {
-                paint_canvas_path(bounds, command, colors, window);
+                paint_canvas_path(bounds, command, colors, rotate, window);
             }
         }
     }
@@ -2155,6 +2222,7 @@ fn paint_canvas_path(
     bounds: Bounds<Pixels>,
     command: &crate::CanvasCommand,
     colors: &impl ColorResolver,
+    rotate: f64,
     window: &mut Window,
 ) {
     let crate::CanvasCommand::Path {
@@ -2176,10 +2244,10 @@ fn paint_canvas_path(
     for segment in segments {
         match segment {
             crate::CanvasPathSegment::Move { x, y } => {
-                builder.move_to(canvas_path_point(bounds, *transform, *x, *y));
+                builder.move_to(canvas_path_point(bounds, *transform, *x, *y, rotate));
             }
             crate::CanvasPathSegment::Line { x, y } => {
-                builder.line_to(canvas_path_point(bounds, *transform, *x, *y));
+                builder.line_to(canvas_path_point(bounds, *transform, *x, *y, rotate));
             }
             crate::CanvasPathSegment::Quadratic {
                 x,
@@ -2187,8 +2255,8 @@ fn paint_canvas_path(
                 control_x,
                 control_y,
             } => builder.curve_to(
-                canvas_path_point(bounds, *transform, *x, *y),
-                canvas_path_point(bounds, *transform, *control_x, *control_y),
+                canvas_path_point(bounds, *transform, *x, *y, rotate),
+                canvas_path_point(bounds, *transform, *control_x, *control_y, rotate),
             ),
             crate::CanvasPathSegment::Cubic {
                 x,
@@ -2198,9 +2266,9 @@ fn paint_canvas_path(
                 control_b_x,
                 control_b_y,
             } => builder.cubic_bezier_to(
-                canvas_path_point(bounds, *transform, *x, *y),
-                canvas_path_point(bounds, *transform, *control_a_x, *control_a_y),
-                canvas_path_point(bounds, *transform, *control_b_x, *control_b_y),
+                canvas_path_point(bounds, *transform, *x, *y, rotate),
+                canvas_path_point(bounds, *transform, *control_a_x, *control_a_y, rotate),
+                canvas_path_point(bounds, *transform, *control_b_x, *control_b_y, rotate),
             ),
             crate::CanvasPathSegment::Close => builder.close(),
         }
@@ -2257,15 +2325,32 @@ fn canvas_path_point(
     transform: crate::CanvasTransform,
     x: f64,
     y: f64,
+    node_rotate: f64,
 ) -> Point<Pixels> {
     let radians = transform.rotate_degrees.to_radians();
     let scaled_x = x * transform.scale;
     let scaled_y = y * transform.scale;
     let rotated_x = scaled_x * radians.cos() - scaled_y * radians.sin();
     let rotated_y = scaled_x * radians.sin() + scaled_y * radians.cos();
+    rotated_canvas_point(
+        bounds,
+        rotated_x + transform.translate_x,
+        rotated_y + transform.translate_y,
+        node_rotate,
+    )
+}
+
+fn rotated_canvas_point(bounds: Bounds<Pixels>, x: f64, y: f64, degrees: f64) -> Point<Pixels> {
+    let center_x = f64::from(bounds.size.width) / 2.0;
+    let center_y = f64::from(bounds.size.height) / 2.0;
+    let radians = degrees.to_radians();
+    let local_x = x - center_x;
+    let local_y = y - center_y;
+    let rotated_x = local_x * radians.cos() - local_y * radians.sin() + center_x;
+    let rotated_y = local_x * radians.sin() + local_y * radians.cos() + center_y;
     point(
-        bounds.origin.x + px(f64_to_f32(rotated_x + transform.translate_x)),
-        bounds.origin.y + px(f64_to_f32(rotated_y + transform.translate_y)),
+        bounds.origin.x + px(f64_to_f32(rotated_x)),
+        bounds.origin.y + px(f64_to_f32(rotated_y)),
     )
 }
 
@@ -2338,13 +2423,28 @@ fn render_inline_svg<C: ColorResolver>(
         .into_any_element()
 }
 
-fn scoped_overlay_spec(spec: &OverlayNodeSpec, view_id: &str) -> OverlayNodeSpec {
+fn scoped_overlay_spec(
+    spec: &OverlayNodeSpec,
+    view_id: &str,
+    direction: TextDirection,
+) -> OverlayNodeSpec {
     let mut rendered = spec.clone();
     rendered.id = WindowOverlayCoordinator::scoped_id(view_id, &rendered.id);
     rendered.parent = rendered
         .parent
         .as_ref()
         .map(|parent| WindowOverlayCoordinator::scoped_id(view_id, parent));
+    rendered.placement = match (rendered.placement, direction) {
+        (crate::OverlayPlacement::Start, TextDirection::LeftToRight)
+        | (crate::OverlayPlacement::End, TextDirection::RightToLeft) => {
+            crate::OverlayPlacement::Left
+        }
+        (crate::OverlayPlacement::End, TextDirection::LeftToRight)
+        | (crate::OverlayPlacement::Start, TextDirection::RightToLeft) => {
+            crate::OverlayPlacement::Right
+        }
+        (placement, _) => placement,
+    };
     rendered
 }
 
@@ -2357,7 +2457,7 @@ fn native_overlay_element<C: ColorResolver>(
     boundary_fallback: Option<&UiNode>,
     (path, retained_id): (&str, Option<NodeId>),
 ) -> ScriptOverlayElement {
-    let mut rendered_spec = scoped_overlay_spec(spec, environment.view_id);
+    let mut rendered_spec = scoped_overlay_spec(spec, environment.view_id, environment.direction);
     if rendered_spec.kind == crate::OverlayKind::Tooltip {
         rendered_spec.open = environment
             .overlays
@@ -2412,7 +2512,8 @@ fn native_overlay_element<C: ColorResolver>(
         environment.direction,
         event_target,
     );
-    let restore_focus_on_close = rendered_spec.kind == crate::OverlayKind::Menu;
+    let restore_focus_on_close =
+        rendered_spec.modal || rendered_spec.kind == crate::OverlayKind::Menu;
     let overlay = ScriptOverlayElement::new(
         path,
         trigger,
@@ -2566,6 +2667,7 @@ struct NodeAnimationValues {
     opacity: Option<f64>,
     translate_x: Option<f64>,
     translate_y: Option<f64>,
+    rotate: Option<f64>,
     width: Option<f64>,
     height: Option<f64>,
     clip_height: Option<f64>,
@@ -2644,6 +2746,7 @@ fn node_animation(values: &BTreeMap<AnimationKey, f64>, path: &str) -> NodeAnima
         opacity: value(AnimationProperty::Opacity),
         translate_x: value(AnimationProperty::TranslateX),
         translate_y: value(AnimationProperty::TranslateY),
+        rotate: value(AnimationProperty::Rotate),
         width: value(AnimationProperty::Width),
         height: value(AnimationProperty::Height),
         clip_height: value(AnimationProperty::ClipHeight),

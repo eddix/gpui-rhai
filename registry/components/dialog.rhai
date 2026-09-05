@@ -49,6 +49,12 @@ define_component(#{
                 sensitive: false,
                 "default": #{ type: "bool", value: true },
             },
+            initial_focus: #{
+                schema: #{ type: "string", allowed: ["panel", "first"] },
+                required: false,
+                sensitive: false,
+                "default": #{ type: "string", value: "panel" },
+            },
             on_open_change: #{
                 schema: #{ type: "optional", value: #{ type: "callback" } },
                 required: false,
@@ -119,6 +125,7 @@ fn render_Dialog(ctx, props) {
             modal: true,
             dismiss_on_escape: optional_bool(props, "dismiss_on_escape", true),
             dismiss_on_outside: optional_bool(props, "dismiss_on_outside", true),
+            initial_focus: if "initial_focus" in props { props.initial_focus } else { "panel" },
         }
     ).with_key(props.key)
         .with_style(component_style(props, "root", style()));

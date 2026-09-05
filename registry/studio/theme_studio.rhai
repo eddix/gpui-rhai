@@ -16,6 +16,7 @@ import "components/pagination" as pagination;
 import "components/popover" as popover;
 import "components/progress" as progress;
 import "components/radio_group" as radio_group;
+import "components/radio" as radio;
 import "components/select" as select;
 import "components/skeleton" as skeleton;
 import "components/switch" as switch_component;
@@ -25,6 +26,24 @@ import "components/tag" as tag;
 import "components/textarea" as textarea;
 import "components/toast" as toast;
 import "components/tooltip" as tooltip;
+import "components/alert" as alert;
+import "components/alert_dialog" as alert_dialog;
+import "components/badge" as badge;
+import "components/button_group" as button_group;
+import "components/card" as card;
+import "components/command" as command;
+import "components/command_dialog" as command_dialog;
+import "components/context_menu" as context_menu;
+import "components/empty" as empty;
+import "components/group_box" as group_box;
+import "components/input_group" as input_group;
+import "components/kbd" as kbd;
+import "components/sheet" as sheet;
+import "components/slider" as slider;
+import "components/spinner" as spinner;
+import "components/toggle" as toggle;
+import "components/toggle_group" as toggle_group;
+import "components/scroll_area" as scroll_area;
 
 fn color_field(name, value) {
     row([
@@ -72,6 +91,18 @@ fn state_schema() {
         popover_open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: false } },
         menu_open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: __VISUAL_MENU__ } },
         toast_visible: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: __VISUAL_TOAST__ } },
+        builtin_open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: false } },
+        builtin_query: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "" } },
+        p0_toggle_values: #{ schema: #{ type: "array", max_items: 4, items: #{ type: "string" } },
+            "default": #{ type: "array", value: [#{ type: "string", value: "bold" }] } },
+        p0_slider: #{ schema: #{ type: "number", min: 0.0, max: 100.0 },
+            "default": #{ type: "float", value: 42.0 } },
+        p0_query: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "" } },
+        p0_command_open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: false } },
+        p0_sheet_open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: false } },
+        p0_alert_open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: false } },
+        p0_context_open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: false } },
+        p0_context_active: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "copy" } },
     } }
 }
 
@@ -81,6 +112,19 @@ fn set_menu(ctx, value) { ctx.set_state("menu_open", value); }
 fn show_dialog(ctx, payload) { ctx.set_state("dialog_open", true); }
 fn show_toast(ctx, payload) { ctx.set_state("toast_visible", true); }
 fn dismiss_toast(ctx, payload) { ctx.set_state("toast_visible", false); }
+fn set_builtin_open(ctx, value) { ctx.set_state("builtin_open", value); }
+fn set_builtin_query(ctx, value) { ctx.set_state("builtin_query", value); }
+fn set_p0_toggles(ctx, value) { ctx.set_state("p0_toggle_values", value); }
+fn set_p0_slider(ctx, value) { ctx.set_state("p0_slider", value); }
+fn set_p0_query(ctx, value) { ctx.set_state("p0_query", value); }
+fn set_p0_command_open(ctx, value) { ctx.set_state("p0_command_open", value); }
+fn set_p0_sheet_open(ctx, value) { ctx.set_state("p0_sheet_open", value); }
+fn set_p0_alert_open(ctx, value) { ctx.set_state("p0_alert_open", value); }
+fn set_p0_context_open(ctx, value) { ctx.set_state("p0_context_open", value); }
+fn set_p0_context_active(ctx, value) { ctx.set_state("p0_context_active", value); }
+fn open_p0_command(ctx, payload) { ctx.set_state("p0_command_open", true); }
+fn open_p0_sheet(ctx, payload) { ctx.set_state("p0_sheet_open", true); }
+fn open_p0_alert(ctx, payload) { ctx.set_state("p0_alert_open", true); }
 fn noop(ctx, payload) { handled() }
 
 fn init(ctx) {
@@ -112,7 +156,10 @@ fn editor(ctx) {
         ]).with_style(style().gap(px(4))),
         combobox::Combobox(#{
             key: "studio-builtin", placeholder: "Load a bundled theme", searchable: true,
-            options: __BUILTIN_OPTIONS__, on_change: native_handler("theme_studio.builtin")
+            options: __BUILTIN_OPTIONS__, selected: [], open: ctx.get_state("builtin_open"),
+            query: ctx.get_state("builtin_query"),
+            on_change: native_handler("theme_studio.builtin"),
+            on_open_change: Fn("set_builtin_open"), on_query_change: Fn("set_builtin_query")
         }),
         divider::Divider(#{}),
         input::Input(#{ key: "studio-family", value: ctx.get_state("family"),
@@ -206,9 +253,9 @@ fn specimen_inputs() {
         textarea::Textarea(#{ key: "specimen-textarea", value: "Two lines\nof themed text",
             rows: 2, max_length: 120, show_count: true }),
         row([
-            select::Select(#{ key: "specimen-select", value: "nord", clearable: true,
+            select::Select(#{ key: "specimen-select", value: "nord", open: false, query: "", clearable: true,
                 options: [#{ value: "nord", label: "Nord" }, #{ value: "gruvbox", label: "Gruvbox" }] }),
-            combobox::Combobox(#{ key: "specimen-combobox", selected: ["dark"],
+            combobox::Combobox(#{ key: "specimen-combobox", selected: ["dark"], open: false, query: "",
                 options: [#{ value: "dark", label: "Dark" }, #{ value: "light", label: "Light" }] }),
             date_picker::DatePicker(#{ key: "specimen-date", value: "2026-09-01",
                 placeholder: "Date", presets: [#{ label: "Today", value: "2026-09-01" }] }),
@@ -226,6 +273,7 @@ fn specimen_choices() {
         ]).with_style(style().gap(px(8))),
         radio_group::RadioGroup(#{ value: "fast", label: "Mode", orientation: "horizontal",
             options: [#{ value: "safe", label: "Safe" }, #{ value: "fast", label: "Fast" }] }),
+        radio::Radio(#{ value: "standalone", selected: true, label: "Standalone radio" }),
         row([
             switch_component::Switch(#{ label: "Enabled", checked: true }),
             switch_component::Switch(#{ label: "Off", checked: false }),
@@ -295,6 +343,86 @@ fn specimen_data() {
     ]).with_style(style().gap(px(7)))
 }
 
+fn p0_commands() {
+    [
+        #{ value: "new", label: "New window", keywords: ["create"], group: "Window", shortcut: "⌘N" },
+        #{ value: "theme", label: "Switch theme", keywords: ["appearance", "color"], group: "Preferences", shortcut: "⌘T" },
+        #{ value: "disabled", label: "Unavailable action", group: "Preferences", disabled: true }
+    ]
+}
+
+fn specimen_p0(ctx) {
+    let joined = button_group::ButtonGroup(#{ label: "Alignment", buttons: [
+        button::Button(#{ text: "Left", variant: "secondary", size: "sm" }),
+        button::Button(#{ text: "Center", variant: "outline", size: "sm" }),
+        button::Button(#{ text: "Right", variant: "outline", size: "sm" })
+    ] });
+    let grouped_input = input_group::InputGroup(#{ label: "Search", prefix: text("⌕"),
+        suffix: kbd::Kbd(#{ text: "⌘ K" }),
+        control: input::Input(#{ key: "p0-input", value: "", placeholder: "Search" }) });
+    let contextual = context_menu::ContextMenu(#{ key: "p0-context",
+        trigger: card::Card(#{ content: text("Right-click this card") }),
+        open: ctx.get_state("p0_context_open"), active_value: ctx.get_state("p0_context_active"),
+        items: [#{ kind: "item", value: "copy", label: "Copy", shortcut: "⌘C" },
+            #{ kind: "item", value: "delete", label: "Delete" }],
+        on_action: Fn("noop"), on_active_change: Fn("set_p0_context_active"),
+        on_open_change: Fn("set_p0_context_open") });
+    column([
+        specimen_title("PUBLIC-LAUNCH FOUNDATIONS", "Semantic surfaces, joined controls, native range input and keyboard command UI."),
+        alert::Alert(#{ title: "Runtime ready", description: "All component sources use the public runtime.", variant: "success" }),
+        row([
+            badge::Badge(#{ text: "NEW", variant: "accent" }),
+            badge::Badge(#{ text: "HEALTHY", variant: "success", dot: true }),
+            badge::Badge(#{ text: "WARNING", variant: "warning" }),
+            spinner::Spinner(#{ key: "p0-spinner", label: "Loading", size: "sm" }),
+            kbd::Kbd(#{ text: "⌘ ⇧ P", label: "Command Shift P" })
+        ]).with_style(style().gap(px(6)).items_center()),
+        joined,
+        grouped_input,
+        scroll_area::ScrollArea(#{ key: "p0-scroll", label: "Scrollable specimen", height: px(96), vertical_scrollbar: "always",
+            content: column([
+                text("Scrollable line 1").with_style(style().height(px(28)).items_center()),
+                text("Scrollable line 2").with_style(style().height(px(28)).items_center()),
+                text("Scrollable line 3").with_style(style().height(px(28)).items_center()),
+                text("Scrollable line 4").with_style(style().height(px(28)).items_center()),
+                text("Scrollable line 5").with_style(style().height(px(28)).items_center())
+            ]).with_style(style().padding(px(8))) }),
+        row([
+            toggle::Toggle(#{ text: "Pinned", pressed: true }),
+            toggle_group::ToggleGroup(#{ key: "p0-formats", label: "Formatting", mode: "multiple",
+                values: ctx.get_state("p0_toggle_values"),
+                items: [#{ value: "bold", label: "Bold" }, #{ value: "italic", label: "Italic" }],
+                on_change: Fn("set_p0_toggles") }),
+            slider::Slider(#{ key: "p0-slider", label: "Volume", value: ctx.get_state("p0_slider"),
+                min: 0.0, max: 100.0, step: 1.0, on_change: Fn("set_p0_slider") })
+        ]).with_style(style().gap(px(10)).items_center()),
+        row([
+            card::Card(#{ header: text("Card"), content: text("Composable content surface"), elevated: true }),
+            group_box::GroupBox(#{ label: "Group box", description: "Related desktop controls",
+                content: text("Persistent layout content") }),
+            empty::Empty(#{ title: "Nothing here", description: "An empty state with a clear next action.",
+                actions: [button::Button(#{ text: "Create", size: "sm" })] })
+        ]).with_style(style().gap(px(8)).items_start()),
+        command::Command(#{ key: "p0-command", label: "Commands", query: ctx.get_state("p0_query"),
+            items: p0_commands(), max_visible: 4, on_query_change: Fn("set_p0_query"), on_action: Fn("noop") }),
+        contextual,
+        row([
+            button::Button(#{ text: "Command dialog", size: "sm", variant: "outline", on_click: Fn("open_p0_command") }),
+            button::Button(#{ text: "Sheet", size: "sm", variant: "outline", on_click: Fn("open_p0_sheet") }),
+            button::Button(#{ text: "Alert dialog", size: "sm", variant: "danger", on_click: Fn("open_p0_alert") })
+        ]).with_style(style().gap(px(6))),
+        command_dialog::CommandDialog(#{ key: "p0-command-dialog", open: ctx.get_state("p0_command_open"),
+            query: ctx.get_state("p0_query"), label: "Command palette", items: p0_commands(),
+            on_query_change: Fn("set_p0_query"), on_action: Fn("noop"), on_open_change: Fn("set_p0_command_open") }),
+        sheet::Sheet(#{ key: "p0-sheet", open: ctx.get_state("p0_sheet_open"), side: "end",
+            title: "Inspector", content: text("A temporary viewport-edge panel."),
+            on_open_change: Fn("set_p0_sheet_open") }),
+        alert_dialog::AlertDialog(#{ key: "p0-alert-dialog", open: ctx.get_state("p0_alert_open"),
+            title: "Apply destructive action?", description: "This is the standard confirmation boundary.",
+            on_confirm: Fn("noop"), on_cancel: Fn("noop"), on_open_change: Fn("set_p0_alert_open") })
+    ]).with_style(style().gap(px(8)))
+}
+
 fn specimen_overlays(ctx) {
     let menu_node = menu::Menu(#{ key: "specimen-menu",
         trigger: button::Button(#{ text: "Menu", size: "sm", variant: "outline" }),
@@ -347,7 +475,8 @@ fn specimen(ctx) {
             column([specimen_inputs(), specimen_navigation(), specimen_overlays(ctx)])
                 .with_style(style().width(relative(0.5)).gap(px(14)))
         ]).with_style(style().gap(px(14)).items_start()),
-        specimen_data()
+        specimen_data(),
+        specimen_p0(ctx)
     ]).with_style(style().padding(px(16)).gap(px(14)).background(theme_color("surface"))
         .font_size(px(12)).line_height(px(16)))
 }

@@ -23,12 +23,14 @@ pub struct OverlayNodeSpec {
     pub parent: Option<OverlayId>,
     pub kind: OverlayKind,
     pub placement: OverlayPlacement,
+    pub anchor: Option<crate::OverlayBounds>,
     pub open: bool,
     pub gap: f64,
     pub modal: bool,
     pub dismiss: OverlayDismissPolicy,
     pub tooltip_delays: Option<TooltipDelays>,
     pub initial_focus: OverlayInitialFocus,
+    pub activate_on_trigger: bool,
 }
 
 /// Where focus lands on each closed -> open presentation cycle of a modal
@@ -717,6 +719,19 @@ impl UiNode {
     }
 
     #[must_use]
+    pub fn with_scrollbars(mut self, spec: crate::ScrollbarSpec) -> Self {
+        self.attributes.insert(
+            "scrollbar_horizontal".to_owned(),
+            UiValue::String(spec.horizontal().as_str().to_owned()),
+        );
+        self.attributes.insert(
+            "scrollbar_vertical".to_owned(),
+            UiValue::String(spec.vertical().as_str().to_owned()),
+        );
+        self
+    }
+
+    #[must_use]
     pub fn with_part_styles(mut self, styles: BTreeMap<String, Style>) -> Self {
         self.part_styles.extend(styles);
         self
@@ -1308,6 +1323,19 @@ fn register_node_behavior_methods(builder: &mut TypeBuilder<UiNode>) {
                 .with_attribute("tab_group", UiValue::Bool(true))
         })
         .with_fn(
+            "scrollbars",
+            |node: &mut UiNode,
+             horizontal: ImmutableString,
+             vertical: ImmutableString|
+             -> Result<UiNode, Box<EvalAltResult>> {
+                let spec = crate::ScrollbarSpec::new(horizontal.as_str(), vertical.as_str())
+                    .map_err(|error| {
+                        Box::new(EvalAltResult::ErrorRuntime(error.into(), Position::NONE))
+                    })?;
+                Ok(node.clone().with_scrollbars(spec))
+            },
+        )
+        .with_fn(
             "on_key_value",
             |call: NativeCallContext<'_>,
              node: &mut UiNode,
@@ -1609,6 +1637,38 @@ fn register_accessibility_state_methods(builder: &mut TypeBuilder<UiNode>) {
             },
         )
         .with_fn(
+            "accessibility_pressed",
+            |node: &mut UiNode, pressed: bool| {
+                node.clone()
+                    .with_attribute("pressed", UiValue::Bool(pressed))
+            },
+        )
+        .with_fn(
+            "accessibility_expanded",
+            |node: &mut UiNode, expanded: bool| {
+                node.clone()
+                    .with_attribute("expanded", UiValue::Bool(expanded))
+            },
+        )
+        .with_fn(
+            "accessibility_orientation",
+            |node: &mut UiNode,
+             orientation: ImmutableString|
+             -> Result<UiNode, Box<EvalAltResult>> {
+                if !matches!(orientation.as_str(), "horizontal" | "vertical") {
+                    return Err(Box::new(EvalAltResult::ErrorRuntime(
+                        "accessibility_orientation must be horizontal or vertical".into(),
+                        Position::NONE,
+                    )));
+                }
+                Ok(node
+                    .clone()
+                    .with_attribute("orientation", UiValue::String(orientation.to_string())))
+            },
+        );
+    register_accessibility_range_methods(builder);
+    builder
+        .with_fn(
             "accessibility_value",
             |node: &mut UiNode, value: Dynamic| -> Result<UiNode, Box<EvalAltResult>> {
                 let value = dynamic_ui_value(value)?;
@@ -1640,6 +1700,57 @@ fn register_accessibility_state_methods(builder: &mut TypeBuilder<UiNode>) {
                     .with_attribute("invalid", UiValue::Bool(invalid))
             },
         );
+}
+
+fn register_accessibility_range_methods(builder: &mut TypeBuilder<UiNode>) {
+    builder
+        .with_fn(
+            "accessibility_value_min",
+            |node: &mut UiNode, value: Dynamic| -> Result<UiNode, Box<EvalAltResult>> {
+                let value = accessibility_number(value, "minimum")?;
+                Ok(node
+                    .clone()
+                    .with_attribute("value_min", UiValue::Float(value)))
+            },
+        )
+        .with_fn(
+            "accessibility_value_max",
+            |node: &mut UiNode, value: Dynamic| -> Result<UiNode, Box<EvalAltResult>> {
+                let value = accessibility_number(value, "maximum")?;
+                Ok(node
+                    .clone()
+                    .with_attribute("value_max", UiValue::Float(value)))
+            },
+        );
+}
+
+fn accessibility_number(value: Dynamic, name: &str) -> Result<f64, Box<EvalAltResult>> {
+    let value = if value.is::<FLOAT>() {
+        value.cast::<FLOAT>()
+    } else if value.is::<INT>() {
+        value
+            .cast::<INT>()
+            .to_string()
+            .parse::<f64>()
+            .map_err(|_| {
+                Box::new(EvalAltResult::ErrorRuntime(
+                    format!("accessibility {name} value cannot be represented").into(),
+                    Position::NONE,
+                ))
+            })?
+    } else {
+        return Err(Box::new(EvalAltResult::ErrorRuntime(
+            format!("accessibility {name} value must be a number").into(),
+            Position::NONE,
+        )));
+    };
+    if !value.is_finite() {
+        return Err(Box::new(EvalAltResult::ErrorRuntime(
+            format!("accessibility {name} value must be finite").into(),
+            Position::NONE,
+        )));
+    }
+    Ok(value)
 }
 
 fn register_accessibility_reference_methods(builder: &mut TypeBuilder<UiNode>) {
@@ -1918,6 +2029,7 @@ pub(crate) fn overlay_node(
         Some("combobox") => OverlayKind::Combobox,
         Some("tooltip") => OverlayKind::Tooltip,
         Some("dialog") => OverlayKind::Dialog,
+        Some("sheet") => OverlayKind::Sheet,
         Some("menu") => OverlayKind::Menu,
         Some(other) => return overlay_config_error(format!("unknown overlay kind `{other}`")),
     };
@@ -1926,17 +2038,22 @@ pub(crate) fn overlay_node(
         Some("top") => OverlayPlacement::Top,
         Some("left") => OverlayPlacement::Left,
         Some("right") => OverlayPlacement::Right,
+        Some("start") => OverlayPlacement::Start,
+        Some("end") => OverlayPlacement::End,
         Some("center") => OverlayPlacement::Center,
         Some(other) => {
             return overlay_config_error(format!("unknown overlay placement `{other}`"));
         }
     };
     let open = optional_bool(&mut config, "open")?.unwrap_or(false);
+    let anchor = optional_overlay_bounds(&mut config, "anchor")?;
     let gap = optional_number(&mut config, "gap")?.unwrap_or(8.0);
     if !gap.is_finite() || gap < 0.0 {
         return overlay_config_error("overlay gap must be finite and non-negative");
     }
-    let modal = optional_bool(&mut config, "modal")?.unwrap_or(kind == OverlayKind::Dialog);
+    let modal = optional_bool(&mut config, "modal")?
+        .unwrap_or(matches!(kind, OverlayKind::Dialog | OverlayKind::Sheet));
+    let activate_on_trigger = optional_bool(&mut config, "activate_on_trigger")?.unwrap_or(true);
     let initial_focus = match optional_string(&mut config, "initial_focus")?.as_deref() {
         None | Some("panel") => OverlayInitialFocus::Panel,
         Some("first") => OverlayInitialFocus::First,
@@ -1966,6 +2083,7 @@ pub(crate) fn overlay_node(
                 parent: parent.map(OverlayId::new),
                 kind,
                 placement,
+                anchor,
                 open,
                 gap,
                 modal,
@@ -1975,6 +2093,7 @@ pub(crate) fn overlay_node(
                 },
                 tooltip_delays,
                 initial_focus,
+                activate_on_trigger,
             },
         ),
         call,
@@ -2103,6 +2222,45 @@ fn optional_usize(config: &mut Map, name: &str) -> Result<Option<usize>, Box<Eva
         .and_then(|value| usize::try_from(value).ok())
         .map(Some)
         .ok_or_else(|| Box::new(overlay_type_error(name, "a non-negative integer")))
+}
+
+fn optional_overlay_bounds(
+    config: &mut Map,
+    name: &str,
+) -> Result<Option<crate::OverlayBounds>, Box<EvalAltResult>> {
+    let Some(value) = config.remove(name) else {
+        return Ok(None);
+    };
+    let Some(mut bounds) = value.try_cast::<Map>() else {
+        return Err(Box::new(overlay_type_error(
+            name,
+            "a map with x, y, width, and height",
+        )));
+    };
+    let x = optional_number(&mut bounds, "x")?
+        .ok_or_else(|| Box::new(overlay_type_error("anchor.x", "number")))?;
+    let y = optional_number(&mut bounds, "y")?
+        .ok_or_else(|| Box::new(overlay_type_error("anchor.y", "number")))?;
+    let width = optional_number(&mut bounds, "width")?.unwrap_or(0.0);
+    let height = optional_number(&mut bounds, "height")?.unwrap_or(0.0);
+    if let Some((unknown, _)) = bounds.into_iter().next() {
+        return overlay_config_error(format!("unknown overlay anchor field `{unknown}`"));
+    }
+    if !x.is_finite()
+        || !y.is_finite()
+        || !width.is_finite()
+        || width < 0.0
+        || !height.is_finite()
+        || height < 0.0
+    {
+        return overlay_config_error("overlay anchor geometry must be finite and non-negative");
+    }
+    Ok(Some(crate::OverlayBounds {
+        x,
+        y,
+        width,
+        height,
+    }))
 }
 
 fn overlay_type_error(name: &str, expected: &str) -> EvalAltResult {

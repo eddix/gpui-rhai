@@ -57,7 +57,7 @@ fn view(ctx) {
                 #{ value: "one", label: "A deliberately wide combobox option" },
                 #{ value: "two", label: "Second option" }
             ],
-            selected: [], open: ctx.get_state("open"),
+            selected: [], open: ctx.get_state("open"), query: "",
             on_change: Fn("selected"), on_open_change: Fn("set_open")
         })
     ]).with_style(

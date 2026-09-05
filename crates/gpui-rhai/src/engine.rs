@@ -26,6 +26,7 @@ use crate::node::{
     rich_text_node, row_node, span_value, stack_node, svg_node, text_node,
 };
 use crate::primitive::{PrimitiveDescriptor, PrimitiveError, PrimitiveHandler, PrimitiveRegistry};
+use crate::range_input::{RangeInputPrimitiveHandler, range_input_primitive_descriptor};
 use crate::style::register_style_api;
 use crate::text_area::{
     TextAreaPrimitiveHandler, register_text_area_api, text_area_primitive_descriptor,
@@ -538,6 +539,11 @@ impl RuntimeEngine {
             TextAreaPrimitiveHandler::default(),
         )
         .expect("built-in Textarea primitive descriptor is valid");
+        self.register_primitive(
+            range_input_primitive_descriptor(),
+            RangeInputPrimitiveHandler::default(),
+        )
+        .expect("built-in RangeInput primitive descriptor is valid");
     }
 
     /// Compile the default application entry source.

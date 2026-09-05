@@ -43,7 +43,10 @@ define_component(#{
                 "default": #{ type: "string", value: "md" } },
             on_change: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false },
         },
-        state: #{ fields: #{} },
+        state: #{ fields: #{
+            page_size_open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: false } },
+            page_size_query: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "" } },
+        } },
         events: #{ change: #{ payload: #{ type: "object", allow_unknown: false, fields: #{
             current_page: #{ schema: #{ type: "integer", min: 1 }, required: true, sensitive: false },
             page_size: #{ schema: #{ type: "integer", min: 1 }, required: true, sensitive: false },
@@ -113,6 +116,8 @@ fn page_button(props, page, current, size, callback) {
 }
 
 fn Pagination(props) { render_component("components/pagination", props) }
+fn page_size_open(ctx, open) { ctx.set_state("page_size_open", open); }
+fn page_size_query(ctx, query) { ctx.set_state("page_size_query", query); }
 fn render_Pagination(ctx, props) {
     if props.key == "" { throw "Pagination key cannot be empty"; }
     let pages = total_pages(props.total_items, props.page_size);
@@ -187,8 +192,10 @@ fn render_Pagination(ctx, props) {
             text(ctx.t("pagination.per_page")).with_style(component_style(props, "page_size_label", style())),
             select::Select(#{
                 key: `${props.key}-page-size`, options: select_options,
-                value: `${props.page_size}`, size: size, width: px(96),
-                on_change: Fn("pagination_size")
+                value: `${props.page_size}`, open: ctx.get_state("page_size_open"),
+                query: ctx.get_state("page_size_query"), size: size, width: px(96),
+                on_change: Fn("pagination_size"), on_open_change: Fn("page_size_open"),
+                on_query_change: Fn("page_size_query")
             }).with_style(component_style(props, "page_size", style()))
         ]).with_style(style().gap(theme_spacing("xs")).items_center()
             .font_size(px(11)).line_height(px(14))));

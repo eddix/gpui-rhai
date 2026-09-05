@@ -115,15 +115,35 @@ pub enum PrimitiveValue {
 /// Primitive handlers use this snapshot to resolve component-owned paint parts
 /// without receiving a mutable application/theme manager or coupling to a
 /// concrete theme family.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct PrimitiveTheme {
     colors: BTreeMap<String, Rgba8>,
     spacing: BTreeMap<SpacingToken, Length>,
     radii: BTreeMap<RadiusToken, Length>,
+    direction: crate::TextDirection,
+}
+
+impl Default for PrimitiveTheme {
+    fn default() -> Self {
+        Self {
+            colors: BTreeMap::new(),
+            spacing: BTreeMap::new(),
+            radii: BTreeMap::new(),
+            direction: crate::TextDirection::LeftToRight,
+        }
+    }
 }
 
 impl PrimitiveTheme {
+    #[cfg(test)]
     pub(crate) fn capture(colors: &impl ColorResolver) -> Self {
+        Self::capture_with_direction(colors, crate::TextDirection::LeftToRight)
+    }
+
+    pub(crate) fn capture_with_direction(
+        colors: &impl ColorResolver,
+        direction: crate::TextDirection,
+    ) -> Self {
         const TOKENS: &[&str] = &[
             "surface",
             "surface_raised",
@@ -173,6 +193,7 @@ impl PrimitiveTheme {
                         .map(|value| (token, value))
                 })
                 .collect(),
+            direction,
         }
     }
 
@@ -196,6 +217,21 @@ impl PrimitiveTheme {
             Length::ThemeRadius(token) => self.radii.get(&token).copied(),
             Length::Pixels(_) | Length::Rems(_) | Length::Relative(_) => Some(value),
         }
+    }
+
+    #[must_use]
+    pub const fn direction(&self) -> crate::TextDirection {
+        self.direction
+    }
+}
+
+impl ColorResolver for PrimitiveTheme {
+    fn resolve(&self, color: &ColorValue) -> Option<Rgba8> {
+        self.resolve_color(color)
+    }
+
+    fn resolve_length(&self, length: Length) -> Option<Length> {
+        PrimitiveTheme::resolve_length(self, length)
     }
 }
 

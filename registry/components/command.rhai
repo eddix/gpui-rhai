@@ -1,0 +1,228 @@
+/* gpui-rhai
+{
+  "id": "components/command",
+  "export": "Command",
+  "version": "0.1.0",
+  "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
+  "dependencies": ["components/input", "components/kbd"],
+  "capabilities": {}
+}
+*/
+// Embeddable keyboard-first command search with deterministic fuzzy ranking.
+// Props: key, label, query, items, placeholders, sizing, disabled, and callbacks.
+// Events: query_change(string) and action(string).
+// State: caller owns query; component owns only the roving active command.
+// Parts: root, search, list, group, item, item_active, label, shortcut, empty.
+// Example: Command(#{ key: "palette", label: "Commands", query: query, items: items, on_query_change: Fn("queried"), on_action: Fn("run") })
+
+import "components/input" as input;
+import "components/kbd" as kbd;
+
+define_component(#{
+    metadata: #{ id: "components/command", "export": "Command", version: "0.1.0",
+        runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
+        dependencies: ["components/input", "components/kbd"], capabilities: #{} },
+    schema: #{
+        props: #{
+            key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+            label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+            query: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+            items: #{ schema: #{ type: "array", max_items: 4096, items: #{
+                type: "object", allow_unknown: false, fields: #{
+                    value: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+                    label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+                    keywords: #{ schema: #{ type: "array", max_items: 32, items: #{ type: "string" } },
+                        required: false, sensitive: false, "default": #{ type: "array", value: [] } },
+                    group: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
+                    shortcut: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
+                    disabled: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
+                        "default": #{ type: "bool", value: false } },
+                }
+            } }, required: true, sensitive: false },
+            placeholder: #{ schema: #{ type: "string" }, required: false, sensitive: false,
+                "default": #{ type: "string", value: "Type a command" } },
+            empty_text: #{ schema: #{ type: "string" }, required: false, sensitive: false,
+                "default": #{ type: "string", value: "No commands found" } },
+            max_visible: #{ schema: #{ type: "integer", min: 1, max: 24 }, required: false, sensitive: false,
+                "default": #{ type: "integer", value: 8 } },
+            row_height: #{ schema: #{ type: "integer", min: 24, max: 64 }, required: false, sensitive: false,
+                "default": #{ type: "integer", value: 32 } },
+            disabled: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
+                "default": #{ type: "bool", value: false } },
+            on_query_change: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false },
+            on_action: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false },
+        },
+        state: #{ fields: #{ active: #{ schema: #{ type: "string" },
+            "default": #{ type: "string", value: "" } } } },
+        events: #{ query_change: #{ payload: #{ type: "string" } }, action: #{ payload: #{ type: "string" } } },
+        slots: #{}, parts: ["root", "search", "list", "group", "item", "item_active", "label", "shortcut", "empty"],
+    },
+    render: Fn("render_Command")
+});
+
+fn Command(props) { render_component("components/command", props) }
+fn prop_or(props, name, fallback) { if name in props { props[name] } else { fallback } }
+fn item_disabled(item) { "disabled" in item && item.disabled }
+fn item_group(item) { if "group" in item && item.group != () { item.group } else { "" } }
+
+fn fuzzy_score(text, query) {
+    let source = text.to_lower();
+    let needle = query.to_lower();
+    if needle == "" { return 0; }
+    if source == needle { return 10000; }
+    if source.starts_with(needle) { return 8000 - source.len; }
+    let direct = source.index_of(needle);
+    if direct >= 0 { return 6000 - direct * 8 - source.len; }
+    let position = 0;
+    let gaps = 0;
+    let matched = true;
+    for character in needle.to_chars() {
+        if matched {
+            let found = source.index_of(character, position);
+            if found < 0 { matched = false; }
+            else { gaps += found - position; position = found + 1; }
+        }
+    }
+    if matched { 4000 - gaps * 12 - source.len } else { -1 }
+}
+
+fn item_score(item, query) {
+    let score = fuzzy_score(item.label, query);
+    for keyword in prop_or(item, "keywords", []) {
+        let candidate = fuzzy_score(keyword, query) - 100;
+        if candidate > score { score = candidate; }
+    }
+    score
+}
+
+fn compare_ranked(left, right) {
+    if left.score > right.score { -1 }
+    else if left.score < right.score { 1 }
+    else if left.source_index < right.source_index { -1 }
+    else if left.source_index > right.source_index { 1 }
+    else { 0 }
+}
+
+fn enabled_values(items) {
+    let values = [];
+    for item in items { if item.kind == "item" && !item.disabled { values.push(item.value); } }
+    values
+}
+
+fn includes(values, value) {
+    let found = false;
+    for current in values { if current == value { found = true; } }
+    found
+}
+
+fn adjacent(values, active, step) {
+    if values.len == 0 { return ""; }
+    let index = 0;
+    for i in 0..values.len { if values[i] == active { index = i; } }
+    if step > 0 { values[(index + 1) % values.len] }
+    else { values[(index + values.len - 1) % values.len] }
+}
+
+fn query_action(ctx, query) { ctx.set_state("active", ""); ctx.emit("query_change", query); }
+fn active_action(ctx, value) { ctx.set_state("active", value); handled() }
+fn action_value(ctx, value) { ctx.emit("action", value); handled() }
+fn submit_action(value, ctx, query) {
+    if value != "" { ctx.emit("action", value); }
+}
+
+fn render_command_row(ctx, payload) {
+    let item = payload.item;
+    if item.kind == "group" {
+        return text(item.label).with_key(payload.key)
+            .with_style(ctx.component_style("group", style()
+                .height(px(24)).padding_x(px(9)).items_center()
+                .font_size(px(10)).line_height(px(14)).font_weight(700)
+                .text_color(theme_color("text_muted"))))
+            .accessibility_role("heading").accessibility_label(item.label);
+    }
+    let children = [text(item.label).with_style(ctx.component_style("label", style().flex_grow()))];
+    if item.shortcut != "" {
+        children.push(kbd::Kbd(#{ text: item.shortcut }).with_style(ctx.component_style("shortcut", style())));
+    }
+    let node = row(children).with_key(payload.key)
+        .with_style(ctx.component_style(if item.active { "item_active" } else { "item" }, style()
+            .height(px(item.height)).padding_x(px(9)).gap(px(8)).items_center()
+            .radius(theme_radius("sm"))
+            .background(if item.active { theme_color("selection") } else { rgba(0x00000000) })
+            .border_start(px(2)).border_color(if item.active { theme_color("accent") } else { rgba(0x00000000) })
+            .font_size(px(12)).line_height(px(16))
+            .text_color(if item.disabled { theme_color("disabled") } else { theme_color("text_primary") })
+            .hover(style().background(theme_color("surface_hover")))
+            .disabled(style().opacity(0.66))))
+        .tab_stop(false).disabled(item.disabled)
+        .accessibility_role("option").accessibility_label(item.label)
+        .accessibility_checked(item.active);
+    if item.disabled { node } else { node.on_click_value(Fn("action_value"), item.value) }
+}
+
+fn render_Command(ctx, props) {
+    let query = props.query;
+    let row_height = prop_or(props, "row_height", 32);
+    let groups = [];
+    let buckets = #{};
+    for index in 0..props.items.len {
+        let item = props.items[index];
+        let score = item_score(item, query);
+        if score >= 0 {
+            let group = item_group(item);
+            if !(group in buckets) { groups.push(group); buckets[group] = []; }
+            let bucket = buckets[group];
+            bucket.push(#{ value: item.value, label: item.label, shortcut: prop_or(item, "shortcut", ""),
+                disabled: item_disabled(item), score: score, source_index: index });
+            buckets[group] = bucket;
+        }
+    }
+    let data = [];
+    for group in groups {
+        let bucket = buckets[group];
+        bucket.sort(Fn("compare_ranked"));
+        if group != "" { data.push(#{ key: `group:${group}`, kind: "group", label: group, height: 24 }); }
+        for item in bucket {
+            data.push(#{ key: `item:${item.value}`, kind: "item", value: item.value,
+                label: item.label, shortcut: item.shortcut, disabled: item.disabled,
+                active: false, height: row_height });
+        }
+    }
+    let enabled = enabled_values(data);
+    let stored = ctx.get_state("active");
+    let active = if includes(enabled, stored) { stored }
+        else if enabled.len > 0 { enabled[0] } else { "" };
+    for index in 0..data.len {
+        if data[index].kind == "item" { data[index].active = data[index].value == active; }
+    }
+    let search = input::Input(#{ key: `${props.key}-search`, value: query,
+        placeholder: prop_or(props, "placeholder", "Type a command"),
+        disabled: prop_or(props, "disabled", false),
+        on_change: Fn("query_action"), on_submit: Fn("submit_action").curry(active) })
+        .with_style(component_style(props, "search", style()));
+    let body = if data.len == 0 {
+        text(prop_or(props, "empty_text", "No commands found"))
+            .with_style(component_style(props, "empty", style()
+                .min_height(px(88)).padding(px(16)).items_center().justify_center()
+                .font_size(px(11)).line_height(px(16)).text_color(theme_color("text_muted"))))
+            .accessibility_role("status")
+    } else {
+        virtual_collection(#{ key: `${props.key}-list`, label: props.label, data: data,
+            estimated_height: row_height, height: prop_or(props, "max_visible", 8) * row_height + 24,
+            overdraw_pixels: row_height * 2, alignment: "top", follow_tail: false },
+            Fn("render_command_row")).with_style(component_style(props, "list", style()))
+    };
+    let root = column([search, body]).with_key(props.key)
+        .with_style(component_style(props, "root", style()
+            .gap(px(4)).padding(px(4)).radius(theme_radius("md"))
+            .border(px(1)).border_color(theme_color("border"))
+            .background(theme_color("surface"))))
+        .tab_stop(false).accessibility_role("listbox").accessibility_label(props.label);
+    if !prop_or(props, "disabled", false) && enabled.len > 0 {
+        root.on_key_value("up", Fn("active_action"), adjacent(enabled, active, -1))
+            .on_key_value("down", Fn("active_action"), adjacent(enabled, active, 1))
+            .on_key_value("home", Fn("active_action"), enabled[0])
+            .on_key_value("end", Fn("active_action"), enabled[enabled.len - 1])
+            .on_key_value("enter", Fn("action_value"), active)
+    } else { root }
+}

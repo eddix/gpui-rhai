@@ -763,7 +763,8 @@ fn composed_semantic_callback_props_execute_in_the_caller_state_scope() {
                 fn view(ctx) {
                     combobox::Combobox(#{
                         key: "theme", options: [#{ value: "dark", label: "Dark" }],
-                        open: ctx.get_state("open"), on_open_change: Fn("set_open")
+                        selected: [], open: ctx.get_state("open"), query: "",
+                        on_open_change: Fn("set_open")
                     })
                 }
             "#,
@@ -825,7 +826,7 @@ fn dirty_transparent_child_promotes_to_the_nearest_replaceable_component() {
                     select::Select(#{
                         key: "region",
                         options: [#{ value: "cn", label: "China" }],
-                        value: (),
+                        value: (), open: true, query: "",
                         empty_text: "No regions",
                     })
                 }
@@ -854,9 +855,15 @@ fn dirty_transparent_child_promotes_to_the_nearest_replaceable_component() {
             .component_invocations()
             .any(|recipe| recipe.path() == &combobox)
     );
-    let open = script_handler(&lifecycle, "open_change");
+    let navigate = script_handler(&lifecycle, "key:down");
+    let payload = lifecycle
+        .root()
+        .unwrap()
+        .handler_payload("key:down")
+        .cloned()
+        .unwrap();
     let _ = lifecycle
-        .invoke_callback_transactional(&engine, &open, UiValue::Bool(true))
+        .invoke_callback_transactional(&engine, &navigate, payload)
         .unwrap();
     assert!(runtime.borrow().dirty_components().contains(&combobox));
 

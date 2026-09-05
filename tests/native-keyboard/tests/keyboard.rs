@@ -13,7 +13,8 @@ use gpui_rhai::{
     OverlayKind, OverlayNodeSpec, OverlayPlacement, PrimitiveEventEmitter, PrimitiveHandler,
     PrimitiveInstance, PrimitiveNode, PrimitiveProps, PrimitiveRegistry, PrimitiveTheme,
     PrimitiveValue, RestrictedModuleResolver, RuntimeEngine, ScriptLifecycle, ScriptViewConfig,
-    ScriptViewHandle, ScriptViewHost, TextInputPrimitiveHandler, UiNode, UiRuntimeState, UiValue,
+    ScriptViewHandle, ScriptViewHost, TextInputPrimitiveHandler, UiNode, UiNodeKind, UiRuntimeState,
+    UiValue,
     init_text_area, init_text_input, text_input_primitive_descriptor,
 };
 
@@ -126,6 +127,7 @@ fn tab_order_skips_disabled_nodes_and_enter_activates_focus(cx: &mut TestAppCont
                 parent: None,
                 kind: OverlayKind::Popover,
                 placement: OverlayPlacement::Bottom,
+                anchor: None,
                 open: false,
                 gap: 4.0,
                 modal: false,
@@ -134,6 +136,7 @@ fn tab_order_skips_disabled_nodes_and_enter_activates_focus(cx: &mut TestAppCont
                     outside: true,
                 },
                 tooltip_delays: None,
+                activate_on_trigger: true,
             },
         )
         .with_key("overlay")
@@ -436,11 +439,12 @@ fn nested_overlay_renders_inside_parent_deferred_subtree(cx: &mut TestAppContext
         UiNode::text("Nested popover"),
         UiNode::text("Nested content"),
         OverlayNodeSpec {
-                initial_focus: gpui_rhai::OverlayInitialFocus::Panel,
+            initial_focus: gpui_rhai::OverlayInitialFocus::Panel,
             id: OverlayId::new("child-popover"),
             parent: Some(OverlayId::new("parent-dialog")),
             kind: OverlayKind::Popover,
             placement: OverlayPlacement::Right,
+            anchor: None,
             open: true,
             gap: 4.0,
             modal: false,
@@ -449,6 +453,7 @@ fn nested_overlay_renders_inside_parent_deferred_subtree(cx: &mut TestAppContext
                 outside: true,
             },
             tooltip_delays: None,
+            activate_on_trigger: true,
         },
     )
     .with_key("child-popover");
@@ -456,11 +461,12 @@ fn nested_overlay_renders_inside_parent_deferred_subtree(cx: &mut TestAppContext
         UiNode::text("Open dialog"),
         child,
         OverlayNodeSpec {
-                initial_focus: gpui_rhai::OverlayInitialFocus::Panel,
+            initial_focus: gpui_rhai::OverlayInitialFocus::Panel,
             id: OverlayId::new("parent-dialog"),
             parent: None,
             kind: OverlayKind::Dialog,
             placement: OverlayPlacement::Bottom,
+            anchor: None,
             open: true,
             gap: 0.0,
             modal: true,
@@ -469,6 +475,7 @@ fn nested_overlay_renders_inside_parent_deferred_subtree(cx: &mut TestAppContext
                 outside: true,
             },
             tooltip_delays: None,
+            activate_on_trigger: true,
         },
     )
     .with_key("parent-dialog");
@@ -640,7 +647,7 @@ fn combobox_pointer_updates_transactional_rhai_caller_state(cx: &mut TestAppCont
                                     #{ value: "tokyo-night", label: "Tokyo Night" },
                                     #{ value: "tokyo-storm", label: "Tokyo Storm" }
                                 ],
-                                selected: selected, open: ctx.get_state("open"),
+                                selected: selected, open: ctx.get_state("open"), query: "",
                                 searchable: false,
                                 on_change: Fn("changed"), on_open_change: Fn("opened")
                             })
@@ -3723,6 +3730,398 @@ fn modal_dialog_reclaims_focus_stolen_by_an_embedding_host(cx: &mut TestAppConte
         texts.contains(&"PROBE open=false".to_owned()),
         "Escape must dismiss after an embedding host moves focus: {texts:?}"
     );
+}
+
+#[gpui::test]
+fn slider_previews_drag_natively_and_commits_once_before_keyboard_steps(
+    cx: &mut TestAppContext,
+) {
+    cx.update(gpui_rhai::install);
+    let entry = ModuleId::parse("main").unwrap();
+    let prepared = EmbeddedScriptView::new(
+        entry.clone(),
+        EmbeddedScriptSource::new(std::collections::BTreeMap::from([
+            (
+                entry,
+                r#"
+                    import "components/slider" as slider;
+                    fn state_schema() { #{ fields: #{
+                        value: #{ schema: #{ type: "number", min: 0.0, max: 100.0 },
+                            "default": #{ type: "float", value: 20.0 } },
+                        commits: #{ schema: #{ type: "integer", min: 0 },
+                            "default": #{ type: "integer", value: 0 } }
+                    } } }
+                    fn changed(ctx, value) {
+                        ctx.set_state("value", value);
+                        ctx.set_state("commits", ctx.get_state("commits") + 1);
+                    }
+                    fn view(ctx) {
+                        column([
+                            text(`slider:${ctx.get_state("value")}:${ctx.get_state("commits")}`),
+                            slider::Slider(#{ key: "volume", label: "Volume",
+                                value: ctx.get_state("value"), min: 0.0, max: 100.0,
+                                step: 5.0, on_change: Fn("changed") })
+                        ]).with_style(style().width(px(320)).padding(px(20)).gap(px(8)))
+                    }
+                "#
+                .to_owned(),
+            ),
+            (
+                ModuleId::parse("components/slider").unwrap(),
+                include_str!("../../../registry/components/slider.rhai").to_owned(),
+            ),
+        ])),
+        include_str!("../../../registry/themes/default_dark.rhai"),
+    )
+    .prepare()
+    .unwrap();
+    let captured = Rc::new(RefCell::new(None));
+    let captured_for_window = Rc::clone(&captured);
+    let window = cx.add_window(move |window, cx| {
+        let host = ScriptViewHost::new("slider-window", cx).unwrap();
+        let view = prepared
+            .mount(
+                ScriptViewConfig::new("slider-view"),
+                host.clone(),
+                window,
+                cx,
+            )
+            .unwrap();
+        *captured_for_window.borrow_mut() = Some(view.clone());
+        SingleEmbeddedHost { host, view }
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    cx.run_until_parked();
+
+    let view = captured.borrow().as_ref().unwrap().clone();
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    let bounds = visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .find_by_role_and_name("slider", "Volume")
+            .next()
+            .unwrap()
+            .geometry
+            .unwrap()
+            .visual
+    });
+    let at = |ratio: f64| {
+        point(
+            px((bounds.x + bounds.width * ratio) as f32),
+            px((bounds.y + bounds.height / 2.0) as f32),
+        )
+    };
+    visual.simulate_mouse_down(at(0.2), MouseButton::Left, Modifiers::default());
+    visual.simulate_mouse_move(at(0.4), MouseButton::Left, Modifiers::default());
+    visual.simulate_mouse_move(at(0.6), MouseButton::Left, Modifiers::default());
+    visual.simulate_mouse_move(at(0.8), MouseButton::Left, Modifiers::default());
+    visual.run_until_parked();
+    assert!(
+        palette_texts(&mut visual, &view).contains(&"slider:20.0:0".to_owned()),
+        "pointer moves must remain on the native preview path"
+    );
+
+    visual.simulate_mouse_up(at(0.8), MouseButton::Left, Modifiers::default());
+    visual.run_until_parked();
+    assert!(palette_texts(&mut visual, &view).contains(&"slider:80.0:1".to_owned()));
+
+    visual.simulate_keystrokes("right");
+    visual.run_until_parked();
+    assert!(palette_texts(&mut visual, &view).contains(&"slider:85.0:2".to_owned()));
+}
+
+#[gpui::test]
+fn scroll_area_thumb_drag_updates_the_retained_scroll_handle(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let entry = ModuleId::parse("main").unwrap();
+    let prepared = EmbeddedScriptView::new(
+        entry.clone(),
+        EmbeddedScriptSource::new(std::collections::BTreeMap::from([
+            (
+                entry,
+                r#"
+                    import "components/scroll_area" as scroll_area;
+                    fn view(ctx) {
+                        let rows = [];
+                        for index in 0..12 {
+                            rows.push(text(`Row ${index}`).with_key(`${index}`)
+                                .with_style(style().height(px(28)).flex_shrink(false).items_center()));
+                        }
+                        scroll_area::ScrollArea(#{ key: "logs", label: "Logs",
+                            width: px(280), height: px(112), vertical_scrollbar: "always",
+                            content: column(rows).with_style(style().padding_x(px(8))) })
+                    }
+                "#
+                .to_owned(),
+            ),
+            (
+                ModuleId::parse("components/scroll_area").unwrap(),
+                include_str!("../../../registry/components/scroll_area.rhai").to_owned(),
+            ),
+        ])),
+        include_str!("../../../registry/themes/default_dark.rhai"),
+    )
+    .prepare()
+    .unwrap();
+    let captured = Rc::new(RefCell::new(None));
+    let captured_for_window = Rc::clone(&captured);
+    let window = cx.add_window(move |window, cx| {
+        let host = ScriptViewHost::new("scroll-area-window", cx).unwrap();
+        let view = prepared
+            .mount(
+                ScriptViewConfig::new("scroll-area-view"),
+                host.clone(),
+                window,
+                cx,
+            )
+            .unwrap();
+        *captured_for_window.borrow_mut() = Some(view.clone());
+        SingleEmbeddedHost { host, view }
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    cx.run_until_parked();
+
+    let view = captured.borrow().as_ref().unwrap().clone();
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    let (region, before) = visual.update(|_, cx| {
+        let snapshot = view.accessibility_snapshot(cx).unwrap();
+        let region = snapshot
+            .find_by_role_and_name("region", "Logs")
+            .next()
+            .unwrap()
+            .geometry
+            .unwrap()
+            .visual;
+        let row = snapshot
+            .find_by_role_and_name("text", "Row 11")
+            .next()
+            .unwrap()
+            .geometry
+            .unwrap()
+            .visual;
+        (region, row)
+    });
+    let start = point(
+        px((region.x + region.width - 6.0) as f32),
+        px((region.y + 12.0) as f32),
+    );
+    let end = point(
+        px((region.x + region.width - 6.0) as f32),
+        px((region.y + region.height - 12.0) as f32),
+    );
+    visual.simulate_mouse_down(start, MouseButton::Left, Modifiers::default());
+    visual.simulate_mouse_move(end, MouseButton::Left, Modifiers::default());
+    visual.simulate_mouse_up(end, MouseButton::Left, Modifiers::default());
+    visual.run_until_parked();
+
+    let after = visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .find_by_role_and_name("text", "Row 11")
+            .next()
+            .unwrap()
+            .geometry
+            .unwrap()
+            .visual
+    });
+    assert!(
+        after.y < before.y - 100.0,
+        "dragging the themed thumb must move content: before={before:?} after={after:?}"
+    );
+}
+
+#[gpui::test]
+fn context_menu_anchors_at_the_right_click_and_closes_with_escape(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let entry = ModuleId::parse("main").unwrap();
+    let prepared = EmbeddedScriptView::new(
+        entry.clone(),
+        EmbeddedScriptSource::new(std::collections::BTreeMap::from([
+            (
+                entry,
+                r#"
+                    import "components/context_menu" as context_menu;
+                    fn state_schema() { #{ fields: #{
+                        open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: false } },
+                        active: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "copy" } }
+                    } } }
+                    fn opened(ctx, open) { ctx.set_state("open", open); }
+                    fn active(ctx, value) { ctx.set_state("active", value); }
+                    fn action(ctx, value) { () }
+                    fn view(ctx) {
+                        column([
+                            text(`context-open:${ctx.get_state("open")}`),
+                            context_menu::ContextMenu(#{ key: "row-menu",
+                                trigger: text("Context target").with_style(style()
+                                    .width(px(220)).height(px(80)).padding(px(12))
+                                    .background(theme_color("surface_raised"))),
+                                open: ctx.get_state("open"), active_value: ctx.get_state("active"),
+                                items: [#{ kind: "item", value: "copy", label: "Copy" },
+                                    #{ kind: "item", value: "delete", label: "Delete" }],
+                                on_open_change: Fn("opened"), on_active_change: Fn("active"),
+                                on_action: Fn("action") })
+                        ]).with_style(style().padding(px(24)).gap(px(8)))
+                    }
+                "#
+                .to_owned(),
+            ),
+            (
+                ModuleId::parse("components/context_menu").unwrap(),
+                include_str!("../../../registry/components/context_menu.rhai").to_owned(),
+            ),
+            (
+                ModuleId::parse("components/menu").unwrap(),
+                include_str!("../../../registry/components/menu.rhai").to_owned(),
+            ),
+            (
+                ModuleId::parse("components/divider").unwrap(),
+                include_str!("../../../registry/components/divider.rhai").to_owned(),
+            ),
+        ])),
+        include_str!("../../../registry/themes/default_dark.rhai"),
+    )
+    .prepare()
+    .unwrap();
+    let captured = Rc::new(RefCell::new(None));
+    let captured_for_window = Rc::clone(&captured);
+    let window = cx.add_window(move |window, cx| {
+        let host = ScriptViewHost::new("context-menu-window", cx).unwrap();
+        let view = prepared
+            .mount(
+                ScriptViewConfig::new("context-menu-view"),
+                host.clone(),
+                window,
+                cx,
+            )
+            .unwrap();
+        *captured_for_window.borrow_mut() = Some(view.clone());
+        SingleEmbeddedHost { host, view }
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    cx.run_until_parked();
+
+    let view = captured.borrow().as_ref().unwrap().clone();
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    let target = visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .find_by_role_and_name("text", "Context target")
+            .next()
+            .unwrap()
+            .geometry
+            .unwrap()
+            .visual
+    });
+    let click = point(
+        px((target.x + target.width * 0.7) as f32),
+        px((target.y + target.height * 0.6) as f32),
+    );
+    visual.simulate_mouse_down(click, MouseButton::Right, Modifiers::default());
+    visual.simulate_mouse_up(click, MouseButton::Right, Modifiers::default());
+    visual.run_until_parked();
+    let texts = palette_texts(&mut visual, &view);
+    let error = visual.update(|_, cx| view.last_error(cx));
+    assert!(
+        texts.contains(&"context-open:true".to_owned()),
+        "context menu did not open: texts={texts:?} error={error:?}"
+    );
+    let anchor = visual.update(|_, cx| {
+        let root = view.root(cx).unwrap().unwrap();
+        let UiNodeKind::Box { children } = root.kind() else {
+            unreachable!()
+        };
+        let UiNodeKind::Overlay { spec, .. } = children[1].kind() else {
+            unreachable!()
+        };
+        spec.anchor.unwrap()
+    });
+    assert!((anchor.x - f64::from(click.x)).abs() < 0.5);
+    assert!((anchor.y - f64::from(click.y)).abs() < 0.5);
+
+    visual.simulate_keystrokes("escape");
+    visual.run_until_parked();
+    assert!(palette_texts(&mut visual, &view).contains(&"context-open:false".to_owned()));
+}
+
+#[gpui::test]
+fn sheet_uses_the_viewport_end_edge_and_restores_controlled_open_state(
+    cx: &mut TestAppContext,
+) {
+    cx.update(gpui_rhai::install);
+    let entry = ModuleId::parse("main").unwrap();
+    let prepared = EmbeddedScriptView::new(
+        entry.clone(),
+        EmbeddedScriptSource::new(std::collections::BTreeMap::from([
+            (
+                entry,
+                r#"
+                    import "components/sheet" as sheet;
+                    fn state_schema() { #{ fields: #{
+                        open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: true } }
+                    } } }
+                    fn opened(ctx, open) { ctx.set_state("open", open); }
+                    fn view(ctx) {
+                        column([
+                            text(`sheet-open:${ctx.get_state("open")}`),
+                            sheet::Sheet(#{ key: "inspector", open: ctx.get_state("open"),
+                                side: "end", size: 280, title: "Inspector",
+                                content: text("Sheet content"), on_open_change: Fn("opened") })
+                        ])
+                    }
+                "#
+                .to_owned(),
+            ),
+            (
+                ModuleId::parse("components/sheet").unwrap(),
+                include_str!("../../../registry/components/sheet.rhai").to_owned(),
+            ),
+        ])),
+        include_str!("../../../registry/themes/default_dark.rhai"),
+    )
+    .prepare()
+    .unwrap();
+    let captured = Rc::new(RefCell::new(None));
+    let captured_for_window = Rc::clone(&captured);
+    let window = cx.add_window(move |window, cx| {
+        let host = ScriptViewHost::new("sheet-window", cx).unwrap();
+        let view = prepared
+            .mount(
+                ScriptViewConfig::new("sheet-view"),
+                host.clone(),
+                window,
+                cx,
+            )
+            .unwrap();
+        *captured_for_window.borrow_mut() = Some(view.clone());
+        SingleEmbeddedHost { host, view }
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    cx.run_until_parked();
+
+    let view = captured.borrow().as_ref().unwrap().clone();
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    let (panel, viewport_width) = visual.update(|window, cx| {
+        let panel = view
+            .accessibility_snapshot(cx)
+            .unwrap()
+            .find_by_role_and_name("dialog", "Inspector")
+            .next()
+            .unwrap()
+            .geometry
+            .unwrap()
+            .visual;
+        (panel, f64::from(window.viewport_size().width))
+    });
+    assert!((panel.width - 280.0).abs() < 1.0);
+    assert!((panel.x + panel.width - viewport_width).abs() < 1.0);
+
+    visual.simulate_keystrokes("escape");
+    visual.run_until_parked();
+    assert!(palette_texts(&mut visual, &view).contains(&"sheet-open:false".to_owned()));
 }
 
 // Palette live-preview shape: cursor movement calls set_theme, which marks

@@ -10,10 +10,10 @@
 }
 */
 // Public Rhai choice composition over Overlay, Input, and virtual_collection.
-// Props: key/options/mode, optional controlled selected/open/query, search and slots.
+// Props: key/options/mode, controlled selected/open/query, search and slots.
 // Events: change(array<string>), open_change(bool), query_change(string).
-// State: keyed selection, open, query, and active-option state when not controlled.
-// Example: Combobox(#{ key: "country", options: options, selected: ["uk"], on_change: Fn("changed") })
+// State: caller owns selected/open/query; component owns only active-option navigation.
+// Example: Combobox(#{ key: "country", options: options, selected: ["uk"], open: false, query: "", on_change: Fn("changed") })
 
 import "components/input" as input;
 
@@ -38,11 +38,11 @@ define_component(#{
             } }, required: true, sensitive: false },
             mode: #{ schema: #{ type: "string", allowed: ["single", "multiple"] }, required: false, sensitive: false,
                 "default": #{ type: "string", value: "single" } },
-            selected: #{ schema: #{ type: "optional", value: #{ type: "array", max_items: 100000, items: #{ type: "string" } } }, required: false, sensitive: false },
-            open: #{ schema: #{ type: "optional", value: #{ type: "bool" } }, required: false, sensitive: false },
+            selected: #{ schema: #{ type: "array", max_items: 100000, items: #{ type: "string" } }, required: true, sensitive: false },
+            open: #{ schema: #{ type: "bool" }, required: true, sensitive: false },
             searchable: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: false } },
-            query: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
+            query: #{ schema: #{ type: "string" }, required: true, sensitive: false },
             placeholder: #{ schema: #{ type: "string" }, required: false, sensitive: false,
                 "default": #{ type: "string", value: "" } },
             search_placeholder: #{ schema: #{ type: "string" }, required: false, sensitive: false,
@@ -75,10 +75,6 @@ define_component(#{
             on_query_change: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false },
         },
         state: #{ fields: #{
-            selected: #{ schema: #{ type: "array", max_items: 100000, items: #{ type: "string" } },
-                "default": #{ type: "array", value: [] } },
-            open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: false } },
-            query: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "" } },
             active: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "" } },
         } },
         events: #{
@@ -193,22 +189,18 @@ fn typeahead_value(options, active, key) {
 }
 
 fn open_action(ctx, value) {
-    ctx.set_state("open", value);
     ctx.emit("open_change", value);
     handled()
 }
 fn open_action_reset(ctx, value) {
-    ctx.set_state("open", value);
     ctx.emit("open_change", value);
     if !value {
-        ctx.set_state("query", "");
         ctx.set_state("active", "");
         ctx.emit("query_change", "");
     }
     handled()
 }
 fn query_action(ctx, value) {
-    ctx.set_state("query", value);
     ctx.set_state("active", "");
     ctx.emit("query_change", value);
     handled()
@@ -216,7 +208,6 @@ fn query_action(ctx, value) {
 fn navigate_action(ctx, payload) {
     ctx.set_state("active", payload.active);
     if payload.open {
-        ctx.set_state("open", true);
         ctx.emit("open_change", true);
     }
     handled()
@@ -224,14 +215,11 @@ fn navigate_action(ctx, payload) {
 fn option_action(ctx, payload) {
     ctx.set_state("active", payload.active);
     if payload.changed {
-        ctx.set_state("selected", payload.selected);
         ctx.emit("change", payload.selected);
     }
     if payload.close {
-        ctx.set_state("open", false);
         ctx.emit("open_change", false);
         if payload.reset_query {
-            ctx.set_state("query", "");
             ctx.emit("query_change", "");
         }
     }
@@ -239,11 +227,9 @@ fn option_action(ctx, payload) {
 }
 fn clear_action(ctx, payload) {
     if payload.changed {
-        ctx.set_state("selected", []);
         ctx.emit("change", []);
     }
     if payload.reset_query {
-        ctx.set_state("query", "");
         ctx.set_state("active", "");
         ctx.emit("query_change", "");
     }
@@ -292,12 +278,10 @@ fn render_combobox_row(ctx, payload) {
 }
 
 fn render_Combobox(ctx, props) {
-    let selected = if "selected" in props && props.selected != () {
-        props.selected
-    } else { ctx.get_state("selected") };
+    let selected = props.selected;
     validate_combobox(props, selected);
-    let open = if "open" in props && props.open != () { props.open } else { ctx.get_state("open") };
-    let query = if "query" in props && props.query != () { props.query } else { ctx.get_state("query") };
+    let open = props.open;
+    let query = props.query;
     let query_lower = query.to_lower();
     let mode = prop_or(props, "mode", "single");
     let reset_query = prop_or(props, "reset_query_on_close", false);

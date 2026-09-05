@@ -15,6 +15,11 @@ pub struct AccessibilityNode {
     pub test_id: Option<String>,
     pub value: Option<UiValue>,
     pub checked: Option<UiValue>,
+    pub pressed: Option<bool>,
+    pub expanded: Option<bool>,
+    pub orientation: Option<String>,
+    pub value_min: Option<f64>,
+    pub value_max: Option<f64>,
     pub current: Option<String>,
     pub disabled: bool,
     pub invalid: bool,
@@ -171,6 +176,11 @@ fn semantic_node(
         test_id: string_attribute(node, "test_id"),
         value: node.attributes().get("value").cloned(),
         checked: node.attributes().get("checked").cloned(),
+        pressed: optional_bool_attribute(node, "pressed"),
+        expanded: optional_bool_attribute(node, "expanded"),
+        orientation: string_attribute(node, "orientation"),
+        value_min: float_attribute(node, "value_min"),
+        value_max: float_attribute(node, "value_max"),
         current: string_attribute(node, "current"),
         disabled: bool_attribute(node, "disabled"),
         invalid: bool_attribute(node, "invalid"),
@@ -222,6 +232,21 @@ fn string_attribute(node: &RetainedNode, name: &str) -> Option<String> {
 
 fn bool_attribute(node: &RetainedNode, name: &str) -> bool {
     node.attributes().get(name) == Some(&UiValue::Bool(true))
+}
+
+fn optional_bool_attribute(node: &RetainedNode, name: &str) -> Option<bool> {
+    match node.attributes().get(name) {
+        Some(UiValue::Bool(value)) => Some(*value),
+        _ => None,
+    }
+}
+
+fn float_attribute(node: &RetainedNode, name: &str) -> Option<f64> {
+    match node.attributes().get(name) {
+        Some(UiValue::Float(value)) => Some(*value),
+        Some(UiValue::Integer(value)) => value.to_string().parse().ok(),
+        _ => None,
+    }
 }
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
@@ -298,5 +323,30 @@ mod tests {
                 clip: None,
             })
         );
+    }
+
+    #[test]
+    fn semantic_tree_preserves_pressed_expanded_orientation_and_range_values() {
+        let node = crate::UiNode::text("Volume")
+            .with_attribute("role", UiValue::String("slider".to_owned()))
+            .with_attribute("pressed", UiValue::Bool(false))
+            .with_attribute("expanded", UiValue::Bool(true))
+            .with_attribute("orientation", UiValue::String("horizontal".to_owned()))
+            .with_attribute("value", UiValue::Float(40.0))
+            .with_attribute("value_min", UiValue::Float(0.0))
+            .with_attribute("value_max", UiValue::Float(100.0));
+        let mut retained = RetainedUiTree::new();
+        retained.reconcile(node).unwrap();
+        let tree = AccessibilityTree::from_retained(&retained, &GeometryRegistry::new()).unwrap();
+        let node = tree
+            .find_by_role_and_name("slider", "Volume")
+            .next()
+            .unwrap();
+        assert_eq!(node.pressed, Some(false));
+        assert_eq!(node.expanded, Some(true));
+        assert_eq!(node.orientation.as_deref(), Some("horizontal"));
+        assert_eq!(node.value, Some(UiValue::Float(40.0)));
+        assert_eq!(node.value_min, Some(0.0));
+        assert_eq!(node.value_max, Some(100.0));
     }
 }
