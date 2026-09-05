@@ -4209,7 +4209,7 @@ fn command_dialog_filters_from_native_input_and_executes_with_enter(cx: &mut Tes
                     fn state_schema() { #{ fields: #{
                         open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: true } },
                         query: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "" } },
-                        active: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "none" } },
+                        active: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "open" } },
                         active_changes: #{ schema: #{ type: "integer", min: 0 }, "default": #{ type: "integer", value: 0 } },
                         last: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "none" } },
                         actions: #{ schema: #{ type: "integer", min: 0 }, "default": #{ type: "integer", value: 0 } }
@@ -4228,7 +4228,8 @@ fn command_dialog_filters_from_native_input_and_executes_with_enter(cx: &mut Tes
                         column([
                             text(`command:active=${ctx.get_state("active")} changes=${ctx.get_state("active_changes")} last=${ctx.get_state("last")} actions=${ctx.get_state("actions")} open=${ctx.get_state("open")} query=${ctx.get_state("query")}`),
                             command_dialog::CommandDialog(#{ key: "palette", open: ctx.get_state("open"),
-                                query: ctx.get_state("query"), label: "Command palette",
+                                query: ctx.get_state("query"), active_value: ctx.get_state("active"),
+                                label: "Command palette",
                                 items: [
                                     #{ value: "new", label: "New file", group: "File", shortcut: "⌘N" },
                                     #{ value: "open", label: "Open file", keywords: ["load document"], group: "File", shortcut: "⌘O" }
@@ -4302,22 +4303,32 @@ fn command_dialog_filters_from_native_input_and_executes_with_enter(cx: &mut Tes
     visual.run_until_parked();
     let texts_after_input = palette_texts(&mut visual, &view);
     assert!(
-        texts_after_input.contains(&"command:active=none changes=0 last=none actions=0 open=true query=file".to_owned())
+        texts_after_input.contains(&"command:active=open changes=0 last=none actions=0 open=true query=file".to_owned())
             && texts_after_input.contains(&"New file".to_owned())
             && texts_after_input.contains(&"Open file".to_owned())
             && !texts_after_input.contains(&"No commands found".to_owned()),
         "the focused CommandDialog input must filter before submit: {texts_after_input:?}"
     );
+    let initial_open_checked = visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .find_by_role_and_name("option", "Open file")
+            .next()
+            .unwrap()
+            .checked
+            .clone()
+    });
+    assert_eq!(initial_open_checked, Some(UiValue::Bool(true)));
     visual.simulate_keystrokes("down");
     visual.run_until_parked();
     assert!(palette_texts(&mut visual, &view).contains(
-        &"command:active=open changes=1 last=none actions=0 open=true query=file".to_owned()
+        &"command:active=new changes=1 last=none actions=0 open=true query=file".to_owned()
     ));
 
-    let new_file = visual.update(|_, cx| {
+    let open_file = visual.update(|_, cx| {
         view.accessibility_snapshot(cx)
             .unwrap()
-            .find_by_role_and_name("option", "New file")
+            .find_by_role_and_name("option", "Open file")
             .next()
             .unwrap()
             .geometry
@@ -4326,37 +4337,35 @@ fn command_dialog_filters_from_native_input_and_executes_with_enter(cx: &mut Tes
     });
     visual.simulate_mouse_move(
         point(
-            px((new_file.x + new_file.width / 2.0) as f32),
-            px((new_file.y + new_file.height / 2.0) as f32),
+            px((open_file.x + open_file.width / 2.0) as f32),
+            px((open_file.y + open_file.height / 2.0) as f32),
         ),
         None,
         Modifiers::default(),
     );
     visual.run_until_parked();
     assert!(palette_texts(&mut visual, &view).contains(
-        &"command:active=new changes=2 last=none actions=0 open=true query=file".to_owned()
+        &"command:active=open changes=2 last=none actions=0 open=true query=file".to_owned()
     ));
     visual.simulate_mouse_move(
         point(
-            px((new_file.x + new_file.width / 2.0) as f32),
-            px((new_file.y + new_file.height / 2.0) as f32),
+            px((open_file.x + open_file.width / 2.0) as f32),
+            px((open_file.y + open_file.height / 2.0) as f32),
         ),
         None,
         Modifiers::default(),
     );
     visual.run_until_parked();
     assert!(palette_texts(&mut visual, &view).contains(
-        &"command:active=new changes=2 last=none actions=0 open=true query=file".to_owned()
+        &"command:active=open changes=2 last=none actions=0 open=true query=file".to_owned()
     ));
 
-    visual.simulate_keystrokes("down");
-    visual.run_until_parked();
     visual.simulate_keystrokes("enter");
     visual.run_until_parked();
     let texts = palette_texts(&mut visual, &view);
     let error = visual.update(|_, cx| view.last_error(cx));
     assert!(
-        texts.contains(&"command:active=open changes=3 last=open actions=1 open=false query=file".to_owned()),
+        texts.contains(&"command:active=open changes=2 last=open actions=1 open=false query=file".to_owned()),
         "command dialog did not execute: search={search:?} texts={texts:?} error={error:?}"
     );
 }

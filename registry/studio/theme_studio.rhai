@@ -100,6 +100,7 @@ fn state_schema() {
         p0_slider: #{ schema: #{ type: "number", min: 0.0, max: 100.0 },
             "default": #{ type: "float", value: 42.0 } },
         p0_query: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "" } },
+        p0_command_active: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "new" } },
         p0_command_open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: __VISUAL_COMMAND__ } },
         p0_sheet_open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: __VISUAL_SHEET__ } },
         p0_alert_open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: __VISUAL_ALERT__ } },
@@ -124,6 +125,7 @@ fn set_builtin_query(ctx, value) { ctx.set_state("builtin_query", value); }
 fn set_p0_toggles(ctx, value) { ctx.set_state("p0_toggle_values", value); }
 fn set_p0_slider(ctx, value) { ctx.set_state("p0_slider", value); }
 fn set_p0_query(ctx, value) { ctx.set_state("p0_query", value); }
+fn set_p0_command_active(ctx, value) { ctx.set_state("p0_command_active", value); }
 fn set_p0_command_open(ctx, value) { ctx.set_state("p0_command_open", value); }
 fn set_p0_sheet_open(ctx, value) { ctx.set_state("p0_sheet_open", value); }
 fn set_p0_alert_open(ctx, value) { ctx.set_state("p0_alert_open", value); }
@@ -473,7 +475,9 @@ fn specimen_p0(ctx) {
                 actions: [button::Button(#{ text: "Create", size: "sm" })] })
         ]).with_style(style().gap(px(8)).items_start().flex_wrap()),
         command::Command(#{ key: "p0-command", label: "Commands", query: ctx.get_state("p0_query"),
-            items: p0_commands(), max_visible: 5, on_query_change: Fn("set_p0_query"), on_action: Fn("noop") }),
+            active_value: ctx.get_state("p0_command_active"), items: p0_commands(), max_visible: 5,
+            on_query_change: Fn("set_p0_query"), on_active_change: Fn("set_p0_command_active"),
+            on_action: Fn("noop") }),
         contextual,
         row([
             button::Button(#{ text: "Command dialog", size: "sm", variant: "outline", on_click: Fn("open_p0_command") }),
@@ -481,8 +485,10 @@ fn specimen_p0(ctx) {
             button::Button(#{ text: "Alert dialog", size: "sm", variant: "danger", on_click: Fn("open_p0_alert") })
         ]).with_style(style().gap(px(6)).flex_wrap()),
         command_dialog::CommandDialog(#{ key: "p0-command-dialog", open: ctx.get_state("p0_command_open"),
-            query: ctx.get_state("p0_query"), label: "Command palette", items: p0_commands(),
-            on_query_change: Fn("set_p0_query"), on_action: Fn("noop"), on_open_change: Fn("set_p0_command_open") }),
+            query: ctx.get_state("p0_query"), active_value: ctx.get_state("p0_command_active"),
+            label: "Command palette", items: p0_commands(), on_query_change: Fn("set_p0_query"),
+            on_active_change: Fn("set_p0_command_active"), on_action: Fn("noop"),
+            on_open_change: Fn("set_p0_command_open") }),
         sheet::Sheet(#{ key: "p0-sheet", open: ctx.get_state("p0_sheet_open"), side: "end",
             title: "Inspector", content: text("A temporary viewport-edge panel."),
             on_open_change: Fn("set_p0_sheet_open") }),

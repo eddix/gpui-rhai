@@ -9,11 +9,11 @@
 }
 */
 // Controlled modal presentation of Command without registering a global shortcut.
-// Props: Command props plus open, close_on_action, and on_open_change.
+// Props: controlled Command props plus open, close_on_action, and on_open_change.
 // Events: query_change(string), active_change(string), action(string), and open_change(bool).
-// State: caller owns open/query; Command owns only transient roving state.
+// State: caller owns open, query, and active_value.
 // Parts: root, dialog, command.
-// Example: CommandDialog(#{ key: "palette", open: open, query: query, label: "Commands", items: items, on_open_change: Fn("opened"), on_query_change: Fn("queried"), on_action: Fn("run") })
+// Example: CommandDialog(#{ key: "palette", open: open, query: query, active_value: active, label: "Commands", items: items, on_open_change: Fn("opened"), on_query_change: Fn("queried"), on_active_change: Fn("preview"), on_action: Fn("run") })
 
 import "components/command" as command;
 import "components/dialog" as dialog;
@@ -27,6 +27,7 @@ define_component(#{
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
             open: #{ schema: #{ type: "bool" }, required: true, sensitive: false },
             query: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+            active_value: #{ schema: #{ type: "string" }, required: true, sensitive: false },
             label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
             items: #{ schema: #{ type: "one_of", variants: [
                 #{ type: "array", max_items: 4096, items: #{
@@ -80,7 +81,7 @@ fn prop_or(props, name, fallback) { if name in props { props[name] } else { fall
 
 fn render_CommandDialog(ctx, props) {
     let list = command::Command(#{ key: `${props.key}-command`, label: props.label,
-        query: props.query, items: props.items,
+        query: props.query, active_value: props.active_value, items: props.items,
         placeholder: prop_or(props, "placeholder", "Type a command"),
         empty_text: prop_or(props, "empty_text", "No commands found"),
         max_visible: prop_or(props, "max_visible", 8),

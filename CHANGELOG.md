@@ -75,9 +75,9 @@ Theme Studio an independently scrollable token editor, made small Command lists
 shrink to their result count, and added deterministic Gallery theme, locale,
 category, overlay, compact, regular, and reduced-motion launch states.
 
-Command and CommandDialog now expose a deduplicated `active_change(string)`
-event for keyboard and pointer roving previews while preserving `action` as the
-explicit confirmation boundary.
+Command and CommandDialog now use caller-owned `active_value` and expose a
+deduplicated `active_change(string)` event for keyboard and pointer roving
+previews while preserving `action` as the explicit confirmation boundary.
 
 The initial theme contract includes explicit `on_accent`, `on_danger`,
 `on_warning`, and `on_success` foregrounds. Reduced motion renders looping

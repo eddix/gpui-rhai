@@ -1208,7 +1208,7 @@ fn command_fuzzy_search_and_keyboard_action_are_composable_and_controlled() {
                 fn queried(ctx, value) { () }
                 fn view(ctx) {
                     column([
-                        command::Command(#{ key: "palette", label: "Commands", query: "opn",
+                        command::Command(#{ key: "palette", label: "Commands", query: "opn", active_value: "open",
                             items: [
                                 #{ value: "new", label: "New file", group: "File", shortcut: "⌘N" },
                                 #{ value: "open", label: "Open file", keywords: ["load document"], group: "File", shortcut: "⌘O" },
@@ -1287,7 +1287,7 @@ fn command_filters_native_collection_and_keeps_large_rows_out_of_rhai() {
                 fn run(ctx, value) { ctx.set_state("action", value); }
                 fn queried(ctx, value) { () }
                 fn view(ctx) {
-                    command::Command(#{ key: "native-palette", label: "Commands", query: "opn",
+                    command::Command(#{ key: "native-palette", label: "Commands", query: "opn", active_value: "open",
                         items: ctx.get_native_collection("commands"),
                         on_query_change: Fn("queried"), on_action: Fn("run") })
                 }

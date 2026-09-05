@@ -9,11 +9,11 @@
 }
 */
 // Embeddable keyboard-first command search with deterministic fuzzy ranking.
-// Props: key, label, query, items, placeholders, sizing, disabled, and callbacks.
+// Props: key, label, controlled query/active_value, items, sizing, disabled, and callbacks.
 // Events: query_change(string), active_change(string), and action(string).
-// State: caller owns query; component owns only the roving active command.
+// State: caller owns query and the roving active command.
 // Parts: root, search, list, group, item, item_active, label, shortcut, empty.
-// Example: Command(#{ key: "palette", label: "Commands", query: query, items: items, on_query_change: Fn("queried"), on_action: Fn("run") })
+// Example: Command(#{ key: "palette", label: "Commands", query: query, active_value: active, items: items, on_query_change: Fn("queried"), on_active_change: Fn("preview"), on_action: Fn("run") })
 
 import "components/input" as input;
 import "components/kbd" as kbd;
@@ -27,6 +27,7 @@ define_component(#{
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
             label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
             query: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+            active_value: #{ schema: #{ type: "string" }, required: true, sensitive: false },
             items: #{ schema: #{ type: "one_of", variants: [
                 #{ type: "array", max_items: 4096, items: #{
                     type: "object", allow_unknown: false, fields: #{
@@ -58,8 +59,7 @@ define_component(#{
             on_active_change: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false },
             on_action: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false },
         },
-        state: #{ fields: #{ active: #{ schema: #{ type: "string" },
-            "default": #{ type: "string", value: "" } } } },
+        state: #{ fields: #{} },
         events: #{ query_change: #{ payload: #{ type: "string" } },
             active_change: #{ payload: #{ type: "string" } }, action: #{ payload: #{ type: "string" } } },
         slots: #{}, parts: ["root", "search", "list", "group", "item", "item_active", "label", "shortcut", "empty"],
@@ -140,16 +140,14 @@ fn adjacent(values, active, step) {
     else { values[(index + values.len - 1) % values.len] }
 }
 
-fn query_action(ctx, query) { ctx.set_state("active", ""); ctx.emit("query_change", query); }
-fn active_action(ctx, value) {
-    if ctx.get_state("active") != value {
-        ctx.set_state("active", value);
-        ctx.emit("active_change", value);
-    }
+fn query_action(ctx, query) { ctx.emit("query_change", query); }
+fn active_action(current, ctx, value) {
+    if current != value { ctx.emit("active_change", value); }
     handled()
 }
-fn active_hover(ctx, payload) {
-    if payload.hovered { active_action(ctx, payload.value) } else { handled() }
+fn active_hover(is_active, ctx, payload) {
+    if payload.hovered && !is_active { ctx.emit("active_change", payload.value); }
+    handled()
 }
 fn action_value(ctx, value) { ctx.emit("action", value); handled() }
 fn submit_action(value, ctx, query) {
@@ -184,7 +182,7 @@ fn render_command_row(ctx, payload) {
         .accessibility_role("option").accessibility_label(item.label)
         .accessibility_checked(item.active);
     if item.disabled { node } else {
-        node.on_hover_value(Fn("active_hover"), item.value)
+        node.on_hover_value(Fn("active_hover").curry(item.active), item.value)
             .on_click_value(Fn("action_value"), item.value)
     }
 }
@@ -247,7 +245,7 @@ fn native_command_model(items, query, row_height, stored) {
 fn render_Command(ctx, props) {
     let query = props.query;
     let row_height = prop_or(props, "row_height", 32);
-    let stored = ctx.get_state("active");
+    let stored = props.active_value;
     let model = if is_native_collection(props.items) {
         native_command_model(props.items, query, row_height, stored)
     } else {
@@ -283,10 +281,10 @@ fn render_Command(ctx, props) {
             .background(theme_color("surface"))))
         .tab_stop(false).accessibility_role("listbox").accessibility_label(props.label);
     if !prop_or(props, "disabled", false) && model.enabled {
-        root.on_key_value("up", Fn("active_action"), model.previous)
-            .on_key_value("down", Fn("active_action"), model.next)
-            .on_key_value("home", Fn("active_action"), model.first)
-            .on_key_value("end", Fn("active_action"), model.last)
+        root.on_key_value("up", Fn("active_action").curry(active), model.previous)
+            .on_key_value("down", Fn("active_action").curry(active), model.next)
+            .on_key_value("home", Fn("active_action").curry(active), model.first)
+            .on_key_value("end", Fn("active_action").curry(active), model.last)
             .on_key_value("enter", Fn("action_value"), active)
     } else { root }
 }

@@ -288,11 +288,12 @@ catalog with category navigation and live switching across all bundled themes.
 See [the component catalog](docs/components/catalog.md) for ownership and
 behavior distinctions that similar-looking controls must preserve.
 
-Command palettes separate preview from confirmation. `on_active_change`
-receives deduplicated keyboard/pointer roving changes and is suitable for
-temporary theme, font, or density previews; `on_action` is the Enter/click
-commit boundary. CommandDialog forwards both as formal component events, so
-their callbacks retain the caller's Rhai module context.
+Command palettes separate seating, preview, and confirmation. The caller-owned
+`active_value` determines the current highlight when the palette opens.
+`on_active_change` receives deduplicated keyboard/pointer roving requests and is
+suitable for temporary theme, font, or density previews; `on_action` is the
+Enter/click commit boundary. CommandDialog forwards both as formal component
+events, so their callbacks retain the caller's Rhai module context.
 
 `TitleBar` and `StatusBar` are application chrome compositions, not a window
 authority escape hatch. An embedded view can render either but cannot move,
