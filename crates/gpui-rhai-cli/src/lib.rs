@@ -21,112 +21,23 @@ use toml_edit::{Array, DocumentMut, InlineTable, Item, Value};
 
 pub mod theme_studio;
 
-const BUTTON_SOURCE: &str = include_str!("../../../registry/components/button.rhai");
-const LABEL_SOURCE: &str = include_str!("../../../registry/components/label.rhai");
-const ICON_SOURCE: &str = include_str!("../../../registry/components/icon.rhai");
-const INPUT_SOURCE: &str = include_str!("../../../registry/components/input.rhai");
-const TEXTAREA_SOURCE: &str = include_str!("../../../registry/components/textarea.rhai");
-const DIVIDER_SOURCE: &str = include_str!("../../../registry/components/divider.rhai");
-const POPOVER_SOURCE: &str = include_str!("../../../registry/components/popover.rhai");
-const DIALOG_SOURCE: &str = include_str!("../../../registry/components/dialog.rhai");
-const COMBOBOX_SOURCE: &str = include_str!("../../../registry/components/combobox.rhai");
-const SELECT_SOURCE: &str = include_str!("../../../registry/components/select.rhai");
-const DATE_PICKER_SOURCE: &str = include_str!("../../../registry/components/date_picker.rhai");
-const TABLE_SOURCE: &str = include_str!("../../../registry/components/table.rhai");
-const PAGINATION_SOURCE: &str = include_str!("../../../registry/components/pagination.rhai");
-const CHECKBOX_SOURCE: &str = include_str!("../../../registry/components/checkbox.rhai");
-const RADIO_SOURCE: &str = include_str!("../../../registry/components/radio.rhai");
-const RADIO_GROUP_SOURCE: &str = include_str!("../../../registry/components/radio_group.rhai");
-const SWITCH_SOURCE: &str = include_str!("../../../registry/components/switch.rhai");
-const TAG_SOURCE: &str = include_str!("../../../registry/components/tag.rhai");
-const AVATAR_SOURCE: &str = include_str!("../../../registry/components/avatar.rhai");
-const PROGRESS_SOURCE: &str = include_str!("../../../registry/components/progress.rhai");
-const SKELETON_SOURCE: &str = include_str!("../../../registry/components/skeleton.rhai");
-const FORM_FIELD_SOURCE: &str = include_str!("../../../registry/components/form_field.rhai");
-const COLLAPSIBLE_SOURCE: &str = include_str!("../../../registry/components/collapsible.rhai");
-const ACCORDION_SOURCE: &str = include_str!("../../../registry/components/accordion.rhai");
-const TABS_SOURCE: &str = include_str!("../../../registry/components/tabs.rhai");
-const TOOLTIP_SOURCE: &str = include_str!("../../../registry/components/tooltip.rhai");
-const MENU_SOURCE: &str = include_str!("../../../registry/components/menu.rhai");
-const TOAST_SOURCE: &str = include_str!("../../../registry/components/toast.rhai");
-const ALERT_SOURCE: &str = include_str!("../../../registry/components/alert.rhai");
-const ALERT_DIALOG_SOURCE: &str = include_str!("../../../registry/components/alert_dialog.rhai");
-const BADGE_SOURCE: &str = include_str!("../../../registry/components/badge.rhai");
-const BUTTON_GROUP_SOURCE: &str = include_str!("../../../registry/components/button_group.rhai");
-const CARD_SOURCE: &str = include_str!("../../../registry/components/card.rhai");
-const EMPTY_SOURCE: &str = include_str!("../../../registry/components/empty.rhai");
-const GROUP_BOX_SOURCE: &str = include_str!("../../../registry/components/group_box.rhai");
-const INPUT_GROUP_SOURCE: &str = include_str!("../../../registry/components/input_group.rhai");
-const KBD_SOURCE: &str = include_str!("../../../registry/components/kbd.rhai");
-const TOGGLE_SOURCE: &str = include_str!("../../../registry/components/toggle.rhai");
-const TOGGLE_GROUP_SOURCE: &str = include_str!("../../../registry/components/toggle_group.rhai");
-const SLIDER_SOURCE: &str = include_str!("../../../registry/components/slider.rhai");
-const CONTEXT_MENU_SOURCE: &str = include_str!("../../../registry/components/context_menu.rhai");
-const SHEET_SOURCE: &str = include_str!("../../../registry/components/sheet.rhai");
-const COMMAND_SOURCE: &str = include_str!("../../../registry/components/command.rhai");
-const COMMAND_DIALOG_SOURCE: &str =
-    include_str!("../../../registry/components/command_dialog.rhai");
-const SPINNER_SOURCE: &str = include_str!("../../../registry/components/spinner.rhai");
-const SCROLL_AREA_SOURCE: &str = include_str!("../../../registry/components/scroll_area.rhai");
-const TITLE_BAR_SOURCE: &str = include_str!("../../../registry/components/title_bar.rhai");
-const STATUS_BAR_SOURCE: &str = include_str!("../../../registry/components/status_bar.rhai");
-const CODE_VIEWER_SOURCE: &str = include_str!("../../../registry/components/code_viewer.rhai");
-const DIFF_VIEWER_SOURCE: &str = include_str!("../../../registry/components/diff_viewer.rhai");
-const CHECK_SVG: &str = include_str!("../../../registry/assets/icons/check.svg");
-const CLOSE_SVG: &str = include_str!("../../../registry/assets/icons/close.svg");
-const CHEVRON_LEFT_SVG: &str = include_str!("../../../registry/assets/icons/chevron_left.svg");
-const CHEVRON_RIGHT_SVG: &str = include_str!("../../../registry/assets/icons/chevron_right.svg");
-const CALENDAR_SVG: &str = include_str!("../../../registry/assets/icons/calendar.svg");
-const DATE_PREVIOUS_SVG: &str = include_str!("../../../registry/assets/icons/date_previous.svg");
-const DATE_NEXT_SVG: &str = include_str!("../../../registry/assets/icons/date_next.svg");
-const DISCLOSURE_DOWN_SVG: &str =
-    include_str!("../../../registry/assets/icons/disclosure_down.svg");
-const SORT_ASCENDING_SVG: &str = include_str!("../../../registry/assets/icons/sort_ascending.svg");
-const SORT_DESCENDING_SVG: &str =
-    include_str!("../../../registry/assets/icons/sort_descending.svg");
-const CHEVRON_DOWN_SVG: &str = include_str!("../../../registry/assets/icons/chevron_down.svg");
-const CHEVRON_UP_SVG: &str = include_str!("../../../registry/assets/icons/chevron_up.svg");
-const MINUS_SVG: &str = include_str!("../../../registry/assets/icons/minus.svg");
-const PLUS_SVG: &str = include_str!("../../../registry/assets/icons/plus.svg");
-const SEARCH_SVG: &str = include_str!("../../../registry/assets/icons/search.svg");
-const INFO_SVG: &str = include_str!("../../../registry/assets/icons/info.svg");
-const WARNING_SVG: &str = include_str!("../../../registry/assets/icons/warning.svg");
-const DEFAULT_THEME: &str = include_str!("../../../registry/themes/default_dark.rhai");
-const DEFAULT_LIGHT_THEME: &str = include_str!("../../../registry/themes/default_light.rhai");
-const TOKYO_NIGHT_THEME: &str = include_str!("../../../registry/themes/tokyo_night.rhai");
-const TOKYO_STORM_THEME: &str = include_str!("../../../registry/themes/tokyo_storm.rhai");
-const CATPPUCCIN_LATTE_THEME: &str = include_str!("../../../registry/themes/catppuccin_latte.rhai");
-const CATPPUCCIN_MOCHA_THEME: &str = include_str!("../../../registry/themes/catppuccin_mocha.rhai");
-const ETHEREAL_THEME: &str = include_str!("../../../registry/themes/ethereal.rhai");
-const EVERFOREST_THEME: &str = include_str!("../../../registry/themes/everforest.rhai");
-const GRUVBOX_THEME: &str = include_str!("../../../registry/themes/gruvbox.rhai");
-const HACKERMAN_THEME: &str = include_str!("../../../registry/themes/hackerman.rhai");
-const NORD_THEME: &str = include_str!("../../../registry/themes/nord.rhai");
-const RETRO_82_THEME: &str = include_str!("../../../registry/themes/retro_82.rhai");
-const HERMARCHY_THEME: &str = include_str!("../../../registry/themes/hermarchy.rhai");
-const FUTURISM_THEME: &str = include_str!("../../../registry/themes/futurism.rhai");
-const AETHERIA_THEME: &str = include_str!("../../../registry/themes/aetheria.rhai");
-const EN_LOCALE: &str = include_str!("../../../registry/locales/en.rhai");
-const ZH_CN_LOCALE: &str = include_str!("../../../registry/locales/zh_cn.rhai");
-const AR_LOCALE: &str = include_str!("../../../registry/locales/ar.rhai");
-
-const BUNDLED_THEME_SOURCES: &[(&str, &str)] = &[
-    ("default_dark.rhai", DEFAULT_THEME),
-    ("default_light.rhai", DEFAULT_LIGHT_THEME),
-    ("tokyo_night.rhai", TOKYO_NIGHT_THEME),
-    ("tokyo_storm.rhai", TOKYO_STORM_THEME),
-    ("catppuccin_latte.rhai", CATPPUCCIN_LATTE_THEME),
-    ("catppuccin_mocha.rhai", CATPPUCCIN_MOCHA_THEME),
-    ("ethereal.rhai", ETHEREAL_THEME),
-    ("everforest.rhai", EVERFOREST_THEME),
-    ("gruvbox.rhai", GRUVBOX_THEME),
-    ("hackerman.rhai", HACKERMAN_THEME),
-    ("nord.rhai", NORD_THEME),
-    ("retro_82.rhai", RETRO_82_THEME),
-    ("hermarchy.rhai", HERMARCHY_THEME),
-    ("futurism.rhai", FUTURISM_THEME),
-    ("aetheria.rhai", AETHERIA_THEME),
-];
+use gpui_rhai_registry::{
+    ACCORDION_SOURCE, ALERT_DIALOG_SOURCE, ALERT_SOURCE, AR_LOCALE, AVATAR_SOURCE, BADGE_SOURCE,
+    BUNDLED_THEME_SOURCES, BUTTON_GROUP_SOURCE, BUTTON_SOURCE, CALENDAR_SVG, CARD_SOURCE,
+    CHECK_SVG, CHECKBOX_SOURCE, CHEVRON_DOWN_SVG, CHEVRON_LEFT_SVG, CHEVRON_RIGHT_SVG,
+    CHEVRON_UP_SVG, CLOSE_SVG, CODE_VIEWER_SOURCE, COLLAPSIBLE_SOURCE, COMBOBOX_SOURCE,
+    COMMAND_DIALOG_SOURCE, COMMAND_SOURCE, CONTEXT_MENU_SOURCE, DATE_NEXT_SVG, DATE_PICKER_SOURCE,
+    DATE_PREVIOUS_SVG, DEFAULT_THEME, DIALOG_SOURCE, DIFF_VIEWER_SOURCE, DISCLOSURE_DOWN_SVG,
+    DIVIDER_SOURCE, EMPTY_SOURCE, EN_LOCALE, FORM_FIELD_SOURCE, GROUP_BOX_SOURCE, ICON_SOURCE,
+    INFO_SVG, INPUT_GROUP_SOURCE, INPUT_SOURCE, KBD_SOURCE, LABEL_SOURCE, MENU_SOURCE, MINUS_SVG,
+    PAGINATION_SOURCE, PLUS_SVG, POPOVER_SOURCE, PROGRESS_SOURCE, RADIO_GROUP_SOURCE, RADIO_SOURCE,
+    SCROLL_AREA_SOURCE, SEARCH_SVG, SELECT_SOURCE, SHEET_SOURCE, SKELETON_SOURCE, SLIDER_SOURCE,
+    SORT_ASCENDING_SVG, SORT_DESCENDING_SVG, SPINNER_SOURCE, STATUS_BAR_SOURCE, STUDIO_SOURCE,
+    SWITCH_SOURCE, TABLE_SOURCE, TABS_SOURCE, TAG_SOURCE, TEXTAREA_SOURCE, TITLE_BAR_SOURCE,
+    TOAST_SOURCE, TOGGLE_GROUP_SOURCE, TOGGLE_SOURCE, TOOLTIP_SOURCE, WARNING_SVG, ZH_CN_LOCALE,
+};
+#[cfg(test)]
+use gpui_rhai_registry::{ETHEREAL_THEME, HELP_SVG};
 
 #[derive(Clone, Debug)]
 struct RegistryEntry {
@@ -1765,10 +1676,7 @@ mod tests {
             ("search", SEARCH_SVG),
             ("info", INFO_SVG),
             ("warning", WARNING_SVG),
-            (
-                "help",
-                include_str!("../../../registry/assets/icons/help.svg"),
-            ),
+            ("help", HELP_SVG),
         ] {
             assert!(source.contains("width=\"24\""), "{name} has no 24px width");
             assert!(

@@ -1,12 +1,11 @@
 # Changelog
 
-All notable runtime, CLI, and registry changes are documented here. No public
-release baseline exists yet: dogfooding changes target the best final API and do
-not retain compatibility shims. Once the maintainer gives an explicit release
-signal, semantic-version and migration notes start from that published
-baseline.
+All notable runtime, CLI, and registry changes are documented here. Version
+0.1.0 establishes the first public compatibility baseline; later public API,
+component schema, manifest, locale, and generated-source changes follow
+semantic versioning from this release.
 
-## 0.1.0 - unreleased
+## 0.1.0 - 2026-09-07
 
 Initial implementation of the stable Rhai `UiNode` boundary, source-owned
 component registry, themes/locales/assets, typed capabilities and custom
@@ -56,6 +55,9 @@ redirecting an event.
 The source registry now includes the complete official component specimen,
 fifteen bundled theme variants, and Theme Studio for creating, importing,
 editing, validating, previewing, and saving gpui-rhai themes.
+The same sources ship as the versioned `gpui-rhai-registry` crate consumed by
+the publishable CLI, so installed binaries never depend on files outside their
+Cargo package.
 
 The public-launch registry expands to 50 official components. Dropdown is
 destructively renamed to the strictly controlled Combobox. New source-owned

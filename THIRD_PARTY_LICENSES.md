@@ -10,6 +10,9 @@ icon or raster image assets are currently included.
 ## Direct Rust dependencies
 
 - GPUI 0.2.2 — Apache-2.0.
+  `crates/gpui-rhai/src/text_input.rs` adapts GPUI's Apache-2.0
+  `examples/input.rs`; the source notice and Zed Industries copyright are
+  retained in that module and the distributed Apache license.
 - Rhai 1.26.0 — MIT OR Apache-2.0.
 - notify 8.2.0 — CC0-1.0 (development hot reload only).
 - Jiff 0.2.35 — Unlicense OR MIT.
@@ -21,7 +24,7 @@ icon or raster image assets are currently included.
 - image 0.25.10, regex 1.13.1, unicode-segmentation 1.13.3, serde, serde_json,
   semver, thiserror, toml, toml_edit, clap, and tempfile — MIT OR Apache-2.0.
 
-The 2026-09-06 Cargo metadata audit covered 650 resolved packages
+The 2026-09-07 Cargo metadata audit covered 651 resolved packages
 and found no missing license metadata. MPL-2.0 dependencies are used under their
 file-level terms; dependencies offering LGPL as one option also offer MIT or
 Apache-2.0. Cargo source distributions contain the authoritative license text

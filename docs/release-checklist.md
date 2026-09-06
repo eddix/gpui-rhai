@@ -1,15 +1,14 @@
 # Release checklist
 
-1. Do not begin compatibility or migration work until the maintainer gives an
-   explicit release/version signal. Before that signal, dogfooding changes go
-   directly to the best SDK design without aliases or dual parsers. Once a
-   release is requested, document every breaking runtime API, component schema,
-   locale, registry, manifest, and generated-source change from that baseline.
+1. Treat 0.1.0 as the first public compatibility baseline. Document every later
+   breaking runtime API, component schema, locale, registry, manifest, and
+   generated-source change against its published predecessor.
 2. Run format, all-target/all-feature check, strict Clippy, tests, and rustdoc.
 3. Test the declared MSRV (`1.94`) and latest stable toolchains.
-4. Run `cargo package -p gpui-rhai` and inspect the package file list.
-   The pinned GPUI HTTP dependency currently locks a yanked `chacha20 0.10.1`;
-   packaging verifies successfully but emits a warning until upstream updates.
+4. Run `cargo package` and inspect the file list for `gpui-rhai`,
+   `gpui-rhai-registry`, and `gpui-rhai-cli`. Before the first release, package
+   the CLI with `--no-verify`; after its two dependencies are indexed, its
+   publish dry-run must perform the full clean rebuild.
 5. Re-run the full Cargo metadata license matrix; investigate unknown licenses
    and update `THIRD_PARTY_LICENSES.md` for copied source or assets.
 6. Build every example in release mode and run `scripts/release-smoke.sh` on
@@ -31,6 +30,12 @@
     scalar/custom Table probes, Select group/search cases, Pagination boundary
     transitions, and Textarea multiline IME/auto-grow cases.
 
-The repository remains version 0.1.0 and `RUNTIME_API_VERSION` 1 during the
-current dogfooding expansion. A later explicit release signal establishes the
-baseline from which changelog and source-update migration contracts apply.
+12. Verify crates.io authentication without printing the token. Publish
+    dependency-first: `gpui-rhai`, then `gpui-rhai-registry`, then
+    `gpui-rhai-cli`, waiting for each package to enter the index before verifying
+    or publishing its dependents. Confirm a clean `cargo install
+    gpui-rhai-cli --locked` from crates.io.
+13. Tag the exact protected-main release commit as `v0.1.0` and create the
+    matching GitHub release only after all three crates are available.
+
+Version 0.1.0 and `RUNTIME_API_VERSION` 1 are the first published baseline.

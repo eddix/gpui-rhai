@@ -21,20 +21,20 @@ Textarea, CodeViewer, and DiffViewer.
 ## Quick start
 
 ```text
-cargo run -p gpui-rhai-cli -- --root /path/to/app init
-cargo run -p gpui-rhai-cli -- --root /path/to/app add button label input icon divider popover combobox dialog
-cargo run -p gpui-rhai-cli -- --root /path/to/app check
-cargo run -p gpui-rhai-cli -- --root /path/to/app metadata
+cargo install gpui-rhai-cli --locked
+gpui-rhai --root /path/to/app init
+gpui-rhai --root /path/to/app add button label input icon divider popover combobox dialog
+gpui-rhai --root /path/to/app check
+gpui-rhai --root /path/to/app metadata
 ```
 
 `init` adds the runtime dependency and creates the minimal Rust host, Rhai entry,
 theme, and manifests without overwriting an existing `main.rs`. `add` copies
 editable source plus a committed update baseline.
 
-Neither crate is published yet. During dogfooding, replace the generated
-version-only runtime dependency with a local checkout path or an exact Git
-commit accessible to the application. The complete pre-release setup is in the
-[User Guide](USER_GUIDE.md#2-start-a-project).
+The generated Host uses the crates.io `gpui-rhai = "0.1"` runtime dependency.
+For repository development, invoke the matching workspace CLI with
+`cargo run -p gpui-rhai-cli -- ...`.
 
 `update` performs an offline three-way merge between the installed baseline,
 the application-owned source, and the bundled registry. Conflicts never

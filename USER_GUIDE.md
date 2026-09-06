@@ -44,10 +44,10 @@ See [Architecture](docs/architecture.md) for the complete runtime design.
 
 ## 2. Start a project
 
-The CLI and runtime are not published yet. Install the CLI from a checkout:
+Install the versioned CLI from crates.io:
 
 ```text
-cargo install --path crates/gpui-rhai-cli
+cargo install gpui-rhai-cli --locked
 ```
 
 Then, from a Cargo application root:
@@ -59,7 +59,7 @@ gpui-rhai check
 gpui-rhai dev
 ```
 
-Inside this repository, invoke the unpublished CLI with:
+Inside this repository, contributors can invoke the matching workspace CLI with:
 
 ```text
 cargo run -p gpui-rhai-cli -- --root /path/to/app init
@@ -88,24 +88,28 @@ The files under `ui/` belong to the application. The files under
 source updates. `init` never overwrites an existing `src/main.rs`; when one is
 present it writes `gpui-rhai-host-snippet.rs` for deliberate integration.
 
-Until `0.1.0` is explicitly released, replace the generated
-`gpui-rhai = { version = "0.1", ... }` dependency with the checkout you are
-dogfooding:
+`init` writes the normal crates.io dependency:
+
+```toml
+gpui-rhai = { version = "0.1", features = ["dev-reload"] }
+```
+
+For runtime development, replace it temporarily with the checkout you are
+testing:
 
 ```toml
 gpui-rhai = { path = "/path/to/gpui-rhai/crates/gpui-rhai", features = ["dev-reload"] }
 ```
 
-For another machine with access to this private repository, pin the exact
-tested commit rather than silently following a moving branch:
+For another machine testing an unreleased commit, pin the exact revision rather
+than silently following a moving branch:
 
 ```toml
 gpui-rhai = { git = "https://github.com/eddix/gpui-rhai", rev = "<commit>", features = ["dev-reload"] }
 ```
 
 Disable `dev-reload` in production builds unless source watching is an explicit
-product requirement. The version-only dependency becomes the normal path only
-after the runtime crate is published.
+product requirement.
 
 Useful commands:
 

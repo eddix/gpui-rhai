@@ -8,7 +8,9 @@ authors.workspace = true
 license.workspace = true
 repository.workspace = true
 readme = "README.md"
-publish = false
+documentation = "https://docs.rs/gpui-rhai-cli"
+keywords = ["gpui", "rhai", "cli", "components", "themes"]
+categories = ["gui", "development-tools"]
 
 [[bin]]
 name = "gpui-rhai"
@@ -18,6 +20,7 @@ doc = false
 [dependencies]
 clap.workspace = true
 gpui-rhai = { version = "0.1.0", path = "../gpui-rhai" }
+gpui-rhai-registry.workspace = true
 semver.workspace = true
 serde.workspace = true
 serde_json.workspace = true

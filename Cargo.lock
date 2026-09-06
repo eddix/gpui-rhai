@@ -1998,6 +1998,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "gpui-rhai",
+ "gpui-rhai-registry",
  "semver",
  "serde",
  "serde_json",
@@ -2006,6 +2007,10 @@ dependencies = [
  "toml 0.8.23",
  "toml_edit 0.22.27",
 ]
+
+[[package]]
+name = "gpui-rhai-registry"
+version = "0.1.0"
 
 [[package]]
 name = "gpui_collections"
