@@ -1258,6 +1258,7 @@ fn command_fuzzy_search_and_keyboard_action_are_composable_and_controlled() {
     };
     assert_eq!(spec.data.len(), 2, "one group header plus one fuzzy match");
     assert_eq!(spec.height, Some(64.0), "small command sets must shrink");
+    assert_eq!(spec.reveal_key.as_deref(), Some("item:open"));
     let (enter, payload) = target_handler(command, "key:enter");
     let _ = lifecycle
         .invoke_callback_transactional(&engine, &enter, payload)
@@ -1366,6 +1367,7 @@ fn command_filters_native_collection_and_keeps_large_rows_out_of_rhai() {
         2,
         "one group header plus one native fuzzy match"
     );
+    assert_eq!(spec.reveal_key.as_deref(), Some("open"));
 
     let (enter, payload) = target_handler(lifecycle.root().unwrap(), "key:enter");
     let _ = lifecycle

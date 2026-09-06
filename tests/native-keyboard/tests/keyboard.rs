@@ -4400,6 +4400,180 @@ fn command_dialog_filters_from_native_input_and_executes_with_enter(cx: &mut Tes
 }
 
 #[gpui::test]
+fn command_preserves_manual_scroll_and_reveals_controlled_active_item(
+    cx: &mut TestAppContext,
+) {
+    cx.update(gpui_rhai::install);
+    let entry = ModuleId::parse("main").unwrap();
+    let prepared = EmbeddedScriptView::new(
+        entry.clone(),
+        EmbeddedScriptSource::new(std::collections::BTreeMap::from([
+            (
+                entry,
+                r#"
+                    import "components/command" as command;
+                    fn state_schema() { #{ fields: #{
+                        active: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "command-0" } }
+                    } } }
+                    fn active(ctx, value) { ctx.set_state("active", value); }
+                    fn action(ctx, value) { () }
+                    fn commands() {
+                        let items = [];
+                        for index in 0..16 {
+                            items.push(#{ value: `command-${index}`, label: `Command ${index}` });
+                        }
+                        items
+                    }
+                    fn view(ctx) {
+                        column([
+                            text(`active:${ctx.get_state("active")}`),
+                            command::Command(#{ key: "commands", label: "Commands", query: "",
+                                active_value: ctx.get_state("active"), items: commands(),
+                                max_visible: 12, autofocus: true,
+                                on_active_change: Fn("active"), on_action: Fn("action") })
+                        ]).with_style(style().width(relative(1)).height(relative(1)).padding(px(16)))
+                    }
+                "#
+                .to_owned(),
+            ),
+            (
+                ModuleId::parse("components/command").unwrap(),
+                include_str!("../../../registry/components/command.rhai").to_owned(),
+            ),
+            (
+                ModuleId::parse("components/input").unwrap(),
+                include_str!("../../../registry/components/input.rhai").to_owned(),
+            ),
+            (
+                ModuleId::parse("components/kbd").unwrap(),
+                include_str!("../../../registry/components/kbd.rhai").to_owned(),
+            ),
+        ])),
+        include_str!("../../../registry/themes/default_dark.rhai"),
+    )
+    .asset_sources(official_icon_assets())
+    .prepare()
+    .unwrap();
+    let captured = Rc::new(RefCell::new(None));
+    let captured_for_window = Rc::clone(&captured);
+    let window = cx.add_window(move |window, cx| {
+        let host = ScriptViewHost::new("command-scroll-window", cx).unwrap();
+        let view = prepared
+            .mount(
+                ScriptViewConfig::new("command-scroll-view"),
+                host.clone(),
+                window,
+                cx,
+            )
+            .unwrap();
+        *captured_for_window.borrow_mut() = Some(view.clone());
+        SingleEmbeddedHost { host, view }
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    cx.run_until_parked();
+
+    let view = captured.borrow().as_ref().unwrap().clone();
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    let row = visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .find_by_role_and_name("option", "Command 6")
+            .next()
+            .unwrap()
+            .geometry
+            .unwrap()
+            .visual
+    });
+    visual.simulate_event(ScrollWheelEvent {
+        position: point(
+            px((row.x + row.width / 2.0) as f32),
+            px((row.y + row.height / 2.0) as f32),
+        ),
+        delta: ScrollDelta::Pixels(point(px(0.0), px(-160.0))),
+        ..ScrollWheelEvent::default()
+    });
+    visual.run_until_parked();
+    let manually_scrolled = visual
+        .update(|_, cx| view.take_performance_snapshot(cx))
+        .unwrap()
+        .virtual_collections
+        .into_iter()
+        .next()
+        .unwrap();
+    assert!(
+        manually_scrolled.scroll_item > 0,
+        "manual wheel scroll must survive realization rerenders: {manually_scrolled:?}"
+    );
+
+    let hovered = visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .find_by_role_and_name("option", "Command 8")
+            .next()
+            .unwrap()
+            .geometry
+            .unwrap()
+            .visual
+    });
+    visual.simulate_mouse_move(
+        point(
+            px((hovered.x + hovered.width / 2.0) as f32),
+            px((hovered.y + hovered.height / 2.0) as f32),
+        ),
+        None,
+        Modifiers::default(),
+    );
+    visual.run_until_parked();
+    let after_hover = visual
+        .update(|_, cx| view.take_performance_snapshot(cx))
+        .unwrap()
+        .virtual_collections
+        .into_iter()
+        .next()
+        .unwrap();
+    assert_eq!(
+        (after_hover.scroll_item, after_hover.scroll_offset),
+        (
+            manually_scrolled.scroll_item,
+            manually_scrolled.scroll_offset
+        ),
+        "activating an already-visible hovered row must not snap the list: before={manually_scrolled:?} after={after_hover:?}"
+    );
+
+    for _ in 0..8 {
+        visual.simulate_keystrokes("up");
+        visual.run_until_parked();
+    }
+    assert!(palette_texts(&mut visual, &view).contains(&"active:command-0".to_owned()));
+
+    for _ in 0..13 {
+        visual.simulate_keystrokes("down");
+        visual.run_until_parked();
+    }
+    assert!(palette_texts(&mut visual, &view).contains(&"active:command-13".to_owned()));
+    let followed = visual
+        .update(|_, cx| view.take_performance_snapshot(cx))
+        .unwrap()
+        .virtual_collections
+        .into_iter()
+        .next()
+        .unwrap();
+    assert!(
+        followed.scroll_item > 0 && followed.visible_range.contains(&13),
+        "controlled active item must be revealed: {followed:?}"
+    );
+    let active = visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .find_by_role_and_name("option", "Command 13")
+            .next()
+            .and_then(|node| node.geometry)
+    });
+    assert!(active.is_some(), "active option must participate in the frame");
+}
+
+#[gpui::test]
 fn component_gallery_switches_categories_and_live_themes(cx: &mut TestAppContext) {
     cx.update(gpui_rhai::install);
     let prepared = component_gallery_example::prepared("all").unwrap();

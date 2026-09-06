@@ -85,6 +85,12 @@ reversible preview and the latter for confirmation. Repeated movement onto the
 same value is deduplicated. Initial render and query-driven fallback selection
 remain pure and do not emit an implicit event.
 
+The active command is also the list's controlled reveal target. Keyboard
+roving and Host-driven `active_value` changes keep that item visible even when
+it was outside the realized window. Wheel/trackpad scrolling is preserved
+across ordinary renders and realization; it is overridden only by the next
+active-value or result-key-order change.
+
 Array inputs are ranked in component Rhai. Large NativeCollection inputs are
 filtered, grouped, ranked, and navigated in Rust; only visible projected rows
 cross into Rhai. `CommandDialog` forwards the same controlled `active_value`,

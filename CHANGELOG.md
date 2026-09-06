@@ -88,6 +88,10 @@ category, overlay, compact, regular, and reduced-motion launch states.
 Command and CommandDialog now use caller-owned `active_value` and expose a
 deduplicated `active_change(string)` event for keyboard and pointer roving
 previews while preserving `action` as the explicit confirmation boundary.
+Their active item is a controlled virtual-collection reveal target: keyboard
+and Host updates follow beyond the visible window, while unchanged targets no
+longer reset manual wheel/trackpad scrolling. Generic virtual collections now
+distinguish stable-key payload updates from structural changes.
 
 The initial theme contract includes explicit `on_accent`, `on_danger`,
 `on_warning`, and `on_success` foregrounds. Reduced motion renders looping

@@ -30,6 +30,31 @@ virtual_collection(#{
 }, Fn("render_message"))
 ```
 
+## Controlled reveal targets
+
+Top-aligned selection and navigation components can pass `reveal_key`, using
+the same stable key exposed by `config.data`. The runtime reacts only when that
+controlled key changes (or when the ordered key set itself changes): it keeps a
+measured target visible and top-aligns an unmeasured offscreen target so GPUI
+can realize it on the next frame.
+
+```rhai
+virtual_collection(#{
+    key: "results",
+    label: "Search results",
+    data: results,
+    estimated_height: 32,
+    height: 320,
+    reveal_key: active_result,
+}, Fn("render_result"))
+```
+
+Ordinary renders and viewport realization do not reapply `reveal_key`, so
+wheel/trackpad scrolling remains under the user's control until the controlled
+target changes. `follow_tail` and `reveal_key` are mutually exclusive because
+they represent competing automatic-scroll policies. An empty or unknown reveal
+key is rejected at the script boundary.
+
 ## Sticky sections
 
 Top-aligned collections may declare sorted, unique item indices as section
@@ -80,8 +105,10 @@ loop.
 
 Realized windows replace offscreen item subtrees and clean their component
 state/tasks/effects. The GPUI `ListState` is not reset when only the realized map
-changes, preserving measured heights and anchor state. Data and realized item
-counts have separate Host budgets.
+or item payload changes while ordered stable keys stay identical, preserving
+measured heights and the user's scroll anchor. A key-order or estimated-height
+change resets measurements; the controlled reveal policy is then applied once.
+Data and realized item counts have separate Host budgets.
 
 The deterministic `VariableListState` policy core uses a Fenwick prefix tree to
 compute pixel-overdraw windows, preserve measured heights by key across

@@ -194,6 +194,7 @@ impl VirtualListView {
             frame_indices: Rc::new(RefCell::new(BTreeSet::new())),
         };
         this.install_keys();
+        this.reveal_controlled_target();
         this.install_metrics_handler();
         this
     }
@@ -205,19 +206,21 @@ impl VirtualListView {
         cx: &mut Context<Self>,
     ) {
         let changed = self.content != content;
+        let recreate = collection_requires_recreation(&self.content, &content);
         let reset = collection_requires_reset(&self.content, &content);
-        let alignment_changed = self.content.bottom_align != content.bottom_align;
+        let reveal_changed = self.content.reveal_key != content.reveal_key;
         self.content = content;
         self.runtime = runtime;
+        if recreate {
+            self.scroll = list_state(&self.content);
+        } else if reset {
+            self.scroll.reset(self.content.data.len());
+        }
         self.install_keys();
         self.install_metrics_handler();
         if changed {
-            if reset {
-                if alignment_changed {
-                    self.scroll = list_state(&self.content);
-                } else {
-                    self.scroll.reset(self.content.data.len());
-                }
+            if reveal_changed || reset || recreate {
+                self.reveal_controlled_target();
             }
             if self.content.follow_tail && !self.content.data.is_empty() {
                 self.scroll.scroll_to(ListOffset {
@@ -226,6 +229,31 @@ impl VirtualListView {
                 });
             }
             cx.notify();
+        }
+    }
+
+    fn reveal_controlled_target(&mut self) {
+        let Some(index) = self.content.reveal_key.as_deref().and_then(|target| {
+            (0..self.content.data.len())
+                .find(|index| collection_item_key(&self.content, *index) == Some(target))
+        }) else {
+            return;
+        };
+        let viewport = self.scroll.viewport_bounds();
+        if let Some(bounds) = self.scroll.bounds_for_item(index)
+            && viewport.size.height > px(0.0)
+        {
+            if bounds.top() < viewport.top() || bounds.bottom() > viewport.bottom() {
+                self.scroll.scroll_to_reveal_item(index);
+            }
+        } else {
+            // GPUI's variable list cannot infer the height of an unmeasured
+            // offscreen item. Top-aligning its logical index gives the next
+            // frame a deterministic place to realize and measure it.
+            self.scroll.scroll_to(ListOffset {
+                item_ix: index,
+                offset_in_item: px(0.0),
+            });
         }
     }
 
@@ -507,16 +535,29 @@ pub(crate) fn collection_item_key(spec: &VirtualCollectionNodeSpec, index: usize
     spec.data.key(index)
 }
 
-fn collection_requires_reset(
+fn collection_requires_recreation(
     current: &VirtualCollectionNodeSpec,
     next: &VirtualCollectionNodeSpec,
 ) -> bool {
     current.id != next.id
-        || current.data != next.data
-        || current.estimated_height.to_bits() != next.estimated_height.to_bits()
-        || current.height.map(f64::to_bits) != next.height.map(f64::to_bits)
         || current.overdraw_pixels.to_bits() != next.overdraw_pixels.to_bits()
         || current.bottom_align != next.bottom_align
+}
+
+fn collection_requires_reset(
+    current: &VirtualCollectionNodeSpec,
+    next: &VirtualCollectionNodeSpec,
+) -> bool {
+    current.estimated_height.to_bits() != next.estimated_height.to_bits()
+        || !same_key_order(&current.data, &next.data)
+}
+
+fn same_key_order(
+    current: &crate::VirtualCollectionData,
+    next: &crate::VirtualCollectionData,
+) -> bool {
+    current.len() == next.len()
+        && (0..current.len()).all(|index| current.key(index) == next.key(index))
 }
 
 fn list_state(spec: &VirtualCollectionNodeSpec) -> ListState {

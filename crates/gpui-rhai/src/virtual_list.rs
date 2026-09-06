@@ -28,6 +28,8 @@ pub struct VirtualCollectionNodeSpec {
     pub overdraw_pixels: f64,
     pub bottom_align: bool,
     pub follow_tail: bool,
+    /// Stable data key to reveal when this controlled target changes.
+    pub reveal_key: Option<String>,
     /// Item indices whose realized nodes act as top-pinned section headers.
     pub sticky_headers: Arc<BTreeSet<usize>>,
 }
@@ -744,6 +746,7 @@ mod tests {
             overdraw_pixels: 48.0,
             bottom_align: true,
             follow_tail: true,
+            reveal_key: None,
             sticky_headers: Arc::new(BTreeSet::new()),
         };
         let registry = VirtualRequestRegistry::new();

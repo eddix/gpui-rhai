@@ -2533,6 +2533,7 @@ struct DecodedVirtualCollection {
     overdraw_pixels: f64,
     bottom_align: bool,
     follow_tail: bool,
+    reveal_key: Option<String>,
     sticky_headers: Arc<BTreeSet<usize>>,
 }
 
@@ -2552,6 +2553,7 @@ impl DecodedVirtualCollection {
             overdraw_pixels: self.overdraw_pixels,
             bottom_align: self.bottom_align,
             follow_tail: self.follow_tail,
+            reveal_key: self.reveal_key,
             sticky_headers: self.sticky_headers,
         }
     }
@@ -2604,6 +2606,24 @@ fn decode_virtual_collection(
     };
     let follow_tail = collection_optional_bool(&mut config, "follow_tail")?.unwrap_or(false);
     let data = collection_data(&mut config)?;
+    let reveal_key = collection_optional_string(&mut config, "reveal_key")?;
+    if reveal_key.as_deref() == Some("") {
+        return Err(Box::new(component_render_error(
+            "virtual collection `reveal_key` must not be empty",
+        )));
+    }
+    if let Some(reveal_key) = reveal_key.as_deref()
+        && !(0..data.len()).any(|index| data.key(index) == Some(reveal_key))
+    {
+        return Err(Box::new(component_render_error(format!(
+            "virtual collection reveal key `{reveal_key}` is not present in its data"
+        ))));
+    }
+    if follow_tail && reveal_key.is_some() {
+        return Err(Box::new(component_render_error(
+            "virtual collection must not combine `follow_tail` with `reveal_key`",
+        )));
+    }
     let sticky_headers = collection_optional_indices(&mut config, "sticky_headers")?
         .map_or_else(|| data.sticky_headers(), Arc::new);
     if let Some(index) = sticky_headers.iter().find(|index| **index >= data.len()) {
@@ -2631,6 +2651,7 @@ fn decode_virtual_collection(
         overdraw_pixels,
         bottom_align,
         follow_tail,
+        reveal_key,
         sticky_headers,
     })
 }
@@ -3193,6 +3214,25 @@ mod tests {
             let error = decode_virtual_collection(virtual_config(sticky, alignment)).unwrap_err();
             assert!(error.to_string().contains(expected), "{error}");
         }
+    }
+
+    #[test]
+    fn virtual_collection_reveal_key_is_known_and_has_one_scroll_owner() {
+        let mut config = virtual_config(&[], "top");
+        config.insert("reveal_key".into(), Dynamic::from("header"));
+        let decoded = decode_virtual_collection(config).unwrap();
+        assert_eq!(decoded.reveal_key.as_deref(), Some("header"));
+
+        let mut unknown = virtual_config(&[], "top");
+        unknown.insert("reveal_key".into(), Dynamic::from("missing"));
+        let error = decode_virtual_collection(unknown).unwrap_err();
+        assert!(error.to_string().contains("is not present"), "{error}");
+
+        let mut competing = virtual_config(&[], "top");
+        competing.insert("reveal_key".into(), Dynamic::from("header"));
+        competing.insert("follow_tail".into(), Dynamic::from(true));
+        let error = decode_virtual_collection(competing).unwrap_err();
+        assert!(error.to_string().contains("must not combine"), "{error}");
     }
 
     #[test]
