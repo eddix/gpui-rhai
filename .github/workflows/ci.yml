@@ -40,6 +40,8 @@ jobs:
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
       - name: Test
         run: cargo test --workspace --all-targets --all-features
+      - name: Default runtime tests
+        run: cargo test -p gpui-rhai --no-default-features --locked
       - name: Native keyboard test support
         run: cargo test --manifest-path tests/native-keyboard/Cargo.toml --locked
       - name: Audit visual baselines
@@ -50,8 +52,10 @@ jobs:
         run: |
           cargo doc -p gpui-rhai --all-features --no-deps
           cargo doc -p gpui-rhai-cli --lib --no-deps
-      - name: Package runtime crate
-        run: cargo package -p gpui-rhai
+      # Package verification runs outside the workspace Git patch, so every
+      # advertised feature must compile against official crates.io Rhai.
+      - name: Package runtime crate (all features, official Rhai)
+        run: cargo package -p gpui-rhai --locked --all-features
       - name: Release build
         run: |
           cargo build --release -p gpui-rhai --examples

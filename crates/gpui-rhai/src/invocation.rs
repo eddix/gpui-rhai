@@ -21,9 +21,9 @@ impl ScriptInvocationContext {
     pub(crate) fn capture(context: &NativeCallContext<'_>) -> Self {
         let stored = Rc::new(context.store_data());
         Self {
-            // Rhai clones this absolute counter into every later
-            // `call_within_context`. Timings must subtract it to report the
-            // delayed invocation rather than repeatedly charging the parent.
+            // Official Rhai clones the absolute counter. The experimental
+            // fork supplies a fresh stored boundary when an accelerator is
+            // attached, so this naturally becomes zero there.
             operation_base: stored.global.num_operations,
             stored,
         }
@@ -73,5 +73,27 @@ impl fmt::Debug for ScriptInvocationContext {
         formatter
             .debug_struct("ScriptInvocationContext")
             .finish_non_exhaustive()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[allow(deprecated)]
+    fn capture_preserves_the_context_store_supplied_by_rhai() {
+        let engine = rhai::Engine::new();
+        let mut global = engine.new_global_runtime_state();
+        global.num_operations = 123;
+        global.level = 3;
+        let context =
+            NativeCallContext::from((&engine, "capture", None, &global, rhai::Position::NONE));
+
+        let captured = ScriptInvocationContext::capture(&context);
+        assert_eq!(
+            (captured.operation_base(), captured.stored.global.level),
+            (123, 3)
+        );
     }
 }

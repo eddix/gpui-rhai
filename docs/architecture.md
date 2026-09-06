@@ -102,11 +102,13 @@ through component composition and strip it before retention; ownership is never
 guessed from the function name, so entry and nested component modules may use
 the same private handler names safely.
 
-The AST interpreter remains the semantic oracle. Named entry/lifecycle/root
-calls cross a static execution-backend trait; stored imported callbacks remain
-behind the volatile invocation-context adapter. The optional `grain-backend`
-feature is a parity harness, not a production switch, and currently records a
-diagnostic-format blocker. See [Rhai execution backends](rhai-execution-backends.md).
+The AST interpreter remains the semantic oracle and the default package's only
+execution path. The optional `experimental-backend` feature adds a
+fork-independent, generation-bound executor interface using only official Rhai
+types; it does not activate an alternate backend by itself. The unpublished JIT
+experiment implements that interface with a pinned Rhai `jit` revision. Stored
+imported callbacks remain behind the volatile invocation-context adapter. See
+[Rhai execution backends](rhai-execution-backends.md).
 
 Formal render functions may declare named effects and typed native signals.
 Effects compare immutable `UiValue` dependencies, run old cleanup before new

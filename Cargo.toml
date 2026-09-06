@@ -2,6 +2,11 @@
 members = [
     "crates/gpui-rhai",
     "crates/gpui-rhai-cli",
+    "crates/rhai-jit-experiment",
+]
+default-members = [
+    "crates/gpui-rhai",
+    "crates/gpui-rhai-cli",
 ]
 resolver = "2"
 
@@ -29,6 +34,7 @@ image = { version = "0.25.10", default-features = false, features = ["png", "jpe
 jiff = { version = "0.2.35", default-features = false, features = ["std", "tz-system", "tzdb-zoneinfo"] }
 usvg = { version = "=0.45.1", default-features = false }
 event-listener = "5.4.2"
+dynasmrt = "5.1"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
@@ -38,3 +44,6 @@ all = { level = "warn", priority = -1 }
 pedantic = { level = "warn", priority = -1 }
 module_name_repetitions = "allow"
 must_use_candidate = "allow"
+
+[patch.crates-io]
+rhai = { git = "https://github.com/eddix/rhai", rev = "989efd986d05ce9799ab2d0472ef7f697d022316" }
