@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.94.0
@@ -40,6 +40,13 @@ jobs:
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
       - name: Test
         run: cargo test --workspace --all-targets --all-features
+      - name: Install native Linux test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            libxcb1-dev \
+            libxkbcommon-dev \
+            libxkbcommon-x11-dev
       - name: Native keyboard test support
         run: cargo test --manifest-path tests/native-keyboard/Cargo.toml --locked
       - name: Audit visual baselines
