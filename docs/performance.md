@@ -30,6 +30,11 @@ The budgets are diagnostics, not permission to move per-frame policy into Rhai.
   policy changes, but the flattened order and sticky indices must be cached.
   Selection-only updates reuse that order and continue projecting only the
   visible rows plus group headers.
+- CodeViewer and DiffViewer parse immutable text snapshots on cancellable
+  background jobs and render only visible document rows. Default Host limits
+  are 10 MiB/500,000 lines per document, 20 MiB combined diff input, 100,000
+  hunks and a two-second diff deadline. Rhai's separate 1 MiB string limit still
+  applies to direct script strings; use `NativeTextDocument` above that size.
 - Textarea large paste/delete and width-change auto-grow probes must settle in
   one subsequent layout without height oscillation. Caret scrolling and IME
   bounds stay proportional to laid-out visual lines.
@@ -80,7 +85,9 @@ or `dev-reload` runs are not comparable performance numbers.
 
 The release benchmark mounts the same `table_1000` fixture in GPUI's test
 platform and measures cold prepare/mount plus unchanged rerender, reverse,
-selection, and native resize scenarios:
+selection, and native resize scenarios. It also records a document report that
+compares the direct-string and NativeTextDocument Rhai boundaries, native syntax
+tokenization, and two-way diff/hunk construction over deterministic Rhai source:
 
 ```text
 bash scripts/benchmark.sh
@@ -94,6 +101,46 @@ GPUI_RHAI_BENCH_WARMUP=10 \
 GPUI_RHAI_BENCH_OUTPUT=/tmp/gpui-rhai-table-1000.json \
 bash scripts/benchmark.sh
 ```
+
+Set `GPUI_RHAI_DOCUMENT_BENCH_LINES` to change the document workload. The
+default is 20,000 lines. `gpui-rhai-document-e2e-v2` reports byte/line/hunk
+counts plus direct-string Rhai prepare, native-document Rhai prepare, Rust
+highlight, and Rust diff durations. It also mounts real CodeViewer and
+DiffViewer instances, waits for their background work and first complete frame,
+then records foreground dispatch p95 and complete-projection p50/p95 for
+viewport-wrap resize. It deliberately includes
+Rhai execution and native presentation work; the core diff timer alone is not
+presented as end-to-end performance.
+
+Document v2 reference run on 2026-09-06, Macmini9,1, macOS 26.6.2,
+`rustc 1.94.0`, release profile, 20,000 generated Rhai lines / 1,008,890
+bytes and 10 resize samples:
+
+```text
+direct-string Rhai prepare          =  46.69ms
+NativeTextDocument Rhai prepare     =   1.10ms
+native syntax tokenization          = 289.61ms
+native two-way diff                 = 598.47ms; 21 hunks / 20,001 aligned rows
+native UI prepare                   =   1.60ms
+native UI mount + complete frame    = 944.81ms
+resize dispatch p95                 =   4.66ms
+resize complete-projection p50/p95  =  26.76ms / 27.09ms
+```
+
+The mounted workload contains one 20,000-line CodeViewer and one split
+20,000-row DiffViewer. Resize dispatch is the foreground responsiveness metric;
+complete-projection latency includes the cancellable background wrap projection
+and atomic repaint. The old complete surface remains usable while that second
+measurement is in flight.
+
+The native boundary is the intended path for large or frequently replaced
+documents. Highlight and diff durations run off the GPUI/Rhai foreground and
+commit atomically; these numbers are latency baselines, not foreground frame
+budgets. The direct-string result intentionally includes parsing a roughly
+1 MiB Rhai literal and quantifies why that convenience path should remain for
+ordinary-sized source rather than bulk Host data. The process-global syntax
+pack is warmed before the direct/native Rhai comparison so its one-time load
+does not unfairly charge only the direct-string branch.
 
 Each `gpui-rhai-e2e-v2` report retains raw samples and p50/p95/p99 summaries
 together with commit, dirty state, Rust/macOS/hardware metadata, retained node

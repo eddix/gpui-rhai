@@ -2,12 +2,14 @@ use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::rc::Rc;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use gpui::{Context, IntoElement, Render, TestAppContext, VisualTestContext, Window, px, size};
 use gpui_rhai::{
     AutomationCommand, AutomationLocator, ExecutionOperation, ExecutionTiming, ScriptViewConfig,
-    ScriptViewHandle, ScriptViewHost, ScriptViewPerformanceSnapshot, VirtualCollectionId,
+    ScriptViewExtension, ScriptViewHandle, ScriptViewHost, ScriptViewPerformanceSnapshot,
+    VirtualCollectionId,
 };
 use serde::Serialize;
 
@@ -582,4 +584,276 @@ fn table_1000_end_to_end_baseline(cx: &mut TestAppContext) {
     if let Ok(path) = std::env::var("GPUI_RHAI_BENCH_OUTPUT") {
         std::fs::write(path, format!("{json}\n")).unwrap();
     }
+}
+
+#[derive(Serialize)]
+struct DocumentBenchmarkReport {
+    schema: &'static str,
+    lines: usize,
+    bytes: usize,
+    direct_string_rhai_prepare_us: u64,
+    native_document_rhai_prepare_us: u64,
+    rust_highlight_us: u64,
+    rust_diff_us: u64,
+    native_ui_prepare_us: u64,
+    native_ui_mount_first_frame_us: u64,
+    native_ui_resize_dispatch_p95_us: u64,
+    native_ui_resize_settle_p50_us: u64,
+    native_ui_resize_settle_p95_us: u64,
+    diff_hunks: usize,
+    diff_rows: usize,
+}
+
+#[derive(Clone)]
+struct BenchmarkDocumentExtension {
+    document: gpui_rhai::NativeTextDocument,
+}
+
+impl ScriptViewExtension for BenchmarkDocumentExtension {
+    fn configure_runtime(&self, runtime: &mut gpui_rhai::UiRuntimeState) -> Result<(), String> {
+        runtime
+            .native_documents
+            .register("benchmark", self.document.clone())
+            .map_err(|error| error.to_string())
+    }
+}
+
+#[derive(Clone)]
+struct BenchmarkDocumentPairExtension {
+    left: gpui_rhai::NativeTextDocument,
+    right: gpui_rhai::NativeTextDocument,
+}
+
+impl ScriptViewExtension for BenchmarkDocumentPairExtension {
+    fn configure_runtime(&self, runtime: &mut gpui_rhai::UiRuntimeState) -> Result<(), String> {
+        runtime
+            .native_documents
+            .register("benchmark-left", self.left.clone())
+            .map_err(|error| error.to_string())?;
+        runtime
+            .native_documents
+            .register("benchmark-right", self.right.clone())
+            .map_err(|error| error.to_string())
+    }
+}
+
+fn benchmark_document_source(lines: usize, changed: bool) -> String {
+    use std::fmt::Write as _;
+
+    let mut source = String::with_capacity(lines * 48);
+    for index in 0..lines {
+        let value = if changed && index.is_multiple_of(997) {
+            index.saturating_add(1)
+        } else {
+            index
+        };
+        let _ = writeln!(
+            source,
+            "let server_{index} = #{{ port: {}, enabled: true }};",
+            8_000 + value % 1_000
+        );
+    }
+    source
+}
+
+fn document_component_source() -> std::collections::BTreeMap<gpui_rhai::ModuleId, String> {
+    std::collections::BTreeMap::from([
+        (
+            gpui_rhai::ModuleId::parse("components/code_viewer").unwrap(),
+            include_str!("../../../registry/components/code_viewer.rhai").to_owned(),
+        ),
+        (
+            gpui_rhai::ModuleId::parse("components/diff_viewer").unwrap(),
+            include_str!("../../../registry/components/diff_viewer.rhai").to_owned(),
+        ),
+    ])
+}
+
+#[gpui::test]
+#[ignore = "run with scripts/benchmark.sh"]
+#[allow(clippy::too_many_lines)]
+fn document_end_to_end_baseline(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let lines = env_usize("GPUI_RHAI_DOCUMENT_BENCH_LINES", 20_000);
+    let left = benchmark_document_source(lines, false);
+    let right = benchmark_document_source(lines, true);
+    let entry = gpui_rhai::ModuleId::parse("main").unwrap();
+    let theme = include_str!("../../../registry/themes/default_dark.rhai");
+    // Keep the direct-string/native comparison about the Rhai data boundary;
+    // cold syntax-pack initialization is a separate process-level one-time cost.
+    let _syntax_pack = gpui_rhai::SyntaxRegistry::new();
+
+    let direct_main = format!(
+        "import \"components/code_viewer\" as code_viewer;\nfn view(ctx) {{ code_viewer::CodeViewer(#{{ key: \"bench\", label: \"Benchmark\", language: \"rhai\", source: {} }}) }}",
+        serde_json::to_string(&left).unwrap()
+    );
+    let mut direct_sources = document_component_source();
+    direct_sources.insert(entry.clone(), direct_main);
+    let direct_started = Instant::now();
+    gpui_rhai::EmbeddedScriptView::new(
+        entry.clone(),
+        gpui_rhai::EmbeddedScriptSource::new(direct_sources),
+        theme,
+    )
+    .prepare()
+    .unwrap();
+    let direct_string_rhai_prepare_us = micros(direct_started);
+
+    let native = gpui_rhai::NativeTextDocument::new("benchmark", 1, Arc::<str>::from(left.clone()))
+        .unwrap();
+    let native_main = "import \"components/code_viewer\" as code_viewer;\nfn view(ctx) { code_viewer::CodeViewer(#{ key: \"bench\", label: \"Benchmark\", language: \"rhai\", source: ctx.get_native_text_document(\"benchmark\") }) }";
+    let mut native_sources = document_component_source();
+    native_sources.insert(entry.clone(), native_main.to_owned());
+    let native_started = Instant::now();
+    gpui_rhai::EmbeddedScriptView::new(
+        entry,
+        gpui_rhai::EmbeddedScriptSource::new(native_sources),
+        theme,
+    )
+    .extension(BenchmarkDocumentExtension { document: native })
+    .prepare()
+    .unwrap();
+    let native_document_rhai_prepare_us = micros(native_started);
+
+    let syntaxes = gpui_rhai::SyntaxRegistry::new();
+    let descriptor = |text: String, label: &str| gpui_rhai::DocumentDescriptor {
+        source: gpui_rhai::DocumentSource::from(text),
+        label: label.to_owned(),
+        file_name: Some("benchmark.rhai".to_owned()),
+        language: Some("rhai".to_owned()),
+    };
+    let left_descriptor = descriptor(left, "left");
+    let right_descriptor = descriptor(right, "right");
+    let highlight_started = Instant::now();
+    let highlighted = gpui_rhai::prepare_document(&left_descriptor, &syntaxes).unwrap();
+    let rust_highlight_us = micros(highlight_started);
+    let diff_started = Instant::now();
+    let diff = gpui_rhai::prepare_diff(
+        &left_descriptor,
+        &right_descriptor,
+        gpui_rhai::DiffWhitespace::Exact,
+        Some(3),
+        &syntaxes,
+    )
+    .unwrap();
+    let rust_diff_us = micros(diff_started);
+    assert_eq!(highlighted.lines().len(), lines + 1);
+    assert!(diff.hunk_count > 0);
+
+    let native_ui_main = r#"
+import "components/code_viewer" as code_viewer;
+import "components/diff_viewer" as diff_viewer;
+fn view(ctx) {
+    let left = ctx.get_native_text_document("benchmark-left");
+    let right = ctx.get_native_text_document("benchmark-right");
+    column([
+        code_viewer::CodeViewer(#{ key: "code", label: "Benchmark source",
+            language: "rhai", source: left, wrap: "viewport",
+            style: style().height(relative(0.42)) }),
+        diff_viewer::DiffViewer(#{ key: "diff", mode: "split", wrap: "viewport",
+            left: #{ source: left, label: "Left", language: "rhai" },
+            right: #{ source: right, label: "Right", language: "rhai" },
+            style: style().height(relative(0.58)) })
+    ]).with_style(style().width(relative(1)).height(relative(1))
+        .min_width(px(0)).min_height(px(0)))
+}
+"#;
+    let mut native_ui_sources = document_component_source();
+    native_ui_sources.insert(
+        gpui_rhai::ModuleId::parse("document-ui-benchmark").unwrap(),
+        native_ui_main.to_owned(),
+    );
+    let native_ui_prepare_started = Instant::now();
+    let native_ui_clock = gpui_rhai::ManualRuntimeClock::new(Instant::now());
+    let native_ui_prepared = gpui_rhai::EmbeddedScriptView::new(
+        gpui_rhai::ModuleId::parse("document-ui-benchmark").unwrap(),
+        gpui_rhai::EmbeddedScriptSource::new(native_ui_sources),
+        theme,
+    )
+    .extension(BenchmarkDocumentPairExtension {
+        left: gpui_rhai::NativeTextDocument::new(
+            "benchmark-left",
+            1,
+            left_descriptor.source.text(),
+        )
+        .unwrap(),
+        right: gpui_rhai::NativeTextDocument::new(
+            "benchmark-right",
+            1,
+            right_descriptor.source.text(),
+        )
+        .unwrap(),
+    })
+    .runtime_clock(native_ui_clock.clock())
+    .prepare()
+    .unwrap();
+    let native_ui_prepare_us = micros(native_ui_prepare_started);
+
+    let captured = Rc::new(RefCell::new(None));
+    let captured_for_window = Rc::clone(&captured);
+    let native_ui_mount_started = Instant::now();
+    let window = cx.add_window(move |window, cx| {
+        let host = ScriptViewHost::new("document-benchmark-window", cx).unwrap();
+        let view = native_ui_prepared
+            .mount(
+                ScriptViewConfig::new("document-benchmark-view"),
+                host.clone(),
+                window,
+                cx,
+            )
+            .unwrap();
+        *captured_for_window.borrow_mut() = Some(view.clone());
+        BenchmarkHost { host, view }
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    cx.run_until_parked();
+    let view = captured.borrow().as_ref().unwrap().clone();
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    visual.simulate_resize(size(px(1_180.0), px(820.0)));
+    let _ = settle(cx, &mut visual, &view);
+    let native_ui_mount_first_frame_us = micros(native_ui_mount_started);
+
+    let resize_samples = env_usize(
+        "GPUI_RHAI_BENCH_SAMPLES",
+        if cfg!(debug_assertions) { 3 } else { 30 },
+    );
+    let mut resize_dispatch_us = Vec::with_capacity(resize_samples);
+    let mut resize_settle_us = Vec::with_capacity(resize_samples);
+    for index in 0..resize_samples {
+        let dimensions = if index.is_multiple_of(2) {
+            size(px(900.0), px(700.0))
+        } else {
+            size(px(1_180.0), px(820.0))
+        };
+        let started = Instant::now();
+        visual.simulate_resize(dimensions);
+        resize_dispatch_us.push(micros(started));
+        let snapshot = settle(cx, &mut visual, &view);
+        assert_eq!(snapshot.dirty_components, 0, "document resize did not settle");
+        resize_settle_us.push(micros(started));
+    }
+    resize_dispatch_us.sort_unstable();
+    resize_settle_us.sort_unstable();
+    let native_ui_resize_dispatch_p95_us = percentile(&resize_dispatch_us, 95);
+    let native_ui_resize_settle_p50_us = percentile(&resize_settle_us, 50);
+    let native_ui_resize_settle_p95_us = percentile(&resize_settle_us, 95);
+
+    let report = DocumentBenchmarkReport {
+        schema: "gpui-rhai-document-e2e-v2",
+        lines,
+        bytes: highlighted.text().len(),
+        direct_string_rhai_prepare_us,
+        native_document_rhai_prepare_us,
+        rust_highlight_us,
+        rust_diff_us,
+        native_ui_prepare_us,
+        native_ui_mount_first_frame_us,
+        native_ui_resize_dispatch_p95_us,
+        native_ui_resize_settle_p50_us,
+        native_ui_resize_settle_p95_us,
+        diff_hunks: diff.hunk_count,
+        diff_rows: diff.rows.len(),
+    };
+    println!("{}", serde_json::to_string_pretty(&report).unwrap());
 }

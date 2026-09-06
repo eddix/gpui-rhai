@@ -1,6 +1,6 @@
 # Official component catalog
 
-gpui-rhai ships 48 editable Rhai source components. They all use the same
+gpui-rhai ships 50 editable Rhai source components. They all use the same
 public atoms and generic runtime mechanisms available to application code; no
 official component receives a private high-level node constructor.
 
@@ -98,6 +98,21 @@ composes the behavior with Dialog, and
 forwards `query_change`, `active_change`, and `action` through formal component
 events. It does not register a global shortcut. The Host action/keybinding
 system owns the shortcut that changes its controlled `open` value.
+
+## CodeViewer and DiffViewer
+
+`CodeViewer` is a virtualized native read-only source surface with built-in
+Rhai, Rust, Go, web/configuration and common scripting language definitions.
+It accepts a direct string or tracked `NativeTextDocument`, supports continuous
+selection, original-text copying, search, line navigation, wrapping, and
+one-based location activation without becoming an editor.
+
+`DiffViewer` compares neutral left/right descriptors in unified or split form.
+Line hunks, Unicode-grapheme intraline changes, context folds, synchronized
+vertical layout, per-pane horizontal scrolling, search and patch copying stay
+in Rust. No row renderer or complete diff payload crosses into Rhai. See the
+[document viewer overview](../document-viewers.md) for Host registration,
+resource limits and extension points.
 
 ## Overlay family
 

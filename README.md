@@ -16,7 +16,7 @@ in [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md).
 
 The implemented complex-control line is specified under
 [docs/components](docs/components/) for DatePicker, Select, Table, Pagination,
-and Textarea.
+Textarea, CodeViewer, and DiffViewer.
 
 ## Quick start
 
@@ -62,6 +62,8 @@ cargo run -p gpui-rhai --example dashboard_layout
 cargo run -p gpui-rhai --example form_showcase
 cargo run -p gpui-rhai --example data_table
 cargo run -p gpui-rhai --example component_gallery
+cargo run --release -p gpui-rhai --example code_viewer
+cargo run --release -p gpui-rhai --example diff_viewer
 cargo run --release -p gpui-rhai --example table_1000
 cargo run -p gpui-rhai-cli -- theme-studio
 cargo run -p gpui-rhai --example extension_host

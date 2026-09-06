@@ -176,7 +176,8 @@ performance probes demonstrate unchanged subtrees do not execute Rhai.
 - Implement inline Span runs, wrapping/alignment/ellipsis/clamp, continuous
   cross-node selection/copy, subtree search/highlight, links, and automation
   geometry.
-- Establish shared document-text infrastructure for future Markdown/Code/Diff.
+- Reuse the native read-only document infrastructure for a future Markdown
+  renderer and eventual independently scoped CodeEditor.
 - Implement retained keyed vector scenes, path building, fill/stroke/gradient,
   transform/clip, hit testing, events, accessibility, signals, and budgets.
 - Ensure no Rhai call occurs during GPUI layout/prepaint/paint.
@@ -413,7 +414,7 @@ This is one final delivery, not a sequence of preview releases. Keep version
 - Register every component and transitive dependency in the CLI, metadata,
   definitions, copied-source update path, and Theme Studio.
 - Add one polished `component_gallery` example that interactively exercises all
-  48 official components, category navigation, all theme hot switches, and
+  50 official components, category navigation, all theme hot switches, and
   important controlled states. Theme Studio remains the exhaustive theme-state
   contract; the gallery is the user-facing experience demo.
 - Update User Guide, component authoring/API docs, examples, release notes,
@@ -421,6 +422,20 @@ This is one final delivery, not a sequence of preview releases. Keep version
 - Certify pointer, keyboard, focus, accessibility, RTL, reduced motion, resize,
   and every bundled theme on macOS. Linux and Windows are explicitly outside
   the first public release gate until hardware or public CI is available.
+
+### P0.5 Read-only document platform
+
+- Ship CodeViewer and DiffViewer as source-owned components over public native
+  lifecycle primitives, without introducing a code editor or VCS authority.
+- Support direct strings plus exact-reader-invalidating NativeTextDocument
+  revisions; keep syntax/diff/search work on cancellable background jobs.
+- Include Rhai, Rust, Go and the agreed web/configuration/scripting language
+  pack, Host syntax extension, unified/split neutral comparison, Unicode
+  intraline refinement, context folding, selection/copy/search/actions and
+  per-pane split scrolling.
+- Complete semantic document palettes for every theme, standalone examples,
+  Gallery/Theme Studio integration, Host/User Guide documentation and a
+  repeatable 20,000-line release baseline.
 
 **P0 gate:** no component is experimental; the full workspace, CLI, native
 macOS interaction, registry, Theme Studio, gallery preparation/smoke, Clippy,

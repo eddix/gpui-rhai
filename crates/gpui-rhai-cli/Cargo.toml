@@ -17,7 +17,7 @@ doc = false
 
 [dependencies]
 clap.workspace = true
-gpui-rhai = { path = "../gpui-rhai" }
+gpui-rhai = { version = "0.1.0", path = "../gpui-rhai" }
 semver.workspace = true
 serde.workspace = true
 serde_json.workspace = true

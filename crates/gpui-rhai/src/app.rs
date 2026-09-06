@@ -54,6 +54,7 @@ pub fn install(cx: &mut App) {
     }
     init_text_input(cx);
     init_text_area(cx);
+    crate::init_document_view(cx);
     cx.bind_keys([KeyBinding::new(
         "cmd-c",
         CopySelectedText,
@@ -666,6 +667,36 @@ impl ScriptViewHandle {
                 .runtime()
                 .borrow_mut()
                 .replace_native_collection_from_host(name, collection)?;
+            if changed {
+                cx.notify();
+            }
+            Ok::<_, ScriptViewError>(changed)
+        })
+    }
+
+    /// Replace one registered Host-owned text document revision.
+    ///
+    /// Only components that read this document are invalidated. The immutable
+    /// text snapshot may be prepared on a background thread before publication.
+    ///
+    /// # Errors
+    ///
+    /// Returns after disposal or when the document name is unknown.
+    pub fn replace_native_text_document(
+        &self,
+        name: &str,
+        document: crate::NativeTextDocument,
+        cx: &mut App,
+    ) -> Result<bool, ScriptViewError> {
+        if self.0.disposed.get() {
+            return Err(ScriptViewError::DisposedView(self.0.view_id.clone()));
+        }
+        self.0.entity.update(cx, |view, cx| {
+            let changed = view
+                .lifecycle
+                .runtime()
+                .borrow_mut()
+                .replace_native_text_document_from_host(name, document)?;
             if changed {
                 cx.notify();
             }
@@ -3893,6 +3924,8 @@ pub enum ScriptViewError {
     Signal(#[from] crate::SignalError),
     #[error(transparent)]
     NativeCollection(#[from] crate::NativeCollectionError),
+    #[error(transparent)]
+    Document(#[from] crate::DocumentError),
     #[error(transparent)]
     ElementRef(#[from] crate::ElementRefError),
     #[error(transparent)]

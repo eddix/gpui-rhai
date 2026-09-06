@@ -25,6 +25,7 @@ security, testing, and troubleshooting.
 - [Assets and fonts](assets.md)
 - [Retained Canvas scenes](canvas.md)
 - [Native virtual collections](virtual-list.md) and [Rust-owned collection data](native-collections.md)
+- [Native text documents and read-only viewers](document-viewers.md)
 - [Accessibility status](accessibility.md)
 - [Official component catalog](components/catalog.md)
 
@@ -38,6 +39,7 @@ Complex component contracts:
 - [Pagination](components/pagination.md)
 - [Toast](components/toast.md)
 - [Command and CommandDialog](components/catalog.md#command-and-commanddialog)
+- [CodeViewer](components/code-viewer.md) and [DiffViewer](components/diff-viewer.md)
 - [Slider and ScrollArea](components/catalog.md#native-interaction-foundations)
 
 ## Develop the framework

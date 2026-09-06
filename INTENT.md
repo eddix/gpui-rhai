@@ -300,6 +300,14 @@ Font files are declared through AssetId/provider metadata, loaded before
 render, registered under stable aliases, and hot reloaded without render-time
 file I/O. Unsupported variable-font axes are reported rather than simulated.
 
+CodeViewer and DiffViewer are the first read-only consumers of the native
+document infrastructure. They accept direct strings or revisioned Host-owned
+text snapshots, parse syntax and calculate neutral left/right hunks away from
+the Rhai foreground, virtualize visual rows, and keep selection/search/scroll
+state native. Diff supports unified and aligned split projections, Unicode
+intraline refinement and expandable equal context. Neither surface acquires
+filesystem, Git, editing, merge, LSP, or patch-application authority.
+
 ### 8.5 Canvas
 
 Canvas is a declarative retained vector scene with keyed rectangles, rounded

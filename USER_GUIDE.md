@@ -267,7 +267,7 @@ Use `part_styles` for an intended component customization point. Edit the
 copied `.rhai` source when the product needs a structural change. Do not hide a
 structural fork behind a growing stack of arbitrary overrides.
 
-The bundled catalog contains 48 official source components:
+The bundled catalog contains 50 official source components:
 
 - foundations and status: Label, Divider, Icon, Avatar, Badge, Tag, Alert,
   Card, GroupBox, Empty, Kbd, Progress, Spinner, Skeleton, TitleBar, and
@@ -280,6 +280,7 @@ The bundled catalog contains 48 official source components:
   and ScrollArea;
 - commands and overlays: Command, CommandDialog, ContextMenu, Popover, Dialog,
   AlertDialog, Sheet, Tooltip, and Toast;
+- read-only documents: CodeViewer and DiffViewer;
 - primitives for Box/Text/Image/SVG/Canvas, layout, scrolling, refs, signals,
   layers, and generic overlays.
 
@@ -595,6 +596,34 @@ viewBox and optical center.
 See [Style](docs/style.md), [Assets](docs/assets.md), [Canvas](docs/canvas.md),
 and [Locale and RTL](docs/locale-and-rtl.md).
 
+### 8.1 CodeViewer, DiffViewer, and NativeTextDocument
+
+Use `CodeViewer` for a read-only source document and `DiffViewer` for a neutral
+left/right comparison. They are native document surfaces, not arrays of Rhai
+Text rows: syntax parsing, diff calculation, virtual scrolling, selection,
+search and hunk navigation stay in Rust.
+
+Both accept direct strings. A Rust Host with large or frequently changing text
+registers a revisioned `NativeTextDocument`, reads it from Rhai with
+`ctx.get_native_text_document(name)`, and publishes later revisions through
+`ScriptViewHandle::replace_native_text_document`. Only exact subscribed
+components rerender; native parsing then completes in a cancellable background
+job without moving Rhai values across threads.
+
+Dependency ownership follows callback context: the formal component whose
+`ctx` calls `get_native_text_document` is the reader. Keep that call in the
+smallest component that owns the Viewer when replacing one document should not
+rerun an application-level parent.
+
+CodeViewer is deliberately read-only. DiffViewer uses direction-neutral
+`left`/`right` descriptors and supports unified/split presentation, strict or
+whitespace-insensitive comparison, Unicode-grapheme intraline emphasis, and
+expandable equal context. It does not edit, merge, stage, or apply patches.
+
+See [Native document viewers](docs/document-viewers.md),
+[CodeViewer](docs/components/code-viewer.md), and
+[DiffViewer](docs/components/diff-viewer.md).
+
 ## 9. Themes and Theme Studio
 
 Components refer only to semantic roles such as:
@@ -691,6 +720,10 @@ Guidelines:
 - Keep large stable row sets in `NativeCollection`; let Rhai declare the Table
   and controlled state while Rust caches sort/group/collapse order and projects
   only visible rows.
+- Keep large or rapidly replaced source text in `NativeTextDocument`; direct
+  strings remain the simple path. CodeViewer and DiffViewer compute from
+  immutable typed snapshots on background workers and commit complete matching
+  revisions.
 - Use Table's `group_by`, `collapsed_groups`, and `on_group_toggle` contract for
   row grouping. Group values are non-empty strings from a declared column;
   headers count as virtual items, skip selection, and stick by default through
@@ -709,7 +742,8 @@ Guidelines:
 
 See [Performance](docs/performance.md), [Virtual lists](docs/virtual-list.md),
 [Rust-owned collections](docs/native-collections.md), and
-[Custom primitives](docs/custom-primitives.md).
+[Native document viewers](docs/document-viewers.md), and [Custom
+primitives](docs/custom-primitives.md).
 
 ## 12. Hot reload, errors, and production
 

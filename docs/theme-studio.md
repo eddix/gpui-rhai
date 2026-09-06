@@ -35,12 +35,14 @@ Leading `//` attribution comments are preserved.
 
 ## Component specimen
 
-The right pane renders all 48 official components from the same source shipped
+The right pane renders all 50 official components from the same source shipped
 to applications. It begins with all eight live typography roles, then includes
 action variants and sizes, form controls, choices,
 status and loading states, navigation, grouped/sticky virtualized Table,
 Pagination, themed ScrollArea, Slider, Command, ContextMenu, Sheet, assets, and
-the complete overlay family.
+the complete overlay family, CodeViewer, and unified/split DiffViewer. Loaded
+themes materialize their own syntax/search/diff palette from semantic anchors;
+explicit namespaced overrides remain editable data in the canonical theme.
 
 Product examples remain responsible for realistic application composition;
 Theme Studio is the single exhaustive component/theme contract. The standalone
@@ -53,6 +55,6 @@ cargo run -p gpui-rhai --example component_gallery
 
 The editor and specimen panes scroll independently. Gallery visual runs also
 accept `GPUI_RHAI_VISUAL_THEME`, `GPUI_RHAI_VISUAL_LOCALE`, and
-`GPUI_RHAI_VISUAL_STATE`; states include the five categories, `compact`,
-`regular`, `dialog`, `popover`, `menu`, `toast`, `command-dialog`, `sheet`, and
+`GPUI_RHAI_VISUAL_STATE`; states include the six categories, `compact`,
+`regular`, `documents`, `dialog`, `popover`, `menu`, `toast`, `command-dialog`, `sheet`, and
 `alert-dialog`.

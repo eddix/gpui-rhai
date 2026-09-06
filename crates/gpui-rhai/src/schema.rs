@@ -69,6 +69,7 @@ pub enum ValueSchema {
     Asset,
     Signal,
     Collection,
+    Document,
     Ref,
     Handle {
         kind: String,
@@ -247,6 +248,7 @@ impl ValueSchema {
             | Self::Asset
             | Self::Signal
             | Self::Collection
+            | Self::Document
             | Self::Ref
             | Self::Handle { .. } => Ok(()),
         }
@@ -344,6 +346,13 @@ impl ValueSchema {
                 value,
                 path,
                 "NativeCollection",
+                issues,
+            ),
+            Self::Document => expect_type(
+                value.is::<crate::NativeTextDocument>(),
+                value,
+                path,
+                "NativeTextDocument",
                 issues,
             ),
             Self::Ref => expect_type(value.is::<ElementRef>(), value, path, "ElementRef", issues),

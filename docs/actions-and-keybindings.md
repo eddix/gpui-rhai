@@ -35,3 +35,12 @@ error; repeating the same binding is idempotent. GPUI first offers keyboard inpu
 to the focused native primitive; unhandled input then reaches the action system.
 Register an app action once (normally only when `ctx.window_id() == "main"`) so
 opening another script window does not redefine policy accidentally.
+
+CodeViewer and DiffViewer install only focus-scoped GPUI actions. `Cmd+F`,
+`Cmd+G`, `Shift+Cmd+G`, `Escape`, `Enter`, and copy apply inside the focused
+document surface. Diff additionally binds `Option+Up`/`Option+Down` for hunks,
+`Shift+Cmd+E`/`Shift+Cmd+C` for context folds, and `Option+Cmd+C` for the
+explicit left-to-right unified patch. None is global. A Rust Host can bind or
+dispatch `gpui_rhai::RevealDocumentLine { side, line }`; CodeViewer requires
+`side: None`, while DiffViewer accepts `Some(DiffSide::Left)` or
+`Some(DiffSide::Right)`.

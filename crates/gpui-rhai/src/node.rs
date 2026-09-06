@@ -1090,7 +1090,8 @@ impl UiNode {
                     | crate::PrimitiveValue::Callback(_)
                     | crate::PrimitiveValue::Style(_)
                     | crate::PrimitiveValue::Length(_)
-                    | crate::PrimitiveValue::Asset(_) => None,
+                    | crate::PrimitiveValue::Asset(_)
+                    | crate::PrimitiveValue::Document(_) => None,
                 })
                 .collect(),
             UiNodeKind::Overlay {

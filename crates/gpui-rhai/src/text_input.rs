@@ -98,15 +98,15 @@ pub(crate) struct TextInputEntity {
 }
 
 #[derive(Clone)]
-struct TextInputConfig {
-    value: String,
-    placeholder: String,
-    disabled: bool,
-    read_only: bool,
-    autofocus: bool,
-    selection_color: Rgba8,
-    caret_color: Rgba8,
-    typography: NativeTypography,
+pub(crate) struct TextInputConfig {
+    pub(crate) value: String,
+    pub(crate) placeholder: String,
+    pub(crate) disabled: bool,
+    pub(crate) read_only: bool,
+    pub(crate) autofocus: bool,
+    pub(crate) selection_color: Rgba8,
+    pub(crate) caret_color: Rgba8,
+    pub(crate) typography: NativeTypography,
 }
 
 #[derive(Clone, Debug)]
@@ -166,7 +166,15 @@ fn native_length(
 }
 
 impl TextInputEntity {
-    fn new(config: TextInputConfig, callbacks: TextInputCallbacks, cx: &mut Context<Self>) -> Self {
+    pub(crate) fn callbacks(&self) -> TextInputCallbacks {
+        self.callbacks.clone()
+    }
+
+    pub(crate) fn new(
+        config: TextInputConfig,
+        callbacks: TextInputCallbacks,
+        cx: &mut Context<Self>,
+    ) -> Self {
         Self {
             focus: cx.focus_handle().tab_stop(!config.disabled),
             buffer: TextBuffer::new(&config.value),
@@ -184,7 +192,7 @@ impl TextInputEntity {
         }
     }
 
-    fn update_props(
+    pub(crate) fn update_props(
         &mut self,
         config: &TextInputConfig,
         callbacks: TextInputCallbacks,

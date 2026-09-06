@@ -6,6 +6,8 @@ pub mod date;
 pub mod dependency;
 pub mod devtools;
 pub mod diagnostic;
+pub mod document;
+pub mod document_view;
 pub mod effect;
 pub mod element_ref;
 pub mod engine;
@@ -123,6 +125,17 @@ pub use devtools::{
 };
 pub use diagnostic::{
     Diagnostic, DiagnosticCode, DiagnosticContext, DiagnosticFrame, DiagnosticSeverity,
+};
+pub use document::{
+    DiffAlignedRow, DiffDisplayRow, DiffRowKind, DiffViewMode, DiffWhitespace, DocumentDescriptor,
+    DocumentError, DocumentLimits, DocumentLine, DocumentRuntimeConfig, DocumentSource,
+    DocumentWrap, NativeTextDocument, NativeTextDocumentRegistry, PreparedDiff, PreparedDocument,
+    SyntaxRegistry, SyntaxSpan, SyntaxTokenKind, prepare_diff, prepare_diff_with_limits,
+    prepare_document, prepare_document_with_limits,
+};
+pub use document_view::{
+    CodeViewerPrimitiveHandler, DiffSide, DiffViewerPrimitiveHandler, RevealDocumentLine,
+    code_viewer_primitive_descriptor, diff_viewer_primitive_descriptor, init_document_view,
 };
 pub use effect::{EffectDescriptor, EffectError, EffectId, EffectRegistry};
 pub use element_ref::{ElementRef, ElementRefError, ElementRefId, ElementRefRegistry};

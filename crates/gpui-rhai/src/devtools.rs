@@ -568,6 +568,12 @@ fn primitive_value(value: &PrimitiveValue) -> String {
         PrimitiveValue::Style(_) => "<style>".to_owned(),
         PrimitiveValue::Length(length) => format!("{length:?}"),
         PrimitiveValue::Asset(asset) => asset.as_str().to_owned(),
+        PrimitiveValue::Document(document) => format!(
+            "{}@{} ({} bytes)",
+            document.identity(),
+            document.revision(),
+            document.text().len()
+        ),
     }
 }
 

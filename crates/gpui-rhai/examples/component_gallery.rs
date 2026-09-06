@@ -120,10 +120,12 @@ fn scripts(main: &str) -> EmbeddedScriptSource {
         component!("combobox", "combobox"),
         component!("command", "command"),
         component!("command_dialog", "command_dialog"),
+        component!("code_viewer", "code_viewer"),
         component!("context_menu", "context_menu"),
         component!("date_picker", "date_picker"),
         component!("dialog", "dialog"),
         component!("divider", "divider"),
+        component!("diff_viewer", "diff_viewer"),
         component!("empty", "empty"),
         component!("form_field", "form_field"),
         component!("group_box", "group_box"),
@@ -393,13 +395,13 @@ fn gallery_category(explicit: Option<String>, visual_state: &str) -> String {
         .filter(|category| {
             matches!(
                 category.as_str(),
-                "all" | "foundations" | "forms" | "navigation" | "overlays"
+                "all" | "foundations" | "forms" | "navigation" | "documents" | "overlays"
             )
         })
         .or_else(|| {
             matches!(
                 visual_state,
-                "all" | "foundations" | "forms" | "navigation" | "overlays"
+                "all" | "foundations" | "forms" | "navigation" | "documents" | "overlays"
             )
             .then(|| visual_state.to_owned())
         })
@@ -446,7 +448,14 @@ mod tests {
 
     #[test]
     fn every_gallery_category_prepares_with_all_official_sources() {
-        for category in ["all", "foundations", "forms", "navigation", "overlays"] {
+        for category in [
+            "all",
+            "foundations",
+            "forms",
+            "navigation",
+            "documents",
+            "overlays",
+        ] {
             prepared(category).unwrap_or_else(|error| panic!("{category}: {error}"));
         }
         for theme in ["default-light", "catppuccin-mocha", "nord"] {
@@ -463,7 +472,7 @@ mod tests {
                 "default"
             )))
             .len(),
-            49
+            51
         );
         assert_eq!(gallery_category(None, "forms"), "forms");
         assert_eq!(

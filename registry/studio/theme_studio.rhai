@@ -46,6 +46,8 @@ import "components/toggle_group" as toggle_group;
 import "components/scroll_area" as scroll_area;
 import "components/title_bar" as title_bar;
 import "components/status_bar" as status_bar;
+import "components/code_viewer" as code_viewer;
+import "components/diff_viewer" as diff_viewer;
 
 fn color_field(name, value) {
     row([
@@ -109,7 +111,7 @@ fn state_schema() {
         gallery_theme: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: __GALLERY_THEME__ } },
         gallery_theme_open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: false } },
         gallery_theme_query: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "" } },
-        gallery_category: #{ schema: #{ type: "string", allowed: ["all", "foundations", "forms", "navigation", "overlays"] },
+        gallery_category: #{ schema: #{ type: "string", allowed: ["all", "foundations", "forms", "navigation", "documents", "overlays"] },
             "default": #{ type: "string", value: __GALLERY_CATEGORY__ } },
     } }
 }
@@ -415,6 +417,21 @@ fn specimen_data() {
     ]).with_style(style().gap(px(7)))
 }
 
+fn specimen_documents() {
+    let left = "fn deploy(host) {\n    let port = 8080;\n    log(`deploy ${host}:${port}`);\n}\n";
+    let right = "fn deploy(host) {\n    let port = 8443;\n    log(`deploy ${host}:${port}`);\n    verify(host);\n}\n";
+    column([
+        specimen_title("DOCUMENTS", "Native code and neutral two-way diff surfaces."),
+        code_viewer::CodeViewer(#{ key: "gallery-code", label: "Rhai source",
+            file_name: "deploy.rhai", language: "rhai", source: right,
+            style: style().height(px(180)) }),
+        diff_viewer::DiffViewer(#{ key: "gallery-diff", mode: "split",
+            left: #{ source: left, label: "Server A", file_name: "deploy.rhai", language: "rhai" },
+            right: #{ source: right, label: "Server B", file_name: "deploy.rhai", language: "rhai" },
+            style: style().height(px(230)) })
+    ]).with_style(style().gap(px(7)))
+}
+
 fn p0_commands() {
     [
         #{ value: "new", label: "New window", keywords: ["create"], group: "Window", shortcut: "⌘N" },
@@ -557,6 +574,7 @@ fn specimen(ctx) {
             .border_bottom(px(1)).border_color(theme_color("border"))),
         columns,
         specimen_data(),
+        specimen_documents(),
         specimen_p0(ctx)
     ]).with_style(style().padding(px(16)).gap(px(14)).background(theme_color("surface"))
         .typography("body"))
@@ -579,6 +597,7 @@ fn gallery_header(ctx) {
     let categories = [];
     for entry in [#{ value: "all", label: "All" }, #{ value: "foundations", label: "Foundations" },
         #{ value: "forms", label: "Forms" }, #{ value: "navigation", label: "Navigation & data" },
+        #{ value: "documents", label: "Code & diff" },
         #{ value: "overlays", label: "Commands & overlays" }] {
         categories.push(button::Button(#{ text: entry.label, size: "sm",
             variant: if ctx.get_state("gallery_category") == entry.value { "primary" } else { "ghost" } })
@@ -605,13 +624,13 @@ fn gallery_title_bar(ctx) {
     ]).with_style(style().min_width(px(0)).gap(px(6)).items_center().overflow_hidden());
     let config = #{ label: "GPUI Rhai Component Gallery", title: breadcrumb,
         inset_start: 70, end: [themes] };
-    if !compact { config.subtitle = "48 source-owned components · native GPUI behavior · live themes"; }
+    if !compact { config.subtitle = "50 source-owned components · native GPUI behavior · live themes"; }
     title_bar::TitleBar(config)
 }
 
 fn gallery_status_bar(ctx) {
     status_bar::StatusBar(#{ label: "Component Gallery status",
-        start: [text("48 components")],
+        start: [text("50 components")],
         center: [text(ctx.get_state("gallery_theme"))],
         end: [text(ctx.get_state("gallery_category")), text(ctx.viewport_class())] })
 }
@@ -626,6 +645,9 @@ fn gallery_content(ctx) {
             .with_style(style().padding(px(14)).gap(px(14)))
     } else if category == "navigation" {
         column([specimen_navigation(), specimen_data()])
+            .with_style(style().padding(px(14)).gap(px(14)))
+    } else if category == "documents" {
+        column([specimen_documents()])
             .with_style(style().padding(px(14)).gap(px(14)))
     } else if category == "overlays" {
         column([specimen_overlays(ctx), specimen_p0(ctx)])

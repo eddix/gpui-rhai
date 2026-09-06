@@ -10,7 +10,7 @@ exec cargo test \
   --locked \
   --manifest-path tests/performance/Cargo.toml \
   --test e2e \
-  table_1000_end_to_end_baseline \
+  end_to_end_baseline \
   -- \
   --ignored \
   --nocapture \

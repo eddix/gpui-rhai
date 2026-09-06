@@ -57,7 +57,7 @@ The source registry now includes the complete official component specimen,
 fifteen bundled theme variants, and Theme Studio for creating, importing,
 editing, validating, previewing, and saving gpui-rhai themes.
 
-The public-launch registry expands to 48 official components. Dropdown is
+The public-launch registry expands to 50 official components. Dropdown is
 destructively renamed to the strictly controlled Combobox. New source-owned
 families include Alert/AlertDialog, Badge, Card/GroupBox/Empty, Kbd/Spinner,
 ButtonGroup/InputGroup, Toggle/ToggleGroup, Slider, ScrollArea, ContextMenu,
@@ -92,6 +92,18 @@ Their active item is a controlled virtual-collection reveal target: keyboard
 and Host updates follow beyond the visible window, while unchanged targets no
 longer reset manual wheel/trackpad scrolling. Generic virtual collections now
 distinguish stable-key payload updates from structural changes.
+
+The public registry now includes `CodeViewer` and `DiffViewer` over retained
+native document primitives. Direct strings and exact-reader-invalidating
+`NativeTextDocument` revisions share background syntax parsing, virtual rows,
+continuous source selection, search, wrapping and line navigation. DiffViewer
+adds neutral left/right unified and split projections, Unicode-grapheme
+intraline emphasis, expandable context, focus-scoped hunk actions, independent
+split-pane horizontal scrolling and explicit left-to-right unified-patch copy.
+The built-in language pack includes Rhai, Rust, Go, common web/configuration and
+scripting languages; every theme materializes syntax/search/diff semantic
+colors. Host-configurable resource limits, standalone examples, Gallery/Theme
+Studio specimens and a release benchmark cover both document input paths.
 
 The initial theme contract includes explicit `on_accent`, `on_danger`,
 `on_warning`, and `on_success` foregrounds. Reduced motion renders looping

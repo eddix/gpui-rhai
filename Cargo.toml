@@ -29,6 +29,9 @@ image = { version = "0.25.10", default-features = false, features = ["png", "jpe
 jiff = { version = "0.2.35", default-features = false, features = ["std", "tz-system", "tzdb-zoneinfo"] }
 usvg = { version = "=0.45.1", default-features = false }
 event-listener = "5.4.2"
+similar = { version = "=3.2.0", features = ["inline", "unicode"] }
+syntect = { version = "=5.3.0", default-features = false, features = ["default-syntaxes", "regex-fancy", "yaml-load"] }
+regex = "=1.13.1"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

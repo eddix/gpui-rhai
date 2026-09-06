@@ -285,6 +285,17 @@ push-off; Table contributes only group policy, controlled collapse, semantics,
 and styling. This is a public collection mechanism, not a privileged native
 Table.
 
+CodeViewer and DiffViewer are copied Rhai components over public retained
+document primitives. `NativeTextDocument` is an immutable identity/revision/
+text snapshot with the same exact-reader invalidation pattern as
+NativeCollection; direct strings enter the identical prepared-document model.
+Only typed `Arc<str>` snapshots, syntax registries, limits and owned diff output
+cross to background workers—Rhai Engine/Dynamic/FnPtr values remain on the
+foreground. Native entities atomically install the latest matching result,
+virtualize visual rows, and retain selection/search/fold/scroll state without a
+per-line Rhai callback. Diff uses neutral left/right semantics and keeps patch
+direction an explicit copy command rather than application policy.
+
 Short-lived render elements never enter persistent runtime state.
 
 Window width is reduced to a configurable `compact`/`regular`/`wide` class.

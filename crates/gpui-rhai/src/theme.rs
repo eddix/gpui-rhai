@@ -91,6 +91,70 @@ pub enum ThemeTokenValue {
 }
 
 impl ThemeTokens {
+    fn install_document_defaults(&mut self) {
+        let color = |name: &str| self.colors.get(name).copied();
+        let syntax = self.namespaces.entry("syntax".to_owned()).or_default();
+        for (name, value) in [
+            ("comment", color("text_muted")),
+            ("string", color("success")),
+            ("number", color("warning")),
+            ("keyword", color("accent")),
+            ("function", color("accent_hover")),
+            ("type", color("warning")),
+            ("variable", color("text_primary")),
+            ("constant", color("danger")),
+            ("operator", color("accent")),
+            ("punctuation", color("text_muted")),
+            ("tag", color("danger")),
+            ("attribute", color("warning")),
+        ] {
+            if let Some(value) = value {
+                syntax
+                    .entry(name.to_owned())
+                    .or_insert(ThemeTokenValue::Color(value));
+            }
+        }
+        let document = self.namespaces.entry("document".to_owned()).or_default();
+        if let Some(value) = color("warning") {
+            document
+                .entry("search_match".to_owned())
+                .or_insert(ThemeTokenValue::Color(with_alpha(value, 0x55)));
+            document
+                .entry("search_current".to_owned())
+                .or_insert(ThemeTokenValue::Color(with_alpha(value, 0xaa)));
+        }
+        let diff = self.namespaces.entry("diff".to_owned()).or_default();
+        for (name, value) in [
+            (
+                "left_only",
+                color("danger").map(|value| with_alpha(value, 0x24)),
+            ),
+            (
+                "right_only",
+                color("success").map(|value| with_alpha(value, 0x24)),
+            ),
+            (
+                "modified",
+                color("accent").map(|value| with_alpha(value, 0x18)),
+            ),
+            (
+                "inline_left",
+                color("danger").map(|value| with_alpha(value, 0x66)),
+            ),
+            (
+                "inline_right",
+                color("success").map(|value| with_alpha(value, 0x66)),
+            ),
+            ("gutter", color("surface_raised")),
+            ("fold", color("surface_hover")),
+        ] {
+            if let Some(value) = value {
+                diff.entry(name.to_owned())
+                    .or_insert(ThemeTokenValue::Color(value));
+            }
+        }
+    }
+
     /// Validate the initial semantic token contract.
     ///
     /// # Errors
@@ -445,7 +509,8 @@ impl ThemeManager {
         selection: ThemeSelection,
     ) -> Result<Self, ThemeError> {
         let mut grouped = BTreeMap::<String, BTreeMap<String, ThemeVariant>>::new();
-        for variant in variants {
+        for mut variant in variants {
+            variant.tokens.install_document_defaults();
             variant.validate()?;
             let family = grouped.entry(variant.family.clone()).or_default();
             if family
@@ -515,7 +580,10 @@ impl ThemeManager {
     /// # Errors
     ///
     /// Returns [`ThemeError`] for invalid or duplicate families.
-    pub fn register_family(&mut self, family: ThemeFamily) -> Result<(), ThemeError> {
+    pub fn register_family(&mut self, mut family: ThemeFamily) -> Result<(), ThemeError> {
+        for variant in family.variants.values_mut() {
+            variant.tokens.install_document_defaults();
+        }
         family.validate()?;
         if self.families.contains_key(&family.name) {
             return Err(ThemeError::DuplicateFamily(family.name));
@@ -533,7 +601,8 @@ impl ThemeManager {
     /// # Errors
     ///
     /// Returns validation or unknown-selection errors.
-    pub fn replace_variant(&mut self, variant: ThemeVariant) -> Result<(), ThemeError> {
+    pub fn replace_variant(&mut self, mut variant: ThemeVariant) -> Result<(), ThemeError> {
+        variant.tokens.install_document_defaults();
         variant.validate()?;
         let selection = ThemeSelection::new(variant.family.clone(), variant.name.clone());
         let family = self
@@ -761,10 +830,15 @@ pub fn load_theme_source(
     let raw: Dynamic = engine
         .call_fn(&mut Scope::new(), &ast, "theme", ())
         .map_err(|error| ThemeError::Script(error.to_string()))?;
-    let theme = rhai::serde::from_dynamic::<ThemeVariant>(&raw)
+    let mut theme = rhai::serde::from_dynamic::<ThemeVariant>(&raw)
         .map_err(|error| ThemeError::Decode(error.to_string()))?;
+    theme.tokens.install_document_defaults();
     theme.validate()?;
     Ok(theme)
+}
+
+const fn with_alpha(color: Rgba8, alpha: u8) -> Rgba8 {
+    Rgba8::from_rgba_hex((color.as_rgba_hex() & 0xffff_ff00) | alpha as u32)
 }
 
 #[derive(Debug, Error)]
@@ -986,6 +1060,32 @@ mod tests {
             tokens.validate(),
             Err(ThemeError::NonFiniteNumber { .. })
         ));
+    }
+
+    #[test]
+    fn document_palette_defaults_preserve_explicit_theme_tuning() {
+        let explicit = Rgba8::from_rgb_hex(0x00ab_cdef);
+        let mut tokens = tokens(0x0033_66ff);
+        tokens.namespaces.insert(
+            "syntax".to_owned(),
+            BTreeMap::from([("keyword".to_owned(), ThemeTokenValue::Color(explicit))]),
+        );
+        let manager = ThemeManager::from_variants(
+            [ThemeVariant {
+                family: "Tuned".to_owned(),
+                name: "Dark".to_owned(),
+                mode: ThemeMode::Dark,
+                tokens,
+            }],
+            ThemeSelection::new("Tuned", "Dark"),
+        )
+        .unwrap();
+        let resolved = manager.resolve(None, None, SystemAppearance::Dark).unwrap();
+        assert_eq!(
+            resolved.variant().tokens.color("syntax.keyword"),
+            Some(explicit)
+        );
+        assert!(resolved.variant().tokens.color("diff.left_only").is_some());
     }
 
     #[test]

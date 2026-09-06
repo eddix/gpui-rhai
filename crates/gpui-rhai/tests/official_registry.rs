@@ -57,6 +57,8 @@ const SPINNER: &str = include_str!("../../../registry/components/spinner.rhai");
 const SCROLL_AREA: &str = include_str!("../../../registry/components/scroll_area.rhai");
 const TITLE_BAR: &str = include_str!("../../../registry/components/title_bar.rhai");
 const STATUS_BAR: &str = include_str!("../../../registry/components/status_bar.rhai");
+const CODE_VIEWER: &str = include_str!("../../../registry/components/code_viewer.rhai");
+const DIFF_VIEWER: &str = include_str!("../../../registry/components/diff_viewer.rhai");
 const DATE_PICKER_TEST_APP: &str = r#"
     import "components/date_picker" as date_picker;
     fn changed(ctx, value) { () }
@@ -495,6 +497,43 @@ fn bundled_theme_text_pairs_meet_small_text_contrast() {
             ) >= 3.0,
             "{name}: focus ring does not reach 3:1 against the surface"
         );
+    }
+}
+
+#[test]
+fn bundled_themes_materialize_complete_document_palettes() {
+    let engine = RuntimeEngine::new();
+    for &(name, source) in BUNDLED_THEMES {
+        let theme =
+            gpui_rhai::load_theme_source(engine.engine(), &format!("{name}.rhai"), source).unwrap();
+        for token in [
+            "syntax.comment",
+            "syntax.string",
+            "syntax.number",
+            "syntax.keyword",
+            "syntax.function",
+            "syntax.type",
+            "syntax.variable",
+            "syntax.constant",
+            "syntax.operator",
+            "syntax.punctuation",
+            "syntax.tag",
+            "syntax.attribute",
+            "document.search_match",
+            "document.search_current",
+            "diff.left_only",
+            "diff.right_only",
+            "diff.modified",
+            "diff.inline_left",
+            "diff.inline_right",
+            "diff.gutter",
+            "diff.fold",
+        ] {
+            assert!(
+                theme.tokens.color(token).is_some(),
+                "{name}: missing {token}"
+            );
+        }
     }
 }
 
@@ -1384,6 +1423,79 @@ fn command_filters_native_collection_and_keeps_large_rows_out_of_rhai() {
         runtime.borrow().component_state.get(&path, "action"),
         Some(&UiValue::String("open".to_owned()))
     );
+}
+
+#[test]
+fn code_and_diff_viewers_accept_inline_and_host_owned_documents() {
+    let source = EmbeddedScriptSource::new(BTreeMap::from([
+        (
+            ModuleId::parse("components/code_viewer").unwrap(),
+            CODE_VIEWER.to_owned(),
+        ),
+        (
+            ModuleId::parse("components/diff_viewer").unwrap(),
+            DIFF_VIEWER.to_owned(),
+        ),
+    ]));
+    let mut engine = RuntimeEngine::new();
+    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
+    let compiled = engine
+        .compile_self_contained_named(
+            "ui/document_viewers.rhai",
+            r#"
+                import "components/code_viewer" as code_viewer;
+                import "components/diff_viewer" as diff_viewer;
+                fn view(ctx) {
+                    column([
+                        code_viewer::CodeViewer(#{ key: "code", source: ctx.get_native_text_document("config"),
+                            label: "Rhai", language: "rhai" }),
+                        diff_viewer::DiffViewer(#{ key: "diff", mode: "split",
+                            left: #{ source: "port = 80\n", label: "Server A", language: "rhai" },
+                            right: #{ source: ctx.get_native_text_document("config"), label: "Server B", language: "rhai" } })
+                    ])
+                }
+            "#,
+        )
+        .unwrap();
+    let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+    runtime
+        .borrow_mut()
+        .native_documents
+        .register(
+            "config",
+            gpui_rhai::NativeTextDocument::new("server-b", 1, "port = 443\n").unwrap(),
+        )
+        .unwrap();
+    let path = ComponentInstancePath::root("App", "root");
+    let mut lifecycle = ScriptLifecycle::new(
+        compiled,
+        Rc::clone(&runtime),
+        path,
+        Some("main".to_owned()),
+        BTreeMap::new(),
+        &ComponentStateSchema::default(),
+    )
+    .unwrap();
+    lifecycle.start(&mut engine).unwrap();
+    let UiNodeKind::Box { children } = lifecycle.root().unwrap().kind() else {
+        panic!("document viewer app must render a column");
+    };
+    assert_eq!(children.len(), 2);
+    for (node, expected) in [
+        (&children[0], "gpui_rhai.code_viewer"),
+        (&children[1], "gpui_rhai.diff_viewer"),
+    ] {
+        let UiNodeKind::Custom { primitive } = node.kind() else {
+            panic!("viewer must remain a public native primitive");
+        };
+        assert_eq!(primitive.primitive.as_str(), expected);
+        assert!(
+            primitive
+                .props
+                .iter()
+                .any(|(_, value)| matches!(value, gpui_rhai::PrimitiveValue::Document(_)))
+        );
+    }
 }
 
 #[test]

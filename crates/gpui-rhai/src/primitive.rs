@@ -108,6 +108,7 @@ pub enum PrimitiveValue {
     Style(Box<Style>),
     Length(Length),
     Asset(AssetId),
+    Document(crate::NativeTextDocument),
 }
 
 /// Read-only semantic theme values captured for one native primitive render.
@@ -164,6 +165,27 @@ impl PrimitiveTheme {
             "border",
             "focus_ring",
             "disabled",
+            "syntax.comment",
+            "syntax.string",
+            "syntax.number",
+            "syntax.keyword",
+            "syntax.function",
+            "syntax.type",
+            "syntax.variable",
+            "syntax.constant",
+            "syntax.operator",
+            "syntax.punctuation",
+            "syntax.tag",
+            "syntax.attribute",
+            "document.search_match",
+            "document.search_current",
+            "diff.left_only",
+            "diff.right_only",
+            "diff.modified",
+            "diff.inline_left",
+            "diff.inline_right",
+            "diff.gutter",
+            "diff.fold",
         ];
         Self {
             colors: TOKENS
@@ -319,7 +341,8 @@ impl PrimitiveProps {
                 PrimitiveValue::Data(_)
                 | PrimitiveValue::Style(_)
                 | PrimitiveValue::Length(_)
-                | PrimitiveValue::Asset(_) => {}
+                | PrimitiveValue::Asset(_)
+                | PrimitiveValue::Document(_) => {}
             }
         }
     }
@@ -1219,6 +1242,9 @@ fn convert_prop(
         ValueSchema::Style => Ok(PrimitiveValue::Style(Box::new(value.cast::<Style>()))),
         ValueSchema::Length => Ok(PrimitiveValue::Length(value.cast::<Length>())),
         ValueSchema::Asset => Ok(PrimitiveValue::Asset(value.cast::<AssetId>())),
+        ValueSchema::Document => Ok(PrimitiveValue::Document(
+            value.cast::<crate::NativeTextDocument>(),
+        )),
         _ => UiValue::from_dynamic(value)
             .map(PrimitiveValue::Data)
             .map_err(Into::into),

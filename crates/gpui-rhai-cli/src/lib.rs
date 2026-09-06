@@ -70,6 +70,8 @@ const SPINNER_SOURCE: &str = include_str!("../../../registry/components/spinner.
 const SCROLL_AREA_SOURCE: &str = include_str!("../../../registry/components/scroll_area.rhai");
 const TITLE_BAR_SOURCE: &str = include_str!("../../../registry/components/title_bar.rhai");
 const STATUS_BAR_SOURCE: &str = include_str!("../../../registry/components/status_bar.rhai");
+const CODE_VIEWER_SOURCE: &str = include_str!("../../../registry/components/code_viewer.rhai");
+const DIFF_VIEWER_SOURCE: &str = include_str!("../../../registry/components/diff_viewer.rhai");
 const CHECK_SVG: &str = include_str!("../../../registry/assets/icons/check.svg");
 const CLOSE_SVG: &str = include_str!("../../../registry/assets/icons/close.svg");
 const CHEVRON_LEFT_SVG: &str = include_str!("../../../registry/assets/icons/chevron_left.svg");
@@ -338,6 +340,8 @@ impl BundledRegistry {
             (SCROLL_AREA_SOURCE, &[][..]),
             (TITLE_BAR_SOURCE, &[][..]),
             (STATUS_BAR_SOURCE, &[][..]),
+            (CODE_VIEWER_SOURCE, &[][..]),
+            (DIFF_VIEWER_SOURCE, &[][..]),
         ] {
             let metadata = parse_component_header(source)?;
             let id = metadata.id.clone();
@@ -2000,7 +2004,7 @@ mod tests {
         let project = Project::new(directory.path());
         project.plan_init().unwrap().apply().unwrap();
         let registry = BundledRegistry::load().unwrap();
-        assert_eq!(registry.entries.len(), 48);
+        assert_eq!(registry.entries.len(), 50);
         let requested = registry
             .entries
             .keys()

@@ -47,6 +47,7 @@ pub struct UiRuntimeState {
     pub component_state: StateStore,
     pub stores: StoreRegistry,
     pub native_collections: crate::NativeCollectionRegistry,
+    pub native_documents: crate::NativeTextDocumentRegistry,
     pub actions: ActionRegistry,
     pub capabilities: CapabilityRegistry,
     pub tasks: TaskRegistry,
@@ -121,6 +122,22 @@ impl UiRuntimeState {
         Ok(changed)
     }
 
+    /// Replace one Host-owned text revision and invalidate exact readers.
+    ///
+    /// # Errors
+    ///
+    /// Returns when the document name is not registered.
+    pub fn replace_native_text_document_from_host(
+        &mut self,
+        name: &str,
+        document: crate::NativeTextDocument,
+    ) -> Result<bool, crate::DocumentError> {
+        let invalidated = self.native_documents.replace(name, document)?;
+        let changed = !invalidated.is_empty();
+        self.dirty.extend(invalidated);
+        Ok(changed)
+    }
+
     /// Replace the active editable theme variant and invalidate mounted
     /// component subtrees without recompiling Rhai.
     ///
@@ -181,6 +198,7 @@ impl UiRuntimeState {
         self.assets.cancel_window_scope(window, root)?;
         self.stores.remove_window(window);
         self.native_collections.remove_reader_scope(root);
+        self.native_documents.remove_reader_scope(root);
         self.component_state.remove_scope(root);
         self.component_event_handlers
             .retain(|(path, _), _| !path.is_within(root));
@@ -322,6 +340,7 @@ impl UiRuntimeState {
     pub(crate) fn reset_component_readers(&mut self, component: &ComponentInstancePath) {
         self.stores.reset_reader(component);
         self.native_collections.reset_reader(component);
+        self.native_documents.reset_reader(component);
         self.environment_dependencies.reset_reader(component);
     }
 
@@ -407,6 +426,7 @@ impl UiRuntimeState {
         });
         self.stores.retain_reader_scope(root, active);
         self.native_collections.retain_reader_scope(root, active);
+        self.native_documents.retain_reader_scope(root, active);
         self.environment_dependencies.retain_scope(root, active);
         self.dirty
             .retain(|path| !path.is_within(root) || path == root || active.contains(path));
@@ -437,6 +457,7 @@ impl UiRuntimeState {
             component_state: self.component_state.clone(),
             stores: self.stores.clone(),
             native_collections: self.native_collections.clone(),
+            native_documents: self.native_documents.clone(),
             actions: self.actions.clone(),
             component_event_handlers: self.component_event_handlers.clone(),
             dirty: self.dirty.clone(),
@@ -479,6 +500,7 @@ impl UiRuntimeState {
         self.component_state = snapshot.component_state;
         self.stores = snapshot.stores;
         self.native_collections = snapshot.native_collections;
+        self.native_documents = snapshot.native_documents;
         self.actions = snapshot.actions;
         self.component_event_handlers = snapshot.component_event_handlers;
         self.dirty = snapshot.dirty;
@@ -510,6 +532,7 @@ pub struct UiStateSnapshot {
     component_state: StateStore,
     stores: StoreRegistry,
     native_collections: crate::NativeCollectionRegistry,
+    native_documents: crate::NativeTextDocumentRegistry,
     actions: ActionRegistry,
     component_event_handlers: BTreeMap<(ComponentInstancePath, String), ScriptCallback>,
     dirty: BTreeSet<ComponentInstancePath>,
@@ -1125,6 +1148,24 @@ impl UiContext {
             .map_err(|_| UiContextError::Borrowed)?;
         Ok(runtime
             .native_collections
+            .read_tracked(&self.component, name)?)
+    }
+
+    /// Read and subscribe to one immutable Host-owned text revision.
+    ///
+    /// # Errors
+    ///
+    /// Returns document or runtime borrow errors.
+    pub fn get_native_text_document(
+        &self,
+        name: &str,
+    ) -> Result<crate::NativeTextDocument, UiContextError> {
+        let mut runtime = self
+            .runtime
+            .try_borrow_mut()
+            .map_err(|_| UiContextError::Borrowed)?;
+        Ok(runtime
+            .native_documents
             .read_tracked(&self.component, name)?)
     }
 
@@ -2304,6 +2345,7 @@ impl CustomType for UiContext {
             );
         register_state_store_context_methods(&mut builder);
         register_native_collection_context_methods(&mut builder);
+        register_native_document_context_methods(&mut builder);
         register_signal_context_methods(&mut builder);
         register_element_ref_context_methods(&mut builder);
         register_async_context_methods(&mut builder);
@@ -2322,6 +2364,17 @@ fn register_native_collection_context_methods(builder: &mut TypeBuilder<UiContex
         |context: &mut UiContext, name: ImmutableString| {
             context
                 .get_native_collection(name.as_str())
+                .map_err(|error| Box::new(context_runtime_error(&error)))
+        },
+    );
+}
+
+fn register_native_document_context_methods(builder: &mut TypeBuilder<UiContext>) {
+    builder.with_fn(
+        "get_native_text_document",
+        |context: &mut UiContext, name: ImmutableString| {
+            context
+                .get_native_text_document(name.as_str())
                 .map_err(|error| Box::new(context_runtime_error(&error)))
         },
     );
@@ -3131,6 +3184,8 @@ pub enum UiContextError {
     Store(#[from] StoreError),
     #[error(transparent)]
     NativeCollection(#[from] crate::NativeCollectionError),
+    #[error(transparent)]
+    Document(#[from] crate::DocumentError),
     #[error(transparent)]
     Action(#[from] ActionError),
     #[error(transparent)]

@@ -13,10 +13,15 @@ icon or raster image assets are currently included.
 - Rhai 1.26.0 — MIT OR Apache-2.0.
 - notify 8.2.0 — CC0-1.0 (development hot reload only).
 - Jiff 0.2.35 — Unlicense OR MIT.
-- image 0.25.10, unicode-segmentation 1.13.3, serde, serde_json,
+- similar 3.2.0 — Apache-2.0.
+- syntect 5.3.0 — MIT. Its bundled default syntax definitions originate from
+  the open-source Sublime Text default package set; GPUI Rhai's Rhai,
+  TypeScript/TSX, JSONC, TOML, and Dockerfile definitions are original project
+  adaptations.
+- image 0.25.10, regex 1.13.1, unicode-segmentation 1.13.3, serde, serde_json,
   semver, thiserror, toml, toml_edit, clap, and tempfile — MIT OR Apache-2.0.
 
-The 2026-08-28 Cargo metadata audit covered 629 host and cross-target packages
+The 2026-09-06 Cargo metadata audit covered 650 resolved packages
 and found no missing license metadata. MPL-2.0 dependencies are used under their
 file-level terms; dependencies offering LGPL as one option also offer MIT or
 Apache-2.0. Cargo source distributions contain the authoritative license text
