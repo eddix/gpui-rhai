@@ -425,6 +425,14 @@ fn specimen_documents() {
         code_viewer::CodeViewer(#{ key: "gallery-code", label: "Rhai source",
             file_name: "deploy.rhai", language: "rhai", source: right,
             style: style().height(px(180)) }),
+        text("UNIFIED").with_style(style().typography("caption")
+            .font_weight(700).text_color(theme_color("text_muted"))),
+        diff_viewer::DiffViewer(#{ key: "gallery-diff-unified", mode: "unified",
+            left: #{ source: left, label: "Server A", file_name: "deploy.rhai", language: "rhai" },
+            right: #{ source: right, label: "Server B", file_name: "deploy.rhai", language: "rhai" },
+            style: style().height(px(190)) }),
+        text("SPLIT").with_style(style().typography("caption")
+            .font_weight(700).text_color(theme_color("text_muted"))),
         diff_viewer::DiffViewer(#{ key: "gallery-diff", mode: "split",
             left: #{ source: left, label: "Server A", file_name: "deploy.rhai", language: "rhai" },
             right: #{ source: right, label: "Server B", file_name: "deploy.rhai", language: "rhai" },

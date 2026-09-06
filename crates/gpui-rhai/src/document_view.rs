@@ -3586,6 +3586,7 @@ fn diff_cell(
             )))
             .overflow_x_scroll()
             .track_scroll(horizontal)
+            .bg(rgba(background.as_rgba_hex()))
             .child(row.w(px(width)))
             .into_any_element()
     } else {
