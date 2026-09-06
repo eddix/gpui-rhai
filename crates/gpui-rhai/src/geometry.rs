@@ -60,6 +60,7 @@ pub struct ElementGeometry {
 #[derive(Clone, Debug, Default)]
 struct GeometryState {
     committed: BTreeMap<NodeId, ElementGeometry>,
+    presented: BTreeSet<NodeId>,
     readers: BTreeMap<NodeId, BTreeSet<ComponentInstancePath>>,
     dirty: BTreeSet<ComponentInstancePath>,
 }
@@ -87,6 +88,7 @@ impl GeometryRegistry {
 
     pub fn update(&self, node: NodeId, geometry: ElementGeometry) -> bool {
         let mut state = self.inner.borrow_mut();
+        state.presented.insert(node);
         if state.committed.get(&node) == Some(&geometry) {
             return false;
         }
@@ -139,9 +141,18 @@ impl GeometryRegistry {
         self.inner.borrow().committed.get(&node).copied()
     }
 
+    pub(crate) fn begin_frame(&self) {
+        self.inner.borrow_mut().presented.clear();
+    }
+
+    pub(crate) fn is_presented(&self, node: NodeId) -> bool {
+        self.inner.borrow().presented.contains(&node)
+    }
+
     pub(crate) fn retain_nodes(&self, active: &BTreeSet<NodeId>) {
         let mut state = self.inner.borrow_mut();
         state.committed.retain(|node, _| active.contains(node));
+        state.presented.retain(|node| active.contains(node));
         state.readers.retain(|node, _| active.contains(node));
     }
 
@@ -191,6 +202,11 @@ mod tests {
             clip: None,
         };
         registry.update(node, initial);
+        assert!(registry.is_presented(node));
+        registry.begin_frame();
+        assert!(!registry.is_presented(node));
+        assert!(!registry.update(node, initial));
+        assert!(registry.is_presented(node));
         assert_eq!(registry.read(node, &reader).unwrap(), initial);
         let snapshot = registry.snapshot();
         registry.update(

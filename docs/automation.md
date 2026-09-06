@@ -34,6 +34,13 @@ commands do not fabricate GPUI platform input or browser-style default
 behavior; platform keyboard, IME, pointer, and focus certification continues
 through GPUI test support and unlocked macOS tests.
 
+The automation tree is a presentation projection, not every retained node.
+Only nodes that participated in the latest committed GPUI prepaint frame are
+included. Content in an open Overlay is queryable; retained content belonging
+to a closed Overlay is excluded even though its component identity and state
+remain available for reopening. After an interaction changes visibility, let
+the Host render the next frame before taking a geometry-backed snapshot.
+
 `AdvanceTime` advances an injected controllable `RuntimeClock`, then polls the
 mounted view so timers and animation observe one deterministic timeline. It
 fails against the production system clock.

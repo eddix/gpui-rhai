@@ -38,7 +38,8 @@ Accessibility and keyboard operation are release requirements.
 - FormField retains stable semantic IDs plus labelled-by, described-by,
   required, and invalid relationships in the runtime tree.
 - Retained reconciliation copies semantic attributes and static text into a
-  stable `AccessibilityTree`, flattens layout-only nodes, resolves
+  stable `AccessibilityTree`; mounted snapshots project only nodes presented in
+  the latest GPUI frame. The tree flattens layout-only nodes, resolves
   labelled-by/described-by text, rejects duplicate semantic IDs, attaches last
   committed geometry, and supports role/name or semantic-ID lookup through
   `ScriptViewHandle::accessibility_snapshot`.

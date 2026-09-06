@@ -4288,6 +4288,12 @@ fn command_dialog_filters_from_native_input_and_executes_with_enter(cx: &mut Tes
 
     let view = captured.borrow().as_ref().unwrap().clone();
     let mut visual = VisualTestContext::from_window(*window, cx);
+    visual.update(|_, cx| {
+        let snapshot = view.automation_snapshot(cx).unwrap();
+        assert!(snapshot.nodes.iter().any(|node| {
+            node.role == "option" && node.name == "Open file" && node.bounds.is_some()
+        }));
+    });
     let search = visual.update(|_, cx| {
         view.accessibility_snapshot(cx)
             .unwrap()
@@ -4368,6 +4374,29 @@ fn command_dialog_filters_from_native_input_and_executes_with_enter(cx: &mut Tes
         texts.contains(&"command:active=open changes=2 last=open actions=1 open=false query=file".to_owned()),
         "command dialog did not execute: search={search:?} texts={texts:?} error={error:?}"
     );
+    visual.update(|window, cx| {
+        let snapshot = view.automation_snapshot(cx).unwrap();
+        assert!(!snapshot
+            .nodes
+            .iter()
+            .any(|node| node.role == "option" && node.name == "Open file"));
+        let query = view.automate(
+            gpui_rhai::AutomationCommand::Query {
+                locator: gpui_rhai::AutomationLocator::RoleName {
+                    role: "option".to_owned(),
+                    name: "Open file".to_owned(),
+                },
+            },
+            window,
+            cx,
+        );
+        assert!(matches!(
+            query,
+            Err(gpui_rhai::ScriptViewError::Automation(
+                gpui_rhai::AutomationError::NoMatch(_)
+            ))
+        ));
+    });
 }
 
 #[gpui::test]

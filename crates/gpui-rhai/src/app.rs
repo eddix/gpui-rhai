@@ -754,7 +754,7 @@ impl ScriptViewHandle {
         }
         let view = self.0.entity.read(cx);
         let geometry = view.lifecycle.runtime().borrow().geometry.clone();
-        Ok(crate::AccessibilityTree::from_retained(
+        Ok(crate::AccessibilityTree::from_presented(
             view.lifecycle.retained(),
             &geometry,
         )?)
@@ -799,7 +799,7 @@ impl ScriptViewHandle {
                 let view = self.0.entity.read(cx);
                 let geometry = view.lifecycle.runtime().borrow().geometry.clone();
                 let tree =
-                    crate::AccessibilityTree::from_retained(view.lifecycle.retained(), &geometry)?;
+                    crate::AccessibilityTree::from_presented(view.lifecycle.retained(), &geometry)?;
                 let id = crate::automation::resolve_locator(&tree, &locator)?;
                 let node = tree
                     .node(id)
@@ -2791,7 +2791,7 @@ impl ScriptHostView {
         let runtime = self.lifecycle.runtime();
         let geometry = runtime.borrow().geometry.clone();
         let accessibility =
-            crate::AccessibilityTree::from_retained(self.lifecycle.retained(), &geometry)?;
+            crate::AccessibilityTree::from_presented(self.lifecycle.retained(), &geometry)?;
         let target = crate::automation::resolve_locator(&accessibility, locator)?;
         let target_node = self
             .lifecycle
@@ -2892,6 +2892,7 @@ impl ScriptHostView {
 
     fn prepare_host_render(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.prepare_render(window);
+        self.lifecycle.runtime().borrow().geometry.begin_frame();
         self.text_selection.retain(self.lifecycle.retained());
         self.sync_focus_handles(cx);
         self.process_element_commands(window, cx);

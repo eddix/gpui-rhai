@@ -48,10 +48,40 @@ impl AccessibilityTree {
         tree: &RetainedUiTree,
         geometry: &GeometryRegistry,
     ) -> Result<Self, AccessibilityError> {
-        let labels = semantic_labels(tree)?;
+        Self::build(tree, geometry, false)
+    }
+
+    /// Build the semantic tree from nodes that participated in the latest
+    /// committed GPUI presentation frame.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AccessibilityError::DuplicateSemanticId`] for ambiguous IDs
+    /// among currently presented nodes.
+    pub fn from_presented(
+        tree: &RetainedUiTree,
+        geometry: &GeometryRegistry,
+    ) -> Result<Self, AccessibilityError> {
+        Self::build(tree, geometry, true)
+    }
+
+    fn build(
+        tree: &RetainedUiTree,
+        geometry: &GeometryRegistry,
+        presented_only: bool,
+    ) -> Result<Self, AccessibilityError> {
+        let labels = semantic_labels(tree, geometry, presented_only)?;
         let mut output = Self::default();
         if let Some(root) = tree.root_id() {
-            visit_retained(tree, geometry, root, None, &labels, &mut output)?;
+            visit_retained(
+                tree,
+                geometry,
+                root,
+                None,
+                &labels,
+                presented_only,
+                &mut output,
+            )?;
         }
         Ok(output)
     }
@@ -97,9 +127,16 @@ impl AccessibilityTree {
     }
 }
 
-fn semantic_labels(tree: &RetainedUiTree) -> Result<BTreeMap<String, String>, AccessibilityError> {
+fn semantic_labels(
+    tree: &RetainedUiTree,
+    geometry: &GeometryRegistry,
+    presented_only: bool,
+) -> Result<BTreeMap<String, String>, AccessibilityError> {
     let mut labels = BTreeMap::new();
     for node in tree.nodes() {
+        if presented_only && !geometry.is_presented(node.id()) {
+            continue;
+        }
         let Some(id) = string_attribute(node, "semantic_id") else {
             continue;
         };
@@ -119,11 +156,15 @@ fn visit_retained(
     id: NodeId,
     semantic_parent: Option<NodeId>,
     labels: &BTreeMap<String, String>,
+    presented_only: bool,
     output: &mut AccessibilityTree,
 ) -> Result<(), AccessibilityError> {
     let retained = tree
         .node(id)
         .ok_or(AccessibilityError::MissingRetainedNode(id))?;
+    if presented_only && !geometry.is_presented(id) {
+        return Ok(());
+    }
     let semantic = semantic_node(tree, retained, semantic_parent, geometry, labels);
     let next_parent = if let Some(node) = semantic {
         if semantic_parent.is_none() {
@@ -148,7 +189,15 @@ fn visit_retained(
         semantic_parent
     };
     for child in retained.children() {
-        visit_retained(tree, geometry, child.node(), next_parent, labels, output)?;
+        visit_retained(
+            tree,
+            geometry,
+            child.node(),
+            next_parent,
+            labels,
+            presented_only,
+            output,
+        )?;
     }
     Ok(())
 }
@@ -322,6 +371,53 @@ mod tests {
                 visual: bounds,
                 clip: None,
             })
+        );
+    }
+
+    #[test]
+    fn presented_tree_excludes_retained_but_unpainted_subtrees() {
+        let visible = crate::UiNode::text("Visible")
+            .with_key("visible")
+            .with_attribute("role", UiValue::String("button".to_owned()));
+        let hidden = crate::UiNode::text("Hidden")
+            .with_key("hidden")
+            .with_attribute("role", UiValue::String("button".to_owned()));
+        let mut retained = RetainedUiTree::new();
+        retained
+            .reconcile(crate::UiNode::box_node(vec![visible, hidden]))
+            .unwrap();
+        let root = retained.root_id().unwrap();
+        let children = retained
+            .node(root)
+            .unwrap()
+            .children()
+            .map(crate::RetainedChildLink::node)
+            .collect::<Vec<_>>();
+        let geometry = GeometryRegistry::new();
+        let bounds = crate::GeometryBounds::new(0.0, 0.0, 100.0, 24.0).unwrap();
+        let presentation = ElementGeometry {
+            layout: bounds,
+            visual: bounds,
+            clip: None,
+        };
+        geometry.update(root, presentation);
+        geometry.update(children[0], presentation);
+
+        let structural = AccessibilityTree::from_retained(&retained, &geometry).unwrap();
+        assert_eq!(structural.nodes().len(), 2);
+        let presented = AccessibilityTree::from_presented(&retained, &geometry).unwrap();
+        assert_eq!(presented.nodes().len(), 1);
+        assert!(
+            presented
+                .find_by_role_and_name("button", "Visible")
+                .next()
+                .is_some()
+        );
+        assert!(
+            presented
+                .find_by_role_and_name("button", "Hidden")
+                .next()
+                .is_none()
         );
     }
 

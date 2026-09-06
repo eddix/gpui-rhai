@@ -27,6 +27,11 @@ visual bounds through `ctx.event_target_bounds()`, raw pointer/wheel
 `payload.target`, or `NativeEvent::target`. The application no longer needs a
 resize/store channel merely to position native UI after a click.
 
+Automation and mounted accessibility snapshots now project only nodes presented
+in the latest GPUI frame. Open Overlay content is locatable, while retained
+content from a closed Overlay can no longer receive invisible automation
+dispatches.
+
 Transparent formal-component rerenders promote to the nearest replaceable
 ancestor instead of failing when a parent and child share one `UiNode` root.
 Runtime-error banners are selectable monospace text and can be suppressed by a
