@@ -34,6 +34,8 @@ Rhai.
 
 Parts are `root`, `gutter`, `line`, `text`, `loading`, `error`, and `search`.
 Line rendering remains native; there is intentionally no per-line Rhai callback.
+`text` and `gutter` start with the resolved platform monospace family, and
+`part_styles` can override either family.
 
 Run the standalone example:
 

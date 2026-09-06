@@ -42,6 +42,8 @@ labels. Double-click emits one-based
 
 Parts are `root`, `header`, `gutter`, `line`, `text`, `fold`, `loading`,
 `error`, `search`, and `status`. Diff rows cannot be rendered through Rhai.
+`text` and `gutter` default to the resolved platform monospace family and remain
+independently overridable through `part_styles`.
 
 Run the standalone example:
 

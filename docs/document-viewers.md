@@ -130,3 +130,21 @@ refinement; line-level diff and original-text selection remain intact.
 All bundled themes materialize semantic `syntax.*`, `document.*`, and `diff.*`
 colors from their own palette. Explicit namespaced theme values override those
 defaults and survive Theme Studio's canonical save format.
+
+Document text and line-number gutters default to an installed platform
+monospace family (Lilex/SF Mono/Menlo/Monaco on macOS, Cascadia/Consolas on
+Windows, and the common DejaVu/Liberation/Noto/Ubuntu Mono families on Linux).
+Applications can override either intended part without forking the component:
+
+```rhai
+let code_font = style().font_family("JetBrains Mono")
+    .font_fallbacks(["SF Mono", "Menlo"]);
+code_viewer::CodeViewer(#{
+    key: "source",
+    source: source,
+    part_styles: #{ text: code_font, gutter: code_font },
+})
+```
+
+The selected family must be installed or registered by the Host through
+`FontSource`.

@@ -203,6 +203,7 @@ struct CodeViewerConfig {
     show_line_numbers: bool,
     wrap: DocumentWrap,
     tab_size: usize,
+    monospace_family: SharedString,
     gutter_style: Style,
     line_style: Style,
     text_style: Style,
@@ -217,6 +218,73 @@ impl CodeViewerConfig {
             || self.descriptor.file_name != next.descriptor.file_name
             || self.descriptor.language != next.descriptor.language
     }
+}
+
+#[cfg(target_os = "macos")]
+const DOCUMENT_MONOSPACE_CANDIDATES: &[&str] = &["Lilex", "SF Mono", "Menlo", "Monaco"];
+#[cfg(target_os = "macos")]
+const DOCUMENT_MONOSPACE_FALLBACK: &str = "Menlo";
+
+#[cfg(target_os = "windows")]
+const DOCUMENT_MONOSPACE_CANDIDATES: &[&str] = &[
+    "Lilex",
+    "Cascadia Mono",
+    "Cascadia Code",
+    "Consolas",
+    "Courier New",
+];
+#[cfg(target_os = "windows")]
+const DOCUMENT_MONOSPACE_FALLBACK: &str = "Consolas";
+
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
+const DOCUMENT_MONOSPACE_CANDIDATES: &[&str] = &[
+    "Lilex",
+    "DejaVu Sans Mono",
+    "Liberation Mono",
+    "Noto Sans Mono",
+    "Ubuntu Mono",
+];
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
+const DOCUMENT_MONOSPACE_FALLBACK: &str = "DejaVu Sans Mono";
+
+#[cfg(not(any(
+    target_os = "macos",
+    target_os = "windows",
+    target_os = "linux",
+    target_os = "freebsd"
+)))]
+const DOCUMENT_MONOSPACE_CANDIDATES: &[&str] = &["Lilex", "DejaVu Sans Mono", "Courier New"];
+#[cfg(not(any(
+    target_os = "macos",
+    target_os = "windows",
+    target_os = "linux",
+    target_os = "freebsd"
+)))]
+const DOCUMENT_MONOSPACE_FALLBACK: &str = "DejaVu Sans Mono";
+
+fn select_document_monospace_family(
+    available: &[String],
+    candidates: &[&str],
+    fallback: &str,
+) -> SharedString {
+    candidates
+        .iter()
+        .find_map(|candidate| {
+            available
+                .iter()
+                .find(|family| family.eq_ignore_ascii_case(candidate))
+        })
+        .cloned()
+        .unwrap_or_else(|| fallback.to_owned())
+        .into()
+}
+
+fn resolve_document_monospace_family(cx: &App) -> SharedString {
+    select_document_monospace_family(
+        &cx.text_system().all_font_names(),
+        DOCUMENT_MONOSPACE_CANDIDATES,
+        DOCUMENT_MONOSPACE_FALLBACK,
+    )
 }
 
 #[derive(Clone, Debug)]
@@ -1141,6 +1209,7 @@ fn code_line_element(
             .flex()
             .items_center()
             .justify_end()
+            .font_family(config.monospace_family.clone())
             .text_color(rgba(
                 theme_color(theme, "text_muted", 0x929a_a8ff).as_rgba_hex(),
             ))
@@ -1160,7 +1229,7 @@ fn code_line_element(
             .min_w(px(0.0))
             .flex()
             .items_center()
-            .font_family(".ZedMono")
+            .font_family(config.monospace_family.clone())
             .text_size(px(text_size))
             .line_height(px(line_height))
             .text_color(rgba(
@@ -1354,6 +1423,7 @@ pub struct CodeViewerPrimitiveHandler {
     instances: BTreeMap<PrimitiveInstanceId, Entity<CodeViewerEntity>>,
     syntaxes: Option<SyntaxRegistry>,
     document_runtime: Option<DocumentRuntimeConfig>,
+    monospace_family: Option<SharedString>,
 }
 
 impl CodeViewerPrimitiveHandler {
@@ -1363,6 +1433,7 @@ impl CodeViewerPrimitiveHandler {
             instances: BTreeMap::new(),
             syntaxes: Some(syntaxes),
             document_runtime: Some(document_runtime),
+            monospace_family: None,
         }
     }
 }
@@ -1380,7 +1451,11 @@ impl PrimitiveHandler for CodeViewerPrimitiveHandler {
             .id
             .clone()
             .ok_or_else(|| "CodeViewPrimitive requires a stable key".to_owned())?;
-        let config = parse_code_config(&instance.node.props)?;
+        let monospace_family = self
+            .monospace_family
+            .get_or_insert_with(|| resolve_document_monospace_family(cx))
+            .clone();
+        let config = parse_code_config(&instance.node.props, monospace_family)?;
         let search_typography = native_typography(theme, "body_small", window)?;
         let entity = if let Some(entity) = self.instances.get(&id) {
             entity.clone()
@@ -1422,7 +1497,10 @@ impl PrimitiveHandler for CodeViewerPrimitiveHandler {
     }
 }
 
-fn parse_code_config(props: &PrimitiveProps) -> Result<CodeViewerConfig, String> {
+fn parse_code_config(
+    props: &PrimitiveProps,
+    monospace_family: SharedString,
+) -> Result<CodeViewerConfig, String> {
     let descriptor = DocumentDescriptor {
         source: document_source_prop(props, "source")?,
         label: string_prop(props, "label").unwrap_or_else(|| "Code".to_owned()),
@@ -1440,6 +1518,7 @@ fn parse_code_config(props: &PrimitiveProps) -> Result<CodeViewerConfig, String>
         show_line_numbers: bool_prop(props, "show_line_numbers").unwrap_or(true),
         wrap,
         tab_size: integer_prop(props, "tab_size").unwrap_or(4),
+        monospace_family,
         gutter_style: style_prop(props, "gutter_style"),
         line_style: style_prop(props, "line_style"),
         text_style: style_prop(props, "text_style"),
@@ -1864,6 +1943,7 @@ struct DiffViewerConfig {
     show_line_numbers: bool,
     wrap: DocumentWrap,
     tab_size: usize,
+    monospace_family: SharedString,
     header_style: Style,
     gutter_style: Style,
     line_style: Style,
@@ -3528,6 +3608,7 @@ fn diff_cell(
             .flex()
             .items_center()
             .justify_between()
+            .font_family(config.monospace_family.clone())
             .bg(rgba(
                 theme_color(theme, "diff.gutter", 0x1a1d_24ff).as_rgba_hex(),
             ))
@@ -3552,7 +3633,7 @@ fn diff_cell(
             .px(px(8.0))
             .flex()
             .items_center()
-            .font_family(".ZedMono")
+            .font_family(config.monospace_family.clone())
             .text_size(px(text_size))
             .line_height(px(line_height))
             .text_color(rgba(
@@ -3599,6 +3680,7 @@ pub struct DiffViewerPrimitiveHandler {
     instances: BTreeMap<PrimitiveInstanceId, Entity<DiffViewerEntity>>,
     syntaxes: Option<SyntaxRegistry>,
     document_runtime: Option<DocumentRuntimeConfig>,
+    monospace_family: Option<SharedString>,
 }
 
 impl DiffViewerPrimitiveHandler {
@@ -3608,6 +3690,7 @@ impl DiffViewerPrimitiveHandler {
             instances: BTreeMap::new(),
             syntaxes: Some(syntaxes),
             document_runtime: Some(document_runtime),
+            monospace_family: None,
         }
     }
 }
@@ -3625,7 +3708,11 @@ impl PrimitiveHandler for DiffViewerPrimitiveHandler {
             .id
             .clone()
             .ok_or_else(|| "DiffViewPrimitive requires a stable key".to_owned())?;
-        let config = parse_diff_config(&instance.node.props)?;
+        let monospace_family = self
+            .monospace_family
+            .get_or_insert_with(|| resolve_document_monospace_family(cx))
+            .clone();
+        let config = parse_diff_config(&instance.node.props, monospace_family)?;
         let search_typography = native_typography(theme, "body_small", window)?;
         let entity = if let Some(entity) = self.instances.get(&id) {
             entity.clone()
@@ -3664,7 +3751,10 @@ impl PrimitiveHandler for DiffViewerPrimitiveHandler {
     }
 }
 
-fn parse_diff_config(props: &PrimitiveProps) -> Result<DiffViewerConfig, String> {
+fn parse_diff_config(
+    props: &PrimitiveProps,
+    monospace_family: SharedString,
+) -> Result<DiffViewerConfig, String> {
     let descriptor = |prefix: &str| -> Result<DocumentDescriptor, String> {
         Ok(DocumentDescriptor {
             source: document_source_prop(props, &format!("{prefix}_source"))?,
@@ -3707,6 +3797,7 @@ fn parse_diff_config(props: &PrimitiveProps) -> Result<DiffViewerConfig, String>
         show_line_numbers: bool_prop(props, "show_line_numbers").unwrap_or(true),
         wrap,
         tab_size: integer_prop(props, "tab_size").unwrap_or(4),
+        monospace_family,
         header_style: style_prop(props, "header_style"),
         gutter_style: style_prop(props, "gutter_style"),
         line_style: style_prop(props, "line_style"),
@@ -3898,6 +3989,20 @@ mod tests {
         assert_eq!(unicode.len(), 2);
         assert_eq!(&family[unicode[0].0.clone()], "👨‍👩‍👧");
         assert_eq!(&family[unicode[1].0.clone()], "x");
+    }
+
+    #[test]
+    fn document_font_resolution_uses_an_installed_monospace_before_fallback() {
+        let available = vec!["Helvetica".to_owned(), "Menlo".to_owned()];
+        assert_eq!(
+            select_document_monospace_family(&available, &["Lilex", "Menlo"], "Fallback")
+                .to_string(),
+            "Menlo"
+        );
+        assert_eq!(
+            select_document_monospace_family(&available, &["Lilex"], "Fallback").to_string(),
+            "Fallback"
+        );
     }
 
     #[test]
