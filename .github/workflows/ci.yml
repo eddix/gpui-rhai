@@ -57,8 +57,15 @@ jobs:
         run: |
           cargo doc -p gpui-rhai --all-features --no-deps
           cargo doc -p gpui-rhai-cli --lib --no-deps
-      - name: Package runtime crate
-        run: cargo package -p gpui-rhai
+      - name: Package crates
+        run: |
+          cargo package -p gpui-rhai
+          cargo package -p gpui-rhai-registry
+          # Full verification becomes possible after the two dependencies enter
+          # the crates.io index; workspace checks validate their local graph.
+          cargo package -p gpui-rhai-cli --no-verify \
+            --config 'patch.crates-io.gpui-rhai.path="crates/gpui-rhai"' \
+            --config 'patch.crates-io.gpui-rhai-registry.path="registry"'
       - name: Release build
         run: |
           cargo build --release -p gpui-rhai --examples

@@ -2,6 +2,7 @@
 members = [
     "crates/gpui-rhai",
     "crates/gpui-rhai-cli",
+    "registry",
 ]
 resolver = "2"
 
@@ -32,6 +33,7 @@ event-listener = "5.4.2"
 similar = { version = "=3.2.0", features = ["inline", "unicode"] }
 syntect = { version = "=5.3.0", default-features = false, features = ["default-syntaxes", "regex-fancy", "yaml-load"] }
 regex = "=1.13.1"
+gpui-rhai-registry = { version = "0.1.0", path = "registry" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

@@ -1,6 +1,15 @@
 #!/bin/bash
 set -eu
 
+for package_dir in crates/gpui-rhai crates/gpui-rhai-cli registry; do
+  for license in LICENSE-MIT LICENSE-APACHE; do
+    if ! cmp -s "${license}" "${package_dir}/${license}"; then
+      echo "published license drift: ${package_dir}/${license}"
+      exit 1
+    fi
+  done
+done
+
 embedded_examples=(
   dashboard_layout
   component_gallery

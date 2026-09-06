@@ -1,21 +1,34 @@
 # gpui-rhai CLI
 
-The source-management CLI for GPUI Rhai. It initializes projects, copies
-application-owned components/themes/locales/assets, validates compatibility,
-performs baseline-aware updates, and generates production embedded sources.
-
-The CLI has no published release yet. Build or install it from the repository
-checkout because its bundled registry is maintained at the workspace root:
+The source-management CLI for
+[GPUI Rhai](https://github.com/eddix/gpui-rhai). It initializes applications,
+copies editable first-party components/themes/locales/assets, validates the
+result with the real runtime, performs baseline-aware updates, and generates
+production embedded sources.
 
 ```text
-cargo install --path crates/gpui-rhai-cli
+cargo install gpui-rhai-cli --locked
+
+gpui-rhai init
+gpui-rhai add button input form_field
+gpui-rhai check
+gpui-rhai dev
 ```
 
-Before the runtime's first release, `init` writes the intended future
-`version = "0.1"` dependency shape. Point the generated dependency at a local
-runtime checkout or an exact accessible Git commit while dogfooding; see the
-[repository User Guide](../../USER_GUIDE.md).
+Important commands:
 
-`gpui-rhai theme-studio [path]` launches the bundled Theme Studio. It edits only
-gpui-rhai `.rhai` themes and renders the canonical official-component specimen
-under the live draft.
+- `init` creates the Rust Host and application-owned `ui/` source tree;
+- `add`, `diff`, and `update` install and three-way merge official source;
+- `check` compiles and executes a validated headless first frame;
+- `metadata` emits schemas, editor snippets, and Rhai definitions;
+- `embed` generates production `include_str!`/`include_bytes!` wiring;
+- `theme-studio [path]` opens the live semantic theme editor and complete
+  component specimen.
+
+The CLI consumes the version-matched `gpui-rhai-registry` package internally.
+Applications depend on `gpui-rhai`; they do not need to add the registry crate
+themselves.
+
+See the complete
+[User Guide](https://github.com/eddix/gpui-rhai/blob/main/USER_GUIDE.md) and
+[quick start](https://github.com/eddix/gpui-rhai/blob/main/docs/quick-start.zh-CN.md).

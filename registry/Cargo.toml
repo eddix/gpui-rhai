@@ -1,0 +1,27 @@
+[package]
+name = "gpui-rhai-registry"
+description = "First-party editable component, theme, locale, and asset sources for GPUI Rhai"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+readme = "README.md"
+documentation = "https://docs.rs/gpui-rhai-registry"
+keywords = ["gpui", "rhai", "components", "themes", "registry"]
+categories = ["gui", "development-tools"]
+include = [
+    "src/**/*.rs",
+    "components/**/*.rhai",
+    "themes/**/*.rhai",
+    "locales/**/*.rhai",
+    "studio/**/*.rhai",
+    "assets/**/*.svg",
+    "README.md",
+    "LICENSE-*",
+    "Cargo.toml",
+]
+
+[lints]
+workspace = true

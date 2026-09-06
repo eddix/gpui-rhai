@@ -5,11 +5,11 @@ GPUI Rhai 的 Rust runtime 负责 GPUI、生命周期与安全边界；组件、
 `gpui-component`。
 
 完整的使用方式、架构边界与 agent 工作规范见
-[User Guide](../USER_GUIDE.md)；这里仅保留最短上手路径。CLI 尚未发布到
-crates.io，也没有正式 release；请在仓库 checkout 中安装：
+[User Guide](../USER_GUIDE.md)；这里仅保留最短上手路径。先从 crates.io
+安装与 runtime 版本匹配的 CLI：
 
 ```text
-cargo install --path crates/gpui-rhai-cli
+cargo install gpui-rhai-cli --locked
 ```
 
 ```text
@@ -19,15 +19,15 @@ gpui-rhai check
 gpui-rhai dev
 ```
 
-首次正式发布前，`init` 写入的 `version = "0.1"` 尚不能从 crates.io 解析。
-dogfooding 时请将目标项目的依赖改为本地 checkout，或有权限访问的固定 Git
-commit；不要无意中跟随不断变化的 `main`：
+`init` 会写入 `gpui-rhai = "0.1"`。只有在开发 runtime 本身或验收未发布
+提交时，才临时改成本地 checkout 或固定 Git commit；不要让应用无意中跟随
+不断变化的 `main`：
 
 ```toml
 gpui-rhai = { path = "/path/to/gpui-rhai/crates/gpui-rhai", features = ["dev-reload"] }
 ```
 
-另一台有私有仓库权限的机器可使用：
+另一台机器验收未发布提交时可使用：
 
 ```toml
 gpui-rhai = { git = "https://github.com/eddix/gpui-rhai", rev = "<commit>", features = ["dev-reload"] }

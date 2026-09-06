@@ -8,9 +8,10 @@ authors.workspace = true
 license.workspace = true
 repository.workspace = true
 readme = "README.md"
+documentation = "https://docs.rs/gpui-rhai"
 keywords = ["gpui", "rhai", "gui", "desktop", "declarative"]
 categories = ["gui"]
-include = ["src/**/*.rs", "README.md", "Cargo.toml"]
+include = ["src/**/*.rs", "README.md", "LICENSE-*", "Cargo.toml"]
 
 [features]
 default = []
