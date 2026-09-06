@@ -10,17 +10,20 @@
 */
 // Source-owned application chrome with logical start, center, and end regions.
 // Native window authority remains Host-owned; this component never moves or closes a window.
-// Props: title, optional subtitle, start/center/end nodes, and logical start inset.
+// Props: accessible label, string-or-node title/subtitle, start/center/end nodes, and logical start inset.
 // Events/state: stateless and emits no events. Parts: root, start, title, subtitle, center, end.
-// Example: TitleBar(#{ title: "Workbench", end: [settings_button] })
+// Example: TitleBar(#{ label: "Workbench", title: breadcrumb_node, end: [settings_button] })
 
 define_component(#{
     metadata: #{ id: "components/title_bar", "export": "TitleBar", version: "0.1.0",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 }, dependencies: [], capabilities: #{} },
     schema: #{
         props: #{
-            title: #{ schema: #{ type: "string" }, required: true, sensitive: false },
-            subtitle: #{ schema: #{ type: "optional", value: #{ type: "string" } },
+            label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+            title: #{ schema: #{ type: "one_of", variants: [#{ type: "string" }, #{ type: "node" }] },
+                required: true, sensitive: false },
+            subtitle: #{ schema: #{ type: "optional", value: #{ type: "one_of",
+                variants: [#{ type: "string" }, #{ type: "node" }] } },
                 required: false, sensitive: false },
             start: #{ schema: #{ type: "array", max_items: 8, items: #{ type: "node" } },
                 required: false, sensitive: false, "default": #{ type: "array", value: [] } },
@@ -40,17 +43,26 @@ define_component(#{
 });
 
 fn TitleBar(props) { render_component("components/title_bar", props) }
+fn title_bar_content(props, part, value, typography, muted) {
+    let structural = style();
+    if type_of(value) == "string" {
+        let defaults = structural.typography(typography)
+            .whitespace_nowrap().text_ellipsis();
+        if part == "title" { defaults = defaults.font_weight(700); }
+        if muted { defaults = defaults.text_color(theme_color("text_muted")); }
+        text(value).with_style(component_style(props, part, defaults))
+    } else {
+        value.with_style(component_style(props, part, structural))
+    }
+}
 fn render_TitleBar(ctx, props) {
-    let title_children = [text(props.title).with_style(component_style(props, "title",
-        style().typography("body_small").font_weight(700)
-            .whitespace_nowrap().text_ellipsis()))];
+    let title_children = [title_bar_content(props, "title", props.title, "body_small", false)];
     if "subtitle" in props && props.subtitle != () {
-        title_children.push(text(props.subtitle).with_style(component_style(props, "subtitle",
-            style().typography("caption").text_color(theme_color("text_muted"))
-                .whitespace_nowrap().text_ellipsis())));
+        title_children.push(title_bar_content(props, "subtitle", props.subtitle, "caption", true));
     }
     let start_children = if "start" in props { props.start } else { [] };
-    start_children.push(column(title_children).with_style(style().min_width(px(0)).gap(px(0))));
+    start_children.push(column(title_children).with_style(style()
+        .flex_grow().min_width(px(0)).gap(px(0)).overflow_hidden()));
     let inset = if "inset_start" in props { props.inset_start } else { 0 };
     let start = row(start_children).with_style(component_style(props, "start", style()
         .width(relative(0.333333)).min_width(px(0)).height(relative(1.0))
@@ -68,5 +80,5 @@ fn render_TitleBar(ctx, props) {
             .width(relative(1.0)).height(px(34)).padding_x(px(10)).items_center()
             .border_bottom(px(1)).border_color(theme_color("border"))
             .background(theme_color("surface_raised")).text_color(theme_color("text_primary"))))
-        .accessibility_role("toolbar").accessibility_label(props.title)
+        .accessibility_role("toolbar").accessibility_label(props.label)
 }

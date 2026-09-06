@@ -70,6 +70,11 @@ glyphs use a centered 24px SVG asset system, and the default radius scale is
 square. Only elements that are semantically circular retain explicit radii;
 Switch tracks and thumbs are rectangular.
 
+TitleBar now accepts string-or-node `title` and `subtitle` content with a
+separate required accessibility `label`, allowing structured breadcrumbs to
+retain their own styles and pointer/native handlers inside the standard chrome
+layout.
+
 The unlocked macOS visual pass tightened responsive specimen wrapping, gave
 Theme Studio an independently scrollable token editor, made small Command lists
 shrink to their result count, and added deterministic Gallery theme, locale,

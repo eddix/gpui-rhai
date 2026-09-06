@@ -318,6 +318,10 @@ ScriptApplication::new(prepared)
 The corresponding Rhai `TitleBar` may reserve the traffic-light area with
 `inset_start: 70`. Native dragging and window actions remain Rust-owned and can
 be connected through explicitly registered native handlers when required.
+`label` is the required accessible window-area name. `title` and optional
+`subtitle` accept either plain strings or structured nodes: strings receive the
+default type treatment, while nodes retain their own styling and event/native
+handler bindings inside the same inset, clipping, and region layout.
 
 Use [Component authoring](docs/component-authoring-guide.md) and the component
 specifications under `docs/components/` when modifying or creating components.

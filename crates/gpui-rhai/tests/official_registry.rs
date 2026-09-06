@@ -583,9 +583,15 @@ fn window_bars_are_source_owned_compositions_without_native_authority() {
             r#"
                 import "components/title_bar" as title_bar;
                 import "components/status_bar" as status_bar;
+                fn drag(ctx, payload) { handled() }
                 fn view(ctx) {
+                    let breadcrumb = row([text("Workspace").with_style(style().font_weight(700)),
+                        text("/ panel").with_style(style().text_color(theme_color("text_muted")))])
+                        .with_key("breadcrumb").on("pointer_down", Fn("drag"))
+                        .accessibility_role("group").accessibility_label("Workspace breadcrumb");
                     column([
-                        title_bar::TitleBar(#{ title: "Workbench", inset_start: 70,
+                        title_bar::TitleBar(#{ label: "Workbench", title: breadcrumb,
+                            subtitle: text("main"), inset_start: 70,
                             center: [text("Editor")], end: [text("Run")] }),
                         text("Content"),
                         status_bar::StatusBar(#{ label: "Editor status",
@@ -615,6 +621,16 @@ fn window_bars_are_source_owned_compositions_without_native_authority() {
     assert_eq!(
         children[0].attributes().get("role"),
         Some(&UiValue::String("toolbar".to_owned()))
+    );
+    assert_eq!(
+        children[0].attributes().get("label"),
+        Some(&UiValue::String("Workbench".to_owned()))
+    );
+    assert!(
+        find_label(&children[0], "Workspace breadcrumb")
+            .unwrap()
+            .handlers()
+            .contains_key("pointer_down")
     );
     assert_eq!(
         children[2].attributes().get("role"),

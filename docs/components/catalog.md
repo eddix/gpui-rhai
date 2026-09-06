@@ -18,6 +18,13 @@ bar alone deliberately does not change native window behavior. This keeps an
 embedded user-authored view from turning ordinary content into a window-control
 surface.
 
+TitleBar requires a textual `label` for accessibility. Its `title` and optional
+`subtitle` accept strings or nodes. String values receive the standard
+typography/truncation treatment; structured nodes keep their own appearance and
+handlers while still participating in TitleBar's start inset and clipping.
+Breadcrumb separators remain application-owned rather than becoming TitleBar
+policy.
+
 ## Foundations and status
 
 - `Label`, `Divider`, and `Icon` provide semantic text and visual structure.

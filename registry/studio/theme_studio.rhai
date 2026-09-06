@@ -358,7 +358,9 @@ fn specimen_chrome() {
     column([
         specimen_title("APPLICATION CHROME", "Composable title and status bars; native window authority stays in Rust."),
         column([
-            title_bar::TitleBar(#{ title: "Workbench", subtitle: "main",
+            title_bar::TitleBar(#{ label: "Workbench", title: "Workbench",
+                subtitle: text("main").with_style(style().typography("caption")
+                    .text_color(theme_color("text_muted"))),
                 center: [text("Editor")],
                 end: [button::Button(#{ text: "Run", size: "xs", variant: "ghost" })] }),
             row([text("Application content")]).with_style(style()
@@ -595,7 +597,14 @@ fn gallery_title_bar(ctx) {
             width: px(if compact { 150 } else { 240 }), trigger_height: 26,
             on_change: Fn("set_gallery_theme"), on_open_change: Fn("set_gallery_theme_open"),
             on_query_change: Fn("set_gallery_theme_query") });
-    let config = #{ title: "GPUI RHAI COMPONENT GALLERY", inset_start: 70, end: [themes] };
+    let breadcrumb = row([
+        text("GPUI RHAI").with_style(style().typography("body_small").font_weight(700)),
+        text("/").with_style(style().typography("caption").text_color(theme_color("text_muted"))),
+        text("COMPONENT GALLERY").with_style(style().typography("body_small")
+            .text_color(theme_color("text_muted")))
+    ]).with_style(style().min_width(px(0)).gap(px(6)).items_center().overflow_hidden());
+    let config = #{ label: "GPUI Rhai Component Gallery", title: breadcrumb,
+        inset_start: 70, end: [themes] };
     if !compact { config.subtitle = "48 source-owned components · native GPUI behavior · live themes"; }
     title_bar::TitleBar(config)
 }
