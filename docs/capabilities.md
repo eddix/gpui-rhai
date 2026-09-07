@@ -36,6 +36,22 @@ callbacks return to the GPUI thread. App, window, and component scopes define
 cancellation lifetime. Closing a window cancels its window/component work but
 does not cancel app-scoped work.
 
+Subscription delivery is explicit and bounded:
+
+```rhai
+ctx.start_subscription(
+    "app.events", "watch", (), Fn("received"), Fn("failed"),
+    #{ delivery: "all", capacity: 128, throttle_ms: 0 },
+);
+```
+
+`delivery: "all"` is the default and preserves FIFO order. Its queue defaults
+to 64 values and reports backpressure to the Rust emitter instead of silently
+dropping an event. `delivery: "latest"` explicitly coalesces pending values and
+is appropriate for progress, sensors, and replaceable state snapshots.
+`throttle_ms` paces lossless delivery or defines the coalescing interval for a
+latest-only stream. Capacity is bounded to 1–4096 and throttle to 60 seconds.
+
 ## Subscription producer lifetime
 
 `SubscriptionWork` owns the complete producer loop. It must remain running for

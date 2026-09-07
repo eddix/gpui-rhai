@@ -7,6 +7,9 @@ semantic versioning from this release.
 
 ## 0.1.1 - Unreleased
 
+- Subscription delivery now defaults to a bounded FIFO instead of silently
+  overwriting earlier values. Rhai callers pass an explicit options map and may
+  opt into latest-only coalescing; full queues return backpressure to Rust.
 - Controlled virtual collections synchronously rebuild the retained viewport
   with current Rhai state before committing a rerender, eliminating blank
   frames when Command selection moves beyond the first realized window.

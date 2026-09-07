@@ -1102,7 +1102,7 @@ fn async_workers_wake_the_view_without_input_or_manual_poll(cx: &mut TestAppCont
                     ctx.start_task("app.delayed_text", "load", "background ready",
                         Fn("loaded"), Fn("failed"));
                     ctx.start_subscription("app.ticker", "watch", (),
-                        Fn("ticked"), Fn("failed"), 0);
+                        Fn("ticked"), Fn("failed"), #{ delivery: "all" });
                 }
                 fn view(ctx) {
                     column([
@@ -1598,7 +1598,7 @@ fn subscription_callback_state_write_restarts_effect_and_delivers(cx: &mut TestA
                 fn Watcher(props) { render_component("widgets/watcher", props) }
                 fn start_watch(ctx, deps) {
                     ctx.start_subscription("app.push", "watch", (),
-                        Fn("pushed"), Fn("push_failed"), 0);
+                        Fn("pushed"), Fn("push_failed"), #{ delivery: "all" });
                 }
                 fn cleanup_watch(ctx, deps) { () }
                 fn pushed(ctx, value) { ctx.set_state("id", value); }

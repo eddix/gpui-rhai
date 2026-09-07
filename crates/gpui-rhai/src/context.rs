@@ -16,10 +16,10 @@ use crate::{
     EventSchema, ImageDecodeHandle, LocaleError, LocaleManager, NumberFormatOptions, OpaqueHandle,
     ResponsiveError, ResponsiveRuntime, ScriptCallback, ScriptGeneration, ScriptWindowSpec,
     StateError, StateStore, StoreError, StoreId, StoreRegistry, SubscriptionCloseReason,
-    SubscriptionHandle, SubscriptionRegistration, SubscriptionRegistry, TaskHandle, TaskRegistry,
-    TextDirection, ThemeError, ThemeManager, ThemePreference, ThemeSelection, UiEvent, UiValue,
-    UiValueError, UiValuePath, UiValuePathError, UiValuePathSegment, WindowCommandError,
-    WindowCommandRegistry,
+    SubscriptionDeliveryPolicy, SubscriptionHandle, SubscriptionOptions, SubscriptionRegistration,
+    SubscriptionRegistry, TaskHandle, TaskRegistry, TextDirection, ThemeError, ThemeManager,
+    ThemePreference, ThemeSelection, UiEvent, UiValue, UiValueError, UiValuePath, UiValuePathError,
+    UiValuePathSegment, WindowCommandError, WindowCommandRegistry,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -2281,7 +2281,7 @@ impl UiContext {
         input: Dynamic,
         success: FnPtr,
         error: FnPtr,
-        throttle: Duration,
+        options: SubscriptionOptions,
     ) -> Result<SubscriptionHandle, UiContextError> {
         self.require_mutation()?;
         self.require_generation()?;
@@ -2306,7 +2306,7 @@ impl UiContext {
             error,
             output,
         )
-        .with_throttle(throttle);
+        .with_options(options);
         let (handle, emitter) = runtime.subscriptions.subscribe(registration);
         let closer = emitter.clone();
         if let Err(spawn_error) = std::thread::Builder::new()
@@ -2796,13 +2796,8 @@ fn register_async_context_methods(builder: &mut TypeBuilder<UiContext>) {
              input: Dynamic,
              success: FnPtr,
              error: FnPtr,
-             throttle_ms: rhai::INT| {
-                let throttle_ms = u64::try_from(throttle_ms).map_err(|_| {
-                    Box::new(EvalAltResult::ErrorRuntime(
-                        "subscription throttle must be non-negative".into(),
-                        Position::NONE,
-                    ))
-                })?;
+             options: Map| {
+                let options = subscription_options(options)?;
                 context_at_call(context, &call)
                     .start_subscription(
                         capability.as_str(),
@@ -2810,7 +2805,7 @@ fn register_async_context_methods(builder: &mut TypeBuilder<UiContext>) {
                         input,
                         success,
                         error,
-                        Duration::from_millis(throttle_ms),
+                        options,
                     )
                     .map_err(|error| Box::new(context_runtime_error(&error)))
             },
@@ -2855,6 +2850,70 @@ fn register_async_context_methods(builder: &mut TypeBuilder<UiContext>) {
                     .map_err(|error| Box::new(context_runtime_error(&error)))
             },
         );
+}
+
+fn subscription_options(mut options: Map) -> Result<SubscriptionOptions, Box<EvalAltResult>> {
+    let defaults = SubscriptionOptions::default();
+    let delivery = options.remove("delivery").map_or(
+        Ok(defaults.delivery()),
+        |value| -> Result<_, Box<EvalAltResult>> {
+            let value = value.try_cast::<ImmutableString>().ok_or_else(|| {
+                Box::new(EvalAltResult::ErrorRuntime(
+                    "subscription delivery must be `all` or `latest`".into(),
+                    Position::NONE,
+                ))
+            })?;
+            match value.as_str() {
+                "all" => Ok(SubscriptionDeliveryPolicy::All),
+                "latest" => Ok(SubscriptionDeliveryPolicy::Latest),
+                _ => Err(Box::new(EvalAltResult::ErrorRuntime(
+                    "subscription delivery must be `all` or `latest`".into(),
+                    Position::NONE,
+                ))),
+            }
+        },
+    )?;
+    let capacity = options.remove("capacity").map_or(
+        Ok(defaults.capacity()),
+        |value| -> Result<_, Box<EvalAltResult>> {
+            value
+                .try_cast::<INT>()
+                .and_then(|value| usize::try_from(value).ok())
+                .ok_or_else(|| {
+                    Box::new(EvalAltResult::ErrorRuntime(
+                        "subscription capacity must be a positive integer".into(),
+                        Position::NONE,
+                    ))
+                })
+        },
+    )?;
+    let throttle = options.remove("throttle_ms").map_or(
+        Ok(defaults.throttle()),
+        |value| -> Result<_, Box<EvalAltResult>> {
+            value
+                .try_cast::<INT>()
+                .and_then(|value| u64::try_from(value).ok())
+                .map(Duration::from_millis)
+                .ok_or_else(|| {
+                    Box::new(EvalAltResult::ErrorRuntime(
+                        "subscription throttle_ms must be a non-negative integer".into(),
+                        Position::NONE,
+                    ))
+                })
+        },
+    )?;
+    if let Some(name) = options.keys().next() {
+        return Err(Box::new(EvalAltResult::ErrorRuntime(
+            format!("unknown subscription option `{name}`").into(),
+            Position::NONE,
+        )));
+    }
+    SubscriptionOptions::new(delivery, capacity, throttle).map_err(|error| {
+        Box::new(EvalAltResult::ErrorRuntime(
+            error.to_string().into(),
+            Position::NONE,
+        ))
+    })
 }
 
 fn register_locale_context_methods(builder: &mut TypeBuilder<UiContext>) {

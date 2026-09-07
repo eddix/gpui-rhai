@@ -32,7 +32,8 @@ fn init(ctx) {
     let message = ctx.call_capability("app.text_transform", "uppercase", "extension ready");
     ctx.set_state("message", message);
     ctx.start_task("app.delayed_text", "load", "background ready", Fn("loaded"), Fn("failed"));
-    ctx.start_subscription("app.ticker", "watch", (), Fn("ticked"), Fn("failed"), 10);
+    ctx.start_subscription("app.ticker", "watch", (), Fn("ticked"), Fn("failed"),
+        #{ delivery: "latest", throttle_ms: 10 });
 }
 
 fn view(ctx) {
