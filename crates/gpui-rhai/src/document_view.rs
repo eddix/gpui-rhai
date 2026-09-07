@@ -1210,6 +1210,8 @@ fn code_line_element(
             .items_center()
             .justify_end()
             .font_family(config.monospace_family.clone())
+            .text_size(px(text_size))
+            .line_height(px(line_height))
             .text_color(rgba(
                 theme_color(theme, "text_muted", 0x929a_a8ff).as_rgba_hex(),
             ))
@@ -3609,6 +3611,8 @@ fn diff_cell(
             .items_center()
             .justify_between()
             .font_family(config.monospace_family.clone())
+            .text_size(px(text_size))
+            .line_height(px(line_height))
             .bg(rgba(
                 theme_color(theme, "diff.gutter", 0x1a1d_24ff).as_rgba_hex(),
             ))

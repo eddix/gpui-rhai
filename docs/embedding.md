@@ -198,6 +198,58 @@ host.bind_keys(prepared.key_bindings().iter().cloned(), cx)?;
 The operation is idempotent for identical bindings and rejects conflicting
 actions for the same keystrokes/context.
 
+## Retained suspension and Host-managed tombstones
+
+Use `ScriptViewHandle::suspend` when a Host wants to remove a view from its
+active layout without paying a later dispose/remount cost. Suspension keeps the
+last-good declarative tree, component state, native primitive entities, input
+selection/undo state, scroll positions, and virtual-list measurements. It
+closes the view's overlays and Layers, releases focus and pointer capture, runs
+the optional `suspend(ctx)` hook, cleans every active declarative effect, and
+freezes declarative timers and animations.
+
+```rust
+view.suspend(window, cx)?;
+assert_eq!(view.state(), gpui_rhai::ScriptViewState::Suspended);
+
+// Later, before putting the element back into Host layout:
+view.resume(cx)?;
+```
+
+`element()`, `flex_item()`, focus, automation, accessibility snapshots, and
+element-ref commands reject a suspended view. A Host should branch on
+`view.state()` and omit that view from newly constructed layout until `resume`
+succeeds. Read-only diagnostics and `root()` remain available. Host writes to
+signals, native collections/documents, themes, and locales may continue; they
+accumulate invalidation without invoking Rhai.
+
+One-shot tasks already in flight may finish while suspended. Their completions
+are held in a bounded queue (256 per runtime) and delivered immediately before
+the resume hook. Long-lived subscriptions must be created by declarative
+effects and are therefore cancelled by effect cleanup. Effect-owned tasks are
+cancelled with the same activation; ordinary one-shot component work continues.
+Timers and animations resume from their frozen progress and never catch up the
+elapsed wall time.
+
+The optional script hooks are:
+
+```rhai
+fn suspend(ctx) { /* synchronous, bounded quiesce bookkeeping */ }
+fn resume(ctx, elapsed_ms) { /* decide whether Host-backed data is stale */ }
+```
+
+Resume is one atomic transaction: current-generation task results are applied,
+`resume` runs, the tree reconciles once against all Host-side changes, and
+effects restart with fresh activation identities. Failure preserves the
+suspended last-good view. If development hot reload observed edits while the
+view was suspended, it retains only filesystem changes; on resume the latest
+successful candidate is compiled and migrated in the same transaction. Async
+results from the replaced generation are discarded.
+
+This contract is intended for a small Host-owned LRU of inactive panels.
+Eviction still uses normal `dispose`; suspension is not a second persistence or
+state-serialization format.
+
 ## Disposal
 
 Remove a configured widget with `view.dispose(cx)?` before dropping it. Disposal

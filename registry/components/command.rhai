@@ -159,8 +159,9 @@ fn render_command_row(ctx, payload) {
     if item.kind == "group" {
         return text(item.label).with_key(payload.key)
             .with_style(ctx.component_style("group", style()
-                .height(px(24)).padding_x(px(9)).items_center()
-                .typography("caption").font_weight(700)
+                .height(px(item.height)).padding_start(px(9)).padding_end(px(9))
+                .padding_top(px(6)).items_center()
+                .typography("caption").font_weight(400).opacity(0.72)
                 .text_color(theme_color("text_muted"))))
             .accessibility_role("heading").accessibility_label(item.label);
     }
@@ -170,7 +171,7 @@ fn render_command_row(ctx, payload) {
     }
     let node = row(children).with_key(payload.key)
         .with_style(ctx.component_style(if item.active { "item_active" } else { "item" }, style()
-            .height(px(item.height)).padding_x(px(9)).gap(px(8)).items_center()
+            .height(px(item.height)).padding_start(px(18)).padding_end(px(9)).gap(px(8)).items_center()
             .radius(theme_radius("sm"))
             .background(if item.active { theme_color("selection") } else { rgba(0x00000000) })
             .border_start(px(2)).border_color(if item.active { theme_color("accent") } else { rgba(0x00000000) })
@@ -206,7 +207,7 @@ fn array_command_model(items, query, row_height, stored) {
     for group in groups {
         let bucket = buckets[group];
         bucket.sort(Fn("compare_ranked"));
-        if group != "" { data.push(#{ key: `group:${group}`, kind: "group", label: group, height: 24 }); }
+        if group != "" { data.push(#{ key: `group:${group}`, kind: "group", label: group, height: row_height }); }
         for item in bucket {
             data.push(#{ key: `item:${item.value}`, kind: "item", value: item.value,
                 label: item.label, shortcut: item.shortcut, disabled: item.disabled,

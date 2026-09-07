@@ -7,6 +7,22 @@ semantic versioning from this release.
 
 ## 0.1.1 - Unreleased
 
+- Hosts can retain inactive `ScriptViewHandle` tombstones through explicit
+  `suspend`/`resume`. State, native entities, input/scroll/virtual measurements,
+  and the last-good tree survive; effects quiesce, subscriptions cancel, timers
+  and animations freeze, overlays/focus/capture release, bounded task results
+  wait for one atomic resume, and suspended hot reload migrates transactionally.
+- Long-lived subscriptions must now be started by declarative component effects,
+  making their cleanup, suspension, replacement, reload, and disposal ownership
+  explicit.
+- CodeViewer and both DiffViewer panes now apply the document typography metrics
+  to line-number gutters instead of inheriting a larger ambient font.
+- Sticky virtual section headers no longer create a duplicate presentation layer
+  at their natural position, and structural header rows are excluded from the
+  generic roving-focus sequence.
+- Command group labels now recede with regular-weight muted typography, gain
+  asymmetric breathing room, and visually own indented command rows. Array and
+  NativeCollection projections use the same row metric.
 - Raw nodes passed through formal component slots now retain the caller's
   callback provenance recursively, including optional, array, map, object, and
   union-shaped Node props.

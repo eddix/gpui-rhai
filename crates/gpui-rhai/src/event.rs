@@ -308,6 +308,10 @@ impl PointerCaptureRegistry {
         self.active.borrow_mut().remove(&pointer_id)
     }
 
+    pub(crate) fn clear(&self) {
+        self.active.borrow_mut().clear();
+    }
+
     #[must_use]
     pub fn captured(&self, pointer_id: u64) -> Option<crate::NodeId> {
         self.active.borrow().get(&pointer_id).copied()

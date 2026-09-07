@@ -534,6 +534,11 @@ struct SingleEmbeddedHost {
     view: ScriptViewHandle,
 }
 
+struct SuspensibleEmbeddedHost {
+    host: ScriptViewHost,
+    view: ScriptViewHandle,
+}
+
 struct ExternalFocusEmbeddedHost {
     host: ScriptViewHost,
     view: ScriptViewHandle,
@@ -560,6 +565,18 @@ impl Render for AutoMinWidthTableHost {
 impl Render for SingleEmbeddedHost {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         self.host.container(self.view.element().unwrap())
+    }
+}
+
+impl Render for SuspensibleEmbeddedHost {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        let content = match self.view.state() {
+            gpui_rhai::ScriptViewState::Active => self.view.element().unwrap(),
+            gpui_rhai::ScriptViewState::Suspended | gpui_rhai::ScriptViewState::Disposed => {
+                div().into_any_element()
+            }
+        };
+        self.host.container(content)
     }
 }
 
@@ -593,6 +610,68 @@ fn wait_for_view_text(
         );
         std::thread::yield_now();
     }
+}
+
+#[gpui::test]
+fn embedded_view_suspend_resume_retains_state_and_rejects_new_elements(
+    cx: &mut TestAppContext,
+) {
+    cx.update(gpui_rhai::install);
+    let entry = ModuleId::parse("main").unwrap();
+    let prepared = EmbeddedScriptView::new(
+        entry.clone(),
+        EmbeddedScriptSource::new(std::collections::BTreeMap::from([(
+            entry,
+            r#"
+                fn state_schema() { #{ fields: #{ phase: #{ schema: #{ type: "string" },
+                    "default": #{ type: "string", value: "active" } } } } }
+                fn suspend(ctx) { ctx.set_state("phase", "suspended"); }
+                fn resume(ctx, elapsed_ms) { ctx.set_state("phase", "resumed"); }
+                fn view(ctx) { text(ctx.get_state("phase")) }
+            "#
+            .to_owned(),
+        )])),
+        include_str!("../../../registry/themes/default_dark.rhai"),
+    )
+    .prepare()
+    .unwrap();
+    let captured = Rc::new(RefCell::new(None));
+    let captured_for_window = Rc::clone(&captured);
+    let window = cx.add_window(move |window, cx| {
+        let host = ScriptViewHost::new("suspend-window", cx).unwrap();
+        let view = prepared
+            .mount(
+                ScriptViewConfig::new("suspend-view"),
+                host.clone(),
+                window,
+                cx,
+            )
+            .unwrap();
+        *captured_for_window.borrow_mut() = Some(view.clone());
+        SuspensibleEmbeddedHost { host, view }
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    cx.run_until_parked();
+
+    let view = captured.borrow().as_ref().unwrap().clone();
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    assert!(visual.update(|window, cx| view.suspend(window, cx)).unwrap());
+    assert_eq!(view.state(), gpui_rhai::ScriptViewState::Suspended);
+    assert!(matches!(
+        view.element(),
+        Err(gpui_rhai::ScriptViewError::SuspendedView(_))
+    ));
+    let root = visual.update(|_, cx| view.root(cx).unwrap().unwrap());
+    assert!(
+        matches!(root.kind(), gpui_rhai::UiNodeKind::Text { text } if text == "active"),
+        "suspension retains the last-good tree instead of rendering hook mutations"
+    );
+
+    assert!(visual.update(|_, cx| view.resume(cx)).unwrap());
+    assert_eq!(view.state(), gpui_rhai::ScriptViewState::Active);
+    let root = visual.update(|_, cx| view.root(cx).unwrap().unwrap());
+    assert!(matches!(root.kind(), gpui_rhai::UiNodeKind::Text { text } if text == "resumed"));
 }
 
 fn prepared_failure_view() -> gpui_rhai::PreparedScriptView {
@@ -1088,28 +1167,47 @@ fn async_workers_wake_the_view_without_input_or_manual_poll(cx: &mut TestAppCont
                 entry,
                 r#"
                 import "helpers/state" as state;
+                define_component(#{
+                    metadata: #{ id: "tests/ticker", "export": "Ticker", version: "0.1.0",
+                        runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
+                        dependencies: [], capabilities: #{ "app.ticker": "*" } },
+                    schema: #{
+                        props: #{ key: #{ schema: #{ type: "string" }, required: true, sensitive: false } },
+                        state: #{ fields: #{ tick: #{ schema: #{ type: "integer" },
+                            "default": #{ type: "integer", value: 0 } } } },
+                        events: #{}, slots: #{}, parts: [], effects: ["watch"],
+                    },
+                    render: Fn("render_Ticker"),
+                });
                 fn state_schema() { #{ fields: #{
                     message: #{ schema: #{ type: "string" },
                         "default": #{ type: "string", value: "waiting" } },
-                    tick: #{ schema: #{ type: "integer" },
-                        "default": #{ type: "integer", value: 0 } }
                 } } }
                 fn loaded(ctx, value) { state::set_message(ctx, value); }
-                fn ticked(ctx, value) { state::set_tick(ctx, value); }
                 fn failed(ctx, error) { state::set_message(ctx, `error: ${error}`); }
                 fn clicked(ctx, value) { state::set_message(ctx, value); }
+                fn ticked(ctx, value) { ctx.set_state("tick", value); }
+                fn tick_failed(ctx, error) { ctx.set_state("tick", -1); }
+                fn start_ticker(ctx, deps) {
+                    ctx.start_subscription("app.ticker", "watch", (),
+                        Fn("ticked"), Fn("tick_failed"), #{ delivery: "all" });
+                }
+                fn stop_ticker(ctx, deps) { () }
+                fn render_Ticker(ctx, props) {
+                    effect("watch", (), Fn("start_ticker"), Fn("stop_ticker"));
+                    text(`tick: ${ctx.get_state("tick")}`)
+                }
+                fn Ticker() { render_component("tests/ticker", #{ key: "ticker" }) }
                 fn init(ctx) {
                     ctx.start_task("app.delayed_text", "load", "background ready",
                         Fn("loaded"), Fn("failed"));
-                    ctx.start_subscription("app.ticker", "watch", (),
-                        Fn("ticked"), Fn("failed"), #{ delivery: "all" });
                 }
                 fn view(ctx) {
                     column([
                         text(`message: ${ctx.get_state("message")}`)
                             .test_id("message")
                             .on_click_value(Fn("clicked"), "clicked through import"),
-                        text(`tick: ${ctx.get_state("tick")}`)
+                        Ticker()
                     ])
                 }
                 "#
@@ -2881,15 +2979,25 @@ fn grouped_table_headers_stick_through_the_native_virtual_list(cx: &mut TestAppC
         });
     };
 
+    assert!(
+        visual
+            .debug_bounds("virtual-list-sticky:groups-body")
+            .is_none(),
+        "a group header at its natural position must not be duplicated in the sticky layer"
+    );
+    scroll(&mut visual, -60.0);
+    cx.background_executor
+        .advance_clock(std::time::Duration::from_millis(16));
+    visual.run_until_parked();
     let sticky_bounds = visual
         .debug_bounds("virtual-list-sticky:groups-body")
-        .expect("initial group header must use the sticky layer");
+        .expect("the group header must enter the sticky layer after crossing the viewport top");
     visual.simulate_event(ScrollWheelEvent {
         position: point(
             sticky_bounds.origin.x + sticky_bounds.size.width / 2.0,
             sticky_bounds.origin.y + sticky_bounds.size.height / 2.0,
         ),
-        delta: ScrollDelta::Pixels(point(px(0.0), px(-300.0))),
+        delta: ScrollDelta::Pixels(point(px(0.0), px(-240.0))),
         ..ScrollWheelEvent::default()
     });
     cx.background_executor

@@ -1291,6 +1291,35 @@ impl RuntimeEngine {
         Ok(true)
     }
 
+    pub(crate) fn call_optional_lifecycle_with_value(
+        &self,
+        compiled: &CompiledUi,
+        function: &str,
+        context: UiContext,
+        value: UiValue,
+    ) -> Result<bool, RuntimeError> {
+        if !compiled.has_function(function, 2) {
+            return Ok(false);
+        }
+        self.evaluation_generation.set(compiled.generation);
+        let started = self.begin_timing();
+        let result = AstInterpreter::call_fn::<Dynamic, _>(
+            &self.engine,
+            &compiled.ast,
+            &mut Scope::new(),
+            function,
+            (context, value.into_dynamic()),
+        );
+        self.record_timing(
+            ExecutionOperation::Lifecycle(function.to_owned()),
+            compiled.ast.source().unwrap_or("<script>"),
+            started,
+            result.is_ok(),
+        );
+        let _ = result.map_err(RuntimeError::Evaluate)?;
+        Ok(true)
+    }
+
     /// Decode optional root `state_schema()` from an application entry.
     ///
     /// # Errors
@@ -1922,14 +1951,7 @@ fn execute_component_render(
         return Ok(node);
     }
     let native_context = crate::invocation::ScriptInvocationContext::capture(call);
-    let caller_binding =
-        ComponentCallbackBinding {
-            component: caller_context.component_path().clone(),
-            events: caller_context.event_schemas().clone(),
-            context: Some(caller_context.native_context().cloned().unwrap_or_else(|| {
-                crate::invocation::ScriptInvocationContext::capture_entry(call)
-            })),
-        };
+    let caller_binding = caller_component_binding(call, &caller_context);
     bind_component_callback_props(
         &mut invocation.props,
         &component.schema.props,
@@ -1989,6 +2011,22 @@ fn execute_component_render(
     node = node.with_component_root(path.clone());
     node.bind_component_scope(&path, &component.schema.events, Some(&native_context));
     Ok(node)
+}
+
+fn caller_component_binding(
+    call: &rhai::NativeCallContext<'_>,
+    caller_context: &UiContext,
+) -> ComponentCallbackBinding {
+    ComponentCallbackBinding {
+        component: caller_context.component_path().clone(),
+        events: caller_context.event_schemas().clone(),
+        context: Some(
+            caller_context
+                .native_context()
+                .cloned()
+                .unwrap_or_else(|| crate::invocation::ScriptInvocationContext::capture_entry(call)),
+        ),
+    }
 }
 
 fn component_render_metadata(

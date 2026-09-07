@@ -172,8 +172,8 @@ fn view(ctx) {
 }
 ```
 
-Only `view(ctx)` is required. `state_schema`, `init(ctx)`, and `dispose(ctx)` are
-optional.
+Only `view(ctx)` is required. `state_schema`, `init(ctx)`, `suspend(ctx)`,
+`resume(ctx, elapsed_ms)`, and `dispose(ctx)` are optional.
 
 Do not perform effects in `view`. Rendering may be retried, rolled back, or run
 because a dependency changed. Use callbacks, effects, capabilities, tasks, or
@@ -403,6 +403,12 @@ effects, tasks, subscriptions, refs, signals, and validated commands.
 Old callbacks are rejected after reload. Deliveries after unmount or disposal
 are discarded by generation/scope ownership.
 
+Subscriptions are legal only from a declared formal-component effect start.
+This gives the runtime an exact cleanup owner on dependency replacement,
+unmount, retained suspension, reload, and disposal. One-shot `start_task` calls
+may also originate in `init`, ordinary events, and `resume`; do not emulate a
+long-lived stream with recursively started unowned tasks.
+
 ### 6.2 Events, propagation, and geometry
 
 Atomic nodes accept `on(event, handler)`, `on_capture(event, handler)`, and
@@ -572,6 +578,25 @@ width. Use `element()` for fixed, absolute, grid, or manually styled placement.
 Call `view.dispose(cx)?` when removing a mounted view permanently. Merely not
 rendering it for one frame does not dispose its tasks, overlays, and scoped
 resources.
+
+For a small Host-owned LRU of expensive panels, use retained suspension instead
+of dispose/remount:
+
+```rust
+view.suspend(window, cx)?;
+// Omit it from newly built layout while view.state() is Suspended.
+view.resume(cx)?;
+```
+
+Suspension preserves component/native/input/scroll/virtual state but cleans
+effects, cancels their subscriptions and tasks, freezes timers and animations,
+and closes presentation layers. Ordinary one-shot task results wait in a
+bounded queue. `element()`, `flex_item()`, focus, automation, accessibility, and
+element-ref interaction reject suspended handles. Resume delivers valid task
+results, calls `resume(ctx, elapsed_ms)`, reconciles once, and starts fresh
+effect activations atomically. A failed resume remains suspended. See
+[Embedding](docs/embedding.md#retained-suspension-and-host-managed-tombstones)
+for the full hot-reload and generation rules.
 
 See [Embedding](docs/embedding.md) and [Multi-window](docs/multi-window.md).
 

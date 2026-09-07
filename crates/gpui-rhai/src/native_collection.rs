@@ -528,7 +528,7 @@ impl CollectionProjection {
     fn project_group(&self, group: &GroupEntry) -> UiValue {
         match self {
             Self::Table(projection) => projection.project_group(group),
-            Self::Fuzzy(_) => FuzzyProjection::project_group(group),
+            Self::Fuzzy(projection) => projection.project_group(group),
         }
     }
 }
@@ -686,12 +686,12 @@ impl FuzzyProjection {
         ])))
     }
 
-    fn project_group(group: &GroupEntry) -> UiValue {
+    fn project_group(&self, group: &GroupEntry) -> UiValue {
         UiValue::Map(BTreeMap::from([
             ("kind".to_owned(), UiValue::String("group".to_owned())),
             ("key".to_owned(), UiValue::String(group.key.clone())),
             ("label".to_owned(), UiValue::String(group.value.clone())),
-            ("height".to_owned(), UiValue::Float(24.0)),
+            ("height".to_owned(), UiValue::Float(self.row_height)),
         ]))
     }
 

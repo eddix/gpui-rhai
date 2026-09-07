@@ -10,6 +10,13 @@ the entry is then compiled self-contained for atomic commit. Failed candidates k
 callbacks, state, and component metadata. Successful reloads preserve compatible
 state and invalidate callbacks from the previous generation.
 
+A suspended `ScriptViewHandle` continues to collect changed filesystem paths
+but does not compile modules or invoke Rhai in the background. `resume` processes
+the latest batch first. The latest successful program candidate migrates through
+the same atomic resume transaction; a failed edit keeps the prior generation
+and appears through normal last-good diagnostics. Pending async deliveries from
+an older generation are discarded rather than replayed into migrated code.
+
 Mounted views surface the latest failed callback/render/reload above the
 last-good tree as selectable monospace text. Embedded Hosts that render their
 own error UI may set `ScriptViewConfig::show_error_banner(false)` and continue

@@ -29,7 +29,7 @@ impl AsyncWake {
         self.event.listen()
     }
 
-    fn notify(&self) {
+    pub(crate) fn notify(&self) {
         self.event.notify(usize::MAX);
     }
 }
@@ -735,7 +735,7 @@ impl SubscriptionRegistry {
                 let mut pending = entry
                     .pending
                     .lock()
-                    .unwrap_or_else(|error| error.into_inner());
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
                 let take = if closed.contains_key(id)
                     || entry.delivery == SubscriptionDeliveryPolicy::Latest
                     || entry.throttle.is_zero()
@@ -863,6 +863,8 @@ pub enum AsyncRuntimeError {
     InvalidThrottle(Duration),
     #[error("subscription pending queue is poisoned")]
     Poisoned,
+    #[error("suspended view delivery queue reached its capacity of {capacity}")]
+    SuspendedBackpressure { capacity: usize },
 }
 
 #[cfg(test)]

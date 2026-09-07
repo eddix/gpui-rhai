@@ -152,6 +152,12 @@ impl OverlayManager {
         Ok(())
     }
 
+    pub(crate) fn remove_id_prefix(&mut self, prefix: &str) {
+        self.entries
+            .retain(|id, _| !id.as_str().starts_with(prefix));
+        self.order.retain(|id| !id.as_str().starts_with(prefix));
+    }
+
     /// Open and place an overlay above its optional parent.
     ///
     /// # Errors

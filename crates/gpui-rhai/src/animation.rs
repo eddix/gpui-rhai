@@ -332,6 +332,27 @@ impl AnimationRuntime {
         self.settled.retain(|key, _| !key.in_node_scope(path));
     }
 
+    /// Shift one retained node scope forward so elapsed suspended time is not
+    /// sampled as animation progress.
+    pub fn delay_node_scope(&mut self, path: &str, delay: Duration) {
+        if delay.is_zero() {
+            return;
+        }
+        for (key, animation) in &mut self.active {
+            if !key.in_node_scope(path) {
+                continue;
+            }
+            match animation {
+                ActiveAnimation::Transition { started, .. } => {
+                    *started = started.checked_add(delay).unwrap_or(*started);
+                }
+                ActiveAnimation::Spring { last_tick, .. } => {
+                    *last_tick = last_tick.checked_add(delay).unwrap_or(*last_tick);
+                }
+            }
+        }
+    }
+
     #[must_use]
     pub fn snapshot(&self, now: Instant) -> BTreeMap<AnimationKey, f64> {
         self.active

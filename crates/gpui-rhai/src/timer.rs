@@ -266,6 +266,26 @@ impl TimerRegistry {
             .retain(|id, _| !id.component.is_within(component));
     }
 
+    pub fn pause_component_scope(&mut self, component: &ComponentInstancePath, now: Instant) {
+        for (id, entry) in &mut self.entries {
+            if id.component.is_within(component) {
+                let was_paused = entry.is_paused();
+                entry.interaction_paused = true;
+                entry.transition_pause(was_paused, entry.is_paused(), now);
+            }
+        }
+    }
+
+    pub fn resume_component_scope(&mut self, component: &ComponentInstancePath, now: Instant) {
+        for (id, entry) in &mut self.entries {
+            if id.component.is_within(component) {
+                let was_paused = entry.is_paused();
+                entry.interaction_paused = false;
+                entry.transition_pause(was_paused, entry.is_paused(), now);
+            }
+        }
+    }
+
     #[must_use]
     pub fn active_count(&self) -> usize {
         self.entries.len()
