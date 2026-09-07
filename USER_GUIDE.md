@@ -391,6 +391,15 @@ child component, so a raw button placed in TitleBar `start`/`center`/`end` or a
 Dialog action updates the state of the component that created it. Component
 code must not strip and reconstruct a slot's handler as an unscoped `FnPtr`.
 
+Passed formal components also preserve their caller-owned state and resources.
+If the receiving component rerenders, the runtime refreshes its node props from
+the passed components' latest owned snapshots without rerunning them; effects,
+tasks, timers, signals, refs, and virtual state continue unchanged. Styles,
+handlers and other presentation mutations added by the receiver survive child
+updates and do not accumulate on repeated receiver renders. Node construction
+is eager, so the caller—not the receiver—must conditionally stop constructing a
+component when hiding it should also unmount its lifecycle.
+
 Durable callbacks must be named, non-capturing functions. gpui-rhai rejects
 anonymous/capturing closures and curry values that cannot cross the `UiValue`
 boundary. Pass durable data in component props, state/store fields, or explicit

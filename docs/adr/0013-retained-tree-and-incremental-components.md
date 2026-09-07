@@ -28,9 +28,13 @@ a stable string field, so a pure reorder preserves the item dependency.
 
 Root-view rerenders perform component-level bailout before invoking a formal
 component's Rhai render. Equal normalized props, no dirty descendant, and an
-unchanged script/theme/locale/calendar environment reuse the prior `UiNode`
-subtree together with all retained component-owned runtime declarations and
-dependency edges. Node-valued props compare conservatively as unequal.
+unchanged script/theme/locale/calendar environment reuse the component's
+recipe-owned `UiNode` snapshot together with all retained component-owned
+runtime declarations and dependency edges. Node-valued props compare
+conservatively as unequal. Receiver-local rerenders hydrate them recursively
+from the passed components' latest owned snapshots; typed presentation
+mutations remain outside those snapshots and survive child replacement without
+being applied twice. ADR 0019 defines that ownership split and its matrix.
 Components that sample an untracked native signal during render are not
 reusable; signal-bound native properties remain the intended hot path.
 
@@ -54,5 +58,6 @@ candidates preserve the last-good generation.
 
 Protected by keyed reorder/removal tests, incremental/full-render equivalence,
 root-dirty nested bailout and transparent Select/Combobox promotion tests,
-retained dependency/resource tests, failure rollback, retained primitive
-lifecycle, and end-to-end performance probes.
+node-prop replay/state/resource/presentation tests, retained
+dependency/resource tests, failure rollback, retained primitive lifecycle, and
+end-to-end performance probes.

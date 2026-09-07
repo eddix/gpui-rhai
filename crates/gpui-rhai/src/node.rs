@@ -1,4 +1,7 @@
+use std::cell::RefCell;
 use std::collections::BTreeMap;
+use std::fmt;
+use std::rc::{Rc, Weak};
 
 use rhai::{
     Array, CustomType, Dynamic, EvalAltResult, FLOAT, FnPtr, INT, ImmutableString, Map,
@@ -259,6 +262,154 @@ pub struct UiNode {
     animations: Vec<AnimationSpec>,
     signal_bindings: BTreeMap<crate::SignalProperty, crate::NativeSignal>,
     element_ref: Option<crate::ElementRef>,
+    presentation: Vec<NodePresentationMutation>,
+    component_snapshot: Option<ComponentOwnedSnapshotRef>,
+}
+
+#[derive(Clone, Default)]
+pub(crate) struct ComponentOwnedSnapshot(Rc<RefCell<Option<Rc<UiNode>>>>);
+
+#[derive(Clone, Default)]
+pub(crate) struct ComponentOwnedSnapshotRef(Weak<RefCell<Option<Rc<UiNode>>>>);
+
+impl ComponentOwnedSnapshot {
+    pub(crate) fn reference(&self) -> ComponentOwnedSnapshotRef {
+        ComponentOwnedSnapshotRef(Rc::downgrade(&self.0))
+    }
+
+    pub(crate) fn current(&self) -> Option<Rc<UiNode>> {
+        self.0.borrow().clone()
+    }
+
+    pub(crate) fn restore(&self, snapshot: Option<Rc<UiNode>>) {
+        *self.0.borrow_mut() = snapshot;
+    }
+
+    pub(crate) fn update_if_active(&self, node: &UiNode) {
+        let mut snapshot = self.0.borrow_mut();
+        if snapshot.is_some() {
+            *snapshot = Some(Rc::new(node.clone()));
+        }
+    }
+
+    pub(crate) fn replace_if_active(&self, node: Rc<UiNode>) {
+        let mut snapshot = self.0.borrow_mut();
+        if snapshot.is_some() {
+            *snapshot = Some(node);
+        }
+    }
+}
+
+impl fmt::Debug for ComponentOwnedSnapshot {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ComponentOwnedSnapshot")
+            .field("active", &self.0.borrow().is_some())
+            .finish()
+    }
+}
+
+impl ComponentOwnedSnapshotRef {
+    fn current(&self) -> Option<Rc<UiNode>> {
+        self.0.upgrade()?.borrow().clone()
+    }
+
+    fn activate(&self, node: &UiNode) {
+        let Some(snapshot) = self.0.upgrade() else {
+            return;
+        };
+        let mut snapshot = snapshot.borrow_mut();
+        if snapshot.is_none() {
+            *snapshot = Some(Rc::new(node.clone()));
+        }
+    }
+}
+
+impl fmt::Debug for ComponentOwnedSnapshotRef {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ComponentOwnedSnapshotRef")
+            .field("live", &(self.0.strong_count() > 0))
+            .finish()
+    }
+}
+
+impl PartialEq for ComponentOwnedSnapshotRef {
+    fn eq(&self, _: &Self) -> bool {
+        // Snapshot links are runtime ownership metadata. Effective node data
+        // and presentation mutations already participate in UiNode equality;
+        // comparing allocation identity would make equivalent full renders
+        // differ across transactions and engines.
+        true
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+enum NodePresentationMutation {
+    Key(NodeKey),
+    Style(Rc<Style>),
+    PartStyles(Rc<BTreeMap<String, Style>>),
+    Signal(crate::SignalProperty, crate::NativeSignal),
+    ElementRef(crate::ElementRef),
+    Attribute(String, UiValue),
+    Handler(String, UiEventBinding),
+    HandlerPayload(String, UiValue),
+    Animation(AnimationSpec),
+}
+
+impl NodePresentationMutation {
+    fn apply(&self, node: &mut UiNode) {
+        match self {
+            Self::Key(key) => node.key = Some(key.clone()),
+            Self::Style(style) => node.style = std::mem::take(&mut node.style).merged(style),
+            Self::PartStyles(styles) => node.part_styles.extend(styles.as_ref().clone()),
+            Self::Signal(property, signal) => {
+                node.signal_bindings.insert(*property, signal.clone());
+            }
+            Self::ElementRef(reference) => node.element_ref = Some(reference.clone()),
+            Self::Attribute(name, value) => {
+                node.attributes.insert(name.clone(), value.clone());
+            }
+            Self::Handler(event, binding) => {
+                node.handlers
+                    .entry(event.clone())
+                    .or_default()
+                    .push(binding.clone());
+            }
+            Self::HandlerPayload(event, payload) => {
+                node.handler_payloads.insert(event.clone(), payload.clone());
+            }
+            Self::Animation(animation) => {
+                node.animations
+                    .retain(|existing| existing.property() != animation.property());
+                node.animations.push(*animation);
+            }
+        }
+    }
+
+    fn bind_generation(&mut self, generation: ScriptGeneration) {
+        if let Self::Handler(_, binding) = self
+            && let Some(callback) = binding.handler_mut().as_script_mut()
+        {
+            callback.bind_generation(generation);
+        }
+    }
+
+    fn bind_component_scope(
+        &mut self,
+        component: &ComponentInstancePath,
+        events: &BTreeMap<String, crate::EventSchema>,
+        native_context: Option<&crate::invocation::ScriptInvocationContext>,
+    ) {
+        if let Self::Handler(_, binding) = self
+            && let Some(callback) = binding.handler_mut().as_script_mut()
+        {
+            callback.bind_component_if_unset(component.clone(), events.clone());
+            if let Some(context) = native_context {
+                callback.bind_native_context_if_unset(context.clone());
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -427,6 +578,8 @@ impl UiNode {
             animations: Vec::new(),
             signal_bindings: BTreeMap::new(),
             element_ref: None,
+            presentation: Vec::new(),
+            component_snapshot: None,
         }
     }
 
@@ -446,6 +599,8 @@ impl UiNode {
             animations: Vec::new(),
             signal_bindings: BTreeMap::new(),
             element_ref: None,
+            presentation: Vec::new(),
+            component_snapshot: None,
         }
     }
 
@@ -485,6 +640,8 @@ impl UiNode {
             animations: Vec::new(),
             signal_bindings: BTreeMap::new(),
             element_ref: None,
+            presentation: Vec::new(),
+            component_snapshot: None,
         }
     }
 
@@ -524,6 +681,8 @@ impl UiNode {
             animations: Vec::new(),
             signal_bindings: BTreeMap::new(),
             element_ref: None,
+            presentation: Vec::new(),
+            component_snapshot: None,
         }
     }
 
@@ -545,6 +704,8 @@ impl UiNode {
             animations: Vec::new(),
             signal_bindings: BTreeMap::new(),
             element_ref: None,
+            presentation: Vec::new(),
+            component_snapshot: None,
         }
     }
 
@@ -572,6 +733,8 @@ impl UiNode {
             animations: Vec::new(),
             signal_bindings: BTreeMap::new(),
             element_ref: None,
+            presentation: Vec::new(),
+            component_snapshot: None,
         }
     }
 
@@ -611,6 +774,8 @@ impl UiNode {
             animations: Vec::new(),
             signal_bindings: BTreeMap::new(),
             element_ref: None,
+            presentation: Vec::new(),
+            component_snapshot: None,
         }
     }
 
@@ -633,6 +798,8 @@ impl UiNode {
             animations: Vec::new(),
             signal_bindings: BTreeMap::new(),
             element_ref: None,
+            presentation: Vec::new(),
+            component_snapshot: None,
         }
     }
 
@@ -655,6 +822,8 @@ impl UiNode {
             animations: Vec::new(),
             signal_bindings: BTreeMap::new(),
             element_ref: None,
+            presentation: Vec::new(),
+            component_snapshot: None,
         }
     }
 
@@ -674,18 +843,39 @@ impl UiNode {
             animations: Vec::new(),
             signal_bindings: BTreeMap::new(),
             element_ref: None,
+            presentation: Vec::new(),
+            component_snapshot: None,
         }
+    }
+
+    fn apply_presentation_mutation(&mut self, mutation: NodePresentationMutation) {
+        if self.component_root.is_some()
+            && let Some(snapshot) = self.component_snapshot.clone()
+        {
+            snapshot.activate(self);
+        }
+        mutation.apply(self);
+        if self.component_root.is_some() {
+            self.presentation.push(mutation);
+        }
+    }
+
+    fn restore_presentation(&mut self, presentation: Vec<NodePresentationMutation>) {
+        for mutation in &presentation {
+            mutation.apply(self);
+        }
+        self.presentation.extend(presentation);
     }
 
     #[must_use]
     pub fn with_key(mut self, key: impl Into<ImmutableString>) -> Self {
-        self.key = Some(NodeKey::new(key));
+        self.apply_presentation_mutation(NodePresentationMutation::Key(NodeKey::new(key)));
         self
     }
 
     #[must_use]
     pub fn with_style(mut self, style: &Style) -> Self {
-        self.style = self.style.merged(style);
+        self.apply_presentation_mutation(NodePresentationMutation::Style(Rc::new(style.clone())));
         self
     }
 
@@ -708,38 +898,45 @@ impl UiNode {
                 actual,
             });
         }
-        self.signal_bindings.insert(property, signal);
+        self.apply_presentation_mutation(NodePresentationMutation::Signal(property, signal));
         Ok(self)
     }
 
     #[must_use]
     pub fn with_element_ref(mut self, reference: crate::ElementRef) -> Self {
-        self.element_ref = Some(reference);
+        self.apply_presentation_mutation(NodePresentationMutation::ElementRef(reference));
         self
     }
 
     #[must_use]
     pub fn with_scrollbars(mut self, spec: crate::ScrollbarSpec) -> Self {
-        self.attributes.insert(
+        self.apply_presentation_mutation(NodePresentationMutation::Attribute(
             "scrollbar_horizontal".to_owned(),
             UiValue::String(spec.horizontal().as_str().to_owned()),
-        );
-        self.attributes.insert(
+        ));
+        self.apply_presentation_mutation(NodePresentationMutation::Attribute(
             "scrollbar_vertical".to_owned(),
             UiValue::String(spec.vertical().as_str().to_owned()),
-        );
+        ));
         self
     }
 
     #[must_use]
     pub fn with_part_styles(mut self, styles: BTreeMap<String, Style>) -> Self {
+        self.apply_presentation_mutation(NodePresentationMutation::PartStyles(Rc::new(styles)));
+        self
+    }
+
+    pub(crate) fn with_owned_part_styles(mut self, styles: BTreeMap<String, Style>) -> Self {
         self.part_styles.extend(styles);
         self
     }
 
     #[must_use]
     pub fn with_part_style(mut self, part: impl Into<String>, style: Style) -> Self {
-        self.part_styles.insert(part.into(), style);
+        self.apply_presentation_mutation(NodePresentationMutation::PartStyles(Rc::new(
+            BTreeMap::from([(part.into(), style)]),
+        )));
         self
     }
 
@@ -749,8 +946,22 @@ impl UiNode {
         self
     }
 
+    #[cfg(test)]
     pub(crate) fn with_component_root(mut self, component: ComponentInstancePath) -> Self {
         self.component_root = Some(component);
+        self.presentation.clear();
+        self.component_snapshot = None;
+        self
+    }
+
+    pub(crate) fn with_component_root_snapshot(
+        mut self,
+        component: ComponentInstancePath,
+        snapshot: ComponentOwnedSnapshotRef,
+    ) -> Self {
+        self.component_root = Some(component);
+        self.presentation.clear();
+        self.component_snapshot = Some(snapshot);
         self
     }
 
@@ -765,7 +976,9 @@ impl UiNode {
         replacement: Self,
     ) -> bool {
         if self.component_root.as_ref() == Some(component) {
+            let presentation = std::mem::take(&mut self.presentation);
             *self = replacement;
+            self.restore_presentation(presentation);
             return true;
         }
         match &mut self.kind {
@@ -812,6 +1025,82 @@ impl UiNode {
             | UiNodeKind::Svg { .. }
             | UiNodeKind::Image { .. }
             | UiNodeKind::DirectionalImage { .. } => false,
+        }
+    }
+
+    pub(crate) fn activate_component_snapshots(&mut self) {
+        if self.component_root.is_some()
+            && let Some(snapshot) = self.component_snapshot.clone()
+        {
+            snapshot.activate(self);
+        }
+        self.visit_component_children_mut(Self::activate_component_snapshots);
+    }
+
+    pub(crate) fn hydrate_component_subtrees(&mut self) {
+        if let Some(current) = self
+            .component_snapshot
+            .as_ref()
+            .and_then(ComponentOwnedSnapshotRef::current)
+        {
+            let presentation = std::mem::take(&mut self.presentation);
+            *self = current.as_ref().clone();
+            self.restore_presentation(presentation);
+        }
+        self.visit_component_children_mut(Self::hydrate_component_subtrees);
+    }
+
+    fn visit_component_children_mut(&mut self, mut visit: impl FnMut(&mut Self)) {
+        match &mut self.kind {
+            UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => {
+                for child in children {
+                    visit(child);
+                }
+            }
+            UiNodeKind::Custom { primitive } => {
+                for (_, value) in primitive.props.iter_mut() {
+                    match value {
+                        crate::PrimitiveValue::Node(node) => {
+                            visit(node);
+                        }
+                        crate::PrimitiveValue::Nodes(nodes) => {
+                            for node in nodes {
+                                visit(node);
+                            }
+                        }
+                        crate::PrimitiveValue::Data(_)
+                        | crate::PrimitiveValue::Callback(_)
+                        | crate::PrimitiveValue::Style(_)
+                        | crate::PrimitiveValue::Length(_)
+                        | crate::PrimitiveValue::Asset(_)
+                        | crate::PrimitiveValue::Document(_) => {}
+                    }
+                }
+            }
+            UiNodeKind::Overlay {
+                trigger, content, ..
+            } => {
+                visit(trigger);
+                visit(content);
+            }
+            UiNodeKind::Layer { content, .. } => {
+                visit(content);
+            }
+            UiNodeKind::VirtualCollection { spec } => {
+                for item in spec.realized.values_mut() {
+                    visit(item);
+                }
+            }
+            UiNodeKind::ErrorBoundary { child, fallback } => {
+                visit(child);
+                visit(fallback);
+            }
+            UiNodeKind::Text { .. }
+            | UiNodeKind::RichText { .. }
+            | UiNodeKind::Canvas { .. }
+            | UiNodeKind::Svg { .. }
+            | UiNodeKind::Image { .. }
+            | UiNodeKind::DirectionalImage { .. } => {}
         }
     }
 
@@ -877,7 +1166,7 @@ impl UiNode {
 
     #[must_use]
     pub fn with_attribute(mut self, name: impl Into<String>, value: UiValue) -> Self {
-        self.attributes.insert(name.into(), value);
+        self.apply_presentation_mutation(NodePresentationMutation::Attribute(name.into(), value));
         self
     }
 
@@ -887,10 +1176,10 @@ impl UiNode {
         event: impl Into<String>,
         handler: impl Into<UiEventHandler>,
     ) -> Self {
-        self.handlers
-            .entry(event.into())
-            .or_default()
-            .push(UiEventBinding::new(crate::EventPhase::Target, handler));
+        self.apply_presentation_mutation(NodePresentationMutation::Handler(
+            event.into(),
+            UiEventBinding::new(crate::EventPhase::Target, handler),
+        ));
         self
     }
 
@@ -901,10 +1190,10 @@ impl UiNode {
         phase: crate::EventPhase,
         handler: impl Into<UiEventHandler>,
     ) -> Self {
-        self.handlers
-            .entry(event.into())
-            .or_default()
-            .push(UiEventBinding::new(phase, handler));
+        self.apply_presentation_mutation(NodePresentationMutation::Handler(
+            event.into(),
+            UiEventBinding::new(phase, handler),
+        ));
         self
     }
 
@@ -915,15 +1204,16 @@ impl UiNode {
 
     #[must_use]
     pub fn with_handler_payload(mut self, event: impl Into<String>, payload: UiValue) -> Self {
-        self.handler_payloads.insert(event.into(), payload);
+        self.apply_presentation_mutation(NodePresentationMutation::HandlerPayload(
+            event.into(),
+            payload,
+        ));
         self
     }
 
     #[must_use]
     pub fn with_animation(mut self, animation: AnimationSpec) -> Self {
-        self.animations
-            .retain(|existing| existing.property() != animation.property());
-        self.animations.push(animation);
+        self.apply_presentation_mutation(NodePresentationMutation::Animation(animation));
         self
     }
 
@@ -968,6 +1258,9 @@ impl UiNode {
                     callback.bind_generation(generation);
                 }
             }
+        }
+        for mutation in &mut self.presentation {
+            mutation.bind_generation(generation);
         }
         match &mut self.kind {
             UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => {
@@ -1016,6 +1309,9 @@ impl UiNode {
                     }
                 }
             }
+        }
+        for mutation in &mut self.presentation {
+            mutation.bind_component_scope(component, events, native_context);
         }
         match &mut self.kind {
             UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => {
@@ -2246,7 +2542,10 @@ fn collect_children(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ColorValue, Length, Rgba8};
+    use crate::{
+        AnimationProperty, ColorValue, Easing, EventPropagation, Length, Rgba8, SignalId,
+        SignalKind, SignalProperty, TransitionSpec,
+    };
 
     #[test]
     fn node_identity_style_source_and_attributes_are_runtime_owned() {
@@ -2285,5 +2584,90 @@ mod tests {
                 .contains("selectable(true) is supported only on text() nodes"),
             "{error}"
         );
+    }
+
+    #[test]
+    fn component_replacement_preserves_every_external_presentation_mutation() {
+        let component = ComponentInstancePath::root("Probe", "owned");
+        let signal = crate::NativeSignal::new(
+            SignalId::new(component.clone(), "opacity", SignalKind::Float).unwrap(),
+        );
+        let reference =
+            crate::ElementRef::new(crate::ElementRefId::new(component.clone(), "target").unwrap());
+        let style = Style::new().width(Length::pixels(120.0).unwrap());
+        let part_style = Style::new().height(Length::pixels(24.0).unwrap());
+        let animation = AnimationSpec::Transition(TransitionSpec {
+            property: AnimationProperty::Opacity,
+            from: 0.0,
+            to: 1.0,
+            duration_ms: 100,
+            easing: Easing::Linear,
+        });
+        let mut presented = UiNode::text("old")
+            .with_key("owned")
+            .with_component_root(component.clone())
+            .with_key("presented")
+            .with_style(&style)
+            .with_part_style("label", part_style.clone())
+            .with_signal_binding(SignalProperty::Opacity, signal.clone())
+            .unwrap()
+            .with_element_ref(reference.clone())
+            .with_attribute("role", UiValue::String("status".to_owned()))
+            .with_host_handler(
+                "click",
+                crate::HostCallback::new("outer.click", |_, _, _| EventPropagation::Handled),
+            )
+            .with_handler_payload("click", UiValue::Integer(7))
+            .with_animation(animation);
+        assert_eq!(presented.presentation.len(), 9);
+
+        let replacement = UiNode::text("new")
+            .with_key("replacement")
+            .with_component_root(component.clone());
+        assert!(presented.replace_component_subtree(&component, replacement));
+        assert!(matches!(presented.kind(), UiNodeKind::Text { text } if text == "new"));
+        assert_eq!(presented.key().map(NodeKey::as_str), Some("presented"));
+        assert_eq!(presented.style(), &style);
+        assert_eq!(presented.part_style("label"), Some(&part_style));
+        assert_eq!(
+            presented.signal_bindings().collect::<Vec<_>>(),
+            vec![(SignalProperty::Opacity, &signal)]
+        );
+        assert_eq!(presented.element_ref(), Some(&reference));
+        assert_eq!(
+            presented.attributes().get("role"),
+            Some(&UiValue::String("status".to_owned()))
+        );
+        assert_eq!(presented.event_handlers("click").len(), 1);
+        assert_eq!(
+            presented.handler_payload("click"),
+            Some(&UiValue::Integer(7))
+        );
+        assert_eq!(presented.animations(), &[animation]);
+        assert_eq!(presented.presentation.len(), 9);
+    }
+
+    #[test]
+    fn component_snapshot_activates_lazily_and_stays_free_of_outer_presentation() {
+        let component = ComponentInstancePath::root("Probe", "lazy");
+        let snapshot = ComponentOwnedSnapshot::default();
+        let node = UiNode::text("initial")
+            .with_component_root_snapshot(component.clone(), snapshot.reference());
+        assert!(snapshot.current().is_none());
+
+        let mut presented = node.with_style(&Style::new().opacity(0.5).unwrap());
+        let owned = snapshot
+            .current()
+            .expect("first outer mutation activates snapshot");
+        assert_eq!(Rc::strong_count(&snapshot.0), 1, "node link must stay weak");
+        assert!(matches!(owned.kind(), UiNodeKind::Text { text } if text == "initial"));
+        assert_eq!(owned.style().base.opacity, None);
+
+        let replacement =
+            UiNode::text("updated").with_component_root_snapshot(component, snapshot.reference());
+        snapshot.update_if_active(&replacement);
+        presented.hydrate_component_subtrees();
+        assert!(matches!(presented.kind(), UiNodeKind::Text { text } if text == "updated"));
+        assert_eq!(presented.style().base.opacity, Some(0.5));
     }
 }

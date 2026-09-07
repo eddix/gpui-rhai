@@ -376,9 +376,10 @@ impl ScriptLifecycle {
                 if !missing.is_empty() {
                     items.extend(engine.realize_virtual_collection(&id, &missing)?);
                 }
-                if !root.replace_virtual_collection_items(&id, items) {
+                if !root.replace_virtual_collection_items(&id, items.clone()) {
                     return Err(LifecycleError::MissingVirtualCollection(id));
                 }
+                engine.update_virtual_collection_snapshot(&id, &items)?;
                 changed = true;
             }
             if !changed {
