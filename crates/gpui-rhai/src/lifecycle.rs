@@ -1967,7 +1967,7 @@ mod tests {
                     fn init(ctx) {
                         ctx.start_subscription(
                             "app.stream", "watch", (),
-                            Fn("received"), Fn("failed"), 0
+                            Fn("received"), Fn("failed"), #{ delivery: "all" }
                         );
                     }
                     fn received(ctx, value) { ctx.set_state("phase", value); }

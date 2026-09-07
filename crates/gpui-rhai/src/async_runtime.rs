@@ -1,8 +1,8 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::fmt;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
-use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
+use std::sync::mpsc::{Receiver, Sender, channel};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use event_listener::{Event, EventListener};
@@ -331,21 +331,107 @@ fn task_delivery(entry: TaskEntry, result: Result<UiValue, String>) -> AsyncDeli
     }
 }
 
-enum SubscriptionMessage {
-    Value {
-        id: u64,
-        result: Result<UiValue, String>,
-    },
-    Closed {
-        id: u64,
-        reason: SubscriptionCloseReason,
-    },
+const DEFAULT_SUBSCRIPTION_CAPACITY: usize = 64;
+const MAX_SUBSCRIPTION_CAPACITY: usize = 4_096;
+const MAX_SUBSCRIPTION_THROTTLE: Duration = Duration::from_secs(60);
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SubscriptionDeliveryPolicy {
+    All,
+    Latest,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SubscriptionOptions {
+    delivery: SubscriptionDeliveryPolicy,
+    capacity: usize,
+    throttle: Duration,
+}
+
+impl Default for SubscriptionOptions {
+    fn default() -> Self {
+        Self {
+            delivery: SubscriptionDeliveryPolicy::All,
+            capacity: DEFAULT_SUBSCRIPTION_CAPACITY,
+            throttle: Duration::ZERO,
+        }
+    }
+}
+
+impl SubscriptionOptions {
+    /// Build an explicit bounded subscription delivery contract.
+    ///
+    /// # Errors
+    ///
+    /// Returns for a capacity outside 1..=4096 or a throttle above 60 seconds.
+    pub fn new(
+        delivery: SubscriptionDeliveryPolicy,
+        capacity: usize,
+        throttle: Duration,
+    ) -> Result<Self, AsyncRuntimeError> {
+        if !(1..=MAX_SUBSCRIPTION_CAPACITY).contains(&capacity) {
+            return Err(AsyncRuntimeError::InvalidCapacity(capacity));
+        }
+        if throttle > MAX_SUBSCRIPTION_THROTTLE {
+            return Err(AsyncRuntimeError::InvalidThrottle(throttle));
+        }
+        Ok(Self {
+            delivery,
+            capacity,
+            throttle,
+        })
+    }
+
+    #[must_use]
+    pub const fn delivery(self) -> SubscriptionDeliveryPolicy {
+        self.delivery
+    }
+
+    #[must_use]
+    pub const fn capacity(self) -> usize {
+        self.capacity
+    }
+
+    #[must_use]
+    pub const fn throttle(self) -> Duration {
+        self.throttle
+    }
+}
+
+#[derive(Debug)]
+struct SubscriptionBuffer {
+    values: VecDeque<Result<UiValue, String>>,
+    delivery: SubscriptionDeliveryPolicy,
+    capacity: usize,
+}
+
+impl SubscriptionBuffer {
+    fn push(&mut self, result: Result<UiValue, String>) -> Result<(), AsyncRuntimeError> {
+        match self.delivery {
+            SubscriptionDeliveryPolicy::All if self.values.len() >= self.capacity => {
+                Err(AsyncRuntimeError::Backpressure {
+                    capacity: self.capacity,
+                })
+            }
+            SubscriptionDeliveryPolicy::All => {
+                self.values.push_back(result);
+                Ok(())
+            }
+            SubscriptionDeliveryPolicy::Latest => {
+                if let Some(latest) = self.values.back_mut() {
+                    *latest = result;
+                } else {
+                    self.values.push_back(result);
+                }
+                Ok(())
+            }
+        }
+    }
 }
 
 #[derive(Clone)]
 pub struct SubscriptionEmitter {
-    id: u64,
-    sender: Sender<SubscriptionMessage>,
+    pending: Arc<Mutex<SubscriptionBuffer>>,
     lifetime: Arc<SubscriptionLifetime>,
     wake: AsyncWake,
 }
@@ -355,9 +441,10 @@ impl SubscriptionEmitter {
     ///
     /// # Errors
     ///
-    /// Returns [`AsyncRuntimeError::Closed`] after the producer work returns,
-    /// explicit cancellation, scope teardown, generation replacement, or
-    /// registry drop.
+    /// Returns [`AsyncRuntimeError::Closed`] after teardown, or
+    /// [`AsyncRuntimeError::Backpressure`] when a lossless stream's bounded
+    /// pending queue is full. Latest-only streams explicitly replace their
+    /// pending value instead.
     pub fn emit(&self, value: UiValue) -> Result<(), AsyncRuntimeError> {
         self.send(Ok(value))
     }
@@ -377,18 +464,12 @@ impl SubscriptionEmitter {
         if let Some(reason) = self.lifetime.close_reason() {
             return Err(AsyncRuntimeError::Closed { reason });
         }
-        self.sender
-            .send(SubscriptionMessage::Value {
-                id: self.id,
-                result,
-            })
-            .map(|()| self.wake.notify())
-            .map_err(|_| AsyncRuntimeError::Closed {
-                reason: self
-                    .lifetime
-                    .close_reason()
-                    .unwrap_or(SubscriptionCloseReason::RegistryDropped),
-            })
+        self.pending
+            .lock()
+            .map_err(|_| AsyncRuntimeError::Poisoned)?
+            .push(result)?;
+        self.wake.notify();
+        Ok(())
     }
 
     /// Close the stream explicitly from the producer side.
@@ -403,15 +484,7 @@ impl SubscriptionEmitter {
     }
 
     pub(crate) fn close_with_reason(&self, reason: SubscriptionCloseReason) {
-        if self.lifetime.close(reason)
-            && self
-                .sender
-                .send(SubscriptionMessage::Closed {
-                    id: self.id,
-                    reason,
-                })
-                .is_ok()
-        {
+        if self.lifetime.close(reason) {
             self.wake.notify();
         }
     }
@@ -424,9 +497,10 @@ struct SubscriptionEntry {
     callbacks: CallbackPair,
     output: ValueSchema,
     lifetime: Arc<SubscriptionLifetime>,
+    pending: Arc<Mutex<SubscriptionBuffer>>,
+    delivery: SubscriptionDeliveryPolicy,
     throttle: Duration,
     last_delivery: Option<Instant>,
-    pending: Option<Result<UiValue, String>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -443,6 +517,8 @@ pub struct SubscriptionRegistration {
     success: ScriptCallback,
     error: ScriptCallback,
     output: ValueSchema,
+    delivery: SubscriptionDeliveryPolicy,
+    capacity: usize,
     throttle: Duration,
 }
 
@@ -463,34 +539,63 @@ impl SubscriptionRegistration {
             success,
             error,
             output,
+            delivery: SubscriptionDeliveryPolicy::All,
+            capacity: DEFAULT_SUBSCRIPTION_CAPACITY,
             throttle: Duration::ZERO,
         }
     }
 
+    /// Set the minimum interval between foreground delivery batches.
+    ///
+    /// Lossless streams retain every value. Latest-only streams coalesce values
+    /// received during the interval.
     #[must_use]
     pub const fn with_throttle(mut self, throttle: Duration) -> Self {
         self.throttle = throttle;
         self
+    }
+
+    /// Select lossless ordered or explicit latest-only delivery.
+    #[must_use]
+    pub const fn with_delivery_policy(mut self, delivery: SubscriptionDeliveryPolicy) -> Self {
+        self.delivery = delivery;
+        self
+    }
+
+    #[must_use]
+    pub const fn with_options(mut self, options: SubscriptionOptions) -> Self {
+        self.delivery = options.delivery;
+        self.capacity = options.capacity;
+        self.throttle = options.throttle;
+        self
+    }
+
+    /// Bound pending values for lossless delivery.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AsyncRuntimeError::InvalidCapacity`] outside 1..=4096.
+    pub fn with_capacity(mut self, capacity: usize) -> Result<Self, AsyncRuntimeError> {
+        if !(1..=MAX_SUBSCRIPTION_CAPACITY).contains(&capacity) {
+            return Err(AsyncRuntimeError::InvalidCapacity(capacity));
+        }
+        self.capacity = capacity;
+        Ok(self)
     }
 }
 
 pub struct SubscriptionRegistry {
     next_id: u64,
     entries: BTreeMap<u64, SubscriptionEntry>,
-    sender: Sender<SubscriptionMessage>,
-    receiver: Receiver<SubscriptionMessage>,
     closures: Vec<SubscriptionClosure>,
     wake: AsyncWake,
 }
 
 impl Default for SubscriptionRegistry {
     fn default() -> Self {
-        let (sender, receiver) = channel();
         Self {
             next_id: 1,
             entries: BTreeMap::new(),
-            sender,
-            receiver,
             closures: Vec::new(),
             wake: AsyncWake::default(),
         }
@@ -520,6 +625,11 @@ impl SubscriptionRegistry {
         let id = self.next_id;
         self.next_id = self.next_id.saturating_add(1);
         let lifetime = Arc::new(SubscriptionLifetime::new());
+        let pending = Arc::new(Mutex::new(SubscriptionBuffer {
+            values: VecDeque::new(),
+            delivery: registration.delivery,
+            capacity: registration.capacity,
+        }));
         self.entries.insert(
             id,
             SubscriptionEntry {
@@ -532,16 +642,16 @@ impl SubscriptionRegistry {
                 },
                 output: registration.output,
                 lifetime: Arc::clone(&lifetime),
+                pending: Arc::clone(&pending),
+                delivery: registration.delivery,
                 throttle: registration.throttle,
                 last_delivery: None,
-                pending: None,
             },
         );
         (
             SubscriptionHandle(id),
             SubscriptionEmitter {
-                id,
-                sender: self.sender.clone(),
+                pending,
                 lifetime,
                 wake: self.wake.clone(),
             },
@@ -600,35 +710,6 @@ impl SubscriptionRegistry {
     pub fn drain(&mut self, current: ScriptGeneration) -> Vec<AsyncDelivery> {
         let now = Instant::now();
         let mut closed = BTreeMap::new();
-        loop {
-            match self.receiver.try_recv() {
-                Ok(SubscriptionMessage::Value { id, result }) => {
-                    let Some(entry) = self.entries.get_mut(&id) else {
-                        continue;
-                    };
-                    if entry.generation == current {
-                        entry.pending = Some(result);
-                    } else {
-                        entry
-                            .lifetime
-                            .close(SubscriptionCloseReason::GenerationStale);
-                        closed.entry(id).or_insert_with(|| {
-                            entry
-                                .lifetime
-                                .close_reason()
-                                .unwrap_or(SubscriptionCloseReason::GenerationStale)
-                        });
-                    }
-                }
-                Ok(SubscriptionMessage::Closed { id, reason }) => {
-                    if self.entries.contains_key(&id) {
-                        closed.entry(id).or_insert(reason);
-                    }
-                }
-                Err(TryRecvError::Empty | TryRecvError::Disconnected) => break,
-            }
-        }
-
         let mut deliveries = Vec::new();
         for (id, entry) in &mut self.entries {
             if entry.generation != current {
@@ -643,13 +724,32 @@ impl SubscriptionRegistry {
                 });
                 continue;
             }
+            if let Some(reason) = entry.lifetime.close_reason() {
+                closed.insert(*id, reason);
+            }
             let ready = closed.contains_key(id)
                 || entry
                     .last_delivery
                     .is_none_or(|last| now.duration_since(last) >= entry.throttle);
-            if ready && let Some(result) = entry.pending.take() {
-                entry.last_delivery = Some(now);
-                deliveries.push(subscription_delivery(entry, result));
+            if ready {
+                let mut pending = entry
+                    .pending
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner());
+                let take = if closed.contains_key(id)
+                    || entry.delivery == SubscriptionDeliveryPolicy::Latest
+                    || entry.throttle.is_zero()
+                {
+                    pending.values.len()
+                } else {
+                    usize::from(!pending.values.is_empty())
+                };
+                for result in pending.values.drain(..take) {
+                    deliveries.push(subscription_delivery(entry, result));
+                }
+                if take > 0 {
+                    entry.last_delivery = Some(now);
+                }
             }
         }
         for (id, reason) in closed {
@@ -755,6 +855,14 @@ pub enum AsyncRuntimeError {
     Closed { reason: SubscriptionCloseReason },
     #[error("async output is invalid: {0}")]
     InvalidOutput(#[from] SchemaValidationError),
+    #[error("subscription pending queue reached its capacity of {capacity}")]
+    Backpressure { capacity: usize },
+    #[error("subscription capacity must be between 1 and {MAX_SUBSCRIPTION_CAPACITY}, got {0}")]
+    InvalidCapacity(usize),
+    #[error("subscription throttle must not exceed 60 seconds, got {0:?}")]
+    InvalidThrottle(Duration),
+    #[error("subscription pending queue is poisoned")]
+    Poisoned,
 }
 
 #[cfg(test)]
@@ -929,6 +1037,7 @@ mod tests {
             error,
             ValueSchema::integer(),
         )
+        .with_delivery_policy(SubscriptionDeliveryPolicy::Latest)
         .with_throttle(Duration::from_millis(50));
         let (handle, emitter) = subscriptions.subscribe(registration);
         emitter.emit(UiValue::Integer(1)).unwrap();
@@ -954,6 +1063,42 @@ mod tests {
                 scope: AsyncScope::Window("main".to_owned()),
                 reason: SubscriptionCloseReason::Cancelled,
             }]
+        );
+    }
+
+    #[test]
+    fn subscription_defaults_to_bounded_ordered_delivery() {
+        let (success, error, generation) = callbacks();
+        let registration = SubscriptionRegistration::new(
+            "app.stream.events",
+            AsyncScope::App,
+            generation,
+            success,
+            error,
+            ValueSchema::integer(),
+        )
+        .with_capacity(2)
+        .unwrap();
+        let mut subscriptions = SubscriptionRegistry::new();
+        let (_, emitter) = subscriptions.subscribe(registration);
+        emitter.emit(UiValue::Integer(1)).unwrap();
+        emitter.emit(UiValue::Integer(2)).unwrap();
+        assert!(matches!(
+            emitter.emit(UiValue::Integer(3)),
+            Err(AsyncRuntimeError::Backpressure { capacity: 2 })
+        ));
+        assert_eq!(
+            subscriptions
+                .drain(generation)
+                .into_iter()
+                .map(|delivery| delivery.payload)
+                .collect::<Vec<_>>(),
+            vec![UiValue::Integer(1), UiValue::Integer(2)]
+        );
+        emitter.emit(UiValue::Integer(3)).unwrap();
+        assert_eq!(
+            subscriptions.drain(generation)[0].payload,
+            UiValue::Integer(3)
         );
     }
 

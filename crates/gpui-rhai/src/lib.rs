@@ -84,8 +84,9 @@ pub use asset::{
     ImageDecodeHandle, ImageHandle, InMemoryAssetProvider,
 };
 pub use async_runtime::{
-    AsyncDelivery, AsyncRuntimeError, AsyncScope, SubscriptionCloseReason, SubscriptionEmitter,
-    SubscriptionHandle, SubscriptionRegistration, SubscriptionRegistry, TaskHandle, TaskRegistry,
+    AsyncDelivery, AsyncRuntimeError, AsyncScope, SubscriptionCloseReason,
+    SubscriptionDeliveryPolicy, SubscriptionEmitter, SubscriptionHandle, SubscriptionOptions,
+    SubscriptionRegistration, SubscriptionRegistry, TaskHandle, TaskRegistry,
 };
 pub use automation::{
     AutomationBounds, AutomationCommand, AutomationDispatchReport, AutomationError,
