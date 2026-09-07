@@ -78,14 +78,31 @@ Failed renders and reloads restore one runtime/Engine checkpoint and keep:
 
 When root state requires `view(ctx)` to run again, each formal component is a
 Rust-side bailout boundary before its Rhai render function is called. The
-runtime reuses the prior subtree only when normalized non-node props are equal,
+runtime reuses the component's latest clean snapshot only when normalized
+non-node props are equal,
 the component has no dirty descendant, and the script/theme/locale/calendar
 environment still matches. Node-valued props are conservatively unequal.
+Snapshot handles are lazy: node transport or the first outer presentation
+mutation activates one before caller/receiver decoration, while ordinary
+components keep using the accepted-tree path. Recipes own the handle, nodes
+hold only `Weak` references, and active values use `Rc<UiNode>`, so checkpoints
+do not deep-copy every subtree or create cycles. The pointed-to values are also
+checkpointed, so rejected candidates cannot leak through a shared handle.
 Reuse carries the complete component scope—descendant recipes and state,
 reader edges, event callbacks, effects, timers, signals, refs, and virtual
 collections—into the candidate transaction. An untracked native-signal read
 makes the containing subtree ineligible for bailout; bind signals to approved
 native properties instead of sampling them during render.
+
+A formal component passed through a node-valued prop keeps the construction
+owner's path and lifecycle. Before a receiver-local rerender, every nested node
+shape is hydrated from the latest component-owned recipe snapshot without
+executing the passed component. Mutations added after a component-root boundary
+are tracked as a separate presentation layer; receiver replay applies them once,
+and an independent child replacement transfers them to the new owned output.
+This prevents stale state-backed UI without duplicating outer styles/handlers or
+restarting effects. See [ADR 0019](adr/0019-node-prop-component-ownership.md)
+for the path/resource matrix and eager-construction lifetime rule.
 
 State schema changes are reconciled by stable component keys. Compatible fields
 survive; incompatible fields reset to their declared defaults.

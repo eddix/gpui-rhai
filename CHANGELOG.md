@@ -7,6 +7,15 @@ semantic versioning from this release.
 
 ## 0.1.1 - Unreleased
 
+- Formal components passed through node-valued props now replay their latest
+  caller-owned component snapshot when the receiver rerenders instead of an
+  initial stale `UiNode`. Receiver rerenders do not re-execute or restart the
+  passed component, same-batch dirty owners are order-independent, and caller
+  removal still performs normal resource cleanup. Component-owned output is
+  separated from typed outer presentation mutations so child updates preserve
+  slot styles/handlers/refs/signals/animations without accumulating them. Lazy
+  weak-linked snapshots avoid ordinary component clone cost, synchronize later
+  virtual realization, and restore their prior value on transaction rollback.
 - First-render `element_bounds(ref)` now returns null while retaining a pending
   ref-identity dependency, self-heals after committed prepaint, and follows
   retained node replacement. Event callbacks can resolve another node in their

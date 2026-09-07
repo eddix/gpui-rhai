@@ -765,6 +765,136 @@ fn element_bounds_self_heals_after_first_prepaint_and_resolves_event_keys(
     );
 }
 
+#[gpui::test]
+fn node_prop_component_keeps_latest_ui_when_receiver_rerenders(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let entry = ModuleId::parse("main").unwrap();
+    let stateful = ModuleId::parse("components/slot_stateful").unwrap();
+    let receiver = ModuleId::parse("components/slot_receiver").unwrap();
+    let prepared = EmbeddedScriptView::new(
+        entry.clone(),
+        EmbeddedScriptSource::new(std::collections::BTreeMap::from([
+            (
+                entry,
+                r#"
+                    import "components/slot_stateful" as stateful;
+                    import "components/slot_receiver" as receiver;
+                    fn view(ctx) {
+                        receiver::SlotReceiver(#{ key: "receiver",
+                            content: stateful::SlotStateful(#{ key: "stateful" }) })
+                    }
+                "#
+                .to_owned(),
+            ),
+            (
+                stateful,
+                r#"
+                    define_component(#{
+                        metadata: #{ id: "components/slot_stateful", "export": "SlotStateful",
+                            version: "0.1.0", runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
+                            dependencies: [], capabilities: #{} },
+                        schema: #{ props: #{ key: #{ schema: #{ type: "string" }, required: true, sensitive: false } },
+                            state: #{ fields: #{ value: #{ schema: #{ type: "string" },
+                                "default": #{ type: "string", value: "initial-slot" } } } },
+                            events: #{}, slots: #{}, parts: ["root"] },
+                        render: Fn("render_SlotStateful"),
+                    });
+                    fn SlotStateful(props) { render_component("components/slot_stateful", props) }
+                    fn update_slot(ctx, payload) { ctx.set_state("value", "updated-slot"); }
+                    fn render_SlotStateful(ctx, props) {
+                        text(ctx.get_state("value")).test_id("slot-content")
+                            .on_click(Fn("update_slot"))
+                    }
+                "#
+                .to_owned(),
+            ),
+            (
+                receiver,
+                r#"
+                    define_component(#{
+                        metadata: #{ id: "components/slot_receiver", "export": "SlotReceiver",
+                            version: "0.1.0", runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
+                            dependencies: [], capabilities: #{} },
+                        schema: #{ props: #{
+                                key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+                                content: #{ schema: #{ type: "node" }, required: true, sensitive: false },
+                            }, state: #{ fields: #{ revision: #{ schema: #{ type: "integer" },
+                                "default": #{ type: "integer", value: 0 } } } },
+                            events: #{}, slots: #{}, parts: ["root", "content"] },
+                        render: Fn("render_SlotReceiver"),
+                    });
+                    fn SlotReceiver(props) { render_component("components/slot_receiver", props) }
+                    fn rerender_receiver(ctx, payload) {
+                        ctx.set_state("revision", ctx.get_state("revision") + 1);
+                    }
+                    fn render_SlotReceiver(ctx, props) {
+                        column([
+                            props.content.with_style(ctx.component_style("content", style().opacity(0.91))),
+                            text(`rerender:${ctx.get_state("revision")}`)
+                                .test_id("receiver-control").on_click(Fn("rerender_receiver")),
+                        ])
+                    }
+                "#
+                .to_owned(),
+            ),
+        ])),
+        include_str!("../../../registry/themes/default_dark.rhai"),
+    )
+    .prepare()
+    .unwrap();
+    let captured = Rc::new(RefCell::new(None));
+    let captured_for_window = Rc::clone(&captured);
+    let window = cx.add_window(move |window, cx| {
+        let host = ScriptViewHost::new("node-prop-window", cx).unwrap();
+        let view = prepared
+            .mount(
+                ScriptViewConfig::new("node-prop-view"),
+                host.clone(),
+                window,
+                cx,
+            )
+            .unwrap();
+        *captured_for_window.borrow_mut() = Some(view.clone());
+        SingleEmbeddedHost { host, view }
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    cx.run_until_parked();
+
+    let view = captured.borrow().as_ref().unwrap().clone();
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    for test_id in ["slot-content", "receiver-control"] {
+        visual
+            .update(|window, cx| {
+                view.automate(
+                    gpui_rhai::AutomationCommand::Dispatch {
+                        locator: gpui_rhai::AutomationLocator::TestId {
+                            id: test_id.to_owned(),
+                        },
+                        event: "click".to_owned(),
+                        payload: None,
+                    },
+                    window,
+                    cx,
+                )
+            })
+            .unwrap();
+        visual.run_until_parked();
+    }
+    wait_for_view_text(
+        &mut visual,
+        &view,
+        "updated-slot",
+        "receiver replay replaced the latest stateful node-prop UI",
+    );
+    wait_for_view_text(
+        &mut visual,
+        &view,
+        "rerender:1",
+        "receiver callback did not commit its own state",
+    );
+}
+
 fn prepared_failure_view() -> gpui_rhai::PreparedScriptView {
     let entry = ModuleId::parse("main").unwrap();
     EmbeddedScriptView::new(

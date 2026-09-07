@@ -188,6 +188,24 @@ The report was produced from a dirty development tree and is an architectural
 checkpoint, not a release guarantee. Compare only reports whose
 `data_backend` and environment metadata match.
 
+The 0.1.1 node-prop ownership fix was checked with alternating current-main and
+candidate release binaries on the same Macmini9,1, using 5 warmups and 30
+samples. A mandatory per-component owned-tree snapshot prototype caused a
+repeatable 13–17% selection regression and was rejected. Lazy snapshots,
+activated only by node transport or outer presentation, produced:
+
+```text
+scenario       candidate p95   adjacent main p95 range
+unchanged          5.06ms          4.96–5.10ms
+reverse           11.25ms         11.10–11.15ms
+selection         20.40ms         20.14–20.88ms
+native resize     12.74ms         13.22–13.29ms
+```
+
+The unchanged candidate retained 26 realized rows and performed zero virtual
+Rhai work. This A/B guards both the foreground clone cost and synchronization of
+later virtual realization into an active component-owned snapshot.
+
 Record toolchain, hardware, and power state when comparing results. The 16 ms
 foreground threshold is enforced as a trace warning; the standalone probe is
 advisory until CI has a dedicated, uncontended performance runner.

@@ -5,8 +5,9 @@ use std::rc::Rc;
 use gpui_rhai::{
     ActionId, AsyncCapabilityHandler, CalendarClock, CapabilityDescriptor, CapabilityId,
     CapabilityMethod, ComponentInstancePath, ComponentStateSchema, EmbeddedScriptSource,
-    GregorianDate, ModuleId, RestrictedModuleResolver, RuntimeEngine, ScriptLifecycle, StateField,
-    StoreId, TaskWork, UiNodeKind, UiRuntimeState, UiValue, ValueSchema,
+    ExecutionOperation, GregorianDate, ModuleId, RestrictedModuleResolver, RuntimeEngine,
+    ScriptLifecycle, StateField, StoreId, TaskWork, UiNodeKind, UiRuntimeState, UiValue,
+    ValueSchema,
 };
 use semver::{Version, VersionReq};
 
@@ -333,6 +334,77 @@ fn hide(ctx, payload) { ctx.set_state("visible", false); }
 fn view(ctx) {
     if ctx.get_state("visible") { probe::RefProbe(#{ key: "primary" }) }
     else { text("hidden") }
+}
+"#;
+
+const NODE_PROP_STATEFUL: &str = r#"
+define_component(#{
+    metadata: #{ id: "components/node_prop_stateful", "export": "NodePropStateful",
+        version: "0.1.0", runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
+        dependencies: [], capabilities: #{} },
+    schema: #{ props: #{ key: #{ schema: #{ type: "string" }, required: true, sensitive: false } },
+        state: #{ fields: #{ value: #{ schema: #{ type: "string" },
+            "default": #{ type: "string", value: "initial" } } } },
+        events: #{}, slots: #{}, parts: ["root"] },
+    render: Fn("render_NodePropStateful"),
+});
+fn NodePropStateful(props) { render_component("components/node_prop_stateful", props) }
+fn render_NodePropStateful(ctx, props) { text(ctx.get_state("value")) }
+"#;
+
+const NODE_PROP_RECEIVER: &str = r#"
+define_component(#{
+    metadata: #{ id: "components/node_prop_receiver", "export": "NodePropReceiver",
+        version: "0.1.0", runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
+        dependencies: [], capabilities: #{} },
+    schema: #{ props: #{
+            key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+            content: #{ schema: #{ type: "node" }, required: true, sensitive: false },
+        },
+        state: #{ fields: #{
+            revision: #{ schema: #{ type: "integer" },
+                "default": #{ type: "integer", value: 0 } },
+            fail: #{ schema: #{ type: "bool" },
+                "default": #{ type: "bool", value: false } },
+            click_count: #{ schema: #{ type: "integer" },
+                "default": #{ type: "integer", value: 0 } },
+        } },
+        events: #{}, slots: #{}, parts: ["root"] },
+    render: Fn("render_NodePropReceiver"),
+});
+fn NodePropReceiver(props) { render_component("components/node_prop_receiver", props) }
+fn receiver_content_clicked(ctx, payload) {
+    ctx.set_state("click_count", ctx.get_state("click_count") + 1);
+}
+fn render_NodePropReceiver(ctx, props) {
+    if ctx.get_state("fail") { throw "receiver rejected replay"; }
+    let content = props.content.on_click(Fn("receiver_content_clicked"));
+    column([content, text(`receiver:${ctx.get_state("revision")}`)])
+}
+"#;
+
+const NODE_PROP_APP: &str = r#"
+import "components/node_prop_stateful" as stateful;
+import "components/node_prop_receiver" as receiver;
+fn state_schema() { #{ fields: #{ revision: #{ schema: #{ type: "integer" },
+    "default": #{ type: "integer", value: 0 } } } } }
+fn view(ctx) {
+    let revision = ctx.get_state("revision");
+    receiver::NodePropReceiver(#{ key: "receiver",
+        content: stateful::NodePropStateful(#{ key: "stateful" }) })
+}
+"#;
+
+const NODE_PROP_EFFECT_APP: &str = r#"
+import "components/effect_probe" as probe;
+import "components/node_prop_receiver" as receiver;
+fn state_schema() { #{ fields: #{ visible: #{ schema: #{ type: "bool" },
+    "default": #{ type: "bool", value: true } } } } }
+fn view(ctx) {
+    receiver::NodePropReceiver(#{ key: "receiver",
+        content: if ctx.get_state("visible") {
+            probe::EffectProbe(#{ key: "effect", dependency: 1 })
+        } else { text("removed") } })
 }
 "#;
 
@@ -1670,6 +1742,280 @@ fn element_refs_follow_retained_node_identity_and_fail_stale_after_unmount() {
         .unwrap();
     assert!(lifecycle.render_dirty(&mut engine).unwrap());
     assert!(runtime.borrow().element_refs.resolve(&reference).is_err());
+}
+
+struct NodePropFixture {
+    engine: RuntimeEngine,
+    runtime: Rc<RefCell<UiRuntimeState>>,
+    lifecycle: ScriptLifecycle,
+    root: ComponentInstancePath,
+    stateful: ComponentInstancePath,
+    receiver: ComponentInstancePath,
+}
+
+fn node_prop_fixture() -> NodePropFixture {
+    let source = EmbeddedScriptSource::new(BTreeMap::from([
+        (
+            ModuleId::parse("components/node_prop_stateful").unwrap(),
+            NODE_PROP_STATEFUL.to_owned(),
+        ),
+        (
+            ModuleId::parse("components/node_prop_receiver").unwrap(),
+            NODE_PROP_RECEIVER.to_owned(),
+        ),
+    ]));
+    let mut engine = RuntimeEngine::new();
+    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
+    let compiled = engine
+        .compile_self_contained_named("ui/node_prop_replay.rhai", NODE_PROP_APP)
+        .unwrap();
+    let schema = engine.root_state_schema(&compiled).unwrap();
+    let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+    let root = ComponentInstancePath::root("App", "root");
+    let stateful = root.child("NodePropStateful", "stateful");
+    let receiver = root.child("NodePropReceiver", "receiver");
+    let mut lifecycle = ScriptLifecycle::new(
+        compiled,
+        Rc::clone(&runtime),
+        root.clone(),
+        Some("main".to_owned()),
+        BTreeMap::new(),
+        &schema,
+    )
+    .unwrap();
+    lifecycle.start(&mut engine).unwrap();
+    NodePropFixture {
+        engine,
+        runtime,
+        lifecycle,
+        root,
+        stateful,
+        receiver,
+    }
+}
+
+fn assert_receiver_content(lifecycle: &ScriptLifecycle, expected: &str, handlers: usize) {
+    let UiNodeKind::Box { children } = lifecycle.root().unwrap().kind() else {
+        panic!("receiver must render a column");
+    };
+    assert!(matches!(children[0].kind(), UiNodeKind::Text { text } if text == expected));
+    assert_eq!(children[0].event_handlers("click").len(), handlers);
+}
+
+#[test]
+fn receiver_rerender_replays_the_latest_node_prop_component_snapshot() {
+    let NodePropFixture {
+        mut engine,
+        runtime,
+        mut lifecycle,
+        root,
+        stateful,
+        receiver,
+    } = node_prop_fixture();
+
+    runtime
+        .borrow_mut()
+        .set_component_state_from_host(&stateful, "value", UiValue::String("updated".to_owned()))
+        .unwrap();
+    assert!(lifecycle.render_dirty(&mut engine).unwrap());
+    assert_receiver_content(&lifecycle, "updated", 1);
+
+    runtime
+        .borrow_mut()
+        .set_component_state_from_host(&receiver, "revision", UiValue::Integer(1))
+        .unwrap();
+    let _ = engine.take_timings();
+    assert!(lifecycle.render_dirty(&mut engine).unwrap());
+    assert_eq!(
+        runtime.borrow().component_state.get(&stateful, "value"),
+        Some(&UiValue::String("updated".to_owned())),
+        "the caller-owned component state itself must remain mounted"
+    );
+    assert_receiver_content(&lifecycle, "updated", 1);
+    let timings = engine.take_timings();
+    assert!(timings.iter().any(|timing| {
+        matches!(timing.operation, ExecutionOperation::Render)
+            && timing.source == "components/node_prop_receiver"
+    }));
+    assert!(!timings.iter().any(|timing| {
+        matches!(timing.operation, ExecutionOperation::Render)
+            && timing.source == "components/node_prop_stateful"
+    }));
+
+    {
+        let mut runtime = runtime.borrow_mut();
+        runtime
+            .set_component_state_from_host(
+                &stateful,
+                "value",
+                UiValue::String("same-batch".to_owned()),
+            )
+            .unwrap();
+        runtime
+            .set_component_state_from_host(&receiver, "revision", UiValue::Integer(2))
+            .unwrap();
+    }
+    assert!(lifecycle.render_dirty(&mut engine).unwrap());
+    assert_receiver_content(&lifecycle, "same-batch", 1);
+    let UiNodeKind::Box { children } = lifecycle.root().unwrap().kind() else {
+        unreachable!()
+    };
+    let receiver_handler = children[0]
+        .handler("click")
+        .and_then(gpui_rhai::UiEventHandler::as_script)
+        .cloned()
+        .expect("receiver presentation callback");
+    let _ = lifecycle
+        .invoke_callback_transactional(&engine, &receiver_handler, UiValue::Null)
+        .unwrap();
+    assert_eq!(
+        runtime
+            .borrow()
+            .component_state
+            .get(&receiver, "click_count"),
+        Some(&UiValue::Integer(1)),
+        "presentation callback must retain the receiving component context"
+    );
+    assert!(lifecycle.render_dirty(&mut engine).unwrap());
+
+    let last_good = lifecycle.root().unwrap().clone();
+    runtime
+        .borrow_mut()
+        .set_component_state_from_host(&receiver, "fail", UiValue::Bool(true))
+        .unwrap();
+    assert!(lifecycle.render_dirty(&mut engine).is_err());
+    assert_eq!(lifecycle.root(), Some(&last_good));
+    {
+        let mut runtime = runtime.borrow_mut();
+        runtime
+            .set_component_state_from_host(&receiver, "fail", UiValue::Bool(false))
+            .unwrap();
+        runtime
+            .set_component_state_from_host(&receiver, "revision", UiValue::Integer(3))
+            .unwrap();
+    }
+    assert!(lifecycle.render_dirty(&mut engine).unwrap());
+    assert_receiver_content(&lifecycle, "same-batch", 1);
+
+    runtime
+        .borrow_mut()
+        .set_component_state_from_host(&root, "revision", UiValue::Integer(1))
+        .unwrap();
+    assert!(lifecycle.render_dirty(&mut engine).unwrap());
+    assert_receiver_content(&lifecycle, "same-batch", 1);
+}
+
+#[test]
+fn receiver_rerender_does_not_restart_replayed_node_prop_resources() {
+    let source = EmbeddedScriptSource::new(BTreeMap::from([
+        (
+            ModuleId::parse("components/effect_probe").unwrap(),
+            EFFECT_PROBE.to_owned(),
+        ),
+        (
+            ModuleId::parse("components/node_prop_receiver").unwrap(),
+            NODE_PROP_RECEIVER.to_owned(),
+        ),
+    ]));
+    let mut engine = RuntimeEngine::new();
+    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
+    let compiled = engine
+        .compile_self_contained_named("ui/node_prop_effect.rhai", NODE_PROP_EFFECT_APP)
+        .unwrap();
+    let schema = engine.root_state_schema(&compiled).unwrap();
+    let runtime = effect_audit_runtime();
+    let root = ComponentInstancePath::root("App", "root");
+    let receiver = root.child("NodePropReceiver", "receiver");
+    let mut lifecycle = ScriptLifecycle::new(
+        compiled,
+        Rc::clone(&runtime),
+        root.clone(),
+        Some("main".to_owned()),
+        BTreeMap::new(),
+        &schema,
+    )
+    .unwrap();
+    lifecycle.start(&mut engine).unwrap();
+    assert_eq!(effect_audit_values(&runtime)["starts"], UiValue::Integer(1));
+    assert_eq!(
+        effect_audit_values(&runtime)["cleanups"],
+        UiValue::Integer(0)
+    );
+    assert_eq!(runtime.borrow().effects.len(), 1);
+    assert_eq!(runtime.borrow().timers.active_count(), 1);
+    assert_eq!(runtime.borrow().tasks.active_count(), 1);
+
+    runtime
+        .borrow_mut()
+        .set_component_state_from_host(&receiver, "revision", UiValue::Integer(1))
+        .unwrap();
+    assert!(lifecycle.render_dirty(&mut engine).unwrap());
+    assert_eq!(effect_audit_values(&runtime)["starts"], UiValue::Integer(1));
+    assert_eq!(
+        effect_audit_values(&runtime)["cleanups"],
+        UiValue::Integer(0)
+    );
+    assert_eq!(runtime.borrow().effects.len(), 1);
+    assert_eq!(runtime.borrow().timers.active_count(), 1);
+    assert_eq!(runtime.borrow().tasks.active_count(), 1);
+
+    runtime
+        .borrow_mut()
+        .set_component_state_from_host(&root, "visible", UiValue::Bool(false))
+        .unwrap();
+    assert!(lifecycle.render_dirty(&mut engine).unwrap());
+    assert_eq!(effect_audit_values(&runtime)["starts"], UiValue::Integer(1));
+    assert_eq!(
+        effect_audit_values(&runtime)["cleanups"],
+        UiValue::Integer(1)
+    );
+    assert!(runtime.borrow().effects.is_empty());
+    assert_eq!(runtime.borrow().timers.active_count(), 0);
+    assert_eq!(runtime.borrow().tasks.active_count(), 0);
+}
+
+#[test]
+fn rejected_child_candidate_cannot_leak_through_the_shared_node_snapshot() {
+    let NodePropFixture {
+        mut engine,
+        runtime,
+        mut lifecycle,
+        stateful,
+        receiver,
+        ..
+    } = node_prop_fixture();
+    runtime
+        .borrow_mut()
+        .set_component_state_from_host(&stateful, "value", UiValue::String("accepted".to_owned()))
+        .unwrap();
+    assert!(lifecycle.render_dirty(&mut engine).unwrap());
+    assert_receiver_content(&lifecycle, "accepted", 1);
+
+    let retained_budget = runtime.borrow().budgets.retained_nodes;
+    {
+        let mut runtime = runtime.borrow_mut();
+        runtime.budgets.retained_nodes = 1;
+        runtime
+            .set_component_state_from_host(
+                &stateful,
+                "value",
+                UiValue::String("rejected".to_owned()),
+            )
+            .unwrap();
+    }
+    assert!(lifecycle.render_dirty(&mut engine).is_err());
+    assert_receiver_content(&lifecycle, "accepted", 1);
+
+    {
+        let mut runtime = runtime.borrow_mut();
+        runtime.budgets.retained_nodes = retained_budget;
+        let _ = runtime.drain_batch();
+        runtime
+            .set_component_state_from_host(&receiver, "revision", UiValue::Integer(1))
+            .unwrap();
+    }
+    assert!(lifecycle.render_dirty(&mut engine).unwrap());
+    assert_receiver_content(&lifecycle, "accepted", 1);
 }
 
 #[test]

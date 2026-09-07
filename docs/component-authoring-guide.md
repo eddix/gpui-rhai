@@ -85,6 +85,20 @@ collections. Slots and other node-valued props intentionally opt out because
 node equality is not a safe ownership proof. Do not rely on render call counts
 for behavior; put effects in declarations and mutations in callbacks.
 
+A component received through a `Node` prop remains owned by the context that
+constructed it. Receiver-local rerenders hydrate the prop from that component's
+latest owned snapshot without executing it or restarting its resources. Fluent
+styles, handlers, refs, signals, attributes, and animations that the receiver
+adds to the component root form a distinct presentation layer: child rerenders
+preserve the layer and receiver rerenders apply it exactly once. This applies
+recursively to optional/array/map/object/union Node shapes and to nodes inside
+Overlay, Layer, ErrorBoundary, custom primitive, and realized virtual content.
+
+Construction is eager. Omitting an already-passed node from a receiver's output
+hides it but does not transfer or end the caller-owned lifecycle. Put the
+conditional around the constructor in the caller when removal must clean state,
+effects, tasks, timers, signals, or refs.
+
 Stateful components and lifecycle custom primitives require a stable caller
 `key`. Never store UI state in mutable script globals.
 

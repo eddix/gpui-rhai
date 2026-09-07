@@ -302,7 +302,19 @@ struct ComponentRenderEnvironment {
 #[derive(Clone)]
 struct ComponentReusePlan {
     previous_root: Rc<UiNode>,
+    subtrees: crate::node::ComponentSubtreeIndex,
     dirty: BTreeSet<ComponentInstancePath>,
+}
+
+impl ComponentReusePlan {
+    fn new(previous_root: Rc<UiNode>, dirty: BTreeSet<ComponentInstancePath>) -> Self {
+        let subtrees = crate::node::ComponentSubtreeIndex::new(&previous_root);
+        Self {
+            previous_root,
+            subtrees,
+            dirty,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -371,6 +383,7 @@ pub struct ComponentInvocationRecipe {
     component_events: BTreeMap<String, EventSchema>,
     declared_effects: BTreeSet<String>,
     render: FnPtr,
+    snapshot: crate::node::ComponentOwnedSnapshot,
     context: crate::invocation::ScriptInvocationContext,
     generation: ScriptGeneration,
     environment: ComponentRenderEnvironment,
@@ -468,6 +481,7 @@ pub(crate) struct RuntimeEngineCheckpoint {
     component_element_refs: BTreeSet<crate::ElementRefId>,
     pending_component_commits: BTreeMap<ComponentInstancePath, PendingComponentCommit>,
     virtual_collections: BTreeMap<crate::VirtualCollectionId, VirtualCollectionRecipe>,
+    component_snapshots: Vec<(crate::node::ComponentOwnedSnapshot, Option<Rc<UiNode>>)>,
 }
 
 impl Default for RuntimeEngine {
@@ -692,7 +706,7 @@ impl RuntimeEngine {
             .begin_render_scope(root.clone());
         let _ = transaction.retain_existing(&root);
         let reuse = reuse_plan.map(|plan| ComponentReuseSnapshot {
-            subtrees: crate::node::ComponentSubtreeIndex::new(&plan.previous_root),
+            subtrees: plan.subtrees,
             previous_root: plan.previous_root,
             dirty: plan.dirty,
             invocations: self
@@ -958,10 +972,7 @@ impl RuntimeEngine {
         self.render_with_context_staged_impl(
             compiled,
             context,
-            Some(ComponentReusePlan {
-                previous_root,
-                dirty: dirty.clone(),
-            }),
+            Some(ComponentReusePlan::new(previous_root, dirty.clone())),
         )
     }
 
@@ -1000,7 +1011,7 @@ impl RuntimeEngine {
         previous_root: &UiNode,
         dirty: &BTreeSet<ComponentInstancePath>,
     ) -> Result<UiNode, RuntimeError> {
-        let recipe = self
+        let mut recipe = self
             .component_invocations
             .get(component)
             .cloned()
@@ -1018,14 +1029,15 @@ impl RuntimeEngine {
             .try_borrow_mut()
             .map_err(|_| RuntimeError::ComponentRuntime("UI state is already borrowed".to_owned()))?
             .reset_component_readers(component);
+        for value in recipe.script_props.values_mut() {
+            hydrate_replayed_node_value(value);
+        }
+        let reuse = ComponentReusePlan::new(Rc::new(previous_root.clone()), dirty.clone());
         self.begin_component_render(
             recipe.component_context.clone(),
             recipe.generation,
             Some(recipe.declared_effects.clone()),
-            Some(ComponentReusePlan {
-                previous_root: Rc::new(previous_root.clone()),
-                dirty: dirty.clone(),
-            }),
+            Some(reuse),
         )?;
         register_component_invocation(&self.component_render, recipe.clone())
             .map_err(RuntimeError::Evaluate)?;
@@ -1051,8 +1063,9 @@ impl RuntimeEngine {
                 &recipe.context,
             )
             .map_err(RuntimeError::Evaluate)?;
-            node = node.with_part_styles(recipe.part_styles.clone());
-            node = node.with_component_root(recipe.path.clone());
+            node = node.with_owned_part_styles(recipe.part_styles.clone());
+            node =
+                node.with_component_root_snapshot(recipe.path.clone(), recipe.snapshot.reference());
             node.bind_component_scope(
                 &recipe.path,
                 &recipe.component_events,
@@ -1072,6 +1085,9 @@ impl RuntimeEngine {
                 if let Some(retained) = active.invocations.get_mut(&recipe.path) {
                     retained.environment = environment;
                     retained.reusable = recipe.component_context.component_render_is_reusable();
+                    if let Ok(node) = &result {
+                        retained.snapshot.update_if_active(node);
+                    }
                 }
             }
         }
@@ -1097,10 +1113,18 @@ impl RuntimeEngine {
             component_element_refs: self.component_element_refs.clone(),
             pending_component_commits: self.pending_component_commits.clone(),
             virtual_collections: self.virtual_collections.clone(),
+            component_snapshots: self
+                .component_invocations
+                .values()
+                .map(|recipe| (recipe.snapshot.clone(), recipe.snapshot.current()))
+                .collect(),
         }
     }
 
     pub(crate) fn restore_execution_checkpoint(&mut self, checkpoint: RuntimeEngineCheckpoint) {
+        for (snapshot, value) in &checkpoint.component_snapshots {
+            snapshot.restore(value.clone());
+        }
         self.generation = checkpoint.generation;
         self.evaluation_generation
             .set(checkpoint.evaluation_generation);
@@ -1256,6 +1280,28 @@ impl RuntimeEngine {
         })();
         self.finish_component_render(result.is_ok())?;
         result
+    }
+
+    pub(crate) fn update_virtual_collection_snapshot(
+        &mut self,
+        id: &crate::VirtualCollectionId,
+        items: &BTreeMap<usize, UiNode>,
+    ) -> Result<(), RuntimeError> {
+        let Some(owner) = self.component_invocations.get_mut(&id.component) else {
+            return Ok(());
+        };
+        let Some(current) = owner.snapshot.current() else {
+            return Ok(());
+        };
+        let mut rendered = current.as_ref().clone();
+        if !rendered.replace_virtual_collection_items(id, items.clone()) {
+            return Err(RuntimeError::ComponentRuntime(format!(
+                "virtual collection `{}` is missing from its owning component snapshot",
+                id.key
+            )));
+        }
+        owner.snapshot.replace_if_active(Rc::new(rendered));
+        Ok(())
     }
 
     /// Invoke an optional one-argument lifecycle function.
@@ -1982,6 +2028,12 @@ fn execute_component_render(
         &native_context,
     )?;
     let (environment, reusable) = component_render_metadata(active, &recipe_component_context)?;
+    leave_component_render(active)?;
+    let mut node = result?;
+    node = node.with_owned_part_styles(part_styles.clone());
+    let snapshot = crate::node::ComponentOwnedSnapshot::default();
+    node = node.with_component_root_snapshot(path.clone(), snapshot.reference());
+    node.bind_component_scope(&path, &component.schema.events, Some(&native_context));
     register_component_invocation(
         active,
         ComponentInvocationRecipe {
@@ -1994,22 +2046,18 @@ fn execute_component_render(
             script_props,
             component_context: recipe_component_context,
             caller_context: caller_context.clone(),
-            part_styles: part_styles.clone(),
+            part_styles,
             event_callbacks: recipe_event_callbacks,
             component_events: component.schema.events.clone(),
             declared_effects: component.schema.effects.clone(),
             render: render_recipe,
+            snapshot,
             context: native_context.clone(),
             generation,
             environment,
             reusable,
         },
     )?;
-    leave_component_render(active)?;
-    let mut node = result?;
-    node = node.with_part_styles(part_styles);
-    node = node.with_component_root(path.clone());
-    node.bind_component_scope(&path, &component.schema.events, Some(&native_context));
     Ok(node)
 }
 
@@ -2133,8 +2181,15 @@ fn reusable_component_scope(
     {
         return None;
     }
+    let node = if let Some(snapshot) = recipe.snapshot.current() {
+        let mut node = snapshot.as_ref().clone();
+        node.hydrate_component_subtrees();
+        node
+    } else {
+        reuse.subtrees.get(&reuse.previous_root, path)?.clone()
+    };
     Some(ReusedComponentScope {
-        node: reuse.subtrees.get(&reuse.previous_root, path)?.clone(),
+        node,
         invocations,
         event_handlers: reuse
             .event_handlers
@@ -3368,6 +3423,7 @@ fn bind_component_node_value(
                 &binding.events,
                 binding.context.as_ref(),
             );
+            node.activate_component_snapshots();
             *value = Dynamic::from(node);
         }
         crate::ValueSchema::Optional { value: inner } if !value.is_unit() => {
@@ -3411,6 +3467,26 @@ fn bind_component_node_value(
             *value = Dynamic::from_map(values);
         }
         _ => {}
+    }
+}
+
+fn hydrate_replayed_node_value(value: &mut Dynamic) {
+    if value.is::<UiNode>() {
+        let mut node = value.clone_cast::<UiNode>();
+        node.hydrate_component_subtrees();
+        *value = Dynamic::from(node);
+    } else if value.is::<Array>() {
+        let mut values = value.clone_cast::<Array>();
+        for value in &mut values {
+            hydrate_replayed_node_value(value);
+        }
+        *value = Dynamic::from_array(values);
+    } else if value.is::<Map>() {
+        let mut values = value.clone_cast::<Map>();
+        for value in values.values_mut() {
+            hydrate_replayed_node_value(value);
+        }
+        *value = Dynamic::from_map(values);
     }
 }
 
@@ -3591,6 +3667,59 @@ mod tests {
             ScriptCallback::try_from_fn_ptr(callback, ScriptGeneration::initial()),
             Err(ScriptCallbackDefinitionError::InvalidCurry { index: 0, .. })
         ));
+    }
+
+    #[test]
+    fn replay_hydrates_formal_subtrees_inside_nested_dynamic_node_shapes() {
+        let root = ComponentInstancePath::root("View", "main");
+        let outer = root.child("Outer", "outer");
+        let inner = root.child("Inner", "inner");
+        let inner_snapshot = crate::node::ComponentOwnedSnapshot::default();
+        let mut current_inner = UiNode::text("current")
+            .with_component_root_snapshot(inner.clone(), inner_snapshot.reference());
+        current_inner.activate_component_snapshots();
+        let outer_snapshot = crate::node::ComponentOwnedSnapshot::default();
+        let mut current_outer = UiNode::box_node(vec![
+            UiNode::text("outer"),
+            UiNode::text("stale-inner")
+                .with_component_root_snapshot(inner, inner_snapshot.reference()),
+        ])
+        .with_component_root_snapshot(outer.clone(), outer_snapshot.reference());
+        current_outer.activate_component_snapshots();
+        let stale = UiNode::box_node(vec![
+            UiNode::text("stale-outer")
+                .with_component_root_snapshot(outer, outer_snapshot.reference())
+                .with_attribute("presentation", UiValue::Bool(true)),
+        ]);
+        let mut nested = Map::new();
+        nested.insert(
+            "object".into(),
+            Dynamic::from_map(Map::from_iter([(
+                "nodes".into(),
+                Dynamic::from_array(vec![Dynamic::from(stale)]),
+            )])),
+        );
+        let mut value = Dynamic::from_map(nested);
+
+        hydrate_replayed_node_value(&mut value);
+
+        let nested = value.cast::<Map>();
+        let object = nested["object"].clone_cast::<Map>();
+        let nodes = object["nodes"].clone_cast::<Array>();
+        let node = nodes[0].clone_cast::<UiNode>();
+        let crate::UiNodeKind::Box { children } = node.kind() else {
+            panic!("nested node shape must preserve its raw wrapper");
+        };
+        assert_eq!(
+            children[0].attributes().get("presentation"),
+            Some(&UiValue::Bool(true))
+        );
+        let crate::UiNodeKind::Box { children } = children[0].kind() else {
+            panic!("outer component must hydrate its owned snapshot");
+        };
+        assert!(
+            matches!(children[1].kind(), crate::UiNodeKind::Text { text } if text == "current")
+        );
     }
 
     #[test]
