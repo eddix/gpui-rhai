@@ -12,8 +12,9 @@ use gpui::{
     AnyElement, AnyWindowHandle, App, AppContext, Application, Bounds, Context, DispatchPhase,
     Element, ElementId, Entity, FocusHandle, Global, GlobalElementId, InspectorElementId,
     InteractiveElement, IntoElement, LayoutId, MouseButton, MouseDownEvent, ParentElement, Pixels,
-    Render, ScrollAnchor, ScrollHandle, SharedString, Styled, Task, Timer, TitlebarOptions, Window,
-    WindowAppearance, WindowBounds, WindowOptions, deferred, div, px, rgba, size,
+    Render, ScrollAnchor, ScrollHandle, SharedString, Styled, Subscription, Task, Timer,
+    TitlebarOptions, Window, WindowAppearance, WindowBounds, WindowOptions, deferred, div, px,
+    rgba, size,
 };
 use thiserror::Error;
 
@@ -29,8 +30,8 @@ use crate::{
     MotionPreference, NodeEventDispatcher, PrimitiveRegistry, ResponsiveError, ResponsiveRuntime,
     RestrictedModuleResolver, RuntimeEngine, RuntimeError, ScriptCallback, ScriptLifecycle,
     ScriptSource, ScriptWindowSpec, SystemAppearance, TextDirection, ThemeManager, ThemeSelection,
-    ThemeVariant, UiRuntimeState, UiValue, ViewportBreakpoints, WindowCommand, WindowCommandPolicy,
-    init_text_area, init_text_input, load_locale_source, load_theme_source,
+    ThemeSnapshot, ThemeVariant, UiRuntimeState, UiValue, ViewportBreakpoints, WindowCommand,
+    WindowCommandPolicy, init_text_area, init_text_input, load_locale_source, load_theme_source,
 };
 
 #[cfg(feature = "dev-reload")]
@@ -490,6 +491,79 @@ impl IntoElement for SharedLayerPortalElement {
 #[derive(Clone)]
 pub struct ScriptViewHandle(Rc<ScriptViewHandleInner>);
 
+#[derive(Clone)]
+pub struct ThemeHandle(Entity<ThemeHandleState>);
+
+struct ThemeHandleState {
+    snapshot: ThemeSnapshot,
+}
+
+impl ThemeHandleState {
+    fn replace(&mut self, variant: ThemeVariant) -> bool {
+        if self.snapshot.variant == variant {
+            return false;
+        }
+        self.snapshot = ThemeSnapshot::new(self.snapshot.revision.saturating_add(1), variant);
+        true
+    }
+}
+
+impl ThemeHandle {
+    fn new(variant: ThemeVariant, cx: &mut App) -> Self {
+        Self(cx.new(|_| ThemeHandleState {
+            snapshot: ThemeSnapshot::new(1, variant),
+        }))
+    }
+
+    /// Read the latest effective theme without invoking Rhai.
+    #[must_use]
+    pub fn snapshot(&self, cx: &App) -> ThemeSnapshot {
+        self.0.read(cx).snapshot.clone()
+    }
+
+    /// Observe effective-theme changes from application-level host code.
+    ///
+    /// The returned subscription must be retained for as long as observation is
+    /// required.
+    pub fn observe(
+        &self,
+        cx: &mut App,
+        mut on_change: impl FnMut(ThemeSnapshot, &mut App) + 'static,
+    ) -> Subscription {
+        cx.observe(&self.0, move |entity, cx| {
+            let snapshot = entity.read(cx).snapshot.clone();
+            on_change(snapshot, cx);
+        })
+    }
+
+    /// Observe effective-theme changes from another GPUI entity.
+    ///
+    /// This is the ergonomic path for Host-owned chrome: retain the returned
+    /// subscription in the observing entity and redraw only that entity.
+    pub fn observe_in<T: 'static>(
+        &self,
+        cx: &mut Context<T>,
+        mut on_change: impl FnMut(&mut T, ThemeSnapshot, &mut Context<T>) + 'static,
+    ) -> Subscription {
+        cx.observe(&self.0, move |owner, entity, cx| {
+            let snapshot = entity.read(cx).snapshot.clone();
+            on_change(owner, snapshot, cx);
+        })
+    }
+
+    fn matches(&self, variant: &ThemeVariant, cx: &App) -> bool {
+        &self.0.read(cx).snapshot.variant == variant
+    }
+
+    fn publish(&self, variant: ThemeVariant, cx: &mut App) {
+        self.0.update(cx, |state, cx| {
+            if state.replace(variant) {
+                cx.notify();
+            }
+        });
+    }
+}
+
 /// Drainable execution diagnostics for one mounted script view.
 ///
 /// Taking a snapshot does not invoke Rhai or alter the mounted UI. Timings are
@@ -505,6 +579,7 @@ pub struct ScriptViewPerformanceSnapshot {
 
 struct ScriptViewHandleInner {
     entity: Entity<ScriptHostView>,
+    theme: ThemeHandle,
     host: ScriptViewHost,
     view_id: String,
     disposed: Cell<bool>,
@@ -523,6 +598,27 @@ impl ScriptViewHandle {
     #[must_use]
     pub fn view_id(&self) -> &str {
         &self.0.view_id
+    }
+
+    /// Return a read-only, observable handle to this view's effective theme.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ScriptViewError::DisposedView`] after explicit disposal.
+    pub fn theme(&self) -> Result<ThemeHandle, ScriptViewError> {
+        if self.0.disposed.get() {
+            return Err(ScriptViewError::DisposedView(self.0.view_id.clone()));
+        }
+        Ok(self.0.theme.clone())
+    }
+
+    /// Read this view's latest effective theme without invoking Rhai.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ScriptViewError::DisposedView`] after explicit disposal.
+    pub fn theme_snapshot(&self, cx: &App) -> Result<ThemeSnapshot, ScriptViewError> {
+        Ok(self.theme()?.snapshot(cx))
     }
 
     /// Return the latest rendered declarative root.
@@ -1948,7 +2044,7 @@ impl PreparedScriptView {
         config: ScriptViewConfig,
         host: ScriptViewHost,
         native_windows: Rc<RefCell<NativeWindowRegistry>>,
-        _window: &mut Window,
+        window: &mut Window,
         cx: &mut App,
     ) -> Result<ScriptViewHandle, ScriptViewError> {
         install(cx);
@@ -1993,6 +2089,8 @@ impl PreparedScriptView {
         let overlays = host.overlays();
         let view_id = config.view_id.clone();
         let view_host = host.clone();
+        let theme_handle = theme_handle_for_lifecycle(&lifecycle, &self.theme, window, cx);
+        let view_theme_handle = theme_handle.clone();
         let entity = cx.new(|entity_cx| {
             let runtime_tasks = spawn_host_runtime_tasks(entity_cx, &lifecycle);
             let host_focus = entity_cx.focus_handle();
@@ -2006,6 +2104,7 @@ impl PreparedScriptView {
                 primitives,
                 last_error: None,
                 theme: self.theme,
+                theme_handle: view_theme_handle,
                 #[cfg(feature = "dev-reload")]
                 development: self.development,
                 #[cfg(feature = "dev-reload")]
@@ -2039,10 +2138,10 @@ impl PreparedScriptView {
                 _reload_task: reload_task,
             }
         });
-        let focus = entity.read(cx).host_focus.clone();
-        host.attach_view_focus(&config.view_id, focus);
+        attach_script_view_focus(&host, &config.view_id, &entity, cx);
         Ok(ScriptViewHandle(Rc::new(ScriptViewHandleInner {
             entity,
+            theme: theme_handle,
             host,
             view_id: config.view_id,
             disposed: Cell::new(false),
@@ -2282,6 +2381,8 @@ fn open_secondary_window(
     let view_window_id = window_id.clone();
     let view_host = host.clone();
     let result = cx.open_window(options, move |window, cx| {
+        let theme_handle = theme_handle_for_lifecycle(&lifecycle, &view_factory.theme, window, cx);
+        let view_theme_handle = theme_handle.clone();
         let entity = cx.new(|entity_cx| {
             let runtime_tasks = spawn_host_runtime_tasks(entity_cx, &lifecycle);
             let host_focus = entity_cx.focus_handle();
@@ -2293,6 +2394,7 @@ fn open_secondary_window(
                 primitives,
                 last_error: None,
                 theme: view_factory.theme.clone(),
+                theme_handle: view_theme_handle,
                 #[cfg(feature = "dev-reload")]
                 development: view_factory.development,
                 #[cfg(feature = "dev-reload")]
@@ -2329,6 +2431,7 @@ fn open_secondary_window(
         view_host.attach_view_focus(&view_window_id, entity.read(cx).host_focus.clone());
         let view = ScriptViewHandle(Rc::new(ScriptViewHandleInner {
             entity: entity.clone(),
+            theme: theme_handle,
             host: view_host.clone(),
             view_id: view_window_id,
             disposed: Cell::new(false),
@@ -2499,6 +2602,7 @@ struct ScriptHostView {
     primitives: PrimitiveRegistry,
     last_error: Option<String>,
     theme: ThemeVariant,
+    theme_handle: ThemeHandle,
     #[cfg(feature = "dev-reload")]
     development: bool,
     #[cfg(feature = "dev-reload")]
@@ -2675,15 +2779,70 @@ fn script_node_dispatcher(cx: &Context<ScriptHostView>) -> NodeEventDispatcher {
     })
 }
 
+const fn system_appearance(appearance: WindowAppearance) -> SystemAppearance {
+    match appearance {
+        WindowAppearance::Dark | WindowAppearance::VibrantDark => SystemAppearance::Dark,
+        WindowAppearance::Light | WindowAppearance::VibrantLight => SystemAppearance::Light,
+    }
+}
+
+fn resolve_root_theme(
+    lifecycle: &ScriptLifecycle,
+    fallback: &ThemeVariant,
+    appearance: SystemAppearance,
+) -> ThemeVariant {
+    let runtime = lifecycle.runtime();
+    resolve_root_theme_from_runtime(
+        &runtime.borrow(),
+        lifecycle.root_path(),
+        lifecycle.window_id().unwrap_or_default(),
+        appearance,
+        fallback,
+    )
+}
+
+fn theme_handle_for_lifecycle(
+    lifecycle: &ScriptLifecycle,
+    fallback: &ThemeVariant,
+    window: &Window,
+    cx: &mut App,
+) -> ThemeHandle {
+    ThemeHandle::new(
+        resolve_root_theme(lifecycle, fallback, system_appearance(window.appearance())),
+        cx,
+    )
+}
+
+fn attach_script_view_focus(
+    host: &ScriptViewHost,
+    view_id: &str,
+    entity: &Entity<ScriptHostView>,
+    cx: &App,
+) {
+    host.attach_view_focus(view_id, entity.read(cx).host_focus.clone());
+}
+
+fn resolve_root_theme_from_runtime(
+    runtime: &UiRuntimeState,
+    root: &ComponentInstancePath,
+    window_id: &str,
+    appearance: SystemAppearance,
+    fallback: &ThemeVariant,
+) -> ThemeVariant {
+    runtime
+        .theme
+        .as_ref()
+        .and_then(|themes| themes.resolve(Some(window_id), Some(root), appearance).ok())
+        .map_or_else(|| fallback.clone(), |resolved| resolved.variant().clone())
+}
+
 impl Render for ScriptHostView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.prepare_host_render(window, cx);
         let dispatcher = script_node_dispatcher(cx);
-        let appearance = match window.appearance() {
-            WindowAppearance::Dark | WindowAppearance::VibrantDark => SystemAppearance::Dark,
-            WindowAppearance::Light | WindowAppearance::VibrantLight => SystemAppearance::Light,
-        };
+        let appearance = system_appearance(window.appearance());
         let snapshot = self.render_snapshot(appearance);
+        self.publish_theme_after_render(&snapshot.theme, cx);
         let animation_root = format!("window:{}/view:{}/root", self.window_id, self.view_id);
         let render_resources = crate::renderer::WindowRenderResources {
             assets: &snapshot.assets,
@@ -2767,6 +2926,15 @@ impl Render for ScriptHostView {
 }
 
 impl ScriptHostView {
+    fn publish_theme_after_render(&self, theme: &ThemeVariant, cx: &mut Context<Self>) {
+        if self.theme_handle.matches(theme, cx) {
+            return;
+        }
+        let handle = self.theme_handle.clone();
+        let theme = theme.clone();
+        cx.defer(move |cx| handle.publish(theme, cx));
+    }
+
     fn execute_automation(
         &mut self,
         command: crate::AutomationCommand,
@@ -2895,15 +3063,13 @@ impl ScriptHostView {
         let runtime = self.lifecycle.runtime();
         let runtime = runtime.borrow();
         let root = self.lifecycle.root_path();
-        let theme = runtime
-            .theme
-            .as_ref()
-            .and_then(|themes| {
-                themes
-                    .resolve(Some(&self.window_id), Some(root), appearance)
-                    .ok()
-            })
-            .map_or_else(|| self.theme.clone(), |resolved| resolved.variant().clone());
+        let theme = resolve_root_theme_from_runtime(
+            &runtime,
+            root,
+            &self.window_id,
+            appearance,
+            &self.theme,
+        );
         let direction = runtime
             .locale
             .as_ref()
@@ -3989,6 +4155,39 @@ mod tests {
             !ScriptViewConfig::new("custom")
                 .show_error_banner(false)
                 .show_error_banner
+        );
+    }
+
+    #[test]
+    fn theme_handle_state_only_advances_for_an_effective_theme_change() {
+        let engine = RuntimeEngine::new();
+        let dark = load_theme_source(
+            engine.engine(),
+            "default_dark.rhai",
+            include_str!("../../../registry/themes/default_dark.rhai"),
+        )
+        .unwrap();
+        let mut light = dark.clone();
+        light.name = "Light".to_owned();
+        light.mode = crate::ThemeMode::Light;
+        let mut state = ThemeHandleState {
+            snapshot: ThemeSnapshot::new(7, dark.clone()),
+        };
+
+        assert!(!state.replace(dark));
+        assert_eq!(state.snapshot.revision, 7);
+        assert!(state.replace(light.clone()));
+        assert_eq!(state.snapshot.revision, 8);
+        assert_eq!(state.snapshot.variant, light);
+        assert!(state.snapshot.variant.tokens.radii.contains_key("md"));
+        assert!(
+            state
+                .snapshot
+                .variant
+                .tokens
+                .typography
+                .roles
+                .contains_key("body")
         );
     }
 

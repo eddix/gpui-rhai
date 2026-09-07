@@ -360,6 +360,23 @@ pub struct ThemeVariant {
     pub tokens: ThemeTokens,
 }
 
+/// Owned, host-readable snapshot of the effective theme for one mounted view.
+///
+/// `revision` advances whenever the resolved variant changes, including a
+/// system light/dark transition. The complete semantic token table is available
+/// through [`Self::variant`].
+#[derive(Clone, Debug, PartialEq)]
+pub struct ThemeSnapshot {
+    pub revision: u64,
+    pub variant: ThemeVariant,
+}
+
+impl ThemeSnapshot {
+    pub(crate) const fn new(revision: u64, variant: ThemeVariant) -> Self {
+        Self { revision, variant }
+    }
+}
+
 impl ThemeVariant {
     /// Validate identity and semantic tokens.
     ///
