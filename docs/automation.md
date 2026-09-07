@@ -34,6 +34,12 @@ commands do not fabricate GPUI platform input or browser-style default
 behavior; platform keyboard, IME, pointer, and focus certification continues
 through GPUI test support and unlocked macOS tests.
 
+`Dispatch` may route a retained raw event name such as `pointer_down`, but it
+does not synthesize a native pointer payload or down/move/up device sequence.
+Pass an explicit payload when testing a callback's data policy, or read
+`ctx.event_target_bounds()` when the test needs only the current handler node's
+geometry. A future platform-input automation API remains a separate contract.
+
 The automation tree is a presentation projection, not every retained node.
 Only nodes that participated in the latest committed GPUI prepaint frame are
 included. Content in an open Overlay is queryable; retained content belonging

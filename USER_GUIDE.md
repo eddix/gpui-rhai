@@ -260,7 +260,7 @@ The main read paths have deliberately different invalidation semantics:
 | `ctx.get_state(...)` / `get_state_path(...)` | Component-local; a changed field dirties the owning component |
 | `ctx.get_app_store(...)` / `get_window_store(...)` | Whole-field dependency |
 | `ctx.get_app_store_path(...)` / `get_window_store_path(...)` | Exact bounded path dependency, including keyed-array selectors |
-| `ctx.element_bounds(ref)` | Tracked last-committed layout/visual/clip geometry; first render may return `()` |
+| `ctx.element_bounds(ref)` / `element_bounds("key")` | Tracked last-committed layout/visual/clip geometry; first render may return `()` |
 | `ctx.event_target_bounds()` | Event-only, untracked current-target visual snapshot |
 | `ctx.get_signal(...)` during render | Untracked hot value, but makes that component ineligible for render bailout |
 | `node.bind_signal(...)` | Native property sampling without a Rhai rerender |
@@ -448,7 +448,12 @@ window; do not maintain a resize → store → Rhai geometry channel for it.
 Use `element_ref(...)` plus `ctx.element_bounds(ref)` only when rendering must
 react to another retained element's last committed geometry. That read creates
 an exact dependency, returns `#{ layout, visual, clip }`, and may initially be
-`()`. It cannot provide synchronous same-layout feedback.
+`()`. The runtime keeps the unresolved dependency by ref identity, binds it to
+the committed `NodeId`, and rerenders after first prepaint reports geometry; do
+not add an unrelated redraw to make it self-heal. Event callbacks cannot retain
+the custom `ElementRef` value and instead call
+`ctx.element_bounds("component_local_ref_key")`. It cannot provide synchronous
+same-layout feedback.
 
 ### 6.3 Rust native handlers callable from Rhai
 

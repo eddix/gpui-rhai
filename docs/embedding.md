@@ -156,9 +156,13 @@ in the callback context or `NativeEvent`.
 
 This snapshot is event-only and untracked, so reading it cannot dirty a
 component. By contrast, `ctx.element_bounds(ref)` reads tracked last-committed
-`layout`, `visual`, and `clip` geometry for a retained `ElementRef`. Use that API
-only when a render truly depends on another element's previous committed
-geometry; it cannot create same-layout synchronous feedback.
+`layout`, `visual`, and `clip` geometry for a retained `ElementRef`. An unresolved
+first-render read returns null, follows the ref through commit, and self-heals
+after first prepaint. Event callbacks resolve another node in the same formal
+component with `ctx.element_bounds("local_ref_key")`; the custom ref itself is
+not durable callback data. Use this API only when a render truly depends on
+another element's previous committed geometry; it cannot create same-layout
+synchronous feedback.
 
 ## Identity and window commands
 

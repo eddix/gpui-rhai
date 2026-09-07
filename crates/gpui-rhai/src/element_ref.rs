@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use rhai::{CustomType, ImmutableString, TypeBuilder};
 use thiserror::Error;
@@ -75,6 +75,7 @@ impl CustomType for ElementRef {
 #[derive(Clone, Debug, Default)]
 pub struct ElementRefRegistry {
     active: BTreeMap<ElementRefId, NodeId>,
+    pending_geometry_readers: BTreeMap<ElementRefId, BTreeSet<ComponentInstancePath>>,
 }
 
 impl ElementRefRegistry {
@@ -130,17 +131,53 @@ impl ElementRefRegistry {
             })
     }
 
+    pub(crate) fn resolve_and_track_geometry(
+        &mut self,
+        reference: &ElementRef,
+        reader: &ComponentInstancePath,
+    ) -> Option<NodeId> {
+        self.pending_geometry_readers
+            .entry(reference.id().clone())
+            .or_default()
+            .insert(reader.clone());
+        self.active.get(reference.id()).copied()
+    }
+
     pub(crate) fn reconcile(
         &mut self,
         root: &ComponentInstancePath,
         candidate: BTreeMap<ElementRefId, NodeId>,
-    ) {
+    ) -> BTreeMap<NodeId, BTreeSet<ComponentInstancePath>> {
         self.active.retain(|id, _| !id.component.is_within(root));
         self.active.extend(candidate);
+        let pending = self
+            .pending_geometry_readers
+            .keys()
+            .filter(|id| id.component.is_within(root))
+            .cloned()
+            .collect::<Vec<_>>();
+        let mut resolved = BTreeMap::<NodeId, BTreeSet<ComponentInstancePath>>::new();
+        for id in pending {
+            let readers = self
+                .pending_geometry_readers
+                .remove(&id)
+                .unwrap_or_default();
+            if let Some(node) = self.active.get(&id) {
+                resolved.entry(*node).or_default().extend(readers);
+            }
+        }
+        resolved
     }
 
     pub(crate) fn remove_scope(&mut self, root: &ComponentInstancePath) {
         self.active.retain(|id, _| !id.component.is_within(root));
+        self.pending_geometry_readers.retain(|id, readers| {
+            if id.component.is_within(root) {
+                return false;
+            }
+            readers.retain(|reader| !reader.is_within(root));
+            !readers.is_empty()
+        });
     }
 }
 
@@ -212,5 +249,57 @@ mod tests {
             registry.resolve(&reference),
             Err(ElementRefError::Stale(_))
         ));
+    }
+
+    #[test]
+    fn pending_geometry_reader_binds_after_the_ref_commits() {
+        let component = ComponentInstancePath::root("Panel", "main");
+        let reader = component.child("Inspector", "reader");
+        let reference = ElementRef::new(ElementRefId::new(component.clone(), "field").unwrap());
+        let mut tree = crate::RetainedUiTree::new();
+        tree.reconcile(crate::UiNode::text("field")).unwrap();
+        let node = tree.root_id().unwrap();
+        let mut refs = ElementRefRegistry::new();
+        assert_eq!(refs.resolve_and_track_geometry(&reference, &reader), None);
+
+        let resolved = refs.reconcile(&component, BTreeMap::from([(reference.id().clone(), node)]));
+        let geometry = crate::GeometryRegistry::new();
+        for (node, readers) in resolved {
+            geometry.register_readers(node, readers);
+        }
+        geometry.update(
+            node,
+            crate::ElementGeometry {
+                layout: crate::GeometryBounds::new(0.0, 0.0, 120.0, 24.0).unwrap(),
+                visual: crate::GeometryBounds::new(0.0, 0.0, 120.0, 24.0).unwrap(),
+                clip: None,
+            },
+        );
+        assert_eq!(geometry.take_dirty(), BTreeSet::from([reader.clone()]));
+
+        assert_eq!(
+            refs.resolve_and_track_geometry(&reference, &reader),
+            Some(node)
+        );
+        tree.reconcile(crate::UiNode::box_node(Vec::new())).unwrap();
+        let replacement = tree.root_id().unwrap();
+        assert_ne!(replacement, node);
+        let resolved = refs.reconcile(
+            &component,
+            BTreeMap::from([(reference.id().clone(), replacement)]),
+        );
+        for (node, readers) in resolved {
+            geometry.register_readers(node, readers);
+        }
+        geometry.retain_nodes(&BTreeSet::from([replacement]));
+        geometry.update(
+            replacement,
+            crate::ElementGeometry {
+                layout: crate::GeometryBounds::new(0.0, 0.0, 160.0, 24.0).unwrap(),
+                visual: crate::GeometryBounds::new(0.0, 0.0, 160.0, 24.0).unwrap(),
+                clip: None,
+            },
+        );
+        assert_eq!(geometry.take_dirty(), BTreeSet::from([reader]));
     }
 }

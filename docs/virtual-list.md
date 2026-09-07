@@ -55,6 +55,12 @@ target changes. `follow_tail` and `reveal_key` are mutually exclusive because
 they represent competing automatic-scroll policies. An empty or unknown reveal
 key is rejected at the script boundary.
 
+Before GPUI's first measurement, a fixed-height collection compares the target
+against its estimated initial viewport. A target already expected to be visible
+keeps the natural `(item 0, offset 0)` origin and therefore does not hide group
+headers or other predecessors. A genuinely offscreen target still receives the
+one initial pre-position. Once measured, real item bounds decide reveal.
+
 ## Sticky sections
 
 Top-aligned collections may declare sorted, unique item indices as section

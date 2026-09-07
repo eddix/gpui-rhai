@@ -143,7 +143,11 @@ pointer local coordinates invert that visual translation before Canvas hit
 testing. Content coordinates additionally subtract the live sum of every
 retained scrollable ancestor's GPUI `ScrollHandle` offset, including during
 window-level pointer capture. Exact geometry reads create component dependencies.
-Unmounted refs fail stale instead of rebinding by name. `ctx.focus(ref)` queues
+First-render reads retain a pending ref-identity dependency until reconciliation
+can bind it to a `NodeId`; the first prepaint then invalidates the exact reader,
+and keyed node replacement migrates that binding. Event callbacks resolve
+component-local keys without persisting Rhai custom ref values. Unmounted refs
+fail stale instead of rebinding by name. `ctx.focus(ref)` queues
 a window-scoped retained command; the Host view owns the corresponding GPUI
 `FocusHandle` by `NodeId`, so no window/focus object crosses into Rhai.
 Semantic attributes and static text are copied into RetainedNode and projected

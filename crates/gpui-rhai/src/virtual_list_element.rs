@@ -246,6 +246,12 @@ impl VirtualListView {
             if bounds.top() < viewport.top() || bounds.bottom() > viewport.bottom() {
                 self.scroll.scroll_to_reveal_item(index);
             }
+        } else if viewport.size.height <= px(0.0)
+            && estimated_target_is_initially_visible(&self.content, index)
+        {
+            // Before GPUI's first measurement there are no item bounds. Keep
+            // the natural top when the configured viewport already contains
+            // the target instead of top-aligning (and hiding) its predecessors.
         } else {
             // GPUI's variable list cannot infer the height of an unmeasured
             // offscreen item. Top-aligning its logical index gives the next
@@ -301,6 +307,16 @@ impl VirtualListView {
         }
         focused
     }
+}
+
+#[allow(clippy::cast_precision_loss)]
+fn estimated_target_is_initially_visible(
+    content: &VirtualCollectionNodeSpec,
+    index: usize,
+) -> bool {
+    content
+        .height
+        .is_some_and(|height| (index.saturating_add(1) as f64) * content.estimated_height <= height)
 }
 
 impl Render for VirtualListView {
@@ -644,5 +660,30 @@ mod tests {
             px(-20.0)
         );
         assert_eq!(sticky_push_offset(px(30.0), px(100.0), None), px(0.0));
+    }
+
+    #[test]
+    fn initial_reveal_keeps_estimated_visible_predecessors() {
+        let mut content = crate::VirtualCollectionNodeSpec {
+            id: crate::VirtualCollectionId {
+                component: crate::ComponentInstancePath::root("Command", "palette"),
+                key: "results".to_owned(),
+            },
+            label: "Results".to_owned(),
+            data: crate::VirtualCollectionData::Values(vec![crate::UiValue::Null; 20]),
+            realized: std::collections::BTreeMap::new(),
+            estimated_height: 32.0,
+            height: Some(384.0),
+            overdraw_pixels: 64.0,
+            bottom_align: false,
+            follow_tail: false,
+            reveal_key: None,
+            sticky_headers: std::sync::Arc::new(BTreeSet::new()),
+        };
+        assert!(estimated_target_is_initially_visible(&content, 1));
+        assert!(estimated_target_is_initially_visible(&content, 11));
+        assert!(!estimated_target_is_initially_visible(&content, 12));
+        content.height = None;
+        assert!(!estimated_target_is_initially_visible(&content, 1));
     }
 }
