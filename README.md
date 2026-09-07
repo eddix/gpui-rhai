@@ -81,7 +81,9 @@ gpui_rhai::ScriptApplication::new(view).run()?;
 ```
 
 Existing GPUI applications instead mount one or more isolated views through a
-shared `ScriptViewHost`; see the [embedding guide](docs/embedding.md).
+shared `ScriptViewHost`. Hosts can suspend expensive inactive views as fully
+retained, quiescent tombstones and later resume them atomically; see the
+[embedding guide](docs/embedding.md).
 
 Hosts that already own a plain-data UI tree can render it without Rhai and
 attach trusted Rust event closures. The `host_owned_tree` example demonstrates

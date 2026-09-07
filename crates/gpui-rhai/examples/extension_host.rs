@@ -15,32 +15,51 @@ use semver::Version;
 const DEFAULT_DARK: &str = include_str!("../../../registry/themes/default_dark.rhai");
 
 const MAIN: &str = r#"
+define_component(#{
+    metadata: #{ id: "examples/ticker", "export": "Ticker", version: "0.1.0",
+        runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
+        dependencies: [], capabilities: #{ "app.ticker": "*" } },
+    schema: #{ props: #{ key: #{ schema: #{ type: "string" }, required: true, sensitive: false } },
+        state: #{ fields: #{ tick: #{ schema: #{ type: "integer" },
+            "default": #{ type: "integer", value: 0 } } } },
+        events: #{}, slots: #{}, parts: [], effects: ["watch"] },
+    render: Fn("render_Ticker"),
+});
+
 fn state_schema() {
     #{ fields: #{
         message: #{ schema: #{ type: "string" },
             "default": #{ type: "string", value: "Waiting for host extension" } },
-        tick: #{ schema: #{ type: "integer" },
-            "default": #{ type: "integer", value: 0 } },
     } }
 }
 
 fn loaded(ctx, value) { ctx.set_state("message", value); }
-fn ticked(ctx, value) { ctx.set_state("tick", value); }
 fn failed(ctx, error) { ctx.set_state("message", `Host error: ${error}`); }
+fn ticker_received(ctx, value) { ctx.set_state("tick", value); }
+fn ticker_failed(ctx, error) { ctx.set_state("tick", -1); }
+fn start_ticker(ctx, deps) {
+    ctx.start_subscription("app.ticker", "watch", (),
+        Fn("ticker_received"), Fn("ticker_failed"),
+        #{ delivery: "latest", throttle_ms: 10 });
+}
+fn stop_ticker(ctx, deps) { () }
+fn render_Ticker(ctx, props) {
+    effect("watch", (), Fn("start_ticker"), Fn("stop_ticker"));
+    text(`Subscription tick: ${ctx.get_state("tick")}`)
+}
+fn Ticker() { render_component("examples/ticker", #{ key: "ticker" }) }
 
 fn init(ctx) {
     let message = ctx.call_capability("app.text_transform", "uppercase", "extension ready");
     ctx.set_state("message", message);
     ctx.start_task("app.delayed_text", "load", "background ready", Fn("loaded"), Fn("failed"));
-    ctx.start_subscription("app.ticker", "watch", (), Fn("ticked"), Fn("failed"),
-        #{ delivery: "latest", throttle_ms: 10 });
 }
 
 fn view(ctx) {
     column([
         text("Host extension"),
         my_app::StatusCard(#{ message: ctx.get_state("message") }),
-        text(`Subscription tick: ${ctx.get_state("tick")}`),
+        Ticker(),
         text("The card above is rendered by a Rust primitive.")
             .with_style(style().text_color(theme_color("text_muted")))
     ]).with_style(

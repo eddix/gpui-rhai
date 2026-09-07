@@ -16,6 +16,7 @@ pub enum LifecycleState {
     Created,
     Initialized,
     Running,
+    Suspended,
     Disposed,
 }
 
@@ -29,6 +30,7 @@ pub struct ScriptLifecycle {
     state: LifecycleState,
     root: Option<Rc<UiNode>>,
     retained: crate::RetainedUiTree,
+    suspended_at: Option<std::time::Instant>,
 }
 
 #[derive(Default)]
@@ -74,6 +76,7 @@ impl ScriptLifecycle {
             state: LifecycleState::Created,
             root: None,
             retained: crate::RetainedUiTree::new(),
+            suspended_at: None,
         })
     }
 
@@ -423,7 +426,7 @@ impl ScriptLifecycle {
     pub fn dispose(&mut self, engine: &mut RuntimeEngine) -> Result<(), LifecycleError> {
         if !matches!(
             self.state,
-            LifecycleState::Initialized | LifecycleState::Running
+            LifecycleState::Initialized | LifecycleState::Running | LifecycleState::Suspended
         ) {
             return Err(LifecycleError::InvalidTransition {
                 from: self.state,
@@ -459,6 +462,167 @@ impl ScriptLifecycle {
                 Err(error)
             }
         }
+    }
+
+    /// Quiesce one retained view without discarding its tree, state, native
+    /// entities, measurements, or current script generation.
+    ///
+    /// # Errors
+    ///
+    /// Returns lifecycle, callback, cleanup, or rollback errors. Repeated
+    /// suspension is an idempotent no-op.
+    pub fn suspend(&mut self, engine: &mut RuntimeEngine) -> Result<bool, LifecycleError> {
+        if self.state == LifecycleState::Suspended {
+            return Ok(false);
+        }
+        if self.state != LifecycleState::Running {
+            return Err(LifecycleError::InvalidTransition {
+                from: self.state,
+                operation: "suspend",
+            });
+        }
+        let snapshot = self
+            .runtime
+            .try_borrow()
+            .map_err(|_| LifecycleError::Borrowed)?
+            .snapshot()?;
+        let checkpoint = engine.execution_checkpoint();
+        let result = (|| {
+            engine.call_optional_lifecycle(
+                &self.compiled,
+                "suspend",
+                self.context(ExecutionPhase::Suspend),
+            )?;
+            self.stop_active_effects(engine)?;
+            let mut runtime = self
+                .runtime
+                .try_borrow_mut()
+                .map_err(|_| LifecycleError::Borrowed)?;
+            let now = runtime.clock.now();
+            runtime.timers.pause_component_scope(&self.root_path, now);
+            runtime.animation_values = runtime.animations.snapshot(now);
+            runtime.pointer_capture.clear();
+            Ok(now)
+        })();
+        match result {
+            Ok(now) => {
+                self.suspended_at = Some(now);
+                self.state = LifecycleState::Suspended;
+                Ok(true)
+            }
+            Err(error) => {
+                self.runtime
+                    .try_borrow_mut()
+                    .map_err(|_| LifecycleError::Borrowed)?
+                    .restore(snapshot)?;
+                engine.restore_execution_checkpoint(checkpoint);
+                Err(error)
+            }
+        }
+    }
+
+    /// Resume a retained view transactionally against current Host data.
+    ///
+    /// The optional `resume(ctx, elapsed_ms)` hook runs before one full render;
+    /// effect declarations then restart with fresh activation identities.
+    ///
+    /// # Errors
+    ///
+    /// Returns lifecycle, callback, render, reconciliation, or rollback errors.
+    pub fn resume(&mut self, engine: &mut RuntimeEngine) -> Result<bool, LifecycleError> {
+        if self.state == LifecycleState::Running {
+            return Ok(false);
+        }
+        if self.state != LifecycleState::Suspended {
+            return Err(LifecycleError::InvalidTransition {
+                from: self.state,
+                operation: "resume",
+            });
+        }
+        let snapshot = self
+            .runtime
+            .try_borrow()
+            .map_err(|_| LifecycleError::Borrowed)?
+            .snapshot()?;
+        let checkpoint = engine.execution_checkpoint();
+        let suspended_at = self
+            .suspended_at
+            .ok_or(LifecycleError::MissingSuspendTime)?;
+        let now = self
+            .runtime
+            .try_borrow()
+            .map_err(|_| LifecycleError::Borrowed)?
+            .clock
+            .now();
+        let elapsed = now.saturating_duration_since(suspended_at);
+        let result = (|| {
+            {
+                let mut runtime = self
+                    .runtime
+                    .try_borrow_mut()
+                    .map_err(|_| LifecycleError::Borrowed)?;
+                runtime.timers.resume_component_scope(&self.root_path, now);
+                runtime
+                    .animations
+                    .delay_node_scope(&self.animation_root_path(), elapsed);
+                runtime.animation_values = runtime.animations.snapshot(now);
+            }
+            engine.call_optional_lifecycle_with_value(
+                &self.compiled,
+                "resume",
+                self.context(ExecutionPhase::Resume),
+                UiValue::Integer(i64::try_from(elapsed.as_millis()).unwrap_or(i64::MAX)),
+            )?;
+            self.state = LifecycleState::Initialized;
+            self.render_impl(engine, None)?;
+            Ok(())
+        })();
+        match result {
+            Ok(()) => {
+                self.suspended_at = None;
+                self.state = LifecycleState::Running;
+                Ok(true)
+            }
+            Err(error) => {
+                self.state = LifecycleState::Suspended;
+                self.runtime
+                    .try_borrow_mut()
+                    .map_err(|_| LifecycleError::Borrowed)?
+                    .restore(snapshot)?;
+                engine.restore_execution_checkpoint(checkpoint);
+                Err(error)
+            }
+        }
+    }
+
+    fn stop_active_effects(&self, engine: &RuntimeEngine) -> Result<(), LifecycleError> {
+        let plan = self
+            .runtime
+            .try_borrow()
+            .map_err(|_| LifecycleError::Borrowed)?
+            .effects
+            .plan(&self.root_path, BTreeMap::new());
+        if plan.transition_count() > 64 {
+            return Err(LifecycleError::EffectBudget(plan.transition_count()));
+        }
+        for (descriptor, scope) in plan.cleanup_descriptors() {
+            self.invoke_effect_callback(
+                engine,
+                &self.compiled,
+                descriptor.cleanup(),
+                descriptor.dependencies().clone(),
+                scope,
+            )?;
+        }
+        let mut runtime = self
+            .runtime
+            .try_borrow_mut()
+            .map_err(|_| LifecycleError::Borrowed)?;
+        for (_, scope) in plan.cleanup_descriptors() {
+            runtime.cancel_async_scope(&scope)?;
+        }
+        runtime.effects.commit(plan);
+        Ok(())
     }
 
     /// Invoke a generation-bound event callback with `(ctx, payload)`.
@@ -622,7 +786,7 @@ impl ScriptLifecycle {
         candidate: CompiledUi,
         state_schema: &ComponentStateSchema,
     ) -> Result<&UiNode, LifecycleError> {
-        if self.state == LifecycleState::Disposed {
+        if self.state != LifecycleState::Running {
             return Err(LifecycleError::InvalidTransition {
                 from: self.state,
                 operation: "reload",
@@ -634,16 +798,12 @@ impl ScriptLifecycle {
             .map_err(|_| LifecycleError::Borrowed)?
             .snapshot()?;
         let engine_checkpoint = engine.execution_checkpoint();
-        {
-            let mut runtime = self
-                .runtime
+        let result: Result<(UiNode, crate::RetainedUiTree), LifecycleError> = (|| {
+            self.runtime
                 .try_borrow_mut()
-                .map_err(|_| LifecycleError::Borrowed)?;
-            runtime
+                .map_err(|_| LifecycleError::Borrowed)?
                 .component_state
                 .mount_instance(self.root_path.clone(), state_schema)?;
-        }
-        let result: Result<(UiNode, crate::RetainedUiTree), LifecycleError> = (|| {
             engine.call_optional_lifecycle(
                 &candidate,
                 "init",
@@ -682,6 +842,118 @@ impl ScriptLifecycle {
                     .map_err(|_| LifecycleError::Borrowed)?
                     .restore(snapshot)?;
                 engine.restore_execution_checkpoint(engine_checkpoint);
+                Err(error)
+            }
+        }
+    }
+
+    /// Resume a suspended retained view into a newer compiled generation.
+    ///
+    /// Candidate initialization, the optional resume hook, reconciliation,
+    /// and effect activation form one rollback-safe transaction. Async
+    /// deliveries from the replaced generation must be discarded by the host
+    /// before entering this transaction.
+    ///
+    /// # Errors
+    ///
+    /// Returns lifecycle, callback, render, reconciliation, or rollback errors.
+    pub fn resume_reload(
+        &mut self,
+        engine: &mut RuntimeEngine,
+        candidate: CompiledUi,
+        state_schema: &ComponentStateSchema,
+    ) -> Result<&UiNode, LifecycleError> {
+        if self.state != LifecycleState::Suspended {
+            return Err(LifecycleError::InvalidTransition {
+                from: self.state,
+                operation: "resume_reload",
+            });
+        }
+        let snapshot = self
+            .runtime
+            .try_borrow()
+            .map_err(|_| LifecycleError::Borrowed)?
+            .snapshot()?;
+        let engine_checkpoint = engine.execution_checkpoint();
+        let suspended_at = self
+            .suspended_at
+            .ok_or(LifecycleError::MissingSuspendTime)?;
+        let now = self
+            .runtime
+            .try_borrow()
+            .map_err(|_| LifecycleError::Borrowed)?
+            .clock
+            .now();
+        let elapsed = now.saturating_duration_since(suspended_at);
+        let result: Result<(UiNode, crate::RetainedUiTree), LifecycleError> = (|| {
+            self.runtime
+                .try_borrow_mut()
+                .map_err(|_| LifecycleError::Borrowed)?
+                .component_state
+                .mount_instance(self.root_path.clone(), state_schema)?;
+            engine.call_optional_lifecycle(
+                &candidate,
+                "init",
+                self.context_for(ExecutionPhase::Init, candidate.generation()),
+            )?;
+            engine.call_optional_lifecycle_with_value(
+                &candidate,
+                "resume",
+                self.context_for(ExecutionPhase::Resume, candidate.generation()),
+                UiValue::Integer(i64::try_from(elapsed.as_millis()).unwrap_or(i64::MAX)),
+            )?;
+            {
+                let mut runtime = self
+                    .runtime
+                    .try_borrow_mut()
+                    .map_err(|_| LifecycleError::Borrowed)?;
+                runtime
+                    .animations
+                    .delay_node_scope(&self.animation_root_path(), elapsed);
+                runtime.animation_values = runtime.animations.snapshot(now);
+            }
+            let root = engine.render_with_context_staged(
+                &candidate,
+                self.context_for(ExecutionPhase::Render, candidate.generation()),
+            )?;
+            let mut retained = self.retained.clone();
+            retained.reconcile(root.clone())?;
+            self.validate_resource_budgets(engine, &retained)?;
+            self.reconcile_animations(&root)?;
+            self.reconcile_effects(
+                engine,
+                &candidate,
+                snapshot.component_state().clone(),
+                &retained,
+            )?;
+            {
+                let mut runtime = self
+                    .runtime
+                    .try_borrow_mut()
+                    .map_err(|_| LifecycleError::Borrowed)?;
+                runtime.timers.resume_component_scope(&self.root_path, now);
+            }
+            self.retain_geometry_nodes(&retained)?;
+            self.validate_signal_bindings(&root)?;
+            Ok((root, retained))
+        })();
+        match result {
+            Ok((root, retained)) => {
+                self.trace_reconcile("resume_reload", retained.last_report());
+                self.compiled = candidate;
+                self.retained = retained;
+                self.root = Some(Rc::new(root));
+                self.suspended_at = None;
+                self.state = LifecycleState::Running;
+                self.root.as_deref().ok_or(LifecycleError::MissingRoot)
+            }
+            Err(error) => {
+                self.runtime
+                    .try_borrow_mut()
+                    .map_err(|_| LifecycleError::Borrowed)?
+                    .restore(snapshot)?;
+                engine.restore_execution_checkpoint(engine_checkpoint);
+                self.state = LifecycleState::Suspended;
                 Err(error)
             }
         }
@@ -1091,6 +1363,8 @@ pub enum LifecycleError {
     Reconcile(#[from] crate::ReconcileError),
     #[error("script lifecycle has no accepted root")]
     MissingRoot,
+    #[error("suspended lifecycle is missing its monotonic suspension timestamp")]
+    MissingSuspendTime,
     #[error("component subtree `{0}` is missing from the accepted UiNode snapshot")]
     MissingComponentSubtree(ComponentInstancePath),
     #[error("virtual collection `{0:?}` is missing from the accepted UiNode snapshot")]
@@ -1166,6 +1440,33 @@ mod tests {
         )]))
         .unwrap()
     }
+
+    const STREAM_COMPONENT_APP: &str = r#"
+        define_component(#{
+            metadata: #{ id: "test/stream", "export": "StreamProbe", version: "0.1.0",
+                runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
+                dependencies: [], capabilities: #{ "app.stream": "*" } },
+            schema: #{ props: #{ key: #{ schema: #{ type: "string" }, required: true, sensitive: false } },
+                state: #{ fields: #{ phase: #{ schema: #{ type: "string" },
+                    "default": #{ type: "string", value: "idle" } } } },
+                events: #{}, slots: #{}, parts: [], effects: ["watch"] },
+            render: Fn("render_StreamProbe"),
+        });
+        fn start_stream(ctx, deps) {
+            ctx.start_subscription(
+                "app.stream", "watch", (),
+                Fn("received"), Fn("failed"), #{ delivery: "all" }
+            );
+        }
+        fn stop_stream(ctx, deps) { () }
+        fn received(ctx, value) { ctx.set_state("phase", value); }
+        fn failed(ctx, error) { ctx.set_state("phase", "failed"); }
+        fn render_StreamProbe(ctx, props) {
+            effect("watch", (), Fn("start_stream"), Fn("stop_stream"));
+            text(ctx.get_state("phase"))
+        }
+        fn view(ctx) { render_component("test/stream", #{ key: "stream" }) }
+    "#;
 
     #[test]
     fn lifecycle_order_and_optional_functions_are_enforced() {
@@ -1269,6 +1570,149 @@ mod tests {
         assert_eq!(
             frame.values.values().copied().collect::<Vec<_>>(),
             vec![50.0]
+        );
+    }
+
+    #[test]
+    fn suspend_resume_preserves_state_and_freezes_animation_time() {
+        let mut engine = RuntimeEngine::new();
+        let compiled = engine
+            .compile(
+                r#"
+                    fn suspend(ctx) { ctx.set_state("phase", "suspended"); }
+                    fn resume(ctx, elapsed_ms) {
+                        ctx.set_state("phase", "resumed");
+                        ctx.set_state("elapsed", elapsed_ms);
+                    }
+                    fn view(ctx) {
+                        text(ctx.get_state("phase")).with_key("probe")
+                            .animate(transition("width", 0.0, 100.0, 100, "linear"))
+                    }
+                "#,
+            )
+            .unwrap();
+        let start = Instant::now();
+        let manual = crate::ManualRuntimeClock::new(start);
+        let mut runtime_state = UiRuntimeState::new();
+        runtime_state.clock = manual.clock();
+        let runtime = Rc::new(RefCell::new(runtime_state));
+        let path = ComponentInstancePath::root("App", "root");
+        let schema = ComponentStateSchema::new(BTreeMap::from([
+            (
+                "phase".to_owned(),
+                StateField::new(ValueSchema::string(), UiValue::String("active".to_owned())),
+            ),
+            (
+                "elapsed".to_owned(),
+                StateField::new(ValueSchema::integer(), UiValue::Integer(0)),
+            ),
+        ]))
+        .unwrap();
+        let mut lifecycle = ScriptLifecycle::new(
+            compiled,
+            Rc::clone(&runtime),
+            path.clone(),
+            Some("main".to_owned()),
+            BTreeMap::new(),
+            &schema,
+        )
+        .unwrap();
+        lifecycle.start(&mut engine).unwrap();
+        manual.advance(Duration::from_millis(50));
+        {
+            let mut runtime = runtime.borrow_mut();
+            let now = runtime.clock.now();
+            runtime.animation_values = runtime.animations.tick(now).values;
+        }
+        let before = *runtime.borrow().animation_values.values().next().unwrap();
+        assert!(lifecycle.suspend(&mut engine).unwrap());
+        assert_eq!(lifecycle.state(), LifecycleState::Suspended);
+        assert_eq!(
+            runtime.borrow().component_state.get(&path, "phase"),
+            Some(&UiValue::String("suspended".to_owned()))
+        );
+        assert!(!lifecycle.suspend(&mut engine).unwrap());
+
+        manual.advance(Duration::from_millis(1_000));
+        assert!(lifecycle.resume(&mut engine).unwrap());
+        assert_eq!(lifecycle.state(), LifecycleState::Running);
+        assert_eq!(
+            runtime.borrow().component_state.get(&path, "elapsed"),
+            Some(&UiValue::Integer(1_000))
+        );
+        let after = *runtime.borrow().animation_values.values().next().unwrap();
+        assert!(
+            (before - after).abs() < 0.001,
+            "animation advanced while suspended"
+        );
+        assert!(!lifecycle.resume(&mut engine).unwrap());
+    }
+
+    #[test]
+    fn suspended_reload_migrates_atomically_and_keeps_last_good_on_failure() {
+        let mut engine = RuntimeEngine::new();
+        let active = engine
+            .compile(
+                r#"
+                    fn suspend(ctx) { ctx.set_state("phase", "parked"); }
+                    fn view(ctx) { text(ctx.get_state("phase")) }
+                "#,
+            )
+            .unwrap();
+        let active_generation = active.generation();
+        let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+        let path = ComponentInstancePath::root("App", "root");
+        let mut lifecycle = ScriptLifecycle::new(
+            active,
+            Rc::clone(&runtime),
+            path.clone(),
+            Some("main".to_owned()),
+            BTreeMap::new(),
+            &state_schema(),
+        )
+        .unwrap();
+        lifecycle.start(&mut engine).unwrap();
+        lifecycle.suspend(&mut engine).unwrap();
+
+        let rejected = engine
+            .compile(
+                r#"
+                    fn init(ctx) { ctx.set_state("phase", "candidate-init"); }
+                    fn resume(ctx, elapsed_ms) { throw "candidate resume failed"; }
+                    fn view(ctx) { text(ctx.get_state("phase")) }
+                "#,
+            )
+            .unwrap();
+        assert!(
+            lifecycle
+                .resume_reload(&mut engine, rejected, &state_schema())
+                .is_err()
+        );
+        assert_eq!(lifecycle.state(), LifecycleState::Suspended);
+        assert_eq!(lifecycle.generation(), active_generation);
+        assert_eq!(
+            runtime.borrow().component_state.get(&path, "phase"),
+            Some(&UiValue::String("parked".to_owned()))
+        );
+
+        let accepted = engine
+            .compile(
+                r#"
+                    fn init(ctx) { ctx.set_state("phase", "candidate-init"); }
+                    fn resume(ctx, elapsed_ms) { ctx.set_state("phase", "candidate-resumed"); }
+                    fn view(ctx) { text(ctx.get_state("phase")) }
+                "#,
+            )
+            .unwrap();
+        let accepted_generation = accepted.generation();
+        lifecycle
+            .resume_reload(&mut engine, accepted, &state_schema())
+            .unwrap();
+        assert_eq!(lifecycle.state(), LifecycleState::Running);
+        assert_eq!(lifecycle.generation(), accepted_generation);
+        assert_eq!(
+            runtime.borrow().component_state.get(&path, "phase"),
+            Some(&UiValue::String("candidate-resumed".to_owned()))
         );
     }
 
@@ -1961,21 +2405,7 @@ mod tests {
         }
 
         let mut engine = RuntimeEngine::new();
-        let compiled = engine
-            .compile(
-                r#"
-                    fn init(ctx) {
-                        ctx.start_subscription(
-                            "app.stream", "watch", (),
-                            Fn("received"), Fn("failed"), #{ delivery: "all" }
-                        );
-                    }
-                    fn received(ctx, value) { ctx.set_state("phase", value); }
-                    fn failed(ctx, error) { ctx.set_state("phase", "failed"); }
-                    fn view(ctx) { text(ctx.get_state("phase")) }
-                "#,
-            )
-            .unwrap();
+        let compiled = engine.compile(STREAM_COMPONENT_APP).unwrap();
         let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
         let capability = CapabilityId::parse("app.stream").unwrap();
         runtime
@@ -2030,8 +2460,46 @@ mod tests {
             std::thread::yield_now();
         }
         assert_eq!(
-            runtime.borrow().component_state.get(&path, "phase"),
+            runtime
+                .borrow()
+                .component_state
+                .get(&path.child("StreamProbe", "stream"), "phase"),
             Some(&UiValue::String("second".to_owned()))
+        );
+    }
+
+    #[test]
+    fn subscription_start_outside_a_declarative_effect_is_rejected() {
+        let mut engine = RuntimeEngine::new();
+        let compiled = engine
+            .compile(
+                r#"
+                    fn init(ctx) {
+                        ctx.start_subscription(
+                            "app.stream", "watch", (),
+                            Fn("received"), Fn("failed"), #{ delivery: "all" }
+                        );
+                    }
+                    fn received(ctx, value) { () }
+                    fn failed(ctx, error) { () }
+                    fn view(ctx) { text("never mounted") }
+                "#,
+            )
+            .unwrap();
+        let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+        let mut lifecycle = ScriptLifecycle::new(
+            compiled,
+            runtime,
+            ComponentInstancePath::root("App", "root"),
+            None,
+            BTreeMap::new(),
+            &state_schema(),
+        )
+        .unwrap();
+        let error = lifecycle.start(&mut engine).unwrap_err().to_string();
+        assert!(
+            error.contains("subscriptions must be started by a declarative component effect"),
+            "unexpected error: {error}"
         );
     }
 }

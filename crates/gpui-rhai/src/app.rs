@@ -287,6 +287,14 @@ impl ScriptViewHost {
         state.overlays.remove_view(view_id);
     }
 
+    fn quiesce_view(&self, view_id: &str, focus: &FocusHandle, window: &mut Window, cx: &App) {
+        let fallback = self.inner.borrow().fallback_focus.clone();
+        if focus.contains_focused(window, cx) {
+            fallback.focus(window);
+        }
+        self.inner.borrow().overlays.remove_view(view_id);
+    }
+
     fn overlays(&self) -> WindowOverlayCoordinator {
         self.inner.borrow().overlays.clone()
     }
@@ -492,6 +500,13 @@ impl IntoElement for SharedLayerPortalElement {
 #[derive(Clone)]
 pub struct ScriptViewHandle(Rc<ScriptViewHandleInner>);
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ScriptViewState {
+    Active,
+    Suspended,
+    Disposed,
+}
+
 #[derive(Clone)]
 pub struct ThemeHandle(Entity<ThemeHandleState>);
 
@@ -583,22 +598,46 @@ struct ScriptViewHandleInner {
     theme: ThemeHandle,
     host: ScriptViewHost,
     view_id: String,
-    disposed: Cell<bool>,
+    state: Rc<Cell<ScriptViewState>>,
     measured_bounds: Rc<Cell<Option<Bounds<Pixels>>>>,
 }
 
 impl Drop for ScriptViewHandleInner {
     fn drop(&mut self) {
-        if !self.disposed.replace(true) {
+        if self.state.get() != ScriptViewState::Disposed {
             self.host.unregister_view(&self.view_id);
         }
     }
 }
 
 impl ScriptViewHandle {
+    fn require_not_disposed(&self) -> Result<ScriptViewState, ScriptViewError> {
+        let state = self.0.state.get();
+        if state == ScriptViewState::Disposed {
+            Err(ScriptViewError::DisposedView(self.0.view_id.clone()))
+        } else {
+            Ok(state)
+        }
+    }
+
+    fn require_active(&self) -> Result<(), ScriptViewError> {
+        match self.require_not_disposed()? {
+            ScriptViewState::Active => Ok(()),
+            ScriptViewState::Suspended => {
+                Err(ScriptViewError::SuspendedView(self.0.view_id.clone()))
+            }
+            ScriptViewState::Disposed => unreachable!(),
+        }
+    }
+
     #[must_use]
     pub fn view_id(&self) -> &str {
         &self.0.view_id
+    }
+
+    #[must_use]
+    pub fn state(&self) -> ScriptViewState {
+        self.0.state.get()
     }
 
     /// Return a read-only, observable handle to this view's effective theme.
@@ -607,9 +646,7 @@ impl ScriptViewHandle {
     ///
     /// Returns [`ScriptViewError::DisposedView`] after explicit disposal.
     pub fn theme(&self) -> Result<ThemeHandle, ScriptViewError> {
-        if self.0.disposed.get() {
-            return Err(ScriptViewError::DisposedView(self.0.view_id.clone()));
-        }
+        self.require_not_disposed()?;
         Ok(self.0.theme.clone())
     }
 
@@ -633,9 +670,7 @@ impl ScriptViewHandle {
     /// method with [`Self::last_error`] when the caller must distinguish a
     /// current successful tree from a rollback after failure.
     pub fn root(&self, cx: &App) -> Result<Option<crate::UiNode>, ScriptViewError> {
-        if self.0.disposed.get() {
-            return Err(ScriptViewError::DisposedView(self.0.view_id.clone()));
-        }
+        self.require_not_disposed()?;
         Ok(self.0.entity.read(cx).lifecycle.root().cloned())
     }
 
@@ -649,9 +684,7 @@ impl ScriptViewHandle {
     ///
     /// Returns [`ScriptViewError::DisposedView`] after disposal.
     pub fn last_error(&self, cx: &App) -> Result<Option<String>, ScriptViewError> {
-        if self.0.disposed.get() {
-            return Err(ScriptViewError::DisposedView(self.0.view_id.clone()));
-        }
+        self.require_not_disposed()?;
         Ok(self.0.entity.read(cx).last_error.clone())
     }
 
@@ -664,9 +697,7 @@ impl ScriptViewHandle {
         &self,
         cx: &mut App,
     ) -> Result<ScriptViewPerformanceSnapshot, ScriptViewError> {
-        if self.0.disposed.get() {
-            return Err(ScriptViewError::DisposedView(self.0.view_id.clone()));
-        }
+        self.require_not_disposed()?;
         Ok(self.0.entity.update(cx, |view, _| {
             let (virtual_collections, dirty_components, pending_virtual_requests) = {
                 let runtime_handle = view.lifecycle.runtime();
@@ -697,9 +728,7 @@ impl ScriptViewHandle {
         signal: &crate::NativeSignal,
         cx: &App,
     ) -> Result<crate::SignalValue, ScriptViewError> {
-        if self.0.disposed.get() {
-            return Err(ScriptViewError::DisposedView(self.0.view_id.clone()));
-        }
+        self.require_not_disposed()?;
         Ok(self
             .0
             .entity
@@ -724,9 +753,7 @@ impl ScriptViewHandle {
         value: crate::SignalValue,
         cx: &mut App,
     ) -> Result<bool, ScriptViewError> {
-        if self.0.disposed.get() {
-            return Err(ScriptViewError::DisposedView(self.0.view_id.clone()));
-        }
+        self.require_not_disposed()?;
         self.0.entity.update(cx, |view, cx| {
             let changed = view
                 .lifecycle
@@ -755,9 +782,7 @@ impl ScriptViewHandle {
         collection: crate::NativeCollection,
         cx: &mut App,
     ) -> Result<bool, ScriptViewError> {
-        if self.0.disposed.get() {
-            return Err(ScriptViewError::DisposedView(self.0.view_id.clone()));
-        }
+        self.require_not_disposed()?;
         self.0.entity.update(cx, |view, cx| {
             let changed = view
                 .lifecycle
@@ -785,9 +810,7 @@ impl ScriptViewHandle {
         document: crate::NativeTextDocument,
         cx: &mut App,
     ) -> Result<bool, ScriptViewError> {
-        if self.0.disposed.get() {
-            return Err(ScriptViewError::DisposedView(self.0.view_id.clone()));
-        }
+        self.require_not_disposed()?;
         self.0.entity.update(cx, |view, cx| {
             let changed = view
                 .lifecycle
@@ -807,9 +830,7 @@ impl ScriptViewHandle {
     ///
     /// Returns [`ScriptViewError::DisposedView`] after explicit disposal.
     pub fn element(&self) -> Result<AnyElement, ScriptViewError> {
-        if self.0.disposed.get() {
-            return Err(ScriptViewError::DisposedView(self.0.view_id.clone()));
-        }
+        self.require_active()?;
         Ok(MeasuredScriptViewElement {
             entity: self.0.entity.clone(),
             measured_bounds: Rc::clone(&self.0.measured_bounds),
@@ -836,6 +857,37 @@ impl ScriptViewHandle {
             .into_any_element())
     }
 
+    /// Quiesce this retained view without discarding script or native UI state.
+    ///
+    /// # Errors
+    ///
+    /// Returns after disposal or when a suspend hook/effect cleanup fails.
+    pub fn suspend(&self, window: &mut Window, cx: &mut App) -> Result<bool, ScriptViewError> {
+        match self.require_not_disposed()? {
+            ScriptViewState::Suspended => return Ok(false),
+            ScriptViewState::Active => {}
+            ScriptViewState::Disposed => unreachable!(),
+        }
+        self.0
+            .entity
+            .update(cx, |view, cx| view.suspend_view(window, cx))
+    }
+
+    /// Atomically resume a suspended view before returning it to Host layout.
+    ///
+    /// # Errors
+    ///
+    /// Returns after disposal or when pending delivery, resume hook, reload, or
+    /// the first restored render fails. Failure leaves the view suspended.
+    pub fn resume(&self, cx: &mut App) -> Result<bool, ScriptViewError> {
+        match self.require_not_disposed()? {
+            ScriptViewState::Active => return Ok(false),
+            ScriptViewState::Suspended => {}
+            ScriptViewState::Disposed => unreachable!(),
+        }
+        self.0.entity.update(cx, ScriptHostView::resume_view)
+    }
+
     /// Dispose this view immediately. The operation is idempotent.
     ///
     /// # Errors
@@ -843,7 +895,7 @@ impl ScriptViewHandle {
     /// Returns an entity update error only if GPUI has already released the
     /// underlying view unexpectedly.
     pub fn dispose(&self, cx: &mut App) -> Result<(), ScriptViewError> {
-        if self.0.disposed.replace(true) {
+        if self.0.state.get() == ScriptViewState::Disposed {
             return Ok(());
         }
         self.0.entity.update(cx, |view, cx| {
@@ -861,9 +913,7 @@ impl ScriptViewHandle {
     ///
     /// Returns [`ScriptViewError::DisposedView`] after disposal.
     pub fn focus(&self, window: &mut Window, cx: &App) -> Result<(), ScriptViewError> {
-        if self.0.disposed.get() {
-            return Err(ScriptViewError::DisposedView(self.0.view_id.clone()));
-        }
+        self.require_active()?;
         self.0.entity.read(cx).host_focus.focus(window);
         Ok(())
     }
@@ -877,9 +927,7 @@ impl ScriptViewHandle {
         &self,
         cx: &App,
     ) -> Result<crate::AccessibilityTree, ScriptViewError> {
-        if self.0.disposed.get() {
-            return Err(ScriptViewError::DisposedView(self.0.view_id.clone()));
-        }
+        self.require_active()?;
         let view = self.0.entity.read(cx);
         let geometry = view.lifecycle.runtime().borrow().geometry.clone();
         Ok(crate::AccessibilityTree::from_presented(
@@ -916,9 +964,7 @@ impl ScriptViewHandle {
         window: &mut Window,
         cx: &mut App,
     ) -> Result<crate::AutomationResult, ScriptViewError> {
-        if self.0.disposed.get() {
-            return Err(ScriptViewError::DisposedView(self.0.view_id.clone()));
-        }
+        self.require_active()?;
         match command {
             crate::AutomationCommand::Snapshot => Ok(crate::AutomationResult::Snapshot {
                 snapshot: self.automation_snapshot(cx)?,
@@ -949,9 +995,7 @@ impl ScriptViewHandle {
     ///
     /// Returns after disposal.
     pub fn reconcile_report(&self, cx: &App) -> Result<crate::ReconcileReport, ScriptViewError> {
-        if self.0.disposed.get() {
-            return Err(ScriptViewError::DisposedView(self.0.view_id.clone()));
-        }
+        self.require_not_disposed()?;
         Ok(self
             .0
             .entity
@@ -974,9 +1018,7 @@ impl ScriptViewHandle {
         window: &mut Window,
         cx: &mut App,
     ) -> Result<(), ScriptViewError> {
-        if self.0.disposed.get() {
-            return Err(ScriptViewError::DisposedView(self.0.view_id.clone()));
-        }
+        self.require_active()?;
         self.0.entity.update(cx, |view, _| {
             let node = view
                 .lifecycle
@@ -999,9 +1041,7 @@ impl ScriptViewHandle {
     ///
     /// Returns [`ScriptViewError::DisposedView`] after disposal.
     pub fn set_inspector_open(&self, open: bool, cx: &mut App) -> Result<(), ScriptViewError> {
-        if self.0.disposed.get() {
-            return Err(ScriptViewError::DisposedView(self.0.view_id.clone()));
-        }
+        self.require_active()?;
         self.0.entity.update(cx, |view, cx| {
             view.inspector_open = open;
             cx.notify();
@@ -2124,11 +2164,7 @@ impl PreparedScriptView {
         install(cx);
         install_declared_fonts(std::mem::take(&mut self.fonts), cx)?;
         #[cfg(feature = "dev-reload")]
-        let watcher = if self.development && !self.ui_root.as_os_str().is_empty() {
-            Some(FileWatcher::new(&self.ui_root)?)
-        } else {
-            None
-        };
+        let watcher = development_watcher(self.development, &self.ui_root)?;
         host.reserve_view(&config.view_id)?;
         let window_id = host.window_id();
         let lifecycle = mount_prepared_lifecycle(
@@ -2154,11 +2190,21 @@ impl PreparedScriptView {
         let view_host = host.clone();
         let (theme_handle, view_theme_handle) =
             theme_handles_for_lifecycle(&lifecycle, &self.theme, window, cx);
+        let view_state = Rc::new(Cell::new(ScriptViewState::Active));
+        let entity_view_state = Rc::clone(&view_state);
+        let entity_activity_wake = crate::async_runtime::AsyncWake::default();
         let entity = cx.new(|entity_cx| {
-            let runtime_tasks = spawn_host_runtime_tasks(entity_cx, &lifecycle);
+            let runtime_tasks = spawn_host_runtime_tasks(
+                entity_cx,
+                &lifecycle,
+                Rc::clone(&entity_view_state),
+                entity_activity_wake.clone(),
+            );
             let host_focus = entity_cx.focus_handle();
             #[cfg(feature = "dev-reload")]
-            let reload_task = watcher.as_ref().map(|_| spawn_host_reload_poll(entity_cx));
+            let reload_task = watcher
+                .as_ref()
+                .map(|_| spawn_host_reload_poll(entity_cx, Rc::clone(&entity_view_state)));
             ScriptHostView {
                 view_id: view_id.clone(),
                 window_id,
@@ -2185,7 +2231,8 @@ impl PreparedScriptView {
                 scroll_handles: BTreeMap::new(),
                 scroll_anchors: BTreeMap::new(),
                 text_selection: crate::renderer::TextSelectionRegistry::default(),
-                disposed: false,
+                state: entity_view_state,
+                activity_wake: entity_activity_wake,
                 _runtime_tasks: runtime_tasks,
                 #[cfg(feature = "dev-reload")]
                 module_cache: self.module_cache,
@@ -2201,6 +2248,8 @@ impl PreparedScriptView {
                 style_path: self.style_path,
                 #[cfg(feature = "dev-reload")]
                 _reload_task: reload_task,
+                #[cfg(feature = "dev-reload")]
+                pending_reload_paths: BTreeSet::new(),
             }
         });
         attach_script_view_focus(&host, &config.view_id, &entity, cx);
@@ -2209,7 +2258,20 @@ impl PreparedScriptView {
             theme_handle,
             host,
             config,
+            view_state,
         ))
+    }
+}
+
+#[cfg(feature = "dev-reload")]
+fn development_watcher(
+    development: bool,
+    ui_root: &Path,
+) -> Result<Option<FileWatcher>, ScriptViewError> {
+    if development && !ui_root.as_os_str().is_empty() {
+        Ok(Some(FileWatcher::new(ui_root)?))
+    } else {
+        Ok(None)
     }
 }
 
@@ -2446,8 +2508,16 @@ fn open_secondary_window(
     let result = cx.open_window(options, move |window, cx| {
         let (theme_handle, view_theme_handle) =
             theme_handles_for_lifecycle(&lifecycle, &view_factory.theme, window, cx);
+        let view_state = Rc::new(Cell::new(ScriptViewState::Active));
+        let entity_view_state = Rc::clone(&view_state);
+        let entity_activity_wake = crate::async_runtime::AsyncWake::default();
         let entity = cx.new(|entity_cx| {
-            let runtime_tasks = spawn_host_runtime_tasks(entity_cx, &lifecycle);
+            let runtime_tasks = spawn_host_runtime_tasks(
+                entity_cx,
+                &lifecycle,
+                Rc::clone(&entity_view_state),
+                entity_activity_wake.clone(),
+            );
             let host_focus = entity_cx.focus_handle();
             ScriptHostView {
                 view_id: view_window_id.clone(),
@@ -2475,7 +2545,8 @@ fn open_secondary_window(
                 scroll_handles: BTreeMap::new(),
                 scroll_anchors: BTreeMap::new(),
                 text_selection: crate::renderer::TextSelectionRegistry::default(),
-                disposed: false,
+                state: entity_view_state,
+                activity_wake: entity_activity_wake,
                 _runtime_tasks: runtime_tasks,
                 #[cfg(feature = "dev-reload")]
                 module_cache: ModuleCompileCache::new(),
@@ -2491,6 +2562,8 @@ fn open_secondary_window(
                 style_path: PathBuf::new(),
                 #[cfg(feature = "dev-reload")]
                 _reload_task: None,
+                #[cfg(feature = "dev-reload")]
+                pending_reload_paths: BTreeSet::new(),
             }
         });
         view_host.attach_view_focus(&view_window_id, entity.read(cx).host_focus.clone());
@@ -2499,7 +2572,7 @@ fn open_secondary_window(
             theme: theme_handle,
             host: view_host.clone(),
             view_id: view_window_id,
-            disposed: Cell::new(false),
+            state: view_state,
             measured_bounds: Rc::new(Cell::new(None)),
         }));
         let _ = view.focus(window, cx);
@@ -2571,6 +2644,8 @@ struct HostRuntimeTasks {
 fn spawn_host_runtime_tasks(
     cx: &mut Context<ScriptHostView>,
     lifecycle: &ScriptLifecycle,
+    state: Rc<Cell<ScriptViewState>>,
+    activity_wake: crate::async_runtime::AsyncWake,
 ) -> HostRuntimeTasks {
     let (task_wake, subscription_wake) = {
         let runtime = lifecycle.runtime();
@@ -2578,15 +2653,29 @@ fn spawn_host_runtime_tasks(
         (runtime.tasks.wake(), runtime.subscriptions.wake())
     };
     HostRuntimeTasks {
-        _frame_poll: spawn_host_frame_poll(cx),
+        _frame_poll: spawn_host_frame_poll(cx, state, activity_wake),
         _task_delivery: spawn_host_delivery_pump(cx, task_wake),
         _subscription_delivery: spawn_host_delivery_pump(cx, subscription_wake),
     }
 }
 
-fn spawn_host_frame_poll(cx: &mut Context<ScriptHostView>) -> Task<()> {
+fn spawn_host_frame_poll(
+    cx: &mut Context<ScriptHostView>,
+    state: Rc<Cell<ScriptViewState>>,
+    activity_wake: crate::async_runtime::AsyncWake,
+) -> Task<()> {
+    let mut listener = activity_wake.listen();
     cx.spawn(async move |entity: gpui::WeakEntity<ScriptHostView>, cx| {
         loop {
+            match state.get() {
+                ScriptViewState::Disposed => break,
+                ScriptViewState::Suspended => {
+                    listener.await;
+                    listener = activity_wake.listen();
+                    continue;
+                }
+                ScriptViewState::Active => {}
+            }
             Timer::after(Duration::from_millis(16)).await;
             if entity.update(cx, ScriptHostView::poll_async).is_err() {
                 break;
@@ -2615,9 +2704,15 @@ fn spawn_host_delivery_pump(
 }
 
 #[cfg(feature = "dev-reload")]
-fn spawn_host_reload_poll(cx: &mut Context<ScriptHostView>) -> Task<()> {
+fn spawn_host_reload_poll(
+    cx: &mut Context<ScriptHostView>,
+    state: Rc<Cell<ScriptViewState>>,
+) -> Task<()> {
     cx.spawn(async move |entity: gpui::WeakEntity<ScriptHostView>, cx| {
         loop {
+            if state.get() == ScriptViewState::Disposed {
+                break;
+            }
             Timer::after(Duration::from_millis(100)).await;
             if entity.update(cx, ScriptHostView::poll_reload).is_err() {
                 break;
@@ -2685,7 +2780,8 @@ struct ScriptHostView {
     scroll_handles: BTreeMap<crate::NodeId, ScrollHandle>,
     scroll_anchors: BTreeMap<crate::NodeId, ScrollAnchor>,
     text_selection: crate::renderer::TextSelectionRegistry,
-    disposed: bool,
+    state: Rc<Cell<ScriptViewState>>,
+    activity_wake: crate::async_runtime::AsyncWake,
     _runtime_tasks: HostRuntimeTasks,
     #[cfg(feature = "dev-reload")]
     module_cache: ModuleCompileCache,
@@ -2701,6 +2797,8 @@ struct ScriptHostView {
     style_path: PathBuf,
     #[cfg(feature = "dev-reload")]
     _reload_task: Option<Task<()>>,
+    #[cfg(feature = "dev-reload")]
+    pending_reload_paths: BTreeSet<PathBuf>,
 }
 
 fn nearest_scroll_ancestor(
@@ -2895,13 +2993,14 @@ fn mounted_script_view_handle(
     theme: ThemeHandle,
     host: ScriptViewHost,
     config: ScriptViewConfig,
+    state: Rc<Cell<ScriptViewState>>,
 ) -> ScriptViewHandle {
     ScriptViewHandle(Rc::new(ScriptViewHandleInner {
         entity,
         theme,
         host,
         view_id: config.view_id,
-        disposed: Cell::new(false),
+        state,
         measured_bounds: Rc::new(Cell::new(None)),
     }))
 }
@@ -2944,6 +3043,9 @@ fn resolve_root_theme_from_runtime(
 
 impl Render for ScriptHostView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if self.state.get() != ScriptViewState::Active {
+            return div().into_any_element();
+        }
         self.prepare_host_render(window, cx);
         let dispatcher = script_node_dispatcher(cx);
         let appearance = system_appearance(window.appearance());
@@ -3442,7 +3544,11 @@ impl ScriptHostView {
     }
 
     fn should_close(&mut self, cx: &mut Context<Self>) -> bool {
-        if self.disposed {
+        if self.state.get() == ScriptViewState::Disposed {
+            return true;
+        }
+        if self.state.get() == ScriptViewState::Suspended {
+            self.release_view();
             return true;
         }
         let forced = self
@@ -3490,8 +3596,122 @@ impl ScriptHostView {
         }
     }
 
+    fn suspend_view(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Result<bool, ScriptViewError> {
+        let changed = self.lifecycle.suspend(&mut self.engine)?;
+        if !changed {
+            return Ok(false);
+        }
+        self.host
+            .quiesce_view(&self.view_id, &self.host_focus, window, cx);
+        self.state.set(ScriptViewState::Suspended);
+        self.last_error = None;
+        cx.notify();
+        Ok(true)
+    }
+
+    fn resume_view(&mut self, cx: &mut Context<Self>) -> Result<bool, ScriptViewError> {
+        if self.state.get() == ScriptViewState::Active {
+            return Ok(false);
+        }
+        #[cfg(feature = "dev-reload")]
+        let pending_reload_error = self.apply_pending_reload_on_resume();
+        #[cfg(not(feature = "dev-reload"))]
+        let pending_reload_error: Option<String> = None;
+        self.collect_suspended_deliveries()?;
+        let program = self.factory.program();
+        let migrating = program.compiled.generation() != self.lifecycle.generation();
+        let previous_exports = migrating
+            .then(|| self.engine.component_exports())
+            .transpose()
+            .map_err(|error| ScriptViewError::Resume(error.to_string()))?;
+        let previous_renderers = migrating
+            .then(|| self.engine.component_renderer_snapshot())
+            .transpose()
+            .map_err(|error| ScriptViewError::Resume(error.to_string()))?;
+        if migrating {
+            self.engine
+                .restore_component_exports(program.component_exports.clone())
+                .map_err(|error| ScriptViewError::Resume(error.to_string()))?;
+            if let Err(error) = self
+                .engine
+                .restore_component_renderers(program.component_renderers.clone())
+            {
+                if let Some(previous_exports) = previous_exports.clone() {
+                    let _ = self.engine.restore_component_exports(previous_exports);
+                }
+                return Err(ScriptViewError::Resume(error.to_string()));
+            }
+        }
+        let result = self.run_script_transaction(|view| {
+            if migrating {
+                view.lifecycle
+                    .runtime()
+                    .borrow_mut()
+                    .discard_component_async_before_generation(
+                        view.lifecycle.root_path(),
+                        program.compiled.generation(),
+                    );
+                view.lifecycle
+                    .resume_reload(&mut view.engine, program.compiled, &program.state_schema)
+                    .map(|_| true)
+                    .map_err(|error| error.to_string())?;
+                return Ok(true);
+            }
+            let pending = view
+                .lifecycle
+                .runtime()
+                .borrow_mut()
+                .take_window_async(&view.window_id, view.lifecycle.root_path());
+            for delivery in pending {
+                let _ = view
+                    .lifecycle
+                    .invoke_async_delivery(&view.engine, delivery)
+                    .map_err(|error| error.to_string())?;
+            }
+            view.invoke_pending_effects()?;
+            view.lifecycle
+                .resume(&mut view.engine)
+                .map_err(|error| error.to_string())
+        });
+        match result {
+            Ok(changed) => {
+                self.state.set(ScriptViewState::Active);
+                self.activity_wake.notify();
+                self.last_error = pending_reload_error;
+                self.collect_timings();
+                cx.notify();
+                Ok(changed)
+            }
+            Err(error) => {
+                if let Some(previous_exports) = previous_exports {
+                    let _ = self.engine.restore_component_exports(previous_exports);
+                }
+                if let Some(previous_renderers) = previous_renderers {
+                    let _ = self.engine.restore_component_renderers(previous_renderers);
+                }
+                self.last_error = Some(error.clone());
+                Err(ScriptViewError::Resume(error))
+            }
+        }
+    }
+
+    fn collect_suspended_deliveries(&mut self) -> Result<(), ScriptViewError> {
+        let generation = self.lifecycle.generation();
+        let runtime = self.lifecycle.runtime();
+        let mut runtime = runtime.borrow_mut();
+        let mut deliveries = runtime.tasks.drain(generation);
+        deliveries.extend(runtime.subscriptions.drain(generation));
+        runtime.trace_subscription_closures();
+        runtime.queue_suspended_async(deliveries)?;
+        Ok(())
+    }
+
     fn release_view(&mut self) {
-        if self.disposed {
+        if self.state.get() == ScriptViewState::Disposed {
             return;
         }
         if let Err(error) = self.primitives.retain_mounted(&BTreeSet::new()) {
@@ -3509,7 +3729,8 @@ impl ScriptHostView {
         native.force_close.remove(&self.window_id);
         drop(native);
         self.host.unregister_view(&self.view_id);
-        self.disposed = true;
+        self.state.set(ScriptViewState::Disposed);
+        self.activity_wake.notify();
     }
 
     fn process_window_commands(&mut self, cx: &mut Context<Self>) {
@@ -3593,6 +3814,9 @@ impl ScriptHostView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> crate::EventResponse {
+        if self.state.get() != ScriptViewState::Active {
+            return crate::EventResponse::new().stop();
+        }
         if let Ok(mut runtime) = self.lifecycle.runtime().try_borrow_mut() {
             runtime.traces.push(
                 crate::RuntimeTraceKind::Event,
@@ -3642,6 +3866,9 @@ impl ScriptHostView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> crate::EventResponse {
+        if self.state.get() != ScriptViewState::Active {
+            return crate::EventResponse::new().stop();
+        }
         let registry = self.engine.native_handler_registry();
         let result = self.run_script_transaction(|view| {
             let response = {
@@ -3736,6 +3963,16 @@ impl ScriptHostView {
     }
 
     fn poll_async(&mut self, cx: &mut Context<Self>) {
+        if self.state.get() == ScriptViewState::Suspended {
+            if let Err(error) = self.collect_suspended_deliveries() {
+                self.last_error = Some(error.to_string());
+                cx.notify();
+            }
+            return;
+        }
+        if self.state.get() == ScriptViewState::Disposed {
+            return;
+        }
         self.process_window_commands(cx);
         self.sync_program();
         let generation = self.lifecycle.generation();
@@ -3880,35 +4117,59 @@ impl ScriptHostView {
         if batch.paths.is_empty() {
             return;
         }
+        if self.state.get() == ScriptViewState::Suspended {
+            self.pending_reload_paths.extend(batch.paths);
+            return;
+        }
+        let result = self.reload_changed_paths(&batch.paths);
+        match result {
+            Ok(()) => self.last_error = None,
+            Err(error) => self.last_error = Some(error),
+        }
+        self.collect_timings();
+        cx.notify();
+    }
+
+    #[cfg(feature = "dev-reload")]
+    fn apply_pending_reload_on_resume(&mut self) -> Option<String> {
+        let paths = std::mem::take(&mut self.pending_reload_paths);
+        if paths.is_empty() {
+            return None;
+        }
+        // A broken edit does not strand the retained view. Resume keeps using
+        // the last successfully compiled program and exposes the candidate
+        // error through the normal development error banner.
+        self.reload_changed_paths(&paths).err()
+    }
+
+    #[cfg(feature = "dev-reload")]
+    fn reload_changed_paths(&mut self, paths: &BTreeSet<PathBuf>) -> Result<(), String> {
         let theme_path = self.theme_path.canonicalize().ok();
         let style_path = self.style_path.canonicalize().ok();
         let themes_root = self.ui_root.join("themes").canonicalize().ok();
         let theme_changed = theme_path
             .as_ref()
-            .is_some_and(|theme| batch.paths.contains(theme))
-            || themes_root.as_ref().is_some_and(|themes_root| {
-                batch.paths.iter().any(|path| path.starts_with(themes_root))
-            });
+            .is_some_and(|theme| paths.contains(theme))
+            || themes_root
+                .as_ref()
+                .is_some_and(|themes_root| paths.iter().any(|path| path.starts_with(themes_root)));
         let style_changed = style_path
             .as_ref()
-            .is_some_and(|styles| batch.paths.contains(styles))
-            || batch
-                .paths
-                .iter()
-                .any(|path| path.ends_with(&self.style_path));
+            .is_some_and(|styles| paths.contains(styles))
+            || paths.iter().any(|path| path.ends_with(&self.style_path));
         let locale_root = self.ui_root.join("locales").canonicalize().ok();
-        let locale_changed = locale_root.as_ref().is_some_and(|locale_root| {
-            batch.paths.iter().any(|path| path.starts_with(locale_root))
-        });
+        let locale_changed = locale_root
+            .as_ref()
+            .is_some_and(|locale_root| paths.iter().any(|path| path.starts_with(locale_root)));
         let assets_root = self.ui_root.join("assets").canonicalize().ok();
-        let assets_changed = assets_root.as_ref().is_some_and(|assets_root| {
-            batch.paths.iter().any(|path| path.starts_with(assets_root))
-        });
+        let assets_changed = assets_root
+            .as_ref()
+            .is_some_and(|assets_root| paths.iter().any(|path| path.starts_with(assets_root)));
         let manifest_path = self.ui_root.join("app.toml").canonicalize().ok();
         let manifest_changed = manifest_path
             .as_ref()
-            .is_some_and(|manifest| batch.paths.contains(manifest));
-        let script_changed = batch.paths.iter().any(|path| {
+            .is_some_and(|manifest| paths.contains(manifest));
+        let script_changed = paths.iter().any(|path| {
             path.extension().and_then(|extension| extension.to_str()) == Some("rhai")
                 && Some(path) != theme_path.as_ref()
                 && Some(path) != style_path.as_ref()
@@ -3921,8 +4182,8 @@ impl ScriptHostView {
                     .is_some_and(|themes_root| path.starts_with(themes_root))
         });
 
-        let result = if script_changed {
-            self.reload_scripts(&batch.paths)
+        if script_changed {
+            self.reload_scripts(paths)
         } else {
             Ok(())
         }
@@ -3960,13 +4221,7 @@ impl ScriptHostView {
             } else {
                 Ok(())
             }
-        });
-        match result {
-            Ok(()) => self.last_error = None,
-            Err(error) => self.last_error = Some(error),
-        }
-        self.collect_timings();
-        cx.notify();
+        })
     }
 
     #[cfg(feature = "dev-reload")]
@@ -3985,22 +4240,7 @@ impl ScriptHostView {
             .ui_root
             .canonicalize()
             .map_err(|error| error.to_string())?;
-        let changed_modules = changed_paths.iter().filter_map(|path| {
-            let relative = path.strip_prefix(&root).ok()?;
-            (relative.extension().and_then(|value| value.to_str()) == Some("rhai"))
-                .then(|| {
-                    ModuleId::parse(
-                        relative
-                            .with_extension("")
-                            .components()
-                            .map(|component| component.as_os_str().to_string_lossy())
-                            .collect::<Vec<_>>()
-                            .join("/"),
-                    )
-                    .ok()
-                })
-                .flatten()
-        });
+        let changed_modules = changed_module_ids(&root, changed_paths);
         let refresh = self
             .module_cache
             .refresh(self.engine.engine(), &file_source, changed_modules)
@@ -4043,9 +4283,18 @@ impl ScriptHostView {
                     .engine
                     .component_renderer_snapshot()
                     .map_err(|error| error.to_string())?;
-                self.lifecycle
-                    .reload(&mut self.engine, candidate, &state_schema)
-                    .map_err(|error| error.to_string())?;
+                if self.state.get() == ScriptViewState::Suspended {
+                    self.engine
+                        .restore_component_exports(previous_exports.clone())
+                        .map_err(|error| error.to_string())?;
+                    self.engine
+                        .restore_component_renderers(previous_renderers.clone())
+                        .map_err(|error| error.to_string())?;
+                } else {
+                    self.lifecycle
+                        .reload(&mut self.engine, candidate, &state_schema)
+                        .map_err(|error| error.to_string())?;
+                }
                 self.factory.update_program(
                     program_compiled,
                     program_schema,
@@ -4129,7 +4378,7 @@ impl ScriptHostView {
                 .runtime()
                 .borrow_mut()
                 .replace_component_styles_from_host(styles);
-            if changed {
+            if changed && view.state.get() == ScriptViewState::Active {
                 view.lifecycle
                     .render_dirty(&mut view.engine)
                     .map_err(|error| error.to_string())?;
@@ -4193,6 +4442,29 @@ impl ScriptHostView {
     }
 }
 
+#[cfg(feature = "dev-reload")]
+fn changed_module_ids(root: &Path, changed_paths: &BTreeSet<PathBuf>) -> Vec<ModuleId> {
+    changed_paths
+        .iter()
+        .filter_map(|path| {
+            let relative = path.strip_prefix(root).ok()?;
+            (relative.extension().and_then(|value| value.to_str()) == Some("rhai"))
+                .then(|| {
+                    ModuleId::parse(
+                        relative
+                            .with_extension("")
+                            .components()
+                            .map(|component| component.as_os_str().to_string_lossy())
+                            .collect::<Vec<_>>()
+                            .join("/"),
+                    )
+                    .ok()
+                })
+                .flatten()
+        })
+        .collect()
+}
+
 impl Drop for ScriptHostView {
     fn drop(&mut self) {
         self.release_view();
@@ -4219,6 +4491,10 @@ pub enum ScriptViewError {
     DuplicateView(String),
     #[error("script view `{0}` has been disposed")]
     DisposedView(String),
+    #[error("script view `{0}` is suspended; resume it before rendering or interaction")]
+    SuspendedView(String),
+    #[error("script view resume failed: {0}")]
+    Resume(String),
     #[error(
         "key binding `{keystrokes}` ({context:?}) conflicts: `{existing:?}` is already bound, requested `{requested:?}`"
     )]
@@ -4242,6 +4518,8 @@ pub enum ScriptViewError {
     ManifestEntry { manifest: ModuleId, host: ModuleId },
     #[error(transparent)]
     Capability(#[from] CapabilityError),
+    #[error(transparent)]
+    Async(#[from] crate::AsyncRuntimeError),
     #[error(transparent)]
     Responsive(#[from] ResponsiveError),
     #[error(transparent)]

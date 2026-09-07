@@ -116,6 +116,11 @@ uses its collection key as the action value and supplies `label`, optional
 exact/prefix/substring/subsequence scoring, stable group-local ranking, group
 projection, and disabled-aware edge/adjacent navigation in Rust.
 
+Projected group rows use the same configured row-height metric as projected
+commands. This keeps Array and NativeCollection layout equivalent and lets the
+source component create asymmetric header spacing without a second unstyleable
+height contract.
+
 The structural order cache excludes the active command, so arrow movement
 reuses filtering/ranking and changes only visible-row projection. The official
 Command source invokes these generic functions and sends only the projected

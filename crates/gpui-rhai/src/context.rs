@@ -27,6 +27,8 @@ pub enum ExecutionPhase {
     Init,
     Render,
     Event,
+    Suspend,
+    Resume,
     Dispose,
 }
 
@@ -38,7 +40,14 @@ enum ThemeTarget {
 
 impl ExecutionPhase {
     const fn allows_mutation(self) -> bool {
-        matches!(self, Self::Init | Self::Event | Self::Dispose)
+        matches!(
+            self,
+            Self::Init | Self::Event | Self::Suspend | Self::Resume | Self::Dispose
+        )
+    }
+
+    const fn allows_async_start(self) -> bool {
+        matches!(self, Self::Init | Self::Event | Self::Resume)
     }
 }
 
@@ -84,6 +93,7 @@ pub struct UiRuntimeState {
 }
 
 impl UiRuntimeState {
+    const SUSPENDED_DELIVERY_CAPACITY: usize = 256;
     #[must_use]
     pub fn new() -> Self {
         Self::default()
@@ -277,6 +287,21 @@ impl UiRuntimeState {
         self.pending_async.extend(deliveries);
     }
 
+    pub(crate) fn queue_suspended_async(
+        &mut self,
+        deliveries: impl IntoIterator<Item = crate::AsyncDelivery>,
+    ) -> Result<(), AsyncRuntimeError> {
+        for delivery in deliveries {
+            if self.pending_async.len() >= Self::SUSPENDED_DELIVERY_CAPACITY {
+                return Err(AsyncRuntimeError::SuspendedBackpressure {
+                    capacity: Self::SUSPENDED_DELIVERY_CAPACITY,
+                });
+            }
+            self.pending_async.push(delivery);
+        }
+        Ok(())
+    }
+
     pub(crate) fn cancel_async_scope(&mut self, scope: &AsyncScope) -> Result<(), AssetError> {
         self.assets.cancel_scope(scope)?;
         self.tasks.cancel_scope(scope);
@@ -306,6 +331,17 @@ impl UiRuntimeState {
                 });
         self.pending_async = retained;
         accepted
+    }
+
+    pub(crate) fn discard_component_async_before_generation(
+        &mut self,
+        root: &ComponentInstancePath,
+        generation: crate::ScriptGeneration,
+    ) {
+        self.pending_async.retain(|delivery| {
+            !delivery.scope.is_within_component(root)
+                || delivery.callback.generation() == generation
+        });
     }
 
     pub(crate) fn take_window_element_commands(
@@ -2239,6 +2275,7 @@ impl UiContext {
         error: FnPtr,
     ) -> Result<TaskHandle, UiContextError> {
         self.require_mutation()?;
+        self.require_async_start()?;
         self.require_generation()?;
         let id = CapabilityId::parse(capability)?;
         let input = UiValue::from_dynamic(input)?;
@@ -2284,7 +2321,11 @@ impl UiContext {
         options: SubscriptionOptions,
     ) -> Result<SubscriptionHandle, UiContextError> {
         self.require_mutation()?;
+        self.require_async_start()?;
         self.require_generation()?;
+        if !matches!(self.async_scope, Some(AsyncScope::Effect { .. })) {
+            return Err(UiContextError::SubscriptionRequiresEffect);
+        }
         let id = CapabilityId::parse(capability)?;
         let input = UiValue::from_dynamic(input)?;
         let success = self.scoped_callback(success)?;
@@ -2333,6 +2374,14 @@ impl UiContext {
             Ok(())
         } else {
             Err(UiContextError::MutationDuringRender)
+        }
+    }
+
+    fn require_async_start(&self) -> Result<(), UiContextError> {
+        if self.phase.allows_async_start() {
+            Ok(())
+        } else {
+            Err(UiContextError::AsyncDuringSuspend)
         }
     }
 
@@ -3253,6 +3302,10 @@ pub enum UiContextError {
     Borrowed,
     #[error("state mutation and effects are forbidden during view rendering")]
     MutationDuringRender,
+    #[error("new async work is forbidden while a view is suspending")]
+    AsyncDuringSuspend,
+    #[error("subscriptions must be started by a declarative component effect")]
+    SubscriptionRequiresEffect,
     #[error("event target geometry is available only during event callbacks")]
     EventTargetOutsideEvent,
     #[error("async work requires a bound script generation")]

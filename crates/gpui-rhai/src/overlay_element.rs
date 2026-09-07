@@ -135,16 +135,13 @@ impl WindowOverlayCoordinator {
     pub(crate) fn remove_view(&self, view_id: &str) {
         let prefix = format!("{view_id}::");
         let mut state = self.0.borrow_mut();
-        let overlays = state
+        state.manager.remove_id_prefix(&prefix);
+        state
             .callbacks
-            .keys()
-            .filter(|id| id.as_str().starts_with(&prefix))
-            .cloned()
-            .collect::<Vec<_>>();
-        for id in overlays {
-            let _ = state.manager.dismiss(&id);
-            state.callbacks.remove(&id);
-        }
+            .retain(|id, _| !id.as_str().starts_with(&prefix));
+        state
+            .priorities
+            .retain(|id, _| !id.as_str().starts_with(&prefix));
         state
             .layer_elements
             .retain(|id, _| !id.as_str().starts_with(&prefix));
@@ -1076,5 +1073,20 @@ mod tests {
                 .z_index(&OverlayId::new("dialog"))
                 .is_none()
         );
+    }
+
+    #[test]
+    fn removing_a_view_closes_overlays_without_callbacks() {
+        let coordinator = WindowOverlayCoordinator::default();
+        coordinator.begin_frame(overlay_viewport(size(px(800.0), px(600.0))));
+        let local = OverlayId::new("menu");
+        let scoped = WindowOverlayCoordinator::scoped_id("left", &local);
+        let mut overlay = spec(scoped.as_str(), None);
+        overlay.id = scoped.clone();
+        coordinator.register(overlay).unwrap();
+        assert!(coordinator.0.borrow().manager.z_index(&scoped).is_some());
+
+        coordinator.remove_view("left");
+        assert!(coordinator.0.borrow().manager.z_index(&scoped).is_none());
     }
 }

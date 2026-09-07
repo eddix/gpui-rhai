@@ -30,11 +30,16 @@ Synchronous methods may run only in `init`, `dispose`, or an event callback:
 let result = ctx.call_capability("app.settings", "load", #{ key: "theme" });
 ```
 
-Use `ctx.start_task` for one-shot background work and
-`ctx.start_subscription` for streams. Rust work runs off the foreground thread;
-callbacks return to the GPUI thread. App, window, and component scopes define
-cancellation lifetime. Closing a window cancels its window/component work but
-does not cancel app-scoped work.
+Use `ctx.start_task` for one-shot background work. It may start from `init`, an
+event callback, an effect start, or `resume`; ordinary component-owned tasks
+continue across retained view suspension. Rust work runs off the foreground
+thread and callbacks return to the GPUI thread.
+
+`ctx.start_subscription` is valid only inside a declared formal-component
+effect start callback. This makes every long-lived stream structurally owned:
+dependency replacement, unmount, suspension, hot reload, and disposal all run
+cleanup and cancel the exact effect activation. Starting a subscription from
+root `init` or an ordinary event callback is a runtime error.
 
 Subscription delivery is explicit and bounded:
 
@@ -44,6 +49,10 @@ ctx.start_subscription(
     #{ delivery: "all", capacity: 128, throttle_ms: 0 },
 );
 ```
+
+The call above belongs inside a function referenced by
+`effect("stream", deps, Fn("start_stream"), Fn("stop_stream"))`, not directly
+inside `view` or root lifecycle code.
 
 `delivery: "all"` is the default and preserves FIFO order. Its queue defaults
 to 64 values and reports backpressure to the Rust emitter instead of silently

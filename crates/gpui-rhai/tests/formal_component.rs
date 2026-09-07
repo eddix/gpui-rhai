@@ -799,6 +799,18 @@ fn composed_semantic_callback_props_execute_in_the_caller_state_scope() {
     );
 }
 
+fn first_click_handler(node: &gpui_rhai::UiNode) -> Option<gpui_rhai::ScriptCallback> {
+    node.handler("click")
+        .and_then(gpui_rhai::UiEventHandler::as_script)
+        .cloned()
+        .or_else(|| match node.kind() {
+            UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => {
+                children.iter().find_map(first_click_handler)
+            }
+            _ => None,
+        })
+}
+
 #[test]
 fn raw_node_slots_keep_the_callers_callback_provenance() {
     let title_bar = include_str!("../../../registry/components/title_bar.rhai");
@@ -839,18 +851,7 @@ fn raw_node_slots_keep_the_callers_callback_provenance() {
     .unwrap();
     lifecycle.start(&mut engine).unwrap();
 
-    fn click_handler(node: &gpui_rhai::UiNode) -> Option<gpui_rhai::ScriptCallback> {
-        node.handler("click")
-            .and_then(gpui_rhai::UiEventHandler::as_script)
-            .cloned()
-            .or_else(|| match node.kind() {
-                UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => {
-                    children.iter().find_map(click_handler)
-                }
-                _ => None,
-            })
-    }
-    let handler = click_handler(lifecycle.root().unwrap())
+    let handler = first_click_handler(lifecycle.root().unwrap())
         .expect("raw TitleBar slot must retain its click callback");
     let _ = lifecycle
         .invoke_callback_transactional(&engine, &handler, UiValue::Null)
@@ -1120,6 +1121,58 @@ fn declarative_effects_start_restart_and_cleanup_in_imported_module_context() {
     assert_eq!(
         effect_audit_values(&runtime)["last_cleanup"],
         UiValue::Integer(2)
+    );
+}
+
+#[test]
+fn suspension_cleans_effects_and_resume_restarts_fresh_activations() {
+    let module = ModuleId::parse("components/effect_probe").unwrap();
+    let source = EmbeddedScriptSource::new(BTreeMap::from([(module, EFFECT_PROBE.to_owned())]));
+    let mut engine = RuntimeEngine::new();
+    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
+    let compiled = engine
+        .compile_self_contained_named("ui/effect_suspend.rhai", EFFECT_APP)
+        .unwrap();
+    let schema = engine.root_state_schema(&compiled).unwrap();
+    let runtime = effect_audit_runtime();
+    let mut lifecycle = ScriptLifecycle::new(
+        compiled,
+        Rc::clone(&runtime),
+        ComponentInstancePath::root("App", "root"),
+        Some("main".to_owned()),
+        BTreeMap::new(),
+        &schema,
+    )
+    .unwrap();
+    lifecycle.start(&mut engine).unwrap();
+    assert_eq!(runtime.borrow().effects.len(), 1);
+    assert_eq!(runtime.borrow().tasks.active_count(), 1);
+
+    assert!(lifecycle.suspend(&mut engine).unwrap());
+    assert_eq!(
+        effect_audit_values(&runtime)["cleanups"],
+        UiValue::Integer(1)
+    );
+    assert!(runtime.borrow().effects.is_empty());
+    assert_eq!(runtime.borrow().tasks.active_count(), 0);
+    assert!(
+        runtime
+            .borrow()
+            .timers
+            .inspect(runtime.borrow().clock.now())[0]
+            .interaction_paused
+    );
+
+    assert!(lifecycle.resume(&mut engine).unwrap());
+    assert_eq!(effect_audit_values(&runtime)["starts"], UiValue::Integer(2));
+    assert_eq!(runtime.borrow().effects.len(), 1);
+    assert_eq!(runtime.borrow().tasks.active_count(), 1);
+    assert!(
+        !runtime
+            .borrow()
+            .timers
+            .inspect(runtime.borrow().clock.now())[0]
+            .interaction_paused
     );
 }
 

@@ -77,6 +77,12 @@ deterministic fuzzy matching over labels and keywords, preserves group order,
 sorts matches stably within groups, skips disabled items during navigation, and
 virtualizes the result.
 
+Group labels are intentionally quieter than actions: regular-weight muted text
+sits lower in its row to create more separation from the preceding group, while
+the owned command rows use additional logical-start indentation. Structural
+group rows are not roving-focus targets. Applications can still replace these
+defaults through the `group`, `item`, and `item_active` component parts.
+
 `active_value` is controlled by the caller, so a palette can open with its
 highlight seated on the currently selected command. `active_change(string)`
 reports explicit roving movement from Up/Down/Home/End

@@ -156,13 +156,21 @@ tree; external Rust side effects remain outside rollback and therefore need
 idempotent Host design.
 
 Tasks, subscriptions, and background image decodes started by an effect callback
-belong to that exact effect activation. Scripts do not need to retain their
-handles merely for lifecycle cleanup. After every cleanup and replacement start
+belong to that exact effect activation. Subscriptions are accepted only from
+this scope; root initialization and ordinary event callbacks must not create
+long-lived streams. Scripts do not need to retain their handles merely for
+lifecycle cleanup. After every cleanup and replacement start
 succeeds, the Host cancels the old activation scope; a replacement uses a new
 scope even when its effect key is unchanged. Failed replacement starts cancel
 new work through transaction rollback; the Host does not automatically cancel
 the prior activation. Explicit cancellation performed by cleanup and external
 capability side effects remain irreversible and should therefore be idempotent.
+
+Retained view suspension is also an effect boundary. Every active effect is
+cleaned and its activation-owned work is cancelled while component state and
+native UI state stay mounted. On successful resume, one full reconcile restarts
+the declarations with new activation IDs. Put refresh policy in the optional
+root `resume(ctx, elapsed_ms)` hook; do not hide polling work outside effects.
 
 ## Native signals
 

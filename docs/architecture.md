@@ -187,8 +187,16 @@ created by a failed callback are canceled before their results can deliver.
 
 ## Script lifecycle
 
-The only required function is `view(ctx)`. `init(ctx)` and `dispose(ctx)` are
-optional. Effectful APIs reject calls made during `view`.
+The only required function is `view(ctx)`. `init(ctx)`, `suspend(ctx)`,
+`resume(ctx, elapsed_ms)`, and `dispose(ctx)` are optional. Effectful APIs reject
+calls made during `view`. A suspended lifecycle is a fully retained tombstone:
+state, tree, native entities, scroll/input state, and measurements remain, while
+effects are cleaned, subscriptions and effect tasks are cancelled, timers and
+animations freeze, presentation layers close, and event/Rhai execution stops.
+Resume applies bounded current-generation completions, invokes the hook,
+reconciles once, then starts fresh effect activations in one rollback-safe
+transaction. A candidate hot-reload generation migrates through that same
+resume transaction; stale-generation completions are discarded.
 
 During development, a polling filesystem watcher feeds a dependency graph.
 Changed modules and their transitive dependants are compiled transactionally.

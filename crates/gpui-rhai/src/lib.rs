@@ -77,7 +77,7 @@ pub use animation::{
 pub use app::{
     EmbeddedScriptView, FileScriptView, PreparedScriptView, ScriptApplication, ScriptViewConfig,
     ScriptViewError, ScriptViewExtension, ScriptViewHandle, ScriptViewHost,
-    ScriptViewPerformanceSnapshot, ThemeHandle, install,
+    ScriptViewPerformanceSnapshot, ScriptViewState, ThemeHandle, install,
 };
 pub use asset::{
     AssetData, AssetError, AssetId, AssetProvider, AssetRegistry, DirectoryAssetProvider,

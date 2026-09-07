@@ -94,7 +94,8 @@ name. See `assets.md` for ownership and validation.
 The remaining final-style gaps are intrinsic/min-content/max-content and custom
 fr/grid-track values, multi-stop gradients, rotation/scale and
 transform-origin, per-edge border colors/styles (GPUI 0.2.2 stores only one
-quad-wide color/style), font aliases and hot
+quad-wide color/style), letter spacing (GPUI 0.2.2 exposes no public shaping
+property for it), font aliases and hot
 replacement, selection styling, and explicit hit-testing/stacking-context
 controls beyond GPUI's two occlusion policies. General z-index is not exposed;
 window-level ordering uses public Overlay/Layer priorities. They are

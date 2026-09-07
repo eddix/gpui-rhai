@@ -260,6 +260,7 @@ impl VirtualListView {
     fn install_keys(&mut self) {
         let _ = self.state.set_keys(
             (0..self.content.data.len())
+                .filter(|index| !self.content.sticky_headers.contains(index))
                 .filter_map(|index| {
                     collection_item_key(&self.content, index).map(ToOwned::to_owned)
                 })
@@ -467,6 +468,13 @@ fn sticky_header_frame(
 ) -> Option<StickyHeaderFrame> {
     let scroll_top = state.logical_scroll_top();
     let index = active_sticky_header(&content.sticky_headers, scroll_top.item_ix)?;
+    let natural_header_has_crossed_top = scroll_top.item_ix > index
+        || state
+            .bounds_for_item(index)
+            .is_some_and(|bounds| bounds.top() < viewport.top());
+    if !natural_header_has_crossed_top {
+        return None;
+    }
     let height = sticky_header_height(content, runtime, index);
     let next = content
         .sticky_headers
