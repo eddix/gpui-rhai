@@ -76,7 +76,7 @@ pub use animation::{
 pub use app::{
     EmbeddedScriptView, FileScriptView, PreparedScriptView, ScriptApplication, ScriptViewConfig,
     ScriptViewError, ScriptViewExtension, ScriptViewHandle, ScriptViewHost,
-    ScriptViewPerformanceSnapshot, install,
+    ScriptViewPerformanceSnapshot, ThemeHandle, install,
 };
 pub use asset::{
     AssetData, AssetError, AssetId, AssetProvider, AssetRegistry, DirectoryAssetProvider,
@@ -221,8 +221,9 @@ pub use text_input::{
 };
 pub use theme::{
     REQUIRED_TYPOGRAPHY, ResolvedTheme, ResolvedTypography, SystemAppearance, ThemeError,
-    ThemeFamily, ThemeManager, ThemeMode, ThemePreference, ThemeSelection, ThemeTokenValue,
-    ThemeTokens, ThemeTypography, ThemeVariant, TypographyToken, load_theme_source,
+    ThemeFamily, ThemeManager, ThemeMode, ThemePreference, ThemeSelection, ThemeSnapshot,
+    ThemeTokenValue, ThemeTokens, ThemeTypography, ThemeVariant, TypographyToken,
+    load_theme_source,
 };
 pub use timer::{TimerDescriptor, TimerError, TimerId, TimerRegistry, TimerSnapshot};
 pub use value::{

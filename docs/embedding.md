@@ -84,6 +84,36 @@ Several Hosts may intentionally coexist in one window. Capture routing is
 limited to each Host container, so their Overlay domains do not dismiss one
 another. Use one shared Host whenever sibling widgets should coordinate.
 
+## Host-owned chrome and the active theme
+
+Each mounted view exposes its own read-only `ThemeHandle`. Its snapshot is the
+root ScriptView's effective family/variant after app, window, subtree, and
+system-appearance selection. It contains the complete color, spacing, radius,
+typography, and namespaced token tables; reading it never invokes Rhai.
+
+```rust
+let theme = view.theme()?;
+let current = theme.snapshot(cx);
+let _surface = current.variant.tokens.colors["surface"];
+let _body = &current.variant.tokens.typography.roles["body"];
+```
+
+Host entities should retain an observation subscription rather than polling on
+every frame:
+
+```rust
+let subscription = theme.observe_in(cx, |host_view, snapshot, cx| {
+    host_view.script_theme = snapshot;
+    cx.notify();
+});
+```
+
+`ThemeSnapshot::revision` advances only when the effective variant changes,
+including a system light/dark transition. Sibling ScriptViews remain isolated
+and may expose different snapshots. Local theme overrides below the root are
+intentionally not projected onto adjacent Host UI because one view may contain
+several differently themed subtrees.
+
 ## Bounds and overlays
 
 `ScriptViewHandle::element()` automatically measures the bounds allocated by
