@@ -800,6 +800,68 @@ fn composed_semantic_callback_props_execute_in_the_caller_state_scope() {
 }
 
 #[test]
+fn raw_node_slots_keep_the_callers_callback_provenance() {
+    let title_bar = include_str!("../../../registry/components/title_bar.rhai");
+    let source = EmbeddedScriptSource::new(BTreeMap::from([(
+        ModuleId::parse("components/title_bar").unwrap(),
+        title_bar.to_owned(),
+    )]));
+    let mut engine = RuntimeEngine::new();
+    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
+    let compiled = engine
+        .compile_self_contained_named(
+            "ui/titlebar_slot_scope.rhai",
+            r#"
+                import "components/title_bar" as title_bar;
+                fn state_schema() { #{ fields: #{ menu_open: #{ schema: #{ type: "bool" },
+                    "default": #{ type: "bool", value: false } } } } }
+                fn toggle_menu(ctx, payload) { ctx.set_state("menu_open", true); }
+                fn view(ctx) {
+                    let menu = text("Menu").on_click(Fn("toggle_menu"));
+                    title_bar::TitleBar(#{
+                        label: "Chrome", title: "Workspace", end: [menu],
+                    })
+                }
+            "#,
+        )
+        .unwrap();
+    let schema = engine.root_state_schema(&compiled).unwrap();
+    let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+    let root = ComponentInstancePath::root("App", "root");
+    let mut lifecycle = ScriptLifecycle::new(
+        compiled,
+        Rc::clone(&runtime),
+        root.clone(),
+        Some("main".to_owned()),
+        BTreeMap::new(),
+        &schema,
+    )
+    .unwrap();
+    lifecycle.start(&mut engine).unwrap();
+
+    fn click_handler(node: &gpui_rhai::UiNode) -> Option<gpui_rhai::ScriptCallback> {
+        node.handler("click")
+            .and_then(gpui_rhai::UiEventHandler::as_script)
+            .cloned()
+            .or_else(|| match node.kind() {
+                UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => {
+                    children.iter().find_map(click_handler)
+                }
+                _ => None,
+            })
+    }
+    let handler = click_handler(lifecycle.root().unwrap())
+        .expect("raw TitleBar slot must retain its click callback");
+    let _ = lifecycle
+        .invoke_callback_transactional(&engine, &handler, UiValue::Null)
+        .unwrap();
+    assert_eq!(
+        runtime.borrow().component_state.get(&root, "menu_open"),
+        Some(&UiValue::Bool(true))
+    );
+}
+
+#[test]
 fn nested_callback_scope_is_never_inferred_from_a_private_function_name() {
     let inner = r#"
         define_component(#{

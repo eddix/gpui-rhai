@@ -7,6 +7,9 @@ semantic versioning from this release.
 
 ## 0.1.1 - Unreleased
 
+- Raw nodes passed through formal component slots now retain the caller's
+  callback provenance recursively, including optional, array, map, object, and
+  union-shaped Node props.
 - Subscription delivery now defaults to a bounded FIFO instead of silently
   overwriting earlier values. Rhai callers pass an explicit options map and may
   opt into latest-only coalescing; full queues return backpressure to Rust.
