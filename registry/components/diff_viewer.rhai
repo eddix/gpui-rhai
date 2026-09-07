@@ -2,7 +2,7 @@
 {
   "id": "components/diff_viewer",
   "export": "DiffViewer",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": [],
   "capabilities": {}
@@ -15,7 +15,7 @@
 // Example: DiffViewer(#{ key: "servers", left: #{ source: a, label: "Server A" }, right: #{ source: b, label: "Server B" }, mode: "split" })
 
 define_component(#{
-    metadata: #{ id: "components/diff_viewer", "export": "DiffViewer", version: "0.1.0",
+    metadata: #{ id: "components/diff_viewer", "export": "DiffViewer", version: "0.1.1",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 }, dependencies: [], capabilities: #{} },
     schema: #{
         props: #{
@@ -68,7 +68,7 @@ fn location_activate(ctx, payload) { ctx.emit("location_activate", payload); }
 fn render_DiffViewer(ctx, props) {
     let left = props.left;
     let right = props.right;
-    let root_style = component_style(props, "root", style()
+    let root_style = ctx.component_style("root", style()
         .width(relative(1.0)).height(relative(1.0)).min_width(px(0)).min_height(px(0))
         .background(theme_color("surface")).border(px(1)).border_color(theme_color("border")));
     gpui_rhai::DiffViewPrimitive(#{
@@ -88,15 +88,15 @@ fn render_DiffViewer(ctx, props) {
         wrap: prop_or(props, "wrap", "none"),
         wrap_column: prop_or(props, "wrap_column", 100),
         tab_size: prop_or(props, "tab_size", 4),
-        header_style: component_style(props, "header", style()),
-        gutter_style: component_style(props, "gutter", style()),
-        line_style: component_style(props, "line", style()),
-        text_style: component_style(props, "text", style()),
-        fold_style: component_style(props, "fold", style()),
-        loading_style: component_style(props, "loading", style()),
-        error_style: component_style(props, "error", style()),
-        search_style: component_style(props, "search", style()),
-        status_style: component_style(props, "status", style()),
+        header_style: ctx.component_style("header", style()),
+        gutter_style: ctx.component_style("gutter", style()),
+        line_style: ctx.component_style("line", style()),
+        text_style: ctx.component_style("text", style()),
+        fold_style: ctx.component_style("fold", style()),
+        loading_style: ctx.component_style("loading", style()),
+        error_style: ctx.component_style("error", style()),
+        search_style: ctx.component_style("search", style()),
+        status_style: ctx.component_style("status", style()),
         on_location_activate: if "on_location_activate" in props && props.on_location_activate != () {
             Fn("location_activate")
         } else { () },

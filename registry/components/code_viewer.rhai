@@ -2,7 +2,7 @@
 {
   "id": "components/code_viewer",
   "export": "CodeViewer",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": [],
   "capabilities": {}
@@ -16,7 +16,7 @@
 // Example: CodeViewer(#{ key: "source", source: rhai_source, label: "Rhai source", language: "rhai" })
 
 define_component(#{
-    metadata: #{ id: "components/code_viewer", "export": "CodeViewer", version: "0.1.0",
+    metadata: #{ id: "components/code_viewer", "export": "CodeViewer", version: "0.1.1",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 }, dependencies: [], capabilities: #{} },
     schema: #{
         props: #{
@@ -52,7 +52,7 @@ fn prop_or(props, name, fallback) { if name in props { props[name] } else { fall
 fn location_activate(ctx, payload) { ctx.emit("location_activate", payload); }
 
 fn render_CodeViewer(ctx, props) {
-    let root_style = component_style(props, "root", style()
+    let root_style = ctx.component_style("root", style()
         .width(relative(1.0)).height(relative(1.0)).min_width(px(0)).min_height(px(0))
         .background(theme_color("surface")).border(px(1)).border_color(theme_color("border")));
     gpui_rhai::CodeViewPrimitive(#{
@@ -65,13 +65,13 @@ fn render_CodeViewer(ctx, props) {
         wrap: prop_or(props, "wrap", "none"),
         wrap_column: prop_or(props, "wrap_column", 100),
         tab_size: prop_or(props, "tab_size", 4),
-        gutter_style: component_style(props, "gutter", style()
+        gutter_style: ctx.component_style("gutter", style()
             .background(theme_color("surface_raised"))),
-        line_style: component_style(props, "line", style()),
-        text_style: component_style(props, "text", style()),
-        loading_style: component_style(props, "loading", style()),
-        error_style: component_style(props, "error", style()),
-        search_style: component_style(props, "search", style()),
+        line_style: ctx.component_style("line", style()),
+        text_style: ctx.component_style("text", style()),
+        loading_style: ctx.component_style("loading", style()),
+        error_style: ctx.component_style("error", style()),
+        search_style: ctx.component_style("search", style()),
         on_location_activate: if "on_location_activate" in props && props.on_location_activate != () {
             Fn("location_activate")
         } else { () },

@@ -2,7 +2,7 @@
 {
   "id": "components/alert",
   "export": "Alert",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": [],
   "capabilities": {},
@@ -16,7 +16,7 @@
 // Example: Alert(#{ title: "Saved", description: "Changes are live.", variant: "success" })
 
 define_component(#{
-    metadata: #{ id: "components/alert", "export": "Alert", version: "0.1.0",
+    metadata: #{ id: "components/alert", "export": "Alert", version: "0.1.1",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 }, dependencies: [], capabilities: #{},
         assets: ["icons/check.svg", "icons/close.svg", "icons/info.svg", "icons/warning.svg"] },
     schema: #{
@@ -66,35 +66,35 @@ fn alert_role(variant) {
 fn Alert(props) { render_component("components/alert", props) }
 fn render_Alert(ctx, props) {
     let variant = if "variant" in props { props.variant } else { "info" };
-    let body = [text(props.title).with_style(component_style(props, "title", style()
+    let body = [text(props.title).with_style(ctx.component_style("title", style()
         .typography("body").font_weight(700)
         .text_color(theme_color("text_primary"))))];
     if "description" in props && props.description != () {
-        body.push(text(props.description).with_style(component_style(props, "description", style()
+        body.push(text(props.description).with_style(ctx.component_style("description", style()
             .typography("body_small").text_color(theme_color("text_muted")))));
     }
     if "content" in props && props.content != () {
-        body.push(props.content.with_style(component_style(props, "content", style())));
+        body.push(props.content.with_style(ctx.component_style("content", style())));
     }
     let children = [];
     if "icon" in props && props.icon != () {
-        children.push(props.icon.with_style(component_style(props, "icon", style()
+        children.push(props.icon.with_style(ctx.component_style("icon", style()
             .width(px(18)).height(px(18)).items_center().justify_center()
             .text_color(alert_color(variant)))));
     } else {
         children.push(row([image_source(asset(alert_icon(variant))).with_style(style()
                 .width(px(12)).height(px(12)).text_color(alert_foreground(variant)))])
-            .with_style(component_style(props, "icon", style()
+            .with_style(ctx.component_style("icon", style()
                 .width(px(18)).height(px(18)).items_center().justify_center()
                 .radius(px(9)).background(alert_color(variant))
                 .text_color(alert_foreground(variant)))));
     }
-    children.push(column(body).with_style(component_style(props, "body", style().gap(px(2)).flex_grow())));
+    children.push(column(body).with_style(ctx.component_style("body", style().gap(px(2)).flex_grow())));
     if "actions" in props && props.actions.len > 0 {
-        children.push(row(props.actions).with_style(component_style(props, "actions", style()
+        children.push(row(props.actions).with_style(ctx.component_style("actions", style()
             .gap(px(6)).items_center())));
     }
-    row(children).with_style(component_style(props, "root", style()
+    row(children).with_style(ctx.component_style("root", style()
         .padding(px(10)).gap(px(9)).items_center().radius(theme_radius("md"))
         .border(px(1)).border_start(px(3)).border_color(alert_color(variant))
         .background(theme_color("surface"))))

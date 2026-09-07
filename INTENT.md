@@ -458,10 +458,12 @@ Progress, Skeleton, Combobox, Select, DatePicker, Popover, Tooltip, Dialog,
 Accordion, Collapsible, Tabs, Menu, Toast, FormField, Table, and Pagination—but
 all compositional implementations migrate to public Core Runtime v2 mechanisms.
 
-Dogfooding permits destructive migration. Until an explicit release/versioning
-signal, crate/component version remains `0.1.0`, `RUNTIME_API_VERSION` remains 1,
-and no compatibility adapter, deprecated alias, dual parser, old component
-format, or SDK-managed downstream migration is retained.
+Version `0.1.0` is the first published baseline. Before 1.0, dogfooding still
+prefers the strongest final design over compatibility shims; deliberate source
+and Rust API breaks are documented in the next release rather than preserved as
+deprecated aliases, dual parsers, old component formats, or SDK-managed
+downstream migration. The current target is `0.1.1`; `RUNTIME_API_VERSION`
+remains 1 until its actual runtime contract needs a coordinated change.
 
 ## 15. Completion and acceptance
 

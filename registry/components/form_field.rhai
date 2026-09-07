@@ -2,7 +2,7 @@
 {
   "id": "components/form_field",
   "export": "FormField",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": ["components/label"],
   "capabilities": {}
@@ -17,7 +17,7 @@ import "components/label" as label_component;
 
 define_component(#{
     metadata: #{
-        id: "components/form_field", "export": "FormField", version: "0.1.0",
+        id: "components/form_field", "export": "FormField", version: "0.1.1",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
         dependencies: ["components/label"], capabilities: #{},
     },
@@ -52,28 +52,28 @@ fn render_FormField(ctx, props) {
         label_component::Label(#{
             text: props.label,
             required: required,
-        }).with_style(component_style(props, "label", style()))
+        }).with_style(ctx.component_style("label", style()))
             .accessibility_id(label_id),
-        props.control.with_style(component_style(props, "control", style()))
+        props.control.with_style(ctx.component_style("control", style()))
             .accessibility_labelled_by(label_id)
             .accessibility_described_by(described_by)
             .accessibility_required(required)
     ];
     if description != () {
         children.push(text(description)
-            .with_style(component_style(props, "description",
+            .with_style(ctx.component_style("description",
                 style().typography("body_small")
                     .text_color(theme_color("text_muted"))))
             .accessibility_id(description_id));
     }
     if error != () {
-        children.push(text(error).with_style(component_style(props, "error",
+        children.push(text(error).with_style(ctx.component_style("error",
             style().typography("body_small")
                 .text_color(theme_color("danger"))))
             .accessibility_id(error_id).accessibility_role("alert"));
     }
     column(children).with_key(props.id)
-        .with_style(component_style(props, "root", style().gap(px(4))))
+        .with_style(ctx.component_style("root", style().gap(px(4))))
         .accessibility_role("group")
         .accessibility_label(props.label)
         .accessibility_invalid(error != ())

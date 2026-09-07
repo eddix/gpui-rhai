@@ -2,7 +2,7 @@
 {
   "id": "components/slider",
   "export": "Slider",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": [],
   "capabilities": {}
@@ -16,7 +16,7 @@
 // Example: Slider(#{ key: "volume", value: 40, min: 0, max: 100, step: 5, label: "Volume", on_change: Fn("changed") })
 
 define_component(#{
-    metadata: #{ id: "components/slider", "export": "Slider", version: "0.1.0",
+    metadata: #{ id: "components/slider", "export": "Slider", version: "0.1.1",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 }, dependencies: [], capabilities: #{} },
     schema: #{
         props: #{
@@ -60,18 +60,18 @@ fn render_Slider(ctx, props) {
     let control = gpui_rhai::RangeInputPrimitive(#{
         key: props.key, value: props.value, min: min, max: max, step: step,
         orientation: orientation, disabled: disabled,
-        track_style: component_style(props, "track", style()
+        track_style: ctx.component_style("track", style()
             .width(if orientation == "horizontal" { relative(1.0) } else { px(4) })
             .height(if orientation == "horizontal" { px(4) } else { relative(1.0) })
             .radius(px(0)).background(theme_color("surface_hover"))),
-        fill_style: component_style(props, "fill", style()
+        fill_style: ctx.component_style("fill", style()
             .radius(px(0)).background(theme_color("accent"))),
-        thumb_style: component_style(props, "thumb", style()
+        thumb_style: ctx.component_style("thumb", style()
             .width(px(14)).height(px(14)).radius(px(7))
             .border(px(2)).border_color(theme_color("accent"))
             .background(theme_color("surface"))),
         on_change: if "on_change" in props && props.on_change != () { Fn("change_action") } else { () }
-    }).with_style(component_style(props, "control", style()
+    }).with_style(ctx.component_style("control", style()
         .width(if orientation == "horizontal" { px(240) } else { px(24) })
         .height(if orientation == "horizontal" { px(24) } else { px(180) })
         .focus(style().border_color(theme_color("focus_ring")))))
@@ -81,15 +81,15 @@ fn render_Slider(ctx, props) {
     let value_label = if "value_label" in props && props.value_label != () {
         props.value_label
     } else { `${props.value}` };
-    let header = [text(props.label).with_style(component_style(props, "label", style()
+    let header = [text(props.label).with_style(ctx.component_style("label", style()
         .typography("body").font_weight(700)))];
     if prop_or(props, "show_value", true) {
-        header.push(text(value_label).with_style(component_style(props, "value", style()
+        header.push(text(value_label).with_style(ctx.component_style("value", style()
             .typography("body_small").text_color(theme_color("text_muted")))));
     }
     column([
-        row(header).with_style(component_style(props, "header", style()
+        row(header).with_style(ctx.component_style("header", style()
             .items_center().justify_between().gap(px(8)))),
         control
-    ]).with_key(props.key).with_style(component_style(props, "root", style().gap(px(5))))
+    ]).with_key(props.key).with_style(ctx.component_style("root", style().gap(px(5))))
 }

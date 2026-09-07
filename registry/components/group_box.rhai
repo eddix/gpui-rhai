@@ -2,7 +2,7 @@
 {
   "id": "components/group_box",
   "export": "GroupBox",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": [],
   "capabilities": {}
@@ -15,7 +15,7 @@
 // Example: GroupBox(#{ label: "Sync", content: text("Settings") })
 
 define_component(#{
-    metadata: #{ id: "components/group_box", "export": "GroupBox", version: "0.1.0",
+    metadata: #{ id: "components/group_box", "export": "GroupBox", version: "0.1.1",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 }, dependencies: [], capabilities: #{} },
     schema: #{
         props: #{
@@ -34,17 +34,17 @@ define_component(#{
 
 fn GroupBox(props) { render_component("components/group_box", props) }
 fn render_GroupBox(ctx, props) {
-    let header = [text(props.label).with_style(component_style(props, "label", style()
+    let header = [text(props.label).with_style(ctx.component_style("label", style()
         .typography("body").font_weight(700)
         .text_color(theme_color("text_primary"))))];
     if "description" in props && props.description != () {
-        header.push(text(props.description).with_style(component_style(props, "description", style()
+        header.push(text(props.description).with_style(ctx.component_style("description", style()
             .typography("body_small").text_color(theme_color("text_muted")))));
     }
     column([
         column(header).with_style(style().gap(px(2))),
-        props.content.with_style(component_style(props, "content", style()))
-    ]).with_style(component_style(props, "root", style()
+        props.content.with_style(ctx.component_style("content", style()))
+    ]).with_style(ctx.component_style("root", style()
         .padding(px(12)).gap(px(10)).radius(theme_radius("md"))
         .border(px(1)).border_color(theme_color("border"))
         .background(theme_color("surface"))

@@ -54,6 +54,12 @@ fn view(ctx) {
 }
 ```
 
+全局配色、圆角尺度和字号体系写在 `ui/theme.rhai`；针对 Button、Input 等
+正式组件及其公开 part 的统一覆盖写在 `ui/styles.rhai`。样式表使用同一个
+类型安全的 `style()` builder，并由 `gpui-rhai check` 校验组件 ID 和 part；
+详见[组件样式表](component-styles.md)。单个实例仍可在调用处传入
+`style`/`part_styles`。
+
 `view` 只能描述 UI，不能执行副作用。文件、网络、持久化和平台服务必须由
 Rust host 注册为带 schema 和版本的 capability。需要发布时运行
 `gpui-rhai embed`，使用生成的 embedded source 构建 release；不要在生产环境

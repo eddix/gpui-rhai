@@ -2,7 +2,7 @@
 {
   "id": "components/sheet",
   "export": "Sheet",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": [],
   "capabilities": {}
@@ -16,7 +16,7 @@
 // Example: Sheet(#{ key: "inspector", open: true, side: "end", title: "Inspector", content: panel, on_open_change: Fn("opened") })
 
 define_component(#{
-    metadata: #{ id: "components/sheet", "export": "Sheet", version: "0.1.0",
+    metadata: #{ id: "components/sheet", "export": "Sheet", version: "0.1.1",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 }, dependencies: [], capabilities: #{} },
     schema: #{
         props: #{
@@ -52,12 +52,12 @@ fn prop_or(props, name, fallback) { if name in props { props[name] } else { fall
 fn render_Sheet(ctx, props) {
     let side = prop_or(props, "side", "end");
     let size = prop_or(props, "size", 360);
-    let children = [text(props.title).with_style(component_style(props, "title", style()
+    let children = [text(props.title).with_style(ctx.component_style("title", style()
         .typography("title").font_weight(700)
         .text_color(theme_color("text_primary"))))];
-    children.push(props.content.with_style(component_style(props, "content", style().flex_grow())));
+    children.push(props.content.with_style(ctx.component_style("content", style().flex_grow())));
     if "actions" in props && props.actions.len > 0 {
-        children.push(row(props.actions).with_style(component_style(props, "actions", style()
+        children.push(row(props.actions).with_style(ctx.component_style("actions", style()
             .padding_top(px(10)).gap(px(8)).justify_end()
             .border_top(px(1)).border_color(theme_color("border")))));
     }
@@ -68,7 +68,7 @@ fn render_Sheet(ctx, props) {
     } else {
         panel_style = panel_style.width(relative(1.0)).height(px(size));
     }
-    let panel = column(children).with_style(component_style(props, "panel", panel_style))
+    let panel = column(children).with_style(ctx.component_style("panel", panel_style))
         .accessibility_role("dialog").accessibility_label(props.title);
     let node = overlay(row([]), panel, #{
         id: props.key, kind: "sheet", placement: side, open: props.open, gap: 0,
@@ -76,7 +76,7 @@ fn render_Sheet(ctx, props) {
         dismiss_on_escape: prop_or(props, "dismiss_on_escape", true),
         dismiss_on_outside: prop_or(props, "dismiss_on_outside", true),
         initial_focus: prop_or(props, "initial_focus", "first")
-    }).with_key(props.key).with_style(component_style(props, "root", style()));
+    }).with_key(props.key).with_style(ctx.component_style("root", style()));
     if "on_open_change" in props && props.on_open_change != () {
         node.on_open_change(Fn("open_action"))
     } else { node }

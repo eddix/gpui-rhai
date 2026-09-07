@@ -57,6 +57,7 @@ pub struct UiRuntimeState {
     pub calendar_clock: CalendarClock,
     pub clock: crate::RuntimeClock,
     pub theme: Option<ThemeManager>,
+    component_styles: crate::ComponentStyleSheet,
     pub assets: AssetRegistry,
     pub animations: AnimationRuntime,
     pub effects: crate::EffectRegistry,
@@ -79,6 +80,7 @@ pub struct UiRuntimeState {
     pending_async: Vec<crate::AsyncDelivery>,
     pending_element_commands: Vec<crate::element_ref::ElementCommand>,
     repaint_windows: BTreeSet<String>,
+    component_style_generation: u64,
 }
 
 impl UiRuntimeState {
@@ -154,6 +156,31 @@ impl UiRuntimeState {
             .replace_variant(variant)?;
         self.dirty.extend(self.component_state.paths());
         Ok(())
+    }
+
+    /// Atomically replace application-wide formal-component style rules.
+    ///
+    /// Equal replacements are ignored. A changed sheet invalidates every
+    /// mounted component because rules are keyed by formal component identity.
+    pub fn replace_component_styles_from_host(
+        &mut self,
+        styles: crate::ComponentStyleSheet,
+    ) -> bool {
+        if self.component_styles == styles {
+            return false;
+        }
+        self.component_styles = styles;
+        self.component_style_generation = self.component_style_generation.saturating_add(1);
+        self.dirty.extend(self.component_state.paths());
+        true
+    }
+
+    pub(crate) const fn component_style_generation(&self) -> u64 {
+        self.component_style_generation
+    }
+
+    pub(crate) const fn component_styles(&self) -> &crate::ComponentStyleSheet {
+        &self.component_styles
     }
 
     pub(crate) fn trace_subscription_closures(&mut self) {
@@ -467,6 +494,8 @@ impl UiRuntimeState {
             pending_element_commands: self.pending_element_commands.clone(),
             locale: self.locale.clone(),
             theme: self.theme.clone(),
+            component_styles: self.component_styles.clone(),
+            component_style_generation: self.component_style_generation,
             animations: self.animations.clone(),
             effects: self.effects.clone(),
             signals: self.signals.clone(),
@@ -510,6 +539,8 @@ impl UiRuntimeState {
         self.pending_element_commands = snapshot.pending_element_commands;
         self.locale = snapshot.locale;
         self.theme = snapshot.theme;
+        self.component_styles = snapshot.component_styles;
+        self.component_style_generation = snapshot.component_style_generation;
         self.animations = snapshot.animations;
         self.effects = snapshot.effects;
         self.signals = snapshot.signals;
@@ -542,6 +573,8 @@ pub struct UiStateSnapshot {
     pending_element_commands: Vec<crate::element_ref::ElementCommand>,
     locale: Option<LocaleManager>,
     theme: Option<ThemeManager>,
+    component_styles: crate::ComponentStyleSheet,
+    component_style_generation: u64,
     animations: AnimationRuntime,
     effects: crate::EffectRegistry,
     signals: crate::SignalRegistry,
@@ -593,6 +626,7 @@ pub struct UiContext {
     async_scope: Option<AsyncScope>,
     component_style: Option<crate::Style>,
     component_part_styles: BTreeMap<String, crate::Style>,
+    global_component_part_styles: BTreeMap<String, crate::Style>,
     non_reusable_render_reads: Rc<RefCell<BTreeSet<ComponentInstancePath>>>,
     event_target: Option<crate::GeometryBounds>,
 }
@@ -618,6 +652,7 @@ impl UiContext {
             async_scope: None,
             component_style: None,
             component_part_styles: BTreeMap::new(),
+            global_component_part_styles: BTreeMap::new(),
             non_reusable_render_reads: Rc::new(RefCell::new(BTreeSet::new())),
             event_target: None,
         };
@@ -664,6 +699,7 @@ impl UiContext {
             async_scope: self.async_scope.clone(),
             component_style: self.component_style.clone(),
             component_part_styles: self.component_part_styles.clone(),
+            global_component_part_styles: self.global_component_part_styles.clone(),
             non_reusable_render_reads: Rc::clone(&self.non_reusable_render_reads),
             event_target: self.event_target,
         };
@@ -695,9 +731,11 @@ impl UiContext {
 
     pub(crate) fn with_component_styles(
         mut self,
+        global_part_styles: BTreeMap<String, crate::Style>,
         style: Option<crate::Style>,
         part_styles: BTreeMap<String, crate::Style>,
     ) -> Self {
+        self.global_component_part_styles = global_part_styles;
         self.component_style = style;
         self.component_part_styles = part_styles;
         self
@@ -723,6 +761,9 @@ impl UiContext {
     }
 
     fn resolve_component_style(&self, part: &str, mut base: crate::Style) -> crate::Style {
+        if let Some(style) = self.global_component_part_styles.get(part) {
+            base = base.merged(style);
+        }
         if part == "root"
             && let Some(style) = &self.component_style
         {

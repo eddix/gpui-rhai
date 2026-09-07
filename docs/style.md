@@ -1,8 +1,14 @@
 # Typed Style surface
 
 `Style` is a validated runtime value, not a GPUI handle or CSS string. Explicit
-merge and component parts determine precedence; pseudo refinements resolve in
+merge, the application component stylesheet, and component parts determine
+precedence; pseudo refinements resolve in
 `base → hover → active → focus → disabled` order.
+
+Formal component authors resolve every public part through
+`ctx.component_style("part", base)`. The runtime merges the matching
+`ui/styles.rhai` rule before the caller's explicit instance override. See
+[component stylesheets](component-styles.md).
 
 The current public builder maps directly to stable GPUI 0.2.2 behavior:
 

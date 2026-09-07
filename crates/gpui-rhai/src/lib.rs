@@ -1,6 +1,7 @@
 //! Runtime foundations for building GPUI applications from Rhai source.
 
 pub mod component;
+pub mod component_styles;
 pub mod context;
 pub mod date;
 pub mod dependency;
@@ -108,6 +109,7 @@ pub use component::{
     ComponentPropValue, ComponentProps, ComponentRegistry, ComponentRegistryError, ComponentSchema,
     EventSchema, RuntimeApiRange, SlotSchema, parse_component_header,
 };
+pub use component_styles::{ComponentStyleError, ComponentStyleSheet, load_component_styles};
 pub use context::{
     ExecutionPhase, PendingEvent, UiContext, UiContextError, UiMutationBatch, UiRuntimeState,
     UiStateSnapshot,

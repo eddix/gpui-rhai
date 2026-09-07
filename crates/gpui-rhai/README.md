@@ -30,7 +30,7 @@ gpui-rhai check
   embedded GPUI windows;
 - explicit resource budgets and no dependency on `gpui-component`.
 
-Components, themes, locales, and small assets are source-owned by the
+Components, themes, the typed component stylesheet, locales, and small assets are source-owned by the
 application after `gpui-rhai-cli` copies them from the version-matched
 `gpui-rhai-registry` package.
 

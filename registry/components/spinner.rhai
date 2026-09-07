@@ -2,7 +2,7 @@
 {
   "id": "components/spinner",
   "export": "Spinner",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": [],
   "capabilities": {}
@@ -15,7 +15,7 @@
 // Example: Spinner(#{ key: "loading", label: "Loading" })
 
 define_component(#{
-    metadata: #{ id: "components/spinner", "export": "Spinner", version: "0.1.0",
+    metadata: #{ id: "components/spinner", "export": "Spinner", version: "0.1.1",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 }, dependencies: [], capabilities: #{} },
     schema: #{
         props: #{
@@ -50,7 +50,7 @@ fn render_Spinner(ctx, props) {
         canvas_line("e", 8.0 * scale, 15.0 * scale, 8.0 * scale, 12.0 * scale, width, color)
     ]);
     canvas(scene).with_key(props.key)
-        .with_style(component_style(props, "root", component_style(props, "indicator", style()
+        .with_style(ctx.component_style("root", ctx.component_style("indicator", style()
             .width(px(size)).height(px(size)))))
         .animate(loop_transition("rotate", 0.0, 360.0,
             if "speed_ms" in props { props.speed_ms } else { 850 }, "linear"))

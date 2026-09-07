@@ -2529,44 +2529,6 @@ pub(crate) fn register_style_api(engine: &mut Engine) {
                     .map_err(|error| Box::new(style_runtime_error(error.to_string())))
             },
         );
-    FuncRegistration::new("component_style")
-        .in_global_namespace()
-        .register_into_engine(engine, component_style);
-}
-
-fn component_style(
-    mut props: Map,
-    part: ImmutableString,
-    mut base: Style,
-) -> Result<Style, Box<EvalAltResult>> {
-    let part: String = part.into();
-    if part == "root"
-        && let Some(style) = props.remove("style")
-    {
-        if !style.is::<Style>() {
-            return Err(Box::new(style_runtime_error(
-                "component style must be a Style".to_owned(),
-            )));
-        }
-        base = base.merged(&style.cast::<Style>());
-    }
-    if let Some(part_styles) = props.remove("part_styles") {
-        if !part_styles.is::<Map>() {
-            return Err(Box::new(style_runtime_error(
-                "component part_styles must be a map of Style values".to_owned(),
-            )));
-        }
-        let mut part_styles = part_styles.cast::<Map>();
-        if let Some(style) = part_styles.remove(part.as_str()) {
-            if !style.is::<Style>() {
-                return Err(Box::new(style_runtime_error(format!(
-                    "component part style `{part}` must be a Style"
-                ))));
-            }
-            base = base.merged(&style.cast::<Style>());
-        }
-    }
-    Ok(base)
 }
 
 fn register_length_constructor(

@@ -2,7 +2,7 @@
 {
   "id": "components/badge",
   "export": "Badge",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": [],
   "capabilities": {}
@@ -16,7 +16,7 @@
 
 define_component(#{
     metadata: #{
-        id: "components/badge", "export": "Badge", version: "0.1.0",
+        id: "components/badge", "export": "Badge", version: "0.1.1",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
         dependencies: [], capabilities: #{},
     },
@@ -53,11 +53,11 @@ fn render_Badge(ctx, props) {
     let size = if "size" in props { props.size } else { "md" };
     let children = [];
     if "dot" in props && props.dot {
-        children.push(row([]).with_style(component_style(props, "dot", style()
+        children.push(row([]).with_style(ctx.component_style("dot", style()
             .width(px(6)).height(px(6)).radius(px(3)).background(badge_color(variant)))));
     }
-    children.push(text(props.text).with_style(component_style(props, "label", style())));
-    row(children).with_style(component_style(props, "root", style()
+    children.push(text(props.text).with_style(ctx.component_style("label", style())));
+    row(children).with_style(ctx.component_style("root", style()
         .height(px(if size == "sm" { 18 } else { 22 }))
         .padding_x(px(if size == "sm" { 5 } else { 7 })).gap(px(5)).items_center()
         .radius(theme_radius("sm")).background(theme_color("surface_raised"))

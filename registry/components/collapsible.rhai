@@ -2,7 +2,7 @@
 {
   "id": "components/collapsible",
   "export": "Collapsible",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": [],
   "capabilities": {}
@@ -15,7 +15,7 @@
 
 define_component(#{
     metadata: #{
-        id: "components/collapsible", "export": "Collapsible", version: "0.1.0",
+        id: "components/collapsible", "export": "Collapsible", version: "0.1.1",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 }, dependencies: [], capabilities: #{},
     },
     schema: #{
@@ -43,7 +43,7 @@ fn Collapsible(props) { render_component("components/collapsible", props) }
 fn render_Collapsible(ctx, props) {
     let disabled = if "disabled" in props { props.disabled } else { false };
     let trigger = props.trigger
-        .with_style(component_style(props, "trigger", style()
+        .with_style(ctx.component_style("trigger", style()
             .min_height(px(32)).padding_x(px(10)).items_center()
             .border(px(1)).border_color(rgba(0x00000000))
             .radius(theme_radius("sm"))
@@ -59,7 +59,7 @@ fn render_Collapsible(ctx, props) {
         trigger = trigger.on_click_value(props.on_open_change, !props.open);
     }
     let height = props.content_height;
-    let panel_content = props.content.with_style(component_style(props, "content", style()
+    let panel_content = props.content.with_style(ctx.component_style("content", style()
         .padding(px(10)).typography("body")));
     let panel = column([panel_content])
         .with_key(`${props.key}-content`)
@@ -67,7 +67,7 @@ fn render_Collapsible(ctx, props) {
             .border_top(px(1)).border_color(theme_color("border")))
         .animate(transition("clip_height", 0.0, if props.open { height * 1.0 } else { 0.0 }, 150, "ease_out"));
     column([trigger, panel]).with_key(props.key)
-        .with_style(component_style(props, "root", style()
+        .with_style(ctx.component_style("root", style()
             .border(px(1)).border_color(theme_color("border"))
             .radius(theme_radius("md")).clip()))
 }

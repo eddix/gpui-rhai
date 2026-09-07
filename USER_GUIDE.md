@@ -72,6 +72,7 @@ ui/
 ├─ app.toml
 ├─ main.rhai
 ├─ theme.rhai
+├─ styles.rhai
 ├─ themes/
 ├─ locales/
 ├─ components/
@@ -267,9 +268,11 @@ The main read paths have deliberately different invalidation semantics:
 Prefer declarative props and tracked state/store reads for ordinary UI. Prefer
 signal bindings or retained native work for values that change every frame.
 
-Use `part_styles` for an intended component customization point. Edit the
-copied `.rhai` source when the product needs a structural change. Do not hide a
-structural fork behind a growing stack of arbitrary overrides.
+Use `ui/styles.rhai` for coherent application-wide overrides keyed by formal
+component ID and declared part. Use instance `style`/`part_styles` for an
+intentional one-off. Edit the copied component source when the product needs a
+structural or behavioral fork; do not hide one behind a growing stack of visual
+overrides. See [Component stylesheets](docs/component-styles.md).
 
 The bundled catalog contains 50 official source components:
 
@@ -640,12 +643,24 @@ theme_color("focus_ring")
 theme_typography("body")
 ```
 
+Theme variants also own the `xs/sm/md/lg` spacing scale, `sm/md/lg` radius
+scale, and all eight typography size/line-height/weight roles plus an optional
+font family/fallback stack. These values are editable data in `ui/theme.rhai`,
+not hard-coded Rust constants.
+
 Use `style().typography("caption" | "body_small" | "body" | "subtitle" |
 "title" | "heading" | "display" | "display_large")` instead of copying font
 sizes and line heights into components. Theme values remain symbolic until
 rendering. Switching a ThemeVariant advances
 the theme generation and repaints/rerenders affected native content without
 recompiling Rhai or discarding component state.
+
+Use `ui/styles.rhai` when the customization belongs to a formal component
+rather than a universal token. A rule targets an exact component ID and one of
+its declared parts with the normal typed `Style` builder. File-backed views
+discover it automatically; production embedding passes
+`COMPONENT_STYLES_SOURCE` to `EmbeddedScriptView::component_styles`. See
+[Component stylesheets](docs/component-styles.md).
 
 Open Theme Studio with:
 
@@ -910,9 +925,11 @@ mounting a different component instance.
 
 ### theme edits do not appear
 
-Validate the `.rhai` theme, confirm family/variant selection, and check that
-components use semantic `theme_color` values rather than literals. Theme Studio
-shows the active draft and contrast diagnostics.
+Validate the `.rhai` theme and `styles.rhai`, confirm family/variant selection,
+and check that components use semantic tokens and `ctx.component_style` rather
+than literals or the removed global helper. Theme Studio shows the active draft
+and contrast diagnostics; `gpui-rhai check` reports invalid component/part
+rules.
 
 ### overlay is clipped or dismisses the wrong view
 

@@ -24,14 +24,15 @@ use crate::overlay_element::WindowOverlayCoordinator;
 use crate::{
     ActionError, ActionId, AnimationRuntime, AppManifest, AssetData, AssetId, AssetRegistry,
     CapabilityError, CompiledUi, ComponentExportError, ComponentInstancePath, ComponentRegistry,
-    ComponentStateSchema, DependencyError, DirectoryAssetProvider, DispatchScriptAction,
-    EmbeddedScriptSource, FileScriptSource, GpuiNodeRenderer, InMemoryAssetProvider,
-    InteractionState, KeyBindingSpec, LocaleBundle, LocaleManager, ModuleCompileCache, ModuleId,
-    MotionPreference, NodeEventDispatcher, PrimitiveRegistry, ResponsiveError, ResponsiveRuntime,
-    RestrictedModuleResolver, RuntimeEngine, RuntimeError, ScriptCallback, ScriptLifecycle,
-    ScriptSource, ScriptWindowSpec, SystemAppearance, TextDirection, ThemeManager, ThemeSelection,
-    ThemeSnapshot, ThemeVariant, UiRuntimeState, UiValue, ViewportBreakpoints, WindowCommand,
-    WindowCommandPolicy, init_text_area, init_text_input, load_locale_source, load_theme_source,
+    ComponentStateSchema, ComponentStyleError, ComponentStyleSheet, DependencyError,
+    DirectoryAssetProvider, DispatchScriptAction, EmbeddedScriptSource, FileScriptSource,
+    GpuiNodeRenderer, InMemoryAssetProvider, InteractionState, KeyBindingSpec, LocaleBundle,
+    LocaleManager, ModuleCompileCache, ModuleId, MotionPreference, NodeEventDispatcher,
+    PrimitiveRegistry, ResponsiveError, ResponsiveRuntime, RestrictedModuleResolver, RuntimeEngine,
+    RuntimeError, ScriptCallback, ScriptLifecycle, ScriptSource, ScriptWindowSpec,
+    SystemAppearance, TextDirection, ThemeManager, ThemeSelection, ThemeSnapshot, ThemeVariant,
+    UiRuntimeState, UiValue, ViewportBreakpoints, WindowCommand, WindowCommandPolicy,
+    init_text_area, init_text_input, load_component_styles, load_locale_source, load_theme_source,
 };
 
 #[cfg(feature = "dev-reload")]
@@ -1232,11 +1233,13 @@ impl FileScriptView {
                 .map_err(ScriptViewError::Extension)?;
         }
         let (ui_root, theme_path, theme) = load_primary_file_theme(&engine, &self.entry)?;
+        let style_path = ui_root.join("styles.rhai");
         let mut fonts = self.fonts;
         fonts.extend(load_file_fonts(&ui_root.join("fonts"))?);
         crate::validate_font_sources(&fonts)?;
         let manifest = load_file_manifest(&ui_root, &self.entry)?;
-        let module_cache = configure_file_modules(&mut engine, &ui_root, &self.entry, &theme_path)?;
+        let module_cache =
+            configure_file_modules(&mut engine, &ui_root, &self.entry, &theme_path, &style_path)?;
         #[cfg(not(feature = "dev-reload"))]
         let _ = &module_cache;
         let compiled =
@@ -1244,6 +1247,8 @@ impl FileScriptView {
         let component_exports = engine.component_exports()?;
         let component_renderers = engine.component_renderer_snapshot()?;
         manifest.validate_components(&component_exports)?;
+        let component_styles =
+            load_file_component_styles(engine.engine(), &style_path, &component_exports)?;
         let state_schema = engine.root_state_schema(&compiled)?;
         let mut runtime_state = UiRuntimeState::new();
         runtime_state.animations = AnimationRuntime::new(self.motion_preference);
@@ -1256,6 +1261,7 @@ impl FileScriptView {
             &ui_root.join("themes"),
             &theme,
         )?);
+        runtime_state.replace_component_styles_from_host(component_styles);
         register_file_assets(&runtime_state, &ui_root)?;
         preload_component_assets(&runtime_state, &component_exports)?;
         for extension in extensions.iter() {
@@ -1286,6 +1292,7 @@ impl FileScriptView {
             entry: self.entry,
             ui_root,
             theme_path,
+            style_path,
             development: self.development,
             factory,
             key_bindings: self.key_bindings,
@@ -1300,6 +1307,7 @@ pub struct EmbeddedScriptView {
     entry: ModuleId,
     scripts: EmbeddedScriptSource,
     theme_source: String,
+    component_style_source: Option<String>,
     locales: Vec<(String, String)>,
     themes: Vec<(String, String)>,
     development: bool,
@@ -1326,6 +1334,7 @@ impl EmbeddedScriptView {
             entry,
             scripts,
             theme_source: theme_source.into(),
+            component_style_source: None,
             locales: Vec::new(),
             themes: Vec::new(),
             development: false,
@@ -1350,6 +1359,13 @@ impl EmbeddedScriptView {
     #[must_use]
     pub fn theme_sources(mut self, themes: impl IntoIterator<Item = (String, String)>) -> Self {
         self.themes = themes.into_iter().collect();
+        self
+    }
+
+    /// Install one application-wide typed component stylesheet.
+    #[must_use]
+    pub fn component_styles(mut self, source: impl Into<String>) -> Self {
+        self.component_style_source = Some(source.into());
         self
     }
 
@@ -1438,10 +1454,22 @@ impl EmbeddedScriptView {
         let theme = load_theme_source(engine.engine(), "<embedded-theme>", &self.theme_source)
             .map_err(|error| ScriptViewError::Theme(error.to_string()))?;
         engine.set_module_resolver(RestrictedModuleResolver::from_source(&self.scripts)?);
+        preload_component_modules(&mut engine, self.scripts.module_ids())?;
         let compiled = engine.compile_self_contained_named(self.entry.as_str(), &entry.source)?;
         let component_exports = engine.component_exports()?;
         let component_renderers = engine.component_renderer_snapshot()?;
         self.manifest.validate_components(&component_exports)?;
+        let component_styles = self.component_style_source.map_or_else(
+            || Ok(ComponentStyleSheet::default()),
+            |source| {
+                load_component_styles(
+                    engine.engine(),
+                    "<embedded-component-styles>",
+                    &source,
+                    &component_exports,
+                )
+            },
+        )?;
         let state_schema = engine.root_state_schema(&compiled)?;
         let mut runtime_state = UiRuntimeState::new();
         runtime_state.animations = AnimationRuntime::new(self.motion_preference);
@@ -1450,6 +1478,7 @@ impl EmbeddedScriptView {
         runtime_state.clock = self.runtime_clock;
         runtime_state.locale = load_embedded_locales(engine.engine(), self.locales)?;
         runtime_state.theme = Some(load_embedded_themes(engine.engine(), self.themes, &theme)?);
+        runtime_state.replace_component_styles_from_host(component_styles);
         if !self.assets.is_empty() {
             runtime_state
                 .assets
@@ -1484,6 +1513,7 @@ impl EmbeddedScriptView {
             entry: PathBuf::new(),
             ui_root: PathBuf::new(),
             theme_path: PathBuf::new(),
+            style_path: PathBuf::new(),
             development: self.development,
             factory,
             key_bindings: self.key_bindings,
@@ -1582,20 +1612,61 @@ fn load_primary_file_theme(
     Ok((root, path, theme))
 }
 
+fn load_file_component_styles(
+    engine: &rhai::Engine,
+    path: &Path,
+    components: &ComponentRegistry,
+) -> Result<ComponentStyleSheet, ScriptViewError> {
+    match fs::read_to_string(path) {
+        Ok(source) => Ok(load_component_styles(
+            engine,
+            &path.to_string_lossy(),
+            &source,
+            components,
+        )?),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            Ok(ComponentStyleSheet::default())
+        }
+        Err(source) => Err(ScriptViewError::Io {
+            path: path.to_path_buf(),
+            source,
+        }),
+    }
+}
+
 fn configure_file_modules(
     engine: &mut RuntimeEngine,
     root: &Path,
     entry: &Path,
     theme: &Path,
+    styles: &Path,
 ) -> Result<ModuleCompileCache, ScriptViewError> {
-    let modules = discover_modules(root, entry, theme)?;
+    let modules = discover_modules(root, entry, theme, styles)?;
     let source = FileScriptSource::new(root, modules)?;
     let mut cache = ModuleCompileCache::new();
     cache.refresh(engine.engine(), &source, source.module_ids())?;
     engine.set_module_resolver(RestrictedModuleResolver::from_source_with_cache(
         &source, &cache,
     )?);
+    preload_component_modules(engine, source.module_ids())?;
     Ok(cache)
+}
+
+fn preload_component_modules(
+    engine: &mut RuntimeEngine,
+    modules: impl IntoIterator<Item = ModuleId>,
+) -> Result<(), ScriptViewError> {
+    let imports = modules
+        .into_iter()
+        .filter(|id| id.as_str().starts_with("components/"))
+        .enumerate()
+        .map(|(index, id)| format!("import \"{id}\" as component_{index};"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    if !imports.is_empty() {
+        engine.compile_self_contained_named("<component-registry>", &imports)?;
+    }
+    Ok(())
 }
 
 fn register_file_assets(runtime: &UiRuntimeState, root: &Path) -> Result<(), ScriptViewError> {
@@ -1738,6 +1809,7 @@ fn discover_modules(
     root: &Path,
     entry: &Path,
     theme: &Path,
+    styles: &Path,
 ) -> Result<Vec<ModuleId>, ScriptViewError> {
     let mut pending = vec![root.to_path_buf()];
     let mut modules = Vec::new();
@@ -1761,6 +1833,7 @@ fn discover_modules(
             } else if path.extension().and_then(|extension| extension.to_str()) == Some("rhai")
                 && path != entry
                 && path != theme
+                && path != styles
             {
                 modules.push(module_id_from_path(root, &path)?);
             }
@@ -2004,6 +2077,7 @@ pub struct PreparedScriptView {
     entry: PathBuf,
     ui_root: PathBuf,
     theme_path: PathBuf,
+    style_path: PathBuf,
     development: bool,
     factory: Rc<ScriptWindowFactory>,
     key_bindings: Vec<KeyBindingSpec>,
@@ -2057,30 +2131,19 @@ impl PreparedScriptView {
         };
         host.reserve_view(&config.view_id)?;
         let window_id = host.window_id();
-        let program = self.factory.program();
-        let lifecycle = self
-            .factory
-            .mount_lifecycle(
-                &mut self.engine,
-                program,
-                &config.view_id,
-                &window_id,
-                host.window_policy(),
-                true,
-            )
-            .map_err(ScriptViewError::Extension);
-        let lifecycle = match lifecycle {
-            Ok(lifecycle) => lifecycle,
-            Err(error) => {
-                host.unregister_view(&config.view_id);
-                return Err(error);
-            }
-        };
+        let lifecycle = mount_prepared_lifecycle(
+            &self.factory,
+            &mut self.engine,
+            &host,
+            &config.view_id,
+            &window_id,
+        )?;
         #[cfg(not(feature = "dev-reload"))]
         let _ = (
             &self.entry,
             &self.ui_root,
             &self.theme_path,
+            &self.style_path,
             self.development,
         );
         let primitives = self.engine.primitive_registry();
@@ -2089,8 +2152,8 @@ impl PreparedScriptView {
         let overlays = host.overlays();
         let view_id = config.view_id.clone();
         let view_host = host.clone();
-        let theme_handle = theme_handle_for_lifecycle(&lifecycle, &self.theme, window, cx);
-        let view_theme_handle = theme_handle.clone();
+        let (theme_handle, view_theme_handle) =
+            theme_handles_for_lifecycle(&lifecycle, &self.theme, window, cx);
         let entity = cx.new(|entity_cx| {
             let runtime_tasks = spawn_host_runtime_tasks(entity_cx, &lifecycle);
             let host_focus = entity_cx.focus_handle();
@@ -2135,18 +2198,18 @@ impl PreparedScriptView {
                 #[cfg(feature = "dev-reload")]
                 theme_path: self.theme_path,
                 #[cfg(feature = "dev-reload")]
+                style_path: self.style_path,
+                #[cfg(feature = "dev-reload")]
                 _reload_task: reload_task,
             }
         });
         attach_script_view_focus(&host, &config.view_id, &entity, cx);
-        Ok(ScriptViewHandle(Rc::new(ScriptViewHandleInner {
+        Ok(mounted_script_view_handle(
             entity,
-            theme: theme_handle,
+            theme_handle,
             host,
-            view_id: config.view_id,
-            disposed: Cell::new(false),
-            measured_bounds: Rc::new(Cell::new(None)),
-        })))
+            config,
+        ))
     }
 }
 
@@ -2381,8 +2444,8 @@ fn open_secondary_window(
     let view_window_id = window_id.clone();
     let view_host = host.clone();
     let result = cx.open_window(options, move |window, cx| {
-        let theme_handle = theme_handle_for_lifecycle(&lifecycle, &view_factory.theme, window, cx);
-        let view_theme_handle = theme_handle.clone();
+        let (theme_handle, view_theme_handle) =
+            theme_handles_for_lifecycle(&lifecycle, &view_factory.theme, window, cx);
         let entity = cx.new(|entity_cx| {
             let runtime_tasks = spawn_host_runtime_tasks(entity_cx, &lifecycle);
             let host_focus = entity_cx.focus_handle();
@@ -2424,6 +2487,8 @@ fn open_secondary_window(
                 ui_root: PathBuf::new(),
                 #[cfg(feature = "dev-reload")]
                 theme_path: PathBuf::new(),
+                #[cfg(feature = "dev-reload")]
+                style_path: PathBuf::new(),
                 #[cfg(feature = "dev-reload")]
                 _reload_task: None,
             }
@@ -2633,6 +2698,8 @@ struct ScriptHostView {
     #[cfg(feature = "dev-reload")]
     theme_path: PathBuf,
     #[cfg(feature = "dev-reload")]
+    style_path: PathBuf,
+    #[cfg(feature = "dev-reload")]
     _reload_task: Option<Task<()>>,
 }
 
@@ -2801,16 +2868,17 @@ fn resolve_root_theme(
     )
 }
 
-fn theme_handle_for_lifecycle(
+fn theme_handles_for_lifecycle(
     lifecycle: &ScriptLifecycle,
     fallback: &ThemeVariant,
     window: &Window,
     cx: &mut App,
-) -> ThemeHandle {
-    ThemeHandle::new(
+) -> (ThemeHandle, ThemeHandle) {
+    let handle = ThemeHandle::new(
         resolve_root_theme(lifecycle, fallback, system_appearance(window.appearance())),
         cx,
-    )
+    );
+    (handle.clone(), handle)
 }
 
 fn attach_script_view_focus(
@@ -2820,6 +2888,44 @@ fn attach_script_view_focus(
     cx: &App,
 ) {
     host.attach_view_focus(view_id, entity.read(cx).host_focus.clone());
+}
+
+fn mounted_script_view_handle(
+    entity: Entity<ScriptHostView>,
+    theme: ThemeHandle,
+    host: ScriptViewHost,
+    config: ScriptViewConfig,
+) -> ScriptViewHandle {
+    ScriptViewHandle(Rc::new(ScriptViewHandleInner {
+        entity,
+        theme,
+        host,
+        view_id: config.view_id,
+        disposed: Cell::new(false),
+        measured_bounds: Rc::new(Cell::new(None)),
+    }))
+}
+
+fn mount_prepared_lifecycle(
+    factory: &ScriptWindowFactory,
+    engine: &mut RuntimeEngine,
+    host: &ScriptViewHost,
+    view_id: &str,
+    window_id: &str,
+) -> Result<ScriptLifecycle, ScriptViewError> {
+    factory
+        .mount_lifecycle(
+            engine,
+            factory.program(),
+            view_id,
+            window_id,
+            host.window_policy(),
+            true,
+        )
+        .map_err(|error| {
+            host.unregister_view(view_id);
+            ScriptViewError::Extension(error)
+        })
 }
 
 fn resolve_root_theme_from_runtime(
@@ -3775,6 +3881,7 @@ impl ScriptHostView {
             return;
         }
         let theme_path = self.theme_path.canonicalize().ok();
+        let style_path = self.style_path.canonicalize().ok();
         let themes_root = self.ui_root.join("themes").canonicalize().ok();
         let theme_changed = theme_path
             .as_ref()
@@ -3782,6 +3889,13 @@ impl ScriptHostView {
             || themes_root.as_ref().is_some_and(|themes_root| {
                 batch.paths.iter().any(|path| path.starts_with(themes_root))
             });
+        let style_changed = style_path
+            .as_ref()
+            .is_some_and(|styles| batch.paths.contains(styles))
+            || batch
+                .paths
+                .iter()
+                .any(|path| path.ends_with(&self.style_path));
         let locale_root = self.ui_root.join("locales").canonicalize().ok();
         let locale_changed = locale_root.as_ref().is_some_and(|locale_root| {
             batch.paths.iter().any(|path| path.starts_with(locale_root))
@@ -3797,6 +3911,8 @@ impl ScriptHostView {
         let script_changed = batch.paths.iter().any(|path| {
             path.extension().and_then(|extension| extension.to_str()) == Some("rhai")
                 && Some(path) != theme_path.as_ref()
+                && Some(path) != style_path.as_ref()
+                && !path.ends_with(&self.style_path)
                 && !locale_root
                     .as_ref()
                     .is_some_and(|locale_root| path.starts_with(locale_root))
@@ -3813,6 +3929,13 @@ impl ScriptHostView {
         .and_then(|()| {
             if theme_changed {
                 self.reload_theme()
+            } else {
+                Ok(())
+            }
+        })
+        .and_then(|()| {
+            if style_changed {
+                self.reload_component_styles()
             } else {
                 Ok(())
             }
@@ -3849,8 +3972,13 @@ impl ScriptHostView {
     #[cfg(feature = "dev-reload")]
     fn reload_scripts(&mut self, changed_paths: &BTreeSet<PathBuf>) -> Result<(), String> {
         let source = fs::read_to_string(&self.entry).map_err(|error| error.to_string())?;
-        let modules = discover_modules(&self.ui_root, &self.entry, &self.theme_path)
-            .map_err(|error| error.to_string())?;
+        let modules = discover_modules(
+            &self.ui_root,
+            &self.entry,
+            &self.theme_path,
+            &self.style_path,
+        )
+        .map_err(|error| error.to_string())?;
         let file_source =
             FileScriptSource::new(&self.ui_root, modules).map_err(|error| error.to_string())?;
         let root = self
@@ -3892,6 +4020,8 @@ impl ScriptHostView {
             .clear_component_exports()
             .map_err(|error| error.to_string())?;
         self.engine.set_module_resolver(resolver);
+        preload_component_modules(&mut self.engine, file_source.module_ids())
+            .map_err(|error| error.to_string())?;
         let candidate = self
             .engine
             .compile_self_contained_named(&self.entry.to_string_lossy(), &source);
@@ -3908,21 +4038,21 @@ impl ScriptHostView {
                     .engine
                     .component_exports()
                     .map_err(|error| error.to_string())?;
+                self.load_current_component_styles(&program_exports)?;
                 let program_renderers = self
                     .engine
                     .component_renderer_snapshot()
                     .map_err(|error| error.to_string())?;
                 self.lifecycle
                     .reload(&mut self.engine, candidate, &state_schema)
-                    .map(|_| {
-                        self.factory.update_program(
-                            program_compiled,
-                            program_schema,
-                            program_exports,
-                            program_renderers,
-                        );
-                    })
-                    .map_err(|error| error.to_string())
+                    .map_err(|error| error.to_string())?;
+                self.factory.update_program(
+                    program_compiled,
+                    program_schema,
+                    program_exports,
+                    program_renderers,
+                );
+                Ok(())
             });
         if result.is_err() {
             self.engine
@@ -3933,19 +4063,20 @@ impl ScriptHostView {
                 .map_err(|error| error.to_string())?;
         }
         if result.is_ok() {
-            self.lifecycle.runtime().borrow_mut().traces.push(
-                crate::RuntimeTraceKind::Reload,
-                self.lifecycle.root_path().to_string(),
-                format!(
-                    "refreshed {} affected module(s), compiled {}",
-                    refresh.affected.len(),
-                    refresh.compiled.len()
-                ),
-                None,
-                false,
-            );
+            self.trace_script_reload(refresh.affected.len(), refresh.compiled.len());
         }
         result
+    }
+
+    #[cfg(feature = "dev-reload")]
+    fn trace_script_reload(&self, affected: usize, compiled: usize) {
+        self.lifecycle.runtime().borrow_mut().traces.push(
+            crate::RuntimeTraceKind::Reload,
+            self.lifecycle.root_path().to_string(),
+            format!("refreshed {affected} affected module(s), compiled {compiled}"),
+            None,
+            false,
+        );
     }
 
     #[cfg(feature = "dev-reload")]
@@ -3983,6 +4114,37 @@ impl ScriptHostView {
         runtime.borrow_mut().theme = Some(themes);
         runtime.borrow_mut().mark_all_windows_dirty();
         Ok(())
+    }
+
+    #[cfg(feature = "dev-reload")]
+    fn reload_component_styles(&mut self) -> Result<(), String> {
+        let components = self
+            .engine
+            .component_exports()
+            .map_err(|error| error.to_string())?;
+        let styles = self.load_current_component_styles(&components)?;
+        self.run_script_transaction(|view| {
+            let changed = view
+                .lifecycle
+                .runtime()
+                .borrow_mut()
+                .replace_component_styles_from_host(styles);
+            if changed {
+                view.lifecycle
+                    .render_dirty(&mut view.engine)
+                    .map_err(|error| error.to_string())?;
+            }
+            Ok(())
+        })
+    }
+
+    #[cfg(feature = "dev-reload")]
+    fn load_current_component_styles(
+        &self,
+        components: &ComponentRegistry,
+    ) -> Result<ComponentStyleSheet, String> {
+        load_file_component_styles(self.engine.engine(), &self.style_path, components)
+            .map_err(|error| error.to_string())
     }
 
     #[cfg(feature = "dev-reload")]
@@ -4068,6 +4230,8 @@ pub enum ScriptViewError {
     },
     #[error("failed to load UI theme: {0}")]
     Theme(String),
+    #[error(transparent)]
+    ComponentStyle(#[from] ComponentStyleError),
     #[error("failed to load UI locale: {0}")]
     Locale(String),
     #[error("runtime extension failed: {0}")]
@@ -4290,6 +4454,48 @@ mod tests {
         assert_eq!(
             root.source().map(|source| source.module.as_str()),
             Some("components/greeting")
+        );
+    }
+
+    #[test]
+    fn file_view_applies_the_validated_component_stylesheet() {
+        let directory = tempfile::tempdir().unwrap();
+        let components = directory.path().join("components");
+        fs::create_dir_all(&components).unwrap();
+        fs::write(
+            components.join("button.rhai"),
+            include_str!("../../../registry/components/button.rhai"),
+        )
+        .unwrap();
+        fs::write(
+            directory.path().join("main.rhai"),
+            r#"import "components/button" as button;
+            fn view(ctx) { button::Button(#{ text: "Styled" }) }
+            "#,
+        )
+        .unwrap();
+        fs::write(
+            directory.path().join("styles.rhai"),
+            r#"fn component_styles() {
+                #{ "components/button": #{ root: style().height(px(41)) } }
+            }
+            "#,
+        )
+        .unwrap();
+        fs::write(
+            directory.path().join("theme.rhai"),
+            include_str!("../../../registry/themes/default_dark.rhai"),
+        )
+        .unwrap();
+        write_manifest(directory.path());
+
+        let prepared = FileScriptView::new(directory.path().join("main.rhai"))
+            .prepare()
+            .unwrap();
+        let (_, lifecycle) = start_prepared(prepared, "widget", "main");
+        assert_eq!(
+            lifecycle.root().unwrap().style().base.height,
+            Some(crate::LayoutLength::Definite(crate::Length::Pixels(41.0)))
         );
     }
 

@@ -2,7 +2,7 @@
 {
   "id": "components/accordion",
   "export": "Accordion",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": [],
   "capabilities": {},
@@ -16,7 +16,7 @@
 
 define_component(#{
     metadata: #{
-        id: "components/accordion", "export": "Accordion", version: "0.1.0",
+        id: "components/accordion", "export": "Accordion", version: "0.1.1",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 }, dependencies: [], capabilities: #{},
         assets: ["icons/minus.svg", "icons/plus.svg"],
     },
@@ -87,7 +87,7 @@ fn render_Accordion(ctx, props) {
                 .with_style(style().width(px(14)).height(px(14)).text_color(toggle_color))
         ])
             .with_key(`${item.key}-trigger`)
-            .with_style(component_style(props, "trigger", trigger_style))
+            .with_style(ctx.component_style("trigger", trigger_style))
             .disabled(item_disabled)
             .accessibility_role("button")
             .accessibility_checked(open);
@@ -95,18 +95,18 @@ fn render_Accordion(ctx, props) {
             trigger = trigger.on_click_value(callback, toggled(props.expanded, item.key, mode));
         }
         let height = item.content_height;
-        let panel_content = item.content.with_style(component_style(props, "content", style()
+        let panel_content = item.content.with_style(ctx.component_style("content", style()
             .padding(px(10)).typography("body")));
         let panel = column([panel_content])
             .with_key(`${item.key}-content`)
             .with_style(style().height(px(if open { height } else { 0 })).clip())
             .animate(transition("clip_height", 0.0, if open { height * 1.0 } else { 0.0 }, 150, "ease_out"));
         items.push(column([trigger, panel]).with_key(item.key)
-            .with_style(component_style(props, "item", style()
+            .with_style(ctx.component_style("item", style()
                 .border_bottom(px(1)).border_color(theme_color("border")))));
     }
     column(items).with_key(props.key)
-        .with_style(component_style(props, "root", style()
+        .with_style(ctx.component_style("root", style()
             .border(px(1)).border_color(theme_color("border"))
             .radius(theme_radius("md")).clip()))
 }

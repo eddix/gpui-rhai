@@ -2,7 +2,7 @@
 {
   "id": "components/popover",
   "export": "Popover",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": [],
   "capabilities": {}
@@ -20,7 +20,7 @@ define_component(#{
     metadata: #{
         id: "components/popover",
         "export": "Popover",
-        version: "0.1.0",
+        version: "0.1.1",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
         dependencies: [],
         capabilities: #{},
@@ -86,7 +86,7 @@ fn render_Popover(ctx, props) {
     let placement = if "placement" in props { props.placement } else { "bottom" };
     let gap = if "gap" in props { props.gap } else { 8.0 };
     let content = column([props.content])
-        .with_style(component_style(props, "content",
+        .with_style(ctx.component_style("content",
             style()
                 .width(px(240))
                 .padding(px(10))
@@ -112,10 +112,10 @@ fn render_Popover(ctx, props) {
         config.parent = props.parent_overlay;
     }
     let node = overlay(
-        props.trigger.with_style(component_style(props, "trigger", style())),
+        props.trigger.with_style(ctx.component_style("trigger", style())),
         content, config
     ).with_key(props.key)
-        .with_style(component_style(props, "root", style()));
+        .with_style(ctx.component_style("root", style()));
     if "on_open_change" in props && props.on_open_change != () {
         node.on_open_change(props.on_open_change)
     } else {

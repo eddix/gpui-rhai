@@ -294,6 +294,7 @@ struct ActiveComponentRender {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct ComponentRenderEnvironment {
     theme_generation: Option<u64>,
+    component_style_generation: u64,
     locale_generation: Option<u64>,
     calendar_day: crate::GregorianDate,
 }
@@ -671,6 +672,7 @@ impl RuntimeEngine {
                 runtime.component_state.clone(),
                 ComponentRenderEnvironment {
                     theme_generation: runtime.theme.as_ref().map(crate::ThemeManager::generation),
+                    component_style_generation: runtime.component_style_generation(),
                     locale_generation: runtime
                         .locale
                         .as_ref()
@@ -2253,18 +2255,27 @@ fn enter_component_render(
         .transaction
         .mount(path.clone(), &component.schema.state)
         .map_err(|error| Box::new(component_render_error(error.to_string())))?;
-    active
-        .root_context
-        .runtime()
-        .try_borrow_mut()
-        .map_err(|_| Box::new(component_render_error("UI state is already borrowed")))?
-        .component_state
-        .mount_instance(path.clone(), &component.schema.state)
-        .map_err(|error| Box::new(component_render_error(error.to_string())))?;
+    let global_part_styles = {
+        let mut runtime = active
+            .root_context
+            .runtime()
+            .try_borrow_mut()
+            .map_err(|_| Box::new(component_render_error("UI state is already borrowed")))?;
+        runtime
+            .component_state
+            .mount_instance(path.clone(), &component.schema.state)
+            .map_err(|error| Box::new(component_render_error(error.to_string())))?;
+        runtime
+            .component_styles()
+            .component(&component.metadata.id)
+            .cloned()
+            .unwrap_or_default()
+    };
     let context = active
         .root_context
         .for_component(path.clone(), component.schema.events.clone())
         .with_component_styles(
+            global_part_styles,
             component_root_style(&invocation.props),
             component_part_styles(&invocation.props),
         )
@@ -2877,7 +2888,7 @@ fn virtual_collection_seed_indices(
                 virtual_overdraw_items(decoded),
             );
         }
-    } else {
+    } else if decoded.reveal_key.is_none() && !decoded.bottom_align && !decoded.follow_tail {
         extend_virtual_window(&mut indices, 0, count, decoded.data.len(), 0);
     }
     drop(guard);

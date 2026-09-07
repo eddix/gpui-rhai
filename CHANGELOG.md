@@ -5,6 +5,25 @@ All notable runtime, CLI, and registry changes are documented here. Version
 component schema, manifest, locale, and generated-source changes follow
 semantic versioning from this release.
 
+## 0.1.1 - Unreleased
+
+- Controlled virtual collections synchronously rebuild the retained viewport
+  with current Rhai state before committing a rerender, eliminating blank
+  frames when Command selection moves beyond the first realized window.
+- Embedded Hosts can read and observe each `ScriptViewHandle`'s complete
+  effective `ThemeSnapshot`, including colors, spacing, radii, typography,
+  namespaced tokens, and system-appearance changes.
+- Applications can define validated global formal-component part overrides in
+  `ui/styles.rhai`. File, embedded, CLI check/embed, hot reload, rollback, and
+  all official component sources use the same typed `ctx.component_style`
+  cascade. Explicit instance overrides remain the final application-owned
+  layer.
+
+This release intentionally removes the old global
+`component_style(props, part, base)` helper. Source components use
+`ctx.component_style(part, base)` so retained and deferred renderers share the
+same validated stylesheet snapshot.
+
 ## 0.1.0 - 2026-09-07
 
 Initial implementation of the stable Rhai `UiNode` boundary, source-owned
@@ -122,6 +141,7 @@ Dogfooding API reset before the first published release:
 - existing GPUI hosts mount isolated views through `ScriptViewHost` and
   `ScriptViewHandle`.
 
-No compatibility aliases are retained because `0.1.0` has not been published.
+This destructive migration was completed before `0.1.0`; the published
+baseline therefore contains no compatibility aliases.
 
 There is no earlier GPUI Rhai release to migrate from.

@@ -2,7 +2,7 @@
 {
   "id": "components/kbd",
   "export": "Kbd",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": [],
   "capabilities": {}
@@ -15,7 +15,7 @@
 // Example: Kbd(#{ text: "⌘ K", label: "Command K" })
 
 define_component(#{
-    metadata: #{ id: "components/kbd", "export": "Kbd", version: "0.1.0",
+    metadata: #{ id: "components/kbd", "export": "Kbd", version: "0.1.1",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 }, dependencies: [], capabilities: #{} },
     schema: #{
         props: #{
@@ -29,7 +29,7 @@ define_component(#{
 
 fn Kbd(props) { render_component("components/kbd", props) }
 fn render_Kbd(ctx, props) {
-    text(props.text).with_style(component_style(props, "root", component_style(props, "label", style()
+    text(props.text).with_style(ctx.component_style("root", ctx.component_style("label", style()
         .min_width(px(20)).height(px(20)).padding_x(px(5)).items_center().justify_center()
         .radius(theme_radius("sm")).border(px(1)).border_color(theme_color("border"))
         .background(theme_color("surface_raised")).text_color(theme_color("text_muted"))

@@ -2,7 +2,7 @@
 {
   "id": "components/toggle",
   "export": "Toggle",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": ["components/button"],
   "capabilities": {}
@@ -18,7 +18,7 @@
 import "components/button" as button;
 
 define_component(#{
-    metadata: #{ id: "components/toggle", "export": "Toggle", version: "0.1.0",
+    metadata: #{ id: "components/toggle", "export": "Toggle", version: "0.1.1",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
         dependencies: ["components/button"], capabilities: #{} },
     schema: #{
@@ -54,7 +54,7 @@ fn render_Toggle(ctx, props) {
         on_click: if "on_pressed_change" in props && props.on_pressed_change != () {
             Fn("pressed_action").curry(!props.pressed)
         } else { () }
-    }).with_style(component_style(props, "root", style()
+    }).with_style(ctx.component_style("root", style()
         .background(if props.pressed { theme_color("selection") } else { rgba(0x00000000) })
         .border_color(if props.pressed { theme_color("accent") } else { rgba(0x00000000) })));
     node.accessibility_role("button").accessibility_label(props.text)

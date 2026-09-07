@@ -2,7 +2,7 @@
 {
   "id": "components/title_bar",
   "export": "TitleBar",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": [],
   "capabilities": {}
@@ -15,7 +15,7 @@
 // Example: TitleBar(#{ label: "Workbench", title: breadcrumb_node, end: [settings_button] })
 
 define_component(#{
-    metadata: #{ id: "components/title_bar", "export": "TitleBar", version: "0.1.0",
+    metadata: #{ id: "components/title_bar", "export": "TitleBar", version: "0.1.1",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 }, dependencies: [], capabilities: #{} },
     schema: #{
         props: #{
@@ -43,40 +43,40 @@ define_component(#{
 });
 
 fn TitleBar(props) { render_component("components/title_bar", props) }
-fn title_bar_content(props, part, value, typography, muted) {
+fn title_bar_content(ctx, part, value, typography, muted) {
     let structural = style();
     if type_of(value) == "string" {
         let defaults = structural.typography(typography)
             .whitespace_nowrap().text_ellipsis();
         if part == "title" { defaults = defaults.font_weight(700); }
         if muted { defaults = defaults.text_color(theme_color("text_muted")); }
-        text(value).with_style(component_style(props, part, defaults))
+        text(value).with_style(ctx.component_style(part, defaults))
     } else {
-        value.with_style(component_style(props, part, structural))
+        value.with_style(ctx.component_style(part, structural))
     }
 }
 fn render_TitleBar(ctx, props) {
-    let title_children = [title_bar_content(props, "title", props.title, "body_small", false)];
+    let title_children = [title_bar_content(ctx, "title", props.title, "body_small", false)];
     if "subtitle" in props && props.subtitle != () {
-        title_children.push(title_bar_content(props, "subtitle", props.subtitle, "caption", true));
+        title_children.push(title_bar_content(ctx, "subtitle", props.subtitle, "caption", true));
     }
     let start_children = if "start" in props { props.start } else { [] };
     start_children.push(column(title_children).with_style(style()
         .flex_grow().min_width(px(0)).gap(px(0)).overflow_hidden()));
     let inset = if "inset_start" in props { props.inset_start } else { 0 };
-    let start = row(start_children).with_style(component_style(props, "start", style()
+    let start = row(start_children).with_style(ctx.component_style("start", style()
         .width(relative(0.333333)).min_width(px(0)).height(relative(1.0))
         .padding_start(px(inset)).items_center().gap(px(8)).overflow_hidden()));
     let center = row(if "center" in props { props.center } else { [] })
-        .with_style(component_style(props, "center", style()
+        .with_style(ctx.component_style("center", style()
             .width(relative(0.333333)).min_width(px(0)).height(relative(1.0))
             .items_center().justify_center().gap(px(6)).overflow_hidden()));
     let end = row(if "end" in props { props.end } else { [] })
-        .with_style(component_style(props, "end", style()
+        .with_style(ctx.component_style("end", style()
             .width(relative(0.333333)).min_width(px(0)).height(relative(1.0))
             .items_center().justify_end().gap(px(6)).overflow_hidden()));
     row([start, center, end])
-        .with_style(component_style(props, "root", style()
+        .with_style(ctx.component_style("root", style()
             .width(relative(1.0)).height(px(34)).padding_x(px(10)).items_center()
             .border_bottom(px(1)).border_color(theme_color("border"))
             .background(theme_color("surface_raised")).text_color(theme_color("text_primary"))))

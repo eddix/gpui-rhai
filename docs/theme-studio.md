@@ -33,6 +33,12 @@ Theme Studio saves a simple canonical `theme() -> map`. Opening a complex valid
 theme is supported, but saving intentionally normalizes its implementation.
 Leading `//` attribution comments are preserved.
 
+Theme Studio owns semantic theme tokens, including spacing, radii, and
+typography. Application-wide Button/Input/etc. overrides are a separate typed
+contract in `ui/styles.rhai`; see [component stylesheets](component-styles.md).
+Keeping that file separate lets one component skin consume any light or dark
+theme variant through symbolic tokens.
+
 ## Component specimen
 
 The right pane renders all 50 official components from the same source shipped

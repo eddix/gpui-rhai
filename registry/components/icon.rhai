@@ -2,7 +2,7 @@
 {
   "id": "components/icon",
   "export": "Icon",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": [],
   "capabilities": {},
@@ -19,7 +19,7 @@ define_component(#{
     metadata: #{
         id: "components/icon",
         "export": "Icon",
-        version: "0.1.0",
+        version: "0.1.1",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
         dependencies: [],
         capabilities: #{},
@@ -80,7 +80,7 @@ fn render_Icon(ctx, props) {
         image_source(props.source)
     };
     node
-        .with_style(component_style(props, "root",
+        .with_style(ctx.component_style("root",
             style()
                 .width(px(icon_size(size)))
                 .height(px(icon_size(size)))

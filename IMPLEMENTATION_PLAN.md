@@ -9,7 +9,8 @@ complete delivery.
 
 Constraints that apply to every section:
 
-- keep crate/component version `0.1.0` and `RUNTIME_API_VERSION` 1;
+- treat published `0.1.0` as the baseline; current work targets `0.1.1` and
+  keeps `RUNTIME_API_VERSION` 1;
 - accept destructive Rust/Rhai/schema/registry migration;
 - add no compatibility shim, deprecated alias, dual path, or downstream app
   adapter;
@@ -362,8 +363,9 @@ review.
 
 ## 13. Public-launch P0 component completion
 
-This is one final delivery, not a sequence of preview releases. Keep version
-`0.1.0` and runtime API 1 while accepting destructive source/API migration.
+This workstream shipped in the 0.1.0 baseline. Runtime API 1 remains current;
+subsequent pre-1.0 releases may make explicitly documented source/API breaks
+without compatibility shims.
 
 ### P0.1 Public taxonomy
 

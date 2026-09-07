@@ -35,7 +35,7 @@
     `gpui-rhai-cli`, waiting for each package to enter the index before verifying
     or publishing its dependents. Confirm a clean `cargo install
     gpui-rhai-cli --locked` from crates.io.
-13. Tag the exact protected-main release commit as `v0.1.0` and create the
+13. Tag the exact protected-main release commit with the target version and create the
     matching GitHub release only after all three crates are available.
 
 Version 0.1.0 and `RUNTIME_API_VERSION` 1 are the first published baseline.

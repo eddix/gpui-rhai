@@ -11,8 +11,8 @@ use gpui_rhai::{
     AppManifest, ComponentDefinition, ComponentInstancePath, ComponentMetadata, ComponentRegistry,
     DirectoryAssetProvider, EmbeddedScriptSource, FontSource, LocaleManager, ModuleId,
     RUNTIME_API_VERSION, RestrictedModuleResolver, RuntimeEngine, ScriptAsset, ScriptLifecycle,
-    ThemeManager, ThemeSelection, UiRuntimeState, load_locale_source, load_theme_source,
-    parse_component_header, validate_font_sources,
+    ThemeManager, ThemeSelection, UiRuntimeState, load_component_styles, load_locale_source,
+    load_theme_source, parse_component_header, validate_font_sources,
 };
 use semver::Version;
 use serde::{Deserialize, Serialize};
@@ -51,6 +51,12 @@ struct RegistryAsset {
     path: &'static str,
     source: &'static str,
 }
+
+const DEFAULT_COMPONENT_STYLES: &str = r"// Application-wide typed component overrides.
+fn component_styles() {
+    #{}
+}
+";
 
 const ICON_ASSETS: &[RegistryAsset] = &[
     RegistryAsset {
@@ -388,6 +394,10 @@ impl Project {
         }
         plan.create(self.root.join("ui/main.rhai"), starter_ui())?;
         plan.create(self.root.join("ui/theme.rhai"), DEFAULT_THEME.to_owned())?;
+        plan.create(
+            self.root.join("ui/styles.rhai"),
+            DEFAULT_COMPONENT_STYLES.to_owned(),
+        )?;
         for &(name, source) in BUNDLED_THEME_SOURCES
             .iter()
             .filter(|(name, _)| *name != "default_dark.rhai")
@@ -518,7 +528,7 @@ impl Project {
         }
 
         let components = validate_component_exports(&modules, &headers)?;
-        validate_entry(&self.root, &modules)?;
+        validate_entry(&self.root, &modules, &components)?;
         let app: AppManifest = toml::from_str(&read(&self.root.join("ui/app.toml"))?)?;
         if app.entry.as_str() != "main" {
             return Err(ProjectError::ManifestEntry(app.entry));
@@ -530,6 +540,16 @@ impl Project {
             });
         }
         app.validate_components(&components)?;
+        let styles_path = self.root.join("ui/styles.rhai");
+        if styles_path.exists() {
+            load_component_styles(
+                RuntimeEngine::new().engine(),
+                "ui/styles.rhai",
+                &read(&styles_path)?,
+                &components,
+            )
+            .map_err(|error| ProjectError::ComponentStyle(error.to_string()))?;
+        }
         let theme_source = read(&self.root.join("ui/theme.rhai"))?;
         let theme_runtime = RuntimeEngine::new();
         let primary = load_theme_source(theme_runtime.engine(), "ui/theme.rhai", &theme_source)
@@ -677,6 +697,10 @@ impl Project {
             if !path.exists() {
                 plan.create(path, source.to_owned())?;
             }
+        }
+        let styles = self.root.join("ui/styles.rhai");
+        if !styles.exists() {
+            plan.create(styles, DEFAULT_COMPONENT_STYLES.to_owned())?;
         }
         plan.update(
             manifest_path,
@@ -899,7 +923,11 @@ fn validate_component_exports(
     Ok(exported)
 }
 
-fn validate_entry(root: &Path, modules: &BTreeMap<ModuleId, String>) -> Result<(), ProjectError> {
+fn validate_entry(
+    root: &Path,
+    modules: &BTreeMap<ModuleId, String>,
+    components: &ComponentRegistry,
+) -> Result<(), ProjectError> {
     let entry_path = root.join("ui/main.rhai");
     let entry = read(&entry_path)?;
     let source = EmbeddedScriptSource::new(modules.clone());
@@ -931,6 +959,17 @@ fn validate_entry(root: &Path, modules: &BTreeMap<ModuleId, String>) -> Result<(
         );
     }
     let mut state = UiRuntimeState::new();
+    let styles_path = root.join("ui/styles.rhai");
+    if styles_path.exists() {
+        let styles = load_component_styles(
+            runtime.engine(),
+            &styles_path.to_string_lossy(),
+            &read(&styles_path)?,
+            components,
+        )
+        .map_err(|error| ProjectError::ComponentStyle(error.to_string()))?;
+        state.replace_component_styles_from_host(styles);
+    }
     state.theme = Some(
         ThemeManager::from_variants(
             themes,
@@ -1234,6 +1273,9 @@ fn generated_embed_module(
     }
     output.push_str("    ]))\n}\n\n");
     output.push_str("pub const THEME_SOURCE: &str = include_str!(\"../ui/theme.rhai\");\n\n");
+    output.push_str(
+        "pub const COMPONENT_STYLES_SOURCE: &str = include_str!(\"../ui/styles.rhai\");\n\n",
+    );
     output.push_str("pub const LOCALES: &[(&str, &str)] = &[\n");
     for (name, path) in locales {
         let _ = writeln!(output, "    ({name:?}, include_str!({path:?})),");
@@ -1605,6 +1647,8 @@ pub enum ProjectError {
     DuplicateAssetLogical(String),
     #[error("theme validation failed: {0}")]
     Theme(String),
+    #[error("component stylesheet validation failed: {0}")]
+    ComponentStyle(String),
     #[error("locale validation failed: {0}")]
     Locale(String),
     #[error("component update conflicts require inspection: {0:?}")]
@@ -1725,6 +1769,47 @@ mod tests {
     }
 
     #[test]
+    fn check_validates_the_typed_component_stylesheet() {
+        let directory = fixture();
+        let project = Project::new(directory.path());
+        project.plan_init().unwrap().apply().unwrap();
+        project
+            .plan_add(&BundledRegistry::load().unwrap(), &["button".to_owned()])
+            .unwrap()
+            .apply()
+            .unwrap();
+        fs::write(
+            directory.path().join("ui/main.rhai"),
+            r#"import "components/button" as button;
+            fn view(ctx) { button::Button(#{ text: "Styled" }) }
+            "#,
+        )
+        .unwrap();
+        let styles = directory.path().join("ui/styles.rhai");
+        fs::write(
+            &styles,
+            r#"fn component_styles() {
+                #{ "components/button": #{ root: style().height(px(34)) } }
+            }
+            "#,
+        )
+        .unwrap();
+        project.check().unwrap();
+
+        fs::write(
+            styles,
+            r#"fn component_styles() {
+                #{ "components/button": #{ missing: style() } }
+            }
+            "#,
+        )
+        .unwrap();
+        let error = project.check().unwrap_err();
+        assert!(matches!(error, ProjectError::ComponentStyle(_)));
+        assert!(error.to_string().contains("unknown part"));
+    }
+
+    #[test]
     fn check_executes_the_headless_initial_view() {
         let directory = fixture();
         let project = Project::new(directory.path());
@@ -1821,6 +1906,7 @@ mod tests {
         assert!(generated.contains("image/svg+xml"));
         assert!(generated.contains("components/button"));
         assert!(generated.contains("THEME_SOURCE"));
+        assert!(generated.contains("COMPONENT_STYLES_SOURCE"));
         assert!(generated.contains("locales/en.rhai"));
         assert!(generated.contains("assets/check.svg"));
         assert!(generated.contains("fonts/art.otf"));
@@ -1956,7 +2042,7 @@ mod tests {
         let entry = registry.entries.get_mut(&id).unwrap();
         let source = entry
             .source
-            .replace("0.1.0", "0.2.0")
+            .replace("0.1.1", "0.2.0")
             .replace("// Button presents a desktop action.", upstream_purpose);
         let source: &'static str = Box::leak(source.into_boxed_str());
         entry.metadata = parse_component_header(source).unwrap();
@@ -2009,6 +2095,8 @@ mod tests {
         fs::write(&owned, "// application-owned Nord\n").unwrap();
         let missing = directory.path().join("ui/themes/ethereal.rhai");
         fs::remove_file(&missing).unwrap();
+        let styles = directory.path().join("ui/styles.rhai");
+        fs::remove_file(&styles).unwrap();
 
         project
             .plan_update(&BundledRegistry::load().unwrap())
@@ -2018,6 +2106,7 @@ mod tests {
 
         assert_eq!(read(&owned).unwrap(), "// application-owned Nord\n");
         assert_eq!(read(&missing).unwrap(), ETHEREAL_THEME);
+        assert_eq!(read(&styles).unwrap(), DEFAULT_COMPONENT_STYLES);
     }
 
     #[test]

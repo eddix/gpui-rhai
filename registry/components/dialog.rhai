@@ -2,7 +2,7 @@
 {
   "id": "components/dialog",
   "export": "Dialog",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": [],
   "capabilities": {}
@@ -20,7 +20,7 @@ define_component(#{
     metadata: #{
         id: "components/dialog",
         "export": "Dialog",
-        version: "0.1.0",
+        version: "0.1.1",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
         dependencies: [],
         capabilities: #{},
@@ -84,23 +84,23 @@ fn forward_open_change(ctx, open) {
 
 fn render_Dialog(ctx, props) {
     let children = [
-        text(props.title).with_style(component_style(props, "title",
+        text(props.title).with_style(ctx.component_style("title",
             style().typography("title").font_weight(700)
                 .text_color(theme_color("text_primary"))
         )),
-        props.content.with_style(component_style(props, "content",
+        props.content.with_style(ctx.component_style("content",
             style().typography("body"))),
     ];
     if "actions" in props && props.actions != () {
         children.push(
             row(props.actions)
-                .with_style(component_style(props, "actions",
+                .with_style(ctx.component_style("actions",
                     style().gap(px(8)).justify_end().padding_top(px(4))
                         .border_top(px(1)).border_color(theme_color("border"))))
         );
     }
     let panel = column(children)
-        .with_style(component_style(props, "panel",
+        .with_style(ctx.component_style("panel",
             style()
                 .width(px(420))
                 .max_width(relative(0.9))
@@ -128,7 +128,7 @@ fn render_Dialog(ctx, props) {
             initial_focus: if "initial_focus" in props { props.initial_focus } else { "panel" },
         }
     ).with_key(props.key)
-        .with_style(component_style(props, "root", style()));
+        .with_style(ctx.component_style("root", style()));
     if "on_open_change" in props && props.on_open_change != () {
         node.on_open_change(Fn("forward_open_change"))
     } else {
