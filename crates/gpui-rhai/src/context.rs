@@ -1036,12 +1036,23 @@ impl UiContext {
     ///
     /// Returns for stale refs, unavailable geometry, or runtime borrow conflicts.
     pub fn element_bounds(&self, reference: &crate::ElementRef) -> Result<UiValue, UiContextError> {
-        let runtime = self
+        let mut runtime = self
             .runtime
-            .try_borrow()
+            .try_borrow_mut()
             .map_err(|_| UiContextError::Borrowed)?;
-        let node = runtime.element_refs.resolve(reference)?;
-        let Some(geometry) = runtime.geometry.read_tracked(node, &self.component) else {
+        let node = if self.phase == ExecutionPhase::Render {
+            runtime
+                .element_refs
+                .resolve_and_track_geometry(reference, &self.component)
+        } else {
+            Some(runtime.element_refs.resolve(reference)?)
+        };
+        let Some(node) = node else {
+            return Ok(UiValue::Null);
+        };
+        let geometry_registry = runtime.geometry.clone();
+        drop(runtime);
+        let Some(geometry) = geometry_registry.read_tracked(node, &self.component) else {
             return Ok(UiValue::Null);
         };
         Ok(UiValue::Map(BTreeMap::from([
@@ -1052,6 +1063,24 @@ impl UiContext {
                 geometry.clip.map_or(UiValue::Null, geometry_bounds_value),
             ),
         ])))
+    }
+
+    /// Resolve and read a committed component-local ref by its stable key.
+    ///
+    /// This is intended for event callbacks, which cannot retain the custom
+    /// [`crate::ElementRef`] value created during render.
+    ///
+    /// # Errors
+    ///
+    /// Returns for unknown keys, unavailable geometry, or runtime borrow conflicts.
+    pub fn element_bounds_by_key(&self, key: &str) -> Result<UiValue, UiContextError> {
+        let reference = self
+            .runtime
+            .try_borrow()
+            .map_err(|_| UiContextError::Borrowed)?
+            .element_refs
+            .resolve_key(&self.component, key)?;
+        self.element_bounds(&reference)
     }
 
     /// Read the current handler node's committed visual bounds without
@@ -2732,6 +2761,15 @@ fn register_element_ref_context_methods(builder: &mut TypeBuilder<UiContext>) {
                     .map_err(|error| Box::new(context_runtime_error(&error)))
             },
         )
+        .with_fn(
+            "element_bounds",
+            |context: &mut UiContext, key: ImmutableString| {
+                context
+                    .element_bounds_by_key(key.as_str())
+                    .map(UiValue::into_dynamic)
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        )
         .with_fn("event_target_bounds", |context: &mut UiContext| {
             context
                 .event_target_bounds()
@@ -3871,6 +3909,21 @@ mod tests {
             context.component_path(),
             BTreeMap::from([(reference.id().clone(), tree.root_id().unwrap())]),
         );
+        let node = tree.root_id().unwrap();
+        context.runtime().borrow().geometry.update(
+            node,
+            crate::ElementGeometry {
+                layout: crate::GeometryBounds::new(1.0, 2.0, 120.0, 24.0).unwrap(),
+                visual: crate::GeometryBounds::new(3.0, 4.0, 120.0, 24.0).unwrap(),
+                clip: None,
+            },
+        );
+        assert!(matches!(
+            context.element_bounds_by_key("field").unwrap(),
+            UiValue::Map(bounds)
+                if matches!(bounds.get("visual"), Some(UiValue::Map(visual))
+                    if visual.get("width") == Some(&UiValue::Float(120.0)))
+        ));
         context.focus_element_by_key("field").unwrap();
         context
             .scroll_element_to_by_key("field", 12.0, 24.0)

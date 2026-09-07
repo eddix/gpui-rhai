@@ -1130,9 +1130,12 @@ impl ScriptLifecycle {
             runtime
                 .signals
                 .reconcile(&self.root_path, declarations.signals);
-            runtime
+            let geometry_readers = runtime
                 .element_refs
                 .reconcile(&self.root_path, declarations.element_refs);
+            for (node, readers) in geometry_readers {
+                runtime.geometry.register_readers(node, readers);
+            }
             runtime.virtual_requests.retain(&virtual_collections);
         }
         for (descriptor, scope) in plan.start_descriptors() {

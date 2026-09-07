@@ -342,7 +342,12 @@ declare them in its validated payload.
 Formal components may declare `element_ref("name")` during render and attach it
 to a stable keyed node with `with_ref`. `ctx.element_bounds(ref)` returns null
 before first committed prepaint and then the last committed layout/visual
-geometry; geometry changes dirty only components that read that exact ref.
+geometry. The unresolved first read is retained by ref identity, resolves after
+the candidate commits, and automatically rerenders when prepaint supplies the
+first value. Geometry dependencies follow a ref across retained `NodeId`
+replacement. Event handlers use `ctx.element_bounds("local_ref_key")`, because
+custom `ElementRef` values intentionally cannot cross the retained callback
+data boundary. Geometry changes dirty only components that read that exact ref.
 Event handlers can call `ctx.focus(ref)` or `ctx.focus("local_ref_key")`; focus
 is executed as a window-scoped retained command after the transaction commits.
 Scrollable keyed ref nodes use `Style().overflow_x_scroll()`,

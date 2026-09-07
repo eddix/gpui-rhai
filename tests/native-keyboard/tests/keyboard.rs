@@ -674,6 +674,97 @@ fn embedded_view_suspend_resume_retains_state_and_rejects_new_elements(
     assert!(matches!(root.kind(), gpui_rhai::UiNodeKind::Text { text } if text == "resumed"));
 }
 
+#[gpui::test]
+fn element_bounds_self_heals_after_first_prepaint_and_resolves_event_keys(
+    cx: &mut TestAppContext,
+) {
+    cx.update(gpui_rhai::install);
+    let entry = ModuleId::parse("main").unwrap();
+    let prepared = EmbeddedScriptView::new(
+        entry.clone(),
+        EmbeddedScriptSource::new(std::collections::BTreeMap::from([(
+            entry,
+            r#"
+                define_component(#{
+                    metadata: #{ id: "tests/geometry_probe", "export": "GeometryProbe",
+                        version: "0.1.0", runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
+                        dependencies: [], capabilities: #{} },
+                    schema: #{ props: #{ key: #{ schema: #{ type: "string" }, required: true, sensitive: false } },
+                        state: #{ fields: #{ event_measured: #{ schema: #{ type: "bool" },
+                            "default": #{ type: "bool", value: false } } } },
+                        events: #{}, slots: #{}, parts: ["root"] },
+                    render: Fn("render_GeometryProbe"),
+                });
+                fn clicked(ctx, payload) {
+                    let bounds = ctx.element_bounds("target");
+                    ctx.set_state("event_measured", bounds.visual.width > 0);
+                }
+                fn render_GeometryProbe(ctx, props) {
+                    let target = element_ref("target");
+                    let bounds = ctx.element_bounds(target);
+                    let label = if ctx.get_state("event_measured") { "event-measured" }
+                        else if bounds == () { "pending" } else { "render-measured" };
+                    text(label).with_key("target").with_ref(target)
+                        .test_id("geometry-target").on_click(Fn("clicked"))
+                }
+                fn view(ctx) { render_component("tests/geometry_probe", #{ key: "probe" }) }
+            "#
+            .to_owned(),
+        )])),
+        include_str!("../../../registry/themes/default_dark.rhai"),
+    )
+    .prepare()
+    .unwrap();
+    let captured = Rc::new(RefCell::new(None));
+    let captured_for_window = Rc::clone(&captured);
+    let window = cx.add_window(move |window, cx| {
+        let host = ScriptViewHost::new("geometry-window", cx).unwrap();
+        let view = prepared
+            .mount(
+                ScriptViewConfig::new("geometry-view"),
+                host.clone(),
+                window,
+                cx,
+            )
+            .unwrap();
+        *captured_for_window.borrow_mut() = Some(view.clone());
+        SingleEmbeddedHost { host, view }
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    cx.run_until_parked();
+
+    let view = captured.borrow().as_ref().unwrap().clone();
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    wait_for_view_text(
+        &mut visual,
+        &view,
+        "render-measured",
+        "first-prepaint geometry dependency did not self-heal",
+    );
+    visual
+        .update(|window, cx| {
+            view.automate(
+                gpui_rhai::AutomationCommand::Dispatch {
+                    locator: gpui_rhai::AutomationLocator::TestId {
+                        id: "geometry-target".to_owned(),
+                    },
+                    event: "click".to_owned(),
+                    payload: None,
+                },
+                window,
+                cx,
+            )
+        })
+        .unwrap();
+    wait_for_view_text(
+        &mut visual,
+        &view,
+        "event-measured",
+        "event callback could not resolve component-local ref key geometry",
+    );
+}
+
 fn prepared_failure_view() -> gpui_rhai::PreparedScriptView {
     let entry = ModuleId::parse("main").unwrap();
     EmbeddedScriptView::new(
@@ -4505,6 +4596,167 @@ fn command_dialog_filters_from_native_input_and_executes_with_enter(cx: &mut Tes
             ))
         ));
     });
+}
+
+#[gpui::test]
+fn grouped_command_initial_reveal_keeps_its_first_header_natural(
+    cx: &mut TestAppContext,
+) {
+    struct CommandData(gpui_rhai::NativeCollection);
+    impl gpui_rhai::ScriptViewExtension for CommandData {
+        fn configure_runtime(&self, runtime: &mut UiRuntimeState) -> Result<(), String> {
+            runtime
+                .native_collections
+                .register("commands", self.0.clone())
+                .map_err(|error| error.to_string())
+        }
+    }
+
+    cx.update(gpui_rhai::install);
+    let rows = (0..24)
+        .map(|index| {
+            std::collections::BTreeMap::from([
+                ("id".to_owned(), UiValue::String(format!("command-{index}"))),
+                (
+                    "label".to_owned(),
+                    UiValue::String(format!("Command {index}")),
+                ),
+                (
+                    "group".to_owned(),
+                    UiValue::String(
+                        if index < 8 {
+                            "Group A"
+                        } else if index < 16 {
+                            "Group B"
+                        } else {
+                            "Group C"
+                        }
+                        .to_owned(),
+                    ),
+                ),
+                ("keywords".to_owned(), UiValue::Array(Vec::new())),
+                ("shortcut".to_owned(), UiValue::String(String::new())),
+                ("disabled".to_owned(), UiValue::Bool(false)),
+            ])
+        })
+        .collect::<Vec<_>>();
+    let commands = gpui_rhai::NativeCollection::new("id", rows).unwrap();
+    let entry = ModuleId::parse("main").unwrap();
+    let prepared = EmbeddedScriptView::new(
+        entry.clone(),
+        EmbeddedScriptSource::new(std::collections::BTreeMap::from([
+            (
+                entry,
+                r#"
+                    import "components/command" as command;
+                    fn active(ctx, value) { () }
+                    fn action(ctx, value) { () }
+                    fn view(ctx) {
+                        command::Command(#{ key: "grouped-commands", label: "Commands", query: "",
+                            active_value: "command-0", items: ctx.get_native_collection("commands"),
+                            max_visible: 12,
+                            on_active_change: Fn("active"), on_action: Fn("action") })
+                    }
+                "#
+                .to_owned(),
+            ),
+            (
+                ModuleId::parse("components/command").unwrap(),
+                include_str!("../../../registry/components/command.rhai").to_owned(),
+            ),
+            (
+                ModuleId::parse("components/input").unwrap(),
+                include_str!("../../../registry/components/input.rhai").to_owned(),
+            ),
+            (
+                ModuleId::parse("components/kbd").unwrap(),
+                include_str!("../../../registry/components/kbd.rhai").to_owned(),
+            ),
+        ])),
+        include_str!("../../../registry/themes/default_dark.rhai"),
+    )
+    .asset_sources(official_icon_assets())
+    .extension(CommandData(commands))
+    .prepare()
+    .unwrap();
+    let captured = Rc::new(RefCell::new(None));
+    let captured_for_window = Rc::clone(&captured);
+    let window = cx.add_window(move |window, cx| {
+        let host = ScriptViewHost::new("grouped-command-window", cx).unwrap();
+        let view = prepared
+            .mount(
+                ScriptViewConfig::new("grouped-command-view"),
+                host.clone(),
+                window,
+                cx,
+            )
+            .unwrap();
+        *captured_for_window.borrow_mut() = Some(view.clone());
+        SingleEmbeddedHost { host, view }
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    cx.run_until_parked();
+
+    let view = captured.borrow().as_ref().unwrap().clone();
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    let initial = visual
+        .update(|_, cx| view.take_performance_snapshot(cx))
+        .unwrap()
+        .virtual_collections
+        .into_iter()
+        .next()
+        .unwrap();
+    assert_eq!((initial.scroll_item, initial.scroll_offset), (0, 0.0));
+    assert_eq!(initial.sticky_header, None);
+    assert!(
+        visual
+            .debug_bounds("virtual-list-sticky:grouped-commands-list")
+            .is_none()
+    );
+    assert!(
+        visual
+            .update(|_, cx| view.accessibility_snapshot(cx).unwrap())
+            .find_by_role_and_name("heading", "Group A")
+            .next()
+            .is_some(),
+        "the first group header must remain in the natural row sequence"
+    );
+
+    let option = visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .find_by_role_and_name("option", "Command 3")
+            .next()
+            .unwrap()
+            .geometry
+            .unwrap()
+            .visual
+    });
+    visual.simulate_event(ScrollWheelEvent {
+        position: point(
+            px((option.x + option.width / 2.0) as f32),
+            px((option.y + option.height / 2.0) as f32),
+        ),
+        delta: ScrollDelta::Pixels(point(px(0.0), px(-160.0))),
+        ..ScrollWheelEvent::default()
+    });
+    for _ in 0..4 {
+        cx.background_executor
+            .advance_clock(std::time::Duration::from_millis(16));
+        visual.run_until_parked();
+    }
+    let scrolled = visual
+        .update(|_, cx| view.take_performance_snapshot(cx))
+        .unwrap()
+        .virtual_collections
+        .into_iter()
+        .next()
+        .unwrap();
+    assert!(
+        scrolled.scroll_item > 0,
+        "real wheel input must still advance the grouped Command after preserving its initial origin: {scrolled:?}"
+    );
 }
 
 #[gpui::test]

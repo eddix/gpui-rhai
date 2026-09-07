@@ -137,6 +137,25 @@ impl GeometryRegistry {
         state.committed.get(&node).copied()
     }
 
+    pub(crate) fn register_readers(&self, node: NodeId, readers: BTreeSet<ComponentInstancePath>) {
+        if readers.is_empty() {
+            return;
+        }
+        let mut state = self.inner.borrow_mut();
+        let committed = state.committed.contains_key(&node);
+        for reader in readers {
+            if state
+                .readers
+                .entry(node)
+                .or_default()
+                .insert(reader.clone())
+                && committed
+            {
+                state.dirty.insert(reader);
+            }
+        }
+    }
+
     pub(crate) fn get(&self, node: NodeId) -> Option<ElementGeometry> {
         self.inner.borrow().committed.get(&node).copied()
     }

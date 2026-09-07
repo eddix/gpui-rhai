@@ -7,6 +7,15 @@ semantic versioning from this release.
 
 ## 0.1.1 - Unreleased
 
+- First-render `element_bounds(ref)` now returns null while retaining a pending
+  ref-identity dependency, self-heals after committed prepaint, and follows
+  retained node replacement. Event callbacks can resolve another node in their
+  formal component with `ctx.element_bounds("local_ref_key")` without retaining
+  a Rhai custom value.
+- Initial controlled virtual-list reveal no longer pre-scrolls past predecessors
+  when the target already fits the configured estimated viewport. Long grouped
+  Commands therefore retain their first group heading at the natural scroll
+  origin while genuinely offscreen initial targets are still revealed.
 - Hosts can retain inactive `ScriptViewHandle` tombstones through explicit
   `suspend`/`resume`. State, native entities, input/scroll/virtual measurements,
   and the last-good tree survive; effects quiesce, subscriptions cancel, timers
