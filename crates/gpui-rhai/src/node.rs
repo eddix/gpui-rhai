@@ -819,11 +819,18 @@ impl UiNode {
         &self,
         id: &crate::VirtualCollectionId,
     ) -> Option<&BTreeMap<usize, UiNode>> {
+        self.virtual_collection_spec(id).map(|spec| &spec.realized)
+    }
+
+    pub(crate) fn virtual_collection_spec(
+        &self,
+        id: &crate::VirtualCollectionId,
+    ) -> Option<&crate::VirtualCollectionNodeSpec> {
         match &self.kind {
-            UiNodeKind::VirtualCollection { spec } if &spec.id == id => Some(&spec.realized),
+            UiNodeKind::VirtualCollection { spec } if &spec.id == id => Some(spec),
             UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => children
                 .iter()
-                .find_map(|child| child.virtual_collection_items(id)),
+                .find_map(|child| child.virtual_collection_spec(id)),
             UiNodeKind::Overlay {
                 trigger, content, ..
             }
@@ -831,9 +838,9 @@ impl UiNode {
                 child: trigger,
                 fallback: content,
             } => trigger
-                .virtual_collection_items(id)
-                .or_else(|| content.virtual_collection_items(id)),
-            UiNodeKind::Layer { content, .. } => content.virtual_collection_items(id),
+                .virtual_collection_spec(id)
+                .or_else(|| content.virtual_collection_spec(id)),
+            UiNodeKind::Layer { content, .. } => content.virtual_collection_spec(id),
             _ => None,
         }
     }

@@ -2724,23 +2724,14 @@ fn register_virtual_collection_api(engine: &mut Engine, active: &ActiveComponent
                 callback.bind_component_if_unset(component.clone(), events);
                 callback.bind_native_context_if_unset(native_context);
 
-                let initial_viewport = decoded.height.unwrap_or(decoded.estimated_height);
-                let initial_count = nonnegative_usize(
-                    ((initial_viewport + decoded.overdraw_pixels) / decoded.estimated_height)
-                        .ceil()
-                        + 1.0,
-                )
-                .min(decoded.data.len());
-                enter_virtual_collection_scope(&active, collection_context.clone())?;
-                let realized = realize_initial_collection(
+                let realized = realize_seeded_virtual_collection(
                     &call,
                     &renderer,
                     &collection_context,
-                    &decoded.data,
-                    initial_count,
-                );
-                leave_component_render(&active)?;
-                let realized = realized?;
+                    &active,
+                    &id,
+                    &decoded,
+                )?;
                 let recipe = VirtualCollectionRecipe {
                     id: id.clone(),
                     data: decoded.data.clone(),
@@ -2789,10 +2780,10 @@ fn realize_initial_collection(
     renderer: &FnPtr,
     context: &UiContext,
     data: &crate::VirtualCollectionData,
-    count: usize,
+    indices: &BTreeSet<usize>,
 ) -> Result<BTreeMap<usize, UiNode>, Box<EvalAltResult>> {
     let mut realized = BTreeMap::new();
-    for index in 0..count.min(data.len()) {
+    for index in indices.iter().copied().filter(|index| *index < data.len()) {
         let item = data
             .item(index)
             .map_err(|error| Box::new(component_render_error(error.to_string())))?
@@ -2808,6 +2799,133 @@ fn realize_initial_collection(
         realized.insert(index, node);
     }
     Ok(realized)
+}
+
+fn realize_seeded_virtual_collection(
+    call: &rhai::NativeCallContext<'_>,
+    renderer: &FnPtr,
+    context: &UiContext,
+    active: &ActiveComponentRenderState,
+    id: &crate::VirtualCollectionId,
+    decoded: &DecodedVirtualCollection,
+) -> Result<BTreeMap<usize, UiNode>, Box<EvalAltResult>> {
+    let previous_metrics = context
+        .runtime()
+        .try_borrow()
+        .map_err(|_| {
+            Box::new(component_render_error(
+                "UI state is already borrowed while seeding a virtual collection",
+            ))
+        })?
+        .virtual_requests
+        .metrics(id);
+    let viewport = decoded.height.unwrap_or_else(|| {
+        previous_metrics
+            .as_ref()
+            .map_or(decoded.estimated_height, |metrics| {
+                if metrics.viewport_height > 0.0 {
+                    metrics.viewport_height
+                } else {
+                    decoded.estimated_height
+                }
+            })
+    });
+    let count = nonnegative_usize(
+        ((viewport + decoded.overdraw_pixels) / decoded.estimated_height).ceil() + 1.0,
+    )
+    .min(decoded.data.len());
+    let indices =
+        virtual_collection_seed_indices(active, id, decoded, count, previous_metrics.as_ref())?;
+    enter_virtual_collection_scope(active, context.clone())?;
+    let realized = realize_initial_collection(call, renderer, context, &decoded.data, &indices);
+    leave_component_render(active)?;
+    realized
+}
+
+fn virtual_collection_seed_indices(
+    active: &ActiveComponentRenderState,
+    id: &crate::VirtualCollectionId,
+    decoded: &DecodedVirtualCollection,
+    count: usize,
+    metrics: Option<&crate::VirtualCollectionMetrics>,
+) -> Result<BTreeSet<usize>, Box<EvalAltResult>> {
+    let mut indices = BTreeSet::new();
+    let guard = active.try_borrow().map_err(|_| {
+        Box::new(component_render_error(
+            "component render stack is already borrowed",
+        ))
+    })?;
+    let reuse = guard.as_ref().and_then(|render| render.reuse.as_ref());
+    let previous = reuse.and_then(|reuse| reuse.previous_root.virtual_collection_spec(id));
+    let preserves_scroll = previous.is_some_and(|previous| {
+        previous.estimated_height.to_bits() == decoded.estimated_height.to_bits()
+            && previous.overdraw_pixels.to_bits() == decoded.overdraw_pixels.to_bits()
+            && previous.bottom_align == decoded.bottom_align
+            && same_collection_key_order(&previous.data, &decoded.data)
+    });
+
+    if preserves_scroll {
+        if let Some(previous) = previous {
+            indices.extend(previous.realized.keys().copied());
+        }
+        if let Some(metrics) = metrics {
+            extend_virtual_window(
+                &mut indices,
+                metrics.scroll_item,
+                count,
+                decoded.data.len(),
+                virtual_overdraw_items(decoded),
+            );
+        }
+    } else {
+        extend_virtual_window(&mut indices, 0, count, decoded.data.len(), 0);
+    }
+    drop(guard);
+
+    if let Some(reveal) = decoded.reveal_key.as_deref()
+        && let Some(index) =
+            (0..decoded.data.len()).find(|index| decoded.data.key(*index) == Some(reveal))
+    {
+        extend_virtual_window(
+            &mut indices,
+            index,
+            count,
+            decoded.data.len(),
+            virtual_overdraw_items(decoded),
+        );
+        if let Some(header) = decoded.sticky_headers.range(..=index).next_back() {
+            indices.insert(*header);
+        }
+    }
+    if (decoded.bottom_align || decoded.follow_tail) && !decoded.data.is_empty() {
+        let start = decoded.data.len().saturating_sub(count);
+        indices.extend(start..decoded.data.len());
+    }
+    Ok(indices)
+}
+
+fn same_collection_key_order(
+    current: &crate::VirtualCollectionData,
+    next: &crate::VirtualCollectionData,
+) -> bool {
+    current.len() == next.len()
+        && (0..current.len()).all(|index| current.key(index) == next.key(index))
+}
+
+fn virtual_overdraw_items(decoded: &DecodedVirtualCollection) -> usize {
+    nonnegative_usize((decoded.overdraw_pixels / decoded.estimated_height).ceil())
+}
+
+fn extend_virtual_window(
+    indices: &mut BTreeSet<usize>,
+    anchor: usize,
+    count: usize,
+    len: usize,
+    leading: usize,
+) {
+    let start = anchor.saturating_sub(leading).min(len);
+    let end = anchor.saturating_add(count).min(len);
+    indices.extend(start..end);
 }
 
 struct VirtualCollectionContext {
