@@ -385,6 +385,12 @@ The runtime then dispatches `change` to the composite's `on_change` prop in the
 original caller context. This event boundary applies equally to pointer and
 keyboard handlers.
 
+Node-valued slots preserve callbacks already attached by their caller. The
+runtime binds every `Node`/`Array<Node>` prop to the caller before invoking the
+child component, so a raw button placed in TitleBar `start`/`center`/`end` or a
+Dialog action updates the state of the component that created it. Component
+code must not strip and reconstruct a slot's handler as an unscoped `FnPtr`.
+
 Durable callbacks must be named, non-capturing functions. gpui-rhai rejects
 anonymous/capturing closures and curry values that cannot cross the `UiValue`
 boundary. Pass durable data in component props, state/store fields, or explicit

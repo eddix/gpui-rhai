@@ -1922,16 +1922,23 @@ fn execute_component_render(
         return Ok(node);
     }
     let native_context = crate::invocation::ScriptInvocationContext::capture(call);
-    bind_component_callback_props(
-        &mut invocation.props,
-        &component.schema.props,
-        &ComponentCallbackBinding {
+    let caller_binding =
+        ComponentCallbackBinding {
             component: caller_context.component_path().clone(),
             events: caller_context.event_schemas().clone(),
             context: Some(caller_context.native_context().cloned().unwrap_or_else(|| {
                 crate::invocation::ScriptInvocationContext::capture_entry(call)
             })),
-        },
+        };
+    bind_component_callback_props(
+        &mut invocation.props,
+        &component.schema.props,
+        &caller_binding,
+    );
+    bind_component_node_props(
+        &mut invocation.props,
+        &component.schema.props,
+        &caller_binding,
     );
     let event_callbacks = component_event_callbacks(&component, &invocation.props);
     let recipe_event_callbacks = event_callbacks.clone();
@@ -3274,6 +3281,93 @@ fn bind_component_callback_value(
                     && let Some(value) = values.get_mut(name.as_str())
                 {
                     bind_component_callback_value(&field.schema, value, binding);
+                }
+            }
+            *value = Dynamic::from_map(values);
+        }
+        _ => {}
+    }
+}
+
+fn bind_component_node_props(
+    props: &mut Map,
+    schema: &BTreeMap<String, crate::ObjectField>,
+    binding: &ComponentCallbackBinding,
+) {
+    for (name, field) in schema {
+        if schema_contains_node(&field.schema)
+            && let Some(value) = props.get_mut(name.as_str())
+        {
+            bind_component_node_value(&field.schema, value, binding);
+        }
+    }
+}
+
+fn schema_contains_node(schema: &crate::ValueSchema) -> bool {
+    match schema {
+        crate::ValueSchema::Node => true,
+        crate::ValueSchema::Array { items, .. }
+        | crate::ValueSchema::Map { values: items }
+        | crate::ValueSchema::Optional { value: items } => schema_contains_node(items),
+        crate::ValueSchema::Object { fields, .. } => fields
+            .values()
+            .any(|field| schema_contains_node(&field.schema)),
+        crate::ValueSchema::OneOf { variants } => variants.iter().any(schema_contains_node),
+        _ => false,
+    }
+}
+
+fn bind_component_node_value(
+    schema: &crate::ValueSchema,
+    value: &mut Dynamic,
+    binding: &ComponentCallbackBinding,
+) {
+    match schema {
+        crate::ValueSchema::Node if value.is::<UiNode>() => {
+            let mut node = value.clone_cast::<UiNode>();
+            node.bind_component_scope(
+                &binding.component,
+                &binding.events,
+                binding.context.as_ref(),
+            );
+            *value = Dynamic::from(node);
+        }
+        crate::ValueSchema::Optional { value: inner } if !value.is_unit() => {
+            bind_component_node_value(inner, value, binding);
+        }
+        crate::ValueSchema::OneOf { variants } => {
+            if let Some(variant) = variants
+                .iter()
+                .find(|variant| variant.validate(value).is_ok())
+            {
+                bind_component_node_value(variant, value, binding);
+            }
+        }
+        crate::ValueSchema::Array { items, .. }
+            if schema_contains_node(items) && value.is::<Array>() =>
+        {
+            let mut values = value.clone_cast::<Array>();
+            for value in &mut values {
+                bind_component_node_value(items, value, binding);
+            }
+            *value = Dynamic::from_array(values);
+        }
+        crate::ValueSchema::Map {
+            values: item_schema,
+        } if schema_contains_node(item_schema) && value.is::<Map>() => {
+            let mut values = value.clone_cast::<Map>();
+            for value in values.values_mut() {
+                bind_component_node_value(item_schema, value, binding);
+            }
+            *value = Dynamic::from_map(values);
+        }
+        crate::ValueSchema::Object { fields, .. } if value.is::<Map>() => {
+            let mut values = value.clone_cast::<Map>();
+            for (name, field) in fields {
+                if schema_contains_node(&field.schema)
+                    && let Some(value) = values.get_mut(name.as_str())
+                {
+                    bind_component_node_value(&field.schema, value, binding);
                 }
             }
             *value = Dynamic::from_map(values);
