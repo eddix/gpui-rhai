@@ -2,7 +2,7 @@
 {
   "id": "components/divider",
   "export": "Divider",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": [],
   "capabilities": {}
@@ -18,7 +18,7 @@ define_component(#{
     metadata: #{
         id: "components/divider",
         "export": "Divider",
-        version: "0.1.0",
+        version: "0.1.1",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
         dependencies: [],
         capabilities: #{},
@@ -69,7 +69,7 @@ fn render_Divider(ctx, props) {
     };
 
     row([])
-        .with_style(component_style(props, "root", divider_style))
+        .with_style(ctx.component_style("root", divider_style))
         .accessibility_role("separator")
         .accessibility_label("")
 }

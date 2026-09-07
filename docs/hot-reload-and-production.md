@@ -3,7 +3,7 @@
 ## Development
 
 Run `gpui-rhai dev` or a file-backed `FileScriptView` with the `dev-reload` feature.
-The watcher tracks Rhai modules, themes, locale bundles, and image assets. Script candidates are
+The watcher tracks Rhai modules, themes, the component stylesheet, locale bundles, and image assets. Script candidates are
 compiled transactionally. A reverse dependency graph recompiles changed modules
 and their transitive dependants while the resolver reuses content-matching ASTs;
 the entry is then compiled self-contained for atomic commit. Failed candidates keep the last-good AST, tree,
@@ -31,9 +31,10 @@ cargo build --release
 ```
 
 `embed` deterministically generates `src/gpui_rhai_embedded.rs` using
-`include_str!`/`include_bytes!` for the entry, installed components, locales,
-themes, and assets, plus an `app_manifest()` constructor. Construct
+`include_str!`/`include_bytes!` for the entry, installed components, component
+stylesheet, locales, themes, and assets, plus an `app_manifest()` constructor. Construct
 `EmbeddedScriptView` from those generated sources and pass
+`.component_styles(generated::COMPONENT_STYLES_SOURCE)` and
 `.manifest(generated::app_manifest())`.
 Pass `.asset_sources(generated::asset_sources())` so embedded `app/...` image
 IDs resolve exactly like file-backed assets.

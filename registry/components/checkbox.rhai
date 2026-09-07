@@ -2,7 +2,7 @@
 {
   "id": "components/checkbox",
   "export": "Checkbox",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": [],
   "capabilities": {},
@@ -17,7 +17,7 @@
 
 define_component(#{
     metadata: #{
-        id: "components/checkbox", "export": "Checkbox", version: "0.1.0",
+        id: "components/checkbox", "export": "Checkbox", version: "0.1.1",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
         dependencies: [], capabilities: #{}, assets: ["icons/check.svg", "icons/minus.svg"],
     },
@@ -63,10 +63,10 @@ fn render_Checkbox(ctx, props) {
     let active = props.checked || mixed;
     let box_background = if active { theme_color("accent") } else { theme_color("surface") };
     let mark_node = image_source(asset(if mixed { "app/icons/minus" } else { "app/icons/check" }))
-        .with_style(component_style(props, "mark", style()
+        .with_style(ctx.component_style("mark", style()
             .width(px(12)).height(px(12)).text_color(theme_color("on_accent"))
             .opacity(if active { 1.0 } else { 0.0 })));
-    let box_node = row([mark_node]).with_style(component_style(props, "box",
+    let box_node = row([mark_node]).with_style(ctx.component_style("box",
         style()
                 .width(px(16)).height(px(16))
                 .items_center().justify_center().radius(theme_radius("sm"))
@@ -76,9 +76,9 @@ fn render_Checkbox(ctx, props) {
     ));
     let node = row([
         box_node,
-        text(props.label).with_style(component_style(props, "label", style()))
+        text(props.label).with_style(ctx.component_style("label", style()))
     ])
-        .with_style(component_style(props, "root",
+        .with_style(ctx.component_style("root",
             style().gap(px(8)).items_center().self_start().padding(px(3))
                 .radius(theme_radius("sm"))
                 .border(px(1)).border_color(rgba(0x00000000))

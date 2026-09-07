@@ -2,7 +2,7 @@
 {
   "id": "components/combobox",
   "export": "Combobox",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": ["components/input"],
   "capabilities": {},
@@ -18,7 +18,7 @@
 import "components/input" as input;
 
 define_component(#{
-    metadata: #{ id: "components/combobox", "export": "Combobox", version: "0.1.0",
+    metadata: #{ id: "components/combobox", "export": "Combobox", version: "0.1.1",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
         dependencies: ["components/input"], capabilities: #{},
         assets: ["icons/check.svg", "icons/close.svg", "icons/chevron_down.svg", "icons/chevron_up.svg"] },
@@ -339,13 +339,13 @@ fn render_Combobox(ctx, props) {
     if !custom_trigger {
         trigger_children.push(text(if selected_label == "" { placeholder } else { selected_label })
             .with_key(`${props.key}-trigger-value`)
-            .with_style(component_style(props,
+            .with_style(ctx.component_style(
                 if selected_label == "" { "placeholder" } else { "value" },
                 style().flex_grow().text_color(if selected_label == "" { theme_color("text_muted") }
                     else { theme_color("text_primary") }))));
         let trigger_actions = [];
         if prop_or(props, "clearable", false) && selected.len > 0 {
-            let clear_style = component_style(props, "clear", style()
+            let clear_style = ctx.component_style("clear", style()
                 .width(px(16)).height(px(16)).items_center().justify_center()
                 .text_color(theme_color("text_muted")).radius(theme_radius("sm"))
                 .hover(style().background(theme_color("surface_hover"))));
@@ -360,7 +360,7 @@ fn render_Combobox(ctx, props) {
                 "app/icons/chevron_up"
             } else { "app/icons/chevron_down" }))
             .with_key(`${props.key}-indicator`)
-            .with_style(component_style(props, "indicator",
+            .with_style(ctx.component_style("indicator",
                 style().width(px(16)).height(px(16)).items_center().justify_center()
                     .text_color(theme_color("text_muted")))));
         trigger_children.push(row(trigger_actions).with_style(style().gap(px(4)).items_center()));
@@ -384,7 +384,7 @@ fn render_Combobox(ctx, props) {
     };
     let trigger = if custom_trigger { props.trigger } else { row(trigger_children) };
     trigger = trigger.with_key(`${props.key}-trigger`)
-        .with_style(component_style(props, "trigger", trigger_style))
+        .with_style(ctx.component_style("trigger", trigger_style))
         .disabled(prop_or(props, "disabled", false)).tab_stop(true)
         .accessibility_role("combobox").accessibility_checked(open)
         .accessibility_label(placeholder).accessibility_value(selected_label);
@@ -416,12 +416,12 @@ fn render_Combobox(ctx, props) {
             key: `${props.key}-search`, value: query,
             placeholder: prop_or(props, "search_placeholder", "Search"),
             on_change: Fn("query_action")
-        }).with_style(component_style(props, "search", style())));
+        }).with_style(ctx.component_style("search", style())));
     }
     if ordered.len == 0 {
         content.push(if "empty" in props && props.empty != () { props.empty }
             else { text(prop_or(props, "empty_text", "No results"))
-                .with_style(component_style(props, "empty", style().padding(px(8))
+                .with_style(ctx.component_style("empty", style().padding(px(8))
                     .typography("body_small").text_color(theme_color("text_muted")))) });
     } else {
         content.push(virtual_collection(#{
@@ -429,11 +429,11 @@ fn render_Combobox(ctx, props) {
             data: data, estimated_height: row_height,
             height: prop_or(props, "max_visible", 8) * row_height,
             overdraw_pixels: row_height * 2, alignment: "top", follow_tail: false
-        }, Fn("render_combobox_row")).with_style(component_style(props, "list", style())));
+        }, Fn("render_combobox_row")).with_style(ctx.component_style("list", style())));
     }
     if "footer" in props && props.footer != () { content.push(props.footer); }
     let panel = column(content).with_key(`${props.key}-panel`)
-        .with_style(component_style(props, "panel",
+        .with_style(ctx.component_style("panel",
             style().width(width).gap(px(4)).padding(px(4))
                 .border(px(1)).border_color(theme_color("border"))
                 .radius(theme_radius("md")).background(theme_color("surface"))
@@ -474,7 +474,7 @@ fn render_Combobox(ctx, props) {
         overlay_config.parent = props.parent_overlay;
     }
     let node = overlay(trigger, panel, overlay_config)
-        .with_key(props.key).with_style(component_style(props, "root", style()))
+        .with_key(props.key).with_style(ctx.component_style("root", style()))
         .on_open_change(if reset_query { Fn("open_action_reset") } else { Fn("open_action") });
     if enabled.len > 0 {
         node = node

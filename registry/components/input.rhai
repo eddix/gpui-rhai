@@ -2,7 +2,7 @@
 {
   "id": "components/input",
   "export": "Input",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": [],
   "capabilities": {}
@@ -19,7 +19,7 @@ define_component(#{
     metadata: #{
         id: "components/input",
         "export": "Input",
-        version: "0.1.0",
+        version: "0.1.1",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
         dependencies: [],
         capabilities: #{},
@@ -122,7 +122,7 @@ fn render_Input(ctx, props) {
         on_focus: optional_prop(props, "on_focus"),
         on_blur: optional_prop(props, "on_blur"),
     })
-        .with_style(component_style(props, "root", component_style(props, "input",
+        .with_style(ctx.component_style("root", ctx.component_style("input",
             style()
                 .height(px(32))
                 .padding_x(px(10))

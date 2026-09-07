@@ -2,7 +2,7 @@
 {
   "id": "components/radio_group",
   "export": "RadioGroup",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": ["components/radio"],
   "capabilities": {}
@@ -18,7 +18,7 @@ import "components/radio" as radio;
 
 define_component(#{
     metadata: #{
-        id: "components/radio_group", "export": "RadioGroup", version: "0.1.0",
+        id: "components/radio_group", "export": "RadioGroup", version: "0.1.1",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
         dependencies: ["components/radio"], capabilities: #{},
     },
@@ -108,12 +108,12 @@ fn render_RadioGroup(ctx, props) {
                 label: option.label,
                 disabled: disabled || option_disabled(option),
                 on_select: if callback == () { () } else { Fn("change_action") },
-            }).with_style(component_style(props, "option", style())).tab_stop(false)
+            }).with_style(ctx.component_style("option", style())).tab_stop(false)
         );
     }
     let group = if orientation == "horizontal" { row(options) } else { column(options) };
     group = group
-        .with_style(component_style(props, "root", style().gap(px(4))))
+        .with_style(ctx.component_style("root", style().gap(px(4))))
         .accessibility_role("radiogroup")
         .accessibility_label(props.label)
         .accessibility_value(props.value);

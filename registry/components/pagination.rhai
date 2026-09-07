@@ -2,7 +2,7 @@
 {
   "id": "components/pagination",
   "export": "Pagination",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": ["components/button", "components/icon", "components/select"],
   "capabilities": {},
@@ -21,7 +21,7 @@ import "components/icon" as icon;
 import "components/select" as select;
 
 define_component(#{
-    metadata: #{ id: "components/pagination", "export": "Pagination", version: "0.1.0",
+    metadata: #{ id: "components/pagination", "export": "Pagination", version: "0.1.1",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
         dependencies: ["components/button", "components/icon", "components/select"], capabilities: #{},
         assets: ["icons/chevron_left.svg", "icons/chevron_right.svg"] },
@@ -103,16 +103,16 @@ fn pagination_size(ctx, value) {
     ctx.emit("change", #{ current_page: 1, page_size: parse_int(value) });
 }
 
-fn page_button(props, page, current, size, callback) {
+fn page_button(ctx, page, current, page_size, size, callback) {
     let selected = page == current;
     let node = button::Button(#{
         text: `${page}`, size: size,
         variant: if selected { "primary" } else { "outline" },
         hoverable: !selected,
-    }).with_style(component_style(props, if selected { "page_current" } else { "page" }, style()));
+    }).with_style(ctx.component_style(if selected { "page_current" } else { "page" }, style()));
     if selected { node.tab_stop(false).accessibility_current("page") }
     else if callback == () { node }
-    else { node.on_click_value(Fn("pagination_emit"), #{ current_page: page, page_size: props.page_size }) }
+    else { node.on_click_value(Fn("pagination_emit"), #{ current_page: page, page_size: page_size }) }
 }
 
 fn Pagination(props) { render_component("components/pagination", props) }
@@ -146,7 +146,7 @@ fn render_Pagination(ctx, props) {
     let previous = button::Button(#{
         text: ctx.t("pagination.previous"), prefix: previous_icon,
         size: size, variant: "outline", disabled: props.current_page == 1,
-    }).with_style(component_style(props, "previous", style()));
+    }).with_style(ctx.component_style("previous", style()));
     controls.push(if callback == () { previous } else {
         previous.on_click_value(Fn("pagination_emit"), #{ current_page: props.current_page - 1, page_size: props.page_size })
     });
@@ -156,10 +156,10 @@ fn render_Pagination(ctx, props) {
         prop_or(props, "sibling_count", 1)
     ) {
         if page == 0 {
-            controls.push(row([text("…")]).with_style(component_style(props, "ellipsis",
+            controls.push(row([text("…")]).with_style(ctx.component_style("ellipsis",
                 style().items_center().padding_x(px(4)))));
         } else {
-            controls.push(page_button(props, page, props.current_page, size, callback));
+            controls.push(page_button(ctx, page, props.current_page, props.page_size, size, callback));
         }
     }
     let next_icon = icon::Icon(#{
@@ -170,7 +170,7 @@ fn render_Pagination(ctx, props) {
     let next = button::Button(#{
         text: ctx.t("pagination.next"), suffix: next_icon,
         size: size, variant: "outline", disabled: props.current_page == pages,
-    }).with_style(component_style(props, "next", style()));
+    }).with_style(ctx.component_style("next", style()));
     controls.push(if callback == () { next } else {
         next.on_click_value(Fn("pagination_emit"), #{ current_page: props.current_page + 1, page_size: props.page_size })
     });
@@ -178,10 +178,10 @@ fn render_Pagination(ctx, props) {
     let children = [];
     if prop_or(props, "show_summary", true) {
         children.push(text(`${ctx.format_number(props.total_items)} ${ctx.t("pagination.items")} · ${ctx.t("pagination.page")} ${ctx.format_number(props.current_page)} / ${ctx.format_number(pages)}`)
-            .with_style(component_style(props, "summary", style()
+            .with_style(ctx.component_style("summary", style()
                 .typography("body_small").text_color(theme_color("text_muted")))));
     }
-    children.push(row(controls).with_style(component_style(props, "controls",
+    children.push(row(controls).with_style(ctx.component_style("controls",
         style().gap(theme_spacing("xs")).items_center())));
     if options.len > 0 {
         let select_options = [];
@@ -189,19 +189,19 @@ fn render_Pagination(ctx, props) {
             select_options.push(#{ value: `${option}`, label: `${option}` });
         }
         children.push(row([
-            text(ctx.t("pagination.per_page")).with_style(component_style(props, "page_size_label", style())),
+            text(ctx.t("pagination.per_page")).with_style(ctx.component_style("page_size_label", style())),
             select::Select(#{
                 key: `${props.key}-page-size`, options: select_options,
                 value: `${props.page_size}`, open: ctx.get_state("page_size_open"),
                 query: ctx.get_state("page_size_query"), size: size, width: px(96),
                 on_change: Fn("pagination_size"), on_open_change: Fn("page_size_open"),
                 on_query_change: Fn("page_size_query")
-            }).with_style(component_style(props, "page_size", style()))
+            }).with_style(ctx.component_style("page_size", style()))
         ]).with_style(style().gap(theme_spacing("xs")).items_center()
             .typography("body_small")));
     }
     row(children).with_key(props.key)
-        .with_style(component_style(props, "root", style()
+        .with_style(ctx.component_style("root", style()
             .items_center().justify_between().gap(theme_spacing("sm"))
             .typography("body")))
         .accessibility_role("navigation")

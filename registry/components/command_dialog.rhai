@@ -2,7 +2,7 @@
 {
   "id": "components/command_dialog",
   "export": "CommandDialog",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": ["components/command", "components/dialog"],
   "capabilities": {}
@@ -19,7 +19,7 @@ import "components/command" as command;
 import "components/dialog" as dialog;
 
 define_component(#{
-    metadata: #{ id: "components/command_dialog", "export": "CommandDialog", version: "0.1.0",
+    metadata: #{ id: "components/command_dialog", "export": "CommandDialog", version: "0.1.1",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
         dependencies: ["components/command", "components/dialog"], capabilities: #{} },
     schema: #{
@@ -91,8 +91,8 @@ fn render_CommandDialog(ctx, props) {
         on_query_change: Fn("query_action"),
         on_active_change: Fn("active_action"),
         on_action: Fn("command_action").curry(prop_or(props, "close_on_action", true)) })
-        .with_style(component_style(props, "command", style().border(px(0))));
+        .with_style(ctx.component_style("command", style().border(px(0))));
     dialog::Dialog(#{ key: props.key, open: props.open, title: props.label,
         content: list, initial_focus: "first", on_open_change: Fn("open_action") })
-        .with_style(component_style(props, "dialog", component_style(props, "root", style())))
+        .with_style(ctx.component_style("dialog", ctx.component_style("root", style())))
 }

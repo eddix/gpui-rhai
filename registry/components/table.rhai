@@ -2,7 +2,7 @@
 {
   "id": "components/table",
   "export": "Table",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": [],
   "capabilities": {},
@@ -19,7 +19,7 @@
 //     columns: columns, height: 420 })
 
 define_component(#{
-    metadata: #{ id: "components/table", "export": "Table", version: "0.1.0",
+    metadata: #{ id: "components/table", "export": "Table", version: "0.1.1",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
         dependencies: [], capabilities: #{},
         assets: ["icons/disclosure_down.svg", "icons/chevron_right.svg", "icons/sort_ascending.svg", "icons/sort_descending.svg"] },
@@ -224,7 +224,7 @@ fn render_Table(ctx, props) {
                     .text_color(theme_color("text_primary"))));
         }
         let header = row(header_children).with_key(column.key)
-            .with_style(component_style(props, "header_cell",
+            .with_style(ctx.component_style("header_cell",
                 column_style(column).min_width(px(0)).height(px(30)).items_center()
                     .gap(px(5))
                     .typography("body_small").font_weight(700)
@@ -235,7 +235,7 @@ fn render_Table(ctx, props) {
         } else { header });
     }
     let header = row(headers).with_key(`${props.key}-header`)
-        .with_style(component_style(props, "header",
+        .with_style(ctx.component_style("header",
             style().height(px(30)).items_center()
                 .border_bottom(px(1)).border_color(theme_color("border"))
                 .background(theme_color("surface_raised"))))
@@ -245,18 +245,18 @@ fn render_Table(ctx, props) {
         let loading = if "loading_content" in props && props.loading_content != () {
             props.loading_content
         } else { text("Loading…") };
-        return box([header, loading.with_style(component_style(props, "loading", style()
+        return box([header, loading.with_style(ctx.component_style("loading", style()
             .padding(px(12)).typography("body_small").text_color(theme_color("text_muted"))))])
-            .with_key(props.key).with_style(component_style(props, "root", style().flex_col()
+            .with_key(props.key).with_style(ctx.component_style("root", style().flex_col()
                 .border(px(1)).border_color(theme_color("border"))))
             .accessibility_role("table").accessibility_label(props.label);
     }
     if props.rows.len == 0 {
         let empty = if "empty" in props && props.empty != () { props.empty }
             else { text(prop_or(props, "empty_text", "No results")) };
-        return box([header, empty.with_style(component_style(props, "empty", style()
+        return box([header, empty.with_style(ctx.component_style("empty", style()
             .padding(px(12)).typography("body_small").text_color(theme_color("text_muted"))))])
-            .with_key(props.key).with_style(component_style(props, "root", style().flex_col()
+            .with_key(props.key).with_style(ctx.component_style("root", style().flex_col()
                 .border(px(1)).border_color(theme_color("border"))))
             .accessibility_role("table").accessibility_label(props.label);
     }
@@ -346,12 +346,12 @@ fn render_Table(ctx, props) {
         style().flex_grow().min_width(px(0)).min_height(px(0))
     } else { style().min_width(px(0)) };
     let body = virtual_collection(collection, Fn("render_table_row"))
-        .with_style(component_style(props, "body", body_style));
+        .with_style(ctx.component_style("body", body_style));
     let root_style = if fill_height {
         style().flex_col().flex_grow().min_width(px(0)).min_height(px(0))
     } else { style().flex_col().min_width(px(0)) };
     box([header, body]).with_key(props.key)
-        .with_style(component_style(props, "root", root_style.overflow_x_scroll()
+        .with_style(ctx.component_style("root", root_style.overflow_x_scroll()
             .border(px(1)).border_color(theme_color("border"))))
         .accessibility_role("table").accessibility_label(props.label)
 }

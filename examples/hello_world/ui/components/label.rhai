@@ -56,19 +56,19 @@ fn render_Label(ctx, props) {
     let description = if "description" in props { props.description } else { () };
     let title = if required { `${props.text} *` } else { props.text };
     let children = [
-        text(title).with_style(component_style(props, "required", component_style(props, "text",
+        text(title).with_style(ctx.component_style("required", ctx.component_style("text",
             style().typography("body").font_weight(700)
                 .text_color(theme_color("text_primary")))))
     ];
     if description != () {
         children.push(
             text(description)
-                .with_style(component_style(props, "description",
+                .with_style(ctx.component_style("description",
                     style().typography("body_small").text_color(theme_color("text_muted"))))
         );
     }
     column(children)
-        .with_style(component_style(props, "root", style().gap(px(4))))
+        .with_style(ctx.component_style("root", style().gap(px(4))))
         .accessibility_role("label")
         .accessibility_label(props.text)
 }

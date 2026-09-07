@@ -2,7 +2,7 @@
 {
   "id": "components/tooltip",
   "export": "Tooltip",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": [],
   "capabilities": {}
@@ -16,7 +16,7 @@
 
 define_component(#{
     metadata: #{
-        id: "components/tooltip", "export": "Tooltip", version: "0.1.0",
+        id: "components/tooltip", "export": "Tooltip", version: "0.1.1",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 }, dependencies: [], capabilities: #{},
     },
     schema: #{
@@ -48,13 +48,13 @@ fn render_Tooltip(ctx, props) {
     if "disabled" in props && props.disabled { return props.trigger; }
     let show_delay = if "show_delay_ms" in props && props.show_delay_ms > 0 { props.show_delay_ms } else { 0 };
     let hide_delay = if "hide_delay_ms" in props && props.hide_delay_ms > 0 { props.hide_delay_ms } else { 0 };
-    let content = row([props.content]).with_style(component_style(props, "content",
+    let content = row([props.content]).with_style(ctx.component_style("content",
         style().max_width(px(320)).padding_x(px(7)).padding_y(px(5))
             .radius(theme_radius("sm")).typography("body_small")
             .background(theme_color("text_primary"))
             .text_color(theme_color("surface"))
     )).accessibility_role("tooltip");
-    overlay(props.trigger.with_style(component_style(props, "trigger", style())), content, #{
+    overlay(props.trigger.with_style(ctx.component_style("trigger", style())), content, #{
         id: props.key,
         kind: "tooltip",
         placement: if "placement" in props { props.placement } else { "top" },
@@ -66,5 +66,5 @@ fn render_Tooltip(ctx, props) {
         show_delay_ms: show_delay,
         hide_delay_ms: hide_delay,
     }).with_key(props.key)
-        .with_style(component_style(props, "root", style()))
+        .with_style(ctx.component_style("root", style()))
 }

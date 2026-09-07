@@ -69,12 +69,11 @@ fn render_Counter(ctx, props) {
 
 The wrapper validates and defaults props, derives the parent/key instance path, mounts declared local state,
 scopes callbacks to the component module, rejects duplicate stateful keys, and
-cleans unreachable instances only after a successful render. Merge overrides with
-`component_style(props, "part_name", base_style)`; the root merge order remains
-base, size, variant/state, caller `style`, then caller root `part_styles`.
-Named `virtual_collection` item renderers do not retain the original Dynamic
-props. They resolve the same validated Style-only snapshot with
-`ctx.component_style("part_name", base_style)`, which cannot expose nodes,
+cleans unreachable instances only after a successful render. Resolve every
+public part with `ctx.component_style("part_name", base_style)`. The merge order
+is base, size, variant/state, application component stylesheet, caller `style`,
+then caller `part_styles`. Named `virtual_collection` item renderers use the
+same context method; its retained Style-only snapshot cannot expose nodes,
 callbacks, or arbitrary Dynamic values to deferred rendering.
 
 Formal render is pure and is also the automatic reuse boundary. A root `view`
@@ -200,7 +199,7 @@ for event handlers.
 Use semantic theme tokens and the typed `Style` builder. Merge order is:
 
 ```text
-base -> size -> variant/state -> caller style/part_styles
+base -> size -> variant/state -> component stylesheet -> caller style/part_styles
 ```
 
 Use typed `linear_gradient(#{...})` and `shadow(#{...})` values for component

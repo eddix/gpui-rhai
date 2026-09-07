@@ -2,7 +2,7 @@
 {
   "id": "components/tag",
   "export": "Tag",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": [],
   "capabilities": {},
@@ -17,7 +17,7 @@
 
 define_component(#{
     metadata: #{
-        id: "components/tag", "export": "Tag", version: "0.1.0",
+        id: "components/tag", "export": "Tag", version: "0.1.1",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
         dependencies: [], capabilities: #{}, assets: ["icons/close.svg"],
     },
@@ -74,10 +74,10 @@ fn render_Tag(ctx, props) {
     let variant = if "variant" in props { props.variant } else { "neutral" };
     let closable = if "closable" in props { props.closable } else { false };
     let disabled = if "disabled" in props { props.disabled } else { false };
-    let children = [text(props.text).with_style(component_style(props, "label", style()))];
+    let children = [text(props.text).with_style(ctx.component_style("label", style()))];
     if closable {
         let close = image_source(asset("app/icons/close"))
-            .with_style(component_style(props, "close", style()
+            .with_style(ctx.component_style("close", style()
                 .width(px(14)).height(px(14)).items_center().justify_center()
                 .text_color(if disabled { theme_color("disabled") } else { tag_foreground(variant) })
                 .radius(theme_radius("sm")).hover(style().background(theme_color("surface_hover")))))
@@ -89,7 +89,7 @@ fn render_Tag(ctx, props) {
         children.push(close);
     }
     row(children)
-        .with_style(component_style(props, "root",
+        .with_style(ctx.component_style("root",
             style().height(px(22)).padding_x(px(6)).gap(px(6)).items_center()
                 .radius(theme_radius("sm"))
                 .border(px(1)).border_color(tag_border(variant))

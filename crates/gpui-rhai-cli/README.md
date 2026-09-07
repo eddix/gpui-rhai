@@ -17,7 +17,8 @@ gpui-rhai dev
 
 Important commands:
 
-- `init` creates the Rust Host and application-owned `ui/` source tree;
+- `init` creates the Rust Host and application-owned `ui/` source tree,
+  including theme tokens and `styles.rhai` component overrides;
 - `add`, `diff`, and `update` install and three-way merge official source;
 - `check` compiles and executes a validated headless first frame;
 - `metadata` emits schemas, editor snippets, and Rhai definitions;

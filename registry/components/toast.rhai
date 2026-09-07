@@ -2,7 +2,7 @@
 {
   "id": "components/toast",
   "export": "Toast",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": [],
   "capabilities": {},
@@ -16,7 +16,7 @@
 
 define_component(#{
     metadata: #{
-        id: "components/toast", "export": "Toast", version: "0.1.0",
+        id: "components/toast", "export": "Toast", version: "0.1.1",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 }, dependencies: [], capabilities: #{},
         assets: ["icons/close.svg"],
     },
@@ -77,13 +77,13 @@ fn variant_color(variant) {
     else { theme_color("border") }
 }
 
-fn toast_node(props, item) {
+fn toast_node(ctx, item) {
     let variant = prop_or(item, "variant", "neutral");
     let header = [text(item.title)
-        .with_style(component_style(props, "title", style()))];
+        .with_style(ctx.component_style("title", style()))];
     if prop_or(item, "dismissible", true) {
         header.push(image_source(asset("app/icons/close")).with_key(`${item.id}-close`)
-            .with_style(component_style(props, "close", style()
+            .with_style(ctx.component_style("close", style()
                 .width(px(18)).height(px(18)).items_center().justify_center()
                 .text_color(theme_color("text_muted"))
                 .radius(theme_radius("sm")).hover(style().background(theme_color("surface_hover")))))
@@ -93,13 +93,13 @@ fn toast_node(props, item) {
     let children = [row(header).with_style(style().items_center().justify_between()
         .typography("body").font_weight(700))];
     if prop_or(item, "message", "") != "" {
-        children.push(text(item.message).with_style(component_style(props, "message",
+        children.push(text(item.message).with_style(ctx.component_style("message",
             style().typography("body_small")
                 .text_color(theme_color("text_muted")))));
     }
     column(children).with_key(item.id)
-        .with_style(component_style(props, `toast_${variant}`,
-            component_style(props, "toast",
+        .with_style(ctx.component_style(`toast_${variant}`,
+            ctx.component_style("toast",
                 style().width(px(320)).gap(px(4)).padding(px(10))
                     .border(px(1)).border_color(variant_color(variant))
                     .radius(theme_radius("md")).background(theme_color("surface"))
@@ -109,10 +109,10 @@ fn toast_node(props, item) {
         .accessibility_label(item.title)
 }
 
-fn region_layer(props, key, placement, children) {
+fn region_layer(ctx, key, placement, children) {
     if children.len == 0 { return (); }
     layer(column(children).with_key(`${key}-column`)
-        .with_style(component_style(props, "region", style().width(px(320)).gap(px(6)))),
+        .with_style(ctx.component_style("region", style().width(px(320)).gap(px(6)))),
         #{ id: key, placement: placement, inset: 10, priority: 9000 })
 }
 
@@ -139,7 +139,7 @@ fn render_Toast(ctx, props) {
         let item = props.items[index];
         timeout(timer_key(item.id), prop_or(item, "duration_ms", 5000),
             prop_or(item, "paused", false), Fn("toast_timeout"), item.id);
-        let node = toast_node(props, item);
+        let node = toast_node(ctx, item);
         let region = prop_or(item, "region", "top_right");
         if region == "top_left" { top_left.push(node); }
         else if region == "bottom_left" { bottom_left.push(node); }
@@ -153,9 +153,9 @@ fn render_Toast(ctx, props) {
         #{ key: `${props.key}-bottom-left`, placement: "bottom_left", children: bottom_left },
         #{ key: `${props.key}-bottom-right`, placement: "bottom_right", children: bottom_right },
     ] {
-        let node = region_layer(props, spec.key, spec.placement, spec.children);
+        let node = region_layer(ctx, spec.key, spec.placement, spec.children);
         if node != () { layers.push(node); }
     }
     box(layers).with_key(props.key)
-        .with_style(component_style(props, "root", style()))
+        .with_style(ctx.component_style("root", style()))
 }

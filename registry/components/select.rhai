@@ -2,7 +2,7 @@
 {
   "id": "components/select",
   "export": "Select",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": ["components/combobox"],
   "capabilities": {},
@@ -18,7 +18,7 @@
 import "components/combobox" as combobox;
 
 define_component(#{
-    metadata: #{ id: "components/select", "export": "Select", version: "0.1.0",
+    metadata: #{ id: "components/select", "export": "Select", version: "0.1.1",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
         dependencies: ["components/combobox"], capabilities: #{}, assets: [] },
     schema: #{
@@ -111,22 +111,22 @@ fn render_Select(ctx, props) {
         width: if "width" in props { props.width } else { px(280) },
         on_change: Fn("select_values"),
         on_open_change: Fn("select_open"), on_query_change: Fn("select_query"),
-        style: component_style(props, "root", style()),
+        style: ctx.component_style("root", style()),
         part_styles: #{
-            trigger: component_style(props, "trigger", style().border_color(border)),
-            value: component_style(props, "value", style()),
-            placeholder: component_style(props, "placeholder", style()),
-            indicator: component_style(props, "indicator", style()),
-            clear: component_style(props, "clear", style()),
-            panel: component_style(props, "panel", style()),
-            search: component_style(props, "search", style()),
-            list: component_style(props, "list", style()),
-            group: component_style(props, "group", style()),
-            option: component_style(props, "option", style()),
-            option_selected: component_style(props, "option_selected", style()),
-            option_active: component_style(props, "option_active", style()),
-            option_disabled: component_style(props, "option_disabled", style()),
-            empty: component_style(props, "empty", style()),
+            trigger: ctx.component_style("trigger", style().border_color(border)),
+            value: ctx.component_style("value", style()),
+            placeholder: ctx.component_style("placeholder", style()),
+            indicator: ctx.component_style("indicator", style()),
+            clear: ctx.component_style("clear", style()),
+            panel: ctx.component_style("panel", style()),
+            search: ctx.component_style("search", style()),
+            list: ctx.component_style("list", style()),
+            group: ctx.component_style("group", style()),
+            option: ctx.component_style("option", style()),
+            option_selected: ctx.component_style("option_selected", style()),
+            option_active: ctx.component_style("option_active", style()),
+            option_disabled: ctx.component_style("option_disabled", style()),
+            empty: ctx.component_style("empty", style()),
         }
     }).with_key(props.key);
     node.accessibility_invalid(prop_or(props, "error", false))

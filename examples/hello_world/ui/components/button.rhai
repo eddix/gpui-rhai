@@ -149,14 +149,14 @@ fn render_Button(ctx, props) {
 
     let children = [];
     if "prefix" in props && props.prefix != () {
-        children.push(props.prefix.with_style(component_style(props, "prefix", style())));
+        children.push(props.prefix.with_style(ctx.component_style("prefix", style())));
     }
-    children.push(text(label).with_style(component_style(props, "label", style())));
+    children.push(text(label).with_style(ctx.component_style("label", style())));
     if "suffix" in props && props.suffix != () {
-        children.push(props.suffix.with_style(component_style(props, "suffix", style())));
+        children.push(props.suffix.with_style(ctx.component_style("suffix", style())));
     }
     let button = row(children)
-        .with_style(component_style(props, "root", base))
+        .with_style(ctx.component_style("root", base))
         .disabled(disabled || loading)
         .accessibility_role("button")
         .accessibility_label(props.text);

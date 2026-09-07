@@ -2,7 +2,7 @@
 {
   "id": "components/menu",
   "export": "Menu",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": ["components/divider"],
   "capabilities": {},
@@ -20,7 +20,7 @@ import "components/divider" as divider;
 
 define_component(#{
     metadata: #{
-        id: "components/menu", "export": "Menu", version: "0.1.0",
+        id: "components/menu", "export": "Menu", version: "0.1.1",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
         dependencies: ["components/divider"], capabilities: #{}, assets: ["icons/check.svg"],
     },
@@ -122,10 +122,10 @@ fn render_Menu(ctx, props) {
     for item in props.items {
         if item.kind == "separator" {
             children.push(divider::Divider(#{}).with_style(
-                component_style(props, "separator", style())
+                ctx.component_style("separator", style())
             ));
         } else if item.kind == "submenu" && "submenu" in item && item.submenu != () {
-            children.push(item.submenu.with_style(component_style(props, "submenu", style())));
+            children.push(item.submenu.with_style(ctx.component_style("submenu", style())));
         } else {
             let checked = "checked" in item && item.checked;
             let shortcut = if "shortcut" in item && item.shortcut != () { item.shortcut } else { "" };
@@ -150,11 +150,11 @@ fn render_Menu(ctx, props) {
                     .width(px(14)).height(px(14)).text_color(theme_color("accent"))
                     .opacity(if checked { 1.0 } else { 0.0 })),
                 text(label).with_style(style().flex_grow()),
-                text(shortcut).with_style(component_style(props, "shortcut",
+                text(shortcut).with_style(ctx.component_style("shortcut",
                     style().typography("caption").text_color(theme_color("text_muted"))))
             ])
                 .with_key(item.value)
-                .with_style(component_style(props, "item", item_style))
+                .with_style(ctx.component_style("item", item_style))
                 .tab_stop(false)
                 .disabled(item_disabled(item))
                 .accessibility_role("menuitem")
@@ -168,7 +168,7 @@ fn render_Menu(ctx, props) {
     }
     let content = column(children)
         .with_key(`${props.key}-content`)
-        .with_style(component_style(props, "content",
+        .with_style(ctx.component_style("content",
             style().width(px(240)).padding(px(4)).gap(px(2)).radius(theme_radius("md"))
                 .border(px(1)).border_color(theme_color("border"))
                 .background(theme_color("surface"))
@@ -206,7 +206,7 @@ fn render_Menu(ctx, props) {
     };
     if "parent_overlay" in props && props.parent_overlay != () { config.parent = props.parent_overlay; }
     if "anchor" in props && props.anchor != () { config.anchor = props.anchor; }
-    let trigger = props.trigger.with_style(component_style(props, "trigger", style()));
+    let trigger = props.trigger.with_style(ctx.component_style("trigger", style()));
     if "on_context_request" in props && props.on_context_request != () {
         trigger = trigger.on("pointer_down", Fn("context_request"));
     }
@@ -214,7 +214,7 @@ fn render_Menu(ctx, props) {
         trigger,
         content, config
     ).with_key(props.key)
-        .with_style(component_style(props, "root", style()));
+        .with_style(ctx.component_style("root", style()));
     if "on_open_change" in props && props.on_open_change != () {
         node = node.on_open_change(props.on_open_change);
     }

@@ -2,7 +2,7 @@
 {
   "id": "components/tabs",
   "export": "Tabs",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": [],
   "capabilities": {}
@@ -15,7 +15,7 @@
 
 define_component(#{
     metadata: #{
-        id: "components/tabs", "export": "Tabs", version: "0.1.0",
+        id: "components/tabs", "export": "Tabs", version: "0.1.1",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 }, dependencies: [], capabilities: #{},
     },
     schema: #{
@@ -84,7 +84,7 @@ fn render_Tabs(ctx, props) {
         } else { tab_style.hover(style().background(theme_color("surface_hover"))) };
         let header = text(tab.label)
             .with_key(tab.value)
-            .with_style(component_style(props, "tab",
+            .with_style(ctx.component_style("tab",
                 tab_style
             ))
             .tab_stop(false)
@@ -95,13 +95,13 @@ fn render_Tabs(ctx, props) {
             header = header.on_click_value(callback, tab.value);
         }
         headers.push(header);
-        if selected { panel = tab.content.with_style(component_style(props, "panel", style()
+        if selected { panel = tab.content.with_style(ctx.component_style("panel", style()
             .padding(px(12)).border(px(1)).border_color(theme_color("border"))
             .background(theme_color("surface")).typography("body"))); }
     }
     let list = if orientation == "vertical" { column(headers) } else { row(headers) };
     list = list
-        .with_style(component_style(props, "list", style().gap(px(2))))
+        .with_style(ctx.component_style("list", style().gap(px(2))))
         .accessibility_role("tablist")
         .accessibility_label(props.label)
         .accessibility_value(props.value);
@@ -116,6 +116,6 @@ fn render_Tabs(ctx, props) {
         }
     }
     let root = if orientation == "vertical" { row([list, panel]) } else { column([list, panel]) };
-    root.with_style(component_style(props, "root", style().gap(px(6))))
+    root.with_style(ctx.component_style("root", style().gap(px(6))))
         .accessibility_role("group").accessibility_label(props.label)
 }

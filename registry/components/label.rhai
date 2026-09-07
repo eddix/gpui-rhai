@@ -2,7 +2,7 @@
 {
   "id": "components/label",
   "export": "Label",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": [],
   "capabilities": {}
@@ -18,7 +18,7 @@ define_component(#{
     metadata: #{
         id: "components/label",
         "export": "Label",
-        version: "0.1.0",
+        version: "0.1.1",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
         dependencies: [],
         capabilities: #{},
@@ -57,20 +57,20 @@ fn render_Label(ctx, props) {
     let title = if required {
         text([span(props.text).bold(), span(" *").bold().color(theme_color("danger"))])
     } else { text([span(props.text).bold()]) };
-    let children = [title.with_style(component_style(props, "required",
-        component_style(props, "text", style()
+    let children = [title.with_style(ctx.component_style("required",
+        ctx.component_style("text", style()
             .typography("body")
             .text_color(theme_color("text_primary")))))] ;
     if description != () {
         children.push(
             text(description)
-                .with_style(component_style(props, "description",
+                .with_style(ctx.component_style("description",
                     style().typography("body_small")
                         .text_color(theme_color("text_muted"))))
         );
     }
     column(children)
-        .with_style(component_style(props, "root", style().gap(px(3))))
+        .with_style(ctx.component_style("root", style().gap(px(3))))
         .accessibility_role("label")
         .accessibility_label(props.text)
 }

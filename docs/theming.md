@@ -64,18 +64,24 @@ windows; window and subtree changes remain local.
 Literal colors are supported for exceptional geometry, but official components
 should use `theme_color("semantic_name")`.
 
-## Token and component-metric boundary
+## Token and component-style boundary
 
 Themes own values whose meaning crosses component boundaries: semantic colors,
 the standard spacing and radius scales, and typography. They must not grow one
 required token for every row height, calendar cell, or control-specific width.
 Adding a component must not force unrelated application themes to migrate.
 
-Source-owned `.rhai` components define structural metrics such as control
-height, fixed Table row height, and calendar cell size. Textarea and Input pass
-a semantic typography role into native shaping so their metrics cannot drift
-from ordinary text. Rust must not hide component visual constants.
-Applications own the copied source and may change these metrics directly.
+Source-owned `.rhai` components define their sound structural defaults.
+Application-wide visual changes belong in `ui/styles.rhai`, whose typed rules
+target exact formal component IDs and declared parts. This keeps Button height,
+Input padding, or Dialog shadow out of the universal token schema without
+forcing applications to fork every call site. Applications may still edit the
+copied component source for an actual structural or behavioral fork.
+
+Textarea and Input pass a semantic typography role into native shaping so their
+metrics cannot drift from ordinary text. Rust must not hide component visual
+constants. See [component stylesheets](component-styles.md) for precedence,
+validation, hot reload, and embedded-source wiring.
 
 Official components never hard-code palette colors. New semantic color tokens
 are added only when a state has cross-component meaning that cannot be expressed

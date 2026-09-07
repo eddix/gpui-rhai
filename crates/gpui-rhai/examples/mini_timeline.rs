@@ -70,7 +70,7 @@ fn render_MiniTimeline(ctx, props) {
             .width(px(2)).height(px(210)).background(theme_color("danger")));
     stack([surface, playhead])
         .with_key("timeline_surface")
-        .with_style(component_style(props, "root",
+        .with_style(ctx.component_style("root",
             style().width(px(640)).height(px(210)).clip()
                 .background(theme_color("surface_raised"))))
         .on("pointer_down", Fn("begin_drag"))

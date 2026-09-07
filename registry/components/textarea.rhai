@@ -2,7 +2,7 @@
 {
   "id": "components/textarea",
   "export": "Textarea",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": [],
   "capabilities": {},
@@ -18,7 +18,7 @@
 
 define_component(#{
     metadata: #{
-        id: "components/textarea", "export": "Textarea", version: "0.1.0",
+        id: "components/textarea", "export": "Textarea", version: "0.1.1",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
         dependencies: [], capabilities: #{}, assets: [],
     },
@@ -90,20 +90,20 @@ fn render_Textarea(ctx, props) {
         on_change: optional_prop(props, "on_change"),
         on_focus: optional_prop(props, "on_focus"),
         on_blur: optional_prop(props, "on_blur"),
-        placeholder_style: component_style(props, "placeholder",
+        placeholder_style: ctx.component_style("placeholder",
             style().text_color(theme_color("text_muted"))),
-        selection_style: component_style(props, "selection",
+        selection_style: ctx.component_style("selection",
             style().background(theme_color("selection"))),
-        caret_style: component_style(props, "caret",
+        caret_style: ctx.component_style("caret",
             style().background(theme_color("accent"))),
-        scroll_style: component_style(props, "scroll", style()),
+        scroll_style: ctx.component_style("scroll", style()),
     };
     if "rows" in props && props.rows != () { config.rows = props.rows; }
     if "max_length" in props && props.max_length != () { config.max_length = props.max_length; }
 
     let border = if error { theme_color("danger") } else { theme_color("border") };
     let editor = gpui_rhai::TextareaPrimitive(config)
-        .with_style(component_style(props, "editor",
+        .with_style(ctx.component_style("editor",
             style()
                 .padding(theme_spacing("sm"))
                 .radius(theme_radius("md"))
@@ -132,15 +132,15 @@ fn render_Textarea(ctx, props) {
             `${ctx.format_number(count)} / ${ctx.format_number(max)}`
         };
         let reached = max != () && count >= max;
-        let counter_style = component_style(props, "counter",
+        let counter_style = ctx.component_style("counter",
             style().typography("body_small")
                 .text_color(theme_color("text_muted")));
         let counter_style = if reached {
-            component_style(props, "limit", counter_style.text_color(theme_color("danger")))
+            ctx.component_style("limit", counter_style.text_color(theme_color("danger")))
         } else { counter_style };
         children.push(row([text(label)]).with_style(counter_style.justify_end()));
     }
     column(children)
         .with_key(props.key)
-        .with_style(component_style(props, "root", style().gap(theme_spacing("xs"))))
+        .with_style(ctx.component_style("root", style().gap(theme_spacing("xs"))))
 }

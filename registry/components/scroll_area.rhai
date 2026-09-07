@@ -2,7 +2,7 @@
 {
   "id": "components/scroll_area",
   "export": "ScrollArea",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": [],
   "capabilities": {}
@@ -15,7 +15,7 @@
 // Example: ScrollArea(#{ key: "logs", label: "Logs", height: px(240), content: long_content })
 
 define_component(#{
-    metadata: #{ id: "components/scroll_area", "export": "ScrollArea", version: "0.1.0",
+    metadata: #{ id: "components/scroll_area", "export": "ScrollArea", version: "0.1.1",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 }, dependencies: [], capabilities: #{} },
     schema: #{
         props: #{
@@ -52,13 +52,13 @@ fn render_ScrollArea(ctx, props) {
     if axis == "horizontal" { base = base.overflow_x_scroll(); }
     else if axis == "both" { base = base.overflow_scroll(); }
     else { base = base.overflow_y_scroll(); }
-    box([props.content.with_style(component_style(props, "content", style()))])
-        .with_key(props.key).with_style(component_style(props, "root", base))
-        .with_part_style("scrollbar_track", component_style(props, "scrollbar_track",
+    box([props.content.with_style(ctx.component_style("content", style()))])
+        .with_key(props.key).with_style(ctx.component_style("root", base))
+        .with_part_style("scrollbar_track", ctx.component_style("scrollbar_track",
             style().background(theme_color("surface_raised"))))
-        .with_part_style("scrollbar_thumb", component_style(props, "scrollbar_thumb",
+        .with_part_style("scrollbar_thumb", ctx.component_style("scrollbar_thumb",
             style().background(theme_color("text_muted"))))
-        .with_part_style("scrollbar_thumb_hover", component_style(props, "scrollbar_thumb_hover",
+        .with_part_style("scrollbar_thumb_hover", ctx.component_style("scrollbar_thumb_hover",
             style().background(theme_color("accent"))))
         .scrollbars(horizontal, vertical)
         .accessibility_role("region").accessibility_label(props.label)

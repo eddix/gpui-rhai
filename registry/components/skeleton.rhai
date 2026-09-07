@@ -2,7 +2,7 @@
 {
   "id": "components/skeleton",
   "export": "Skeleton",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": [],
   "capabilities": {}
@@ -15,7 +15,7 @@
 
 define_component(#{
     metadata: #{
-        id: "components/skeleton", "export": "Skeleton", version: "0.1.0",
+        id: "components/skeleton", "export": "Skeleton", version: "0.1.1",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 }, dependencies: [], capabilities: #{},
     },
     schema: #{
@@ -41,7 +41,7 @@ fn render_Skeleton(ctx, props) {
     let radius = requested_radius;
     let node = row([])
         .with_key(props.key)
-        .with_style(component_style(props, "root",
+        .with_style(ctx.component_style("root",
             style().width(px(width)).height(px(height))
                 .radius(px(radius))
                 .background(theme_color("surface_hover"))

@@ -19,7 +19,7 @@ security, testing, and troubleshooting.
 
 - [Component authoring](component-authoring-guide.md)
 - [Registry design system](registry-design-system.md)
-- [Typed Style surface](style.md)
+- [Typed Style surface](style.md) and [component stylesheets](component-styles.md)
 - [Theming](theming.md), [bundled themes](bundled-themes.md), and [Theme Studio](theme-studio.md)
 - [Locale and RTL](locale-and-rtl.md)
 - [Assets and fonts](assets.md)

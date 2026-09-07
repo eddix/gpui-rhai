@@ -2,7 +2,7 @@
 {
   "id": "components/command",
   "export": "Command",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": ["components/input", "components/kbd"],
   "capabilities": {}
@@ -19,7 +19,7 @@ import "components/input" as input;
 import "components/kbd" as kbd;
 
 define_component(#{
-    metadata: #{ id: "components/command", "export": "Command", version: "0.1.0",
+    metadata: #{ id: "components/command", "export": "Command", version: "0.1.1",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
         dependencies: ["components/input", "components/kbd"], capabilities: #{} },
     schema: #{
@@ -259,10 +259,10 @@ fn render_Command(ctx, props) {
         disabled: prop_or(props, "disabled", false),
         autofocus: prop_or(props, "autofocus", false),
         on_change: Fn("query_action"), on_submit: Fn("submit_action").curry(active) })
-        .with_style(component_style(props, "search", style()));
+        .with_style(ctx.component_style("search", style()));
     let body = if data.len == 0 {
         text(prop_or(props, "empty_text", "No commands found"))
-            .with_style(component_style(props, "empty", style()
+            .with_style(ctx.component_style("empty", style()
                 .min_height(px(88)).padding(px(16)).items_center().justify_center()
                 .typography("body_small").text_color(theme_color("text_muted"))))
             .accessibility_role("status")
@@ -274,10 +274,10 @@ fn render_Command(ctx, props) {
             estimated_height: row_height, height: visible_rows * row_height,
             overdraw_pixels: row_height * 2, alignment: "top", follow_tail: false,
             reveal_key: reveal_key },
-            Fn("render_command_row")).with_style(component_style(props, "list", style()))
+            Fn("render_command_row")).with_style(ctx.component_style("list", style()))
     };
     let root = column([search, body]).with_key(props.key)
-        .with_style(component_style(props, "root", style()
+        .with_style(ctx.component_style("root", style()
             .gap(px(4)).padding(px(4)).radius(theme_radius("md"))
             .border(px(1)).border_color(theme_color("border"))
             .background(theme_color("surface"))))

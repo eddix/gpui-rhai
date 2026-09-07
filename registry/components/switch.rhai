@@ -2,7 +2,7 @@
 {
   "id": "components/switch",
   "export": "Switch",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": [],
   "capabilities": {}
@@ -16,7 +16,7 @@
 
 define_component(#{
     metadata: #{
-        id: "components/switch", "export": "Switch", version: "0.1.0",
+        id: "components/switch", "export": "Switch", version: "0.1.1",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
         dependencies: [], capabilities: #{},
     },
@@ -49,7 +49,7 @@ fn render_Switch(ctx, props) {
     let disabled = if "disabled" in props { props.disabled } else { false };
     let loading = if "loading" in props { props.loading } else { false };
     let blocked = disabled || loading;
-    let thumb = text(if loading { "·" } else { "" }).with_style(component_style(props, "thumb",
+    let thumb = text(if loading { "·" } else { "" }).with_style(ctx.component_style("thumb",
         style()
             .width(px(12)).height(px(12)).radius(px(0))
             .items_center().justify_center().typography("caption")
@@ -64,9 +64,9 @@ fn render_Switch(ctx, props) {
             else { theme_color("border") })
         .background(if props.checked { theme_color("accent") } else { theme_color("surface") });
     track_style = if props.checked { track_style.justify_end() } else { track_style.justify_start() };
-    let track = row([thumb]).with_style(component_style(props, "track", track_style));
-    let node = row([track, text(props.label).with_style(component_style(props, "label", style()))])
-        .with_style(component_style(props, "root",
+    let track = row([thumb]).with_style(ctx.component_style("track", track_style));
+    let node = row([track, text(props.label).with_style(ctx.component_style("label", style()))])
+        .with_style(ctx.component_style("root",
             style().gap(px(8)).items_center().self_start().padding(px(3))
                 .radius(theme_radius("sm"))
                 .border(px(1)).border_color(rgba(0x00000000))

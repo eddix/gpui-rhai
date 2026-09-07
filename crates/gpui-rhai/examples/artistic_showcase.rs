@@ -60,7 +60,7 @@ fn render_ArtPanel(ctx, props) {
     ])
         .with_key("panel")
         .bind_signal("opacity", alpha)
-        .with_style(component_style(props, "root",
+        .with_style(ctx.component_style("root",
             style().width(px(608)).padding(px(24)).gap(px(16)).flex_col()
                 .radius(px(18)).border(px(1)).border_color(theme_color("border"))
                 .linear_gradient(linear_gradient(#{ angle: 145,

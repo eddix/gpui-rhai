@@ -2,7 +2,7 @@
 {
   "id": "components/radio",
   "export": "Radio",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": [],
   "capabilities": {}
@@ -16,7 +16,7 @@
 
 define_component(#{
     metadata: #{
-        id: "components/radio", "export": "Radio", version: "0.1.0",
+        id: "components/radio", "export": "Radio", version: "0.1.1",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
         dependencies: [], capabilities: #{},
     },
@@ -47,14 +47,14 @@ fn render_Radio(ctx, props) {
     let dot = row([]).with_style(style()
         .width(px(6)).height(px(6)).radius(px(3))
         .background(if props.selected { theme_color("accent") } else { rgba(0x00000000) }));
-    let indicator = row([dot]).with_style(component_style(props, "indicator",
+    let indicator = row([dot]).with_style(ctx.component_style("indicator",
         style().width(px(16)).height(px(16)).radius(px(8))
             .items_center().justify_center().border(px(1))
             .border_color(if props.selected { theme_color("accent") }
                 else { theme_color("border") }).background(theme_color("surface"))));
-    let node = row([indicator, text(props.label).with_style(component_style(props, "label", style()))])
+    let node = row([indicator, text(props.label).with_style(ctx.component_style("label", style()))])
         .with_key(props.value)
-        .with_style(component_style(props, "root",
+        .with_style(ctx.component_style("root",
             style().gap(px(8)).items_center().self_start().padding(px(3))
                 .radius(theme_radius("sm"))
                 .border(px(1)).border_color(rgba(0x00000000))

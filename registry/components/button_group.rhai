@@ -2,7 +2,7 @@
 {
   "id": "components/button_group",
   "export": "ButtonGroup",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": [],
   "capabilities": {}
@@ -15,7 +15,7 @@
 // Example: ButtonGroup(#{ label: "View", buttons: [grid_button, list_button] })
 
 define_component(#{
-    metadata: #{ id: "components/button_group", "export": "ButtonGroup", version: "0.1.0",
+    metadata: #{ id: "components/button_group", "export": "ButtonGroup", version: "0.1.1",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 }, dependencies: [], capabilities: #{} },
     schema: #{
         props: #{
@@ -47,11 +47,11 @@ fn render_ButtonGroup(ctx, props) {
             if !first { item_style = item_style.margin_start(offset_px(-1)); }
         }
         let part = if first { "first" } else if last { "last" } else { "item" };
-        items.push(props.buttons[index].with_style(component_style(props, part,
-            component_style(props, "item", item_style))));
+        items.push(props.buttons[index].with_style(ctx.component_style(part,
+            ctx.component_style("item", item_style))));
     }
     let root = if vertical { column(items) } else { row(items) };
-    root.with_style(component_style(props, "root", style()
+    root.with_style(ctx.component_style("root", style()
         .clip().radius(theme_radius("md"))))
         .accessibility_role("group").accessibility_label(props.label)
 }

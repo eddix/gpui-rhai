@@ -2,7 +2,7 @@
 {
   "id": "components/avatar",
   "export": "Avatar",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": [],
   "capabilities": {}
@@ -15,7 +15,7 @@
 
 define_component(#{
     metadata: #{
-        id: "components/avatar", "export": "Avatar", version: "0.1.0",
+        id: "components/avatar", "export": "Avatar", version: "0.1.1",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 }, dependencies: [], capabilities: #{},
     },
     schema: #{
@@ -66,9 +66,9 @@ fn render_Avatar(ctx, props) {
         props.name[0].to_string()
     } else { "" };
     let content = if "handle" in props && props.handle != () {
-        image(props.handle).with_style(component_style(props, "image", style().width(px(size)).height(px(size))))
+        image(props.handle).with_style(ctx.component_style("image", style().width(px(size)).height(px(size))))
     } else {
-        text(initials).with_style(component_style(props, "initials",
+        text(initials).with_style(ctx.component_style("initials",
             style().text_color(theme_color("text_primary"))))
     };
     let face = row([content]).with_style(
@@ -80,13 +80,13 @@ fn render_Avatar(ctx, props) {
     let children = [face];
     let presence = if "presence" in props { props.presence } else { "none" };
     if presence != "none" {
-        children.push(row([]).with_style(component_style(props, "presence",
+        children.push(row([]).with_style(ctx.component_style("presence",
             style().width(px(8)).height(px(8)).absolute().right(px(0)).bottom(px(0))
                 .radius(px(4)).border(px(2)).border_color(theme_color("surface"))
                 .background(presence_color(presence)))));
     }
     stack(children)
-        .with_style(component_style(props, "root",
+        .with_style(ctx.component_style("root",
             style().width(px(size)).height(px(size))))
         .accessibility_role("image")
         .accessibility_label(props.name)

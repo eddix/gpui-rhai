@@ -2,7 +2,7 @@
 {
   "id": "components/context_menu",
   "export": "ContextMenu",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": ["components/menu"],
   "capabilities": {}
@@ -18,7 +18,7 @@
 import "components/menu" as menu;
 
 define_component(#{
-    metadata: #{ id: "components/context_menu", "export": "ContextMenu", version: "0.1.0",
+    metadata: #{ id: "components/context_menu", "export": "ContextMenu", version: "0.1.1",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 }, dependencies: ["components/menu"], capabilities: #{} },
     schema: #{
         props: #{
@@ -76,7 +76,7 @@ fn forward_open(ctx, open) { ctx.emit("open_change", open); }
 
 fn render_ContextMenu(ctx, props) {
     let trigger = props.trigger.tab_stop(false)
-        .with_style(component_style(props, "trigger", style()));
+        .with_style(ctx.component_style("trigger", style()));
     menu::Menu(#{
         key: props.key, trigger: trigger, open: props.open, active_value: props.active_value,
         items: props.items, placement: if "placement" in props { props.placement } else { "bottom" },
@@ -85,5 +85,5 @@ fn render_ContextMenu(ctx, props) {
         on_action: if "on_action" in props && props.on_action != () { Fn("forward_action") } else { () },
         on_active_change: if "on_active_change" in props && props.on_active_change != () { Fn("forward_active") } else { () },
         on_open_change: if "on_open_change" in props && props.on_open_change != () { Fn("forward_open") } else { () }
-    }).with_style(component_style(props, "root", style()))
+    }).with_style(ctx.component_style("root", style()))
 }

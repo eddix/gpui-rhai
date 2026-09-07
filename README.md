@@ -7,7 +7,7 @@ GPUI Rhai is a desktop UI system in which editable Rhai source builds a stable
 declarative `UiNode` tree and a thin Rust runtime renders that tree with GPUI.
 
 This is not a traditional opaque component crate. The runtime is a Cargo
-dependency, while components, themes, locale bundles, and small assets are
+dependency, while components, themes, the typed component stylesheet, locale bundles, and small assets are
 copied into the application repository and owned by the application developer.
 
 The project is under active implementation. The authoritative product contract
