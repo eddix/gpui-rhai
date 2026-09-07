@@ -1392,6 +1392,101 @@ mod tests {
     }
 
     #[test]
+    fn controlled_rerender_synchronously_rebuilds_the_retained_virtual_window() {
+        let mut engine = RuntimeEngine::new();
+        let compiled = engine
+            .compile(
+                r#"
+                    fn render_item(ctx, payload) {
+                        text(`${payload.item.label}:${payload.item.active}`).with_key(payload.key)
+                    }
+                    fn view(ctx) {
+                        let active = ctx.get_state("active");
+                        let data = [];
+                        for index in 0..32 {
+                            data.push(#{
+                                key: `row-${index}`,
+                                label: `Row ${index}`,
+                                active: index == active,
+                            });
+                        }
+                        virtual_collection(#{
+                            key: "rows", label: "Rows", data: data,
+                            estimated_height: 24, height: 96,
+                            overdraw_pixels: 24, alignment: "top", follow_tail: false,
+                            reveal_key: `row-${active}`,
+                        }, Fn("render_item"))
+                    }
+                "#,
+            )
+            .unwrap();
+        let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+        let path = ComponentInstancePath::root("App", "root");
+        let schema = ComponentStateSchema::new(BTreeMap::from([(
+            "active".to_owned(),
+            StateField::new(ValueSchema::integer(), UiValue::Integer(0)),
+        )]))
+        .unwrap();
+        let mut lifecycle = ScriptLifecycle::new(
+            compiled,
+            Rc::clone(&runtime),
+            path.clone(),
+            Some("main".to_owned()),
+            BTreeMap::new(),
+            &schema,
+        )
+        .unwrap();
+        lifecycle.start(&mut engine).unwrap();
+        let id = engine
+            .virtual_collection_ids_in_scope(&path)
+            .into_iter()
+            .next()
+            .unwrap();
+
+        runtime
+            .borrow()
+            .virtual_requests
+            .request(id.clone(), 14..20);
+        assert!(lifecycle.realize_virtual_requests(&mut engine).unwrap());
+        assert_eq!(
+            lifecycle
+                .root()
+                .unwrap()
+                .virtual_collection_items(&id)
+                .unwrap()
+                .keys()
+                .copied()
+                .collect::<Vec<_>>(),
+            (14..20).collect::<Vec<_>>()
+        );
+
+        runtime
+            .borrow_mut()
+            .set_component_state_from_host(&path, "active", UiValue::Integer(16))
+            .unwrap();
+        assert!(lifecycle.render_dirty(&mut engine).unwrap());
+        let realized = lifecycle
+            .root()
+            .unwrap()
+            .virtual_collection_items(&id)
+            .unwrap();
+        for index in 14..20 {
+            assert!(
+                realized.contains_key(&index),
+                "retained row {index} is missing"
+            );
+        }
+        assert!(matches!(
+            realized[&16].kind(),
+            crate::UiNodeKind::Text { text } if text == "Row 16:true"
+        ));
+        assert!(matches!(
+            realized[&15].kind(),
+            crate::UiNodeKind::Text { text } if text == "Row 15:false"
+        ));
+    }
+
+    #[test]
     fn failed_event_callback_rolls_back_ui_state() {
         let mut engine = RuntimeEngine::new();
         let compiled = engine

@@ -234,6 +234,10 @@ impl VirtualRequestRegistry {
     pub fn inspect(&self) -> Vec<VirtualCollectionMetrics> {
         self.metrics.borrow().values().cloned().collect()
     }
+
+    pub(crate) fn metrics(&self, id: &VirtualCollectionId) -> Option<VirtualCollectionMetrics> {
+        self.metrics.borrow().get(id).cloned()
+    }
 }
 
 fn index_range(indices: impl IntoIterator<Item = usize>) -> Range<usize> {
