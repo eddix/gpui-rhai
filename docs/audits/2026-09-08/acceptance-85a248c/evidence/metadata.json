@@ -1,0 +1,24 @@
+{
+  "commit": "85a248c4cb5e1d38797579312d33c40b9949b077",
+  "previous_acceptance": "0788e3cbfa243b6e985b2a554c310aa29c33ca5f",
+  "initial_worktree_clean": true,
+  "workspace_tests_passed": 443,
+  "native_tests_passed": 49,
+  "fmt": "passed",
+  "clippy": "passed",
+  "C01_to_C06": "targeted acceptance passed",
+  "ci": {
+    "url": "https://github.com/eddix/gpui-rhai/actions/runs/34213075003",
+    "conclusion": "success"
+  },
+  "issue40": {
+    "url": "https://github.com/eddix/gpui-rhai/issues/40",
+    "confirmed": true,
+    "unfixed_at_reviewed_commit": true,
+    "backends": [
+      "array",
+      "native fuzzy projection"
+    ],
+    "evidence": "Actual Command source evaluated via ScriptLifecycle; roving inclusion and first/next policy replayed with VirtualListState; renderer inspected, no new GPU screenshot."
+  }
+}
