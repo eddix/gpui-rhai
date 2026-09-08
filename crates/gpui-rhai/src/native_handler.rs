@@ -244,12 +244,12 @@ impl NativeHandlerRegistry {
                 handler: registered.descriptor.id.clone(),
                 event: event.name.clone(),
             })?;
-        schema
-            .validate(&event.payload.clone().into_dynamic())
-            .map_err(|source| NativeHandlerError::InvalidPayload {
+        schema.validate_ui_value(&event.payload).map_err(|source| {
+            NativeHandlerError::InvalidPayload {
                 event: event.name.clone(),
                 source,
-            })?;
+            }
+        })?;
         registered
             .handler
             .try_borrow_mut()

@@ -61,12 +61,45 @@ check_case() {
   dimensions="$(python3 - "${file}" <<'PY'
 import struct
 import sys
+import zlib
 
-with open(sys.argv[1], "rb") as image:
-    header = image.read(24)
-if len(header) != 24 or header[:8] != b"\x89PNG\r\n\x1a\n" or header[12:16] != b"IHDR":
+data = open(sys.argv[1], "rb").read()
+if len(data) < 33 or data[:8] != b"\x89PNG\r\n\x1a\n":
     raise SystemExit("not a valid PNG header")
-width, height = struct.unpack(">II", header[16:24])
+offset = 8
+idat = bytearray()
+width = height = bit_depth = color_type = interlace = None
+ended = False
+while offset + 12 <= len(data):
+    length = struct.unpack(">I", data[offset:offset + 4])[0]
+    kind = data[offset + 4:offset + 8]
+    start = offset + 8
+    end = start + length
+    if end + 4 > len(data):
+        raise SystemExit("truncated PNG chunk")
+    payload = data[start:end]
+    expected_crc = struct.unpack(">I", data[end:end + 4])[0]
+    if zlib.crc32(kind + payload) & 0xffffffff != expected_crc:
+        raise SystemExit("invalid PNG chunk CRC")
+    if kind == b"IHDR":
+        width, height, bit_depth, color_type, _, _, interlace = struct.unpack(">IIBBBBB", payload)
+    elif kind == b"IDAT":
+        idat.extend(payload)
+    elif kind == b"IEND":
+        ended = True
+        offset = end + 4
+        break
+    offset = end + 4
+if not ended or offset != len(data) or width is None or not idat:
+    raise SystemExit("incomplete PNG")
+decoded = zlib.decompress(idat)
+if interlace == 0:
+    channels = {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}.get(color_type)
+    if channels is None:
+        raise SystemExit("unsupported PNG color type")
+    row_bytes = (width * channels * bit_depth + 7) // 8
+    if len(decoded) != (row_bytes + 1) * height:
+        raise SystemExit("unexpected decoded PNG size")
 print(f"{width}x{height}")
 PY
 )"

@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use rhai::{
@@ -32,6 +33,32 @@ pub enum ExecutionPhase {
     Dispose,
 }
 
+/// Identity of one continuous component mount. Logical paths may be reused
+/// after unmount, but an incarnation never is.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ComponentIncarnation(u64);
+
+impl ComponentIncarnation {
+    pub(crate) const fn unscoped() -> Self {
+        Self(0)
+    }
+
+    #[must_use]
+    pub const fn get(self) -> u64 {
+        self.0
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct RuntimeStateId(u64);
+
+impl Default for RuntimeStateId {
+    fn default() -> Self {
+        static NEXT_ID: AtomicU64 = AtomicU64::new(1);
+        Self(NEXT_ID.fetch_add(1, Ordering::Relaxed))
+    }
+}
+
 enum ThemeTarget {
     App,
     Window(String),
@@ -53,6 +80,8 @@ impl ExecutionPhase {
 
 #[derive(Debug, Default)]
 pub struct UiRuntimeState {
+    runtime_id: RuntimeStateId,
+    transaction_depth: usize,
     pub component_state: StateStore,
     pub stores: StoreRegistry,
     pub native_collections: crate::NativeCollectionRegistry,
@@ -72,8 +101,9 @@ pub struct UiRuntimeState {
     pub effects: crate::EffectRegistry,
     pub signals: crate::SignalRegistry,
     pub element_refs: crate::ElementRefRegistry,
-    pub geometry: crate::GeometryRegistry,
-    pub pointer_capture: crate::PointerCaptureRegistry,
+    pub(crate) geometry: crate::GeometryRegistry,
+    pub(crate) pointer_capture: crate::PointerCaptureRegistry,
+    presentations: BTreeMap<String, ViewPresentationState>,
     pub budgets: crate::RuntimeBudgets,
     pub virtual_requests: crate::VirtualRequestRegistry,
     pub windows: WindowCommandRegistry,
@@ -83,6 +113,8 @@ pub struct UiRuntimeState {
     pub animation_values: BTreeMap<AnimationKey, f64>,
     pub traces: crate::TraceBuffer,
     component_event_handlers: BTreeMap<(ComponentInstancePath, String), ScriptCallback>,
+    component_incarnations: BTreeMap<ComponentInstancePath, ComponentIncarnation>,
+    next_component_incarnation: u64,
     dirty: BTreeSet<ComponentInstancePath>,
     pending_events: Vec<PendingEvent>,
     pending_actions: Vec<ActionInvocation>,
@@ -97,6 +129,61 @@ impl UiRuntimeState {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub(crate) fn ensure_component_incarnation(
+        &mut self,
+        component: &ComponentInstancePath,
+    ) -> ComponentIncarnation {
+        if let Some(incarnation) = self.component_incarnations.get(component) {
+            return *incarnation;
+        }
+        let next = self.next_component_incarnation.max(1);
+        let incarnation = ComponentIncarnation(next);
+        self.next_component_incarnation = next.saturating_add(1);
+        self.component_incarnations
+            .insert(component.clone(), incarnation);
+        incarnation
+    }
+
+    pub(crate) fn component_incarnation(
+        &self,
+        component: &ComponentInstancePath,
+    ) -> Option<ComponentIncarnation> {
+        self.component_incarnations.get(component).copied()
+    }
+
+    pub(crate) fn ensure_presentation(&mut self, view: &str) {
+        self.presentations.entry(view.to_owned()).or_default();
+    }
+
+    /// Return the geometry domain for one mounted view, creating it if needed.
+    pub fn presentation_geometry(&mut self, view: &str) -> crate::GeometryRegistry {
+        self.ensure_presentation(view);
+        self.geometry_for(Some(view))
+    }
+
+    /// Return the pointer-capture domain for one mounted view, creating it if needed.
+    pub fn presentation_pointer_capture(&mut self, view: &str) -> crate::PointerCaptureRegistry {
+        self.ensure_presentation(view);
+        self.pointer_capture_for(Some(view))
+    }
+
+    pub(crate) fn geometry_for(&self, view: Option<&str>) -> crate::GeometryRegistry {
+        view.and_then(|view| self.presentations.get(view))
+            .map_or_else(|| self.geometry.clone(), |state| state.geometry.clone())
+    }
+
+    pub(crate) fn pointer_capture_for(&self, view: Option<&str>) -> crate::PointerCaptureRegistry {
+        view.and_then(|view| self.presentations.get(view))
+            .map_or_else(
+                || self.pointer_capture.clone(),
+                |state| state.pointer_capture.clone(),
+            )
+    }
+
+    pub(crate) fn remove_presentation(&mut self, view: &str) {
+        self.presentations.remove(view);
     }
 
     /// Set one mounted component field from trusted host code and schedule its
@@ -239,6 +326,8 @@ impl UiRuntimeState {
         self.component_state.remove_scope(root);
         self.component_event_handlers
             .retain(|(path, _), _| !path.is_within(root));
+        self.component_incarnations
+            .retain(|path, _| !path.is_within(root));
         self.actions.remove_component_scope(root);
         self.dirty.retain(|path| !path.is_within(root));
         self.pending_events
@@ -302,6 +391,10 @@ impl UiRuntimeState {
         Ok(())
     }
 
+    pub(crate) fn suspended_delivery_capacity_remaining(&self) -> usize {
+        Self::SUSPENDED_DELIVERY_CAPACITY.saturating_sub(self.pending_async.len())
+    }
+
     pub(crate) fn cancel_async_scope(&mut self, scope: &AsyncScope) -> Result<(), AssetError> {
         self.assets.cancel_scope(scope)?;
         self.tasks.cancel_scope(scope);
@@ -362,6 +455,9 @@ impl UiRuntimeState {
 
     pub(crate) fn flush_geometry_dependencies(&mut self) {
         self.dirty.extend(self.geometry.take_dirty());
+        for presentation in self.presentations.values() {
+            self.dirty.extend(presentation.geometry.take_dirty());
+        }
     }
 
     pub(crate) fn take_window_dirty_components(
@@ -493,6 +589,8 @@ impl UiRuntimeState {
         self.environment_dependencies.retain_scope(root, active);
         self.dirty
             .retain(|path| !path.is_within(root) || path == root || active.contains(path));
+        self.component_incarnations
+            .retain(|path, _| !path.is_within(root) || path == root || active.contains(path));
         Ok(())
     }
 
@@ -510,19 +608,18 @@ impl UiRuntimeState {
         &self.dirty
     }
 
-    /// Capture rollback-capable UI state and async ownership checkpoints.
-    ///
-    /// # Errors
-    ///
-    /// Returns an asset-registry borrow error while decode state is in use.
-    pub fn snapshot(&self) -> Result<UiStateSnapshot, AssetError> {
+    pub(crate) fn snapshot(&self) -> Result<UiStateSnapshot, AssetError> {
         Ok(UiStateSnapshot {
+            runtime_id: self.runtime_id,
+            transaction_depth: self.transaction_depth,
             component_state: self.component_state.clone(),
             stores: self.stores.clone(),
             native_collections: self.native_collections.clone(),
             native_documents: self.native_documents.clone(),
             actions: self.actions.clone(),
             component_event_handlers: self.component_event_handlers.clone(),
+            component_incarnations: self.component_incarnations.clone(),
+            next_component_incarnation: self.next_component_incarnation,
             dirty: self.dirty.clone(),
             pending_events: self.pending_events.clone(),
             pending_actions: self.pending_actions.clone(),
@@ -538,6 +635,11 @@ impl UiRuntimeState {
             element_refs: self.element_refs.clone(),
             geometry: self.geometry.snapshot(),
             pointer_capture: self.pointer_capture.snapshot(),
+            presentations: self
+                .presentations
+                .iter()
+                .map(|(view, state)| (view.clone(), state.snapshot()))
+                .collect(),
             budgets: self.budgets.clone(),
             virtual_requests: self.virtual_requests.snapshot(),
             animation_values: self.animation_values.clone(),
@@ -545,29 +647,36 @@ impl UiRuntimeState {
             responsive: self.responsive.clone(),
             environment_dependencies: self.environment_dependencies.clone(),
             repaint_windows: self.repaint_windows.clone(),
-            task_ids: self.tasks.active_ids(),
-            subscription_ids: self.subscriptions.active_ids(),
+            tasks: self.tasks.snapshot(),
+            subscriptions: self.subscriptions.snapshot(),
             timers: self.timers.clone(),
-            decode_ids: self.assets.pending_decode_ids()?,
+            image_decodes: self.assets.decode_snapshot()?,
         })
     }
 
-    /// Restore a snapshot and cancel async/image work created after it.
-    ///
-    /// # Errors
-    ///
-    /// Returns an asset-registry borrow error while decode state is in use.
-    pub fn restore(&mut self, snapshot: UiStateSnapshot) -> Result<(), AssetError> {
-        self.tasks.retain_ids(&snapshot.task_ids);
-        self.subscriptions.retain_ids(&snapshot.subscription_ids);
+    pub(crate) fn restore(&mut self, snapshot: UiStateSnapshot) -> Result<(), UiTransactionError> {
+        if self.runtime_id != snapshot.runtime_id {
+            return Err(UiTransactionError::ForeignSnapshot);
+        }
+        let expected_depth = snapshot.transaction_depth.saturating_add(1);
+        if self.transaction_depth != expected_depth {
+            return Err(UiTransactionError::Unbalanced {
+                expected: expected_depth,
+                actual: self.transaction_depth,
+            });
+        }
+        self.tasks.restore(snapshot.tasks);
+        self.subscriptions.restore(snapshot.subscriptions);
         self.timers = snapshot.timers;
-        self.assets.retain_decode_ids(&snapshot.decode_ids)?;
+        let decode_result = self.assets.restore_decode_snapshot(snapshot.image_decodes);
         self.component_state = snapshot.component_state;
         self.stores = snapshot.stores;
         self.native_collections = snapshot.native_collections;
         self.native_documents = snapshot.native_documents;
         self.actions = snapshot.actions;
         self.component_event_handlers = snapshot.component_event_handlers;
+        self.component_incarnations = snapshot.component_incarnations;
+        self.next_component_incarnation = snapshot.next_component_incarnation;
         self.dirty = snapshot.dirty;
         self.pending_events = snapshot.pending_events;
         self.pending_actions = snapshot.pending_actions;
@@ -583,6 +692,13 @@ impl UiRuntimeState {
         self.element_refs = snapshot.element_refs;
         self.geometry.restore(snapshot.geometry);
         self.pointer_capture.restore(snapshot.pointer_capture);
+        self.presentations
+            .retain(|view, _| snapshot.presentations.contains_key(view));
+        for (view, presentation) in snapshot.presentations {
+            let state = self.presentations.entry(view).or_default();
+            state.geometry.restore(presentation.geometry);
+            state.pointer_capture.restore(presentation.pointer_capture);
+        }
         self.budgets = snapshot.budgets;
         self.virtual_requests.restore(snapshot.virtual_requests);
         self.animation_values = snapshot.animation_values;
@@ -590,18 +706,104 @@ impl UiRuntimeState {
         self.responsive = snapshot.responsive;
         self.environment_dependencies = snapshot.environment_dependencies;
         self.repaint_windows = snapshot.repaint_windows;
+        self.transaction_depth = snapshot.transaction_depth;
+        decode_result.map_err(UiTransactionError::from)
+    }
+
+    /// Begin an explicit rollback-capable runtime transaction.
+    ///
+    /// Cancellation of existing tasks, subscriptions, and image decodes remains
+    /// provisional until commit, so rollback restores their delivery ability.
+    ///
+    /// # Errors
+    ///
+    /// Returns an asset-registry error while decode state is in use.
+    pub fn begin_transaction(&mut self) -> Result<UiStateSnapshot, UiTransactionError> {
+        let snapshot = self.snapshot()?;
+        let _ = self.assets.begin_transaction()?;
+        self.tasks.begin_transaction();
+        self.subscriptions.begin_transaction();
+        self.transaction_depth = self.transaction_depth.saturating_add(1);
+        Ok(snapshot)
+    }
+
+    /// Commit a transaction and publish deferred resource cancellation when the
+    /// outermost nested transaction completes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an asset-registry error or an unmatched-commit error.
+    pub fn commit_transaction(&mut self) -> Result<(), UiTransactionError> {
+        if self.transaction_depth == 0 {
+            return Err(UiTransactionError::Unbalanced {
+                expected: 1,
+                actual: 0,
+            });
+        }
+        self.assets.commit_transaction()?;
+        self.tasks.commit_transaction();
+        self.subscriptions.commit_transaction();
+        self.transaction_depth -= 1;
         Ok(())
+    }
+
+    /// Roll back a transaction to its checkpoint.
+    ///
+    /// # Errors
+    ///
+    /// Returns an asset-registry error, foreign-checkpoint error, or an
+    /// unbalanced transaction-depth error.
+    pub fn rollback_transaction(
+        &mut self,
+        snapshot: UiStateSnapshot,
+    ) -> Result<(), UiTransactionError> {
+        self.restore(snapshot)
+    }
+}
+
+#[derive(Debug, Default)]
+struct ViewPresentationState {
+    geometry: crate::GeometryRegistry,
+    pointer_capture: crate::PointerCaptureRegistry,
+}
+
+impl ViewPresentationState {
+    fn snapshot(&self) -> ViewPresentationSnapshot {
+        ViewPresentationSnapshot {
+            geometry: self.geometry.snapshot(),
+            pointer_capture: self.pointer_capture.snapshot(),
+        }
     }
 }
 
 #[derive(Clone, Debug)]
+struct ViewPresentationSnapshot {
+    geometry: crate::geometry::GeometrySnapshot,
+    pointer_capture: BTreeMap<u64, crate::NodeId>,
+}
+
+#[derive(Debug, Error)]
+pub enum UiTransactionError {
+    #[error("transaction snapshot belongs to another UiRuntimeState")]
+    ForeignSnapshot,
+    #[error("unbalanced runtime transaction depth: expected {expected}, got {actual}")]
+    Unbalanced { expected: usize, actual: usize },
+    #[error(transparent)]
+    Asset(#[from] AssetError),
+}
+
+#[derive(Clone)]
 pub struct UiStateSnapshot {
+    runtime_id: RuntimeStateId,
+    transaction_depth: usize,
     component_state: StateStore,
     stores: StoreRegistry,
     native_collections: crate::NativeCollectionRegistry,
     native_documents: crate::NativeTextDocumentRegistry,
     actions: ActionRegistry,
     component_event_handlers: BTreeMap<(ComponentInstancePath, String), ScriptCallback>,
+    component_incarnations: BTreeMap<ComponentInstancePath, ComponentIncarnation>,
+    next_component_incarnation: u64,
     dirty: BTreeSet<ComponentInstancePath>,
     pending_events: Vec<PendingEvent>,
     pending_actions: Vec<ActionInvocation>,
@@ -617,6 +819,7 @@ pub struct UiStateSnapshot {
     element_refs: crate::ElementRefRegistry,
     geometry: crate::geometry::GeometrySnapshot,
     pointer_capture: BTreeMap<u64, crate::NodeId>,
+    presentations: BTreeMap<String, ViewPresentationSnapshot>,
     budgets: crate::RuntimeBudgets,
     virtual_requests: crate::virtual_list::VirtualRequestSnapshot,
     animation_values: BTreeMap<AnimationKey, f64>,
@@ -624,10 +827,10 @@ pub struct UiStateSnapshot {
     responsive: ResponsiveRuntime,
     environment_dependencies: crate::environment_dependency::EnvironmentDependencyRegistry,
     repaint_windows: BTreeSet<String>,
-    task_ids: BTreeSet<u64>,
-    subscription_ids: BTreeSet<u64>,
+    tasks: crate::async_runtime::TaskRegistrySnapshot,
+    subscriptions: crate::async_runtime::SubscriptionRegistrySnapshot,
     timers: crate::TimerRegistry,
-    decode_ids: BTreeSet<u64>,
+    image_decodes: crate::asset::ImageDecodeSnapshot,
 }
 
 impl UiStateSnapshot {
@@ -653,6 +856,7 @@ pub struct UiMutationBatch {
 pub struct UiContext {
     runtime: Rc<RefCell<UiRuntimeState>>,
     component: ComponentInstancePath,
+    incarnation: ComponentIncarnation,
     window: Option<String>,
     view: Option<String>,
     phase: ExecutionPhase,
@@ -676,9 +880,19 @@ impl UiContext {
         phase: ExecutionPhase,
         events: BTreeMap<String, EventSchema>,
     ) -> Self {
+        if let Some(window) = window.as_deref()
+            && let Ok(mut runtime) = runtime.try_borrow_mut()
+        {
+            runtime.ensure_presentation(window);
+        }
+        let incarnation = runtime
+            .try_borrow_mut()
+            .map(|mut runtime| runtime.ensure_component_incarnation(&component))
+            .unwrap_or_default();
         let context = Self {
             runtime,
             component,
+            incarnation,
             window,
             view: None,
             phase,
@@ -708,12 +922,21 @@ impl UiContext {
 
     #[must_use]
     pub fn with_view_id(mut self, view: impl Into<String>) -> Self {
-        self.view = Some(view.into());
+        let view = view.into();
+        if let Ok(mut runtime) = self.runtime.try_borrow_mut() {
+            runtime.ensure_presentation(&view);
+        }
+        self.view = Some(view);
         self
     }
 
     #[must_use]
     pub(crate) fn with_optional_view_id(mut self, view: Option<String>) -> Self {
+        if let Some(view) = view.as_deref()
+            && let Ok(mut runtime) = self.runtime.try_borrow_mut()
+        {
+            runtime.ensure_presentation(view);
+        }
         self.view = view;
         self
     }
@@ -723,9 +946,15 @@ impl UiContext {
         component: ComponentInstancePath,
         events: BTreeMap<String, EventSchema>,
     ) -> Self {
+        let incarnation = self
+            .runtime
+            .try_borrow_mut()
+            .map(|mut runtime| runtime.ensure_component_incarnation(&component))
+            .unwrap_or_default();
         let context = Self {
             runtime: Rc::clone(&self.runtime),
             component,
+            incarnation,
             window: self.window.clone(),
             view: self.view.clone(),
             phase: self.phase,
@@ -813,7 +1042,11 @@ impl UiContext {
 
     fn scoped_callback(&self, function: FnPtr) -> Result<ScriptCallback, UiContextError> {
         let mut callback = ScriptCallback::try_from_fn_ptr(function, self.generation)?;
-        callback.bind_component_if_unset(self.component.clone(), self.events.clone());
+        callback.bind_component_scope_if_unset(
+            &self.component,
+            self.incarnation,
+            self.events.clone(),
+        );
         if let Some(context) = &self.native_context {
             callback.bind_native_context_if_unset(context.clone());
         }
@@ -827,6 +1060,10 @@ impl UiContext {
 
     pub(crate) fn component_path(&self) -> &ComponentInstancePath {
         &self.component
+    }
+
+    pub(crate) const fn component_incarnation(&self) -> ComponentIncarnation {
+        self.incarnation
     }
 
     pub(crate) fn event_schemas(&self) -> &BTreeMap<String, EventSchema> {
@@ -1050,7 +1287,8 @@ impl UiContext {
         let Some(node) = node else {
             return Ok(UiValue::Null);
         };
-        let geometry_registry = runtime.geometry.clone();
+        let geometry_registry =
+            runtime.geometry_for(self.view.as_deref().or(self.window.as_deref()));
         drop(runtime);
         let Some(geometry) = geometry_registry.read_tracked(node, &self.component) else {
             return Ok(UiValue::Null);
@@ -2178,6 +2416,11 @@ impl UiContext {
             .runtime
             .try_borrow_mut()
             .map_err(|_| UiContextError::Borrowed)?;
+        crate::RuntimeBudgets::check(
+            "image_decodes",
+            runtime.assets.pending_decode_count().saturating_add(1),
+            runtime.budgets.image_decodes,
+        )?;
         let handle = runtime.assets.start_image_decode(
             asset,
             self.async_scope
@@ -2314,8 +2557,13 @@ impl UiContext {
             .runtime
             .try_borrow_mut()
             .map_err(|_| UiContextError::Borrowed)?;
+        crate::RuntimeBudgets::check(
+            "background_tasks",
+            runtime.tasks.active_count().saturating_add(1),
+            runtime.budgets.background_tasks,
+        )?;
         let (work, output) = runtime.capabilities.start_task(&id, method, input)?;
-        let handle = runtime.tasks.spawn(
+        let handle = runtime.tasks.spawn_cancellable(
             self.async_scope
                 .clone()
                 .unwrap_or_else(|| AsyncScope::Component(self.component.clone())),
@@ -2323,7 +2571,7 @@ impl UiContext {
             success,
             error,
             output,
-            work,
+            move |cancellation| work.run(cancellation),
         )?;
         runtime.traces.push(
             crate::RuntimeTraceKind::Task,
@@ -2363,6 +2611,11 @@ impl UiContext {
             .runtime
             .try_borrow_mut()
             .map_err(|_| UiContextError::Borrowed)?;
+        crate::RuntimeBudgets::check(
+            "subscriptions",
+            runtime.subscriptions.active_count().saturating_add(1),
+            runtime.budgets.subscriptions,
+        )?;
         let (work, output) = runtime
             .capabilities
             .start_subscription(&id, method, input)?;
@@ -3405,6 +3658,8 @@ pub enum UiContextError {
     Callback(#[from] crate::ScriptCallbackDefinitionError),
     #[error(transparent)]
     Timer(#[from] crate::TimerError),
+    #[error(transparent)]
+    Budget(#[from] crate::RuntimeBudgetError),
 }
 
 #[cfg(test)]
@@ -3898,6 +4153,144 @@ mod tests {
     }
 
     #[test]
+    fn receiver_subscription_waits_for_lossless_capacity_without_ending_the_stream() {
+        let mut engine = RuntimeEngine::new();
+        let compiled = engine
+            .compile(
+                "fn view() { text(\"stream\") } fn success(ctx, value) {} fn failure(ctx, value) {}",
+            )
+            .unwrap();
+        engine.render(&compiled).unwrap();
+        let generation = compiled.generation();
+        let registration = SubscriptionRegistration::new(
+            "stream",
+            AsyncScope::App,
+            generation,
+            engine.callback(&compiled, "success").unwrap(),
+            engine.callback(&compiled, "failure").unwrap(),
+            ValueSchema::integer(),
+        )
+        .with_capacity(1)
+        .unwrap();
+        let mut subscriptions = SubscriptionRegistry::new();
+        let (_, emitter) = subscriptions.subscribe(registration);
+        let closer = emitter.clone();
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            run_subscription_work(SubscriptionWork::from_receiver(receiver), emitter, &closer);
+        });
+        sender.send(UiValue::Integer(1)).unwrap();
+        sender.send(UiValue::Integer(2)).unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(1);
+        let first = loop {
+            let values = subscriptions.drain(generation);
+            if !values.is_empty() {
+                break values;
+            }
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::yield_now();
+        };
+        assert_eq!(first[0].payload, UiValue::Integer(1));
+        let second = loop {
+            let values = subscriptions.drain(generation);
+            if !values.is_empty() {
+                break values;
+            }
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::yield_now();
+        };
+        assert_eq!(second[0].payload, UiValue::Integer(2));
+        assert_eq!(subscriptions.active_count(), 1);
+        drop(sender);
+        worker.join().unwrap();
+    }
+
+    #[test]
+    fn runtime_transaction_rollback_restores_cancelled_subscription() {
+        let mut engine = RuntimeEngine::new();
+        let compiled = engine
+            .compile(
+                "fn view() { text(\"test\") } fn success(ctx, value) {} fn failure(ctx, value) {}",
+            )
+            .unwrap();
+        engine.render(&compiled).unwrap();
+        let success = engine.callback(&compiled, "success").unwrap();
+        let error = engine.callback(&compiled, "failure").unwrap();
+        let generation = compiled.generation();
+        let mut state = UiRuntimeState::new();
+        let (handle, emitter) = state.subscriptions.subscribe(SubscriptionRegistration::new(
+            "rollback",
+            AsyncScope::App,
+            generation,
+            success,
+            error,
+            ValueSchema::integer(),
+        ));
+        let checkpoint = state.begin_transaction().unwrap();
+        assert!(state.subscriptions.cancel(handle));
+        assert_eq!(emitter.close_reason(), None);
+        state.rollback_transaction(checkpoint).unwrap();
+        assert_eq!(state.subscriptions.active_count(), 1);
+        emitter.emit(UiValue::Integer(7)).unwrap();
+        assert_eq!(state.subscriptions.drain(generation).len(), 1);
+    }
+
+    #[test]
+    fn transaction_tokens_cannot_cross_runtime_or_commit_unbalanced() {
+        let mut first = UiRuntimeState::new();
+        let mut second = UiRuntimeState::new();
+        let checkpoint = first.begin_transaction().unwrap();
+        assert!(matches!(
+            second.rollback_transaction(checkpoint.clone()),
+            Err(UiTransactionError::ForeignSnapshot)
+        ));
+        assert!(matches!(
+            second.commit_transaction(),
+            Err(UiTransactionError::Unbalanced { .. })
+        ));
+        first.rollback_transaction(checkpoint).unwrap();
+    }
+
+    #[test]
+    fn presentation_geometry_and_capture_are_isolated_per_view() {
+        let mut first = crate::RetainedUiTree::new();
+        first.reconcile(crate::UiNode::text("first")).unwrap();
+        let mut second = crate::RetainedUiTree::new();
+        second.reconcile(crate::UiNode::text("second")).unwrap();
+        let first_node = first.root_id().unwrap();
+        let second_node = second.root_id().unwrap();
+        assert_eq!(
+            first_node, second_node,
+            "tree-local IDs intentionally overlap"
+        );
+
+        let mut state = UiRuntimeState::new();
+        state.ensure_presentation("first");
+        state.ensure_presentation("second");
+        let first_geometry = state.geometry_for(Some("first"));
+        let second_geometry = state.geometry_for(Some("second"));
+        let bounds = |width| crate::ElementGeometry {
+            layout: crate::GeometryBounds::new(0.0, 0.0, width, 20.0).unwrap(),
+            visual: crate::GeometryBounds::new(0.0, 0.0, width, 20.0).unwrap(),
+            clip: None,
+        };
+        first_geometry.update(first_node, bounds(100.0));
+        second_geometry.update(second_node, bounds(300.0));
+        second_geometry.begin_frame();
+        assert!(
+            (first_geometry.get(first_node).unwrap().visual.width - 100.0).abs() < f64::EPSILON
+        );
+        assert!(first_geometry.is_presented(first_node));
+
+        let first_capture = state.pointer_capture_for(Some("first"));
+        let second_capture = state.pointer_capture_for(Some("second"));
+        first_capture.capture(0, first_node);
+        second_capture.capture(0, second_node);
+        assert_eq!(first_capture.captured(0), Some(first_node));
+        assert_eq!(second_capture.captured(0), Some(second_node));
+    }
+
+    #[test]
     fn focus_by_ref_key_queues_a_window_scoped_retained_command() {
         let context = mounted_context(ExecutionPhase::Event);
         let mut tree = crate::RetainedUiTree::new();
@@ -3910,14 +4303,18 @@ mod tests {
             BTreeMap::from([(reference.id().clone(), tree.root_id().unwrap())]),
         );
         let node = tree.root_id().unwrap();
-        context.runtime().borrow().geometry.update(
-            node,
-            crate::ElementGeometry {
-                layout: crate::GeometryBounds::new(1.0, 2.0, 120.0, 24.0).unwrap(),
-                visual: crate::GeometryBounds::new(3.0, 4.0, 120.0, 24.0).unwrap(),
-                clip: None,
-            },
-        );
+        context
+            .runtime()
+            .borrow()
+            .geometry_for(Some("main"))
+            .update(
+                node,
+                crate::ElementGeometry {
+                    layout: crate::GeometryBounds::new(1.0, 2.0, 120.0, 24.0).unwrap(),
+                    visual: crate::GeometryBounds::new(3.0, 4.0, 120.0, 24.0).unwrap(),
+                    clip: None,
+                },
+            );
         assert!(matches!(
             context.element_bounds_by_key("field").unwrap(),
             UiValue::Map(bounds)

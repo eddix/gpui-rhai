@@ -4,9 +4,12 @@ The budgets are diagnostics, not permission to move per-frame policy into Rhai.
 
 - `view`, event callbacks, and capability delivery warn at 16 ms by default.
 - Every compile/render/lifecycle/callback `ExecutionTiming` records wall time,
-  success, slow-threshold state, and Rhai's actual operation counter. Imported
-  component/helper calls are included in their outer render/callback total;
-  Inspector shows the latest operation counts beside duration.
+  success, slow-threshold state, and the runtime's cumulative Rhai operation
+  count. Semantics version 2 aggregates nested evaluators; delayed callbacks
+  start with fresh quota even when their stored module context was captured
+  late in an earlier render. Imported component/helper calls are included in
+  their outer render/callback total; Inspector shows the latest counts beside
+  duration.
 - Rhai execution is capped at 1,000,000 operations, 64 call levels, bounded
   expression depth, 10,000 array entries, 100,000 aggregate map fields, and
   1 MiB strings.
@@ -146,9 +149,9 @@ Each `gpui-rhai-e2e-v2` report retains raw samples and p50/p95/p99 summaries
 together with commit, dirty state, Rust/macOS/hardware metadata, retained node
 counts, data backend, and virtual-collection data/realization metrics. Rhai
 duration and operation totals are split into root/component work and delayed
-virtual-item work. Persisted `NativeCallContext` calls report an operation delta
-from the stored parent counter; the absolute parent value is never charged once
-per item. Samples also report `reused_component_subtrees` and
+virtual-item work. Persisted `NativeCallContext` calls begin a new execution
+session from their stored absolute counter; only newly observed work consumes
+that session. Samples also report `reused_component_subtrees` and
 `reused_components`. The unchanged-data scenario requires the four stable
 buttons and Table to survive a root-state rerender through component bailout.
 

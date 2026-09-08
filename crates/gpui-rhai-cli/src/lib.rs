@@ -2,6 +2,8 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::fs;
+use std::fs::OpenOptions;
+use std::io::Write as _;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -659,34 +661,74 @@ impl Project {
         let manifest_source = read(&manifest_path)?;
         let mut manifest: LocalManifest = toml::from_str(&manifest_source)?;
         let mut plan = ProjectPlan::new(self.root.clone());
-        for (raw_id, installed) in &mut manifest.components {
-            let id = ModuleId::parse(raw_id.clone())?;
-            let Some(upstream) = registry.entries.get(&id) else {
-                continue;
-            };
-            if upstream.metadata.version <= installed.version {
-                continue;
+        let requested = manifest.components.keys().cloned().collect::<Vec<_>>();
+        for id in registry.resolve(&requested)? {
+            let upstream = registry
+                .entries
+                .get(&id)
+                .ok_or_else(|| ProjectError::UnknownComponent(id.clone()))?;
+            if !upstream.metadata.runtime_api.contains(RUNTIME_API_VERSION) {
+                return Err(ProjectError::IncompatibleRuntime(id));
             }
             let relative = component_relative_path(&id)?;
             let source_path = self.root.join("ui").join(&relative);
             let baseline_path = self.root.join(".gpui-rhai/baselines").join(&relative);
-            let source = read(&source_path)?;
-            let baseline = read(&baseline_path)?;
-            let Ok(merged) = three_way_merge(&baseline, &source, upstream.source) else {
-                let conflict_path = self.root.join(".gpui-rhai/conflicts").join(&relative);
-                plan.replace_or_create(
-                    conflict_path,
-                    conflict_artifact(&source, &baseline, upstream.source),
-                )?;
+            let installed = manifest.components.get(id.as_str()).cloned();
+            if let Some(installed) = &installed
+                && upstream.metadata.version <= installed.version
+            {
+                continue;
+            }
+            let write_checkpoint = plan.writes.len();
+            if installed.is_some() {
+                let source = read(&source_path)?;
+                let baseline = read(&baseline_path)?;
+                let Ok(merged) = three_way_merge(&baseline, &source, upstream.source) else {
+                    let conflict_path = self.root.join(".gpui-rhai/conflicts").join(&relative);
+                    plan.replace_or_create(
+                        conflict_path,
+                        conflict_artifact(&source, &baseline, upstream.source),
+                    )?;
+                    plan.conflicts.push(id);
+                    continue;
+                };
+                plan.update(source_path, merged, source);
+                plan.update(baseline_path, upstream.source.to_owned(), baseline);
+            } else {
+                plan.create(source_path, upstream.source.to_owned())?;
+                plan.create(baseline_path, upstream.source.to_owned())?;
+            }
+            let mut asset_conflict = false;
+            for asset in upstream.assets {
+                asset_conflict |= self.plan_asset_update(&mut plan, asset)?;
+            }
+            if asset_conflict {
+                let added = plan.writes.split_off(write_checkpoint);
+                let conflicts = self.root.join(".gpui-rhai/conflicts");
+                plan.writes.extend(
+                    added
+                        .into_iter()
+                        .filter(|write| write.path.starts_with(&conflicts)),
+                );
                 plan.conflicts.push(id);
                 continue;
-            };
-            plan.update(source_path, merged, source);
-            plan.update(baseline_path, upstream.source.to_owned(), baseline);
-            installed.version = upstream.metadata.version.clone();
-            installed.content_hash = format!(
+            }
+            let content_hash = format!(
                 "{:016x}",
-                ScriptAsset::new(id, upstream.source.to_owned()).content_hash
+                ScriptAsset::new(id.clone(), upstream.source.to_owned()).content_hash
+            );
+            manifest.components.insert(
+                id.as_str().to_owned(),
+                InstalledComponent {
+                    version: upstream.metadata.version.clone(),
+                    content_hash,
+                    dependencies: upstream
+                        .metadata
+                        .dependencies
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect(),
+                },
             );
         }
         for &(name, source) in BUNDLED_THEME_SOURCES
@@ -708,6 +750,43 @@ impl Project {
             manifest_source,
         );
         Ok(plan)
+    }
+
+    fn plan_asset_update(
+        &self,
+        plan: &mut ProjectPlan,
+        asset: &RegistryAsset,
+    ) -> Result<bool, ProjectError> {
+        let source_path = self.root.join("ui/assets").join(asset.path);
+        let baseline_path = self
+            .root
+            .join(".gpui-rhai/baselines/assets")
+            .join(asset.path);
+        match (source_path.exists(), baseline_path.exists()) {
+            (false, false) => {
+                plan.create(source_path, asset.source.to_owned())?;
+                plan.create(baseline_path, asset.source.to_owned())?;
+            }
+            (true, true) => {
+                let source = read(&source_path)?;
+                let baseline = read(&baseline_path)?;
+                let Ok(merged) = three_way_merge(&baseline, &source, asset.source) else {
+                    let conflict_path = self
+                        .root
+                        .join(".gpui-rhai/conflicts/assets")
+                        .join(asset.path);
+                    plan.replace_or_create(
+                        conflict_path,
+                        conflict_artifact(&source, &baseline, asset.source),
+                    )?;
+                    return Ok(true);
+                };
+                plan.update(source_path, merged, source);
+                plan.update(baseline_path, asset.source.to_owned(), baseline);
+            }
+            _ => return Err(ProjectError::IncompleteAssetBaseline(asset.path.to_owned())),
+        }
+        Ok(false)
     }
 
     /// Generate a deterministic Rust module for production embedding.
@@ -1396,6 +1475,47 @@ struct PlannedWrite {
     expected: ExpectedFile,
 }
 
+struct StagedProjectWrite<'a> {
+    write: &'a PlannedWrite,
+    temporary: PathBuf,
+    backup: Option<PathBuf>,
+    committed: bool,
+}
+
+struct ProjectApplyLock {
+    path: PathBuf,
+}
+
+impl ProjectApplyLock {
+    fn acquire(root: &Path) -> Result<Self, ProjectError> {
+        let path = root.join(".gpui-rhai-apply.lock");
+        let mut lock = match OpenOptions::new().write(true).create_new(true).open(&path) {
+            Ok(lock) => lock,
+            Err(source) if source.kind() == std::io::ErrorKind::AlreadyExists => {
+                return Err(ProjectError::ConcurrentChange {
+                    path,
+                    detail: "another apply is active or crash recovery is required".to_owned(),
+                });
+            }
+            Err(source) => {
+                return Err(ProjectError::Io { path, source });
+            }
+        };
+        let guard = Self { path: path.clone() };
+        writeln!(lock, "pid={}", std::process::id()).map_err(|source| ProjectError::Io {
+            path: path.clone(),
+            source,
+        })?;
+        Ok(guard)
+    }
+}
+
+impl Drop for ProjectApplyLock {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.path);
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct ProjectPlan {
     root: PathBuf,
@@ -1497,7 +1617,9 @@ impl ProjectPlan {
     ///
     /// Returns [`ProjectError::ConcurrentChange`] or an I/O error. All
     /// expectations are checked before the first write.
+    #[allow(clippy::too_many_lines)] // Linear prepare/commit/rollback protocol is easier to audit in order.
     pub fn apply(self) -> Result<(), ProjectError> {
+        let _lock = ProjectApplyLock::acquire(&self.root)?;
         for write in &self.writes {
             match (&write.expected, fs::read_to_string(&write.path)) {
                 (ExpectedFile::Missing, Err(error))
@@ -1514,6 +1636,11 @@ impl ProjectPlan {
                 }
             }
         }
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let mut staged = Vec::with_capacity(self.writes.len());
         for (index, write) in self.writes.iter().enumerate() {
             let parent = write
                 .path
@@ -1523,17 +1650,141 @@ impl ProjectPlan {
                 path: parent.to_path_buf(),
                 source,
             })?;
-            let temporary = parent.join(format!(".gpui-rhai-tmp-{}-{index}", std::process::id()));
-            fs::write(&temporary, &write.content).map_err(|source| ProjectError::Io {
-                path: temporary.clone(),
-                source,
-            })?;
-            fs::rename(&temporary, &write.path).map_err(|source| ProjectError::Io {
-                path: write.path.clone(),
-                source,
-            })?;
+            let temporary = parent.join(format!(
+                ".gpui-rhai-tmp-{}-{nonce}-{index}",
+                std::process::id()
+            ));
+            let mut file = match OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&temporary)
+            {
+                Ok(file) => file,
+                Err(source) => {
+                    cleanup_staged_files(&staged);
+                    return Err(ProjectError::Io {
+                        path: temporary,
+                        source,
+                    });
+                }
+            };
+            if let Err(source) = file.write_all(write.content.as_bytes()) {
+                let _ = fs::remove_file(&temporary);
+                cleanup_staged_files(&staged);
+                return Err(ProjectError::Io {
+                    path: temporary,
+                    source,
+                });
+            }
+            staged.push(StagedProjectWrite {
+                write,
+                temporary,
+                backup: matches!(write.expected, ExpectedFile::Exact(_)).then(|| {
+                    parent.join(format!(
+                        ".gpui-rhai-backup-{}-{nonce}-{index}",
+                        std::process::id()
+                    ))
+                }),
+                committed: false,
+            });
+        }
+
+        // Close the planning-to-commit race as far as a cooperative CLI can
+        // without claiming process-crash atomicity.
+        for staged_write in &staged {
+            if !expectation_matches(staged_write.write) {
+                cleanup_staged_files(&staged);
+                return Err(ProjectError::ConcurrentChange {
+                    path: staged_write.write.path.clone(),
+                    detail: "content changed while staging the update".to_owned(),
+                });
+            }
+        }
+
+        for index in 0..staged.len() {
+            let commit = (|| -> Result<(), std::io::Error> {
+                if let Some(backup) = &staged[index].backup {
+                    fs::rename(&staged[index].write.path, backup)?;
+                }
+                fs::rename(&staged[index].temporary, &staged[index].write.path)?;
+                staged[index].committed = true;
+                Ok(())
+            })();
+            if let Err(source) = commit {
+                let rollback = rollback_staged_files(&mut staged, index);
+                if let Err(rollback) = rollback {
+                    return Err(ProjectError::ApplyRollback {
+                        path: staged[index].write.path.clone(),
+                        source,
+                        rollback,
+                    });
+                }
+                return Err(ProjectError::Io {
+                    path: staged[index].write.path.clone(),
+                    source,
+                });
+            }
+        }
+        for staged_write in &staged {
+            if let Some(backup) = &staged_write.backup {
+                let _ = fs::remove_file(backup);
+            }
         }
         Ok(())
+    }
+}
+
+fn expectation_matches(write: &PlannedWrite) -> bool {
+    match (&write.expected, fs::read_to_string(&write.path)) {
+        (ExpectedFile::Missing, Err(error)) if error.kind() == std::io::ErrorKind::NotFound => true,
+        (ExpectedFile::Exact(expected), Ok(actual)) => expected == &actual,
+        _ => false,
+    }
+}
+
+fn cleanup_staged_files(staged: &[StagedProjectWrite<'_>]) {
+    for staged in staged {
+        let _ = fs::remove_file(&staged.temporary);
+    }
+}
+
+fn rollback_staged_files(
+    staged: &mut [StagedProjectWrite<'_>],
+    failed: usize,
+) -> Result<(), String> {
+    let mut errors = Vec::new();
+    for index in (0..=failed).rev() {
+        let item = &mut staged[index];
+        if item.committed
+            && let Err(error) = fs::remove_file(&item.write.path)
+        {
+            errors.push(format!("remove {}: {error}", item.write.path.display()));
+        }
+        if let Some(backup) = &item.backup
+            && backup.exists()
+            && let Err(error) = fs::rename(backup, &item.write.path)
+        {
+            errors.push(format!(
+                "restore {} from {}: {error}",
+                item.write.path.display(),
+                backup.display()
+            ));
+        }
+        if item.temporary.exists()
+            && let Err(error) = fs::remove_file(&item.temporary)
+        {
+            errors.push(format!("remove {}: {error}", item.temporary.display()));
+        }
+    }
+    for item in staged.iter().skip(failed + 1) {
+        if let Err(error) = fs::remove_file(&item.temporary) {
+            errors.push(format!("remove {}: {error}", item.temporary.display()));
+        }
+    }
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors.join("; "))
     }
 }
 
@@ -1585,6 +1836,13 @@ pub enum ProjectError {
         #[source]
         source: std::io::Error,
     },
+    #[error("I/O failed for `{path}`: {source}; rollback was incomplete: {rollback}")]
+    ApplyRollback {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+        rollback: String,
+    },
     #[error("invalid Cargo.toml `{path}`: {source}")]
     CargoToml {
         path: PathBuf,
@@ -1618,6 +1876,8 @@ pub enum ProjectError {
     InvalidComponentPath(ModuleId),
     #[error("baseline hash for `{0}` does not match the install manifest")]
     BaselineHash(ModuleId),
+    #[error("asset `{0}` has source without a baseline or a baseline without source")]
+    IncompleteAssetBaseline(String),
     #[error("installed metadata for `{0}` does not match its manifest")]
     InstalledMetadata(ModuleId),
     #[error("component `{0}` did not call define_component")]
@@ -1877,6 +2137,30 @@ mod tests {
     }
 
     #[test]
+    fn apply_stages_every_write_before_replacing_any_target() {
+        let directory = fixture();
+        let original = read(&directory.path().join("Cargo.toml")).unwrap();
+        let blocked = directory.path().join("blocked");
+        fs::write(&blocked, "not a directory").unwrap();
+        let mut plan = ProjectPlan::new(directory.path().to_path_buf());
+        plan.update(
+            directory.path().join("Cargo.toml"),
+            format!("{original}\n# planned\n"),
+            original.clone(),
+        );
+        plan.writes.push(PlannedWrite {
+            path: blocked.join("child.rhai"),
+            content: "fn view() {}".to_owned(),
+            expected: ExpectedFile::Missing,
+        });
+        assert!(plan.apply().is_err());
+        assert_eq!(
+            read(&directory.path().join("Cargo.toml")).unwrap(),
+            original
+        );
+    }
+
+    #[test]
     fn embed_plan_contains_entry_components_theme_locale_and_assets() {
         let directory = fixture();
         let project = Project::new(directory.path());
@@ -2083,6 +2367,44 @@ mod tests {
             )
             .unwrap(),
             registry.entries[&ModuleId::parse("components/button").unwrap()].source
+        );
+    }
+
+    #[test]
+    fn update_installs_new_transitive_dependencies_and_records_the_target_graph() {
+        let directory = fixture();
+        let project = Project::new(directory.path());
+        project.plan_init().unwrap().apply().unwrap();
+        project
+            .plan_add(&BundledRegistry::load().unwrap(), &["button".to_owned()])
+            .unwrap()
+            .apply()
+            .unwrap();
+
+        let mut registry = BundledRegistry::load().unwrap();
+        let button = ModuleId::parse("components/button").unwrap();
+        let entry = registry.entries.get_mut(&button).unwrap();
+        let source = entry
+            .source
+            .replace("0.1.1", "0.2.0")
+            .replace("dependencies: []", "dependencies: [\"components/badge\"]")
+            .replace(
+                "\"dependencies\": []",
+                "\"dependencies\": [\"components/badge\"]",
+            );
+        let source: &'static str = Box::leak(source.into_boxed_str());
+        entry.metadata = parse_component_header(source).unwrap();
+        entry.source = source;
+
+        project.plan_update(&registry).unwrap().apply().unwrap();
+        assert!(directory.path().join("ui/components/badge.rhai").exists());
+        let manifest: LocalManifest =
+            toml::from_str(&read(&directory.path().join(".gpui-rhai/manifest.toml")).unwrap())
+                .unwrap();
+        assert!(manifest.components.contains_key("components/badge"));
+        assert_eq!(
+            manifest.components["components/button"].dependencies,
+            vec!["components/badge"]
         );
     }
 

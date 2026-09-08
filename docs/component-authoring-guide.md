@@ -379,6 +379,9 @@ repeat until removed or changed, and unreachable scopes cancel. Event handlers
 may call `ctx.pause_timeout(key)`, `ctx.resume_timeout(key)`, or
 `ctx.cancel_timeout(key)`. Only named non-capturing callbacks and UiValue
 payloads cross the retained boundary.
+The signature includes callback curry/provenance, not only its function name.
+Declaration pause, explicit interaction pause, and temporary view suspension
+are independent reasons; resuming a view never clears an explicit pause.
 
 Timer deadlines and animation sampling share the Host's monotonic
 `RuntimeClock`. Production applications use the system clock. Tests and

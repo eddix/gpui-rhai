@@ -398,13 +398,14 @@ impl NodePresentationMutation {
     fn bind_component_scope(
         &mut self,
         component: &ComponentInstancePath,
+        incarnation: crate::ComponentIncarnation,
         events: &BTreeMap<String, crate::EventSchema>,
         native_context: Option<&crate::invocation::ScriptInvocationContext>,
     ) {
         if let Self::Handler(_, binding) = self
             && let Some(callback) = binding.handler_mut().as_script_mut()
         {
-            callback.bind_component_if_unset(component.clone(), events.clone());
+            callback.bind_component_scope_if_unset(component, incarnation, events.clone());
             if let Some(context) = native_context {
                 callback.bind_native_context_if_unset(context.clone());
             }
@@ -1297,13 +1298,14 @@ impl UiNode {
     pub(crate) fn bind_component_scope(
         &mut self,
         component: &crate::ComponentInstancePath,
+        incarnation: crate::ComponentIncarnation,
         events: &BTreeMap<String, crate::EventSchema>,
         native_context: Option<&crate::invocation::ScriptInvocationContext>,
     ) {
         for bindings in self.handlers.values_mut() {
             for binding in bindings {
                 if let Some(callback) = binding.handler_mut().as_script_mut() {
-                    callback.bind_component_if_unset(component.clone(), events.clone());
+                    callback.bind_component_scope_if_unset(component, incarnation, events.clone());
                     if let Some(context) = native_context {
                         callback.bind_native_context_if_unset(context.clone());
                     }
@@ -1311,35 +1313,38 @@ impl UiNode {
             }
         }
         for mutation in &mut self.presentation {
-            mutation.bind_component_scope(component, events, native_context);
+            mutation.bind_component_scope(component, incarnation, events, native_context);
         }
         match &mut self.kind {
             UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => {
                 for child in children {
-                    child.bind_component_scope(component, events, native_context);
+                    child.bind_component_scope(component, incarnation, events, native_context);
                 }
             }
             UiNodeKind::Custom { primitive } => {
-                primitive
-                    .props
-                    .bind_component_scope(component, events, native_context);
+                primitive.props.bind_component_scope(
+                    component,
+                    incarnation,
+                    events,
+                    native_context,
+                );
             }
             UiNodeKind::ErrorBoundary { child, fallback } => {
-                child.bind_component_scope(component, events, native_context);
-                fallback.bind_component_scope(component, events, native_context);
+                child.bind_component_scope(component, incarnation, events, native_context);
+                fallback.bind_component_scope(component, incarnation, events, native_context);
             }
             UiNodeKind::Overlay {
                 trigger, content, ..
             } => {
-                trigger.bind_component_scope(component, events, native_context);
-                content.bind_component_scope(component, events, native_context);
+                trigger.bind_component_scope(component, incarnation, events, native_context);
+                content.bind_component_scope(component, incarnation, events, native_context);
             }
             UiNodeKind::Layer { content, .. } => {
-                content.bind_component_scope(component, events, native_context);
+                content.bind_component_scope(component, incarnation, events, native_context);
             }
             UiNodeKind::VirtualCollection { spec } => {
                 for item in spec.realized.values_mut() {
-                    item.bind_component_scope(component, events, native_context);
+                    item.bind_component_scope(component, incarnation, events, native_context);
                 }
             }
             UiNodeKind::Text { .. }

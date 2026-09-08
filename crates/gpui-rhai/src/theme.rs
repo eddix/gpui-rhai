@@ -843,6 +843,8 @@ pub fn load_theme_source(
     let mut ast = engine
         .compile(source)
         .map_err(|error| ThemeError::Script(error.to_string()))?;
+    crate::engine::validate_assignment_targets(&ast)
+        .map_err(|error| ThemeError::Script(error.to_string()))?;
     ast.set_source(source_name);
     let raw: Dynamic = engine
         .call_fn(&mut Scope::new(), &ast, "theme", ())

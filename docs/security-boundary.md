@@ -27,7 +27,8 @@ contexts, arbitrary Rust values, filesystem paths, URLs, sockets, or process API
   candidate before commit when retained nodes, event handlers, formal
   components, effects, timers, signals, element refs, generic Layers, Canvas
   scenes/commands, or virtual data/realization counts exceed their independent
-  limits.
+  limits. Background tasks, subscriptions, and image decodes have separate
+  admission limits; task execution uses a bounded shared worker queue.
 - Window commands accept bounded sizes and validated stable IDs. Scripts cannot
   access native window handles.
 - Diagnostics redact fields marked `sensitive`; capability payloads should be

@@ -317,6 +317,7 @@ impl PrimitiveProps {
     pub(crate) fn bind_component_scope(
         &mut self,
         component: &crate::ComponentInstancePath,
+        incarnation: crate::ComponentIncarnation,
         events: &BTreeMap<String, EventSchema>,
         native_context: Option<&crate::invocation::ScriptInvocationContext>,
     ) {
@@ -324,18 +325,22 @@ impl PrimitiveProps {
             match value {
                 PrimitiveValue::Callback(callback) => {
                     if let Some(callback) = callback.as_script_mut() {
-                        callback.bind_component_if_unset(component.clone(), events.clone());
+                        callback.bind_component_scope_if_unset(
+                            component,
+                            incarnation,
+                            events.clone(),
+                        );
                         if let Some(context) = native_context {
                             callback.bind_native_context_if_unset(context.clone());
                         }
                     }
                 }
                 PrimitiveValue::Node(node) => {
-                    node.bind_component_scope(component, events, native_context);
+                    node.bind_component_scope(component, incarnation, events, native_context);
                 }
                 PrimitiveValue::Nodes(nodes) => {
                     for node in nodes {
-                        node.bind_component_scope(component, events, native_context);
+                        node.bind_component_scope(component, incarnation, events, native_context);
                     }
                 }
                 PrimitiveValue::Data(_)
@@ -816,7 +821,7 @@ impl PrimitiveRegistry {
             })?;
         schema
             .payload
-            .validate(&payload.clone().into_dynamic())
+            .validate_ui_value(&payload)
             .map_err(|source| PrimitiveError::InvalidEvent {
                 primitive: id.clone(),
                 event: event.to_owned(),
@@ -1138,13 +1143,12 @@ fn validate_descriptor(descriptor: &PrimitiveDescriptor) -> Result<(), Primitive
                 source,
             })?;
         if let Some(default) = &field.default {
-            field
-                .schema
-                .validate(&default.clone().into_dynamic())
-                .map_err(|source| PrimitiveError::InvalidDefault {
+            field.schema.validate_ui_value(default).map_err(|source| {
+                PrimitiveError::InvalidDefault {
                     prop: name.clone(),
                     source,
-                })?;
+                }
+            })?;
         }
     }
     for (name, event) in &descriptor.events {

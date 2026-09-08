@@ -86,7 +86,7 @@ struct DelayedTextCapability;
 impl AsyncCapabilityHandler for DelayedTextCapability {
     fn start(&mut self, method: &str, input: UiValue) -> Result<TaskWork, String> {
         match (method, input) {
-            ("load", UiValue::String(value)) => Ok(Box::new(move || {
+            ("load", UiValue::String(value)) => Ok(TaskWork::new(move || {
                 std::thread::sleep(Duration::from_millis(20));
                 Ok(UiValue::String(value.to_uppercase()))
             })),

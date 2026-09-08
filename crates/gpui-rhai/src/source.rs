@@ -237,6 +237,13 @@ impl ModuleResolver for RestrictedModuleResolver {
                         position,
                     ))
                 })?;
+                crate::engine::validate_assignment_targets(&ast).map_err(|error| {
+                    Box::new(EvalAltResult::ErrorInModule(
+                        path.to_owned(),
+                        Box::new(runtime_error(error.to_string(), position)),
+                        position,
+                    ))
+                })?;
                 ast.set_source(path);
                 ast
             };

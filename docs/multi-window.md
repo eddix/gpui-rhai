@@ -17,6 +17,9 @@ IDs are stable and unique; sizes, title length, window count, and pending comman
 count are bounded. Every standalone script window runs the same entry in a separate lifecycle and
 component-state namespace. App stores are shared; window stores, theme and locale
 overrides, overlays, animations, tasks, subscriptions, and image work are scoped.
+Geometry, presented-frame membership, and pointer capture live in a per-view
+presentation domain, so tree-local NodeId and pointer numbers may overlap
+without one window clearing or overwriting another.
 
 Declare per-window Rust resources with
 `ScriptViewExtension::configure_window(window_id, runtime)`. It runs before that

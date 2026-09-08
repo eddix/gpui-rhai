@@ -1,0 +1,28 @@
+{
+  "examples": [
+    "artistic_showcase",
+    "code_viewer",
+    "component_gallery",
+    "dashboard_layout",
+    "data_table",
+    "diff_viewer",
+    "embedded_hello_world",
+    "embedded_views",
+    "extension_host",
+    "form_showcase",
+    "hello_world",
+    "host_owned_tree",
+    "mini_timeline",
+    "multi_window",
+    "native_overlay_smoke",
+    "native_virtual_list_smoke",
+    "performance_probe",
+    "phase0_probe",
+    "settings_panel",
+    "table_1000",
+    "variable_height_chat"
+  ],
+  "feature_sets": ["default", "all-features"],
+  "native_platforms": ["macos", "linux"],
+  "manual_gates": ["macos-ime", "macos-accessibility", "macos-visual", "120hz-frame-time"]
+}

@@ -1176,7 +1176,11 @@ fn automation_commands_use_mounted_handlers_actions_and_clock(cx: &mut TestAppCo
                     ctx.set_state("count", ctx.get_state("count") + 1);
                 }
                 fn tick(ctx, payload) { increment(ctx, payload); }
-                fn init(ctx) { ctx.register_action("counter.bump", Fn("increment")); }
+                fn fail(ctx, payload) { throw "deliberate automation failure"; }
+                fn init(ctx) {
+                    ctx.register_action("counter.bump", Fn("increment"));
+                    ctx.register_action("counter.fail", Fn("fail"));
+                }
                 fn view(ctx) {
                     timeout("tick", 100, false, Fn("tick"), ());
                     column([
@@ -1274,6 +1278,19 @@ fn automation_commands_use_mounted_handlers_actions_and_clock(cx: &mut TestAppCo
     let mut texts = Vec::new();
     node_texts(&root, &mut texts);
     assert!(texts.contains(&"Count: 3".to_owned()), "{texts:?}");
+    let error = visual
+        .update(|window, cx| {
+            view.automate(
+                gpui_rhai::AutomationCommand::Action {
+                    id: "counter.fail".to_owned(),
+                    payload: None,
+                },
+                window,
+                cx,
+            )
+        })
+        .unwrap_err();
+    assert!(error.to_string().contains("deliberate automation failure"));
 }
 
 #[gpui::test]
@@ -1292,7 +1309,7 @@ fn async_workers_wake_the_view_without_input_or_manual_poll(cx: &mut TestAppCont
             let UiValue::String(value) = input else {
                 return Err("load expects a string".to_owned());
             };
-            Ok(Box::new(move || Ok(UiValue::String(value.to_uppercase()))))
+            Ok(TaskWork::new(move || Ok(UiValue::String(value.to_uppercase()))))
         }
     }
 
@@ -1537,7 +1554,7 @@ fn effect_restart_still_delivers_async_task_results(cx: &mut TestAppContext) {
     struct Echo;
     impl AsyncCapabilityHandler for Echo {
         fn start(&mut self, _m: &str, input: UiValue) -> Result<TaskWork, String> {
-            Ok(Box::new(move || Ok(input)))
+            Ok(TaskWork::new(move || Ok(input)))
         }
     }
 
@@ -1698,7 +1715,7 @@ fn effect_start_state_write_restarts_sibling_effect_and_delivers(cx: &mut TestAp
     struct Echo;
     impl AsyncCapabilityHandler for Echo {
         fn start(&mut self, _m: &str, input: UiValue) -> Result<TaskWork, String> {
-            Ok(Box::new(move || Ok(input)))
+            Ok(TaskWork::new(move || Ok(input)))
         }
     }
     struct EchoExtension;
@@ -1834,7 +1851,7 @@ fn subscription_callback_state_write_restarts_effect_and_delivers(cx: &mut TestA
     struct Echo;
     impl AsyncCapabilityHandler for Echo {
         fn start(&mut self, _m: &str, input: UiValue) -> Result<TaskWork, String> {
-            Ok(Box::new(move || Ok(input)))
+            Ok(TaskWork::new(move || Ok(input)))
         }
     }
     struct Push;
@@ -3626,7 +3643,7 @@ fn mounted_view_exposes_failed_render_while_retaining_last_good_root(cx: &mut Te
     let view = captured.borrow().as_ref().unwrap().clone();
     let mut visual = VisualTestContext::from_window(*window, cx);
     assert_eq!(visual.update(|_, cx| view.last_error(cx).unwrap()), None);
-    visual
+    let automation_error = visual
         .update(|window, cx| {
             view.automate(
                 gpui_rhai::AutomationCommand::Dispatch {
@@ -3641,7 +3658,12 @@ fn mounted_view_exposes_failed_render_while_retaining_last_good_root(cx: &mut Te
                 cx,
             )
         })
-        .unwrap();
+        .unwrap_err();
+    assert!(
+        automation_error
+            .to_string()
+            .contains("dogfood render failure")
+    );
     visual.run_until_parked();
 
     let error = visual.update(|_, cx| view.last_error(cx).unwrap().unwrap());
@@ -3699,7 +3721,7 @@ fn host_can_suppress_the_builtin_error_banner_without_hiding_last_error(cx: &mut
 
     let view = captured.borrow().as_ref().unwrap().clone();
     let mut visual = VisualTestContext::from_window(*window, cx);
-    visual
+    let automation_error = visual
         .update(|window, cx| {
             view.automate(
                 gpui_rhai::AutomationCommand::Dispatch {
@@ -3714,7 +3736,12 @@ fn host_can_suppress_the_builtin_error_banner_without_hiding_last_error(cx: &mut
                 cx,
             )
         })
-        .unwrap();
+        .unwrap_err();
+    assert!(
+        automation_error
+            .to_string()
+            .contains("dogfood render failure")
+    );
     visual.run_until_parked();
 
     let error = visual.update(|_, cx| view.last_error(cx).unwrap().unwrap());

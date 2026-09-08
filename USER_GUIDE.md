@@ -124,8 +124,10 @@ gpui-rhai theme-studio
 ```
 
 - `add` installs requested components and their source dependencies.
-- `update` three-way merges component updates and adds newly bundled themes;
-  it never silently overwrites application-owned source.
+- `update` recomputes the target component dependency/asset graph, installs new
+  transitive requirements, and three-way merges component updates. The complete
+  plan is staged before any target is replaced; it never silently overwrites
+  application-owned source.
 - `metadata` emits component schemas, snippets, and Rhai language-server
   definitions from the actual installed APIs.
 - `embed` generates production Rust `include_str!`/`include_bytes!` wiring.
@@ -361,6 +363,7 @@ The runtime binds the callback to:
 
 - its script generation;
 - the owning component instance path;
+- the current mount incarnation of that path;
 - the declared event schema;
 - its imported-module invocation context;
 - any `UiValue`-convertible curried arguments.
@@ -409,8 +412,11 @@ The first callback parameter is gpui-rhai `UiContext`, not GPUI `Context`.
 `UiContext` exposes the safe runtime surface: state, stores, locale, themes,
 effects, tasks, subscriptions, refs, signals, and validated commands.
 
-Old callbacks are rejected after reload. Deliveries after unmount or disposal
-are discarded by generation/scope ownership.
+Old callbacks are rejected after reload. Unmounting and later recreating the
+same logical key produces a new incarnation, so callbacks and NativeSignal
+handles retained from the old mount remain stale instead of targeting the new
+component. Deliveries after unmount or disposal are discarded by
+generation/scope/incarnation ownership.
 
 Subscriptions are legal only from a declared formal-component effect start.
 This gives the runtime an exact cleanup owner on dependency replacement,
@@ -593,6 +599,12 @@ Call `view.dispose(cx)?` when removing a mounted view permanently. Merely not
 rendering it for one frame does not dispose its tasks, overlays, and scoped
 resources.
 
+Advanced Rust extensions that group several direct `UiRuntimeState` mutations
+use `begin_transaction`, followed by exactly one `commit_transaction` or
+`rollback_transaction(checkpoint)`. Checkpoints are runtime-bound opaque
+tokens; a token from another runtime, an unmatched commit, or a reused token is
+rejected.
+
 For a small Host-owned LRU of expensive panels, use retained suspension instead
 of dispose/remount:
 
@@ -770,6 +782,22 @@ Rhai 1.26 is configured without its `sync` feature. Engine, Dynamic, FnPtr, and
 stored invocation contexts stay on the GPUI foreground thread. Background work
 must move typed Rust data, not Rhai runtime objects.
 
+One-shot capability work uses the bounded shared worker pool. Return
+`TaskWork::new` for ordinary work, or `TaskWork::cancellable` when a longer job
+can periodically observe its `TaskCancellation` token. Cancellation removes
+callback authority immediately and signals the token after the surrounding UI
+transaction commits; rollback keeps the old task alive.
+
+```rust
+Ok(TaskWork::cancellable(move |cancel| {
+    for item in items {
+        if cancel.is_cancelled() { return Err("cancelled".to_owned()); }
+        process(item)?;
+    }
+    Ok(UiValue::Null)
+}))
+```
+
 The retained Rust diff makes GPUI updates efficient, but Rhai still constructs
 the declarative tree for every component that actually reruns. Root-dirty
 renders bail out unchanged formal component subtrees before Rhai execution;
@@ -813,10 +841,17 @@ primitives](docs/custom-primitives.md).
 
 Development reload is transactional:
 
-- changed modules and dependants compile as one candidate;
+- changed modules and dependants compile in one uniquely identified preparation
+  session;
 - success swaps the generation and preserves compatible state;
 - failure keeps the last-good AST, callbacks, tree, effects, and state;
 - old callbacks and asynchronous deliveries become stale.
+
+The runtime distinguishes program generation, logical component path, mount
+incarnation, and per-view presentation domain. These identities are not
+interchangeable: two windows may have the same tree-local NodeId, and a
+same-key remount may have the same path, without sharing geometry, capture, or
+callback authority.
 
 Embedded hosts should read `ScriptViewHandle::last_error()` alongside
 `root()`. After a failed callback, delivery, or render, `root()` intentionally

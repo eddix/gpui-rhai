@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
+use std::rc::Rc;
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -111,7 +112,7 @@ impl ComponentStateSchema {
                 })?;
             field
                 .schema
-                .validate(&field.default.clone().into_dynamic())
+                .validate_ui_value(&field.default)
                 .map_err(|source| StateError::InvalidDefault {
                     field: name.clone(),
                     source,
@@ -145,13 +146,13 @@ impl ComponentStateSchema {
 
 #[derive(Clone, Debug, Default)]
 pub struct StateStore {
-    instances: BTreeMap<ComponentInstancePath, ComponentState>,
+    instances: Rc<BTreeMap<ComponentInstancePath, ComponentState>>,
 }
 
 #[derive(Clone, Debug)]
 struct ComponentState {
-    schema: ComponentStateSchema,
-    values: BTreeMap<String, UiValue>,
+    schema: Rc<ComponentStateSchema>,
+    values: Rc<BTreeMap<String, UiValue>>,
 }
 
 impl StateStore {
@@ -168,7 +169,7 @@ impl StateStore {
     #[must_use]
     pub fn begin_render(&self) -> RenderStateTransaction {
         RenderStateTransaction {
-            instances: self.instances.clone(),
+            instances: Rc::clone(&self.instances),
             seen: BTreeSet::new(),
             scope: None,
         }
@@ -179,14 +180,14 @@ impl StateStore {
     #[must_use]
     pub fn begin_render_scope(&self, scope: ComponentInstancePath) -> RenderStateTransaction {
         RenderStateTransaction {
-            instances: self.instances.clone(),
+            instances: Rc::clone(&self.instances),
             seen: BTreeSet::new(),
             scope: Some(scope),
         }
     }
 
     pub fn commit_render(&mut self, mut transaction: RenderStateTransaction) {
-        transaction.instances.retain(|path, _| {
+        Rc::make_mut(&mut transaction.instances).retain(|path, _| {
             transaction.seen.contains(path)
                 || transaction
                     .scope
@@ -198,7 +199,7 @@ impl StateStore {
 
     /// Remove one component subtree, including every descendant instance.
     pub fn remove_scope(&mut self, scope: &ComponentInstancePath) {
-        self.instances.retain(|path, _| !path.is_within(scope));
+        Rc::make_mut(&mut self.instances).retain(|path, _| !path.is_within(scope));
     }
 
     /// Mount or reconcile one instance without cleaning any other path.
@@ -212,9 +213,7 @@ impl StateStore {
         path: ComponentInstancePath,
         schema: &ComponentStateSchema,
     ) -> Result<StateReconcileReport, StateError> {
-        let mut transaction = self.begin_render();
-        let report = transaction.mount(path, schema)?;
-        self.instances = transaction.instances;
+        let report = reconcile_instance(Rc::make_mut(&mut self.instances), path, schema)?;
         Ok(report)
     }
 
@@ -235,8 +234,7 @@ impl StateStore {
         field: &str,
         value: UiValue,
     ) -> Result<bool, StateError> {
-        let state = self
-            .instances
+        let state = Rc::make_mut(&mut self.instances)
             .get_mut(path)
             .ok_or_else(|| StateError::UnknownInstance(path.clone()))?;
         let state_field = state
@@ -248,7 +246,7 @@ impl StateStore {
             })?;
         state_field
             .schema
-            .validate(&value.clone().into_dynamic())
+            .validate_ui_value(&value)
             .map_err(|source| StateError::InvalidValue {
                 path: path.clone(),
                 field: field.to_owned(),
@@ -257,7 +255,7 @@ impl StateStore {
         if state.values.get(field) == Some(&value) {
             return Ok(false);
         }
-        state.values.insert(field.to_owned(), value);
+        Rc::make_mut(&mut state.values).insert(field.to_owned(), value);
         Ok(true)
     }
 
@@ -293,14 +291,19 @@ impl StateStore {
                     .values
                     .iter()
                     .map(|(name, value)| {
+                        let sensitive = state
+                            .schema
+                            .field(name)
+                            .is_some_and(|field| field.sensitive);
                         (
                             name.clone(),
                             StateValueSnapshot {
-                                value: value.clone(),
-                                sensitive: state
-                                    .schema
-                                    .field(name)
-                                    .is_some_and(|field| field.sensitive),
+                                value: if sensitive {
+                                    UiValue::String("<sensitive>".to_owned())
+                                } else {
+                                    value.clone()
+                                },
+                                sensitive,
                             },
                         )
                     })
@@ -324,7 +327,7 @@ pub struct StateValueSnapshot {
 
 #[derive(Clone, Debug)]
 pub struct RenderStateTransaction {
-    instances: BTreeMap<ComponentInstancePath, ComponentState>,
+    instances: Rc<BTreeMap<ComponentInstancePath, ComponentState>>,
     seen: BTreeSet<ComponentInstancePath>,
     scope: Option<ComponentInstancePath>,
 }
@@ -352,64 +355,65 @@ impl RenderStateTransaction {
         path: ComponentInstancePath,
         schema: &ComponentStateSchema,
     ) -> Result<StateReconcileReport, StateError> {
-        // Revalidate here because deserialized schemas can bypass `new`.
-        ComponentStateSchema::new(schema.fields.clone())?;
-
-        let report = match self.instances.get(&path) {
-            None => {
-                self.instances.insert(
-                    path.clone(),
-                    ComponentState {
-                        schema: schema.clone(),
-                        values: schema.defaults(),
-                    },
-                );
-                StateReconcileReport {
-                    created: true,
-                    reset_fields: Vec::new(),
-                }
-            }
-            Some(previous) => {
-                let mut reset_fields = Vec::new();
-                let values = schema
-                    .fields
-                    .iter()
-                    .map(|(name, field)| {
-                        let value = previous
-                            .values
-                            .get(name)
-                            .filter(|value| {
-                                field
-                                    .schema
-                                    .validate(&(*value).clone().into_dynamic())
-                                    .is_ok()
-                            })
-                            .cloned()
-                            .unwrap_or_else(|| {
-                                if previous.values.contains_key(name) {
-                                    reset_fields.push(name.clone());
-                                }
-                                field.default.clone()
-                            });
-                        (name.clone(), value)
-                    })
-                    .collect();
-                self.instances.insert(
-                    path.clone(),
-                    ComponentState {
-                        schema: schema.clone(),
-                        values,
-                    },
-                );
-                StateReconcileReport {
-                    created: false,
-                    reset_fields,
-                }
-            }
-        };
+        let report = reconcile_instance(Rc::make_mut(&mut self.instances), path.clone(), schema)?;
         self.seen.insert(path);
         Ok(report)
     }
+}
+
+fn reconcile_instance(
+    instances: &mut BTreeMap<ComponentInstancePath, ComponentState>,
+    path: ComponentInstancePath,
+    schema: &ComponentStateSchema,
+) -> Result<StateReconcileReport, StateError> {
+    // Public serde construction can bypass `ComponentStateSchema::new`.
+    ComponentStateSchema::new(schema.fields.clone())?;
+
+    let next = match instances.get(&path) {
+        None => (
+            ComponentState {
+                schema: Rc::new(schema.clone()),
+                values: Rc::new(schema.defaults()),
+            },
+            StateReconcileReport {
+                created: true,
+                reset_fields: Vec::new(),
+            },
+        ),
+        Some(previous) => {
+            let mut reset_fields = Vec::new();
+            let values = schema
+                .fields
+                .iter()
+                .map(|(name, field)| {
+                    let value = previous
+                        .values
+                        .get(name)
+                        .filter(|value| field.schema.validate_ui_value(value).is_ok())
+                        .cloned()
+                        .unwrap_or_else(|| {
+                            if previous.values.contains_key(name) {
+                                reset_fields.push(name.clone());
+                            }
+                            field.default.clone()
+                        });
+                    (name.clone(), value)
+                })
+                .collect();
+            (
+                ComponentState {
+                    schema: Rc::new(schema.clone()),
+                    values: Rc::new(values),
+                },
+                StateReconcileReport {
+                    created: false,
+                    reset_fields,
+                },
+            )
+        }
+    };
+    instances.insert(path, next.0);
+    Ok(next.1)
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -521,6 +525,19 @@ mod tests {
         next.mount(first, &state_schema).unwrap();
         store.commit_render(next);
         assert_eq!(store.instance_count(), 1);
+    }
+
+    #[test]
+    fn snapshots_share_instances_until_one_store_mutates() {
+        let path = ComponentInstancePath::root("Counter", "one");
+        let schema = schema(ValueSchema::integer(), UiValue::Integer(0));
+        let mut store = StateStore::new();
+        store.mount_instance(path.clone(), &schema).unwrap();
+        let snapshot = store.clone();
+        assert!(Rc::ptr_eq(&store.instances, &snapshot.instances));
+        store.set(&path, "value", UiValue::Integer(4)).unwrap();
+        assert!(!Rc::ptr_eq(&store.instances, &snapshot.instances));
+        assert_eq!(snapshot.get(&path, "value"), Some(&UiValue::Integer(0)));
     }
 
     #[test]

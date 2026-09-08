@@ -138,7 +138,7 @@ sampled by the GPUI renderer without per-frame Rhai execution.
 `UiEventHandler` joins event targets only at the node/primitive boundary.
 Each event has ordered capture/target/bubble bindings. Responses independently
 control default behavior, propagation, immediate propagation, and pointer
-capture intent. Script handlers keep generation, component scope, Rhai context,
+capture intent. Script handlers keep generation, component scope, mount incarnation, Rhai context,
 transactions, and runtime traces. Host callbacks execute their labeled Rust
 closure directly. A schema-checked `NativeHandlerRef` lets Rhai attach a Host-
 registered Rust fast path to the same ordinary node and outer transaction.
@@ -205,6 +205,9 @@ queued UI events/actions, Engine generation, and component recipes. External
 capability side effects are intentionally outside this transaction and must be
 designed idempotently by the host; task, subscription, and image-decode handles
 created by a failed callback are canceled before their results can deliver.
+Cancellation of an older runtime-owned task, subscription, or image decode is a
+transaction intent: producer cancellation is published only after the outermost
+commit, while rollback restores the old delivery authority.
 
 ## Script lifecycle
 

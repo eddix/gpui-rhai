@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::rc::Rc;
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -41,14 +42,14 @@ impl StoreId {
 
 #[derive(Clone, Debug, Default)]
 pub struct StoreRegistry {
-    stores: BTreeMap<StoreId, StoreState>,
-    readers: BTreeMap<StoreField, BTreeSet<ComponentInstancePath>>,
+    stores: Rc<BTreeMap<StoreId, StoreState>>,
+    readers: Rc<BTreeMap<StoreField, BTreeSet<ComponentInstancePath>>>,
 }
 
 #[derive(Clone, Debug)]
 struct StoreState {
-    schema: ComponentStateSchema,
-    values: BTreeMap<String, UiValue>,
+    schema: Rc<ComponentStateSchema>,
+    values: Rc<BTreeMap<String, UiValue>>,
 }
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -73,12 +74,19 @@ impl StoreRegistry {
         if self.stores.contains_key(&id) {
             return Err(StoreError::DuplicateStore(id));
         }
+        ComponentStateSchema::new(schema.fields().clone())?;
         let values = schema
             .fields()
             .iter()
             .map(|(name, field)| (name.clone(), field.default.clone()))
             .collect();
-        self.stores.insert(id, StoreState { schema, values });
+        Rc::make_mut(&mut self.stores).insert(
+            id,
+            StoreState {
+                schema: Rc::new(schema),
+                values: Rc::new(values),
+            },
+        );
         Ok(())
     }
 
@@ -95,10 +103,11 @@ impl StoreRegistry {
     }
 
     pub fn reset_reader(&mut self, reader: &ComponentInstancePath) {
-        for readers in self.readers.values_mut() {
+        let tracked = Rc::make_mut(&mut self.readers);
+        for readers in tracked.values_mut() {
             readers.remove(reader);
         }
-        self.readers.retain(|_, readers| !readers.is_empty());
+        tracked.retain(|_, readers| !readers.is_empty());
     }
 
     /// Remove stale reader edges inside one successfully reconciled subtree.
@@ -107,12 +116,13 @@ impl StoreRegistry {
         root: &ComponentInstancePath,
         active: &BTreeSet<ComponentInstancePath>,
     ) {
-        for readers in self.readers.values_mut() {
+        let tracked = Rc::make_mut(&mut self.readers);
+        for readers in tracked.values_mut() {
             readers.retain(|reader| {
                 !reader.is_within(root) || reader == root || active.contains(reader)
             });
         }
-        self.readers.retain(|_, readers| !readers.is_empty());
+        tracked.retain(|_, readers| !readers.is_empty());
     }
 
     /// Read a field and add one dependency without clearing earlier reads.
@@ -137,7 +147,7 @@ impl StoreRegistry {
                 store: store.clone(),
                 field: field.to_owned(),
             })?;
-        self.readers
+        Rc::make_mut(&mut self.readers)
             .entry(StoreField {
                 store: store.clone(),
                 field: field.to_owned(),
@@ -172,7 +182,7 @@ impl StoreRegistry {
             })?
             .get_path(path)?
             .clone();
-        self.readers
+        Rc::make_mut(&mut self.readers)
             .entry(StoreField {
                 store: store.clone(),
                 field: field.to_owned(),
@@ -197,7 +207,7 @@ impl StoreRegistry {
     ) -> Result<BTreeSet<ComponentInstancePath>, StoreError> {
         let state = self
             .stores
-            .get_mut(store)
+            .get(store)
             .ok_or_else(|| StoreError::UnknownStore(store.clone()))?;
         let declared = state
             .schema
@@ -208,7 +218,7 @@ impl StoreRegistry {
             })?;
         declared
             .schema
-            .validate(&value.clone().into_dynamic())
+            .validate_ui_value(&value)
             .map_err(|source| StoreError::InvalidValue {
                 store: store.clone(),
                 field: field.to_owned(),
@@ -238,7 +248,10 @@ impl StoreRegistry {
             })
             .flat_map(|(_, readers)| readers.iter().cloned())
             .collect();
-        state.values.insert(field.to_owned(), value);
+        let state = Rc::make_mut(&mut self.stores)
+            .get_mut(store)
+            .ok_or_else(|| StoreError::UnknownStore(store.clone()))?;
+        Rc::make_mut(&mut state.values).insert(field.to_owned(), value);
         Ok(invalidated)
     }
 
@@ -271,9 +284,9 @@ impl StoreRegistry {
 
     /// Remove a window and all stores/read dependencies scoped to it.
     pub fn remove_window(&mut self, window: &str) {
-        self.stores
+        Rc::make_mut(&mut self.stores)
             .retain(|id, _| !matches!(&id.scope, StoreScope::Window(id) if id == window));
-        self.readers.retain(
+        Rc::make_mut(&mut self.readers).retain(
             |field, _| !matches!(&field.store.scope, StoreScope::Window(id) if id == window),
         );
     }
@@ -296,14 +309,19 @@ impl StoreRegistry {
                     .values
                     .iter()
                     .map(|(name, value)| {
+                        let sensitive = state
+                            .schema
+                            .field(name)
+                            .is_some_and(|field| field.sensitive);
                         (
                             name.clone(),
                             crate::StateValueSnapshot {
-                                value: value.clone(),
-                                sensitive: state
-                                    .schema
-                                    .field(name)
-                                    .is_some_and(|field| field.sensitive),
+                                value: if sensitive {
+                                    UiValue::String("<sensitive>".to_owned())
+                                } else {
+                                    value.clone()
+                                },
+                                sensitive,
                             },
                         )
                     })
@@ -364,6 +382,8 @@ pub enum StoreError {
         field: String,
         source: SchemaValidationError,
     },
+    #[error(transparent)]
+    State(#[from] crate::StateError),
     #[error(transparent)]
     Path(#[from] UiValuePathError),
 }
@@ -437,6 +457,36 @@ mod tests {
             .write(&store_id, "project", UiValue::String("beta".to_owned()))
             .unwrap();
         assert_eq!(invalidated, BTreeSet::from([project]));
+    }
+
+    #[test]
+    fn deserialized_schema_defaults_are_validated_before_store_declaration() {
+        let schema: ComponentStateSchema = serde_json::from_str(
+            r#"{"fields":{"count":{"schema":{"type":"integer"},"default":{"type":"string","value":"wrong"}}}}"#,
+        )
+        .unwrap();
+        let mut stores = StoreRegistry::new();
+        assert!(matches!(
+            stores.declare(StoreId::app("invalid"), schema),
+            Err(StoreError::State(crate::StateError::InvalidDefault { .. }))
+        ));
+    }
+
+    #[test]
+    fn snapshots_share_large_store_values_until_a_write() {
+        let id = StoreId::app("session");
+        let mut stores = StoreRegistry::new();
+        stores.declare(id.clone(), session_schema()).unwrap();
+        let snapshot = stores.clone();
+        assert!(Rc::ptr_eq(&stores.stores, &snapshot.stores));
+        stores
+            .write(&id, "sidebar_open", UiValue::Bool(false))
+            .unwrap();
+        assert!(!Rc::ptr_eq(&stores.stores, &snapshot.stores));
+        assert_eq!(
+            snapshot.stores[&id].values["sidebar_open"],
+            UiValue::Bool(true)
+        );
     }
 
     #[test]

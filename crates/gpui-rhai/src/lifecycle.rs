@@ -33,6 +33,15 @@ pub struct ScriptLifecycle {
     suspended_at: Option<std::time::Instant>,
 }
 
+#[derive(Clone)]
+pub(crate) struct ScriptLifecycleCheckpoint {
+    compiled: CompiledUi,
+    state: LifecycleState,
+    root: Option<Rc<UiNode>>,
+    retained: crate::RetainedUiTree,
+    suspended_at: Option<std::time::Instant>,
+}
+
 #[derive(Default)]
 struct RetainedDeclarations {
     effects: BTreeMap<crate::EffectId, crate::EffectDescriptor>,
@@ -42,6 +51,24 @@ struct RetainedDeclarations {
 }
 
 impl ScriptLifecycle {
+    pub(crate) fn execution_checkpoint(&self) -> ScriptLifecycleCheckpoint {
+        ScriptLifecycleCheckpoint {
+            compiled: self.compiled.clone(),
+            state: self.state,
+            root: self.root.clone(),
+            retained: self.retained.clone(),
+            suspended_at: self.suspended_at,
+        }
+    }
+
+    pub(crate) fn restore_execution_checkpoint(&mut self, checkpoint: ScriptLifecycleCheckpoint) {
+        self.compiled = checkpoint.compiled;
+        self.state = checkpoint.state;
+        self.root = checkpoint.root;
+        self.retained = checkpoint.retained;
+        self.suspended_at = checkpoint.suspended_at;
+    }
+
     /// Create an application lifecycle and mount its root component state.
     ///
     /// # Errors
@@ -65,6 +92,7 @@ impl ScriptLifecycle {
                 .begin_render_scope(root_path.clone());
             transaction.mount(root_path.clone(), state_schema)?;
             runtime_state.component_state.commit_render(transaction);
+            runtime_state.ensure_component_incarnation(&root_path);
         }
         Ok(Self {
             compiled,
@@ -107,7 +135,11 @@ impl ScriptLifecycle {
 
     #[must_use]
     pub fn with_view_id(mut self, view: impl Into<String>) -> Self {
-        self.view = Some(view.into());
+        let view = view.into();
+        if let Ok(mut runtime) = self.runtime.try_borrow_mut() {
+            runtime.ensure_presentation(&view);
+        }
+        self.view = Some(view);
         self
     }
 
@@ -119,10 +151,21 @@ impl ScriptLifecycle {
     /// script evaluation error.
     pub fn initialize(&mut self, engine: &RuntimeEngine) -> Result<(), LifecycleError> {
         self.require_state(LifecycleState::Created)?;
+        let snapshot = self.begin_runtime_transaction()?;
         let context = self.context(ExecutionPhase::Init);
-        engine.call_optional_lifecycle(&self.compiled, "init", context)?;
-        self.state = LifecycleState::Initialized;
-        Ok(())
+        match engine.call_optional_lifecycle(&self.compiled, "init", context) {
+            Ok(_) => {
+                self.state = LifecycleState::Initialized;
+                self.commit_runtime_transaction()
+            }
+            Err(error) => {
+                self.runtime
+                    .try_borrow_mut()
+                    .map_err(|_| LifecycleError::Borrowed)?
+                    .restore(snapshot)?;
+                Err(error.into())
+            }
+        }
     }
 
     /// Evaluate required `view(ctx)` and activate its generation on success.
@@ -149,11 +192,7 @@ impl ScriptLifecycle {
                 operation: "render",
             });
         }
-        let runtime_snapshot = self
-            .runtime
-            .try_borrow()
-            .map_err(|_| LifecycleError::Borrowed)?
-            .snapshot()?;
+        let runtime_snapshot = self.begin_runtime_transaction()?;
         let engine_checkpoint = engine.execution_checkpoint();
         let previous_root = reuse_dirty.and_then(|_| self.root.clone());
         let result = (|| {
@@ -187,6 +226,7 @@ impl ScriptLifecycle {
                 self.retained = retained;
                 self.state = LifecycleState::Running;
                 self.root = Some(Rc::new(root));
+                self.commit_runtime_transaction()?;
                 self.root.as_deref().ok_or(LifecycleError::MissingRoot)
             }
             Err(error) => {
@@ -218,11 +258,7 @@ impl ScriptLifecycle {
         {
             return Ok(false);
         }
-        let runtime_snapshot = self
-            .runtime
-            .try_borrow()
-            .map_err(|_| LifecycleError::Borrowed)?
-            .snapshot()?;
+        let runtime_snapshot = self.begin_runtime_transaction()?;
         let engine_checkpoint = engine.execution_checkpoint();
         let dirty = self
             .runtime
@@ -254,6 +290,7 @@ impl ScriptLifecycle {
         else {
             return self.render_dirty_full(engine, &dirty, runtime_snapshot, engine_checkpoint);
         };
+        engine.begin_execution_session();
         let mut retained = self.retained.clone();
         let result = (|| {
             for path in topmost {
@@ -281,6 +318,7 @@ impl ScriptLifecycle {
                 self.root = Some(Rc::new(root));
                 self.retained = retained;
                 self.state = LifecycleState::Running;
+                self.commit_runtime_transaction()?;
                 Ok(true)
             }
             Err(error) => {
@@ -302,7 +340,10 @@ impl ScriptLifecycle {
         engine_checkpoint: crate::engine::RuntimeEngineCheckpoint,
     ) -> Result<bool, LifecycleError> {
         match self.render_impl(engine, Some(dirty)) {
-            Ok(_) => Ok(true),
+            Ok(_) => {
+                self.commit_runtime_transaction()?;
+                Ok(true)
+            }
             Err(error) => {
                 self.runtime
                     .try_borrow_mut()
@@ -323,11 +364,16 @@ impl ScriptLifecycle {
         &mut self,
         engine: &mut RuntimeEngine,
     ) -> Result<bool, LifecycleError> {
-        let runtime_snapshot = self
+        if !self
             .runtime
             .try_borrow()
             .map_err(|_| LifecycleError::Borrowed)?
-            .snapshot()?;
+            .virtual_requests
+            .has_scope(&self.root_path)
+        {
+            return Ok(false);
+        }
+        let runtime_snapshot = self.begin_runtime_transaction()?;
         let engine_checkpoint = engine.execution_checkpoint();
         let requests = self
             .runtime
@@ -350,6 +396,7 @@ impl ScriptLifecycle {
         if selected.is_empty() {
             return Ok(false);
         }
+        engine.begin_execution_session();
         let mut root = self
             .root
             .as_deref()
@@ -405,6 +452,7 @@ impl ScriptLifecycle {
                     self.root = Some(Rc::new(root));
                     self.retained = retained;
                 }
+                self.commit_runtime_transaction()?;
                 Ok(changed)
             }
             Err(error) => {
@@ -434,11 +482,7 @@ impl ScriptLifecycle {
                 operation: "dispose",
             });
         }
-        let snapshot = self
-            .runtime
-            .try_borrow()
-            .map_err(|_| LifecycleError::Borrowed)?
-            .snapshot()?;
+        let snapshot = self.begin_runtime_transaction()?;
         let result = (|| {
             self.reconcile_effect_candidate(
                 engine,
@@ -453,6 +497,7 @@ impl ScriptLifecycle {
         match result {
             Ok(()) => {
                 self.state = LifecycleState::Disposed;
+                self.commit_runtime_transaction()?;
                 Ok(())
             }
             Err(error) => {
@@ -482,11 +527,7 @@ impl ScriptLifecycle {
                 operation: "suspend",
             });
         }
-        let snapshot = self
-            .runtime
-            .try_borrow()
-            .map_err(|_| LifecycleError::Borrowed)?
-            .snapshot()?;
+        let snapshot = self.begin_runtime_transaction()?;
         let checkpoint = engine.execution_checkpoint();
         let result = (|| {
             engine.call_optional_lifecycle(
@@ -502,13 +543,16 @@ impl ScriptLifecycle {
             let now = runtime.clock.now();
             runtime.timers.pause_component_scope(&self.root_path, now);
             runtime.animation_values = runtime.animations.snapshot(now);
-            runtime.pointer_capture.clear();
+            runtime
+                .pointer_capture_for(self.presentation_scope())
+                .clear();
             Ok(now)
         })();
         match result {
             Ok(now) => {
                 self.suspended_at = Some(now);
                 self.state = LifecycleState::Suspended;
+                self.commit_runtime_transaction()?;
                 Ok(true)
             }
             Err(error) => {
@@ -540,11 +584,7 @@ impl ScriptLifecycle {
                 operation: "resume",
             });
         }
-        let snapshot = self
-            .runtime
-            .try_borrow()
-            .map_err(|_| LifecycleError::Borrowed)?
-            .snapshot()?;
+        let snapshot = self.begin_runtime_transaction()?;
         let checkpoint = engine.execution_checkpoint();
         let suspended_at = self
             .suspended_at
@@ -582,6 +622,7 @@ impl ScriptLifecycle {
             Ok(()) => {
                 self.suspended_at = None;
                 self.state = LifecycleState::Running;
+                self.commit_runtime_transaction()?;
                 Ok(true)
             }
             Err(error) => {
@@ -647,6 +688,7 @@ impl ScriptLifecycle {
         payload: UiValue,
         event_target: Option<crate::GeometryBounds>,
     ) -> Result<Dynamic, LifecycleError> {
+        self.validate_callback_owner(callback)?;
         let root_context = self.context(ExecutionPhase::Event);
         let context = callback
             .component()
@@ -670,13 +712,12 @@ impl ScriptLifecycle {
         callback: &ScriptCallback,
         payload: UiValue,
     ) -> Result<Dynamic, LifecycleError> {
-        let snapshot = self
-            .runtime
-            .try_borrow()
-            .map_err(|_| LifecycleError::Borrowed)?
-            .snapshot()?;
+        let snapshot = self.begin_runtime_transaction()?;
         match self.invoke_callback(engine, callback, payload) {
-            Ok(value) => Ok(value),
+            Ok(value) => {
+                self.commit_runtime_transaction()?;
+                Ok(value)
+            }
             Err(error) => {
                 self.runtime
                     .try_borrow_mut()
@@ -697,6 +738,7 @@ impl ScriptLifecycle {
         engine: &RuntimeEngine,
         delivery: AsyncDelivery,
     ) -> Result<Dynamic, LifecycleError> {
+        self.validate_callback_owner(&delivery.callback)?;
         let component = delivery
             .callback
             .component()
@@ -733,13 +775,12 @@ impl ScriptLifecycle {
         engine: &RuntimeEngine,
         delivery: AsyncDelivery,
     ) -> Result<Dynamic, LifecycleError> {
-        let snapshot = self
-            .runtime
-            .try_borrow()
-            .map_err(|_| LifecycleError::Borrowed)?
-            .snapshot()?;
+        let snapshot = self.begin_runtime_transaction()?;
         match self.invoke_async_delivery(engine, delivery) {
-            Ok(value) => Ok(value),
+            Ok(value) => {
+                self.commit_runtime_transaction()?;
+                Ok(value)
+            }
             Err(error) => {
                 self.runtime
                     .try_borrow_mut()
@@ -793,11 +834,7 @@ impl ScriptLifecycle {
                 operation: "reload",
             });
         }
-        let snapshot = self
-            .runtime
-            .try_borrow()
-            .map_err(|_| LifecycleError::Borrowed)?
-            .snapshot()?;
+        let snapshot = self.begin_runtime_transaction()?;
         let engine_checkpoint = engine.execution_checkpoint();
         let result: Result<(UiNode, crate::RetainedUiTree), LifecycleError> = (|| {
             self.runtime
@@ -835,6 +872,7 @@ impl ScriptLifecycle {
                 self.retained = retained;
                 self.state = LifecycleState::Running;
                 self.root = Some(Rc::new(root));
+                self.commit_runtime_transaction()?;
                 self.root.as_deref().ok_or(LifecycleError::MissingRoot)
             }
             Err(error) => {
@@ -870,11 +908,7 @@ impl ScriptLifecycle {
                 operation: "resume_reload",
             });
         }
-        let snapshot = self
-            .runtime
-            .try_borrow()
-            .map_err(|_| LifecycleError::Borrowed)?
-            .snapshot()?;
+        let snapshot = self.begin_runtime_transaction()?;
         let engine_checkpoint = engine.execution_checkpoint();
         let suspended_at = self
             .suspended_at
@@ -946,6 +980,7 @@ impl ScriptLifecycle {
                 self.root = Some(Rc::new(root));
                 self.suspended_at = None;
                 self.state = LifecycleState::Running;
+                self.commit_runtime_transaction()?;
                 self.root.as_deref().ok_or(LifecycleError::MissingRoot)
             }
             Err(error) => {
@@ -966,8 +1001,29 @@ impl ScriptLifecycle {
     ///
     /// Returns lifecycle or script errors from either stage.
     pub fn start(&mut self, engine: &mut RuntimeEngine) -> Result<&UiNode, LifecycleError> {
-        self.initialize(engine)?;
-        self.render(engine)
+        let runtime_snapshot = self.begin_runtime_transaction()?;
+        let engine_checkpoint = engine.execution_checkpoint();
+        let lifecycle_checkpoint = self.execution_checkpoint();
+        let result = (|| {
+            self.initialize(engine)?;
+            self.render(engine)?;
+            Ok::<_, LifecycleError>(())
+        })();
+        match result {
+            Ok(()) => {
+                self.commit_runtime_transaction()?;
+                self.root.as_deref().ok_or(LifecycleError::MissingRoot)
+            }
+            Err(error) => {
+                self.runtime
+                    .try_borrow_mut()
+                    .map_err(|_| LifecycleError::Borrowed)?
+                    .restore(runtime_snapshot)?;
+                engine.restore_execution_checkpoint(engine_checkpoint);
+                self.restore_execution_checkpoint(lifecycle_checkpoint);
+                Err(error)
+            }
+        }
     }
 
     fn context(&self, phase: ExecutionPhase) -> UiContext {
@@ -1134,8 +1190,9 @@ impl ScriptLifecycle {
             let geometry_readers = runtime
                 .element_refs
                 .reconcile(&self.root_path, declarations.element_refs);
+            let geometry = runtime.geometry_for(self.presentation_scope());
             for (node, readers) in geometry_readers {
-                runtime.geometry.register_readers(node, readers);
+                geometry.register_readers(node, readers);
             }
             runtime.virtual_requests.retain(&virtual_collections);
         }
@@ -1169,6 +1226,7 @@ impl ScriptLifecycle {
         dependencies: UiValue,
         scope: AsyncScope,
     ) -> Result<(), LifecycleError> {
+        self.validate_callback_owner(callback)?;
         let compiled = if callback.generation() == candidate.generation() {
             candidate
         } else if callback.generation() == self.compiled.generation() {
@@ -1193,6 +1251,27 @@ impl ScriptLifecycle {
             (context, dependencies.into_dynamic()),
         )?;
         Ok(())
+    }
+
+    fn validate_callback_owner(&self, callback: &ScriptCallback) -> Result<(), LifecycleError> {
+        let (Some(component), Some(incarnation)) = (callback.component(), callback.incarnation())
+        else {
+            return Ok(());
+        };
+        let active = self
+            .runtime
+            .try_borrow()
+            .map_err(|_| LifecycleError::Borrowed)?
+            .component_incarnation(component);
+        if active == Some(incarnation) {
+            Ok(())
+        } else {
+            Err(RuntimeError::StaleComponentCallback {
+                name: callback.name().to_owned(),
+                component: component.clone(),
+            }
+            .into())
+        }
     }
 
     fn validate_signal_bindings(&self, root: &UiNode) -> Result<(), LifecycleError> {
@@ -1247,8 +1326,32 @@ impl ScriptLifecycle {
             .runtime
             .try_borrow()
             .map_err(|_| LifecycleError::Borrowed)?;
-        runtime.geometry.retain_nodes(&nodes);
-        runtime.pointer_capture.retain_nodes(&nodes);
+        runtime
+            .geometry_for(self.presentation_scope())
+            .retain_nodes(&nodes);
+        runtime
+            .pointer_capture_for(self.presentation_scope())
+            .retain_nodes(&nodes);
+        Ok(())
+    }
+
+    fn presentation_scope(&self) -> Option<&str> {
+        self.view.as_deref().or(self.window.as_deref())
+    }
+
+    fn begin_runtime_transaction(&self) -> Result<crate::UiStateSnapshot, LifecycleError> {
+        self.runtime
+            .try_borrow_mut()
+            .map_err(|_| LifecycleError::Borrowed)?
+            .begin_transaction()
+            .map_err(LifecycleError::from)
+    }
+
+    fn commit_runtime_transaction(&self) -> Result<(), LifecycleError> {
+        self.runtime
+            .try_borrow_mut()
+            .map_err(|_| LifecycleError::Borrowed)?
+            .commit_transaction()?;
         Ok(())
     }
 
@@ -1382,6 +1485,8 @@ pub enum LifecycleError {
     },
     #[error(transparent)]
     Asset(#[from] crate::AssetError),
+    #[error(transparent)]
+    Transaction(#[from] crate::UiTransactionError),
     #[error(transparent)]
     Signal(#[from] crate::SignalError),
     #[error(transparent)]
@@ -2242,7 +2347,7 @@ mod tests {
         struct Echo;
         impl AsyncCapabilityHandler for Echo {
             fn start(&mut self, _: &str, input: UiValue) -> Result<TaskWork, String> {
-                Ok(Box::new(move || Ok(input)))
+                Ok(TaskWork::new(move || Ok(input)))
             }
         }
 

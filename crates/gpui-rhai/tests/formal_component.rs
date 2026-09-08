@@ -485,7 +485,7 @@ struct AsyncEcho;
 
 impl AsyncCapabilityHandler for AsyncEcho {
     fn start(&mut self, _: &str, input: UiValue) -> Result<TaskWork, String> {
-        Ok(Box::new(move || Ok(input)))
+        Ok(TaskWork::new(move || Ok(input)))
     }
 }
 
@@ -586,6 +586,16 @@ fn assert_root_text(lifecycle: &ScriptLifecycle, expected: &str) {
         lifecycle.root().unwrap().kind(),
         UiNodeKind::Text { text } if text == expected
     ));
+}
+
+fn normalized_root(lifecycle: &ScriptLifecycle) -> String {
+    regex::Regex::new(r"generation: ScriptGeneration\(\d+\)")
+        .unwrap()
+        .replace_all(
+            &format!("{:?}", lifecycle.root()),
+            "generation: <runtime-local>",
+        )
+        .into_owned()
 }
 
 fn script_handler(lifecycle: &ScriptLifecycle, event: &str) -> gpui_rhai::ScriptCallback {
@@ -1232,7 +1242,7 @@ fn suspension_cleans_effects_and_resume_restarts_fresh_activations() {
             .borrow()
             .timers
             .inspect(runtime.borrow().clock.now())[0]
-            .interaction_paused
+            .view_paused
     );
 
     assert!(lifecycle.resume(&mut engine).unwrap());
@@ -1275,7 +1285,7 @@ fn incremental_component_renders_match_forced_full_renders_over_event_sequences(
     .unwrap();
     incremental.start(&mut incremental_engine).unwrap();
     full.start(&mut full_engine).unwrap();
-    assert_eq!(incremental.root(), full.root());
+    assert_eq!(normalized_root(&incremental), normalized_root(&full));
     let _ = incremental_engine.take_timings();
     let _ = full_engine.take_timings();
 
@@ -1323,8 +1333,8 @@ fn incremental_component_renders_match_forced_full_renders_over_event_sequences(
         let _ = full_engine.take_timings();
 
         assert_eq!(
-            incremental.root(),
-            full.root(),
+            normalized_root(&incremental),
+            normalized_root(&full),
             "node snapshots diverged after event batch {batch}"
         );
         assert_eq!(

@@ -929,7 +929,11 @@ impl ScriptViewHandle {
     ) -> Result<crate::AccessibilityTree, ScriptViewError> {
         self.require_active()?;
         let view = self.0.entity.read(cx);
-        let geometry = view.lifecycle.runtime().borrow().geometry.clone();
+        let geometry = view
+            .lifecycle
+            .runtime()
+            .borrow()
+            .geometry_for(Some(&view.view_id));
         Ok(crate::AccessibilityTree::from_presented(
             view.lifecycle.retained(),
             &geometry,
@@ -971,7 +975,11 @@ impl ScriptViewHandle {
             }),
             crate::AutomationCommand::Query { locator } => {
                 let view = self.0.entity.read(cx);
-                let geometry = view.lifecycle.runtime().borrow().geometry.clone();
+                let geometry = view
+                    .lifecycle
+                    .runtime()
+                    .borrow()
+                    .geometry_for(Some(&view.view_id));
                 let tree =
                     crate::AccessibilityTree::from_presented(view.lifecycle.retained(), &geometry)?;
                 let id = crate::automation::resolve_locator(&tree, &locator)?;
@@ -1278,12 +1286,15 @@ impl FileScriptView {
         fonts.extend(load_file_fonts(&ui_root.join("fonts"))?);
         crate::validate_font_sources(&fonts)?;
         let manifest = load_file_manifest(&ui_root, &self.entry)?;
-        let module_cache =
-            configure_file_modules(&mut engine, &ui_root, &self.entry, &theme_path, &style_path)?;
+        let (module_cache, compiled) = engine.with_program_preparation(|engine| {
+            let module_cache =
+                configure_file_modules(engine, &ui_root, &self.entry, &theme_path, &style_path)?;
+            let compiled =
+                engine.compile_self_contained_named(&self.entry.to_string_lossy(), &source)?;
+            Ok::<_, ScriptViewError>((module_cache, compiled))
+        })?;
         #[cfg(not(feature = "dev-reload"))]
         let _ = &module_cache;
-        let compiled =
-            engine.compile_self_contained_named(&self.entry.to_string_lossy(), &source)?;
         let component_exports = engine.component_exports()?;
         let component_renderers = engine.component_renderer_snapshot()?;
         manifest.validate_components(&component_exports)?;
@@ -1494,8 +1505,12 @@ impl EmbeddedScriptView {
         let theme = load_theme_source(engine.engine(), "<embedded-theme>", &self.theme_source)
             .map_err(|error| ScriptViewError::Theme(error.to_string()))?;
         engine.set_module_resolver(RestrictedModuleResolver::from_source(&self.scripts)?);
-        preload_component_modules(&mut engine, self.scripts.module_ids())?;
-        let compiled = engine.compile_self_contained_named(self.entry.as_str(), &entry.source)?;
+        let compiled = engine.with_program_preparation(|engine| {
+            preload_component_modules(engine, self.scripts.module_ids())?;
+            engine
+                .compile_self_contained_named(self.entry.as_str(), &entry.source)
+                .map_err(ScriptViewError::from)
+        })?;
         let component_exports = engine.component_exports()?;
         let component_renderers = engine.component_renderer_snapshot()?;
         self.manifest.validate_components(&component_exports)?;
@@ -2830,6 +2845,7 @@ struct ScriptRenderSnapshot {
 struct ScriptViewTransaction {
     runtime: crate::UiStateSnapshot,
     engine: crate::engine::RuntimeEngineCheckpoint,
+    lifecycle: crate::lifecycle::ScriptLifecycleCheckpoint,
 }
 
 fn handle_tab_navigation(event: &gpui::KeyDownEvent, window: &mut Window, cx: &mut App) {
@@ -3170,6 +3186,9 @@ impl ScriptHostView {
                     window,
                     cx,
                 );
+                if let Some(error) = self.last_error.clone() {
+                    return Err(crate::AutomationError::Command(error).into());
+                }
                 Ok(crate::AutomationResult::Action { id })
             }
             crate::AutomationCommand::AdvanceTime { millis } => {
@@ -3178,7 +3197,11 @@ impl ScriptHostView {
                 if !clock.advance(duration) {
                     return Err(crate::AutomationError::ClockNotControllable.into());
                 }
+                self.last_error = None;
                 self.poll_async(cx);
+                if let Some(error) = self.last_error.clone() {
+                    return Err(crate::AutomationError::Command(error).into());
+                }
                 Ok(crate::AutomationResult::Advanced { millis })
             }
             crate::AutomationCommand::Snapshot | crate::AutomationCommand::Query { .. } => {
@@ -3195,8 +3218,9 @@ impl ScriptHostView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Result<crate::AutomationResult, ScriptViewError> {
+        self.last_error = None;
         let runtime = self.lifecycle.runtime();
-        let geometry = runtime.borrow().geometry.clone();
+        let geometry = runtime.borrow().geometry_for(Some(&self.view_id));
         let accessibility =
             crate::AccessibilityTree::from_presented(self.lifecycle.retained(), &geometry)?;
         let target = crate::automation::resolve_locator(&accessibility, locator)?;
@@ -3238,6 +3262,9 @@ impl ScriptHostView {
                 ),
             };
             invoked = invoked.saturating_add(1);
+            if let Some(error) = self.last_error.clone() {
+                return Err(crate::AutomationError::Command(error).into());
+            }
             response.merge(current);
             match current.propagation() {
                 crate::PropagationControl::StopImmediate => break,
@@ -3247,10 +3274,16 @@ impl ScriptHostView {
             if let Some(pointer_id) = automation_pointer_id(&payload) {
                 match current.pointer_capture() {
                     crate::PointerCaptureDirective::Capture => {
-                        runtime.borrow().pointer_capture.capture(pointer_id, target);
+                        runtime
+                            .borrow()
+                            .pointer_capture_for(Some(&self.view_id))
+                            .capture(pointer_id, target);
                     }
                     crate::PointerCaptureDirective::Release => {
-                        runtime.borrow().pointer_capture.release(pointer_id);
+                        runtime
+                            .borrow()
+                            .pointer_capture_for(Some(&self.view_id))
+                            .release(pointer_id);
                     }
                     crate::PointerCaptureDirective::None => {}
                 }
@@ -3288,8 +3321,8 @@ impl ScriptHostView {
             theme,
             animations: runtime.animation_values.clone(),
             signals: runtime.signals.clone(),
-            geometry: runtime.geometry.clone(),
-            pointer_capture: runtime.pointer_capture.clone(),
+            geometry: runtime.geometry_for(Some(&self.view_id)),
+            pointer_capture: runtime.pointer_capture_for(Some(&self.view_id)),
             virtual_requests: runtime.virtual_requests.clone(),
             direction,
         }
@@ -3297,7 +3330,11 @@ impl ScriptHostView {
 
     fn prepare_host_render(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.prepare_render(window);
-        self.lifecycle.runtime().borrow().geometry.begin_frame();
+        self.lifecycle
+            .runtime()
+            .borrow()
+            .geometry_for(Some(&self.view_id))
+            .begin_frame();
         self.text_selection.retain(self.lifecycle.retained());
         self.sync_focus_handles(cx);
         self.process_element_commands(window, cx);
@@ -3420,6 +3457,20 @@ impl ScriptHostView {
             || f64::from(window.viewport_size().width),
             |bounds| f64::from(bounds.size.width),
         );
+        let needs_update = self
+            .lifecycle
+            .runtime()
+            .borrow()
+            .responsive
+            .would_update_window(&self.window_id, width);
+        match needs_update {
+            Ok(false) => return,
+            Err(error) => {
+                self.last_error = Some(error.to_string());
+                return;
+            }
+            Ok(true) => {}
+        }
         let result = self.run_script_transaction(|view| {
             let runtime = view.lifecycle.runtime();
             let changed = {
@@ -3532,12 +3583,13 @@ impl ScriptHostView {
         (self.development && self.inspector_open).then(|| {
             let components = self.engine.component_exports().unwrap_or_default();
             let runtime = runtime.borrow();
-            let snapshot = crate::InspectorSnapshot::capture(
+            let snapshot = crate::InspectorSnapshot::capture_for_view(
                 self.lifecycle.root(),
                 &runtime,
                 theme,
                 &components,
                 self.timings.clone(),
+                Some(&self.view_id),
             );
             crate::devtools::inspector_element(&snapshot)
         })
@@ -3703,8 +3755,10 @@ impl ScriptHostView {
         let generation = self.lifecycle.generation();
         let runtime = self.lifecycle.runtime();
         let mut runtime = runtime.borrow_mut();
-        let mut deliveries = runtime.tasks.drain(generation);
-        deliveries.extend(runtime.subscriptions.drain(generation));
+        let capacity = runtime.suspended_delivery_capacity_remaining();
+        let mut deliveries = runtime.tasks.drain_up_to(generation, capacity);
+        let remaining = capacity.saturating_sub(deliveries.len());
+        deliveries.extend(runtime.subscriptions.drain_up_to(generation, remaining));
         runtime.trace_subscription_closures();
         runtime.queue_suspended_async(deliveries)?;
         Ok(())
@@ -3724,6 +3778,10 @@ impl ScriptHostView {
             .runtime()
             .borrow_mut()
             .release_window(&self.window_id, &root);
+        self.lifecycle
+            .runtime()
+            .borrow_mut()
+            .remove_presentation(&self.view_id);
         let mut native = self.native_windows.borrow_mut();
         native.handles.remove(&self.window_id);
         native.force_close.remove(&self.window_id);
@@ -3822,8 +3880,8 @@ impl ScriptHostView {
                 crate::RuntimeTraceKind::Event,
                 "/App[root]",
                 format!("callback {}", callback.name()),
-                Some(payload.clone()),
-                false,
+                None,
+                true,
             );
         }
         let callback_result = self.run_script_transaction(|view| {
@@ -3917,13 +3975,14 @@ impl ScriptHostView {
         let runtime = self
             .lifecycle
             .runtime()
-            .try_borrow()
+            .try_borrow_mut()
             .map_err(|_| "UI runtime state is already borrowed".to_owned())?
-            .snapshot()
+            .begin_transaction()
             .map_err(|error| error.to_string())?;
         Ok(ScriptViewTransaction {
             runtime,
             engine: self.engine.execution_checkpoint(),
+            lifecycle: self.lifecycle.execution_checkpoint(),
         })
     }
 
@@ -3931,14 +3990,17 @@ impl ScriptHostView {
         &mut self,
         transaction: ScriptViewTransaction,
     ) -> Result<(), String> {
-        self.lifecycle
-            .runtime()
-            .try_borrow_mut()
-            .map_err(|_| "UI runtime state is already borrowed".to_owned())?
-            .restore(transaction.runtime)
-            .map_err(|error| error.to_string())?;
+        let runtime = self.lifecycle.runtime();
+        let runtime_result = match runtime.try_borrow_mut() {
+            Ok(mut runtime) => runtime
+                .restore(transaction.runtime)
+                .map_err(|error| error.to_string()),
+            Err(_) => Err("UI runtime state is already borrowed".to_owned()),
+        };
         self.engine.restore_execution_checkpoint(transaction.engine);
-        Ok(())
+        self.lifecycle
+            .restore_execution_checkpoint(transaction.lifecycle);
+        runtime_result
     }
 
     fn run_script_transaction<T>(
@@ -3947,10 +4009,37 @@ impl ScriptHostView {
     ) -> Result<T, String> {
         let transaction = self.begin_script_transaction()?;
         match operation(self) {
-            Ok(value) => Ok(value),
+            Ok(value) => {
+                let runtime = self.lifecycle.runtime();
+                let commit = match runtime.try_borrow_mut() {
+                    Ok(mut runtime) => runtime
+                        .commit_transaction()
+                        .map_err(|error| error.to_string()),
+                    Err(_) => Err("UI runtime state is already borrowed".to_owned()),
+                };
+                match commit {
+                    Ok(()) => Ok(value),
+                    Err(error) => {
+                        let rollback = self.rollback_script_transaction(transaction);
+                        Err(rollback.map_or_else(
+                            |rollback| {
+                                format!(
+                                    "transaction commit failed: {error}; rollback also failed: {rollback}"
+                                )
+                            },
+                            |()| format!("transaction commit failed: {error}"),
+                        ))
+                    }
+                }
+            }
             Err(error) => {
                 let rollback = self.rollback_script_transaction(transaction);
-                Err(rollback.err().unwrap_or(error))
+                match rollback {
+                    Ok(()) => Err(error),
+                    Err(rollback) => Err(format!(
+                        "{error}; transaction rollback also failed: {rollback}"
+                    )),
+                }
             }
         }
     }
@@ -4009,16 +4098,10 @@ impl ScriptHostView {
             return;
         }
 
-        let result = if has_script_work {
+        let (delivery_changed, delivery_error) = self.deliver_async_batch(deliveries);
+        let result = if dirty || pending_dispatch || virtual_requests {
             self.run_script_transaction(|view| {
                 let mut changed = view.invoke_pending_effects()?;
-                for delivery in deliveries {
-                    let _ = view
-                        .lifecycle
-                        .invoke_async_delivery(&view.engine, delivery)
-                        .map_err(|error| error.to_string())?;
-                }
-                changed |= view.invoke_pending_effects()?;
                 changed |= view
                     .lifecycle
                     .realize_virtual_requests(&mut view.engine)
@@ -4027,10 +4110,14 @@ impl ScriptHostView {
                     .lifecycle
                     .render_dirty(&mut view.engine)
                     .map_err(|error| error.to_string())?;
-                Ok(changed)
+                Ok(changed || delivery_changed)
             })
         } else {
-            Ok(false)
+            Ok(delivery_changed)
+        };
+        let result = match (result, delivery_error) {
+            (Ok(_), Some(error)) => Err(error),
+            (result, _) => result,
         };
         let notify = match result {
             Ok(changed) => {
@@ -4049,6 +4136,44 @@ impl ScriptHostView {
         if notify {
             cx.notify();
         }
+    }
+
+    fn deliver_async_batch(
+        &mut self,
+        deliveries: Vec<crate::AsyncDelivery>,
+    ) -> (bool, Option<String>) {
+        let mut changed = false;
+        let mut first_error = None;
+        for delivery in deliveries {
+            let scope = format!("{:?}", delivery.scope);
+            let result = self.run_script_transaction(|view| {
+                let mut delivery_changed = view.invoke_pending_effects()?;
+                let _ = view
+                    .lifecycle
+                    .invoke_async_delivery(&view.engine, delivery)
+                    .map_err(|error| error.to_string())?;
+                delivery_changed |= view.invoke_pending_effects()?;
+                delivery_changed |= view
+                    .lifecycle
+                    .render_dirty(&mut view.engine)
+                    .map_err(|error| error.to_string())?;
+                Ok(delivery_changed)
+            });
+            match result {
+                Ok(delivery_changed) => changed |= delivery_changed,
+                Err(error) => {
+                    self.lifecycle.runtime().borrow_mut().traces.push(
+                        crate::RuntimeTraceKind::Task,
+                        scope,
+                        format!("delivery failed: {error}"),
+                        None,
+                        false,
+                    );
+                    first_error.get_or_insert(error);
+                }
+            }
+        }
+        (changed, first_error)
     }
 
     fn sync_program(&mut self) {
@@ -4241,60 +4366,52 @@ impl ScriptHostView {
             .canonicalize()
             .map_err(|error| error.to_string())?;
         let changed_modules = changed_module_ids(&root, changed_paths);
-        let refresh = self
-            .module_cache
-            .refresh(self.engine.engine(), &file_source, changed_modules)
+        let mut candidate_engine = self.engine.candidate_engine();
+        for extension in self.factory.extensions.iter() {
+            extension.configure_engine(&mut candidate_engine)?;
+        }
+        let mut candidate_cache = self.module_cache.clone();
+        let refresh = candidate_cache
+            .refresh(candidate_engine.engine(), &file_source, changed_modules)
             .map_err(|error| error.to_string())?;
         let resolver =
-            RestrictedModuleResolver::from_source_with_cache(&file_source, &self.module_cache)
+            RestrictedModuleResolver::from_source_with_cache(&file_source, &candidate_cache)
                 .map_err(|error| error.to_string())?;
-        let previous_exports = self
-            .engine
-            .component_exports()
-            .map_err(|error| error.to_string())?;
-        let previous_renderers = self
-            .engine
-            .component_renderer_snapshot()
-            .map_err(|error| error.to_string())?;
-        self.engine
-            .clear_component_exports()
-            .map_err(|error| error.to_string())?;
-        self.engine.set_module_resolver(resolver);
-        preload_component_modules(&mut self.engine, file_source.module_ids())
-            .map_err(|error| error.to_string())?;
-        let candidate = self
-            .engine
-            .compile_self_contained_named(&self.entry.to_string_lossy(), &source);
-        let result = candidate
-            .map_err(|error| error.to_string())
-            .and_then(|candidate| {
-                let state_schema = self
-                    .engine
-                    .root_state_schema(&candidate)
-                    .map_err(|error| error.to_string())?;
+        let candidate = candidate_engine.with_program_preparation(|engine| {
+            engine.set_module_resolver(resolver);
+            preload_component_modules(engine, file_source.module_ids())
+                .map_err(|error| error.to_string())?;
+            let candidate = engine
+                .compile_self_contained_named(&self.entry.to_string_lossy(), &source)
+                .map_err(|error| error.to_string())?;
+            let state_schema = engine
+                .root_state_schema(&candidate)
+                .map_err(|error| error.to_string())?;
+            let program_exports = engine
+                .component_exports()
+                .map_err(|error| error.to_string())?;
+            let program_renderers = engine
+                .component_renderer_snapshot()
+                .map_err(|error| error.to_string())?;
+            Ok::<_, String>((candidate, state_schema, program_exports, program_renderers))
+        });
+        let result = candidate.and_then(
+            |(candidate, state_schema, program_exports, program_renderers)| {
                 let program_compiled = candidate.clone();
                 let program_schema = state_schema.clone();
-                let program_exports = self
-                    .engine
-                    .component_exports()
-                    .map_err(|error| error.to_string())?;
-                self.load_current_component_styles(&program_exports)?;
-                let program_renderers = self
-                    .engine
-                    .component_renderer_snapshot()
-                    .map_err(|error| error.to_string())?;
-                if self.state.get() == ScriptViewState::Suspended {
-                    self.engine
-                        .restore_component_exports(previous_exports.clone())
-                        .map_err(|error| error.to_string())?;
-                    self.engine
-                        .restore_component_renderers(previous_renderers.clone())
-                        .map_err(|error| error.to_string())?;
-                } else {
+                load_file_component_styles(
+                    candidate_engine.engine(),
+                    &self.style_path,
+                    &program_exports,
+                )
+                .map_err(|error| error.to_string())?;
+                if self.state.get() != ScriptViewState::Suspended {
                     self.lifecycle
-                        .reload(&mut self.engine, candidate, &state_schema)
+                        .reload(&mut candidate_engine, candidate, &state_schema)
                         .map_err(|error| error.to_string())?;
+                    self.engine = candidate_engine;
                 }
+                self.module_cache = candidate_cache;
                 self.factory.update_program(
                     program_compiled,
                     program_schema,
@@ -4302,15 +4419,8 @@ impl ScriptHostView {
                     program_renderers,
                 );
                 Ok(())
-            });
-        if result.is_err() {
-            self.engine
-                .restore_component_exports(previous_exports)
-                .map_err(|error| error.to_string())?;
-            self.engine
-                .restore_component_renderers(previous_renderers)
-                .map_err(|error| error.to_string())?;
-        }
+            },
+        );
         if result.is_ok() {
             self.trace_script_reload(refresh.affected.len(), refresh.compiled.len());
         }

@@ -194,6 +194,7 @@ impl CustomType for ImageDecodeHandle {
     }
 }
 
+#[derive(Clone, Debug)]
 struct PendingImageDecode {
     asset: AssetId,
     scope: AsyncScope,
@@ -208,6 +209,29 @@ struct ImageDecodeMessage {
     result: Result<(ImageFormat, AssetData), String>,
 }
 
+#[derive(Clone, Debug)]
+pub(crate) struct ImageDecodeSnapshot {
+    pending: BTreeMap<u64, PendingImageDecode>,
+    deferred: BTreeMap<u64, PendingImageDecode>,
+    transaction_depth: usize,
+}
+
+fn defer_or_cancel_decode(inner: &mut AssetRegistryInner, id: u64, pending: PendingImageDecode) {
+    if inner.transaction_depth > 0 {
+        inner.deferred_decode_cancellations.insert(id, pending);
+    } else {
+        pending.canceled.store(true, Ordering::Release);
+    }
+}
+
+fn cancel_decode_ids(inner: &mut AssetRegistryInner, ids: impl IntoIterator<Item = u64>) {
+    for id in ids {
+        if let Some(pending) = inner.pending_decodes.remove(&id) {
+            defer_or_cancel_decode(inner, id, pending);
+        }
+    }
+}
+
 struct AssetRegistryInner {
     providers: BTreeMap<String, Box<dyn AssetProvider>>,
     by_asset: BTreeMap<AssetId, ImageHandle>,
@@ -217,6 +241,8 @@ struct AssetRegistryInner {
     next_id: u64,
     next_decode_id: u64,
     pending_decodes: BTreeMap<u64, PendingImageDecode>,
+    deferred_decode_cancellations: BTreeMap<u64, PendingImageDecode>,
+    transaction_depth: usize,
     decode_sender: Sender<ImageDecodeMessage>,
     decode_receiver: Receiver<ImageDecodeMessage>,
 }
@@ -233,6 +259,8 @@ impl Default for AssetRegistryInner {
             next_id: 0,
             next_decode_id: 1,
             pending_decodes: BTreeMap::new(),
+            deferred_decode_cancellations: BTreeMap::new(),
+            transaction_depth: 0,
             decode_sender,
             decode_receiver,
         }
@@ -258,6 +286,30 @@ impl std::fmt::Debug for AssetRegistry {
 }
 
 impl AssetRegistry {
+    pub(crate) fn begin_transaction(&self) -> Result<ImageDecodeSnapshot, AssetError> {
+        let snapshot = self.decode_snapshot()?;
+        let mut inner = self
+            .inner
+            .try_borrow_mut()
+            .map_err(|_| AssetError::Borrowed)?;
+        inner.transaction_depth = inner.transaction_depth.saturating_add(1);
+        Ok(snapshot)
+    }
+
+    pub(crate) fn commit_transaction(&self) -> Result<(), AssetError> {
+        let mut inner = self
+            .inner
+            .try_borrow_mut()
+            .map_err(|_| AssetError::Borrowed)?;
+        inner.transaction_depth = inner.transaction_depth.saturating_sub(1);
+        if inner.transaction_depth == 0 {
+            for pending in std::mem::take(&mut inner.deferred_decode_cancellations).into_values() {
+                pending.canceled.store(true, Ordering::Release);
+            }
+        }
+        Ok(())
+    }
+
     #[must_use]
     pub fn new() -> Self {
         Self::default()
@@ -281,13 +333,10 @@ impl AssetRegistry {
             .inner
             .try_borrow_mut()
             .map_err(|_| AssetError::Borrowed)?;
-        if inner
-            .providers
-            .insert(namespace.clone(), Box::new(provider))
-            .is_some()
-        {
+        if inner.providers.contains_key(&namespace) {
             return Err(AssetError::DuplicateNamespace(namespace));
         }
+        inner.providers.insert(namespace, Box::new(provider));
         Ok(())
     }
 
@@ -516,7 +565,7 @@ impl AssetRegistry {
         let Some(pending) = inner.pending_decodes.remove(&handle.0) else {
             return Ok(false);
         };
-        pending.canceled.store(true, Ordering::Release);
+        defer_or_cancel_decode(&mut inner, handle.0, pending);
         Ok(true)
     }
 
@@ -534,19 +583,21 @@ impl AssetRegistry {
             .inner
             .try_borrow_mut()
             .map_err(|_| AssetError::Borrowed)?;
-        inner.pending_decodes.retain(|_, pending| {
-            let remove = match &pending.scope {
-                AsyncScope::Window(id) => id == window,
-                AsyncScope::Component(_) | AsyncScope::Effect { .. } => {
-                    pending.scope.is_within_component(component)
-                }
-                AsyncScope::App => false,
-            };
-            if remove {
-                pending.canceled.store(true, Ordering::Release);
-            }
-            !remove
-        });
+        let remove = inner
+            .pending_decodes
+            .iter()
+            .filter_map(|(id, pending)| {
+                let remove = match &pending.scope {
+                    AsyncScope::Window(id) => id == window,
+                    AsyncScope::Component(_) | AsyncScope::Effect { .. } => {
+                        pending.scope.is_within_component(component)
+                    }
+                    AsyncScope::App => false,
+                };
+                remove.then_some(*id)
+            })
+            .collect::<Vec<_>>();
+        cancel_decode_ids(&mut inner, remove);
         Ok(())
     }
 
@@ -563,13 +614,12 @@ impl AssetRegistry {
             .inner
             .try_borrow_mut()
             .map_err(|_| AssetError::Borrowed)?;
-        inner.pending_decodes.retain(|_, pending| {
-            let remove = pending.scope.is_within_component(component);
-            if remove {
-                pending.canceled.store(true, Ordering::Release);
-            }
-            !remove
-        });
+        let remove = inner
+            .pending_decodes
+            .iter()
+            .filter_map(|(id, pending)| pending.scope.is_within_component(component).then_some(*id))
+            .collect::<Vec<_>>();
+        cancel_decode_ids(&mut inner, remove);
         Ok(())
     }
 
@@ -583,13 +633,12 @@ impl AssetRegistry {
             .inner
             .try_borrow_mut()
             .map_err(|_| AssetError::Borrowed)?;
-        inner.pending_decodes.retain(|_, pending| {
-            let remove = &pending.scope == scope;
-            if remove {
-                pending.canceled.store(true, Ordering::Release);
-            }
-            !remove
-        });
+        let remove = inner
+            .pending_decodes
+            .iter()
+            .filter_map(|(id, pending)| (&pending.scope == scope).then_some(*id))
+            .collect::<Vec<_>>();
+        cancel_decode_ids(&mut inner, remove);
         Ok(())
     }
 
@@ -661,32 +710,35 @@ impl AssetRegistry {
             .map_or(0, |inner| inner.pending_decodes.len())
     }
 
-    pub(crate) fn pending_decode_ids(&self) -> Result<std::collections::BTreeSet<u64>, AssetError> {
-        Ok(self
-            .inner
-            .try_borrow()
-            .map_err(|_| AssetError::Borrowed)?
-            .pending_decodes
-            .keys()
-            .copied()
-            .collect())
+    pub(crate) fn decode_snapshot(&self) -> Result<ImageDecodeSnapshot, AssetError> {
+        let inner = self.inner.try_borrow().map_err(|_| AssetError::Borrowed)?;
+        Ok(ImageDecodeSnapshot {
+            pending: inner.pending_decodes.clone(),
+            deferred: inner.deferred_decode_cancellations.clone(),
+            transaction_depth: inner.transaction_depth,
+        })
     }
 
-    pub(crate) fn retain_decode_ids(
+    pub(crate) fn restore_decode_snapshot(
         &self,
-        retained: &std::collections::BTreeSet<u64>,
+        snapshot: ImageDecodeSnapshot,
     ) -> Result<(), AssetError> {
         let mut inner = self
             .inner
             .try_borrow_mut()
             .map_err(|_| AssetError::Borrowed)?;
-        inner.pending_decodes.retain(|id, pending| {
-            let keep = retained.contains(id);
-            if !keep {
+        for (id, pending) in inner
+            .pending_decodes
+            .iter()
+            .chain(inner.deferred_decode_cancellations.iter())
+        {
+            if !snapshot.pending.contains_key(id) && !snapshot.deferred.contains_key(id) {
                 pending.canceled.store(true, Ordering::Release);
             }
-            keep
-        });
+        }
+        inner.pending_decodes = snapshot.pending;
+        inner.deferred_decode_cancellations = snapshot.deferred;
+        inner.transaction_depth = snapshot.transaction_depth;
         Ok(())
     }
 
@@ -919,6 +971,34 @@ mod tests {
     }
 
     #[test]
+    fn rejected_duplicate_provider_keeps_uncached_assets_from_the_original() {
+        let registry = AssetRegistry::new();
+        let data = AssetData {
+            mime_type: "image/svg+xml".to_owned(),
+            bytes: b"<svg xmlns='http://www.w3.org/2000/svg'/>".to_vec(),
+        };
+        registry
+            .register(
+                "app",
+                InMemoryAssetProvider::new(BTreeMap::from([
+                    ("first".to_owned(), data.clone()),
+                    ("second".to_owned(), data),
+                ])),
+            )
+            .unwrap();
+        registry
+            .load_image(&AssetId::parse("app/first").unwrap())
+            .unwrap();
+        assert!(matches!(
+            registry.register("app", InMemoryAssetProvider::default()),
+            Err(AssetError::DuplicateNamespace(_))
+        ));
+        registry
+            .load_image(&AssetId::parse("app/second").unwrap())
+            .unwrap();
+    }
+
+    #[test]
     fn namespace_refresh_preserves_handle_and_replaces_cached_bytes() {
         let data = Rc::new(RefCell::new(AssetData {
             mime_type: "image/svg+xml".to_owned(),
@@ -1065,5 +1145,37 @@ mod tests {
                 .is_empty()
         );
         assert_eq!(registry.pending_decode_count(), 0);
+    }
+
+    #[test]
+    fn transaction_rollback_restores_a_cancelled_decode_registration() {
+        let registry = AssetRegistry::new();
+        registry
+            .register(
+                "app",
+                InMemoryAssetProvider::new(BTreeMap::from([(
+                    "pixel".to_owned(),
+                    AssetData {
+                        mime_type: "image/png".to_owned(),
+                        bytes: one_pixel_png(),
+                    },
+                )])),
+            )
+            .unwrap();
+        let generation = ScriptGeneration::initial();
+        let handle = registry
+            .start_image_decode(
+                &AssetId::parse("app/pixel").unwrap(),
+                AsyncScope::App,
+                generation,
+                ScriptCallback::try_from_fn_ptr(FnPtr::new("loaded").unwrap(), generation).unwrap(),
+                ScriptCallback::try_from_fn_ptr(FnPtr::new("failed").unwrap(), generation).unwrap(),
+            )
+            .unwrap();
+        let snapshot = registry.begin_transaction().unwrap();
+        assert!(registry.cancel_image_decode(handle).unwrap());
+        assert_eq!(registry.pending_decode_count(), 0);
+        registry.restore_decode_snapshot(snapshot).unwrap();
+        assert_eq!(registry.pending_decode_count(), 1);
     }
 }

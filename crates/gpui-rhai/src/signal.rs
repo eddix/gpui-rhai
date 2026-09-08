@@ -92,6 +92,13 @@ impl SignalValue {
         }
     }
 
+    fn validate(&self) -> Result<(), SignalError> {
+        match self {
+            Self::Float(value) if !value.is_finite() => Err(SignalError::NonFiniteFloat),
+            _ => Ok(()),
+        }
+    }
+
     /// Convert a Rhai scalar into a typed hot value.
     ///
     /// # Errors
@@ -135,6 +142,7 @@ impl SignalValue {
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct SignalId {
     component: ComponentInstancePath,
+    incarnation: crate::ComponentIncarnation,
     key: String,
     kind: SignalKind,
 }
@@ -161,14 +169,31 @@ impl SignalId {
         }
         Ok(Self {
             component,
+            incarnation: crate::ComponentIncarnation::unscoped(),
             key,
             kind,
         })
     }
 
+    pub(crate) fn new_scoped(
+        component: ComponentInstancePath,
+        incarnation: crate::ComponentIncarnation,
+        key: impl Into<String>,
+        kind: SignalKind,
+    ) -> Result<Self, SignalError> {
+        let mut id = Self::new(component, key, kind)?;
+        id.incarnation = incarnation;
+        Ok(id)
+    }
+
     #[must_use]
     pub const fn component(&self) -> &ComponentInstancePath {
         &self.component
+    }
+
+    #[must_use]
+    pub const fn incarnation(&self) -> crate::ComponentIncarnation {
+        self.incarnation
     }
 
     #[must_use]
@@ -326,6 +351,7 @@ impl SignalRegistry {
         value: SignalValue,
         writer: SignalWriter,
     ) -> Result<bool, SignalError> {
+        value.validate()?;
         if signal.id.kind != value.kind() {
             return Err(SignalError::TypeMismatch {
                 expected: signal.id.kind,
@@ -466,6 +492,11 @@ mod tests {
             registry.write(&signal, SignalValue::Integer(1)),
             Err(SignalError::TypeMismatch { .. })
         ));
+        assert_eq!(registry.read(&signal).unwrap(), SignalValue::Float(0.0));
+        assert_eq!(
+            registry.write(&signal, SignalValue::Float(f64::NAN)),
+            Err(SignalError::NonFiniteFloat)
+        );
         assert_eq!(registry.read(&signal).unwrap(), SignalValue::Float(0.0));
     }
 }

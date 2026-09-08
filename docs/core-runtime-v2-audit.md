@@ -5,7 +5,21 @@ green current test suite is necessary but does not mark an incomplete
 workstream complete. Every row becomes complete only when its implementation,
 negative cases, acceptance application, and required platform gate exist.
 
-Last updated: 2026-09-05.
+Last updated: 2026-09-08.
+
+The 2026-09-08 invariant hardening pass supersedes the numerical counts in row
+J below: the core now has 335 all-feature unit tests, the official registry 43 cases, the
+CLI 23 cases, and the independent native workspace 49 cases. A machine-readable
+verification manifest covers all 21 examples; CI runs the default/all-feature
+contracts plus the independent structural performance workspace; PNG baseline
+validation parses all chunks, verifies CRCs, and decompresses image data.
+
+That pass also established globally unique program candidates, per-view
+geometry/capture domains, component mount incarnations, cumulative Rhai
+operation semantics v2, candidate-Engine hot reload, COW state/store snapshots,
+commit-deferred task/subscription/decode cancellation, lossless receiver
+backpressure, and structured automation failures. The remaining Partial rows
+describe product/platform work rather than those corrected runtime invariants.
 
 | Workstream | Status | Evidence present | Blocking gaps |
 | --- | --- | --- | --- |

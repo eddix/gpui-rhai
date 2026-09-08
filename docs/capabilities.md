@@ -33,7 +33,11 @@ let result = ctx.call_capability("app.settings", "load", #{ key: "theme" });
 Use `ctx.start_task` for one-shot background work. It may start from `init`, an
 event callback, an effect start, or `resume`; ordinary component-owned tasks
 continue across retained view suspension. Rust work runs off the foreground
-thread and callbacks return to the GPUI thread.
+thread on a bounded shared worker pool and callbacks return to the GPUI thread.
+Implement ordinary work with `TaskWork::new`. For work that can stop early,
+use `TaskWork::cancellable` and periodically inspect the supplied
+`TaskCancellation`; the runtime never attempts to forcibly interrupt arbitrary
+Rust code.
 
 `ctx.start_subscription` is valid only inside a declared formal-component
 effect start callback. This makes every long-lived stream structurally owned:
@@ -60,6 +64,8 @@ dropping an event. `delivery: "latest"` explicitly coalesces pending values and
 is appropriate for progress, sensors, and replaceable state snapshots.
 `throttle_ms` paces lossless delivery or defines the coalescing interval for a
 latest-only stream. Capacity is bounded to 1–4096 and throttle to 60 seconds.
+The built-in `SubscriptionWork::from_receiver` waits for lossless capacity and
+wakes on cancellation; it does not reinterpret backpressure as end-of-stream.
 
 ## Subscription producer lifetime
 

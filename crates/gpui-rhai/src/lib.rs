@@ -86,12 +86,12 @@ pub use asset::{
 pub use async_runtime::{
     AsyncDelivery, AsyncRuntimeError, AsyncScope, SubscriptionCloseReason,
     SubscriptionDeliveryPolicy, SubscriptionEmitter, SubscriptionHandle, SubscriptionOptions,
-    SubscriptionRegistration, SubscriptionRegistry, TaskHandle, TaskRegistry,
+    SubscriptionRegistration, SubscriptionRegistry, TaskCancellation, TaskHandle, TaskRegistry,
 };
 pub use automation::{
     AutomationBounds, AutomationCommand, AutomationDispatchReport, AutomationError,
-    AutomationLocator, AutomationNode, AutomationRequest, AutomationResponse, AutomationResult,
-    AutomationSnapshot, handle_automation_json_line, run_automation_json_lines,
+    AutomationFailure, AutomationLocator, AutomationNode, AutomationRequest, AutomationResponse,
+    AutomationResult, AutomationSnapshot, handle_automation_json_line, run_automation_json_lines,
 };
 pub use budget::{RuntimeBudgetError, RuntimeBudgets};
 pub use canvas::{
@@ -112,8 +112,8 @@ pub use component::{
 };
 pub use component_styles::{ComponentStyleError, ComponentStyleSheet, load_component_styles};
 pub use context::{
-    ExecutionPhase, PendingEvent, UiContext, UiContextError, UiMutationBatch, UiRuntimeState,
-    UiStateSnapshot,
+    ComponentIncarnation, ExecutionPhase, PendingEvent, UiContext, UiContextError, UiMutationBatch,
+    UiRuntimeState, UiStateSnapshot, UiTransactionError,
 };
 pub use date::{CalendarClock, CalendarClockSource, DateError, GregorianDate, Weekday};
 pub use dependency::{
@@ -143,8 +143,9 @@ pub use document_view::{
 pub use effect::{EffectDescriptor, EffectError, EffectId, EffectRegistry};
 pub use element_ref::{ElementRef, ElementRefError, ElementRefId, ElementRefRegistry};
 pub use engine::{
-    CompiledUi, ComponentInvocationRecipe, ExecutionOperation, ExecutionTiming, RuntimeEngine,
-    RuntimeError, ScriptCallback, ScriptCallbackDefinitionError, ScriptGeneration,
+    CompiledUi, ComponentInvocationRecipe, ExecutionOperation, ExecutionTiming,
+    OPERATION_SEMANTICS_VERSION, RuntimeEngine, RuntimeError, ScriptCallback,
+    ScriptCallbackDefinitionError, ScriptGeneration,
 };
 pub use event::{
     EventDispatchReport, EventModifiers, EventPhase, EventPropagation, EventResponse, EventRouter,

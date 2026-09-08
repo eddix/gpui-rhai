@@ -98,7 +98,7 @@ impl TimerDescriptor {
 #[derive(Clone, Debug, PartialEq)]
 struct TimerSignature {
     delay: Duration,
-    callback: String,
+    callback: ScriptCallback,
     payload: UiValue,
 }
 
@@ -106,7 +106,7 @@ impl From<&TimerDescriptor> for TimerSignature {
     fn from(descriptor: &TimerDescriptor) -> Self {
         Self {
             delay: descriptor.delay,
-            callback: descriptor.callback.name().to_owned(),
+            callback: descriptor.callback.clone(),
             payload: descriptor.payload.clone(),
         }
     }
@@ -120,6 +120,7 @@ struct TimerEntry {
     remaining: Option<Duration>,
     declaration_paused: bool,
     interaction_paused: bool,
+    view_paused: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -129,6 +130,7 @@ pub struct TimerSnapshot {
     pub remaining: Duration,
     pub declaration_paused: bool,
     pub interaction_paused: bool,
+    pub view_paused: bool,
     pub callback: String,
     pub generation: ScriptGeneration,
 }
@@ -145,6 +147,7 @@ impl TimerEntry {
             remaining,
             declaration_paused,
             interaction_paused: false,
+            view_paused: false,
         }
     }
 
@@ -156,7 +159,7 @@ impl TimerEntry {
     }
 
     fn is_paused(&self) -> bool {
-        self.declaration_paused || self.interaction_paused
+        self.declaration_paused || self.interaction_paused || self.view_paused
     }
 
     fn transition_pause(&mut self, was_paused: bool, paused: bool, now: Instant) {
@@ -270,7 +273,7 @@ impl TimerRegistry {
         for (id, entry) in &mut self.entries {
             if id.component.is_within(component) {
                 let was_paused = entry.is_paused();
-                entry.interaction_paused = true;
+                entry.view_paused = true;
                 entry.transition_pause(was_paused, entry.is_paused(), now);
             }
         }
@@ -280,7 +283,7 @@ impl TimerRegistry {
         for (id, entry) in &mut self.entries {
             if id.component.is_within(component) {
                 let was_paused = entry.is_paused();
-                entry.interaction_paused = false;
+                entry.view_paused = false;
                 entry.transition_pause(was_paused, entry.is_paused(), now);
             }
         }
@@ -303,6 +306,7 @@ impl TimerRegistry {
                     .unwrap_or_else(|| entry.deadline.saturating_duration_since(now)),
                 declaration_paused: entry.declaration_paused,
                 interaction_paused: entry.interaction_paused,
+                view_paused: entry.view_paused,
                 callback: entry.descriptor.callback.name().to_owned(),
                 generation: entry.descriptor.callback.generation(),
             })
@@ -404,5 +408,28 @@ mod tests {
         );
         timers.reconcile(&root, BTreeMap::new(), now);
         assert_eq!(timers.active_count(), 0);
+    }
+
+    #[test]
+    fn view_resume_does_not_clear_an_explicit_pause() {
+        let root = ComponentInstancePath::root("App", "root");
+        let now = Instant::now();
+        let mut timers = TimerRegistry::new();
+        let timer = descriptor(&root, "one", Duration::from_millis(100), false);
+        timers.reconcile(&root, BTreeMap::from([(timer.id.clone(), timer)]), now);
+        assert!(timers.pause(
+            &TimerId::new(root.clone(), "one").unwrap(),
+            now + Duration::from_millis(10)
+        ));
+        timers.pause_component_scope(&root, now + Duration::from_millis(20));
+        timers.resume_component_scope(&root, now + Duration::from_secs(1));
+        let snapshot = timers.inspect(now + Duration::from_secs(1));
+        assert!(snapshot[0].interaction_paused);
+        assert!(!snapshot[0].view_paused);
+        assert!(
+            timers
+                .drain(now + Duration::from_secs(2), ScriptGeneration::initial())
+                .is_empty()
+        );
     }
 }

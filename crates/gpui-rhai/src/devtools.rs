@@ -77,7 +77,11 @@ impl TraceBuffer {
             kind,
             scope: scope.into(),
             message: message.into(),
-            payload,
+            payload: if sensitive && payload.is_some() {
+                Some(UiValue::String("<sensitive>".to_owned()))
+            } else {
+                payload
+            },
             sensitive,
         });
         self.next_sequence = self.next_sequence.saturating_add(1);
@@ -176,6 +180,7 @@ pub struct InspectorTimer {
     pub remaining_ms: u64,
     pub declaration_paused: bool,
     pub interaction_paused: bool,
+    pub view_paused: bool,
     pub callback: String,
     pub generation: u64,
 }
@@ -227,7 +232,19 @@ impl InspectorSnapshot {
         components: &ComponentRegistry,
         timings: Vec<ExecutionTiming>,
     ) -> Self {
-        let mechanisms = inspect_runtime_mechanisms(runtime);
+        Self::capture_for_view(root, runtime, theme, components, timings, None)
+    }
+
+    #[must_use]
+    pub fn capture_for_view(
+        root: Option<&UiNode>,
+        runtime: &UiRuntimeState,
+        theme: &ThemeVariant,
+        components: &ComponentRegistry,
+        timings: Vec<ExecutionTiming>,
+        view: Option<&str>,
+    ) -> Self {
+        let mechanisms = inspect_runtime_mechanisms(runtime, view);
         Self {
             root: root.map(|root| inspect_node(root, "root")),
             state: runtime.component_state.inspect(),
@@ -286,7 +303,12 @@ impl InspectorSnapshot {
     }
 }
 
-fn inspect_runtime_mechanisms(runtime: &UiRuntimeState) -> InspectorRuntimeMechanisms {
+fn inspect_runtime_mechanisms(
+    runtime: &UiRuntimeState,
+    view: Option<&str>,
+) -> InspectorRuntimeMechanisms {
+    let geometry = runtime.geometry_for(view);
+    let pointer_capture = runtime.pointer_capture_for(view);
     InspectorRuntimeMechanisms {
         signals: runtime
             .signals
@@ -347,6 +369,7 @@ fn inspect_runtime_mechanisms(runtime: &UiRuntimeState) -> InspectorRuntimeMecha
                 remaining_ms: u64::try_from(timer.remaining.as_millis()).unwrap_or(u64::MAX),
                 declaration_paused: timer.declaration_paused,
                 interaction_paused: timer.interaction_paused,
+                view_paused: timer.view_paused,
                 callback: timer.callback,
                 generation: timer.generation.get(),
             })
@@ -360,9 +383,8 @@ fn inspect_runtime_mechanisms(runtime: &UiRuntimeState) -> InspectorRuntimeMecha
             })
             .collect(),
         virtual_collections: inspect_virtual_collections(runtime),
-        geometry_nodes: runtime.geometry.len(),
-        pointer_captures: runtime
-            .pointer_capture
+        geometry_nodes: geometry.len(),
+        pointer_captures: pointer_capture
             .snapshot()
             .into_iter()
             .map(|(pointer, node)| (pointer, node.get()))
@@ -649,11 +671,12 @@ pub(crate) fn inspector_element(snapshot: &InspectorSnapshot) -> AnyElement {
     lines.push("Script timings".to_owned());
     for timing in snapshot.timings.iter().rev().take(20) {
         lines.push(format!(
-            "  {:?} {} {:.2?} {} ops{}",
+            "  {:?} {} {:.2?} {} ops(v{}){}",
             timing.operation,
             timing.source,
             timing.duration,
             timing.operations,
+            timing.operation_semantics,
             if timing.slow { " SLOW" } else { "" }
         ));
     }
@@ -761,12 +784,13 @@ fn append_mechanism_lines(snapshot: &InspectorSnapshot, lines: &mut Vec<String>)
     lines.push("Timers".to_owned());
     for timer in &snapshot.timers {
         lines.push(format!(
-            "  {} remaining={}ms/{}ms paused={}/{} callback={} gen={}",
+            "  {} remaining={}ms/{}ms paused={}/{}/{} callback={} gen={}",
             timer.id,
             timer.remaining_ms,
             timer.delay_ms,
             timer.declaration_paused,
             timer.interaction_paused,
+            timer.view_paused,
             timer.callback,
             timer.generation
         ));
@@ -893,6 +917,10 @@ mod tests {
         assert_eq!(snapshot.root.unwrap().source.unwrap().line, 4);
         assert!(snapshot.state[0].fields["token"].sensitive);
         assert_eq!(
+            snapshot.state[0].fields["token"].value,
+            UiValue::String("<sensitive>".to_owned())
+        );
+        assert_eq!(
             display_value(&snapshot.state[0].fields["token"].value, true),
             "<redacted>"
         );
@@ -914,6 +942,22 @@ mod tests {
         assert_eq!(snapshot.len(), 2);
         assert_eq!(snapshot[0].sequence, 2);
         assert_eq!(snapshot[1].sequence, 3);
+    }
+
+    #[test]
+    fn sensitive_trace_payload_is_redacted_before_storage() {
+        let mut traces = TraceBuffer::new(1);
+        traces.push(
+            RuntimeTraceKind::State,
+            "login",
+            "token changed",
+            Some(UiValue::String("secret".to_owned())),
+            true,
+        );
+        assert_eq!(
+            traces.snapshot()[0].payload,
+            Some(UiValue::String("<sensitive>".to_owned()))
+        );
     }
 
     fn install_virtual_metrics_probe(runtime: &UiRuntimeState, component: &ComponentInstancePath) {
