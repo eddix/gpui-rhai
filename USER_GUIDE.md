@@ -809,6 +809,9 @@ Guidelines:
 - Keep `view` and ordinary callbacks short; 16 ms is the default slow warning.
 - Do not parse files, access the network, or perform blocking work in `view`.
 - Use `virtual_collection` for large lists and Tables.
+- Treat `virtual_collection` as presentation-only. The owning component defines
+  enabled items, keyboard navigation, the single active style, and passes its
+  controlled key as `reveal_key`; sticky rows are a separate layout policy.
 - Keep large stable row sets in `NativeCollection`; let Rhai declare the Table
   and controlled state while Rust caches sort/group/collapse order and projects
   only visible rows.

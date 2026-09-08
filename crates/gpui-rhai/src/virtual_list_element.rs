@@ -4,14 +4,13 @@ use std::rc::Rc;
 
 use gpui::prelude::FluentBuilder;
 use gpui::{
-    AnyElement, App, AppContext, Bounds, BoxShadow, Context, Element, ElementId, Entity,
-    GlobalElementId, InspectorElementId, InteractiveElement, IntoElement, KeyDownEvent, LayoutId,
-    ListAlignment, ListOffset, ListState, ParentElement, Pixels, Render, SharedString, Styled,
-    Window, div, list, point, px, rgba,
+    AnyElement, App, AppContext, Bounds, Context, Element, ElementId, Entity, GlobalElementId,
+    InspectorElementId, InteractiveElement, IntoElement, LayoutId, ListAlignment, ListOffset,
+    ListState, ParentElement, Pixels, Render, SharedString, Styled, Window, div, list, px,
 };
 
+use crate::VirtualCollectionNodeSpec;
 use crate::slot_runtime::NodeSlotRuntime;
-use crate::{ColorResolver, ColorValue, Rgba8, VirtualCollectionNodeSpec, VirtualListState};
 
 pub(crate) struct VirtualListEntityElement {
     id: ElementId,
@@ -170,7 +169,6 @@ impl IntoElement for VirtualListEntityElement {
 
 struct VirtualListView {
     content: VirtualCollectionNodeSpec,
-    state: VirtualListState,
     runtime: NodeSlotRuntime,
     scroll: ListState,
     frame_indices: Rc<RefCell<BTreeSet<usize>>>,
@@ -188,12 +186,10 @@ impl VirtualListView {
         let scroll = list_state(&content);
         let mut this = Self {
             content,
-            state: VirtualListState::default(),
             runtime,
             scroll,
             frame_indices: Rc::new(RefCell::new(BTreeSet::new())),
         };
-        this.install_keys();
         this.reveal_controlled_target();
         this.install_metrics_handler();
         this
@@ -216,7 +212,6 @@ impl VirtualListView {
         } else if reset {
             self.scroll.reset(self.content.data.len());
         }
-        self.install_keys();
         self.install_metrics_handler();
         if changed {
             if reveal_changed || reset || recreate {
@@ -263,49 +258,12 @@ impl VirtualListView {
         }
     }
 
-    fn install_keys(&mut self) {
-        let _ = self.state.set_keys(
-            (0..self.content.data.len())
-                .filter(|index| !self.content.sticky_headers.contains(index))
-                .filter_map(|index| {
-                    collection_item_key(&self.content, index).map(ToOwned::to_owned)
-                })
-                .collect(),
-        );
-        if self.state.focused().is_none() {
-            self.state.focus_first();
-        }
-    }
-
     fn install_metrics_handler(&self) {
         let metrics = self.runtime.virtual_requests.clone();
         let id = self.content.id.clone();
         self.scroll.set_scroll_handler(move |event, _, _| {
             metrics.report_scroll(&id, event.visible_range.clone(), event.is_scrolled);
         });
-    }
-
-    fn handle_key(&mut self, key: &str, cx: &mut Context<Self>) -> Option<String> {
-        let previous = self.state.focused().map(ToOwned::to_owned);
-        match key {
-            "up" => self.state.focus_previous(),
-            "down" => self.state.focus_next(),
-            "home" => self.state.focus_first(),
-            "end" => self.state.focus_last(),
-            _ => return None,
-        }
-        let focused = self.state.focused().map(ToOwned::to_owned);
-        if focused != previous {
-            if let Some(index) = focused.as_ref().and_then(|focused| {
-                (0..self.content.data.len()).find(|index| {
-                    collection_item_key(&self.content, *index) == Some(focused.as_str())
-                })
-            }) {
-                self.scroll.scroll_to_reveal_item(index);
-            }
-            cx.notify();
-        }
-        focused
     }
 }
 
@@ -320,7 +278,7 @@ fn estimated_target_is_initially_visible(
 }
 
 impl Render for VirtualListView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         let viewport = self.scroll.viewport_bounds();
         let scroll_top = self.scroll.logical_scroll_top();
         let measured_visible = measured_visible_range(&self.scroll, &self.content, viewport);
@@ -339,22 +297,13 @@ impl Render for VirtualListView {
         if let Some(sticky) = sticky {
             frame_indices.borrow_mut().insert(sticky.index);
         }
-        let focused = self.state.focused().map(ToOwned::to_owned);
-        let (focus_color, focus_shadows) = virtual_focus_style(&runtime);
         let fixed_height = content.height.map(finite_to_f32);
         let list_content = content.clone();
         let list_runtime = runtime.clone();
         let list_frame_indices = Rc::clone(&frame_indices);
         let list = list(self.scroll.clone(), move |index, _window, _cx| {
             list_frame_indices.borrow_mut().insert(index);
-            render_virtual_item(
-                &list_content,
-                &list_runtime,
-                focused.as_deref(),
-                focus_color,
-                sticky,
-                index,
-            )
+            render_virtual_item(&list_content, &list_runtime, sticky, index)
         })
         .w_full()
         .when_some(fixed_height, |list, height| list.h(px(height)))
@@ -366,7 +315,6 @@ impl Render for VirtualListView {
         });
         let root_selector = format!("virtual-list:{}", self.content.id.key);
         let sticky_selector = format!("virtual-list-sticky:{}", self.content.id.key);
-        let weak = cx.entity().downgrade();
         div()
             .relative()
             .flex()
@@ -376,23 +324,6 @@ impl Render for VirtualListView {
                 self.content.id.key
             )))
             .debug_selector(move || root_selector.clone())
-            .tab_index(0)
-            .tab_stop(true)
-            .focus(move |style| style.shadow(focus_shadows.clone()))
-            .on_key_down(move |event: &KeyDownEvent, window, app| {
-                if event.keystroke.key.as_str() == "tab" {
-                    if event.keystroke.modifiers.shift {
-                        window.focus_prev();
-                    } else {
-                        window.focus_next();
-                    }
-                    app.stop_propagation();
-                    return;
-                }
-                let _ = weak.update(app, |view, cx| {
-                    view.handle_key(event.keystroke.key.as_str(), cx)
-                });
-            })
             .when(fixed_height.is_none(), |root| root.flex_1().min_h(px(0.0)))
             .child(list)
             .when_some(sticky, |root, (sticky, element)| {
@@ -411,43 +342,9 @@ impl Render for VirtualListView {
     }
 }
 
-fn virtual_focus_style(runtime: &NodeSlotRuntime) -> (Rgba8, Vec<BoxShadow>) {
-    let focus_color = runtime
-        .colors
-        .resolve(&ColorValue::Token("surface_hover".to_owned()))
-        .unwrap_or_else(|| Rgba8::from_rgba_hex(0x0000_0000));
-    let focus_ring = runtime
-        .colors
-        .resolve(&ColorValue::Token("focus_ring".to_owned()))
-        .unwrap_or_else(|| Rgba8::from_rgb_hex(0x003b_82f6));
-    let focus_surface = runtime
-        .colors
-        .resolve(&ColorValue::Token("surface".to_owned()))
-        .unwrap_or_else(|| Rgba8::from_rgb_hex(0x0018_181b));
-    (
-        focus_color,
-        vec![
-            BoxShadow {
-                color: rgba(focus_ring.as_rgba_hex()).into(),
-                offset: point(px(0.0), px(0.0)),
-                blur_radius: px(0.0),
-                spread_radius: px(4.0),
-            },
-            BoxShadow {
-                color: rgba(focus_surface.as_rgba_hex()).into(),
-                offset: point(px(0.0), px(0.0)),
-                blur_radius: px(0.0),
-                spread_radius: px(2.0),
-            },
-        ],
-    )
-}
-
 fn render_virtual_item(
     content: &VirtualCollectionNodeSpec,
     runtime: &NodeSlotRuntime,
-    focused: Option<&str>,
-    focus_color: Rgba8,
     sticky: Option<StickyHeaderFrame>,
     index: usize,
 ) -> AnyElement {
@@ -469,9 +366,6 @@ fn render_virtual_item(
     );
     div()
         .id(("virtual-list-row", index))
-        .when(focused == Some(key.as_str()), |row| {
-            row.bg(rgba(focus_color.as_rgba_hex()))
-        })
         .child(child)
         .into_any_element()
 }
@@ -605,6 +499,7 @@ fn finite_to_f32(value: f64) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use gpui::point;
 
     fn indices(range: std::ops::Range<usize>) -> BTreeSet<usize> {
         range.collect()

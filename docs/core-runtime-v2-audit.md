@@ -8,8 +8,8 @@ negative cases, acceptance application, and required platform gate exist.
 Last updated: 2026-09-08.
 
 The 2026-09-08 invariant hardening pass and its acceptance remediation supersede
-the numerical counts in row J below: the core now has 343 all-feature unit
-tests, the official registry 43 cases, the CLI 24 cases, and the independent
+the numerical counts in row J below: the core now has 341 all-feature unit
+tests, the official registry 45 cases, the CLI 24 cases, and the independent
 native workspace 49 cases. A machine-readable
 verification manifest covers all 21 examples; CI runs the default/all-feature
 contracts plus the independent structural performance workspace; PNG baseline

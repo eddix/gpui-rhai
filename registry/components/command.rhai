@@ -270,11 +270,14 @@ fn render_Command(ctx, props) {
     } else {
         let max_visible = prop_or(props, "max_visible", 8);
         let visible_rows = if data.len < max_visible { data.len } else { max_visible };
-        let reveal_key = if is_native_collection(data) { active } else { `item:${active}` };
-        virtual_collection(#{ key: `${props.key}-list`, label: props.label, data: data,
+        let collection = #{ key: `${props.key}-list`, label: props.label, data: data,
             estimated_height: row_height, height: visible_rows * row_height,
             overdraw_pixels: row_height * 2, alignment: "top", follow_tail: false,
-            reveal_key: reveal_key },
+        };
+        if active != "" {
+            collection.reveal_key = if is_native_collection(data) { active } else { `item:${active}` };
+        }
+        virtual_collection(collection,
             Fn("render_command_row")).with_style(ctx.component_style("list", style()))
     };
     let root = column([search, body]).with_key(props.key)

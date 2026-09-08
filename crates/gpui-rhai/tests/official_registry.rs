@@ -1426,6 +1426,209 @@ fn command_filters_native_collection_and_keeps_large_rows_out_of_rhai() {
 }
 
 #[test]
+#[allow(clippy::too_many_lines)]
+fn command_array_and_native_models_share_one_enabled_active_sequence() {
+    for native in [false, true] {
+        for grouped in [false, true] {
+            for disabled_first in [false, true] {
+                let source = EmbeddedScriptSource::new(BTreeMap::from([
+                    (
+                        ModuleId::parse("components/command").unwrap(),
+                        COMMAND.to_owned(),
+                    ),
+                    (
+                        ModuleId::parse("components/input").unwrap(),
+                        INPUT.to_owned(),
+                    ),
+                    (ModuleId::parse("components/kbd").unwrap(), KBD.to_owned()),
+                ]));
+                let mut engine = RuntimeEngine::new();
+                engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
+                let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+                let groups = if grouped {
+                    ["G1", "G1", "G2"]
+                } else {
+                    ["", "", ""]
+                };
+                let rows = ["a", "b", "c"]
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, value)| {
+                        BTreeMap::from([
+                            ("value".to_owned(), UiValue::String(value.to_owned())),
+                            ("label".to_owned(), UiValue::String(value.to_uppercase())),
+                            (
+                                "group".to_owned(),
+                                UiValue::String(groups[index].to_owned()),
+                            ),
+                            (
+                                "disabled".to_owned(),
+                                UiValue::Bool(disabled_first && index == 0),
+                            ),
+                            ("keywords".to_owned(), UiValue::Array(Vec::new())),
+                            ("shortcut".to_owned(), UiValue::String(String::new())),
+                        ])
+                    })
+                    .collect::<Vec<_>>();
+                runtime
+                    .borrow_mut()
+                    .native_collections
+                    .register(
+                        "commands",
+                        gpui_rhai::NativeCollection::new("value", rows).unwrap(),
+                    )
+                    .unwrap();
+                let items = if native {
+                    "ctx.get_native_collection(\"commands\")".to_owned()
+                } else {
+                    format!(
+                        r#"[
+                            #{{ value: "a", label: "A", group: "{}", disabled: {} }},
+                            #{{ value: "b", label: "B", group: "{}" }},
+                            #{{ value: "c", label: "C", group: "{}" }},
+                        ]"#,
+                        groups[0], disabled_first, groups[1], groups[2]
+                    )
+                };
+                let entry = format!(
+                    r#"import "components/command" as command;
+                        fn view(ctx) {{
+                            command::Command(#{{
+                                key: "palette", label: "Palette", query: "",
+                                active_value: "b", items: {items}, max_visible: 8,
+                            }})
+                        }}"#
+                );
+                let compiled = engine
+                    .compile_self_contained_named("command-navigation", &entry)
+                    .unwrap();
+                let mut lifecycle = ScriptLifecycle::new(
+                    compiled,
+                    runtime,
+                    ComponentInstancePath::root("App", "command-navigation"),
+                    None,
+                    BTreeMap::new(),
+                    &ComponentStateSchema::default(),
+                )
+                .unwrap();
+                lifecycle.start(&mut engine).unwrap();
+                let root = lifecycle.root().unwrap();
+                let UiNodeKind::VirtualCollection { spec } =
+                    find_virtual_collection(root).unwrap().kind()
+                else {
+                    unreachable!()
+                };
+                assert_eq!(spec.realized.len(), spec.data.len());
+                assert!(
+                    spec.sticky_headers.is_empty(),
+                    "sticky presentation must not encode Command navigation"
+                );
+                let active = spec
+                    .realized
+                    .values()
+                    .filter(|node| node.attributes().get("checked") == Some(&UiValue::Bool(true)))
+                    .filter_map(|node| node.attributes().get("label"))
+                    .cloned()
+                    .collect::<Vec<_>>();
+                assert_eq!(active, vec![UiValue::String("B".to_owned())]);
+
+                let expected_home = if disabled_first { "b" } else { "a" };
+                let expected_previous = if disabled_first { "c" } else { "a" };
+                for (event, expected) in [
+                    ("key:home", expected_home),
+                    ("key:end", "c"),
+                    ("key:up", expected_previous),
+                    ("key:down", "c"),
+                ] {
+                    let (_, payload) = target_handler(root, event);
+                    assert_eq!(payload, UiValue::String(expected.to_owned()), "{event}");
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn command_empty_and_all_disabled_models_have_no_navigation_owner() {
+    for native in [false, true] {
+        for query in ["", "missing"] {
+            let source = EmbeddedScriptSource::new(BTreeMap::from([
+                (
+                    ModuleId::parse("components/command").unwrap(),
+                    COMMAND.to_owned(),
+                ),
+                (
+                    ModuleId::parse("components/input").unwrap(),
+                    INPUT.to_owned(),
+                ),
+                (ModuleId::parse("components/kbd").unwrap(), KBD.to_owned()),
+            ]));
+            let mut engine = RuntimeEngine::new();
+            engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
+            let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+            runtime
+                .borrow_mut()
+                .native_collections
+                .register(
+                    "commands",
+                    gpui_rhai::NativeCollection::new(
+                        "value",
+                        [BTreeMap::from([
+                            ("value".to_owned(), UiValue::String("a".to_owned())),
+                            ("label".to_owned(), UiValue::String("A".to_owned())),
+                            ("group".to_owned(), UiValue::String("G".to_owned())),
+                            ("disabled".to_owned(), UiValue::Bool(true)),
+                            ("keywords".to_owned(), UiValue::Array(Vec::new())),
+                            ("shortcut".to_owned(), UiValue::String(String::new())),
+                        ])],
+                    )
+                    .unwrap(),
+                )
+                .unwrap();
+            let items = if native {
+                "ctx.get_native_collection(\"commands\")"
+            } else {
+                r#"[#{ value: "a", label: "A", group: "G", disabled: true }]"#
+            };
+            let entry = format!(
+                r#"import "components/command" as command;
+                    fn view(ctx) {{
+                        command::Command(#{{ key: "palette", label: "Palette",
+                            query: "{query}", active_value: "", items: {items} }})
+                    }}"#
+            );
+            let compiled = engine
+                .compile_self_contained_named("command-empty-navigation", &entry)
+                .unwrap();
+            let mut lifecycle = ScriptLifecycle::new(
+                compiled,
+                runtime,
+                ComponentInstancePath::root("App", "command-empty-navigation"),
+                None,
+                BTreeMap::new(),
+                &ComponentStateSchema::default(),
+            )
+            .unwrap();
+            lifecycle.start(&mut engine).unwrap();
+            let root = lifecycle.root().unwrap();
+            for event in ["key:up", "key:down", "key:home", "key:end", "key:enter"] {
+                assert!(root.handler(event).is_none(), "unexpected handler {event}");
+            }
+            if let Some(collection) = find_virtual_collection(root) {
+                let UiNodeKind::VirtualCollection { spec } = collection.kind() else {
+                    unreachable!()
+                };
+                assert!(spec.realized.values().all(|node| {
+                    node.attributes().get("checked") != Some(&UiValue::Bool(true))
+                }));
+            } else {
+                assert_eq!(query, "missing");
+            }
+        }
+    }
+}
+
+#[test]
 fn code_and_diff_viewers_accept_inline_and_host_owned_documents() {
     let source = EmbeddedScriptSource::new(BTreeMap::from([
         (
