@@ -1727,15 +1727,15 @@ impl UiContext {
             target: self.component.clone(),
             event: UiEvent {
                 name: event.to_owned(),
-                payload: payload.clone(),
+                payload,
             },
         });
         runtime.traces.push(
             crate::RuntimeTraceKind::Event,
             self.component.to_string(),
             format!("emit {event}"),
-            Some(payload),
-            false,
+            None,
+            true,
         );
         Ok(())
     }
@@ -1753,14 +1753,14 @@ impl UiContext {
             .runtime
             .try_borrow_mut()
             .map_err(|_| UiContextError::Borrowed)?;
-        let invocation = runtime.actions.dispatch(&id, payload.clone())?;
+        let invocation = runtime.actions.dispatch(&id, payload)?;
         runtime.pending_actions.push(invocation);
         runtime.traces.push(
             crate::RuntimeTraceKind::Action,
             self.component.to_string(),
             format!("dispatch {action}"),
-            Some(payload),
-            false,
+            None,
+            true,
         );
         Ok(())
     }
@@ -3836,6 +3836,69 @@ mod tests {
                 .get(&ComponentInstancePath::root("Counter", "counter"), "count",),
             Some(&UiValue::Integer(2))
         );
+    }
+
+    #[test]
+    fn semantic_event_and_action_traces_never_retain_payload_values() {
+        let secret = "AUDIT_ONLY_SYNTHETIC_TOKEN";
+        let path = ComponentInstancePath::root("SecretInput", "audit");
+        let schema = ComponentStateSchema::new(BTreeMap::from([(
+            "token".to_owned(),
+            StateField::new(ValueSchema::string(), UiValue::String(secret.to_owned()))
+                .sensitive(true),
+        )]))
+        .unwrap();
+        let mut state = UiRuntimeState::new();
+        let mut render = state.component_state.begin_render();
+        render.mount(path.clone(), &schema).unwrap();
+        state.component_state.commit_render(render);
+
+        let mut engine = RuntimeEngine::new();
+        let compiled = engine
+            .compile("fn view() { text(\"trace\") } fn receive(ctx, payload) {}")
+            .unwrap();
+        state.actions.register_or_replace(
+            crate::ActionId::parse("audit.receive").unwrap(),
+            engine.callback(&compiled, "receive").unwrap(),
+        );
+        let runtime = Rc::new(RefCell::new(state));
+        let context = UiContext::new(
+            Rc::clone(&runtime),
+            path,
+            Some("main".to_owned()),
+            ExecutionPhase::Event,
+            BTreeMap::from([(
+                "change".to_owned(),
+                EventSchema {
+                    payload: ValueSchema::string(),
+                },
+            )]),
+        );
+
+        let event_value = context.get_state("token").unwrap().into_dynamic();
+        context.emit("change", event_value).unwrap();
+        let action_value = context.get_state("token").unwrap().into_dynamic();
+        context
+            .dispatch_action("audit.receive", action_value)
+            .unwrap();
+
+        let traces = runtime.borrow().traces.snapshot();
+        let semantic = traces
+            .iter()
+            .filter(|trace| {
+                matches!(
+                    trace.kind,
+                    crate::RuntimeTraceKind::Event | crate::RuntimeTraceKind::Action
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(semantic.len(), 2);
+        assert!(
+            semantic
+                .iter()
+                .all(|trace| trace.sensitive && trace.payload.is_none())
+        );
+        assert!(!format!("{traces:?}").contains(secret));
     }
 
     #[test]

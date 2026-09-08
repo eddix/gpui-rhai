@@ -66,6 +66,11 @@ is appropriate for progress, sensors, and replaceable state snapshots.
 latest-only stream. Capacity is bounded to 1–4096 and throttle to 60 seconds.
 The built-in `SubscriptionWork::from_receiver` waits for lossless capacity and
 wakes on cancellation; it does not reinterpret backpressure as end-of-stream.
+Capacity waits and every close path share one mutex/condition protocol, so
+scope cancellation, registry teardown, and generation replacement cannot lose
+a producer wakeup. A stale generation discards its buffered values and removes
+the subscription immediately; a normal producer close still drains values that
+were accepted before close.
 
 ## Subscription producer lifetime
 
