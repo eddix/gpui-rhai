@@ -1,0 +1,12 @@
+Probe project: /var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T//gpui-rhai-audit.tLiKZG
+   Compiling gpui-rhai-audit-probes v0.0.0 (/var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T/gpui-rhai-audit.tLiKZG)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.11s
+     Running `target/debug/gpui-rhai-audit-probes`
+backend=array grouped=false disabled_first=false sticky={} reveal=Some("item:b") first=item:a first_role=Some(String("option")) first_disabled=Some(Bool(false)) source_active=["item:b"] roving=["item:a", "item:b", "item:c"]
+backend=array grouped=false disabled_first=true sticky={} reveal=Some("item:b") first=item:a first_role=Some(String("option")) first_disabled=Some(Bool(true)) source_active=["item:b"] roving=["item:a", "item:b", "item:c"]
+backend=array grouped=true disabled_first=false sticky={} reveal=Some("item:b") first=group:G1 first_role=Some(String("heading")) first_disabled=None source_active=["item:b"] roving=["group:G1", "item:a", "item:b", "group:G2", "item:c"]
+backend=array grouped=true disabled_first=true sticky={} reveal=Some("item:b") first=group:G1 first_role=Some(String("heading")) first_disabled=None source_active=["item:b"] roving=["group:G1", "item:a", "item:b", "group:G2", "item:c"]
+backend=native grouped=false disabled_first=false sticky={} reveal=Some("b") first=a first_role=Some(String("option")) first_disabled=Some(Bool(false)) source_active=["b"] roving=["a", "b", "c"]
+backend=native grouped=false disabled_first=true sticky={} reveal=Some("b") first=a first_role=Some(String("option")) first_disabled=Some(Bool(true)) source_active=["b"] roving=["a", "b", "c"]
+backend=native grouped=true disabled_first=false sticky={} reveal=Some("b") first=__gpui_rhai_group__:command:G1 first_role=Some(String("heading")) first_disabled=None source_active=["b"] roving=["__gpui_rhai_group__:command:G1", "a", "b", "__gpui_rhai_group__:command:G2", "c"]
+backend=native grouped=true disabled_first=true sticky={} reveal=Some("b") first=__gpui_rhai_group__:command:G1 first_role=Some(String("heading")) first_disabled=None source_active=["b"] roving=["__gpui_rhai_group__:command:G1", "a", "b", "__gpui_rhai_group__:command:G2", "c"]
