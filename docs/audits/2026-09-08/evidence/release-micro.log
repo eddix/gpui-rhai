@@ -1,0 +1,6 @@
+Using artifact tests/performance/target/release/deps/libgpui_rhai-ad83d380a9df1769.rlib
+release_mount_empty_instances n=200 median_ms=4.918
+release_mount_empty_instances n=400 median_ms=10.916
+release_mount_empty_instances n=800 median_ms=31.644
+release_mount_empty_instances n=1600 median_ms=126.043
+release_snapshot_10000_items p50_ms=4.395 p95_ms=4.495

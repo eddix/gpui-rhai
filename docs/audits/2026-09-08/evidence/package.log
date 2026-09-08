@@ -1,0 +1,30 @@
+   Packaging gpui-rhai v0.1.1 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai)
+warning: ignoring example `artistic_showcase` as `examples/artistic_showcase.rs` is not included in the published package
+warning: ignoring example `code_viewer` as `examples/code_viewer.rs` is not included in the published package
+warning: ignoring example `component_gallery` as `examples/component_gallery.rs` is not included in the published package
+warning: ignoring example `dashboard_layout` as `examples/dashboard_layout.rs` is not included in the published package
+warning: ignoring example `data_table` as `examples/data_table.rs` is not included in the published package
+warning: ignoring example `diff_viewer` as `examples/diff_viewer.rs` is not included in the published package
+warning: ignoring example `embedded_hello_world` as `examples/embedded_hello_world.rs` is not included in the published package
+warning: ignoring example `embedded_views` as `examples/embedded_views.rs` is not included in the published package
+warning: ignoring example `extension_host` as `examples/extension_host.rs` is not included in the published package
+warning: ignoring example `form_showcase` as `examples/form_showcase.rs` is not included in the published package
+warning: ignoring example `hello_world` as `examples/hello_world.rs` is not included in the published package
+warning: ignoring example `host_owned_tree` as `examples/host_owned_tree.rs` is not included in the published package
+warning: ignoring example `mini_timeline` as `examples/mini_timeline.rs` is not included in the published package
+warning: ignoring example `multi_window` as `examples/multi_window.rs` is not included in the published package
+warning: ignoring example `native_overlay_smoke` as `examples/native_overlay_smoke.rs` is not included in the published package
+warning: ignoring example `native_virtual_list_smoke` as `examples/native_virtual_list_smoke.rs` is not included in the published package
+warning: ignoring example `performance_probe` as `examples/performance_probe.rs` is not included in the published package
+warning: ignoring example `phase0_probe` as `examples/phase0_probe.rs` is not included in the published package
+warning: ignoring example `settings_panel` as `examples/settings_panel.rs` is not included in the published package
+warning: ignoring example `table_1000` as `examples/table_1000.rs` is not included in the published package
+warning: ignoring example `variable_height_chat` as `examples/variable_height_chat.rs` is not included in the published package
+warning: ignoring test `custom_primitive` as `tests/custom_primitive.rs` is not included in the published package
+warning: ignoring test `formal_component` as `tests/formal_component.rs` is not included in the published package
+warning: ignoring test `official_registry` as `tests/official_registry.rs` is not included in the published package
+    Packaged 70 files, 2.2MiB (429.9KiB compressed)
+   Verifying gpui-rhai v0.1.1 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai)
+    Blocking waiting for file lock on artifact directory
+   Compiling gpui-rhai v0.1.1 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/target/package/gpui-rhai-0.1.1)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 5.69s

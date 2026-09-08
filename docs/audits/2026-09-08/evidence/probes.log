@@ -1,0 +1,30 @@
+Probe project: /var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T//gpui-rhai-audit.7K8ZrN
+   Compiling gpui-rhai-audit-probes v0.0.0 (/var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T/gpui-rhai-audit.7K8ZrN)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 7.05s
+     Running `target/debug/gpui-rhai-audit-probes`
+default_resolver_absolute_import_accepted=true
+
+thread 'main' (23602364) panicked at /Users/eddix/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rhai-1.26.0/src/eval/stmt.rs:376:34:
+internal error: entered unreachable code: cannot assign to expression: 1 @ 1:34
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+const_map_panicked=true
+cancel_rollback_subscription_active=0 emitter_closed=Some(Cancelled)
+
+thread 'gpui-rhai-task-1' (23602395) panicked at src/main.rs:79:17:
+intentional audit worker panic
+worker_panic_deliveries=0 active=1
+nan_ui_value_accepted=true reflexive=false json={"type":"float","value":null} roundtrip=false
+lexer_nested_comment_rhai_compile=true import_scan=Err(ModuleId(InvalidSegment("../not_an_import")))
+lexer_backtick_string_rhai_compile=true import_scan=Err(ModuleId(InvalidSegment("../not_an_import")))
+cli_partial_apply_failed=true cargo_already_changed=true ui_main_exists=false
+debug_snapshot_10000_map_items_p50_ms=8.923 p95_ms=9.357
+debug_mount_empty_instances count=200 elapsed_ms=7.117
+debug_mount_empty_instances count=400 elapsed_ms=26.658
+debug_mount_empty_instances count=800 elapsed_ms=103.573
+debug_mount_empty_instances count=1600 elapsed_ms=414.237
+nested_800000_iterations_accepted=true recorded_operations=34
+failed_preload=true old_generation_render_after_clear=Err(Evaluate(ErrorInFunctionCall("Heavy", "components/heavy", ErrorRuntime("component `components/heavy` has no registered render function", 3:19), 1:56)))
+effect_swap_failed=true old_tree_restored=true old_subscription_active=0 closed=Some(ScopeDisposed)
+callback_ops root_loops=0 callback_loops=100000 render_ops=26 callback_ops=300007 result=Ok(100000)
+callback_ops root_loops=250000 callback_loops=100000 render_ops=750026 callback_ops=249977 result=Err(Runtime(Evaluate(ErrorTooManyOperations(4:45))))
+callback_ops root_loops=300000 callback_loops=100000 render_ops=900026 callback_ops=99977 result=Err(Runtime(Evaluate(ErrorTooManyOperations(4:45))))
