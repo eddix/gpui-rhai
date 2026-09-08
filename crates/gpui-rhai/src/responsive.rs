@@ -116,6 +116,16 @@ impl ResponsiveRuntime {
         Ok(self.windows.insert(window.to_owned(), class) != Some(class))
     }
 
+    /// Check a width without mutating the committed viewport class.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ResponsiveError::InvalidWidth`] for invalid geometry.
+    pub fn would_update_window(&self, window: &str, width: f64) -> Result<bool, ResponsiveError> {
+        let class = self.breakpoints.classify(width)?;
+        Ok(self.windows.get(window).copied() != Some(class))
+    }
+
     #[must_use]
     pub fn class(&self, window: &str) -> ViewportClass {
         self.windows

@@ -687,13 +687,12 @@ fn validate_schema(schema: &ComponentSchema) -> Result<(), ComponentError> {
             }
         })?;
         if let Some(default) = &field.default {
-            field
-                .schema
-                .validate(&default.clone().into_dynamic())
-                .map_err(|source| ComponentError::InvalidPropDefault {
+            field.schema.validate_ui_value(default).map_err(|source| {
+                ComponentError::InvalidPropDefault {
                     prop: name.clone(),
                     source,
-                })?;
+                }
+            })?;
         }
     }
     for (name, event) in &schema.events {
@@ -758,7 +757,7 @@ fn validate_schema(schema: &ComponentSchema) -> Result<(), ComponentError> {
         })?;
         field
             .schema
-            .validate(&field.default.clone().into_dynamic())
+            .validate_ui_value(&field.default)
             .map_err(|source| ComponentError::InvalidStateDefault {
                 field: name.clone(),
                 source,

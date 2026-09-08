@@ -78,6 +78,8 @@ pub fn load_component_styles(
     let mut ast = engine
         .compile(source)
         .map_err(|error| ComponentStyleError::Script(error.to_string()))?;
+    crate::engine::validate_assignment_targets(&ast)
+        .map_err(|error| ComponentStyleError::Script(error.to_string()))?;
     ast.set_source(source_name);
     let raw: Dynamic = engine
         .call_fn(&mut Scope::new(), &ast, "component_styles", ())

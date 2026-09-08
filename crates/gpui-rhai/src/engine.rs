@@ -7,8 +7,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use rhai::{
-    AST, Array, Dynamic, Engine, EvalAltResult, FnPtr, FuncArgs, FuncRegistration, ImmutableString,
-    Map, Module, ModuleResolver, Position, Scope,
+    AST, ASTNode, Array, Dynamic, Engine, EvalAltResult, Expr, FnPtr, FuncArgs, FuncRegistration,
+    ImmutableString, Map, Module, ModuleResolver, Position, Scope, Stmt,
 };
 use thiserror::Error;
 
@@ -48,13 +48,15 @@ impl ScriptGeneration {
         self.0
     }
 
+    #[cfg(test)]
     #[must_use]
-    pub fn initial() -> Self {
+    pub(crate) fn initial() -> Self {
         Self(1)
     }
 
+    #[cfg(test)]
     #[must_use]
-    pub fn next(self) -> Self {
+    pub(crate) fn next(self) -> Self {
         Self(self.0.saturating_add(1))
     }
 }
@@ -84,9 +86,12 @@ pub struct ExecutionTiming {
     pub source: String,
     pub duration: Duration,
     pub operations: u64,
+    pub operation_semantics: u32,
     pub slow: bool,
     pub succeeded: bool,
 }
+
+pub const OPERATION_SEMANTICS_VERSION: u32 = 2;
 
 #[derive(Debug, Error)]
 pub enum RuntimeError {
@@ -113,12 +118,21 @@ pub enum RuntimeError {
         callback_generation: ScriptGeneration,
         current_generation: ScriptGeneration,
     },
+    #[error("callback `{name}` belongs to an unmounted incarnation of component `{component}`")]
+    StaleComponentCallback {
+        name: String,
+        component: ComponentInstancePath,
+    },
     #[error("component runtime failed: {0}")]
     ComponentRuntime(String),
     #[error("component invocation `{0}` is not retained in the active generation")]
     MissingComponentInvocation(ComponentInstancePath),
     #[error("invalid script import: {0}")]
     Import(String),
+    #[error(
+        "compiled Rhai source contains an assignment target that Rhai 1.26 cannot evaluate safely at {0}"
+    )]
+    InvalidAssignmentTarget(Position),
 }
 
 #[derive(Debug, Error)]
@@ -140,6 +154,7 @@ pub enum ScriptCallbackDefinitionError {
 #[derive(Clone, Debug)]
 struct ComponentCallbackBinding {
     component: ComponentInstancePath,
+    incarnation: crate::ComponentIncarnation,
     events: BTreeMap<String, EventSchema>,
     context: Option<crate::invocation::ScriptInvocationContext>,
 }
@@ -156,6 +171,7 @@ pub struct ScriptCallback {
     curry: Vec<UiValue>,
     generation: ScriptGeneration,
     component: Option<ComponentInstancePath>,
+    incarnation: Option<crate::ComponentIncarnation>,
     events: BTreeMap<String, EventSchema>,
     #[allow(deprecated)]
     native_context: Option<crate::invocation::ScriptInvocationContext>,
@@ -167,6 +183,7 @@ impl PartialEq for ScriptCallback {
             && self.curry == other.curry
             && self.generation == other.generation
             && self.component == other.component
+            && self.incarnation == other.incarnation
     }
 }
 
@@ -204,15 +221,23 @@ impl ScriptCallback {
             );
         }
         function.set_curry(curry.iter().cloned().map(UiValue::into_dynamic));
-        let (component, events, native_context) = binding.map_or_else(
-            || (None, BTreeMap::new(), None),
-            |binding| (Some(binding.component), binding.events, binding.context),
+        let (component, incarnation, events, native_context) = binding.map_or_else(
+            || (None, None, BTreeMap::new(), None),
+            |binding| {
+                (
+                    Some(binding.component),
+                    Some(binding.incarnation),
+                    binding.events,
+                    binding.context,
+                )
+            },
         );
         Ok(Self {
             function,
             curry,
             generation,
             component,
+            incarnation,
             events,
             native_context,
         })
@@ -222,6 +247,7 @@ impl ScriptCallback {
         self.generation = generation;
     }
 
+    #[cfg(test)]
     pub(crate) fn bind_component_if_unset(
         &mut self,
         component: ComponentInstancePath,
@@ -230,6 +256,21 @@ impl ScriptCallback {
         if self.component.is_none() {
             self.component = Some(component);
             self.events = events;
+        }
+    }
+
+    pub(crate) fn bind_component_scope_if_unset(
+        &mut self,
+        component: &ComponentInstancePath,
+        incarnation: crate::ComponentIncarnation,
+        events: BTreeMap<String, EventSchema>,
+    ) {
+        if self.component.is_none() {
+            self.component = Some(component.clone());
+            self.events = events;
+        }
+        if self.component.as_ref() == Some(component) && self.incarnation.is_none() {
+            self.incarnation = Some(incarnation);
         }
     }
 
@@ -244,6 +285,10 @@ impl ScriptCallback {
 
     pub(crate) fn component(&self) -> Option<&ComponentInstancePath> {
         self.component.as_ref()
+    }
+
+    pub(crate) const fn incarnation(&self) -> Option<crate::ComponentIncarnation> {
+        self.incarnation
     }
 
     pub(crate) fn events(&self) -> &BTreeMap<String, EventSchema> {
@@ -449,12 +494,13 @@ impl ComponentInvocationRecipe {
 pub struct RuntimeEngine {
     engine: Engine,
     generation: ScriptGeneration,
+    preparation_generation: Option<ScriptGeneration>,
     component_exports: ComponentExportCollector,
     evaluation_generation: Rc<Cell<ScriptGeneration>>,
     primitives: PrimitiveRegistry,
     primitive_modules: BTreeMap<String, Module>,
     timings: RefCell<Vec<ExecutionTiming>>,
-    operation_counter: Arc<AtomicU64>,
+    operation_tracker: Rc<OperationTracker>,
     slow_threshold: Duration,
     component_render: ActiveComponentRenderState,
     component_invocations: BTreeMap<ComponentInstancePath, ComponentInvocationRecipe>,
@@ -468,6 +514,43 @@ pub struct RuntimeEngine {
     syntax_registry: crate::SyntaxRegistry,
     document_runtime: crate::DocumentRuntimeConfig,
     virtual_collections: BTreeMap<crate::VirtualCollectionId, VirtualCollectionRecipe>,
+}
+
+const MAX_SCRIPT_OPERATIONS: u64 = 1_000_000;
+
+#[derive(Debug, Default)]
+struct OperationTracker {
+    last_absolute: Cell<u64>,
+    total: Cell<u64>,
+}
+
+impl OperationTracker {
+    fn begin(&self, inherited_base: u64) {
+        self.last_absolute.set(inherited_base);
+        self.total.set(0);
+    }
+
+    fn observe(&self, absolute: u64) -> u64 {
+        let last_absolute = self.last_absolute.get();
+        let delta = if absolute >= last_absolute {
+            absolute - last_absolute
+        } else {
+            // Returning from a nested evaluator resumes a smaller parent
+            // counter. Rhai invokes progress once per operation, so the first
+            // lower observation represents one newly consumed parent step.
+            1
+        };
+        let total = self.total.get().saturating_add(delta);
+        self.total.set(total);
+        self.last_absolute.set(absolute);
+        total
+    }
+}
+
+#[derive(Clone, Copy)]
+struct ExecutionTimingStart {
+    instant: Instant,
+    operations: u64,
 }
 
 #[derive(Clone)]
@@ -491,6 +574,13 @@ impl Default for RuntimeEngine {
 }
 
 impl RuntimeEngine {
+    #[cfg(feature = "dev-reload")]
+    pub(crate) fn candidate_engine(&self) -> Self {
+        let mut candidate = Self::new();
+        candidate.slow_threshold = self.slow_threshold;
+        candidate
+    }
+
     /// Create a runtime with all built-in primitive descriptors.
     ///
     /// # Panics
@@ -500,11 +590,16 @@ impl RuntimeEngine {
     #[must_use]
     pub fn new() -> Self {
         let mut engine = Engine::new();
-        let operation_counter = Arc::new(AtomicU64::new(0));
-        let progress = Arc::clone(&operation_counter);
+        engine.set_module_resolver(crate::source::RestrictedModuleResolver::new());
+        let operation_tracker = Rc::new(OperationTracker::default());
+        let progress = Rc::clone(&operation_tracker);
         engine.on_progress(move |operations| {
-            progress.store(operations, Ordering::Relaxed);
-            None
+            let total = progress.observe(operations);
+            (total > MAX_SCRIPT_OPERATIONS).then(|| {
+                Dynamic::from(format!(
+                    "script operation budget exceeded: {total} > {MAX_SCRIPT_OPERATIONS}"
+                ))
+            })
         });
         engine.build_type::<UiNode>();
         engine.build_type::<OpaqueHandle>();
@@ -545,12 +640,13 @@ impl RuntimeEngine {
         let mut runtime = Self {
             engine,
             generation: ScriptGeneration::default(),
+            preparation_generation: None,
             component_exports,
             evaluation_generation,
             primitives,
             primitive_modules: BTreeMap::new(),
             timings: RefCell::new(Vec::new()),
-            operation_counter,
+            operation_tracker,
             slow_threshold: Duration::from_millis(16),
             component_render,
             component_invocations: BTreeMap::new(),
@@ -624,6 +720,7 @@ impl RuntimeEngine {
     ) -> Result<CompiledUi, RuntimeError> {
         let generation = self.candidate_generation();
         self.evaluation_generation.set(generation);
+        self.begin_execution_session();
         let started = self.begin_timing();
         let result = self.engine.compile(source);
         self.record_timing(
@@ -633,6 +730,7 @@ impl RuntimeEngine {
             result.is_ok(),
         );
         let mut ast = result.map_err(|error| RuntimeError::Compile(error.into()))?;
+        validate_assignment_targets(&ast)?;
         ast.set_source(source_name);
         Ok(CompiledUi { ast, generation })
     }
@@ -649,7 +747,7 @@ impl RuntimeEngine {
     ) -> Result<CompiledUi, RuntimeError> {
         let generation = self.candidate_generation();
         self.evaluation_generation.set(generation);
-        crate::extract_imports(source).map_err(|error| RuntimeError::Import(error.to_string()))?;
+        self.begin_execution_session();
         let started = self.begin_timing();
         let result = self
             .engine
@@ -661,12 +759,35 @@ impl RuntimeEngine {
             result.is_ok(),
         );
         let mut ast = result.map_err(RuntimeError::Compile)?;
+        validate_literal_imports(&ast)?;
+        validate_assignment_targets(&ast)?;
         ast.set_source(source_name);
         Ok(CompiledUi { ast, generation })
     }
 
     pub fn set_module_resolver(&mut self, resolver: impl ModuleResolver + 'static) {
         self.engine.set_module_resolver(resolver);
+    }
+
+    /// Compile all modules and the entry AST for one candidate under one unique
+    /// program identity. Independent calls receive different generations even
+    /// when neither candidate has been rendered yet.
+    ///
+    /// # Errors
+    ///
+    /// Returns the error produced by `operation`.
+    pub fn with_program_preparation<T, E>(
+        &mut self,
+        operation: impl FnOnce(&mut Self) -> Result<T, E>,
+    ) -> Result<T, E> {
+        if self.preparation_generation.is_some() {
+            return operation(self);
+        }
+        let generation = Self::allocate_generation();
+        self.preparation_generation = Some(generation);
+        let result = operation(self);
+        self.preparation_generation = None;
+        result
     }
 
     fn begin_component_render(
@@ -799,6 +920,7 @@ impl RuntimeEngine {
                             source: source.clone(),
                             duration: Duration::ZERO,
                             operations: 0,
+                            operation_semantics: OPERATION_SEMANTICS_VERSION,
                             slow: false,
                             succeeded: true,
                         }),
@@ -854,6 +976,7 @@ impl RuntimeEngine {
     /// returns a value other than [`UiNode`].
     pub fn render(&mut self, compiled: &CompiledUi) -> Result<UiNode, RuntimeError> {
         self.evaluation_generation.set(compiled.generation);
+        self.begin_execution_session();
         let checkpoint = self.execution_checkpoint();
         let root_path = ComponentInstancePath::root("App", "root");
         let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
@@ -917,9 +1040,9 @@ impl RuntimeEngine {
         let runtime = Rc::clone(context.runtime());
         let root = context.component_path().clone();
         let snapshot = runtime
-            .try_borrow()
+            .try_borrow_mut()
             .map_err(|_| RuntimeError::ComponentRuntime("UI state is already borrowed".to_owned()))?
-            .snapshot()
+            .begin_transaction()
             .map_err(|error| RuntimeError::ComponentRuntime(error.to_string()))?;
         let checkpoint = self.execution_checkpoint();
         let result = self.render_with_context_staged(compiled, context);
@@ -939,7 +1062,16 @@ impl RuntimeEngine {
             Ok(node)
         });
         match result {
-            Ok(node) => Ok(node),
+            Ok(node) => {
+                runtime
+                    .try_borrow_mut()
+                    .map_err(|_| {
+                        RuntimeError::ComponentRuntime("UI state is already borrowed".to_owned())
+                    })?
+                    .commit_transaction()
+                    .map_err(|error| RuntimeError::ComponentRuntime(error.to_string()))?;
+                Ok(node)
+            }
             Err(error) => {
                 runtime
                     .try_borrow_mut()
@@ -983,6 +1115,7 @@ impl RuntimeEngine {
         reuse: Option<ComponentReusePlan>,
     ) -> Result<UiNode, RuntimeError> {
         self.evaluation_generation.set(compiled.generation);
+        self.begin_execution_session();
         self.begin_component_render(context.clone(), compiled.generation, None, reuse)?;
         let started = self.begin_timing();
         let result = AstInterpreter::call_fn::<UiNode, _>(
@@ -1068,6 +1201,7 @@ impl RuntimeEngine {
                 node.with_component_root_snapshot(recipe.path.clone(), recipe.snapshot.reference());
             node.bind_component_scope(
                 &recipe.path,
+                recipe.component_context.component_incarnation(),
                 &recipe.component_events,
                 Some(&recipe.context),
             );
@@ -1091,12 +1225,11 @@ impl RuntimeEngine {
                 }
             }
         }
-        self.record_timing_from_base(
+        self.record_timing(
             ExecutionOperation::Render,
             recipe.component.as_str(),
             started,
             result.is_ok(),
-            recipe.context.operation_base(),
         );
         self.finish_component_render(result.is_ok())?;
         result
@@ -1260,17 +1393,17 @@ impl RuntimeEngine {
                     &recipe.renderer.function,
                     (context.clone(), Dynamic::from_map(payload)),
                 );
-                self.record_timing_from_base(
+                self.record_timing(
                     ExecutionOperation::VirtualCollection(id.key.clone()),
                     id.key.as_str(),
                     started,
                     item.is_ok(),
-                    invocation.operation_base(),
                 );
                 let mut node = item.map_err(RuntimeError::Evaluate)?.with_key(key);
                 node.bind_generation(recipe.generation);
                 node.bind_component_scope(
                     recipe.event_context.component_path(),
+                    recipe.event_context.component_incarnation(),
                     recipe.renderer.events(),
                     recipe.renderer.native_context(),
                 );
@@ -1319,6 +1452,7 @@ impl RuntimeEngine {
             return Ok(false);
         }
         self.evaluation_generation.set(compiled.generation);
+        self.begin_execution_session();
         let started = self.begin_timing();
         let result = AstInterpreter::call_fn::<Dynamic, _>(
             &self.engine,
@@ -1348,6 +1482,7 @@ impl RuntimeEngine {
             return Ok(false);
         }
         self.evaluation_generation.set(compiled.generation);
+        self.begin_execution_session();
         let started = self.begin_timing();
         let result = AstInterpreter::call_fn::<Dynamic, _>(
             &self.engine,
@@ -1379,6 +1514,7 @@ impl RuntimeEngine {
         if !compiled.has_function("state_schema", 0) {
             return Ok(ComponentStateSchema::default());
         }
+        self.begin_execution_session();
         let raw: Dynamic = self
             .engine
             .call_fn(&mut Scope::new(), &compiled.ast, "state_schema", ())
@@ -1447,6 +1583,11 @@ impl RuntimeEngine {
             });
         }
         self.evaluation_generation.set(compiled.generation);
+        let operation_base = callback.native_context.as_ref().map_or(
+            0,
+            crate::invocation::ScriptInvocationContext::operation_base,
+        );
+        self.begin_execution_session_from(operation_base);
         let started = self.begin_timing();
         #[allow(deprecated)]
         let result = if let Some(context) = callback.native_context.as_ref() {
@@ -1454,16 +1595,11 @@ impl RuntimeEngine {
         } else {
             callback.function.call(self.engine(), &compiled.ast, args)
         };
-        let operation_base = callback.native_context.as_ref().map_or(
-            0,
-            crate::invocation::ScriptInvocationContext::operation_base,
-        );
-        self.record_timing_from_base(
+        self.record_timing(
             ExecutionOperation::Callback(callback.name().to_owned()),
             compiled.ast.source().unwrap_or("<script>"),
             started,
             result.is_ok(),
-            operation_base,
         );
         result.map_err(RuntimeError::Evaluate)
     }
@@ -1672,46 +1808,90 @@ impl RuntimeEngine {
         &self,
         operation: ExecutionOperation,
         source: &str,
-        started: Instant,
+        started: ExecutionTimingStart,
         succeeded: bool,
     ) {
-        self.record_timing_from_base(operation, source, started, succeeded, 0);
-    }
-
-    fn record_timing_from_base(
-        &self,
-        operation: ExecutionOperation,
-        source: &str,
-        started: Instant,
-        succeeded: bool,
-        operation_base: u64,
-    ) {
-        let duration = started.elapsed();
+        let duration = started.instant.elapsed();
+        let operations = self.operation_total().saturating_sub(started.operations);
         self.timings.borrow_mut().push(ExecutionTiming {
             operation,
             source: source.to_owned(),
             duration,
-            operations: self
-                .operation_counter
-                .load(Ordering::Relaxed)
-                .saturating_sub(operation_base),
+            operations,
+            operation_semantics: OPERATION_SEMANTICS_VERSION,
             slow: duration >= self.slow_threshold,
             succeeded,
         });
     }
 
-    fn begin_timing(&self) -> Instant {
-        self.operation_counter.store(0, Ordering::Relaxed);
-        Instant::now()
+    pub(crate) fn begin_execution_session(&self) {
+        self.begin_execution_session_from(0);
     }
 
-    fn candidate_generation(&self) -> ScriptGeneration {
-        if self.generation == ScriptGeneration::default() {
-            ScriptGeneration::initial()
-        } else {
-            self.generation.next()
+    fn begin_execution_session_from(&self, inherited_base: u64) {
+        self.operation_tracker.begin(inherited_base);
+    }
+
+    fn operation_total(&self) -> u64 {
+        self.operation_tracker.total.get()
+    }
+
+    fn begin_timing(&self) -> ExecutionTimingStart {
+        ExecutionTimingStart {
+            instant: Instant::now(),
+            operations: self.operation_total(),
         }
     }
+
+    fn candidate_generation(&mut self) -> ScriptGeneration {
+        self.preparation_generation
+            .unwrap_or_else(Self::allocate_generation)
+    }
+
+    fn allocate_generation() -> ScriptGeneration {
+        static NEXT_GENERATION: AtomicU64 = AtomicU64::new(1);
+        ScriptGeneration(NEXT_GENERATION.fetch_add(1, Ordering::Relaxed))
+    }
+}
+
+pub(crate) fn validate_assignment_targets(ast: &AST) -> Result<(), RuntimeError> {
+    let mut invalid = None;
+    ast.walk(&mut |path| {
+        let Some(ASTNode::Stmt(Stmt::Assignment(assignment))) = path.last() else {
+            return true;
+        };
+        if !matches!(
+            assignment.1.lhs,
+            Expr::ThisPtr(_) | Expr::Variable(..) | Expr::Index(..) | Expr::Dot(..)
+        ) {
+            invalid = Some(assignment.1.lhs.position());
+            return false;
+        }
+        true
+    });
+    invalid.map_or(Ok(()), |position| {
+        Err(RuntimeError::InvalidAssignmentTarget(position))
+    })
+}
+
+fn validate_literal_imports(ast: &AST) -> Result<(), RuntimeError> {
+    let mut dynamic = None;
+    ast.walk(&mut |path| {
+        let Some(ASTNode::Stmt(Stmt::Import(import, position))) = path.last() else {
+            return true;
+        };
+        if matches!(import.0, Expr::StringConstant(..)) {
+            true
+        } else {
+            dynamic = Some(*position);
+            false
+        }
+    });
+    dynamic.map_or(Ok(()), |position| {
+        Err(RuntimeError::Import(format!(
+            "Rhai imports must use a literal module string at {position}"
+        )))
+    })
 }
 
 fn register_node_apis(engine: &mut Engine) {
@@ -1808,7 +1988,10 @@ fn register_native_handler_api(engine: &mut Engine, registry: &crate::NativeHand
 fn configure_engine_limits(engine: &mut Engine) {
     engine.set_max_call_levels(64);
     engine.set_max_expr_depths(64, 32);
-    engine.set_max_operations(1_000_000);
+    // Rhai's counter is evaluator-local and cloned into stored callback
+    // contexts. The runtime's progress adapter enforces one cumulative budget
+    // across nested evaluators and starts delayed callbacks with fresh quota.
+    engine.set_max_operations(0);
     engine.set_max_array_size(10_000);
     engine.set_max_map_size(100_000);
     engine.set_max_string_size(1_048_576);
@@ -1953,6 +2136,7 @@ fn register_render_component_api(
         );
 }
 
+#[allow(clippy::too_many_lines)] // One cohesive Rhai component transaction; splitting hides ordering.
 fn execute_component_render(
     call: &rhai::NativeCallContext<'_>,
     exports: &ComponentExportCollector,
@@ -2033,7 +2217,12 @@ fn execute_component_render(
     node = node.with_owned_part_styles(part_styles.clone());
     let snapshot = crate::node::ComponentOwnedSnapshot::default();
     node = node.with_component_root_snapshot(path.clone(), snapshot.reference());
-    node.bind_component_scope(&path, &component.schema.events, Some(&native_context));
+    node.bind_component_scope(
+        &path,
+        recipe_component_context.component_incarnation(),
+        &component.schema.events,
+        Some(&native_context),
+    );
     register_component_invocation(
         active,
         ComponentInvocationRecipe {
@@ -2067,6 +2256,7 @@ fn caller_component_binding(
 ) -> ComponentCallbackBinding {
     ComponentCallbackBinding {
         component: caller_context.component_path().clone(),
+        incarnation: caller_context.component_incarnation(),
         events: caller_context.event_schemas().clone(),
         context: Some(
             caller_context
@@ -2462,11 +2652,19 @@ fn register_effect_api(engine: &mut Engine, active: &ActiveComponentRenderState)
                 let native_context = crate::invocation::ScriptInvocationContext::capture(&call);
                 let mut start = ScriptCallback::try_from_fn_ptr(start, generation)
                     .map_err(|error| Box::new(component_render_error(error.to_string())))?;
-                start.bind_component_if_unset(component.clone(), context.event_schemas().clone());
+                start.bind_component_scope_if_unset(
+                    &component,
+                    context.component_incarnation(),
+                    context.event_schemas().clone(),
+                );
                 start.bind_native_context_if_unset(native_context.clone());
                 let mut cleanup = ScriptCallback::try_from_fn_ptr(cleanup, generation)
                     .map_err(|error| Box::new(component_render_error(error.to_string())))?;
-                cleanup.bind_component_if_unset(component.clone(), context.event_schemas().clone());
+                cleanup.bind_component_scope_if_unset(
+                    &component,
+                    context.component_incarnation(),
+                    context.event_schemas().clone(),
+                );
                 cleanup.bind_native_context_if_unset(native_context);
                 let descriptor =
                     crate::EffectDescriptor::new(id.clone(), dependencies, start, cleanup);
@@ -2533,7 +2731,11 @@ fn register_timer_api(engine: &mut Engine, active: &ActiveComponentRenderState) 
                 let native_context = crate::invocation::ScriptInvocationContext::capture(&call);
                 let mut callback = ScriptCallback::try_from_fn_ptr(callback, generation)
                     .map_err(|error| Box::new(component_render_error(error.to_string())))?;
-                callback.bind_component_if_unset(component, context.event_schemas().clone());
+                callback.bind_component_scope_if_unset(
+                    &component,
+                    context.component_incarnation(),
+                    context.event_schemas().clone(),
+                );
                 callback.bind_native_context_if_unset(native_context);
                 let descriptor = crate::TimerDescriptor::new(
                     id.clone(),
@@ -2592,16 +2794,13 @@ fn register_signal_api(engine: &mut Engine, active: &ActiveComponentRenderState)
                         &"signals may be declared only by formal components",
                     )));
                 }
-                let component = render
-                    .contexts
-                    .last()
-                    .ok_or_else(|| {
-                        Box::new(crate::signal::signal_runtime_error(
-                            &"component render context stack is empty",
-                        ))
-                    })?
-                    .component_path()
-                    .clone();
+                let context = render.contexts.last().ok_or_else(|| {
+                    Box::new(crate::signal::signal_runtime_error(
+                        &"component render context stack is empty",
+                    ))
+                })?;
+                let component = context.component_path().clone();
+                let incarnation = context.component_incarnation();
                 if render
                     .signals
                     .keys()
@@ -2611,7 +2810,7 @@ fn register_signal_api(engine: &mut Engine, active: &ActiveComponentRenderState)
                         &crate::SignalError::Duplicate { component, key },
                     )));
                 }
-                let id = crate::SignalId::new(component, key, initial.kind())
+                let id = crate::SignalId::new_scoped(component, incarnation, key, initial.kind())
                     .map_err(|error| Box::new(crate::signal::signal_runtime_error(&error)))?;
                 let signal = crate::NativeSignal::new(id.clone());
                 render
@@ -2832,7 +3031,11 @@ fn register_virtual_collection_api(engine: &mut Engine, active: &ActiveComponent
                 let native_context = crate::invocation::ScriptInvocationContext::capture(&call);
                 let mut callback = ScriptCallback::try_from_fn_ptr(renderer.clone(), generation)
                     .map_err(|error| Box::new(component_render_error(error.to_string())))?;
-                callback.bind_component_if_unset(component.clone(), events);
+                callback.bind_component_scope_if_unset(
+                    &component,
+                    context.component_incarnation(),
+                    events,
+                );
                 callback.bind_native_context_if_unset(native_context);
 
                 let realized = realize_seeded_virtual_collection(
@@ -3420,6 +3623,7 @@ fn bind_component_node_value(
             let mut node = value.clone_cast::<UiNode>();
             node.bind_component_scope(
                 &binding.component,
+                binding.incarnation,
                 &binding.events,
                 binding.context.as_ref(),
             );
@@ -3532,8 +3736,9 @@ fn register_component_event_callbacks(
     for (event, function) in callbacks {
         let mut callback = ScriptCallback::try_from_fn_ptr(function, active.generation)
             .map_err(|error| Box::new(component_render_error(error.to_string())))?;
-        callback.bind_component_if_unset(
-            caller.component_path().clone(),
+        callback.bind_component_scope_if_unset(
+            caller.component_path(),
+            caller.component_incarnation(),
             caller.event_schemas().clone(),
         );
         callback.bind_native_context_if_unset(native_context.clone());
@@ -4145,5 +4350,266 @@ mod tests {
         assert!(timings[1].operations > 0);
         assert!(timings[2].operations > timings[1].operations);
         assert!(timings.iter().all(|timing| timing.slow && timing.succeeded));
+    }
+
+    #[test]
+    fn independent_candidates_never_share_callback_authority() {
+        let mut runtime = RuntimeEngine::new();
+        let first = runtime
+            .compile("fn view() { text(\"first\") } fn action() { 1 }")
+            .unwrap();
+        let callback = runtime.callback(&first, "action").unwrap();
+        let second = runtime
+            .compile("fn view() { text(\"second\") } fn action() { 2 }")
+            .unwrap();
+        assert_ne!(first.generation(), second.generation());
+        runtime.render(&second).unwrap();
+        assert!(matches!(
+            runtime.invoke_callback(&second, &callback, ()),
+            Err(RuntimeError::StaleCallback { .. })
+        ));
+    }
+
+    #[test]
+    fn callbacks_cannot_cross_runtime_engines() {
+        let mut first_engine = RuntimeEngine::new();
+        let first = first_engine
+            .compile("fn view() { text(\"first\") } fn action() { 1 }")
+            .unwrap();
+        first_engine.render(&first).unwrap();
+        let callback = first_engine.callback(&first, "action").unwrap();
+
+        let mut second_engine = RuntimeEngine::new();
+        let second = second_engine
+            .compile("fn view() { text(\"second\") } fn action() { 2 }")
+            .unwrap();
+        second_engine.render(&second).unwrap();
+        assert!(matches!(
+            second_engine.invoke_callback(&second, &callback, ()),
+            Err(RuntimeError::StaleCallback { .. })
+        ));
+    }
+
+    #[test]
+    fn one_program_preparation_shares_identity_across_module_and_entry_compilation() {
+        let mut runtime = RuntimeEngine::new();
+        let (module, entry) = runtime
+            .with_program_preparation(|runtime| {
+                Ok::<_, RuntimeError>((
+                    runtime.compile_named("module", "fn helper() { 1 }")?,
+                    runtime.compile_named("entry", "fn view() { text(\"entry\") }")?,
+                ))
+            })
+            .unwrap();
+        assert_eq!(module.generation(), entry.generation());
+        let next = runtime.compile("fn view() { text(\"next\") }").unwrap();
+        assert_ne!(entry.generation(), next.generation());
+    }
+
+    #[test]
+    fn unsafe_const_container_assignment_is_rejected_before_evaluation() {
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            RuntimeEngine::new()
+                .compile("fn view() { const m = #{ x: 1 }; m.x = 2; text(\"done\") }")
+        }));
+        assert!(matches!(
+            result,
+            Ok(Err(RuntimeError::InvalidAssignmentTarget(_)))
+        ));
+    }
+
+    #[test]
+    fn default_runtime_rejects_filesystem_imports() {
+        let directory = tempfile::tempdir().unwrap();
+        let module = directory.path().join("external.rhai");
+        std::fs::write(&module, "fn value() { \"external\" }").unwrap();
+        let mut runtime = RuntimeEngine::new();
+        let source = format!(
+            "import {:?} as external; fn view() {{ text(external::value()) }}",
+            module.with_extension("").to_string_lossy()
+        );
+        let compiled = runtime.compile(&source).unwrap();
+        assert!(runtime.render(&compiled).is_err());
+    }
+
+    #[test]
+    fn nested_component_work_consumes_one_shared_operation_budget() {
+        let module = r#"
+            define_component(#{
+                metadata: #{ id: "components/heavy", "export": "Heavy", version: "0.1.1",
+                    runtime_api: #{ min_inclusive: 1, max_exclusive: 2 }, dependencies: [], capabilities: #{} },
+                schema: #{ props: #{}, state: #{ fields: #{} }, events: #{}, slots: #{}, parts: ["root"] },
+                render: Fn("render_Heavy")
+            });
+            fn Heavy(props) { render_component("components/heavy", props) }
+            fn render_Heavy(ctx, props) {
+                let n = 0;
+                for i in 0..200000 { n += 1; }
+                text(`${n}`)
+            }
+        "#;
+        let mut resolver = crate::RestrictedModuleResolver::new();
+        resolver.insert("components/heavy", module).unwrap();
+        let mut runtime = RuntimeEngine::new();
+        runtime.set_module_resolver(resolver);
+        let compiled = runtime
+            .compile_self_contained_named(
+                "budget",
+                r#"import "components/heavy" as h;
+                    fn view() { column([h::Heavy(#{}), h::Heavy(#{}), h::Heavy(#{}), h::Heavy(#{} )]) }"#,
+            )
+            .unwrap();
+        let result = runtime.render(&compiled);
+        assert!(result.is_err(), "nested work must exceed the shared budget");
+        assert!(
+            runtime
+                .take_timings()
+                .iter()
+                .any(|timing| timing.operations > MAX_SCRIPT_OPERATIONS)
+        );
+    }
+
+    #[test]
+    fn delayed_component_callback_starts_with_a_fresh_operation_budget() {
+        let module = r#"
+            define_component(#{
+                metadata: #{ id: "components/counter", "export": "Counter", version: "0.1.1",
+                    runtime_api: #{ min_inclusive: 1, max_exclusive: 2 }, dependencies: [], capabilities: #{} },
+                schema: #{ props: #{}, state: #{ fields: #{} }, events: #{}, slots: #{}, parts: ["root"] },
+                render: Fn("render_Counter")
+            });
+            fn Counter(props) { render_component("components/counter", props) }
+            fn render_Counter(ctx, props) { text("counter").on_click(Fn("clicked")) }
+            fn clicked(ctx, payload) {
+                let n = 0;
+                for i in 0..100000 { n += 1; }
+                n
+            }
+        "#;
+        let mut resolver = crate::RestrictedModuleResolver::new();
+        resolver.insert("components/counter", module).unwrap();
+        let mut engine = RuntimeEngine::new();
+        engine.set_module_resolver(resolver);
+        let compiled = engine
+            .compile_self_contained_named(
+                "callback-budget",
+                r#"import "components/counter" as c;
+                    fn view(ctx) {
+                        let n = 0;
+                        for i in 0..250000 { n += 1; }
+                        c::Counter(#{} )
+                    }"#,
+            )
+            .unwrap();
+        let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+        let mut lifecycle = crate::ScriptLifecycle::new(
+            compiled,
+            runtime,
+            ComponentInstancePath::root("App", "budget"),
+            None,
+            BTreeMap::new(),
+            &ComponentStateSchema::default(),
+        )
+        .unwrap();
+        let root = lifecycle.start(&mut engine).unwrap();
+        let crate::UiEventHandler::Script(callback) = root.handlers()["click"][0].handler() else {
+            panic!("component must expose a script click callback");
+        };
+        let callback = callback.clone();
+        assert!(
+            lifecycle
+                .invoke_callback_transactional(&engine, &callback, UiValue::Null)
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn old_component_handles_cannot_target_a_same_key_remount() {
+        let module = r#"
+            define_component(#{
+                metadata: #{ id: "components/incarnation", "export": "Counter", version: "0.1.1",
+                    runtime_api: #{ min_inclusive: 1, max_exclusive: 2 }, dependencies: [], capabilities: #{} },
+                schema: #{ props: #{ key: #{ schema: #{ type: "string" }, required: true, sensitive: false } },
+                    state: #{ fields: #{ count: #{ schema: #{ type: "integer" }, "default": #{ type: "integer", value: 0 } } } },
+                    events: #{}, slots: #{}, parts: ["root"] }, render: Fn("render_Counter")
+            });
+            fn Counter(props) { render_component("components/incarnation", props) }
+            fn increment(ctx, payload) { ctx.set_state("count", ctx.get_state("count") + 1); }
+            fn render_Counter(ctx, props) {
+                let progress = signal("progress", 0.0);
+                text(`${ctx.get_state("count")}`).bind_signal("opacity", progress).on_click(Fn("increment"))
+            }
+        "#;
+        let mut resolver = crate::RestrictedModuleResolver::new();
+        resolver.insert("components/incarnation", module).unwrap();
+        let mut engine = RuntimeEngine::new();
+        engine.set_module_resolver(resolver);
+        let compiled = engine
+            .compile_self_contained_named(
+                "incarnation",
+                r#"import "components/incarnation" as c;
+                    fn view(ctx) {
+                        if ctx.get_state("visible") { c::Counter(#{ key: "same" }) }
+                        else { text("hidden") }
+                    }"#,
+            )
+            .unwrap();
+        let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+        let root_path = ComponentInstancePath::root("App", "incarnation");
+        let schema = ComponentStateSchema::new(BTreeMap::from([(
+            "visible".to_owned(),
+            crate::StateField::new(crate::ValueSchema::Bool, UiValue::Bool(true)),
+        )]))
+        .unwrap();
+        let mut lifecycle = crate::ScriptLifecycle::new(
+            compiled,
+            Rc::clone(&runtime),
+            root_path.clone(),
+            None,
+            BTreeMap::new(),
+            &schema,
+        )
+        .unwrap();
+        lifecycle.start(&mut engine).unwrap();
+        let component = engine
+            .component_invocations()
+            .next()
+            .unwrap()
+            .path()
+            .clone();
+        let crate::UiEventHandler::Script(old_callback) =
+            lifecycle.root().unwrap().handlers()["click"][0].handler()
+        else {
+            panic!("component must expose its callback");
+        };
+        let old_callback = old_callback.clone();
+        let old_signal = runtime
+            .borrow()
+            .signals
+            .resolve(&component, "progress")
+            .unwrap();
+        runtime
+            .borrow_mut()
+            .set_component_state_from_host(&root_path, "visible", UiValue::Bool(false))
+            .unwrap();
+        lifecycle.render_dirty(&mut engine).unwrap();
+        runtime
+            .borrow_mut()
+            .set_component_state_from_host(&root_path, "visible", UiValue::Bool(true))
+            .unwrap();
+        lifecycle.render_dirty(&mut engine).unwrap();
+        assert!(matches!(
+            lifecycle.invoke_callback_transactional(&engine, &old_callback, UiValue::Null),
+            Err(crate::LifecycleError::Runtime(
+                RuntimeError::StaleComponentCallback { .. }
+            ))
+        ));
+        assert!(matches!(
+            runtime
+                .borrow_mut()
+                .signals
+                .write(&old_signal, crate::SignalValue::Float(0.5)),
+            Err(crate::SignalError::Stale(_))
+        ));
     }
 }

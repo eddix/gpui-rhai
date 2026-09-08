@@ -141,7 +141,13 @@ pub struct AutomationResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub value: Option<AutomationResult>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
+    pub error: Option<AutomationFailure>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct AutomationFailure {
+    pub code: String,
+    pub message: String,
 }
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
@@ -160,6 +166,27 @@ pub enum AutomationError {
     ClockNotControllable,
     #[error("automation command failed: {0}")]
     Command(String),
+}
+
+impl AutomationError {
+    fn code(&self) -> &'static str {
+        match self {
+            Self::NoMatch(_) => "no_match",
+            Self::Ambiguous { .. } => "ambiguous",
+            Self::StaleTarget(_) => "stale_target",
+            Self::Disabled(_) => "disabled",
+            Self::InvalidEvent => "invalid_event",
+            Self::ClockNotControllable => "clock_not_controllable",
+            Self::Command(_) => "execution_failed",
+        }
+    }
+
+    fn failure(&self) -> AutomationFailure {
+        AutomationFailure {
+            code: self.code().to_owned(),
+            message: self.to_string(),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -282,14 +309,17 @@ pub fn handle_automation_json_line(
                 id: request.id,
                 ok: false,
                 value: None,
-                error: Some(error.to_string()),
+                error: Some(error.failure()),
             },
         },
         Err(error) => AutomationResponse {
             id: serde_json::Value::Null,
             ok: false,
             value: None,
-            error: Some(error.to_string()),
+            error: Some(AutomationFailure {
+                code: "invalid_request".to_owned(),
+                message: error.to_string(),
+            }),
         },
     };
     serde_json::to_string(&response)
@@ -371,5 +401,6 @@ mod tests {
         let decoded: AutomationResponse = serde_json::from_str(&malformed).unwrap();
         assert!(!decoded.ok);
         assert_eq!(decoded.id, serde_json::Value::Null);
+        assert_eq!(decoded.error.unwrap().code, "invalid_request");
     }
 }

@@ -84,7 +84,31 @@ pub trait CapabilityHandler {
     fn call(&mut self, method: &str, input: UiValue) -> Result<UiValue, String>;
 }
 
-pub type TaskWork = Box<dyn FnOnce() -> Result<UiValue, String> + Send + 'static>;
+pub struct TaskWork {
+    work: Box<dyn FnOnce(crate::TaskCancellation) -> Result<UiValue, String> + Send + 'static>,
+}
+
+impl TaskWork {
+    #[must_use]
+    pub fn new(work: impl FnOnce() -> Result<UiValue, String> + Send + 'static) -> Self {
+        Self {
+            work: Box::new(move |_| work()),
+        }
+    }
+
+    #[must_use]
+    pub fn cancellable(
+        work: impl FnOnce(crate::TaskCancellation) -> Result<UiValue, String> + Send + 'static,
+    ) -> Self {
+        Self {
+            work: Box::new(work),
+        }
+    }
+
+    pub(crate) fn run(self, cancellation: crate::TaskCancellation) -> Result<UiValue, String> {
+        (self.work)(cancellation)
+    }
+}
 
 pub trait AsyncCapabilityHandler {
     /// Build one-shot background work after input validation.
@@ -119,9 +143,18 @@ impl SubscriptionWork {
     #[must_use]
     pub fn from_receiver(receiver: Receiver<UiValue>) -> Self {
         Self::new(move |emitter| {
-            while let Ok(value) = receiver.recv() {
-                if emitter.emit(value).is_err() {
+            loop {
+                if emitter.close_reason().is_some() {
                     break;
+                }
+                match receiver.recv_timeout(std::time::Duration::from_millis(50)) {
+                    Ok(value) => {
+                        if emitter.emit_blocking(value).is_err() {
+                            break;
+                        }
+                    }
+                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
                 }
             }
         })
@@ -313,7 +346,7 @@ impl CapabilityRegistry {
             })?;
         schema
             .input
-            .validate(&input.clone().into_dynamic())
+            .validate_ui_value(&input)
             .map_err(|source| CapabilityError::InvalidInput {
                 id: id.clone(),
                 method: method.to_owned(),
@@ -330,14 +363,13 @@ impl CapabilityRegistry {
                 method: method.to_owned(),
                 message,
             })?;
-        schema
-            .output
-            .validate(&output.clone().into_dynamic())
-            .map_err(|source| CapabilityError::InvalidOutput {
+        schema.output.validate_ui_value(&output).map_err(|source| {
+            CapabilityError::InvalidOutput {
                 id: id.clone(),
                 method: method.to_owned(),
                 source,
-            })?;
+            }
+        })?;
         Ok(output)
     }
 
@@ -418,7 +450,7 @@ impl CapabilityRegistry {
             })?;
         schema
             .input
-            .validate(&input.clone().into_dynamic())
+            .validate_ui_value(input)
             .map_err(|source| CapabilityError::InvalidInput {
                 id: id.clone(),
                 method: method.to_owned(),
@@ -619,7 +651,7 @@ mod tests {
     impl AsyncCapabilityHandler for AsyncEcho {
         fn start(&mut self, method: &str, input: UiValue) -> Result<TaskWork, String> {
             if method == "echo" {
-                Ok(Box::new(move || Ok(input)))
+                Ok(TaskWork::new(move || Ok(input)))
             } else {
                 Err("unexpected method".to_owned())
             }
@@ -746,8 +778,8 @@ mod tests {
                 UiValue::String("async".to_owned()),
             )
             .unwrap();
-        let value = work().unwrap();
-        output.validate(&value.clone().into_dynamic()).unwrap();
+        let value = work.run(crate::TaskCancellation::default()).unwrap();
+        output.validate_ui_value(&value).unwrap();
         assert_eq!(value, UiValue::String("async".to_owned()));
     }
 }

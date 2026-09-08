@@ -1,27 +1,9 @@
 #!/bin/bash
 set -eu
 
-examples=(
-  artistic_showcase
-  component_gallery
-  dashboard_layout
-  data_table
-  embedded_hello_world
-  embedded_views
-  extension_host
-  form_showcase
-  hello_world
-  host_owned_tree
-  multi_window
-  mini_timeline
-  native_overlay_smoke
-  native_virtual_list_smoke
-  performance_probe
-  phase0_probe
-  settings_panel
-  table_1000
-  variable_height_chat
-)
+examples=($(
+  python3 scripts/verify-target-manifest.py --examples
+))
 smoke_seconds="${GPUI_RHAI_SMOKE_SECONDS:-2}"
 clang_cache="${TMPDIR:-/tmp}/gpui-rhai-clang-module-cache"
 mkdir -p "${clang_cache}"

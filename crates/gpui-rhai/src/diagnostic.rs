@@ -76,6 +76,19 @@ impl Diagnostic {
                 key: context.key.clone(),
                 stack: Vec::new(),
             },
+            RuntimeError::StaleComponentCallback { name, component } => Self {
+                severity: DiagnosticSeverity::Error,
+                code: DiagnosticCode::StaleCallback,
+                message: format!(
+                    "callback `{name}` belongs to an unmounted incarnation of `{component}`"
+                ),
+                source: context.source.clone(),
+                line: None,
+                column: None,
+                component: Some(component.to_string()),
+                key: context.key.clone(),
+                stack: Vec::new(),
+            },
             RuntimeError::RetainedCallback { source, .. } => Self {
                 severity: DiagnosticSeverity::Error,
                 code: DiagnosticCode::ScriptEvaluate,
@@ -116,6 +129,17 @@ impl Diagnostic {
                 source: context.source.clone(),
                 line: None,
                 column: None,
+                component: context.component.as_ref().map(ToString::to_string),
+                key: context.key.clone(),
+                stack: Vec::new(),
+            },
+            RuntimeError::InvalidAssignmentTarget(position) => Self {
+                severity: DiagnosticSeverity::Error,
+                code: DiagnosticCode::ScriptCompile,
+                message: error.to_string(),
+                source: context.source.clone(),
+                line: position.line(),
+                column: position.position(),
                 component: context.component.as_ref().map(ToString::to_string),
                 key: context.key.clone(),
                 stack: Vec::new(),

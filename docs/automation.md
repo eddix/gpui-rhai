@@ -33,6 +33,9 @@ handler node's current visual bounds through their event-target context. This is
 commands do not fabricate GPUI platform input or browser-style default
 behavior; platform keyboard, IME, pointer, and focus certification continues
 through GPUI test support and unlocked macOS tests.
+Propagation control and execution outcome are separate. A normal `stop()` is a
+successful dispatch; a callback, rerender, stale-owner, or async failure makes
+`automate` return an error even when a handler was reached.
 
 `Dispatch` may route a retained raw event name such as `pointer_down`, but it
 does not synthesize a native pointer payload or down/move/up device sequence.
@@ -64,7 +67,9 @@ one tagged command and produces one response line:
 ```
 
 Malformed JSON produces `ok:false` with a null correlation ID; command failures
-preserve the request ID. The codec performs no I/O beyond the supplied
+preserve the request ID. Failures are structured as
+`{"code":"execution_failed","message":"..."}` rather than being hidden behind
+a successful dispatch report. The codec performs no I/O beyond the supplied
 `BufRead`/`Write` pair and never opens a network or process capability.
 
 GPU screenshot capture remains a separate platform gate because it requires a

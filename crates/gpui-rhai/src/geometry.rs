@@ -67,7 +67,7 @@ struct GeometryState {
 
 #[derive(Clone, Debug, Default)]
 pub struct GeometryRegistry {
-    inner: Rc<RefCell<GeometryState>>,
+    inner: Rc<RefCell<Rc<GeometryState>>>,
 }
 
 impl GeometryRegistry {
@@ -87,7 +87,8 @@ impl GeometryRegistry {
     }
 
     pub fn update(&self, node: NodeId, geometry: ElementGeometry) -> bool {
-        let mut state = self.inner.borrow_mut();
+        let mut current = self.inner.borrow_mut();
+        let state = Rc::make_mut(&mut current);
         state.presented.insert(node);
         if state.committed.get(&node) == Some(&geometry) {
             return false;
@@ -109,7 +110,8 @@ impl GeometryRegistry {
         node: NodeId,
         reader: &ComponentInstancePath,
     ) -> Result<ElementGeometry, GeometryError> {
-        let mut state = self.inner.borrow_mut();
+        let mut current = self.inner.borrow_mut();
+        let state = Rc::make_mut(&mut current);
         let geometry = state
             .committed
             .get(&node)
@@ -128,7 +130,8 @@ impl GeometryRegistry {
         node: NodeId,
         reader: &ComponentInstancePath,
     ) -> Option<ElementGeometry> {
-        let mut state = self.inner.borrow_mut();
+        let mut current = self.inner.borrow_mut();
+        let state = Rc::make_mut(&mut current);
         state
             .readers
             .entry(node)
@@ -141,7 +144,8 @@ impl GeometryRegistry {
         if readers.is_empty() {
             return;
         }
-        let mut state = self.inner.borrow_mut();
+        let mut current = self.inner.borrow_mut();
+        let state = Rc::make_mut(&mut current);
         let committed = state.committed.contains_key(&node);
         for reader in readers {
             if state
@@ -161,7 +165,7 @@ impl GeometryRegistry {
     }
 
     pub(crate) fn begin_frame(&self) {
-        self.inner.borrow_mut().presented.clear();
+        Rc::make_mut(&mut self.inner.borrow_mut()).presented.clear();
     }
 
     pub(crate) fn is_presented(&self, node: NodeId) -> bool {
@@ -169,18 +173,19 @@ impl GeometryRegistry {
     }
 
     pub(crate) fn retain_nodes(&self, active: &BTreeSet<NodeId>) {
-        let mut state = self.inner.borrow_mut();
+        let mut current = self.inner.borrow_mut();
+        let state = Rc::make_mut(&mut current);
         state.committed.retain(|node, _| active.contains(node));
         state.presented.retain(|node| active.contains(node));
         state.readers.retain(|node, _| active.contains(node));
     }
 
     pub(crate) fn take_dirty(&self) -> BTreeSet<ComponentInstancePath> {
-        std::mem::take(&mut self.inner.borrow_mut().dirty)
+        std::mem::take(&mut Rc::make_mut(&mut self.inner.borrow_mut()).dirty)
     }
 
     pub(crate) fn snapshot(&self) -> GeometrySnapshot {
-        GeometrySnapshot(self.inner.borrow().clone())
+        GeometrySnapshot(Rc::clone(&self.inner.borrow()))
     }
 
     pub(crate) fn restore(&self, snapshot: GeometrySnapshot) {
@@ -189,7 +194,7 @@ impl GeometryRegistry {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct GeometrySnapshot(GeometryState);
+pub(crate) struct GeometrySnapshot(Rc<GeometryState>);
 
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum GeometryError {

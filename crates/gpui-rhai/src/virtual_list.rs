@@ -151,6 +151,14 @@ impl VirtualRequestRegistry {
         self.requests.borrow().is_empty()
     }
 
+    #[must_use]
+    pub(crate) fn has_scope(&self, root: &ComponentInstancePath) -> bool {
+        self.requests
+            .borrow()
+            .keys()
+            .any(|id| id.component.is_within(root))
+    }
+
     pub(crate) fn drain(&self) -> BTreeMap<VirtualCollectionId, BTreeSet<usize>> {
         let requests = std::mem::take(&mut *self.requests.borrow_mut());
         for metrics in self.metrics.borrow_mut().values_mut() {

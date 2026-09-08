@@ -1,8 +1,9 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::fmt;
-use std::sync::atomic::{AtomicU8, Ordering};
-use std::sync::mpsc::{Receiver, Sender, channel};
-use std::sync::{Arc, Mutex};
+use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::mpsc::{Receiver, Sender, SyncSender, TrySendError, channel, sync_channel};
+use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use event_listener::{Event, EventListener};
@@ -13,6 +14,59 @@ use crate::{
     ComponentInstancePath, SchemaValidationError, ScriptCallback, ScriptGeneration, UiValue,
     ValueSchema,
 };
+
+type BackgroundJob = Box<dyn FnOnce() + Send + 'static>;
+
+struct BackgroundExecutor {
+    sender: SyncSender<BackgroundJob>,
+}
+
+impl BackgroundExecutor {
+    fn start() -> Option<Self> {
+        let (sender, receiver) = sync_channel::<BackgroundJob>(1_024);
+        let receiver = Arc::new(Mutex::new(receiver));
+        let workers = std::thread::available_parallelism()
+            .map_or(2, usize::from)
+            .clamp(1, 4);
+        for index in 0..workers {
+            let receiver = Arc::clone(&receiver);
+            if std::thread::Builder::new()
+                .name(format!("gpui-rhai-worker-{index}"))
+                .spawn(move || {
+                    loop {
+                        let job = receiver
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner)
+                            .recv();
+                        let Ok(job) = job else {
+                            break;
+                        };
+                        job();
+                    }
+                })
+                .is_err()
+            {
+                return None;
+            }
+        }
+        Some(Self { sender })
+    }
+
+    fn submit(&self, job: BackgroundJob) -> Result<(), AsyncRuntimeError> {
+        self.sender.try_send(job).map_err(|error| match error {
+            TrySendError::Full(_) => AsyncRuntimeError::WorkerQueueFull,
+            TrySendError::Disconnected(_) => AsyncRuntimeError::WorkerPoolUnavailable,
+        })
+    }
+}
+
+fn background_executor() -> Result<&'static BackgroundExecutor, AsyncRuntimeError> {
+    static EXECUTOR: OnceLock<Option<BackgroundExecutor>> = OnceLock::new();
+    EXECUTOR
+        .get_or_init(BackgroundExecutor::start)
+        .as_ref()
+        .ok_or(AsyncRuntimeError::WorkerPoolUnavailable)
+}
 
 /// Thread-safe edge notification for foreground delivery pumps.
 ///
@@ -72,6 +126,22 @@ impl CustomType for TaskHandle {
             .with_fn("to_string", |handle: &mut Self| {
                 format!("task#{}", handle.0)
             });
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct TaskCancellation {
+    cancelled: Arc<AtomicBool>,
+}
+
+impl TaskCancellation {
+    #[must_use]
+    pub fn is_cancelled(&self) -> bool {
+        self.cancelled.load(Ordering::Acquire)
+    }
+
+    fn cancel(&self) {
+        self.cancelled.store(true, Ordering::Release);
     }
 }
 
@@ -167,17 +237,19 @@ pub struct AsyncDelivery {
     pub scope: AsyncScope,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct CallbackPair {
     success: ScriptCallback,
     error: ScriptCallback,
 }
 
+#[derive(Clone, Debug)]
 struct TaskEntry {
     scope: AsyncScope,
     generation: ScriptGeneration,
     callbacks: CallbackPair,
     output: ValueSchema,
+    cancellation: TaskCancellation,
 }
 
 struct TaskMessage {
@@ -191,6 +263,15 @@ pub struct TaskRegistry {
     sender: Sender<TaskMessage>,
     receiver: Receiver<TaskMessage>,
     wake: AsyncWake,
+    deferred_cancellations: BTreeMap<u64, TaskEntry>,
+    transaction_depth: usize,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct TaskRegistrySnapshot {
+    entries: BTreeMap<u64, TaskEntry>,
+    deferred_cancellations: BTreeMap<u64, TaskEntry>,
+    transaction_depth: usize,
 }
 
 impl Default for TaskRegistry {
@@ -202,6 +283,8 @@ impl Default for TaskRegistry {
             sender,
             receiver,
             wake: AsyncWake::default(),
+            deferred_cancellations: BTreeMap::new(),
+            transaction_depth: 0,
         }
     }
 }
@@ -221,6 +304,19 @@ impl TaskRegistry {
         Self::default()
     }
 
+    pub(crate) fn begin_transaction(&mut self) {
+        self.transaction_depth = self.transaction_depth.saturating_add(1);
+    }
+
+    pub(crate) fn commit_transaction(&mut self) {
+        self.transaction_depth = self.transaction_depth.saturating_sub(1);
+        if self.transaction_depth == 0 {
+            for entry in std::mem::take(&mut self.deferred_cancellations).into_values() {
+                entry.cancellation.cancel();
+            }
+        }
+    }
+
     /// Spawn Rust work while retaining Rhai callbacks on the foreground side.
     ///
     /// # Errors
@@ -235,8 +331,21 @@ impl TaskRegistry {
         output: ValueSchema,
         work: impl FnOnce() -> Result<UiValue, String> + Send + 'static,
     ) -> Result<TaskHandle, AsyncRuntimeError> {
+        self.spawn_cancellable(scope, generation, success, error, output, move |_| work())
+    }
+
+    pub(crate) fn spawn_cancellable(
+        &mut self,
+        scope: AsyncScope,
+        generation: ScriptGeneration,
+        success: ScriptCallback,
+        error: ScriptCallback,
+        output: ValueSchema,
+        work: impl FnOnce(TaskCancellation) -> Result<UiValue, String> + Send + 'static,
+    ) -> Result<TaskHandle, AsyncRuntimeError> {
         let id = self.next_id;
         self.next_id = self.next_id.saturating_add(1);
+        let cancellation = TaskCancellation::default();
         self.entries.insert(
             id,
             TaskEntry {
@@ -244,42 +353,79 @@ impl TaskRegistry {
                 generation,
                 callbacks: CallbackPair { success, error },
                 output,
+                cancellation: cancellation.clone(),
             },
         );
         let sender = self.sender.clone();
         let wake = self.wake.clone();
-        if let Err(spawn_error) = std::thread::Builder::new()
-            .name(format!("gpui-rhai-task-{id}"))
-            .spawn(move || {
-                if sender.send(TaskMessage { id, result: work() }).is_ok() {
-                    wake.notify();
-                }
-            })
-        {
+        let job = Box::new(move || {
+            let result =
+                catch_unwind(AssertUnwindSafe(|| work(cancellation))).unwrap_or_else(|payload| {
+                    let message = payload.downcast_ref::<&str>().map_or_else(
+                        || {
+                            payload.downcast_ref::<String>().map_or_else(
+                                || "background task panicked".to_owned(),
+                                |message| format!("background task panicked: {message}"),
+                            )
+                        },
+                        |message| format!("background task panicked: {message}"),
+                    );
+                    Err(message)
+                });
+            if sender.send(TaskMessage { id, result }).is_ok() {
+                wake.notify();
+            }
+        });
+        if let Err(error) = background_executor().and_then(|executor| executor.submit(job)) {
             self.entries.remove(&id);
-            return Err(AsyncRuntimeError::Spawn(spawn_error));
+            return Err(error);
         }
         Ok(TaskHandle(id))
     }
 
     #[must_use]
     pub fn cancel(&mut self, handle: TaskHandle) -> bool {
-        self.entries.remove(&handle.0).is_some()
+        let Some(entry) = self.entries.remove(&handle.0) else {
+            return false;
+        };
+        self.defer_or_cancel(handle.0, entry);
+        true
     }
 
     pub fn cancel_scope(&mut self, scope: &AsyncScope) {
-        self.entries.retain(|_, entry| &entry.scope != scope);
+        let ids = self
+            .entries
+            .iter()
+            .filter_map(|(id, entry)| (&entry.scope == scope).then_some(*id))
+            .collect::<Vec<_>>();
+        self.cancel_ids(ids);
     }
 
     pub fn cancel_component_scope(&mut self, component: &ComponentInstancePath) {
-        self.entries
-            .retain(|_, entry| !entry.scope.is_within_component(component));
+        let ids = self
+            .entries
+            .iter()
+            .filter_map(|(id, entry)| entry.scope.is_within_component(component).then_some(*id))
+            .collect::<Vec<_>>();
+        self.cancel_ids(ids);
     }
 
     #[must_use]
     pub fn drain(&mut self, current: ScriptGeneration) -> Vec<AsyncDelivery> {
+        self.drain_up_to(current, usize::MAX)
+    }
+
+    #[must_use]
+    pub(crate) fn drain_up_to(
+        &mut self,
+        current: ScriptGeneration,
+        limit: usize,
+    ) -> Vec<AsyncDelivery> {
         let mut deliveries = Vec::new();
-        while let Ok(message) = self.receiver.try_recv() {
+        while deliveries.len() < limit {
+            let Ok(message) = self.receiver.try_recv() else {
+                break;
+            };
             let Some(entry) = self.entries.remove(&message.id) else {
                 continue;
             };
@@ -296,12 +442,45 @@ impl TaskRegistry {
         self.entries.len()
     }
 
-    pub(crate) fn active_ids(&self) -> std::collections::BTreeSet<u64> {
-        self.entries.keys().copied().collect()
+    pub(crate) fn snapshot(&self) -> TaskRegistrySnapshot {
+        TaskRegistrySnapshot {
+            entries: self.entries.clone(),
+            deferred_cancellations: self.deferred_cancellations.clone(),
+            transaction_depth: self.transaction_depth,
+        }
     }
 
-    pub(crate) fn retain_ids(&mut self, retained: &std::collections::BTreeSet<u64>) {
-        self.entries.retain(|id, _| retained.contains(id));
+    pub(crate) fn restore(&mut self, snapshot: TaskRegistrySnapshot) {
+        for (id, entry) in self
+            .entries
+            .iter()
+            .chain(self.deferred_cancellations.iter())
+        {
+            if !snapshot.entries.contains_key(id)
+                && !snapshot.deferred_cancellations.contains_key(id)
+            {
+                entry.cancellation.cancel();
+            }
+        }
+        self.entries = snapshot.entries;
+        self.deferred_cancellations = snapshot.deferred_cancellations;
+        self.transaction_depth = snapshot.transaction_depth;
+    }
+
+    fn cancel_ids(&mut self, ids: impl IntoIterator<Item = u64>) {
+        for id in ids {
+            if let Some(entry) = self.entries.remove(&id) {
+                self.defer_or_cancel(id, entry);
+            }
+        }
+    }
+
+    fn defer_or_cancel(&mut self, id: u64, entry: TaskEntry) {
+        if self.transaction_depth > 0 {
+            self.deferred_cancellations.insert(id, entry);
+        } else {
+            entry.cancellation.cancel();
+        }
     }
 
     pub(crate) fn wake(&self) -> AsyncWake {
@@ -311,7 +490,7 @@ impl TaskRegistry {
 
 fn task_delivery(entry: TaskEntry, result: Result<UiValue, String>) -> AsyncDelivery {
     match result {
-        Ok(value) => match entry.output.validate(&value.clone().into_dynamic()) {
+        Ok(value) => match entry.output.validate_ui_value(&value) {
             Ok(()) => AsyncDelivery {
                 callback: entry.callbacks.success,
                 payload: value,
@@ -405,6 +584,12 @@ struct SubscriptionBuffer {
     capacity: usize,
 }
 
+#[derive(Debug)]
+struct SubscriptionQueue {
+    buffer: Mutex<SubscriptionBuffer>,
+    space: Condvar,
+}
+
 impl SubscriptionBuffer {
     fn push(&mut self, result: Result<UiValue, String>) -> Result<(), AsyncRuntimeError> {
         match self.delivery {
@@ -431,7 +616,7 @@ impl SubscriptionBuffer {
 
 #[derive(Clone)]
 pub struct SubscriptionEmitter {
-    pending: Arc<Mutex<SubscriptionBuffer>>,
+    pending: Arc<SubscriptionQueue>,
     lifetime: Arc<SubscriptionLifetime>,
     wake: AsyncWake,
 }
@@ -447,6 +632,16 @@ impl SubscriptionEmitter {
     /// pending value instead.
     pub fn emit(&self, value: UiValue) -> Result<(), AsyncRuntimeError> {
         self.send(Ok(value))
+    }
+
+    /// Emit one lossless value, waiting for foreground capacity or cancellation.
+    /// Latest-only streams never block because they explicitly replace a value.
+    ///
+    /// # Errors
+    ///
+    /// Returns when the stream closes or its shared queue is poisoned.
+    pub fn emit_blocking(&self, value: UiValue) -> Result<(), AsyncRuntimeError> {
+        self.send_blocking(Ok(value))
     }
 
     /// Emit a structured error to the Rhai error callback.
@@ -465,11 +660,41 @@ impl SubscriptionEmitter {
             return Err(AsyncRuntimeError::Closed { reason });
         }
         self.pending
+            .buffer
             .lock()
             .map_err(|_| AsyncRuntimeError::Poisoned)?
             .push(result)?;
         self.wake.notify();
         Ok(())
+    }
+
+    fn send_blocking(&self, result: Result<UiValue, String>) -> Result<(), AsyncRuntimeError> {
+        let mut result = Some(result);
+        loop {
+            if let Some(reason) = self.lifetime.close_reason() {
+                return Err(AsyncRuntimeError::Closed { reason });
+            }
+            let mut pending = self
+                .pending
+                .buffer
+                .lock()
+                .map_err(|_| AsyncRuntimeError::Poisoned)?;
+            if pending.delivery == SubscriptionDeliveryPolicy::All
+                && pending.values.len() >= pending.capacity
+            {
+                drop(
+                    self.pending
+                        .space
+                        .wait(pending)
+                        .map_err(|_| AsyncRuntimeError::Poisoned)?,
+                );
+                continue;
+            }
+            pending.push(result.take().expect("subscription value is sent once"))?;
+            drop(pending);
+            self.wake.notify();
+            return Ok(());
+        }
     }
 
     /// Close the stream explicitly from the producer side.
@@ -485,11 +710,13 @@ impl SubscriptionEmitter {
 
     pub(crate) fn close_with_reason(&self, reason: SubscriptionCloseReason) {
         if self.lifetime.close(reason) {
+            self.pending.space.notify_all();
             self.wake.notify();
         }
     }
 }
 
+#[derive(Clone, Debug)]
 struct SubscriptionEntry {
     label: String,
     scope: AsyncScope,
@@ -497,7 +724,7 @@ struct SubscriptionEntry {
     callbacks: CallbackPair,
     output: ValueSchema,
     lifetime: Arc<SubscriptionLifetime>,
-    pending: Arc<Mutex<SubscriptionBuffer>>,
+    pending: Arc<SubscriptionQueue>,
     delivery: SubscriptionDeliveryPolicy,
     throttle: Duration,
     last_delivery: Option<Instant>,
@@ -588,6 +815,8 @@ pub struct SubscriptionRegistry {
     next_id: u64,
     entries: BTreeMap<u64, SubscriptionEntry>,
     closures: Vec<SubscriptionClosure>,
+    deferred_closures: BTreeMap<u64, (SubscriptionEntry, SubscriptionCloseReason)>,
+    transaction_depth: usize,
     wake: AsyncWake,
 }
 
@@ -597,9 +826,18 @@ impl Default for SubscriptionRegistry {
             next_id: 1,
             entries: BTreeMap::new(),
             closures: Vec::new(),
+            deferred_closures: BTreeMap::new(),
+            transaction_depth: 0,
             wake: AsyncWake::default(),
         }
     }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct SubscriptionRegistrySnapshot {
+    entries: BTreeMap<u64, SubscriptionEntry>,
+    deferred_closures: BTreeMap<u64, (SubscriptionEntry, SubscriptionCloseReason)>,
+    transaction_depth: usize,
 }
 
 impl fmt::Debug for SubscriptionRegistry {
@@ -617,6 +855,69 @@ impl SubscriptionRegistry {
         Self::default()
     }
 
+    pub(crate) fn begin_transaction(&mut self) {
+        self.transaction_depth = self.transaction_depth.saturating_add(1);
+    }
+
+    pub(crate) fn commit_transaction(&mut self) {
+        self.transaction_depth = self.transaction_depth.saturating_sub(1);
+        if self.transaction_depth == 0 {
+            self.finalize_deferred_closures();
+        }
+    }
+
+    pub(crate) fn snapshot(&self) -> SubscriptionRegistrySnapshot {
+        SubscriptionRegistrySnapshot {
+            entries: self.entries.clone(),
+            deferred_closures: self.deferred_closures.clone(),
+            transaction_depth: self.transaction_depth,
+        }
+    }
+
+    pub(crate) fn restore(&mut self, snapshot: SubscriptionRegistrySnapshot) {
+        for (id, entry) in &self.entries {
+            if !snapshot.entries.contains_key(id) && !snapshot.deferred_closures.contains_key(id) {
+                self.closures.push(close_subscription_entry(
+                    entry,
+                    SubscriptionCloseReason::TransactionRolledBack,
+                ));
+            }
+        }
+        for (id, (entry, _)) in &self.deferred_closures {
+            if !snapshot.entries.contains_key(id) && !snapshot.deferred_closures.contains_key(id) {
+                self.closures.push(close_subscription_entry(
+                    entry,
+                    SubscriptionCloseReason::TransactionRolledBack,
+                ));
+            }
+        }
+        self.entries = snapshot.entries;
+        self.deferred_closures = snapshot.deferred_closures;
+        self.transaction_depth = snapshot.transaction_depth;
+    }
+
+    fn defer_or_close(
+        &mut self,
+        id: u64,
+        entry: SubscriptionEntry,
+        reason: SubscriptionCloseReason,
+    ) {
+        if self.transaction_depth > 0 {
+            self.deferred_closures.insert(id, (entry, reason));
+        } else {
+            self.closures.push(close_subscription_entry(&entry, reason));
+        }
+    }
+
+    fn finalize_deferred_closures(&mut self) {
+        let deferred = std::mem::take(&mut self.deferred_closures);
+        self.closures.extend(
+            deferred
+                .into_values()
+                .map(|(entry, reason)| close_subscription_entry(&entry, reason)),
+        );
+    }
+
     #[must_use]
     pub fn subscribe(
         &mut self,
@@ -625,11 +926,14 @@ impl SubscriptionRegistry {
         let id = self.next_id;
         self.next_id = self.next_id.saturating_add(1);
         let lifetime = Arc::new(SubscriptionLifetime::new());
-        let pending = Arc::new(Mutex::new(SubscriptionBuffer {
-            values: VecDeque::new(),
-            delivery: registration.delivery,
-            capacity: registration.capacity,
-        }));
+        let pending = Arc::new(SubscriptionQueue {
+            buffer: Mutex::new(SubscriptionBuffer {
+                values: VecDeque::new(),
+                delivery: registration.delivery,
+                capacity: registration.capacity,
+            }),
+            space: Condvar::new(),
+        });
         self.entries.insert(
             id,
             SubscriptionEntry {
@@ -671,43 +975,50 @@ impl SubscriptionRegistry {
         let Some(entry) = self.entries.remove(&handle.0) else {
             return false;
         };
-        self.closures.push(close_subscription_entry(&entry, reason));
+        self.defer_or_close(handle.0, entry, reason);
         true
     }
 
     pub fn cancel_scope(&mut self, scope: &AsyncScope) {
         let mut closures = Vec::new();
-        self.entries.retain(|_, entry| {
+        self.entries.retain(|id, entry| {
             if &entry.scope == scope {
-                closures.push(close_subscription_entry(
-                    entry,
-                    SubscriptionCloseReason::ScopeDisposed,
-                ));
+                closures.push((*id, entry.clone(), SubscriptionCloseReason::ScopeDisposed));
                 false
             } else {
                 true
             }
         });
-        self.closures.extend(closures);
+        for (id, entry, reason) in closures {
+            self.defer_or_close(id, entry, reason);
+        }
     }
 
     pub fn cancel_component_scope(&mut self, component: &ComponentInstancePath) {
         let mut closures = Vec::new();
-        self.entries.retain(|_, entry| {
+        self.entries.retain(|id, entry| {
             let remove = entry.scope.is_within_component(component);
             if remove {
-                closures.push(close_subscription_entry(
-                    entry,
-                    SubscriptionCloseReason::ScopeDisposed,
-                ));
+                closures.push((*id, entry.clone(), SubscriptionCloseReason::ScopeDisposed));
             }
             !remove
         });
-        self.closures.extend(closures);
+        for (id, entry, reason) in closures {
+            self.defer_or_close(id, entry, reason);
+        }
     }
 
     #[must_use]
     pub fn drain(&mut self, current: ScriptGeneration) -> Vec<AsyncDelivery> {
+        self.drain_up_to(current, usize::MAX)
+    }
+
+    #[must_use]
+    pub(crate) fn drain_up_to(
+        &mut self,
+        current: ScriptGeneration,
+        limit: usize,
+    ) -> Vec<AsyncDelivery> {
         let now = Instant::now();
         let mut closed = BTreeMap::new();
         let mut deliveries = Vec::new();
@@ -731,12 +1042,13 @@ impl SubscriptionRegistry {
                 || entry
                     .last_delivery
                     .is_none_or(|last| now.duration_since(last) >= entry.throttle);
-            if ready {
+            if ready && deliveries.len() < limit {
                 let mut pending = entry
                     .pending
+                    .buffer
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
-                let take = if closed.contains_key(id)
+                let requested = if closed.contains_key(id)
                     || entry.delivery == SubscriptionDeliveryPolicy::Latest
                     || entry.throttle.is_zero()
                 {
@@ -744,8 +1056,12 @@ impl SubscriptionRegistry {
                 } else {
                     usize::from(!pending.values.is_empty())
                 };
+                let take = requested.min(limit.saturating_sub(deliveries.len()));
                 for result in pending.values.drain(..take) {
                     deliveries.push(subscription_delivery(entry, result));
+                }
+                if take > 0 {
+                    entry.pending.space.notify_all();
                 }
                 if take > 0 {
                     entry.last_delivery = Some(now);
@@ -753,7 +1069,16 @@ impl SubscriptionRegistry {
             }
         }
         for (id, reason) in closed {
-            if let Some(entry) = self.entries.remove(&id) {
+            let empty = self.entries.get(&id).is_none_or(|entry| {
+                entry
+                    .pending
+                    .buffer
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .values
+                    .is_empty()
+            });
+            if empty && let Some(entry) = self.entries.remove(&id) {
                 self.closures.push(close_subscription_entry(&entry, reason));
             }
         }
@@ -765,26 +1090,10 @@ impl SubscriptionRegistry {
         self.entries.len()
     }
 
-    pub(crate) fn active_ids(&self) -> std::collections::BTreeSet<u64> {
-        self.entries.keys().copied().collect()
-    }
-
-    pub(crate) fn retain_ids(&mut self, retained: &std::collections::BTreeSet<u64>) {
-        let mut closures = Vec::new();
-        self.entries.retain(|id, entry| {
-            let keep = retained.contains(id);
-            if !keep {
-                closures.push(close_subscription_entry(
-                    entry,
-                    SubscriptionCloseReason::TransactionRolledBack,
-                ));
-            }
-            keep
-        });
-        self.closures.extend(closures);
-    }
-
     pub(crate) fn take_closures(&mut self) -> Vec<SubscriptionClosure> {
+        if self.transaction_depth == 0 {
+            self.finalize_deferred_closures();
+        }
         std::mem::take(&mut self.closures)
     }
 
@@ -795,10 +1104,15 @@ impl SubscriptionRegistry {
 
 impl Drop for SubscriptionRegistry {
     fn drop(&mut self) {
-        for entry in self.entries.values() {
+        for entry in self
+            .entries
+            .values()
+            .chain(self.deferred_closures.values().map(|(entry, _)| entry))
+        {
             entry
                 .lifetime
                 .close(SubscriptionCloseReason::RegistryDropped);
+            entry.pending.space.notify_all();
         }
     }
 }
@@ -808,6 +1122,7 @@ fn close_subscription_entry(
     reason: SubscriptionCloseReason,
 ) -> SubscriptionClosure {
     entry.lifetime.close(reason);
+    entry.pending.space.notify_all();
     SubscriptionClosure {
         label: entry.label.clone(),
         scope: entry.scope.clone(),
@@ -820,7 +1135,7 @@ fn subscription_delivery(
     result: Result<UiValue, String>,
 ) -> AsyncDelivery {
     match result {
-        Ok(value) => match entry.output.validate(&value.clone().into_dynamic()) {
+        Ok(value) => match entry.output.validate_ui_value(&value) {
             Ok(()) => AsyncDelivery {
                 callback: entry.callbacks.success.clone(),
                 payload: value,
@@ -851,6 +1166,10 @@ fn error_payload(message: String) -> UiValue {
 pub enum AsyncRuntimeError {
     #[error("failed to spawn async worker: {0}")]
     Spawn(std::io::Error),
+    #[error("background worker pool is unavailable")]
+    WorkerPoolUnavailable,
+    #[error("background worker queue is full")]
+    WorkerQueueFull,
     #[error("subscription is closed: {reason}")]
     Closed { reason: SubscriptionCloseReason },
     #[error("async output is invalid: {0}")]
@@ -919,6 +1238,33 @@ mod tests {
     }
 
     #[test]
+    fn task_panic_becomes_an_error_delivery_and_releases_the_entry() {
+        let (success, error, generation) = callbacks();
+        let mut tasks = TaskRegistry::new();
+        tasks
+            .spawn(
+                AsyncScope::App,
+                generation,
+                success,
+                error.clone(),
+                ValueSchema::Null,
+                || panic!("task failed"),
+            )
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(1);
+        loop {
+            let deliveries = tasks.drain(generation);
+            if let Some(delivery) = deliveries.into_iter().next() {
+                assert_eq!(delivery.callback, error);
+                assert_eq!(tasks.active_count(), 0);
+                break;
+            }
+            assert!(Instant::now() < deadline);
+            std::thread::yield_now();
+        }
+    }
+
+    #[test]
     fn canceled_and_stale_tasks_never_deliver() {
         let (success, error, generation) = callbacks();
         let mut tasks = TaskRegistry::new();
@@ -948,6 +1294,43 @@ mod tests {
             .unwrap();
         std::thread::sleep(Duration::from_millis(10));
         assert!(tasks.drain(generation.next()).is_empty());
+    }
+
+    #[test]
+    fn task_cancellation_is_reversible_until_transaction_commit() {
+        let (success, error, generation) = callbacks();
+        let (release, wait) = std::sync::mpsc::channel();
+        let mut tasks = TaskRegistry::new();
+        let handle = tasks
+            .spawn_cancellable(
+                AsyncScope::App,
+                generation,
+                success,
+                error,
+                ValueSchema::integer(),
+                move |cancellation| {
+                    wait.recv().unwrap();
+                    assert!(!cancellation.is_cancelled());
+                    Ok(UiValue::Integer(9))
+                },
+            )
+            .unwrap();
+        let snapshot = tasks.snapshot();
+        tasks.begin_transaction();
+        assert!(tasks.cancel(handle));
+        tasks.restore(snapshot);
+        assert_eq!(tasks.active_count(), 1);
+        release.send(()).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(1);
+        loop {
+            let deliveries = tasks.drain(generation);
+            if !deliveries.is_empty() {
+                assert_eq!(deliveries[0].payload, UiValue::Integer(9));
+                break;
+            }
+            assert!(Instant::now() < deadline);
+            std::thread::yield_now();
+        }
     }
 
     #[test]

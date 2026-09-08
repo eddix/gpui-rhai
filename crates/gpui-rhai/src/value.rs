@@ -106,8 +106,7 @@ impl CustomType for OpaqueHandle {
 }
 
 /// Data allowed to cross a capability or semantic-event boundary.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "type", content = "value", rename_all = "snake_case")]
+#[derive(Clone, Debug, PartialEq)]
 pub enum UiValue {
     Null,
     Bool(bool),
@@ -119,7 +118,144 @@ pub enum UiValue {
     Handle(OpaqueHandle),
 }
 
+#[derive(Serialize)]
+#[serde(tag = "type", content = "value", rename_all = "snake_case")]
+enum UiValueRef<'a> {
+    Null,
+    Bool(bool),
+    Integer(i64),
+    Float(f64),
+    String(&'a str),
+    Array(&'a [UiValue]),
+    Map(&'a BTreeMap<String, UiValue>),
+    Handle(&'a OpaqueHandle),
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "type", content = "value", rename_all = "snake_case")]
+enum UiValueOwned {
+    Null,
+    Bool(bool),
+    Integer(i64),
+    Float(f64),
+    String(String),
+    Array(Vec<UiValue>),
+    Map(BTreeMap<String, UiValue>),
+    Handle(OpaqueHandle),
+}
+
+impl Serialize for UiValue {
+    fn serialize<Serializer>(
+        &self,
+        serializer: Serializer,
+    ) -> Result<Serializer::Ok, Serializer::Error>
+    where
+        Serializer: serde::Serializer,
+    {
+        self.validate().map_err(serde::ser::Error::custom)?;
+        match self {
+            Self::Null => UiValueRef::Null,
+            Self::Bool(value) => UiValueRef::Bool(*value),
+            Self::Integer(value) => UiValueRef::Integer(*value),
+            Self::Float(value) => UiValueRef::Float(*value),
+            Self::String(value) => UiValueRef::String(value),
+            Self::Array(value) => UiValueRef::Array(value),
+            Self::Map(value) => UiValueRef::Map(value),
+            Self::Handle(value) => UiValueRef::Handle(value),
+        }
+        .serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for UiValue {
+    fn deserialize<Deserializer>(deserializer: Deserializer) -> Result<Self, Deserializer::Error>
+    where
+        Deserializer: serde::Deserializer<'de>,
+    {
+        let value = match UiValueOwned::deserialize(deserializer)? {
+            UiValueOwned::Null => Self::Null,
+            UiValueOwned::Bool(value) => Self::Bool(value),
+            UiValueOwned::Integer(value) => Self::Integer(value),
+            UiValueOwned::Float(value) => Self::Float(value),
+            UiValueOwned::String(value) => Self::String(value),
+            UiValueOwned::Array(value) => Self::Array(value),
+            UiValueOwned::Map(value) => Self::Map(value),
+            UiValueOwned::Handle(value) => Self::Handle(value),
+        };
+        value.validate().map_err(serde::de::Error::custom)?;
+        Ok(value)
+    }
+}
+
 impl UiValue {
+    const MAX_DEPTH: usize = 64;
+    const MAX_ITEMS: usize = 1_000_000;
+    const MAX_BYTES: usize = 16 * 1024 * 1024;
+
+    /// Validate the complete durable value domain, including values constructed
+    /// directly by Rust or deserialized without passing through Rhai.
+    ///
+    /// # Errors
+    ///
+    /// Returns a path-aware non-finite or resource-limit violation.
+    pub fn validate(&self) -> Result<(), UiValueError> {
+        let mut items = 0usize;
+        let mut bytes = 0usize;
+        self.validate_at("$", 0, &mut items, &mut bytes)
+    }
+
+    fn validate_at(
+        &self,
+        path: &str,
+        depth: usize,
+        items: &mut usize,
+        bytes: &mut usize,
+    ) -> Result<(), UiValueError> {
+        if depth > Self::MAX_DEPTH {
+            return Err(UiValueError::Limit {
+                path: path.to_owned(),
+                resource: "depth",
+                limit: Self::MAX_DEPTH,
+            });
+        }
+        *items = items.saturating_add(1);
+        if *items > Self::MAX_ITEMS {
+            return Err(UiValueError::Limit {
+                path: path.to_owned(),
+                resource: "items",
+                limit: Self::MAX_ITEMS,
+            });
+        }
+        match self {
+            Self::Float(value) if !value.is_finite() => {
+                return Err(UiValueError::NonFiniteFloat {
+                    path: path.to_owned(),
+                });
+            }
+            Self::String(value) => *bytes = bytes.saturating_add(value.len()),
+            Self::Array(values) => {
+                for (index, value) in values.iter().enumerate() {
+                    value.validate_at(&format!("{path}[{index}]"), depth + 1, items, bytes)?;
+                }
+            }
+            Self::Map(values) => {
+                for (key, value) in values {
+                    *bytes = bytes.saturating_add(key.len());
+                    value.validate_at(&format!("{path}.{key}"), depth + 1, items, bytes)?;
+                }
+            }
+            Self::Null | Self::Bool(_) | Self::Integer(_) | Self::Float(_) | Self::Handle(_) => {}
+        }
+        if *bytes > Self::MAX_BYTES {
+            return Err(UiValueError::Limit {
+                path: path.to_owned(),
+                resource: "bytes",
+                limit: Self::MAX_BYTES,
+            });
+        }
+        Ok(())
+    }
+
     /// Read one nested map/array path.
     ///
     /// # Errors
@@ -324,7 +460,9 @@ impl UiValue {
     /// Returns [`UiValueError`] when the value contains a custom type such as a
     /// `UiNode` or callback, or when one of its descendants is unsupported.
     pub fn from_dynamic(value: Dynamic) -> Result<Self, UiValueError> {
-        Self::from_dynamic_at(value, "$".to_owned())
+        let value = Self::from_dynamic_at(value, "$".to_owned())?;
+        value.validate()?;
+        Ok(value)
     }
 
     fn from_dynamic_at(value: Dynamic, path: String) -> Result<Self, UiValueError> {
@@ -400,6 +538,14 @@ impl UiValue {
 pub enum UiValueError {
     #[error("unsupported Rhai type `{type_name}` at {path}")]
     UnsupportedType { path: String, type_name: String },
+    #[error("non-finite float at {path}")]
+    NonFiniteFloat { path: String },
+    #[error("UiValue {resource} limit {limit} exceeded at {path}")]
+    Limit {
+        path: String,
+        resource: &'static str,
+        limit: usize,
+    },
 }
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
@@ -472,6 +618,16 @@ mod tests {
             error,
             UiValueError::UnsupportedType { ref path, .. } if path == "$"
         ));
+    }
+
+    #[test]
+    fn non_finite_numbers_are_rejected_from_rhai_and_serialization() {
+        assert!(matches!(
+            UiValue::from_dynamic(Dynamic::from(f64::NAN)),
+            Err(UiValueError::NonFiniteFloat { .. })
+        ));
+        assert!(serde_json::to_string(&UiValue::Float(f64::INFINITY)).is_err());
+        assert!(serde_json::from_str::<UiValue>(r#"{"type":"float","value":1e999}"#).is_err());
     }
 
     #[test]

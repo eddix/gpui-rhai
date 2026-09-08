@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use rhai::{AST, Engine};
+use rhai::{AST, Engine, Token};
 use thiserror::Error;
 
 use crate::{ModuleId, ScriptSource, ScriptSourceError};
@@ -79,106 +79,55 @@ impl ModuleDependencyGraph {
 /// Returns [`DependencyError`] for a dynamic/unterminated import or invalid
 /// module ID.
 pub fn extract_imports(source: &str) -> Result<BTreeSet<ModuleId>, DependencyError> {
-    let tokens = tokenize(source)?;
+    let parser = Engine::new_raw();
+    let scripts = [source];
+    let (tokens, control) = parser.lex(&scripts);
     let mut imports = BTreeSet::new();
-    let mut index = 0;
-    while index < tokens.len() {
-        if tokens[index] == SourceToken::Identifier("import".to_owned()) {
-            let Some(SourceToken::String(path)) = tokens.get(index + 1) else {
-                return Err(DependencyError::DynamicImport);
-            };
-            imports.insert(ModuleId::parse(path.clone())?);
-            index += 2;
-        } else {
-            index += 1;
+    let mut expects_module = false;
+    let mut interpolation_depth: Option<usize> = None;
+    for (token, position) in tokens {
+        if expects_module {
+            match token {
+                Token::StringConstant(module) => {
+                    imports.insert(ModuleId::parse(module.to_string())?);
+                    expects_module = false;
+                    continue;
+                }
+                Token::LexError(error) => {
+                    return Err(DependencyError::Lex {
+                        position,
+                        message: error.to_string(),
+                    });
+                }
+                _ => return Err(DependencyError::DynamicImport),
+            }
         }
+        match (&token, interpolation_depth) {
+            (Token::InterpolatedString(_), _) => interpolation_depth = Some(0),
+            (Token::LeftBrace, Some(depth)) => interpolation_depth = Some(depth + 1),
+            (Token::RightBrace, Some(1)) => {
+                interpolation_depth = None;
+                control.borrow_mut().is_within_text = true;
+            }
+            (Token::RightBrace, Some(depth)) => interpolation_depth = Some(depth.saturating_sub(1)),
+            _ => {}
+        }
+        match token {
+            Token::Import => expects_module = true,
+            Token::LexError(error) => {
+                return Err(DependencyError::Lex {
+                    position,
+                    message: error.to_string(),
+                });
+            }
+            Token::EOF => break,
+            _ => {}
+        }
+    }
+    if expects_module {
+        return Err(DependencyError::DynamicImport);
     }
     Ok(imports)
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-enum SourceToken {
-    Identifier(String),
-    String(String),
-    Other,
-}
-
-fn tokenize(source: &str) -> Result<Vec<SourceToken>, DependencyError> {
-    let bytes = source.as_bytes();
-    let mut tokens = Vec::new();
-    let mut index = 0;
-    while index < bytes.len() {
-        match bytes[index] {
-            byte if byte.is_ascii_whitespace() => index += 1,
-            b'/' if bytes.get(index + 1) == Some(&b'/') => {
-                index += 2;
-                while index < bytes.len() && bytes[index] != b'\n' {
-                    index += 1;
-                }
-            }
-            b'/' if bytes.get(index + 1) == Some(&b'*') => {
-                index += 2;
-                let mut closed = false;
-                while index + 1 < bytes.len() {
-                    if bytes[index] == b'*' && bytes[index + 1] == b'/' {
-                        index += 2;
-                        closed = true;
-                        break;
-                    }
-                    index += 1;
-                }
-                if !closed {
-                    return Err(DependencyError::UnterminatedBlockComment);
-                }
-            }
-            b'"' => {
-                let (value, next) = parse_string(bytes, index + 1)?;
-                tokens.push(SourceToken::String(value));
-                index = next;
-            }
-            byte if byte.is_ascii_alphabetic() || byte == b'_' => {
-                let start = index;
-                index += 1;
-                while index < bytes.len()
-                    && (bytes[index].is_ascii_alphanumeric() || bytes[index] == b'_')
-                {
-                    index += 1;
-                }
-                tokens.push(SourceToken::Identifier(source[start..index].to_owned()));
-            }
-            _ => {
-                tokens.push(SourceToken::Other);
-                index += 1;
-            }
-        }
-    }
-    Ok(tokens)
-}
-
-fn parse_string(bytes: &[u8], mut index: usize) -> Result<(String, usize), DependencyError> {
-    let mut value = Vec::new();
-    while index < bytes.len() {
-        match bytes[index] {
-            b'"' => {
-                let value =
-                    String::from_utf8(value).map_err(|_| DependencyError::InvalidUtf8Import)?;
-                return Ok((value, index + 1));
-            }
-            b'\\' => {
-                index += 1;
-                let Some(escaped) = bytes.get(index) else {
-                    return Err(DependencyError::UnterminatedString);
-                };
-                value.push(*escaped);
-                index += 1;
-            }
-            byte => {
-                value.push(byte);
-                index += 1;
-            }
-        }
-    }
-    Err(DependencyError::UnterminatedString)
 }
 
 #[derive(Clone)]
@@ -231,6 +180,12 @@ impl ModuleCompileCache {
                         module: id.clone(),
                         source: source.into(),
                     })?;
+            crate::engine::validate_assignment_targets(&ast).map_err(|error| {
+                DependencyError::UnsafeAst {
+                    module: id.clone(),
+                    message: error.to_string(),
+                }
+            })?;
             ast.set_source(id.as_str());
             staged.insert(
                 id.clone(),
@@ -272,18 +227,19 @@ pub struct ModuleRefreshReport {
 pub enum DependencyError {
     #[error("Rhai imports must use a literal module string")]
     DynamicImport,
-    #[error("unterminated block comment while scanning imports")]
-    UnterminatedBlockComment,
-    #[error("unterminated string while scanning imports")]
-    UnterminatedString,
-    #[error("import path contains invalid UTF-8")]
-    InvalidUtf8Import,
+    #[error("Rhai source failed to tokenize while extracting imports at {position}: {message}")]
+    Lex {
+        position: rhai::Position,
+        message: String,
+    },
     #[error("module `{module}` failed to compile: {source}")]
     Compile {
         module: ModuleId,
         #[source]
         source: Box<rhai::EvalAltResult>,
     },
+    #[error("module `{module}` contains an unsafe Rhai AST: {message}")]
+    UnsafeAst { module: ModuleId, message: String },
     #[error(transparent)]
     ModuleId(#[from] crate::ModuleIdError),
     #[error(transparent)]
@@ -411,12 +367,30 @@ mod tests {
             r#"
                 // import "ignored/line" as ignored;
                 /* import "ignored/block" as ignored; */
-                let message = "import \\"ignored/string\\"";
+                let message = "import \"ignored/string\"";
                 import "components/button" as button;
             "#,
         )
         .unwrap();
         assert_eq!(imports, BTreeSet::from([id("components/button")]));
+    }
+
+    #[test]
+    fn import_extraction_uses_rhai_lexer_for_nested_comments_and_templates() {
+        for source in [
+            r#"/* outer /* inner */ import "../ignored"; */ fn view() { text("ok") }"#,
+            r#"fn view() { text(`example: import "../ignored" as demo;`) }"#,
+        ] {
+            assert!(extract_imports(source).unwrap().is_empty());
+        }
+        assert_eq!(
+            extract_imports(
+                r#"fn view() { text(`before ${#{ value: 1 }.value} after`) }
+                    import "components/real" as real;"#,
+            )
+            .unwrap(),
+            BTreeSet::from([id("components/real")])
+        );
     }
 
     #[test]

@@ -111,7 +111,7 @@ an open parent Dialog, guarding GPUI 0.2.x against nested `defer_draw` panics.
 Three-view embedding cases cover automatic bounds, runtime isolation, shared
 Host overlays, duplicate local IDs, click-through dismissal, key conflicts,
 and dispose/remount.
-The independent workspace currently has 42 tests: 40 GPUI integration cases
+The independent workspace currently has 49 tests: 47 GPUI integration cases
 plus `table_1000` and Component Gallery preparation guards. It contains no
 deleted Table/choice/date/toast native constructor and also guards that window-level
 pointer-capture listeners register during paint rather than GPUI layout.

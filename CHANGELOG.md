@@ -7,6 +7,35 @@ semantic versioning from this release.
 
 ## 0.1.1 - Unreleased
 
+- Runtime identity now distinguishes globally unique program candidates,
+  logical component paths, mount incarnations, and per-view presentation
+  domains. Multi-window geometry/capture no longer collide, and callbacks,
+  timers, and NativeSignal handles from an unmounted same-key component cannot
+  target its replacement.
+- Runtime transactions now checkpoint the lifecycle tree as well as Engine and
+  UI state. Task, subscription, and image-decode cancellation is provisional
+  until the outer commit, while rollback restores old delivery authority and
+  cancels newly created work. Independent async deliveries commit separately;
+  a failed message no longer discards its neighbors.
+- Rhai operation accounting now aggregates nested evaluators under semantics
+  version 2 and gives delayed callbacks fresh quota. The default Engine rejects
+  filesystem imports, import extraction uses Rhai's actual AST, and the pinned
+  Rhai 1.26 constant-container assignment panic is rejected during compilation.
+- Durable values reject non-finite floats and enforce recursive item/depth/byte
+  limits across Rhai, Rust, serde, state, stores, capabilities, handlers, and
+  signals. Sensitive diagnostic payloads are redacted before storage, and
+  automation returns execution failures instead of reporting dispatch success.
+- Component and Store snapshots use copy-on-write state, removing quadratic
+  instance mounting and deep-copying of unrelated large stores. No-op viewport
+  and unrelated virtual-request paths return before opening a transaction.
+- Background tasks use a bounded shared worker pool with panic delivery,
+  admission budgets, and optional cooperative cancellation. Lossless receiver
+  subscriptions wait for capacity instead of treating backpressure as stream
+  termination.
+- CLI updates recompute the complete dependency/asset graph. Multi-file apply
+  stages every write, uses a project lock, and rolls back ordinary commit
+  failures. A single verification manifest now covers every shipped example,
+  while PNG baseline checks fully validate chunks, CRCs, and decoded data.
 - Formal components passed through node-valued props now replay their latest
   caller-owned component snapshot when the receiver rerenders instead of an
   initial stale `UiNode`. Receiver rerenders do not re-execute or restart the

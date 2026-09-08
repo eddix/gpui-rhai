@@ -270,6 +270,18 @@ impl ValueSchema {
         }
     }
 
+    /// Validate a durable host value before converting it back into Rhai.
+    ///
+    /// # Errors
+    ///
+    /// Returns all detected durable-domain or schema violations.
+    pub fn validate_ui_value(&self, value: &UiValue) -> Result<(), SchemaValidationError> {
+        value.validate().map_err(|error| SchemaValidationError {
+            issues: vec![SchemaIssue::new("$", error.to_string())],
+        })?;
+        self.validate(&value.clone().into_dynamic())
+    }
+
     fn validate_at(&self, value: &Dynamic, path: &str, issues: &mut Vec<SchemaIssue>) {
         match self {
             Self::Null => expect_type(value.is_unit(), value, path, "null", issues),

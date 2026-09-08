@@ -16,6 +16,13 @@ performs an offline three-way merge of baseline, application source, and bundled
 registry source. Clean updates replace source and baseline atomically;
 independent edits merge line-wise.
 
+The CLI stages every planned file before replacing any target. An ordinary I/O
+error during commit restores targets already replaced in that invocation.
+Process termination can still leave uniquely named staging/backup artifacts;
+the CLI does not claim filesystem-wide crash transactions. It also leaves the
+project apply lock in place so a later invocation fails closed until the
+artifacts are inspected and the lock is deliberately removed.
+
 Conflicts never overwrite application source. The CLI writes conflict artifacts
 under `.gpui-rhai/conflicts/` and exits unsuccessfully. Resolve the application
 file deliberately, rerun `check`, and update only after reviewing component
