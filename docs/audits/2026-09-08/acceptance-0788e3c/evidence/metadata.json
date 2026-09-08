@@ -1,0 +1,19 @@
+{
+  "commit": "0788e3cbfa243b6e985b2a554c310aa29c33ca5f",
+  "review_base": "29482d5",
+  "initial_worktree_clean": true,
+  "issue_url": "https://github.com/eddix/gpui-rhai/issues/42",
+  "ci_run": "https://github.com/eddix/gpui-rhai/actions/runs/34201369168",
+  "ci_result": "failure: Performance structure tests, missing Linux xcb/xkbcommon libraries",
+  "workspace_passed": 434,
+  "native_passed": 49,
+  "structure_workspace_passed": 2,
+  "structure_workspace_ignored": 2,
+  "release_benchmark_passed": 2,
+  "clippy": "passed",
+  "rustdoc": "passed",
+  "historical_api_compatibility": "explicitly out of scope (A07 withdrawn)",
+  "verdict": "not accepted; targeted fixes required",
+  "confirmed_open_findings": 5,
+  "additional_static_concurrency_findings": 1
+}

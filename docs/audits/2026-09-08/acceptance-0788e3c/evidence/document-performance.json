@@ -1,0 +1,16 @@
+{
+  "schema": "gpui-rhai-document-e2e-v2",
+  "lines": 20000,
+  "bytes": 1008890,
+  "direct_string_rhai_prepare_us": 64451,
+  "native_document_rhai_prepare_us": 1749,
+  "rust_highlight_us": 296293,
+  "rust_diff_us": 607223,
+  "native_ui_prepare_us": 2393,
+  "native_ui_mount_first_frame_us": 957872,
+  "native_ui_resize_dispatch_p95_us": 4368,
+  "native_ui_resize_settle_p50_us": 25547,
+  "native_ui_resize_settle_p95_us": 28185,
+  "diff_hunks": 21,
+  "diff_rows": 20001
+}

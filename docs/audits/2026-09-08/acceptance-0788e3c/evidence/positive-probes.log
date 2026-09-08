@@ -1,0 +1,7 @@
+Probe project: /var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T//gpui-rhai-audit.8jtShZ
+   Compiling gpui-rhai-audit-probes v0.0.0 (/var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T/gpui-rhai-audit.8jtShZ)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.16s
+     Running `target/debug/gpui-rhai-audit-probes`
+const_map_compile_rejected_without_panic=true
+nonfinite_rhai_and_serde_rejected=true
+effect_swap_failed=true old_tree_restored=true old_subscription_active=1 closed=None

@@ -1,0 +1,58 @@
+   Compiling gpui-rhai v0.1.1 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai)
+   Compiling gpui-rhai-native-keyboard-tests v0.0.0 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 26.07s
+     Running tests/keyboard.rs (tests/native-keyboard/target/debug/deps/keyboard-727dbdcea8e1bc6b)
+
+running 49 tests
+test click_context_exposes_untracked_event_target_visual_bounds ... ok
+test autofocus_input_receives_typing_without_any_click ... ok
+test automation_commands_use_mounted_handlers_actions_and_clock ... ok
+test async_workers_wake_the_view_without_input_or_manual_poll ... ok
+test custom_primitive_rejects_invalid_payload_before_host_callback ... ok
+test code_and_diff_viewers_mount_native_document_surfaces ... ok
+test effect_restart_still_delivers_async_task_results ... ok
+test effect_start_state_write_restarts_sibling_effect_and_delivers ... ok
+test combobox_pointer_updates_transactional_rhai_caller_state ... ok
+test element_bounds_self_heals_after_first_prepaint_and_resolves_event_keys ... ok
+test embedded_view_suspend_resume_retains_state_and_rejects_new_elements ... ok
+test explicit_occlusion_blocks_pointer_hits_to_painted_siblings ... ok
+test duplicate_local_overlay_ids_are_namespaced_per_embedded_view ... ok
+test host_callbacks_dispatch_without_a_script_runtime ... ok
+test host_can_suppress_the_builtin_error_banner_without_hiding_last_error ... ok
+test context_menu_anchors_at_the_right_click_and_closes_with_escape ... ok
+test modal_dialog_reclaims_focus_stolen_by_an_embedding_host ... ok
+test grouped_command_initial_reveal_keeps_its_first_header_natural ... ok
+test mounted_view_exposes_failed_render_while_retaining_last_good_root ... ok
+test native_input_updates_rhai_state_and_clipboard_with_unicode ... ok
+test menu_trigger_routes_roving_and_enter_keys_through_current_rhai_state ... ok
+test command_dialog_filters_from_native_input_and_executes_with_enter ... ok
+test nested_overlay_renders_inside_parent_deferred_subtree ... ok
+test native_text_document_revision_invalidates_exact_viewer_reader ... ok
+test multiple_embedded_views_share_host_mechanics_but_isolate_runtime_state ... ok
+test node_prop_component_keeps_latest_ui_when_receiver_rerenders ... ok
+test overlay_default_panel_focus_keeps_keyboard_on_panel ... ok
+test script_runtime_install_is_idempotent_and_key_conflicts_are_explicit ... ok
+test native_textarea_wraps_inserts_newlines_and_limits_graphemes ... ok
+test read_only_input_allows_selection_and_copy_but_rejects_edits ... ok
+test selectable_text_uses_native_selection_and_copy_semantics ... ok
+test scroll_area_thumb_drag_updates_the_retained_scroll_handle ... ok
+test overlay_initial_focus_first_reaches_input_on_every_open ... ok
+test sheet_uses_the_viewport_end_edge_and_restores_controlled_open_state ... ok
+test set_theme_during_typing_keeps_input_focus ... ok
+test slider_previews_drag_natively_and_commits_once_before_keyboard_steps ... ok
+test separate_hosts_in_one_window_keep_overlay_domains_isolated ... ok
+test subscription_callback_state_write_restarts_effect_and_delivers ... ok
+test tab_order_skips_disabled_nodes_and_enter_activates_focus ... ok
+test slider_reverses_horizontal_pointer_and_arrow_semantics_in_rtl ... ok
+test text_input_primitive_dispatches_host_callbacks ... ok
+test grouped_table_headers_stick_through_the_native_virtual_list ... ok
+test virtual_collection_fill_height_uses_the_resolved_flex_viewport ... ok
+test table_1000_example::tests::one_thousand_row_workload_prepares ... ok
+test table_does_not_expand_an_auto_min_width_host_flex_column_across_frames ... ok
+test command_preserves_manual_scroll_and_reveals_controlled_active_item ... ok
+test table_1000_tracks_the_resized_window_viewport ... ok
+test component_gallery_switches_categories_and_live_themes ... ok
+test component_gallery_example::tests::every_gallery_category_prepares_with_all_official_sources ... ok
+
+test result: ok. 49 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.33s
+
