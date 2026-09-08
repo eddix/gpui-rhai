@@ -40,6 +40,13 @@ semantic versioning from this release.
 - Semantic event and action traces retain names and scopes but never their
   payload values. Sensitive state/store values and all event/action payloads are
   therefore absent from retained diagnostics and Inspector snapshots.
+- `virtual_collection` is now strictly a presentation/scroll/reveal/sticky
+  mechanism and no longer creates a second internal roving row or generic
+  background highlight. Command and Combobox remain the sole owners of their
+  enabled-item navigation and controlled active style, so Array and
+  NativeCollection groups, disabled items, and `active_value` cannot diverge.
+  The unused fixed-row `VirtualListSpec`, `VirtualListState`, and
+  `VirtualListMetrics` Rust APIs are removed with that duplicate state model.
 - CLI updates recompute the complete dependency/asset graph. Multi-file apply
   stages every write, uses a project lock, and rolls back ordinary commit
   failures. A single verification manifest now covers every shipped example,
@@ -73,8 +80,8 @@ semantic versioning from this release.
 - CodeViewer and both DiffViewer panes now apply the document typography metrics
   to line-number gutters instead of inheriting a larger ambient font.
 - Sticky virtual section headers no longer create a duplicate presentation layer
-  at their natural position, and structural header rows are excluded from the
-  generic roving-focus sequence.
+  at their natural position; sticky indices remain presentation metadata rather
+  than an interaction-eligibility channel.
 - Command group labels now recede with regular-weight muted typography, gain
   asymmetric breathing room, and visually own indented command rows. Array and
   NativeCollection projections use the same row metric.

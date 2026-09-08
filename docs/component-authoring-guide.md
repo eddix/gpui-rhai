@@ -270,6 +270,14 @@ runtime keeps one header realized and pushes it off with the next; component
 source remains responsible for section identity, controlled collapse, semantic
 labels, and styling. Do not duplicate a realized header as a second UiNode.
 
+The generic collection is presentation-only: it virtualizes, scrolls, reveals,
+and pins rows, but does not own a roving active row or draw an implicit row
+highlight. Components such as Command and Combobox must derive enabled
+navigation values from their complete data model, handle keys at their semantic
+focus owner, render the active style themselves, and pass that same controlled
+key through `reveal_key`. Never use `sticky_headers` as a navigability filter;
+sticky behavior and interaction eligibility are independent contracts.
+
 ## Events
 
 Bind callbacks to nodes rather than calling them during rendering:

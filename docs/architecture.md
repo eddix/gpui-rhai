@@ -296,6 +296,14 @@ scripts. DatePicker is likewise Rhai composition; checked Gregorian arithmetic
 and localized month formatting are generic data APIs rather than a specialized
 UI node.
 
+The generic virtual collection owns measurement, realization, scrolling,
+controlled reveal, and sticky presentation only. It is not a second listbox
+state machine: it does not enter the tab order, choose an active row, infer
+navigation eligibility from sticky indices, or paint a generic active
+background. Command and Combobox derive enabled navigation from their complete
+Array/native model and remain the sole owner of semantic active state and row
+styling.
+
 Input and Textarea share a text-editing core for UTF-8/UTF-16 conversion,
 grapheme boundaries, selection, clipboard, IME marked ranges, and controlled
 reconciliation. The shared core also owns bounded native undo/redo, typing

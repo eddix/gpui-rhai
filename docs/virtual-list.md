@@ -55,6 +55,21 @@ target changes. `follow_tail` and `reveal_key` are mutually exclusive because
 they represent competing automatic-scroll policies. An empty or unknown reveal
 key is rejected at the script boundary.
 
+## Focus and active-item ownership
+
+`virtual_collection` is a presentation and scrolling mechanism. It does not
+create an independent focused row, paint a generic active background, or enter
+the tab sequence. The source component owns its semantic active key, disabled
+policy, keyboard handlers, hover/click behavior, and themed active style; pass
+that same key as `reveal_key` when navigation should keep it visible.
+
+This separation is deliberate. Structural rows such as Command group headings
+and Table group headers may share the same data projection as interactive rows,
+while `sticky_headers` controls only pinned presentation. It is never used as a
+proxy for keyboard eligibility. Command and Combobox therefore keep focus on
+their input/trigger/panel and expose exactly one component-owned active item,
+for both Array and `NativeCollection` data.
+
 Before GPUI's first measurement, a fixed-height collection compares the target
 against its estimated initial viewport. A target already expected to be visible
 keeps the natural `(item 0, offset 0)` origin and therefore does not hide group
@@ -99,7 +114,7 @@ one complete prepaint and returns a height-estimated placeholder for a missing
 item. After prepaint, the renderer constructs one atomic target containing the
 required indices plus already-measured items inside each required index's
 overdraw halo. Treating each halo independently is important because GPUI may
-also request a disconnected offscreen focused item.
+also request a disconnected offscreen item through its own list layout state.
 
 The next foreground runtime turn invokes the retained named renderer only for
 missing target indices in its original module/component context, renders formal
@@ -133,7 +148,8 @@ the pre-realized window; scroll changes update it immediately from
 Pending requested metrics clear when the foreground realization batch drains,
 and failed transactions restore the prior metric snapshot.
 
-The old eager `virtual_list` Rhai constructor and `UiNodeKind` have been deleted.
-The remaining fixed-range policy types are internal helpers of the generic
-`virtual_collection` element; Table, Combobox, and Select now consume only the
-same public data-backed API available to application Rhai.
+The old eager `virtual_list` Rhai constructor, `UiNodeKind`, and unused
+fixed-row `VirtualListSpec/State/Metrics` Rust APIs have been deleted. Table,
+Combobox, and Select consume only the same public data-backed
+`virtual_collection` API available to application Rhai; the retained
+`VariableListState` remains the measured-height policy core.

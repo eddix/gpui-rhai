@@ -126,3 +126,10 @@ reuses filtering/ranking and changes only visible-row projection. The official
 Command source invokes these generic functions and sends only the projected
 virtual window into Rhai. Applications should not call them merely to enumerate
 a NativeCollection; the no-enumeration boundary remains intact.
+
+Array and native Command paths share one active-item contract. Command owns the
+controlled active value and derives edge/adjacent navigation only from enabled
+command rows; group headings and disabled rows never enter that sequence. The
+generic virtual collection consumes the controlled key only for reveal and
+does not maintain or paint a second internal active row. Native fuzzy grouping
+does not need to manufacture sticky indices to express navigation eligibility.

@@ -4,7 +4,6 @@ use std::ops::Range;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::{ComponentInstancePath, UiNode};
@@ -259,60 +258,6 @@ fn index_range(indices: impl IntoIterator<Item = usize>) -> Range<usize> {
     min..max.saturating_add(1)
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-pub struct VirtualListSpec {
-    pub row_height: f64,
-    pub overscan: usize,
-}
-
-impl VirtualListSpec {
-    /// Create an equal-height one-dimensional virtualization specification.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`VirtualListError`] unless row height is finite and positive.
-    pub fn new(row_height: f64, overscan: usize) -> Result<Self, VirtualListError> {
-        if row_height.is_finite() && row_height > 0.0 {
-            Ok(Self {
-                row_height,
-                overscan,
-            })
-        } else {
-            Err(VirtualListError::InvalidRowHeight(row_height))
-        }
-    }
-
-    /// Compute the only item range that a renderer should realize.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`VirtualListError`] for non-finite or negative viewport values.
-    pub fn visible_range(
-        self,
-        item_count: usize,
-        scroll_offset: f64,
-        viewport_height: f64,
-    ) -> Result<Range<usize>, VirtualListError> {
-        validate_viewport(scroll_offset, viewport_height)?;
-        if item_count == 0 {
-            return Ok(0..0);
-        }
-        let first_visible = nonnegative_to_usize((scroll_offset / self.row_height).floor());
-        let visible_count =
-            nonnegative_to_usize((viewport_height / self.row_height).ceil()).saturating_add(1);
-        let start = first_visible.saturating_sub(self.overscan).min(item_count);
-        let end = first_visible
-            .saturating_add(visible_count)
-            .saturating_add(self.overscan)
-            .min(item_count);
-        Ok(start..end)
-    }
-}
-
-fn nonnegative_to_usize(value: f64) -> usize {
-    value.to_string().parse().unwrap_or(usize::MAX)
-}
-
 fn validate_viewport(scroll_offset: f64, viewport_height: f64) -> Result<(), VirtualListError> {
     if !scroll_offset.is_finite() || scroll_offset < 0.0 {
         return Err(VirtualListError::InvalidScrollOffset(scroll_offset));
@@ -321,121 +266,6 @@ fn validate_viewport(scroll_offset: f64, viewport_height: f64) -> Result<(), Vir
         return Err(VirtualListError::InvalidViewport(viewport_height));
     }
     Ok(())
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct VirtualListState {
-    keys: Vec<String>,
-    focused: Option<String>,
-}
-
-impl VirtualListState {
-    /// Install ordered stable keys and preserve focus by identity.
-    ///
-    /// If the focused item was removed, focus moves to the nearest surviving
-    /// index instead of silently jumping to unrelated state by position.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`VirtualListError::DuplicateKey`] for duplicate keys.
-    pub fn set_keys(&mut self, keys: Vec<String>) -> Result<(), VirtualListError> {
-        let mut unique = BTreeSet::new();
-        if let Some(duplicate) = keys.iter().find(|key| !unique.insert((*key).clone())) {
-            return Err(VirtualListError::DuplicateKey(duplicate.clone()));
-        }
-        let previous_index = self
-            .focused
-            .as_ref()
-            .and_then(|focused| self.keys.iter().position(|key| key == focused));
-        if let Some(focused) = &self.focused
-            && !keys.contains(focused)
-        {
-            self.focused = previous_index
-                .and_then(|index| keys.get(index.min(keys.len().saturating_sub(1))))
-                .cloned();
-        }
-        self.keys = keys;
-        Ok(())
-    }
-
-    /// Focus a known item key.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`VirtualListError::UnknownKey`] for absent keys.
-    pub fn focus(&mut self, key: &str) -> Result<(), VirtualListError> {
-        if self.keys.iter().any(|candidate| candidate == key) {
-            self.focused = Some(key.to_owned());
-            Ok(())
-        } else {
-            Err(VirtualListError::UnknownKey(key.to_owned()))
-        }
-    }
-
-    pub fn focus_next(&mut self) {
-        if self.keys.is_empty() {
-            self.focused = None;
-            return;
-        }
-        let next = self
-            .focused
-            .as_ref()
-            .and_then(|focused| self.keys.iter().position(|key| key == focused))
-            .map_or(0, |index| (index + 1).min(self.keys.len() - 1));
-        self.focused = self.keys.get(next).cloned();
-    }
-
-    pub fn focus_previous(&mut self) {
-        if self.keys.is_empty() {
-            self.focused = None;
-            return;
-        }
-        let previous = self
-            .focused
-            .as_ref()
-            .and_then(|focused| self.keys.iter().position(|key| key == focused))
-            .map_or(0, |index| index.saturating_sub(1));
-        self.focused = self.keys.get(previous).cloned();
-    }
-
-    pub fn focus_first(&mut self) {
-        self.focused = self.keys.first().cloned();
-    }
-
-    pub fn focus_last(&mut self) {
-        self.focused = self.keys.last().cloned();
-    }
-
-    #[must_use]
-    pub fn focused(&self) -> Option<&str> {
-        self.focused.as_deref()
-    }
-
-    /// Return realization metrics for diagnostics and performance assertions.
-    ///
-    /// # Errors
-    ///
-    /// Returns viewport validation errors from [`VirtualListSpec`].
-    pub fn metrics(
-        &self,
-        spec: VirtualListSpec,
-        scroll_offset: f64,
-        viewport_height: f64,
-    ) -> Result<VirtualListMetrics, VirtualListError> {
-        let range = spec.visible_range(self.keys.len(), scroll_offset, viewport_height)?;
-        Ok(VirtualListMetrics {
-            item_count: self.keys.len(),
-            realized_count: range.len(),
-            range,
-        })
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct VirtualListMetrics {
-    pub item_count: usize,
-    pub realized_count: usize,
-    pub range: Range<usize>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -653,8 +483,6 @@ impl FenwickTree {
 
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum VirtualListError {
-    #[error("virtual row height must be finite and positive, got {0}")]
-    InvalidRowHeight(f64),
     #[error("scroll offset must be finite and non-negative, got {0}")]
     InvalidScrollOffset(f64),
     #[error("viewport height must be finite and non-negative, got {0}")]
@@ -675,35 +503,6 @@ pub enum VirtualListError {
 mod tests {
     use super::*;
     use crate::UiValue;
-
-    #[test]
-    fn five_thousand_items_have_bounded_realization() {
-        let mut list = VirtualListState::default();
-        list.set_keys((0..5_000).map(|index| format!("row-{index}")).collect())
-            .unwrap();
-        let metrics = list
-            .metrics(VirtualListSpec::new(24.0, 4).unwrap(), 48_000.0, 480.0)
-            .unwrap();
-        assert_eq!(metrics.item_count, 5_000);
-        assert!(metrics.realized_count <= 30, "{metrics:?}");
-    }
-
-    #[test]
-    fn focus_survives_reorder_filter_and_keyboard_moves() {
-        let mut list = VirtualListState::default();
-        list.set_keys(vec!["a".to_owned(), "b".to_owned(), "c".to_owned()])
-            .unwrap();
-        list.focus("b").unwrap();
-        list.set_keys(vec!["c".to_owned(), "b".to_owned(), "a".to_owned()])
-            .unwrap();
-        assert_eq!(list.focused(), Some("b"));
-        list.set_keys(vec!["c".to_owned(), "a".to_owned()]).unwrap();
-        assert_eq!(list.focused(), Some("a"));
-        list.focus_previous();
-        assert_eq!(list.focused(), Some("c"));
-        list.focus_next();
-        assert_eq!(list.focused(), Some("a"));
-    }
 
     #[test]
     fn variable_height_window_is_bounded_and_measurement_preserves_anchor() {
