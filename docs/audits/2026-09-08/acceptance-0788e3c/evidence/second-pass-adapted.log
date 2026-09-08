@@ -1,0 +1,13 @@
+Probe project: /var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T//gpui-rhai-audit.kuUyRu
+   Compiling gpui-rhai-audit-probes v0.0.0 (/var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T/gpui-rhai-audit.kuUyRu)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.21s
+     Running `target/debug/gpui-rhai-audit-probes`
+shared_windows root_id_collision=true a_child_geometry_lost=false a_capture_lost=false
+shared_windows a_root_expected_width=100 actual_width=100
+candidate_alias a=3 b=4 stale_a_with_a=Err(StaleCallback { name: "callback", callback_generation: ScriptGeneration(3), current_generation: ScriptGeneration(4) }) stale_a_with_b=Err(StaleCallback { name: "callback", callback_generation: ScriptGeneration(3), current_generation: ScriptGeneration(4) })
+pause_before_suspend_restored=true unexpectedly_fired=0
+duplicate_provider_rejected=true cached_a_ok=true previously_valid_b_ok=true
+bad_schema_component_rejected=true store_accepted=false value=Err(UnknownStore(StoreId { scope: App, name: "bad" }))
+remount_signal_was_stale=true old_signal_write=Err(Stale(SignalId { component: ComponentInstancePath([ComponentInstanceSegment { component: "App", key: "incarnation" }, ComponentInstanceSegment { component: "Counter", key: "same" }]), incarnation: ComponentIncarnation(2), key: "progress", kind: Float })) old_callback_accepted=false new_instance_count=Some(Integer(0)) old_ref_rebound=true old_node=1 new_node=3
+host_signal_nan_accepted=false
+changed_curry_completed_timer first_fired=1 rearmed_active=1

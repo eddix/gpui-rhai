@@ -1,0 +1,15 @@
+Probe project: /var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T//gpui-rhai-audit.Z4v8p8
+   Compiling gpui-rhai-audit-probes v0.0.0 (/var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T/gpui-rhai-audit.Z4v8p8)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.35s
+     Running `target/debug/gpui-rhai-audit-probes`
+lex issue42: rhai_ok=true extracted=Err(Lex { position: 1:45, message: "Open string is not terminated" })
+lex nested_no_inner_interpolation: rhai_ok=true extracted=Ok({})
+lex sequential_interpolation: rhai_ok=true extracted=Ok({})
+lex three_levels: rhai_ok=true extracted=Ok({})
+lex after_nested_real_import: rhai_ok=true extracted=Err(Lex { position: 1:21, message: "Open string is not terminated" })
+lex import_in_expression: rhai_ok=true extracted=Ok({ModuleId("components/real")})
+lex nested_comment: rhai_ok=true extracted=Ok({})
+incremental parent=0 result=Ok(true) timings=[(Render, 300029)]
+incremental parent=250000 result=Err(Runtime(Evaluate(ErrorTerminated("script operation budget exceeded: 1000001 > 1000000", 3:19)))) timings=[(Render, 1000001)]
+stale_sub first=0 second=0 active=1 reason=Some(GenerationStale)
+sensitive_emit state=String("<sensitive>") trace=Some((Some(String("AUDIT_ONLY_SYNTHETIC_TOKEN")), false))

@@ -1,0 +1,14 @@
+Probe project: /var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T//gpui-rhai-audit.q1WdVe
+   Compiling gpui-rhai-audit-probes v0.0.0 (/var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T/gpui-rhai-audit.q1WdVe)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 4.69s
+     Running `target/debug/gpui-rhai-audit-probes`
+issue42: current=Err(Lex { position: 1:45, message: "Open string is not terminated" }); stack=ok; unoptimized_ast=ok
+after: current=Err(Lex { position: 1:21, message: "Open string is not terminated" }); stack=ok; unoptimized_ast=ok
+multi: current=Err(Lex { position: 1:31, message: "Open string is not terminated" }); stack=ok; unoptimized_ast=ok
+triple: current=Ok({}); stack=ok; unoptimized_ast=ok
+inner_import: current=Err(Lex { position: 1:56, message: "Open string is not terminated" }); stack=ok; unoptimized_ast=ok
+fake: current=Err(Lex { position: 1:37, message: "Open string is not terminated" }); stack=ok; unoptimized_ast=ok
+object: current=Err(Lex { position: 1:37, message: "Open string is not terminated" }); stack=ok; unoptimized_ast=ok
+comment: current=Ok({}); stack=ok; unoptimized_ast=ok
+dead_import: current=Ok({ModuleId("components/real")}); stack=ok; unoptimized_ast=ok
+reference strategies agree with all 50 current registry components; literal-only negative cases rejected

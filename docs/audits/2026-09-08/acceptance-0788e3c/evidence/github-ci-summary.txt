@@ -1,0 +1,7 @@
+portable	Performance structure tests	2026-09-08T07:59:54.1797038Z   ^[[1m^[[94m= ^[[0m^[[1mnote^[[0m: rust-lld: error: unable to find library -lxcb
+portable	Performance structure tests	2026-09-08T07:59:54.1797376Z           rust-lld: error: unable to find library -lxkbcommon
+portable	Performance structure tests	2026-09-08T07:59:54.1797686Z           rust-lld: error: unable to find library -lxkbcommon-x11
+portable	Performance structure tests	2026-09-08T07:59:54.1900113Z   ^[[1m^[[94m= ^[[0m^[[1mnote^[[0m: rust-lld: error: unable to find library -lxcb
+portable	Performance structure tests	2026-09-08T07:59:54.1900445Z           rust-lld: error: unable to find library -lxkbcommon
+portable	Performance structure tests	2026-09-08T07:59:54.1900757Z           rust-lld: error: unable to find library -lxkbcommon-x11
+portable	Performance structure tests	2026-09-08T07:59:54.2190527Z ##[error]Process completed with exit code 101.

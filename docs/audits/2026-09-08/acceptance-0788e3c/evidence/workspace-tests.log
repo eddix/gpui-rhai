@@ -1,0 +1,603 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.86s
+     Running unittests src/lib.rs (target/debug/deps/gpui_rhai-bf08e32030da2e63)
+
+running 335 tests
+test animation::tests::looping_transition_repeats_without_completing ... ok
+test animation::tests::node_declarations_reconcile_without_restarting_same_target ... ok
+test accessibility::tests::semantic_tree_preserves_pressed_expanded_orientation_and_range_values ... ok
+test animation::tests::reduced_motion_settles_without_frames ... ok
+test animation::tests::reduced_motion_keeps_looping_indicators_visible_at_midpoint ... ok
+test accessibility::tests::semantic_descendant_inherits_nearest_realized_geometry ... ok
+test animation::tests::transition_retargets_from_current_sample ... ok
+test animation::tests::animated_nodes_require_keys_and_removed_declarations_cancel ... ok
+test animation::tests::spring_converges_without_rhai_frame_callbacks ... ok
+test accessibility::tests::semantic_tree_flattens_layout_and_resolves_label_relationships ... ok
+test accessibility::tests::presented_tree_excludes_retained_but_unpainted_subtrees ... ok
+test animation::tests::scoped_reconciliation_does_not_remove_other_window_animations ... ok
+test app::tests::error_banner_policy_defaults_on_and_can_be_disabled ... ok
+test action::tests::key_bindings_validate_and_convert_to_gpui ... ok
+test action::tests::disabled_actions_do_not_dispatch ... ok
+test app::tests::missing_entry_has_path_aware_error ... ok
+test app::tests::pointer_callback_return_controls_gpui_propagation ... ok
+test app::tests::embedded_runtime_clock_is_installed_before_initial_render ... ok
+test app::tests::embedded_font_sources_are_validated_and_retained_for_mount ... ok
+test app::tests::reduced_motion_environment_values_are_normalized ... ok
+test app::tests::retained_descendant_resolves_nearest_scroll_ancestor ... ok
+test app::tests::missing_declared_component_asset_fails_preparation ... ok
+test app::tests::script_window_api_queues_open_and_installs_close_confirmation_handler ... ok
+test app::tests::embedded_asset_sources_match_file_provider_namespace ... ok
+test app::tests::prepared_view_starts_engine_and_lifecycle_on_mount ... ok
+test app::tests::declared_component_assets_preload_and_render_without_lifecycle_io ... ok
+test app::tests::script_registered_semantic_action_dispatches_generation_bound_callback ... ok
+test app::tests::prepare_resolves_copied_component_modules ... ok
+test app::tests::file_and_embedded_apps_produce_equivalent_locale_asset_tree ... ok
+test asset::tests::namespace_refresh_preserves_handle_and_replaces_cached_bytes ... ok
+test asset::tests::logical_ids_reject_urls_and_traversal ... ok
+test asset::tests::provider_images_are_cached_behind_opaque_handles ... ok
+test app::tests::theme_handle_state_only_advances_for_an_effective_theme_change ... ok
+test asset::tests::rejected_duplicate_provider_keeps_uncached_assets_from_the_original ... ok
+test asset::tests::svg_current_color_is_semantically_tinted_and_cached ... ok
+test app::tests::startup_rejects_manifest_capabilities_missing_from_host ... ok
+test asset::tests::transaction_rollback_restores_a_cancelled_decode_registration ... ok
+test async_runtime::tests::exact_effect_activation_cancellation_preserves_replacement_work ... ok
+test app::tests::file_view_applies_the_validated_component_stylesheet ... ok
+test asset::tests::raster_decode_delivers_handle_on_foreground_drain ... ok
+test async_runtime::tests::producer_close_and_registry_drop_report_first_close_reason ... ok
+test app::tests::secondary_window_engine_restores_compiled_component_exports ... ok
+test asset::tests::canceled_and_stale_image_decodes_do_not_deliver ... ok
+test async_runtime::tests::task_completion_delivers_on_foreground_drain ... ok
+test async_runtime::tests::subscription_defaults_to_bounded_ordered_delivery ... ok
+test automation::tests::locators_require_one_unambiguous_semantic_node ... ok
+test budget::tests::default_budgets_are_valid_and_limits_are_inclusive ... ok
+test async_runtime::tests::task_cancellation_is_reversible_until_transaction_commit ... ok
+test canvas::tests::scene_rejects_duplicate_keys ... ok
+test canvas::tests::scene_hit_testing_uses_reverse_paint_order_and_path_geometry ... ok
+test capability::tests::async_handler_builds_validated_worker_without_moving_rhai_callbacks ... ok
+test capability::tests::manifest_controls_capability_access_and_versions ... ok
+test capability::tests::manifest_must_cover_component_capability_requirements ... ok
+test capability::tests::output_is_validated_even_for_rust_handlers ... ok
+test clock::tests::manual_clock_is_shared_and_monotonic_by_host_policy ... ok
+test component::tests::component_assets_are_safe_and_part_of_header_identity ... ok
+test automation::tests::json_lines_protocol_correlates_success_and_errors ... ok
+test component::tests::component_collector_is_idempotent_and_rejects_conflicts ... ok
+test component::tests::component_header_is_machine_readable ... ok
+test component::tests::component_reuse_equality_is_conservative_for_nested_nodes ... ok
+test component::tests::header_and_exported_metadata_must_match ... ok
+test component::tests::invalid_nested_schema_definition_is_rejected_at_export ... ok
+test component::tests::component_schema_round_trips_for_tooling ... ok
+test component::tests::invocation_applies_defaults_and_rejects_unknown_props ... ok
+test component::tests::invocation_normalizes_data_style_and_callback_props_for_retention ... ok
+test component::tests::registry_resolves_dependencies_first ... ok
+test component::tests::standard_style_props_are_typed_and_reject_unknown_parts ... ok
+test component::tests::stateful_components_require_keys ... ok
+test async_runtime::tests::window_and_component_scope_cancellation_preserves_app_tasks ... ok
+test backend::tests::grain_harness_checks_values_and_records_diagnostic_blocker ... ok
+test async_runtime::tests::task_panic_becomes_an_error_delivery_and_releases_the_entry ... ok
+test context::tests::event_mutations_are_batched ... ok
+test context::tests::event_target_bounds_are_untracked_and_event_only ... ok
+test canvas::tests::script_paths_are_typed_transformed_clipped_and_budgeted_by_segments ... ok
+test component::tests::invocation_rejects_anonymous_retained_callback_props ... ok
+test context::tests::presentation_geometry_and_capture_are_isolated_per_view ... ok
+test context::tests::focus_by_ref_key_queues_a_window_scoped_retained_command ... ok
+test component_styles::tests::source_decodes_typed_styles_and_validates_parts ... ok
+test context::tests::render_context_rejects_mutation ... ok
+test context::tests::render_signal_reads_disable_component_reuse ... ok
+test context::tests::locale_and_viewport_reads_register_exact_component_dependencies ... ok
+test component_styles::tests::source_rejects_unknown_components_parts_and_non_styles ... ok
+test async_runtime::tests::canceled_and_stale_tasks_never_deliver ... ok
+test context::tests::receiver_subscription_forwards_external_values_until_sender_drop ... ok
+test context::tests::returning_subscription_work_closes_external_emitters_with_reason ... ok
+test component_styles::tests::stylesheet_precedes_instance_overrides_during_component_render ... ok
+test context::tests::transaction_tokens_cannot_cross_runtime_or_commit_unbalanced ... ok
+test context::tests::viewport_class_is_window_scoped_and_script_readable ... ok
+test date::tests::arithmetic_crosses_month_year_and_century_boundaries ... ok
+test context::tests::runtime_transaction_rollback_restores_cancelled_subscription ... ok
+test date::tests::fixed_clock_is_deterministic ... ok
+test date::tests::strict_iso_and_leap_year_validation ... ok
+test context::tests::receiver_subscription_waits_for_lossless_capacity_without_ending_the_stream ... ok
+test date::tests::weekdays_match_known_dates ... ok
+test dependency::tests::changes_invalidate_transitive_dependants ... ok
+test context::tests::script_reads_fixed_today_calendar_and_locale_formatters ... ok
+test dependency::tests::file_watcher_accepts_all_supported_image_formats ... ok
+test dependency::tests::import_extraction_uses_rhai_lexer_for_nested_comments_and_templates ... ok
+test dependency::tests::import_scanner_ignores_comments_and_string_contents ... ok
+test devtools::tests::inspector_reports_host_handler_label_without_opaque_details ... ok
+test devtools::tests::sensitive_trace_payload_is_redacted_before_storage ... ok
+test context::tests::scripts_receive_restricted_context_without_gpui_types ... ok
+test dependency::tests::failed_refresh_does_not_commit_partial_cache ... ok
+test devtools::tests::trace_buffer_is_bounded_and_ordered ... ok
+test context::tests::scripts_use_bounded_nested_and_keyed_store_paths ... ok
+test date::tests::rhai_date_data_api_is_checked_and_month_grid_is_stable ... ok
+test document::tests::host_limits_fail_explicitly_before_unbounded_work ... ok
+test context::tests::script_theme_switch_preserves_component_state_and_ast_generation ... ok
+test document::tests::line_ranges_normalize_crlf_but_retain_terminal_empty_line ... ok
+test document::tests::native_documents_are_revisioned_and_registry_reads_are_exact ... ok
+test devtools::tests::snapshot_captures_source_and_redacts_sensitive_state ... ok
+test diagnostic::tests::runtime_diagnostic_contains_location_component_and_stack ... ok
+test devtools::tests::snapshot_includes_runtime_mechanism_identity_and_state ... ok
+test document_view::tests::code_descriptor_exposes_string_or_native_document_without_rhai_rows ... ok
+test document_view::tests::document_font_resolution_uses_an_installed_monospace_before_fallback ... ok
+test document_view::tests::document_selection_copies_original_cross_line_text ... ok
+test document_view::tests::native_search_supports_case_word_and_regex_policies ... ok
+test document_view::tests::overlapping_highlight_layers_become_ordered_composed_runs ... ok
+test document_view::tests::tab_expansion_preserves_source_and_display_offsets ... ok
+test document_view::tests::wrapping_respects_tabs_and_unicode_grapheme_boundaries ... ok
+test document::tests::diff_is_direction_neutral_refines_unicode_and_collapses_context ... ok
+test document::tests::whitespace_policy_is_explicit ... ok
+test element_ref::tests::pending_geometry_reader_binds_after_the_ref_commits ... ok
+test element_ref::tests::stale_refs_do_not_rebind_after_scope_removal ... ok
+test engine::tests::callbacks_are_rejected_after_reload ... ok
+test effect::tests::unchanged_effects_do_not_restart_and_removed_effects_cleanup ... ok
+test engine::tests::canvas_scene_is_keyed_validated_and_script_constructible ... ok
+test engine::tests::callbacks_cannot_cross_runtime_engines ... ok
+test effect::tests::restarted_effect_uses_a_distinct_async_activation_scope ... ok
+test async_runtime::tests::subscription_throttles_to_latest_value_and_cancels ... ok
+test engine::tests::click_handlers_can_carry_typed_semantic_payloads ... ok
+test engine::tests::default_runtime_rejects_filesystem_imports ... ok
+test engine::tests::execution_timings_cover_compile_and_render ... ok
+test engine::tests::failed_candidate_keeps_last_good_generation_active ... ok
+test engine::tests::final_component_api_registers_render_once_and_invokes_by_id ... ok
+test engine::tests::final_box_and_fragment_atoms_are_distinct_snapshots ... ok
+test engine::tests::independent_candidates_never_share_callback_authority ... ok
+test engine::tests::lazy_error_boundary_catches_rhai_evaluation_failure ... ok
+test engine::tests::inline_svg_atom_is_bounded_and_self_contained ... ok
+test engine::tests::one_program_preparation_shares_identity_across_module_and_entry_compilation ... ok
+test engine::tests::old_component_handles_cannot_target_a_same_key_remount ... ok
+test engine::tests::replay_hydrates_formal_subtrees_inside_nested_dynamic_node_shapes ... ok
+test engine::tests::recompilation_invalidates_previous_generation ... ok
+test engine::tests::retained_callbacks_reject_capturing_functions_and_non_data_curry ... ok
+test engine::tests::rhai_nodes_retain_ordered_handlers_for_all_event_phases ... ok
+test engine::tests::rhai_nodes_attach_only_registered_schema_checked_native_handlers ... ok
+test engine::tests::script_builds_a_declarative_tree ... ok
+test engine::tests::runtime_emits_official_rhai_language_server_definitions ... ok
+test engine::tests::script_builds_a_typed_controlled_overlay ... ok
+test engine::tests::script_builds_an_error_boundary ... ok
+test engine::tests::sticky_virtual_collection_indices_are_bounded_unique_and_top_aligned ... ok
+test engine::tests::self_contained_compile_rejects_dynamic_imports_before_evaluation ... ok
+test engine::tests::text_accepts_typed_inline_span_runs ... ok
+test engine::tests::virtual_collection_reveal_key_is_known_and_has_one_scroll_owner ... ok
+test environment_dependency::tests::environment_dependencies_invalidate_only_matching_domains ... ok
+test engine::tests::unsafe_const_container_assignment_is_rejected_before_evaluation ... ok
+test event::tests::capture_target_bubble_and_immediate_stop_are_ordered ... ok
+test event::tests::host_callback_identity_debug_and_tree_drop_follow_rc_ownership ... ok
+test event::tests::pointer_capture_is_node_scoped_and_clears_on_unmount ... ok
+test event::tests::events_bubble_until_explicitly_handled ... ok
+test event::tests::rhai_cannot_construct_host_callbacks ... ok
+test event::tests::stop_allows_remaining_same_phase_handlers_but_blocks_ancestors ... ok
+test font::tests::font_sources_validate_format_size_and_duplicates ... ok
+test geometry::tests::changed_geometry_invalidates_exact_readers_and_snapshot_restores ... ok
+test inline_svg::tests::inline_svg_accepts_local_gradients_and_current_color ... ok
+test inline_svg::tests::inline_svg_rejects_active_and_external_content ... ok
+test lifecycle::tests::async_capability_completes_through_foreground_delivery ... ok
+test lifecycle::tests::async_image_decode_completes_through_lifecycle_delivery ... ok
+test lifecycle::tests::canvas_scene_budget_is_independent_from_command_budget ... ok
+test lifecycle::tests::failed_event_callback_rolls_back_ui_state ... ok
+test lifecycle::tests::controlled_rerender_synchronously_rebuilds_the_retained_virtual_window ... ok
+test lifecycle::tests::hot_reload_rolls_back_candidate_init_state_on_render_failure ... ok
+test lifecycle::tests::layer_budget_rejects_candidate_before_commit ... ok
+test lifecycle::tests::hot_reload_rolls_back_engine_generation_after_retained_validation_failure ... ok
+test lifecycle::tests::lifecycle_order_and_optional_functions_are_enforced ... ok
+test lifecycle::tests::lifecycle_animation_uses_the_host_runtime_clock ... ok
+test dependency::tests::file_watcher_reports_rhai_changes ... ok
+test lifecycle::tests::missing_optional_lifecycle_functions_are_valid ... ok
+test lifecycle::tests::retained_candidate_over_host_budget_is_rejected_before_commit ... ok
+test document::tests::rhai_and_go_are_built_in_and_unknown_languages_fall_back_to_plain_text ... ok
+test lifecycle::tests::subscription_start_outside_a_declarative_effect_is_rejected ... ok
+test lifecycle::tests::suspend_resume_preserves_state_and_freezes_animation_time ... ok
+test lifecycle::tests::subscription_capability_streams_until_close ... ok
+test locale::tests::dates_and_numbers_use_selected_bundle_metadata ... ok
+test locale::tests::live_locale_switch_advances_only_locale_generation ... ok
+test locale::tests::malformed_calendar_and_number_contracts_fail_load ... ok
+test locale::tests::rtl_direction_follows_scope_window_and_app_precedence ... ok
+test locale::tests::scope_precedence_and_fallback_are_deterministic ... ok
+test native_collection::tests::fuzzy_projection_filters_groups_projects_and_reuses_structural_order ... ok
+test native_collection::tests::grouped_table_projection_collapses_rows_but_retains_header_counts ... ok
+test native_collection::tests::grouped_table_projection_flattens_headers_and_sorted_rows ... ok
+test lifecycle::tests::suspended_reload_migrates_atomically_and_keeps_last_good_on_failure ... ok
+test native_collection::tests::validates_keys_and_caches_rust_sort_order ... ok
+test native_collection::tests::tracked_replacement_invalidates_only_collection_readers ... ok
+test native_handler::tests::descriptor_rejects_unsafe_ids_and_events ... ok
+test node::tests::component_replacement_preserves_every_external_presentation_mutation ... ok
+test node::tests::component_snapshot_activates_lazily_and_stays_free_of_outer_presentation ... ok
+test node::tests::node_identity_style_source_and_attributes_are_runtime_owned ... ok
+test overlay::tests::centered_dialog_ignores_anchor_and_fits_viewport ... ok
+test overlay::tests::clicking_trigger_is_not_an_outside_dismissal ... ok
+test overlay::tests::dismissing_parent_closes_nested_children_top_down ... ok
+test overlay::tests::escape_closes_only_topmost_dismissible_overlay ... ok
+test overlay::tests::placement_flips_then_clamps_to_window ... ok
+test overlay::tests::tooltip_delay_cancels_on_leave_and_transitions_deterministically ... ok
+test locale::tests::month_year_pattern_controls_date_picker_header_order ... ok
+test overlay_element::tests::removing_a_view_closes_overlays_without_callbacks ... ok
+test overlay_element::tests::window_coordinator_shares_parent_stack_and_resets_per_frame ... ok
+test primitive::tests::custom_primitive_events_are_normalized ... ok
+test primitive::tests::custom_primitive_props_and_keys_are_validated ... ok
+test primitive::tests::primitive_event_emitter_holds_only_a_weak_registry_reference ... ok
+test primitive::tests::native_panics_are_converted_to_primitive_errors ... ok
+test primitive::tests::primitive_identity_uses_retained_node_not_component_local_key ... ok
+test primitive::tests::primitive_theme_exposes_only_resolved_semantic_snapshot ... ok
+test primitive::tests::successful_tree_cleanup_unmounts_removed_keyed_instances ... ok
+test range_input::tests::horizontal_rtl_geometry_keeps_the_fill_between_minimum_and_thumb ... ok
+test range_input::tests::range_values_clamp_and_snap_to_step ... ok
+test primitive::tests::primitive_resource_scope_rolls_back_and_continues_after_cleanup_panic ... ok
+test node::tests::selectable_rejects_non_text_nodes_at_the_script_boundary ... ok
+test lifecycle::tests::virtual_realization_commits_the_complete_target_window_and_prunes_old_items ... ok
+test renderer::tests::aligned_text_nodes_become_flex_content_boxes ... ok
+test renderer::tests::logical_overlay_edges_resolve_against_text_direction ... ok
+test reload::tests::failed_reload_preserves_last_good_tree_and_generation ... ok
+test renderer::tests::logical_spacing_resolves_to_physical_edges_in_both_directions ... ok
+test renderer::tests::native_signal_values_override_approved_properties_without_rhai ... ok
+test renderer::tests::property_specific_layout_values_reach_gpui_without_loss ... ok
+test renderer::tests::pseudo_paint_preserves_native_border_text_and_opacity_states ... ok
+test renderer::tests::pointer_payload_uses_committed_local_geometry_and_canvas_hit_key ... ok
+test renderer::tests::retained_tab_order_reads_explicit_group_indices ... ok
+test renderer::tests::rtl_keyboard_navigation_maps_physical_arrows_to_logical_handlers ... ok
+test renderer::tests::symbolic_typography_resolves_and_explicit_fields_win ... ok
+test renderer::tests::sampled_animation_values_override_dimensions_and_transform_without_rhai ... ok
+test responsive::tests::discrete_classes_change_only_at_configured_boundaries ... ok
+test retained::tests::duplicate_key_rejects_candidate_without_consuming_ids ... ok
+test retained::tests::fragment_rejects_layout_or_interaction_decoration ... ok
+test retained::tests::keyed_reorder_preserves_ids_and_reports_moves ... ok
+test retained::tests::kind_change_replaces_only_the_changed_subtree ... ok
+test retained::tests::named_child_groups_isolate_duplicate_slot_keys ... ok
+test schema::tests::invalid_definitions_are_rejected ... ok
+test schema::tests::bounds_and_unions_report_precise_failures ... ok
+test schema::tests::length_ui_value_and_asset_are_distinct ... ok
+test schema::tests::node_callback_and_handle_types_are_distinct ... ok
+test schema::tests::objects_report_all_precise_paths ... ok
+test renderer::tests::declarative_nodes_and_typed_styles_convert_without_a_gpui_context ... ok
+test reload::tests::successful_reload_atomically_replaces_tree ... ok
+test script_lint::tests::known_call_lint_accepts_local_module_core_and_standard_calls ... ok
+test script_lint::tests::known_call_lint_characterizes_rhai_language_intrinsics ... ok
+test script_lint::tests::known_call_lint_checks_unexecuted_branches_and_arities ... ok
+test script_source::tests::embedded_source_is_content_addressed ... ok
+test script_lint::tests::known_call_lint_checks_qualified_installed_modules ... ok
+test script_source::tests::missing_embedded_module_is_explicit ... ok
+test scrollbar::tests::vertical_track_uses_the_logical_end_edge ... ok
+test scrollbar::tests::visibility_contract_is_strict_and_round_trips ... ok
+test signal::tests::reconcile_preserves_value_and_revision_for_compatible_identity ... ok
+test signal::tests::stale_and_type_mismatched_writes_are_atomic ... ok
+test script_source::tests::file_and_embedded_sources_have_identical_resolution ... ok
+test source::tests::cyclic_imports_report_the_cycle ... ok
+test source::tests::module_ids_reject_escape_paths ... ok
+test source::tests::missing_modules_are_diagnostic_errors ... ok
+test source::tests::module_init_accepts_literal_consts_and_direct_pure_definition ... ok
+test source::tests::module_init_rejects_effectful_calls_before_evaluation ... ok
+test source::tests::module_init_rejects_mutable_globals_and_computed_definitions ... ok
+test source::tests::registered_modules_can_be_imported ... ok
+test state::tests::failed_render_does_not_change_committed_state ... ok
+test state::tests::scoped_commit_preserves_other_window_roots_and_remove_scope_cleans_one ... ok
+test state::tests::snapshots_share_instances_until_one_store_mutates ... ok
+test state::tests::successful_render_cleans_unreachable_instances ... ok
+test state::tests::successful_render_resets_only_incompatible_fields ... ok
+test state::tests::updates_are_schema_checked ... ok
+test store::tests::deserialized_schema_defaults_are_validated_before_store_declaration ... ok
+test store::tests::keyed_item_reader_ignores_reorder_but_observes_item_change ... ok
+test source::tests::resolver_reuses_only_content_matching_cached_asts ... ok
+test store::tests::removing_window_clears_window_store ... ok
+test store::tests::repeated_value_does_not_invalidate ... ok
+test store::tests::snapshots_share_large_store_values_until_a_write ... ok
+test store::tests::nested_writes_invalidate_only_changed_path_and_whole_readers ... ok
+test store::tests::successful_subtree_reconcile_removes_stale_app_store_readers ... ok
+test store::tests::writes_invalidate_only_exact_field_readers ... ok
+test style::tests::caller_overlay_wins_deterministically ... ok
+test style::tests::disabled_pseudo_state_has_final_precedence ... ok
+test style::tests::invalid_lengths_are_rejected ... ok
+test style::tests::script_builds_typed_styles ... ok
+test style::tests::script_layout_values_separate_auto_and_signed_offsets_from_lengths ... ok
+test style::tests::script_builds_extended_layout_paint_and_typography ... ok
+test style::tests::script_uses_validated_symbolic_typography_roles ... ok
+test style::tests::script_selects_uniform_border_style ... ok
+test text_area::tests::config_rejects_controlled_values_over_grapheme_limit ... ok
+test text_area::tests::visual_line_layout_maps_positions_and_selection ... ok
+test text_edit::tests::ime_can_temporarily_exceed_then_clamps_only_marked_text ... ok
+test text_edit::tests::ime_composition_is_one_revision_and_external_control_resets_history ... ok
+test text_edit::tests::max_length_counts_extended_graphemes_and_credits_selection ... ok
+test text_edit::tests::oversized_paste_truncates_at_grapheme_boundary ... ok
+test text_edit::tests::physical_line_boundaries_are_stable ... ok
+test text_edit::tests::undo_redo_coalesces_typing_and_restores_selection ... ok
+test text_edit::tests::utf16_offsets_never_split_extended_graphemes ... ok
+test text_input::tests::grapheme_navigation_does_not_split_emoji_or_combining_text ... ok
+test text_input::tests::horizontal_scroll_keeps_the_active_cursor_inside_the_viewport ... ok
+test text_input::tests::marked_text_replacement_tracks_ime_range ... ok
+test text_input::tests::utf16_round_trip_supports_cjk_and_surrogate_pairs ... ok
+test theme::tests::document_palette_defaults_preserve_explicit_theme_tuning ... ok
+test theme::tests::missing_semantic_token_is_rejected ... ok
+test theme::tests::namespaced_typed_tokens_validate_and_resolve_colors ... ok
+test theme::tests::replacing_a_variant_preserves_identity_and_advances_generation ... ok
+test style::tests::strict_color_literals_share_one_typed_value_path ... ok
+test theme::tests::scope_precedes_window_and_app_preferences ... ok
+test theme::tests::semantic_spacing_and_radius_lengths_resolve_without_recursion ... ok
+test theme::tests::switching_theme_only_advances_theme_generation ... ok
+test theme::tests::typography_roles_are_required_validated_and_resolved ... ok
+test timer::tests::changing_signature_restarts_and_removal_cleans_scope ... ok
+test timer::tests::reconcile_preserves_deadline_pause_and_one_shot_completion ... ok
+test timer::tests::view_resume_does_not_clear_an_explicit_pause ... ok
+test value::tests::bounded_paths_read_and_replace_existing_nested_values ... ok
+test value::tests::keyed_item_paths_survive_array_reorder ... ok
+test value::tests::nested_values_round_trip ... ok
+test value::tests::non_finite_numbers_are_rejected_from_rhai_and_serialization ... ok
+test value::tests::ui_nodes_cannot_cross_capability_boundary ... ok
+test theme::tests::rhai_theme_source_is_typed_and_validated ... ok
+test virtual_list::tests::focus_survives_reorder_filter_and_keyboard_moves ... ok
+test virtual_list::tests::variable_height_measurements_survive_reorder_and_tail_alignment ... ok
+test virtual_list::tests::five_thousand_items_have_bounded_realization ... ok
+test virtual_list::tests::virtual_collection_metrics_track_frame_scroll_requests_and_rollback ... ok
+test virtual_list_element::tests::frame_target_does_not_fill_the_gap_to_an_offscreen_focused_item ... ok
+test virtual_list_element::tests::frame_target_prunes_items_outside_the_current_halo ... ok
+test virtual_list_element::tests::frame_target_retains_cached_overdraw_without_oscillation ... ok
+test virtual_list_element::tests::initial_reveal_keeps_estimated_visible_predecessors ... ok
+test virtual_list_element::tests::sticky_sections_select_the_latest_header_and_push_before_the_next ... ok
+test window::tests::commands_validate_identity_lifecycle_and_duplicates ... ok
+test window::tests::embedded_view_policy_rejects_window_commands_at_call_site ... ok
+test window::tests::invalid_window_specs_never_reserve_an_id ... ok
+test virtual_list::tests::variable_height_window_is_bounded_and_measurement_preserves_anchor ... ok
+test engine::tests::delayed_component_callback_starts_with_a_fresh_operation_budget ... ok
+test script_lint::tests::known_call_lint_restores_engine_optimization_after_parse_failure ... ok
+test script_lint::tests::known_call_lint_normalizes_native_method_receiver_arity ... ok
+test engine::tests::nested_component_work_consumes_one_shared_operation_budget ... ok
+test document::tests::host_registered_syntax_participates_in_background_safe_snapshots ... ok
+test document::tests::public_launch_language_pack_resolves_every_declared_language ... ok
+
+test result: ok. 335 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.10s
+
+     Running tests/custom_primitive.rs (target/debug/deps/custom_primitive-97986e14de53296b)
+
+running 1 test
+test downstream_crate_registers_namespaced_primitive ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.94s
+
+     Running tests/formal_component.rs (target/debug/deps/formal_component-d49705ad96743416)
+
+running 21 tests
+test duplicate_stateful_component_keys_are_rejected ... ok
+test callback_props_execute_in_the_caller_state_scope ... ok
+test declarative_effects_start_restart_and_cleanup_in_imported_module_context ... ok
+test component_reuse_invalidates_on_calendar_environment_change ... ok
+test element_refs_follow_retained_node_identity_and_fail_stale_after_unmount ... ok
+test data_backed_virtual_collection_realizes_only_requested_items_off_layout_path ... ok
+test hot_reload_cleans_old_effect_context_before_starting_new_generation ... ok
+test native_signal_updates_preserve_identity_without_component_invalidation ... ok
+test local_state_callback_scope_and_reload_cleanup_are_end_to_end ... ok
+test nested_callback_scope_is_never_inferred_from_a_private_function_name ... ok
+test dirty_transparent_child_promotes_to_the_nearest_replaceable_component ... ok
+test receiver_rerender_replays_the_latest_node_prop_component_snapshot ... ok
+test raw_node_slots_keep_the_callers_callback_provenance ... ok
+test receiver_rerender_does_not_restart_replayed_node_prop_resources ... ok
+test reused_component_keeps_store_reader_dependency ... ok
+test composed_semantic_callback_props_execute_in_the_caller_state_scope ... ok
+test rejected_child_candidate_cannot_leak_through_the_shared_node_snapshot ... ok
+test reused_component_preserves_effect_and_async_ownership ... ok
+test root_dirty_render_reuses_unchanged_components_and_respects_dirty_descendants ... ok
+test suspension_cleans_effects_and_resume_restarts_fresh_activations ... ok
+test incremental_component_renders_match_forced_full_renders_over_event_sequences ... ok
+
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.18s
+
+     Running tests/official_registry.rs (target/debug/deps/official_registry-cf877e77a9c93913)
+
+running 43 tests
+test m1_palette_adaptations_implement_the_semantic_contract ... ok
+test code_and_diff_viewers_accept_inline_and_host_owned_documents ... ok
+test bundled_themes_share_the_dense_square_metric_contract ... ok
+test bundled_theme_text_pairs_meet_small_text_contrast ... ok
+test bundled_themes_materialize_complete_document_palettes ... ok
+test command_filters_native_collection_and_keeps_large_rows_out_of_rhai ... ok
+test command_fuzzy_search_and_keyboard_action_are_composable_and_controlled ... ok
+test m2_visual_primitives_export_fallbacks_and_rust_animations ... ok
+test context_menu_and_sheet_use_generic_pointer_and_edge_overlay_policies ... ok
+test official_component_sources_reject_decorative_visual_drift ... ok
+test m2_composites_export_slots_animation_and_keyboard_payloads ... ok
+test official_components_validate_props_and_merge_standard_style_overrides ... ok
+test m2_control_sources_emit_typed_values_and_roving_keys ... ok
+test official_default_theme_pair_satisfies_one_semantic_contract ... ok
+test official_divider_is_typed_decorative_layout ... ok
+test official_icon_selects_explicit_rtl_resource_pair ... ok
+test official_combobox_is_public_overlay_and_virtual_collection_composition ... ok
+test official_icon_uses_only_logical_asset_and_opaque_image_handle ... ok
+test official_input_wraps_keyed_native_text_input_primitive ... ok
+test official_m0_components_compile_export_and_render_together ... ok
+test official_pagination_rejects_duplicate_page_sizes ... ok
+test nested_menu_preserves_parent_overlay_identity ... ok
+test official_registry_has_no_privileged_component_constructors ... ok
+test official_popover_and_dialog_use_native_overlay_nodes ... ok
+test official_combobox_groups_and_routes_keyboard_in_rhai ... ok
+test official_pagination_page_window_covers_ellipsis_transitions ... ok
+test official_table_groups_array_rows_with_controlled_collapse ... ok
+test official_table_groups_native_collection_without_materializing_rows_in_rhai ... ok
+test official_pagination_page_size_emits_one_atomic_reset ... ok
+test official_combobox_rejects_invalid_choice_identity ... ok
+test official_table_is_public_data_backed_rhai_composition ... ok
+test scroll_area_decorates_the_generic_retained_scroll_node ... ok
+test toast_source_builds_public_layers_and_declarative_timers ... ok
+test official_textarea_wraps_independent_multiline_primitive ... ok
+test slider_uses_the_public_native_range_input_with_range_semantics ... ok
+test official_pagination_is_pure_rhai_composition ... ok
+test window_bars_are_source_owned_compositions_without_native_authority ... ok
+test radio_group_forwards_pointer_and_keyboard_changes_to_its_caller ... ok
+test official_select_uses_scalar_controlled_choice_semantics ... ok
+test tooltip_and_menu_use_window_overlay_policies ... ok
+test toggle_group_routes_pointer_and_roving_keyboard_changes_to_caller_state ... ok
+test public_launch_static_components_compile_and_compose ... ok
+test official_date_picker_consumes_locale_and_strict_iso_values ... ok
+
+test result: ok. 43 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.29s
+
+     Running unittests examples/artistic_showcase.rs (target/debug/examples/artistic_showcase-e00a8723c4a45e5e)
+
+running 1 test
+test tests::pure_rhai_artistic_showcase_prepares ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.06s
+
+     Running unittests examples/code_viewer.rs (target/debug/examples/code_viewer-54804106d80e6d91)
+
+running 1 test
+test tests::code_viewer_example_prepares ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.08s
+
+     Running unittests examples/component_gallery.rs (target/debug/examples/component_gallery-9cf388813b3a159f)
+
+running 1 test
+test tests::every_gallery_category_prepares_with_all_official_sources ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.88s
+
+     Running unittests examples/dashboard_layout.rs (target/debug/examples/dashboard_layout-cca59fb849f3c485)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples/data_table.rs (target/debug/examples/data_table-ec0635f1230b8622)
+
+running 1 test
+test tests::every_data_table_visual_state_prepares ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.90s
+
+     Running unittests examples/diff_viewer.rs (target/debug/examples/diff_viewer-fbba8ddca7bfb795)
+
+running 1 test
+test tests::diff_viewer_example_prepares ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.89s
+
+     Running unittests examples/embedded_hello_world.rs (target/debug/examples/embedded_hello_world-3dfbf74d07350a5c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples/embedded_views.rs (target/debug/examples/embedded_views-f44ef6d0f4d38a67)
+
+running 1 test
+test tests::all_widget_variants_prepare_independently ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.13s
+
+     Running unittests examples/extension_host.rs (target/debug/examples/extension_host-f31f308dbaeec2ad)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples/form_showcase.rs (target/debug/examples/form_showcase-7c3792d845fd33a3)
+
+running 1 test
+test tests::date_picker_visual_state_opens_the_real_component_panel ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples/hello_world.rs (target/debug/examples/hello_world-341358602ced5fca)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples/host_owned_tree.rs (target/debug/examples/host_owned_tree-40c9c4edce942ebf)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples/mini_timeline.rs (target/debug/examples/mini_timeline-05023a48bcc18808)
+
+running 1 test
+test tests::pure_rhai_mini_timeline_prepares ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.89s
+
+     Running unittests examples/multi_window.rs (target/debug/examples/multi_window-374193877cc57756)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples/native_overlay_smoke.rs (target/debug/examples/native_overlay_smoke-a8d82725c09bd122)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples/native_virtual_list_smoke.rs (target/debug/examples/native_virtual_list_smoke-9fe7a6641b7d7074)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples/performance_probe.rs (target/debug/examples/performance_probe-77ff05cf42dbe019)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples/phase0_probe.rs (target/debug/examples/phase0_probe-b7d2be363ce52671)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples/settings_panel.rs (target/debug/examples/settings_panel-35f8a29f1ad606cb)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples/table_1000.rs (target/debug/examples/table_1000-92b904647168a743)
+
+running 1 test
+test tests::one_thousand_row_workload_prepares ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.92s
+
+     Running unittests examples/variable_height_chat.rs (target/debug/examples/variable_height_chat-503adc09b218e94d)
+
+running 1 test
+test tests::variable_height_chat_prepares ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.27s
+
+     Running unittests src/lib.rs (target/debug/deps/gpui_rhai_cli-30d4c32f84d2030e)
+
+running 23 tests
+test tests::bundled_component_icons_share_an_explicit_24px_coordinate_space ... ok
+test tests::apply_stages_every_write_before_replacing_any_target ... ok
+test tests::dry_run_plan_has_zero_writes_until_applied ... ok
+test tests::apply_detects_changes_after_planning ... ok
+test tests::embed_plan_contains_entry_components_theme_locale_and_assets ... ok
+test tests::check_lints_known_calls_in_unexecuted_branches ... ok
+test tests::editor_metadata_comes_from_installed_component_schemas ... ok
+test tests::init_never_overwrites_existing_main ... ok
+test tests::line_merge_combines_independent_insertions ... ok
+test tests::check_executes_the_headless_initial_view ... ok
+test tests::update_adds_missing_bundled_themes_without_overwriting_owned_sources ... ok
+test tests::update_conflict_preserves_sources_and_writes_artifact ... ok
+test tests::update_installs_new_transitive_dependencies_and_records_the_target_graph ... ok
+test tests::update_three_way_merges_non_overlapping_local_changes ... ok
+test theme_studio::tests::canonical_theme_round_trips_and_preserves_attribution ... ok
+test tests::adding_icon_installs_core_svg_asset_pack ... ok
+test theme_studio::tests::studio_source_contains_every_official_component ... ok
+test tests::check_rejects_invalid_locales_and_duplicate_logical_assets ... ok
+test tests::init_add_and_check_form_a_reproducible_flow ... ok
+test tests::check_validates_the_typed_component_stylesheet ... ok
+test tests::complex_components_install_transitive_sources_and_assets ... ok
+test tests::every_bundled_component_passes_known_call_validation ... ok
+test theme_studio::tests::studio_executes_the_real_component_specimen ... ok
+
+test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.82s
+
+     Running unittests src/main.rs (target/debug/deps/gpui_rhai-e9c6455c110a64b8)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/gpui_rhai_registry-673d4471fd25fdf1)
+
+running 1 test
+test tests::release_snapshot_has_the_expected_catalog_size ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
