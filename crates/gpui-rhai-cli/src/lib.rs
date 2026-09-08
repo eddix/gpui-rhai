@@ -2086,6 +2086,37 @@ mod tests {
     }
 
     #[test]
+    fn check_accepts_nested_templates_and_imports_after_them() {
+        let directory = fixture();
+        let project = Project::new(directory.path());
+        project.plan_init().unwrap().apply().unwrap();
+        project
+            .plan_add(&BundledRegistry::load().unwrap(), &["button".to_owned()])
+            .unwrap()
+            .apply()
+            .unwrap();
+        fs::write(
+            directory.path().join("ui/main.rhai"),
+            r#"
+                fn nested_label() {
+                    `外层${if true { "中文" } else { `内层${1}` }}结束`
+                }
+                import "components/button" as button;
+                fn view(ctx) {
+                    column([
+                        text(nested_label()),
+                        button::Button(#{ text: "Ready" }),
+                    ])
+                }
+            "#,
+        )
+        .unwrap();
+
+        let report = project.check().unwrap();
+        assert_eq!(report.components, 1);
+    }
+
+    #[test]
     fn check_lints_known_calls_in_unexecuted_branches() {
         let directory = fixture();
         let project = Project::new(directory.path());

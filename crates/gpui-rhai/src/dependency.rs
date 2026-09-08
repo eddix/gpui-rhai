@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use rhai::{AST, Engine, Token};
+use rhai::{AST, ASTNode, Engine, Expr, OptimizationLevel, Stmt};
 use thiserror::Error;
 
 use crate::{ModuleId, ScriptSource, ScriptSourceError};
@@ -72,62 +72,49 @@ impl ModuleDependencyGraph {
     }
 }
 
-/// Extract literal Rhai imports while ignoring comments and string contents.
+/// Extract literal Rhai imports from an unoptimized Rhai AST.
 ///
 /// # Errors
 ///
-/// Returns [`DependencyError`] for a dynamic/unterminated import or invalid
-/// module ID.
+/// Returns [`DependencyError`] for invalid Rhai syntax, a dynamic import, or an
+/// invalid module ID.
 pub fn extract_imports(source: &str) -> Result<BTreeSet<ModuleId>, DependencyError> {
-    let parser = Engine::new_raw();
-    let scripts = [source];
-    let (tokens, control) = parser.lex(&scripts);
+    let mut parser = Engine::new_raw();
+    parser.set_optimization_level(OptimizationLevel::None);
+    parser.set_max_expr_depths(64, 32);
+    let ast = parser
+        .compile(source)
+        .map_err(|error| DependencyError::Parse {
+            position: error.position(),
+            message: error.to_string(),
+        })?;
+    extract_imports_from_ast(&ast)
+}
+
+fn extract_imports_from_ast(ast: &AST) -> Result<BTreeSet<ModuleId>, DependencyError> {
     let mut imports = BTreeSet::new();
-    let mut expects_module = false;
-    let mut interpolation_depth: Option<usize> = None;
-    for (token, position) in tokens {
-        if expects_module {
-            match token {
-                Token::StringConstant(module) => {
-                    imports.insert(ModuleId::parse(module.to_string())?);
-                    expects_module = false;
-                    continue;
+    let mut error = None;
+    ast.walk(&mut |path| {
+        let Some(ASTNode::Stmt(Stmt::Import(import, _))) = path.last() else {
+            return true;
+        };
+        if let Expr::StringConstant(module, ..) = &import.0 {
+            match ModuleId::parse(module.to_string()) {
+                Ok(module) => {
+                    imports.insert(module);
+                    true
                 }
-                Token::LexError(error) => {
-                    return Err(DependencyError::Lex {
-                        position,
-                        message: error.to_string(),
-                    });
+                Err(source) => {
+                    error = Some(DependencyError::ModuleId(source));
+                    false
                 }
-                _ => return Err(DependencyError::DynamicImport),
             }
+        } else {
+            error = Some(DependencyError::DynamicImport);
+            false
         }
-        match (&token, interpolation_depth) {
-            (Token::InterpolatedString(_), _) => interpolation_depth = Some(0),
-            (Token::LeftBrace, Some(depth)) => interpolation_depth = Some(depth + 1),
-            (Token::RightBrace, Some(1)) => {
-                interpolation_depth = None;
-                control.borrow_mut().is_within_text = true;
-            }
-            (Token::RightBrace, Some(depth)) => interpolation_depth = Some(depth.saturating_sub(1)),
-            _ => {}
-        }
-        match token {
-            Token::Import => expects_module = true,
-            Token::LexError(error) => {
-                return Err(DependencyError::Lex {
-                    position,
-                    message: error.to_string(),
-                });
-            }
-            Token::EOF => break,
-            _ => {}
-        }
-    }
-    if expects_module {
-        return Err(DependencyError::DynamicImport);
-    }
-    Ok(imports)
+    });
+    error.map_or(Ok(imports), Err)
 }
 
 #[derive(Clone)]
@@ -227,8 +214,8 @@ pub struct ModuleRefreshReport {
 pub enum DependencyError {
     #[error("Rhai imports must use a literal module string")]
     DynamicImport,
-    #[error("Rhai source failed to tokenize while extracting imports at {position}: {message}")]
-    Lex {
+    #[error("Rhai source failed to parse while extracting imports at {position}: {message}")]
+    Parse {
         position: rhai::Position,
         message: String,
     },
@@ -376,7 +363,7 @@ mod tests {
     }
 
     #[test]
-    fn import_extraction_uses_rhai_lexer_for_nested_comments_and_templates() {
+    fn import_extraction_uses_rhai_parser_for_nested_comments_and_templates() {
         for source in [
             r#"/* outer /* inner */ import "../ignored"; */ fn view() { text("ok") }"#,
             r#"fn view() { text(`example: import "../ignored" as demo;`) }"#,
@@ -391,6 +378,54 @@ mod tests {
             .unwrap(),
             BTreeSet::from([id("components/real")])
         );
+    }
+
+    #[test]
+    fn import_extraction_uses_unoptimized_ast_for_nested_templates() {
+        let cases = [
+            (
+                r#"let x = `a${if true { "" } else { `b${1}` }}`;"#,
+                BTreeSet::new(),
+            ),
+            (
+                r#"let x = `a${`b${1}`}`; import "components/real" as real;"#,
+                BTreeSet::from([id("components/real")]),
+            ),
+            (r"let x = `a${`b${1}c${2}`}d${3}`;", BTreeSet::new()),
+            (r"let x = `a${`b${`c${1}`}`}`;", BTreeSet::new()),
+            (
+                r#"let x = `a${{ import "components/real" as real; `b${1}` }}`;"#,
+                BTreeSet::from([id("components/real")]),
+            ),
+            (r#"let x = `a${`import "../fake" ${1}`}`;"#, BTreeSet::new()),
+            (
+                r"let x = `a${#{ value: `b${#{ nested: 1 }.nested}` }.value}`;",
+                BTreeSet::new(),
+            ),
+            (
+                r#"/* outer /* inner */ import "../fake"; */ let x = `a${1}`;"#,
+                BTreeSet::new(),
+            ),
+            (
+                r#"if false { import "components/dead" as dead; }"#,
+                BTreeSet::from([id("components/dead")]),
+            ),
+        ];
+        for (source, expected) in cases {
+            assert_eq!(extract_imports(source).unwrap(), expected, "{source}");
+        }
+    }
+
+    #[test]
+    fn import_extraction_rejects_dynamic_and_invalid_imports() {
+        assert!(
+            extract_imports(r#"let module = "components/real"; import module as real;"#).is_err()
+        );
+        assert!(extract_imports(r#"import "../outside" as outside;"#).is_err());
+        assert!(matches!(
+            extract_imports("let broken = `unterminated${1}"),
+            Err(DependencyError::Parse { .. })
+        ));
     }
 
     #[test]

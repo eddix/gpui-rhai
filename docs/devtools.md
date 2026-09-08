@@ -28,9 +28,10 @@ adds one `Reconcile` trace with mounted/preserved/moved/unmounted counts and a
 bounded sample of stable `NodeId` values. Failed candidates emit no reconcile
 trace, so the trace stream describes only committed retained mutations.
 
-Opaque handles never reveal their numeric identity, and trace producers mark
-capability inputs and asynchronous work as sensitive by default. The overlay is
-owned by Rust and is not part of the Rhai node tree.
+Opaque handles never reveal their numeric identity. Semantic event/action
+traces retain names and scopes but omit payload values; trace producers also
+mark capability inputs and asynchronous work as sensitive by default. The
+overlay is owned by Rust and is not part of the Rhai node tree.
 
 Handler entries distinguish `script:<name>` from `host:<label>`. Inspector
 snapshots never retain or display a Host closure address or captured value, and

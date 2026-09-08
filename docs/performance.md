@@ -7,8 +7,11 @@ The budgets are diagnostics, not permission to move per-frame policy into Rhai.
   success, slow-threshold state, and the runtime's cumulative Rhai operation
   count. Semantics version 2 aggregates nested evaluators; delayed callbacks
   start with fresh quota even when their stored module context was captured
-  late in an earlier render. Imported component/helper calls are included in
-  their outer render/callback total; Inspector shows the latest counts beside
+  late in an earlier render. Incremental component and virtual-item calls align
+  the tracker to each stored context's absolute counter while preserving the
+  enclosing session total, so parent history is not recharged and sibling work
+  cannot evade the aggregate cap. Imported component/helper calls are included
+  in their outer render/callback total; Inspector shows the latest counts beside
   duration.
 - Rhai execution is capped at 1,000,000 operations, 64 call levels, bounded
   expression depth, 10,000 array entries, 100,000 aggregate map fields, and

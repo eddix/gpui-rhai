@@ -545,6 +545,14 @@ impl OperationTracker {
         self.last_absolute.set(absolute);
         total
     }
+
+    fn align(&self, inherited_base: u64) {
+        // Stored NativeCallContext values clone the absolute counter captured
+        // in an earlier evaluator. Align only that absolute baseline before a
+        // retained call; the current execution session's aggregate must remain
+        // intact across multiple dirty components or virtual items.
+        self.last_absolute.set(inherited_base);
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -1175,6 +1183,7 @@ impl RuntimeEngine {
         register_component_invocation(&self.component_render, recipe.clone())
             .map_err(RuntimeError::Evaluate)?;
 
+        self.align_execution_session_to(recipe.context.operation_base());
         let started = self.begin_timing();
         let result = (|| {
             let mut node = recipe
@@ -1387,6 +1396,7 @@ impl RuntimeEngine {
                         "virtual collection renderer lost its module context".to_owned(),
                     )
                 })?;
+                self.align_execution_session_to(invocation.operation_base());
                 let started = self.begin_timing();
                 let item = invocation.call::<UiNode>(
                     self.engine(),
@@ -1830,6 +1840,10 @@ impl RuntimeEngine {
 
     fn begin_execution_session_from(&self, inherited_base: u64) {
         self.operation_tracker.begin(inherited_base);
+    }
+
+    fn align_execution_session_to(&self, inherited_base: u64) {
+        self.operation_tracker.align(inherited_base);
     }
 
     fn operation_total(&self) -> u64 {
@@ -4467,6 +4481,196 @@ mod tests {
                 .iter()
                 .any(|timing| timing.operations > MAX_SCRIPT_OPERATIONS)
         );
+    }
+
+    #[test]
+    fn retained_component_budget_ignores_parent_history_without_resetting_session_total() {
+        let module = r#"
+            define_component(#{
+                metadata: #{ id: "components/probe", "export": "Probe", version: "0.1.1",
+                    runtime_api: #{ min_inclusive: 1, max_exclusive: 2 }, dependencies: [], capabilities: #{} },
+                schema: #{ props: #{ key: #{ schema: #{ type: "string" }, required: true, sensitive: false } },
+                    state: #{ fields: #{ heavy: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: false } } } },
+                    events: #{}, slots: #{}, parts: ["root"] },
+                render: Fn("render_Probe")
+            });
+            fn Probe(props) { render_component("components/probe", props) }
+            fn render_Probe(ctx, props) {
+                let n = 0;
+                if ctx.get_state("heavy") { for i in 0..100000 { n += 1; } }
+                text(`${n}`)
+            }
+        "#;
+        let mut measured = Vec::new();
+        for parent_work in [0, 250_000] {
+            let mut resolver = crate::RestrictedModuleResolver::new();
+            resolver.insert("components/probe", module).unwrap();
+            let mut engine = RuntimeEngine::new();
+            engine.set_module_resolver(resolver);
+            let source = format!(
+                r#"import "components/probe" as probe;
+                    fn view(ctx) {{
+                        let n = 0;
+                        for i in 0..{parent_work} {{ n += 1; }}
+                        probe::Probe(#{{ key: "probe" }})
+                    }}"#
+            );
+            let compiled = engine
+                .compile_self_contained_named("incremental-budget", &source)
+                .unwrap();
+            let runtime = Rc::new(RefCell::new(crate::UiRuntimeState::new()));
+            let mut lifecycle = crate::ScriptLifecycle::new(
+                compiled,
+                Rc::clone(&runtime),
+                ComponentInstancePath::root("App", "budget"),
+                None,
+                BTreeMap::new(),
+                &ComponentStateSchema::default(),
+            )
+            .unwrap();
+            lifecycle.start(&mut engine).unwrap();
+            let owner = engine
+                .component_invocations()
+                .next()
+                .unwrap()
+                .path()
+                .clone();
+            let _ = engine.take_timings();
+            runtime
+                .borrow_mut()
+                .set_component_state_from_host(&owner, "heavy", UiValue::Bool(true))
+                .unwrap();
+            assert!(lifecycle.render_dirty(&mut engine).unwrap());
+            let operations = engine
+                .take_timings()
+                .into_iter()
+                .filter(|timing| timing.operation == ExecutionOperation::Render)
+                .map(|timing| timing.operations)
+                .sum::<u64>();
+            assert!(operations < MAX_SCRIPT_OPERATIONS / 2, "{operations}");
+            measured.push(operations);
+        }
+        assert_eq!(measured[0], measured[1]);
+    }
+
+    #[test]
+    fn multiple_dirty_components_share_one_incremental_budget() {
+        let module = r#"
+            define_component(#{
+                metadata: #{ id: "components/probe", "export": "Probe", version: "0.1.1",
+                    runtime_api: #{ min_inclusive: 1, max_exclusive: 2 }, dependencies: [], capabilities: #{} },
+                schema: #{ props: #{ key: #{ schema: #{ type: "string" }, required: true, sensitive: false } },
+                    state: #{ fields: #{ heavy: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: false } } } },
+                    events: #{}, slots: #{}, parts: ["root"] }, render: Fn("render_Probe") }
+            );
+            fn Probe(props) { render_component("components/probe", props) }
+            fn render_Probe(ctx, props) {
+                let n = 0;
+                if ctx.get_state("heavy") { for i in 0..200000 { n += 1; } }
+                text(`${n}`)
+            }
+        "#;
+        let mut resolver = crate::RestrictedModuleResolver::new();
+        resolver.insert("components/probe", module).unwrap();
+        let mut engine = RuntimeEngine::new();
+        engine.set_module_resolver(resolver);
+        let compiled = engine
+            .compile_self_contained_named(
+                "incremental-aggregate-budget",
+                r#"import "components/probe" as probe;
+                    fn view(ctx) {
+                        column([
+                            probe::Probe(#{ key: "first" }),
+                            probe::Probe(#{ key: "second" }),
+                        ])
+                    }"#,
+            )
+            .unwrap();
+        let runtime = Rc::new(RefCell::new(crate::UiRuntimeState::new()));
+        let mut lifecycle = crate::ScriptLifecycle::new(
+            compiled,
+            Rc::clone(&runtime),
+            ComponentInstancePath::root("App", "budget"),
+            None,
+            BTreeMap::new(),
+            &ComponentStateSchema::default(),
+        )
+        .unwrap();
+        lifecycle.start(&mut engine).unwrap();
+        let owners = engine
+            .component_invocations()
+            .map(|recipe| recipe.path().clone())
+            .collect::<Vec<_>>();
+        assert_eq!(owners.len(), 2);
+        for owner in owners {
+            runtime
+                .borrow_mut()
+                .set_component_state_from_host(&owner, "heavy", UiValue::Bool(true))
+                .unwrap();
+        }
+        assert!(lifecycle.render_dirty(&mut engine).is_err());
+    }
+
+    #[test]
+    fn retained_virtual_renderer_budget_ignores_parent_history() {
+        let mut measured = Vec::new();
+        for parent_work in [0, 250_000] {
+            let mut engine = RuntimeEngine::new();
+            let source = format!(
+                r#"
+                    fn render_item(ctx, payload) {{
+                        let n = 0;
+                        if payload.item.heavy {{ for i in 0..100000 {{ n += 1; }} }}
+                        text(`${{n}}`).with_key(payload.key)
+                    }}
+                    fn view(ctx) {{
+                        let n = 0;
+                        for i in 0..{parent_work} {{ n += 1; }}
+                        let data = [];
+                        for index in 0..32 {{
+                            data.push(#{{ key: `row-${{index}}`, heavy: index == 31 }});
+                        }}
+                        virtual_collection(#{{
+                            key: "rows", label: "Rows", data: data,
+                            estimated_height: 24, height: 24, overdraw_pixels: 0,
+                            alignment: "top", follow_tail: false,
+                        }}, Fn("render_item"))
+                    }}
+                "#
+            );
+            let compiled = engine.compile_named("virtual-budget", &source).unwrap();
+            let runtime = Rc::new(RefCell::new(crate::UiRuntimeState::new()));
+            let root_path = ComponentInstancePath::root("App", "budget");
+            let mut lifecycle = crate::ScriptLifecycle::new(
+                compiled,
+                Rc::clone(&runtime),
+                root_path.clone(),
+                None,
+                BTreeMap::new(),
+                &ComponentStateSchema::default(),
+            )
+            .unwrap();
+            lifecycle.start(&mut engine).unwrap();
+            let id = engine
+                .virtual_collection_ids_in_scope(&root_path)
+                .into_iter()
+                .next()
+                .unwrap();
+            let _ = engine.take_timings();
+            runtime.borrow().virtual_requests.request(id, [31]);
+            assert!(lifecycle.realize_virtual_requests(&mut engine).unwrap());
+            let operations = engine
+                .take_timings()
+                .into_iter()
+                .filter(|timing| {
+                    matches!(timing.operation, ExecutionOperation::VirtualCollection(_))
+                })
+                .map(|timing| timing.operations)
+                .sum::<u64>();
+            assert!(operations < MAX_SCRIPT_OPERATIONS / 2, "{operations}");
+            measured.push(operations);
+        }
+        assert_eq!(measured[0], measured[1]);
     }
 
     #[test]

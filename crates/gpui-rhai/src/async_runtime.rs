@@ -1,6 +1,8 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::fmt;
 use std::panic::{AssertUnwindSafe, catch_unwind};
+#[cfg(test)]
+use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::mpsc::{Receiver, Sender, SyncSender, TrySendError, channel, sync_channel};
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
@@ -588,6 +590,8 @@ struct SubscriptionBuffer {
 struct SubscriptionQueue {
     buffer: Mutex<SubscriptionBuffer>,
     space: Condvar,
+    #[cfg(test)]
+    blocked_producers: AtomicUsize,
 }
 
 impl SubscriptionBuffer {
@@ -656,38 +660,44 @@ impl SubscriptionEmitter {
     }
 
     fn send(&self, result: Result<UiValue, String>) -> Result<(), AsyncRuntimeError> {
+        let mut pending = self
+            .pending
+            .buffer
+            .lock()
+            .map_err(|_| AsyncRuntimeError::Poisoned)?;
         if let Some(reason) = self.lifetime.close_reason() {
             return Err(AsyncRuntimeError::Closed { reason });
         }
-        self.pending
-            .buffer
-            .lock()
-            .map_err(|_| AsyncRuntimeError::Poisoned)?
-            .push(result)?;
+        pending.push(result)?;
+        drop(pending);
         self.wake.notify();
         Ok(())
     }
 
     fn send_blocking(&self, result: Result<UiValue, String>) -> Result<(), AsyncRuntimeError> {
         let mut result = Some(result);
+        let mut pending = self
+            .pending
+            .buffer
+            .lock()
+            .map_err(|_| AsyncRuntimeError::Poisoned)?;
         loop {
             if let Some(reason) = self.lifetime.close_reason() {
                 return Err(AsyncRuntimeError::Closed { reason });
             }
-            let mut pending = self
-                .pending
-                .buffer
-                .lock()
-                .map_err(|_| AsyncRuntimeError::Poisoned)?;
             if pending.delivery == SubscriptionDeliveryPolicy::All
                 && pending.values.len() >= pending.capacity
             {
-                drop(
-                    self.pending
-                        .space
-                        .wait(pending)
-                        .map_err(|_| AsyncRuntimeError::Poisoned)?,
-                );
+                #[cfg(test)]
+                self.pending
+                    .blocked_producers
+                    .fetch_add(1, Ordering::AcqRel);
+                let waited = self.pending.space.wait(pending);
+                #[cfg(test)]
+                self.pending
+                    .blocked_producers
+                    .fetch_sub(1, Ordering::AcqRel);
+                pending = waited.map_err(|_| AsyncRuntimeError::Poisoned)?;
                 continue;
             }
             pending.push(result.take().expect("subscription value is sent once"))?;
@@ -709,8 +719,7 @@ impl SubscriptionEmitter {
     }
 
     pub(crate) fn close_with_reason(&self, reason: SubscriptionCloseReason) {
-        if self.lifetime.close(reason) {
-            self.pending.space.notify_all();
+        if close_subscription_queue(&self.pending, &self.lifetime, reason, false) == reason {
             self.wake.notify();
         }
     }
@@ -933,6 +942,8 @@ impl SubscriptionRegistry {
                 capacity: registration.capacity,
             }),
             space: Condvar::new(),
+            #[cfg(test)]
+            blocked_producers: AtomicUsize::new(0),
         });
         self.entries.insert(
             id,
@@ -1024,15 +1035,13 @@ impl SubscriptionRegistry {
         let mut deliveries = Vec::new();
         for (id, entry) in &mut self.entries {
             if entry.generation != current {
-                entry
-                    .lifetime
-                    .close(SubscriptionCloseReason::GenerationStale);
-                closed.entry(*id).or_insert_with(|| {
-                    entry
-                        .lifetime
-                        .close_reason()
-                        .unwrap_or(SubscriptionCloseReason::GenerationStale)
-                });
+                let reason = close_subscription_queue(
+                    &entry.pending,
+                    &entry.lifetime,
+                    SubscriptionCloseReason::GenerationStale,
+                    true,
+                );
+                closed.entry(*id).or_insert(reason);
                 continue;
             }
             if let Some(reason) = entry.lifetime.close_reason() {
@@ -1109,24 +1118,48 @@ impl Drop for SubscriptionRegistry {
             .values()
             .chain(self.deferred_closures.values().map(|(entry, _)| entry))
         {
-            entry
-                .lifetime
-                .close(SubscriptionCloseReason::RegistryDropped);
-            entry.pending.space.notify_all();
+            close_subscription_queue(
+                &entry.pending,
+                &entry.lifetime,
+                SubscriptionCloseReason::RegistryDropped,
+                true,
+            );
         }
     }
+}
+
+fn close_subscription_queue(
+    pending: &SubscriptionQueue,
+    lifetime: &SubscriptionLifetime,
+    reason: SubscriptionCloseReason,
+    discard: bool,
+) -> SubscriptionCloseReason {
+    // The close predicate and Condvar wait are synchronized by the same mutex.
+    // This prevents a producer from observing an open stream, missing the close
+    // notification, and then sleeping forever on a full queue.
+    let mut buffer = pending
+        .buffer
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    lifetime.close(reason);
+    if discard {
+        buffer.values.clear();
+    }
+    let reason = lifetime.close_reason().unwrap_or(reason);
+    drop(buffer);
+    pending.space.notify_all();
+    reason
 }
 
 fn close_subscription_entry(
     entry: &SubscriptionEntry,
     reason: SubscriptionCloseReason,
 ) -> SubscriptionClosure {
-    entry.lifetime.close(reason);
-    entry.pending.space.notify_all();
+    let reason = close_subscription_queue(&entry.pending, &entry.lifetime, reason, true);
     SubscriptionClosure {
         label: entry.label.clone(),
         scope: entry.scope.clone(),
-        reason: entry.lifetime.close_reason().unwrap_or(reason),
+        reason,
     }
 }
 
@@ -1488,6 +1521,114 @@ mod tests {
     }
 
     #[test]
+    fn stale_generation_discards_buffer_and_reclaims_subscription() {
+        let (success, error, generation) = callbacks();
+        let mut subscriptions = SubscriptionRegistry::new();
+        let (_, emitter) = subscriptions.subscribe(
+            SubscriptionRegistration::new(
+                "app.stream.stale",
+                AsyncScope::App,
+                generation,
+                success,
+                error,
+                ValueSchema::integer(),
+            )
+            .with_capacity(1)
+            .unwrap(),
+        );
+        emitter.emit(UiValue::Integer(1)).unwrap();
+        let pending = Arc::clone(&emitter.pending);
+        let blocked = emitter.clone();
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        let producer = std::thread::spawn(move || {
+            done_tx
+                .send(blocked.emit_blocking(UiValue::Integer(2)))
+                .unwrap();
+        });
+        let deadline = Instant::now() + Duration::from_secs(1);
+        while pending.blocked_producers.load(Ordering::Acquire) == 0 {
+            assert!(
+                Instant::now() < deadline,
+                "producer did not reach the capacity wait"
+            );
+            std::thread::yield_now();
+        }
+
+        let current = generation.next();
+        assert!(subscriptions.drain_up_to(current, 0).is_empty());
+        assert!(matches!(
+            done_rx.recv_timeout(Duration::from_secs(1)).unwrap(),
+            Err(AsyncRuntimeError::Closed {
+                reason: SubscriptionCloseReason::GenerationStale
+            })
+        ));
+        producer.join().unwrap();
+        assert_eq!(subscriptions.active_count(), 0);
+        assert_eq!(
+            subscriptions.take_closures()[0].reason,
+            SubscriptionCloseReason::GenerationStale
+        );
+        assert!(matches!(
+            emitter.emit(UiValue::Integer(2)),
+            Err(AsyncRuntimeError::Closed {
+                reason: SubscriptionCloseReason::GenerationStale
+            })
+        ));
+    }
+
+    #[test]
+    fn cancellation_wakes_a_blocked_lossless_producer() {
+        let (success, error, generation) = callbacks();
+        let mut subscriptions = SubscriptionRegistry::new();
+        let (handle, emitter) = subscriptions.subscribe(
+            SubscriptionRegistration::new(
+                "app.stream.blocked",
+                AsyncScope::App,
+                generation,
+                success,
+                error,
+                ValueSchema::integer(),
+            )
+            .with_capacity(1)
+            .unwrap(),
+        );
+        emitter.emit(UiValue::Integer(1)).unwrap();
+        let pending = Arc::clone(&emitter.pending);
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        let producer = std::thread::spawn(move || {
+            started_tx.send(()).unwrap();
+            done_tx
+                .send(emitter.emit_blocking(UiValue::Integer(2)))
+                .unwrap();
+        });
+        started_rx.recv().unwrap();
+        let deadline = Instant::now() + Duration::from_secs(1);
+        while pending.blocked_producers.load(Ordering::Acquire) == 0 {
+            assert!(
+                Instant::now() < deadline,
+                "producer did not reach the capacity wait"
+            );
+            std::thread::yield_now();
+        }
+
+        assert!(subscriptions.cancel(handle));
+        let result = done_rx.recv_timeout(Duration::from_secs(1));
+        if result.is_err() {
+            // Keep a failing regression from stranding the test process.
+            pending.space.notify_all();
+        }
+        let result = result.expect("cancellation must wake the blocked producer");
+        assert!(matches!(
+            result,
+            Err(AsyncRuntimeError::Closed {
+                reason: SubscriptionCloseReason::Cancelled
+            })
+        ));
+        producer.join().unwrap();
+    }
+
+    #[test]
     fn producer_close_and_registry_drop_report_first_close_reason() {
         let (success, error, generation) = callbacks();
         let mut subscriptions = SubscriptionRegistry::new();
@@ -1500,8 +1641,12 @@ mod tests {
             ValueSchema::integer(),
         );
         let (_, emitter) = subscriptions.subscribe(registration);
+        emitter.emit(UiValue::Integer(1)).unwrap();
         emitter.close();
-        let _ = subscriptions.drain(generation);
+        assert_eq!(
+            subscriptions.drain_up_to(generation, 1)[0].payload,
+            UiValue::Integer(1)
+        );
         assert!(matches!(
             emitter.emit(UiValue::Integer(1)),
             Err(AsyncRuntimeError::Closed {

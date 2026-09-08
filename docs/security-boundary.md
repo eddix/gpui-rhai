@@ -31,8 +31,10 @@ contexts, arbitrary Rust values, filesystem paths, URLs, sockets, or process API
   admission limits; task execution uses a bounded shared worker queue.
 - Window commands accept bounded sizes and validated stable IDs. Scripts cannot
   access native window handles.
-- Diagnostics redact fields marked `sensitive`; capability payloads should be
-  treated as sensitive unless a host explicitly decides otherwise.
+- Diagnostics redact fields marked `sensitive`. Semantic event and action
+  traces retain only the name and scope, never the payload value; capability
+  payloads should be treated as sensitive unless a host explicitly decides
+  otherwise.
 - `HostCallback` can be constructed only by trusted Rust code. It cannot enter
   Rhai, `UiValue`, capabilities, serialization, or script callback schemas.
 - `NativeHandlerRef` is resolvable by Rhai only after trusted Rust registers a

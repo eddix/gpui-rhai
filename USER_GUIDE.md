@@ -867,7 +867,10 @@ clears `last_error`, so the Host remains responsible for making the failure
 visible.
 
 Use the development inspector (`Command + Option + I` or `F12`) for source
-locations, state, semantics, traces, timings, and last errors.
+locations, state, semantics, traces, timings, and last errors. Event and action
+traces intentionally retain only their semantic name and scope, never the
+payload value; inspect application state or add a trusted Host diagnostic when
+payload-level debugging is genuinely required.
 
 Production workflow:
 

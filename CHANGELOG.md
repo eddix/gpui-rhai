@@ -18,9 +18,12 @@ semantic versioning from this release.
   cancels newly created work. Independent async deliveries commit separately;
   a failed message no longer discards its neighbors.
 - Rhai operation accounting now aggregates nested evaluators under semantics
-  version 2 and gives delayed callbacks fresh quota. The default Engine rejects
-  filesystem imports, import extraction uses Rhai's actual AST, and the pinned
-  Rhai 1.26 constant-container assignment panic is rejected during compilation.
+  version 2 and gives delayed callbacks, retained component rerenders, and
+  virtual item renderers fresh absolute baselines without resetting their
+  enclosing execution budget. The default Engine rejects filesystem imports,
+  import extraction walks an unoptimized Rhai AST (including nested template
+  interpolation and dead branches), and the pinned Rhai 1.26 constant-container
+  assignment panic is rejected during compilation.
 - Durable values reject non-finite floats and enforce recursive item/depth/byte
   limits across Rhai, Rust, serde, state, stores, capabilities, handlers, and
   signals. Sensitive diagnostic payloads are redacted before storage, and
@@ -31,7 +34,12 @@ semantic versioning from this release.
 - Background tasks use a bounded shared worker pool with panic delivery,
   admission budgets, and optional cooperative cancellation. Lossless receiver
   subscriptions wait for capacity instead of treating backpressure as stream
-  termination.
+  termination. Subscription close and capacity waits share one synchronization
+  protocol; stale generations discard buffered values, wake producers, and are
+  reclaimed immediately.
+- Semantic event and action traces retain names and scopes but never their
+  payload values. Sensitive state/store values and all event/action payloads are
+  therefore absent from retained diagnostics and Inspector snapshots.
 - CLI updates recompute the complete dependency/asset graph. Multi-file apply
   stages every write, uses a project lock, and rolls back ordinary commit
   failures. A single verification manifest now covers every shipped example,
