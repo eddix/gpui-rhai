@@ -24,7 +24,7 @@ icon or raster image assets are currently included.
 - image 0.25.10, regex 1.13.1, unicode-segmentation 1.13.3, serde, serde_json,
   semver, thiserror, toml, toml_edit, clap, and tempfile — MIT OR Apache-2.0.
 
-The 2026-09-07 Cargo metadata audit covered 651 resolved packages
+The 2026-09-08 all-features Cargo metadata audit covered 651 resolved packages
 and found no missing license metadata. MPL-2.0 dependencies are used under their
 file-level terms; dependencies offering LGPL as one option also offer MIT or
 Apache-2.0. Cargo source distributions contain the authoritative license text
@@ -38,6 +38,18 @@ for every resolved package.
 - Catppuccin Latte and Mocha are adapted from
   [catppuccin/catppuccin](https://github.com/catppuccin/catppuccin), licensed
   under MIT.
+- Ethereal, Everforest, Gruvbox, Hackerman, Nord, and Retro 82 are semantic
+  adaptations of their corresponding palettes in the
+  [MIT-licensed Omarchy repository](https://github.com/basecamp/omarchy/tree/master/themes).
+- Hermarchy is adapted from
+  [Archer Clawbot's Hermarchy theme](https://github.com/archer-clawbot/omarchy-hermarchy-theme),
+  licensed under MIT.
+- Aetheria is adapted from
+  [Dizziee's Aetheria theme](https://github.com/JJDizz1L/aetheria), licensed
+  under MIT.
+- Futurism is an original GPUI Rhai semantic palette inspired by
+  [Bjarne Øverli's Futurism theme](https://github.com/bjarneo/omarchy-futurism-theme).
+  No source code or artwork from that repository is redistributed.
 
 The Rhai files map upstream palette values into GPUI Rhai's independent
 semantic token contract; they do not copy upstream implementation code.

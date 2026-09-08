@@ -5,7 +5,7 @@ All notable runtime, CLI, and registry changes are documented here. Version
 component schema, manifest, locale, and generated-source changes follow
 semantic versioning from this release.
 
-## 0.1.1 - Unreleased
+## 0.1.1 - 2026-09-08
 
 - Runtime identity now distinguishes globally unique program candidates,
   logical component paths, mount incarnations, and per-view presentation
