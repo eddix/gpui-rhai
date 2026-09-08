@@ -1,0 +1,14 @@
+Probe project: /var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T//gpui-rhai-audit.Qt0O5P
+   Compiling gpui-rhai-audit-probes v0.0.0 (/var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T/gpui-rhai-audit.Qt0O5P)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.36s
+     Running `target/debug/gpui-rhai-audit-probes`
+shared_windows root_id_collision=true a_child_geometry_lost=true a_capture_lost=true
+shared_windows a_root_expected_width=100 actual_width=300
+candidate_alias a=1 b=1 stale_a_with_a=Ok("a") stale_a_with_b=Ok("b")
+pause_before_suspend_restored=false unexpectedly_fired=1
+duplicate_provider_rejected=true cached_a_ok=true previously_valid_b_ok=false
+bad_schema_component_rejected=true store_accepted=true value=Ok(String("wrong"))
+remount_signal_was_stale=true old_signal_write=Ok(true) old_callback_accepted=true new_instance_count=Some(Integer(1)) old_ref_rebound=true old_node=1 new_node=3
+host_signal_nan_accepted=true
+changed_curry_completed_timer first_fired=1 rearmed_active=0
+receiver_adapter preloaded=65 source_disconnected=true delivered=64 active=0

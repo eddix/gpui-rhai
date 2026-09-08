@@ -1,0 +1,42 @@
+{
+  "audit_date": "2026-09-08",
+  "commit": "d4a7901b26fa91311f3228d768037e1d52531e16",
+  "initial_worktree_clean": true,
+  "rust_toolchain": "1.94.0",
+  "rhai": "1.26.0",
+  "gpui": "0.2.2",
+  "workspace_tests_passed": 409,
+  "native_tests_passed": 49,
+  "performance_tests_passed": 2,
+  "rhai_base_features": [
+    "default",
+    "internals",
+    "metadata",
+    "serde",
+    "std"
+  ],
+  "all_features_add": [
+    "grain",
+    "dev-reload"
+  ],
+  "target": "aarch64-apple-darwin",
+  "os": "macOS 26.6.2",
+  "limitations": [
+    "No new native screen, IME or platform accessibility certification",
+    "No hosted Linux/Windows CI execution",
+    "No dedicated uncontended performance run or 120 Hz full-frame certification",
+    "No fresh online vulnerability/license database scan",
+    "No registry or CLI clean package/install verification"
+  ],
+  "audit_revision": 2,
+  "withdrawn_findings": {
+    "A07": "Maintainer explicitly accepts 0.1.1 breaking changes; no historical compatibility or release-number change required."
+  },
+  "active_findings": {
+    "total": 23,
+    "P1": 10,
+    "P2": 13,
+    "second_pass": 7
+  },
+  "second_pass_method": "First-principles invariants, public API characterization probes; no code-review-expert checklist"
+}

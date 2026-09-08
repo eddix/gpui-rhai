@@ -1,0 +1,8 @@
+    Blocking waiting for file lock on artifact directory
+ Documenting gpui-rhai v0.1.1 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 28.66s
+   Generated /Users/eddix/Codes/github.com/eddix/gpui-rhai/target/doc/gpui_rhai/index.html
+    Checking gpui-rhai v0.1.1 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai)
+ Documenting gpui-rhai-cli v0.1.1 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai-cli)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 11.44s
+   Generated /Users/eddix/Codes/github.com/eddix/gpui-rhai/target/doc/gpui_rhai_cli/index.html
