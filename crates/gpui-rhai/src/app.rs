@@ -2944,6 +2944,8 @@ fn build_error_banner(
 fn script_node_dispatcher(cx: &Context<ScriptHostView>) -> NodeEventDispatcher {
     let script_entity = cx.entity().downgrade();
     let native_entity = script_entity.clone();
+    let signal_entity = script_entity.clone();
+    let geometry_entity = script_entity.clone();
     NodeEventDispatcher::new(move |callback, payload, target, window, app| {
         script_entity
             .update(app, |view, cx| {
@@ -2957,6 +2959,36 @@ fn script_node_dispatcher(cx: &Context<ScriptHostView>) -> NodeEventDispatcher {
                 view.handle_native_event(&handler, event, payload, target, window, cx)
             })
             .unwrap_or_else(|_| crate::EventResponse::new().stop())
+    })
+    .with_signal_write(move |signal, value, app| {
+        let stale = crate::SignalError::Stale(signal.id().clone());
+        signal_entity
+            .update(app, |view, cx| {
+                let changed = view.lifecycle.runtime().borrow_mut().signals.write_from(
+                    &signal,
+                    value,
+                    crate::SignalWriter::Primitive,
+                )?;
+                if changed {
+                    cx.notify();
+                }
+                Ok(changed)
+            })
+            .unwrap_or(Err(stale))
+    })
+    .with_element_bounds(move |reference, app| {
+        geometry_entity
+            .read_with(app, |view, _| {
+                let runtime = view.lifecycle.runtime();
+                let runtime = runtime.borrow();
+                let node = runtime.element_refs.resolve(reference).ok()?;
+                runtime
+                    .geometry_for(Some(&view.view_id))
+                    .get(node)
+                    .map(|geometry| geometry.layout)
+            })
+            .ok()
+            .flatten()
     })
 }
 

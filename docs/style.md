@@ -101,6 +101,14 @@ values at frame sampling time without rerunning Rhai. Static translation uses
 the same paint wrapper, so visual geometry reporting remains the next required
 step before transformed hit testing can be marked complete.
 
+`optional_float_signal(key)` declares an initially inactive native value.
+Binding it as `width_override` preserves the node's normal fixed/percent/flex
+layout while null; a finite value becomes an authoritative non-growing,
+non-shrinking pixel width. This lower-level contract powers Table divider drags
+and is useful for native primitives that need live geometry without a Rhai
+render. Virtual item renderers bind an owner-declared optional signal in one
+boundary call with `node.bind_parent_signal(ctx, "width_override", key)`.
+
 Hosts may register bounded in-memory TrueType/OpenType sources and file apps
 automatically discover `ui/fonts`; `font_family` selects the internal family
 name. See `assets.md` for ownership and validation.

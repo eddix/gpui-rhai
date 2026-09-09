@@ -3407,6 +3407,193 @@ fn table_flex_columns_distribute_remaining_width_by_weight(cx: &mut TestAppConte
 }
 
 #[gpui::test]
+fn table_column_resize_previews_natively_and_emits_once_on_commit(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let entry = ModuleId::parse("main").unwrap();
+    let prepared = EmbeddedScriptView::new(
+        entry.clone(),
+        EmbeddedScriptSource::new(std::collections::BTreeMap::from([
+            (
+                entry,
+                r#"
+                    import "components/table" as table;
+                    fn state_schema() { #{ fields: #{
+                        resize_count: #{ schema: #{ type: "integer", min: 0 },
+                            "default": #{ type: "integer", value: 0 } },
+                        resize_width: #{ schema: #{ type: "number", min: 0.0 },
+                            "default": #{ type: "float", value: 0.0 } },
+                        declared_width: #{ schema: #{ type: "number", min: 1.0 },
+                            "default": #{ type: "float", value: 160.0 } },
+                    } } }
+                    fn resized(ctx, payload) {
+                        ctx.set_state("resize_count", ctx.get_state("resize_count") + 1);
+                        ctx.set_state("resize_width", payload.width.value);
+                        ctx.set_state("declared_width", payload.width.value);
+                    }
+                    fn reset_width(ctx, payload) { ctx.set_state("declared_width", 160.0); }
+                    fn view(ctx) {
+                        column([
+                            text(`resize:${ctx.get_state("resize_count")}:${ctx.get_state("resize_width")}`),
+                            text("Reset width").on_click(Fn("reset_width"))
+                                .accessibility_role("button").accessibility_label("Reset width"),
+                            table::Table(#{
+                                key: "resizable", label: "Resizable columns", row_key: "id",
+                                rows: [#{ id: "row", left: "Left", right: "Right" }],
+                                columns: [
+                                    #{ key: "left", title: "Left", width: #{ kind: "fixed",
+                                        value: ctx.get_state("declared_width") }, max_width: 240 },
+                                    #{ key: "right", title: "Right", width: #{ kind: "flex", value: 1 } },
+                                ],
+                                height: 140, resizable_columns: true,
+                                on_column_resize: Fn("resized"),
+                            })
+                        ]).with_style(style().width(relative(1.0)).gap(px(8)))
+                    }
+                "#
+                .to_owned(),
+            ),
+            (
+                ModuleId::parse("components/table").unwrap(),
+                include_str!("../../../registry/components/table.rhai").to_owned(),
+            ),
+        ])),
+        include_str!("../../../registry/themes/default_dark.rhai"),
+    )
+    .asset_sources(official_icon_assets())
+    .prepare()
+    .unwrap();
+    let captured = Rc::new(RefCell::new(None));
+    let captured_for_window = Rc::clone(&captured);
+    let window = cx.add_window(move |window, cx| {
+        let host = ScriptViewHost::new("resizable-table-window", cx).unwrap();
+        let view = prepared
+            .mount(
+                ScriptViewConfig::new("resizable-table-view"),
+                host.clone(),
+                window,
+                cx,
+            )
+            .unwrap();
+        *captured_for_window.borrow_mut() = Some(view.clone());
+        SingleEmbeddedHost { host, view }
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    cx.run_until_parked();
+
+    let view = captured.borrow().as_ref().unwrap().clone();
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    visual.simulate_resize(size(px(800.0), px(420.0)));
+    visual.run_until_parked();
+    let (header, separator) = visual.update(|_, cx| {
+        let snapshot = view.accessibility_snapshot(cx).unwrap();
+        let header = snapshot
+            .find_by_role_and_name("columnheader", "Left")
+            .next()
+            .unwrap()
+            .geometry
+            .unwrap()
+            .visual;
+        let separator = snapshot
+            .find_by_role_and_name("separator", "Resize Left column")
+            .next()
+            .unwrap()
+            .geometry
+            .unwrap()
+            .visual;
+        (header, separator)
+    });
+    assert!((header.width - 160.0).abs() < 1.0, "header={header:?}");
+    let start = point(
+        px((separator.x + separator.width / 2.0) as f32),
+        px((separator.y + separator.height / 2.0) as f32),
+    );
+    let end = point(start.x + px(120.0), start.y + px(40.0));
+
+    visual.simulate_mouse_down(start, MouseButton::Left, Modifiers::default());
+    visual.simulate_mouse_move(end, MouseButton::Left, Modifiers::default());
+    visual.run_until_parked();
+    let preview = visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .find_by_role_and_name("columnheader", "Left")
+            .next()
+            .unwrap()
+            .geometry
+            .unwrap()
+            .visual
+            .width
+    });
+    assert!((preview - 240.0).abs() < 1.0, "preview={preview}");
+    let preview_texts = palette_texts(&mut visual, &view);
+    assert!(
+        preview_texts.iter().any(|text| text.starts_with("resize:0:")),
+        "pointer-move preview must not invoke Rhai: {preview_texts:?}"
+    );
+
+    visual.simulate_mouse_up(end, MouseButton::Left, Modifiers::default());
+    visual.run_until_parked();
+    let committed_texts = palette_texts(&mut visual, &view);
+    assert!(
+        committed_texts.iter().any(|text| text == "resize:1:240" || text == "resize:1:240.0"),
+        "mouse-up must emit exactly one semantic resize event: {committed_texts:?}"
+    );
+
+    visual
+        .update(|window, cx| {
+            view.automate(
+                gpui_rhai::AutomationCommand::Dispatch {
+                    locator: gpui_rhai::AutomationLocator::RoleName {
+                        role: "button".to_owned(),
+                        name: "Reset width".to_owned(),
+                    },
+                    event: "click".to_owned(),
+                    payload: None,
+                },
+                window,
+                cx,
+            )
+        })
+        .unwrap();
+    visual.run_until_parked();
+    let reset_width = visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .find_by_role_and_name("columnheader", "Left")
+            .next()
+            .unwrap()
+            .geometry
+            .unwrap()
+            .visual
+            .width
+    });
+    assert!((reset_width - 160.0).abs() < 1.0, "reset={reset_width}");
+
+    visual
+        .update(|window, cx| {
+            view.automate(
+                gpui_rhai::AutomationCommand::Dispatch {
+                    locator: gpui_rhai::AutomationLocator::RoleName {
+                        role: "separator".to_owned(),
+                        name: "Resize Left column".to_owned(),
+                    },
+                    event: "key:right".to_owned(),
+                    payload: None,
+                },
+                window,
+                cx,
+            )
+        })
+        .unwrap();
+    visual.run_until_parked();
+    let keyboard_texts = palette_texts(&mut visual, &view);
+    assert!(
+        keyboard_texts.iter().any(|text| text == "resize:2:168" || text == "resize:2:168.0"),
+        "focused separators must support logical arrow-key resizing: {keyboard_texts:?}"
+    );
+}
+
+#[gpui::test]
 fn table_does_not_expand_an_auto_min_width_host_flex_column_across_frames(cx: &mut TestAppContext) {
     cx.update(gpui_rhai::install);
     let entry = ModuleId::parse("main").unwrap();

@@ -1,5 +1,6 @@
 //! Runtime foundations for building GPUI applications from Rhai source.
 
+pub mod column_resize;
 pub mod component;
 pub mod component_styles;
 pub mod context;
@@ -104,6 +105,7 @@ pub use capability::{
     SubscriptionWork, TaskWork,
 };
 pub use clock::{ManualRuntimeClock, RuntimeClock, RuntimeClockSource};
+pub use column_resize::{ColumnResizePrimitiveHandler, column_resize_primitive_descriptor};
 pub use component::{
     ComponentDefinition, ComponentError, ComponentExportCollector, ComponentExportError,
     ComponentHeaderError, ComponentInvocation, ComponentMetadata, ComponentPropConversionError,

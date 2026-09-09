@@ -42,11 +42,16 @@ type NativeDispatchFn = dyn Fn(
     &mut Window,
     &mut App,
 ) -> EventResponse;
+type SignalWriteFn =
+    dyn Fn(crate::NativeSignal, crate::SignalValue, &mut App) -> Result<bool, crate::SignalError>;
+type ElementBoundsFn = dyn Fn(&crate::ElementRef, &App) -> Option<crate::GeometryBounds>;
 
 #[derive(Clone)]
 pub struct NodeEventDispatcher {
     script: Rc<DispatchFn>,
     native: Rc<NativeDispatchFn>,
+    signal_write: Rc<SignalWriteFn>,
+    element_bounds: Rc<ElementBoundsFn>,
 }
 
 impl NodeEventDispatcher {
@@ -69,6 +74,10 @@ impl NodeEventDispatcher {
                 dispatch(callback, payload, target, window, app).into()
             }),
             native: Rc::new(|_, _, _, _, _, _| EventResponse::new().stop()),
+            signal_write: Rc::new(|signal, _, _| {
+                Err(crate::SignalError::Stale(signal.id().clone()))
+            }),
+            element_bounds: Rc::new(|_, _| None),
         }
     }
 
@@ -94,6 +103,27 @@ impl NodeEventDispatcher {
         self
     }
 
+    pub(crate) fn with_signal_write(
+        mut self,
+        write: impl Fn(
+            crate::NativeSignal,
+            crate::SignalValue,
+            &mut App,
+        ) -> Result<bool, crate::SignalError>
+        + 'static,
+    ) -> Self {
+        self.signal_write = Rc::new(write);
+        self
+    }
+
+    pub(crate) fn with_element_bounds(
+        mut self,
+        read: impl Fn(&crate::ElementRef, &App) -> Option<crate::GeometryBounds> + 'static,
+    ) -> Self {
+        self.element_bounds = Rc::new(read);
+        self
+    }
+
     pub(crate) fn dispatch(
         &self,
         callback: ScriptCallback,
@@ -115,6 +145,23 @@ impl NodeEventDispatcher {
         app: &mut App,
     ) -> EventResponse {
         (self.native)(handler, event, payload, target, window, app)
+    }
+
+    pub(crate) fn write_signal(
+        &self,
+        signal: crate::NativeSignal,
+        value: crate::SignalValue,
+        app: &mut App,
+    ) -> Result<bool, crate::SignalError> {
+        (self.signal_write)(signal, value, app)
+    }
+
+    pub(crate) fn element_bounds(
+        &self,
+        reference: &crate::ElementRef,
+        app: &App,
+    ) -> Option<crate::GeometryBounds> {
+        (self.element_bounds)(reference, app)
     }
 }
 
@@ -1001,14 +1048,14 @@ pub trait ColorResolver {
 
 fn default_typography(role: &str) -> Option<crate::ResolvedTypography> {
     let (size, line_height, weight) = match role {
-        "caption" => (10.0, 14.0, 400),
-        "body_small" => (11.0, 14.0, 400),
-        "body" => (12.0, 16.0, 400),
-        "subtitle" => (13.0, 18.0, 400),
-        "title" => (14.0, 20.0, 700),
-        "heading" => (16.0, 22.0, 700),
-        "display" => (24.0, 30.0, 700),
-        "display_large" => (28.0, 34.0, 700),
+        "caption" => (11.0, 16.0, 400),
+        "body_small" => (12.0, 16.0, 400),
+        "body" => (13.0, 18.0, 400),
+        "subtitle" => (14.0, 20.0, 400),
+        "title" => (16.0, 22.0, 700),
+        "heading" => (18.0, 24.0, 700),
+        "display" => (24.0, 32.0, 700),
+        "display_large" => (28.0, 36.0, 700),
         _ => return None,
     };
     Some(crate::ResolvedTypography {
@@ -2718,6 +2765,7 @@ struct NodeSignalValues {
     translate_x: Option<f64>,
     translate_y: Option<f64>,
     width: Option<f64>,
+    width_override: Option<f64>,
     height: Option<f64>,
     background: Option<ColorValue>,
     text_color: Option<ColorValue>,
@@ -2743,6 +2791,9 @@ fn node_signals(registry: &crate::SignalRegistry, node: &UiNode) -> NodeSignalVa
             (crate::SignalProperty::Width, crate::SignalValue::Float(value)) => {
                 values.width = Some(value);
             }
+            (crate::SignalProperty::WidthOverride, crate::SignalValue::OptionalFloat(value)) => {
+                values.width_override = value;
+            }
             (crate::SignalProperty::Height, crate::SignalValue::Float(value)) => {
                 values.height = Some(value);
             }
@@ -2764,6 +2815,13 @@ fn node_signals(registry: &crate::SignalRegistry, node: &UiNode) -> NodeSignalVa
 fn apply_signal_style(style: &mut StyleProperties, values: &NodeSignalValues) {
     if let Some(width) = values.width {
         style.width = Some(Length::Pixels(width.max(0.0)).into());
+    }
+    if let Some(width) = values.width_override {
+        style.width = Some(Length::Pixels(width.max(0.0)).into());
+        style.flex_basis = None;
+        style.flex_grow = Some(false);
+        style.flex_grow_weight = None;
+        style.flex_shrink = Some(false);
     }
     if let Some(height) = values.height {
         style.height = Some(Length::Pixels(height.max(0.0)).into());
@@ -4227,6 +4285,30 @@ mod tests {
         let mut style = StyleProperties::default();
         apply_signal_style(&mut style, &values);
         assert_eq!(style.width, Some(Length::Pixels(144.0).into()));
+    }
+
+    #[test]
+    fn optional_width_override_activates_fixed_layout_only_when_present() {
+        let mut base = StyleProperties {
+            flex_basis: Some(Length::Relative(0.0).into()),
+            flex_grow_weight: Some(2.0),
+            ..StyleProperties::default()
+        };
+        apply_signal_style(&mut base, &NodeSignalValues::default());
+        assert_eq!(base.flex_grow_weight, Some(2.0));
+        let mut overridden = base;
+        apply_signal_style(
+            &mut overridden,
+            &NodeSignalValues {
+                width_override: Some(180.0),
+                ..NodeSignalValues::default()
+            },
+        );
+        assert_eq!(overridden.width, Some(Length::Pixels(180.0).into()));
+        assert_eq!(overridden.flex_basis, None);
+        assert_eq!(overridden.flex_grow, Some(false));
+        assert_eq!(overridden.flex_grow_weight, None);
+        assert_eq!(overridden.flex_shrink, Some(false));
     }
 
     #[test]

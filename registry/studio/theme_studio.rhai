@@ -252,14 +252,14 @@ fn specimen_title(title, detail) {
 fn specimen_typography() {
     column([
         specimen_title("TYPOGRAPHY", "Eight semantic roles share one theme-owned rhythm."),
-        text("Display Large · 28 / 34").with_style(style().typography("display_large")),
-        text("Display · 24 / 30").with_style(style().typography("display")),
-        text("Heading · 16 / 22").with_style(style().typography("heading")),
-        text("Title · 14 / 20").with_style(style().typography("title")),
-        text("Subtitle · 13 / 18").with_style(style().typography("subtitle")),
-        text("Body · 12 / 16").with_style(style().typography("body")),
-        text("Body Small · 11 / 14").with_style(style().typography("body_small")),
-        text("CAPTION · 10 / 14").with_style(style().typography("caption")),
+        text("Display Large · 28 / 36").with_style(style().typography("display_large")),
+        text("Display · 24 / 32").with_style(style().typography("display")),
+        text("Heading · 18 / 24").with_style(style().typography("heading")),
+        text("Title · 16 / 22").with_style(style().typography("title")),
+        text("Subtitle · 14 / 20").with_style(style().typography("subtitle")),
+        text("Body · 13 / 18").with_style(style().typography("body")),
+        text("Body Small · 12 / 16").with_style(style().typography("body_small")),
+        text("CAPTION · 11 / 16").with_style(style().typography("caption")),
     ]).with_style(style().gap(px(4)))
 }
 
@@ -408,7 +408,7 @@ fn specimen_data() {
     column([
         specimen_title("DATA", "Real virtualized rows and pagination."),
         table::Table(#{ key: "specimen-table", label: "Users", row_key: "id",
-            rows: rows, columns: columns, height: 126, striped: true,
+            rows: rows, columns: columns, height: 126, striped: true, resizable_columns: true,
             selection_mode: "multiple", selected_keys: ["two"],
             sort: #{ key: "name", direction: "ascending" }, group_by: "state",
             on_group_toggle: Fn("noop") }),
