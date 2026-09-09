@@ -1209,7 +1209,7 @@ impl UiContext {
         value: Dynamic,
     ) -> Result<(), UiContextError> {
         self.require_mutation()?;
-        let value = crate::SignalValue::from_dynamic(value)?;
+        let value = crate::SignalValue::from_dynamic_for_kind(value, signal.id().kind())?;
         let mut runtime = self
             .runtime
             .try_borrow_mut()
@@ -1246,6 +1246,52 @@ impl UiContext {
             .map_err(|_| UiContextError::Borrowed)?;
         let signal = runtime.signals.resolve(&self.component, key)?;
         Ok(runtime.signals.read(&signal)?.into_dynamic())
+    }
+
+    /// Resolve an optional-float signal owned by the nearest parent component.
+    /// This is intended for retained render scopes, such as virtual collection
+    /// item renderers, that consume a signal declared by their owner while the
+    /// owner's initial render transaction is still in progress.
+    ///
+    /// # Errors
+    ///
+    /// Returns a borrow, identity, type, or unknown-signal error.
+    pub(crate) fn parent_optional_float_signal_ref(
+        &self,
+        key: &str,
+    ) -> Result<crate::NativeSignal, UiContextError> {
+        let runtime = self
+            .runtime
+            .try_borrow()
+            .map_err(|_| UiContextError::Borrowed)?;
+        let mut scope = self.component.parent();
+        while let Some(component) = scope {
+            if let Ok(signal) = runtime.signals.resolve(&component, key) {
+                if signal.id().kind() == crate::SignalKind::OptionalFloat {
+                    return Ok(signal);
+                }
+                return Err(crate::SignalError::TypeMismatch {
+                    expected: crate::SignalKind::OptionalFloat,
+                    actual: signal.id().kind(),
+                }
+                .into());
+            }
+            if let Some(incarnation) = runtime.component_incarnation(&component) {
+                let id = crate::SignalId::new_scoped(
+                    component,
+                    incarnation,
+                    key,
+                    crate::SignalKind::OptionalFloat,
+                )?;
+                return Ok(crate::NativeSignal::new(id));
+            }
+            scope = component.parent();
+        }
+        Err(crate::SignalError::UnknownKey {
+            component: self.component.clone(),
+            key: key.to_owned(),
+        }
+        .into())
     }
 
     /// Resolve and write a component-local signal key.

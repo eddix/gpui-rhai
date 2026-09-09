@@ -10,6 +10,7 @@ pub enum SignalKind {
     Bool,
     Integer,
     Float,
+    OptionalFloat,
     String,
     Color,
 }
@@ -20,6 +21,7 @@ pub enum SignalProperty {
     TranslateX,
     TranslateY,
     Width,
+    WidthOverride,
     Height,
     Background,
     TextColor,
@@ -39,6 +41,7 @@ impl SignalProperty {
             "translate_x" => Ok(Self::TranslateX),
             "translate_y" => Ok(Self::TranslateY),
             "width" => Ok(Self::Width),
+            "width_override" => Ok(Self::WidthOverride),
             "height" => Ok(Self::Height),
             "background" => Ok(Self::Background),
             "text_color" => Ok(Self::TextColor),
@@ -53,6 +56,7 @@ impl SignalProperty {
             Self::Opacity | Self::TranslateX | Self::TranslateY | Self::Width | Self::Height => {
                 SignalKind::Float
             }
+            Self::WidthOverride => SignalKind::OptionalFloat,
             Self::Background | Self::TextColor | Self::BorderColor => SignalKind::Color,
         }
     }
@@ -65,6 +69,7 @@ impl SignalKind {
             Self::Bool => "bool",
             Self::Integer => "integer",
             Self::Float => "float",
+            Self::OptionalFloat => "optional_float",
             Self::String => "string",
             Self::Color => "color",
         }
@@ -76,6 +81,7 @@ pub enum SignalValue {
     Bool(bool),
     Integer(INT),
     Float(FLOAT),
+    OptionalFloat(Option<FLOAT>),
     String(String),
     Color(ColorValue),
 }
@@ -87,6 +93,7 @@ impl SignalValue {
             Self::Bool(_) => SignalKind::Bool,
             Self::Integer(_) => SignalKind::Integer,
             Self::Float(_) => SignalKind::Float,
+            Self::OptionalFloat(_) => SignalKind::OptionalFloat,
             Self::String(_) => SignalKind::String,
             Self::Color(_) => SignalKind::Color,
         }
@@ -95,6 +102,9 @@ impl SignalValue {
     fn validate(&self) -> Result<(), SignalError> {
         match self {
             Self::Float(value) if !value.is_finite() => Err(SignalError::NonFiniteFloat),
+            Self::OptionalFloat(Some(value)) if !value.is_finite() => {
+                Err(SignalError::NonFiniteFloat)
+            }
             _ => Ok(()),
         }
     }
@@ -128,11 +138,47 @@ impl SignalValue {
         Err(SignalError::UnsupportedValue(value.type_name().to_owned()))
     }
 
+    /// Convert a Rhai value for an already typed signal.
+    ///
+    /// Optional-float signals accept either null or a finite float/number;
+    /// other signal kinds retain the ordinary scalar conversion contract.
+    ///
+    /// # Errors
+    ///
+    /// Returns a type or finite-number error when the value cannot satisfy the
+    /// signal's declared kind.
+    pub fn from_dynamic_for_kind(value: Dynamic, kind: SignalKind) -> Result<Self, SignalError> {
+        if kind == SignalKind::OptionalFloat {
+            if value.is_unit() {
+                return Ok(Self::OptionalFloat(None));
+            }
+            if value.is::<FLOAT>() {
+                let value = value.cast::<FLOAT>();
+                return value
+                    .is_finite()
+                    .then_some(Self::OptionalFloat(Some(value)))
+                    .ok_or(SignalError::NonFiniteFloat);
+            }
+            if value.is::<INT>() {
+                let value = value
+                    .cast::<INT>()
+                    .to_string()
+                    .parse::<FLOAT>()
+                    .map_err(|_| {
+                        SignalError::UnsupportedValue("integer outside float range".to_owned())
+                    })?;
+                return Ok(Self::OptionalFloat(Some(value)));
+            }
+        }
+        Self::from_dynamic(value)
+    }
+
     pub fn into_dynamic(self) -> Dynamic {
         match self {
             Self::Bool(value) => Dynamic::from_bool(value),
             Self::Integer(value) => Dynamic::from_int(value),
-            Self::Float(value) => Dynamic::from_float(value),
+            Self::Float(value) | Self::OptionalFloat(Some(value)) => Dynamic::from_float(value),
+            Self::OptionalFloat(None) => Dynamic::UNIT,
             Self::String(value) => Dynamic::from(value),
             Self::Color(value) => Dynamic::from(value),
         }
@@ -260,6 +306,7 @@ pub enum SignalWriter {
     Declaration,
     Script,
     Host,
+    Primitive,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -498,5 +545,45 @@ mod tests {
             Err(SignalError::NonFiniteFloat)
         );
         assert_eq!(registry.read(&signal).unwrap(), SignalValue::Float(0.0));
+    }
+
+    #[test]
+    fn optional_float_signal_supports_an_inactive_width_override() {
+        let component = ComponentInstancePath::root("Table", "users");
+        let id = SignalId::new(
+            component.clone(),
+            "column-width-0",
+            SignalKind::OptionalFloat,
+        )
+        .unwrap();
+        let signal = NativeSignal::new(id.clone());
+        let mut registry = SignalRegistry::new();
+        registry.reconcile(
+            &component,
+            BTreeMap::from([(id, SignalDescriptor::new(SignalValue::OptionalFloat(None)))]),
+        );
+        assert!(registry.read(&signal).unwrap().into_dynamic().is_unit());
+        assert!(
+            registry
+                .write_from(
+                    &signal,
+                    SignalValue::from_dynamic_for_kind(
+                        Dynamic::from_float(144.0),
+                        SignalKind::OptionalFloat,
+                    )
+                    .unwrap(),
+                    SignalWriter::Primitive,
+                )
+                .unwrap()
+        );
+        assert_eq!(
+            registry.read(&signal).unwrap(),
+            SignalValue::OptionalFloat(Some(144.0))
+        );
+        assert_eq!(registry.inspect()[0].last_writer, SignalWriter::Primitive);
+        assert_eq!(
+            SignalValue::from_dynamic_for_kind(Dynamic::UNIT, SignalKind::OptionalFloat).unwrap(),
+            SignalValue::OptionalFloat(None)
+        );
     }
 }

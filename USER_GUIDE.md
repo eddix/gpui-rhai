@@ -812,6 +812,11 @@ Guidelines:
 - In Table column widths, `fixed` values are pixels, `percent` values are
   percentages, and `flex` values are positive weights over the remaining row
   width; use 1/2 rather than pixel-like values such as 100/200.
+- Set `resizable_columns: true` for native divider dragging. Per-column
+  `resizable`, `min_width`, and `max_width` refine the policy. Pointer movement
+  stays on the native signal path; `on_column_resize` runs once on release with
+  a fixed pixel descriptor that the caller may persist. Focused dividers use
+  logical Left/Right in 8px steps.
 - Treat `virtual_collection` as presentation-only. The owning component defines
   enabled items, keyboard navigation, the single active style, and passes its
   controlled key as `reveal_key`; sticky rows are a separate layout policy.
@@ -1030,8 +1035,10 @@ local overlay IDs, and declare parent overlay IDs for nested ownership.
 For a node event, read `ctx.event_target_bounds()` or `NativeEvent::target`
 inside that callback. Do not cache `ctx.element_bounds(ref)` in state on every
 resize merely to service a later click. Custom primitive emissions currently
-have no renderer-owned event target, so include any primitive-measured geometry
-in their declared payload when the mechanism requires it.
+have no renderer-owned event target. A primitive may accept a validated
+`ElementRef` prop and use `PrimitiveEventEmitter::element_bounds` for
+last-committed layout geometry; event consumers still receive only the
+primitive's declared payload.
 
 ### application exits immediately in release
 

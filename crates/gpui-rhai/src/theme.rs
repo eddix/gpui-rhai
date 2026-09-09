@@ -931,14 +931,14 @@ mod tests {
             family: None,
             fallbacks: Vec::new(),
             roles: BTreeMap::from([
-                ("caption".to_owned(), type_token(10.0, 14.0, 400)),
-                ("body_small".to_owned(), type_token(11.0, 14.0, 400)),
-                ("body".to_owned(), type_token(12.0, 16.0, 400)),
-                ("subtitle".to_owned(), type_token(13.0, 18.0, 400)),
-                ("title".to_owned(), type_token(14.0, 20.0, 700)),
-                ("heading".to_owned(), type_token(16.0, 22.0, 700)),
-                ("display".to_owned(), type_token(24.0, 30.0, 700)),
-                ("display_large".to_owned(), type_token(28.0, 34.0, 700)),
+                ("caption".to_owned(), type_token(11.0, 16.0, 400)),
+                ("body_small".to_owned(), type_token(12.0, 16.0, 400)),
+                ("body".to_owned(), type_token(13.0, 18.0, 400)),
+                ("subtitle".to_owned(), type_token(14.0, 20.0, 400)),
+                ("title".to_owned(), type_token(16.0, 22.0, 700)),
+                ("heading".to_owned(), type_token(18.0, 24.0, 700)),
+                ("display".to_owned(), type_token(24.0, 32.0, 700)),
+                ("display_large".to_owned(), type_token(28.0, 36.0, 700)),
             ]),
         }
     }
@@ -1186,8 +1186,8 @@ mod tests {
         let body = theme_tokens.typography.resolve("body").unwrap();
         assert_eq!(body.family.as_deref(), Some("JetBrains Mono"));
         assert_eq!(body.fallbacks, ["PingFang SC"]);
-        assert_eq!(body.size, Length::Pixels(12.0));
-        assert_eq!(body.line_height, Length::Pixels(16.0));
+        assert_eq!(body.size, Length::Pixels(13.0));
+        assert_eq!(body.line_height, Length::Pixels(18.0));
         assert_eq!(body.weight, 400);
 
         theme_tokens.typography.roles.remove("caption");

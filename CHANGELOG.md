@@ -12,6 +12,14 @@ semantic versioning from this release.
   weights over remaining width instead of falling through to raw pixels;
   fixed/percent columns do not shrink, and Array/NativeCollection headers and
   cells share the same width contract.
+- Table can opt into native divider resizing with per-column eligibility and
+  min/max bounds. Pointer movement updates an optional fixed-width NativeSignal
+  without running Rhai; release emits one persistable `column_resize` event,
+  while logical arrow keys provide an accessible 8px step. Auto-fit remains
+  outside the contract until virtual data providers can supply measurement.
+- Bundled themes now use a readable dense-desktop typography scale: caption
+  11/16, body-small 12/16, body 13/18, subtitle 14/20, title 16/22, heading
+  18/24, display 24/32, and display-large 28/36px.
 
 ## 0.1.1 - 2026-09-08
 

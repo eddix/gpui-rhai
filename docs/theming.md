@@ -26,14 +26,14 @@ Typography requires eight semantic roles:
 
 | Role | Size / line | Weight |
 |---|---:|---:|
-| `caption` | `10 / 14px` | 400 |
-| `body_small` | `11 / 14px` | 400 |
-| `body` | `12 / 16px` | 400 |
-| `subtitle` | `13 / 18px` | 400 |
-| `title` | `14 / 20px` | 700 |
-| `heading` | `16 / 22px` | 700 |
-| `display` | `24 / 30px` | 700 |
-| `display_large` | `28 / 34px` | 700 |
+| `caption` | `11 / 16px` | 400 |
+| `body_small` | `12 / 16px` | 400 |
+| `body` | `13 / 18px` | 400 |
+| `subtitle` | `14 / 20px` | 400 |
+| `title` | `16 / 22px` | 700 |
+| `heading` | `18 / 24px` | 700 |
+| `display` | `24 / 32px` | 700 |
+| `display_large` | `28 / 36px` | 700 |
 
 The typography block may also select one shared `family` and ordered
 `fallbacks`. Built-in themes leave both unset so the host's platform font

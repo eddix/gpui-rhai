@@ -358,8 +358,10 @@ payloads before Rust runs. `NativeEvent::target` carries the optional event-time
 current-target bounds separately, so adding geometry does not weaken or wrap the
 declared payload schema. Native and Script handlers share transaction and
 response semantics. Events emitted by a custom primitive currently have no
-renderer-owned target; a primitive that needs its own measured coordinates must
-declare them in its validated payload.
+renderer-owned target. A primitive can accept a validated `ElementRef` prop and
+query its last committed layout bounds through
+`PrimitiveEventEmitter::element_bounds`; consumer-facing coordinates still
+belong in the declared event payload when the event contract requires them.
 
 Formal components may declare `element_ref("name")` during render and attach it
 to a stable keyed node with `with_ref`. `ctx.element_bounds(ref)` returns null

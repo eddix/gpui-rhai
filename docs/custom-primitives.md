@@ -80,12 +80,20 @@ emitter cannot form `Registry -> Entity -> Registry` ownership cycles. Use GPUI
 through `gpui_rhai::gpui` so the host and runtime cannot link incompatible GPUI
 type versions.
 
+`ValueSchema::Signal` and `ValueSchema::Ref` props remain typed native handles
+as `PrimitiveValue::Signal` and `PrimitiveValue::Ref`; they are not flattened
+into durable `UiValue`. A foreground primitive may write a passed signal with
+`PrimitiveEventEmitter::write_signal`, which requests a GPUI repaint without
+executing Rhai. It may query the last committed layout rectangle of a passed
+ref with `PrimitiveEventEmitter::element_bounds`. Both operations fail closed
+when the owning component or view has unmounted.
+
 Primitive emissions do not currently receive renderer-owned target geometry:
 `ctx.event_target_bounds()` and `NativeEvent::target` are `()`/`None` on that
-path. When a native mechanism owns meaningful coordinates, measure them in the
-primitive and include a bounded, schema-checked geometry value in its declared
-event payload. Do not fabricate an `ElementRef` or start a global resize/store
-channel merely to imitate atomic-node event geometry.
+path. When a native mechanism exposes coordinates to its consumer, include a
+bounded, schema-checked geometry value in its declared event payload. Passing a
+genuine component-declared `ElementRef` for internal native layout work does not
+add geometry to the emitted event contract.
 
 See `extension_host.rs` for rendering and `tests/custom_primitive.rs` for the
 downstream registration contract.

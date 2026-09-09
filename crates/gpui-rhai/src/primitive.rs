@@ -108,6 +108,8 @@ pub enum PrimitiveValue {
     Style(Box<Style>),
     Length(Length),
     Asset(AssetId),
+    Signal(crate::NativeSignal),
+    Ref(crate::ElementRef),
     Document(crate::NativeTextDocument),
 }
 
@@ -347,6 +349,8 @@ impl PrimitiveProps {
                 | PrimitiveValue::Style(_)
                 | PrimitiveValue::Length(_)
                 | PrimitiveValue::Asset(_)
+                | PrimitiveValue::Signal(_)
+                | PrimitiveValue::Ref(_)
                 | PrimitiveValue::Document(_) => {}
             }
         }
@@ -635,6 +639,36 @@ impl PrimitiveEventEmitter {
             }
         }
         Ok(())
+    }
+
+    /// Write one primitive-owned native signal without invoking Rhai.
+    ///
+    /// # Errors
+    ///
+    /// Returns a stale or type error when the signal no longer belongs to the
+    /// mounted component instance.
+    pub fn write_signal(
+        &self,
+        signal: &crate::NativeSignal,
+        value: crate::SignalValue,
+        cx: &mut App,
+    ) -> Result<bool, crate::SignalError> {
+        self.dispatcher.as_ref().map_or_else(
+            || Err(crate::SignalError::Stale(signal.id().clone())),
+            |dispatcher| dispatcher.write_signal(signal.clone(), value, cx),
+        )
+    }
+
+    /// Read the last committed layout bounds for a primitive-owned element ref.
+    #[must_use]
+    pub fn element_bounds(
+        &self,
+        reference: &crate::ElementRef,
+        cx: &App,
+    ) -> Option<crate::GeometryBounds> {
+        self.dispatcher
+            .as_ref()
+            .and_then(|dispatcher| dispatcher.element_bounds(reference, cx))
     }
 }
 
@@ -1246,6 +1280,8 @@ fn convert_prop(
         ValueSchema::Style => Ok(PrimitiveValue::Style(Box::new(value.cast::<Style>()))),
         ValueSchema::Length => Ok(PrimitiveValue::Length(value.cast::<Length>())),
         ValueSchema::Asset => Ok(PrimitiveValue::Asset(value.cast::<AssetId>())),
+        ValueSchema::Signal => Ok(PrimitiveValue::Signal(value.cast::<crate::NativeSignal>())),
+        ValueSchema::Ref => Ok(PrimitiveValue::Ref(value.cast::<crate::ElementRef>())),
         ValueSchema::Document => Ok(PrimitiveValue::Document(
             value.cast::<crate::NativeTextDocument>(),
         )),

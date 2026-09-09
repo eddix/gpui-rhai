@@ -1074,6 +1074,8 @@ impl UiNode {
                         | crate::PrimitiveValue::Style(_)
                         | crate::PrimitiveValue::Length(_)
                         | crate::PrimitiveValue::Asset(_)
+                        | crate::PrimitiveValue::Signal(_)
+                        | crate::PrimitiveValue::Ref(_)
                         | crate::PrimitiveValue::Document(_) => {}
                     }
                 }
@@ -1399,6 +1401,8 @@ impl UiNode {
                     | crate::PrimitiveValue::Style(_)
                     | crate::PrimitiveValue::Length(_)
                     | crate::PrimitiveValue::Asset(_)
+                    | crate::PrimitiveValue::Signal(_)
+                    | crate::PrimitiveValue::Ref(_)
                     | crate::PrimitiveValue::Document(_) => None,
                 })
                 .collect(),
@@ -1502,6 +1506,28 @@ impl CustomType for UiNode {
                  signal: crate::NativeSignal|
                  -> Result<Self, Box<EvalAltResult>> {
                     let property = crate::SignalProperty::parse(property.as_str())
+                        .map_err(|error| Box::new(crate::signal::signal_runtime_error(&error)))?;
+                    node.clone()
+                        .with_signal_binding(property, signal)
+                        .map_err(|error| Box::new(crate::signal::signal_runtime_error(&error)))
+                },
+            )
+            .with_fn(
+                "bind_parent_signal",
+                |node: &mut Self,
+                 context: crate::UiContext,
+                 property: ImmutableString,
+                 key: ImmutableString|
+                 -> Result<Self, Box<EvalAltResult>> {
+                    let property = crate::SignalProperty::parse(property.as_str())
+                        .map_err(|error| Box::new(crate::signal::signal_runtime_error(&error)))?;
+                    if property.signal_kind() != crate::SignalKind::OptionalFloat {
+                        return Err(Box::new(crate::signal::signal_runtime_error(
+                            &"parent signal binding currently supports optional-float properties",
+                        )));
+                    }
+                    let signal = context
+                        .parent_optional_float_signal_ref(key.as_str())
                         .map_err(|error| Box::new(crate::signal::signal_runtime_error(&error)))?;
                     node.clone()
                         .with_signal_binding(property, signal)

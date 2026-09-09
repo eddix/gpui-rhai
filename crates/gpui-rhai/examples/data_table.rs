@@ -153,7 +153,7 @@ fn view(ctx) {
         table_controls(ctx),
         table::Table(#{
             key: "users", label: "Users", rows: page_rows(ctx), row_key: "id",
-            columns: columns, height: 470, striped: true,
+            columns: columns, height: 470, striped: true, resizable_columns: true,
             loading: ctx.get_state("loading"),
             selection_mode: ctx.get_state("selection_mode"),
             selected_keys: ctx.get_state("selected"), sort: ctx.get_state("sort"),

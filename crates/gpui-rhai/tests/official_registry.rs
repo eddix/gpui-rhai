@@ -256,6 +256,50 @@ fn assert_table_column_width_contract(columns: &[gpui_rhai::UiNode]) {
     assert_eq!(columns[3].style().base.flex_shrink, Some(false));
 }
 
+fn assert_resizable_table_width_signals(columns: &[gpui_rhai::UiNode]) {
+    assert!(columns[..columns.len() - 1].iter().all(|column| {
+        matches!(
+            column.signal_bindings().next(),
+            Some((gpui_rhai::SignalProperty::WidthOverride, signal))
+                if signal.id().kind() == gpui_rhai::SignalKind::OptionalFloat
+        ) && column.signal_bindings().count() == 1
+    }));
+    assert!(
+        columns
+            .last()
+            .is_some_and(|column| column.signal_bindings().next().is_none())
+    );
+}
+
+fn assert_table_has_no_width_signals(root: &gpui_rhai::UiNode) {
+    let UiNodeKind::Box { children } = root.kind() else {
+        panic!("Table root must be a Box")
+    };
+    let UiNodeKind::Box {
+        children: header_cells,
+    } = children[0].kind()
+    else {
+        panic!("Table header must be a row")
+    };
+    assert!(
+        header_cells
+            .iter()
+            .all(|cell| cell.signal_bindings().next().is_none()),
+        "non-resizable Tables must not pay the native width-signal cost"
+    );
+    let UiNodeKind::VirtualCollection { spec } = children[1].kind() else {
+        panic!("Table body must be a virtual collection")
+    };
+    let UiNodeKind::Box { children: cells } = spec.realized[&1].kind() else {
+        panic!("realized Table row must be a Box")
+    };
+    assert!(
+        cells
+            .iter()
+            .all(|cell| cell.signal_bindings().next().is_none())
+    );
+}
+
 fn invoke_and_render(
     lifecycle: &mut ScriptLifecycle,
     engine: &mut RuntimeEngine,
@@ -446,22 +490,34 @@ fn official_default_theme_pair_satisfies_one_semantic_contract() {
 }
 
 #[test]
-fn bundled_themes_share_the_dense_square_metric_contract() {
+fn bundled_themes_share_the_readable_square_metric_contract() {
     let engine = RuntimeEngine::new();
+    let typography = [
+        ("caption", 11.0, 16.0, 400),
+        ("body_small", 12.0, 16.0, 400),
+        ("body", 13.0, 18.0, 400),
+        ("subtitle", 14.0, 20.0, 400),
+        ("title", 16.0, 22.0, 700),
+        ("heading", 18.0, 24.0, 700),
+        ("display", 24.0, 32.0, 700),
+        ("display_large", 28.0, 36.0, 700),
+    ];
     for &(name, source) in BUNDLED_THEMES {
         let theme =
             gpui_rhai::load_theme_source(engine.engine(), &format!("{name}.rhai"), source).unwrap();
         assert_eq!(theme.tokens.radii["sm"], gpui_rhai::Length::Pixels(0.0));
         assert_eq!(theme.tokens.radii["md"], gpui_rhai::Length::Pixels(0.0));
         assert_eq!(theme.tokens.radii["lg"], gpui_rhai::Length::Pixels(0.0));
-        assert_eq!(
-            theme.tokens.typography.roles["body"].size,
-            gpui_rhai::Length::Pixels(12.0)
-        );
-        assert_eq!(
-            theme.tokens.typography.roles["body"].line_height,
-            gpui_rhai::Length::Pixels(16.0)
-        );
+        for &(role, size, line_height, weight) in &typography {
+            let token = &theme.tokens.typography.roles[role];
+            assert_eq!(token.size, gpui_rhai::Length::Pixels(size), "{name}:{role}");
+            assert_eq!(
+                token.line_height,
+                gpui_rhai::Length::Pixels(line_height),
+                "{name}:{role}"
+            );
+            assert_eq!(token.weight, weight, "{name}:{role}");
+        }
         assert_ne!(
             theme.tokens.colors["surface"],
             theme.tokens.colors["surface_raised"]
@@ -2147,7 +2203,7 @@ fn official_table_is_public_data_backed_rhai_composition() {
                             #{ key: "joined", title: "Joined", width: #{ kind: "percent", value: 30 } },
                             #{ key: "status", title: "Status", width: #{ kind: "fixed", value: 90 } }
                         ],
-                        loading: false, selection_mode: "multiple",
+                        loading: false, selection_mode: "multiple", resizable_columns: true,
                         selected_keys: ["u1"], striped: true,
                         on_sort_change: Fn("sorted"), on_selection_change: Fn("selected"),
                         on_row_click: Fn("clicked")
@@ -2193,6 +2249,27 @@ fn official_table_is_public_data_backed_rhai_composition() {
     };
     assert_table_column_width_contract(header_cells);
     assert_table_column_width_contract(cells);
+    assert_resizable_table_width_signals(header_cells);
+    assert_resizable_table_width_signals(cells);
+    for header in &header_cells[..3] {
+        let UiNodeKind::Box { children } = header.kind() else {
+            unreachable!()
+        };
+        assert!(matches!(children.last().map(gpui_rhai::UiNode::kind),
+            Some(UiNodeKind::Custom { primitive })
+                if primitive.primitive.as_str() == "gpui_rhai.column_resize"));
+    }
+    let UiNodeKind::Box {
+        children: last_header_children,
+    } = header_cells[3].kind()
+    else {
+        unreachable!()
+    };
+    assert!(
+        !last_header_children
+            .iter()
+            .any(|node| matches!(node.kind(), UiNodeKind::Custom { .. }))
+    );
     assert!(cells.iter().all(|cell| {
         cell.style().base.white_space == Some(gpui_rhai::WhiteSpaceMode::NoWrap)
             && cell.style().base.text_ellipsis == Some(true)
@@ -2252,6 +2329,8 @@ fn official_table_groups_array_rows_with_controlled_collapse() {
     )
     .unwrap();
     lifecycle.start(&mut engine).unwrap();
+
+    assert_table_has_no_width_signals(lifecycle.root().unwrap());
 
     let UiNodeKind::VirtualCollection { spec } = find_virtual_collection(lifecycle.root().unwrap())
         .expect("grouped Table must use virtual_collection")

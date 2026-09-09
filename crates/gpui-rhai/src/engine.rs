@@ -16,6 +16,7 @@ use crate::animation::register_animation_api;
 use crate::asset::{AssetId, ImageDecodeHandle, asset_id_from_script};
 use crate::backend::{AstInterpreter, ExecutionBackend};
 use crate::canvas::register_canvas_api;
+use crate::column_resize::{ColumnResizePrimitiveHandler, column_resize_primitive_descriptor};
 use crate::component::{ComponentExportCollector, ComponentExportError, ComponentRegistry};
 use crate::context::{UiContext, register_ui_context_api};
 use crate::date::register_date_api;
@@ -674,6 +675,11 @@ impl RuntimeEngine {
     }
 
     fn register_builtin_primitives(&mut self) {
+        self.register_primitive(
+            column_resize_primitive_descriptor(),
+            ColumnResizePrimitiveHandler,
+        )
+        .expect("built-in column resize primitive descriptor is valid");
         self.register_primitive(
             text_input_primitive_descriptor(),
             TextInputPrimitiveHandler::default(),
@@ -2782,7 +2788,7 @@ fn register_timer_api(engine: &mut Engine, active: &ActiveComponentRenderState) 
 }
 
 fn register_signal_api(engine: &mut Engine, active: &ActiveComponentRenderState) {
-    let active = Rc::clone(active);
+    let scalar_active = Rc::clone(active);
     FuncRegistration::new("signal")
         .in_global_namespace()
         .register_into_engine(
@@ -2793,46 +2799,68 @@ fn register_signal_api(engine: &mut Engine, active: &ActiveComponentRenderState)
                 let key = key.to_string();
                 let initial = crate::SignalValue::from_dynamic(initial)
                     .map_err(|error| Box::new(crate::signal::signal_runtime_error(&error)))?;
-                let mut guard = active.try_borrow_mut().map_err(|_| {
-                    Box::new(crate::signal::signal_runtime_error(
-                        &"component render stack is already borrowed",
-                    ))
-                })?;
-                let render = guard.as_mut().ok_or_else(|| {
-                    Box::new(crate::signal::signal_runtime_error(
-                        &"signal may run only during formal component render",
-                    ))
-                })?;
-                if render.effect_keys.last().and_then(Option::as_ref).is_none() {
-                    return Err(Box::new(crate::signal::signal_runtime_error(
-                        &"signals may be declared only by formal components",
-                    )));
-                }
-                let context = render.contexts.last().ok_or_else(|| {
-                    Box::new(crate::signal::signal_runtime_error(
-                        &"component render context stack is empty",
-                    ))
-                })?;
-                let component = context.component_path().clone();
-                let incarnation = context.component_incarnation();
-                if render
-                    .signals
-                    .keys()
-                    .any(|id| id.component() == &component && id.key() == key)
-                {
-                    return Err(Box::new(crate::signal::signal_runtime_error(
-                        &crate::SignalError::Duplicate { component, key },
-                    )));
-                }
-                let id = crate::SignalId::new_scoped(component, incarnation, key, initial.kind())
-                    .map_err(|error| Box::new(crate::signal::signal_runtime_error(&error)))?;
-                let signal = crate::NativeSignal::new(id.clone());
-                render
-                    .signals
-                    .insert(id, crate::signal::SignalDescriptor::new(initial));
-                Ok(signal)
+                declare_signal(&scalar_active, key, initial)
             },
         );
+
+    let optional_active = Rc::clone(active);
+    FuncRegistration::new("optional_float_signal")
+        .in_global_namespace()
+        .register_into_engine(
+            engine,
+            move |key: ImmutableString| -> Result<crate::NativeSignal, Box<EvalAltResult>> {
+                declare_signal(
+                    &optional_active,
+                    key.to_string(),
+                    crate::SignalValue::OptionalFloat(None),
+                )
+            },
+        );
+}
+
+fn declare_signal(
+    active: &ActiveComponentRenderState,
+    key: String,
+    initial: crate::SignalValue,
+) -> Result<crate::NativeSignal, Box<EvalAltResult>> {
+    let mut guard = active.try_borrow_mut().map_err(|_| {
+        Box::new(crate::signal::signal_runtime_error(
+            &"component render stack is already borrowed",
+        ))
+    })?;
+    let render = guard.as_mut().ok_or_else(|| {
+        Box::new(crate::signal::signal_runtime_error(
+            &"signal may run only during formal component render",
+        ))
+    })?;
+    if render.effect_keys.last().and_then(Option::as_ref).is_none() {
+        return Err(Box::new(crate::signal::signal_runtime_error(
+            &"signals may be declared only by formal components",
+        )));
+    }
+    let context = render.contexts.last().ok_or_else(|| {
+        Box::new(crate::signal::signal_runtime_error(
+            &"component render context stack is empty",
+        ))
+    })?;
+    let component = context.component_path().clone();
+    let incarnation = context.component_incarnation();
+    if render
+        .signals
+        .keys()
+        .any(|id| id.component() == &component && id.key() == key)
+    {
+        return Err(Box::new(crate::signal::signal_runtime_error(
+            &crate::SignalError::Duplicate { component, key },
+        )));
+    }
+    let id = crate::SignalId::new_scoped(component, incarnation, key, initial.kind())
+        .map_err(|error| Box::new(crate::signal::signal_runtime_error(&error)))?;
+    let signal = crate::NativeSignal::new(id.clone());
+    render
+        .signals
+        .insert(id, crate::signal::SignalDescriptor::new(initial));
+    Ok(signal)
 }
 
 fn register_element_ref_api(engine: &mut Engine, active: &ActiveComponentRenderState) {

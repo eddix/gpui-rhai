@@ -873,6 +873,7 @@ struct TableColumn {
     key: String,
     width: UiValue,
     align: String,
+    resize_signal_key: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1026,12 +1027,19 @@ impl TableProjection {
                 let text = row
                     .get(&column.key)
                     .map_or_else(String::new, display_scalar);
-                UiValue::Map(BTreeMap::from([
+                let mut cell = BTreeMap::from([
                     ("key".to_owned(), UiValue::String(column.key.clone())),
                     ("text".to_owned(), UiValue::String(text)),
                     ("width".to_owned(), column.width.clone()),
                     ("align".to_owned(), UiValue::String(column.align.clone())),
-                ]))
+                ]);
+                if let Some(signal_key) = &column.resize_signal_key {
+                    cell.insert(
+                        "resize_signal_key".to_owned(),
+                        UiValue::String(signal_key.clone()),
+                    );
+                }
+                UiValue::Map(cell)
             })
             .collect();
         let selection = match self.selection_mode {
@@ -1179,7 +1187,21 @@ impl TableColumn {
                 ));
             }
         };
-        Ok(Self { key, width, align })
+        let resize_signal_key = match column.remove("resize_signal_key") {
+            Some(UiValue::String(value)) => Some(value),
+            Some(_) => {
+                return Err(NativeCollectionError::InvalidTableConfig(
+                    "resize_signal_key must be a string".to_owned(),
+                ));
+            }
+            None => None,
+        };
+        Ok(Self {
+            key,
+            width,
+            align,
+            resize_signal_key,
+        })
     }
 }
 

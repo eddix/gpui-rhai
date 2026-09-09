@@ -81,6 +81,11 @@ Use these repeatable interactions when comparing changes:
 6. select and clear row 500 to measure a small controlled-state update against
    the same 1,000-row input.
 
+Column-drag performance is kept as a separate workload so this historical
+baseline remains comparable. Run the `data_table` example, drag a header
+divider vertically outside the header, and verify that preview remains smooth
+with no Rhai callback before the single committed `column_resize` event.
+
 Run release builds on the same machine, display configuration, power state,
 and window size. Record the commit, Rust toolchain, macOS version, hardware,
 and whether the process was sampled under Instruments. Development Inspector

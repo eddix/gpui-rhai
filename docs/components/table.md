@@ -1,7 +1,9 @@
 # Table
 
-The official Table is a copied Rhai source component. It has no native Table
-node, renderer, Entity, private scrollbar, or asset privilege.
+The official Table remains a copied Rhai source composition rather than a
+native Table renderer. Its optional divider handles use one small built-in
+native primitive so high-frequency pointer movement can update retained width
+signals without executing Rhai.
 
 Its header and cells are public Box/Text atoms. `rows` accepts either the
 original Rhai Array of maps or a Rust-owned `NativeCollection`. The Array path
@@ -63,7 +65,47 @@ sort/check assets were removed. Applications that require richer cells should
 supply domain data formatted before the Table boundary or compose a specialized
 source component over `virtual_collection`.
 
-Table exposes source parts for `root`, `header`, `header_cell`, `body`,
+## Column resizing
+
+Set `resizable_columns: true` to add a divider between eligible headers. A
+column may override the table default with `resizable: true/false` and may set
+positive logical-pixel `min_width` and `max_width`; the defaults are 48px and a
+bounded implementation ceiling. The last column has no trailing divider.
+
+```rhai
+fn column_resized(ctx, change) {
+    // change == #{ key: "name", width: #{ kind: "fixed", value: 248.0 } }
+    // Persist change.width into the caller's column model when desired.
+}
+
+table::Table(#{
+    // ordinary Table props...
+    resizable_columns: true,
+    columns: [
+        #{ key: "name", title: "Name", width: #{ kind: "flex", value: 2 },
+            min_width: 96, max_width: 480 },
+        #{ key: "status", title: "Status", width: #{ kind: "fixed", value: 120 } },
+    ],
+    on_column_resize: Fn("column_resized"),
+})
+```
+
+Before interaction, fixed/percent/flex descriptors remain fully responsive.
+Pointer-down snapshots the committed header width; native signal sampling then
+turns only that column into a non-shrinking fixed pixel override. Pointer moves
+continue outside the header and repaint header plus realized Array or
+NativeCollection cells without a Rhai render. Mouse-up emits exactly one
+`column_resize` event. The keyed Table retains the override when the event is
+unobserved; replacing that column's source width descriptor clears it.
+
+Each divider is a focusable vertical separator. Logical Left/Right changes the
+width by 8px and emits the same committed event; RTL reverses physical pointer
+and arrow direction while preserving logical increase/decrease semantics.
+Double-click auto-fit is intentionally absent: a virtualized NativeCollection
+cannot infer a stable maximum from unmounted rows without a separate provider
+measurement contract.
+
+Table exposes source parts for `root`, `header`, `header_cell`, `resize_handle`, `body`,
 `group_header`, `group_indicator`, `group_label`, `group_count`, `loading`, and
 `empty`. Lazy ordinary row/cell part overrides require the future structural
 item-context API and are intentionally not faked through UiValue.
