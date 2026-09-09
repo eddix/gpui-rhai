@@ -5,6 +5,14 @@ All notable runtime, CLI, and registry changes are documented here. Version
 component schema, manifest, locale, and generated-source changes follow
 semantic versioning from this release.
 
+## 0.1.2 - Unreleased
+
+- `Style::flex_grow_weight` and Rhai's overloaded `style().flex_grow(weight)`
+  now expose GPUI's positive numeric grow factor. Table `flex` column values are
+  weights over remaining width instead of falling through to raw pixels;
+  fixed/percent columns do not shrink, and Array/NativeCollection headers and
+  cells share the same width contract.
+
 ## 0.1.1 - 2026-09-08
 
 - Runtime identity now distinguishes globally unique program candidates,

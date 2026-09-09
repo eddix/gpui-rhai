@@ -13,7 +13,8 @@ Formal component authors resolve every public part through
 The current public builder maps directly to stable GPUI 0.2.2 behavior:
 
 - block, flex, and bounded explicit grid layout (`grid_cols/rows`, spans);
-- row/column direction, wrapping, grow/shrink/basis, alignment, justification;
+- row/column direction, wrapping, boolean or positive weighted grow,
+  shrink/basis, alignment, and justification;
 - min/max/fixed/auto sizing and flex basis, gaps, physical/logical padding and
   definite/auto/signed margins;
 - relative/absolute positioning with definite/auto/signed four-edge insets and
@@ -27,6 +28,19 @@ The current public builder maps directly to stable GPUI 0.2.2 behavior:
 - font family, ordered fallback stack, bounded OpenType feature tags, numeric
   weight, normal/italic style, size/line height, logical text alignment,
   whitespace, ellipsis, and bounded line clamp.
+
+`style().flex_grow()` uses GPUI's ordinary factor of 1. The overloaded
+`style().flex_grow(weight)` accepts a positive integer or float and preserves
+that numeric factor through merge, serialization, theme resolution, and GPUI
+layout. Use a zero relative basis when weights should divide only the remaining
+main-axis space:
+
+```rhai
+style().flex_basis(relative(0)).flex_grow(2).min_width(px(0))
+```
+
+`relative(2)` is not a grow weight; relative lengths are fractions of the
+containing size and remain bounded to their own length contract.
 
 `style().typography("body")` applies one of the theme's eight validated semantic
 roles (`caption`, `body_small`, `body`, `subtitle`, `title`, `heading`,

@@ -809,6 +809,9 @@ Guidelines:
 - Keep `view` and ordinary callbacks short; 16 ms is the default slow warning.
 - Do not parse files, access the network, or perform blocking work in `view`.
 - Use `virtual_collection` for large lists and Tables.
+- In Table column widths, `fixed` values are pixels, `percent` values are
+  percentages, and `flex` values are positive weights over the remaining row
+  width; use 1/2 rather than pixel-like values such as 100/200.
 - Treat `virtual_collection` as presentation-only. The owning component defines
   enabled items, keyboard navigation, the single active style, and passes its
   controlled key as `reveal_key`; sticky rows are a separate layout policy.

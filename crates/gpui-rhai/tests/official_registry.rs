@@ -230,6 +230,32 @@ fn target_handler(node: &gpui_rhai::UiNode, event: &str) -> (ScriptCallback, UiV
     )
 }
 
+fn assert_table_column_width_contract(columns: &[gpui_rhai::UiNode]) {
+    assert_eq!(columns.len(), 4);
+    assert_eq!(
+        columns[0].style().base.width,
+        Some(gpui_rhai::Length::Pixels(120.0).into())
+    );
+    assert_eq!(columns[0].style().base.flex_shrink, Some(false));
+    assert_eq!(columns[1].style().base.width, None);
+    assert_eq!(
+        columns[1].style().base.flex_basis,
+        Some(gpui_rhai::Length::Relative(0.0).into())
+    );
+    assert_eq!(columns[1].style().base.flex_grow, None);
+    assert_eq!(columns[1].style().base.flex_grow_weight, Some(2.0));
+    assert_eq!(
+        columns[2].style().base.width,
+        Some(gpui_rhai::Length::Relative(0.3).into())
+    );
+    assert_eq!(columns[2].style().base.flex_shrink, Some(false));
+    assert_eq!(
+        columns[3].style().base.width,
+        Some(gpui_rhai::Length::Pixels(90.0).into())
+    );
+    assert_eq!(columns[3].style().base.flex_shrink, Some(false));
+}
+
 fn invoke_and_render(
     lifecycle: &mut ScriptLifecycle,
     engine: &mut RuntimeEngine,
@@ -2117,7 +2143,7 @@ fn official_table_is_public_data_backed_rhai_composition() {
                         ],
                         columns: [
                             #{ key: "name", title: "Name", width: #{ kind: "fixed", value: 120 }, sortable: true },
-                            #{ key: "score", title: "Score", width: #{ kind: "flex", value: 100 } },
+                            #{ key: "score", title: "Score", width: #{ kind: "flex", value: 2 } },
                             #{ key: "joined", title: "Joined", width: #{ kind: "percent", value: 30 } },
                             #{ key: "status", title: "Status", width: #{ kind: "fixed", value: 90 } }
                         ],
@@ -2144,6 +2170,12 @@ fn official_table_is_public_data_backed_rhai_composition() {
     let UiNodeKind::Box { children } = lifecycle.root().unwrap().kind() else {
         panic!("Table must be a public Box composition");
     };
+    let UiNodeKind::Box {
+        children: header_cells,
+    } = children[0].kind()
+    else {
+        panic!("Table header must remain a public row composition");
+    };
     assert!(
         matches!(children[1].kind(), UiNodeKind::VirtualCollection { spec }
         if spec.data.len() == 2 && spec.height.is_none())
@@ -2159,6 +2191,8 @@ fn official_table_is_public_data_backed_rhai_composition() {
     let UiNodeKind::Box { children: cells } = row.kind() else {
         panic!("table row must remain a public row composition");
     };
+    assert_table_column_width_contract(header_cells);
+    assert_table_column_width_contract(cells);
     assert!(cells.iter().all(|cell| {
         cell.style().base.white_space == Some(gpui_rhai::WhiteSpaceMode::NoWrap)
             && cell.style().base.text_ellipsis == Some(true)
@@ -2279,7 +2313,7 @@ fn official_table_groups_native_collection_without_materializing_rows_in_rhai() 
                             #{ key: "track", title: "Track",
                                 width: #{ kind: "fixed", value: 120 } },
                             #{ key: "state", title: "State",
-                                width: #{ kind: "fixed", value: 100 } }
+                                width: #{ kind: "flex", value: 2 } }
                         ]
                     })
                 }
@@ -2336,6 +2370,15 @@ fn official_table_groups_native_collection_without_materializing_rows_in_rhai() 
         spec.realized[&0].attributes().get("label"),
         Some(&UiValue::String("alpha, 2".to_owned()))
     );
+    let UiNodeKind::Box { children: cells } = spec.realized[&1].kind() else {
+        panic!("native Table row must remain a public row composition");
+    };
+    assert_eq!(cells[1].style().base.width, None);
+    assert_eq!(
+        cells[1].style().base.flex_basis,
+        Some(gpui_rhai::Length::Relative(0.0).into())
+    );
+    assert_eq!(cells[1].style().base.flex_grow_weight, Some(2.0));
 }
 
 #[test]
