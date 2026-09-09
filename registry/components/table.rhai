@@ -2,7 +2,7 @@
 {
   "id": "components/table",
   "export": "Table",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": [],
   "capabilities": {},
@@ -19,7 +19,7 @@
 //     columns: columns, height: 420 })
 
 define_component(#{
-    metadata: #{ id: "components/table", "export": "Table", version: "0.1.1",
+    metadata: #{ id: "components/table", "export": "Table", version: "0.1.2",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
         dependencies: [], capabilities: #{},
         assets: ["icons/disclosure_down.svg", "icons/chevron_right.svg", "icons/sort_ascending.svg", "icons/sort_descending.svg"] },
@@ -102,9 +102,13 @@ fn prop_or(props, name, fallback) { if name in props { props[name] } else { fall
 
 fn column_style(column) {
     let style = style().padding_x(theme_spacing("sm"));
-    if column.width.kind == "fixed" { style.width(px(column.width.value)) }
-    else if column.width.kind == "percent" { style.width(relative(column.width.value / 100.0)) }
-    else { style.width(px(column.width.value)) }
+    if column.width.kind == "fixed" {
+        style.width(px(column.width.value)).flex_shrink(false)
+    } else if column.width.kind == "percent" {
+        style.width(relative(column.width.value / 100.0)).flex_shrink(false)
+    } else {
+        style.flex_basis(relative(0)).flex_grow(column.width.value).min_width(px(0))
+    }
 }
 
 fn next_sort(current, key) {

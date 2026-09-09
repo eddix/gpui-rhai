@@ -19,7 +19,7 @@ doc = false
 
 [dependencies]
 clap.workspace = true
-gpui-rhai = { version = "0.1.1", path = "../gpui-rhai" }
+gpui-rhai = { version = "0.1.2", path = "../gpui-rhai" }
 gpui-rhai-registry.workspace = true
 semver.workspace = true
 serde.workspace = true

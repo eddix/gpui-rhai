@@ -3597,7 +3597,9 @@ fn apply_layout_dimensions(mut element: Div, style: &StyleProperties) -> Div {
     if let Some(value) = style.gap {
         element = gap(element, value);
     }
-    if style.flex_grow == Some(true) {
+    if let Some(weight) = style.flex_grow_weight {
+        element.style().flex_grow = Some(to_f32(weight));
+    } else if style.flex_grow == Some(true) {
         element = element.flex_grow();
     }
     if let Some(shrink) = style.flex_shrink {
@@ -4237,6 +4239,17 @@ mod tests {
             signed.style().margin.left,
             Some(gpui::Length::from(px(-12.0)))
         );
+
+        let mut weighted = apply_layout_dimensions(
+            div(),
+            &StyleProperties {
+                flex_grow_weight: Some(2.5),
+                flex_basis: Some(Length::Relative(0.0).into()),
+                ..StyleProperties::default()
+            },
+        );
+        assert_eq!(weighted.style().flex_grow, Some(2.5));
+        assert_eq!(weighted.style().flex_basis, Some(relative(0.0).into()));
     }
 
     #[test]

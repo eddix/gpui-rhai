@@ -3312,6 +3312,101 @@ fn grouped_table_headers_stick_through_the_native_virtual_list(cx: &mut TestAppC
 }
 
 #[gpui::test]
+fn table_flex_columns_distribute_remaining_width_by_weight(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let entry = ModuleId::parse("main").unwrap();
+    let prepared = EmbeddedScriptView::new(
+        entry.clone(),
+        EmbeddedScriptSource::new(std::collections::BTreeMap::from([
+            (
+                entry,
+                r#"
+                    import "components/table" as table;
+                    fn view(ctx) {
+                        table::Table(#{
+                            key: "weighted", label: "Weighted columns", row_key: "id",
+                            rows: [#{ id: "row", fixed: "Fixed", percent: "Percent",
+                                one: "One", two: "Two" }],
+                            columns: [
+                                #{ key: "fixed", title: "Fixed", width: #{ kind: "fixed", value: 120 } },
+                                #{ key: "percent", title: "Percent", width: #{ kind: "percent", value: 25 } },
+                                #{ key: "one", title: "Flex one", width: #{ kind: "flex", value: 1 } },
+                                #{ key: "two", title: "Flex two", width: #{ kind: "flex", value: 2 } },
+                            ],
+                            height: 140,
+                        })
+                    }
+                "#
+                .to_owned(),
+            ),
+            (
+                ModuleId::parse("components/table").unwrap(),
+                include_str!("../../../registry/components/table.rhai").to_owned(),
+            ),
+        ])),
+        include_str!("../../../registry/themes/default_dark.rhai"),
+    )
+    .asset_sources(official_icon_assets())
+    .prepare()
+    .unwrap();
+    let captured = Rc::new(RefCell::new(None));
+    let captured_for_window = Rc::clone(&captured);
+    let window = cx.add_window(move |window, cx| {
+        let host = ScriptViewHost::new("weighted-table-window", cx).unwrap();
+        let view = prepared
+            .mount(
+                ScriptViewConfig::new("weighted-table-view"),
+                host.clone(),
+                window,
+                cx,
+            )
+            .unwrap();
+        *captured_for_window.borrow_mut() = Some(view.clone());
+        SingleEmbeddedHost { host, view }
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    cx.run_until_parked();
+
+    let view = captured.borrow().as_ref().unwrap().clone();
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    let widths = |visual: &mut VisualTestContext, view: &ScriptViewHandle| {
+        visual.update(|_, cx| {
+            let snapshot = view.accessibility_snapshot(cx).unwrap();
+            let width = |name: &str| {
+                snapshot
+                    .find_by_role_and_name("columnheader", name)
+                    .next()
+                    .unwrap()
+                    .geometry
+                    .unwrap()
+                    .visual
+                    .width
+            };
+            [
+                width("Fixed"),
+                width("Percent"),
+                width("Flex one"),
+                width("Flex two"),
+            ]
+        })
+    };
+
+    for viewport in [800.0, 1_200.0] {
+        visual.simulate_resize(size(px(viewport), px(420.0)));
+        visual.run_until_parked();
+        let [fixed, percent, one, two] = widths(&mut visual, &view);
+        assert!((fixed - 120.0).abs() < 1.0, "fixed={fixed}");
+        assert!(percent > fixed, "percent={percent} fixed={fixed}");
+        assert!(one > 40.0, "flex one collapsed: {one}");
+        assert!(
+            (1.9..=2.1).contains(&(two / one)),
+            "flex weights did not produce 1:2 widths: one={one} two={two}"
+        );
+    }
+}
+
+#[gpui::test]
 fn table_does_not_expand_an_auto_min_width_host_flex_column_across_frames(cx: &mut TestAppContext) {
     cx.update(gpui_rhai::install);
     let entry = ModuleId::parse("main").unwrap();

@@ -51,11 +51,17 @@ or `fill_height: true`; fill mode participates in a parent flex layout and uses
 the measured native viewport for virtualization. `estimated_row_height` remains
 optional. Cells and headers are single-line, clipped, and ellipsized so fixed
 row heights cannot overpaint adjacent rows. Column widths remain tagged
-fixed/percent/flex data. The old eager `cell_renderer`, native locale formatter
-maps, selection geometry, private horizontal scrollbar configuration, and
-bundled sort/check assets were removed. Applications that require richer cells
-should supply domain data formatted before the Table boundary or compose a
-specialized source component over `virtual_collection`.
+fixed/percent/flex data: fixed values are logical pixels, percent values are a
+percentage of the row width, and flex values are positive weights that divide
+the space remaining after fixed and percentage columns. A flex value is never
+interpreted as pixels. Fixed and percent columns keep their declared width and
+horizontal overflow remains available when the complete contract is wider than
+the viewport. Header cells and Array/NativeCollection body cells call the same
+width function. The old eager `cell_renderer`, native locale formatter maps,
+selection geometry, private horizontal scrollbar configuration, and bundled
+sort/check assets were removed. Applications that require richer cells should
+supply domain data formatted before the Table boundary or compose a specialized
+source component over `virtual_collection`.
 
 Table exposes source parts for `root`, `header`, `header_cell`, `body`,
 `group_header`, `group_indicator`, `group_label`, `group_count`, `loading`, and

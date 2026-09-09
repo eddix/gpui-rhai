@@ -774,6 +774,8 @@ pub enum StyleValueError {
     InvalidOpacity(f64),
     #[error("translation must be finite, got {0}")]
     InvalidTranslation(f64),
+    #[error("flex grow weight must be finite, positive, and representable by GPUI, got {0}")]
+    InvalidFlexGrowWeight(f64),
     #[error("font weight must be between 1 and 1000, got {0}")]
     InvalidFontWeight(i64),
     #[error("font family must be a non-empty string no longer than 256 bytes")]
@@ -963,6 +965,7 @@ pub struct StyleProperties {
     pub typography: Option<String>,
     pub font_size: Option<Length>,
     pub flex_grow: Option<bool>,
+    pub flex_grow_weight: Option<f64>,
     pub flex_shrink: Option<bool>,
     pub flex_basis: Option<LayoutLength>,
     pub grid_columns: Option<u16>,
@@ -1022,7 +1025,13 @@ impl StyleProperties {
         self.radii.merge(&overlay.radii);
         merge_option(&mut self.typography, overlay.typography.clone());
         merge_option(&mut self.font_size, overlay.font_size);
-        merge_option(&mut self.flex_grow, overlay.flex_grow);
+        if let Some(weight) = overlay.flex_grow_weight {
+            self.flex_grow = None;
+            self.flex_grow_weight = Some(weight);
+        } else if let Some(grow) = overlay.flex_grow {
+            self.flex_grow = Some(grow);
+            self.flex_grow_weight = None;
+        }
         merge_option(&mut self.flex_shrink, overlay.flex_shrink);
         merge_option(&mut self.flex_basis, overlay.flex_basis);
         merge_option(&mut self.grid_columns, overlay.grid_columns);
@@ -1490,7 +1499,21 @@ impl Style {
     #[must_use]
     pub fn flex_grow(mut self) -> Self {
         self.base.flex_grow = Some(true);
+        self.base.flex_grow_weight = None;
         self
+    }
+
+    /// Set the positive relative rate used to distribute free main-axis space.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StyleValueError`] for zero, negative, non-finite, or
+    /// unrepresentable weights.
+    pub fn flex_grow_weight(mut self, weight: f64) -> Result<Self, StyleValueError> {
+        validate_flex_grow_weight(weight)?;
+        self.base.flex_grow = None;
+        self.base.flex_grow_weight = Some(weight);
+        Ok(self)
     }
 
     #[must_use]
@@ -1865,6 +1888,14 @@ fn validate_translation(value: f64) -> Result<(), StyleValueError> {
     }
 }
 
+fn validate_flex_grow_weight(value: f64) -> Result<(), StyleValueError> {
+    if value.is_finite() && value > 0.0 && value <= f64::from(f32::MAX) {
+        Ok(())
+    } else {
+        Err(StyleValueError::InvalidFlexGrowWeight(value))
+    }
+}
+
 fn merge_pseudo(base: &mut Option<StyleProperties>, overlay: Option<&StyleProperties>) {
     if let Some(overlay) = overlay {
         base.get_or_insert_with(StyleProperties::default)
@@ -2167,6 +2198,7 @@ fn register_position_methods(builder: &mut TypeBuilder<Style>) {
 }
 
 fn register_extended_layout_methods(builder: &mut TypeBuilder<Style>) {
+    register_flex_methods(builder);
     builder
         .with_fn("min_width", |style: &mut Style, value: Length| {
             style.clone().min_width(value)
@@ -2213,13 +2245,6 @@ fn register_extended_layout_methods(builder: &mut TypeBuilder<Style>) {
         .with_fn("justify_around", |style: &mut Style| {
             style.clone().justify_around()
         })
-        .with_fn("flex_grow", |style: &mut Style| style.clone().flex_grow())
-        .with_fn("flex_shrink", |style: &mut Style, value: bool| {
-            style.clone().flex_shrink(value)
-        })
-        .with_fn("flex_basis", |style: &mut Style, value: Length| {
-            style.clone().flex_basis(value)
-        })
         .with_fn("flex_wrap", |style: &mut Style| {
             style.clone().flex_wrap(FlexWrapMode::Wrap)
         })
@@ -2252,6 +2277,35 @@ fn register_extended_layout_methods(builder: &mut TypeBuilder<Style>) {
                 .clone()
                 .row_span(value)
                 .map_err(|error| Box::new(style_runtime_error(error.to_string())))
+        });
+}
+
+fn register_flex_methods(builder: &mut TypeBuilder<Style>) {
+    builder
+        .with_fn("flex_grow", |style: &mut Style| style.clone().flex_grow())
+        .with_fn(
+            "flex_grow",
+            |style: &mut Style, value: FLOAT| -> Result<Style, Box<EvalAltResult>> {
+                style
+                    .clone()
+                    .flex_grow_weight(value)
+                    .map_err(|error| Box::new(style_runtime_error(error.to_string())))
+            },
+        )
+        .with_fn(
+            "flex_grow",
+            |style: &mut Style, value: INT| -> Result<Style, Box<EvalAltResult>> {
+                style
+                    .clone()
+                    .flex_grow_weight(numeric_to_f64(&value)?)
+                    .map_err(|error| Box::new(style_runtime_error(error.to_string())))
+            },
+        )
+        .with_fn("flex_shrink", |style: &mut Style, value: bool| {
+            style.clone().flex_shrink(value)
+        })
+        .with_fn("flex_basis", |style: &mut Style, value: Length| {
+            style.clone().flex_basis(value)
         });
 }
 
@@ -2748,6 +2802,40 @@ mod tests {
             CornerLengths::all(Length::ThemeRadius(RadiusToken::Md))
         );
         assert!(style.hover.is_some());
+    }
+
+    #[test]
+    fn weighted_flex_grow_is_validated_overloaded_and_merges_as_one_property() {
+        let mut engine = Engine::new();
+        register_style_api(&mut engine);
+        let float: Style = engine.eval("style().flex_grow(2.5)").unwrap();
+        let integer: Style = engine.eval("style().flex_grow(3)").unwrap();
+        assert_eq!(float.base.flex_grow_weight, Some(2.5));
+        assert_eq!(float.base.flex_grow, None);
+        assert_eq!(integer.base.flex_grow_weight, Some(3.0));
+        for invalid in ["0", "-1"] {
+            assert!(
+                engine
+                    .eval::<Style>(&format!("style().flex_grow({invalid})"))
+                    .is_err()
+            );
+        }
+        assert!(Style::new().flex_grow_weight(f64::INFINITY).is_err());
+
+        let standard = Style::new()
+            .flex_grow_weight(4.0)
+            .unwrap()
+            .merged(&Style::new().flex_grow());
+        assert_eq!(standard.base.flex_grow, Some(true));
+        assert_eq!(standard.base.flex_grow_weight, None);
+        let weighted = Style::new()
+            .flex_grow()
+            .merged(&Style::new().flex_grow_weight(4.0).unwrap());
+        assert_eq!(weighted.base.flex_grow, None);
+        assert_eq!(weighted.base.flex_grow_weight, Some(4.0));
+
+        let encoded = serde_json::to_string(&weighted).unwrap();
+        assert_eq!(serde_json::from_str::<Style>(&encoded).unwrap(), weighted);
     }
 
     #[test]

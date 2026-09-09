@@ -401,7 +401,7 @@ fn specimen_data() {
         #{ id: "three", name: "Grace", state: "Offline", score: 91 },
     ];
     let columns = [
-        #{ key: "name", title: "Name", width: #{ kind: "flex", value: 160 }, sortable: true },
+        #{ key: "name", title: "Name", width: #{ kind: "flex", value: 1 }, sortable: true },
         #{ key: "state", title: "State", width: #{ kind: "fixed", value: 120 } },
         #{ key: "score", title: "Score", width: #{ kind: "fixed", value: 90 }, align: "end" },
     ];
