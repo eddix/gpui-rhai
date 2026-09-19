@@ -13,19 +13,8 @@ use gpui_rhai::{
 };
 
 use super::{
-    ACCORDION_SOURCE, ALERT_DIALOG_SOURCE, ALERT_SOURCE, AR_LOCALE, AVATAR_SOURCE, BADGE_SOURCE,
-    BUNDLED_THEME_SOURCES, BUTTON_GROUP_SOURCE, BUTTON_SOURCE, CARD_SOURCE, CHECK_SVG,
-    CHECKBOX_SOURCE, CHEVRON_DOWN_SVG, CHEVRON_UP_SVG, CLOSE_SVG, CODE_VIEWER_SOURCE,
-    COLLAPSIBLE_SOURCE, COMBOBOX_SOURCE, COMMAND_DIALOG_SOURCE, COMMAND_SOURCE,
-    CONTEXT_MENU_SOURCE, DATE_NEXT_SVG, DATE_PICKER_SOURCE, DATE_PREVIOUS_SVG, DEFAULT_THEME,
-    DIALOG_SOURCE, DIFF_VIEWER_SOURCE, DISCLOSURE_DOWN_SVG, DIVIDER_SOURCE, EMPTY_SOURCE,
-    EN_LOCALE, FORM_FIELD_SOURCE, GROUP_BOX_SOURCE, ICON_SOURCE, INFO_SVG, INPUT_GROUP_SOURCE,
-    INPUT_SOURCE, KBD_SOURCE, LABEL_SOURCE, MENU_SOURCE, MINUS_SVG, PAGINATION_SOURCE, PLUS_SVG,
-    POPOVER_SOURCE, PROGRESS_SOURCE, RADIO_GROUP_SOURCE, RADIO_SOURCE, SCROLL_AREA_SOURCE,
-    SEARCH_SVG, SELECT_SOURCE, SHEET_SOURCE, SKELETON_SOURCE, SLIDER_SOURCE, SORT_ASCENDING_SVG,
-    SORT_DESCENDING_SVG, SPINNER_SOURCE, STATUS_BAR_SOURCE, STUDIO_SOURCE, SWITCH_SOURCE,
-    TABLE_SOURCE, TABS_SOURCE, TAG_SOURCE, TEXTAREA_SOURCE, TITLE_BAR_SOURCE, TOAST_SOURCE,
-    TOGGLE_GROUP_SOURCE, TOGGLE_SOURCE, TOOLTIP_SOURCE, WARNING_SVG, ZH_CN_LOCALE,
+    AR_LOCALE, BUNDLED_ASSET_SOURCES, BUNDLED_COMPONENT_SOURCES_BY_ID, BUNDLED_THEME_SOURCES,
+    DEFAULT_THEME, EN_LOCALE, STUDIO_SOURCE, ZH_CN_LOCALE,
 };
 const COLOR_TOKENS: &[&str] = &[
     "surface",
@@ -841,59 +830,13 @@ fn asset(bytes: &[u8]) -> AssetData {
 }
 
 fn studio_scripts(main: &str) -> EmbeddedScriptSource {
-    EmbeddedScriptSource::new(BTreeMap::from([
-        module("main", main),
-        module("components/accordion", ACCORDION_SOURCE),
-        module("components/avatar", AVATAR_SOURCE),
-        module("components/button", BUTTON_SOURCE),
-        module("components/checkbox", CHECKBOX_SOURCE),
-        module("components/collapsible", COLLAPSIBLE_SOURCE),
-        module("components/date_picker", DATE_PICKER_SOURCE),
-        module("components/dialog", DIALOG_SOURCE),
-        module("components/divider", DIVIDER_SOURCE),
-        module("components/combobox", COMBOBOX_SOURCE),
-        module("components/form_field", FORM_FIELD_SOURCE),
-        module("components/icon", ICON_SOURCE),
-        module("components/input", INPUT_SOURCE),
-        module("components/label", LABEL_SOURCE),
-        module("components/menu", MENU_SOURCE),
-        module("components/pagination", PAGINATION_SOURCE),
-        module("components/popover", POPOVER_SOURCE),
-        module("components/progress", PROGRESS_SOURCE),
-        module("components/radio", RADIO_SOURCE),
-        module("components/radio_group", RADIO_GROUP_SOURCE),
-        module("components/select", SELECT_SOURCE),
-        module("components/skeleton", SKELETON_SOURCE),
-        module("components/switch", SWITCH_SOURCE),
-        module("components/table", TABLE_SOURCE),
-        module("components/tabs", TABS_SOURCE),
-        module("components/tag", TAG_SOURCE),
-        module("components/textarea", TEXTAREA_SOURCE),
-        module("components/toast", TOAST_SOURCE),
-        module("components/tooltip", TOOLTIP_SOURCE),
-        module("components/alert", ALERT_SOURCE),
-        module("components/alert_dialog", ALERT_DIALOG_SOURCE),
-        module("components/badge", BADGE_SOURCE),
-        module("components/button_group", BUTTON_GROUP_SOURCE),
-        module("components/card", CARD_SOURCE),
-        module("components/command", COMMAND_SOURCE),
-        module("components/command_dialog", COMMAND_DIALOG_SOURCE),
-        module("components/code_viewer", CODE_VIEWER_SOURCE),
-        module("components/context_menu", CONTEXT_MENU_SOURCE),
-        module("components/diff_viewer", DIFF_VIEWER_SOURCE),
-        module("components/empty", EMPTY_SOURCE),
-        module("components/group_box", GROUP_BOX_SOURCE),
-        module("components/input_group", INPUT_GROUP_SOURCE),
-        module("components/kbd", KBD_SOURCE),
-        module("components/sheet", SHEET_SOURCE),
-        module("components/slider", SLIDER_SOURCE),
-        module("components/spinner", SPINNER_SOURCE),
-        module("components/toggle", TOGGLE_SOURCE),
-        module("components/toggle_group", TOGGLE_GROUP_SOURCE),
-        module("components/scroll_area", SCROLL_AREA_SOURCE),
-        module("components/title_bar", TITLE_BAR_SOURCE),
-        module("components/status_bar", STATUS_BAR_SOURCE),
-    ]))
+    let mut modules = BTreeMap::from([module("main", main)]);
+    modules.extend(
+        BUNDLED_COMPONENT_SOURCES_BY_ID
+            .iter()
+            .map(|(id, source)| module(id, source)),
+    );
+    EmbeddedScriptSource::new(modules)
 }
 
 /// Launch the first-party gpui-rhai theme editor.
@@ -1005,55 +948,12 @@ fn launch(
             ("zh_cn.rhai".to_owned(), ZH_CN_LOCALE.to_owned()),
             ("ar.rhai".to_owned(), AR_LOCALE.to_owned()),
         ])
-        .asset_sources([
-            ("icons/check".to_owned(), asset(CHECK_SVG.as_bytes())),
-            ("icons/close".to_owned(), asset(CLOSE_SVG.as_bytes())),
+        .asset_sources(BUNDLED_ASSET_SOURCES.iter().map(|(path, source)| {
             (
-                "icons/chevron_left".to_owned(),
-                asset(super::CHEVRON_LEFT_SVG.as_bytes()),
-            ),
-            (
-                "icons/chevron_right".to_owned(),
-                asset(super::CHEVRON_RIGHT_SVG.as_bytes()),
-            ),
-            (
-                "icons/calendar".to_owned(),
-                asset(super::CALENDAR_SVG.as_bytes()),
-            ),
-            (
-                "icons/date_previous".to_owned(),
-                asset(DATE_PREVIOUS_SVG.as_bytes()),
-            ),
-            (
-                "icons/date_next".to_owned(),
-                asset(DATE_NEXT_SVG.as_bytes()),
-            ),
-            (
-                "icons/disclosure_down".to_owned(),
-                asset(DISCLOSURE_DOWN_SVG.as_bytes()),
-            ),
-            (
-                "icons/sort_ascending".to_owned(),
-                asset(SORT_ASCENDING_SVG.as_bytes()),
-            ),
-            (
-                "icons/sort_descending".to_owned(),
-                asset(SORT_DESCENDING_SVG.as_bytes()),
-            ),
-            (
-                "icons/chevron_down".to_owned(),
-                asset(CHEVRON_DOWN_SVG.as_bytes()),
-            ),
-            (
-                "icons/chevron_up".to_owned(),
-                asset(CHEVRON_UP_SVG.as_bytes()),
-            ),
-            ("icons/minus".to_owned(), asset(MINUS_SVG.as_bytes())),
-            ("icons/plus".to_owned(), asset(PLUS_SVG.as_bytes())),
-            ("icons/search".to_owned(), asset(SEARCH_SVG.as_bytes())),
-            ("icons/info".to_owned(), asset(INFO_SVG.as_bytes())),
-            ("icons/warning".to_owned(), asset(WARNING_SVG.as_bytes())),
-        ])
+                path.strip_suffix(".svg").unwrap_or(path).to_owned(),
+                asset(source.as_bytes()),
+            )
+        }))
         .extension(ThemeStudioExtension { session, builtins })
         .development(true)
         .prepare()
@@ -1106,60 +1006,9 @@ mod tests {
 
     #[test]
     fn studio_source_contains_every_official_component() {
-        for component in [
-            "accordion",
-            "avatar",
-            "button",
-            "checkbox",
-            "collapsible",
-            "date_picker",
-            "dialog",
-            "divider",
-            "combobox",
-            "form_field",
-            "icon",
-            "input",
-            "label",
-            "menu",
-            "pagination",
-            "popover",
-            "progress",
-            "radio_group",
-            "radio",
-            "select",
-            "skeleton",
-            "switch_component",
-            "table",
-            "tabs",
-            "tag",
-            "textarea",
-            "toast",
-            "tooltip",
-            "alert",
-            "alert_dialog",
-            "badge",
-            "button_group",
-            "card",
-            "command",
-            "command_dialog",
-            "code_viewer",
-            "context_menu",
-            "diff_viewer",
-            "empty",
-            "group_box",
-            "input_group",
-            "kbd",
-            "sheet",
-            "slider",
-            "spinner",
-            "toggle",
-            "toggle_group",
-            "scroll_area",
-            "title_bar",
-            "status_bar",
-        ] {
+        for (component, _) in BUNDLED_COMPONENT_SOURCES_BY_ID {
             assert!(
-                STUDIO_SOURCE.contains(&format!("{component}::")),
+                STUDIO_SOURCE.contains(&format!("import \"{component}\"")),
                 "{component}"
             );
         }

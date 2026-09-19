@@ -2,7 +2,7 @@
 {
   "id": "components/button",
   "export": "Button",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": [],
   "capabilities": {}
@@ -20,7 +20,7 @@ define_component(#{
     metadata: #{
         id: "components/button",
         "export": "Button",
-        version: "0.1.1",
+        version: "0.1.2",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
         dependencies: [],
         capabilities: #{},
@@ -186,11 +186,13 @@ fn render_Button(ctx, props) {
 
     let children = [];
     if "prefix" in props && props.prefix != () {
-        children.push(props.prefix.with_style(ctx.component_style("prefix", style())));
+        children.push(props.prefix.with_style(ctx.component_style("prefix",
+            style().text_color(button_foreground(variant)))));
     }
     children.push(text(label).with_style(ctx.component_style("label", style())));
     if "suffix" in props && props.suffix != () {
-        children.push(props.suffix.with_style(ctx.component_style("suffix", style())));
+        children.push(props.suffix.with_style(ctx.component_style("suffix",
+            style().text_color(button_foreground(variant)))));
     }
     let button = row(children)
         .with_style(ctx.component_style("root", base))

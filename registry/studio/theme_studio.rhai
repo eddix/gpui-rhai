@@ -1,6 +1,7 @@
 import "components/accordion" as accordion;
 import "components/avatar" as avatar;
 import "components/button" as button;
+import "components/icon_button" as icon_button;
 import "components/checkbox" as checkbox;
 import "components/collapsible" as collapsible;
 import "components/date_picker" as date_picker;
@@ -264,6 +265,8 @@ fn specimen_typography() {
 }
 
 fn specimen_actions() {
+    let search_icon = svg("<svg width='24' height='24' viewBox='0 0 24 24' fill='none'><circle cx='11' cy='11' r='6' stroke='currentColor' stroke-width='2'/><path d='M16 16L21 21' stroke='currentColor' stroke-width='2'/></svg>");
+    let launch_icon = svg("<svg width='24' height='24' viewBox='0 0 24 24' fill='none'><path d='M5 12H19M13 6L19 12L13 18' stroke='currentColor' stroke-width='2'/></svg>");
     column([
         specimen_title("ACTIONS", "Variants, sizes, tags and disabled states."),
         row([
@@ -280,6 +283,10 @@ fn specimen_actions() {
             button::Button(#{ text: "LG", size: "lg", variant: "outline" }),
             button::Button(#{ text: "Disabled", disabled: true }),
             button::Button(#{ text: "Loading", loading: true, variant: "secondary" }),
+        ]).with_style(style().gap(px(5)).items_center()),
+        row([
+            icon_button::IconButton(#{ icon: search_icon, label: "Search", size: "md", variant: "outline" }),
+            button::Button(#{ text: "Launch", prefix: launch_icon, variant: "secondary" }),
         ]).with_style(style().gap(px(5)).items_center()),
         row([
             tag::Tag(#{ text: "ACCENT", variant: "accent" }),
@@ -632,13 +639,13 @@ fn gallery_title_bar(ctx) {
     ]).with_style(style().min_width(px(0)).gap(px(6)).items_center().overflow_hidden());
     let config = #{ label: "GPUI Rhai Component Gallery", title: breadcrumb,
         inset_start: 70, end: [themes] };
-    if !compact { config.subtitle = "50 source-owned components · native GPUI behavior · live themes"; }
+    if !compact { config.subtitle = "51 source-owned components · native GPUI behavior · live themes"; }
     title_bar::TitleBar(config)
 }
 
 fn gallery_status_bar(ctx) {
     status_bar::StatusBar(#{ label: "Component Gallery status",
-        start: [text("50 components")],
+        start: [text("51 components")],
         center: [text(ctx.get_state("gallery_theme"))],
         end: [text(ctx.get_state("gallery_category")), text(ctx.viewport_class())] })
 }

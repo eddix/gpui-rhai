@@ -396,7 +396,9 @@ struct ReusedComponentResources {
 struct VirtualCollectionRecipe {
     id: crate::VirtualCollectionId,
     data: crate::VirtualCollectionData,
-    renderer: ScriptCallback,
+    renderer: FnPtr,
+    renderer_events: BTreeMap<String, crate::EventSchema>,
+    renderer_context: crate::invocation::ScriptInvocationContext,
     context: UiContext,
     event_context: UiContext,
     generation: ScriptGeneration,
@@ -1368,7 +1370,7 @@ impl RuntimeEngine {
         })?;
         if recipe.generation != self.generation || recipe.id != *id {
             return Err(RuntimeError::StaleCallback {
-                name: recipe.renderer.name().to_owned(),
+                name: recipe.renderer.fn_name().to_owned(),
                 callback_generation: recipe.generation,
                 current_generation: self.generation,
             });
@@ -1397,16 +1399,12 @@ impl RuntimeEngine {
                     })?;
                 let (key, payload) =
                     collection_payload(&item, index).map_err(RuntimeError::Evaluate)?;
-                let invocation = recipe.renderer.native_context.as_ref().ok_or_else(|| {
-                    RuntimeError::ComponentRuntime(
-                        "virtual collection renderer lost its module context".to_owned(),
-                    )
-                })?;
+                let invocation = &recipe.renderer_context;
                 self.align_execution_session_to(invocation.operation_base());
                 let started = self.begin_timing();
                 let item = invocation.call::<UiNode>(
                     self.engine(),
-                    &recipe.renderer.function,
+                    &recipe.renderer,
                     (context.clone(), Dynamic::from_map(payload)),
                 );
                 self.record_timing(
@@ -1420,8 +1418,8 @@ impl RuntimeEngine {
                 node.bind_component_scope(
                     recipe.event_context.component_path(),
                     recipe.event_context.component_incarnation(),
-                    recipe.renderer.events(),
-                    recipe.renderer.native_context(),
+                    &recipe.renderer_events,
+                    Some(&recipe.renderer_context),
                 );
                 realized.insert(index, node);
             }
@@ -3071,15 +3069,6 @@ fn register_virtual_collection_api(engine: &mut Engine, active: &ActiveComponent
                     )
                     .with_generation(generation);
                 let native_context = crate::invocation::ScriptInvocationContext::capture(&call);
-                let mut callback = ScriptCallback::try_from_fn_ptr(renderer.clone(), generation)
-                    .map_err(|error| Box::new(component_render_error(error.to_string())))?;
-                callback.bind_component_scope_if_unset(
-                    &component,
-                    context.component_incarnation(),
-                    events,
-                );
-                callback.bind_native_context_if_unset(native_context);
-
                 let realized = realize_seeded_virtual_collection(
                     &call,
                     &renderer,
@@ -3091,7 +3080,9 @@ fn register_virtual_collection_api(engine: &mut Engine, active: &ActiveComponent
                 let recipe = VirtualCollectionRecipe {
                     id: id.clone(),
                     data: decoded.data.clone(),
-                    renderer: callback,
+                    renderer,
+                    renderer_events: events,
+                    renderer_context: native_context,
                     context: collection_context,
                     event_context: context,
                     generation,
@@ -3123,12 +3114,37 @@ fn register_virtual_collection_api(engine: &mut Engine, active: &ActiveComponent
 
 fn validate_virtual_renderer(renderer: &FnPtr) -> Result<(), Box<EvalAltResult>> {
     if renderer.is_anonymous() {
-        Err(Box::new(component_render_error(
+        return Err(Box::new(component_render_error(
             "virtual collection item renderer must be a named function",
-        )))
-    } else {
-        Ok(())
+        )));
     }
+    for (index, value) in renderer.iter_curry().enumerate() {
+        validate_virtual_renderer_curry(value).map_err(|error| {
+            Box::new(component_render_error(format!(
+                "virtual collection renderer curry {index} is not durable presentation data: {error}"
+            )))
+        })?;
+    }
+    Ok(())
+}
+
+fn validate_virtual_renderer_curry(value: &Dynamic) -> Result<(), crate::UiValueError> {
+    if value.is::<UiNode>() {
+        return Ok(());
+    }
+    if value.is::<Array>() {
+        for value in value.clone_cast::<Array>() {
+            validate_virtual_renderer_curry(&value)?;
+        }
+        return Ok(());
+    }
+    if value.is::<Map>() {
+        for value in value.clone_cast::<Map>().values() {
+            validate_virtual_renderer_curry(value)?;
+        }
+        return Ok(());
+    }
+    UiValue::from_dynamic(value.clone()).map(|_| ())
 }
 
 fn realize_initial_collection(
@@ -4699,6 +4715,61 @@ mod tests {
             measured.push(operations);
         }
         assert_eq!(measured[0], measured[1]);
+    }
+
+    #[test]
+    fn retained_virtual_renderer_replays_curried_node_presentation() {
+        let mut engine = RuntimeEngine::new();
+        let compiled = engine
+            .compile_named(
+                "virtual-rich-presentation",
+                r#"
+                    fn render_item(content, ctx, payload) {
+                        content[payload.key]
+                    }
+                    fn view(ctx) {
+                        let data = [];
+                        let content = #{};
+                        for index in 0..32 {
+                            let key = `row-${index}`;
+                            data.push(#{ key: key });
+                            content[key] = text(`Rich ${index}`);
+                        }
+                        virtual_collection(#{
+                            key: "rows", label: "Rows", data: data,
+                            estimated_height: 24, height: 24, overdraw_pixels: 0,
+                            alignment: "top", follow_tail: false,
+                        }, Fn("render_item").curry(content))
+                    }
+                "#,
+            )
+            .unwrap();
+        let runtime = Rc::new(RefCell::new(crate::UiRuntimeState::new()));
+        let root_path = ComponentInstancePath::root("App", "rich");
+        let mut lifecycle = crate::ScriptLifecycle::new(
+            compiled,
+            Rc::clone(&runtime),
+            root_path.clone(),
+            None,
+            BTreeMap::new(),
+            &ComponentStateSchema::default(),
+        )
+        .unwrap();
+        lifecycle.start(&mut engine).unwrap();
+        let id = engine
+            .virtual_collection_ids_in_scope(&root_path)
+            .into_iter()
+            .next()
+            .unwrap();
+        runtime.borrow().virtual_requests.request(id, [31]);
+        assert!(lifecycle.realize_virtual_requests(&mut engine).unwrap());
+        let crate::UiNodeKind::VirtualCollection { spec } = lifecycle.root().unwrap().kind() else {
+            unreachable!()
+        };
+        assert!(matches!(
+            spec.realized[&31].kind(),
+            crate::UiNodeKind::Text { text } if text == "Rich 31"
+        ));
     }
 
     #[test]
