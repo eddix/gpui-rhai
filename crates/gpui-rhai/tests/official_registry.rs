@@ -10,6 +10,7 @@ use gpui_rhai::{
 };
 
 const BUTTON: &str = include_str!("../../../registry/components/button.rhai");
+const ICON_BUTTON: &str = include_str!("../../../registry/components/icon_button.rhai");
 const LABEL: &str = include_str!("../../../registry/components/label.rhai");
 const ICON: &str = include_str!("../../../registry/components/icon.rhai");
 const INPUT: &str = include_str!("../../../registry/components/input.rhai");
@@ -623,6 +624,7 @@ fn bundled_themes_materialize_complete_document_palettes() {
 fn official_component_sources_reject_decorative_visual_drift() {
     for (id, source) in [
         ("button", BUTTON),
+        ("icon_button", ICON_BUTTON),
         ("checkbox", CHECKBOX),
         ("radio", RADIO),
         ("switch", SWITCH),
@@ -1395,6 +1397,136 @@ fn command_fuzzy_search_and_keyboard_action_are_composable_and_controlled() {
         runtime.borrow().component_state.get(&path, "action"),
         Some(&UiValue::String("open".to_owned()))
     );
+}
+
+#[test]
+fn command_array_items_keep_text_semantics_with_rich_visual_content() {
+    let source = EmbeddedScriptSource::new(BTreeMap::from([
+        (
+            ModuleId::parse("components/command").unwrap(),
+            COMMAND.to_owned(),
+        ),
+        (
+            ModuleId::parse("components/input").unwrap(),
+            INPUT.to_owned(),
+        ),
+        (ModuleId::parse("components/kbd").unwrap(), KBD.to_owned()),
+    ]));
+    let mut engine = RuntimeEngine::new();
+    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
+    let compiled = engine
+        .compile_self_contained_named(
+            "ui/rich_command.rhai",
+            r#"
+                import "components/command" as command;
+                fn view(ctx) {
+                    command::Command(#{
+                        key: "palette", label: "Commands", query: "server",
+                        active_value: "open", items: [#{
+                            value: "open", label: "Open server config",
+                            keywords: ["remote"],
+                            content: row([
+                                text("Server").with_style(style().text_color(theme_color("text_muted"))),
+                                text("Open config")
+                            ]).with_key("rich-command-content")
+                        }]
+                    })
+                }
+            "#,
+        )
+        .unwrap();
+    let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+    let mut lifecycle = ScriptLifecycle::new(
+        compiled,
+        runtime,
+        ComponentInstancePath::root("App", "root"),
+        Some("main".to_owned()),
+        BTreeMap::new(),
+        &ComponentStateSchema::default(),
+    )
+    .unwrap();
+    lifecycle.start(&mut engine).unwrap();
+    let collection = find_virtual_collection(lifecycle.root().unwrap()).unwrap();
+    let UiNodeKind::VirtualCollection { spec } = collection.kind() else {
+        unreachable!()
+    };
+    let item = spec
+        .realized
+        .values()
+        .find(|node| {
+            node.attributes().get("label")
+                == Some(&UiValue::String("Open server config".to_owned()))
+        })
+        .expect("rich command item");
+    let UiNodeKind::Box { children } = item.kind() else {
+        panic!("command item must remain a composed row");
+    };
+    assert_eq!(
+        children[0].key().map(gpui_rhai::NodeKey::as_str),
+        Some("rich-command-content")
+    );
+}
+
+#[test]
+fn icon_button_owns_a_square_target_and_sized_icon_slot() {
+    let source = EmbeddedScriptSource::new(BTreeMap::from([
+        (
+            ModuleId::parse("components/button").unwrap(),
+            BUTTON.to_owned(),
+        ),
+        (
+            ModuleId::parse("components/icon_button").unwrap(),
+            ICON_BUTTON.to_owned(),
+        ),
+    ]));
+    let mut engine = RuntimeEngine::new();
+    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
+    let compiled = engine
+        .compile_self_contained_named(
+            "ui/icon_button.rhai",
+            r#"
+                import "components/icon_button" as icon_button;
+                fn view(ctx) {
+                    icon_button::IconButton(#{
+                        icon: svg("<svg width='24' height='24' viewBox='0 0 24 24'><path fill='currentColor' d='M4 4L20 20M20 4L4 20'/></svg>"),
+                        label: "Close", size: "md", variant: "outline"
+                    })
+                }
+            "#,
+        )
+        .unwrap();
+    let context = UiContext::new(
+        Rc::new(RefCell::new(UiRuntimeState::new())),
+        ComponentInstancePath::root("App", "root"),
+        Some("main".to_owned()),
+        ExecutionPhase::Render,
+        BTreeMap::new(),
+    );
+    let root = engine.render_with_context(&compiled, context).unwrap();
+    assert_eq!(
+        root.style().base.width,
+        Some(gpui_rhai::Length::Pixels(32.0).into())
+    );
+    assert_eq!(
+        root.style().base.height,
+        Some(gpui_rhai::Length::Pixels(32.0).into())
+    );
+    assert_eq!(
+        root.attributes().get("label"),
+        Some(&UiValue::String("Close".to_owned()))
+    );
+    let UiNodeKind::Box { children } = root.kind() else {
+        panic!("IconButton must render a centered row");
+    };
+    assert_eq!(
+        children[0].style().base.width,
+        Some(gpui_rhai::Length::Pixels(16.0).into())
+    );
+    assert_eq!(
+        children[0].style().base.height,
+        Some(gpui_rhai::Length::Pixels(16.0).into())
+    );
+    assert!(children[0].style().base.text_color.is_some());
 }
 
 #[test]

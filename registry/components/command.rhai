@@ -2,14 +2,15 @@
 {
   "id": "components/command",
   "export": "Command",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": ["components/input", "components/kbd"],
   "capabilities": {}
 }
 */
 // Embeddable keyboard-first command search with deterministic fuzzy ranking.
-// Props: key, label, controlled query/active_value, items, sizing, disabled, and callbacks.
+// Props: key, label, controlled query/active_value, items (text label plus optional rich content),
+//        sizing, disabled, and callbacks.
 // Events: query_change(string), active_change(string), and action(string).
 // State: caller owns query and the roving active command.
 // Parts: root, search, list, group, item, item_active, label, shortcut, empty.
@@ -19,7 +20,7 @@ import "components/input" as input;
 import "components/kbd" as kbd;
 
 define_component(#{
-    metadata: #{ id: "components/command", "export": "Command", version: "0.1.1",
+    metadata: #{ id: "components/command", "export": "Command", version: "0.1.2",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
         dependencies: ["components/input", "components/kbd"], capabilities: #{} },
     schema: #{
@@ -33,6 +34,8 @@ define_component(#{
                     type: "object", allow_unknown: false, fields: #{
                         value: #{ schema: #{ type: "string" }, required: true, sensitive: false },
                         label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+                        content: #{ schema: #{ type: "optional", value: #{ type: "node" } },
+                            required: false, sensitive: false },
                         keywords: #{ schema: #{ type: "array", max_items: 32, items: #{ type: "string" } },
                             required: false, sensitive: false, "default": #{ type: "array", value: [] } },
                         group: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
@@ -154,7 +157,7 @@ fn submit_action(value, ctx, query) {
     if value != "" { ctx.emit("action", value); }
 }
 
-fn render_command_row(ctx, payload) {
+fn render_command_row(content, ctx, payload) {
     let item = payload.item;
     if item.kind == "group" {
         return text(item.label).with_key(payload.key)
@@ -165,7 +168,8 @@ fn render_command_row(ctx, payload) {
                 .text_color(theme_color("text_muted"))))
             .accessibility_role("heading").accessibility_label(item.label);
     }
-    let children = [text(item.label).with_style(ctx.component_style("label", style().flex_grow()))];
+    let label = if item.value in content { content[item.value] } else { text(item.label) };
+    let children = [label.with_style(ctx.component_style("label", style().flex_grow()))];
     if item.shortcut != "" {
         children.push(kbd::Kbd(#{ text: item.shortcut }).with_style(ctx.component_style("shortcut", style())));
     }
@@ -191,6 +195,7 @@ fn render_command_row(ctx, payload) {
 fn array_command_model(items, query, row_height, stored) {
     let groups = [];
     let buckets = #{};
+    let content = #{};
     for index in 0..items.len {
         let item = items[index];
         let score = item_score(item, query);
@@ -198,8 +203,10 @@ fn array_command_model(items, query, row_height, stored) {
             let group = item_group(item);
             if !(group in buckets) { groups.push(group); buckets[group] = []; }
             let bucket = buckets[group];
-            bucket.push(#{ value: item.value, label: item.label, shortcut: prop_or(item, "shortcut", ""),
-                disabled: item_disabled(item), score: score, source_index: index });
+            let ranked = #{ value: item.value, label: item.label, shortcut: prop_or(item, "shortcut", ""),
+                disabled: item_disabled(item), score: score, source_index: index };
+            if "content" in item && item.content != () { content[item.value] = item.content; }
+            bucket.push(ranked);
             buckets[group] = bucket;
         }
     }
@@ -209,9 +216,10 @@ fn array_command_model(items, query, row_height, stored) {
         bucket.sort(Fn("compare_ranked"));
         if group != "" { data.push(#{ key: `group:${group}`, kind: "group", label: group, height: row_height }); }
         for item in bucket {
-            data.push(#{ key: `item:${item.value}`, kind: "item", value: item.value,
+            let row = #{ key: `item:${item.value}`, kind: "item", value: item.value,
                 label: item.label, shortcut: item.shortcut, disabled: item.disabled,
-                active: false, height: row_height });
+                active: false, height: row_height };
+            data.push(row);
         }
     }
     let enabled = enabled_values(data);
@@ -220,7 +228,7 @@ fn array_command_model(items, query, row_height, stored) {
     for index in 0..data.len {
         if data[index].kind == "item" { data[index].active = data[index].value == active; }
     }
-    #{ data: data, active: active, enabled: enabled.len > 0,
+    #{ data: data, content: content, active: active, enabled: enabled.len > 0,
         previous: if enabled.len > 0 { adjacent(enabled, active, -1) } else { "" },
         next: if enabled.len > 0 { adjacent(enabled, active, 1) } else { "" },
         first: if enabled.len > 0 { enabled[0] } else { "" },
@@ -237,7 +245,7 @@ fn native_command_model(items, query, row_height, stored) {
         config.active = active;
         data = native_fuzzy_view(items, config);
     }
-    #{ data: data, active: active, enabled: active != "",
+    #{ data: data, content: #{}, active: active, enabled: active != "",
         previous: native_fuzzy_adjacent(data, active, -1),
         next: native_fuzzy_adjacent(data, active, 1),
         first: native_fuzzy_edge(data, false), last: native_fuzzy_edge(data, true) }
@@ -278,7 +286,7 @@ fn render_Command(ctx, props) {
             collection.reveal_key = if is_native_collection(data) { active } else { `item:${active}` };
         }
         virtual_collection(collection,
-            Fn("render_command_row")).with_style(ctx.component_style("list", style()))
+            Fn("render_command_row").curry(model.content)).with_style(ctx.component_style("list", style()))
     };
     let root = column([search, body]).with_key(props.key)
         .with_style(ctx.component_style("root", style()

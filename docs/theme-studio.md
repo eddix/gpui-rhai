@@ -41,7 +41,7 @@ theme variant through symbolic tokens.
 
 ## Component specimen
 
-The right pane renders all 50 official components from the same source shipped
+The right pane renders all 51 official components from the same source shipped
 to applications. It begins with all eight live typography roles, then includes
 action variants and sizes, form controls, choices,
 status and loading states, navigation, grouped/sticky virtualized Table,

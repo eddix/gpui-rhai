@@ -3,129 +3,295 @@
 //! Most users install these sources through `gpui-rhai-cli`. The constants are
 //! public so alternative tooling can consume the exact same release snapshot.
 
-pub const BUTTON_SOURCE: &str = include_str!("../components/button.rhai");
-pub const LABEL_SOURCE: &str = include_str!("../components/label.rhai");
-pub const ICON_SOURCE: &str = include_str!("../components/icon.rhai");
-pub const INPUT_SOURCE: &str = include_str!("../components/input.rhai");
-pub const TEXTAREA_SOURCE: &str = include_str!("../components/textarea.rhai");
-pub const DIVIDER_SOURCE: &str = include_str!("../components/divider.rhai");
-pub const POPOVER_SOURCE: &str = include_str!("../components/popover.rhai");
-pub const DIALOG_SOURCE: &str = include_str!("../components/dialog.rhai");
-pub const COMBOBOX_SOURCE: &str = include_str!("../components/combobox.rhai");
-pub const SELECT_SOURCE: &str = include_str!("../components/select.rhai");
-pub const DATE_PICKER_SOURCE: &str = include_str!("../components/date_picker.rhai");
-pub const TABLE_SOURCE: &str = include_str!("../components/table.rhai");
-pub const PAGINATION_SOURCE: &str = include_str!("../components/pagination.rhai");
-pub const CHECKBOX_SOURCE: &str = include_str!("../components/checkbox.rhai");
-pub const RADIO_SOURCE: &str = include_str!("../components/radio.rhai");
-pub const RADIO_GROUP_SOURCE: &str = include_str!("../components/radio_group.rhai");
-pub const SWITCH_SOURCE: &str = include_str!("../components/switch.rhai");
-pub const TAG_SOURCE: &str = include_str!("../components/tag.rhai");
-pub const AVATAR_SOURCE: &str = include_str!("../components/avatar.rhai");
-pub const PROGRESS_SOURCE: &str = include_str!("../components/progress.rhai");
-pub const SKELETON_SOURCE: &str = include_str!("../components/skeleton.rhai");
-pub const FORM_FIELD_SOURCE: &str = include_str!("../components/form_field.rhai");
-pub const COLLAPSIBLE_SOURCE: &str = include_str!("../components/collapsible.rhai");
-pub const ACCORDION_SOURCE: &str = include_str!("../components/accordion.rhai");
-pub const TABS_SOURCE: &str = include_str!("../components/tabs.rhai");
-pub const TOOLTIP_SOURCE: &str = include_str!("../components/tooltip.rhai");
-pub const MENU_SOURCE: &str = include_str!("../components/menu.rhai");
-pub const TOAST_SOURCE: &str = include_str!("../components/toast.rhai");
-pub const ALERT_SOURCE: &str = include_str!("../components/alert.rhai");
-pub const ALERT_DIALOG_SOURCE: &str = include_str!("../components/alert_dialog.rhai");
-pub const BADGE_SOURCE: &str = include_str!("../components/badge.rhai");
-pub const BUTTON_GROUP_SOURCE: &str = include_str!("../components/button_group.rhai");
-pub const CARD_SOURCE: &str = include_str!("../components/card.rhai");
-pub const EMPTY_SOURCE: &str = include_str!("../components/empty.rhai");
-pub const GROUP_BOX_SOURCE: &str = include_str!("../components/group_box.rhai");
-pub const INPUT_GROUP_SOURCE: &str = include_str!("../components/input_group.rhai");
-pub const KBD_SOURCE: &str = include_str!("../components/kbd.rhai");
-pub const TOGGLE_SOURCE: &str = include_str!("../components/toggle.rhai");
-pub const TOGGLE_GROUP_SOURCE: &str = include_str!("../components/toggle_group.rhai");
-pub const SLIDER_SOURCE: &str = include_str!("../components/slider.rhai");
-pub const CONTEXT_MENU_SOURCE: &str = include_str!("../components/context_menu.rhai");
-pub const SHEET_SOURCE: &str = include_str!("../components/sheet.rhai");
-pub const COMMAND_SOURCE: &str = include_str!("../components/command.rhai");
-pub const COMMAND_DIALOG_SOURCE: &str = include_str!("../components/command_dialog.rhai");
-pub const SPINNER_SOURCE: &str = include_str!("../components/spinner.rhai");
-pub const SCROLL_AREA_SOURCE: &str = include_str!("../components/scroll_area.rhai");
-pub const TITLE_BAR_SOURCE: &str = include_str!("../components/title_bar.rhai");
-pub const STATUS_BAR_SOURCE: &str = include_str!("../components/status_bar.rhai");
-pub const CODE_VIEWER_SOURCE: &str = include_str!("../components/code_viewer.rhai");
-pub const DIFF_VIEWER_SOURCE: &str = include_str!("../components/diff_viewer.rhai");
+macro_rules! bundled_components {
+    ($(($constant:ident, $id:literal, $path:literal)),+ $(,)?) => {
+        $(pub const $constant: &str = include_str!($path);)+
 
-/// Every official component source in deterministic installation order.
-pub const BUNDLED_COMPONENT_SOURCES: &[&str] = &[
-    BUTTON_SOURCE,
-    LABEL_SOURCE,
-    ICON_SOURCE,
-    INPUT_SOURCE,
-    TEXTAREA_SOURCE,
-    DIVIDER_SOURCE,
-    POPOVER_SOURCE,
-    DIALOG_SOURCE,
-    COMBOBOX_SOURCE,
-    SELECT_SOURCE,
-    DATE_PICKER_SOURCE,
-    TABLE_SOURCE,
-    PAGINATION_SOURCE,
-    CHECKBOX_SOURCE,
-    RADIO_SOURCE,
-    RADIO_GROUP_SOURCE,
-    SWITCH_SOURCE,
-    TAG_SOURCE,
-    AVATAR_SOURCE,
-    PROGRESS_SOURCE,
-    SKELETON_SOURCE,
-    FORM_FIELD_SOURCE,
-    COLLAPSIBLE_SOURCE,
-    ACCORDION_SOURCE,
-    TABS_SOURCE,
-    TOOLTIP_SOURCE,
-    MENU_SOURCE,
-    TOAST_SOURCE,
-    ALERT_SOURCE,
-    ALERT_DIALOG_SOURCE,
-    BADGE_SOURCE,
-    BUTTON_GROUP_SOURCE,
-    CARD_SOURCE,
-    EMPTY_SOURCE,
-    GROUP_BOX_SOURCE,
-    INPUT_GROUP_SOURCE,
-    KBD_SOURCE,
-    TOGGLE_SOURCE,
-    TOGGLE_GROUP_SOURCE,
-    SLIDER_SOURCE,
-    CONTEXT_MENU_SOURCE,
-    SHEET_SOURCE,
-    COMMAND_SOURCE,
-    COMMAND_DIALOG_SOURCE,
-    SPINNER_SOURCE,
-    SCROLL_AREA_SOURCE,
-    TITLE_BAR_SOURCE,
-    STATUS_BAR_SOURCE,
-    CODE_VIEWER_SOURCE,
-    DIFF_VIEWER_SOURCE,
-];
+        /// Every official component keyed by its canonical module ID.
+        pub const BUNDLED_COMPONENT_SOURCES_BY_ID: &[(&str, &str)] = &[
+            $(($id, $constant),)+
+        ];
 
-pub const CHECK_SVG: &str = include_str!("../assets/icons/check.svg");
-pub const CLOSE_SVG: &str = include_str!("../assets/icons/close.svg");
-pub const CHEVRON_LEFT_SVG: &str = include_str!("../assets/icons/chevron_left.svg");
-pub const CHEVRON_RIGHT_SVG: &str = include_str!("../assets/icons/chevron_right.svg");
-pub const CALENDAR_SVG: &str = include_str!("../assets/icons/calendar.svg");
-pub const DATE_PREVIOUS_SVG: &str = include_str!("../assets/icons/date_previous.svg");
-pub const DATE_NEXT_SVG: &str = include_str!("../assets/icons/date_next.svg");
-pub const DISCLOSURE_DOWN_SVG: &str = include_str!("../assets/icons/disclosure_down.svg");
-pub const SORT_ASCENDING_SVG: &str = include_str!("../assets/icons/sort_ascending.svg");
-pub const SORT_DESCENDING_SVG: &str = include_str!("../assets/icons/sort_descending.svg");
-pub const CHEVRON_DOWN_SVG: &str = include_str!("../assets/icons/chevron_down.svg");
-pub const CHEVRON_UP_SVG: &str = include_str!("../assets/icons/chevron_up.svg");
-pub const MINUS_SVG: &str = include_str!("../assets/icons/minus.svg");
-pub const PLUS_SVG: &str = include_str!("../assets/icons/plus.svg");
-pub const SEARCH_SVG: &str = include_str!("../assets/icons/search.svg");
-pub const INFO_SVG: &str = include_str!("../assets/icons/info.svg");
-pub const WARNING_SVG: &str = include_str!("../assets/icons/warning.svg");
-pub const HELP_SVG: &str = include_str!("../assets/icons/help.svg");
+        /// Every official component source in deterministic installation order.
+        pub const BUNDLED_COMPONENT_SOURCES: &[&str] = &[
+            $($constant,)+
+        ];
+    };
+}
+
+bundled_components!(
+    (
+        BUTTON_SOURCE,
+        "components/button",
+        "../components/button.rhai"
+    ),
+    (
+        ICON_BUTTON_SOURCE,
+        "components/icon_button",
+        "../components/icon_button.rhai"
+    ),
+    (LABEL_SOURCE, "components/label", "../components/label.rhai"),
+    (ICON_SOURCE, "components/icon", "../components/icon.rhai"),
+    (INPUT_SOURCE, "components/input", "../components/input.rhai"),
+    (
+        TEXTAREA_SOURCE,
+        "components/textarea",
+        "../components/textarea.rhai"
+    ),
+    (
+        DIVIDER_SOURCE,
+        "components/divider",
+        "../components/divider.rhai"
+    ),
+    (
+        POPOVER_SOURCE,
+        "components/popover",
+        "../components/popover.rhai"
+    ),
+    (
+        DIALOG_SOURCE,
+        "components/dialog",
+        "../components/dialog.rhai"
+    ),
+    (
+        COMBOBOX_SOURCE,
+        "components/combobox",
+        "../components/combobox.rhai"
+    ),
+    (
+        SELECT_SOURCE,
+        "components/select",
+        "../components/select.rhai"
+    ),
+    (
+        DATE_PICKER_SOURCE,
+        "components/date_picker",
+        "../components/date_picker.rhai"
+    ),
+    (TABLE_SOURCE, "components/table", "../components/table.rhai"),
+    (
+        PAGINATION_SOURCE,
+        "components/pagination",
+        "../components/pagination.rhai"
+    ),
+    (
+        CHECKBOX_SOURCE,
+        "components/checkbox",
+        "../components/checkbox.rhai"
+    ),
+    (RADIO_SOURCE, "components/radio", "../components/radio.rhai"),
+    (
+        RADIO_GROUP_SOURCE,
+        "components/radio_group",
+        "../components/radio_group.rhai"
+    ),
+    (
+        SWITCH_SOURCE,
+        "components/switch",
+        "../components/switch.rhai"
+    ),
+    (TAG_SOURCE, "components/tag", "../components/tag.rhai"),
+    (
+        AVATAR_SOURCE,
+        "components/avatar",
+        "../components/avatar.rhai"
+    ),
+    (
+        PROGRESS_SOURCE,
+        "components/progress",
+        "../components/progress.rhai"
+    ),
+    (
+        SKELETON_SOURCE,
+        "components/skeleton",
+        "../components/skeleton.rhai"
+    ),
+    (
+        FORM_FIELD_SOURCE,
+        "components/form_field",
+        "../components/form_field.rhai"
+    ),
+    (
+        COLLAPSIBLE_SOURCE,
+        "components/collapsible",
+        "../components/collapsible.rhai"
+    ),
+    (
+        ACCORDION_SOURCE,
+        "components/accordion",
+        "../components/accordion.rhai"
+    ),
+    (TABS_SOURCE, "components/tabs", "../components/tabs.rhai"),
+    (
+        TOOLTIP_SOURCE,
+        "components/tooltip",
+        "../components/tooltip.rhai"
+    ),
+    (MENU_SOURCE, "components/menu", "../components/menu.rhai"),
+    (TOAST_SOURCE, "components/toast", "../components/toast.rhai"),
+    (ALERT_SOURCE, "components/alert", "../components/alert.rhai"),
+    (
+        ALERT_DIALOG_SOURCE,
+        "components/alert_dialog",
+        "../components/alert_dialog.rhai"
+    ),
+    (BADGE_SOURCE, "components/badge", "../components/badge.rhai"),
+    (
+        BUTTON_GROUP_SOURCE,
+        "components/button_group",
+        "../components/button_group.rhai"
+    ),
+    (CARD_SOURCE, "components/card", "../components/card.rhai"),
+    (EMPTY_SOURCE, "components/empty", "../components/empty.rhai"),
+    (
+        GROUP_BOX_SOURCE,
+        "components/group_box",
+        "../components/group_box.rhai"
+    ),
+    (
+        INPUT_GROUP_SOURCE,
+        "components/input_group",
+        "../components/input_group.rhai"
+    ),
+    (KBD_SOURCE, "components/kbd", "../components/kbd.rhai"),
+    (
+        TOGGLE_SOURCE,
+        "components/toggle",
+        "../components/toggle.rhai"
+    ),
+    (
+        TOGGLE_GROUP_SOURCE,
+        "components/toggle_group",
+        "../components/toggle_group.rhai"
+    ),
+    (
+        SLIDER_SOURCE,
+        "components/slider",
+        "../components/slider.rhai"
+    ),
+    (
+        CONTEXT_MENU_SOURCE,
+        "components/context_menu",
+        "../components/context_menu.rhai"
+    ),
+    (SHEET_SOURCE, "components/sheet", "../components/sheet.rhai"),
+    (
+        COMMAND_SOURCE,
+        "components/command",
+        "../components/command.rhai"
+    ),
+    (
+        COMMAND_DIALOG_SOURCE,
+        "components/command_dialog",
+        "../components/command_dialog.rhai"
+    ),
+    (
+        SPINNER_SOURCE,
+        "components/spinner",
+        "../components/spinner.rhai"
+    ),
+    (
+        SCROLL_AREA_SOURCE,
+        "components/scroll_area",
+        "../components/scroll_area.rhai"
+    ),
+    (
+        TITLE_BAR_SOURCE,
+        "components/title_bar",
+        "../components/title_bar.rhai"
+    ),
+    (
+        STATUS_BAR_SOURCE,
+        "components/status_bar",
+        "../components/status_bar.rhai"
+    ),
+    (
+        CODE_VIEWER_SOURCE,
+        "components/code_viewer",
+        "../components/code_viewer.rhai"
+    ),
+    (
+        DIFF_VIEWER_SOURCE,
+        "components/diff_viewer",
+        "../components/diff_viewer.rhai"
+    ),
+);
+
+macro_rules! bundled_assets {
+    ($(($constant:ident, $id:literal, $path:literal)),+ $(,)?) => {
+        $(pub const $constant: &str = include_str!($path);)+
+
+        /// Every bundled component asset keyed exactly as component metadata declares it.
+        pub const BUNDLED_ASSET_SOURCES: &[(&str, &str)] = &[
+            $(($id, $constant),)+
+        ];
+    };
+}
+
+bundled_assets!(
+    (CHECK_SVG, "icons/check.svg", "../assets/icons/check.svg"),
+    (CLOSE_SVG, "icons/close.svg", "../assets/icons/close.svg"),
+    (
+        CHEVRON_LEFT_SVG,
+        "icons/chevron_left.svg",
+        "../assets/icons/chevron_left.svg"
+    ),
+    (
+        CHEVRON_RIGHT_SVG,
+        "icons/chevron_right.svg",
+        "../assets/icons/chevron_right.svg"
+    ),
+    (
+        CALENDAR_SVG,
+        "icons/calendar.svg",
+        "../assets/icons/calendar.svg"
+    ),
+    (
+        DATE_PREVIOUS_SVG,
+        "icons/date_previous.svg",
+        "../assets/icons/date_previous.svg"
+    ),
+    (
+        DATE_NEXT_SVG,
+        "icons/date_next.svg",
+        "../assets/icons/date_next.svg"
+    ),
+    (
+        DISCLOSURE_DOWN_SVG,
+        "icons/disclosure_down.svg",
+        "../assets/icons/disclosure_down.svg"
+    ),
+    (
+        SORT_ASCENDING_SVG,
+        "icons/sort_ascending.svg",
+        "../assets/icons/sort_ascending.svg"
+    ),
+    (
+        SORT_DESCENDING_SVG,
+        "icons/sort_descending.svg",
+        "../assets/icons/sort_descending.svg"
+    ),
+    (
+        CHEVRON_DOWN_SVG,
+        "icons/chevron_down.svg",
+        "../assets/icons/chevron_down.svg"
+    ),
+    (
+        CHEVRON_UP_SVG,
+        "icons/chevron_up.svg",
+        "../assets/icons/chevron_up.svg"
+    ),
+    (MINUS_SVG, "icons/minus.svg", "../assets/icons/minus.svg"),
+    (PLUS_SVG, "icons/plus.svg", "../assets/icons/plus.svg"),
+    (SEARCH_SVG, "icons/search.svg", "../assets/icons/search.svg"),
+    (INFO_SVG, "icons/info.svg", "../assets/icons/info.svg"),
+    (
+        WARNING_SVG,
+        "icons/warning.svg",
+        "../assets/icons/warning.svg"
+    ),
+    (HELP_SVG, "icons/help.svg", "../assets/icons/help.svg"),
+);
 
 pub const DEFAULT_THEME: &str = include_str!("../themes/default_dark.rhai");
 pub const DEFAULT_LIGHT_THEME: &str = include_str!("../themes/default_light.rhai");
@@ -172,7 +338,9 @@ mod tests {
 
     #[test]
     fn release_snapshot_has_the_expected_catalog_size() {
-        assert_eq!(BUNDLED_COMPONENT_SOURCES.len(), 50);
+        assert_eq!(BUNDLED_COMPONENT_SOURCES.len(), 51);
+        assert_eq!(BUNDLED_COMPONENT_SOURCES_BY_ID.len(), 51);
+        assert_eq!(BUNDLED_ASSET_SOURCES.len(), 18);
         assert_eq!(BUNDLED_THEME_SOURCES.len(), 15);
         assert!(
             BUNDLED_COMPONENT_SOURCES
@@ -183,6 +351,22 @@ mod tests {
             BUNDLED_THEME_SOURCES
                 .iter()
                 .all(|(_, source)| !source.is_empty())
+        );
+        assert_eq!(
+            BUNDLED_COMPONENT_SOURCES_BY_ID
+                .iter()
+                .map(|(id, _)| *id)
+                .collect::<std::collections::BTreeSet<_>>()
+                .len(),
+            BUNDLED_COMPONENT_SOURCES_BY_ID.len()
+        );
+        assert_eq!(
+            BUNDLED_ASSET_SOURCES
+                .iter()
+                .map(|(id, _)| *id)
+                .collect::<std::collections::BTreeSet<_>>()
+                .len(),
+            BUNDLED_ASSET_SOURCES.len()
         );
     }
 }

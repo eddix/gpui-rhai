@@ -5,74 +5,15 @@ use gpui_rhai::{
     AssetData, EmbeddedScriptSource, EmbeddedScriptView, ModuleId, RuntimeEngine,
     ScriptApplication, ThemeVariant, load_theme_source,
 };
+#[allow(dead_code)]
+#[path = "../../../registry/src/lib.rs"]
+mod registry_snapshot;
+use registry_snapshot::{
+    AR_LOCALE, BUNDLED_ASSET_SOURCES, BUNDLED_COMPONENT_SOURCES_BY_ID, BUNDLED_THEME_SOURCES,
+    EN_LOCALE, STUDIO_SOURCE, ZH_CN_LOCALE,
+};
 
-const STUDIO: &str = include_str!("../../../registry/studio/theme_studio.rhai");
-const EN: &str = include_str!("../../../registry/locales/en.rhai");
-const AR: &str = include_str!("../../../registry/locales/ar.rhai");
-const ZH_CN: &str = include_str!("../../../registry/locales/zh_cn.rhai");
-
-const THEMES: &[(&str, &str)] = &[
-    (
-        "default_dark.rhai",
-        include_str!("../../../registry/themes/default_dark.rhai"),
-    ),
-    (
-        "default_light.rhai",
-        include_str!("../../../registry/themes/default_light.rhai"),
-    ),
-    (
-        "tokyo_night.rhai",
-        include_str!("../../../registry/themes/tokyo_night.rhai"),
-    ),
-    (
-        "tokyo_storm.rhai",
-        include_str!("../../../registry/themes/tokyo_storm.rhai"),
-    ),
-    (
-        "catppuccin_latte.rhai",
-        include_str!("../../../registry/themes/catppuccin_latte.rhai"),
-    ),
-    (
-        "catppuccin_mocha.rhai",
-        include_str!("../../../registry/themes/catppuccin_mocha.rhai"),
-    ),
-    (
-        "ethereal.rhai",
-        include_str!("../../../registry/themes/ethereal.rhai"),
-    ),
-    (
-        "everforest.rhai",
-        include_str!("../../../registry/themes/everforest.rhai"),
-    ),
-    (
-        "gruvbox.rhai",
-        include_str!("../../../registry/themes/gruvbox.rhai"),
-    ),
-    (
-        "hackerman.rhai",
-        include_str!("../../../registry/themes/hackerman.rhai"),
-    ),
-    (
-        "nord.rhai",
-        include_str!("../../../registry/themes/nord.rhai"),
-    ),
-    (
-        "retro_82.rhai",
-        include_str!("../../../registry/themes/retro_82.rhai"),
-    ),
-    (
-        "hermarchy.rhai",
-        include_str!("../../../registry/themes/hermarchy.rhai"),
-    ),
-    (
-        "futurism.rhai",
-        include_str!("../../../registry/themes/futurism.rhai"),
-    ),
-    (
-        "aetheria.rhai",
-        include_str!("../../../registry/themes/aetheria.rhai"),
-    ),
-];
+const THEMES: &[(&str, &str)] = BUNDLED_THEME_SOURCES;
 
 const COLOR_TOKENS: &[&str] = &[
     "surface",
@@ -95,69 +36,15 @@ const COLOR_TOKENS: &[&str] = &[
     "disabled",
 ];
 
-macro_rules! component {
-    ($id:literal, $file:literal) => {
-        (
-            ModuleId::parse(concat!("components/", $id)).expect("static component module ID"),
-            include_str!(concat!("../../../registry/components/", $file, ".rhai")).to_owned(),
-        )
-    };
-}
-
 fn scripts(main: &str) -> EmbeddedScriptSource {
-    EmbeddedScriptSource::new(BTreeMap::from([
-        (ModuleId::parse("main").unwrap(), main.to_owned()),
-        component!("accordion", "accordion"),
-        component!("alert", "alert"),
-        component!("alert_dialog", "alert_dialog"),
-        component!("avatar", "avatar"),
-        component!("badge", "badge"),
-        component!("button", "button"),
-        component!("button_group", "button_group"),
-        component!("card", "card"),
-        component!("checkbox", "checkbox"),
-        component!("collapsible", "collapsible"),
-        component!("combobox", "combobox"),
-        component!("command", "command"),
-        component!("command_dialog", "command_dialog"),
-        component!("code_viewer", "code_viewer"),
-        component!("context_menu", "context_menu"),
-        component!("date_picker", "date_picker"),
-        component!("dialog", "dialog"),
-        component!("divider", "divider"),
-        component!("diff_viewer", "diff_viewer"),
-        component!("empty", "empty"),
-        component!("form_field", "form_field"),
-        component!("group_box", "group_box"),
-        component!("icon", "icon"),
-        component!("input", "input"),
-        component!("input_group", "input_group"),
-        component!("kbd", "kbd"),
-        component!("label", "label"),
-        component!("menu", "menu"),
-        component!("pagination", "pagination"),
-        component!("popover", "popover"),
-        component!("progress", "progress"),
-        component!("radio", "radio"),
-        component!("radio_group", "radio_group"),
-        component!("scroll_area", "scroll_area"),
-        component!("select", "select"),
-        component!("sheet", "sheet"),
-        component!("skeleton", "skeleton"),
-        component!("slider", "slider"),
-        component!("spinner", "spinner"),
-        component!("switch", "switch"),
-        component!("table", "table"),
-        component!("tabs", "tabs"),
-        component!("tag", "tag"),
-        component!("textarea", "textarea"),
-        component!("toast", "toast"),
-        component!("toggle", "toggle"),
-        component!("toggle_group", "toggle_group"),
-        component!("tooltip", "tooltip"),
-        component!("title_bar", "title_bar"),
-        component!("status_bar", "status_bar"),
-    ]))
+    let mut modules = BTreeMap::from([(ModuleId::parse("main").unwrap(), main.to_owned())]);
+    modules.extend(BUNDLED_COMPONENT_SOURCES_BY_ID.iter().map(|(id, source)| {
+        (
+            ModuleId::parse(*id).expect("static component module ID"),
+            (*source).to_owned(),
+        )
+    }));
+    EmbeddedScriptSource::new(modules)
 }
 
 fn json(value: &str) -> String {
@@ -191,7 +78,7 @@ fn gallery_source(category: &str, theme_slug: &str, locale: &str, visual_state: 
     } else {
         "en"
     };
-    let mut source = STUDIO.to_owned();
+    let mut source = STUDIO_SOURCE.to_owned();
     for (placeholder, value) in [
         ("__PATH__", json("")),
         ("__FAMILY__", json(&theme.family)),
@@ -273,7 +160,7 @@ fn gallery_source(category: &str, theme_slug: &str, locale: &str, visual_state: 
         .replace("__GALLERY_ONLY__", "true")
 }
 
-fn svg(bytes: &'static [u8]) -> AssetData {
+fn svg(bytes: &[u8]) -> AssetData {
     AssetData {
         mime_type: "image/svg+xml".to_owned(),
         bytes: bytes.to_vec(),
@@ -281,79 +168,15 @@ fn svg(bytes: &'static [u8]) -> AssetData {
 }
 
 fn gallery_assets() -> Vec<(String, AssetData)> {
-    [
-        (
-            "check",
-            include_bytes!("../../../registry/assets/icons/check.svg").as_slice(),
-        ),
-        (
-            "close",
-            include_bytes!("../../../registry/assets/icons/close.svg").as_slice(),
-        ),
-        (
-            "chevron_left",
-            include_bytes!("../../../registry/assets/icons/chevron_left.svg").as_slice(),
-        ),
-        (
-            "chevron_right",
-            include_bytes!("../../../registry/assets/icons/chevron_right.svg").as_slice(),
-        ),
-        (
-            "calendar",
-            include_bytes!("../../../registry/assets/icons/calendar.svg").as_slice(),
-        ),
-        (
-            "date_previous",
-            include_bytes!("../../../registry/assets/icons/date_previous.svg").as_slice(),
-        ),
-        (
-            "date_next",
-            include_bytes!("../../../registry/assets/icons/date_next.svg").as_slice(),
-        ),
-        (
-            "disclosure_down",
-            include_bytes!("../../../registry/assets/icons/disclosure_down.svg").as_slice(),
-        ),
-        (
-            "sort_ascending",
-            include_bytes!("../../../registry/assets/icons/sort_ascending.svg").as_slice(),
-        ),
-        (
-            "sort_descending",
-            include_bytes!("../../../registry/assets/icons/sort_descending.svg").as_slice(),
-        ),
-        (
-            "chevron_down",
-            include_bytes!("../../../registry/assets/icons/chevron_down.svg").as_slice(),
-        ),
-        (
-            "chevron_up",
-            include_bytes!("../../../registry/assets/icons/chevron_up.svg").as_slice(),
-        ),
-        (
-            "minus",
-            include_bytes!("../../../registry/assets/icons/minus.svg").as_slice(),
-        ),
-        (
-            "plus",
-            include_bytes!("../../../registry/assets/icons/plus.svg").as_slice(),
-        ),
-        (
-            "search",
-            include_bytes!("../../../registry/assets/icons/search.svg").as_slice(),
-        ),
-        (
-            "info",
-            include_bytes!("../../../registry/assets/icons/info.svg").as_slice(),
-        ),
-        (
-            "warning",
-            include_bytes!("../../../registry/assets/icons/warning.svg").as_slice(),
-        ),
-    ]
-    .into_iter()
-    .map(|(name, bytes)| (format!("icons/{name}"), svg(bytes)))
-    .collect()
+    BUNDLED_ASSET_SOURCES
+        .iter()
+        .map(|(path, source)| {
+            (
+                path.strip_suffix(".svg").unwrap_or(path).to_owned(),
+                svg(source.as_bytes()),
+            )
+        })
+        .collect()
 }
 
 pub(crate) fn prepared(
@@ -382,9 +205,9 @@ fn prepared_with_environment(
             .map(|(name, source)| ((*name).to_owned(), (*source).to_owned())),
     )
     .locale_sources([
-        ("en.rhai".to_owned(), EN.to_owned()),
-        ("ar.rhai".to_owned(), AR.to_owned()),
-        ("zh_cn.rhai".to_owned(), ZH_CN.to_owned()),
+        ("en.rhai".to_owned(), EN_LOCALE.to_owned()),
+        ("ar.rhai".to_owned(), AR_LOCALE.to_owned()),
+        ("zh_cn.rhai".to_owned(), ZH_CN_LOCALE.to_owned()),
     ])
     .asset_sources(gallery_assets())
     .prepare()
@@ -472,7 +295,7 @@ mod tests {
                 "default"
             )))
             .len(),
-            51
+            52
         );
         assert_eq!(gallery_category(None, "forms"), "forms");
         assert_eq!(

@@ -67,6 +67,10 @@ svg("<svg viewBox='0 0 16 16'><path fill='currentColor' d='M2 8L7 13L14 3'/></sv
     .with_style(style().width(px(16)).height(px(16)).text_color(theme_color("accent")))
 ```
 
+Styled width and height define the SVG viewport. GPUI fits the SVG into that
+node box instead of painting the root document's intrinsic dimensions outside
+it. Unstyled SVG nodes retain their intrinsic size.
+
 Inline SVG does not read paths, fetch resources, or replace declared assets for
 shared icons. GPUI remains the rendering backend; invalid markup is a script
 evaluation error and preserves the last-good tree.

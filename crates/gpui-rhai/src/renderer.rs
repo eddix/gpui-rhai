@@ -8,7 +8,7 @@ use gpui::{
     AlignSelf as GpuiAlignSelf, AnyElement, App, Background, Bounds, BoxShadow, ClickEvent,
     ContentMask, Context, CursorStyle, DispatchPhase, Div, Element, ElementId, FocusHandle,
     FontFallbacks, FontFeatures, FontStyle, FontWeight, GlobalElementId, HighlightStyle, Image,
-    ImageFormat, InspectorElementId, InteractiveElement, IntoElement, LayoutId, Modifiers,
+    ImageFormat, Img, InspectorElementId, InteractiveElement, IntoElement, LayoutId, Modifiers,
     MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point,
     Render, ScrollHandle, ScrollWheelEvent, SharedString, Stateful, StatefulInteractiveElement,
     Styled, StyledText, TextAlign, Window, auto, div, img, linear_color_stop, linear_gradient,
@@ -2487,12 +2487,12 @@ fn render_inline_svg<C: ColorResolver>(
     } else {
         environment.interaction.clone()
     };
-    let color = node
-        .style()
-        .resolve(&interaction)
+    let resolved_style = node.style().resolve(&interaction);
+    let color = resolved_style
         .text_color
         .as_ref()
         .and_then(|color| environment.colors.resolve(color));
+    let fills_styled_box = resolved_style.width.is_some() || resolved_style.height.is_some();
     let bytes = color.map_or_else(
         || source.as_str().as_bytes().to_vec(),
         |color| {
@@ -2505,8 +2505,17 @@ fn render_inline_svg<C: ColorResolver>(
         },
     );
     element
-        .child(img(Arc::new(Image::from_bytes(ImageFormat::Svg, bytes))))
+        .child(inline_svg_image(bytes, fills_styled_box))
         .into_any_element()
+}
+
+fn inline_svg_image(bytes: Vec<u8>, fills_styled_box: bool) -> Img {
+    let image = img(Arc::new(Image::from_bytes(ImageFormat::Svg, bytes)));
+    if fills_styled_box {
+        image.size_full()
+    } else {
+        image
+    }
 }
 
 fn scoped_overlay_spec(
@@ -4184,6 +4193,18 @@ mod tests {
                 .background(ColorValue::Literal(Rgba8::from_rgb_hex(0x0022_2222))),
         );
         let _element = GpuiNodeRenderer::render(&root);
+    }
+
+    #[test]
+    fn styled_inline_svg_fills_its_node_box_without_losing_intrinsic_default() {
+        let bytes = b"<svg width='24' height='24' viewBox='0 0 24 24'></svg>".to_vec();
+        let mut sized = inline_svg_image(bytes.clone(), true);
+        assert_eq!(sized.style().size.width, Some(relative(1.0).into()));
+        assert_eq!(sized.style().size.height, Some(relative(1.0).into()));
+
+        let mut intrinsic = inline_svg_image(bytes, false);
+        assert_eq!(intrinsic.style().size.width, None);
+        assert_eq!(intrinsic.style().size.height, None);
     }
 
     #[test]

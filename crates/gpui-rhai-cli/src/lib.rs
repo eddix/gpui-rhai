@@ -24,28 +24,22 @@ use toml_edit::{Array, DocumentMut, InlineTable, Item, Value};
 pub mod theme_studio;
 
 use gpui_rhai_registry::{
-    ACCORDION_SOURCE, ALERT_DIALOG_SOURCE, ALERT_SOURCE, AR_LOCALE, AVATAR_SOURCE, BADGE_SOURCE,
-    BUNDLED_THEME_SOURCES, BUTTON_GROUP_SOURCE, BUTTON_SOURCE, CALENDAR_SVG, CARD_SOURCE,
-    CHECK_SVG, CHECKBOX_SOURCE, CHEVRON_DOWN_SVG, CHEVRON_LEFT_SVG, CHEVRON_RIGHT_SVG,
-    CHEVRON_UP_SVG, CLOSE_SVG, CODE_VIEWER_SOURCE, COLLAPSIBLE_SOURCE, COMBOBOX_SOURCE,
-    COMMAND_DIALOG_SOURCE, COMMAND_SOURCE, CONTEXT_MENU_SOURCE, DATE_NEXT_SVG, DATE_PICKER_SOURCE,
-    DATE_PREVIOUS_SVG, DEFAULT_THEME, DIALOG_SOURCE, DIFF_VIEWER_SOURCE, DISCLOSURE_DOWN_SVG,
-    DIVIDER_SOURCE, EMPTY_SOURCE, EN_LOCALE, FORM_FIELD_SOURCE, GROUP_BOX_SOURCE, ICON_SOURCE,
-    INFO_SVG, INPUT_GROUP_SOURCE, INPUT_SOURCE, KBD_SOURCE, LABEL_SOURCE, MENU_SOURCE, MINUS_SVG,
-    PAGINATION_SOURCE, PLUS_SVG, POPOVER_SOURCE, PROGRESS_SOURCE, RADIO_GROUP_SOURCE, RADIO_SOURCE,
-    SCROLL_AREA_SOURCE, SEARCH_SVG, SELECT_SOURCE, SHEET_SOURCE, SKELETON_SOURCE, SLIDER_SOURCE,
-    SORT_ASCENDING_SVG, SORT_DESCENDING_SVG, SPINNER_SOURCE, STATUS_BAR_SOURCE, STUDIO_SOURCE,
-    SWITCH_SOURCE, TABLE_SOURCE, TABS_SOURCE, TAG_SOURCE, TEXTAREA_SOURCE, TITLE_BAR_SOURCE,
-    TOAST_SOURCE, TOGGLE_GROUP_SOURCE, TOGGLE_SOURCE, TOOLTIP_SOURCE, WARNING_SVG, ZH_CN_LOCALE,
+    AR_LOCALE, BUNDLED_ASSET_SOURCES, BUNDLED_COMPONENT_SOURCES_BY_ID, BUNDLED_THEME_SOURCES,
+    DEFAULT_THEME, EN_LOCALE, STUDIO_SOURCE, ZH_CN_LOCALE,
 };
 #[cfg(test)]
-use gpui_rhai_registry::{ETHEREAL_THEME, HELP_SVG};
+use gpui_rhai_registry::{
+    CALENDAR_SVG, CHECK_SVG, CHEVRON_DOWN_SVG, CHEVRON_LEFT_SVG, CHEVRON_RIGHT_SVG, CHEVRON_UP_SVG,
+    CLOSE_SVG, DATE_NEXT_SVG, DATE_PREVIOUS_SVG, DISCLOSURE_DOWN_SVG, ETHEREAL_THEME, HELP_SVG,
+    INFO_SVG, MINUS_SVG, PLUS_SVG, SEARCH_SVG, SORT_ASCENDING_SVG, SORT_DESCENDING_SVG,
+    WARNING_SVG,
+};
 
 #[derive(Clone, Debug)]
 struct RegistryEntry {
     metadata: ComponentMetadata,
     source: &'static str,
-    assets: &'static [RegistryAsset],
+    assets: Vec<RegistryAsset>,
 }
 
 #[derive(Clone, Debug)]
@@ -59,142 +53,6 @@ fn component_styles() {
     #{}
 }
 ";
-
-const ICON_ASSETS: &[RegistryAsset] = &[
-    RegistryAsset {
-        path: "icons/check.svg",
-        source: CHECK_SVG,
-    },
-    RegistryAsset {
-        path: "icons/close.svg",
-        source: CLOSE_SVG,
-    },
-    RegistryAsset {
-        path: "icons/search.svg",
-        source: SEARCH_SVG,
-    },
-];
-
-const PAGINATION_ASSETS: &[RegistryAsset] = &[
-    RegistryAsset {
-        path: "icons/chevron_left.svg",
-        source: CHEVRON_LEFT_SVG,
-    },
-    RegistryAsset {
-        path: "icons/chevron_right.svg",
-        source: CHEVRON_RIGHT_SVG,
-    },
-];
-
-const DATE_PICKER_ASSETS: &[RegistryAsset] = &[
-    RegistryAsset {
-        path: "icons/calendar.svg",
-        source: CALENDAR_SVG,
-    },
-    RegistryAsset {
-        path: "icons/date_previous.svg",
-        source: DATE_PREVIOUS_SVG,
-    },
-    RegistryAsset {
-        path: "icons/date_next.svg",
-        source: DATE_NEXT_SVG,
-    },
-    RegistryAsset {
-        path: "icons/close.svg",
-        source: CLOSE_SVG,
-    },
-];
-
-const SELECT_ASSETS: &[RegistryAsset] = &[];
-
-const TABLE_ASSETS: &[RegistryAsset] = &[
-    RegistryAsset {
-        path: "icons/disclosure_down.svg",
-        source: DISCLOSURE_DOWN_SVG,
-    },
-    RegistryAsset {
-        path: "icons/chevron_right.svg",
-        source: CHEVRON_RIGHT_SVG,
-    },
-    RegistryAsset {
-        path: "icons/sort_ascending.svg",
-        source: SORT_ASCENDING_SVG,
-    },
-    RegistryAsset {
-        path: "icons/sort_descending.svg",
-        source: SORT_DESCENDING_SVG,
-    },
-];
-
-const COMBOBOX_ASSETS: &[RegistryAsset] = &[
-    RegistryAsset {
-        path: "icons/check.svg",
-        source: CHECK_SVG,
-    },
-    RegistryAsset {
-        path: "icons/close.svg",
-        source: CLOSE_SVG,
-    },
-    RegistryAsset {
-        path: "icons/chevron_down.svg",
-        source: CHEVRON_DOWN_SVG,
-    },
-    RegistryAsset {
-        path: "icons/chevron_up.svg",
-        source: CHEVRON_UP_SVG,
-    },
-];
-
-const CHECKBOX_ASSETS: &[RegistryAsset] = &[
-    RegistryAsset {
-        path: "icons/check.svg",
-        source: CHECK_SVG,
-    },
-    RegistryAsset {
-        path: "icons/minus.svg",
-        source: MINUS_SVG,
-    },
-];
-
-const ACCORDION_ASSETS: &[RegistryAsset] = &[
-    RegistryAsset {
-        path: "icons/minus.svg",
-        source: MINUS_SVG,
-    },
-    RegistryAsset {
-        path: "icons/plus.svg",
-        source: PLUS_SVG,
-    },
-];
-
-const CLOSE_ASSETS: &[RegistryAsset] = &[RegistryAsset {
-    path: "icons/close.svg",
-    source: CLOSE_SVG,
-}];
-
-const MENU_ASSETS: &[RegistryAsset] = &[RegistryAsset {
-    path: "icons/check.svg",
-    source: CHECK_SVG,
-}];
-
-const ALERT_ASSETS: &[RegistryAsset] = &[
-    RegistryAsset {
-        path: "icons/check.svg",
-        source: CHECK_SVG,
-    },
-    RegistryAsset {
-        path: "icons/close.svg",
-        source: CLOSE_SVG,
-    },
-    RegistryAsset {
-        path: "icons/info.svg",
-        source: INFO_SVG,
-    },
-    RegistryAsset {
-        path: "icons/warning.svg",
-        source: WARNING_SVG,
-    },
-];
 
 #[derive(Clone, Debug, Default)]
 pub struct BundledRegistry {
@@ -210,66 +68,34 @@ impl BundledRegistry {
     /// duplicates another component ID.
     pub fn load() -> Result<Self, ProjectError> {
         let mut registry = Self::default();
-        for (source, assets) in [
-            (BUTTON_SOURCE, &[][..]),
-            (LABEL_SOURCE, &[][..]),
-            (ICON_SOURCE, ICON_ASSETS),
-            (INPUT_SOURCE, &[][..]),
-            (TEXTAREA_SOURCE, &[][..]),
-            (DIVIDER_SOURCE, &[][..]),
-            (POPOVER_SOURCE, &[][..]),
-            (DIALOG_SOURCE, &[][..]),
-            (COMBOBOX_SOURCE, COMBOBOX_ASSETS),
-            (SELECT_SOURCE, SELECT_ASSETS),
-            (DATE_PICKER_SOURCE, DATE_PICKER_ASSETS),
-            (TABLE_SOURCE, TABLE_ASSETS),
-            (PAGINATION_SOURCE, PAGINATION_ASSETS),
-            (CHECKBOX_SOURCE, CHECKBOX_ASSETS),
-            (RADIO_SOURCE, &[][..]),
-            (RADIO_GROUP_SOURCE, &[][..]),
-            (SWITCH_SOURCE, &[][..]),
-            (TAG_SOURCE, CLOSE_ASSETS),
-            (AVATAR_SOURCE, &[][..]),
-            (PROGRESS_SOURCE, &[][..]),
-            (SKELETON_SOURCE, &[][..]),
-            (FORM_FIELD_SOURCE, &[][..]),
-            (COLLAPSIBLE_SOURCE, &[][..]),
-            (ACCORDION_SOURCE, ACCORDION_ASSETS),
-            (TABS_SOURCE, &[][..]),
-            (TOOLTIP_SOURCE, &[][..]),
-            (MENU_SOURCE, MENU_ASSETS),
-            (TOAST_SOURCE, CLOSE_ASSETS),
-            (ALERT_SOURCE, ALERT_ASSETS),
-            (ALERT_DIALOG_SOURCE, &[][..]),
-            (BADGE_SOURCE, &[][..]),
-            (BUTTON_GROUP_SOURCE, &[][..]),
-            (CARD_SOURCE, &[][..]),
-            (EMPTY_SOURCE, &[][..]),
-            (GROUP_BOX_SOURCE, &[][..]),
-            (INPUT_GROUP_SOURCE, &[][..]),
-            (KBD_SOURCE, &[][..]),
-            (TOGGLE_SOURCE, &[][..]),
-            (TOGGLE_GROUP_SOURCE, &[][..]),
-            (SLIDER_SOURCE, &[][..]),
-            (CONTEXT_MENU_SOURCE, &[][..]),
-            (SHEET_SOURCE, &[][..]),
-            (COMMAND_SOURCE, &[][..]),
-            (COMMAND_DIALOG_SOURCE, &[][..]),
-            (SPINNER_SOURCE, &[][..]),
-            (SCROLL_AREA_SOURCE, &[][..]),
-            (TITLE_BAR_SOURCE, &[][..]),
-            (STATUS_BAR_SOURCE, &[][..]),
-            (CODE_VIEWER_SOURCE, &[][..]),
-            (DIFF_VIEWER_SOURCE, &[][..]),
-        ] {
+        let asset_sources = BUNDLED_ASSET_SOURCES
+            .iter()
+            .copied()
+            .collect::<BTreeMap<_, _>>();
+        for &(catalog_id, source) in BUNDLED_COMPONENT_SOURCES_BY_ID {
             let metadata = parse_component_header(source)?;
             let id = metadata.id.clone();
+            if id.as_str() != catalog_id {
+                return Err(ProjectError::RegistryIdMismatch {
+                    catalog: catalog_id.to_owned(),
+                    metadata: id,
+                });
+            }
             validate_component_documentation(source, &id)?;
             let declared_assets = metadata
                 .assets
                 .iter()
                 .map(String::as_str)
                 .collect::<BTreeSet<_>>();
+            let assets = metadata
+                .assets
+                .iter()
+                .filter_map(|path| {
+                    asset_sources
+                        .get_key_value(path.as_str())
+                        .map(|(&path, &source)| RegistryAsset { path, source })
+                })
+                .collect::<Vec<_>>();
             let bundled_assets = assets
                 .iter()
                 .map(|asset| asset.path)
@@ -459,7 +285,7 @@ impl Project {
                 self.root.join(".gpui-rhai/baselines").join(&relative),
                 entry.source.to_owned(),
             )?;
-            for asset in entry.assets {
+            for asset in &entry.assets {
                 plan.create(
                     self.root.join("ui/assets").join(asset.path),
                     asset.source.to_owned(),
@@ -699,7 +525,7 @@ impl Project {
                 plan.create(baseline_path, upstream.source.to_owned())?;
             }
             let mut asset_conflict = false;
-            for asset in upstream.assets {
+            for asset in &upstream.assets {
                 asset_conflict |= self.plan_asset_update(&mut plan, asset)?;
             }
             if asset_conflict {
@@ -1856,6 +1682,8 @@ pub enum ProjectError {
     InvalidPath(PathBuf),
     #[error("component registry contains duplicate `{0}`")]
     DuplicateRegistry(ModuleId),
+    #[error("component catalog id `{catalog}` differs from source metadata `{metadata}`")]
+    RegistryIdMismatch { catalog: String, metadata: ModuleId },
     #[error(
         "component `{component}` asset metadata differs from bundled assets: declared {declared:?}, bundled {bundled:?}"
     )]
@@ -2313,7 +2141,7 @@ mod tests {
         let project = Project::new(directory.path());
         project.plan_init().unwrap().apply().unwrap();
         let registry = BundledRegistry::load().unwrap();
-        assert_eq!(registry.entries.len(), 50);
+        assert_eq!(registry.entries.len(), 51);
         let requested = registry
             .entries
             .keys()
@@ -2357,7 +2185,7 @@ mod tests {
         let entry = registry.entries.get_mut(&id).unwrap();
         let source = entry
             .source
-            .replace("0.1.1", "0.2.0")
+            .replace("0.1.2", "0.2.0")
             .replace("// Button presents a desktop action.", upstream_purpose);
         let source: &'static str = Box::leak(source.into_boxed_str());
         entry.metadata = parse_component_header(source).unwrap();
@@ -2417,7 +2245,7 @@ mod tests {
         let entry = registry.entries.get_mut(&button).unwrap();
         let source = entry
             .source
-            .replace("0.1.1", "0.2.0")
+            .replace("0.1.2", "0.2.0")
             .replace("dependencies: []", "dependencies: [\"components/badge\"]")
             .replace(
                 "\"dependencies\": []",

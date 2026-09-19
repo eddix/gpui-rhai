@@ -1,6 +1,6 @@
 # Official component catalog
 
-gpui-rhai ships 50 editable Rhai source components. They all use the same
+gpui-rhai ships 51 editable Rhai source components. They all use the same
 public atoms and generic runtime mechanisms available to application code; no
 official component receives a private high-level node constructor.
 
@@ -42,7 +42,9 @@ policy.
 
 ## Actions, choices, and forms
 
-- `Button` and `ButtonGroup` express actions; `Toggle`/`ToggleGroup` express
+- `Button`, `IconButton`, and `ButtonGroup` express actions. `IconButton` owns a
+  square hit target and requires an accessible label; `Button` uses its typed
+  `prefix`/`suffix` slots for icons mixed with text. `Toggle`/`ToggleGroup` express
   pressed tool state; `Checkbox`, `Radio`/`RadioGroup`, and `Switch` retain
   their separate selection and setting semantics.
 - `Input`, `InputGroup`, `Textarea`, and `FormField` use the retained native
@@ -99,7 +101,10 @@ active-value or result-key-order change.
 
 Array inputs are ranked in component Rhai. Large NativeCollection inputs are
 filtered, grouped, ranked, and navigated in Rust; only visible projected rows
-cross into Rhai. `CommandDialog` forwards the same controlled `active_value`,
+cross into Rhai. Array items keep a required textual `label` for filtering and
+accessibility, and may add `content: node` for two-tone labels, icons, badges,
+or other presentation. The content node never becomes the search or accessible
+name implicitly. `CommandDialog` forwards the same controlled `active_value`,
 composes the behavior with Dialog, and
 forwards `query_change`, `active_change`, and `action` through formal component
 events. It does not register a global shortcut. The Host action/keybinding
