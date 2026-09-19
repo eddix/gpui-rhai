@@ -1,9 +1,9 @@
 # Table
 
 The official Table remains a copied Rhai source composition rather than a
-native Table renderer. Its optional divider handles use one small built-in
-native primitive so high-frequency pointer movement can update retained width
-signals without executing Rhai.
+native Table renderer. Its optional divider handles and zero-size intrinsic
+text probes use small built-in native primitives so pointer movement and
+auto-fit measurement stay out of Rhai.
 
 Its header and cells are public Box/Text atoms. `rows` accepts either the
 original Rhai Array of maps or a Rust-owned `NativeCollection`. The Array path
@@ -92,18 +92,30 @@ table::Table(#{
 
 Before interaction, fixed/percent/flex descriptors remain fully responsive.
 Pointer-down snapshots the committed header width; native signal sampling then
-turns only that column into a non-shrinking fixed pixel override. Pointer moves
-continue outside the header and repaint header plus realized Array or
-NativeCollection cells without a Rhai render. Mouse-up emits exactly one
-`column_resize` event. The keyed Table retains the override when the event is
-unobserved; replacing that column's source width descriptor clears it.
+turns only that column into a non-shrinking fixed pixel override after movement
+begins. Pointer moves continue outside the header and repaint header plus
+realized Array or NativeCollection cells without a Rhai render. Mouse-up emits
+exactly one `column_resize` event when the callback is supplied. A click without
+movement does not alter the width or emit an event. The keyed Table retains the
+override when the event is unobserved; replacing that column's source width
+descriptor clears it.
+
+Double-clicking a divider auto-fits to the widest measured header or currently
+realized data cell, including the virtual collection's bounded overdraw window,
+then applies `min_width`/`max_width` and emits one ordinary `column_resize`
+event when observed. Text is shaped by GPUI with the active theme typography;
+the source Table padding and a sortable header's icon allowance are included.
+
+This realized-window contract is identical for Array and NativeCollection
+inputs. It deliberately does not scan every Array row or materialize unmounted
+NativeCollection rows in Rhai: an offscreen value cannot affect auto-fit until
+its row enters the realized virtual window. Scroll to another region and
+double-click again to fit that region. This keeps double-click work bounded by
+viewport/overdraw size rather than total collection size.
 
 Each divider is a focusable vertical separator. Logical Left/Right changes the
 width by 8px and emits the same committed event; RTL reverses physical pointer
 and arrow direction while preserving logical increase/decrease semantics.
-Double-click auto-fit is intentionally absent: a virtualized NativeCollection
-cannot infer a stable maximum from unmounted rows without a separate provider
-measurement contract.
 
 Table exposes source parts for `root`, `header`, `header_cell`, `resize_handle`, `body`,
 `group_header`, `group_indicator`, `group_label`, `group_count`, `loading`, and

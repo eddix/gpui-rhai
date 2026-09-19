@@ -16,7 +16,10 @@ use crate::animation::register_animation_api;
 use crate::asset::{AssetId, ImageDecodeHandle, asset_id_from_script};
 use crate::backend::{AstInterpreter, ExecutionBackend};
 use crate::canvas::register_canvas_api;
-use crate::column_resize::{ColumnResizePrimitiveHandler, column_resize_primitive_descriptor};
+use crate::column_resize::{
+    ColumnMeasurementRegistry, ColumnResizePrimitiveHandler, IntrinsicTextMeasurePrimitiveHandler,
+    column_resize_primitive_descriptor, intrinsic_text_measure_primitive_descriptor,
+};
 use crate::component::{ComponentExportCollector, ComponentExportError, ComponentRegistry};
 use crate::context::{UiContext, register_ui_context_api};
 use crate::date::register_date_api;
@@ -677,11 +680,17 @@ impl RuntimeEngine {
     }
 
     fn register_builtin_primitives(&mut self) {
+        let column_measurements = ColumnMeasurementRegistry::default();
         self.register_primitive(
             column_resize_primitive_descriptor(),
-            ColumnResizePrimitiveHandler,
+            ColumnResizePrimitiveHandler::new(column_measurements.clone()),
         )
         .expect("built-in column resize primitive descriptor is valid");
+        self.register_primitive(
+            intrinsic_text_measure_primitive_descriptor(),
+            IntrinsicTextMeasurePrimitiveHandler::new(column_measurements),
+        )
+        .expect("built-in intrinsic text measurement primitive descriptor is valid");
         self.register_primitive(
             text_input_primitive_descriptor(),
             TextInputPrimitiveHandler::default(),
@@ -3129,7 +3138,7 @@ fn validate_virtual_renderer(renderer: &FnPtr) -> Result<(), Box<EvalAltResult>>
 }
 
 fn validate_virtual_renderer_curry(value: &Dynamic) -> Result<(), crate::UiValueError> {
-    if value.is::<UiNode>() {
+    if value.is::<UiNode>() || value.is::<crate::NativeSignal>() {
         return Ok(());
     }
     if value.is::<Array>() {

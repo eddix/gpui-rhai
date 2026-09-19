@@ -94,6 +94,7 @@ fn view(ctx) {
             rows: ctx.get_native_collection("accounts"),
             columns: columns,
             fill_height: true,
+            resizable_columns: __RESIZABLE__,
             estimated_row_height: 30.0,
             striped: true,
             selection_mode: "single",
@@ -117,7 +118,18 @@ fn module(id: &str, source: &str) -> (ModuleId, String) {
 }
 
 pub(crate) fn table_1000_view() -> EmbeddedScriptView {
-    let main = MAIN.replace("__ROW_COUNT__", &ROW_COUNT.to_string());
+    table_1000_view_with_resizable(false)
+}
+
+#[allow(dead_code)] // Used when this example is imported by the independent GPUI test workspace.
+pub(crate) fn table_1000_resizable_view() -> EmbeddedScriptView {
+    table_1000_view_with_resizable(true)
+}
+
+fn table_1000_view_with_resizable(resizable: bool) -> EmbeddedScriptView {
+    let main = MAIN
+        .replace("__ROW_COUNT__", &ROW_COUNT.to_string())
+        .replace("__RESIZABLE__", if resizable { "true" } else { "false" });
     let scripts = EmbeddedScriptSource::new(BTreeMap::from([
         module("main", &main),
         module("components/table", TABLE),
