@@ -272,6 +272,49 @@ fn assert_resizable_table_width_signals(columns: &[gpui_rhai::UiNode]) {
     );
 }
 
+fn assert_resizable_table_autofit_measurements(
+    headers: &[gpui_rhai::UiNode],
+    cells: &[gpui_rhai::UiNode],
+) {
+    assert!(
+        headers[..3]
+            .iter()
+            .all(|header| contains_primitive(header, "gpui_rhai.intrinsic_text_measure"))
+    );
+    assert!(!contains_primitive(
+        &headers[3],
+        "gpui_rhai.intrinsic_text_measure"
+    ));
+    assert!(
+        cells[..3]
+            .iter()
+            .all(|cell| contains_primitive(cell, "gpui_rhai.intrinsic_text_measure"))
+    );
+    assert!(!contains_primitive(
+        &cells[3],
+        "gpui_rhai.intrinsic_text_measure"
+    ));
+}
+
+fn assert_table_resize_handles(headers: &[gpui_rhai::UiNode]) {
+    for header in &headers[..3] {
+        let UiNodeKind::Box { children } = header.kind() else {
+            unreachable!()
+        };
+        assert!(matches!(children.last().map(gpui_rhai::UiNode::kind),
+            Some(UiNodeKind::Custom { primitive })
+                if primitive.primitive.as_str() == "gpui_rhai.column_resize"));
+    }
+    let UiNodeKind::Box { children } = headers[3].kind() else {
+        unreachable!()
+    };
+    assert!(
+        !children
+            .iter()
+            .any(|node| matches!(node.kind(), UiNodeKind::Custom { .. }))
+    );
+}
+
 fn assert_table_has_no_width_signals(root: &gpui_rhai::UiNode) {
     let UiNodeKind::Box { children } = root.kind() else {
         panic!("Table root must be a Box")
@@ -318,6 +361,22 @@ fn contains_overlay(node: &gpui_rhai::UiNode) -> bool {
         UiNodeKind::Overlay { .. } => true,
         UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => {
             children.iter().any(contains_overlay)
+        }
+        _ => false,
+    }
+}
+
+fn contains_primitive(node: &gpui_rhai::UiNode, id: &str) -> bool {
+    match node.kind() {
+        UiNodeKind::Custom { primitive } => primitive.primitive.as_str() == id,
+        UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => {
+            children.iter().any(|child| contains_primitive(child, id))
+        }
+        UiNodeKind::Overlay {
+            trigger, content, ..
+        } => contains_primitive(trigger, id) || contains_primitive(content, id),
+        UiNodeKind::ErrorBoundary { child, fallback } => {
+            contains_primitive(child, id) || contains_primitive(fallback, id)
         }
         _ => false,
     }
@@ -2383,29 +2442,12 @@ fn official_table_is_public_data_backed_rhai_composition() {
     assert_table_column_width_contract(cells);
     assert_resizable_table_width_signals(header_cells);
     assert_resizable_table_width_signals(cells);
-    for header in &header_cells[..3] {
-        let UiNodeKind::Box { children } = header.kind() else {
-            unreachable!()
-        };
-        assert!(matches!(children.last().map(gpui_rhai::UiNode::kind),
-            Some(UiNodeKind::Custom { primitive })
-                if primitive.primitive.as_str() == "gpui_rhai.column_resize"));
-    }
-    let UiNodeKind::Box {
-        children: last_header_children,
-    } = header_cells[3].kind()
-    else {
-        unreachable!()
-    };
-    assert!(
-        !last_header_children
-            .iter()
-            .any(|node| matches!(node.kind(), UiNodeKind::Custom { .. }))
-    );
+    assert_table_resize_handles(header_cells);
     assert!(cells.iter().all(|cell| {
         cell.style().base.white_space == Some(gpui_rhai::WhiteSpaceMode::NoWrap)
             && cell.style().base.text_ellipsis == Some(true)
     }));
+    assert_resizable_table_autofit_measurements(header_cells, cells);
 }
 
 #[test]
@@ -2520,6 +2562,7 @@ fn official_table_groups_native_collection_without_materializing_rows_in_rhai() 
                     table::Table(#{
                         key: "clusters", label: "Clusters", row_key: "id", height: 120,
                         rows: ctx.get_native_collection("clusters"), group_by: "track",
+                        resizable_columns: true,
                         columns: [
                             #{ key: "track", title: "Track",
                                 width: #{ kind: "fixed", value: 120 } },
@@ -2590,6 +2633,14 @@ fn official_table_groups_native_collection_without_materializing_rows_in_rhai() 
         Some(gpui_rhai::Length::Relative(0.0).into())
     );
     assert_eq!(cells[1].style().base.flex_grow_weight, Some(2.0));
+    assert!(contains_primitive(
+        &cells[0],
+        "gpui_rhai.intrinsic_text_measure"
+    ));
+    assert!(!contains_primitive(
+        &cells[1],
+        "gpui_rhai.intrinsic_text_measure"
+    ));
 }
 
 #[test]

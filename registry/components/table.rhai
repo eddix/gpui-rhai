@@ -12,7 +12,7 @@
 // Data-backed Table composed entirely from public Box/Text/virtual_collection APIs.
 // Use either a positive logical-pixel height or fill_height for flex layouts.
 // Props: key, label, row_key, Array-or-NativeCollection rows, columns,
-// height, loading/empty, sort, selection, optional grouping, and native column resizing.
+// height, loading/empty, sort, selection, optional grouping, and native resize/auto-fit.
 // Events: sort_change, selection_change, row_click, group_toggle, and column_resize.
 // State: application values are controlled; keyed native width overrides retain drag previews.
 // Example: Table(#{ key: "users", label: "Users", row_key: "id", rows: rows,
@@ -145,6 +145,13 @@ fn row_action(ctx, payload) {
 fn group_action(ctx, group) { ctx.emit("group_toggle", group); }
 fn column_resize_action(ctx, payload) { ctx.emit("column_resize", payload); }
 
+fn intrinsic_column_measure(key, text_value, signal, extra_width) {
+    gpui_rhai::IntrinsicTextMeasurePrimitive(#{
+        key: key, text: text_value, group: signal,
+        horizontal_padding: theme_spacing("sm"), extra_width: extra_width,
+    })
+}
+
 fn clamp_column_width(value, min_width, max_width) {
     let result = if value < min_width { min_width } else { value };
     if max_width != () && result > max_width { max_width } else { result }
@@ -163,7 +170,7 @@ fn column_resize_key(ctx, payload) {
         width: #{ kind: "fixed", value: width } });
 }
 
-fn render_table_row(ctx, payload) {
+fn render_table_row(resize_signals, ctx, payload) {
     let item = payload.item;
     if item.kind == "group" {
         let indicator = image_source(asset(if item.collapsed {
@@ -193,9 +200,16 @@ fn render_table_row(ctx, payload) {
     }
     let cells = [];
     for cell in item.cells {
-        let node = text(cell.text).with_key(cell.key).with_style(
-            column_style(cell).min_width(px(0)).whitespace_nowrap().text_ellipsis()
-                .typography("body")
+        let content = [text(cell.text).with_key(`${cell.key}-text`)
+            .with_style(style().flex_grow().min_width(px(0)).whitespace_nowrap().text_ellipsis())];
+        if "resize_signal_key" in cell {
+            content.push(intrinsic_column_measure(
+                `${payload.key}-${cell.key}-measure`, cell.text,
+                resize_signals[cell.key], 0.0));
+        }
+        let node = row(content).with_key(cell.key).with_style(
+            column_style(cell).min_width(px(0)).overflow_hidden()
+                .whitespace_nowrap().text_ellipsis().typography("body")
         );
         if "resize_signal_key" in cell {
             node = node.bind_parent_signal(ctx, "width_override", cell.resize_signal_key);
@@ -262,10 +276,11 @@ fn table_column_model(props) {
             requested = true;
         }
     }
-    if !requested { return #{ columns: props.columns, signals: [] }; }
+    if !requested { return #{ columns: props.columns, signals: [], resize_signals: #{} }; }
     let column_keys = [];
     let columns = [];
     let resize_signals = [];
+    let resize_signal_map = #{};
     for index in 0..props.columns.len {
         let source = props.columns[index];
         if source.key in column_keys { throw `Table column key ${source.key} is duplicated`; }
@@ -288,14 +303,16 @@ fn table_column_model(props) {
             column.resize_ref_key = `column-header-${index}`;
             column.min_width = min_width;
             column.max_width = max_width;
-            resize_signals.push(optional_float_signal(signal_key));
+            let resize_signal = optional_float_signal(signal_key);
+            resize_signals.push(resize_signal);
+            resize_signal_map[source.key] = resize_signal;
         } else { resize_signals.push(()); }
         columns.push(column);
     }
-    #{ columns: columns, signals: resize_signals }
+    #{ columns: columns, signals: resize_signals, resize_signals: resize_signal_map }
 }
 
-fn table_resize_handle(ctx, table_key, column, index, signal, header_ref) {
+fn table_resize_handle(ctx, table_key, column, index, signal, header_ref, emit_resize) {
     let base = style().width(px(8)).height(relative(1.0)).flex_shrink(false)
         .margin_start(offset_px(-4)).margin_end(offset_px(-4)).cursor_resize_x()
         .focus(style().background(theme_color("selection")));
@@ -305,7 +322,8 @@ fn table_resize_handle(ctx, table_key, column, index, signal, header_ref) {
     let resize_props = #{ key: `${table_key}-column-resize-${index}`,
         column_key: column.key, source_kind: column.width.kind,
         source_value: column.width.value, min_width: column.min_width,
-        signal: signal, column_ref: header_ref, on_resize: Fn("column_resize_action") };
+        signal: signal, column_ref: header_ref };
+    if emit_resize { resize_props.on_resize = Fn("column_resize_action"); }
     if column.max_width != () { resize_props.max_width = column.max_width; }
     let handle = gpui_rhai::ColumnResizePrimitive(resize_props)
         .with_style(ctx.component_style("resize_handle", base))
@@ -319,12 +337,18 @@ fn table_resize_handle(ctx, table_key, column, index, signal, header_ref) {
 
 fn table_header(ctx, props, columns, resize_signals, current_sort) {
     let headers = [];
+    let emit_resize = "on_column_resize" in props && props.on_column_resize != ();
     for index in 0..columns.len {
         let column = columns[index];
         let resize_enabled = prop_or(column, "resize_enabled", false);
         let resize_signal = if resize_enabled { resize_signals[index] } else { () };
         let content = [text(column.title).with_style(style()
             .min_width(px(0)).whitespace_nowrap().text_ellipsis())];
+        if resize_enabled {
+            content.push(intrinsic_column_measure(
+                `${props.key}-${column.key}-header-measure`, column.title,
+                resize_signal, if optional_or(column, "sortable", false) { 19.0 } else { 0.0 }));
+        }
         if current_sort != () && current_sort.key == column.key {
             content.push(image_source(asset(if current_sort.direction == "ascending" {
                     "app/icons/sort_ascending"
@@ -337,7 +361,7 @@ fn table_header(ctx, props, columns, resize_signals, current_sort) {
         let header_ref = if resize_enabled { element_ref(column.resize_ref_key) } else { () };
         if resize_enabled {
             children.push(table_resize_handle(
-                ctx, props.key, column, index, resize_signal, header_ref));
+                ctx, props.key, column, index, resize_signal, header_ref, emit_resize));
         }
         let cell = row(children).with_key(column.key)
             .with_style(ctx.component_style("header_cell",
@@ -476,7 +500,7 @@ fn render_Table(ctx, props) {
     let body_style = if fill_height {
         style().flex_grow().min_width(px(0)).min_height(px(0))
     } else { style().min_width(px(0)) };
-    let body = virtual_collection(collection, Fn("render_table_row"))
+    let body = virtual_collection(collection, Fn("render_table_row").curry(model.resize_signals))
         .with_style(ctx.component_style("body", body_style));
     let root_style = if fill_height {
         style().flex_col().flex_grow().min_width(px(0)).min_height(px(0))

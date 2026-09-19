@@ -11,11 +11,13 @@ lists. A native collection keeps the complete source out of `Dynamic` and
 projects an owned `UiValue` only when the viewport requests that index.
 
 The retained named renderer may curry validated presentation data, including
-`UiNode` values nested in arrays or maps. This supports components such as
-Command that keep a required textual label in `config.data` while retaining a
-separate rich label node. Curried values belong only to the render recipe:
-nodes are rebound to the active generation and component scope when realized,
-and never enter sortable/comparable `UiValue` or `NativeCollection` data.
+`UiNode` and scoped `NativeSignal` values nested in arrays or maps. This
+supports components such as Command that keep a required textual label in
+`config.data` while retaining a separate rich label node, and Table cells that
+bind to one column-owned native width signal. Curried values belong only to the
+render recipe: nodes are rebound to the active generation, stale signals remain
+generation/incarnation checked, and neither enters sortable/comparable
+`UiValue` or `NativeCollection` data.
 
 ```rhai
 fn render_message(ctx, payload) {

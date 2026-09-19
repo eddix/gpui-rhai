@@ -2,9 +2,10 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use gpui::{
-    Context, FocusHandle, InteractiveElement, IntoElement, Modifiers, MouseButton, ParentElement,
-    Render, ScrollDelta, ScrollWheelEvent, StatefulInteractiveElement, Styled, TestAppContext,
-    VisualTestContext, Window, div, point, px, size,
+    Context, FocusHandle, InteractiveElement, IntoElement, Modifiers, MouseButton, MouseDownEvent,
+    MouseUpEvent, ParentElement, Render, ScrollDelta, ScrollWheelEvent,
+    StatefulInteractiveElement, Styled, TestAppContext, VisualTestContext, Window, div, point, px,
+    size,
 };
 use gpui_rhai::{
     ActionId, AssetData, ComponentInstancePath, EmbeddedScriptSource, EmbeddedScriptView,
@@ -57,6 +58,21 @@ fn official_icon_assets() -> Vec<(String, AssetData)> {
         )
     })
     .collect()
+}
+
+fn simulate_double_click(visual: &mut VisualTestContext, position: gpui::Point<gpui::Pixels>) {
+    visual.simulate_event(MouseDownEvent {
+        position,
+        button: MouseButton::Left,
+        click_count: 2,
+        ..MouseDownEvent::default()
+    });
+    visual.simulate_event(MouseUpEvent {
+        position,
+        button: MouseButton::Left,
+        click_count: 2,
+        ..MouseUpEvent::default()
+    });
 }
 
 struct KeyboardHost {
@@ -3569,6 +3585,49 @@ fn table_column_resize_previews_natively_and_emits_once_on_commit(cx: &mut TestA
     });
     assert!((reset_width - 160.0).abs() < 1.0, "reset={reset_width}");
 
+    visual.simulate_event(MouseDownEvent {
+        position: start,
+        button: MouseButton::Left,
+        click_count: 1,
+        ..MouseDownEvent::default()
+    });
+    visual.simulate_event(MouseUpEvent {
+        position: start,
+        button: MouseButton::Left,
+        click_count: 1,
+        ..MouseUpEvent::default()
+    });
+    visual.run_until_parked();
+    let single_click_texts = palette_texts(&mut visual, &view);
+    assert!(
+        single_click_texts
+            .iter()
+            .any(|text| text == "resize:1:240" || text == "resize:1:240.0"),
+        "a zero-motion separator click must not emit resize: {single_click_texts:?}"
+    );
+
+    simulate_double_click(&mut visual, start);
+    visual.run_until_parked();
+    let auto_fit = visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .find_by_role_and_name("columnheader", "Left")
+            .next()
+            .unwrap()
+            .geometry
+            .unwrap()
+            .visual
+            .width
+    });
+    assert!((auto_fit - 48.0).abs() < 1.0, "auto_fit={auto_fit}");
+    let auto_fit_texts = palette_texts(&mut visual, &view);
+    assert!(
+        auto_fit_texts
+            .iter()
+            .any(|text| text == "resize:2:48" || text == "resize:2:48.0"),
+        "double-click auto-fit must emit one semantic resize: {auto_fit_texts:?}"
+    );
+
     visual
         .update(|window, cx| {
             view.automate(
@@ -3588,9 +3647,124 @@ fn table_column_resize_previews_natively_and_emits_once_on_commit(cx: &mut TestA
     visual.run_until_parked();
     let keyboard_texts = palette_texts(&mut visual, &view);
     assert!(
-        keyboard_texts.iter().any(|text| text == "resize:2:168" || text == "resize:2:168.0"),
+        keyboard_texts.iter().any(|text| text == "resize:3:56" || text == "resize:3:56.0"),
         "focused separators must support logical arrow-key resizing: {keyboard_texts:?}"
     );
+}
+
+#[gpui::test]
+fn native_collection_table_autofit_stays_on_the_realized_rust_path(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let prepared = table_1000_example::table_1000_resizable_view()
+        .prepare()
+        .unwrap();
+    let captured = Rc::new(RefCell::new(None));
+    let captured_for_window = Rc::clone(&captured);
+    let window = cx.add_window(move |window, cx| {
+        let host = ScriptViewHost::new("native-autofit-window", cx).unwrap();
+        let view = prepared
+            .mount(
+                ScriptViewConfig::new("native-autofit-view"),
+                host.clone(),
+                window,
+                cx,
+            )
+            .unwrap();
+        *captured_for_window.borrow_mut() = Some(view.clone());
+        SingleEmbeddedHost { host, view }
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    cx.run_until_parked();
+
+    let view = captured.borrow().as_ref().unwrap().clone();
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    wait_for_view_text(
+        &mut visual,
+        &view,
+        "Account 0000",
+        "native rows must realize before auto-fit",
+    );
+    let (header, separator) = visual.update(|_, cx| {
+        let snapshot = view.accessibility_snapshot(cx).unwrap();
+        let header = snapshot
+            .find_by_role_and_name("columnheader", "Row")
+            .next()
+            .unwrap()
+            .geometry
+            .unwrap()
+            .visual;
+        let separator = snapshot
+            .find_by_role_and_name("separator", "Resize Row column")
+            .next()
+            .unwrap()
+            .geometry
+            .unwrap()
+            .visual;
+        (header, separator)
+    });
+    let _ = visual.update(|_, cx| view.take_performance_snapshot(cx));
+    simulate_double_click(
+        &mut visual,
+        point(
+            px((separator.x + separator.width / 2.0) as f32),
+            px((separator.y + separator.height / 2.0) as f32),
+        ),
+    );
+    visual.run_until_parked();
+    let fitted = visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .find_by_role_and_name("columnheader", "Row")
+            .next()
+            .unwrap()
+            .geometry
+            .unwrap()
+            .visual
+            .width
+    });
+    assert!(
+        fitted >= 48.0 && fitted < header.width - 8.0,
+        "native realized content did not auto-fit: before={header:?}, after={fitted}"
+    );
+    let performance = visual
+        .update(|_, cx| view.take_performance_snapshot(cx))
+        .unwrap();
+    assert!(
+        performance.timings.iter().all(|timing| !matches!(
+            timing.operation,
+            ExecutionOperation::Render | ExecutionOperation::VirtualCollection(_)
+        )),
+        "auto-fit must not materialize NativeCollection rows or rerender Rhai: {performance:?}"
+    );
+    assert!(
+        performance
+            .timings
+            .iter()
+            .all(|timing| !matches!(timing.operation, ExecutionOperation::Callback(_))),
+        "an unobserved auto-fit should stay entirely in Rust: {performance:?}"
+    );
+
+    visual.simulate_event(ScrollWheelEvent {
+        position: point(
+            px((header.x + header.width / 2.0) as f32),
+            px((header.y + 120.0) as f32),
+        ),
+        delta: ScrollDelta::Pixels(point(px(0.0), px(-600.0))),
+        ..ScrollWheelEvent::default()
+    });
+    for _ in 0..4 {
+        cx.background_executor
+            .advance_clock(std::time::Duration::from_millis(16));
+        visual.run_until_parked();
+    }
+    wait_for_view_text(
+        &mut visual,
+        &view,
+        "Account 0030",
+        "retained virtual rows must replay their scoped width signals after auto-fit",
+    );
+    assert!(visual.update(|_, cx| view.last_error(cx)).unwrap().is_none());
 }
 
 #[gpui::test]
