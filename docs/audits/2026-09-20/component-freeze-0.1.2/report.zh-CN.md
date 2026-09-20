@@ -119,4 +119,20 @@ IconButton 继续独占正方形纯图标动作目标；Button 的 `prefix`/`suf
 - fresh 默认深色 Component Gallery 目视抽查通过；原生测试完成类别与主题
   热切换、表单/overlay/Command/Table 等真实交互验证。
 
-受保护主干提交、GitHub CI、三个 crate、tag 与 release URL 在发布完成后补录。
+## 7. 发布记录
+
+- 实现 PR [#54](https://github.com/eddix/gpui-rhai/pull/54) 通过受保护主干合并，
+  implementation merge 为 `e46c374fad596c9e9fe18aa73194b1620232cd11`；
+- GitHub portable CI
+  [run 35484473453](https://github.com/eddix/gpui-rhai/actions/runs/35484473453)
+  在 23m37s 内完成全部门禁；
+- crates.io 已按依赖顺序发布
+  [gpui-rhai 0.1.2](https://crates.io/crates/gpui-rhai/0.1.2)、
+  [gpui-rhai-registry 0.1.2](https://crates.io/crates/gpui-rhai-registry/0.1.2)
+  与 [gpui-rhai-cli 0.1.2](https://crates.io/crates/gpui-rhai-cli/0.1.2)；
+- 从 crates.io 执行 `cargo install gpui-rhai-cli --version 0.1.2 --locked`
+  完成 3m21s 冷编译，安装后二进制报告 `gpui-rhai 0.1.2`；
+- macOS Xcode 27 的冷安装验证同时发现旧 Metal Toolchain 17F109 不再适配，
+  已安装匹配的 27A266a 并由 `xcrun metal --version` 实际验证；
+- 最终发布入口为
+  [`v0.1.2`](https://github.com/eddix/gpui-rhai/releases/tag/v0.1.2)。
