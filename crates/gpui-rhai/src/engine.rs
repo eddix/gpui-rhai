@@ -10,6 +10,7 @@ use rhai::{
     AST, ASTNode, Array, Dynamic, Engine, EvalAltResult, Expr, FnPtr, FuncArgs, FuncRegistration,
     ImmutableString, Map, Module, ModuleResolver, Position, Scope, Stmt,
 };
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::animation::register_animation_api;
@@ -71,7 +72,8 @@ impl fmt::Display for ScriptGeneration {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ExecutionOperation {
     Compile,
     Render,
@@ -338,6 +340,7 @@ struct ActiveComponentRender {
     environment: ComponentRenderEnvironment,
     reuse: Option<ComponentReuseSnapshot>,
     reused: Vec<(String, usize)>,
+    failed_component: Option<ComponentInstancePath>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -506,6 +509,8 @@ pub struct RuntimeEngine {
     primitives: PrimitiveRegistry,
     primitive_modules: BTreeMap<String, Module>,
     timings: RefCell<Vec<ExecutionTiming>>,
+    last_failed_timing: RefCell<Option<ExecutionTiming>>,
+    last_failed_component: RefCell<Option<ComponentInstancePath>>,
     operation_tracker: Rc<OperationTracker>,
     slow_threshold: Duration,
     component_render: ActiveComponentRenderState,
@@ -522,7 +527,7 @@ pub struct RuntimeEngine {
     virtual_collections: BTreeMap<crate::VirtualCollectionId, VirtualCollectionRecipe>,
 }
 
-const MAX_SCRIPT_OPERATIONS: u64 = 1_000_000;
+pub const MAX_SCRIPT_OPERATIONS: u64 = 1_000_000;
 
 #[derive(Debug, Default)]
 struct OperationTracker {
@@ -660,6 +665,8 @@ impl RuntimeEngine {
             primitives,
             primitive_modules: BTreeMap::new(),
             timings: RefCell::new(Vec::new()),
+            last_failed_timing: RefCell::new(None),
+            last_failed_component: RefCell::new(None),
             operation_tracker,
             slow_threshold: Duration::from_millis(16),
             component_render,
@@ -916,6 +923,7 @@ impl RuntimeEngine {
             environment,
             reuse,
             reused: Vec::new(),
+            failed_component: None,
         });
         Ok(())
     }
@@ -981,6 +989,9 @@ impl RuntimeEngine {
                 .retain(|id, _| !id.component.is_within(&root));
             self.virtual_collections.extend(active.virtual_collections);
         } else {
+            *self.last_failed_component.borrow_mut() = active
+                .failed_component
+                .or_else(|| active.stack.last().cloned());
             active
                 .root_context
                 .runtime()
@@ -1234,6 +1245,9 @@ impl RuntimeEngine {
             node.bind_generation(recipe.generation);
             Ok(node)
         })();
+        if result.is_err() {
+            record_component_render_failure(&self.component_render, &recipe.path);
+        }
         {
             let mut active = self.component_render.try_borrow_mut().map_err(|_| {
                 RuntimeError::ComponentRuntime(
@@ -1434,6 +1448,9 @@ impl RuntimeEngine {
             }
             Ok(realized)
         })();
+        if result.is_err() {
+            record_component_render_failure(&self.component_render, context.component_path());
+        }
         self.finish_component_render(result.is_ok())?;
         result
     }
@@ -1538,11 +1555,21 @@ impl RuntimeEngine {
             return Ok(ComponentStateSchema::default());
         }
         self.begin_execution_session();
-        let raw: Dynamic = self
-            .engine
-            .call_fn(&mut Scope::new(), &compiled.ast, "state_schema", ())
-            .map_err(RuntimeError::Evaluate)?;
-        rhai::serde::from_dynamic(&raw).map_err(RuntimeError::Evaluate)
+        let started = self.begin_timing();
+        let result = (|| {
+            let raw: Dynamic = self
+                .engine
+                .call_fn(&mut Scope::new(), &compiled.ast, "state_schema", ())
+                .map_err(RuntimeError::Evaluate)?;
+            rhai::serde::from_dynamic(&raw).map_err(RuntimeError::Evaluate)
+        })();
+        self.record_timing(
+            ExecutionOperation::Lifecycle("state_schema".to_owned()),
+            compiled.ast.source().unwrap_or("<script>"),
+            started,
+            result.is_ok(),
+        );
+        result
     }
 
     /// Create a generation-bound callback for a script function.
@@ -1827,6 +1854,18 @@ impl RuntimeEngine {
         std::mem::take(&mut *self.timings.borrow_mut())
     }
 
+    /// Return the failed timing from the current execution session, if any.
+    /// Starting the next compile, render, callback, or lifecycle call clears it.
+    #[must_use]
+    pub fn last_failed_timing(&self) -> Option<ExecutionTiming> {
+        self.last_failed_timing.borrow().clone()
+    }
+
+    #[must_use]
+    pub(crate) fn last_failed_component(&self) -> Option<ComponentInstancePath> {
+        self.last_failed_component.borrow().clone()
+    }
+
     fn record_timing(
         &self,
         operation: ExecutionOperation,
@@ -1836,7 +1875,7 @@ impl RuntimeEngine {
     ) {
         let duration = started.instant.elapsed();
         let operations = self.operation_total().saturating_sub(started.operations);
-        self.timings.borrow_mut().push(ExecutionTiming {
+        let timing = ExecutionTiming {
             operation,
             source: source.to_owned(),
             duration,
@@ -1844,7 +1883,11 @@ impl RuntimeEngine {
             operation_semantics: OPERATION_SEMANTICS_VERSION,
             slow: duration >= self.slow_threshold,
             succeeded,
-        });
+        };
+        if !succeeded {
+            *self.last_failed_timing.borrow_mut() = Some(timing.clone());
+        }
+        self.timings.borrow_mut().push(timing);
     }
 
     pub(crate) fn begin_execution_session(&self) {
@@ -1852,6 +1895,8 @@ impl RuntimeEngine {
     }
 
     fn begin_execution_session_from(&self, inherited_base: u64) {
+        self.last_failed_timing.borrow_mut().take();
+        self.last_failed_component.borrow_mut().take();
         self.operation_tracker.begin(inherited_base);
     }
 
@@ -2231,6 +2276,9 @@ fn execute_component_render(
     )?;
     let recipe_component_context = context.clone();
     let result = render.call_within_context::<UiNode>(call, (context, invocation.props));
+    if result.is_err() {
+        record_component_render_failure(active, &path);
+    }
     register_component_event_callbacks(
         active,
         &path,
@@ -2309,6 +2357,18 @@ fn component_render_metadata(
         ))
     })?;
     Ok((render.environment, context.component_render_is_reusable()))
+}
+
+fn record_component_render_failure(
+    active: &ActiveComponentRenderState,
+    component: &ComponentInstancePath,
+) {
+    if let Ok(mut active) = active.try_borrow_mut()
+        && let Some(active) = active.as_mut()
+        && active.failed_component.is_none()
+    {
+        active.failed_component = Some(component.clone());
+    }
 }
 
 fn try_reuse_component_subtree(
@@ -4388,6 +4448,46 @@ mod tests {
         let _ = runtime
             .invoke_callback(&active, &callback, ("still active",))
             .unwrap();
+    }
+
+    #[test]
+    fn failed_nested_component_records_the_deepest_component_path() {
+        let mut runtime = RuntimeEngine::new();
+        let compiled = runtime
+            .compile(
+                r#"
+                    define_component(#{
+                        metadata: #{ id: "components/broken", "export": "Broken",
+                            version: "0.1.3",
+                            runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
+                            dependencies: [], capabilities: #{} },
+                        schema: #{ props: #{}, state: #{ fields: #{} }, events: #{},
+                            slots: #{}, parts: [] },
+                        render: Fn("render_Broken")
+                    });
+                    fn Broken(props) { render_component("components/broken", props) }
+                    fn render_Broken(ctx, props) { throw "nested failure"; }
+                    fn view() { Broken(#{ key: "inner" }) }
+                "#,
+            )
+            .unwrap();
+
+        assert!(runtime.render(&compiled).is_err());
+        assert_eq!(
+            runtime
+                .last_failed_component()
+                .as_ref()
+                .map(ToString::to_string),
+            Some("/App[root]/Broken[inner]".to_owned())
+        );
+        assert!(runtime.last_failed_timing().is_some());
+
+        let recovered = runtime
+            .compile("fn view() { text(\"recovered\") }")
+            .unwrap();
+        runtime.render(&recovered).unwrap();
+        assert_eq!(runtime.last_failed_component(), None);
+        assert_eq!(runtime.last_failed_timing(), None);
     }
 
     #[test]

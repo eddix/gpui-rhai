@@ -21,7 +21,11 @@ Mounted views surface the latest failed callback/render/reload above the
 last-good tree as selectable monospace text. Embedded Hosts that render their
 own error UI may set `ScriptViewConfig::show_error_banner(false)` and continue
 reading `ScriptViewHandle::last_error`; standalone adapters expose the matching
-`ScriptApplication` option.
+`ScriptApplication` option. `ScriptViewHandle::last_diagnostic` returns the
+same failure as structured data: bounded Rhai termination details, typed timing
+and operation budget, deepest failing component identity, and a pre-redacted
+snapshot of only that component's state. Success clears the message and
+diagnostic atomically; ordinary error formatting never emits the snapshot.
 
 The inspector is available only in development and opens with Command-Option-I
 or F12. It shows source locations, redacted state, computed semantics, traces,

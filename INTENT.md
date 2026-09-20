@@ -439,6 +439,12 @@ provenance, dependencies, state, signals, effects, focus/scroll/capture,
 accessibility, recent event paths, dirty causes, animation sources, and frame
 timings.
 
+Mounted failures preserve one atomic human/structured record while the
+last-good tree remains visible. Structured diagnostics identify the deepest
+failing component, retain bounded typed Rhai termination/timing/budget data,
+and snapshot only that component's already-redacted state. They never enter the
+ordinary error string implicitly and clear together with it after success.
+
 Public automation provides role/name/text/test-ID locators, input, drag/wheel,
 bounds/style/text/selection/scroll/accessibility queries, deterministic clocks,
 and GPU screenshots through production render/input paths. It has an in-process

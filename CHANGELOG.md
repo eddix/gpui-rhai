@@ -5,6 +5,17 @@ All notable runtime, CLI, and registry changes are documented here. Version
 component schema, manifest, locale, and generated-source changes follow
 semantic versioning from this release.
 
+## 0.1.3 - Unreleased
+
+- Mounted script failures now expose one atomic human/structured error record.
+  `ScriptViewHandle::last_diagnostic()` preserves the Rhai error kind, bounded
+  token, source position and stack, typed execution timing and operation budget,
+  deepest failing component path/key, and only that component's pre-redacted
+  state snapshot across lifecycle, callback, native-triggered rerender, async
+  delivery, virtual realization, resume, and hot-reload paths. A successful
+  transaction clears both representations together; ordinary error display
+  never serializes the diagnostic payload implicitly.
+
 ## 0.1.2 - 2026-09-20
 
 - `Style::flex_grow_weight` and Rhai's overloaded `style().flex_grow(weight)`

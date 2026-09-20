@@ -129,7 +129,9 @@ pub use devtools::{
     InspectorSnapshot, InspectorTimer, RuntimeTrace, RuntimeTraceKind, TraceBuffer,
 };
 pub use diagnostic::{
-    Diagnostic, DiagnosticCode, DiagnosticContext, DiagnosticFrame, DiagnosticSeverity,
+    Diagnostic, DiagnosticCode, DiagnosticContext, DiagnosticContextError, DiagnosticErrorKind,
+    DiagnosticExecutionTiming, DiagnosticFrame, DiagnosticOperationBudget, DiagnosticSeverity,
+    DiagnosticStateSnapshot,
 };
 pub use document::{
     DiffAlignedRow, DiffDisplayRow, DiffRowKind, DiffViewMode, DiffWhitespace, DocumentDescriptor,
@@ -146,8 +148,8 @@ pub use effect::{EffectDescriptor, EffectError, EffectId, EffectRegistry};
 pub use element_ref::{ElementRef, ElementRefError, ElementRefId, ElementRefRegistry};
 pub use engine::{
     CompiledUi, ComponentInvocationRecipe, ExecutionOperation, ExecutionTiming,
-    OPERATION_SEMANTICS_VERSION, RuntimeEngine, RuntimeError, ScriptCallback,
-    ScriptCallbackDefinitionError, ScriptGeneration,
+    MAX_SCRIPT_OPERATIONS, OPERATION_SEMANTICS_VERSION, RuntimeEngine, RuntimeError,
+    ScriptCallback, ScriptCallbackDefinitionError, ScriptGeneration,
 };
 pub use event::{
     EventDispatchReport, EventModifiers, EventPhase, EventPropagation, EventResponse, EventRouter,

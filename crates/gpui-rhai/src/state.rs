@@ -46,6 +46,11 @@ impl ComponentInstancePath {
     }
 
     #[must_use]
+    pub fn leaf_key(&self) -> Option<&str> {
+        self.0.last().map(|segment| segment.key.as_str())
+    }
+
+    #[must_use]
     pub fn is_within(&self, ancestor: &Self) -> bool {
         self.0.starts_with(&ancestor.0)
     }
@@ -285,31 +290,46 @@ impl StateStore {
     pub fn inspect(&self) -> Vec<StateInstanceSnapshot> {
         self.instances
             .iter()
-            .map(|(path, state)| StateInstanceSnapshot {
-                path: path.clone(),
-                fields: state
-                    .values
-                    .iter()
-                    .map(|(name, value)| {
-                        let sensitive = state
-                            .schema
-                            .field(name)
-                            .is_some_and(|field| field.sensitive);
-                        (
-                            name.clone(),
-                            StateValueSnapshot {
-                                value: if sensitive {
-                                    UiValue::String("<sensitive>".to_owned())
-                                } else {
-                                    value.clone()
-                                },
-                                sensitive,
-                            },
-                        )
-                    })
-                    .collect(),
-            })
+            .map(|(path, state)| state_instance_snapshot(path, state))
             .collect()
+    }
+
+    /// Inspect one component instance without cloning unrelated component state.
+    #[must_use]
+    pub fn inspect_instance(&self, path: &ComponentInstancePath) -> Option<StateInstanceSnapshot> {
+        self.instances
+            .get(path)
+            .map(|state| state_instance_snapshot(path, state))
+    }
+}
+
+fn state_instance_snapshot(
+    path: &ComponentInstancePath,
+    state: &ComponentState,
+) -> StateInstanceSnapshot {
+    StateInstanceSnapshot {
+        path: path.clone(),
+        fields: state
+            .values
+            .iter()
+            .map(|(name, value)| {
+                let sensitive = state
+                    .schema
+                    .field(name)
+                    .is_some_and(|field| field.sensitive);
+                (
+                    name.clone(),
+                    StateValueSnapshot {
+                        value: if sensitive {
+                            UiValue::String("<sensitive>".to_owned())
+                        } else {
+                            value.clone()
+                        },
+                        sensitive,
+                    },
+                )
+            })
+            .collect(),
     }
 }
 
@@ -506,6 +526,36 @@ mod tests {
         assert_eq!(
             store.get(&path, "value"),
             Some(&UiValue::String("reset".to_owned()))
+        );
+    }
+
+    #[test]
+    fn inspect_instance_is_exact_and_redacts_sensitive_values() {
+        let selected = ComponentInstancePath::root("App", "root").child("Panel", "selected");
+        let unrelated = ComponentInstancePath::root("App", "root").child("Panel", "other");
+        let schema = ComponentStateSchema::new(BTreeMap::from([(
+            "token".to_owned(),
+            StateField::new(ValueSchema::string(), UiValue::String("secret".to_owned()))
+                .sensitive(true),
+        )]))
+        .unwrap();
+        let mut store = StateStore::new();
+        let mut render = store.begin_render();
+        render.mount(selected.clone(), &schema).unwrap();
+        render.mount(unrelated, &schema).unwrap();
+        store.commit_render(render);
+
+        let snapshot = store.inspect_instance(&selected).unwrap();
+        assert_eq!(snapshot.path, selected);
+        assert_eq!(
+            snapshot.fields["token"].value,
+            UiValue::String("<sensitive>".to_owned())
+        );
+        assert!(snapshot.fields["token"].sensitive);
+        assert!(
+            store
+                .inspect_instance(&ComponentInstancePath::root("missing", "root"))
+                .is_none()
         );
     }
 
