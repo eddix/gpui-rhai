@@ -685,7 +685,13 @@ impl ScriptViewHandle {
     /// Returns [`ScriptViewError::DisposedView`] after disposal.
     pub fn last_error(&self, cx: &App) -> Result<Option<String>, ScriptViewError> {
         self.require_not_disposed()?;
-        Ok(self.0.entity.read(cx).last_error.clone())
+        Ok(self
+            .0
+            .entity
+            .read(cx)
+            .last_failure
+            .as_ref()
+            .map(|failure| failure.message.clone()))
     }
 
     /// Return structured details for the latest script runtime error.
@@ -698,13 +704,13 @@ impl ScriptViewHandle {
     /// Returns [`ScriptViewError::DisposedView`] after disposal.
     pub fn last_diagnostic(&self, cx: &App) -> Result<Option<Diagnostic>, ScriptViewError> {
         self.require_not_disposed()?;
-        let view = self.0.entity.read(cx);
-        Ok(view
-            .last_diagnostic
+        Ok(self
+            .0
+            .entity
+            .read(cx)
+            .last_failure
             .as_ref()
-            .and_then(|(message, diagnostic)| {
-                (view.last_error.as_ref() == Some(message)).then(|| diagnostic.clone())
-            }))
+            .and_then(|failure| failure.diagnostic.as_deref().cloned()))
     }
 
     /// Drain execution timings and snapshot retained/virtual metrics.
@@ -2059,28 +2065,24 @@ impl ScriptWindowFactory {
         &self,
         view_id: &str,
         window_id: &str,
-    ) -> Result<(RuntimeEngine, ScriptLifecycle, PrimitiveRegistry), String> {
+    ) -> Result<(RuntimeEngine, ScriptLifecycle, PrimitiveRegistry), ScriptViewError> {
         let mut engine = RuntimeEngine::new();
         for extension in self.extensions.iter() {
-            extension.configure_engine(&mut engine)?;
+            extension
+                .configure_engine(&mut engine)
+                .map_err(ScriptViewError::Extension)?;
         }
         let program = self.program.borrow().clone();
-        engine
-            .restore_component_exports(program.component_exports.clone())
-            .map_err(|error| error.to_string())?;
-        engine
-            .restore_component_renderers(program.component_renderers.clone())
-            .map_err(|error| error.to_string())?;
-        let lifecycle = self
-            .mount_lifecycle(
-                &mut engine,
-                program,
-                view_id,
-                window_id,
-                WindowCommandPolicy::ApplicationOwned,
-                false,
-            )
-            .map_err(|error| error.to_string())?;
+        engine.restore_component_exports(program.component_exports.clone())?;
+        engine.restore_component_renderers(program.component_renderers.clone())?;
+        let lifecycle = self.mount_lifecycle(
+            &mut engine,
+            program,
+            view_id,
+            window_id,
+            WindowCommandPolicy::ApplicationOwned,
+            false,
+        )?;
         let primitives = engine.primitive_registry();
         Ok((engine, lifecycle, primitives))
     }
@@ -2259,8 +2261,7 @@ impl PreparedScriptView {
                 engine: self.engine,
                 lifecycle,
                 primitives,
-                last_error: None,
-                last_diagnostic: None,
+                last_failure: None,
                 theme: self.theme,
                 theme_handle: view_theme_handle,
                 #[cfg(feature = "dev-reload")]
@@ -2524,7 +2525,7 @@ fn open_secondary_window(
     factory: &Rc<ScriptWindowFactory>,
     native_windows: &Rc<RefCell<NativeWindowRegistry>>,
     cx: &mut App,
-) -> Result<(), String> {
+) -> Result<(), ScriptFailure> {
     let factory = Rc::clone(factory);
     let native_windows = Rc::clone(native_windows);
     let window_id = spec.id.clone();
@@ -2533,9 +2534,8 @@ fn open_secondary_window(
         WindowCommandPolicy::ApplicationOwned,
         cx,
     )
-    .map_err(|error| error.to_string())?;
-    host.reserve_view(&window_id)
-        .map_err(|error| error.to_string())?;
+    .map_err(ScriptFailure::from)?;
+    host.reserve_view(&window_id).map_err(ScriptFailure::from)?;
     let (engine, lifecycle, primitives) = match factory.instantiate(&window_id, &window_id) {
         Ok(instance) => instance,
         Err(error) => {
@@ -2545,7 +2545,7 @@ fn open_secondary_window(
                 .runtime
                 .borrow_mut()
                 .release_window(&window_id, &root);
-            return Err(error);
+            return Err(error.into());
         }
     };
     let timings = engine.take_timings();
@@ -2574,8 +2574,7 @@ fn open_secondary_window(
                 engine,
                 lifecycle,
                 primitives,
-                last_error: None,
-                last_diagnostic: None,
+                last_failure: None,
                 theme: view_factory.theme.clone(),
                 theme_handle: view_theme_handle,
                 #[cfg(feature = "dev-reload")]
@@ -2644,7 +2643,7 @@ fn open_secondary_window(
                 .borrow_mut()
                 .windows
                 .mark_open(&window_id)
-                .map_err(|error| error.to_string())?;
+                .map_err(|error| ScriptFailure::plain(error.to_string()))?;
             Ok(())
         }
         Err(error) => {
@@ -2652,7 +2651,7 @@ fn open_secondary_window(
             let root = ComponentInstancePath::root("View", &window_id);
             let mut runtime = factory.runtime.borrow_mut();
             let _ = runtime.release_window(&window_id, &root);
-            Err(error.to_string())
+            Err(ScriptFailure::plain(error.to_string()))
         }
     }
 }
@@ -2803,6 +2802,49 @@ fn automation_pointer_id(payload: &UiValue) -> Option<u64> {
     }
 }
 
+#[derive(Clone, Debug)]
+struct ScriptFailure {
+    message: String,
+    diagnostic: Option<Box<Diagnostic>>,
+}
+
+impl ScriptFailure {
+    fn plain(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            diagnostic: None,
+        }
+    }
+
+    fn with_diagnostic(message: impl Into<String>, diagnostic: Diagnostic) -> Self {
+        Self {
+            message: message.into(),
+            diagnostic: Some(Box::new(diagnostic)),
+        }
+    }
+
+    fn append_context(mut self, context: impl AsRef<str>) -> Self {
+        self.message = format!("{}; {}", self.message, context.as_ref());
+        self
+    }
+
+    fn into_view_error(self) -> ScriptViewError {
+        match self.diagnostic {
+            Some(diagnostic) => ScriptViewError::ScriptDiagnostic {
+                message: self.message,
+                diagnostic,
+            },
+            None => ScriptViewError::Resume(self.message),
+        }
+    }
+}
+
+impl From<String> for ScriptFailure {
+    fn from(message: String) -> Self {
+        Self::plain(message)
+    }
+}
+
 #[allow(clippy::struct_excessive_bools)]
 struct ScriptHostView {
     view_id: String,
@@ -2810,8 +2852,7 @@ struct ScriptHostView {
     engine: RuntimeEngine,
     lifecycle: ScriptLifecycle,
     primitives: PrimitiveRegistry,
-    last_error: Option<String>,
-    last_diagnostic: Option<(String, Diagnostic)>,
+    last_failure: Option<ScriptFailure>,
     theme: ThemeVariant,
     theme_handle: ThemeHandle,
     #[cfg(feature = "dev-reload")]
@@ -3165,11 +3206,11 @@ impl Render for ScriptHostView {
                 )
             },
         );
-        let content = match (&self.last_error, self.show_error_banner) {
-            (Some(error), true) => build_error_banner(
+        let content = match (&self.last_failure, self.show_error_banner) {
+            (Some(failure), true) => build_error_banner(
                 &self.view_id,
                 &self.window_id,
-                error,
+                &failure.message,
                 &snapshot.theme,
                 self.text_selection.clone(),
                 self.host_focus.clone(),
@@ -3217,27 +3258,64 @@ impl Render for ScriptHostView {
 }
 
 impl ScriptHostView {
-    fn capture_lifecycle_diagnostic(
-        &mut self,
+    fn lifecycle_failure(
+        &self,
         error: &crate::LifecycleError,
         component: Option<&ComponentInstancePath>,
-    ) {
-        let crate::LifecycleError::Runtime(error) = error else {
-            return;
-        };
-        if let Ok(context) = self.lifecycle.diagnostic_context(&self.engine, component) {
-            self.last_diagnostic =
-                Some((error.to_string(), Diagnostic::from_runtime(error, &context)));
+    ) -> ScriptFailure {
+        self.lifecycle_failure_with_engine(&self.engine, error, component)
+    }
+
+    fn lifecycle_failure_with_engine(
+        &self,
+        engine: &RuntimeEngine,
+        error: &crate::LifecycleError,
+        component: Option<&ComponentInstancePath>,
+    ) -> ScriptFailure {
+        let message = error.to_string();
+        if let crate::LifecycleError::Runtime(runtime_error) = error
+            && let Ok(context) = self.lifecycle.diagnostic_context(engine, component)
+        {
+            return ScriptFailure::with_diagnostic(
+                message,
+                Diagnostic::from_runtime(runtime_error, &context),
+            );
+        }
+        ScriptFailure::plain(message)
+    }
+
+    #[cfg(feature = "dev-reload")]
+    fn runtime_failure_with_engine(
+        &self,
+        engine: &RuntimeEngine,
+        error: &RuntimeError,
+        component: Option<&ComponentInstancePath>,
+    ) -> ScriptFailure {
+        let message = error.to_string();
+        match self.lifecycle.diagnostic_context(engine, component) {
+            Ok(context) => {
+                ScriptFailure::with_diagnostic(message, Diagnostic::from_runtime(error, &context))
+            }
+            Err(_) => ScriptFailure::plain(message),
         }
     }
 
-    fn lifecycle_error(
-        &mut self,
-        error: &crate::LifecycleError,
-        component: Option<&ComponentInstancePath>,
-    ) -> String {
-        self.capture_lifecycle_diagnostic(error, component);
-        error.to_string()
+    fn set_failure(&mut self, failure: ScriptFailure) {
+        self.last_failure = Some(failure);
+    }
+
+    fn set_plain_failure(&mut self, message: impl Into<String>) {
+        self.set_failure(ScriptFailure::plain(message));
+    }
+
+    fn clear_failure(&mut self) {
+        self.last_failure = None;
+    }
+
+    fn failure_message(&self) -> Option<String> {
+        self.last_failure
+            .as_ref()
+            .map(|failure| failure.message.clone())
     }
 
     fn publish_theme_after_render(&self, theme: &ThemeVariant, cx: &mut Context<Self>) {
@@ -3276,7 +3354,7 @@ impl ScriptHostView {
                     window,
                     cx,
                 );
-                if let Some(error) = self.last_error.clone() {
+                if let Some(error) = self.failure_message() {
                     return Err(crate::AutomationError::Command(error).into());
                 }
                 Ok(crate::AutomationResult::Action { id })
@@ -3287,9 +3365,9 @@ impl ScriptHostView {
                 if !clock.advance(duration) {
                     return Err(crate::AutomationError::ClockNotControllable.into());
                 }
-                self.last_error = None;
+                self.clear_failure();
                 self.poll_async(cx);
-                if let Some(error) = self.last_error.clone() {
+                if let Some(error) = self.failure_message() {
                     return Err(crate::AutomationError::Command(error).into());
                 }
                 Ok(crate::AutomationResult::Advanced { millis })
@@ -3308,7 +3386,7 @@ impl ScriptHostView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Result<crate::AutomationResult, ScriptViewError> {
-        self.last_error = None;
+        self.clear_failure();
         let runtime = self.lifecycle.runtime();
         let geometry = runtime.borrow().geometry_for(Some(&self.view_id));
         let accessibility =
@@ -3352,7 +3430,7 @@ impl ScriptHostView {
                 ),
             };
             invoked = invoked.saturating_add(1);
-            if let Some(error) = self.last_error.clone() {
+            if let Some(error) = self.failure_message() {
                 return Err(crate::AutomationError::Command(error).into());
             }
             response.merge(current);
@@ -3439,8 +3517,8 @@ impl ScriptHostView {
 
     fn prepare_render(&mut self, window: &Window) {
         if !self.host.frame_active() {
-            self.last_error = Some(
-                "embedded ScriptView must be rendered inside ScriptViewHost::container".to_owned(),
+            self.set_plain_failure(
+                "embedded ScriptView must be rendered inside ScriptViewHost::container",
             );
         }
         self.sync_viewport_class(window);
@@ -3507,7 +3585,7 @@ impl ScriptHostView {
                     if let Some(handle) = self.focus_handles.get(&node) {
                         handle.focus(window);
                     } else {
-                        self.last_error = Some(format!(
+                        self.set_plain_failure(format!(
                             "retained node {node} is not focusable or has been unmounted"
                         ));
                     }
@@ -3516,7 +3594,7 @@ impl ScriptHostView {
                     if let Some(handle) = self.scroll_handles.get(&node) {
                         handle.set_offset(gpui::point(pixel_from_f64(-x), pixel_from_f64(-y)));
                     } else {
-                        self.last_error = Some(format!(
+                        self.set_plain_failure(format!(
                             "retained node {node} is not a scroll container or has been unmounted"
                         ));
                     }
@@ -3525,7 +3603,7 @@ impl ScriptHostView {
                     if let Some(anchor) = self.scroll_anchors.get(&node) {
                         anchor.scroll_to(window, cx);
                     } else {
-                        self.last_error = Some(format!(
+                        self.set_plain_failure(format!(
                             "retained node {node} has no scrollable ancestor or was unmounted"
                         ));
                     }
@@ -3538,7 +3616,7 @@ impl ScriptHostView {
         if !self.lifecycle.retained().is_empty()
             && let Err(error) = self.primitives.retain_tree(self.lifecycle.retained())
         {
-            self.last_error = Some(error.to_string());
+            self.set_plain_failure(error.to_string());
         }
     }
 
@@ -3556,7 +3634,7 @@ impl ScriptHostView {
         match needs_update {
             Ok(false) => return,
             Err(error) => {
-                self.last_error = Some(error.to_string());
+                self.set_plain_failure(error.to_string());
                 return;
             }
             Ok(true) => {}
@@ -3578,14 +3656,13 @@ impl ScriptHostView {
                 changed
             };
             if changed {
-                view.lifecycle
-                    .render_dirty(&mut view.engine)
-                    .map_err(|error| error.to_string())?;
+                let result = view.lifecycle.render_dirty(&mut view.engine);
+                result.map_err(|error| view.lifecycle_failure(&error, None))?;
             }
             Ok(())
         });
         if let Err(error) = result {
-            self.last_error = Some(error);
+            self.set_failure(error);
         }
     }
 
@@ -3616,7 +3693,7 @@ impl ScriptHostView {
                 self.handle_node_event(&invocation.callback, invocation.payload, None, window, cx);
             }
             Err(error) => {
-                self.last_error = Some(error.to_string());
+                self.set_plain_failure(error.to_string());
                 cx.notify();
             }
         }
@@ -3629,7 +3706,7 @@ impl ScriptHostView {
         }
     }
 
-    fn invoke_pending_effects(&mut self) -> Result<bool, String> {
+    fn invoke_pending_effects(&mut self) -> Result<bool, ScriptFailure> {
         let mut processed = 0usize;
         loop {
             let (actions, events) = {
@@ -3645,9 +3722,9 @@ impl ScriptHostView {
             }
             processed = processed.saturating_add(actions.len() + events.len());
             if processed > 64 {
-                return Err(
-                    "semantic event/action dispatch exceeded the 64-callback budget".to_owned(),
-                );
+                return Err(ScriptFailure::plain(
+                    "semantic event/action dispatch exceeded the 64-callback budget",
+                ));
             }
             for action in actions {
                 let component = action.callback.component().cloned();
@@ -3656,14 +3733,15 @@ impl ScriptHostView {
                     &action.callback,
                     action.payload,
                 );
-                let _ = result.map_err(|error| self.lifecycle_error(&error, component.as_ref()))?;
+                let _ =
+                    result.map_err(|error| self.lifecycle_failure(&error, component.as_ref()))?;
             }
             for event in events {
                 let component = event.target.clone();
                 let result = self
                     .lifecycle
                     .invoke_component_event_transactional(&self.engine, event);
-                let _ = result.map_err(|error| self.lifecycle_error(&error, Some(&component)))?;
+                let _ = result.map_err(|error| self.lifecycle_failure(&error, Some(&component)))?;
             }
         }
     }
@@ -3716,26 +3794,26 @@ impl ScriptHostView {
             self.release_view();
             return true;
         };
+        let component = handler.component().cloned();
         let result = self.run_script_transaction(|view| {
-            let _ = view
+            let result = view
                 .lifecycle
-                .invoke_callback(&view.engine, &handler, UiValue::Null)
-                .map_err(|error| error.to_string())?;
+                .invoke_callback(&view.engine, &handler, UiValue::Null);
+            let _ = result.map_err(|error| view.lifecycle_failure(&error, component.as_ref()))?;
             view.invoke_pending_effects()?;
-            view.lifecycle
-                .render_dirty(&mut view.engine)
-                .map_err(|error| error.to_string())?;
+            let result = view.lifecycle.render_dirty(&mut view.engine);
+            result.map_err(|error| view.lifecycle_failure(&error, None))?;
             Ok(())
         });
         match result {
             Ok(()) => {
-                self.last_error = None;
+                self.clear_failure();
                 self.process_window_commands(cx);
                 cx.notify();
                 false
             }
             Err(error) => {
-                self.last_error = Some(error);
+                self.set_failure(error);
                 self.release_view();
                 true
             }
@@ -3754,7 +3832,7 @@ impl ScriptHostView {
         self.host
             .quiesce_view(&self.view_id, &self.host_focus, window, cx);
         self.state.set(ScriptViewState::Suspended);
-        self.last_error = None;
+        self.clear_failure();
         cx.notify();
         Ok(true)
     }
@@ -3766,7 +3844,7 @@ impl ScriptHostView {
         #[cfg(feature = "dev-reload")]
         let pending_reload_error = self.apply_pending_reload_on_resume();
         #[cfg(not(feature = "dev-reload"))]
-        let pending_reload_error: Option<String> = None;
+        let pending_reload_error: Option<ScriptFailure> = None;
         self.collect_suspended_deliveries()?;
         let program = self.factory.program();
         let migrating = program.compiled.generation() != self.lifecycle.generation();
@@ -3801,10 +3879,14 @@ impl ScriptHostView {
                         view.lifecycle.root_path(),
                         program.compiled.generation(),
                     );
-                view.lifecycle
-                    .resume_reload(&mut view.engine, program.compiled, &program.state_schema)
+                let result = view.lifecycle.resume_reload(
+                    &mut view.engine,
+                    program.compiled,
+                    &program.state_schema,
+                );
+                result
                     .map(|_| true)
-                    .map_err(|error| error.to_string())?;
+                    .map_err(|error| view.lifecycle_failure(&error, None))?;
                 return Ok(true);
             }
             let pending = view
@@ -3813,21 +3895,28 @@ impl ScriptHostView {
                 .borrow_mut()
                 .take_window_async(&view.window_id, view.lifecycle.root_path());
             for delivery in pending {
-                let _ = view
-                    .lifecycle
-                    .invoke_async_delivery(&view.engine, delivery)
-                    .map_err(|error| error.to_string())?;
+                let component = delivery
+                    .callback
+                    .component()
+                    .cloned()
+                    .or_else(|| delivery.scope.component().cloned());
+                let result = view.lifecycle.invoke_async_delivery(&view.engine, delivery);
+                let _ =
+                    result.map_err(|error| view.lifecycle_failure(&error, component.as_ref()))?;
             }
             view.invoke_pending_effects()?;
-            view.lifecycle
-                .resume(&mut view.engine)
-                .map_err(|error| error.to_string())
+            let result = view.lifecycle.resume(&mut view.engine);
+            result.map_err(|error| view.lifecycle_failure(&error, None))
         });
         match result {
             Ok(changed) => {
                 self.state.set(ScriptViewState::Active);
                 self.activity_wake.notify();
-                self.last_error = pending_reload_error;
+                if let Some(error) = pending_reload_error {
+                    self.set_failure(error);
+                } else {
+                    self.clear_failure();
+                }
                 self.collect_timings();
                 cx.notify();
                 Ok(changed)
@@ -3839,8 +3928,9 @@ impl ScriptHostView {
                 if let Some(previous_renderers) = previous_renderers {
                     let _ = self.engine.restore_component_renderers(previous_renderers);
                 }
-                self.last_error = Some(error.clone());
-                Err(ScriptViewError::Resume(error))
+                let public_error = error.clone().into_view_error();
+                self.set_failure(error);
+                Err(public_error)
             }
         }
     }
@@ -3863,7 +3953,7 @@ impl ScriptHostView {
             return;
         }
         if let Err(error) = self.primitives.retain_mounted(&BTreeSet::new()) {
-            self.last_error = Some(error.to_string());
+            self.set_plain_failure(error.to_string());
         }
         let _ = self.lifecycle.dispose(&mut self.engine);
         let root = self.lifecycle.root_path().clone();
@@ -3900,11 +3990,15 @@ impl ScriptHostView {
                 WindowCommand::Focus(id) => {
                     let handle = self.native_windows.borrow().handles.get(&id).copied();
                     handle.map_or_else(
-                        || Err(format!("native window `{id}` is unavailable")),
+                        || {
+                            Err(ScriptFailure::plain(format!(
+                                "native window `{id}` is unavailable"
+                            )))
+                        },
                         |handle| {
                             handle
                                 .update(cx, |_, window, _| window.activate_window())
-                                .map_err(|error| error.to_string())
+                                .map_err(|error| ScriptFailure::plain(error.to_string()))
                         },
                     )
                 }
@@ -3917,7 +4011,9 @@ impl ScriptHostView {
                     handle.map_or_else(
                         || {
                             self.native_windows.borrow_mut().force_close.remove(&id);
-                            Err(format!("native window `{id}` is unavailable"))
+                            Err(ScriptFailure::plain(format!(
+                                "native window `{id}` is unavailable"
+                            )))
                         },
                         |handle| {
                             // A script commonly confirms closing from an event
@@ -3934,7 +4030,7 @@ impl ScriptHostView {
                                     native_windows.borrow_mut().force_close.remove(&close_id);
                                     let message = error.to_string();
                                     let _ = view.update(cx, |view, cx| {
-                                        view.last_error = Some(message);
+                                        view.set_plain_failure(message);
                                         cx.notify();
                                     });
                                 }
@@ -3945,7 +4041,7 @@ impl ScriptHostView {
                 }
             };
             if let Err(error) = result {
-                self.last_error = Some(error);
+                self.set_failure(error);
             }
         }
     }
@@ -3986,10 +4082,10 @@ impl ScriptHostView {
                 event_target,
             );
             let value =
-                result.map_err(|error| view.lifecycle_error(&error, callback.component()))?;
+                result.map_err(|error| view.lifecycle_failure(&error, callback.component()))?;
             view.invoke_pending_effects()?;
             let result = view.lifecycle.render_dirty(&mut view.engine);
-            result.map_err(|error| view.lifecycle_error(&error, None))?;
+            result.map_err(|error| view.lifecycle_failure(&error, None))?;
             Ok(value)
         });
         let response = callback_result.as_ref().map_or_else(
@@ -3998,8 +4094,8 @@ impl ScriptHostView {
         );
         let succeeded = callback_result.is_ok();
         match callback_result {
-            Ok(_) => self.last_error = None,
-            Err(error) => self.last_error = Some(error),
+            Ok(_) => self.clear_failure(),
+            Err(error) => self.set_failure(error),
         }
         self.process_window_commands(cx);
         self.process_element_commands(window, cx);
@@ -4046,14 +4142,13 @@ impl ScriptHostView {
                     .map_err(|error| error.to_string())?
             };
             view.invoke_pending_effects()?;
-            view.lifecycle
-                .render_dirty(&mut view.engine)
-                .map_err(|error| error.to_string())?;
+            let result = view.lifecycle.render_dirty(&mut view.engine);
+            result.map_err(|error| view.lifecycle_failure(&error, None))?;
             Ok(response)
         });
         match result {
             Ok(response) => {
-                self.last_error = None;
+                self.clear_failure();
                 self.process_window_commands(cx);
                 self.process_element_commands(window, cx);
                 self.collect_timings();
@@ -4061,7 +4156,7 @@ impl ScriptHostView {
                 response
             }
             Err(error) => {
-                self.last_error = Some(error);
+                self.set_failure(error);
                 cx.notify();
                 crate::EventResponse::new().stop()
             }
@@ -4102,9 +4197,11 @@ impl ScriptHostView {
 
     fn run_script_transaction<T>(
         &mut self,
-        operation: impl FnOnce(&mut Self) -> Result<T, String>,
-    ) -> Result<T, String> {
-        let transaction = self.begin_script_transaction()?;
+        operation: impl FnOnce(&mut Self) -> Result<T, ScriptFailure>,
+    ) -> Result<T, ScriptFailure> {
+        let transaction = self
+            .begin_script_transaction()
+            .map_err(ScriptFailure::from)?;
         match operation(self) {
             Ok(value) => {
                 let runtime = self.lifecycle.runtime();
@@ -4118,14 +4215,14 @@ impl ScriptHostView {
                     Ok(()) => Ok(value),
                     Err(error) => {
                         let rollback = self.rollback_script_transaction(transaction);
-                        Err(rollback.map_or_else(
+                        Err(ScriptFailure::plain(rollback.map_or_else(
                             |rollback| {
                                 format!(
                                     "transaction commit failed: {error}; rollback also failed: {rollback}"
                                 )
                             },
                             |()| format!("transaction commit failed: {error}"),
-                        ))
+                        )))
                     }
                 }
             }
@@ -4133,9 +4230,8 @@ impl ScriptHostView {
                 let rollback = self.rollback_script_transaction(transaction);
                 match rollback {
                     Ok(()) => Err(error),
-                    Err(rollback) => Err(format!(
-                        "{error}; transaction rollback also failed: {rollback}"
-                    )),
+                    Err(rollback) => Err(error
+                        .append_context(format!("transaction rollback also failed: {rollback}"))),
                 }
             }
         }
@@ -4151,7 +4247,7 @@ impl ScriptHostView {
     fn poll_async(&mut self, cx: &mut Context<Self>) {
         if self.state.get() == ScriptViewState::Suspended {
             if let Err(error) = self.collect_suspended_deliveries() {
-                self.last_error = Some(error.to_string());
+                self.set_plain_failure(error.to_string());
                 cx.notify();
             }
             return;
@@ -4200,9 +4296,9 @@ impl ScriptHostView {
             self.run_script_transaction(|view| {
                 let mut changed = view.invoke_pending_effects()?;
                 let result = view.lifecycle.realize_virtual_requests(&mut view.engine);
-                changed |= result.map_err(|error| view.lifecycle_error(&error, None))?;
+                changed |= result.map_err(|error| view.lifecycle_failure(&error, None))?;
                 let result = view.lifecycle.render_dirty(&mut view.engine);
-                changed |= result.map_err(|error| view.lifecycle_error(&error, None))?;
+                changed |= result.map_err(|error| view.lifecycle_failure(&error, None))?;
                 Ok(changed || delivery_changed)
             })
         } else {
@@ -4215,13 +4311,13 @@ impl ScriptHostView {
         let notify = match result {
             Ok(changed) => {
                 if has_script_work {
-                    self.last_error = None;
+                    self.clear_failure();
                 }
                 self.process_window_commands(cx);
                 changed || animation_active || repaint
             }
             Err(error) => {
-                self.last_error = Some(error);
+                self.set_failure(error);
                 true
             }
         };
@@ -4234,7 +4330,7 @@ impl ScriptHostView {
     fn deliver_async_batch(
         &mut self,
         deliveries: Vec<crate::AsyncDelivery>,
-    ) -> (bool, Option<String>) {
+    ) -> (bool, Option<ScriptFailure>) {
         let mut changed = false;
         let mut first_error = None;
         for delivery in deliveries {
@@ -4247,10 +4343,11 @@ impl ScriptHostView {
             let result = self.run_script_transaction(|view| {
                 let mut delivery_changed = view.invoke_pending_effects()?;
                 let result = view.lifecycle.invoke_async_delivery(&view.engine, delivery);
-                let _ = result.map_err(|error| view.lifecycle_error(&error, component.as_ref()))?;
+                let _ =
+                    result.map_err(|error| view.lifecycle_failure(&error, component.as_ref()))?;
                 delivery_changed |= view.invoke_pending_effects()?;
                 let result = view.lifecycle.render_dirty(&mut view.engine);
-                delivery_changed |= result.map_err(|error| view.lifecycle_error(&error, None))?;
+                delivery_changed |= result.map_err(|error| view.lifecycle_failure(&error, None))?;
                 Ok(delivery_changed)
             });
             match result {
@@ -4259,7 +4356,7 @@ impl ScriptHostView {
                     self.lifecycle.runtime().borrow_mut().traces.push(
                         crate::RuntimeTraceKind::Task,
                         scope,
-                        format!("delivery failed: {error}"),
+                        format!("delivery failed: {}", error.message),
                         None,
                         false,
                     );
@@ -4278,14 +4375,14 @@ impl ScriptHostView {
         let previous_exports = match self.engine.component_exports() {
             Ok(exports) => exports,
             Err(error) => {
-                self.last_error = Some(error.to_string());
+                self.set_plain_failure(error.to_string());
                 return;
             }
         };
         let previous_renderers = match self.engine.component_renderer_snapshot() {
             Ok(renderers) => renderers,
             Err(error) => {
-                self.last_error = Some(error.to_string());
+                self.set_plain_failure(error.to_string());
                 return;
             }
         };
@@ -4293,14 +4390,14 @@ impl ScriptHostView {
             .engine
             .restore_component_exports(program.component_exports.clone())
         {
-            self.last_error = Some(error.to_string());
+            self.set_plain_failure(error.to_string());
             return;
         }
         if let Err(error) = self
             .engine
             .restore_component_renderers(program.component_renderers.clone())
         {
-            self.last_error = Some(error.to_string());
+            self.set_plain_failure(error.to_string());
             let _ = self.engine.restore_component_exports(previous_exports);
             return;
         }
@@ -4308,15 +4405,13 @@ impl ScriptHostView {
             self.lifecycle
                 .reload(&mut self.engine, program.compiled, &program.state_schema)
         {
+            let mut failure = self.lifecycle_failure(&error, None);
             let rollback_exports = self.engine.restore_component_exports(previous_exports);
             let rollback_renderers = self.engine.restore_component_renderers(previous_renderers);
-            self.last_error = rollback_exports
-                .err()
-                .or_else(|| rollback_renderers.err())
-                .map_or_else(
-                    || Some(error.to_string()),
-                    |rollback| Some(rollback.to_string()),
-                );
+            if let Some(rollback) = rollback_exports.err().or_else(|| rollback_renderers.err()) {
+                failure = failure.append_context(format!("rollback failed: {rollback}"));
+            }
+            self.set_failure(failure);
         }
     }
 
@@ -4328,7 +4423,7 @@ impl ScriptHostView {
         let batch = match watcher.poll() {
             Ok(batch) => batch,
             Err(error) => {
-                self.last_error = Some(error.to_string());
+                self.set_plain_failure(error.to_string());
                 cx.notify();
                 return;
             }
@@ -4342,15 +4437,15 @@ impl ScriptHostView {
         }
         let result = self.reload_changed_paths(&batch.paths);
         match result {
-            Ok(()) => self.last_error = None,
-            Err(error) => self.last_error = Some(error),
+            Ok(()) => self.clear_failure(),
+            Err(error) => self.set_failure(error),
         }
         self.collect_timings();
         cx.notify();
     }
 
     #[cfg(feature = "dev-reload")]
-    fn apply_pending_reload_on_resume(&mut self) -> Option<String> {
+    fn apply_pending_reload_on_resume(&mut self) -> Option<ScriptFailure> {
         let paths = std::mem::take(&mut self.pending_reload_paths);
         if paths.is_empty() {
             return None;
@@ -4362,7 +4457,7 @@ impl ScriptHostView {
     }
 
     #[cfg(feature = "dev-reload")]
-    fn reload_changed_paths(&mut self, paths: &BTreeSet<PathBuf>) -> Result<(), String> {
+    fn reload_changed_paths(&mut self, paths: &BTreeSet<PathBuf>) -> Result<(), ScriptFailure> {
         let theme_path = self.theme_path.canonicalize().ok();
         let style_path = self.style_path.canonicalize().ok();
         let themes_root = self.ui_root.join("themes").canonicalize().ok();
@@ -4408,7 +4503,7 @@ impl ScriptHostView {
         }
         .and_then(|()| {
             if theme_changed {
-                self.reload_theme()
+                self.reload_theme().map_err(ScriptFailure::from)
             } else {
                 Ok(())
             }
@@ -4422,21 +4517,21 @@ impl ScriptHostView {
         })
         .and_then(|()| {
             if locale_changed {
-                self.reload_locales()
+                self.reload_locales().map_err(ScriptFailure::from)
             } else {
                 Ok(())
             }
         })
         .and_then(|()| {
             if assets_changed {
-                self.reload_assets()
+                self.reload_assets().map_err(ScriptFailure::from)
             } else {
                 Ok(())
             }
         })
         .and_then(|()| {
             if manifest_changed {
-                self.reload_manifest()
+                self.reload_manifest().map_err(ScriptFailure::from)
             } else {
                 Ok(())
             }
@@ -4444,50 +4539,53 @@ impl ScriptHostView {
     }
 
     #[cfg(feature = "dev-reload")]
-    fn reload_scripts(&mut self, changed_paths: &BTreeSet<PathBuf>) -> Result<(), String> {
-        let source = fs::read_to_string(&self.entry).map_err(|error| error.to_string())?;
+    fn reload_scripts(&mut self, changed_paths: &BTreeSet<PathBuf>) -> Result<(), ScriptFailure> {
+        let source = fs::read_to_string(&self.entry)
+            .map_err(|error| ScriptFailure::plain(error.to_string()))?;
         let modules = discover_modules(
             &self.ui_root,
             &self.entry,
             &self.theme_path,
             &self.style_path,
         )
-        .map_err(|error| error.to_string())?;
-        let file_source =
-            FileScriptSource::new(&self.ui_root, modules).map_err(|error| error.to_string())?;
+        .map_err(|error| ScriptFailure::plain(error.to_string()))?;
+        let file_source = FileScriptSource::new(&self.ui_root, modules)
+            .map_err(|error| ScriptFailure::plain(error.to_string()))?;
         let root = self
             .ui_root
             .canonicalize()
-            .map_err(|error| error.to_string())?;
+            .map_err(|error| ScriptFailure::plain(error.to_string()))?;
         let changed_modules = changed_module_ids(&root, changed_paths);
         let mut candidate_engine = self.engine.candidate_engine();
         for extension in self.factory.extensions.iter() {
-            extension.configure_engine(&mut candidate_engine)?;
+            extension
+                .configure_engine(&mut candidate_engine)
+                .map_err(ScriptFailure::plain)?;
         }
         let mut candidate_cache = self.module_cache.clone();
         let refresh = candidate_cache
             .refresh(candidate_engine.engine(), &file_source, changed_modules)
-            .map_err(|error| error.to_string())?;
+            .map_err(|error| ScriptFailure::plain(error.to_string()))?;
         let resolver =
             RestrictedModuleResolver::from_source_with_cache(&file_source, &candidate_cache)
-                .map_err(|error| error.to_string())?;
+                .map_err(|error| ScriptFailure::plain(error.to_string()))?;
         let candidate = candidate_engine.with_program_preparation(|engine| {
             engine.set_module_resolver(resolver);
             preload_component_modules(engine, file_source.module_ids())
-                .map_err(|error| error.to_string())?;
+                .map_err(|error| ScriptFailure::plain(error.to_string()))?;
             let candidate = engine
                 .compile_self_contained_named(&self.entry.to_string_lossy(), &source)
-                .map_err(|error| error.to_string())?;
+                .map_err(|error| self.runtime_failure_with_engine(engine, &error, None))?;
             let state_schema = engine
                 .root_state_schema(&candidate)
-                .map_err(|error| error.to_string())?;
+                .map_err(|error| self.runtime_failure_with_engine(engine, &error, None))?;
             let program_exports = engine
                 .component_exports()
-                .map_err(|error| error.to_string())?;
+                .map_err(|error| ScriptFailure::plain(error.to_string()))?;
             let program_renderers = engine
                 .component_renderer_snapshot()
-                .map_err(|error| error.to_string())?;
-            Ok::<_, String>((candidate, state_schema, program_exports, program_renderers))
+                .map_err(|error| ScriptFailure::plain(error.to_string()))?;
+            Ok::<_, ScriptFailure>((candidate, state_schema, program_exports, program_renderers))
         });
         let result = candidate.and_then(
             |(candidate, state_schema, program_exports, program_renderers)| {
@@ -4498,11 +4596,18 @@ impl ScriptHostView {
                     &self.style_path,
                     &program_exports,
                 )
-                .map_err(|error| error.to_string())?;
+                .map_err(|error| ScriptFailure::plain(error.to_string()))?;
                 if self.state.get() != ScriptViewState::Suspended {
-                    self.lifecycle
-                        .reload(&mut candidate_engine, candidate, &state_schema)
-                        .map_err(|error| error.to_string())?;
+                    if let Err(error) =
+                        self.lifecycle
+                            .reload(&mut candidate_engine, candidate, &state_schema)
+                    {
+                        return Err(self.lifecycle_failure_with_engine(
+                            &candidate_engine,
+                            &error,
+                            None,
+                        ));
+                    }
                     self.engine = candidate_engine;
                 }
                 self.module_cache = candidate_cache;
@@ -4570,12 +4675,14 @@ impl ScriptHostView {
     }
 
     #[cfg(feature = "dev-reload")]
-    fn reload_component_styles(&mut self) -> Result<(), String> {
+    fn reload_component_styles(&mut self) -> Result<(), ScriptFailure> {
         let components = self
             .engine
             .component_exports()
-            .map_err(|error| error.to_string())?;
-        let styles = self.load_current_component_styles(&components)?;
+            .map_err(|error| ScriptFailure::plain(error.to_string()))?;
+        let styles = self
+            .load_current_component_styles(&components)
+            .map_err(ScriptFailure::from)?;
         self.run_script_transaction(|view| {
             let changed = view
                 .lifecycle
@@ -4583,9 +4690,8 @@ impl ScriptHostView {
                 .borrow_mut()
                 .replace_component_styles_from_host(styles);
             if changed && view.state.get() == ScriptViewState::Active {
-                view.lifecycle
-                    .render_dirty(&mut view.engine)
-                    .map_err(|error| error.to_string())?;
+                let result = view.lifecycle.render_dirty(&mut view.engine);
+                result.map_err(|error| view.lifecycle_failure(&error, None))?;
             }
             Ok(())
         })
@@ -4687,7 +4793,7 @@ pub enum ScriptViewError {
     Runtime(#[from] RuntimeError),
     #[error(transparent)]
     Lifecycle(#[from] crate::LifecycleError),
-    #[error("{message} diagnostic={diagnostic}")]
+    #[error("{message}")]
     ScriptDiagnostic {
         message: String,
         diagnostic: Box<Diagnostic>,
@@ -4766,6 +4872,28 @@ pub enum ScriptViewError {
     Watcher(#[from] crate::WatcherError),
 }
 
+impl ScriptViewError {
+    #[must_use]
+    pub fn diagnostic(&self) -> Option<&Diagnostic> {
+        match self {
+            Self::ScriptDiagnostic { diagnostic, .. } => Some(diagnostic),
+            _ => None,
+        }
+    }
+}
+
+impl From<ScriptViewError> for ScriptFailure {
+    fn from(error: ScriptViewError) -> Self {
+        match error {
+            ScriptViewError::ScriptDiagnostic {
+                message,
+                diagnostic,
+            } => Self::with_diagnostic(message, *diagnostic),
+            error => Self::plain(error.to_string()),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -4806,6 +4934,73 @@ mod tests {
             !ScriptViewConfig::new("custom")
                 .show_error_banner(false)
                 .show_error_banner
+        );
+    }
+
+    #[test]
+    fn structured_script_error_keeps_human_display_separate_from_diagnostic() {
+        let mut engine = RuntimeEngine::new();
+        let compiled = engine
+            .compile_named("ui/failure.rhai", "fn view() { throw \"boom\"; }")
+            .unwrap();
+        let runtime_error = engine.render(&compiled).unwrap_err();
+        let diagnostic = Diagnostic::from_runtime(
+            &runtime_error,
+            &crate::DiagnosticContext {
+                source: Some("ui/failure.rhai".to_owned()),
+                component: Some(ComponentInstancePath::root("View", "failure")),
+                execution_timing: engine.last_failed_timing(),
+                ..crate::DiagnosticContext::default()
+            },
+        );
+        let error = ScriptViewError::ScriptDiagnostic {
+            message: "human message".to_owned(),
+            diagnostic: Box::new(diagnostic.clone()),
+        };
+
+        assert_eq!(error.to_string(), "human message");
+        assert_eq!(error.diagnostic(), Some(&diagnostic));
+        let failure = ScriptFailure::from(error);
+        assert_eq!(failure.message, "human message");
+        assert_eq!(failure.diagnostic, Some(Box::new(diagnostic)));
+    }
+
+    #[test]
+    fn initial_mount_failure_returns_a_structured_root_diagnostic() {
+        let entry = ModuleId::parse("main").unwrap();
+        let mut prepared = EmbeddedScriptView::new(
+            entry.clone(),
+            EmbeddedScriptSource::new(BTreeMap::from([(
+                entry,
+                "fn view(ctx) { throw \"mount failure\"; }".to_owned(),
+            )])),
+            include_str!("../../../registry/themes/default_dark.rhai"),
+        )
+        .prepare()
+        .unwrap();
+        let program = prepared.factory.program();
+        let Err(error) = prepared.factory.mount_lifecycle(
+            &mut prepared.engine,
+            program,
+            "broken-view",
+            "main",
+            WindowCommandPolicy::Disabled,
+            true,
+        ) else {
+            panic!("mount unexpectedly succeeded");
+        };
+
+        assert!(error.to_string().contains("mount failure"));
+        assert!(!error.to_string().contains("component_state"));
+        let diagnostic = error.diagnostic().expect("script diagnostic");
+        assert_eq!(diagnostic.component.as_deref(), Some("/View[broken-view]"));
+        assert_eq!(diagnostic.key.as_deref(), Some("broken-view"));
+        assert_eq!(
+            diagnostic
+                .execution
+                .as_ref()
+                .map(|execution| &execution.operation),
+            Some(&crate::ExecutionOperation::Render)
         );
     }
 

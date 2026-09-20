@@ -1,13 +1,11 @@
 use std::collections::BTreeMap;
-use std::fmt;
 
 use rhai::EvalAltResult;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 use crate::{
     ComponentInstancePath, ExecutionOperation, ExecutionTiming, MAX_SCRIPT_OPERATIONS,
-    RuntimeError, StateInstanceSnapshot, UiContext,
+    OPERATION_SEMANTICS_VERSION, RuntimeError, StateInstanceSnapshot, UiContext, UiValue,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -62,13 +60,16 @@ impl DiagnosticContext {
             .try_borrow()
             .map_err(|_| DiagnosticContextError::StateBorrowed)?
             .component_state
-            .inspect();
+            .inspect_instance(&component);
         Ok(Self {
             source,
             component: Some(component.clone()),
             key,
             execution_timing: engine.last_failed_timing(),
-            component_state: redact_component_state(&component_state, &component),
+            component_state: component_state
+                .map(redact_component_state)
+                .into_iter()
+                .collect(),
         })
     }
 }
@@ -81,25 +82,32 @@ pub enum DiagnosticContextError {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct DiagnosticExecutionTiming {
-    pub operation: String,
+    pub operation: ExecutionOperation,
     pub source: String,
     pub duration_micros: u64,
     pub succeeded: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct DiagnosticPosition {
-    pub line: usize,
-    pub column: usize,
+#[serde(rename_all = "snake_case")]
+pub enum DiagnosticErrorKind {
+    Terminated,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct DiagnosticOperationBudget {
+    pub consumed: u64,
+    pub maximum: u64,
+    pub semantics_version: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct DiagnosticStateSnapshot {
     pub path: String,
-    pub fields: BTreeMap<String, Value>,
+    pub fields: BTreeMap<String, UiValue>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Diagnostic {
     pub severity: DiagnosticSeverity,
     pub code: DiagnosticCode,
@@ -107,23 +115,14 @@ pub struct Diagnostic {
     pub source: Option<String>,
     pub line: Option<usize>,
     pub column: Option<usize>,
-    pub position: Option<DiagnosticPosition>,
     pub component: Option<String>,
     pub key: Option<String>,
     pub stack: Vec<DiagnosticFrame>,
-    pub error_kind: Option<String>,
-    pub token: Option<Value>,
+    pub error_kind: Option<DiagnosticErrorKind>,
+    pub token: Option<UiValue>,
     pub execution: Option<DiagnosticExecutionTiming>,
-    pub operations: Option<u64>,
-    pub max_operations: Option<u64>,
+    pub operation_budget: Option<DiagnosticOperationBudget>,
     pub component_state: Vec<DiagnosticStateSnapshot>,
-}
-
-impl fmt::Display for Diagnostic {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let json = serde_json::to_string(self).map_err(|_| fmt::Error)?;
-        formatter.write_str(&json)
-    }
 }
 
 impl Diagnostic {
@@ -151,7 +150,6 @@ impl Diagnostic {
                 source: context.source.clone(),
                 line: None,
                 column: None,
-                position: None,
                 component: context.component.as_ref().map(ToString::to_string),
                 key: context.key.clone(),
                 stack: Vec::new(),
@@ -166,7 +164,6 @@ impl Diagnostic {
                 source: context.source.clone(),
                 line: None,
                 column: None,
-                position: None,
                 component: Some(component.to_string()),
                 key: context.key.clone(),
                 stack: Vec::new(),
@@ -179,7 +176,6 @@ impl Diagnostic {
                 source: context.source.clone(),
                 line: None,
                 column: None,
-                position: None,
                 component: context.component.as_ref().map(ToString::to_string),
                 key: context.key.clone(),
                 stack: Vec::new(),
@@ -192,7 +188,6 @@ impl Diagnostic {
                 source: context.source.clone(),
                 line: None,
                 column: None,
-                position: None,
                 component: context.component.as_ref().map(ToString::to_string),
                 key: context.key.clone(),
                 stack: Vec::new(),
@@ -205,7 +200,6 @@ impl Diagnostic {
                 source: context.source.clone(),
                 line: None,
                 column: None,
-                position: None,
                 component: Some(component.to_string()),
                 key: context.key.clone(),
                 stack: Vec::new(),
@@ -218,7 +212,6 @@ impl Diagnostic {
                 source: context.source.clone(),
                 line: None,
                 column: None,
-                position: None,
                 component: context.component.as_ref().map(ToString::to_string),
                 key: context.key.clone(),
                 stack: Vec::new(),
@@ -231,10 +224,6 @@ impl Diagnostic {
                 source: context.source.clone(),
                 line: position.line(),
                 column: position.position(),
-                position: position
-                    .line()
-                    .zip(position.position())
-                    .map(|(line, column)| DiagnosticPosition { line, column }),
                 component: context.component.as_ref().map(ToString::to_string),
                 key: context.key.clone(),
                 stack: Vec::new(),
@@ -254,18 +243,13 @@ fn from_eval(
     let mut stack = Vec::new();
     collect_frames(error, &mut stack);
     let (error_kind, token) = eval_details(leaf);
-    let line = position.line();
-    let column = position.position();
     Diagnostic {
         severity: DiagnosticSeverity::Error,
         code,
         message: error.to_string(),
         source: source_for(error).or_else(|| context.source.clone()),
-        line,
-        column,
-        position: line
-            .zip(column)
-            .map(|(line, column)| DiagnosticPosition { line, column }),
+        line: position.line(),
+        column: position.position(),
         component: context.component.as_ref().map(ToString::to_string),
         key: context.key.clone(),
         stack,
@@ -275,14 +259,13 @@ fn from_eval(
     }
 }
 
-fn eval_details(error: &EvalAltResult) -> (Option<String>, Option<Value>) {
+fn eval_details(error: &EvalAltResult) -> (Option<DiagnosticErrorKind>, Option<UiValue>) {
     match error {
         EvalAltResult::ErrorTerminated(token, _) => (
-            Some("ErrorTerminated".to_owned()),
-            Some(
-                rhai::serde::from_dynamic::<Value>(token)
-                    .unwrap_or_else(|_| Value::String(token.to_string())),
-            ),
+            Some(DiagnosticErrorKind::Terminated),
+            Some(UiValue::from_dynamic(token.clone()).unwrap_or_else(|_| {
+                UiValue::String(format!("<unsupported:{}>", token.type_name()))
+            })),
         ),
         _ => (None, None),
     }
@@ -293,10 +276,15 @@ fn runtime_context(context: &DiagnosticContext) -> Diagnostic {
         .execution_timing
         .as_ref()
         .map(DiagnosticExecutionTiming::from);
-    let operations = context
-        .execution_timing
-        .as_ref()
-        .map(|timing| timing.operations);
+    let operation_budget =
+        context
+            .execution_timing
+            .as_ref()
+            .map(|timing| DiagnosticOperationBudget {
+                consumed: timing.operations,
+                maximum: MAX_SCRIPT_OPERATIONS,
+                semantics_version: OPERATION_SEMANTICS_VERSION,
+            });
     Diagnostic {
         severity: DiagnosticSeverity::Error,
         code: DiagnosticCode::ScriptEvaluate,
@@ -304,15 +292,13 @@ fn runtime_context(context: &DiagnosticContext) -> Diagnostic {
         source: None,
         line: None,
         column: None,
-        position: None,
         component: None,
         key: None,
         stack: Vec::new(),
         error_kind: None,
         token: None,
         execution,
-        operations,
-        max_operations: operations.map(|_| MAX_SCRIPT_OPERATIONS),
+        operation_budget,
         component_state: context.component_state.clone(),
     }
 }
@@ -320,16 +306,7 @@ fn runtime_context(context: &DiagnosticContext) -> Diagnostic {
 impl From<&ExecutionTiming> for DiagnosticExecutionTiming {
     fn from(timing: &ExecutionTiming) -> Self {
         Self {
-            operation: match &timing.operation {
-                ExecutionOperation::Compile => "compile".to_owned(),
-                ExecutionOperation::Render => "render".to_owned(),
-                ExecutionOperation::ComponentReuse(count) => format!("component_reuse:{count}"),
-                ExecutionOperation::VirtualCollection(name) => {
-                    format!("virtual_collection:{name}")
-                }
-                ExecutionOperation::Lifecycle(name) => format!("lifecycle:{name}"),
-                ExecutionOperation::Callback(name) => format!("callback:{name}"),
-            },
+            operation: timing.operation.clone(),
             source: timing.source.clone(),
             duration_micros: timing.duration.as_micros().try_into().unwrap_or(u64::MAX),
             succeeded: timing.succeeded,
@@ -337,29 +314,22 @@ impl From<&ExecutionTiming> for DiagnosticExecutionTiming {
     }
 }
 
-fn redact_component_state(
-    snapshots: &[StateInstanceSnapshot],
-    component: &ComponentInstancePath,
-) -> Vec<DiagnosticStateSnapshot> {
-    snapshots
-        .iter()
-        .filter(|snapshot| snapshot.path == *component)
-        .map(|snapshot| DiagnosticStateSnapshot {
-            path: snapshot.path.to_string(),
-            fields: snapshot
-                .fields
-                .iter()
-                .map(|(name, field)| {
-                    let value = if field.sensitive {
-                        Value::String("<redacted>".to_owned())
-                    } else {
-                        serde_json::to_value(&field.value).unwrap_or(Value::Null)
-                    };
-                    (name.clone(), value)
-                })
-                .collect(),
-        })
-        .collect()
+fn redact_component_state(snapshot: StateInstanceSnapshot) -> DiagnosticStateSnapshot {
+    DiagnosticStateSnapshot {
+        path: snapshot.path.to_string(),
+        fields: snapshot
+            .fields
+            .into_iter()
+            .map(|(name, field)| {
+                let value = if field.sensitive {
+                    UiValue::String("<redacted>".to_owned())
+                } else {
+                    field.value
+                };
+                (name, value)
+            })
+            .collect(),
+    }
 }
 
 fn leaf_error(mut error: &EvalAltResult) -> &EvalAltResult {
@@ -451,8 +421,6 @@ mod tests {
     #[test]
     fn terminated_evaluation_preserves_structured_runtime_context() {
         let component = ComponentInstancePath::root("App", "root").child("LoginForm", "primary");
-        let other_component =
-            ComponentInstancePath::root("App", "root").child("Sidebar", "primary");
         let error = RuntimeError::Evaluate(Box::new(EvalAltResult::ErrorInFunctionCall(
             "submit".to_owned(),
             "ui/login.rhai".to_owned(),
@@ -471,39 +439,27 @@ mod tests {
             slow: false,
             succeeded: false,
         };
-        let state = vec![
-            StateInstanceSnapshot {
-                path: component.clone(),
-                fields: BTreeMap::from([
-                    (
-                        "attempts".to_owned(),
-                        StateValueSnapshot {
-                            value: UiValue::Integer(3),
-                            sensitive: false,
-                        },
-                    ),
-                    (
-                        "password".to_owned(),
-                        StateValueSnapshot {
-                            value: UiValue::String("hunter2".to_owned()),
-                            sensitive: true,
-                        },
-                    ),
-                ]),
-            },
-            StateInstanceSnapshot {
-                path: other_component,
-                fields: BTreeMap::from([(
-                    "expanded".to_owned(),
+        let state = StateInstanceSnapshot {
+            path: component.clone(),
+            fields: BTreeMap::from([
+                (
+                    "attempts".to_owned(),
                     StateValueSnapshot {
-                        value: UiValue::Bool(true),
+                        value: UiValue::Integer(3),
                         sensitive: false,
                     },
-                )]),
-            },
-        ];
+                ),
+                (
+                    "password".to_owned(),
+                    StateValueSnapshot {
+                        value: UiValue::String("hunter2".to_owned()),
+                        sensitive: true,
+                    },
+                ),
+            ]),
+        };
 
-        let component_state = redact_component_state(&state, &component);
+        let component_state = vec![redact_component_state(state)];
         let diagnostic = Diagnostic::from_runtime(
             &error,
             &DiagnosticContext {
@@ -515,41 +471,52 @@ mod tests {
             },
         );
 
-        assert_eq!(diagnostic.error_kind.as_deref(), Some("ErrorTerminated"));
-        assert_eq!(diagnostic.token, Some(serde_json::json!("operation-limit")));
+        assert_eq!(diagnostic.error_kind, Some(DiagnosticErrorKind::Terminated));
+        assert_eq!(
+            diagnostic.token,
+            Some(UiValue::String("operation-limit".to_owned()))
+        );
         assert_eq!(diagnostic.line, Some(17));
         assert_eq!(diagnostic.column, Some(9));
         assert_eq!(
-            diagnostic.position,
-            Some(DiagnosticPosition {
-                line: 17,
-                column: 9
+            diagnostic.operation_budget,
+            Some(DiagnosticOperationBudget {
+                consumed: 1_000_001,
+                maximum: MAX_SCRIPT_OPERATIONS,
+                semantics_version: crate::OPERATION_SEMANTICS_VERSION,
             })
         );
-        assert_eq!(diagnostic.operations, Some(1_000_001));
-        assert_eq!(diagnostic.max_operations, Some(MAX_SCRIPT_OPERATIONS));
         assert_eq!(
             diagnostic.component.as_deref(),
             Some("/App[root]/LoginForm[primary]")
         );
         let execution = diagnostic.execution.as_ref().unwrap();
-        assert_eq!(execution.operation, "callback:submit");
+        assert_eq!(
+            execution.operation,
+            ExecutionOperation::Callback("submit".to_owned())
+        );
         assert_eq!(execution.source, "ui/login.rhai");
         assert_eq!(execution.duration_micros, 2_500);
         assert!(!execution.succeeded);
         assert_eq!(diagnostic.component_state.len(), 1);
         assert_eq!(
             diagnostic.component_state[0].fields["attempts"],
-            serde_json::json!({ "type": "integer", "value": 3 })
+            UiValue::Integer(3)
         );
         assert_eq!(
             diagnostic.component_state[0].fields["password"],
-            serde_json::json!("<redacted>")
+            UiValue::String("<redacted>".to_owned())
         );
-        assert!(
-            !serde_json::to_string(&diagnostic)
-                .unwrap()
-                .contains("hunter2")
+        let serialized = serde_json::to_value(&diagnostic).unwrap();
+        assert_eq!(serialized["error_kind"], serde_json::json!("terminated"));
+        assert_eq!(
+            serialized["execution"]["operation"],
+            serde_json::json!({ "callback": "submit" })
         );
+        assert_eq!(
+            serialized["operation_budget"]["semantics_version"],
+            serde_json::json!(crate::OPERATION_SEMANTICS_VERSION)
+        );
+        assert!(!serialized.to_string().contains("hunter2"));
     }
 }

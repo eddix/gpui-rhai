@@ -881,6 +881,15 @@ Embedded hosts should read `ScriptViewHandle::last_error()` alongside
 remains the last-good tree and `last_error()` explains why the latest candidate
 was not committed.
 
+For a machine-readable failure, read `ScriptViewHandle::last_diagnostic()` in
+the same foreground App context. It belongs to the exact same failure as
+`last_error()` and is cleared atomically on success. The diagnostic includes
+the deepest failing component path/key, Rhai source position and stack, typed
+execution timing and operation budget, a bounded termination token, and only
+that component's state snapshot. Sensitive fields are redacted before the
+snapshot leaves the runtime. Ordinary `Display`/error-banner text remains the
+human message and never appends the structured payload.
+
 The default runtime-error banner uses compact monospace text and the same native
 drag-selection/`Cmd-C` path as `text(...).selectable(true)`. A Host that owns a
 better error surface may mount with

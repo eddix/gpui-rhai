@@ -1376,11 +1376,14 @@ impl ScriptLifecycle {
         component: Option<&ComponentInstancePath>,
     ) -> Result<crate::DiagnosticContext, crate::DiagnosticContextError> {
         let root_context = self.context(ExecutionPhase::Event);
-        let context = component.map_or(root_context.clone(), |component| {
-            root_context.for_component(component.clone(), BTreeMap::new())
-        });
+        let component = component
+            .cloned()
+            .or_else(|| engine.last_failed_component())
+            .unwrap_or_else(|| self.root_path.clone());
+        let key = component.leaf_key().map(str::to_owned);
+        let context = root_context.for_component(component, BTreeMap::new());
         let source = engine.last_failed_timing().map(|timing| timing.source);
-        crate::DiagnosticContext::capture(engine, &context, source, None)
+        crate::DiagnosticContext::capture(engine, &context, source, key)
     }
 
     #[must_use]

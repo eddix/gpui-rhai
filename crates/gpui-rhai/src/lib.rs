@@ -129,8 +129,8 @@ pub use devtools::{
     InspectorSnapshot, InspectorTimer, RuntimeTrace, RuntimeTraceKind, TraceBuffer,
 };
 pub use diagnostic::{
-    Diagnostic, DiagnosticCode, DiagnosticContext, DiagnosticContextError,
-    DiagnosticExecutionTiming, DiagnosticFrame, DiagnosticPosition, DiagnosticSeverity,
+    Diagnostic, DiagnosticCode, DiagnosticContext, DiagnosticContextError, DiagnosticErrorKind,
+    DiagnosticExecutionTiming, DiagnosticFrame, DiagnosticOperationBudget, DiagnosticSeverity,
     DiagnosticStateSnapshot,
 };
 pub use document::{
