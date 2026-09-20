@@ -24,7 +24,7 @@ use crate::overlay_element::WindowOverlayCoordinator;
 use crate::{
     ActionError, ActionId, AnimationRuntime, AppManifest, AssetData, AssetId, AssetRegistry,
     CapabilityError, CompiledUi, ComponentExportError, ComponentInstancePath, ComponentRegistry,
-    ComponentStateSchema, ComponentStyleError, ComponentStyleSheet, DependencyError,
+    ComponentStateSchema, ComponentStyleError, ComponentStyleSheet, DependencyError, Diagnostic,
     DirectoryAssetProvider, DispatchScriptAction, EmbeddedScriptSource, FileScriptSource,
     GpuiNodeRenderer, InMemoryAssetProvider, InteractionState, KeyBindingSpec, LocaleBundle,
     LocaleManager, ModuleCompileCache, ModuleId, MotionPreference, NodeEventDispatcher,
@@ -686,6 +686,25 @@ impl ScriptViewHandle {
     pub fn last_error(&self, cx: &App) -> Result<Option<String>, ScriptViewError> {
         self.require_not_disposed()?;
         Ok(self.0.entity.read(cx).last_error.clone())
+    }
+
+    /// Return structured details for the latest script runtime error.
+    ///
+    /// Non-script host errors only have a string representation and return
+    /// `None` here.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ScriptViewError::DisposedView`] after disposal.
+    pub fn last_diagnostic(&self, cx: &App) -> Result<Option<Diagnostic>, ScriptViewError> {
+        self.require_not_disposed()?;
+        let view = self.0.entity.read(cx);
+        Ok(view
+            .last_diagnostic
+            .as_ref()
+            .and_then(|(message, diagnostic)| {
+                (view.last_error.as_ref() == Some(message)).then(|| diagnostic.clone())
+            }))
     }
 
     /// Drain execution timings and snapshot retained/virtual metrics.
@@ -2052,14 +2071,16 @@ impl ScriptWindowFactory {
         engine
             .restore_component_renderers(program.component_renderers.clone())
             .map_err(|error| error.to_string())?;
-        let lifecycle = self.mount_lifecycle(
-            &mut engine,
-            program,
-            view_id,
-            window_id,
-            WindowCommandPolicy::ApplicationOwned,
-            false,
-        )?;
+        let lifecycle = self
+            .mount_lifecycle(
+                &mut engine,
+                program,
+                view_id,
+                window_id,
+                WindowCommandPolicy::ApplicationOwned,
+                false,
+            )
+            .map_err(|error| error.to_string())?;
         let primitives = engine.primitive_registry();
         Ok((engine, lifecycle, primitives))
     }
@@ -2072,17 +2093,19 @@ impl ScriptWindowFactory {
         window_id: &str,
         policy: WindowCommandPolicy,
         register_window: bool,
-    ) -> Result<ScriptLifecycle, String> {
+    ) -> Result<ScriptLifecycle, ScriptViewError> {
         {
             let mut runtime = self.runtime.borrow_mut();
             if register_window {
                 runtime
                     .windows
                     .register_open_for_view(window_id, policy, view_id)
-                    .map_err(|error| error.to_string())?;
+                    .map_err(|error| ScriptViewError::Extension(error.to_string()))?;
             }
             for extension in self.extensions.iter() {
-                extension.configure_window(window_id, &mut runtime)?;
+                extension
+                    .configure_window(window_id, &mut runtime)
+                    .map_err(ScriptViewError::Extension)?;
             }
         }
         let mut lifecycle = ScriptLifecycle::new(
@@ -2092,10 +2115,20 @@ impl ScriptWindowFactory {
             Some(window_id.to_owned()),
             BTreeMap::new(),
             &program.state_schema,
-        )
-        .map_err(|error| error.to_string())?
+        )?
         .with_view_id(view_id);
-        lifecycle.start(engine).map_err(|error| error.to_string())?;
+        if let Err(error) = lifecycle.start(engine) {
+            let message = error.to_string();
+            if let crate::LifecycleError::Runtime(runtime_error) = &error
+                && let Ok(context) = lifecycle.diagnostic_context(engine, None)
+            {
+                return Err(ScriptViewError::ScriptDiagnostic {
+                    message,
+                    diagnostic: Box::new(Diagnostic::from_runtime(runtime_error, &context)),
+                });
+            }
+            return Err(ScriptViewError::Lifecycle(error));
+        }
         Ok(lifecycle)
     }
 
@@ -2227,6 +2260,7 @@ impl PreparedScriptView {
                 lifecycle,
                 primitives,
                 last_error: None,
+                last_diagnostic: None,
                 theme: self.theme,
                 theme_handle: view_theme_handle,
                 #[cfg(feature = "dev-reload")]
@@ -2541,6 +2575,7 @@ fn open_secondary_window(
                 lifecycle,
                 primitives,
                 last_error: None,
+                last_diagnostic: None,
                 theme: view_factory.theme.clone(),
                 theme_handle: view_theme_handle,
                 #[cfg(feature = "dev-reload")]
@@ -2776,6 +2811,7 @@ struct ScriptHostView {
     lifecycle: ScriptLifecycle,
     primitives: PrimitiveRegistry,
     last_error: Option<String>,
+    last_diagnostic: Option<(String, Diagnostic)>,
     theme: ThemeVariant,
     theme_handle: ThemeHandle,
     #[cfg(feature = "dev-reload")]
@@ -3069,9 +3105,8 @@ fn mount_prepared_lifecycle(
             host.window_policy(),
             true,
         )
-        .map_err(|error| {
+        .inspect_err(|_| {
             host.unregister_view(view_id);
-            ScriptViewError::Extension(error)
         })
 }
 
@@ -3182,6 +3217,29 @@ impl Render for ScriptHostView {
 }
 
 impl ScriptHostView {
+    fn capture_lifecycle_diagnostic(
+        &mut self,
+        error: &crate::LifecycleError,
+        component: Option<&ComponentInstancePath>,
+    ) {
+        let crate::LifecycleError::Runtime(error) = error else {
+            return;
+        };
+        if let Ok(context) = self.lifecycle.diagnostic_context(&self.engine, component) {
+            self.last_diagnostic =
+                Some((error.to_string(), Diagnostic::from_runtime(error, &context)));
+        }
+    }
+
+    fn lifecycle_error(
+        &mut self,
+        error: &crate::LifecycleError,
+        component: Option<&ComponentInstancePath>,
+    ) -> String {
+        self.capture_lifecycle_diagnostic(error, component);
+        error.to_string()
+    }
+
     fn publish_theme_after_render(&self, theme: &ThemeVariant, cx: &mut Context<Self>) {
         if self.theme_handle.matches(theme, cx) {
             return;
@@ -3592,16 +3650,20 @@ impl ScriptHostView {
                 );
             }
             for action in actions {
-                let _ = self
-                    .lifecycle
-                    .invoke_callback_transactional(&self.engine, &action.callback, action.payload)
-                    .map_err(|error| error.to_string())?;
+                let component = action.callback.component().cloned();
+                let result = self.lifecycle.invoke_callback_transactional(
+                    &self.engine,
+                    &action.callback,
+                    action.payload,
+                );
+                let _ = result.map_err(|error| self.lifecycle_error(&error, component.as_ref()))?;
             }
             for event in events {
-                let _ = self
+                let component = event.target.clone();
+                let result = self
                     .lifecycle
-                    .invoke_component_event_transactional(&self.engine, event)
-                    .map_err(|error| error.to_string())?;
+                    .invoke_component_event_transactional(&self.engine, event);
+                let _ = result.map_err(|error| self.lifecycle_error(&error, Some(&component)))?;
             }
         }
     }
@@ -3917,14 +3979,17 @@ impl ScriptHostView {
             );
         }
         let callback_result = self.run_script_transaction(|view| {
-            let value = view
-                .lifecycle
-                .invoke_callback_with_event_target(&view.engine, callback, payload, event_target)
-                .map_err(|error| error.to_string())?;
+            let result = view.lifecycle.invoke_callback_with_event_target(
+                &view.engine,
+                callback,
+                payload,
+                event_target,
+            );
+            let value =
+                result.map_err(|error| view.lifecycle_error(&error, callback.component()))?;
             view.invoke_pending_effects()?;
-            view.lifecycle
-                .render_dirty(&mut view.engine)
-                .map_err(|error| error.to_string())?;
+            let result = view.lifecycle.render_dirty(&mut view.engine);
+            result.map_err(|error| view.lifecycle_error(&error, None))?;
             Ok(value)
         });
         let response = callback_result.as_ref().map_or_else(
@@ -4134,14 +4199,10 @@ impl ScriptHostView {
         let result = if dirty || pending_dispatch || virtual_requests {
             self.run_script_transaction(|view| {
                 let mut changed = view.invoke_pending_effects()?;
-                changed |= view
-                    .lifecycle
-                    .realize_virtual_requests(&mut view.engine)
-                    .map_err(|error| error.to_string())?;
-                changed |= view
-                    .lifecycle
-                    .render_dirty(&mut view.engine)
-                    .map_err(|error| error.to_string())?;
+                let result = view.lifecycle.realize_virtual_requests(&mut view.engine);
+                changed |= result.map_err(|error| view.lifecycle_error(&error, None))?;
+                let result = view.lifecycle.render_dirty(&mut view.engine);
+                changed |= result.map_err(|error| view.lifecycle_error(&error, None))?;
                 Ok(changed || delivery_changed)
             })
         } else {
@@ -4178,17 +4239,18 @@ impl ScriptHostView {
         let mut first_error = None;
         for delivery in deliveries {
             let scope = format!("{:?}", delivery.scope);
+            let component = delivery
+                .callback
+                .component()
+                .cloned()
+                .or_else(|| delivery.scope.component().cloned());
             let result = self.run_script_transaction(|view| {
                 let mut delivery_changed = view.invoke_pending_effects()?;
-                let _ = view
-                    .lifecycle
-                    .invoke_async_delivery(&view.engine, delivery)
-                    .map_err(|error| error.to_string())?;
+                let result = view.lifecycle.invoke_async_delivery(&view.engine, delivery);
+                let _ = result.map_err(|error| view.lifecycle_error(&error, component.as_ref()))?;
                 delivery_changed |= view.invoke_pending_effects()?;
-                delivery_changed |= view
-                    .lifecycle
-                    .render_dirty(&mut view.engine)
-                    .map_err(|error| error.to_string())?;
+                let result = view.lifecycle.render_dirty(&mut view.engine);
+                delivery_changed |= result.map_err(|error| view.lifecycle_error(&error, None))?;
                 Ok(delivery_changed)
             });
             match result {
@@ -4625,6 +4687,11 @@ pub enum ScriptViewError {
     Runtime(#[from] RuntimeError),
     #[error(transparent)]
     Lifecycle(#[from] crate::LifecycleError),
+    #[error("{message} diagnostic={diagnostic}")]
+    ScriptDiagnostic {
+        message: String,
+        diagnostic: Box<Diagnostic>,
+    },
     #[error("failed to open GPUI window: {0}")]
     Window(String),
     #[error("script view ID `{0}` must be 1-64 ASCII alphanumeric, `_`, or `-` characters")]

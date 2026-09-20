@@ -1370,6 +1370,19 @@ impl ScriptLifecycle {
         &self.root_path
     }
 
+    pub(crate) fn diagnostic_context(
+        &self,
+        engine: &RuntimeEngine,
+        component: Option<&ComponentInstancePath>,
+    ) -> Result<crate::DiagnosticContext, crate::DiagnosticContextError> {
+        let root_context = self.context(ExecutionPhase::Event);
+        let context = component.map_or(root_context.clone(), |component| {
+            root_context.for_component(component.clone(), BTreeMap::new())
+        });
+        let source = engine.last_failed_timing().map(|timing| timing.source);
+        crate::DiagnosticContext::capture(engine, &context, source, None)
+    }
+
     #[must_use]
     pub fn compiled(&self) -> CompiledUi {
         self.compiled.clone()

@@ -522,7 +522,7 @@ pub struct RuntimeEngine {
     virtual_collections: BTreeMap<crate::VirtualCollectionId, VirtualCollectionRecipe>,
 }
 
-const MAX_SCRIPT_OPERATIONS: u64 = 1_000_000;
+pub const MAX_SCRIPT_OPERATIONS: u64 = 1_000_000;
 
 #[derive(Debug, Default)]
 struct OperationTracker {
@@ -1825,6 +1825,17 @@ impl RuntimeEngine {
     #[must_use]
     pub fn take_timings(&self) -> Vec<ExecutionTiming> {
         std::mem::take(&mut *self.timings.borrow_mut())
+    }
+
+    /// Return the most recently recorded failed execution without consuming timing history.
+    #[must_use]
+    pub fn last_failed_timing(&self) -> Option<ExecutionTiming> {
+        self.timings
+            .borrow()
+            .iter()
+            .rev()
+            .find(|timing| !timing.succeeded)
+            .cloned()
     }
 
     fn record_timing(
