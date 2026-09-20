@@ -38,14 +38,22 @@ semantic versioning from this release.
   generation; play is idempotent, pause/seek are position-complete, control
   commands recheck policy and budget, and direct/timeline physics share one
   finite sampler with velocity-preserving retargets.
-- Display-frame sampling is scoped per presentation domain and terminal
-  callbacks are delivered after frame commit in independent transactions.
+- Display-frame sampling is scoped per presentation domain; terminal event
+  batches are frozen by the frame that samples them and delivered after that
+  frame commits, in independent transactions.
   Suspended views, virtual rows, exit ghosts, layout/trigger motion, and slot
   rendering share the Host clock, policy, and stable identity rules.
-- Canvas affine motion uses the same matrix for polygon painting and inverse
-  hit testing. Axis-aligned clipped paths explicitly reject affine motion, and
-  unsupported exit-ghost subtrees fail reconciliation instead of silently
-  degrading.
+- Canvas affine, morph, trim, clip and non-scaling stroke motion use one
+  presented geometry for painting and hit testing. Axis-aligned clipped paths
+  explicitly reject affine motion, and unsupported exit-ghost subtrees fail
+  reconciliation instead of silently degrading.
+- Mounted motion identity is now `presentation domain + retained NodeId`, while
+  headless Rust reconciliation uses collision-free encoded path segments.
+  Root remount, hot reload and resume-reload transfer authority explicitly;
+  live reconciliation cannot reclaim independently playing exit scenes.
+- Unconstrained and non-bouncing inertia use closed-form exponential sampling;
+  bouncing constraints use analytical collision segments instead of replaying
+  a 240 Hz history on every frame.
 - `motion_gallery` now mounts in the native GPUI harness and exposes live
   timeline controls, controlled tabs, keyed reorder, and shared-layout
   selection rather than only verifying source preparation.

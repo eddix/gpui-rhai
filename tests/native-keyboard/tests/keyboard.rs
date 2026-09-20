@@ -6255,3 +6255,106 @@ fn host_none_policy_snaps_layout_motion_in_the_presented_frame(cx: &mut TestAppC
     });
     assert_eq!(later.visual.x, 100.0, "None must not retain a hidden animation");
 }
+
+#[gpui::test]
+fn canvas_morph_hit_testing_follows_the_presented_path(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let entry = ModuleId::parse("main").unwrap();
+    let source = r#"
+        fn state_schema(){#{fields:#{hit:#{schema:#{type:"string"},
+            "default":#{type:"string",value:"unseen"}}}}}
+        fn hit(ctx,event) {
+            ctx.set_state("hit", if event.canvas_key == () { "none" } else { event.canvas_key });
+        }
+        fn view(ctx) {
+            column([
+                canvas(canvas_scene([
+                    canvas_morph_stroke_path("shape",
+                        [path_move(20.0,20.0),path_line(180.0,20.0)],
+                        [path_move(20.0,80.0),path_line(180.0,80.0)],
+                        10.0, theme_color("accent"))
+                ])).with_key("canvas")
+                    .accessibility_role("button").accessibility_label("Canvas")
+                    .with_style(style().width(px(200)).height(px(100)))
+                    .on("pointer_down", Fn("hit"))
+                    .motion(motion_transition("path_progress",1.0,1.0,
+                        #{duration_ms:1000,easing:"linear"})),
+                text(ctx.get_state("hit")).with_key("result")
+                    .accessibility_role("status")
+                    .accessibility_label(ctx.get_state("hit"))
+            ])
+        }
+    "#;
+    let manual = gpui_rhai::ManualRuntimeClock::new(std::time::Instant::now());
+    let prepared = EmbeddedScriptView::new(
+        entry.clone(),
+        EmbeddedScriptSource::new(std::collections::BTreeMap::from([(
+            entry,
+            source.to_owned(),
+        )])),
+        include_str!("../../../registry/themes/default_dark.rhai"),
+    )
+    .runtime_clock(manual.clock())
+    .prepare()
+    .unwrap();
+    let captured = Rc::new(RefCell::new(None));
+    let captured_for_window = Rc::clone(&captured);
+    let window = cx.add_window(move |window, cx| {
+        let host = ScriptViewHost::new("canvas-morph-window", cx).unwrap();
+        let view = prepared
+            .mount(
+                ScriptViewConfig::new("canvas-morph-view"),
+                host.clone(),
+                window,
+                cx,
+            )
+            .unwrap();
+        *captured_for_window.borrow_mut() = Some(view.clone());
+        SingleEmbeddedHost { host, view }
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    cx.run_until_parked();
+    let view = captured.borrow().as_ref().unwrap().clone();
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    let bounds = visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .find_by_role_and_name("button", "Canvas")
+            .next()
+            .unwrap()
+            .geometry
+            .unwrap()
+            .visual
+    });
+    visual.simulate_click(
+        point(
+            px((bounds.x + 100.0) as f32),
+            px((bounds.y + 80.0) as f32),
+        ),
+        Modifiers::default(),
+    );
+    visual.run_until_parked();
+    assert!(visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .find_by_role_and_name("status", "shape")
+            .next()
+            .is_some()
+    }));
+    visual.simulate_click(
+        point(
+            px((bounds.x + 100.0) as f32),
+            px((bounds.y + 20.0) as f32),
+        ),
+        Modifiers::default(),
+    );
+    visual.run_until_parked();
+    assert!(visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .find_by_role_and_name("status", "none")
+            .next()
+            .is_some()
+    }));
+}

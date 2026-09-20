@@ -72,9 +72,10 @@ handle stale. Use `play_motion`, `pause_motion`, `resume_motion`, `seek_motion`,
 `restart_motion`, and `cancel_motion`. `play_motion` is idempotent while playing
 and resumes a paused position; only `restart_motion` rewinds. Pause and seek
 immediately produce a complete snapshot for the requested position. Terminal
-callbacks run after the sampled frame commits, in independent transactions so
-one failure cannot discard its neighbors. Missing, stale, cross-view, and
-duplicate handles fail explicitly.
+callbacks are frozen into the batch of the frame that sampled them, then run
+after that frame commits in independent transactions. Later input cannot be
+drained by an older frame, and one failure cannot discard its neighbors.
+Missing, stale, cross-view, and duplicate handles fail explicitly.
 
 ## Native triggers and progress
 
@@ -101,6 +102,8 @@ ownership. Text, RichText, Canvas, SVG, images, and boxes/fragments composed
 entirely from those kinds are supported. Custom primitives, overlays, layers,
 virtual collections, and error boundaries are rejected during reconciliation
 instead of silently losing content.
+Live-tree reconciliation and exit-scene retention are separate: unrelated
+state/store updates cannot reclaim a ghost before its source completes.
 
 Layout motion is opt-in:
 
@@ -128,6 +131,8 @@ Canvas supports `path_progress` stroke trim,
 `canvas_morph_stroke_path` with strict matching topology, and
 `motion_path_follow(scene, key, "translate_x" | "translate_y" | "rotate", config)`.
 Path lookup tables and sampling stay in Rust.
+Morph interpolation, trim, clip, stroke width and the outer affine transform
+produce one presented Canvas geometry shared by paint and hit testing.
 
 ## Theme, accessibility, and quality
 
@@ -158,6 +163,12 @@ velocity; completed snapshots retain the actual terminal sample. The runtime
 validates timeline targets and one-owner-per-property plans atomically before
 committing them. Layout/trigger paths reserve capacity in the same per-runtime
 active-work budget, and play/restart recheck the combined total.
+Mounted nodes use `presentation domain + retained NodeId` identity; readable
+timeline targets are resolved to that identity during planning. Headless Rust
+reconciliation uses collision-free encoded path segments, so keys containing
+`/`, numeric text, or reserved-looking prefixes do not alias. Inertia uses
+closed-form exponential/collision sampling rather than reintegrating its full
+age every frame.
 
 ## Rust Hosts and the effect seam
 

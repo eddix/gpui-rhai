@@ -1,0 +1,8 @@
+age_s=1 count=100 inertia=false p50_ms=0.0500 p95_ms=0.1435
+age_s=1 count=100 inertia=true p50_ms=0.0532 p95_ms=0.1333
+age_s=1 count=1000 inertia=false p50_ms=0.7230 p95_ms=1.0826
+age_s=1 count=1000 inertia=true p50_ms=0.6221 p95_ms=0.6899
+age_s=8 count=100 inertia=false p50_ms=0.0484 p95_ms=0.0496
+age_s=8 count=100 inertia=true p50_ms=0.0508 p95_ms=0.0621
+age_s=8 count=1000 inertia=false p50_ms=0.6027 p95_ms=0.6605
+age_s=8 count=1000 inertia=true p50_ms=0.6242 p95_ms=0.7073

@@ -299,6 +299,21 @@ impl CanvasScene {
             .find(|command| command.hit_test(x, y))
             .map(CanvasCommand::key)
     }
+
+    pub(crate) fn hit_test_presented(
+        &self,
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+        presentation: crate::geometry::CanvasMotionTransform,
+    ) -> Option<&str> {
+        self.commands
+            .iter()
+            .rev()
+            .find(|command| command.hit_test_presented(x, y, width, height, presentation))
+            .map(CanvasCommand::key)
+    }
 }
 
 impl CustomType for CanvasScene {
@@ -308,6 +323,152 @@ impl CustomType for CanvasScene {
 }
 
 impl CanvasCommand {
+    #[allow(clippy::too_many_lines)]
+    fn hit_test_presented(
+        &self,
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+        presentation: crate::geometry::CanvasMotionTransform,
+    ) -> bool {
+        let transform_point =
+            |point: (f64, f64)| canvas_motion_point(width, height, point.0, point.1, presentation);
+        let transform_paths = |paths: Vec<Vec<(f64, f64)>>| {
+            paths
+                .into_iter()
+                .map(|path| path.into_iter().map(transform_point).collect::<Vec<_>>())
+                .collect::<Vec<_>>()
+        };
+        match self {
+            Self::Rect {
+                x: left,
+                y: top,
+                width,
+                height,
+                ..
+            } => point_in_polygon(
+                x,
+                y,
+                &[
+                    transform_point((*left, *top)),
+                    transform_point((left + width, *top)),
+                    transform_point((left + width, top + height)),
+                    transform_point((*left, top + height)),
+                ],
+            ),
+            Self::Circle {
+                center_x,
+                center_y,
+                radius,
+                ..
+            } => {
+                let polygon = (0..48)
+                    .map(|index| {
+                        let angle = std::f64::consts::TAU * f64::from(index) / 48.0;
+                        transform_point((
+                            center_x + radius * angle.cos(),
+                            center_y + radius * angle.sin(),
+                        ))
+                    })
+                    .collect::<Vec<_>>();
+                point_in_polygon(x, y, &polygon)
+            }
+            Self::Line {
+                from_x,
+                from_y,
+                to_x,
+                to_y,
+                width,
+                ..
+            } => {
+                let from = transform_point((*from_x, *from_y));
+                let to = transform_point((*to_x, *to_y));
+                point_segment_distance(x, y, from.0, from.1, to.0, to.1) <= width / 2.0
+            }
+            Self::Path {
+                segments,
+                fill,
+                stroke,
+                transform,
+                clip,
+                ..
+            } => {
+                if clip.is_some_and(|clip| {
+                    x < clip.x || x > clip.x + clip.width || y < clip.y || y > clip.y + clip.height
+                }) {
+                    return false;
+                }
+                let mut paths = flatten_path(segments, *transform);
+                if stroke.is_some()
+                    && presentation
+                        .path_progress
+                        .is_some_and(|progress| progress < 1.0)
+                {
+                    paths = trimmed_canvas_paths(
+                        paths,
+                        presentation.path_progress.unwrap_or(1.0).clamp(0.0, 1.0),
+                    );
+                }
+                let paths = transform_paths(paths);
+                let fill_hit = stroke.is_none()
+                    && fill.is_some()
+                    && paths
+                        .iter()
+                        .fold(false, |inside, path| inside ^ point_in_polygon(x, y, path));
+                let stroke_hit = stroke.as_ref().is_some_and(|(_, stroke_width)| {
+                    paths.iter().any(|path| {
+                        path.windows(2).any(|segment| {
+                            point_segment_distance(
+                                x,
+                                y,
+                                segment[0].0,
+                                segment[0].1,
+                                segment[1].0,
+                                segment[1].1,
+                            ) <= stroke_width / 2.0
+                        })
+                    })
+                });
+                fill_hit || stroke_hit
+            }
+            Self::MorphPath {
+                from,
+                to,
+                stroke: (_, stroke_width),
+                transform,
+                clip,
+                ..
+            } => {
+                if clip.is_some_and(|clip| {
+                    x < clip.x || x > clip.x + clip.width || y < clip.y || y > clip.y + clip.height
+                }) {
+                    return false;
+                }
+                let segments = interpolate_path(
+                    from,
+                    to,
+                    presentation.path_progress.unwrap_or(0.0).clamp(0.0, 1.0),
+                )
+                .unwrap_or_else(|| from.clone());
+                transform_paths(flatten_path(&segments, *transform))
+                    .iter()
+                    .any(|path| {
+                        path.windows(2).any(|segment| {
+                            point_segment_distance(
+                                x,
+                                y,
+                                segment[0].0,
+                                segment[0].1,
+                                segment[1].0,
+                                segment[1].1,
+                            ) <= stroke_width / 2.0
+                        })
+                    })
+            }
+        }
+    }
+
     fn hit_test(&self, x: f64, y: f64) -> bool {
         match self {
             Self::Rect {
@@ -348,7 +509,8 @@ impl CanvasCommand {
                     return false;
                 }
                 let paths = flatten_path(segments, *transform);
-                let fill_hit = fill.is_some()
+                let fill_hit = stroke.is_none()
+                    && fill.is_some()
                     && paths
                         .iter()
                         .fold(false, |inside, path| inside ^ point_in_polygon(x, y, path));
@@ -395,6 +557,71 @@ impl CanvasCommand {
             }
         }
     }
+}
+
+pub(crate) fn canvas_motion_point(
+    width: f64,
+    height: f64,
+    x: f64,
+    y: f64,
+    motion: crate::geometry::CanvasMotionTransform,
+) -> (f64, f64) {
+    let center_x = width / 2.0;
+    let center_y = height / 2.0;
+    let rotate = motion.rotate.to_radians();
+    let skew_x = motion.skew_x.to_radians().tan();
+    let skew_y = motion.skew_y.to_radians().tan();
+    let scaled_x = (x - center_x) * motion.scale_x;
+    let scaled_y = (y - center_y) * motion.scale_y;
+    let local_x = scaled_x + skew_x * scaled_y;
+    let local_y = scaled_y + skew_y * scaled_x;
+    (
+        local_x * rotate.cos() - local_y * rotate.sin() + center_x,
+        local_x * rotate.sin() + local_y * rotate.cos() + center_y,
+    )
+}
+
+pub(crate) fn trimmed_canvas_paths(
+    paths: Vec<Vec<(f64, f64)>>,
+    progress: f64,
+) -> Vec<Vec<(f64, f64)>> {
+    let total = paths
+        .iter()
+        .flat_map(|path| path.windows(2))
+        .map(|pair| (pair[1].0 - pair[0].0).hypot(pair[1].1 - pair[0].1))
+        .sum::<f64>();
+    let mut remaining = total * progress.clamp(0.0, 1.0);
+    let mut output = Vec::new();
+    for path in paths {
+        let Some(first) = path.first().copied() else {
+            continue;
+        };
+        let mut trimmed = vec![first];
+        for pair in path.windows(2) {
+            if remaining <= 0.0 {
+                break;
+            }
+            let length = (pair[1].0 - pair[0].0).hypot(pair[1].1 - pair[0].1);
+            if length <= remaining {
+                trimmed.push(pair[1]);
+                remaining -= length;
+            } else if length > f64::EPSILON {
+                let ratio = remaining / length;
+                trimmed.push((
+                    pair[0].0 + (pair[1].0 - pair[0].0) * ratio,
+                    pair[0].1 + (pair[1].1 - pair[0].1) * ratio,
+                ));
+                remaining = 0.0;
+            }
+        }
+        if trimmed.len() > 1 {
+            output.push(trimmed);
+        }
+        if remaining <= 0.0 {
+            break;
+        }
+    }
+    output
 }
 
 pub(crate) fn flatten_path(
@@ -1153,5 +1380,68 @@ mod tests {
             &from,
             &[CanvasPathSegment::Move { x: 0.0, y: 0.0 }]
         ));
+    }
+
+    #[test]
+    fn presented_hit_testing_tracks_morph_trim_and_non_scaling_stroke() {
+        let morph = CanvasScene::new(vec![CanvasCommand::MorphPath {
+            key: "morph".to_owned(),
+            from: vec![
+                CanvasPathSegment::Move { x: 20.0, y: 20.0 },
+                CanvasPathSegment::Line { x: 180.0, y: 20.0 },
+            ],
+            to: vec![
+                CanvasPathSegment::Move { x: 20.0, y: 80.0 },
+                CanvasPathSegment::Line { x: 180.0, y: 80.0 },
+            ],
+            stroke: (ColorValue::Token("accent".to_owned()), 10.0),
+            transform: CanvasTransform::default(),
+            clip: None,
+        }])
+        .unwrap();
+        let end = crate::geometry::CanvasMotionTransform {
+            path_progress: Some(1.0),
+            ..crate::geometry::CanvasMotionTransform::default()
+        };
+        assert_eq!(
+            morph.hit_test_presented(100.0, 80.0, 200.0, 100.0, end),
+            Some("morph")
+        );
+        assert_eq!(
+            morph.hit_test_presented(100.0, 20.0, 200.0, 100.0, end),
+            None
+        );
+
+        let trimmed = CanvasScene::new(vec![CanvasCommand::Path {
+            key: "trimmed".to_owned(),
+            segments: vec![
+                CanvasPathSegment::Move { x: 20.0, y: 50.0 },
+                CanvasPathSegment::Line { x: 180.0, y: 50.0 },
+            ],
+            fill: None,
+            stroke: Some((ColorValue::Token("accent".to_owned()), 10.0)),
+            transform: CanvasTransform::default(),
+            clip: None,
+        }])
+        .unwrap();
+        let half = crate::geometry::CanvasMotionTransform {
+            scale_x: 1.5,
+            scale_y: 0.5,
+            path_progress: Some(0.5),
+            ..crate::geometry::CanvasMotionTransform::default()
+        };
+        assert_eq!(
+            trimmed.hit_test_presented(60.0, 50.0, 200.0, 100.0, half),
+            Some("trimmed")
+        );
+        assert_eq!(
+            trimmed.hit_test_presented(180.0, 50.0, 200.0, 100.0, half),
+            None
+        );
+        assert_eq!(
+            trimmed.hit_test_presented(60.0, 56.0, 200.0, 100.0, half),
+            None,
+            "stroke width remains in paint-space pixels under non-uniform scale"
+        );
     }
 }

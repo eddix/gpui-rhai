@@ -1,0 +1,42 @@
+{
+  "schema": "gpui-rhai-audit-acceptance-v1",
+  "date": "2026-09-20",
+  "commit": "23874744ccdf92c887785a13a83716b24a3925c6",
+  "baseline": "9f4ba04fc9c5198d7164359f47139a5d306de1bc",
+  "workspace": "/Users/eddix/Codes/github.com/eddix/gpui-rhai",
+  "rustc": "rustc 1.94.0 (4a4ef493e 2026-03-02)\nbinary: rustc\ncommit-hash: 4a4ef493e3a1488c6e321570238084b38948f6db\ncommit-date: 2026-03-02\nhost: aarch64-apple-darwin\nrelease: 1.94.0\nLLVM version: 21.1.8\n",
+  "os": "ProductName:\t\tmacOS\nProductVersion:\t\t26.6.2\nBuildVersion:\t\t25G83\n",
+  "product_changes": false,
+  "workspace_tests": {
+    "passed": 490,
+    "failed": 0,
+    "ignored": 0
+  },
+  "native_tests": {
+    "passed": 57,
+    "failed": 0
+  },
+  "performance_tests": {
+    "passed": 2,
+    "ignored": 2
+  },
+  "new_native_correctness_test": {
+    "passed": 0,
+    "failed": 1,
+    "exit_code": 101,
+    "name": "morphed_path_hit_follows_presented_endpoint"
+  },
+  "public_probes": "positive acceptance assertions plus characterization logs; exit 0 is not full correctness acceptance",
+  "benchmark": {
+    "profile": "release with thin LTO",
+    "samples": 100,
+    "warmup": 10,
+    "scope": "MotionRuntime tick + snapshot; no layout/GPU/Rhai",
+    "physical_display_validation": false
+  },
+  "ci_runs": [],
+  "finding_counts": {
+    "P1": 5,
+    "P2": 4
+  }
+}

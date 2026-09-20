@@ -443,6 +443,7 @@ pub(crate) struct MotionGhost {
 #[derive(Clone, Debug)]
 struct ScheduledMotionTrack {
     target: String,
+    resolved_path: Option<String>,
     source: MotionSource,
     start_ms: u64,
     duration_ms: u64,
@@ -473,6 +474,7 @@ struct TimelineOwner {
     incarnation: ComponentIncarnation,
     generation: ScriptGeneration,
     node_path: String,
+    target_root: String,
 }
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -522,6 +524,29 @@ const fn stricter_preference(left: MotionPreference, right: MotionPreference) ->
 fn motion_domain_from_path(path: &str) -> String {
     path.find("/root")
         .map_or_else(|| "root".to_owned(), |end| path[..end + 5].to_owned())
+}
+
+fn encode_path_segment(kind: &str, value: &str) -> String {
+    let mut encoded = String::with_capacity(kind.len() + 1 + value.len() * 2);
+    encoded.push_str(kind);
+    encoded.push(':');
+    for byte in value.as_bytes() {
+        use std::fmt::Write as _;
+        let _ = write!(encoded, "{byte:02x}");
+    }
+    encoded
+}
+
+pub(crate) fn retained_node_path(path: &str, node: crate::NodeId) -> String {
+    format!("{}/node:{}", motion_domain_from_path(path), node.get())
+}
+
+pub(crate) fn virtual_item_path(path: &str, key: &str) -> String {
+    format!("{path}/{}", encode_path_segment("item", key))
+}
+
+pub(crate) fn span_motion_path(path: &str, key: &str) -> String {
+    format!("{path}/{}", encode_path_segment("span", key))
 }
 
 fn path_contains_scope(path: &str, scope: &str) -> bool {
@@ -587,6 +612,14 @@ struct ActiveMotion {
     finite_duration_ms: Option<u64>,
     started: Instant,
     elapsed_before_play: Duration,
+    retention: MotionRetention,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum MotionRetention {
+    Host,
+    Live(String),
+    Exit,
 }
 
 #[derive(Debug)]
@@ -596,11 +629,13 @@ pub struct MotionRuntime {
     active: BTreeMap<MotionKey, ActiveMotion>,
     settled: BTreeMap<MotionKey, f64>,
     settled_declaration: BTreeMap<MotionKey, (MotionSource, Option<String>)>,
+    settled_retention: BTreeMap<MotionKey, MotionRetention>,
     timelines: BTreeMap<MotionHandle, ActiveTimeline>,
     timeline_index: BTreeMap<TimelineLogicalKey, MotionHandle>,
     timeline_events: Vec<MotionTimelineEvent>,
     suspended_scopes: BTreeSet<String>,
     active_reservations: BTreeMap<String, usize>,
+    live_scene_signatures: BTreeMap<String, String>,
     active_limit: usize,
     host_preference: Option<MotionPreference>,
     preference: Option<MotionPreference>,
@@ -616,11 +651,13 @@ impl Default for MotionRuntime {
             active: BTreeMap::new(),
             settled: BTreeMap::new(),
             settled_declaration: BTreeMap::new(),
+            settled_retention: BTreeMap::new(),
             timelines: BTreeMap::new(),
             timeline_index: BTreeMap::new(),
             timeline_events: Vec::new(),
             suspended_scopes: BTreeSet::new(),
             active_reservations: BTreeMap::new(),
+            live_scene_signatures: BTreeMap::new(),
             active_limit: usize::MAX,
             host_preference: None,
             preference: None,
@@ -661,11 +698,13 @@ impl MotionRuntime {
             active: self.active.clone(),
             settled: self.settled.clone(),
             settled_declaration: self.settled_declaration.clone(),
+            settled_retention: self.settled_retention.clone(),
             timelines: self.timelines.clone(),
             timeline_index: self.timeline_index.clone(),
             timeline_events: self.timeline_events.clone(),
             suspended_scopes: self.suspended_scopes.clone(),
             active_reservations: self.active_reservations.clone(),
+            live_scene_signatures: self.live_scene_signatures.clone(),
             active_limit: self.active_limit,
             host_preference: self.host_preference,
             preference: self.preference,
@@ -706,11 +745,22 @@ impl MotionRuntime {
                     (animation.declaration.clone(), animation.replay_key.clone()),
                 );
                 self.settled.insert(
-                    key,
+                    key.clone(),
                     if preference == MotionPreference::None {
                         source_terminal_value(&animation.declaration)
                     } else {
                         reduced_value(&animation)
+                    },
+                );
+                self.settled_retention.insert(key, animation.retention);
+            }
+            for (key, (declaration, _)) in &self.settled_declaration {
+                self.settled.insert(
+                    key.clone(),
+                    if preference == MotionPreference::None {
+                        source_terminal_value(declaration)
+                    } else {
+                        declaration.reduced_value()
                     },
                 );
             }
@@ -742,6 +792,16 @@ impl MotionRuntime {
                     kind: MotionTimelineEventKind::Complete,
                     callback,
                 });
+            }
+            for timeline in self
+                .timelines
+                .values_mut()
+                .filter(|timeline| timeline.state == MotionPlaybackState::Completed)
+            {
+                timeline.elapsed_before_play = Duration::from_millis(
+                    timeline_total_duration(timeline).unwrap_or(timeline.duration_ms),
+                );
+                timeline.policy_settled = Some(preference);
             }
         }
     }
@@ -781,6 +841,15 @@ impl MotionRuntime {
         self.start_with_replay(component, source, None, now)
     }
 
+    pub(crate) fn start_exit(
+        &mut self,
+        component: ComponentInstancePath,
+        source: MotionSource,
+        now: Instant,
+    ) -> Result<MotionKey, MotionError> {
+        self.start_with_replay_retained(component, source, None, now, MotionRetention::Exit)
+    }
+
     /// Start or retarget while including an explicit declarative replay key.
     ///
     /// # Errors
@@ -793,6 +862,23 @@ impl MotionRuntime {
         declaration: MotionSource,
         replay_key: Option<String>,
         now: Instant,
+    ) -> Result<MotionKey, MotionError> {
+        self.start_with_replay_retained(
+            component,
+            declaration,
+            replay_key,
+            now,
+            MotionRetention::Host,
+        )
+    }
+
+    fn start_with_replay_retained(
+        &mut self,
+        component: ComponentInstancePath,
+        declaration: MotionSource,
+        replay_key: Option<String>,
+        now: Instant,
+        retention: MotionRetention,
     ) -> Result<MotionKey, MotionError> {
         validate_source(&declaration)?;
         let key = MotionKey {
@@ -812,6 +898,11 @@ impl MotionRuntime {
             .get(&key)
             .is_some_and(|settled| settled == &(declaration.clone(), replay_key.clone()))
         {
+            if let Some(motion) = self.active.get_mut(&key) {
+                motion.retention = retention;
+            } else {
+                self.settled_retention.insert(key.clone(), retention);
+            }
             return Ok(key);
         }
         if matches!(
@@ -821,6 +912,7 @@ impl MotionRuntime {
             self.active.remove(&key);
             self.settled_declaration
                 .insert(key.clone(), (declaration.clone(), replay_key));
+            self.settled_retention.insert(key.clone(), retention);
             self.settled.insert(
                 key.clone(),
                 if self.preference == Some(MotionPreference::None) {
@@ -849,6 +941,7 @@ impl MotionRuntime {
         self.ensure_active_capacity(active_increase)?;
         self.settled.remove(&key);
         self.settled_declaration.remove(&key);
+        self.settled_retention.remove(&key);
         self.active.insert(
             key.clone(),
             ActiveMotion {
@@ -858,6 +951,7 @@ impl MotionRuntime {
                 finite_duration_ms,
                 started: now,
                 elapsed_before_play: Duration::ZERO,
+                retention,
             },
         );
         Ok(key)
@@ -865,6 +959,9 @@ impl MotionRuntime {
 
     pub fn cancel(&mut self, key: &MotionKey) {
         self.active.remove(key);
+        self.settled.remove(key);
+        self.settled_declaration.remove(key);
+        self.settled_retention.remove(key);
     }
 
     /// Register or replace a named timeline in one retained node scope.
@@ -887,10 +984,11 @@ impl MotionRuntime {
             component,
             incarnation: ComponentIncarnation::unscoped(),
             generation: ScriptGeneration::default(),
+            target_root: node_path.clone(),
             node_path,
         };
         let mut candidate = self.transaction_snapshot();
-        let handle = candidate.start_timeline_owned(&owner, spec, now)?;
+        let handle = candidate.start_timeline_owned(&owner, spec, now, None)?;
         *self = candidate;
         Ok(handle)
     }
@@ -900,6 +998,7 @@ impl MotionRuntime {
         owner: &TimelineOwner,
         spec: MotionTimeline,
         now: Instant,
+        identities: Option<&BTreeMap<String, String>>,
     ) -> Result<MotionHandle, MotionError> {
         validate_timeline_name(&spec.name)?;
         if spec.iterations == Some(0) {
@@ -907,7 +1006,13 @@ impl MotionRuntime {
                 "timeline iterations must be greater than zero".to_owned(),
             ));
         }
-        let (tracks, duration_ms) = compile_timeline(&spec.root)?;
+        let (mut tracks, duration_ms) = compile_timeline(&spec.root)?;
+        if let Some(identities) = identities {
+            for track in &mut tracks {
+                let target = resolve_timeline_target(&owner.target_root, &track.target);
+                track.resolved_path = identities.get(&target).cloned();
+            }
+        }
         let logical = TimelineLogicalKey {
             domain: owner.domain.clone(),
             node_path: owner.node_path.clone(),
@@ -1234,6 +1339,11 @@ impl MotionRuntime {
             .retain(|event| !event.handle.in_node_scope(path));
     }
 
+    pub(crate) fn prepend_timeline_events(&mut self, mut events: Vec<MotionTimelineEvent>) {
+        events.append(&mut self.timeline_events);
+        self.timeline_events = events;
+    }
+
     #[must_use]
     pub fn resource_usage(&self) -> MotionResourceUsage {
         let geometry_slots = self.active_reservations.values().copied().sum::<usize>();
@@ -1335,6 +1445,7 @@ impl MotionRuntime {
         self.active.retain(|key, _| keys.contains(key));
         self.settled.retain(|key, _| keys.contains(key));
         self.settled_declaration.retain(|key, _| keys.contains(key));
+        self.settled_retention.retain(|key, _| keys.contains(key));
     }
 
     pub fn retain_node_scope(&mut self, path: &str, keys: &BTreeSet<MotionKey>) {
@@ -1344,6 +1455,69 @@ impl MotionRuntime {
             .retain(|key, _| !key.in_node_scope(path) || keys.contains(key));
         self.settled_declaration
             .retain(|key, _| !key.in_node_scope(path) || keys.contains(key));
+        self.settled_retention
+            .retain(|key, _| !key.in_node_scope(path) || keys.contains(key));
+    }
+
+    fn retain_live_scope(&mut self, domain: &str, keys: &BTreeSet<MotionKey>) {
+        self.active.retain(|key, motion| {
+            !matches!(&motion.retention, MotionRetention::Live(owner) if owner == domain)
+                || keys.contains(key)
+        });
+        let removed = self
+            .settled_retention
+            .iter()
+            .filter(|(_, retention)| {
+                matches!(retention, MotionRetention::Live(owner) if owner == domain)
+            })
+            .map(|(key, _)| key.clone())
+            .filter(|key| !keys.contains(key))
+            .collect::<Vec<_>>();
+        for key in removed {
+            self.settled.remove(&key);
+            self.settled_declaration.remove(&key);
+            self.settled_retention.remove(&key);
+        }
+    }
+
+    fn reset_live_scope(&mut self, domain: &str) {
+        self.active.retain(
+            |_, motion| !matches!(&motion.retention, MotionRetention::Live(owner) if owner == domain),
+        );
+        let keys = self
+            .settled_retention
+            .iter()
+            .filter(|(_, retention)| {
+                matches!(retention, MotionRetention::Live(owner) if owner == domain)
+            })
+            .map(|(key, _)| key.clone())
+            .collect::<Vec<_>>();
+        for key in keys {
+            self.settled.remove(&key);
+            self.settled_declaration.remove(&key);
+            self.settled_retention.remove(&key);
+        }
+        let handles = self
+            .timelines
+            .keys()
+            .filter(|handle| handle.domain == domain)
+            .cloned()
+            .collect::<Vec<_>>();
+        for handle in handles {
+            if let Some(timeline) = self.timelines.remove(&handle)
+                && !matches!(
+                    timeline.state,
+                    MotionPlaybackState::Completed | MotionPlaybackState::Cancelled
+                )
+            {
+                self.timeline_events.push(MotionTimelineEvent {
+                    handle: handle.clone(),
+                    kind: MotionTimelineEventKind::Cancel,
+                    callback: timeline.spec.on_cancel,
+                });
+            }
+            self.timeline_index.retain(|_, active| active != &handle);
+        }
     }
 
     pub fn retain_timeline_scope(&mut self, path: &str, handles: &BTreeSet<MotionHandle>) {
@@ -1402,7 +1576,11 @@ impl MotionRuntime {
         self.settled.retain(|key, _| !key.in_node_scope(path));
         self.settled_declaration
             .retain(|key, _| !key.in_node_scope(path));
+        self.settled_retention
+            .retain(|key, _| !key.in_node_scope(path));
         self.active_reservations
+            .retain(|scope, _| !path_contains_scope(path, scope));
+        self.live_scene_signatures
             .retain(|scope, _| !path_contains_scope(path, scope));
         let removed = self
             .timelines
@@ -1657,6 +1835,8 @@ impl MotionRuntime {
                 let sample = sample_active_motion(&animation, now, false);
                 self.settled_declaration
                     .insert(key.clone(), (animation.declaration, animation.replay_key));
+                self.settled_retention
+                    .insert(key.clone(), animation.retention);
                 self.settled.insert(key.clone(), sample.value);
             }
         }
@@ -1737,16 +1917,17 @@ fn sample_timeline(
         };
     }
     if let Some(preference) = timeline.policy_settled {
+        if preference == MotionPreference::None
+            && let Some(total) = timeline_total_duration(timeline)
+        {
+            return sample_timeline_position(handle, timeline, Duration::from_millis(total));
+        }
         let values = timeline
             .tracks
             .iter()
             .map(|track| {
-                let key = timeline_track_key(handle, &track.target, track.source.property());
-                let value = if preference == MotionPreference::None {
-                    source_terminal_value(&track.source)
-                } else {
-                    track.source.reduced_value()
-                };
+                let key = timeline_track_key(handle, track);
+                let value = track.source.reduced_value();
                 (key, value)
             })
             .collect();
@@ -1757,6 +1938,14 @@ fn sample_timeline(
     } else {
         timeline_position(timeline, now)
     };
+    sample_timeline_position(handle, timeline, elapsed)
+}
+
+fn sample_timeline_position(
+    handle: &MotionHandle,
+    timeline: &ActiveTimeline,
+    elapsed: Duration,
+) -> TimelineSample {
     let elapsed_ms = duration_ms(elapsed);
     let iteration_duration = timeline.duration_ms.max(1);
     let raw_iteration = elapsed_ms / iteration_duration;
@@ -1779,7 +1968,7 @@ fn sample_timeline(
     }
     let mut values = BTreeMap::new();
     for track in &timeline.tracks {
-        let key = timeline_track_key(handle, &track.target, track.source.property());
+        let key = timeline_track_key(handle, track);
         if local_ms < track.start_ms {
             values
                 .entry(key)
@@ -1810,14 +1999,17 @@ fn timeline_position(timeline: &ActiveTimeline, now: Instant) -> Duration {
     }
 }
 
-fn timeline_track_key(handle: &MotionHandle, target: &str, property: MotionProperty) -> MotionKey {
+fn timeline_track_key(handle: &MotionHandle, track: &ScheduledMotionTrack) -> MotionKey {
     let root = handle.node_path.as_str();
-    let path = match target {
-        "." | "" => root.to_owned(),
-        target if target.starts_with('/') => target.trim_start_matches('/').to_owned(),
-        target => format!("{root}/{target}"),
-    };
-    MotionKey::for_node(&path, property)
+    let path = track
+        .resolved_path
+        .clone()
+        .unwrap_or_else(|| match track.target.as_str() {
+            "." | "" => root.to_owned(),
+            target if target.starts_with('/') => target.trim_start_matches('/').to_owned(),
+            target => format!("{root}/{target}"),
+        });
+    MotionKey::for_node(&path, track.source.property())
 }
 
 fn timeline_total_duration(timeline: &ActiveTimeline) -> Option<u64> {
@@ -1869,6 +2061,7 @@ fn flatten_timeline(
             let duration_ms = source_duration_ms(&track.source)?;
             output.push(ScheduledMotionTrack {
                 target: track.target.clone(),
+                resolved_path: None,
                 source: track.source.clone(),
                 start_ms,
                 duration_ms,
@@ -2025,27 +2218,88 @@ fn spring_settle_ms(spec: &MotionSpring) -> u64 {
 }
 
 fn sample_inertia_at(spec: &MotionInertia, elapsed: Duration) -> (f64, f64) {
-    let seconds = elapsed.as_secs_f64().min(10.0);
-    let steps = (seconds * 240.0).ceil().clamp(1.0, 2_400.0);
-    let steps = u32::try_from(steps.to_string().parse::<u64>().unwrap_or(1)).unwrap_or(2_400);
-    let delta = seconds / f64::from(steps);
-    let mut position = spec.from;
+    if spec.min.is_none() && spec.max.is_none() {
+        let seconds = elapsed.as_secs_f64().min(10.0);
+        let decay = (-spec.friction * seconds).exp();
+        let mut position = spec.from + spec.velocity * (1.0 - decay) / spec.friction;
+        let mut velocity = spec.velocity * decay;
+        if elapsed >= Duration::from_millis(inertia_settle_ms(spec)) {
+            position = nearest_snap(inertia_target(spec), &spec.snap_points)
+                .unwrap_or_else(|| inertia_target(spec));
+            velocity = 0.0;
+        }
+        return (position, velocity);
+    }
+    if spec.bounce <= f64::EPSILON {
+        let seconds = elapsed.as_secs_f64().min(10.0);
+        let decay = (-spec.friction * seconds).exp();
+        let projected = spec.from + spec.velocity * (1.0 - decay) / spec.friction;
+        let mut position = projected.clamp(
+            spec.min.unwrap_or(f64::NEG_INFINITY),
+            spec.max.unwrap_or(f64::INFINITY),
+        );
+        let mut velocity = if (position - projected).abs() <= f64::EPSILON {
+            spec.velocity * decay
+        } else {
+            0.0
+        };
+        if elapsed >= Duration::from_millis(inertia_settle_ms(spec)) {
+            position = nearest_snap(position, &spec.snap_points).unwrap_or(position);
+            velocity = 0.0;
+        }
+        return (position, velocity);
+    }
+    let mut remaining = elapsed.as_secs_f64().min(10.0);
+    let mut position = spec.from.clamp(
+        spec.min.unwrap_or(f64::NEG_INFINITY),
+        spec.max.unwrap_or(f64::INFINITY),
+    );
     let mut velocity = spec.velocity;
-    for _ in 0..steps {
-        velocity *= (-spec.friction * delta).exp();
-        position += velocity * delta;
-        if let Some(minimum) = spec.min
-            && position < minimum
-        {
-            position = minimum;
-            velocity = velocity.abs() * spec.bounce;
+    if spec.min.is_some_and(|minimum| spec.from < minimum) {
+        velocity = velocity.abs() * spec.bounce;
+    } else if spec.max.is_some_and(|maximum| spec.from > maximum) {
+        velocity = -velocity.abs() * spec.bounce;
+    }
+    for _ in 0..4_096 {
+        if remaining <= f64::EPSILON || velocity.abs() <= 0.01 {
+            break;
         }
-        if let Some(maximum) = spec.max
-            && position > maximum
-        {
-            position = maximum;
-            velocity = -velocity.abs() * spec.bounce;
+        let boundary = if velocity > 0.0 { spec.max } else { spec.min };
+        let Some(boundary) = boundary else {
+            let decay = (-spec.friction * remaining).exp();
+            position += velocity * (1.0 - decay) / spec.friction;
+            velocity *= decay;
+            remaining = 0.0;
+            break;
+        };
+        if (position - boundary).abs() <= f64::EPSILON {
+            velocity = -velocity * spec.bounce;
+            continue;
         }
+        let distance = boundary - position;
+        let ratio = distance * spec.friction / velocity;
+        if !(0.0..1.0).contains(&ratio) {
+            let decay = (-spec.friction * remaining).exp();
+            position += velocity * (1.0 - decay) / spec.friction;
+            velocity *= decay;
+            remaining = 0.0;
+            break;
+        }
+        let collision_time = -(1.0 - ratio).ln() / spec.friction;
+        if collision_time >= remaining {
+            let decay = (-spec.friction * remaining).exp();
+            position += velocity * (1.0 - decay) / spec.friction;
+            velocity *= decay;
+            remaining = 0.0;
+            break;
+        }
+        velocity *= (-spec.friction * collision_time).exp();
+        position = boundary;
+        velocity = -velocity * spec.bounce;
+        remaining -= collision_time;
+    }
+    if remaining > f64::EPSILON {
+        velocity = 0.0;
     }
     if elapsed >= Duration::from_millis(inertia_settle_ms(spec)) {
         position = nearest_snap(position, &spec.snap_points).unwrap_or(position);
@@ -2118,6 +2372,7 @@ pub(crate) struct MotionReconcileContext<'a> {
     pub root_incarnation: ComponentIncarnation,
     pub generation: ScriptGeneration,
     pub incarnations: &'a BTreeMap<ComponentInstancePath, ComponentIncarnation>,
+    pub identities: Option<&'a BTreeMap<String, String>>,
 }
 
 /// Reconcile one window's animation declarations without touching other windows.
@@ -2144,10 +2399,12 @@ pub fn reconcile_node_motion_scoped(
             root_incarnation: ComponentIncarnation::unscoped(),
             generation: ScriptGeneration::default(),
             incarnations: &incarnations,
+            identities: None,
         },
     )
 }
 
+#[allow(clippy::too_many_lines)]
 pub(crate) fn reconcile_node_motion_scoped_owned(
     root: &UiNode,
     runtime: &mut MotionRuntime,
@@ -2170,24 +2427,50 @@ pub(crate) fn reconcile_node_motion_scoped_owned(
         validate_source(spec)?;
     }
     let mut candidate = runtime.transaction_snapshot();
+    if context.identities.is_none() {
+        let signature = format!(
+            "{:?}:{}",
+            root.kind_tag(),
+            root.key().map_or("<unkeyed>", crate::NodeKey::as_str)
+        );
+        if candidate
+            .live_scene_signatures
+            .get(context.domain)
+            .is_some_and(|previous| previous != &signature)
+        {
+            candidate.reset_live_scope(context.domain);
+        }
+        candidate
+            .live_scene_signatures
+            .insert(context.domain.to_owned(), signature);
+    }
     let keys = declarations
         .iter()
-        .map(|(path, source, _)| MotionKey::for_node(path, source.property()))
+        .map(|(path, source, _)| {
+            MotionKey::for_node(
+                context
+                    .identities
+                    .and_then(|identities| identities.get(path))
+                    .map_or(path.as_str(), String::as_str),
+                source.property(),
+            )
+        })
         .collect::<BTreeSet<_>>();
-    candidate.retain_node_scope(root_path, &keys);
+    candidate.retain_live_scope(context.domain, &keys);
     let logical_timelines = timelines
         .iter()
-        .map(|(path, _, timeline)| (path.clone(), timeline.name.clone()))
+        .map(|(path, _, timeline)| {
+            (
+                context
+                    .identities
+                    .and_then(|identities| identities.get(path))
+                    .cloned()
+                    .unwrap_or_else(|| path.clone()),
+                timeline.name.clone(),
+            )
+        })
         .collect::<BTreeSet<_>>();
     candidate.retain_timeline_plan_scope(root_path, &logical_timelines);
-    for (path, spec, replay_key) in declarations {
-        candidate.start_with_replay(
-            ComponentInstancePath::root("UiNode", path),
-            spec,
-            replay_key,
-            now,
-        )?;
-    }
     let mut handles = BTreeSet::new();
     for (path, owner, timeline) in timelines {
         let incarnation = context
@@ -2195,17 +2478,39 @@ pub(crate) fn reconcile_node_motion_scoped_owned(
             .get(&owner)
             .copied()
             .unwrap_or(context.root_incarnation);
-        handles.insert(candidate.start_timeline_owned(
-            &TimelineOwner {
-                domain: context.domain.to_owned(),
-                component: owner,
-                incarnation,
-                generation: context.generation,
-                node_path: path,
-            },
-            timeline,
+        handles.insert(
+            candidate.start_timeline_owned(
+                &TimelineOwner {
+                    domain: context.domain.to_owned(),
+                    component: owner,
+                    incarnation,
+                    generation: context.generation,
+                    node_path: context
+                        .identities
+                        .and_then(|identities| identities.get(&path))
+                        .cloned()
+                        .unwrap_or_else(|| path.clone()),
+                    target_root: path,
+                },
+                timeline,
+                now,
+                context.identities,
+            )?,
+        );
+    }
+    for (path, spec, replay_key) in declarations {
+        let identity = context
+            .identities
+            .and_then(|identities| identities.get(&path))
+            .cloned()
+            .unwrap_or(path);
+        candidate.start_with_replay_retained(
+            ComponentInstancePath::root("UiNode", identity),
+            spec,
+            replay_key,
             now,
-        )?);
+            MotionRetention::Live(context.domain.to_owned()),
+        )?;
     }
     candidate.retain_timeline_scope(root_path, &handles);
     let values = candidate.snapshot(now);
@@ -2277,6 +2582,188 @@ pub(crate) fn shared_layout_ids(root: &UiNode) -> Result<BTreeSet<(String, Strin
     let mut seen = BTreeSet::new();
     visit(root, &mut seen)?;
     Ok(seen)
+}
+
+#[allow(clippy::too_many_lines)]
+pub(crate) fn retained_motion_identities(
+    root: &UiNode,
+    retained: &crate::RetainedUiTree,
+    domain: &str,
+) -> Result<BTreeMap<String, String>, MotionError> {
+    fn group_ids(
+        retained: &crate::RetainedUiTree,
+        parent: crate::NodeId,
+        group: &str,
+    ) -> Result<Vec<crate::NodeId>, MotionError> {
+        let node = retained
+            .node(parent)
+            .ok_or_else(|| MotionError::MissingRetainedIdentity(parent.get().to_string()))?;
+        Ok(node
+            .children()
+            .filter(|child| child.group() == group)
+            .map(crate::RetainedChildLink::node)
+            .collect())
+    }
+
+    #[allow(clippy::too_many_lines)]
+    fn visit(
+        node: &UiNode,
+        retained: &crate::RetainedUiTree,
+        id: crate::NodeId,
+        path: &str,
+        domain: &str,
+        identities: &mut BTreeMap<String, String>,
+    ) -> Result<(), MotionError> {
+        let identity = retained_node_path(domain, id);
+        if identities
+            .insert(path.to_owned(), identity.clone())
+            .is_some()
+        {
+            return Err(MotionError::DuplicateScenePath(path.to_owned()));
+        }
+        if let UiNodeKind::RichText { spans, .. } = node.kind() {
+            for span in spans {
+                if let Some(key) = span.key() {
+                    identities.insert(
+                        span_motion_path(path, key),
+                        span_motion_path(&identity, key),
+                    );
+                }
+            }
+        }
+        match node.kind() {
+            UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => {
+                let ids = group_ids(retained, id, "children")?;
+                if ids.len() != children.len() {
+                    return Err(MotionError::MissingRetainedIdentity(path.to_owned()));
+                }
+                for (index, (child, child_id)) in children.iter().zip(ids).enumerate() {
+                    visit(
+                        child,
+                        retained,
+                        child_id,
+                        &child_path(path, index, child),
+                        domain,
+                        identities,
+                    )?;
+                }
+            }
+            UiNodeKind::Overlay {
+                trigger, content, ..
+            } => {
+                let trigger_id = group_ids(retained, id, "trigger")?
+                    .into_iter()
+                    .next()
+                    .ok_or_else(|| {
+                        MotionError::MissingRetainedIdentity(format!("{path}/trigger"))
+                    })?;
+                let content_id = group_ids(retained, id, "content")?
+                    .into_iter()
+                    .next()
+                    .ok_or_else(|| {
+                        MotionError::MissingRetainedIdentity(format!("{path}/content"))
+                    })?;
+                visit(
+                    trigger,
+                    retained,
+                    trigger_id,
+                    &format!("{path}/trigger"),
+                    domain,
+                    identities,
+                )?;
+                visit(
+                    content,
+                    retained,
+                    content_id,
+                    &format!("{path}/content"),
+                    domain,
+                    identities,
+                )?;
+            }
+            UiNodeKind::Layer { content, .. } => {
+                let child_id = group_ids(retained, id, "content")?
+                    .into_iter()
+                    .next()
+                    .ok_or_else(|| {
+                        MotionError::MissingRetainedIdentity(format!("{path}/content"))
+                    })?;
+                visit(
+                    content,
+                    retained,
+                    child_id,
+                    &format!("{path}/content"),
+                    domain,
+                    identities,
+                )?;
+            }
+            UiNodeKind::ErrorBoundary { child, fallback } => {
+                let child_id = group_ids(retained, id, "child")?
+                    .into_iter()
+                    .next()
+                    .ok_or_else(|| {
+                        MotionError::MissingRetainedIdentity(format!("{path}/boundary"))
+                    })?;
+                let fallback_id = group_ids(retained, id, "fallback")?
+                    .into_iter()
+                    .next()
+                    .ok_or_else(|| {
+                        MotionError::MissingRetainedIdentity(format!("{path}/fallback"))
+                    })?;
+                visit(
+                    child,
+                    retained,
+                    child_id,
+                    &format!("{path}/boundary"),
+                    domain,
+                    identities,
+                )?;
+                visit(
+                    fallback,
+                    retained,
+                    fallback_id,
+                    &format!("{path}/fallback"),
+                    domain,
+                    identities,
+                )?;
+            }
+            UiNodeKind::VirtualCollection { spec } => {
+                let ids = group_ids(retained, id, "items")?;
+                if ids.len() != spec.realized.len() {
+                    return Err(MotionError::MissingRetainedIdentity(path.to_owned()));
+                }
+                for ((index, item), item_id) in spec.realized.iter().zip(ids) {
+                    let key = crate::virtual_list_element::collection_item_key(spec, *index)
+                        .ok_or_else(|| MotionError::MissingVirtualItemKey {
+                            path: path.to_owned(),
+                            index: *index,
+                        })?;
+                    visit(
+                        item,
+                        retained,
+                        item_id,
+                        &virtual_item_path(path, key),
+                        domain,
+                        identities,
+                    )?;
+                }
+            }
+            UiNodeKind::Text { .. }
+            | UiNodeKind::RichText { .. }
+            | UiNodeKind::Canvas { .. }
+            | UiNodeKind::Svg { .. }
+            | UiNodeKind::Custom { .. }
+            | UiNodeKind::Image { .. }
+            | UiNodeKind::DirectionalImage { .. } => {}
+        }
+        Ok(())
+    }
+
+    let root_id = retained
+        .root_id()
+        .ok_or_else(|| MotionError::MissingRetainedIdentity(domain.to_owned()))?;
+    let mut identities = BTreeMap::new();
+    visit(root, retained, root_id, domain, domain, &mut identities)?;
+    Ok(identities)
 }
 
 #[must_use]
@@ -2528,7 +3015,7 @@ fn collect_node_motion(
                     })?;
                 collect_node_motion(
                     item,
-                    &format!("{path}/item:{key}"),
+                    &virtual_item_path(path, key),
                     owner,
                     output,
                     timelines,
@@ -2542,8 +3029,8 @@ fn collect_node_motion(
                 }
                 let key = span
                     .key()
-                    .ok_or_else(|| MotionError::MissingKey(format!("{path}/span:{index}")))?;
-                let span_path = format!("{path}/span:{key}");
+                    .ok_or_else(|| MotionError::MissingKey(format!("{path}/span-index:{index}")))?;
+                let span_path = span_motion_path(path, key);
                 if span
                     .motions()
                     .iter()
@@ -2644,7 +3131,9 @@ fn insert_property_owner(
 fn resolve_timeline_target(base: &str, target: &str) -> String {
     match target {
         "." | "" => base.to_owned(),
-        target => format!("{base}/{target}"),
+        target => target.split('/').fold(base.to_owned(), |path, segment| {
+            format!("{path}/{}", encode_path_segment("key", segment))
+        }),
     }
 }
 
@@ -2699,11 +3188,22 @@ fn collect_motion_scene<'a>(
     path: &str,
     scene: &mut BTreeMap<String, MotionSceneTarget<'a>>,
 ) -> Result<(), MotionError> {
-    scene.insert(path.to_owned(), MotionSceneTarget::Node(node));
+    if scene
+        .insert(path.to_owned(), MotionSceneTarget::Node(node))
+        .is_some()
+    {
+        return Err(MotionError::DuplicateScenePath(path.to_owned()));
+    }
     if let UiNodeKind::RichText { spans, .. } = node.kind() {
         for span in spans {
             if let Some(key) = span.key() {
-                scene.insert(format!("{path}/span:{key}"), MotionSceneTarget::Span);
+                let span_path = span_motion_path(path, key);
+                if scene
+                    .insert(span_path.clone(), MotionSceneTarget::Span)
+                    .is_some()
+                {
+                    return Err(MotionError::DuplicateScenePath(span_path));
+                }
             }
         }
     }
@@ -2741,7 +3241,7 @@ fn visit_motion_children<'a>(
                         path: path.to_owned(),
                         index: *index,
                     })?;
-                visit(item, &format!("{path}/item:{key}"))?;
+                visit(item, &virtual_item_path(path, key))?;
             }
         }
         UiNodeKind::Text { .. }
@@ -2799,10 +3299,10 @@ fn validate_node_property(
     }
 }
 
-fn child_path(path: &str, index: usize, child: &UiNode) -> String {
+pub(crate) fn child_path(path: &str, index: usize, child: &UiNode) -> String {
     child.key().map_or_else(
-        || format!("{path}/{index}"),
-        |key| format!("{path}/{}", key.as_str()),
+        || format!("{path}/index:{index}"),
+        |key| format!("{path}/{}", encode_path_segment("key", key.as_str())),
     )
 }
 
@@ -3638,6 +4138,10 @@ pub enum MotionError {
     UnknownTimelineTarget { timeline: String, target: String },
     #[error("virtual collection `{path}` item index {index} has no stable data key")]
     MissingVirtualItemKey { path: String, index: usize },
+    #[error("motion scene is missing retained identity `{0}`")]
+    MissingRetainedIdentity(String),
+    #[error("motion scene path `{0}` is not unique")]
+    DuplicateScenePath(String),
     #[error("exit motion does not support paint snapshots for node kind `{0}`")]
     UnsupportedExitGhost(String),
     #[error("motion property `{property:?}` is unsupported on {node} node `{path}`")]
@@ -4062,6 +4566,7 @@ mod tests {
                     root_incarnation: ComponentIncarnation::unscoped(),
                     generation,
                     incarnations: &incarnations,
+                    identities: None,
                 },
             )
             .unwrap();
@@ -4180,6 +4685,67 @@ mod tests {
     }
 
     #[test]
+    fn none_policy_reprojects_settled_and_outer_autoreverse_terminals() {
+        let now = Instant::now();
+        let mut reversed = MotionTransition::new(MotionProperty::Opacity, 0.0, 1.0, 100);
+        reversed.iterations = Some(2);
+        reversed.autoreverse = true;
+        let mut reprojected = MotionRuntime::new(MotionPreference::Reduced);
+        let key = reprojected
+            .start(
+                ComponentInstancePath::root("UiNode", "root/reprojected"),
+                MotionSource::Transition(reversed),
+                now,
+            )
+            .unwrap();
+        assert!((reprojected.snapshot(now)[&key] - 1.0).abs() < f64::EPSILON);
+        reprojected.set_preference(MotionPreference::None);
+        assert!(reprojected.snapshot(now)[&key].abs() < f64::EPSILON);
+
+        let mut outer = MotionTimeline::new(
+            "outer-reverse",
+            MotionTimelineStep::Track(MotionTrack {
+                target: ".".to_owned(),
+                source: transition(MotionProperty::Opacity, 0.0, 1.0, 100),
+            }),
+        );
+        outer.iterations = Some(2);
+        outer.autoreverse = true;
+        let mut reduced_timeline = MotionRuntime::new(MotionPreference::Reduced);
+        reduced_timeline
+            .start_timeline(
+                ComponentInstancePath::root("UiNode", "root/outer"),
+                outer.clone(),
+                now,
+            )
+            .unwrap();
+        let initial_events = reduced_timeline.drain_timeline_events().len();
+        reduced_timeline.set_preference(MotionPreference::None);
+        assert!(
+            reduced_timeline.snapshot(now)
+                [&MotionKey::for_node("root/outer", MotionProperty::Opacity)]
+                .abs()
+                < f64::EPSILON
+        );
+        assert_eq!(reduced_timeline.drain_timeline_events().len(), 0);
+        assert_eq!(initial_events, 1);
+        let mut static_timeline = MotionRuntime::new(MotionPreference::None);
+        static_timeline
+            .start_timeline(
+                ComponentInstancePath::root("UiNode", "root/outer"),
+                outer,
+                now,
+            )
+            .unwrap();
+        assert!(
+            static_timeline.snapshot(now)
+                [&MotionKey::for_node("root/outer", MotionProperty::Opacity)]
+                .abs()
+                < f64::EPSILON
+        );
+    }
+
+    #[test]
     fn direct_and_timeline_physics_share_one_sampler_and_extremes_fail() {
         let now = Instant::now();
         let scope = ComponentInstancePath::root("UiNode", "root/card");
@@ -4227,6 +4793,72 @@ mod tests {
             direct.start(scope, MotionSource::Spring(extreme), now),
             Err(MotionError::InvalidSpec)
         );
+    }
+
+    #[test]
+    fn unconstrained_inertia_uses_the_closed_form_at_any_animation_age() {
+        let spec = MotionInertia {
+            property: MotionProperty::TranslateX,
+            from: 10.0,
+            velocity: 1_000.0,
+            friction: 0.5,
+            min: None,
+            max: None,
+            bounce: 0.0,
+            snap_points: Vec::new(),
+            intent: MotionIntent::Decorative,
+        };
+        for seconds in [1.0, 5.0, 8.0] {
+            let elapsed = Duration::from_secs_f64(seconds);
+            let (position, velocity) = sample_inertia_at(&spec, elapsed);
+            let decay = (-spec.friction * seconds).exp();
+            let expected_position = spec.from + spec.velocity * (1.0 - decay) / spec.friction;
+            let expected_velocity = spec.velocity * decay;
+            assert!((position - expected_position).abs() < 1.0e-9);
+            assert!((velocity - expected_velocity).abs() < 1.0e-9);
+        }
+    }
+
+    #[test]
+    fn bouncing_inertia_is_bounded_and_matches_timeline_sampling() {
+        let now = Instant::now();
+        let scope = ComponentInstancePath::root("UiNode", "root/inertia");
+        let spec = MotionInertia {
+            property: MotionProperty::TranslateX,
+            from: 50.0,
+            velocity: 500.0,
+            friction: 1.0,
+            min: Some(0.0),
+            max: Some(100.0),
+            bounce: 0.5,
+            snap_points: vec![0.0, 100.0],
+            intent: MotionIntent::Feedback,
+        };
+        let mut direct = MotionRuntime::new(MotionPreference::Normal);
+        let key = direct
+            .start(scope.clone(), MotionSource::Inertia(spec.clone()), now)
+            .unwrap();
+        let mut timeline = MotionRuntime::new(MotionPreference::Normal);
+        timeline
+            .start_timeline(
+                scope,
+                MotionTimeline::new(
+                    "inertia",
+                    MotionTimelineStep::Track(MotionTrack {
+                        target: ".".to_owned(),
+                        source: MotionSource::Inertia(spec),
+                    }),
+                ),
+                now,
+            )
+            .unwrap();
+        for elapsed in [100, 500, 1_000, 5_000] {
+            let at = now + Duration::from_millis(elapsed);
+            let direct_value = direct.snapshot(at)[&key];
+            let timeline_value = timeline.snapshot(at)[&key];
+            assert!((0.0..=100.0).contains(&direct_value));
+            assert!((direct_value - timeline_value).abs() < 1.0e-9);
+        }
     }
 
     #[test]
@@ -4368,6 +5000,116 @@ mod tests {
         )
         .unwrap();
         assert_eq!(runtime.resource_usage().active, 1);
+    }
+
+    #[test]
+    fn encoded_paths_do_not_alias_legal_slash_keys_and_root_remounts_restart() {
+        let now = Instant::now();
+        let nested = UiNode::column(vec![
+            UiNode::text("flat").with_key("a/b").with_motion(transition(
+                MotionProperty::Opacity,
+                0.0,
+                1.0,
+                100,
+            )),
+            UiNode::column(vec![
+                UiNode::text("nested").with_key("b").with_motion(transition(
+                    MotionProperty::Opacity,
+                    0.0,
+                    1.0,
+                    100,
+                )),
+            ])
+            .with_key("a"),
+            UiNode::text("numeric")
+                .with_key("0")
+                .with_motion(transition(MotionProperty::Opacity, 0.0, 1.0, 100)),
+            UiNode::text("reserved-looking")
+                .with_key("item:alpha")
+                .with_motion(transition(MotionProperty::Opacity, 0.0, 1.0, 100)),
+        ]);
+        let mut runtime = MotionRuntime::new(MotionPreference::Normal);
+        let values = reconcile_node_motion(&nested, &mut runtime, now).unwrap();
+        assert_eq!(values.len(), 4);
+
+        let timeline = || {
+            MotionTimeline::new(
+                "intro",
+                MotionTimelineStep::Track(MotionTrack {
+                    target: ".".to_owned(),
+                    source: transition(MotionProperty::Opacity, 0.0, 1.0, 1_000),
+                }),
+            )
+        };
+        let first = UiNode::text("first")
+            .with_key("one")
+            .with_timeline(timeline());
+        reconcile_node_motion(&first, &mut runtime, now).unwrap();
+        let old = runtime.inspect_timelines(now)[0].handle.clone();
+        let second = UiNode::text("second")
+            .with_key("two")
+            .with_timeline(timeline());
+        reconcile_node_motion(&second, &mut runtime, now + Duration::from_millis(500)).unwrap();
+        let current = runtime.inspect_timelines(now)[0].handle.clone();
+        assert_ne!(old, current);
+        assert!(matches!(
+            runtime.cancel_timeline(&old),
+            Err(MotionError::StaleTimelineHandle(_))
+        ));
+        assert!(
+            runtime
+                .snapshot(now + Duration::from_millis(500))
+                .values()
+                .next()
+                .copied()
+                .unwrap()
+                .abs()
+                < f64::EPSILON
+        );
+    }
+
+    #[test]
+    fn retained_timeline_targets_resolve_to_the_target_node_identity() {
+        let now = Instant::now();
+        let root = UiNode::column(vec![UiNode::text("Title").with_key("title")])
+            .with_key("panel")
+            .with_timeline(MotionTimeline::new(
+                "intro",
+                MotionTimelineStep::Track(MotionTrack {
+                    target: "title".to_owned(),
+                    source: transition(MotionProperty::Opacity, 0.0, 1.0, 100),
+                }),
+            ));
+        let mut retained = crate::RetainedUiTree::new();
+        retained.reconcile(root.clone()).unwrap();
+        let title = retained
+            .nodes()
+            .find(|node| node.key() == Some("title"))
+            .unwrap()
+            .id();
+        let identities = retained_motion_identities(&root, &retained, "root").unwrap();
+        let component = ComponentInstancePath::root("View", "retained-target");
+        let incarnations = BTreeMap::new();
+        let mut runtime = MotionRuntime::new(MotionPreference::Normal);
+        let values = reconcile_node_motion_scoped_owned(
+            &root,
+            &mut runtime,
+            now,
+            "root",
+            MotionReconcileContext {
+                domain: "root",
+                root_component: &component,
+                root_incarnation: ComponentIncarnation::unscoped(),
+                generation: ScriptGeneration::initial(),
+                incarnations: &incarnations,
+                identities: Some(&identities),
+            },
+        )
+        .unwrap();
+        assert!(values.contains_key(&MotionKey::for_node(
+            &retained_node_path("root", title),
+            MotionProperty::Opacity,
+        )));
     }
 
     #[test]

@@ -454,51 +454,19 @@ impl PointerPayloadContext {
                             .node
                             .map(|node| self.geometry.canvas_transform(node))
                             .unwrap_or_default();
-                        let (x, y) = inverse_canvas_motion_point(
-                            geometry.layout.width,
-                            geometry.layout.height,
+                        scene.hit_test_presented(
                             x,
                             y,
+                            geometry.layout.width,
+                            geometry.layout.height,
                             transform,
-                        )?;
-                        scene.hit_test(x, y)
+                        )
                     })
                     .map_or(UiValue::Null, |key| UiValue::String(key.to_owned())),
             );
         }
         UiValue::Map(payload)
     }
-}
-
-fn inverse_canvas_motion_point(
-    width: f64,
-    height: f64,
-    point_x: f64,
-    point_y: f64,
-    transform: crate::geometry::CanvasMotionTransform,
-) -> Option<(f64, f64)> {
-    let center_x = width / 2.0;
-    let center_y = height / 2.0;
-    let rotate = -transform.rotate.to_radians();
-    let dx = point_x - center_x;
-    let dy = point_y - center_y;
-    let rotated_x = dx * rotate.cos() - dy * rotate.sin();
-    let rotated_y = dx * rotate.sin() + dy * rotate.cos();
-    let skew_x = transform.skew_x.to_radians().tan();
-    let skew_y = transform.skew_y.to_radians().tan();
-    let affine = (
-        transform.scale_x,
-        skew_x * transform.scale_y,
-        skew_y * transform.scale_x,
-        transform.scale_y,
-    );
-    let determinant = affine.0.mul_add(affine.3, -affine.1 * affine.2);
-    if !determinant.is_finite() || determinant.abs() <= 1.0e-9 {
-        return None;
-    }
-    let local_x = (affine.3 * rotated_x - affine.1 * rotated_y) / determinant;
-    let local_y = (-affine.2 * rotated_x + affine.0 * rotated_y) / determinant;
-    Some((local_x + center_x, local_y + center_y))
 }
 
 fn value_point(value: &UiValue) -> Option<(f64, f64)> {
@@ -1788,7 +1756,11 @@ impl GpuiNodeRenderer {
         } else {
             environment.interaction.clone()
         };
-        let mut animation = node_motion(environment.motions, path);
+        let motion_path = retained_id.map_or_else(
+            || path.to_owned(),
+            |node| crate::motion::retained_node_path(path, node),
+        );
+        let mut animation = node_motion(environment.motions, &motion_path);
         if let Some(retained_id) = retained_id {
             for binding in node.progress_motions() {
                 if let Some(value) = environment
@@ -2020,7 +1992,10 @@ impl GpuiNodeRenderer {
                     spans,
                     environment.colors,
                     environment.motions,
-                    path,
+                    &retained_id.map_or_else(
+                        || path.to_owned(),
+                        |node| crate::motion::retained_node_path(path, node),
+                    ),
                 ))
                 .into_any_element(),
             UiNodeKind::Canvas { scene } => {
@@ -2459,7 +2434,7 @@ fn styled_text(
             fade_out: span.key().and_then(|key| {
                 motions
                     .get(&MotionKey::for_node(
-                        &format!("{path}/span:{key}"),
+                        &crate::motion::span_motion_path(path, key),
                         MotionProperty::Opacity,
                     ))
                     .map(|opacity| f64_to_f32(1.0 - opacity.clamp(0.0, 1.0)))
@@ -2616,7 +2591,7 @@ fn paint_canvas_path(
     });
     if !is_morph && stroke.is_some() && motion.path_progress.is_some_and(|progress| progress < 1.0)
     {
-        let paths = trimmed_canvas_paths(
+        let paths = crate::canvas::trimmed_canvas_paths(
             crate::canvas::flatten_path(segments, *transform),
             motion.path_progress.unwrap_or(1.0).clamp(0.0, 1.0),
         );
@@ -2730,46 +2705,6 @@ fn canvas_fill(fill: &crate::CanvasFill, colors: &impl ColorResolver) -> Option<
     }
 }
 
-fn trimmed_canvas_paths(paths: Vec<Vec<(f64, f64)>>, progress: f64) -> Vec<Vec<(f64, f64)>> {
-    let total = paths
-        .iter()
-        .flat_map(|path| path.windows(2))
-        .map(|pair| (pair[1].0 - pair[0].0).hypot(pair[1].1 - pair[0].1))
-        .sum::<f64>();
-    let mut remaining = total * progress.clamp(0.0, 1.0);
-    let mut output = Vec::new();
-    for path in paths {
-        let Some(first) = path.first().copied() else {
-            continue;
-        };
-        let mut trimmed = vec![first];
-        for pair in path.windows(2) {
-            if remaining <= 0.0 {
-                break;
-            }
-            let length = (pair[1].0 - pair[0].0).hypot(pair[1].1 - pair[0].1);
-            if length <= remaining {
-                trimmed.push(pair[1]);
-                remaining -= length;
-            } else if length > f64::EPSILON {
-                let ratio = remaining / length;
-                trimmed.push((
-                    pair[0].0 + (pair[1].0 - pair[0].0) * ratio,
-                    pair[0].1 + (pair[1].1 - pair[0].1) * ratio,
-                ));
-                remaining = 0.0;
-            }
-        }
-        if trimmed.len() > 1 {
-            output.push(trimmed);
-        }
-        if remaining <= 0.0 {
-            break;
-        }
-    }
-    output
-}
-
 fn canvas_path_point(
     bounds: Bounds<Pixels>,
     transform: crate::CanvasTransform,
@@ -2796,20 +2731,16 @@ fn node_canvas_point(
     y: f64,
     motion: NodeMotionValues,
 ) -> Point<Pixels> {
-    let center_x = f64::from(bounds.size.width) / 2.0;
-    let center_y = f64::from(bounds.size.height) / 2.0;
-    let rotate = motion.rotate.unwrap_or(0.0).to_radians();
-    let skew_x = motion.skew_x.unwrap_or(0.0).to_radians().tan();
-    let skew_y = motion.skew_y.unwrap_or(0.0).to_radians().tan();
-    let scaled_x = (x - center_x) * motion.scale_x.unwrap_or(1.0);
-    let scaled_y = (y - center_y) * motion.scale_y.unwrap_or(1.0);
-    let local_x = scaled_x + skew_x * scaled_y;
-    let local_y = scaled_y + skew_y * scaled_x;
-    let rotated_x = local_x * rotate.cos() - local_y * rotate.sin() + center_x;
-    let rotated_y = local_x * rotate.sin() + local_y * rotate.cos() + center_y;
+    let (transformed_x, transformed_y) = crate::canvas::canvas_motion_point(
+        f64::from(bounds.size.width),
+        f64::from(bounds.size.height),
+        x,
+        y,
+        motion.canvas_transform(),
+    );
     point(
-        bounds.origin.x + px(f64_to_f32(rotated_x)),
-        bounds.origin.y + px(f64_to_f32(rotated_y)),
+        bounds.origin.x + px(f64_to_f32(transformed_x)),
+        bounds.origin.y + px(f64_to_f32(transformed_y)),
     )
 }
 
@@ -3175,6 +3106,7 @@ impl NodeMotionValues {
             scale_y: self.scale_y.unwrap_or(1.0),
             skew_x: self.skew_x.unwrap_or(0.0),
             skew_y: self.skew_y.unwrap_or(0.0),
+            path_progress: self.path_progress,
         }
     }
 }
@@ -5141,6 +5073,7 @@ mod tests {
             scale_y: 0.7,
             skew_x: 12.0,
             skew_y: -8.0,
+            path_progress: None,
         };
         geometry.update_canvas_transform(node, transform);
         let motion = NodeMotionValues {

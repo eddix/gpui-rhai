@@ -882,9 +882,15 @@ bound to the current view, component incarnation, script generation, and live
 timeline instance; never cache one across remount or reload. `play_motion`
 resumes/idempotently keeps the current position, while `restart_motion` is the
 only rewind operation. Completion and cancellation callbacks run after the
-sampled frame commits.
+sampled frame commits. Compatible progress migrates to a newly
+generation-bound handle during reload; the previous handle becomes stale.
 
-Canvas rotate/scale/skew uses one affine transform for paint and hit testing.
+Mounted motion follows retained NodeId rather than concatenated user keys, so
+reorder preserves identity while a true remount restarts it. Keys containing
+slashes, numeric text, or `item:` are safe.
+
+Canvas morph/trim/stroke/clip and rotate/scale/skew share one presented geometry
+for paint and hit testing.
 Do not combine it with a command-level axis-aligned path clip: Runtime API 2
 rejects that combination because GPUI cannot preserve the same transformed
 clip semantics.

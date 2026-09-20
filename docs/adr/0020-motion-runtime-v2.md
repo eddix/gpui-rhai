@@ -55,9 +55,10 @@ native signal, transition, spring, keyframes, inertia, progress binding, or one
 resolved timeline. Rust validates the complete target/ownership plan before it
 commits and samples it using the Host `RuntimeClock`; Rhai never executes during
 frame sampling, GPUI layout, prepaint or paint. Retargeting begins from the
-currently sampled value and velocity. Presentation domain, component
-incarnation, script generation, stable node path/property, and allocated motion
-instance jointly determine authority and lifetime.
+currently sampled value and velocity. Presentation domain, retained NodeId,
+component incarnation, script generation, property, and allocated motion
+instance jointly determine authority and lifetime. Human-readable timeline
+targets and fallback headless paths are planning inputs, not mounted identity.
 
 The old public `AnimationSpec`, `transition`, `spring`, `loop_transition` and
 `node.animate` surface is removed without aliases. Official source, examples,
@@ -77,10 +78,12 @@ Rust and exposed as typed progress, not continuous Rhai events. Pointer velocity
 feeds bounded inertia/decay with clamp, bounce and snap points. Native GPUI
 scrolling remains authoritative for ScrollArea.
 
-Only explicit timelines support `on_complete` and `on_cancel`. Delivery occurs
-after frame commit through the normal generation-bound foreground callback
-path. Retargeting is not cancellation; stop, unmount and invalid generation
-are. No per-frame or per-property Rhai callback exists.
+Only explicit timelines support `on_complete` and `on_cancel`. Sampling freezes
+one domain event batch for that frame; only that batch is delivered after the
+frame commits through the generation-bound foreground callback path. Events
+created by later input wait for a later rendered frame. Retargeting is not
+cancellation; stop, unmount and invalid generation are. No per-frame or
+per-property Rhai callback exists.
 
 ### Lifecycle and retained identity
 
@@ -117,10 +120,11 @@ pretending unavailable GPUI filters are ordinary Style fields.
 
 Canvas and inline compatible paths share measurement, trim/dash, point/tangent
 following and compatible-topology morphing. Incompatible morph topology is a
-validation error. One sampled affine transform drives Canvas painting and
-inverse hit testing. Affine motion on commands with axis-aligned path clips is
-rejected because GPUI 0.2.2 cannot represent the equivalent transformed clip.
-Path lookup tables and interpolation stay in Rust.
+validation error. Morph, trim, stroke, clip and the sampled affine transform
+produce one presented Canvas geometry used by painting and hit testing. Affine
+motion on commands with axis-aligned path clips is rejected because GPUI 0.2.2
+cannot represent the equivalent transformed clip. Path lookup tables and
+interpolation stay in Rust.
 
 ### Theme, accessibility and quality policy
 

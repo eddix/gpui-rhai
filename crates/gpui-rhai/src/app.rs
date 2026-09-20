@@ -3199,7 +3199,7 @@ impl Render for ScriptHostView {
         }
         self.prepare_host_render(window, cx);
         let motion_root = format!("window:{}/view:{}/root", self.window_id, self.view_id);
-        let motion_active = self.sample_motion_frame(&motion_root);
+        let (motion_active, committed_motion_events) = self.sample_motion_frame(&motion_root);
         let dispatcher = script_node_dispatcher(cx);
         let appearance = system_appearance(window.appearance());
         let snapshot = self.render_snapshot(appearance);
@@ -3290,16 +3290,16 @@ impl Render for ScriptHostView {
             .on_action(cx.listener(Self::copy_selected_text));
         #[cfg(feature = "dev-reload")]
         let root = root.on_action(cx.listener(Self::toggle_inspector));
-        let committed_domain = motion_root.clone();
+        let has_committed_motion_events = !committed_motion_events.is_empty();
         cx.on_next_frame(window, move |view, _, cx| {
             view.lifecycle
                 .runtime()
                 .borrow()
                 .geometry_for(Some(&view.view_id))
                 .finish_frame();
-            view.deliver_committed_motion_events(&committed_domain, cx);
+            view.deliver_committed_motion_events(committed_motion_events, cx);
         });
-        if motion_active {
+        if motion_active || has_committed_motion_events {
             window.request_animation_frame();
         }
         crate::renderer::pointer_capture_router_element(
@@ -3314,34 +3314,33 @@ impl Render for ScriptHostView {
 }
 
 impl ScriptHostView {
-    fn sample_motion_frame(&mut self, domain: &str) -> bool {
+    fn sample_motion_frame(&mut self, domain: &str) -> (bool, Vec<crate::MotionTimelineEvent>) {
         let runtime = self.lifecycle.runtime();
         let mut runtime = runtime.borrow_mut();
         let now = runtime.clock.now();
         let clock_advanced = self.last_motion_sample != Some(now);
         self.last_motion_sample = Some(now);
-        let frame = runtime.motions.tick_scope(now, domain);
-        runtime.motion_values = runtime.motions.snapshot(now);
-        let ghosts = std::mem::take(&mut runtime.motion_ghosts);
-        let mut retained = Vec::with_capacity(ghosts.len());
-        for ghost in ghosts {
-            if ghost.domain != domain || runtime.motions.is_node_scope_active(&ghost.path) {
-                retained.push(ghost);
-            } else {
-                runtime.motions.cancel_node_scope(&ghost.path);
-            }
-        }
-        runtime.motion_ghosts = retained;
-        clock_advanced && frame.needs_frame
+        let (frame, events) = sample_motion_domain(&mut runtime, domain, now);
+        (clock_advanced && frame.needs_frame, events)
     }
 
-    fn deliver_committed_motion_events(&mut self, domain: &str, cx: &mut Context<Self>) {
-        let events = self
-            .lifecycle
-            .runtime()
-            .borrow_mut()
-            .motions
-            .drain_timeline_events_for_domain(domain);
+    fn deliver_committed_motion_events(
+        &mut self,
+        events: Vec<crate::MotionTimelineEvent>,
+        cx: &mut Context<Self>,
+    ) {
+        match self.state.get() {
+            ScriptViewState::Suspended => {
+                self.lifecycle
+                    .runtime()
+                    .borrow_mut()
+                    .motions
+                    .prepend_timeline_events(events);
+                return;
+            }
+            ScriptViewState::Disposed => return,
+            ScriptViewState::Active => {}
+        }
         let mut changed = false;
         let mut first_error = None;
         for event in events {
@@ -4930,6 +4929,27 @@ impl ScriptHostView {
     }
 }
 
+fn sample_motion_domain(
+    runtime: &mut UiRuntimeState,
+    domain: &str,
+    now: Instant,
+) -> (crate::MotionFrame, Vec<crate::MotionTimelineEvent>) {
+    let frame = runtime.motions.tick_scope(now, domain);
+    runtime.motion_values = runtime.motions.snapshot(now);
+    let ghosts = std::mem::take(&mut runtime.motion_ghosts);
+    let mut retained = Vec::with_capacity(ghosts.len());
+    for ghost in ghosts {
+        if ghost.domain != domain || runtime.motions.is_node_scope_active(&ghost.path) {
+            retained.push(ghost);
+        } else {
+            runtime.motions.cancel_node_scope(&ghost.path);
+        }
+    }
+    runtime.motion_ghosts = retained;
+    let events = runtime.motions.drain_timeline_events_for_domain(domain);
+    (frame, events)
+}
+
 #[cfg(feature = "dev-reload")]
 fn changed_module_ids(root: &Path, changed_paths: &BTreeSet<PathBuf>) -> Vec<ModuleId> {
     changed_paths
@@ -5076,6 +5096,60 @@ impl From<ScriptViewError> for ScriptFailure {
 mod tests {
     use super::*;
     use crate::WindowCommand;
+
+    #[test]
+    fn motion_frame_freezes_only_events_present_at_its_sample_boundary() {
+        let now = Instant::now();
+        let domain = "window:w/view:v/root";
+        let source = |name: &str| {
+            crate::MotionTimeline::new(
+                name,
+                crate::MotionTimelineStep::Track(crate::MotionTrack {
+                    target: ".".to_owned(),
+                    source: crate::MotionSource::Transition(crate::MotionTransition::new(
+                        crate::MotionProperty::Opacity,
+                        0.0,
+                        1.0,
+                        1,
+                    )),
+                }),
+            )
+        };
+        let mut runtime = UiRuntimeState::new();
+        runtime
+            .motions
+            .start_timeline(
+                ComponentInstancePath::root("UiNode", format!("{domain}/first")),
+                source("first"),
+                now,
+            )
+            .unwrap();
+        let (_, committed) = sample_motion_domain(
+            &mut runtime,
+            domain,
+            now + std::time::Duration::from_millis(1),
+        );
+        assert_eq!(committed.len(), 1);
+
+        let later = runtime
+            .motions
+            .start_timeline(
+                ComponentInstancePath::root("UiNode", format!("{domain}/later")),
+                source("later"),
+                now,
+            )
+            .unwrap();
+        runtime.motions.cancel_timeline(&later).unwrap();
+        assert_eq!(committed.len(), 1, "the committed batch is immutable");
+        assert_eq!(
+            runtime
+                .motions
+                .drain_timeline_events_for_domain(domain)
+                .len(),
+            1,
+            "events created after sampling remain for the next rendered frame"
+        );
+    }
 
     fn write_manifest(directory: &Path) {
         fs::write(

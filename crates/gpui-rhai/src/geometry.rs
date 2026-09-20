@@ -132,6 +132,7 @@ pub(crate) struct CanvasMotionTransform {
     pub scale_y: f64,
     pub skew_x: f64,
     pub skew_y: f64,
+    pub path_progress: Option<f64>,
 }
 
 impl Default for CanvasMotionTransform {
@@ -142,6 +143,7 @@ impl Default for CanvasMotionTransform {
             scale_y: 1.0,
             skew_x: 0.0,
             skew_y: 0.0,
+            path_progress: None,
         }
     }
 }

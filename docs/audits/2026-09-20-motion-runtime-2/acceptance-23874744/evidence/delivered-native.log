@@ -1,0 +1,21 @@
+Native probe project: /var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T//gpui-rhai-motion-native.lgez5t
+   Compiling gpui-rhai-motion-review-native v0.0.0 (/var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T/gpui-rhai-motion-native.lgez5t)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.50s
+     Running tests/policy.rs (tests/native-keyboard/target/debug/deps/policy-0c5be9fa41d0ce27)
+
+running 1 test
+path_progress=1 painted_y=80: hit_at_y80=false missed_at_y80=true; original_y20_still_hits=true
+
+thread 'morphed_path_hit_follows_presented_endpoint' (39713821) panicked at tests/policy.rs:103:5:
+the painted endpoint must be interactive, but hit testing still uses the original path
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test morphed_path_hit_follows_presented_endpoint ... FAILED
+
+failures:
+
+failures:
+    morphed_path_hit_follows_presented_endpoint
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.89s
+
+error: test failed, to rerun pass `--test policy`
