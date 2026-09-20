@@ -32,9 +32,11 @@ Supported properties are `opacity`, `translate_x`, `translate_y`, `rotate`,
 `scale_x`, `scale_y`, `skew_x`, `skew_y`, `width`, `height`, `clip_height`, and
 `path_progress`. Ordinary GPUI nodes support opacity, translation, and
 dimensions. Canvas/path primitives additionally support 2D rotation, scale,
-skew, trim, follow, and compatible-topology morphing. GPUI 0.2.2 has no public
-arbitrary-subtree scale/rotate transform, so the generic node API does not
-claim otherwise.
+skew, trim, follow, and compatible-topology morphing. A Canvas command with an
+axis-aligned clip rectangle rejects rotate/scale/skew motion because GPUI 0.2.2
+does not expose an equivalent transformed clip; the runtime does not paint and
+hit-test two different shapes. GPUI 0.2.2 has no public arbitrary-subtree
+scale/rotate transform, so the generic node API does not claim otherwise.
 
 Use `.motion_replay_key(value)` when a semantically new value should replay an
 unchanged declaration. Ordinary rerenders and compatible hot reload preserve
@@ -63,11 +65,16 @@ column(children).with_key("panel").timeline(intro)
 ```
 
 Inside a callback, `ctx.motion_handle("intro")` returns a scoped typed handle.
-Use `play_motion`, `pause_motion`, `resume_motion`, `seek_motion`,
-`restart_motion`, and `cancel_motion`. Only timelines have `on_complete` and
-`on_cancel`; callbacks run in the next foreground transaction, after the final
-frame can commit. Missing, stale, cross-view, and duplicate handles fail
-explicitly.
+The handle is bound to the runtime, presentation domain, component incarnation,
+script generation, and one allocated timeline instance. A compatible rerender
+keeps it; removal/remount, replacement, or generation change makes the old
+handle stale. Use `play_motion`, `pause_motion`, `resume_motion`, `seek_motion`,
+`restart_motion`, and `cancel_motion`. `play_motion` is idempotent while playing
+and resumes a paused position; only `restart_motion` rewinds. Pause and seek
+immediately produce a complete snapshot for the requested position. Terminal
+callbacks run after the sampled frame commits, in independent transactions so
+one failure cannot discard its neighbors. Missing, stale, cross-view, and
+duplicate handles fail explicitly.
 
 ## Native triggers and progress
 
@@ -90,7 +97,10 @@ still expose `movement`, `velocity`, and timestamps for seeding inertia.
 `.enter_motion(source)` runs on a real keyed mount or changed replay key.
 `.exit_motion(source)` creates an immutable paint ghost after the real node has
 left layout, hit testing, focus, accessibility, callbacks, and resource
-ownership.
+ownership. Text, RichText, Canvas, SVG, images, and boxes/fragments composed
+entirely from those kinds are supported. Custom primitives, overlays, layers,
+virtual collections, and error boundaries are rejected during reconciliation
+instead of silently losing content.
 
 Layout motion is opt-in:
 
@@ -136,7 +146,18 @@ current sample.
 
 Hosts choose `MotionPreference::{Normal, Reduced, None}` and
 `MotionQuality::{High, Medium, Low}`. Scripts classify intent as `decorative`,
-`feedback`, or `essential` and cannot relax stricter Host policy.
+`feedback`, or `essential` and cannot relax stricter Host policy. `None`
+immediately presents the deterministic terminal/static projection across
+property, timeline, layout, and native trigger paths; later play/restart calls
+cannot re-enable it. View suspension freezes the same Host clock position even
+when another window continues sampling the shared runtime.
+
+Direct property sources and timeline tracks use the same transition,
+keyframe, spring, and inertia samplers. Physical retargets inherit sampled
+velocity; completed snapshots retain the actual terminal sample. The runtime
+validates timeline targets and one-owner-per-property plans atomically before
+committing them. Layout/trigger paths reserve capacity in the same per-runtime
+active-work budget, and play/restart recheck the combined total.
 
 ## Rust Hosts and the effect seam
 
@@ -152,3 +173,7 @@ The optional source pack lives under `motion/*`:
 ```bash
 cargo run --release -p gpui-rhai --example motion_gallery
 ```
+
+The Gallery is an executable acceptance surface, not a prepare-only catalog:
+it includes timeline play/pause/seek/restart controls, controlled Tabs, keyed
+list reorder, and shared-layout selection switching.

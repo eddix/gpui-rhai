@@ -448,12 +448,57 @@ impl PointerPayloadContext {
                 "canvas_key".to_owned(),
                 self.canvas
                     .as_ref()
-                    .and_then(|scene| scene.hit_test(x, y))
+                    .and_then(|scene| {
+                        let geometry = geometry?;
+                        let transform = self
+                            .node
+                            .map(|node| self.geometry.canvas_transform(node))
+                            .unwrap_or_default();
+                        let (x, y) = inverse_canvas_motion_point(
+                            geometry.layout.width,
+                            geometry.layout.height,
+                            x,
+                            y,
+                            transform,
+                        )?;
+                        scene.hit_test(x, y)
+                    })
                     .map_or(UiValue::Null, |key| UiValue::String(key.to_owned())),
             );
         }
         UiValue::Map(payload)
     }
+}
+
+fn inverse_canvas_motion_point(
+    width: f64,
+    height: f64,
+    point_x: f64,
+    point_y: f64,
+    transform: crate::geometry::CanvasMotionTransform,
+) -> Option<(f64, f64)> {
+    let center_x = width / 2.0;
+    let center_y = height / 2.0;
+    let rotate = -transform.rotate.to_radians();
+    let dx = point_x - center_x;
+    let dy = point_y - center_y;
+    let rotated_x = dx * rotate.cos() - dy * rotate.sin();
+    let rotated_y = dx * rotate.sin() + dy * rotate.cos();
+    let skew_x = transform.skew_x.to_radians().tan();
+    let skew_y = transform.skew_y.to_radians().tan();
+    let affine = (
+        transform.scale_x,
+        skew_x * transform.scale_y,
+        skew_y * transform.scale_x,
+        transform.scale_y,
+    );
+    let determinant = affine.0.mul_add(affine.3, -affine.1 * affine.2);
+    if !determinant.is_finite() || determinant.abs() <= 1.0e-9 {
+        return None;
+    }
+    let local_x = (affine.3 * rotated_x - affine.1 * rotated_y) / determinant;
+    let local_y = (-affine.2 * rotated_x + affine.0 * rotated_y) / determinant;
+    Some((local_x + center_x, local_y + center_y))
 }
 
 fn value_point(value: &UiValue) -> Option<(f64, f64)> {
@@ -1753,6 +1798,11 @@ impl GpuiNodeRenderer {
                     animation.set(binding.property(), value);
                 }
             }
+            if matches!(node.kind(), UiNodeKind::Canvas { .. }) {
+                environment
+                    .geometry
+                    .update_canvas_transform(retained_id, animation.canvas_transform());
+            }
         }
         let signals = node_signals(environment.signals, node);
         let mut resolved_style = node.style().resolve(&local_interaction);
@@ -1818,6 +1868,7 @@ impl GpuiNodeRenderer {
                     .and_then(|node| environment.focus_handles.get(&node))
                     .cloned(),
                 now: environment.now,
+                motion_preference: environment.motion_preference,
             }
             .into_any_element(),
             None => element,
@@ -2456,17 +2507,18 @@ fn paint_canvas_scene(
                 ..
             } => {
                 if let Some(color) = colors.resolve(color) {
-                    let origin = node_canvas_point(bounds, *x, *y, motion);
-                    window.paint_quad(gpui::fill(
-                        Bounds::new(
-                            origin,
-                            gpui::size(
-                                px(f64_to_f32(*width * motion.scale_x.unwrap_or(1.0).abs())),
-                                px(f64_to_f32(*height * motion.scale_y.unwrap_or(1.0).abs())),
-                            ),
-                        ),
+                    paint_canvas_polygon(
+                        [
+                            (*x, *y),
+                            (x + width, *y),
+                            (x + width, y + height),
+                            (*x, y + height),
+                        ],
+                        bounds,
+                        motion,
                         rgba(color.as_rgba_hex()),
-                    ));
+                        window,
+                    );
                 }
             }
             crate::CanvasCommand::Circle {
@@ -2477,23 +2529,14 @@ fn paint_canvas_scene(
                 ..
             } => {
                 if let Some(color) = colors.resolve(color) {
-                    let center = node_canvas_point(bounds, *center_x, *center_y, motion);
-                    let scale = f64::midpoint(
-                        motion.scale_x.unwrap_or(1.0).abs(),
-                        motion.scale_y.unwrap_or(1.0).abs(),
-                    );
-                    let radius = px(f64_to_f32(*radius * scale));
-                    window.paint_quad(gpui::quad(
-                        Bounds::new(
-                            point(center.x - radius, center.y - radius),
-                            gpui::size(radius * 2.0, radius * 2.0),
-                        ),
-                        radius,
-                        rgba(color.as_rgba_hex()),
-                        px(0.0),
-                        gpui::transparent_black(),
-                        gpui::BorderStyle::default(),
-                    ));
+                    let points = (0..48).map(|index| {
+                        let angle = std::f64::consts::TAU * f64::from(index) / 48.0;
+                        (
+                            center_x + radius * angle.cos(),
+                            center_y + radius * angle.sin(),
+                        )
+                    });
+                    paint_canvas_polygon(points, bounds, motion, rgba(color.as_rgba_hex()), window);
                 }
             }
             crate::CanvasCommand::Line {
@@ -2645,6 +2688,28 @@ fn paint_canvas_path(
         window.with_content_mask(Some(mask), |window| window.paint_path(path, paint));
     } else {
         window.paint_path(path, paint);
+    }
+}
+
+fn paint_canvas_polygon(
+    points: impl IntoIterator<Item = (f64, f64)>,
+    bounds: Bounds<Pixels>,
+    motion: NodeMotionValues,
+    paint: impl Into<Background>,
+    window: &mut Window,
+) {
+    let mut points = points.into_iter();
+    let Some((x, y)) = points.next() else {
+        return;
+    };
+    let mut path = gpui::PathBuilder::fill();
+    path.move_to(node_canvas_point(bounds, x, y, motion));
+    for (x, y) in points {
+        path.line_to(node_canvas_point(bounds, x, y, motion));
+    }
+    path.close();
+    if let Ok(path) = path.build() {
+        window.paint_path(path, paint.into());
     }
 }
 
@@ -3021,6 +3086,7 @@ fn native_virtual_collection_element<C: ColorResolver>(
         retained_link_subtrees(tree, retained_roots.values().copied())
     });
     let runtime = NodeSlotRuntime {
+        now: environment.now,
         colors: OwnedColorResolver::capture(environment.colors),
         primitives: environment.primitives.clone(),
         assets: environment.assets.cloned().unwrap_or_default(),
@@ -3100,6 +3166,16 @@ impl NodeMotionValues {
             MotionProperty::PathProgress => &mut self.path_progress,
         };
         *target = Some(value);
+    }
+
+    fn canvas_transform(self) -> crate::geometry::CanvasMotionTransform {
+        crate::geometry::CanvasMotionTransform {
+            rotate: self.rotate.unwrap_or(0.0),
+            scale_x: self.scale_x.unwrap_or(1.0),
+            scale_y: self.scale_y.unwrap_or(1.0),
+            skew_x: self.skew_x.unwrap_or(0.0),
+            skew_y: self.skew_y.unwrap_or(0.0),
+        }
     }
 }
 
@@ -3577,6 +3653,7 @@ struct GeometryTrackedElement {
     scroll_handles: Vec<ScrollHandle>,
     focus_handle: Option<FocusHandle>,
     now: Instant,
+    motion_preference: crate::MotionPreference,
 }
 
 #[derive(Clone, Debug)]
@@ -3644,9 +3721,12 @@ impl Element for GeometryTrackedElement {
                         | crate::MotionProgressDriver::Press
                         | crate::MotionProgressDriver::Focus
                 ) {
-                    let sample = self
-                        .registry
-                        .sample_motion_trigger(self.node, binding, self.now);
+                    let sample = self.registry.sample_motion_trigger(
+                        self.node,
+                        binding,
+                        self.motion_preference,
+                        self.now,
+                    );
                     let changed = self.registry.update_motion_progress(
                         self.node,
                         binding.property(),
@@ -3717,12 +3797,16 @@ impl Element for GeometryTrackedElement {
                     self.registry.sample_layout_motion(
                         self.node,
                         layout,
-                        spec.shared
-                            .as_ref()
-                            .map(|(group, id)| (group.as_str(), id.as_str())),
-                        spec.duration,
-                        spec.easing,
-                        spec.now,
+                        crate::geometry::LayoutMotionRequest {
+                            shared: spec
+                                .shared
+                                .as_ref()
+                                .map(|(group, id)| (group.as_str(), id.as_str())),
+                            duration: spec.duration,
+                            easing: spec.easing,
+                            preference: self.motion_preference,
+                            now: spec.now,
+                        },
                     )
                 },
             );
@@ -5024,5 +5108,63 @@ mod tests {
             scroll_handles_for_node(Some(&nested), Some(ids["target"]), &handles).len(),
             2
         );
+    }
+
+    #[test]
+    fn canvas_motion_uses_one_affine_transform_for_paint_and_hit_testing() {
+        let scene = crate::CanvasScene::new(vec![crate::CanvasCommand::Rect {
+            key: "target".to_owned(),
+            x: 20.0,
+            y: 25.0,
+            width: 20.0,
+            height: 20.0,
+            fill: ColorValue::Token("accent".to_owned()),
+        }])
+        .unwrap();
+        let mut tree = crate::RetainedUiTree::new();
+        tree.reconcile(UiNode::canvas(scene.clone()).with_key("canvas"))
+            .unwrap();
+        let node = tree.root_id().unwrap();
+        let geometry = crate::GeometryRegistry::new();
+        let bounds = crate::GeometryBounds::new(100.0, 50.0, 120.0, 90.0).unwrap();
+        geometry.update(
+            node,
+            crate::ElementGeometry {
+                layout: bounds,
+                visual: bounds,
+                clip: None,
+            },
+        );
+        let transform = crate::geometry::CanvasMotionTransform {
+            rotate: 31.0,
+            scale_x: 1.4,
+            scale_y: 0.7,
+            skew_x: 12.0,
+            skew_y: -8.0,
+        };
+        geometry.update_canvas_transform(node, transform);
+        let motion = NodeMotionValues {
+            rotate: Some(transform.rotate),
+            scale_x: Some(transform.scale_x),
+            scale_y: Some(transform.scale_y),
+            skew_x: Some(transform.skew_x),
+            skew_y: Some(transform.skew_y),
+            ..NodeMotionValues::default()
+        };
+        let paint_bounds = Bounds::new(point(px(100.0), px(50.0)), gpui::size(px(120.0), px(90.0)));
+        let painted = node_canvas_point(paint_bounds, 30.0, 35.0, motion);
+        let context = PointerPayloadContext::retained(node, geometry, Some(scene), Vec::new());
+        let payload = context.enrich(pointer_payload(
+            painted,
+            Some(MouseButton::Left),
+            vec![MouseButton::Left],
+            Modifiers::default(),
+            1,
+            false,
+        ));
+        let UiValue::Map(payload) = payload else {
+            unreachable!()
+        };
+        assert_eq!(payload["canvas_key"], UiValue::String("target".to_owned()));
     }
 }

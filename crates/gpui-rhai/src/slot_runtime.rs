@@ -10,6 +10,7 @@ use crate::{
 
 #[derive(Clone)]
 pub(crate) struct NodeSlotRuntime {
+    pub now: std::time::Instant,
     pub colors: OwnedColorResolver,
     pub primitives: PrimitiveRegistry,
     pub assets: AssetRegistry,
@@ -37,7 +38,7 @@ pub(crate) struct NodeSlotRuntime {
 impl NodeSlotRuntime {
     pub(crate) fn render(&self, node: &UiNode, slot: &str) -> AnyElement {
         let resources = WindowRenderResources {
-            now: std::time::Instant::now(),
+            now: self.now,
             motion_preference: self.motion_preference,
             motion_quality: self.motion_quality,
             assets: &self.assets,

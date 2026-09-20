@@ -50,11 +50,14 @@ reduced-motion, budget, automation or cleanup guarantees.
 
 ### Property ownership and clocks
 
-Each animatable property has exactly one typed `PropertySource`: literal,
-signal, transition, spring, keyframes, inertia or derived signal. Rust samples
-sources using the Host `RuntimeClock`; Rhai never executes during frame
-sampling, GPUI layout, prepaint or paint. Retargeting begins from the currently
-sampled value. Stable node/property identity owns progress and velocity.
+Each animatable property has one active owner above its literal style baseline:
+native signal, transition, spring, keyframes, inertia, progress binding, or one
+resolved timeline. Rust validates the complete target/ownership plan before it
+commits and samples it using the Host `RuntimeClock`; Rhai never executes during
+frame sampling, GPUI layout, prepaint or paint. Retargeting begins from the
+currently sampled value and velocity. Presentation domain, component
+incarnation, script generation, stable node path/property, and allocated motion
+instance jointly determine authority and lifetime.
 
 The old public `AnimationSpec`, `transition`, `spring`, `loop_transition` and
 `node.animate` surface is removed without aliases. Official source, examples,
@@ -106,15 +109,18 @@ splitter, Table-column and other direct-manipulation resize stays immediate;
 discrete reorder/expand/selection changes may animate. Hit testing and visual
 bounds follow the sampled transform.
 
-RichText spans receive stable keys and typed opacity/offset/color/effect
-sources. Grapheme clusters are never split, while accessibility remains one
-continuous string. GPUI lacks a general text blur filter, so bounded first-party
-text effects use a typed effect primitive rather than pretending blur is an
-ordinary Style field.
+RichText spans receive stable keys and typed opacity sources. Grapheme clusters
+are never split, while accessibility remains one continuous string. Offset,
+color, blur, and richer per-span effects are not generic 0.1.3 properties;
+bounded first-party text effects use a typed effect primitive rather than
+pretending unavailable GPUI filters are ordinary Style fields.
 
 Canvas and inline compatible paths share measurement, trim/dash, point/tangent
 following and compatible-topology morphing. Incompatible morph topology is a
-validation error. Path lookup tables and interpolation stay in Rust.
+validation error. One sampled affine transform drives Canvas painting and
+inverse hit testing. Affine motion on commands with axis-aligned path clips is
+rejected because GPUI 0.2.2 cannot represent the equivalent transformed clip.
+Path lookup tables and interpolation stay in Rust.
 
 ### Theme, accessibility and quality policy
 
@@ -123,12 +129,12 @@ tokens. Component motion references roles; literals and application stylesheet
 overrides remain possible. Theme hot switching retargets from the current
 sample rather than restarting.
 
-System reduced-motion is the default upper bound. Host policy is scoped
-`system`, `normal`, `reduced` or `none`; scripts classify declarations as
-`decorative`, `feedback` or `essential` and cannot override a stricter Host or
-system policy. Missing fallbacks settle decorative motion, replace spatial
-motion with a short crossfade and retain a recognizable static frame for
-looping progress.
+The Host resolves system/user preference into the scoped runtime policy
+`normal`, `reduced`, or `none`; scripts classify declarations as `decorative`,
+`feedback`, or `essential` and cannot override that upper bound. The core
+runtime uses deterministic static projections for reduced/none sources and a
+recognizable midpoint for indefinite progress. A Host or typed effect may
+provide a richer crossfade fallback, but no declaration can bypass `none`.
 
 Host-selected high/medium/low quality tiers are explicit declaration inputs.
 Exceeding active-animation, timeline-step, keyframe, ghost, shared-snapshot,

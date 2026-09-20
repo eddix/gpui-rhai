@@ -1434,6 +1434,10 @@ impl UiNode {
     }
 
     pub(crate) fn motion_ghost(&self) -> Option<Self> {
+        self.motion_ghost_node(true)
+    }
+
+    fn motion_ghost_node(&self, root: bool) -> Option<Self> {
         let mut ghost = self.clone();
         ghost.handlers.clear();
         ghost.handler_payloads.clear();
@@ -1446,12 +1450,33 @@ impl UiNode {
         ghost.exit_motions.clear();
         ghost.progress_motions.clear();
         ghost.timelines.clear();
+        ghost.attributes.clear();
         ghost
             .attributes
             .insert("motion_ghost".to_owned(), UiValue::Bool(true));
+        ghost.style.base.hit_test = None;
+        ghost.style.base.cursor = None;
+        if root {
+            ghost.style.base.margin = crate::LayoutEdgeLengths::default();
+            ghost.style.base.position = None;
+            ghost.style.base.top = None;
+            ghost.style.base.right = None;
+            ghost.style.base.bottom = None;
+            ghost.style.base.left = None;
+            ghost.style.base.translate_x = None;
+            ghost.style.base.translate_y = None;
+            ghost.style.base.align_self = None;
+            ghost.style.base.flex_grow = None;
+            ghost.style.base.flex_grow_weight = None;
+            ghost.style.base.flex_shrink = None;
+            ghost.style.base.flex_basis = None;
+        }
         match &mut ghost.kind {
             UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => {
-                *children = children.iter().filter_map(UiNode::motion_ghost).collect();
+                *children = children
+                    .iter()
+                    .map(|child| child.motion_ghost_node(false))
+                    .collect::<Option<Vec<_>>>()?;
             }
             UiNodeKind::Text { .. }
             | UiNodeKind::RichText { .. }

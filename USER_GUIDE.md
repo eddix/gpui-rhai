@@ -877,6 +877,18 @@ callbacks are actually needed. Enter and exit require stable keys; exit ghosts
 are paint-only and own no callbacks or resources. Layout motion is opt-in so
 direct manipulation never lags behind the pointer.
 
+Resolve timeline handles inside the declaring component callback. They are
+bound to the current view, component incarnation, script generation, and live
+timeline instance; never cache one across remount or reload. `play_motion`
+resumes/idempotently keeps the current position, while `restart_motion` is the
+only rewind operation. Completion and cancellation callbacks run after the
+sampled frame commits.
+
+Canvas rotate/scale/skew uses one affine transform for paint and hit testing.
+Do not combine it with a command-level axis-aligned path clip: Runtime API 2
+rejects that combination because GPUI cannot preserve the same transformed
+clip semantics.
+
 Theme motion values come from `ctx.motion_duration`, `motion_easing`,
 `motion_spring`, `motion_distance`, and `motion_stagger`. Hosts set the upper
 bound with `MotionPreference` and the effect tier with `MotionQuality`; scripts

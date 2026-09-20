@@ -207,10 +207,10 @@ impl ScriptLifecycle {
                 _ => engine.render_with_context_staged(&self.compiled, context)?,
             };
             let mut retained = self.retained.clone();
-            self.reconcile_exit_ghosts(&root)?;
-            retained.reconcile(root.clone())?;
+            let motion_reconcile_report = retained.reconcile(root.clone())?;
             self.validate_resource_budgets(engine, &retained, &root)?;
             self.reconcile_motion(&root)?;
+            self.reconcile_exit_ghosts(&motion_reconcile_report)?;
             self.reconcile_effects(
                 engine,
                 &self.compiled,
@@ -300,10 +300,10 @@ impl ScriptLifecycle {
                     return Err(LifecycleError::MissingComponentSubtree(path));
                 }
             }
-            self.reconcile_exit_ghosts(&root)?;
-            retained.reconcile(root.clone())?;
+            let motion_reconcile_report = retained.reconcile(root.clone())?;
             self.validate_resource_budgets(engine, &retained, &root)?;
             self.reconcile_motion(&root)?;
+            self.reconcile_exit_ghosts(&motion_reconcile_report)?;
             self.reconcile_effects(
                 engine,
                 &self.compiled,
@@ -435,10 +435,10 @@ impl ScriptLifecycle {
             if !changed {
                 return Ok(false);
             }
-            self.reconcile_exit_ghosts(&root)?;
-            retained.reconcile(root.clone())?;
+            let motion_reconcile_report = retained.reconcile(root.clone())?;
             self.validate_resource_budgets(engine, &retained, &root)?;
             self.reconcile_motion(&root)?;
+            self.reconcile_exit_ghosts(&motion_reconcile_report)?;
             self.reconcile_effects(
                 engine,
                 &self.compiled,
@@ -546,6 +546,9 @@ impl ScriptLifecycle {
                 .map_err(|_| LifecycleError::Borrowed)?;
             let now = runtime.clock.now();
             runtime.timers.pause_component_scope(&self.root_path, now);
+            runtime
+                .motions
+                .suspend_node_scope(&self.motion_root_path(), now);
             runtime.motion_values = runtime.motions.snapshot(now);
             runtime
                 .pointer_capture_for(self.presentation_scope())
@@ -609,7 +612,10 @@ impl ScriptLifecycle {
                 runtime.timers.resume_component_scope(&self.root_path, now);
                 runtime
                     .motions
-                    .delay_node_scope(&self.motion_root_path(), elapsed);
+                    .resume_node_scope(&self.motion_root_path(), now);
+                runtime
+                    .geometry_for(self.presentation_scope())
+                    .delay_motion(elapsed);
                 runtime.motion_values = runtime.motions.snapshot(now);
             }
             engine.call_optional_lifecycle_with_value(
@@ -856,10 +862,10 @@ impl ScriptLifecycle {
                 self.context_for(ExecutionPhase::Render, candidate.generation()),
             )?;
             let mut retained = self.retained.clone();
-            self.reconcile_exit_ghosts(&root)?;
-            retained.reconcile(root.clone())?;
+            let motion_reconcile_report = retained.reconcile(root.clone())?;
             self.validate_resource_budgets(engine, &retained, &root)?;
             self.reconcile_motion(&root)?;
+            self.reconcile_exit_ghosts(&motion_reconcile_report)?;
             self.reconcile_effects(
                 engine,
                 &candidate,
@@ -947,9 +953,6 @@ impl ScriptLifecycle {
                     .runtime
                     .try_borrow_mut()
                     .map_err(|_| LifecycleError::Borrowed)?;
-                runtime
-                    .motions
-                    .delay_node_scope(&self.motion_root_path(), elapsed);
                 runtime.motion_values = runtime.motions.snapshot(now);
             }
             let root = engine.render_with_context_staged(
@@ -957,10 +960,10 @@ impl ScriptLifecycle {
                 self.context_for(ExecutionPhase::Render, candidate.generation()),
             )?;
             let mut retained = self.retained.clone();
-            self.reconcile_exit_ghosts(&root)?;
-            retained.reconcile(root.clone())?;
+            let motion_reconcile_report = retained.reconcile(root.clone())?;
             self.validate_resource_budgets(engine, &retained, &root)?;
             self.reconcile_motion(&root)?;
+            self.reconcile_exit_ghosts(&motion_reconcile_report)?;
             self.reconcile_effects(
                 engine,
                 &candidate,
@@ -1042,58 +1045,77 @@ impl ScriptLifecycle {
             .try_borrow_mut()
             .map_err(|_| LifecycleError::Borrowed)?;
         let now = runtime.clock.now();
-        let values = crate::motion::reconcile_node_motion_scoped(
+        let geometry_slots = crate::motion::node_motion_resource_usage(root).geometry_slots;
+        crate::RuntimeBudgets::check(
+            "active_motions",
+            geometry_slots,
+            runtime.budgets.active_motions,
+        )?;
+        let active_limit = runtime.budgets.active_motions;
+        runtime.motions.set_active_limit(active_limit);
+        let incarnations = runtime.component_incarnations_snapshot();
+        let root_incarnation = runtime
+            .component_incarnation(&self.root_path)
+            .unwrap_or_else(crate::ComponentIncarnation::unscoped);
+        let domain = self.motion_root_path();
+        let shared_layout_ids = crate::motion::shared_layout_ids(root)?;
+        runtime
+            .geometry_for(self.presentation_scope())
+            .retain_shared_layout_ids(&shared_layout_ids);
+        runtime
+            .motions
+            .set_active_reservation(&domain, geometry_slots);
+        let values = crate::motion::reconcile_node_motion_scoped_owned(
             root,
             &mut runtime.motions,
             now,
-            &self.motion_root_path(),
+            &domain,
+            crate::motion::MotionReconcileContext {
+                domain: &domain,
+                root_component: &self.root_path,
+                root_incarnation,
+                generation: self.compiled.generation(),
+                incarnations: &incarnations,
+            },
         )?;
-        let active = runtime.motions.resource_usage().active;
+        let usage = runtime.motions.resource_usage();
+        let active = usage.active.saturating_add(usage.geometry_slots);
         crate::RuntimeBudgets::check("active_motions", active, runtime.budgets.active_motions)?;
         runtime.motion_values = values;
         Ok(())
     }
 
-    fn reconcile_exit_ghosts(&self, candidate: &UiNode) -> Result<(), LifecycleError> {
+    fn reconcile_exit_ghosts(&self, report: &crate::ReconcileReport) -> Result<(), LifecycleError> {
         let Some(previous) = self.root.as_deref() else {
             return Ok(());
         };
-        let mut candidate_keys = BTreeSet::new();
-        collect_node_keys(candidate, &mut candidate_keys);
-        let mut exits = Vec::new();
-        collect_removed_exit_nodes(previous, &candidate_keys, &mut exits);
+        let Some(root_id) = self.retained.root_id() else {
+            return Ok(());
+        };
+        let removed = report.unmounted.iter().copied().collect::<BTreeSet<_>>();
+        let mut exits = Vec::<(crate::NodeId, &UiNode)>::new();
+        collect_removed_exit_nodes(previous, root_id, &self.retained, &removed, &mut exits);
         if exits.is_empty() {
             return Ok(());
-        }
-        let mut retained_by_key = BTreeMap::<String, Option<crate::NodeId>>::new();
-        for retained in self.retained.nodes() {
-            let Some(key) = retained.key() else {
-                continue;
-            };
-            retained_by_key
-                .entry(key.to_owned())
-                .and_modify(|node| *node = None)
-                .or_insert(Some(retained.id()));
         }
         let mut runtime = self
             .runtime
             .try_borrow_mut()
             .map_err(|_| LifecycleError::Borrowed)?;
         let now = runtime.clock.now();
-        for node in exits {
-            let Some(key) = node.key().map(crate::NodeKey::as_str) else {
+        let domain = self.motion_root_path();
+        let geometry_registry = runtime.geometry_for(self.presentation_scope());
+        for (retained, node) in exits {
+            let Some(geometry) = geometry_registry.get(retained) else {
                 continue;
             };
-            let Some(Some(retained)) = retained_by_key.get(key) else {
-                continue;
-            };
-            let Some(geometry) = runtime.geometry.get(*retained) else {
-                continue;
-            };
-            let Some(ghost) = node.motion_ghost() else {
-                continue;
-            };
-            let path = format!("ghost:{}/{}", self.motion_root_path(), key);
+            let ghost = node.motion_ghost().ok_or_else(|| {
+                LifecycleError::Motion(MotionError::UnsupportedExitGhost(format!(
+                    "{:?}",
+                    node.kind_tag()
+                )))
+            })?;
+            let path = format!("{domain}/ghost:{}", retained.get());
             if runtime.motion_ghosts.iter().any(|ghost| ghost.path == path) {
                 continue;
             }
@@ -1106,10 +1128,11 @@ impl ScriptLifecycle {
             }
             if runtime.motions.is_node_scope_active(&path) {
                 runtime.motion_ghosts.push(crate::motion::MotionGhost {
-                    id: key.to_owned(),
+                    id: retained.get().to_string(),
                     node: ghost,
                     bounds: geometry.visual,
                     path,
+                    domain: domain.clone(),
                 });
             }
         }
@@ -1227,6 +1250,11 @@ impl ScriptLifecycle {
             "shared_motion_snapshots",
             motion.shared_snapshots,
             budgets.shared_motion_snapshots,
+        )?;
+        crate::RuntimeBudgets::check(
+            "active_motions",
+            motion.geometry_slots,
+            budgets.active_motions,
         )?;
         Ok(())
     }
@@ -1575,63 +1603,6 @@ impl ScriptLifecycle {
     }
 }
 
-fn collect_node_keys(node: &UiNode, keys: &mut BTreeSet<String>) {
-    if let Some(key) = node.key() {
-        keys.insert(key.as_str().to_owned());
-    }
-    visit_node_children(node, |child| collect_node_keys(child, keys));
-}
-
-fn collect_removed_exit_nodes<'a>(
-    node: &'a UiNode,
-    candidate_keys: &BTreeSet<String>,
-    output: &mut Vec<&'a UiNode>,
-) {
-    if let Some(key) = node.key()
-        && !candidate_keys.contains(key.as_str())
-        && !node.exit_motions().is_empty()
-    {
-        output.push(node);
-        return;
-    }
-    visit_node_children(node, |child| {
-        collect_removed_exit_nodes(child, candidate_keys, output);
-    });
-}
-
-fn visit_node_children<'a>(node: &'a UiNode, mut visit: impl FnMut(&'a UiNode)) {
-    match node.kind() {
-        crate::UiNodeKind::Box { children } | crate::UiNodeKind::Fragment { children } => {
-            for child in children {
-                visit(child);
-            }
-        }
-        crate::UiNodeKind::Overlay {
-            trigger, content, ..
-        } => {
-            visit(trigger);
-            visit(content);
-        }
-        crate::UiNodeKind::Layer { content, .. } => visit(content),
-        crate::UiNodeKind::ErrorBoundary { child, fallback } => {
-            visit(child);
-            visit(fallback);
-        }
-        crate::UiNodeKind::VirtualCollection { spec } => {
-            for child in spec.realized.values() {
-                visit(child);
-            }
-        }
-        crate::UiNodeKind::Text { .. }
-        | crate::UiNodeKind::RichText { .. }
-        | crate::UiNodeKind::Canvas { .. }
-        | crate::UiNodeKind::Svg { .. }
-        | crate::UiNodeKind::Custom { .. }
-        | crate::UiNodeKind::Image { .. }
-        | crate::UiNodeKind::DirectionalImage { .. } => {}
-    }
-}
-
 #[derive(Debug, Error)]
 pub enum LifecycleError {
     #[error("cannot {operation} while lifecycle is {from:?}")]
@@ -1686,6 +1657,32 @@ fn topmost_paths(paths: &BTreeSet<ComponentInstancePath>) -> Vec<ComponentInstan
         })
         .cloned()
         .collect()
+}
+
+fn collect_removed_exit_nodes<'a>(
+    node: &'a UiNode,
+    id: crate::NodeId,
+    retained: &crate::RetainedUiTree,
+    removed: &BTreeSet<crate::NodeId>,
+    output: &mut Vec<(crate::NodeId, &'a UiNode)>,
+) {
+    if removed.contains(&id) && !node.exit_motions().is_empty() {
+        output.push((id, node));
+        return;
+    }
+    let Some(retained_node) = retained.node(id) else {
+        return;
+    };
+    for (group, children) in node.retained_child_groups() {
+        let ids = retained_node
+            .children()
+            .filter(|child| child.group() == group)
+            .map(crate::RetainedChildLink::node)
+            .collect::<Vec<_>>();
+        for (child, id) in children.into_iter().zip(ids) {
+            collect_removed_exit_nodes(child, id, retained, removed, output);
+        }
+    }
 }
 
 fn replaceable_component_paths(
@@ -1864,6 +1861,176 @@ mod tests {
     }
 
     #[test]
+    fn geometry_motion_reserves_capacity_from_timeline_control() {
+        let mut engine = RuntimeEngine::new();
+        let compiled = engine
+            .compile(
+                r#"
+                    fn view(ctx) {
+                        text("card").with_key("card")
+                            .layout_motion(100, "linear")
+                            .timeline(motion_timeline("intro", motion_track(".",
+                                motion_transition("opacity", 0.0, 1.0,
+                                    #{ duration_ms: 100 })), #{ autoplay: false }))
+                    }
+                "#,
+            )
+            .unwrap();
+        let mut state = UiRuntimeState::new();
+        state.budgets.active_motions = 1;
+        let runtime = Rc::new(RefCell::new(state));
+        let mut lifecycle = ScriptLifecycle::new(
+            compiled,
+            Rc::clone(&runtime),
+            ComponentInstancePath::root("View", "budget"),
+            None,
+            BTreeMap::new(),
+            &ComponentStateSchema::default(),
+        )
+        .unwrap();
+        lifecycle.start(&mut engine).unwrap();
+        let context = lifecycle.context(ExecutionPhase::Event);
+        let handle = context.motion_handle("intro").unwrap();
+        assert!(matches!(
+            context.play_motion(&handle),
+            Err(crate::UiContextError::Motion(
+                crate::MotionError::ActiveBudget {
+                    actual: 2,
+                    limit: 1,
+                }
+            ))
+        ));
+    }
+
+    #[test]
+    fn virtual_item_motion_uses_the_stable_data_key_path() {
+        let mut engine = RuntimeEngine::new();
+        let compiled = engine
+            .compile(
+                r#"
+                    fn render_row(ctx, props) {
+                        text("A").with_key(props.key)
+                            .motion(motion_transition("opacity", 0.0, 1.0,
+                                #{ duration_ms: 1000 }))
+                    }
+                    fn view(ctx) {
+                        virtual_collection(#{
+                            key: "list",
+                            data: [#{ key: "alpha" }],
+                            height: 100,
+                            estimated_height: 20
+                        }, Fn("render_row"))
+                    }
+                "#,
+            )
+            .unwrap();
+        let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+        let mut lifecycle = ScriptLifecycle::new(
+            compiled,
+            Rc::clone(&runtime),
+            ComponentInstancePath::root("View", "virtual"),
+            None,
+            BTreeMap::new(),
+            &ComponentStateSchema::default(),
+        )
+        .unwrap();
+        lifecycle.start(&mut engine).unwrap();
+
+        let values = runtime.borrow().motions.snapshot(Instant::now());
+        assert!(values.contains_key(&crate::MotionKey::for_node(
+            "root/item:alpha",
+            crate::MotionProperty::Opacity,
+        )));
+        assert!(!values.contains_key(&crate::MotionKey::for_node(
+            "root/item:0",
+            crate::MotionProperty::Opacity,
+        )));
+    }
+
+    #[test]
+    fn exit_ghost_uses_the_views_committed_geometry_domain() {
+        let mut engine = RuntimeEngine::new();
+        let compiled = engine
+            .compile(
+                r#"
+                    fn view(ctx) {
+                        if ctx.get_state("visible") {
+                            column([
+                                text("gone").with_key("panel")
+                                    .exit_motion(motion_transition("opacity", 1.0, 0.0,
+                                        #{ duration_ms: 500 }))
+                            ])
+                        } else {
+                            column([])
+                        }
+                    }
+                "#,
+            )
+            .unwrap();
+        let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+        let root = ComponentInstancePath::root("View", "v");
+        let schema = ComponentStateSchema::new(BTreeMap::from([(
+            "visible".to_owned(),
+            StateField::new(ValueSchema::Bool, UiValue::Bool(true)),
+        )]))
+        .unwrap();
+        let mut lifecycle = ScriptLifecycle::new(
+            compiled,
+            Rc::clone(&runtime),
+            root.clone(),
+            Some("w".to_owned()),
+            BTreeMap::new(),
+            &schema,
+        )
+        .unwrap()
+        .with_view_id("v");
+        lifecycle.start(&mut engine).unwrap();
+        let panel = lifecycle
+            .retained()
+            .nodes()
+            .find(|node| node.key() == Some("panel"))
+            .unwrap()
+            .id();
+        let bounds = crate::GeometryBounds::new(0.0, 0.0, 100.0, 20.0).unwrap();
+        runtime.borrow_mut().presentation_geometry("v").update(
+            panel,
+            crate::ElementGeometry {
+                layout: bounds,
+                visual: bounds,
+                clip: None,
+            },
+        );
+        runtime
+            .borrow_mut()
+            .set_component_state_from_host(&root, "visible", UiValue::Bool(false))
+            .unwrap();
+        lifecycle.render_dirty(&mut engine).unwrap();
+
+        let ghost_path = {
+            let runtime = runtime.borrow();
+            assert_eq!(runtime.motion_ghosts.len(), 1);
+            assert_eq!(runtime.motion_ghosts[0].domain, "window:w/view:v/root");
+            assert_eq!(runtime.motion_ghosts[0].bounds, bounds);
+            assert!(
+                runtime.motion_ghosts[0]
+                    .path
+                    .starts_with("window:w/view:v/root/ghost:")
+            );
+            assert!(runtime.motions.resource_usage().active > 0);
+            runtime.motion_ghosts[0].path.clone()
+        };
+        let now = runtime.borrow().clock.now();
+        let frame = runtime
+            .borrow_mut()
+            .motions
+            .tick_scope(now + Duration::from_millis(500), "window:w/view:v/root");
+        assert!(frame.completed.contains(&crate::MotionKey::for_node(
+            &ghost_path,
+            crate::MotionProperty::Opacity,
+        )));
+    }
+
+    #[test]
     fn suspend_resume_preserves_state_and_freezes_motion_time() {
         let mut engine = RuntimeEngine::new();
         let compiled = engine
@@ -1924,6 +2091,20 @@ mod tests {
         assert!(!lifecycle.suspend(&mut engine).unwrap());
 
         manual.advance(Duration::from_millis(1_000));
+        {
+            let mut runtime = runtime.borrow_mut();
+            let now = runtime.clock.now();
+            let frame = runtime.motions.tick(now);
+            assert!(
+                !frame.needs_frame,
+                "a suspended scope must not keep another window's frame loop alive"
+            );
+            runtime.motion_values = frame.values;
+        }
+        assert!(
+            (before - *runtime.borrow().motion_values.values().next().unwrap()).abs() < 0.001,
+            "a shared runtime tick must not advance a suspended scope"
+        );
         assert!(lifecycle.resume(&mut engine).unwrap());
         assert_eq!(lifecycle.state(), LifecycleState::Running);
         assert_eq!(

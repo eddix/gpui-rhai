@@ -2300,6 +2300,7 @@ impl PreparedScriptView {
                 scroll_handles: BTreeMap::new(),
                 scroll_anchors: BTreeMap::new(),
                 text_selection: crate::renderer::TextSelectionRegistry::default(),
+                last_motion_sample: None,
                 state: entity_view_state,
                 activity_wake: entity_activity_wake,
                 _runtime_tasks: runtime_tasks,
@@ -2613,6 +2614,7 @@ fn open_secondary_window(
                 scroll_handles: BTreeMap::new(),
                 scroll_anchors: BTreeMap::new(),
                 text_selection: crate::renderer::TextSelectionRegistry::default(),
+                last_motion_sample: None,
                 state: entity_view_state,
                 activity_wake: entity_activity_wake,
                 _runtime_tasks: runtime_tasks,
@@ -2891,6 +2893,7 @@ struct ScriptHostView {
     scroll_handles: BTreeMap<crate::NodeId, ScrollHandle>,
     scroll_anchors: BTreeMap<crate::NodeId, ScrollAnchor>,
     text_selection: crate::renderer::TextSelectionRegistry,
+    last_motion_sample: Option<Instant>,
     state: Rc<Cell<ScriptViewState>>,
     activity_wake: crate::async_runtime::AsyncWake,
     _runtime_tasks: HostRuntimeTasks,
@@ -3195,11 +3198,12 @@ impl Render for ScriptHostView {
             return div().into_any_element();
         }
         self.prepare_host_render(window, cx);
+        let motion_root = format!("window:{}/view:{}/root", self.window_id, self.view_id);
+        let motion_active = self.sample_motion_frame(&motion_root);
         let dispatcher = script_node_dispatcher(cx);
         let appearance = system_appearance(window.appearance());
         let snapshot = self.render_snapshot(appearance);
         self.publish_theme_after_render(&snapshot.theme, cx);
-        let motion_root = format!("window:{}/view:{}/root", self.window_id, self.view_id);
         let render_resources = crate::renderer::WindowRenderResources {
             now: snapshot.now,
             motion_preference: snapshot.motion_preference,
@@ -3286,6 +3290,18 @@ impl Render for ScriptHostView {
             .on_action(cx.listener(Self::copy_selected_text));
         #[cfg(feature = "dev-reload")]
         let root = root.on_action(cx.listener(Self::toggle_inspector));
+        let committed_domain = motion_root.clone();
+        cx.on_next_frame(window, move |view, _, cx| {
+            view.lifecycle
+                .runtime()
+                .borrow()
+                .geometry_for(Some(&view.view_id))
+                .finish_frame();
+            view.deliver_committed_motion_events(&committed_domain, cx);
+        });
+        if motion_active {
+            window.request_animation_frame();
+        }
         crate::renderer::pointer_capture_router_element(
             root.into_any_element(),
             self.lifecycle.retained(),
@@ -3298,6 +3314,65 @@ impl Render for ScriptHostView {
 }
 
 impl ScriptHostView {
+    fn sample_motion_frame(&mut self, domain: &str) -> bool {
+        let runtime = self.lifecycle.runtime();
+        let mut runtime = runtime.borrow_mut();
+        let now = runtime.clock.now();
+        let clock_advanced = self.last_motion_sample != Some(now);
+        self.last_motion_sample = Some(now);
+        let frame = runtime.motions.tick_scope(now, domain);
+        runtime.motion_values = runtime.motions.snapshot(now);
+        let ghosts = std::mem::take(&mut runtime.motion_ghosts);
+        let mut retained = Vec::with_capacity(ghosts.len());
+        for ghost in ghosts {
+            if ghost.domain != domain || runtime.motions.is_node_scope_active(&ghost.path) {
+                retained.push(ghost);
+            } else {
+                runtime.motions.cancel_node_scope(&ghost.path);
+            }
+        }
+        runtime.motion_ghosts = retained;
+        clock_advanced && frame.needs_frame
+    }
+
+    fn deliver_committed_motion_events(&mut self, domain: &str, cx: &mut Context<Self>) {
+        let events = self
+            .lifecycle
+            .runtime()
+            .borrow_mut()
+            .motions
+            .drain_timeline_events_for_domain(domain);
+        let mut changed = false;
+        let mut first_error = None;
+        for event in events {
+            if event.callback.is_none() {
+                continue;
+            }
+            let result = self.run_script_transaction(|view| {
+                let callback_changed = view.invoke_motion_timeline_callback(event)?;
+                let mut work_changed = view.invoke_pending_effects()?;
+                work_changed |= view
+                    .lifecycle
+                    .render_dirty(&mut view.engine)
+                    .map_err(|error| view.lifecycle_failure(&error, None))?;
+                Ok(callback_changed || work_changed)
+            });
+            match result {
+                Ok(event_changed) => changed |= event_changed,
+                Err(error) => {
+                    first_error.get_or_insert(error);
+                }
+            }
+        }
+        if let Some(error) = first_error {
+            self.set_failure(error);
+            changed = true;
+        }
+        if changed {
+            cx.notify();
+        }
+    }
+
     fn lifecycle_failure(
         &self,
         error: &crate::LifecycleError,
@@ -3534,6 +3609,7 @@ impl ScriptHostView {
             .as_ref()
             .and_then(|locale| locale.direction(Some(&self.window_id), Some(root)).ok())
             .unwrap_or(TextDirection::LeftToRight);
+        let motion_domain = format!("window:{}/view:{}/root", self.window_id, self.view_id);
         ScriptRenderSnapshot {
             now: runtime.clock.now(),
             motion_preference: runtime.motions.preference(),
@@ -3541,7 +3617,12 @@ impl ScriptHostView {
             assets: runtime.assets.clone(),
             theme,
             motions: runtime.motion_values.clone(),
-            motion_ghosts: runtime.motion_ghosts.clone(),
+            motion_ghosts: runtime
+                .motion_ghosts
+                .iter()
+                .filter(|ghost| ghost.domain == motion_domain)
+                .cloned()
+                .collect(),
             signals: runtime.signals.clone(),
             geometry: runtime.geometry_for(Some(&self.view_id)),
             pointer_capture: runtime.pointer_capture_for(Some(&self.view_id)),
@@ -3800,39 +3881,49 @@ impl ScriptHostView {
         }
     }
 
-    fn invoke_motion_timeline_callbacks(
+    fn invoke_motion_timeline_callback(
         &mut self,
-        events: Vec<crate::MotionTimelineEvent>,
+        event: crate::MotionTimelineEvent,
     ) -> Result<bool, ScriptFailure> {
-        let mut invoked = false;
-        for event in events {
-            let Some(callback) = event.callback else {
-                continue;
-            };
-            let component = callback.component().cloned();
-            let payload = UiValue::Map(BTreeMap::from([
-                (
-                    "name".to_owned(),
-                    UiValue::String(event.handle.name.clone()),
-                ),
-                (
-                    "kind".to_owned(),
-                    UiValue::String(
-                        match event.kind {
-                            crate::MotionTimelineEventKind::Complete => "complete",
-                            crate::MotionTimelineEventKind::Cancel => "cancel",
-                        }
-                        .to_owned(),
-                    ),
-                ),
-            ]));
-            let _ = self
-                .lifecycle
-                .invoke_callback(&self.engine, &callback, payload)
-                .map_err(|error| self.lifecycle_failure(&error, component.as_ref()))?;
-            invoked = true;
+        let Some(callback) = event.callback else {
+            return Ok(false);
+        };
+        if callback.generation() != self.lifecycle.generation()
+            || callback
+                .component()
+                .zip(callback.incarnation())
+                .is_some_and(|(component, incarnation)| {
+                    self.lifecycle
+                        .runtime()
+                        .borrow()
+                        .component_incarnation(component)
+                        != Some(incarnation)
+                })
+        {
+            return Ok(false);
         }
-        Ok(invoked)
+        let component = callback.component().cloned();
+        let payload = UiValue::Map(BTreeMap::from([
+            (
+                "name".to_owned(),
+                UiValue::String(event.handle.name().to_owned()),
+            ),
+            (
+                "kind".to_owned(),
+                UiValue::String(
+                    match event.kind {
+                        crate::MotionTimelineEventKind::Complete => "complete",
+                        crate::MotionTimelineEventKind::Cancel => "cancel",
+                    }
+                    .to_owned(),
+                ),
+            ),
+        ]));
+        let _ = self
+            .lifecycle
+            .invoke_callback(&self.engine, &callback, payload)
+            .map_err(|error| self.lifecycle_failure(&error, component.as_ref()))?;
+        Ok(true)
     }
 
     #[cfg(feature = "dev-reload")]
@@ -4350,15 +4441,7 @@ impl ScriptHostView {
         let generation = self.lifecycle.generation();
         let runtime = self.lifecycle.runtime();
         let root = self.lifecycle.root_path().clone();
-        let (
-            deliveries,
-            timeline_events,
-            motion_active,
-            dirty,
-            pending_dispatch,
-            virtual_requests,
-            repaint,
-        ) = {
+        let (deliveries, dirty, pending_dispatch, virtual_requests, repaint) = {
             let mut runtime = runtime.borrow_mut();
             runtime.flush_geometry_dependencies();
             let _ = runtime.assets.retain_decode_generation(generation);
@@ -4372,55 +4455,29 @@ impl ScriptHostView {
             }
             runtime.queue_async(deliveries);
             let deliveries = runtime.take_window_async(&self.window_id, &root);
-            // Events produced by the previous frame are delivered now, after
-            // that frame had a chance to commit. Events produced by this tick
-            // remain queued for the next foreground turn.
-            let timeline_events = runtime.motions.drain_timeline_events();
-            let frame = runtime.motions.tick(now);
-            runtime.motion_values = runtime.motions.snapshot(now);
-            let ghosts = std::mem::take(&mut runtime.motion_ghosts);
-            let mut retained_ghosts = Vec::with_capacity(ghosts.len());
-            for ghost in ghosts {
-                if runtime.motions.is_node_scope_active(&ghost.path) {
-                    retained_ghosts.push(ghost);
-                } else {
-                    runtime.motions.cancel_node_scope(&ghost.path);
-                }
-            }
-            runtime.motion_ghosts = retained_ghosts;
             (
                 deliveries,
-                timeline_events,
-                frame.needs_frame || !frame.values.is_empty(),
                 runtime.has_window_dirty(&root),
                 runtime.has_pending_dispatch(),
                 runtime.has_virtual_requests(),
                 runtime.take_window_repaint(&self.window_id),
             )
         };
-        let has_script_work = !deliveries.is_empty()
-            || timeline_events.iter().any(|event| event.callback.is_some())
-            || dirty
-            || pending_dispatch
-            || virtual_requests;
-        if !has_script_work && !motion_active && !repaint {
+        let has_script_work =
+            !deliveries.is_empty() || dirty || pending_dispatch || virtual_requests;
+        if !has_script_work && !repaint {
             return;
         }
 
         let (delivery_changed, delivery_error) = self.deliver_async_batch(deliveries);
         let result = if dirty || pending_dispatch || virtual_requests {
             self.run_script_transaction(|view| {
-                let mut changed = view.invoke_motion_timeline_callbacks(timeline_events)?;
-                changed |= view.invoke_pending_effects()?;
+                let mut changed = view.invoke_pending_effects()?;
                 let result = view.lifecycle.realize_virtual_requests(&mut view.engine);
                 changed |= result.map_err(|error| view.lifecycle_failure(&error, None))?;
                 let result = view.lifecycle.render_dirty(&mut view.engine);
                 changed |= result.map_err(|error| view.lifecycle_failure(&error, None))?;
                 Ok(changed || delivery_changed)
-            })
-        } else if timeline_events.iter().any(|event| event.callback.is_some()) {
-            self.run_script_transaction(|view| {
-                Ok(view.invoke_motion_timeline_callbacks(timeline_events)? || delivery_changed)
             })
         } else {
             Ok(delivery_changed)
@@ -4435,7 +4492,7 @@ impl ScriptHostView {
                     self.clear_failure();
                 }
                 self.process_window_commands(cx);
-                changed || motion_active || repaint
+                changed || repaint
             }
             Err(error) => {
                 self.set_failure(error);

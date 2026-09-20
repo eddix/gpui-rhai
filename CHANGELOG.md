@@ -33,6 +33,22 @@ semantic versioning from this release.
   TextReveal, NumberTicker, Marquee, Shimmer, BorderBeam, Orbit, Particles,
   AnimatedTabs, ReorderList, and SharedLayoutCards. The CLI installs them into
   `ui/motion`, and the separate `motion_gallery` example exercises the pack.
+- Motion reconciliation compiles timeline targets and property ownership
+  atomically. Handles are bound to runtime/view/component incarnation and
+  generation; play is idempotent, pause/seek are position-complete, control
+  commands recheck policy and budget, and direct/timeline physics share one
+  finite sampler with velocity-preserving retargets.
+- Display-frame sampling is scoped per presentation domain and terminal
+  callbacks are delivered after frame commit in independent transactions.
+  Suspended views, virtual rows, exit ghosts, layout/trigger motion, and slot
+  rendering share the Host clock, policy, and stable identity rules.
+- Canvas affine motion uses the same matrix for polygon painting and inverse
+  hit testing. Axis-aligned clipped paths explicitly reject affine motion, and
+  unsupported exit-ghost subtrees fail reconciliation instead of silently
+  degrading.
+- `motion_gallery` now mounts in the native GPUI harness and exposes live
+  timeline controls, controlled tabs, keyed reorder, and shared-layout
+  selection rather than only verifying source preparation.
 
 - Mounted script failures now expose one atomic human/structured error record.
   `ScriptViewHandle::last_diagnostic()` preserves the Rhai error kind, bounded

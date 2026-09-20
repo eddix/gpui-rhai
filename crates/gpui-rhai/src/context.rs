@@ -155,6 +155,12 @@ impl UiRuntimeState {
         self.component_incarnations.get(component).copied()
     }
 
+    pub(crate) fn component_incarnations_snapshot(
+        &self,
+    ) -> BTreeMap<ComponentInstancePath, ComponentIncarnation> {
+        self.component_incarnations.clone()
+    }
+
     pub(crate) fn ensure_presentation(&mut self, view: &str) {
         self.presentations.entry(view.to_owned()).or_default();
     }
@@ -362,8 +368,19 @@ impl UiRuntimeState {
             locale.remove_scope(root);
         }
         self.motions.cancel_node_scope(&format!("window:{window}"));
+        let removed_ghosts = self
+            .motion_ghosts
+            .iter()
+            .filter(|ghost| ghost.domain.starts_with(&format!("window:{window}")))
+            .map(|ghost| ghost.path.clone())
+            .collect::<Vec<_>>();
         self.motion_ghosts
-            .retain(|ghost| !ghost.path.starts_with(&format!("ghost:window:{window}")));
+            .retain(|ghost| !ghost.domain.starts_with(&format!("window:{window}")));
+        for path in removed_ghosts {
+            self.motions.cancel_node_scope(&path);
+        }
+        self.motions
+            .discard_timeline_events_in_scope(&format!("window:{window}"));
         self.motion_values = self.motions.snapshot(self.clock.now());
         self.effects.remove_scope(root);
         self.signals.remove_scope(root);
@@ -633,7 +650,7 @@ impl UiRuntimeState {
             theme: self.theme.clone(),
             component_styles: self.component_styles.clone(),
             component_style_generation: self.component_style_generation,
-            motions: self.motions.clone(),
+            motions: self.motions.transaction_snapshot(),
             effects: self.effects.clone(),
             signals: self.signals.clone(),
             element_refs: self.element_refs.clone(),
@@ -798,7 +815,6 @@ pub enum UiTransactionError {
     Asset(#[from] AssetError),
 }
 
-#[derive(Clone)]
 pub struct UiStateSnapshot {
     runtime_id: RuntimeStateId,
     transaction_depth: usize,
@@ -838,6 +854,51 @@ pub struct UiStateSnapshot {
     subscriptions: crate::async_runtime::SubscriptionRegistrySnapshot,
     timers: crate::TimerRegistry,
     image_decodes: crate::asset::ImageDecodeSnapshot,
+}
+
+impl Clone for UiStateSnapshot {
+    fn clone(&self) -> Self {
+        Self {
+            runtime_id: self.runtime_id,
+            transaction_depth: self.transaction_depth,
+            component_state: self.component_state.clone(),
+            stores: self.stores.clone(),
+            native_collections: self.native_collections.clone(),
+            native_documents: self.native_documents.clone(),
+            actions: self.actions.clone(),
+            component_event_handlers: self.component_event_handlers.clone(),
+            component_incarnations: self.component_incarnations.clone(),
+            next_component_incarnation: self.next_component_incarnation,
+            dirty: self.dirty.clone(),
+            pending_events: self.pending_events.clone(),
+            pending_actions: self.pending_actions.clone(),
+            pending_async: self.pending_async.clone(),
+            pending_element_commands: self.pending_element_commands.clone(),
+            locale: self.locale.clone(),
+            theme: self.theme.clone(),
+            component_styles: self.component_styles.clone(),
+            component_style_generation: self.component_style_generation,
+            motions: self.motions.transaction_snapshot(),
+            effects: self.effects.clone(),
+            signals: self.signals.clone(),
+            element_refs: self.element_refs.clone(),
+            geometry: self.geometry.clone(),
+            pointer_capture: self.pointer_capture.clone(),
+            presentations: self.presentations.clone(),
+            budgets: self.budgets.clone(),
+            virtual_requests: self.virtual_requests.clone(),
+            motion_values: self.motion_values.clone(),
+            motion_ghosts: self.motion_ghosts.clone(),
+            windows: self.windows.clone(),
+            responsive: self.responsive.clone(),
+            environment_dependencies: self.environment_dependencies.clone(),
+            repaint_windows: self.repaint_windows.clone(),
+            tasks: self.tasks.clone(),
+            subscriptions: self.subscriptions.clone(),
+            timers: self.timers.clone(),
+            image_decodes: self.image_decodes.clone(),
+        }
+    }
 }
 
 impl UiStateSnapshot {
@@ -2455,7 +2516,13 @@ impl UiContext {
             .try_borrow()
             .map_err(|_| UiContextError::Borrowed)?
             .motions
-            .timeline_handle_in_scope(&scope, name)?)
+            .timeline_handle_for_owner(
+                &scope,
+                &self.component,
+                self.incarnation,
+                self.generation,
+                name,
+            )?)
     }
 
     #[must_use]
@@ -2584,6 +2651,13 @@ impl UiContext {
             .runtime
             .try_borrow_mut()
             .map_err(|_| UiContextError::Borrowed)?;
+        runtime.motions.validate_handle_owner(
+            handle,
+            &self.motion_scope(),
+            &self.component,
+            self.incarnation,
+            self.generation,
+        )?;
         let now = runtime.clock.now();
         runtime.motions.play_timeline(handle, now)?;
         Ok(())
@@ -2600,6 +2674,13 @@ impl UiContext {
             .runtime
             .try_borrow_mut()
             .map_err(|_| UiContextError::Borrowed)?;
+        runtime.motions.validate_handle_owner(
+            handle,
+            &self.motion_scope(),
+            &self.component,
+            self.incarnation,
+            self.generation,
+        )?;
         let now = runtime.clock.now();
         runtime.motions.pause_timeline(handle, now)?;
         Ok(())
@@ -2620,6 +2701,13 @@ impl UiContext {
             .runtime
             .try_borrow_mut()
             .map_err(|_| UiContextError::Borrowed)?;
+        runtime.motions.validate_handle_owner(
+            handle,
+            &self.motion_scope(),
+            &self.component,
+            self.incarnation,
+            self.generation,
+        )?;
         let now = runtime.clock.now();
         runtime.motions.seek_timeline(handle, position_ms, now)?;
         runtime.motion_values = runtime.motions.snapshot(now);
@@ -2637,6 +2725,13 @@ impl UiContext {
             .runtime
             .try_borrow_mut()
             .map_err(|_| UiContextError::Borrowed)?;
+        runtime.motions.validate_handle_owner(
+            handle,
+            &self.motion_scope(),
+            &self.component,
+            self.incarnation,
+            self.generation,
+        )?;
         let now = runtime.clock.now();
         runtime.motions.restart_timeline(handle, now)?;
         Ok(())
@@ -2649,11 +2744,18 @@ impl UiContext {
     /// Returns phase, borrow, or stale-handle errors.
     pub fn cancel_motion(&self, handle: &crate::MotionHandle) -> Result<(), UiContextError> {
         self.require_mutation()?;
-        self.runtime
+        let mut runtime = self
+            .runtime
             .try_borrow_mut()
-            .map_err(|_| UiContextError::Borrowed)?
-            .motions
-            .cancel_timeline(handle)?;
+            .map_err(|_| UiContextError::Borrowed)?;
+        runtime.motions.validate_handle_owner(
+            handle,
+            &self.motion_scope(),
+            &self.component,
+            self.incarnation,
+            self.generation,
+        )?;
+        runtime.motions.cancel_timeline(handle)?;
         Ok(())
     }
 
@@ -4772,6 +4874,49 @@ mod tests {
         second_capture.capture(0, second_node);
         assert_eq!(first_capture.captured(0), Some(first_node));
         assert_eq!(second_capture.captured(0), Some(second_node));
+    }
+
+    #[test]
+    fn timeline_handles_cannot_cross_view_contexts() {
+        let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+        let now = std::time::Instant::now();
+        let mut transition =
+            crate::MotionTransition::new(crate::MotionProperty::Opacity, 0.0, 1.0, 1_000);
+        transition.easing = crate::MotionEasing::Linear;
+        let handle = runtime
+            .borrow_mut()
+            .motions
+            .start_timeline(
+                ComponentInstancePath::root("UiNode", "window:a/view:a/root"),
+                crate::MotionTimeline::new(
+                    "foreign",
+                    crate::MotionTimelineStep::Track(crate::MotionTrack {
+                        target: ".".to_owned(),
+                        source: crate::MotionSource::Transition(transition),
+                    }),
+                ),
+                now,
+            )
+            .unwrap();
+        let foreign = UiContext::new(
+            Rc::clone(&runtime),
+            ComponentInstancePath::root("View", "b"),
+            Some("b".to_owned()),
+            ExecutionPhase::Event,
+            BTreeMap::new(),
+        )
+        .with_view_id("b");
+
+        assert!(matches!(
+            foreign.cancel_motion(&handle),
+            Err(UiContextError::Motion(
+                crate::MotionError::ForeignTimelineHandle(_)
+            ))
+        ));
+        assert_eq!(
+            runtime.borrow().motions.timeline_state(&handle),
+            Some(crate::MotionPlaybackState::Playing)
+        );
     }
 
     #[test]

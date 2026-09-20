@@ -69,6 +69,7 @@ struct GeometryState {
     motion_progress: BTreeMap<(NodeId, crate::MotionProperty), f64>,
     motion_trigger_targets: BTreeMap<(NodeId, crate::MotionProgressDriver), bool>,
     motion_triggers: BTreeMap<(NodeId, crate::MotionProgressDriver), TriggerMotionState>,
+    canvas_transforms: BTreeMap<NodeId, CanvasMotionTransform>,
 }
 
 #[derive(Clone, Debug)]
@@ -115,6 +116,36 @@ pub(crate) struct TriggerMotionSample {
     pub active: bool,
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct LayoutMotionRequest<'a> {
+    pub shared: Option<(&'a str, &'a str)>,
+    pub duration: Duration,
+    pub easing: crate::MotionEasing,
+    pub preference: crate::MotionPreference,
+    pub now: Instant,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct CanvasMotionTransform {
+    pub rotate: f64,
+    pub scale_x: f64,
+    pub scale_y: f64,
+    pub skew_x: f64,
+    pub skew_y: f64,
+}
+
+impl Default for CanvasMotionTransform {
+    fn default() -> Self {
+        Self {
+            rotate: 0.0,
+            scale_x: 1.0,
+            scale_y: 1.0,
+            skew_x: 0.0,
+            skew_y: 0.0,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct GeometryRegistry {
     inner: Rc<RefCell<Rc<GeometryState>>>,
@@ -153,14 +184,11 @@ impl GeometryRegistry {
         &self,
         node: NodeId,
         layout: GeometryBounds,
-        shared: Option<(&str, &str)>,
-        duration: Duration,
-        easing: crate::MotionEasing,
-        now: Instant,
+        request: LayoutMotionRequest<'_>,
     ) -> LayoutMotionSample {
         let mut current = self.inner.borrow_mut();
         let state = Rc::make_mut(&mut current);
-        let shared_previous = shared.and_then(|(group, id)| {
+        let shared_previous = request.shared.and_then(|(group, id)| {
             state
                 .shared_layout
                 .get(&(group.to_owned(), id.to_owned()))
@@ -180,39 +208,37 @@ impl GeometryRegistry {
         if let Some(previous) = previous
             && previous != layout
             && target_changed
-            && duration > Duration::ZERO
+            && request.duration > Duration::ZERO
         {
             let from = state
                 .layout_motion
                 .get(&node)
-                .map_or(previous, |motion| sample_layout_bounds(motion, now));
+                .map_or(previous, |motion| sample_layout_bounds(motion, request.now));
             state.layout_motion.insert(
                 node,
                 LayoutMotionState {
                     from,
                     to: layout,
-                    started: now,
-                    duration,
-                    easing,
+                    started: request.now,
+                    duration: request.duration,
+                    easing: request.easing,
                 },
             );
         }
-        if let Some((group, id)) = shared {
+        if let Some((group, id)) = request.shared {
             state
                 .shared_layout
                 .insert((group.to_owned(), id.to_owned()), (node, layout));
-            while state.shared_layout.len() > 1_024 {
-                let Some(first) = state.shared_layout.keys().next().cloned() else {
-                    break;
-                };
-                state.shared_layout.remove(&first);
-            }
+        }
+        if request.preference != crate::MotionPreference::Normal {
+            state.layout_motion.remove(&node);
+            return LayoutMotionSample::default();
         }
         let Some(motion) = state.layout_motion.get(&node) else {
             return LayoutMotionSample::default();
         };
-        let sampled = sample_layout_bounds(motion, now);
-        let done = now.saturating_duration_since(motion.started) >= motion.duration;
+        let sampled = sample_layout_bounds(motion, request.now);
+        let done = request.now.saturating_duration_since(motion.started) >= motion.duration;
         let result = LayoutMotionSample {
             offset_x: sampled.x - layout.x,
             offset_y: sampled.y - layout.y,
@@ -262,6 +288,20 @@ impl GeometryRegistry {
             .copied()
     }
 
+    pub(crate) fn delay_motion(&self, delay: Duration) {
+        if delay.is_zero() {
+            return;
+        }
+        let mut current = self.inner.borrow_mut();
+        let state = Rc::make_mut(&mut current);
+        for motion in state.layout_motion.values_mut() {
+            motion.started = motion.started.checked_add(delay).unwrap_or(motion.started);
+        }
+        for motion in state.motion_triggers.values_mut() {
+            motion.started = motion.started.checked_add(delay).unwrap_or(motion.started);
+        }
+    }
+
     pub(crate) fn set_motion_trigger(
         &self,
         node: NodeId,
@@ -273,10 +313,26 @@ impl GeometryRegistry {
             .insert((node, driver), active);
     }
 
+    pub(crate) fn update_canvas_transform(&self, node: NodeId, transform: CanvasMotionTransform) {
+        Rc::make_mut(&mut self.inner.borrow_mut())
+            .canvas_transforms
+            .insert(node, transform);
+    }
+
+    pub(crate) fn canvas_transform(&self, node: NodeId) -> CanvasMotionTransform {
+        self.inner
+            .borrow()
+            .canvas_transforms
+            .get(&node)
+            .copied()
+            .unwrap_or_default()
+    }
+
     pub(crate) fn sample_motion_trigger(
         &self,
         node: NodeId,
         binding: &crate::MotionProgressBinding,
+        preference: crate::MotionPreference,
         now: Instant,
     ) -> TriggerMotionSample {
         let mut current = self.inner.borrow_mut();
@@ -292,6 +348,13 @@ impl GeometryRegistry {
         } else {
             0.0
         };
+        if preference != crate::MotionPreference::Normal {
+            state.motion_triggers.remove(&key);
+            return TriggerMotionSample {
+                value: crate::motion::sample_progress_source(&binding.source, target),
+                active: false,
+            };
+        }
         let duration = crate::motion::progress_source_duration(&binding.source);
         let trigger = state
             .motion_triggers
@@ -386,7 +449,20 @@ impl GeometryRegistry {
     }
 
     pub(crate) fn begin_frame(&self) {
-        Rc::make_mut(&mut self.inner.borrow_mut()).presented.clear();
+        let mut current = self.inner.borrow_mut();
+        let state = Rc::make_mut(&mut current);
+        state
+            .shared_layout
+            .retain(|_, (node, _)| state.presented.contains(node));
+        state.presented.clear();
+    }
+
+    pub(crate) fn finish_frame(&self) {
+        let mut current = self.inner.borrow_mut();
+        let state = Rc::make_mut(&mut current);
+        state
+            .shared_layout
+            .retain(|_, (node, _)| state.presented.contains(node));
     }
 
     pub(crate) fn is_presented(&self, node: NodeId) -> bool {
@@ -409,6 +485,15 @@ impl GeometryRegistry {
         state
             .motion_triggers
             .retain(|(node, _), _| active.contains(node));
+        state
+            .canvas_transforms
+            .retain(|node, _| active.contains(node));
+    }
+
+    pub(crate) fn retain_shared_layout_ids(&self, active: &BTreeSet<(String, String)>) {
+        Rc::make_mut(&mut self.inner.borrow_mut())
+            .shared_layout
+            .retain(|identity, _| active.contains(identity));
     }
 
     pub(crate) fn take_dirty(&self) -> BTreeSet<ComponentInstancePath> {
@@ -532,19 +617,25 @@ mod tests {
         let initial = registry.sample_layout_motion(
             node,
             next,
-            None,
-            Duration::from_millis(100),
-            crate::MotionEasing::Linear,
-            start,
+            LayoutMotionRequest {
+                shared: None,
+                duration: Duration::from_millis(100),
+                easing: crate::MotionEasing::Linear,
+                preference: crate::MotionPreference::Normal,
+                now: start,
+            },
         );
         assert!((initial.offset_x + 100.0).abs() < 0.01);
         let middle = registry.sample_layout_motion(
             node,
             next,
-            None,
-            Duration::from_millis(100),
-            crate::MotionEasing::Linear,
-            start + Duration::from_millis(50),
+            LayoutMotionRequest {
+                shared: None,
+                duration: Duration::from_millis(100),
+                easing: crate::MotionEasing::Linear,
+                preference: crate::MotionPreference::Normal,
+                now: start + Duration::from_millis(50),
+            },
         );
         assert!((middle.offset_x + 50.0).abs() < 0.01);
 
@@ -559,10 +650,48 @@ mod tests {
         )
         .unwrap();
         registry.set_motion_trigger(node, crate::MotionProgressDriver::Hover, true);
-        let sample = registry.sample_motion_trigger(node, &binding, start);
-        assert!(sample.active);
         let sample =
-            registry.sample_motion_trigger(node, &binding, start + Duration::from_millis(100));
+            registry.sample_motion_trigger(node, &binding, crate::MotionPreference::Normal, start);
+        assert!(sample.active);
+        let sample = registry.sample_motion_trigger(
+            node,
+            &binding,
+            crate::MotionPreference::Normal,
+            start + Duration::from_millis(100),
+        );
         assert!((sample.value - 1.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn shared_layout_history_expires_after_its_last_presented_frame() {
+        let mut tree = crate::RetainedUiTree::new();
+        tree.reconcile(crate::UiNode::text("card")).unwrap();
+        let node = tree.root_id().unwrap();
+        let registry = GeometryRegistry::new();
+        let bounds = GeometryBounds::new(0.0, 0.0, 100.0, 20.0).unwrap();
+        registry.update(
+            node,
+            ElementGeometry {
+                layout: bounds,
+                visual: bounds,
+                clip: None,
+            },
+        );
+        registry.sample_layout_motion(
+            node,
+            bounds,
+            LayoutMotionRequest {
+                shared: Some(("cards", "alpha")),
+                duration: Duration::from_millis(100),
+                easing: crate::MotionEasing::Linear,
+                preference: crate::MotionPreference::Normal,
+                now: Instant::now(),
+            },
+        );
+        assert_eq!(registry.inner.borrow().shared_layout.len(), 1);
+        registry.begin_frame();
+        assert_eq!(registry.inner.borrow().shared_layout.len(), 1);
+        registry.begin_frame();
+        assert!(registry.inner.borrow().shared_layout.is_empty());
     }
 }

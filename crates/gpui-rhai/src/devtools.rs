@@ -382,7 +382,12 @@ fn inspect_runtime_mechanisms(
             .inspect_timelines(runtime.clock.now())
             .into_iter()
             .map(|timeline| InspectorTimeline {
-                id: format!("{}/{}", timeline.handle.component, timeline.handle.name),
+                id: format!(
+                    "{}/{}/{}",
+                    timeline.handle.domain(),
+                    timeline.handle.owner(),
+                    timeline.handle.name()
+                ),
                 state: format!("{:?}", timeline.state),
                 elapsed_ms: timeline.elapsed_ms,
                 duration_ms: timeline.duration_ms,

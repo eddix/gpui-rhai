@@ -1,0 +1,13 @@
+Native probe project: /var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T//gpui-rhai-motion-native.cl0gNW
+   Compiling gpui-rhai-motion-review-native v0.0.0 (/var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T/gpui-rhai-motion-native.cl0gNW)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.30s
+     Running tests/policy.rs (tests/native-keyboard/target/debug/deps/policy-0c5be9fa41d0ce27)
+
+running 2 tests
+NONE_LAYOUT initial=ElementGeometry { layout: GeometryBounds { x: 0.0, y: 0.0, width: 100.0, height: 30.0 }, visual: GeometryBounds { x: 0.0, y: 0.0, width: 100.0, height: 30.0 }, clip: None } changed=ElementGeometry { layout: GeometryBounds { x: 100.0, y: 0.0, width: 100.0, height: 30.0 }, visual: GeometryBounds { x: 0.0, y: 0.0, width: 100.0, height: 30.0 }, clip: None } halfway=ElementGeometry { layout: GeometryBounds { x: 100.0, y: 0.0, width: 100.0, height: 30.0 }, visual: GeometryBounds { x: 50.0, y: 0.0, width: 100.0, height: 30.0 }, clip: None }
+test none_policy_still_animates_layout ... ok
+ACTUAL_GALLERY_MOUNT_ERROR=failed to evaluate Rhai UI source: Function not found: size_full (Style) (line 46, position 27)
+test actual_motion_gallery_mount ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.87s
+

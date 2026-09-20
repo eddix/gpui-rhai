@@ -27,6 +27,10 @@ mod table_1000_example;
 #[path = "../../../crates/gpui-rhai/examples/component_gallery.rs"]
 mod component_gallery_example;
 
+#[allow(dead_code)]
+#[path = "../../../crates/gpui-rhai/examples/motion_gallery.rs"]
+mod motion_gallery_example;
+
 fn official_icon_assets() -> Vec<(String, AssetData)> {
     [
         ("check", include_bytes!("../../../registry/assets/icons/check.svg").as_slice()),
@@ -6092,4 +6096,162 @@ fn set_theme_during_typing_keeps_input_focus(cx: &mut TestAppContext) {
         texts.contains(&"typed:ab".to_owned()),
         "focus must survive theme swaps: {texts:?}"
     );
+}
+
+#[gpui::test]
+fn motion_gallery_mounts_and_renders_a_real_frame(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let prepared = motion_gallery_example::prepared().expect("prepare the official motion gallery");
+    let captured = Rc::new(RefCell::new(None));
+    let captured_for_window = Rc::clone(&captured);
+    let window = cx.add_window(move |window, cx| {
+        let host = ScriptViewHost::new("motion-gallery-window", cx).unwrap();
+        let view = prepared
+            .mount(
+                ScriptViewConfig::new("motion-gallery-view"),
+                host.clone(),
+                window,
+                cx,
+            )
+            .expect("mount the official motion gallery");
+        *captured_for_window.borrow_mut() = Some(view.clone());
+        SingleEmbeddedHost { host, view }
+    });
+
+    cx.refresh().expect("render the first gallery frame");
+    let view = captured.borrow().as_ref().unwrap().clone();
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    assert!(
+        visual.update(|_, cx| view.root(cx).unwrap().is_some()),
+        "the mounted gallery must retain a rendered root"
+    );
+    let initial = visual.update(|_, cx| {
+        let root = view.root(cx).unwrap().unwrap();
+        let mut texts = Vec::new();
+        node_texts(&root, &mut texts);
+        texts
+    });
+    assert!(
+        initial.iter().position(|text| text == "One")
+            < initial.iter().position(|text| text == "Three")
+    );
+    for id in ["reorder", "play"] {
+        visual
+            .update(|window, cx| {
+                view.automate(
+                    gpui_rhai::AutomationCommand::Dispatch {
+                        locator: gpui_rhai::AutomationLocator::TestId { id: id.to_owned() },
+                        event: "click".to_owned(),
+                        payload: None,
+                    },
+                    window,
+                    cx,
+                )
+            })
+            .unwrap();
+    }
+    visual.run_until_parked();
+    let changed = visual.update(|_, cx| {
+        let root = view.root(cx).unwrap().unwrap();
+        let mut texts = Vec::new();
+        node_texts(&root, &mut texts);
+        texts
+    });
+    assert!(
+        changed.iter().position(|text| text == "Three")
+            < changed.iter().position(|text| text == "One")
+    );
+    assert!(changed.iter().any(|text| text == "Timeline: playing"));
+}
+
+#[gpui::test]
+fn host_none_policy_snaps_layout_motion_in_the_presented_frame(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let manual = gpui_rhai::ManualRuntimeClock::new(std::time::Instant::now());
+    let entry = ModuleId::parse("main").unwrap();
+    let prepared = EmbeddedScriptView::new(
+        entry.clone(),
+        EmbeddedScriptSource::new(std::collections::BTreeMap::from([(
+            entry,
+            r#"
+                fn state_schema(){#{fields:#{x:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}}}}}
+                fn move_card(ctx, payload) { ctx.set_state("x", 100); }
+                fn init(ctx) { ctx.register_action("card.move", Fn("move_card")); }
+                fn view(ctx) {
+                    column([
+                        text("Card").with_key("card").test_id("card")
+                            .accessibility_role("button").accessibility_label("Card")
+                            .layout_motion(1000, "linear")
+                            .with_style(style().width(px(100)).height(px(30))
+                                .margin_left(px(ctx.get_state("x"))))
+                    ])
+                }
+            "#
+            .to_owned(),
+        )])),
+        include_str!("../../../registry/themes/default_dark.rhai"),
+    )
+    .runtime_clock(manual.clock())
+    .motion_preference(gpui_rhai::MotionPreference::None)
+    .prepare()
+    .unwrap();
+    let captured = Rc::new(RefCell::new(None));
+    let captured_for_window = Rc::clone(&captured);
+    let window = cx.add_window(move |window, cx| {
+        let host = ScriptViewHost::new("none-motion-window", cx).unwrap();
+        let view = prepared
+            .mount(
+                ScriptViewConfig::new("none-motion-view"),
+                host.clone(),
+                window,
+                cx,
+            )
+            .unwrap();
+        *captured_for_window.borrow_mut() = Some(view.clone());
+        SingleEmbeddedHost { host, view }
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+
+    let view = captured.borrow().as_ref().unwrap().clone();
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    visual
+        .update(|window, cx| {
+            view.automate(
+                gpui_rhai::AutomationCommand::Action {
+                    id: "card.move".to_owned(),
+                    payload: None,
+                },
+                window,
+                cx,
+            )
+        })
+        .unwrap();
+    visual.run_until_parked();
+    cx.refresh().unwrap();
+
+    let changed = visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .find_by_role_and_name("button", "Card")
+            .next()
+            .unwrap()
+            .geometry
+            .unwrap()
+    });
+    assert_eq!(changed.layout.x, 100.0);
+    assert_eq!(changed.visual.x, 100.0);
+
+    manual.advance(std::time::Duration::from_millis(500));
+    cx.refresh().unwrap();
+    let later = visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .find_by_role_and_name("button", "Card")
+            .next()
+            .unwrap()
+            .geometry
+            .unwrap()
+    });
+    assert_eq!(later.visual.x, 100.0, "None must not retain a hidden animation");
 }

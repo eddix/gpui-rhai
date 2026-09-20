@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use rhai::{
@@ -245,15 +246,7 @@ impl MotionSource {
 
     #[must_use]
     pub fn target(&self) -> f64 {
-        match self {
-            Self::Transition(spec) if spec.iterations.is_none() => {
-                f64::midpoint(spec.from, spec.to)
-            }
-            Self::Transition(spec) => spec.to,
-            Self::Spring(spec) => spec.to,
-            Self::Keyframes(spec) => spec.frames.last().map_or(0.0, |frame| frame.value),
-            Self::Inertia(spec) => inertia_target(spec),
-        }
+        source_terminal_value(self)
     }
 
     #[must_use]
@@ -375,28 +368,38 @@ impl CustomType for MotionTimeline {
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct MotionHandle {
-    pub component: ComponentInstancePath,
-    pub name: String,
+    runtime_id: u64,
+    instance: u64,
+    domain: String,
+    owner: ComponentInstancePath,
+    incarnation: ComponentIncarnation,
+    generation: ScriptGeneration,
+    node_path: String,
+    name: String,
 }
 
 impl MotionHandle {
     #[must_use]
-    pub fn new(component: ComponentInstancePath, name: impl Into<String>) -> Self {
-        Self {
-            component,
-            name: name.into(),
-        }
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    #[must_use]
+    pub fn owner(&self) -> &ComponentInstancePath {
+        &self.owner
+    }
+
+    #[must_use]
+    pub fn domain(&self) -> &str {
+        &self.domain
     }
 
     fn in_node_scope(&self, path: &str) -> bool {
-        self.component
-            .single_root_key("UiNode")
-            .is_some_and(|node_path| {
-                node_path == path
-                    || node_path
-                        .strip_prefix(path)
-                        .is_some_and(|suffix| suffix.starts_with('/'))
-            })
+        self.node_path == path
+            || self
+                .node_path
+                .strip_prefix(path)
+                .is_some_and(|suffix| suffix.starts_with('/'))
     }
 }
 
@@ -434,6 +437,7 @@ pub(crate) struct MotionGhost {
     pub node: UiNode,
     pub bounds: crate::GeometryBounds,
     pub path: String,
+    pub domain: String,
 }
 
 #[derive(Clone, Debug)]
@@ -452,6 +456,23 @@ struct ActiveTimeline {
     state: MotionPlaybackState,
     started: Instant,
     elapsed_before_play: Duration,
+    policy_settled: Option<MotionPreference>,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct TimelineLogicalKey {
+    domain: String,
+    node_path: String,
+    name: String,
+}
+
+#[derive(Clone, Debug)]
+struct TimelineOwner {
+    domain: String,
+    component: ComponentInstancePath,
+    incarnation: ComponentIncarnation,
+    generation: ScriptGeneration,
+    node_path: String,
 }
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -496,6 +517,18 @@ const fn stricter_preference(left: MotionPreference, right: MotionPreference) ->
         }
         (MotionPreference::Normal, MotionPreference::Normal) => MotionPreference::Normal,
     }
+}
+
+fn motion_domain_from_path(path: &str) -> String {
+    path.find("/root")
+        .map_or_else(|| "root".to_owned(), |end| path[..end + 5].to_owned())
+}
+
+fn path_contains_scope(path: &str, scope: &str) -> bool {
+    scope == path
+        || scope
+            .strip_prefix(path)
+            .is_some_and(|suffix| suffix.starts_with('/'))
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -549,61 +582,51 @@ impl CustomType for MotionProgressBinding {
 #[derive(Clone, Debug)]
 struct ActiveMotion {
     replay_key: Option<String>,
+    declaration: MotionSource,
     source: MotionSource,
-    state: MotionState,
+    finite_duration_ms: Option<u64>,
+    started: Instant,
+    elapsed_before_play: Duration,
 }
 
-#[derive(Clone, Debug)]
-enum MotionState {
-    Transition {
-        from: f64,
-        to: f64,
-        started: Instant,
-        delay: Duration,
-        duration: Duration,
-        easing: MotionEasing,
-        iterations: Option<u32>,
-        autoreverse: bool,
-    },
-    Spring {
-        position: f64,
-        velocity: f64,
-        target: f64,
-        stiffness: f64,
-        damping: f64,
-        mass: f64,
-        last_tick: Instant,
-    },
-    Keyframes {
-        frames: Vec<MotionKeyframe>,
-        started: Instant,
-        delay: Duration,
-        duration: Duration,
-        iterations: Option<u32>,
-        autoreverse: bool,
-    },
-    Inertia {
-        position: f64,
-        velocity: f64,
-        friction: f64,
-        min: Option<f64>,
-        max: Option<f64>,
-        bounce: f64,
-        snap_points: Vec<f64>,
-        last_tick: Instant,
-    },
-}
-
-#[derive(Clone, Debug, Default)]
+#[derive(Debug)]
 pub struct MotionRuntime {
+    runtime_id: u64,
+    next_timeline_instance: u64,
     active: BTreeMap<MotionKey, ActiveMotion>,
     settled: BTreeMap<MotionKey, f64>,
-    settled_replay: BTreeMap<MotionKey, Option<String>>,
+    settled_declaration: BTreeMap<MotionKey, (MotionSource, Option<String>)>,
     timelines: BTreeMap<MotionHandle, ActiveTimeline>,
+    timeline_index: BTreeMap<TimelineLogicalKey, MotionHandle>,
     timeline_events: Vec<MotionTimelineEvent>,
+    suspended_scopes: BTreeSet<String>,
+    active_reservations: BTreeMap<String, usize>,
+    active_limit: usize,
     host_preference: Option<MotionPreference>,
     preference: Option<MotionPreference>,
     quality: Option<MotionQuality>,
+}
+
+impl Default for MotionRuntime {
+    fn default() -> Self {
+        static NEXT_RUNTIME_ID: AtomicU64 = AtomicU64::new(1);
+        Self {
+            runtime_id: NEXT_RUNTIME_ID.fetch_add(1, Ordering::Relaxed),
+            next_timeline_instance: 1,
+            active: BTreeMap::new(),
+            settled: BTreeMap::new(),
+            settled_declaration: BTreeMap::new(),
+            timelines: BTreeMap::new(),
+            timeline_index: BTreeMap::new(),
+            timeline_events: Vec::new(),
+            suspended_scopes: BTreeSet::new(),
+            active_reservations: BTreeMap::new(),
+            active_limit: usize::MAX,
+            host_preference: None,
+            preference: None,
+            quality: None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -631,6 +654,25 @@ pub struct MotionTimelineSnapshot {
 }
 
 impl MotionRuntime {
+    pub(crate) fn transaction_snapshot(&self) -> Self {
+        Self {
+            runtime_id: self.runtime_id,
+            next_timeline_instance: self.next_timeline_instance,
+            active: self.active.clone(),
+            settled: self.settled.clone(),
+            settled_declaration: self.settled_declaration.clone(),
+            timelines: self.timelines.clone(),
+            timeline_index: self.timeline_index.clone(),
+            timeline_events: self.timeline_events.clone(),
+            suspended_scopes: self.suspended_scopes.clone(),
+            active_reservations: self.active_reservations.clone(),
+            active_limit: self.active_limit,
+            host_preference: self.host_preference,
+            preference: self.preference,
+            quality: self.quality,
+        }
+    }
+
     #[must_use]
     pub fn new(preference: MotionPreference) -> Self {
         Self {
@@ -659,34 +701,42 @@ impl MotionRuntime {
         ) {
             let active = std::mem::take(&mut self.active);
             for (key, animation) in active {
-                self.settled_replay
-                    .insert(key.clone(), animation.replay_key.clone());
-                self.settled.insert(key, reduced_value(&animation));
+                self.settled_declaration.insert(
+                    key.clone(),
+                    (animation.declaration.clone(), animation.replay_key.clone()),
+                );
+                self.settled.insert(
+                    key,
+                    if preference == MotionPreference::None {
+                        source_terminal_value(&animation.declaration)
+                    } else {
+                        reduced_value(&animation)
+                    },
+                );
             }
             let handles = self
                 .timelines
                 .iter()
-                .filter(|(_, timeline)| timeline.state == MotionPlaybackState::Playing)
+                .filter(|(_, timeline)| {
+                    !matches!(
+                        timeline.state,
+                        MotionPlaybackState::Completed | MotionPlaybackState::Cancelled
+                    )
+                })
                 .map(|(handle, _)| handle.clone())
                 .collect::<Vec<_>>();
             for handle in handles {
-                let (tracks, callback) = self.timelines.get_mut(&handle).map_or_else(
-                    || (Vec::new(), None),
+                let callback = self.timelines.get_mut(&handle).map_or_else(
+                    || None,
                     |timeline| {
                         timeline.state = MotionPlaybackState::Completed;
-                        (timeline.tracks.clone(), timeline.spec.on_complete.clone())
+                        timeline.elapsed_before_play = Duration::from_millis(
+                            timeline_total_duration(timeline).unwrap_or(timeline.duration_ms),
+                        );
+                        timeline.policy_settled = Some(preference);
+                        timeline.spec.on_complete.clone()
                     },
                 );
-                for track in tracks {
-                    let key = timeline_track_key(&handle, &track.target, track.source.property());
-                    let value = if preference == MotionPreference::None {
-                        track.source.target()
-                    } else {
-                        track.source.reduced_value()
-                    };
-                    self.settled.insert(key.clone(), value);
-                    self.settled_replay.insert(key, None);
-                }
                 self.timeline_events.push(MotionTimelineEvent {
                     handle,
                     kind: MotionTimelineEventKind::Complete,
@@ -740,29 +790,27 @@ impl MotionRuntime {
     pub fn start_with_replay(
         &mut self,
         component: ComponentInstancePath,
-        source: MotionSource,
+        declaration: MotionSource,
         replay_key: Option<String>,
         now: Instant,
     ) -> Result<MotionKey, MotionError> {
-        validate_source(&source)?;
+        validate_source(&declaration)?;
         let key = MotionKey {
             component,
-            property: source.property(),
+            property: declaration.property(),
         };
         let previous_replay = self
             .active
             .get(&key)
             .map(|motion| &motion.replay_key)
-            .or_else(|| self.settled_replay.get(&key));
+            .or_else(|| self.settled_declaration.get(&key).map(|(_, replay)| replay));
         let replaying = replay_key.is_some() && previous_replay != Some(&replay_key);
-        if self
-            .active
+        if self.active.get(&key).is_some_and(|motion| {
+            motion.declaration == declaration && motion.replay_key == replay_key
+        }) || self
+            .settled_declaration
             .get(&key)
-            .is_some_and(|motion| motion.source == source && motion.replay_key == replay_key)
-            || self.settled.get(&key).is_some_and(|value| {
-                (*value - source.target()).abs() < f64::EPSILON
-                    && self.settled_replay.get(&key) == Some(&replay_key)
-            })
+            .is_some_and(|settled| settled == &(declaration.clone(), replay_key.clone()))
         {
             return Ok(key);
         }
@@ -771,81 +819,45 @@ impl MotionRuntime {
             Some(MotionPreference::Reduced | MotionPreference::None)
         ) {
             self.active.remove(&key);
-            self.settled_replay.insert(key.clone(), replay_key);
+            self.settled_declaration
+                .insert(key.clone(), (declaration.clone(), replay_key));
             self.settled.insert(
                 key.clone(),
                 if self.preference == Some(MotionPreference::None) {
-                    source.target()
+                    source_terminal_value(&declaration)
                 } else {
-                    source.reduced_value()
+                    declaration.reduced_value()
                 },
             );
             return Ok(key);
         }
-        let declared_from = match &source {
-            MotionSource::Transition(spec) => spec.from,
-            MotionSource::Spring(spec) => spec.from,
-            MotionSource::Keyframes(spec) => spec.frames.first().map_or(0.0, |frame| frame.value),
-            MotionSource::Inertia(spec) => spec.from,
-        };
-        let current = if replaying {
-            declared_from
+        let declared_from = source_initial_value(&declaration);
+        let previous = if replaying {
+            None
         } else {
-            self.sample(&key, now).unwrap_or(declared_from)
+            self.sample_with_velocity(&key, now)
         };
-        let state = match &source {
-            MotionSource::Transition(spec) => MotionState::Transition {
-                from: current,
-                to: spec.to,
-                started: now,
-                delay: Duration::from_millis(spec.delay_ms),
-                duration: Duration::from_millis(spec.duration_ms),
-                easing: spec.easing,
-                iterations: spec.iterations,
-                autoreverse: spec.autoreverse,
-            },
-            MotionSource::Spring(spec) => MotionState::Spring {
-                position: current,
-                velocity: spec.initial_velocity,
-                target: spec.to,
-                stiffness: spec.stiffness,
-                damping: spec.damping,
-                mass: spec.mass,
-                last_tick: now,
-            },
-            MotionSource::Keyframes(spec) => {
-                let mut frames = spec.frames.clone();
-                if let Some(first) = frames.first_mut() {
-                    first.value = current;
-                }
-                MotionState::Keyframes {
-                    frames,
-                    started: now,
-                    delay: Duration::from_millis(spec.delay_ms),
-                    duration: Duration::from_millis(spec.duration_ms),
-                    iterations: spec.iterations,
-                    autoreverse: spec.autoreverse,
-                }
-            }
-            MotionSource::Inertia(spec) => MotionState::Inertia {
-                position: current,
-                velocity: spec.velocity,
-                friction: spec.friction,
-                min: spec.min,
-                max: spec.max,
-                bounce: spec.bounce,
-                snap_points: spec.snap_points.clone(),
-                last_tick: now,
-            },
-        };
+        let current = previous.map_or(declared_from, |sample| sample.value);
+        let source = retarget_source(
+            &declaration,
+            current,
+            previous.and_then(|sample| sample.velocity),
+        );
+        validate_source(&source)?;
+        let finite_duration_ms = source_duration_ms(&source).ok();
+        let active_increase = usize::from(!self.active.contains_key(&key));
+        self.ensure_active_capacity(active_increase)?;
         self.settled.remove(&key);
-        self.settled_replay.remove(&key);
+        self.settled_declaration.remove(&key);
         self.active.insert(
             key.clone(),
             ActiveMotion {
                 replay_key,
+                declaration,
                 source,
-                state,
+                finite_duration_ms,
+                started: now,
+                elapsed_before_play: Duration::ZERO,
             },
         );
         Ok(key)
@@ -866,6 +878,29 @@ impl MotionRuntime {
         spec: MotionTimeline,
         now: Instant,
     ) -> Result<MotionHandle, MotionError> {
+        let node_path = component
+            .single_root_key("UiNode")
+            .unwrap_or("root")
+            .to_owned();
+        let owner = TimelineOwner {
+            domain: motion_domain_from_path(&node_path),
+            component,
+            incarnation: ComponentIncarnation::unscoped(),
+            generation: ScriptGeneration::default(),
+            node_path,
+        };
+        let mut candidate = self.transaction_snapshot();
+        let handle = candidate.start_timeline_owned(&owner, spec, now)?;
+        *self = candidate;
+        Ok(handle)
+    }
+
+    fn start_timeline_owned(
+        &mut self,
+        owner: &TimelineOwner,
+        spec: MotionTimeline,
+        now: Instant,
+    ) -> Result<MotionHandle, MotionError> {
         validate_timeline_name(&spec.name)?;
         if spec.iterations == Some(0) {
             return Err(MotionError::InvalidTimeline(
@@ -873,14 +908,41 @@ impl MotionRuntime {
             ));
         }
         let (tracks, duration_ms) = compile_timeline(&spec.root)?;
-        let handle = MotionHandle::new(component, spec.name.clone());
-        if let Some(active) = self.timelines.get_mut(&handle)
-            && timeline_compatible(&active.spec, &spec)
+        let logical = TimelineLogicalKey {
+            domain: owner.domain.clone(),
+            node_path: owner.node_path.clone(),
+            name: spec.name.clone(),
+        };
+        if let Some(previous_handle) = self.timeline_index.get(&logical).cloned()
+            && let Some(mut active) = self.timelines.remove(&previous_handle)
         {
-            active.spec.on_complete = spec.on_complete;
-            active.spec.on_cancel = spec.on_cancel;
-            return Ok(handle);
+            if timeline_compatible(&active.spec, &spec)
+                && previous_handle.owner == owner.component
+                && previous_handle.incarnation == owner.incarnation
+            {
+                active.spec.on_complete = spec.on_complete;
+                active.spec.on_cancel = spec.on_cancel;
+                if previous_handle.generation == owner.generation {
+                    self.timelines.insert(previous_handle.clone(), active);
+                    return Ok(previous_handle);
+                }
+                let handle = self.allocate_timeline_handle(owner, spec.name.clone());
+                self.timelines.insert(handle.clone(), active);
+                self.timeline_index.insert(logical, handle.clone());
+                return Ok(handle);
+            }
+            if !matches!(
+                active.state,
+                MotionPlaybackState::Completed | MotionPlaybackState::Cancelled
+            ) {
+                self.timeline_events.push(MotionTimelineEvent {
+                    handle: previous_handle,
+                    kind: MotionTimelineEventKind::Cancel,
+                    callback: active.spec.on_cancel,
+                });
+            }
         }
+        let handle = self.allocate_timeline_handle(owner, spec.name.clone());
         let state = if spec.autoplay {
             MotionPlaybackState::Playing
         } else {
@@ -890,16 +952,6 @@ impl MotionRuntime {
             self.preference,
             Some(MotionPreference::Reduced | MotionPreference::None)
         ) {
-            for track in &tracks {
-                let key = timeline_track_key(&handle, &track.target, track.source.property());
-                let value = if self.preference == Some(MotionPreference::None) {
-                    track.source.target()
-                } else {
-                    track.source.reduced_value()
-                };
-                self.settled.insert(key.clone(), value);
-                self.settled_replay.insert(key, None);
-            }
             let callback = spec.on_complete.clone();
             self.timelines.insert(
                 handle.clone(),
@@ -910,6 +962,7 @@ impl MotionRuntime {
                     state: MotionPlaybackState::Completed,
                     started: now,
                     elapsed_before_play: Duration::from_millis(duration_ms),
+                    policy_settled: self.preference,
                 },
             );
             self.timeline_events.push(MotionTimelineEvent {
@@ -917,7 +970,11 @@ impl MotionRuntime {
                 kind: MotionTimelineEventKind::Complete,
                 callback,
             });
+            self.timeline_index.insert(logical, handle.clone());
             return Ok(handle);
+        }
+        if state == MotionPlaybackState::Playing {
+            self.ensure_active_capacity(tracks.len())?;
         }
         self.timelines.insert(
             handle.clone(),
@@ -928,9 +985,26 @@ impl MotionRuntime {
                 state,
                 started: now,
                 elapsed_before_play: Duration::ZERO,
+                policy_settled: None,
             },
         );
+        self.timeline_index.insert(logical, handle.clone());
         Ok(handle)
+    }
+
+    fn allocate_timeline_handle(&mut self, owner: &TimelineOwner, name: String) -> MotionHandle {
+        let instance = self.next_timeline_instance.max(1);
+        self.next_timeline_instance = instance.saturating_add(1);
+        MotionHandle {
+            runtime_id: self.runtime_id,
+            instance,
+            domain: owner.domain.clone(),
+            owner: owner.component.clone(),
+            incarnation: owner.incarnation,
+            generation: owner.generation,
+            node_path: owner.node_path.clone(),
+            name,
+        }
     }
 
     /// Resume or begin a timeline.
@@ -943,15 +1017,41 @@ impl MotionRuntime {
         handle: &MotionHandle,
         now: Instant,
     ) -> Result<(), MotionError> {
-        let timeline = self.timeline_mut(handle)?;
-        if matches!(
-            timeline.state,
-            MotionPlaybackState::Completed | MotionPlaybackState::Cancelled
-        ) {
-            timeline.elapsed_before_play = Duration::ZERO;
+        self.validate_handle(handle)?;
+        let state = self
+            .timelines
+            .get(handle)
+            .map(|timeline| timeline.state)
+            .ok_or_else(|| MotionError::StaleTimelineHandle(handle.name.clone()))?;
+        match state {
+            MotionPlaybackState::Playing | MotionPlaybackState::Completed => return Ok(()),
+            MotionPlaybackState::Cancelled => {
+                return Err(MotionError::StaleTimelineHandle(handle.name.clone()));
+            }
+            MotionPlaybackState::Idle | MotionPlaybackState::Paused => {}
         }
+        if matches!(
+            self.preference,
+            Some(MotionPreference::Reduced | MotionPreference::None)
+        ) {
+            let preference = self.preference;
+            let timeline = self.timeline_mut(handle)?;
+            timeline.state = MotionPlaybackState::Completed;
+            timeline.elapsed_before_play = Duration::from_millis(
+                timeline_total_duration(timeline).unwrap_or(timeline.duration_ms),
+            );
+            timeline.policy_settled = preference;
+            return Ok(());
+        }
+        let tracks = self
+            .timelines
+            .get(handle)
+            .map_or(0, |timeline| timeline.tracks.len());
+        self.ensure_active_capacity(tracks)?;
+        let timeline = self.timeline_mut(handle)?;
         timeline.started = now;
         timeline.state = MotionPlaybackState::Playing;
+        timeline.policy_settled = None;
         Ok(())
     }
 
@@ -965,11 +1065,13 @@ impl MotionRuntime {
         handle: &MotionHandle,
         now: Instant,
     ) -> Result<(), MotionError> {
+        self.validate_handle(handle)?;
+        let suspended = self.handle_suspended(handle);
         let timeline = self.timeline_mut(handle)?;
         if timeline.state == MotionPlaybackState::Playing {
-            timeline.elapsed_before_play = timeline
-                .elapsed_before_play
-                .saturating_add(now.saturating_duration_since(timeline.started));
+            if !suspended {
+                timeline.elapsed_before_play = timeline_position(timeline, now);
+            }
             timeline.state = MotionPlaybackState::Paused;
         }
         Ok(())
@@ -986,6 +1088,7 @@ impl MotionRuntime {
         position_ms: u64,
         now: Instant,
     ) -> Result<(), MotionError> {
+        self.validate_handle(handle)?;
         let timeline = self.timeline_mut(handle)?;
         let total = timeline_total_duration(timeline);
         if total.is_some_and(|total| position_ms > total) {
@@ -996,7 +1099,10 @@ impl MotionRuntime {
         }
         timeline.elapsed_before_play = Duration::from_millis(position_ms);
         timeline.started = now;
-        if timeline.state == MotionPlaybackState::Completed {
+        if matches!(
+            timeline.state,
+            MotionPlaybackState::Completed | MotionPlaybackState::Idle
+        ) {
             timeline.state = MotionPlaybackState::Paused;
         }
         Ok(())
@@ -1012,10 +1118,36 @@ impl MotionRuntime {
         handle: &MotionHandle,
         now: Instant,
     ) -> Result<(), MotionError> {
+        self.validate_handle(handle)?;
+        if matches!(
+            self.preference,
+            Some(MotionPreference::Reduced | MotionPreference::None)
+        ) {
+            let preference = self.preference;
+            let timeline = self.timeline_mut(handle)?;
+            timeline.elapsed_before_play = Duration::from_millis(
+                timeline_total_duration(timeline).unwrap_or(timeline.duration_ms),
+            );
+            timeline.state = MotionPlaybackState::Completed;
+            timeline.policy_settled = preference;
+            return Ok(());
+        }
+        let tracks = self
+            .timelines
+            .get(handle)
+            .map_or(0, |timeline| timeline.tracks.len());
+        let already_active = self
+            .timelines
+            .get(handle)
+            .is_some_and(|timeline| timeline.state == MotionPlaybackState::Playing);
+        if !already_active {
+            self.ensure_active_capacity(tracks)?;
+        }
         let timeline = self.timeline_mut(handle)?;
         timeline.elapsed_before_play = Duration::ZERO;
         timeline.started = now;
         timeline.state = MotionPlaybackState::Playing;
+        timeline.policy_settled = None;
         Ok(())
     }
 
@@ -1025,6 +1157,7 @@ impl MotionRuntime {
     ///
     /// Returns [`MotionError::UnknownTimeline`] for a stale handle.
     pub fn cancel_timeline(&mut self, handle: &MotionHandle) -> Result<(), MotionError> {
+        self.validate_handle(handle)?;
         let callback = {
             let timeline = self.timeline_mut(handle)?;
             if matches!(
@@ -1046,7 +1179,9 @@ impl MotionRuntime {
 
     #[must_use]
     pub fn timeline_state(&self, handle: &MotionHandle) -> Option<MotionPlaybackState> {
-        self.timelines.get(handle).map(|timeline| timeline.state)
+        (handle.runtime_id == self.runtime_id)
+            .then(|| self.timelines.get(handle).map(|timeline| timeline.state))
+            .flatten()
     }
 
     /// Resolve one unique named timeline below a view root.
@@ -1054,22 +1189,28 @@ impl MotionRuntime {
     /// # Errors
     ///
     /// Returns an explicit error for missing or duplicate names.
-    pub fn timeline_handle_in_scope(
+    pub fn timeline_handle_for_owner(
         &self,
-        scope: &str,
+        domain: &str,
+        owner: &ComponentInstancePath,
+        incarnation: ComponentIncarnation,
+        generation: ScriptGeneration,
         name: &str,
     ) -> Result<MotionHandle, MotionError> {
-        let mut matches = self
-            .timelines
-            .keys()
-            .filter(|handle| handle.name == name && handle.in_node_scope(scope));
+        let mut matches = self.timelines.keys().filter(|handle| {
+            handle.name == name
+                && handle.domain == domain
+                && &handle.owner == owner
+                && handle.incarnation == incarnation
+                && handle.generation == generation
+        });
         let handle = matches
             .next()
             .cloned()
             .ok_or_else(|| MotionError::UnknownTimeline(name.to_owned()))?;
         if matches.next().is_some() {
             return Err(MotionError::InvalidTimeline(format!(
-                "timeline name `{name}` is duplicated inside `{scope}`"
+                "timeline name `{name}` is duplicated for component `{owner}`"
             )));
         }
         Ok(handle)
@@ -1079,11 +1220,27 @@ impl MotionRuntime {
         std::mem::take(&mut self.timeline_events)
     }
 
+    pub fn drain_timeline_events_for_domain(&mut self, domain: &str) -> Vec<MotionTimelineEvent> {
+        let events = std::mem::take(&mut self.timeline_events);
+        let (matching, retained) = events
+            .into_iter()
+            .partition(|event| event.handle.domain == domain);
+        self.timeline_events = retained;
+        matching
+    }
+
+    pub(crate) fn discard_timeline_events_in_scope(&mut self, path: &str) {
+        self.timeline_events
+            .retain(|event| !event.handle.in_node_scope(path));
+    }
+
     #[must_use]
     pub fn resource_usage(&self) -> MotionResourceUsage {
+        let geometry_slots = self.active_reservations.values().copied().sum::<usize>();
         MotionResourceUsage {
             particles: 0,
             shared_snapshots: 0,
+            geometry_slots,
             active: self.active.len().saturating_add(
                 self.timelines
                     .values()
@@ -1115,13 +1272,69 @@ impl MotionRuntime {
     fn timeline_mut(&mut self, handle: &MotionHandle) -> Result<&mut ActiveTimeline, MotionError> {
         self.timelines
             .get_mut(handle)
-            .ok_or_else(|| MotionError::UnknownTimeline(handle.name.clone()))
+            .ok_or_else(|| MotionError::StaleTimelineHandle(handle.name.clone()))
+    }
+
+    fn validate_handle(&self, handle: &MotionHandle) -> Result<(), MotionError> {
+        if handle.runtime_id == self.runtime_id && self.timelines.contains_key(handle) {
+            Ok(())
+        } else {
+            Err(MotionError::StaleTimelineHandle(handle.name.clone()))
+        }
+    }
+
+    pub(crate) fn validate_handle_owner(
+        &self,
+        handle: &MotionHandle,
+        domain: &str,
+        owner: &ComponentInstancePath,
+        incarnation: ComponentIncarnation,
+        generation: ScriptGeneration,
+    ) -> Result<(), MotionError> {
+        self.validate_handle(handle)?;
+        if handle.domain == domain
+            && &handle.owner == owner
+            && handle.incarnation == incarnation
+            && handle.generation == generation
+        {
+            Ok(())
+        } else {
+            Err(MotionError::ForeignTimelineHandle(handle.name.clone()))
+        }
+    }
+
+    fn ensure_active_capacity(&self, additional: usize) -> Result<(), MotionError> {
+        let usage = self.resource_usage();
+        let actual = usage
+            .active
+            .saturating_add(usage.geometry_slots)
+            .saturating_add(additional);
+        if actual <= self.active_limit {
+            Ok(())
+        } else {
+            Err(MotionError::ActiveBudget {
+                actual,
+                limit: self.active_limit,
+            })
+        }
+    }
+
+    pub(crate) fn set_active_limit(&mut self, limit: usize) {
+        self.active_limit = limit;
+    }
+
+    pub(crate) fn set_active_reservation(&mut self, path: &str, slots: usize) {
+        if slots == 0 {
+            self.active_reservations.remove(path);
+        } else {
+            self.active_reservations.insert(path.to_owned(), slots);
+        }
     }
 
     pub fn retain_keys(&mut self, keys: &BTreeSet<MotionKey>) {
         self.active.retain(|key, _| keys.contains(key));
         self.settled.retain(|key, _| keys.contains(key));
-        self.settled_replay.retain(|key, _| keys.contains(key));
+        self.settled_declaration.retain(|key, _| keys.contains(key));
     }
 
     pub fn retain_node_scope(&mut self, path: &str, keys: &BTreeSet<MotionKey>) {
@@ -1129,7 +1342,7 @@ impl MotionRuntime {
             .retain(|key, _| !key.in_node_scope(path) || keys.contains(key));
         self.settled
             .retain(|key, _| !key.in_node_scope(path) || keys.contains(key));
-        self.settled_replay
+        self.settled_declaration
             .retain(|key, _| !key.in_node_scope(path) || keys.contains(key));
     }
 
@@ -1148,19 +1361,49 @@ impl MotionRuntime {
                 )
             {
                 self.timeline_events.push(MotionTimelineEvent {
-                    handle,
+                    handle: handle.clone(),
                     kind: MotionTimelineEventKind::Cancel,
                     callback: timeline.spec.on_cancel,
                 });
             }
+            self.timeline_index.retain(|_, active| active != &handle);
+        }
+    }
+
+    fn retain_timeline_plan_scope(&mut self, path: &str, logical: &BTreeSet<(String, String)>) {
+        let removed = self
+            .timelines
+            .keys()
+            .filter(|handle| {
+                handle.in_node_scope(path)
+                    && !logical.contains(&(handle.node_path.clone(), handle.name.clone()))
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        for handle in removed {
+            if let Some(timeline) = self.timelines.remove(&handle)
+                && !matches!(
+                    timeline.state,
+                    MotionPlaybackState::Completed | MotionPlaybackState::Cancelled
+                )
+            {
+                self.timeline_events.push(MotionTimelineEvent {
+                    handle: handle.clone(),
+                    kind: MotionTimelineEventKind::Cancel,
+                    callback: timeline.spec.on_cancel,
+                });
+            }
+            self.timeline_index.retain(|_, active| active != &handle);
         }
     }
 
     pub fn cancel_node_scope(&mut self, path: &str) {
         self.active.retain(|key, _| !key.in_node_scope(path));
         self.settled.retain(|key, _| !key.in_node_scope(path));
-        self.settled_replay
+        self.settled_declaration
             .retain(|key, _| !key.in_node_scope(path));
+        self.active_reservations
+            .retain(|scope, _| !path_contains_scope(path, scope));
         let removed = self
             .timelines
             .keys()
@@ -1175,11 +1418,12 @@ impl MotionRuntime {
                 )
             {
                 self.timeline_events.push(MotionTimelineEvent {
-                    handle,
+                    handle: handle.clone(),
                     kind: MotionTimelineEventKind::Cancel,
                     callback: timeline.spec.on_cancel,
                 });
             }
+            self.timeline_index.retain(|_, active| active != &handle);
         }
     }
 
@@ -1195,28 +1439,63 @@ impl MotionRuntime {
             })
     }
 
-    /// Shift one retained node scope forward so elapsed suspended time is not
-    /// sampled as animation progress.
-    pub fn delay_node_scope(&mut self, path: &str, delay: Duration) {
-        if delay.is_zero() {
+    fn key_suspended(&self, key: &MotionKey) -> bool {
+        self.suspended_scopes
+            .iter()
+            .any(|scope| key.in_node_scope(scope))
+    }
+
+    fn handle_suspended(&self, handle: &MotionHandle) -> bool {
+        self.suspended_scopes
+            .iter()
+            .any(|scope| handle.in_node_scope(scope))
+    }
+
+    pub fn suspend_node_scope(&mut self, path: &str, now: Instant) {
+        if !self.suspended_scopes.insert(path.to_owned()) {
             return;
         }
         for (key, motion) in &mut self.active {
             if !key.in_node_scope(path) {
                 continue;
             }
-            match &mut motion.state {
-                MotionState::Transition { started, .. }
-                | MotionState::Keyframes { started, .. } => {
-                    *started = started.checked_add(delay).unwrap_or(*started);
-                }
-                MotionState::Spring { last_tick, .. } | MotionState::Inertia { last_tick, .. } => {
-                    *last_tick = last_tick.checked_add(delay).unwrap_or(*last_tick);
-                }
+            motion.elapsed_before_play = motion_elapsed(motion, now);
+        }
+        for (handle, timeline) in &mut self.timelines {
+            if handle.in_node_scope(path) && timeline.state == MotionPlaybackState::Playing {
+                timeline.elapsed_before_play = timeline_position(timeline, now);
+            }
+        }
+    }
+
+    pub fn resume_node_scope(&mut self, path: &str, now: Instant) {
+        if !self.suspended_scopes.remove(path) {
+            return;
+        }
+        for (key, motion) in &mut self.active {
+            if key.in_node_scope(path) {
+                motion.started = now;
             }
         }
         for (handle, timeline) in &mut self.timelines {
             if handle.in_node_scope(path) && timeline.state == MotionPlaybackState::Playing {
+                timeline.started = now;
+            }
+        }
+    }
+
+    /// Compatibility for internal callers that already measured a pause.
+    pub fn delay_node_scope(&mut self, path: &str, delay: Duration) {
+        if delay.is_zero() {
+            return;
+        }
+        for (key, motion) in &mut self.active {
+            if key.in_node_scope(path) {
+                motion.started = motion.started.checked_add(delay).unwrap_or(motion.started);
+            }
+        }
+        for (handle, timeline) in &mut self.timelines {
+            if handle.in_node_scope(path) {
                 timeline.started = timeline
                     .started
                     .checked_add(delay)
@@ -1234,7 +1513,9 @@ impl MotionRuntime {
             .filter_map(|key| self.sample(key, now).map(|value| (key.clone(), value)))
             .collect::<BTreeMap<_, _>>();
         for (handle, timeline) in &self.timelines {
-            values.extend(advance_timeline(handle, timeline, now).0);
+            values.extend(
+                sample_timeline(handle, timeline, now, self.handle_suspended(handle)).values,
+            );
         }
         values
     }
@@ -1244,73 +1525,37 @@ impl MotionRuntime {
         let mut snapshots = self
             .active
             .iter()
-            .map(|(key, motion)| match &motion.state {
-                MotionState::Transition {
-                    to,
-                    started,
-                    duration,
-                    iterations,
-                    ..
-                } => MotionSnapshot {
+            .map(|(key, motion)| {
+                let sample = sample_active_motion(motion, now, self.key_suspended(key));
+                let (kind, duration, repeating) = match &motion.source {
+                    MotionSource::Transition(spec) => (
+                        "transition",
+                        Some(spec.duration_ms),
+                        spec.iterations.is_none() || spec.iterations.is_some_and(|count| count > 1),
+                    ),
+                    MotionSource::Spring(_) => ("spring", None, false),
+                    MotionSource::Keyframes(spec) => (
+                        "keyframes",
+                        Some(spec.duration_ms),
+                        spec.iterations.is_none() || spec.iterations.is_some_and(|count| count > 1),
+                    ),
+                    MotionSource::Inertia(_) => ("inertia", None, false),
+                };
+                MotionSnapshot {
                     key: key.clone(),
-                    kind: "transition".to_owned(),
-                    value: sample_motion(motion, now),
-                    target: *to,
-                    velocity: None,
-                    elapsed_ms: duration_ms(now.saturating_duration_since(*started)),
-                    duration_ms: Some(duration_ms(*duration)),
-                    repeating: iterations.is_none() || iterations.is_some_and(|count| count > 1),
+                    kind: kind.to_owned(),
+                    value: sample.value,
+                    target: source_terminal_value(&motion.source),
+                    velocity: sample.velocity,
+                    elapsed_ms: duration_ms(if self.key_suspended(key) {
+                        motion.elapsed_before_play
+                    } else {
+                        motion_elapsed(motion, now)
+                    }),
+                    duration_ms: duration,
+                    repeating,
                     active: true,
-                },
-                MotionState::Spring {
-                    velocity,
-                    target,
-                    last_tick,
-                    ..
-                } => MotionSnapshot {
-                    key: key.clone(),
-                    kind: "spring".to_owned(),
-                    value: sample_motion(motion, now),
-                    target: *target,
-                    velocity: Some(*velocity),
-                    elapsed_ms: duration_ms(now.saturating_duration_since(*last_tick)),
-                    duration_ms: None,
-                    repeating: false,
-                    active: true,
-                },
-                MotionState::Keyframes {
-                    frames,
-                    started,
-                    duration,
-                    iterations,
-                    ..
-                } => MotionSnapshot {
-                    key: key.clone(),
-                    kind: "keyframes".to_owned(),
-                    value: sample_motion(motion, now),
-                    target: frames.last().map_or(0.0, |frame| frame.value),
-                    velocity: None,
-                    elapsed_ms: duration_ms(now.saturating_duration_since(*started)),
-                    duration_ms: Some(duration_ms(*duration)),
-                    repeating: iterations.is_none() || iterations.is_some_and(|count| count > 1),
-                    active: true,
-                },
-                MotionState::Inertia {
-                    position,
-                    velocity,
-                    last_tick,
-                    ..
-                } => MotionSnapshot {
-                    key: key.clone(),
-                    kind: "inertia".to_owned(),
-                    value: *position,
-                    target: motion.source.target(),
-                    velocity: Some(*velocity),
-                    elapsed_ms: duration_ms(now.saturating_duration_since(*last_tick)),
-                    duration_ms: None,
-                    repeating: false,
-                    active: true,
-                },
+                }
             })
             .collect::<Vec<_>>();
         snapshots.extend(self.settled.iter().map(|(key, value)| MotionSnapshot {
@@ -1333,7 +1578,9 @@ impl MotionRuntime {
         self.timelines
             .iter()
             .map(|(handle, timeline)| {
-                let active_elapsed = if timeline.state == MotionPlaybackState::Playing {
+                let active_elapsed = if timeline.state == MotionPlaybackState::Playing
+                    && !self.handle_suspended(handle)
+                {
                     now.saturating_duration_since(timeline.started)
                 } else {
                     Duration::ZERO
@@ -1354,43 +1601,85 @@ impl MotionRuntime {
 
     #[must_use]
     pub fn sample(&self, key: &MotionKey, now: Instant) -> Option<f64> {
+        self.sample_with_velocity(key, now)
+            .map(|sample| sample.value)
+    }
+
+    fn sample_with_velocity(&self, key: &MotionKey, now: Instant) -> Option<SourceSample> {
         self.active
             .get(key)
-            .map(|animation| sample_motion(animation, now))
-            .or_else(|| self.settled.get(key).copied())
+            .map(|motion| sample_active_motion(motion, now, self.key_suspended(key)))
+            .or_else(|| {
+                self.settled.get(key).copied().map(|value| SourceSample {
+                    value,
+                    velocity: None,
+                    done: true,
+                })
+            })
     }
 
     #[must_use]
     pub fn tick(&mut self, now: Instant) -> MotionFrame {
+        self.tick_filtered(now, None)
+    }
+
+    #[must_use]
+    pub fn tick_scope(&mut self, now: Instant, path: &str) -> MotionFrame {
+        self.tick_filtered(now, Some(path))
+    }
+
+    fn tick_filtered(&mut self, now: Instant, scope: Option<&str>) -> MotionFrame {
         let mut values = BTreeMap::new();
         let mut completed = BTreeSet::new();
         for (key, animation) in &mut self.active {
-            let (value, done) = advance_motion(animation, now);
-            values.insert(key.clone(), value);
-            if done {
+            if scope.is_some_and(|scope| !key.in_node_scope(scope)) {
+                continue;
+            }
+            if self
+                .suspended_scopes
+                .iter()
+                .any(|scope| key.in_node_scope(scope))
+            {
+                values.insert(
+                    key.clone(),
+                    sample_active_motion(animation, now, true).value,
+                );
+                continue;
+            }
+            let sample = sample_active_motion(animation, now, false);
+            values.insert(key.clone(), sample.value);
+            if sample.done {
                 completed.insert(key.clone());
             }
         }
         for key in &completed {
             if let Some(animation) = self.active.remove(key) {
-                self.settled_replay
-                    .insert(key.clone(), animation.replay_key.clone());
-                self.settled.insert(key.clone(), target(&animation));
+                let sample = sample_active_motion(&animation, now, false);
+                self.settled_declaration
+                    .insert(key.clone(), (animation.declaration, animation.replay_key));
+                self.settled.insert(key.clone(), sample.value);
             }
         }
         let mut completed_timelines = Vec::new();
+        let suspended_scopes = &self.suspended_scopes;
         for (handle, timeline) in &mut self.timelines {
-            let (timeline_values, done) = advance_timeline(handle, timeline, now);
-            for (key, value) in timeline_values {
-                values.insert(key.clone(), value);
-                self.settled.insert(key, value);
+            if scope.is_some_and(|scope| !handle.in_node_scope(scope)) {
+                continue;
             }
-            if done {
+            let suspended = suspended_scopes
+                .iter()
+                .any(|scope| handle.in_node_scope(scope));
+            let sample = sample_timeline(handle, timeline, now, suspended);
+            values.extend(sample.values);
+            if sample.done && !suspended && timeline.state == MotionPlaybackState::Playing {
                 completed_timelines.push(handle.clone());
             }
         }
         for handle in completed_timelines {
             let callback = self.timelines.get_mut(&handle).and_then(|timeline| {
+                timeline.elapsed_before_play = Duration::from_millis(
+                    timeline_total_duration(timeline).unwrap_or(timeline.duration_ms),
+                );
                 timeline.state = MotionPlaybackState::Completed;
                 timeline.spec.on_complete.clone()
             });
@@ -1403,11 +1692,20 @@ impl MotionRuntime {
         MotionFrame {
             values,
             completed,
-            needs_frame: !self.active.is_empty()
-                || self
-                    .timelines
-                    .values()
-                    .any(|timeline| timeline.state == MotionPlaybackState::Playing),
+            needs_frame: self.active.keys().any(|key| {
+                scope.is_none_or(|scope| key.in_node_scope(scope))
+                    && !self
+                        .suspended_scopes
+                        .iter()
+                        .any(|suspended| key.in_node_scope(suspended))
+            }) || self.timelines.iter().any(|(handle, timeline)| {
+                timeline.state == MotionPlaybackState::Playing
+                    && scope.is_none_or(|scope| handle.in_node_scope(scope))
+                    && !self
+                        .suspended_scopes
+                        .iter()
+                        .any(|suspended| handle.in_node_scope(suspended))
+            }),
         }
     }
 }
@@ -1421,17 +1719,44 @@ fn timeline_compatible(previous: &MotionTimeline, next: &MotionTimeline) -> bool
         && previous.intent == next.intent
 }
 
-fn advance_timeline(
+struct TimelineSample {
+    values: BTreeMap<MotionKey, f64>,
+    done: bool,
+}
+
+fn sample_timeline(
     handle: &MotionHandle,
     timeline: &ActiveTimeline,
     now: Instant,
-) -> (BTreeMap<MotionKey, f64>, bool) {
-    if timeline.state != MotionPlaybackState::Playing {
-        return (BTreeMap::new(), false);
+    suspended: bool,
+) -> TimelineSample {
+    if timeline.state == MotionPlaybackState::Cancelled {
+        return TimelineSample {
+            values: BTreeMap::new(),
+            done: false,
+        };
     }
-    let elapsed = timeline
-        .elapsed_before_play
-        .saturating_add(now.saturating_duration_since(timeline.started));
+    if let Some(preference) = timeline.policy_settled {
+        let values = timeline
+            .tracks
+            .iter()
+            .map(|track| {
+                let key = timeline_track_key(handle, &track.target, track.source.property());
+                let value = if preference == MotionPreference::None {
+                    source_terminal_value(&track.source)
+                } else {
+                    track.source.reduced_value()
+                };
+                (key, value)
+            })
+            .collect();
+        return TimelineSample { values, done: true };
+    }
+    let elapsed = if suspended {
+        timeline.elapsed_before_play
+    } else {
+        timeline_position(timeline, now)
+    };
     let elapsed_ms = duration_ms(elapsed);
     let iteration_duration = timeline.duration_ms.max(1);
     let raw_iteration = elapsed_ms / iteration_duration;
@@ -1454,22 +1779,39 @@ fn advance_timeline(
     }
     let mut values = BTreeMap::new();
     for track in &timeline.tracks {
-        if local_ms < track.start_ms {
-            continue;
-        }
-        let track_elapsed = local_ms.saturating_sub(track.start_ms);
-        let value = sample_source_at(&track.source, track_elapsed.min(track.duration_ms));
         let key = timeline_track_key(handle, &track.target, track.source.property());
-        values.insert(key, value);
+        if local_ms < track.start_ms {
+            values
+                .entry(key)
+                .or_insert_with(|| source_initial_value(&track.source));
+        } else {
+            let track_elapsed = local_ms.saturating_sub(track.start_ms);
+            values.insert(
+                key,
+                sample_source_with_duration(
+                    &track.source,
+                    Duration::from_millis(track_elapsed),
+                    Some(track.duration_ms),
+                )
+                .value,
+            );
+        }
     }
-    (values, done)
+    TimelineSample { values, done }
+}
+
+fn timeline_position(timeline: &ActiveTimeline, now: Instant) -> Duration {
+    if timeline.state == MotionPlaybackState::Playing {
+        timeline
+            .elapsed_before_play
+            .saturating_add(now.saturating_duration_since(timeline.started))
+    } else {
+        timeline.elapsed_before_play
+    }
 }
 
 fn timeline_track_key(handle: &MotionHandle, target: &str, property: MotionProperty) -> MotionKey {
-    let root = handle
-        .component
-        .single_root_key("UiNode")
-        .unwrap_or(handle.name.as_str());
+    let root = handle.node_path.as_str();
     let path = match target {
         "." | "" => root.to_owned(),
         target if target.starts_with('/') => target.trim_start_matches('/').to_owned(),
@@ -1592,65 +1934,6 @@ fn source_duration_ms(source: &MotionSource) -> Result<u64, MotionError> {
     }
 }
 
-fn sample_source_at(source: &MotionSource, elapsed_ms: u64) -> f64 {
-    match source {
-        MotionSource::Transition(spec) => {
-            if elapsed_ms < spec.delay_ms {
-                return spec.from;
-            }
-            let elapsed = elapsed_ms.saturating_sub(spec.delay_ms);
-            let duration = spec.duration_ms.max(1);
-            let iterations = spec.iterations.unwrap_or(1);
-            let done = elapsed >= duration.saturating_mul(u64::from(iterations));
-            let cycle = if done {
-                u64::from(iterations.saturating_sub(1))
-            } else {
-                elapsed / duration
-            };
-            let mut progress = if done {
-                1.0
-            } else {
-                Duration::from_millis(elapsed % duration).as_secs_f64()
-                    / Duration::from_millis(duration).as_secs_f64()
-            };
-            if spec.autoreverse && cycle % 2 == 1 {
-                progress = 1.0 - progress;
-            }
-            spec.from + (spec.to - spec.from) * spec.easing.sample(progress)
-        }
-        MotionSource::Keyframes(spec) => {
-            if elapsed_ms < spec.delay_ms {
-                return spec.frames.first().map_or(0.0, |frame| frame.value);
-            }
-            let elapsed = elapsed_ms.saturating_sub(spec.delay_ms);
-            let duration = spec.duration_ms.max(1);
-            let iterations = spec.iterations.unwrap_or(1);
-            let done = elapsed >= duration.saturating_mul(u64::from(iterations));
-            let cycle = if done {
-                u64::from(iterations.saturating_sub(1))
-            } else {
-                elapsed / duration
-            };
-            let mut progress = if done {
-                1.0
-            } else {
-                Duration::from_millis(elapsed % duration).as_secs_f64()
-                    / Duration::from_millis(duration).as_secs_f64()
-            };
-            if spec.autoreverse && cycle % 2 == 1 {
-                progress = 1.0 - progress;
-            }
-            sample_keyframes(&spec.frames, progress)
-        }
-        MotionSource::Spring(spec) => {
-            sample_spring_at(spec, Duration::from_millis(elapsed_ms).as_secs_f64()).0
-        }
-        MotionSource::Inertia(spec) => {
-            sample_inertia_at(spec, Duration::from_millis(elapsed_ms).as_secs_f64())
-        }
-    }
-}
-
 pub(crate) fn sample_progress_source(source: &MotionSource, progress: f64) -> f64 {
     let progress = progress.clamp(0.0, 1.0);
     match source {
@@ -1741,18 +2024,34 @@ fn spring_settle_ms(spec: &MotionSpring) -> u64 {
         .unwrap_or(9_600)
 }
 
-fn sample_inertia_at(spec: &MotionInertia, seconds: f64) -> f64 {
-    let projected =
-        spec.from + spec.velocity / spec.friction * (1.0 - (-spec.friction * seconds).exp());
-    let bounded = projected.clamp(
-        spec.min.unwrap_or(f64::NEG_INFINITY),
-        spec.max.unwrap_or(f64::INFINITY),
-    );
-    if Duration::from_secs_f64(seconds.max(0.0)) >= Duration::from_millis(inertia_settle_ms(spec)) {
-        nearest_snap(bounded, &spec.snap_points).unwrap_or(bounded)
-    } else {
-        bounded
+fn sample_inertia_at(spec: &MotionInertia, elapsed: Duration) -> (f64, f64) {
+    let seconds = elapsed.as_secs_f64().min(10.0);
+    let steps = (seconds * 240.0).ceil().clamp(1.0, 2_400.0);
+    let steps = u32::try_from(steps.to_string().parse::<u64>().unwrap_or(1)).unwrap_or(2_400);
+    let delta = seconds / f64::from(steps);
+    let mut position = spec.from;
+    let mut velocity = spec.velocity;
+    for _ in 0..steps {
+        velocity *= (-spec.friction * delta).exp();
+        position += velocity * delta;
+        if let Some(minimum) = spec.min
+            && position < minimum
+        {
+            position = minimum;
+            velocity = velocity.abs() * spec.bounce;
+        }
+        if let Some(maximum) = spec.max
+            && position > maximum
+        {
+            position = maximum;
+            velocity = -velocity.abs() * spec.bounce;
+        }
     }
+    if elapsed >= Duration::from_millis(inertia_settle_ms(spec)) {
+        position = nearest_snap(position, &spec.snap_points).unwrap_or(position);
+        velocity = 0.0;
+    }
+    (position, velocity)
 }
 
 fn inertia_settle_ms(spec: &MotionInertia) -> u64 {
@@ -1812,6 +2111,15 @@ pub fn reconcile_node_motion(
     reconcile_node_motion_scoped(root, runtime, now, "root")
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct MotionReconcileContext<'a> {
+    pub domain: &'a str,
+    pub root_component: &'a ComponentInstancePath,
+    pub root_incarnation: ComponentIncarnation,
+    pub generation: ScriptGeneration,
+    pub incarnations: &'a BTreeMap<ComponentInstancePath, ComponentIncarnation>,
+}
+
 /// Reconcile one window's animation declarations without touching other windows.
 ///
 /// # Errors
@@ -1823,36 +2131,93 @@ pub fn reconcile_node_motion_scoped(
     now: Instant,
     root_path: &str,
 ) -> Result<BTreeMap<MotionKey, f64>, MotionError> {
+    let root_component = ComponentInstancePath::root("UiNode", root_path);
+    let incarnations = BTreeMap::new();
+    reconcile_node_motion_scoped_owned(
+        root,
+        runtime,
+        now,
+        root_path,
+        MotionReconcileContext {
+            domain: root_path,
+            root_component: &root_component,
+            root_incarnation: ComponentIncarnation::unscoped(),
+            generation: ScriptGeneration::default(),
+            incarnations: &incarnations,
+        },
+    )
+}
+
+pub(crate) fn reconcile_node_motion_scoped_owned(
+    root: &UiNode,
+    runtime: &mut MotionRuntime,
+    now: Instant,
+    root_path: &str,
+    context: MotionReconcileContext<'_>,
+) -> Result<BTreeMap<MotionKey, f64>, MotionError> {
     validate_shared_layout_ids(root)?;
     let mut declarations = Vec::<(String, MotionSource, Option<String>)>::new();
-    let mut timelines = Vec::<(String, MotionTimeline)>::new();
-    collect_node_motion(root, root_path, &mut declarations, &mut timelines)?;
+    let mut timelines = Vec::<(String, ComponentInstancePath, MotionTimeline)>::new();
+    collect_node_motion(
+        root,
+        root_path,
+        context.root_component,
+        &mut declarations,
+        &mut timelines,
+    )?;
+    validate_motion_plan(root, root_path, &declarations, &timelines)?;
     for (_, spec, _) in &declarations {
         validate_source(spec)?;
     }
-    let mut keys = BTreeSet::new();
+    let mut candidate = runtime.transaction_snapshot();
+    let keys = declarations
+        .iter()
+        .map(|(path, source, _)| MotionKey::for_node(path, source.property()))
+        .collect::<BTreeSet<_>>();
+    candidate.retain_node_scope(root_path, &keys);
+    let logical_timelines = timelines
+        .iter()
+        .map(|(path, _, timeline)| (path.clone(), timeline.name.clone()))
+        .collect::<BTreeSet<_>>();
+    candidate.retain_timeline_plan_scope(root_path, &logical_timelines);
     for (path, spec, replay_key) in declarations {
-        keys.insert(runtime.start_with_replay(
+        candidate.start_with_replay(
             ComponentInstancePath::root("UiNode", path),
             spec,
             replay_key,
             now,
-        )?);
+        )?;
     }
     let mut handles = BTreeSet::new();
-    for (path, timeline) in timelines {
-        handles.insert(runtime.start_timeline(
-            ComponentInstancePath::root("UiNode", path),
+    for (path, owner, timeline) in timelines {
+        let incarnation = context
+            .incarnations
+            .get(&owner)
+            .copied()
+            .unwrap_or(context.root_incarnation);
+        handles.insert(candidate.start_timeline_owned(
+            &TimelineOwner {
+                domain: context.domain.to_owned(),
+                component: owner,
+                incarnation,
+                generation: context.generation,
+                node_path: path,
+            },
             timeline,
             now,
         )?);
     }
-    runtime.retain_node_scope(root_path, &keys);
-    runtime.retain_timeline_scope(root_path, &handles);
-    Ok(runtime.snapshot(now))
+    candidate.retain_timeline_scope(root_path, &handles);
+    let values = candidate.snapshot(now);
+    *runtime = candidate;
+    Ok(values)
 }
 
 fn validate_shared_layout_ids(root: &UiNode) -> Result<(), MotionError> {
+    shared_layout_ids(root).map(|_| ())
+}
+
+pub(crate) fn shared_layout_ids(root: &UiNode) -> Result<BTreeSet<(String, String)>, MotionError> {
     fn visit(node: &UiNode, seen: &mut BTreeSet<(String, String)>) -> Result<(), MotionError> {
         let group = node.attributes().get("shared_layout_group");
         let id = node.attributes().get("shared_layout_id");
@@ -1909,7 +2274,9 @@ fn validate_shared_layout_ids(root: &UiNode) -> Result<(), MotionError> {
         }
         Ok(())
     }
-    visit(root, &mut BTreeSet::new())
+    let mut seen = BTreeSet::new();
+    visit(root, &mut seen)?;
+    Ok(seen)
 }
 
 #[must_use]
@@ -1924,6 +2291,13 @@ pub fn node_motion_resource_usage(root: &UiNode) -> MotionResourceUsage {
         if node.attributes().contains_key("shared_layout_id") {
             usage.shared_snapshots = usage.shared_snapshots.saturating_add(1);
         }
+        if node.attributes().contains_key("layout_motion_duration_ms") {
+            usage.geometry_slots = usage.geometry_slots.saturating_add(1);
+            usage.declarations = usage.declarations.saturating_add(1);
+        }
+        usage.geometry_slots = usage
+            .geometry_slots
+            .saturating_add(node.progress_motions().len());
         usage.declarations = usage.declarations.saturating_add(node.motions().len());
         usage.declarations = usage.declarations.saturating_add(node.exit_motions().len());
         usage.declarations = usage
@@ -2040,9 +2414,11 @@ fn visit_timeline_sources(step: &MotionTimelineStep, visit: &mut impl FnMut(&Mot
 fn collect_node_motion(
     node: &UiNode,
     path: &str,
+    inherited_owner: &ComponentInstancePath,
     output: &mut Vec<(String, MotionSource, Option<String>)>,
-    timelines: &mut Vec<(String, MotionTimeline)>,
+    timelines: &mut Vec<(String, ComponentInstancePath, MotionTimeline)>,
 ) -> Result<(), MotionError> {
+    let owner = node.component_root().unwrap_or(inherited_owner);
     if (!node.motions().is_empty()
         || !node.exit_motions().is_empty()
         || !node.progress_motions().is_empty()
@@ -2050,6 +2426,12 @@ fn collect_node_motion(
         && node.key().is_none()
     {
         return Err(MotionError::MissingKey(path.to_owned()));
+    }
+    if !node.exit_motions().is_empty() && node.motion_ghost().is_none() {
+        return Err(MotionError::UnsupportedExitGhost(format!(
+            "{:?}",
+            node.kind_tag()
+        )));
     }
     for source in node.exit_motions() {
         validate_source(source)?;
@@ -2086,30 +2468,71 @@ fn collect_node_motion(
         node.timelines()
             .iter()
             .cloned()
-            .map(|timeline| (path.to_owned(), timeline)),
+            .map(|timeline| (path.to_owned(), owner.clone(), timeline)),
     );
     match node.kind() {
         UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => {
             for (index, child) in children.iter().enumerate() {
-                collect_node_motion(child, &child_path(path, index, child), output, timelines)?;
+                collect_node_motion(
+                    child,
+                    &child_path(path, index, child),
+                    owner,
+                    output,
+                    timelines,
+                )?;
             }
         }
         UiNodeKind::Overlay {
             trigger, content, ..
         } => {
-            collect_node_motion(trigger, &format!("{path}/trigger"), output, timelines)?;
-            collect_node_motion(content, &format!("{path}/content"), output, timelines)?;
+            collect_node_motion(
+                trigger,
+                &format!("{path}/trigger"),
+                owner,
+                output,
+                timelines,
+            )?;
+            collect_node_motion(
+                content,
+                &format!("{path}/content"),
+                owner,
+                output,
+                timelines,
+            )?;
         }
         UiNodeKind::Layer { content, .. } => {
-            collect_node_motion(content, &format!("{path}/content"), output, timelines)?;
+            collect_node_motion(
+                content,
+                &format!("{path}/content"),
+                owner,
+                output,
+                timelines,
+            )?;
         }
         UiNodeKind::ErrorBoundary { child, fallback } => {
-            collect_node_motion(child, &format!("{path}/boundary"), output, timelines)?;
-            collect_node_motion(fallback, &format!("{path}/fallback"), output, timelines)?;
+            collect_node_motion(child, &format!("{path}/boundary"), owner, output, timelines)?;
+            collect_node_motion(
+                fallback,
+                &format!("{path}/fallback"),
+                owner,
+                output,
+                timelines,
+            )?;
         }
         UiNodeKind::VirtualCollection { spec } => {
             for (index, item) in &spec.realized {
-                collect_node_motion(item, &format!("{path}/item:{index}"), output, timelines)?;
+                let key = crate::virtual_list_element::collection_item_key(spec, *index)
+                    .ok_or_else(|| MotionError::MissingVirtualItemKey {
+                        path: path.to_owned(),
+                        index: *index,
+                    })?;
+                collect_node_motion(
+                    item,
+                    &format!("{path}/item:{key}"),
+                    owner,
+                    output,
+                    timelines,
+                )?;
             }
         }
         UiNodeKind::RichText { spans, .. } => {
@@ -2154,6 +2577,184 @@ fn collect_node_motion(
     Ok(())
 }
 
+enum MotionSceneTarget<'a> {
+    Node(&'a UiNode),
+    Span,
+}
+
+fn validate_motion_plan(
+    root: &UiNode,
+    root_path: &str,
+    declarations: &[(String, MotionSource, Option<String>)],
+    timelines: &[(String, ComponentInstancePath, MotionTimeline)],
+) -> Result<(), MotionError> {
+    let mut scene = BTreeMap::new();
+    collect_motion_scene(root, root_path, &mut scene)?;
+    let mut owners = BTreeMap::<(String, MotionProperty), String>::new();
+    for (path, source, _) in declarations {
+        insert_property_owner(&mut owners, path, source.property(), "motion declaration")?;
+    }
+    collect_non_timeline_owners(root, root_path, &mut owners)?;
+    for (base, _, timeline) in timelines {
+        let (tracks, _) = compile_timeline(&timeline.root)?;
+        let mut timeline_properties = BTreeSet::new();
+        for track in tracks {
+            let target_path = resolve_timeline_target(base, &track.target);
+            let target =
+                scene
+                    .get(&target_path)
+                    .ok_or_else(|| MotionError::UnknownTimelineTarget {
+                        timeline: timeline.name.clone(),
+                        target: target_path.clone(),
+                    })?;
+            validate_scene_target_property(target, track.source.property(), &target_path)?;
+            let key = (target_path.clone(), track.source.property());
+            if timeline_properties.insert(key.clone()) {
+                insert_property_owner(
+                    &mut owners,
+                    &target_path,
+                    track.source.property(),
+                    &format!("timeline `{}`", timeline.name),
+                )?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn insert_property_owner(
+    owners: &mut BTreeMap<(String, MotionProperty), String>,
+    path: &str,
+    property: MotionProperty,
+    owner: &str,
+) -> Result<(), MotionError> {
+    let key = (path.to_owned(), property);
+    if let Some(previous) = owners.insert(key, owner.to_owned()) {
+        Err(MotionError::PropertyOwnerConflict {
+            path: path.to_owned(),
+            property,
+            first: previous,
+            second: owner.to_owned(),
+        })
+    } else {
+        Ok(())
+    }
+}
+
+fn resolve_timeline_target(base: &str, target: &str) -> String {
+    match target {
+        "." | "" => base.to_owned(),
+        target => format!("{base}/{target}"),
+    }
+}
+
+fn validate_scene_target_property(
+    target: &MotionSceneTarget<'_>,
+    property: MotionProperty,
+    path: &str,
+) -> Result<(), MotionError> {
+    match target {
+        MotionSceneTarget::Node(node) => validate_node_property(node, property, path),
+        MotionSceneTarget::Span if property == MotionProperty::Opacity => Ok(()),
+        MotionSceneTarget::Span => Err(MotionError::UnsupportedProperty {
+            path: path.to_owned(),
+            property,
+            node: "rich_text_span",
+        }),
+    }
+}
+
+fn collect_non_timeline_owners(
+    node: &UiNode,
+    path: &str,
+    owners: &mut BTreeMap<(String, MotionProperty), String>,
+) -> Result<(), MotionError> {
+    for binding in node.progress_motions() {
+        insert_property_owner(owners, path, binding.property(), "progress binding")?;
+    }
+    for (property, _) in node.signal_bindings() {
+        let property = match property {
+            crate::SignalProperty::Opacity => Some(MotionProperty::Opacity),
+            crate::SignalProperty::TranslateX => Some(MotionProperty::TranslateX),
+            crate::SignalProperty::TranslateY => Some(MotionProperty::TranslateY),
+            crate::SignalProperty::Width | crate::SignalProperty::WidthOverride => {
+                Some(MotionProperty::Width)
+            }
+            crate::SignalProperty::Height => Some(MotionProperty::Height),
+            crate::SignalProperty::Background
+            | crate::SignalProperty::TextColor
+            | crate::SignalProperty::BorderColor => None,
+        };
+        if let Some(property) = property {
+            insert_property_owner(owners, path, property, "native signal")?;
+        }
+    }
+    visit_motion_children(node, path, |child, child_path| {
+        collect_non_timeline_owners(child, child_path, owners)
+    })
+}
+
+fn collect_motion_scene<'a>(
+    node: &'a UiNode,
+    path: &str,
+    scene: &mut BTreeMap<String, MotionSceneTarget<'a>>,
+) -> Result<(), MotionError> {
+    scene.insert(path.to_owned(), MotionSceneTarget::Node(node));
+    if let UiNodeKind::RichText { spans, .. } = node.kind() {
+        for span in spans {
+            if let Some(key) = span.key() {
+                scene.insert(format!("{path}/span:{key}"), MotionSceneTarget::Span);
+            }
+        }
+    }
+    visit_motion_children(node, path, |child, child_path| {
+        collect_motion_scene(child, child_path, scene)
+    })
+}
+
+fn visit_motion_children<'a>(
+    node: &'a UiNode,
+    path: &str,
+    mut visit: impl FnMut(&'a UiNode, &str) -> Result<(), MotionError>,
+) -> Result<(), MotionError> {
+    match node.kind() {
+        UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => {
+            for (index, child) in children.iter().enumerate() {
+                visit(child, &child_path(path, index, child))?;
+            }
+        }
+        UiNodeKind::Overlay {
+            trigger, content, ..
+        } => {
+            visit(trigger, &format!("{path}/trigger"))?;
+            visit(content, &format!("{path}/content"))?;
+        }
+        UiNodeKind::Layer { content, .. } => visit(content, &format!("{path}/content"))?,
+        UiNodeKind::ErrorBoundary { child, fallback } => {
+            visit(child, &format!("{path}/boundary"))?;
+            visit(fallback, &format!("{path}/fallback"))?;
+        }
+        UiNodeKind::VirtualCollection { spec } => {
+            for (index, item) in &spec.realized {
+                let key = crate::virtual_list_element::collection_item_key(spec, *index)
+                    .ok_or_else(|| MotionError::MissingVirtualItemKey {
+                        path: path.to_owned(),
+                        index: *index,
+                    })?;
+                visit(item, &format!("{path}/item:{key}"))?;
+            }
+        }
+        UiNodeKind::Text { .. }
+        | UiNodeKind::RichText { .. }
+        | UiNodeKind::Canvas { .. }
+        | UiNodeKind::Svg { .. }
+        | UiNodeKind::Custom { .. }
+        | UiNodeKind::Image { .. }
+        | UiNodeKind::DirectionalImage { .. } => {}
+    }
+    Ok(())
+}
+
 fn validate_node_property(
     node: &UiNode,
     property: MotionProperty,
@@ -2174,6 +2775,25 @@ fn validate_node_property(
             property,
             node: "non_canvas",
         })
+    } else if matches!(
+        property,
+        MotionProperty::Rotate
+            | MotionProperty::ScaleX
+            | MotionProperty::ScaleY
+            | MotionProperty::SkewX
+            | MotionProperty::SkewY
+    ) && matches!(node.kind(), UiNodeKind::Canvas { scene } if scene.commands().iter().any(|command| {
+        matches!(
+            command,
+            crate::CanvasCommand::Path { clip: Some(_), .. }
+                | crate::CanvasCommand::MorphPath { clip: Some(_), .. }
+        )
+    })) {
+        Err(MotionError::UnsupportedProperty {
+            path: path.to_owned(),
+            property,
+            node: "canvas_with_clipped_path",
+        })
     } else {
         Ok(())
     }
@@ -2186,130 +2806,189 @@ fn child_path(path: &str, index: usize, child: &UiNode) -> String {
     )
 }
 
-fn sample_motion(animation: &ActiveMotion, now: Instant) -> f64 {
-    match &animation.state {
-        MotionState::Transition {
-            from,
-            to,
-            started,
-            delay,
-            duration,
-            easing,
-            iterations,
-            autoreverse,
-        } => {
-            let (progress, _) =
-                cycle_progress(now, *started, *delay, *duration, *iterations, *autoreverse);
-            from + (to - from) * easing.sample(progress)
+#[derive(Clone, Copy, Debug)]
+struct SourceSample {
+    value: f64,
+    velocity: Option<f64>,
+    done: bool,
+}
+
+fn motion_elapsed(motion: &ActiveMotion, now: Instant) -> Duration {
+    motion
+        .elapsed_before_play
+        .saturating_add(now.saturating_duration_since(motion.started))
+}
+
+fn sample_active_motion(motion: &ActiveMotion, now: Instant, suspended: bool) -> SourceSample {
+    let elapsed = if suspended {
+        motion.elapsed_before_play
+    } else {
+        motion_elapsed(motion, now)
+    };
+    sample_source_with_duration(&motion.source, elapsed, motion.finite_duration_ms)
+}
+
+fn source_initial_value(source: &MotionSource) -> f64 {
+    match source {
+        MotionSource::Transition(spec) => spec.from,
+        MotionSource::Spring(spec) => spec.from,
+        MotionSource::Keyframes(spec) => spec.frames.first().map_or(0.0, |frame| frame.value),
+        MotionSource::Inertia(spec) => spec.from,
+    }
+}
+
+fn source_terminal_value(source: &MotionSource) -> f64 {
+    source_duration_ms(source).map_or_else(
+        |_| source.reduced_value(),
+        |duration| {
+            sample_source_with_duration(source, Duration::from_millis(duration), Some(duration))
+                .value
+        },
+    )
+}
+
+fn retarget_source(
+    declaration: &MotionSource,
+    current: f64,
+    inherited_velocity: Option<f64>,
+) -> MotionSource {
+    match declaration {
+        MotionSource::Transition(spec) => {
+            let mut spec = spec.clone();
+            spec.from = current;
+            MotionSource::Transition(spec)
         }
-        MotionState::Spring { position, .. } | MotionState::Inertia { position, .. } => *position,
-        MotionState::Keyframes {
-            frames,
-            started,
-            delay,
-            duration,
-            iterations,
-            autoreverse,
-        } => {
-            let (progress, _) =
-                cycle_progress(now, *started, *delay, *duration, *iterations, *autoreverse);
-            sample_keyframes(frames, progress)
+        MotionSource::Spring(spec) => {
+            let mut spec = spec.clone();
+            spec.from = current;
+            spec.initial_velocity = inherited_velocity.unwrap_or(spec.initial_velocity);
+            MotionSource::Spring(spec)
+        }
+        MotionSource::Keyframes(spec) => {
+            let mut spec = spec.clone();
+            if let Some(first) = spec.frames.first_mut() {
+                first.value = current;
+            }
+            MotionSource::Keyframes(spec)
+        }
+        MotionSource::Inertia(spec) => {
+            let mut spec = spec.clone();
+            spec.from = current;
+            MotionSource::Inertia(spec)
         }
     }
 }
 
-fn advance_motion(animation: &mut ActiveMotion, now: Instant) -> (f64, bool) {
-    match &mut animation.state {
-        MotionState::Transition {
-            from,
-            to,
-            started,
-            delay,
-            duration,
-            easing,
-            iterations,
-            autoreverse,
-        } => {
-            let (progress, done) =
-                cycle_progress(now, *started, *delay, *duration, *iterations, *autoreverse);
-            (*from + (*to - *from) * easing.sample(progress), done)
+#[cfg(test)]
+fn sample_source(source: &MotionSource, elapsed: Duration) -> SourceSample {
+    sample_source_with_duration(source, elapsed, source_duration_ms(source).ok())
+}
+
+fn sample_source_with_duration(
+    source: &MotionSource,
+    elapsed: Duration,
+    finite_duration_ms: Option<u64>,
+) -> SourceSample {
+    let elapsed_ms = duration_ms(elapsed);
+    let sample = match source {
+        MotionSource::Transition(spec) => {
+            let (progress, done) = timed_progress(
+                elapsed_ms,
+                spec.delay_ms,
+                spec.duration_ms,
+                spec.iterations,
+                spec.autoreverse,
+            );
+            SourceSample {
+                value: spec.from + (spec.to - spec.from) * spec.easing.sample(progress),
+                velocity: None,
+                done,
+            }
         }
-        MotionState::Spring {
-            position,
-            velocity,
-            target,
-            stiffness,
-            damping,
-            mass,
-            last_tick,
-        } => {
-            let elapsed = now.duration_since(*last_tick).as_secs_f64().min(0.05);
-            *last_tick = now;
-            let displacement = *position - *target;
-            let acceleration = (-*stiffness * displacement - *damping * *velocity) / *mass;
-            *velocity += acceleration * elapsed;
-            *position += *velocity * elapsed;
-            let done = (*position - *target).abs() < 0.001 && velocity.abs() < 0.001;
-            if done {
-                *position = *target;
-                *velocity = 0.0;
+        MotionSource::Keyframes(spec) => {
+            let (progress, done) = timed_progress(
+                elapsed_ms,
+                spec.delay_ms,
+                spec.duration_ms,
+                spec.iterations,
+                spec.autoreverse,
+            );
+            SourceSample {
+                value: sample_keyframes(&spec.frames, progress),
+                velocity: None,
+                done,
             }
-            (*position, done)
         }
-        MotionState::Keyframes {
-            frames,
-            started,
-            delay,
-            duration,
-            iterations,
-            autoreverse,
-        } => {
-            let (progress, done) =
-                cycle_progress(now, *started, *delay, *duration, *iterations, *autoreverse);
-            (sample_keyframes(frames, progress), done)
+        MotionSource::Spring(spec) => {
+            let settle_ms = finite_duration_ms.unwrap_or_else(|| spring_settle_ms(spec));
+            let done = elapsed_ms >= settle_ms;
+            let (value, velocity) = if done {
+                (spec.to, 0.0)
+            } else {
+                sample_spring_at(spec, elapsed.as_secs_f64())
+            };
+            SourceSample {
+                value,
+                velocity: Some(velocity),
+                done,
+            }
         }
-        MotionState::Inertia {
-            position,
-            velocity,
-            friction,
-            min,
-            max,
-            bounce,
-            snap_points,
-            last_tick,
-        } => {
-            let elapsed = now.duration_since(*last_tick).as_secs_f64().min(0.05);
-            *last_tick = now;
-            *velocity *= (-*friction * elapsed).exp();
-            *position += *velocity * elapsed;
-            if let Some(minimum) = min
-                && *position < *minimum
-            {
-                *position = *minimum;
-                *velocity = velocity.abs() * *bounce;
+        MotionSource::Inertia(spec) => {
+            let settle_ms = finite_duration_ms.unwrap_or_else(|| inertia_settle_ms(spec));
+            let done = elapsed_ms >= settle_ms;
+            let (value, velocity) =
+                sample_inertia_at(spec, elapsed.min(Duration::from_millis(settle_ms)));
+            SourceSample {
+                value,
+                velocity: Some(if done { 0.0 } else { velocity }),
+                done,
             }
-            if let Some(maximum) = max
-                && *position > *maximum
-            {
-                *position = *maximum;
-                *velocity = -velocity.abs() * *bounce;
-            }
-            let done = velocity.abs() < 0.01;
-            if done && let Some(nearest) = nearest_snap(*position, snap_points) {
-                *position = nearest;
-                *velocity = 0.0;
-            }
-            (*position, done)
+        }
+    };
+    if sample.value.is_finite() && sample.velocity.is_none_or(f64::is_finite) {
+        sample
+    } else {
+        SourceSample {
+            value: source_initial_value(source),
+            velocity: Some(0.0),
+            done: true,
         }
     }
 }
 
-fn target(animation: &ActiveMotion) -> f64 {
-    animation.source.target()
+fn timed_progress(
+    elapsed_ms: u64,
+    delay_ms: u64,
+    duration_ms: u64,
+    iterations: Option<u32>,
+    autoreverse: bool,
+) -> (f64, bool) {
+    if elapsed_ms < delay_ms {
+        return (0.0, false);
+    }
+    let elapsed = elapsed_ms.saturating_sub(delay_ms);
+    let duration = duration_ms.max(1);
+    let raw_iteration = elapsed / duration;
+    let done = iterations.is_some_and(|count| raw_iteration >= u64::from(count));
+    let cycle = if done {
+        u64::from(iterations.unwrap_or(1).saturating_sub(1))
+    } else {
+        raw_iteration
+    };
+    let mut progress = if done {
+        1.0
+    } else {
+        Duration::from_millis(elapsed % duration).as_secs_f64()
+            / Duration::from_millis(duration).as_secs_f64()
+    };
+    if autoreverse && cycle % 2 == 1 {
+        progress = 1.0 - progress;
+    }
+    (progress, done)
 }
 
 fn reduced_value(animation: &ActiveMotion) -> f64 {
-    animation.source.reduced_value()
+    animation.declaration.reduced_value()
 }
 
 fn validate_source(spec: &MotionSource) -> Result<(), MotionError> {
@@ -2320,17 +2999,7 @@ fn validate_source(spec: &MotionSource) -> Result<(), MotionError> {
                 && spec.duration_ms > 0
                 && spec.iterations != Some(0)
         }
-        MotionSource::Spring(spec) => {
-            spec.from.is_finite()
-                && spec.to.is_finite()
-                && spec.initial_velocity.is_finite()
-                && spec.stiffness.is_finite()
-                && spec.stiffness > 0.0
-                && spec.damping.is_finite()
-                && spec.damping >= 0.0
-                && spec.mass.is_finite()
-                && spec.mass > 0.0
-        }
+        MotionSource::Spring(spec) => valid_spring(spec),
         MotionSource::Keyframes(spec) => {
             spec.duration_ms > 0 && spec.iterations != Some(0) && valid_keyframes(&spec.frames)
         }
@@ -2338,7 +3007,9 @@ fn validate_source(spec: &MotionSource) -> Result<(), MotionError> {
             spec.from.is_finite()
                 && spec.velocity.is_finite()
                 && spec.friction.is_finite()
-                && spec.friction > 0.0
+                && (1.0e-9..=1.0e9).contains(&spec.friction)
+                && spec.from.abs() <= 1.0e12
+                && spec.velocity.abs() <= 1.0e12
                 && spec.min.is_none_or(f64::is_finite)
                 && spec.max.is_none_or(f64::is_finite)
                 && spec.min.zip(spec.max).is_none_or(|(min, max)| min <= max)
@@ -2355,37 +3026,25 @@ fn validate_source(spec: &MotionSource) -> Result<(), MotionError> {
     }
 }
 
-fn cycle_progress(
-    now: Instant,
-    started: Instant,
-    delay: Duration,
-    duration: Duration,
-    iterations: Option<u32>,
-    autoreverse: bool,
-) -> (f64, bool) {
-    let elapsed = now.saturating_duration_since(started);
-    if elapsed < delay {
-        return (0.0, false);
+fn valid_spring(spec: &MotionSpring) -> bool {
+    if !spec.from.is_finite()
+        || !spec.to.is_finite()
+        || !spec.initial_velocity.is_finite()
+        || spec.from.abs() > 1.0e12
+        || spec.to.abs() > 1.0e12
+        || spec.initial_velocity.abs() > 1.0e12
+        || !(1.0e-9..=1.0e12).contains(&spec.stiffness)
+        || !(0.0..=1.0e12).contains(&spec.damping)
+        || !(1.0e-9..=1.0e12).contains(&spec.mass)
+    {
+        return false;
     }
-    if duration.is_zero() {
-        return (1.0, true);
-    }
-    let raw = elapsed.saturating_sub(delay).as_secs_f64() / duration.as_secs_f64();
-    let done = iterations.is_some_and(|count| raw >= f64::from(count));
-    let cycle = if done {
-        iterations.unwrap_or(1).saturating_sub(1)
-    } else {
-        raw.floor().to_string().parse::<u32>().unwrap_or(u32::MAX)
-    };
-    let local = if done { 1.0 } else { raw.fract() };
-    (
-        if autoreverse && cycle % 2 == 1 {
-            1.0 - local
-        } else {
-            local
-        },
-        done,
-    )
+    let ratio = spec.stiffness / spec.mass;
+    let product = spec.stiffness * spec.mass;
+    ratio.is_finite()
+        && product.is_finite()
+        && ratio.sqrt().is_finite()
+        && product.sqrt().is_finite()
 }
 
 fn sample_keyframes(frames: &[MotionKeyframe], progress: f64) -> f64 {
@@ -2949,6 +3608,12 @@ pub enum MotionError {
     InvalidTimeline(String),
     #[error("motion timeline `{0}` is not active in this scope")]
     UnknownTimeline(String),
+    #[error("motion timeline handle `{0}` is stale")]
+    StaleTimelineHandle(String),
+    #[error("motion timeline handle `{0}` belongs to another runtime/view/component")]
+    ForeignTimelineHandle(String),
+    #[error("active motion budget exceeded: {actual} > {limit}")]
+    ActiveBudget { actual: usize, limit: usize },
     #[error("shared layout identity `{group}/{id}` is duplicated in one presentation domain")]
     DuplicateSharedLayout { group: String, id: String },
     #[error("invalid shared layout declaration: {0}")]
@@ -2960,6 +3625,21 @@ pub enum MotionError {
         path: String,
         property: MotionProperty,
     },
+    #[error(
+        "node `{path}` motion property `{property:?}` has conflicting owners `{first}` and `{second}`"
+    )]
+    PropertyOwnerConflict {
+        path: String,
+        property: MotionProperty,
+        first: String,
+        second: String,
+    },
+    #[error("timeline `{timeline}` targets missing node `{target}`")]
+    UnknownTimelineTarget { timeline: String, target: String },
+    #[error("virtual collection `{path}` item index {index} has no stable data key")]
+    MissingVirtualItemKey { path: String, index: usize },
+    #[error("exit motion does not support paint snapshots for node kind `{0}`")]
+    UnsupportedExitGhost(String),
     #[error("motion property `{property:?}` is unsupported on {node} node `{path}`")]
     UnsupportedProperty {
         path: String,
@@ -2984,6 +3664,7 @@ pub struct MotionResourceUsage {
     pub active: usize,
     pub particles: usize,
     pub shared_snapshots: usize,
+    pub geometry_slots: usize,
 }
 
 #[cfg(test)]
@@ -3188,10 +3869,24 @@ mod tests {
         runtime
             .pause_timeline(&handle, start + Duration::from_millis(60))
             .unwrap();
+        assert!(
+            (runtime.snapshot(start + Duration::from_millis(500))
+                [&MotionKey::for_node("root/card", MotionProperty::Opacity)]
+                - 0.6)
+                .abs()
+                < 0.01
+        );
         assert!(!runtime.tick(start + Duration::from_millis(500)).needs_frame);
         runtime
             .seek_timeline(&handle, 200, start + Duration::from_millis(500))
             .unwrap();
+        assert!(
+            (runtime.snapshot(start + Duration::from_millis(500))
+                [&MotionKey::for_node("root/card", MotionProperty::TranslateX)]
+                - 20.0)
+                .abs()
+                < 0.01
+        );
         runtime
             .play_timeline(&handle, start + Duration::from_millis(500))
             .unwrap();
@@ -3239,7 +3934,9 @@ mod tests {
                 ], #{ duration_ms: 200, intent: "decorative" })"#,
             )
             .unwrap();
-        assert!((sample_source_at(&source, 100) - 1.0).abs() < f64::EPSILON);
+        assert!(
+            (sample_source(&source, Duration::from_millis(100)).value - 1.0).abs() < f64::EPSILON
+        );
         assert!(
             engine
                 .eval::<MotionSource>(r#"motion_transition("opacity", 0.0, 1.0, #{ typo: 100 })"#,)
@@ -3297,5 +3994,473 @@ mod tests {
         runtime.set_preference(MotionPreference::None);
         runtime.request_preference(MotionPreference::Normal);
         assert_eq!(runtime.preference(), MotionPreference::None);
+    }
+
+    #[test]
+    fn timeline_handles_are_instance_bound_and_play_is_idempotent() {
+        let now = Instant::now();
+        let scope = ComponentInstancePath::root("UiNode", "root/card");
+        let timeline = || {
+            MotionTimeline::new(
+                "intro",
+                MotionTimelineStep::Track(MotionTrack {
+                    target: ".".to_owned(),
+                    source: transition(MotionProperty::Opacity, 0.0, 1.0, 1_000),
+                }),
+            )
+        };
+        let mut runtime = MotionRuntime::new(MotionPreference::Normal);
+        let old = runtime
+            .start_timeline(scope.clone(), timeline(), now)
+            .unwrap();
+        let _ = runtime.tick(now + Duration::from_millis(400));
+        runtime
+            .play_timeline(&old, now + Duration::from_millis(400))
+            .unwrap();
+        let key = MotionKey::for_node("root/card", MotionProperty::Opacity);
+        assert!((runtime.snapshot(now + Duration::from_millis(400))[&key] - 0.4).abs() < 0.01);
+        runtime.cancel_node_scope("root/card");
+        let new = runtime.start_timeline(scope, timeline(), now).unwrap();
+        assert_ne!(old, new);
+        assert!(matches!(
+            runtime.cancel_timeline(&old),
+            Err(MotionError::StaleTimelineHandle(_))
+        ));
+        assert_eq!(
+            runtime.timeline_state(&new),
+            Some(MotionPlaybackState::Playing)
+        );
+        assert!(matches!(
+            MotionRuntime::new(MotionPreference::Normal).cancel_timeline(&new),
+            Err(MotionError::StaleTimelineHandle(_))
+        ));
+    }
+
+    #[test]
+    fn compatible_generation_migration_preserves_progress_but_rekeys_authority() {
+        let now = Instant::now();
+        let owner = ComponentInstancePath::root("View", "root");
+        let node = UiNode::text("animated")
+            .with_key("card")
+            .with_timeline(MotionTimeline::new(
+                "intro",
+                MotionTimelineStep::Track(MotionTrack {
+                    target: ".".to_owned(),
+                    source: transition(MotionProperty::Opacity, 0.0, 1.0, 1_000),
+                }),
+            ));
+        let incarnations = BTreeMap::new();
+        let reconcile = |runtime: &mut MotionRuntime, generation| {
+            reconcile_node_motion_scoped_owned(
+                &node,
+                runtime,
+                now,
+                "root",
+                MotionReconcileContext {
+                    domain: "root",
+                    root_component: &owner,
+                    root_incarnation: ComponentIncarnation::unscoped(),
+                    generation,
+                    incarnations: &incarnations,
+                },
+            )
+            .unwrap();
+        };
+        let first_generation = ScriptGeneration::initial();
+        let mut runtime = MotionRuntime::new(MotionPreference::Normal);
+        reconcile(&mut runtime, first_generation);
+        let first = runtime
+            .timeline_handle_for_owner(
+                "root",
+                &owner,
+                ComponentIncarnation::unscoped(),
+                first_generation,
+                "intro",
+            )
+            .unwrap();
+        let _ = runtime.tick(now + Duration::from_millis(400));
+        reconcile(&mut runtime, first_generation);
+        assert_eq!(
+            runtime
+                .timeline_handle_for_owner(
+                    "root",
+                    &owner,
+                    ComponentIncarnation::unscoped(),
+                    first_generation,
+                    "intro",
+                )
+                .unwrap(),
+            first
+        );
+
+        let next_generation = first_generation.next();
+        reconcile(&mut runtime, next_generation);
+        let migrated = runtime
+            .timeline_handle_for_owner(
+                "root",
+                &owner,
+                ComponentIncarnation::unscoped(),
+                next_generation,
+                "intro",
+            )
+            .unwrap();
+        assert_ne!(first, migrated);
+        assert!(matches!(
+            runtime.cancel_timeline(&first),
+            Err(MotionError::StaleTimelineHandle(_))
+        ));
+        assert!(
+            (runtime.snapshot(now + Duration::from_millis(400))
+                [&MotionKey::for_node("root", MotionProperty::Opacity)]
+                - 0.4)
+                .abs()
+                < 0.01
+        );
+    }
+
+    #[test]
+    fn none_policy_cannot_be_bypassed_by_restart() {
+        let now = Instant::now();
+        let mut runtime = MotionRuntime::new(MotionPreference::None);
+        let handle = runtime
+            .start_timeline(
+                ComponentInstancePath::root("UiNode", "root/card"),
+                MotionTimeline::new(
+                    "intro",
+                    MotionTimelineStep::Track(MotionTrack {
+                        target: ".".to_owned(),
+                        source: transition(MotionProperty::Opacity, 0.0, 1.0, 1_000),
+                    }),
+                ),
+                now,
+            )
+            .unwrap();
+        runtime.restart_timeline(&handle, now).unwrap();
+        let frame = runtime.tick(now + Duration::from_millis(250));
+        assert!(!frame.needs_frame);
+        assert_eq!(
+            runtime.timeline_state(&handle),
+            Some(MotionPlaybackState::Completed)
+        );
+        assert!(
+            (runtime.snapshot(now)[&MotionKey::for_node("root/card", MotionProperty::Opacity)]
+                - 1.0)
+                .abs()
+                < f64::EPSILON
+        );
+
+        let mut deferred = MotionTimeline::new(
+            "deferred",
+            MotionTimelineStep::Track(MotionTrack {
+                target: ".".to_owned(),
+                source: transition(MotionProperty::TranslateX, 0.0, 10.0, 1_000),
+            }),
+        );
+        deferred.autoplay = false;
+        let mut switched = MotionRuntime::new(MotionPreference::Normal);
+        let handle = switched
+            .start_timeline(
+                ComponentInstancePath::root("UiNode", "root/deferred"),
+                deferred,
+                now,
+            )
+            .unwrap();
+        switched.set_preference(MotionPreference::None);
+        assert_eq!(
+            switched.timeline_state(&handle),
+            Some(MotionPlaybackState::Completed)
+        );
+        assert!(
+            (switched.snapshot(now)
+                [&MotionKey::for_node("root/deferred", MotionProperty::TranslateX,)]
+                - 10.0)
+                .abs()
+                < f64::EPSILON
+        );
+    }
+
+    #[test]
+    fn direct_and_timeline_physics_share_one_sampler_and_extremes_fail() {
+        let now = Instant::now();
+        let scope = ComponentInstancePath::root("UiNode", "root/card");
+        let spring = MotionSpring::new(MotionProperty::TranslateX, 0.0, 1.0);
+        let mut direct = MotionRuntime::new(MotionPreference::Normal);
+        let key = direct
+            .start(scope.clone(), MotionSource::Spring(spring.clone()), now)
+            .unwrap();
+        let direct_value = direct.tick(now + Duration::from_secs(1)).values[&key];
+        let mut timeline = MotionRuntime::new(MotionPreference::Normal);
+        timeline
+            .start_timeline(
+                scope.clone(),
+                MotionTimeline::new(
+                    "spring",
+                    MotionTimelineStep::Track(MotionTrack {
+                        target: ".".to_owned(),
+                        source: MotionSource::Spring(spring.clone()),
+                    }),
+                ),
+                now,
+            )
+            .unwrap();
+        let timeline_value = timeline.tick(now + Duration::from_secs(1)).values[&key];
+        assert!((direct_value - timeline_value).abs() < 1.0e-9);
+
+        let mut retargeted = MotionRuntime::new(MotionPreference::Normal);
+        retargeted
+            .start(scope.clone(), MotionSource::Spring(spring.clone()), now)
+            .unwrap();
+        let retarget_at = now + Duration::from_millis(16);
+        let before = retargeted.inspect(retarget_at)[0].velocity.unwrap();
+        let mut next = spring.clone();
+        next.to = 2.0;
+        retargeted
+            .start(scope.clone(), MotionSource::Spring(next), retarget_at)
+            .unwrap();
+        let inherited = retargeted.inspect(retarget_at)[0].velocity.unwrap();
+        assert!((before - inherited).abs() < 1.0e-9);
+
+        let mut extreme = spring;
+        extreme.stiffness = 1.0e308;
+        extreme.mass = 1.0e-308;
+        assert_eq!(
+            direct.start(scope, MotionSource::Spring(extreme), now),
+            Err(MotionError::InvalidSpec)
+        );
+    }
+
+    #[test]
+    fn timeline_snapshot_resets_future_sequence_tracks_when_seeking_back() {
+        let now = Instant::now();
+        let mut runtime = MotionRuntime::new(MotionPreference::Normal);
+        let handle = runtime
+            .start_timeline(
+                ComponentInstancePath::root("UiNode", "root/card"),
+                MotionTimeline::new(
+                    "sequence",
+                    MotionTimelineStep::Sequence(vec![
+                        MotionTimelineStep::Track(MotionTrack {
+                            target: ".".to_owned(),
+                            source: transition(MotionProperty::Opacity, 0.0, 1.0, 100),
+                        }),
+                        MotionTimelineStep::Track(MotionTrack {
+                            target: ".".to_owned(),
+                            source: transition(MotionProperty::TranslateX, 0.0, 100.0, 100),
+                        }),
+                    ]),
+                ),
+                now,
+            )
+            .unwrap();
+        let _ = runtime.tick(now + Duration::from_millis(150));
+        runtime
+            .seek_timeline(&handle, 0, now + Duration::from_millis(150))
+            .unwrap();
+        assert!(
+            runtime.snapshot(now)[&MotionKey::for_node("root/card", MotionProperty::TranslateX)]
+                .abs()
+                < f64::EPSILON
+        );
+    }
+
+    #[test]
+    fn terminal_events_are_partitioned_and_discarded_by_presentation_scope() {
+        let now = Instant::now();
+        let mut runtime = MotionRuntime::new(MotionPreference::Normal);
+        for domain in ["window:a/view:a/root", "window:b/view:b/root"] {
+            runtime
+                .start_timeline(
+                    ComponentInstancePath::root("UiNode", domain),
+                    MotionTimeline::new(
+                        "done",
+                        MotionTimelineStep::Track(MotionTrack {
+                            target: ".".to_owned(),
+                            source: transition(MotionProperty::Opacity, 0.0, 1.0, 1),
+                        }),
+                    ),
+                    now,
+                )
+                .unwrap();
+        }
+        let _ = runtime.tick(now + Duration::from_millis(1));
+        assert_eq!(
+            runtime
+                .drain_timeline_events_for_domain("window:a/view:a/root")
+                .len(),
+            1
+        );
+        runtime.discard_timeline_events_in_scope("window:b");
+        assert!(runtime.drain_timeline_events().is_empty());
+    }
+
+    #[test]
+    fn autoreverse_completion_keeps_the_sampled_terminal_value() {
+        let now = Instant::now();
+        let mut spec = MotionTransition::new(MotionProperty::Opacity, 0.0, 1.0, 100);
+        spec.easing = MotionEasing::Linear;
+        spec.iterations = Some(2);
+        spec.autoreverse = true;
+        let mut runtime = MotionRuntime::new(MotionPreference::Normal);
+        let key = runtime
+            .start(key_path(), MotionSource::Transition(spec), now)
+            .unwrap();
+        let frame = runtime.tick(now + Duration::from_millis(200));
+        assert!(frame.values[&key].abs() < f64::EPSILON);
+        assert!(runtime.snapshot(now)[&key].abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn reconciliation_validates_targets_ownership_and_is_atomic() {
+        let now = Instant::now();
+        let conflict = UiNode::text("conflict")
+            .with_key("conflict")
+            .with_motion(transition(MotionProperty::Opacity, 0.0, 1.0, 100))
+            .with_timeline(MotionTimeline::new(
+                "conflict",
+                MotionTimelineStep::Track(MotionTrack {
+                    target: ".".to_owned(),
+                    source: transition(MotionProperty::Opacity, 1.0, 0.0, 100),
+                }),
+            ));
+        let mut runtime = MotionRuntime::new(MotionPreference::Normal);
+        assert!(matches!(
+            reconcile_node_motion(&conflict, &mut runtime, now),
+            Err(MotionError::PropertyOwnerConflict { .. })
+        ));
+        assert_eq!(runtime.resource_usage().active, 0);
+
+        let missing = UiNode::text("missing")
+            .with_key("root")
+            .with_timeline(MotionTimeline::new(
+                "missing",
+                MotionTimelineStep::Track(MotionTrack {
+                    target: "child".to_owned(),
+                    source: transition(MotionProperty::Rotate, 0.0, 90.0, 100),
+                }),
+            ));
+        assert!(matches!(
+            reconcile_node_motion(&missing, &mut runtime, now),
+            Err(MotionError::UnknownTimelineTarget { .. })
+        ));
+        assert_eq!(runtime.resource_usage().active, 0);
+
+        runtime.set_active_limit(1);
+        reconcile_node_motion(
+            &UiNode::text("old").with_key("node").with_motion(transition(
+                MotionProperty::Opacity,
+                0.0,
+                1.0,
+                100,
+            )),
+            &mut runtime,
+            now,
+        )
+        .unwrap();
+        reconcile_node_motion(
+            &UiNode::text("new").with_key("node").with_motion(transition(
+                MotionProperty::TranslateX,
+                0.0,
+                1.0,
+                100,
+            )),
+            &mut runtime,
+            now,
+        )
+        .unwrap();
+        assert_eq!(runtime.resource_usage().active, 1);
+    }
+
+    #[test]
+    fn exit_ghost_rejects_an_unsupported_nested_subtree_atomically() {
+        let now = Instant::now();
+        let root = UiNode::box_node(vec![UiNode::error_boundary(
+            UiNode::text("content"),
+            UiNode::text("fallback"),
+        )])
+        .with_key("panel")
+        .with_exit_motion(transition(MotionProperty::Opacity, 1.0, 0.0, 100));
+        let mut runtime = MotionRuntime::new(MotionPreference::Normal);
+        assert!(matches!(
+            reconcile_node_motion(&root, &mut runtime, now),
+            Err(MotionError::UnsupportedExitGhost(_))
+        ));
+        assert_eq!(runtime.resource_usage().active, 0);
+    }
+
+    #[test]
+    fn affine_canvas_motion_rejects_axis_aligned_path_clips() {
+        let scene = crate::CanvasScene::new(vec![crate::CanvasCommand::Path {
+            key: "clipped".to_owned(),
+            segments: vec![
+                crate::CanvasPathSegment::Move { x: 0.0, y: 0.0 },
+                crate::CanvasPathSegment::Line { x: 20.0, y: 20.0 },
+            ],
+            fill: None,
+            stroke: Some((
+                crate::ColorValue::Literal(crate::Rgba8::from_rgb_hex(0x00ff_ffff)),
+                1.0,
+            )),
+            transform: crate::CanvasTransform::default(),
+            clip: Some(crate::CanvasClipRect {
+                x: 0.0,
+                y: 0.0,
+                width: 10.0,
+                height: 10.0,
+            }),
+        }])
+        .unwrap();
+        let node = UiNode::canvas(scene)
+            .with_key("canvas")
+            .with_motion(transition(MotionProperty::Rotate, 0.0, 45.0, 100));
+        assert!(matches!(
+            reconcile_node_motion(
+                &node,
+                &mut MotionRuntime::new(MotionPreference::Normal),
+                Instant::now(),
+            ),
+            Err(MotionError::UnsupportedProperty {
+                node: "canvas_with_clipped_path",
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn play_and_restart_recheck_active_budget() {
+        let now = Instant::now();
+        let mut timeline = MotionTimeline::new(
+            "budget",
+            MotionTimelineStep::Parallel(vec![
+                MotionTimelineStep::Track(MotionTrack {
+                    target: ".".to_owned(),
+                    source: transition(MotionProperty::Opacity, 0.0, 1.0, 100),
+                }),
+                MotionTimelineStep::Track(MotionTrack {
+                    target: ".".to_owned(),
+                    source: transition(MotionProperty::TranslateX, 0.0, 1.0, 100),
+                }),
+            ]),
+        );
+        timeline.autoplay = false;
+        let mut runtime = MotionRuntime::new(MotionPreference::Normal);
+        runtime.set_active_limit(1);
+        let handle = runtime
+            .start_timeline(
+                ComponentInstancePath::root("UiNode", "root/card"),
+                timeline,
+                now,
+            )
+            .unwrap();
+        assert!(matches!(
+            runtime.play_timeline(&handle, now),
+            Err(MotionError::ActiveBudget {
+                actual: 2,
+                limit: 1
+            })
+        ));
+        assert_eq!(
+            runtime.timeline_state(&handle),
+            Some(MotionPlaybackState::Idle)
+        );
     }
 }
