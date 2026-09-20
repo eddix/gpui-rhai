@@ -64,6 +64,7 @@ cargo run -p gpui-rhai --example dashboard_layout
 cargo run -p gpui-rhai --example form_showcase
 cargo run -p gpui-rhai --example data_table
 cargo run -p gpui-rhai --example component_gallery
+cargo run --release -p gpui-rhai --example motion_gallery
 cargo run --release -p gpui-rhai --example code_viewer
 cargo run --release -p gpui-rhai --example diff_viewer
 cargo run --release -p gpui-rhai --example table_1000

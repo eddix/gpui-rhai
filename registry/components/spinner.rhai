@@ -2,8 +2,8 @@
 {
   "id": "components/spinner",
   "export": "Spinner",
-  "version": "0.1.1",
-  "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
+  "version": "0.1.3",
+  "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": [],
   "capabilities": {}
 }
@@ -15,8 +15,8 @@
 // Example: Spinner(#{ key: "loading", label: "Loading" })
 
 define_component(#{
-    metadata: #{ id: "components/spinner", "export": "Spinner", version: "0.1.1",
-        runtime_api: #{ min_inclusive: 1, max_exclusive: 2 }, dependencies: [], capabilities: #{} },
+    metadata: #{ id: "components/spinner", "export": "Spinner", version: "0.1.3",
+        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{} },
     schema: #{
         props: #{
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
@@ -52,8 +52,9 @@ fn render_Spinner(ctx, props) {
     canvas(scene).with_key(props.key)
         .with_style(ctx.component_style("root", ctx.component_style("indicator", style()
             .width(px(size)).height(px(size)))))
-        .animate(loop_transition("rotate", 0.0, 360.0,
-            if "speed_ms" in props { props.speed_ms } else { 850 }, "linear"))
+        .motion(motion_transition("rotate", 0.0, 360.0,
+            #{ duration_ms: if "speed_ms" in props { props.speed_ms } else { ctx.motion_duration("ambient") },
+                easing: "linear", iterations: "infinite", intent: "essential" }))
         .accessibility_role("progressbar").accessibility_label(props.label)
         .accessibility_value("indeterminate")
 }

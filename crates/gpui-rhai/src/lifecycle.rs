@@ -6,8 +6,8 @@ use rhai::Dynamic;
 use thiserror::Error;
 
 use crate::{
-    AnimationError, AsyncDelivery, AsyncScope, CompiledUi, ComponentInstancePath,
-    ComponentStateSchema, EventSchema, ExecutionPhase, RuntimeEngine, RuntimeError, ScriptCallback,
+    AsyncDelivery, AsyncScope, CompiledUi, ComponentInstancePath, ComponentStateSchema,
+    EventSchema, ExecutionPhase, MotionError, RuntimeEngine, RuntimeError, ScriptCallback,
     ScriptGeneration, StateError, UiContext, UiNode, UiRuntimeState, UiValue,
 };
 
@@ -207,9 +207,10 @@ impl ScriptLifecycle {
                 _ => engine.render_with_context_staged(&self.compiled, context)?,
             };
             let mut retained = self.retained.clone();
+            self.reconcile_exit_ghosts(&root)?;
             retained.reconcile(root.clone())?;
-            self.validate_resource_budgets(engine, &retained)?;
-            self.reconcile_animations(&root)?;
+            self.validate_resource_budgets(engine, &retained, &root)?;
+            self.reconcile_motion(&root)?;
             self.reconcile_effects(
                 engine,
                 &self.compiled,
@@ -299,9 +300,10 @@ impl ScriptLifecycle {
                     return Err(LifecycleError::MissingComponentSubtree(path));
                 }
             }
+            self.reconcile_exit_ghosts(&root)?;
             retained.reconcile(root.clone())?;
-            self.validate_resource_budgets(engine, &retained)?;
-            self.reconcile_animations(&root)?;
+            self.validate_resource_budgets(engine, &retained, &root)?;
+            self.reconcile_motion(&root)?;
             self.reconcile_effects(
                 engine,
                 &self.compiled,
@@ -360,6 +362,7 @@ impl ScriptLifecycle {
     /// # Errors
     ///
     /// Returns renderer, retained reconciliation, effect, or rollback errors.
+    #[allow(clippy::too_many_lines)]
     pub fn realize_virtual_requests(
         &mut self,
         engine: &mut RuntimeEngine,
@@ -432,9 +435,10 @@ impl ScriptLifecycle {
             if !changed {
                 return Ok(false);
             }
+            self.reconcile_exit_ghosts(&root)?;
             retained.reconcile(root.clone())?;
-            self.validate_resource_budgets(engine, &retained)?;
-            self.reconcile_animations(&root)?;
+            self.validate_resource_budgets(engine, &retained, &root)?;
+            self.reconcile_motion(&root)?;
             self.reconcile_effects(
                 engine,
                 &self.compiled,
@@ -542,7 +546,7 @@ impl ScriptLifecycle {
                 .map_err(|_| LifecycleError::Borrowed)?;
             let now = runtime.clock.now();
             runtime.timers.pause_component_scope(&self.root_path, now);
-            runtime.animation_values = runtime.animations.snapshot(now);
+            runtime.motion_values = runtime.motions.snapshot(now);
             runtime
                 .pointer_capture_for(self.presentation_scope())
                 .clear();
@@ -604,9 +608,9 @@ impl ScriptLifecycle {
                     .map_err(|_| LifecycleError::Borrowed)?;
                 runtime.timers.resume_component_scope(&self.root_path, now);
                 runtime
-                    .animations
-                    .delay_node_scope(&self.animation_root_path(), elapsed);
-                runtime.animation_values = runtime.animations.snapshot(now);
+                    .motions
+                    .delay_node_scope(&self.motion_root_path(), elapsed);
+                runtime.motion_values = runtime.motions.snapshot(now);
             }
             engine.call_optional_lifecycle_with_value(
                 &self.compiled,
@@ -852,9 +856,10 @@ impl ScriptLifecycle {
                 self.context_for(ExecutionPhase::Render, candidate.generation()),
             )?;
             let mut retained = self.retained.clone();
+            self.reconcile_exit_ghosts(&root)?;
             retained.reconcile(root.clone())?;
-            self.validate_resource_budgets(engine, &retained)?;
-            self.reconcile_animations(&root)?;
+            self.validate_resource_budgets(engine, &retained, &root)?;
+            self.reconcile_motion(&root)?;
             self.reconcile_effects(
                 engine,
                 &candidate,
@@ -943,18 +948,19 @@ impl ScriptLifecycle {
                     .try_borrow_mut()
                     .map_err(|_| LifecycleError::Borrowed)?;
                 runtime
-                    .animations
-                    .delay_node_scope(&self.animation_root_path(), elapsed);
-                runtime.animation_values = runtime.animations.snapshot(now);
+                    .motions
+                    .delay_node_scope(&self.motion_root_path(), elapsed);
+                runtime.motion_values = runtime.motions.snapshot(now);
             }
             let root = engine.render_with_context_staged(
                 &candidate,
                 self.context_for(ExecutionPhase::Render, candidate.generation()),
             )?;
             let mut retained = self.retained.clone();
+            self.reconcile_exit_ghosts(&root)?;
             retained.reconcile(root.clone())?;
-            self.validate_resource_budgets(engine, &retained)?;
-            self.reconcile_animations(&root)?;
+            self.validate_resource_budgets(engine, &retained, &root)?;
+            self.reconcile_motion(&root)?;
             self.reconcile_effects(
                 engine,
                 &candidate,
@@ -1030,26 +1036,97 @@ impl ScriptLifecycle {
         self.context_for(phase, self.compiled.generation())
     }
 
-    fn reconcile_animations(&self, root: &UiNode) -> Result<(), LifecycleError> {
+    fn reconcile_motion(&self, root: &UiNode) -> Result<(), LifecycleError> {
         let mut runtime = self
             .runtime
             .try_borrow_mut()
             .map_err(|_| LifecycleError::Borrowed)?;
         let now = runtime.clock.now();
-        let values = crate::animation::reconcile_node_animations_scoped(
+        let values = crate::motion::reconcile_node_motion_scoped(
             root,
-            &mut runtime.animations,
+            &mut runtime.motions,
             now,
-            &self.animation_root_path(),
+            &self.motion_root_path(),
         )?;
-        runtime.animation_values = values;
+        let active = runtime.motions.resource_usage().active;
+        crate::RuntimeBudgets::check("active_motions", active, runtime.budgets.active_motions)?;
+        runtime.motion_values = values;
         Ok(())
     }
 
+    fn reconcile_exit_ghosts(&self, candidate: &UiNode) -> Result<(), LifecycleError> {
+        let Some(previous) = self.root.as_deref() else {
+            return Ok(());
+        };
+        let mut candidate_keys = BTreeSet::new();
+        collect_node_keys(candidate, &mut candidate_keys);
+        let mut exits = Vec::new();
+        collect_removed_exit_nodes(previous, &candidate_keys, &mut exits);
+        if exits.is_empty() {
+            return Ok(());
+        }
+        let mut retained_by_key = BTreeMap::<String, Option<crate::NodeId>>::new();
+        for retained in self.retained.nodes() {
+            let Some(key) = retained.key() else {
+                continue;
+            };
+            retained_by_key
+                .entry(key.to_owned())
+                .and_modify(|node| *node = None)
+                .or_insert(Some(retained.id()));
+        }
+        let mut runtime = self
+            .runtime
+            .try_borrow_mut()
+            .map_err(|_| LifecycleError::Borrowed)?;
+        let now = runtime.clock.now();
+        for node in exits {
+            let Some(key) = node.key().map(crate::NodeKey::as_str) else {
+                continue;
+            };
+            let Some(Some(retained)) = retained_by_key.get(key) else {
+                continue;
+            };
+            let Some(geometry) = runtime.geometry.get(*retained) else {
+                continue;
+            };
+            let Some(ghost) = node.motion_ghost() else {
+                continue;
+            };
+            let path = format!("ghost:{}/{}", self.motion_root_path(), key);
+            if runtime.motion_ghosts.iter().any(|ghost| ghost.path == path) {
+                continue;
+            }
+            for source in node.exit_motions() {
+                runtime.motions.start(
+                    ComponentInstancePath::root("UiNode", path.clone()),
+                    source.clone(),
+                    now,
+                )?;
+            }
+            if runtime.motions.is_node_scope_active(&path) {
+                runtime.motion_ghosts.push(crate::motion::MotionGhost {
+                    id: key.to_owned(),
+                    node: ghost,
+                    bounds: geometry.visual,
+                    path,
+                });
+            }
+        }
+        crate::RuntimeBudgets::check(
+            "motion_ghosts",
+            runtime.motion_ghosts.len(),
+            runtime.budgets.motion_ghosts,
+        )?;
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_lines)]
     fn validate_resource_budgets(
         &self,
         engine: &RuntimeEngine,
         retained: &crate::RetainedUiTree,
+        root: &UiNode,
     ) -> Result<(), LifecycleError> {
         let budgets = self
             .runtime
@@ -1119,6 +1196,37 @@ impl ScriptLifecycle {
             "timers",
             engine.component_timers_in_scope(&self.root_path).len(),
             budgets.timers,
+        )?;
+        let motion = crate::motion::node_motion_resource_usage(root);
+        crate::RuntimeBudgets::check(
+            "motion_declarations",
+            motion.declarations,
+            budgets.motion_declarations,
+        )?;
+        crate::RuntimeBudgets::check(
+            "motion_keyframes",
+            motion.keyframes,
+            budgets.motion_keyframes,
+        )?;
+        crate::RuntimeBudgets::check(
+            "motion_timelines",
+            motion.timelines,
+            budgets.motion_timelines,
+        )?;
+        crate::RuntimeBudgets::check(
+            "motion_timeline_steps",
+            motion.timeline_steps,
+            budgets.motion_timeline_steps,
+        )?;
+        crate::RuntimeBudgets::check(
+            "motion_particles",
+            motion.particles,
+            budgets.motion_particles,
+        )?;
+        crate::RuntimeBudgets::check(
+            "shared_motion_snapshots",
+            motion.shared_snapshots,
+            budgets.shared_motion_snapshots,
         )?;
         Ok(())
     }
@@ -1391,7 +1499,7 @@ impl ScriptLifecycle {
         self.compiled.clone()
     }
 
-    fn animation_root_path(&self) -> String {
+    fn motion_root_path(&self) -> String {
         match (self.window.as_deref(), self.view.as_deref()) {
             (Some(window), Some(view)) => format!("window:{window}/view:{view}/root"),
             (Some(window), None) => format!("window:{window}/root"),
@@ -1467,6 +1575,63 @@ impl ScriptLifecycle {
     }
 }
 
+fn collect_node_keys(node: &UiNode, keys: &mut BTreeSet<String>) {
+    if let Some(key) = node.key() {
+        keys.insert(key.as_str().to_owned());
+    }
+    visit_node_children(node, |child| collect_node_keys(child, keys));
+}
+
+fn collect_removed_exit_nodes<'a>(
+    node: &'a UiNode,
+    candidate_keys: &BTreeSet<String>,
+    output: &mut Vec<&'a UiNode>,
+) {
+    if let Some(key) = node.key()
+        && !candidate_keys.contains(key.as_str())
+        && !node.exit_motions().is_empty()
+    {
+        output.push(node);
+        return;
+    }
+    visit_node_children(node, |child| {
+        collect_removed_exit_nodes(child, candidate_keys, output);
+    });
+}
+
+fn visit_node_children<'a>(node: &'a UiNode, mut visit: impl FnMut(&'a UiNode)) {
+    match node.kind() {
+        crate::UiNodeKind::Box { children } | crate::UiNodeKind::Fragment { children } => {
+            for child in children {
+                visit(child);
+            }
+        }
+        crate::UiNodeKind::Overlay {
+            trigger, content, ..
+        } => {
+            visit(trigger);
+            visit(content);
+        }
+        crate::UiNodeKind::Layer { content, .. } => visit(content),
+        crate::UiNodeKind::ErrorBoundary { child, fallback } => {
+            visit(child);
+            visit(fallback);
+        }
+        crate::UiNodeKind::VirtualCollection { spec } => {
+            for child in spec.realized.values() {
+                visit(child);
+            }
+        }
+        crate::UiNodeKind::Text { .. }
+        | crate::UiNodeKind::RichText { .. }
+        | crate::UiNodeKind::Canvas { .. }
+        | crate::UiNodeKind::Svg { .. }
+        | crate::UiNodeKind::Custom { .. }
+        | crate::UiNodeKind::Image { .. }
+        | crate::UiNodeKind::DirectionalImage { .. } => {}
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum LifecycleError {
     #[error("cannot {operation} while lifecycle is {from:?}")]
@@ -1481,7 +1646,7 @@ pub enum LifecycleError {
     #[error(transparent)]
     Runtime(#[from] RuntimeError),
     #[error(transparent)]
-    Animation(#[from] AnimationError),
+    Motion(#[from] MotionError),
     #[error(transparent)]
     Reconcile(#[from] crate::ReconcileError),
     #[error("script lifecycle has no accepted root")]
@@ -1569,7 +1734,7 @@ mod tests {
     const STREAM_COMPONENT_APP: &str = r#"
         define_component(#{
             metadata: #{ id: "test/stream", "export": "StreamProbe", version: "0.1.0",
-                runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
+                runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
                 dependencies: [], capabilities: #{ "app.stream": "*" } },
             schema: #{ props: #{ key: #{ schema: #{ type: "string" }, required: true, sensitive: false } },
                 state: #{ fields: #{ phase: #{ schema: #{ type: "string" },
@@ -1649,7 +1814,7 @@ mod tests {
     }
 
     #[test]
-    fn lifecycle_animation_uses_the_host_runtime_clock() {
+    fn lifecycle_motion_uses_the_host_runtime_clock() {
         let mut engine = RuntimeEngine::new();
         let compiled = engine
             .compile(
@@ -1657,7 +1822,7 @@ mod tests {
                     fn view(ctx) {
                         text("clocked")
                             .with_key("probe")
-                            .animate(transition("width", 0.0, 100.0, 100, "linear"))
+                            .motion(motion_transition("width", 0.0, 100.0, #{ duration_ms: 100, easing: "linear" }))
                     }
                 "#,
             )
@@ -1681,7 +1846,7 @@ mod tests {
         assert_eq!(
             runtime
                 .borrow()
-                .animation_values
+                .motion_values
                 .values()
                 .copied()
                 .collect::<Vec<_>>(),
@@ -1691,7 +1856,7 @@ mod tests {
         manual.advance(Duration::from_millis(50));
         let mut runtime = runtime.borrow_mut();
         let now = runtime.clock.now();
-        let frame = runtime.animations.tick(now);
+        let frame = runtime.motions.tick(now);
         assert_eq!(
             frame.values.values().copied().collect::<Vec<_>>(),
             vec![50.0]
@@ -1699,7 +1864,7 @@ mod tests {
     }
 
     #[test]
-    fn suspend_resume_preserves_state_and_freezes_animation_time() {
+    fn suspend_resume_preserves_state_and_freezes_motion_time() {
         let mut engine = RuntimeEngine::new();
         let compiled = engine
             .compile(
@@ -1711,7 +1876,7 @@ mod tests {
                     }
                     fn view(ctx) {
                         text(ctx.get_state("phase")).with_key("probe")
-                            .animate(transition("width", 0.0, 100.0, 100, "linear"))
+                            .motion(motion_transition("width", 0.0, 100.0, #{ duration_ms: 100, easing: "linear" }))
                     }
                 "#,
             )
@@ -1747,9 +1912,9 @@ mod tests {
         {
             let mut runtime = runtime.borrow_mut();
             let now = runtime.clock.now();
-            runtime.animation_values = runtime.animations.tick(now).values;
+            runtime.motion_values = runtime.motions.tick(now).values;
         }
-        let before = *runtime.borrow().animation_values.values().next().unwrap();
+        let before = *runtime.borrow().motion_values.values().next().unwrap();
         assert!(lifecycle.suspend(&mut engine).unwrap());
         assert_eq!(lifecycle.state(), LifecycleState::Suspended);
         assert_eq!(
@@ -1765,7 +1930,7 @@ mod tests {
             runtime.borrow().component_state.get(&path, "elapsed"),
             Some(&UiValue::Integer(1_000))
         );
-        let after = *runtime.borrow().animation_values.values().next().unwrap();
+        let after = *runtime.borrow().motion_values.values().next().unwrap();
         assert!(
             (before - after).abs() < 0.001,
             "animation advanced while suspended"

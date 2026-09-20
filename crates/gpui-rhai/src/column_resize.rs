@@ -783,6 +783,7 @@ pub fn column_resize_primitive_descriptor() -> PrimitiveDescriptor {
         )]),
         state: ComponentStateSchema::default(),
         lifecycle: false,
+        effect: None,
     }
 }
 
@@ -823,6 +824,7 @@ pub(crate) fn intrinsic_text_measure_primitive_descriptor() -> PrimitiveDescript
         events: BTreeMap::new(),
         state: ComponentStateSchema::default(),
         lifecycle: true,
+        effect: None,
     }
 }
 

@@ -1932,6 +1932,7 @@ pub fn code_viewer_primitive_descriptor() -> PrimitiveDescriptor {
         )]),
         state: crate::ComponentStateSchema::default(),
         lifecycle: true,
+        effect: None,
     }
 }
 
@@ -3944,6 +3945,7 @@ pub fn diff_viewer_primitive_descriptor() -> PrimitiveDescriptor {
         )]),
         state: crate::ComponentStateSchema::default(),
         lifecycle: true,
+        effect: None,
     }
 }
 

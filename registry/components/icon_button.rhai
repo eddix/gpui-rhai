@@ -2,8 +2,8 @@
 {
   "id": "components/icon_button",
   "export": "IconButton",
-  "version": "0.1.2",
-  "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
+  "version": "0.1.3",
+  "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": ["components/button"],
   "capabilities": {}
 }
@@ -22,8 +22,8 @@ define_component(#{
     metadata: #{
         id: "components/icon_button",
         "export": "IconButton",
-        version: "0.1.2",
-        runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
+        version: "0.1.3",
+        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
         dependencies: ["components/button"],
         capabilities: #{},
     },

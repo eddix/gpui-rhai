@@ -16,7 +16,7 @@ ctx.close_window("settings");
 IDs are stable and unique; sizes, title length, window count, and pending command
 count are bounded. Every standalone script window runs the same entry in a separate lifecycle and
 component-state namespace. App stores are shared; window stores, theme and locale
-overrides, overlays, animations, tasks, subscriptions, and image work are scoped.
+overrides, overlays, motion, tasks, subscriptions, and image work are scoped.
 Geometry, presented-frame membership, and pointer capture live in a per-view
 presentation domain, so tree-local NodeId and pointer numbers may overlap
 without one window clearing or overwriting another.

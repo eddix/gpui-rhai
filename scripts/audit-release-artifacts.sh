@@ -20,6 +20,7 @@ embedded_examples=(
   form_showcase
   host_owned_tree
   multi_window
+  motion_gallery
   settings_panel
   table_1000
 )

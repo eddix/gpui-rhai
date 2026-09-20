@@ -102,7 +102,7 @@ pub struct InspectorNode {
     pub props: BTreeMap<String, String>,
     pub attributes: BTreeMap<String, String>,
     pub handlers: Vec<String>,
-    pub animations: Vec<String>,
+    pub motions: Vec<String>,
     pub style: StyleProperties,
     pub children: Vec<InspectorNode>,
 }
@@ -121,13 +121,15 @@ pub struct InspectorSnapshot {
     pub components: Vec<InspectorComponent>,
     pub signals: Vec<InspectorSignal>,
     pub effects: Vec<InspectorEffect>,
-    pub animations: Vec<InspectorAnimation>,
+    pub motions: Vec<InspectorMotion>,
+    pub timelines: Vec<InspectorTimeline>,
     pub timers: Vec<InspectorTimer>,
     pub element_refs: Vec<InspectorElementRef>,
     pub virtual_collections: Vec<InspectorVirtualCollection>,
     pub geometry_nodes: usize,
     pub pointer_captures: BTreeMap<u64, u64>,
     pub locale_readers: usize,
+    pub theme_readers: usize,
     pub viewport_readers: usize,
     pub clock_elapsed_ms: u64,
 }
@@ -161,7 +163,7 @@ pub struct InspectorEffect {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct InspectorAnimation {
+pub struct InspectorMotion {
     pub id: String,
     pub kind: String,
     pub value: f64,
@@ -171,6 +173,17 @@ pub struct InspectorAnimation {
     pub duration_ms: Option<u64>,
     pub repeating: bool,
     pub active: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct InspectorTimeline {
+    pub id: String,
+    pub state: String,
+    pub elapsed_ms: u64,
+    pub duration_ms: Option<u64>,
+    pub iterations: Option<u32>,
+    pub autoreverse: bool,
+    pub track_count: usize,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -212,13 +225,15 @@ pub struct InspectorVirtualCollection {
 struct InspectorRuntimeMechanisms {
     signals: Vec<InspectorSignal>,
     effects: Vec<InspectorEffect>,
-    animations: Vec<InspectorAnimation>,
+    motions: Vec<InspectorMotion>,
+    timelines: Vec<InspectorTimeline>,
     timers: Vec<InspectorTimer>,
     element_refs: Vec<InspectorElementRef>,
     virtual_collections: Vec<InspectorVirtualCollection>,
     geometry_nodes: usize,
     pointer_captures: BTreeMap<u64, u64>,
     locale_readers: usize,
+    theme_readers: usize,
     viewport_readers: usize,
     clock_elapsed_ms: u64,
 }
@@ -290,19 +305,22 @@ impl InspectorSnapshot {
                 .collect(),
             signals: mechanisms.signals,
             effects: mechanisms.effects,
-            animations: mechanisms.animations,
+            motions: mechanisms.motions,
+            timelines: mechanisms.timelines,
             timers: mechanisms.timers,
             element_refs: mechanisms.element_refs,
             virtual_collections: mechanisms.virtual_collections,
             geometry_nodes: mechanisms.geometry_nodes,
             pointer_captures: mechanisms.pointer_captures,
             locale_readers: mechanisms.locale_readers,
+            theme_readers: mechanisms.theme_readers,
             viewport_readers: mechanisms.viewport_readers,
             clock_elapsed_ms: mechanisms.clock_elapsed_ms,
         }
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn inspect_runtime_mechanisms(
     runtime: &UiRuntimeState,
     view: Option<&str>,
@@ -339,11 +357,11 @@ fn inspect_runtime_mechanisms(
                 generation: effect.generation().get(),
             })
             .collect(),
-        animations: runtime
-            .animations
+        motions: runtime
+            .motions
             .inspect(runtime.clock.now())
             .into_iter()
-            .map(|animation| InspectorAnimation {
+            .map(|animation| InspectorMotion {
                 id: format!(
                     "{}/{}",
                     animation.key.component,
@@ -357,6 +375,20 @@ fn inspect_runtime_mechanisms(
                 duration_ms: animation.duration_ms,
                 repeating: animation.repeating,
                 active: animation.active,
+            })
+            .collect(),
+        timelines: runtime
+            .motions
+            .inspect_timelines(runtime.clock.now())
+            .into_iter()
+            .map(|timeline| InspectorTimeline {
+                id: format!("{}/{}", timeline.handle.component, timeline.handle.name),
+                state: format!("{:?}", timeline.state),
+                elapsed_ms: timeline.elapsed_ms,
+                duration_ms: timeline.duration_ms,
+                iterations: timeline.iterations,
+                autoreverse: timeline.autoreverse,
+                track_count: timeline.track_count,
             })
             .collect(),
         timers: runtime
@@ -390,6 +422,7 @@ fn inspect_runtime_mechanisms(
             .map(|(pointer, node)| (pointer, node.get()))
             .collect(),
         locale_readers: runtime.environment_dependencies.locale_reader_count(),
+        theme_readers: runtime.environment_dependencies.theme_reader_count(),
         viewport_readers: runtime.environment_dependencies.viewport_reader_count(),
         clock_elapsed_ms: u64::try_from(runtime.clock.elapsed().as_millis()).unwrap_or(u64::MAX),
     }
@@ -510,8 +543,8 @@ fn inspect_node(node: &UiNode, path: &str) -> InspectorNode {
                 })
             })
             .collect(),
-        animations: node
-            .animations()
+        motions: node
+            .motions()
             .iter()
             .map(|animation| format!("{animation:?}"))
             .collect(),
@@ -723,13 +756,14 @@ fn inspector_header(snapshot: &InspectorSnapshot) -> Vec<String> {
             snapshot.theme_family, snapshot.theme_name
         ),
         format!(
-            "nodes={} state={} stores={} signals={} effects={} animations={} timers={} refs={} virtual={} geometry={} captures={} dirty={} traces={} timings={} clock={}ms",
+            "nodes={} state={} stores={} signals={} effects={} motions={} timelines={} timers={} refs={} virtual={} geometry={} captures={} dirty={} traces={} timings={} clock={}ms",
             snapshot.root.as_ref().map_or(0, count_nodes),
             snapshot.state.len(),
             snapshot.stores.len(),
             snapshot.signals.len(),
             snapshot.effects.len(),
-            snapshot.animations.len(),
+            snapshot.motions.len(),
+            snapshot.timelines.len(),
             snapshot.timers.len(),
             snapshot.element_refs.len(),
             snapshot.virtual_collections.len(),
@@ -746,8 +780,8 @@ fn inspector_header(snapshot: &InspectorSnapshot) -> Vec<String> {
 #[cfg(feature = "dev-reload")]
 fn append_mechanism_lines(snapshot: &InspectorSnapshot, lines: &mut Vec<String>) {
     lines.push(format!(
-        "Dependencies — locale={} viewport={}",
-        snapshot.locale_readers, snapshot.viewport_readers
+        "Dependencies — locale={} theme={} viewport={}",
+        snapshot.locale_readers, snapshot.theme_readers, snapshot.viewport_readers
     ));
     lines.push("Signals".to_owned());
     for signal in &snapshot.signals {
@@ -768,19 +802,32 @@ fn append_mechanism_lines(snapshot: &InspectorSnapshot, lines: &mut Vec<String>)
             effect.generation
         ));
     }
-    lines.push("Animations".to_owned());
-    for animation in &snapshot.animations {
+    lines.push("Motion sources".to_owned());
+    for motion in &snapshot.motions {
         lines.push(format!(
             "  {} {} value={:.4} target={:.4} velocity={:?} elapsed={}ms duration={:?} repeat={} active={}",
-            animation.id,
-            animation.kind,
-            animation.value,
-            animation.target,
-            animation.velocity,
-            animation.elapsed_ms,
-            animation.duration_ms,
-            animation.repeating,
-            animation.active
+            motion.id,
+            motion.kind,
+            motion.value,
+            motion.target,
+            motion.velocity,
+            motion.elapsed_ms,
+            motion.duration_ms,
+            motion.repeating,
+            motion.active
+        ));
+    }
+    lines.push("Motion timelines".to_owned());
+    for timeline in &snapshot.timelines {
+        lines.push(format!(
+            "  {} state={} elapsed={}ms duration={:?} iterations={:?} reverse={} tracks={}",
+            timeline.id,
+            timeline.state,
+            timeline.elapsed_ms,
+            timeline.duration_ms,
+            timeline.iterations,
+            timeline.autoreverse,
+            timeline.track_count
         ));
     }
     lines.push("Timers".to_owned());
@@ -856,8 +903,8 @@ fn append_node_lines(node: &InspectorNode, depth: usize, lines: &mut Vec<String>
     if !node.handlers.is_empty() {
         lines.push(format!("{indent}handlers={:?}", node.handlers));
     }
-    if !node.animations.is_empty() {
-        lines.push(format!("{indent}animations={:?}", node.animations));
+    if !node.motions.is_empty() {
+        lines.push(format!("{indent}motions={:?}", node.motions));
     }
     lines.push(format!("{indent}computed_style={:?}", node.style));
     for child in &node.children {
@@ -1017,17 +1064,14 @@ mod tests {
             BTreeMap::from([(timer.id().clone(), timer)]),
             now,
         );
+        let mut transition =
+            crate::MotionTransition::new(crate::MotionProperty::Opacity, 0.0, 1.0, 1_000);
+        transition.easing = crate::MotionEasing::Linear;
         runtime
-            .animations
+            .motions
             .start(
                 component.clone(),
-                crate::AnimationSpec::Transition(crate::TransitionSpec {
-                    property: crate::AnimationProperty::Opacity,
-                    from: 0.0,
-                    to: 1.0,
-                    duration_ms: 1_000,
-                    easing: crate::Easing::Linear,
-                }),
+                crate::MotionSource::Transition(transition),
                 now,
             )
             .unwrap();
@@ -1070,9 +1114,9 @@ mod tests {
         assert_eq!(snapshot.signals[0].last_writer, "Script");
         assert_eq!(snapshot.timers[0].callback, "fired");
         assert_eq!(snapshot.clock_elapsed_ms, 250);
-        assert_eq!(snapshot.animations[0].kind, "transition");
-        assert!((snapshot.animations[0].value - 0.25).abs() < f64::EPSILON);
-        assert_eq!(snapshot.animations[0].duration_ms, Some(1_000));
+        assert_eq!(snapshot.motions[0].kind, "transition");
+        assert!((snapshot.motions[0].value - 0.25).abs() < f64::EPSILON);
+        assert_eq!(snapshot.motions[0].duration_ms, Some(1_000));
         assert_eq!(snapshot.element_refs[0].node, node.get());
         assert_eq!(snapshot.virtual_collections[0].requested_range, 4..6);
         assert_eq!(snapshot.geometry_nodes, 1);

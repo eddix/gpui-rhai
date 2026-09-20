@@ -533,6 +533,7 @@ pub fn range_input_primitive_descriptor() -> PrimitiveDescriptor {
         )]),
         state: ComponentStateSchema::default(),
         lifecycle: true,
+        effect: None,
     }
 }
 

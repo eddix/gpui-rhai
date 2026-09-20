@@ -108,6 +108,14 @@ pub enum CanvasCommand {
         transform: CanvasTransform,
         clip: Option<CanvasClipRect>,
     },
+    MorphPath {
+        key: String,
+        from: Vec<CanvasPathSegment>,
+        to: Vec<CanvasPathSegment>,
+        stroke: (ColorValue, f64),
+        transform: CanvasTransform,
+        clip: Option<CanvasClipRect>,
+    },
 }
 
 impl CanvasCommand {
@@ -117,7 +125,8 @@ impl CanvasCommand {
             Self::Rect { key, .. }
             | Self::Circle { key, .. }
             | Self::Line { key, .. }
-            | Self::Path { key, .. } => key,
+            | Self::Path { key, .. }
+            | Self::MorphPath { key, .. } => key,
         }
     }
 
@@ -125,13 +134,16 @@ impl CanvasCommand {
     pub fn complexity(&self) -> usize {
         match self {
             Self::Path { segments, .. } => 1usize.saturating_add(segments.len()),
+            Self::MorphPath { from, to, .. } => {
+                1usize.saturating_add(from.len()).saturating_add(to.len())
+            }
             Self::Rect { .. } | Self::Circle { .. } | Self::Line { .. } => 1,
         }
     }
 
     fn transform_mut(&mut self) -> Result<&mut CanvasTransform, CanvasError> {
         match self {
-            Self::Path { transform, .. } => Ok(transform),
+            Self::Path { transform, .. } | Self::MorphPath { transform, .. } => Ok(transform),
             _ => Err(CanvasError::PathDecorationOnly),
         }
     }
@@ -161,7 +173,9 @@ impl CanvasCommand {
             height: positive_value("path.clip.height", height)?,
         };
         match &mut self {
-            Self::Path { clip: target, .. } => *target = Some(clip),
+            Self::Path { clip: target, .. } | Self::MorphPath { clip: target, .. } => {
+                *target = Some(clip);
+            }
             _ => return Err(CanvasError::PathDecorationOnly),
         }
         Ok(self)
@@ -207,6 +221,13 @@ pub struct CanvasScene {
     commands: Vec<CanvasCommand>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CanvasPathSample {
+    pub x: f64,
+    pub y: f64,
+    pub tangent_degrees: f64,
+}
+
 impl CanvasScene {
     /// Construct a keyed retained vector scene.
     ///
@@ -235,6 +256,39 @@ impl CanvasScene {
         self.commands.iter().fold(0usize, |total, command| {
             total.saturating_add(command.complexity())
         })
+    }
+
+    /// Sample position and tangent along one retained path by arc length.
+    ///
+    /// # Errors
+    ///
+    /// Returns an explicit error for unknown keys, non-path commands, or an
+    /// empty path.
+    pub fn sample_path(&self, key: &str, progress: f64) -> Result<CanvasPathSample, CanvasError> {
+        if !progress.is_finite() {
+            return Err(CanvasError::NonFinite {
+                field: "path.progress",
+                value: progress,
+            });
+        }
+        let command = self
+            .commands
+            .iter()
+            .find(|command| command.key() == key)
+            .ok_or_else(|| CanvasError::UnknownPath(key.to_owned()))?;
+        let paths = match command {
+            CanvasCommand::Path {
+                segments,
+                transform,
+                ..
+            } => flatten_path(segments, *transform),
+            CanvasCommand::MorphPath {
+                from, transform, ..
+            } => flatten_path(from, *transform),
+            _ => return Err(CanvasError::NotAPath(key.to_owned())),
+        };
+        sample_flattened_paths(&paths, progress.clamp(0.0, 1.0))
+            .ok_or_else(|| CanvasError::EmptyPath(key.to_owned()))
     }
 
     #[must_use]
@@ -314,11 +368,36 @@ impl CanvasCommand {
                 });
                 fill_hit || stroke_hit
             }
+            Self::MorphPath {
+                from,
+                stroke: (_, width),
+                transform,
+                clip,
+                ..
+            } => {
+                if clip.is_some_and(|clip| {
+                    x < clip.x || x > clip.x + clip.width || y < clip.y || y > clip.y + clip.height
+                }) {
+                    return false;
+                }
+                flatten_path(from, *transform).iter().any(|path| {
+                    path.windows(2).any(|segment| {
+                        point_segment_distance(
+                            x,
+                            y,
+                            segment[0].0,
+                            segment[0].1,
+                            segment[1].0,
+                            segment[1].1,
+                        ) <= width / 2.0
+                    })
+                })
+            }
         }
     }
 }
 
-fn flatten_path(
+pub(crate) fn flatten_path(
     segments: &[CanvasPathSegment],
     transform: CanvasTransform,
 ) -> Vec<Vec<(f64, f64)>> {
@@ -481,6 +560,50 @@ pub enum CanvasError {
     TooManyPathSegments,
     #[error("canvas transform and clip refinements apply only to path commands")]
     PathDecorationOnly,
+    #[error("canvas morph paths must have identical segment topology")]
+    IncompatibleMorphTopology,
+    #[error("canvas path key `{0}` does not exist")]
+    UnknownPath(String),
+    #[error("canvas command `{0}` is not a path")]
+    NotAPath(String),
+    #[error("canvas path `{0}` has no measurable segments")]
+    EmptyPath(String),
+}
+
+fn sample_flattened_paths(paths: &[Vec<(f64, f64)>], progress: f64) -> Option<CanvasPathSample> {
+    let total = paths
+        .iter()
+        .flat_map(|path| path.windows(2))
+        .map(|pair| (pair[1].0 - pair[0].0).hypot(pair[1].1 - pair[0].1))
+        .sum::<f64>();
+    if total <= f64::EPSILON {
+        return None;
+    }
+    let mut target = total * progress;
+    let mut last = None;
+    for pair in paths.iter().flat_map(|path| path.windows(2)) {
+        let dx = pair[1].0 - pair[0].0;
+        let dy = pair[1].1 - pair[0].1;
+        let length = dx.hypot(dy);
+        if length <= f64::EPSILON {
+            continue;
+        }
+        last = Some((pair, dx, dy, length));
+        if target <= length {
+            let ratio = target / length;
+            return Some(CanvasPathSample {
+                x: pair[0].0 + dx * ratio,
+                y: pair[0].1 + dy * ratio,
+                tangent_degrees: dy.atan2(dx).to_degrees(),
+            });
+        }
+        target -= length;
+    }
+    last.map(|(pair, dx, dy, _)| CanvasPathSample {
+        x: pair[1].0,
+        y: pair[1].1,
+        tangent_degrees: dy.atan2(dx).to_degrees(),
+    })
 }
 
 fn finite_value(field: &'static str, value: f64) -> Result<f64, CanvasError> {
@@ -687,6 +810,131 @@ fn canvas_stroke_path(
     canvas_path(key, segments, None, Some((color, width)))
 }
 
+fn canvas_morph_stroke_path(
+    key: ImmutableString,
+    from: Array,
+    to: Array,
+    width: FLOAT,
+    color: ColorValue,
+) -> Result<CanvasCommand, Box<EvalAltResult>> {
+    let from = parse_path_segments(from)?;
+    let to = parse_path_segments(to)?;
+    if !compatible_path_topology(&from, &to) {
+        return Err(Box::new(canvas_runtime_error(
+            &CanvasError::IncompatibleMorphTopology,
+        )));
+    }
+    Ok(CanvasCommand::MorphPath {
+        key: validate_key(key)?,
+        from,
+        to,
+        stroke: (color, positive("path.stroke_width", width)?),
+        transform: CanvasTransform::default(),
+        clip: None,
+    })
+}
+
+pub(crate) fn compatible_path_topology(
+    from: &[CanvasPathSegment],
+    to: &[CanvasPathSegment],
+) -> bool {
+    from.len() == to.len()
+        && from.iter().zip(to).all(|(from, to)| {
+            matches!(
+                (from, to),
+                (
+                    CanvasPathSegment::Move { .. },
+                    CanvasPathSegment::Move { .. }
+                ) | (
+                    CanvasPathSegment::Line { .. },
+                    CanvasPathSegment::Line { .. }
+                ) | (
+                    CanvasPathSegment::Quadratic { .. },
+                    CanvasPathSegment::Quadratic { .. }
+                ) | (
+                    CanvasPathSegment::Cubic { .. },
+                    CanvasPathSegment::Cubic { .. }
+                ) | (CanvasPathSegment::Close, CanvasPathSegment::Close)
+            )
+        })
+}
+
+pub(crate) fn interpolate_path(
+    from: &[CanvasPathSegment],
+    to: &[CanvasPathSegment],
+    progress: f64,
+) -> Option<Vec<CanvasPathSegment>> {
+    compatible_path_topology(from, to).then(|| {
+        let progress = progress.clamp(0.0, 1.0);
+        let value = |from: f64, to: f64| from + (to - from) * progress;
+        from.iter()
+            .zip(to)
+            .map(|(from, to)| match (from, to) {
+                (
+                    CanvasPathSegment::Move { x: ax, y: ay },
+                    CanvasPathSegment::Move { x: bx, y: by },
+                ) => CanvasPathSegment::Move {
+                    x: value(*ax, *bx),
+                    y: value(*ay, *by),
+                },
+                (
+                    CanvasPathSegment::Line { x: ax, y: ay },
+                    CanvasPathSegment::Line { x: bx, y: by },
+                ) => CanvasPathSegment::Line {
+                    x: value(*ax, *bx),
+                    y: value(*ay, *by),
+                },
+                (
+                    CanvasPathSegment::Quadratic {
+                        x: ax,
+                        y: ay,
+                        control_x: acx,
+                        control_y: acy,
+                    },
+                    CanvasPathSegment::Quadratic {
+                        x: bx,
+                        y: by,
+                        control_x: bcx,
+                        control_y: bcy,
+                    },
+                ) => CanvasPathSegment::Quadratic {
+                    x: value(*ax, *bx),
+                    y: value(*ay, *by),
+                    control_x: value(*acx, *bcx),
+                    control_y: value(*acy, *bcy),
+                },
+                (
+                    CanvasPathSegment::Cubic {
+                        x: ax,
+                        y: ay,
+                        control_a_x: aax,
+                        control_a_y: aay,
+                        control_b_x: abx,
+                        control_b_y: aby,
+                    },
+                    CanvasPathSegment::Cubic {
+                        x: bx,
+                        y: by,
+                        control_a_x: bax,
+                        control_a_y: bay,
+                        control_b_x: bbx,
+                        control_b_y: bby,
+                    },
+                ) => CanvasPathSegment::Cubic {
+                    x: value(*ax, *bx),
+                    y: value(*ay, *by),
+                    control_a_x: value(*aax, *bax),
+                    control_a_y: value(*aay, *bay),
+                    control_b_x: value(*abx, *bbx),
+                    control_b_y: value(*aby, *bby),
+                },
+                (CanvasPathSegment::Close, CanvasPathSegment::Close) => CanvasPathSegment::Close,
+                _ => unreachable!("topology was validated"),
+            })
+            .collect()
+    })
+}
+
 fn canvas_path(
     key: ImmutableString,
     segments: Array,
@@ -761,6 +1009,9 @@ pub(crate) fn register_canvas_api(engine: &mut Engine) {
     FuncRegistration::new("canvas_stroke_path")
         .in_global_namespace()
         .register_into_engine(engine, canvas_stroke_path);
+    FuncRegistration::new("canvas_morph_stroke_path")
+        .in_global_namespace()
+        .register_into_engine(engine, canvas_morph_stroke_path);
     FuncRegistration::new("canvas_scene")
         .in_global_namespace()
         .register_into_engine(engine, canvas_scene);
@@ -871,5 +1122,36 @@ mod tests {
         assert_eq!(scene.hit_test(20.0, 30.0), Some("triangle"));
         assert_eq!(scene.hit_test(150.0, 150.0), Some("under"));
         assert_eq!(scene.hit_test(250.0, 250.0), None);
+    }
+
+    #[test]
+    fn path_sampling_uses_arc_length_and_morph_requires_matching_topology() {
+        let from = vec![
+            CanvasPathSegment::Move { x: 0.0, y: 0.0 },
+            CanvasPathSegment::Line { x: 100.0, y: 0.0 },
+            CanvasPathSegment::Line { x: 100.0, y: 100.0 },
+        ];
+        let to = vec![
+            CanvasPathSegment::Move { x: 0.0, y: 0.0 },
+            CanvasPathSegment::Line { x: 50.0, y: 50.0 },
+            CanvasPathSegment::Line { x: 0.0, y: 100.0 },
+        ];
+        let scene = CanvasScene::new(vec![CanvasCommand::MorphPath {
+            key: "route".to_owned(),
+            from: from.clone(),
+            to: to.clone(),
+            stroke: (ColorValue::Token("accent".to_owned()), 2.0),
+            transform: CanvasTransform::default(),
+            clip: None,
+        }])
+        .unwrap();
+        let midpoint = scene.sample_path("route", 0.5).unwrap();
+        assert!((midpoint.x - 100.0).abs() < 0.01);
+        assert!(midpoint.y.abs() < 0.01);
+        assert!(interpolate_path(&from, &to, 0.5).is_some());
+        assert!(!compatible_path_topology(
+            &from,
+            &[CanvasPathSegment::Move { x: 0.0, y: 0.0 }]
+        ));
     }
 }

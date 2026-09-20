@@ -47,4 +47,8 @@
 13. Tag the exact protected-main release commit with the target version and create the
     matching GitHub release only after all three crates are available.
 
-Version 0.1.0 and `RUNTIME_API_VERSION` 1 are the first published baseline.
+Versions 0.1.0 through 0.1.2 use `RUNTIME_API_VERSION` 1. Version 0.1.3 moves
+to Runtime API 2 and deliberately removes the old animation surface; verify
+official components, copied examples, CLI metadata, Motion Gallery, reduced
+motion, timelines, exit ghosts, layout/shared-layout behavior, and motion
+budgets together.

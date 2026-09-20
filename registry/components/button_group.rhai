@@ -2,8 +2,8 @@
 {
   "id": "components/button_group",
   "export": "ButtonGroup",
-  "version": "0.1.1",
-  "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
+  "version": "0.1.3",
+  "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": [],
   "capabilities": {}
 }
@@ -15,8 +15,8 @@
 // Example: ButtonGroup(#{ label: "View", buttons: [grid_button, list_button] })
 
 define_component(#{
-    metadata: #{ id: "components/button_group", "export": "ButtonGroup", version: "0.1.1",
-        runtime_api: #{ min_inclusive: 1, max_exclusive: 2 }, dependencies: [], capabilities: #{} },
+    metadata: #{ id: "components/button_group", "export": "ButtonGroup", version: "0.1.3",
+        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{} },
     schema: #{
         props: #{
             buttons: #{ schema: #{ type: "array", max_items: 16, items: #{ type: "node" } },

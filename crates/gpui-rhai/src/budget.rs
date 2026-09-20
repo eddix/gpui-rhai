@@ -17,6 +17,14 @@ pub struct RuntimeBudgets {
     pub background_tasks: usize,
     pub subscriptions: usize,
     pub image_decodes: usize,
+    pub motion_declarations: usize,
+    pub active_motions: usize,
+    pub motion_keyframes: usize,
+    pub motion_timelines: usize,
+    pub motion_timeline_steps: usize,
+    pub motion_ghosts: usize,
+    pub shared_motion_snapshots: usize,
+    pub motion_particles: usize,
 }
 
 impl Default for RuntimeBudgets {
@@ -37,6 +45,14 @@ impl Default for RuntimeBudgets {
             background_tasks: 256,
             subscriptions: 256,
             image_decodes: 256,
+            motion_declarations: 16_384,
+            active_motions: 8_192,
+            motion_keyframes: 65_536,
+            motion_timelines: 1_024,
+            motion_timeline_steps: 16_384,
+            motion_ghosts: 1_024,
+            shared_motion_snapshots: 1_024,
+            motion_particles: 100_000,
         }
     }
 }
@@ -64,6 +80,14 @@ impl RuntimeBudgets {
             ("background_tasks", self.background_tasks),
             ("subscriptions", self.subscriptions),
             ("image_decodes", self.image_decodes),
+            ("motion_declarations", self.motion_declarations),
+            ("active_motions", self.active_motions),
+            ("motion_keyframes", self.motion_keyframes),
+            ("motion_timelines", self.motion_timelines),
+            ("motion_timeline_steps", self.motion_timeline_steps),
+            ("motion_ghosts", self.motion_ghosts),
+            ("shared_motion_snapshots", self.shared_motion_snapshots),
+            ("motion_particles", self.motion_particles),
         ] {
             if limit == 0 {
                 return Err(RuntimeBudgetError::ZeroLimit(resource));

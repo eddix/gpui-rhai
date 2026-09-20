@@ -1252,6 +1252,7 @@ pub fn text_area_primitive_descriptor() -> PrimitiveDescriptor {
         events: text_area_events(),
         state: ComponentStateSchema::default(),
         lifecycle: true,
+        effect: None,
     }
 }
 

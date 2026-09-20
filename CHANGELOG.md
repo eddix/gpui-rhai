@@ -7,6 +7,33 @@ semantic versioning from this release.
 
 ## 0.1.3 - Unreleased
 
+- Runtime API 2 replaces the node animation prototype with one generic Motion
+  engine shared by Rhai and Rust. Strict transition, spring, keyframe, inertia,
+  replay-key, reduced-motion, quality, budget, Inspector, and deterministic
+  clock contracts replace `.animate`, `transition`, `spring`, and
+  `loop_transition` without compatibility aliases.
+- Explicit timelines support delay, sequence, parallel, stagger,
+  repeat/reverse, typed scoped handles, play/pause/resume/restart/seek, and
+  post-frame complete/cancel delivery. Compatible hot reload preserves active
+  timeline progress and refreshes generation-bound callbacks.
+- Native hover/press/focus, in-view, viewport, and scroll progress avoid
+  frame-time Rhai. Pointer payloads expose movement and velocity for bounded
+  inertia. Enter/replay, paint-only exit ghosts, opt-in committed-geometry
+  layout motion, transparent MotionGroup, and same-domain shared-layout IDs
+  participate in transactional lifecycle and budgets.
+- RichText supports grapheme-safe native span opacity motion. Canvas adds
+  native 2D scale/skew/rotation, path trim, arc-length follow, and strict
+  compatible-topology morphing. General arbitrary-subtree transform, arbitrary
+  shaders, and 3D remain explicit future capabilities.
+- Themes now carry duration/easing/spring/distance/stagger motion roles with
+  tracked hot switching. Host effect primitives declare platforms, lifecycle,
+  instance/cost budgets, reduced-motion support, quality tiers, and receive the
+  resolved policy through `PrimitiveTheme`.
+- Ten optional public-substrate components ship under `motion/*`, including
+  TextReveal, NumberTicker, Marquee, Shimmer, BorderBeam, Orbit, Particles,
+  AnimatedTabs, ReorderList, and SharedLayoutCards. The CLI installs them into
+  `ui/motion`, and the separate `motion_gallery` example exercises the pack.
+
 - Mounted script failures now expose one atomic human/structured error record.
   `ScriptViewHandle::last_diagnostic()` preserves the Rhai error kind, bounded
   token, source position and stack, typed execution timing and operation budget,

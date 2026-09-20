@@ -95,7 +95,7 @@ for behavior; put effects in declarations and mutations in callbacks.
 A component received through a `Node` prop remains owned by the context that
 constructed it. Receiver-local rerenders hydrate the prop from that component's
 latest owned snapshot without executing it or restarting its resources. Fluent
-styles, handlers, refs, signals, attributes, and animations that the receiver
+styles, handlers, refs, signals, attributes, and motion that the receiver
 adds to the component root form a distinct presentation layer: child rerenders
 preserve the layer and receiver rerenders apply it exactly once. This applies
 recursively to optional/array/map/object/union Node shapes and to nodes inside
@@ -254,7 +254,7 @@ are retained for the corresponding final typed Style/data APIs.
 
 Use `box(children)` for layout/paint/interaction and `fragment(children)` only
 for transparent snapshot grouping. Fragment cannot carry Style, handlers,
-signals, attributes, animations, or refs. `row`, `column`, and `stack` are Box
+signals, attributes, motion, or refs. `row`, `column`, and `stack` are Box
 helpers, not distinct privileged node kinds.
 
 Use `text([span("Label ").bold(), span(value).color(theme_color("accent"))])`

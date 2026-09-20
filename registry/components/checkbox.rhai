@@ -2,8 +2,8 @@
 {
   "id": "components/checkbox",
   "export": "Checkbox",
-  "version": "0.1.1",
-  "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
+  "version": "0.1.3",
+  "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": [],
   "capabilities": {},
   "assets": ["icons/check.svg", "icons/minus.svg"]
@@ -17,8 +17,8 @@
 
 define_component(#{
     metadata: #{
-        id: "components/checkbox", "export": "Checkbox", version: "0.1.1",
-        runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
+        id: "components/checkbox", "export": "Checkbox", version: "0.1.3",
+        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
         dependencies: [], capabilities: #{}, assets: ["icons/check.svg", "icons/minus.svg"],
     },
     schema: #{

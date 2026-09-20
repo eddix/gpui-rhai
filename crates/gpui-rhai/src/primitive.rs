@@ -97,6 +97,43 @@ pub struct PrimitiveDescriptor {
     pub state: ComponentStateSchema,
     #[serde(default)]
     pub lifecycle: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effect: Option<EffectPrimitiveDescriptor>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PrimitivePlatform {
+    MacOs,
+    Linux,
+    Windows,
+}
+
+impl PrimitivePlatform {
+    #[must_use]
+    pub const fn current() -> Self {
+        #[cfg(target_os = "macos")]
+        {
+            Self::MacOs
+        }
+        #[cfg(target_os = "linux")]
+        {
+            Self::Linux
+        }
+        #[cfg(target_os = "windows")]
+        {
+            Self::Windows
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct EffectPrimitiveDescriptor {
+    pub platforms: BTreeSet<PrimitivePlatform>,
+    pub max_instances: usize,
+    pub max_cost_per_instance: usize,
+    pub reduced_motion: bool,
+    pub quality_tiers: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -125,6 +162,9 @@ pub struct PrimitiveTheme {
     radii: BTreeMap<RadiusToken, Length>,
     typography: BTreeMap<String, crate::ResolvedTypography>,
     direction: crate::TextDirection,
+    motion: crate::ThemeMotion,
+    motion_preference: crate::MotionPreference,
+    motion_quality: crate::MotionQuality,
 }
 
 impl Default for PrimitiveTheme {
@@ -135,6 +175,9 @@ impl Default for PrimitiveTheme {
             radii: BTreeMap::new(),
             typography: BTreeMap::new(),
             direction: crate::TextDirection::LeftToRight,
+            motion: crate::ThemeMotion::default(),
+            motion_preference: crate::MotionPreference::Normal,
+            motion_quality: crate::MotionQuality::High,
         }
     }
 }
@@ -145,9 +188,24 @@ impl PrimitiveTheme {
         Self::capture_with_direction(colors, crate::TextDirection::LeftToRight)
     }
 
+    #[cfg(test)]
     pub(crate) fn capture_with_direction(
         colors: &impl ColorResolver,
         direction: crate::TextDirection,
+    ) -> Self {
+        Self::capture_with_motion_policy(
+            colors,
+            direction,
+            crate::MotionPreference::Normal,
+            crate::MotionQuality::High,
+        )
+    }
+
+    pub(crate) fn capture_with_motion_policy(
+        colors: &impl ColorResolver,
+        direction: crate::TextDirection,
+        motion_preference: crate::MotionPreference,
+        motion_quality: crate::MotionQuality,
     ) -> Self {
         const TOKENS: &[&str] = &[
             "surface",
@@ -228,6 +286,9 @@ impl PrimitiveTheme {
                 })
                 .collect(),
             direction,
+            motion: colors.resolve_motion(),
+            motion_preference,
+            motion_quality,
         }
     }
 
@@ -259,6 +320,21 @@ impl PrimitiveTheme {
     }
 
     #[must_use]
+    pub const fn motion_preference(&self) -> crate::MotionPreference {
+        self.motion_preference
+    }
+
+    #[must_use]
+    pub const fn motion_quality(&self) -> crate::MotionQuality {
+        self.motion_quality
+    }
+
+    #[must_use]
+    pub const fn motion(&self) -> &crate::ThemeMotion {
+        &self.motion
+    }
+
+    #[must_use]
     pub fn typography(&self, role: &str) -> Option<crate::ResolvedTypography> {
         self.typography.get(role).cloned()
     }
@@ -275,6 +351,10 @@ impl ColorResolver for PrimitiveTheme {
 
     fn resolve_typography(&self, role: &str) -> Option<crate::ResolvedTypography> {
         self.typography(role)
+    }
+
+    fn resolve_motion(&self) -> crate::ThemeMotion {
+        self.motion.clone()
     }
 }
 
@@ -673,6 +753,12 @@ impl PrimitiveEventEmitter {
 }
 
 pub trait PrimitiveHandler {
+    /// Return deterministic work units for this validated effect instance.
+    /// Non-effect primitives ignore this value.
+    fn effect_cost(&self, _instance: &PrimitiveInstance) -> usize {
+        1
+    }
+
     /// Called once before the first render of a keyed lifecycle primitive.
     ///
     /// # Errors
@@ -937,6 +1023,7 @@ impl PrimitiveRegistry {
         .into_any_element()
     }
 
+    #[allow(clippy::too_many_lines)]
     fn render_instance(
         &self,
         node: PrimitiveNode,
@@ -986,10 +1073,41 @@ impl PrimitiveRegistry {
             resources: resources.clone(),
         };
         let needs_mount = instance_id.is_some() && previous.is_none();
+        if needs_mount
+            && let Some(effect) = inner
+                .entries
+                .get(&instance.node.primitive)
+                .and_then(|entry| entry.descriptor.effect.as_ref())
+        {
+            let mounted = inner
+                .mounted
+                .keys()
+                .filter(|id| id.primitive == instance.node.primitive)
+                .count();
+            if mounted >= effect.max_instances {
+                return Err(PrimitiveError::EffectInstanceBudget {
+                    primitive: instance.node.primitive.clone(),
+                    actual: mounted.saturating_add(1),
+                    limit: effect.max_instances,
+                });
+            }
+        }
         let entry = inner
             .entries
             .get_mut(&instance.node.primitive)
             .ok_or_else(|| PrimitiveError::Unknown(instance.node.primitive.clone()))?;
+        if let Some(effect) = &entry.descriptor.effect {
+            let cost = guard_primitive_panic(&instance.node.primitive, "effect_cost", || {
+                entry.handler.effect_cost(&instance)
+            })?;
+            if cost > effect.max_cost_per_instance {
+                return Err(PrimitiveError::EffectCostBudget {
+                    primitive: instance.node.primitive.clone(),
+                    actual: cost,
+                    limit: effect.max_cost_per_instance,
+                });
+            }
+        }
         let operation = (|| {
             if needs_mount {
                 guard_primitive_panic(&instance.node.primitive, "mount", || {
@@ -1207,6 +1325,23 @@ fn validate_descriptor(descriptor: &PrimitiveDescriptor) -> Result<(), Primitive
     }
     ComponentStateSchema::new(descriptor.state.fields().clone())
         .map_err(|source| PrimitiveError::InvalidStateSchema(source.to_string()))?;
+    if let Some(effect) = &descriptor.effect {
+        if effect.platforms.is_empty() || !effect.platforms.contains(&PrimitivePlatform::current())
+        {
+            return Err(PrimitiveError::UnsupportedEffectPlatform {
+                primitive: descriptor.id.clone(),
+                platform: PrimitivePlatform::current(),
+            });
+        }
+        if effect.max_instances == 0 || effect.max_cost_per_instance == 0 {
+            return Err(PrimitiveError::InvalidEffectBudget(descriptor.id.clone()));
+        }
+        if !descriptor.lifecycle {
+            return Err(PrimitiveError::EffectRequiresLifecycle(
+                descriptor.id.clone(),
+            ));
+        }
+    }
     Ok(())
 }
 
@@ -1366,6 +1501,27 @@ pub enum PrimitiveError {
         primitive: PrimitiveId,
         phase: &'static str,
     },
+    #[error("effect primitive `{primitive:?}` does not support {platform:?}")]
+    UnsupportedEffectPlatform {
+        primitive: PrimitiveId,
+        platform: PrimitivePlatform,
+    },
+    #[error("effect primitive `{0:?}` must declare positive instance and cost budgets")]
+    InvalidEffectBudget(PrimitiveId),
+    #[error("effect primitive `{0:?}` must opt into scoped lifecycle")]
+    EffectRequiresLifecycle(PrimitiveId),
+    #[error("effect primitive `{primitive:?}` instance budget exceeded: {actual} > {limit}")]
+    EffectInstanceBudget {
+        primitive: PrimitiveId,
+        actual: usize,
+        limit: usize,
+    },
+    #[error("effect primitive `{primitive:?}` cost budget exceeded: {actual} > {limit}")]
+    EffectCostBudget {
+        primitive: PrimitiveId,
+        actual: usize,
+        limit: usize,
+    },
     #[error(transparent)]
     Resource(#[from] PrimitiveResourceError),
 }
@@ -1462,7 +1618,26 @@ mod tests {
             )]))
             .unwrap(),
             lifecycle: true,
+            effect: None,
         }
+    }
+
+    #[test]
+    fn effect_descriptors_require_current_platform_lifecycle_and_budgets() {
+        let mut descriptor = descriptor();
+        descriptor.effect = Some(EffectPrimitiveDescriptor {
+            platforms: BTreeSet::from([PrimitivePlatform::current()]),
+            max_instances: 8,
+            max_cost_per_instance: 4_096,
+            reduced_motion: true,
+            quality_tiers: true,
+        });
+        validate_descriptor(&descriptor).unwrap();
+        descriptor.lifecycle = false;
+        assert!(matches!(
+            validate_descriptor(&descriptor),
+            Err(PrimitiveError::EffectRequiresLifecycle(_))
+        ));
     }
 
     #[test]

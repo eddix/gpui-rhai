@@ -532,7 +532,10 @@ fn validate_fragment(node: &UiNode) -> Result<(), ReconcileError> {
             || node.part_styles().next().is_some()
             || !node.attributes().is_empty()
             || !node.handlers().is_empty()
-            || !node.animations().is_empty()
+            || !node.motions().is_empty()
+            || !node.exit_motions().is_empty()
+            || !node.progress_motions().is_empty()
+            || !node.timelines().is_empty()
             || node.signal_bindings().next().is_some()
             || node.element_ref().is_some())
     {

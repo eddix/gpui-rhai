@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use gpui::KeyBinding;
 use gpui::actions;
@@ -22,17 +22,18 @@ use thiserror::Error;
 use crate::FileWatcher;
 use crate::overlay_element::WindowOverlayCoordinator;
 use crate::{
-    ActionError, ActionId, AnimationRuntime, AppManifest, AssetData, AssetId, AssetRegistry,
-    CapabilityError, CompiledUi, ComponentExportError, ComponentInstancePath, ComponentRegistry,
+    ActionError, ActionId, AppManifest, AssetData, AssetId, AssetRegistry, CapabilityError,
+    CompiledUi, ComponentExportError, ComponentInstancePath, ComponentRegistry,
     ComponentStateSchema, ComponentStyleError, ComponentStyleSheet, DependencyError, Diagnostic,
     DirectoryAssetProvider, DispatchScriptAction, EmbeddedScriptSource, FileScriptSource,
     GpuiNodeRenderer, InMemoryAssetProvider, InteractionState, KeyBindingSpec, LocaleBundle,
-    LocaleManager, ModuleCompileCache, ModuleId, MotionPreference, NodeEventDispatcher,
-    PrimitiveRegistry, ResponsiveError, ResponsiveRuntime, RestrictedModuleResolver, RuntimeEngine,
-    RuntimeError, ScriptCallback, ScriptLifecycle, ScriptSource, ScriptWindowSpec,
-    SystemAppearance, TextDirection, ThemeManager, ThemeSelection, ThemeSnapshot, ThemeVariant,
-    UiRuntimeState, UiValue, ViewportBreakpoints, WindowCommand, WindowCommandPolicy,
-    init_text_area, init_text_input, load_component_styles, load_locale_source, load_theme_source,
+    LocaleManager, ModuleCompileCache, ModuleId, MotionPreference, MotionRuntime,
+    NodeEventDispatcher, PrimitiveRegistry, ResponsiveError, ResponsiveRuntime,
+    RestrictedModuleResolver, RuntimeEngine, RuntimeError, ScriptCallback, ScriptLifecycle,
+    ScriptSource, ScriptWindowSpec, SystemAppearance, TextDirection, ThemeManager, ThemeSelection,
+    ThemeSnapshot, ThemeVariant, UiRuntimeState, UiValue, ViewportBreakpoints, WindowCommand,
+    WindowCommandPolicy, init_text_area, init_text_input, load_component_styles,
+    load_locale_source, load_theme_source,
 };
 
 #[cfg(feature = "dev-reload")]
@@ -1209,6 +1210,7 @@ pub struct FileScriptView {
     entry: PathBuf,
     development: bool,
     motion_preference: MotionPreference,
+    motion_quality: crate::MotionQuality,
     extensions: Vec<Box<dyn ScriptViewExtension>>,
     key_bindings: Vec<KeyBindingSpec>,
     viewport_breakpoints: ViewportBreakpoints,
@@ -1224,6 +1226,7 @@ impl FileScriptView {
             entry: entry.into(),
             development: cfg!(feature = "dev-reload") && cfg!(debug_assertions),
             motion_preference: motion_preference_from_env(),
+            motion_quality: crate::MotionQuality::High,
             extensions: Vec::new(),
             key_bindings: Vec::new(),
             viewport_breakpoints: ViewportBreakpoints::default(),
@@ -1242,6 +1245,12 @@ impl FileScriptView {
     #[must_use]
     pub const fn motion_preference(mut self, preference: MotionPreference) -> Self {
         self.motion_preference = preference;
+        self
+    }
+
+    #[must_use]
+    pub const fn motion_quality(mut self, quality: crate::MotionQuality) -> Self {
+        self.motion_quality = quality;
         self
     }
 
@@ -1327,7 +1336,8 @@ impl FileScriptView {
             load_file_component_styles(engine.engine(), &style_path, &component_exports)?;
         let state_schema = engine.root_state_schema(&compiled)?;
         let mut runtime_state = UiRuntimeState::new();
-        runtime_state.animations = AnimationRuntime::new(self.motion_preference);
+        runtime_state.motions = MotionRuntime::new(self.motion_preference);
+        runtime_state.motions.set_quality(self.motion_quality);
         runtime_state.responsive = ResponsiveRuntime::new(self.viewport_breakpoints);
         runtime_state.calendar_clock = self.calendar_clock;
         runtime_state.clock = self.runtime_clock;
@@ -1388,6 +1398,7 @@ pub struct EmbeddedScriptView {
     themes: Vec<(String, String)>,
     development: bool,
     motion_preference: MotionPreference,
+    motion_quality: crate::MotionQuality,
     extensions: Vec<Box<dyn ScriptViewExtension>>,
     manifest: AppManifest,
     key_bindings: Vec<KeyBindingSpec>,
@@ -1415,6 +1426,7 @@ impl EmbeddedScriptView {
             themes: Vec::new(),
             development: false,
             motion_preference: motion_preference_from_env(),
+            motion_quality: crate::MotionQuality::High,
             extensions: Vec::new(),
             manifest,
             key_bindings: Vec::new(),
@@ -1454,6 +1466,12 @@ impl EmbeddedScriptView {
     #[must_use]
     pub const fn motion_preference(mut self, preference: MotionPreference) -> Self {
         self.motion_preference = preference;
+        self
+    }
+
+    #[must_use]
+    pub const fn motion_quality(mut self, quality: crate::MotionQuality) -> Self {
+        self.motion_quality = quality;
         self
     }
 
@@ -1552,7 +1570,8 @@ impl EmbeddedScriptView {
         )?;
         let state_schema = engine.root_state_schema(&compiled)?;
         let mut runtime_state = UiRuntimeState::new();
-        runtime_state.animations = AnimationRuntime::new(self.motion_preference);
+        runtime_state.motions = MotionRuntime::new(self.motion_preference);
+        runtime_state.motions.set_quality(self.motion_quality);
         runtime_state.responsive = ResponsiveRuntime::new(self.viewport_breakpoints);
         runtime_state.calendar_clock = self.calendar_clock;
         runtime_state.clock = self.runtime_clock;
@@ -2909,9 +2928,13 @@ fn nearest_scroll_ancestor(
 }
 
 struct ScriptRenderSnapshot {
+    now: Instant,
+    motion_preference: crate::MotionPreference,
+    motion_quality: crate::MotionQuality,
     assets: AssetRegistry,
     theme: ThemeVariant,
-    animations: BTreeMap<crate::AnimationKey, f64>,
+    motions: BTreeMap<crate::MotionKey, f64>,
+    motion_ghosts: Vec<crate::motion::MotionGhost>,
     signals: crate::SignalRegistry,
     geometry: crate::GeometryRegistry,
     pointer_capture: crate::PointerCaptureRegistry,
@@ -3166,6 +3189,7 @@ fn resolve_root_theme_from_runtime(
 }
 
 impl Render for ScriptHostView {
+    #[allow(clippy::too_many_lines)]
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if self.state.get() != ScriptViewState::Active {
             return div().into_any_element();
@@ -3175,12 +3199,15 @@ impl Render for ScriptHostView {
         let appearance = system_appearance(window.appearance());
         let snapshot = self.render_snapshot(appearance);
         self.publish_theme_after_render(&snapshot.theme, cx);
-        let animation_root = format!("window:{}/view:{}/root", self.window_id, self.view_id);
+        let motion_root = format!("window:{}/view:{}/root", self.window_id, self.view_id);
         let render_resources = crate::renderer::WindowRenderResources {
+            now: snapshot.now,
+            motion_preference: snapshot.motion_preference,
+            motion_quality: snapshot.motion_quality,
             assets: &snapshot.assets,
             dispatcher: &dispatcher,
             overlays: &self.overlays,
-            animations: &snapshot.animations,
+            motions: &snapshot.motions,
             signals: &snapshot.signals,
             geometry: &snapshot.geometry,
             pointer_capture: &snapshot.pointer_capture,
@@ -3191,7 +3218,7 @@ impl Render for ScriptHostView {
             text_selection: &self.text_selection,
             host_focus: Some(&self.host_focus),
             direction: snapshot.direction,
-            root_path: &animation_root,
+            root_path: &motion_root,
             view_id: &self.view_id,
         };
         let content = self.lifecycle.retained().root().map_or_else(
@@ -3218,6 +3245,18 @@ impl Render for ScriptHostView {
             ),
             _ => content,
         };
+        let motion_ghosts = snapshot
+            .motion_ghosts
+            .iter()
+            .map(|ghost| {
+                crate::renderer::render_motion_ghost(
+                    ghost,
+                    &snapshot.theme,
+                    &self.primitives,
+                    &render_resources,
+                )
+            })
+            .collect::<Vec<_>>();
         #[cfg(feature = "dev-reload")]
         let runtime = self.lifecycle.runtime();
         #[cfg(feature = "dev-reload")]
@@ -3230,6 +3269,7 @@ impl Render for ScriptHostView {
                 }
             })
             .child(content)
+            .children(motion_ghosts)
             .children({
                 #[cfg(feature = "dev-reload")]
                 {
@@ -3470,7 +3510,17 @@ impl ScriptHostView {
 
     fn render_snapshot(&self, appearance: SystemAppearance) -> ScriptRenderSnapshot {
         let runtime = self.lifecycle.runtime();
-        let runtime = runtime.borrow();
+        let mut runtime = runtime.borrow_mut();
+        let appearance_changed = runtime
+            .window_appearances
+            .insert(self.window_id.clone(), appearance)
+            .is_some_and(|previous| previous != appearance);
+        if appearance_changed {
+            let invalidated = runtime
+                .environment_dependencies
+                .invalidate_theme_window(&self.window_id);
+            runtime.mark_dirty(invalidated);
+        }
         let root = self.lifecycle.root_path();
         let theme = resolve_root_theme_from_runtime(
             &runtime,
@@ -3485,9 +3535,13 @@ impl ScriptHostView {
             .and_then(|locale| locale.direction(Some(&self.window_id), Some(root)).ok())
             .unwrap_or(TextDirection::LeftToRight);
         ScriptRenderSnapshot {
+            now: runtime.clock.now(),
+            motion_preference: runtime.motions.preference(),
+            motion_quality: runtime.motions.quality(),
             assets: runtime.assets.clone(),
             theme,
-            animations: runtime.animation_values.clone(),
+            motions: runtime.motion_values.clone(),
+            motion_ghosts: runtime.motion_ghosts.clone(),
             signals: runtime.signals.clone(),
             geometry: runtime.geometry_for(Some(&self.view_id)),
             pointer_capture: runtime.pointer_capture_for(Some(&self.view_id)),
@@ -3744,6 +3798,41 @@ impl ScriptHostView {
                 let _ = result.map_err(|error| self.lifecycle_failure(&error, Some(&component)))?;
             }
         }
+    }
+
+    fn invoke_motion_timeline_callbacks(
+        &mut self,
+        events: Vec<crate::MotionTimelineEvent>,
+    ) -> Result<bool, ScriptFailure> {
+        let mut invoked = false;
+        for event in events {
+            let Some(callback) = event.callback else {
+                continue;
+            };
+            let component = callback.component().cloned();
+            let payload = UiValue::Map(BTreeMap::from([
+                (
+                    "name".to_owned(),
+                    UiValue::String(event.handle.name.clone()),
+                ),
+                (
+                    "kind".to_owned(),
+                    UiValue::String(
+                        match event.kind {
+                            crate::MotionTimelineEventKind::Complete => "complete",
+                            crate::MotionTimelineEventKind::Cancel => "cancel",
+                        }
+                        .to_owned(),
+                    ),
+                ),
+            ]));
+            let _ = self
+                .lifecycle
+                .invoke_callback(&self.engine, &callback, payload)
+                .map_err(|error| self.lifecycle_failure(&error, component.as_ref()))?;
+            invoked = true;
+        }
+        Ok(invoked)
     }
 
     #[cfg(feature = "dev-reload")]
@@ -4244,6 +4333,7 @@ impl ScriptHostView {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     fn poll_async(&mut self, cx: &mut Context<Self>) {
         if self.state.get() == ScriptViewState::Suspended {
             if let Err(error) = self.collect_suspended_deliveries() {
@@ -4260,7 +4350,15 @@ impl ScriptHostView {
         let generation = self.lifecycle.generation();
         let runtime = self.lifecycle.runtime();
         let root = self.lifecycle.root_path().clone();
-        let (deliveries, animation_active, dirty, pending_dispatch, virtual_requests, repaint) = {
+        let (
+            deliveries,
+            timeline_events,
+            motion_active,
+            dirty,
+            pending_dispatch,
+            virtual_requests,
+            repaint,
+        ) = {
             let mut runtime = runtime.borrow_mut();
             runtime.flush_geometry_dependencies();
             let _ = runtime.assets.retain_decode_generation(generation);
@@ -4274,10 +4372,25 @@ impl ScriptHostView {
             }
             runtime.queue_async(deliveries);
             let deliveries = runtime.take_window_async(&self.window_id, &root);
-            let frame = runtime.animations.tick(now);
-            runtime.animation_values = runtime.animations.snapshot(now);
+            // Events produced by the previous frame are delivered now, after
+            // that frame had a chance to commit. Events produced by this tick
+            // remain queued for the next foreground turn.
+            let timeline_events = runtime.motions.drain_timeline_events();
+            let frame = runtime.motions.tick(now);
+            runtime.motion_values = runtime.motions.snapshot(now);
+            let ghosts = std::mem::take(&mut runtime.motion_ghosts);
+            let mut retained_ghosts = Vec::with_capacity(ghosts.len());
+            for ghost in ghosts {
+                if runtime.motions.is_node_scope_active(&ghost.path) {
+                    retained_ghosts.push(ghost);
+                } else {
+                    runtime.motions.cancel_node_scope(&ghost.path);
+                }
+            }
+            runtime.motion_ghosts = retained_ghosts;
             (
                 deliveries,
+                timeline_events,
                 frame.needs_frame || !frame.values.is_empty(),
                 runtime.has_window_dirty(&root),
                 runtime.has_pending_dispatch(),
@@ -4285,21 +4398,29 @@ impl ScriptHostView {
                 runtime.take_window_repaint(&self.window_id),
             )
         };
-        let has_script_work =
-            !deliveries.is_empty() || dirty || pending_dispatch || virtual_requests;
-        if !has_script_work && !animation_active && !repaint {
+        let has_script_work = !deliveries.is_empty()
+            || timeline_events.iter().any(|event| event.callback.is_some())
+            || dirty
+            || pending_dispatch
+            || virtual_requests;
+        if !has_script_work && !motion_active && !repaint {
             return;
         }
 
         let (delivery_changed, delivery_error) = self.deliver_async_batch(deliveries);
         let result = if dirty || pending_dispatch || virtual_requests {
             self.run_script_transaction(|view| {
-                let mut changed = view.invoke_pending_effects()?;
+                let mut changed = view.invoke_motion_timeline_callbacks(timeline_events)?;
+                changed |= view.invoke_pending_effects()?;
                 let result = view.lifecycle.realize_virtual_requests(&mut view.engine);
                 changed |= result.map_err(|error| view.lifecycle_failure(&error, None))?;
                 let result = view.lifecycle.render_dirty(&mut view.engine);
                 changed |= result.map_err(|error| view.lifecycle_failure(&error, None))?;
                 Ok(changed || delivery_changed)
+            })
+        } else if timeline_events.iter().any(|event| event.callback.is_some()) {
+            self.run_script_transaction(|view| {
+                Ok(view.invoke_motion_timeline_callbacks(timeline_events)? || delivery_changed)
             })
         } else {
             Ok(delivery_changed)
@@ -4314,7 +4435,7 @@ impl ScriptHostView {
                     self.clear_failure();
                 }
                 self.process_window_commands(cx);
-                changed || animation_active || repaint
+                changed || motion_active || repaint
             }
             Err(error) => {
                 self.set_failure(error);
@@ -4902,7 +5023,7 @@ mod tests {
     fn write_manifest(directory: &Path) {
         fs::write(
             directory.join("app.toml"),
-            "entry = \"main\"\nruntime_api = 1\n",
+            "entry = \"main\"\nruntime_api = 2\n",
         )
         .unwrap();
     }
@@ -5244,7 +5365,7 @@ mod tests {
         .unwrap();
         fs::write(
             directory.path().join("app.toml"),
-            "entry = \"main\"\nruntime_api = 1\n[capabilities]\n\"app.missing\" = \"*\"\n",
+            "entry = \"main\"\nruntime_api = 2\n[capabilities]\n\"app.missing\" = \"*\"\n",
         )
         .unwrap();
 
@@ -5359,7 +5480,7 @@ mod tests {
   "id": "components/declarative_icon",
   "export": "DeclarativeIcon",
   "version": "0.1.0",
-  "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
+  "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": [],
   "capabilities": {},
   "assets": ["icons/check.svg"]
@@ -5367,7 +5488,7 @@ mod tests {
 */
 define_component(#{
     metadata: #{ id: "components/declarative_icon", "export": "DeclarativeIcon",
-        version: "0.1.0", runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
+        version: "0.1.0", runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
         dependencies: [], capabilities: #{}, assets: ["icons/check.svg"] },
     schema: #{ props: #{}, state: #{ fields: #{} }, events: #{}, slots: #{}, parts: ["root"] },
     render: Fn("render_DeclarativeIcon")
@@ -5425,12 +5546,12 @@ fn render_DeclarativeIcon(ctx, props) { image(asset("app/icons/check")) }
                 r#"/* gpui-rhai
 {
   "id": "components/missing_asset", "export": "MissingAsset", "version": "0.1.0",
-  "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
+  "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": [], "capabilities": {}, "assets": ["icons/missing.svg"]
 }
 */
 define_component(#{ metadata: #{ id: "components/missing_asset", "export": "MissingAsset",
-    version: "0.1.0", runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
+    version: "0.1.0", runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
     dependencies: [], capabilities: #{}, assets: ["icons/missing.svg"] },
     schema: #{ props: #{}, state: #{ fields: #{} }, events: #{}, slots: #{}, parts: ["root"] },
     render: Fn("render_MissingAsset") });
@@ -5469,7 +5590,7 @@ fn render_MissingAsset(ctx, props) { image(asset("app/icons/missing")) }
         fs::write(directory.path().join("theme.rhai"), theme).unwrap();
         fs::write(
             directory.path().join("app.toml"),
-            "entry = \"main\"\nruntime_api = 1\n",
+            "entry = \"main\"\nruntime_api = 2\n",
         )
         .unwrap();
         fs::write(directory.path().join("locales/en.rhai"), locale).unwrap();

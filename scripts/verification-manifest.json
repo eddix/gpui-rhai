@@ -13,6 +13,7 @@
     "hello_world",
     "host_owned_tree",
     "mini_timeline",
+    "motion_gallery",
     "multi_window",
     "native_overlay_smoke",
     "native_virtual_list_smoke",

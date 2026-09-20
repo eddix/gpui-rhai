@@ -11,10 +11,10 @@ use rhai::{
 use thiserror::Error;
 
 use crate::{
-    ActionError, ActionId, ActionInvocation, ActionRegistry, AnimationKey, AnimationRuntime,
-    AssetError, AssetId, AssetRegistry, AsyncRuntimeError, AsyncScope, CalendarClock,
-    CapabilityError, CapabilityId, CapabilityRegistry, ComponentInstancePath, DateStyle,
-    EventSchema, ImageDecodeHandle, LocaleError, LocaleManager, NumberFormatOptions, OpaqueHandle,
+    ActionError, ActionId, ActionInvocation, ActionRegistry, AssetError, AssetId, AssetRegistry,
+    AsyncRuntimeError, AsyncScope, CalendarClock, CapabilityError, CapabilityId,
+    CapabilityRegistry, ComponentInstancePath, DateStyle, EventSchema, ImageDecodeHandle,
+    LocaleError, LocaleManager, MotionKey, MotionRuntime, NumberFormatOptions, OpaqueHandle,
     ResponsiveError, ResponsiveRuntime, ScriptCallback, ScriptGeneration, ScriptWindowSpec,
     StateError, StateStore, StoreError, StoreId, StoreRegistry, SubscriptionCloseReason,
     SubscriptionDeliveryPolicy, SubscriptionHandle, SubscriptionOptions, SubscriptionRegistration,
@@ -97,7 +97,7 @@ pub struct UiRuntimeState {
     pub theme: Option<ThemeManager>,
     component_styles: crate::ComponentStyleSheet,
     pub assets: AssetRegistry,
-    pub animations: AnimationRuntime,
+    pub motions: MotionRuntime,
     pub effects: crate::EffectRegistry,
     pub signals: crate::SignalRegistry,
     pub element_refs: crate::ElementRefRegistry,
@@ -110,7 +110,9 @@ pub struct UiRuntimeState {
     pub responsive: ResponsiveRuntime,
     pub(crate) environment_dependencies:
         crate::environment_dependency::EnvironmentDependencyRegistry,
-    pub animation_values: BTreeMap<AnimationKey, f64>,
+    pub motion_values: BTreeMap<MotionKey, f64>,
+    pub(crate) motion_ghosts: Vec<crate::motion::MotionGhost>,
+    pub(crate) window_appearances: BTreeMap<String, crate::SystemAppearance>,
     pub traces: crate::TraceBuffer,
     component_event_handlers: BTreeMap<(ComponentInstancePath, String), ScriptCallback>,
     component_incarnations: BTreeMap<ComponentInstancePath, ComponentIncarnation>,
@@ -350,6 +352,7 @@ impl UiRuntimeState {
         self.environment_dependencies.remove_window(window);
         self.environment_dependencies.remove_scope(root);
         self.repaint_windows.remove(window);
+        self.window_appearances.remove(window);
         if let Some(theme) = self.theme.as_mut() {
             theme.remove_window(window);
             theme.remove_scope(root);
@@ -358,9 +361,10 @@ impl UiRuntimeState {
             locale.remove_window(window);
             locale.remove_scope(root);
         }
-        self.animations
-            .cancel_node_scope(&format!("window:{window}"));
-        self.animation_values = self.animations.snapshot(self.clock.now());
+        self.motions.cancel_node_scope(&format!("window:{window}"));
+        self.motion_ghosts
+            .retain(|ghost| !ghost.path.starts_with(&format!("ghost:window:{window}")));
+        self.motion_values = self.motions.snapshot(self.clock.now());
         self.effects.remove_scope(root);
         self.signals.remove_scope(root);
         self.element_refs.remove_scope(root);
@@ -629,7 +633,7 @@ impl UiRuntimeState {
             theme: self.theme.clone(),
             component_styles: self.component_styles.clone(),
             component_style_generation: self.component_style_generation,
-            animations: self.animations.clone(),
+            motions: self.motions.clone(),
             effects: self.effects.clone(),
             signals: self.signals.clone(),
             element_refs: self.element_refs.clone(),
@@ -642,7 +646,8 @@ impl UiRuntimeState {
                 .collect(),
             budgets: self.budgets.clone(),
             virtual_requests: self.virtual_requests.snapshot(),
-            animation_values: self.animation_values.clone(),
+            motion_values: self.motion_values.clone(),
+            motion_ghosts: self.motion_ghosts.clone(),
             windows: self.windows.clone(),
             responsive: self.responsive.clone(),
             environment_dependencies: self.environment_dependencies.clone(),
@@ -686,7 +691,7 @@ impl UiRuntimeState {
         self.theme = snapshot.theme;
         self.component_styles = snapshot.component_styles;
         self.component_style_generation = snapshot.component_style_generation;
-        self.animations = snapshot.animations;
+        self.motions = snapshot.motions;
         self.effects = snapshot.effects;
         self.signals = snapshot.signals;
         self.element_refs = snapshot.element_refs;
@@ -701,7 +706,8 @@ impl UiRuntimeState {
         }
         self.budgets = snapshot.budgets;
         self.virtual_requests.restore(snapshot.virtual_requests);
-        self.animation_values = snapshot.animation_values;
+        self.motion_values = snapshot.motion_values;
+        self.motion_ghosts = snapshot.motion_ghosts;
         self.windows = snapshot.windows;
         self.responsive = snapshot.responsive;
         self.environment_dependencies = snapshot.environment_dependencies;
@@ -813,7 +819,7 @@ pub struct UiStateSnapshot {
     theme: Option<ThemeManager>,
     component_styles: crate::ComponentStyleSheet,
     component_style_generation: u64,
-    animations: AnimationRuntime,
+    motions: MotionRuntime,
     effects: crate::EffectRegistry,
     signals: crate::SignalRegistry,
     element_refs: crate::ElementRefRegistry,
@@ -822,7 +828,8 @@ pub struct UiStateSnapshot {
     presentations: BTreeMap<String, ViewPresentationSnapshot>,
     budgets: crate::RuntimeBudgets,
     virtual_requests: crate::virtual_list::VirtualRequestSnapshot,
-    animation_values: BTreeMap<AnimationKey, f64>,
+    motion_values: BTreeMap<MotionKey, f64>,
+    motion_ghosts: Vec<crate::motion::MotionGhost>,
     windows: WindowCommandRegistry,
     responsive: ResponsiveRuntime,
     environment_dependencies: crate::environment_dependency::EnvironmentDependencyRegistry,
@@ -2371,11 +2378,20 @@ impl UiContext {
             .runtime
             .try_borrow_mut()
             .map_err(|_| UiContextError::Borrowed)?;
+        let invalidated = match &target {
+            ThemeTarget::App => runtime.environment_dependencies.invalidate_theme_app(),
+            ThemeTarget::Window(window) => runtime
+                .environment_dependencies
+                .invalidate_theme_window(window),
+            ThemeTarget::Local => runtime
+                .environment_dependencies
+                .invalidate_theme_scope(&self.component),
+        };
+        let app_target = matches!(&target, ThemeTarget::App);
         let theme = runtime
             .theme
             .as_mut()
             .ok_or(UiContextError::ThemeUnavailable)?;
-        let app_target = matches!(&target, ThemeTarget::App);
         match target {
             ThemeTarget::App => theme.set_app(preference)?,
             ThemeTarget::Window(window) => theme.set_window(window, preference)?,
@@ -2386,6 +2402,7 @@ impl UiContext {
         } else {
             runtime.dirty.insert(self.component.clone());
         }
+        runtime.dirty.extend(invalidated);
         runtime.traces.push(
             crate::RuntimeTraceKind::Theme,
             self.component.to_string(),
@@ -2408,13 +2425,13 @@ impl UiContext {
             .runtime
             .try_borrow_mut()
             .map_err(|_| UiContextError::Borrowed)?;
-        runtime.animations.set_preference(if reduced {
+        runtime.motions.request_preference(if reduced {
             crate::MotionPreference::Reduced
         } else {
             crate::MotionPreference::Normal
         });
         let now = runtime.clock.now();
-        runtime.animation_values = runtime.animations.snapshot(now);
+        runtime.motion_values = runtime.motions.snapshot(now);
         runtime.dirty.insert(self.component.clone());
         runtime.traces.push(
             crate::RuntimeTraceKind::State,
@@ -2424,6 +2441,229 @@ impl UiContext {
             false,
         );
         Ok(())
+    }
+
+    /// Resolve a typed timeline handle in the current view.
+    ///
+    /// # Errors
+    ///
+    /// Returns an explicit missing/duplicate timeline error.
+    pub fn motion_handle(&self, name: &str) -> Result<crate::MotionHandle, UiContextError> {
+        let scope = self.motion_scope();
+        Ok(self
+            .runtime
+            .try_borrow()
+            .map_err(|_| UiContextError::Borrowed)?
+            .motions
+            .timeline_handle_in_scope(&scope, name)?)
+    }
+
+    #[must_use]
+    pub fn motion_tokens(&self) -> crate::ThemeMotion {
+        let Ok(mut runtime) = self.runtime.try_borrow_mut() else {
+            return crate::ThemeMotion::default();
+        };
+        runtime
+            .environment_dependencies
+            .track_theme(self.window.as_deref(), &self.component);
+        let appearance = self
+            .window
+            .as_deref()
+            .and_then(|window| runtime.window_appearances.get(window).copied())
+            .unwrap_or(crate::SystemAppearance::Dark);
+        runtime
+            .theme
+            .as_ref()
+            .and_then(|theme| {
+                theme
+                    .resolve(self.window.as_deref(), Some(&self.component), appearance)
+                    .ok()
+            })
+            .map_or_else(crate::ThemeMotion::default, |theme| {
+                theme.variant().tokens.motion.clone()
+            })
+    }
+
+    /// Resolve a semantic motion duration.
+    ///
+    /// # Errors
+    ///
+    /// Returns an unknown-token error for an undeclared role.
+    pub fn motion_duration(&self, role: &str) -> Result<u64, UiContextError> {
+        self.motion_tokens()
+            .durations_ms
+            .get(role)
+            .copied()
+            .ok_or_else(|| UiContextError::UnknownMotionToken {
+                category: "duration",
+                role: role.to_owned(),
+            })
+    }
+
+    /// Resolve a semantic motion easing.
+    ///
+    /// # Errors
+    ///
+    /// Returns an unknown-token error for an undeclared role.
+    pub fn motion_easing(&self, role: &str) -> Result<crate::MotionEasing, UiContextError> {
+        self.motion_tokens()
+            .easings
+            .get(role)
+            .copied()
+            .ok_or_else(|| UiContextError::UnknownMotionToken {
+                category: "easing",
+                role: role.to_owned(),
+            })
+    }
+
+    /// Resolve a semantic spring preset.
+    ///
+    /// # Errors
+    ///
+    /// Returns an unknown-token error for an undeclared role.
+    pub fn motion_spring(&self, role: &str) -> Result<crate::ThemeMotionSpring, UiContextError> {
+        self.motion_tokens()
+            .springs
+            .get(role)
+            .copied()
+            .ok_or_else(|| UiContextError::UnknownMotionToken {
+                category: "spring",
+                role: role.to_owned(),
+            })
+    }
+
+    /// Resolve a semantic motion distance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an unknown-token error for an undeclared role.
+    pub fn motion_distance(&self, role: &str) -> Result<f64, UiContextError> {
+        self.motion_tokens()
+            .distances
+            .get(role)
+            .copied()
+            .ok_or_else(|| UiContextError::UnknownMotionToken {
+                category: "distance",
+                role: role.to_owned(),
+            })
+    }
+
+    /// Resolve a semantic stagger interval.
+    ///
+    /// # Errors
+    ///
+    /// Returns an unknown-token error for an undeclared role.
+    pub fn motion_stagger(&self, role: &str) -> Result<u64, UiContextError> {
+        self.motion_tokens()
+            .staggers_ms
+            .get(role)
+            .copied()
+            .ok_or_else(|| UiContextError::UnknownMotionToken {
+                category: "stagger",
+                role: role.to_owned(),
+            })
+    }
+
+    #[must_use]
+    pub fn motion_quality(&self) -> crate::MotionQuality {
+        self.runtime
+            .try_borrow()
+            .map_or(crate::MotionQuality::Low, |runtime| {
+                runtime.motions.quality()
+            })
+    }
+
+    /// Play or resume a scoped timeline.
+    ///
+    /// # Errors
+    ///
+    /// Returns phase, borrow, or stale-handle errors.
+    pub fn play_motion(&self, handle: &crate::MotionHandle) -> Result<(), UiContextError> {
+        self.require_mutation()?;
+        let mut runtime = self
+            .runtime
+            .try_borrow_mut()
+            .map_err(|_| UiContextError::Borrowed)?;
+        let now = runtime.clock.now();
+        runtime.motions.play_timeline(handle, now)?;
+        Ok(())
+    }
+
+    /// Pause a scoped timeline.
+    ///
+    /// # Errors
+    ///
+    /// Returns phase, borrow, or stale-handle errors.
+    pub fn pause_motion(&self, handle: &crate::MotionHandle) -> Result<(), UiContextError> {
+        self.require_mutation()?;
+        let mut runtime = self
+            .runtime
+            .try_borrow_mut()
+            .map_err(|_| UiContextError::Borrowed)?;
+        let now = runtime.clock.now();
+        runtime.motions.pause_timeline(handle, now)?;
+        Ok(())
+    }
+
+    /// Seek a scoped timeline to an absolute millisecond position.
+    ///
+    /// # Errors
+    ///
+    /// Returns phase, borrow, stale-handle, or invalid-position errors.
+    pub fn seek_motion(
+        &self,
+        handle: &crate::MotionHandle,
+        position_ms: u64,
+    ) -> Result<(), UiContextError> {
+        self.require_mutation()?;
+        let mut runtime = self
+            .runtime
+            .try_borrow_mut()
+            .map_err(|_| UiContextError::Borrowed)?;
+        let now = runtime.clock.now();
+        runtime.motions.seek_timeline(handle, position_ms, now)?;
+        runtime.motion_values = runtime.motions.snapshot(now);
+        Ok(())
+    }
+
+    /// Restart a scoped timeline from zero.
+    ///
+    /// # Errors
+    ///
+    /// Returns phase, borrow, or stale-handle errors.
+    pub fn restart_motion(&self, handle: &crate::MotionHandle) -> Result<(), UiContextError> {
+        self.require_mutation()?;
+        let mut runtime = self
+            .runtime
+            .try_borrow_mut()
+            .map_err(|_| UiContextError::Borrowed)?;
+        let now = runtime.clock.now();
+        runtime.motions.restart_timeline(handle, now)?;
+        Ok(())
+    }
+
+    /// Cancel a scoped timeline.
+    ///
+    /// # Errors
+    ///
+    /// Returns phase, borrow, or stale-handle errors.
+    pub fn cancel_motion(&self, handle: &crate::MotionHandle) -> Result<(), UiContextError> {
+        self.require_mutation()?;
+        self.runtime
+            .try_borrow_mut()
+            .map_err(|_| UiContextError::Borrowed)?
+            .motions
+            .cancel_timeline(handle)?;
+        Ok(())
+    }
+
+    fn motion_scope(&self) -> String {
+        match (self.window.as_deref(), self.view.as_deref()) {
+            (Some(window), Some(view)) => format!("window:{window}/view:{view}/root"),
+            (Some(window), None) => format!("window:{window}/root"),
+            (None, Some(view)) => format!("view:{view}/root"),
+            (None, None) => "root".to_owned(),
+        }
     }
 
     /// Load and cache a logical image asset.
@@ -3494,15 +3734,143 @@ fn register_theme_context_methods(builder: &mut TypeBuilder<UiContext>) {
         );
 }
 
+#[allow(clippy::too_many_lines)]
 fn register_motion_context_methods(builder: &mut TypeBuilder<UiContext>) {
-    builder.with_fn(
-        "set_reduced_motion",
-        |context: &mut UiContext, reduced: bool| {
-            context
-                .set_reduced_motion(reduced)
-                .map_err(|error| Box::new(context_runtime_error(&error)))
-        },
-    );
+    builder
+        .with_fn(
+            "set_reduced_motion",
+            |context: &mut UiContext, reduced: bool| {
+                context
+                    .set_reduced_motion(reduced)
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        )
+        .with_fn(
+            "motion_handle",
+            |context: &mut UiContext, name: ImmutableString| {
+                context
+                    .motion_handle(name.as_str())
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        )
+        .with_fn(
+            "motion_duration",
+            |context: &mut UiContext, role: ImmutableString| {
+                context
+                    .motion_duration(role.as_str())
+                    .map(|value| INT::try_from(value).unwrap_or(INT::MAX))
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        )
+        .with_fn(
+            "motion_easing",
+            |context: &mut UiContext, role: ImmutableString| {
+                context
+                    .motion_easing(role.as_str())
+                    .map(|value| match value {
+                        crate::MotionEasing::Linear => "linear",
+                        crate::MotionEasing::EaseIn => "ease_in",
+                        crate::MotionEasing::EaseOut => "ease_out",
+                        crate::MotionEasing::EaseInOut => "ease_in_out",
+                    })
+                    .map(ImmutableString::from)
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        )
+        .with_fn(
+            "motion_spring",
+            |context: &mut UiContext, role: ImmutableString| {
+                context
+                    .motion_spring(role.as_str())
+                    .map(|spring| {
+                        Map::from_iter([
+                            ("stiffness".into(), Dynamic::from_float(spring.stiffness)),
+                            ("damping".into(), Dynamic::from_float(spring.damping)),
+                            ("mass".into(), Dynamic::from_float(spring.mass)),
+                        ])
+                    })
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        )
+        .with_fn(
+            "motion_distance",
+            |context: &mut UiContext, role: ImmutableString| {
+                context
+                    .motion_distance(role.as_str())
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        )
+        .with_fn(
+            "motion_stagger",
+            |context: &mut UiContext, role: ImmutableString| {
+                context
+                    .motion_stagger(role.as_str())
+                    .map(|value| INT::try_from(value).unwrap_or(INT::MAX))
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        )
+        .with_fn("motion_quality", |context: &mut UiContext| {
+            match context.motion_quality() {
+                crate::MotionQuality::Low => "low",
+                crate::MotionQuality::Medium => "medium",
+                crate::MotionQuality::High => "high",
+            }
+        })
+        .with_fn(
+            "play_motion",
+            |context: &mut UiContext, handle: crate::MotionHandle| {
+                context
+                    .play_motion(&handle)
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        )
+        .with_fn(
+            "resume_motion",
+            |context: &mut UiContext, handle: crate::MotionHandle| {
+                context
+                    .play_motion(&handle)
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        )
+        .with_fn(
+            "pause_motion",
+            |context: &mut UiContext, handle: crate::MotionHandle| {
+                context
+                    .pause_motion(&handle)
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        )
+        .with_fn(
+            "seek_motion",
+            |context: &mut UiContext, handle: crate::MotionHandle, position_ms: INT| {
+                let position_ms = u64::try_from(position_ms).map_err(|_| {
+                    Box::new(context_runtime_error(&UiContextError::Motion(
+                        crate::MotionError::InvalidTimeline(
+                            "seek position must be non-negative".to_owned(),
+                        ),
+                    )))
+                })?;
+                context
+                    .seek_motion(&handle, position_ms)
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        )
+        .with_fn(
+            "restart_motion",
+            |context: &mut UiContext, handle: crate::MotionHandle| {
+                context
+                    .restart_motion(&handle)
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        )
+        .with_fn(
+            "cancel_motion",
+            |context: &mut UiContext, handle: crate::MotionHandle| {
+                context
+                    .cancel_motion(&handle)
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        );
 }
 
 fn register_asset_context_methods(builder: &mut TypeBuilder<UiContext>) {
@@ -3651,6 +4019,11 @@ pub enum UiContextError {
     LocaleUnavailable,
     #[error("no theme manager is configured for this application")]
     ThemeUnavailable,
+    #[error("unknown theme motion {category} token `{role}`")]
+    UnknownMotionToken {
+        category: &'static str,
+        role: String,
+    },
     #[error("component `{component}` has no state field `{field}`")]
     UnknownState {
         component: ComponentInstancePath,
@@ -3704,6 +4077,8 @@ pub enum UiContextError {
     Callback(#[from] crate::ScriptCallbackDefinitionError),
     #[error(transparent)]
     Timer(#[from] crate::TimerError),
+    #[error(transparent)]
+    Motion(#[from] crate::MotionError),
     #[error(transparent)]
     Budget(#[from] crate::RuntimeBudgetError),
 }

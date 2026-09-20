@@ -28,6 +28,11 @@ const REQUIRED_COLORS: &[&str] = &[
 ];
 const REQUIRED_SPACING: &[&str] = &["xs", "sm", "md", "lg"];
 const REQUIRED_RADII: &[&str] = &["sm", "md", "lg"];
+const REQUIRED_MOTION_DURATIONS: &[&str] = &["instant", "fast", "normal", "slow", "ambient"];
+const REQUIRED_MOTION_EASINGS: &[&str] = &["standard", "entrance", "exit", "emphasized"];
+const REQUIRED_MOTION_SPRINGS: &[&str] = &["responsive", "gentle", "bouncy"];
+const REQUIRED_MOTION_DISTANCES: &[&str] = &["subtle", "moderate", "large"];
+const REQUIRED_MOTION_STAGGERS: &[&str] = &["tight", "normal", "relaxed"];
 pub const REQUIRED_TYPOGRAPHY: &[&str] = &[
     "caption",
     "body_small",
@@ -53,7 +58,126 @@ pub struct ThemeTokens {
     pub radii: BTreeMap<String, Length>,
     pub typography: ThemeTypography,
     #[serde(default)]
+    pub motion: ThemeMotion,
+    #[serde(default)]
     pub namespaces: BTreeMap<String, BTreeMap<String, ThemeTokenValue>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ThemeMotion {
+    pub durations_ms: BTreeMap<String, u64>,
+    pub easings: BTreeMap<String, crate::MotionEasing>,
+    pub springs: BTreeMap<String, ThemeMotionSpring>,
+    pub distances: BTreeMap<String, f64>,
+    pub staggers_ms: BTreeMap<String, u64>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ThemeMotionSpring {
+    pub stiffness: f64,
+    pub damping: f64,
+    pub mass: f64,
+}
+
+impl Default for ThemeMotion {
+    fn default() -> Self {
+        Self {
+            durations_ms: BTreeMap::from([
+                ("instant".to_owned(), 1),
+                ("fast".to_owned(), 120),
+                ("normal".to_owned(), 180),
+                ("slow".to_owned(), 320),
+                ("ambient".to_owned(), 1_100),
+            ]),
+            easings: BTreeMap::from([
+                ("standard".to_owned(), crate::MotionEasing::EaseInOut),
+                ("entrance".to_owned(), crate::MotionEasing::EaseOut),
+                ("exit".to_owned(), crate::MotionEasing::EaseIn),
+                ("emphasized".to_owned(), crate::MotionEasing::EaseInOut),
+            ]),
+            springs: BTreeMap::from([
+                (
+                    "responsive".to_owned(),
+                    ThemeMotionSpring {
+                        stiffness: 240.0,
+                        damping: 26.0,
+                        mass: 1.0,
+                    },
+                ),
+                (
+                    "gentle".to_owned(),
+                    ThemeMotionSpring {
+                        stiffness: 140.0,
+                        damping: 22.0,
+                        mass: 1.0,
+                    },
+                ),
+                (
+                    "bouncy".to_owned(),
+                    ThemeMotionSpring {
+                        stiffness: 280.0,
+                        damping: 16.0,
+                        mass: 1.0,
+                    },
+                ),
+            ]),
+            distances: BTreeMap::from([
+                ("subtle".to_owned(), 4.0),
+                ("moderate".to_owned(), 12.0),
+                ("large".to_owned(), 32.0),
+            ]),
+            staggers_ms: BTreeMap::from([
+                ("tight".to_owned(), 24),
+                ("normal".to_owned(), 48),
+                ("relaxed".to_owned(), 80),
+            ]),
+        }
+    }
+}
+
+impl ThemeMotion {
+    /// Validate the semantic motion token contract.
+    ///
+    /// # Errors
+    ///
+    /// Returns a theme error for missing or physically invalid tokens.
+    pub fn validate(&self) -> Result<(), ThemeError> {
+        require_tokens(
+            "motion duration",
+            REQUIRED_MOTION_DURATIONS,
+            &self.durations_ms,
+        )?;
+        require_tokens("motion easing", REQUIRED_MOTION_EASINGS, &self.easings)?;
+        require_tokens("motion spring", REQUIRED_MOTION_SPRINGS, &self.springs)?;
+        require_tokens(
+            "motion distance",
+            REQUIRED_MOTION_DISTANCES,
+            &self.distances,
+        )?;
+        require_tokens(
+            "motion stagger",
+            REQUIRED_MOTION_STAGGERS,
+            &self.staggers_ms,
+        )?;
+        if self.durations_ms.values().any(|duration| *duration == 0)
+            || self.staggers_ms.values().any(|duration| *duration == 0)
+            || self
+                .distances
+                .values()
+                .any(|distance| !distance.is_finite() || *distance < 0.0)
+            || self.springs.values().any(|spring| {
+                !spring.stiffness.is_finite()
+                    || spring.stiffness <= 0.0
+                    || !spring.damping.is_finite()
+                    || spring.damping < 0.0
+                    || !spring.mass.is_finite()
+                    || spring.mass <= 0.0
+            })
+        {
+            return Err(ThemeError::InvalidMotionTokens);
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -165,6 +289,7 @@ impl ThemeTokens {
         require_tokens("spacing", REQUIRED_SPACING, &self.spacing)?;
         require_tokens("radius", REQUIRED_RADII, &self.radii)?;
         self.typography.validate()?;
+        self.motion.validate()?;
         for (name, value) in self.spacing.iter().chain(&self.radii) {
             if value.is_theme_token() {
                 return Err(ThemeError::NestedLengthToken(name.clone()));
@@ -414,6 +539,10 @@ impl ColorResolver for ThemeVariant {
 
     fn resolve_typography(&self, role: &str) -> Option<ResolvedTypography> {
         self.typography(role)
+    }
+
+    fn resolve_motion(&self) -> ThemeMotion {
+        self.tokens.motion.clone()
     }
 }
 
@@ -827,6 +956,10 @@ impl ColorResolver for ResolvedTheme<'_> {
     fn resolve_typography(&self, role: &str) -> Option<ResolvedTypography> {
         self.variant.typography(role)
     }
+
+    fn resolve_motion(&self) -> ThemeMotion {
+        self.variant.tokens.motion.clone()
+    }
 }
 
 /// Compile and evaluate a Rhai theme source exporting `theme() -> map`.
@@ -896,6 +1029,8 @@ pub enum ThemeError {
     InvalidTypographyLineHeight(String),
     #[error("theme typography `{role}` weight must be between 1 and 1000, got {weight}")]
     InvalidTypographyWeight { role: String, weight: u16 },
+    #[error("theme motion tokens must use positive durations and physically valid values")]
+    InvalidMotionTokens,
     #[error("variant `{key}` does not match family `{family}` or its map key")]
     VariantIdentity { family: String, key: String },
     #[error("family `{family}` has no default variant `{variant}`")]
@@ -978,6 +1113,7 @@ mod tests {
                 ("lg".to_owned(), Length::Pixels(12.0)),
             ]),
             typography: typography(),
+            motion: ThemeMotion::default(),
             namespaces: BTreeMap::new(),
         }
     }
@@ -1217,6 +1353,18 @@ mod tests {
         assert!(matches!(
             invalid.validate(),
             Err(ThemeError::UnknownTypographyRole(role)) if role == "bodyish"
+        ));
+    }
+
+    #[test]
+    fn semantic_motion_tokens_default_validate_and_reject_invalid_physics() {
+        let mut motion = ThemeMotion::default();
+        motion.validate().unwrap();
+        assert_eq!(motion.durations_ms["normal"], 180);
+        motion.springs.get_mut("responsive").unwrap().mass = 0.0;
+        assert!(matches!(
+            motion.validate(),
+            Err(ThemeError::InvalidMotionTokens)
         ));
     }
 

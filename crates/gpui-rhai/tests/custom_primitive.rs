@@ -37,6 +37,7 @@ fn downstream_crate_registers_namespaced_primitive() {
                 events: BTreeMap::new(),
                 state: ComponentStateSchema::default(),
                 lifecycle: false,
+                effect: None,
             },
             DownstreamEditor,
         )

@@ -2,8 +2,8 @@
 {
   "id": "components/card",
   "export": "Card",
-  "version": "0.1.1",
-  "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
+  "version": "0.1.3",
+  "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": [],
   "capabilities": {}
 }
@@ -15,8 +15,8 @@
 // Example: Card(#{ header: text("Account"), content: text("Ada") })
 
 define_component(#{
-    metadata: #{ id: "components/card", "export": "Card", version: "0.1.1",
-        runtime_api: #{ min_inclusive: 1, max_exclusive: 2 }, dependencies: [], capabilities: #{} },
+    metadata: #{ id: "components/card", "export": "Card", version: "0.1.3",
+        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{} },
     schema: #{
         props: #{
             content: #{ schema: #{ type: "node" }, required: true, sensitive: false },

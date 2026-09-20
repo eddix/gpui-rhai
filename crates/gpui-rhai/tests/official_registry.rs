@@ -3607,8 +3607,8 @@ fn m2_visual_primitives_export_fallbacks_and_rust_animations() {
         panic!("Progress must render a track container");
     };
     assert!(matches!(
-        determinate[0].animations()[0],
-        gpui_rhai::AnimationSpec::Transition(_)
+        determinate[0].motions()[0],
+        gpui_rhai::MotionSource::Transition(_)
     ));
     assert_eq!(
         children[1].attributes().get("value_min"),
@@ -3625,17 +3625,17 @@ fn m2_visual_primitives_export_fallbacks_and_rust_animations() {
         panic!("Progress must render a track container");
     };
     assert!(matches!(
-        indeterminate[0].animations()[0],
-        gpui_rhai::AnimationSpec::LoopingTransition(_)
+        indeterminate[0].motions()[0],
+        gpui_rhai::MotionSource::Transition(ref spec) if spec.iterations.is_none()
     ));
     assert!(matches!(
-        children[3].animations()[0],
-        gpui_rhai::AnimationSpec::LoopingTransition(_)
+        children[3].motions()[0],
+        gpui_rhai::MotionSource::Transition(ref spec) if spec.iterations.is_none()
     ));
     assert!(matches!(
-        children[4].animations()[0],
-        gpui_rhai::AnimationSpec::LoopingTransition(spec)
-            if spec.property == gpui_rhai::AnimationProperty::Rotate
+        children[4].motions()[0],
+        gpui_rhai::MotionSource::Transition(ref spec)
+            if spec.property == gpui_rhai::MotionProperty::Rotate && spec.iterations.is_none()
     ));
 }
 
@@ -3709,8 +3709,8 @@ fn m2_composites_export_slots_animation_and_keyboard_payloads() {
         panic!("Collapsible must render trigger and panel");
     };
     assert!(matches!(
-        collapsible_children[1].animations()[0],
-        gpui_rhai::AnimationSpec::Transition(_)
+        collapsible_children[1].motions()[0],
+        gpui_rhai::MotionSource::Transition(_)
     ));
     let UiNodeKind::Box {
         children: accordion_items,
@@ -3725,7 +3725,7 @@ fn m2_composites_export_slots_animation_and_keyboard_payloads() {
         panic!("Accordion item must render trigger and panel");
     };
     assert!(first_item[0].handler_payload("click").is_some());
-    assert!(!first_item[1].animations().is_empty());
+    assert!(!first_item[1].motions().is_empty());
     let UiNodeKind::Box {
         children: tabs_root,
     } = children[3].kind()
