@@ -34,6 +34,10 @@
 11. For the complex-control line, run fixed-Clock DatePicker locale cases, large
     scalar/custom Table probes, Select group/search cases, Pagination boundary
     transitions, and Textarea multiline IME/auto-grow cases.
+    For a component-foundation release, also verify the catalog count, imported
+    component metadata, required accessible-name schemas, decorative Icon
+    semantics, Progress range metadata, Theme Studio coverage, and Gallery
+    preparation across every category.
 
 12. Verify crates.io authentication without printing the token. Publish
     dependency-first: `gpui-rhai`, then `gpui-rhai-registry`, then

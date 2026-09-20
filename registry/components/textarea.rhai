@@ -2,7 +2,7 @@
 {
   "id": "components/textarea",
   "export": "Textarea",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": [],
   "capabilities": {},
@@ -11,20 +11,21 @@
 */
 // Textarea is a controlled multiline field with native IME, selection, wrapping, and auto-grow.
 //
-// Props: key, value, placeholder, disabled/read_only/error, size, rows or min/max rows,
+// Props: key, label, value, placeholder, disabled/read_only/error, size, rows or min/max rows,
 //        max_length, show_count, autofocus, and change/focus/blur callbacks.
 // Events: change(string), focus(null), blur(null). State: keyed native transient editor state.
-// Example: Textarea(#{ key: "notes", value: notes, max_length: 500, show_count: true, on_change: Fn("notes_changed") })
+// Example: Textarea(#{ key: "notes", label: "Notes", value: notes, max_length: 500, show_count: true, on_change: Fn("notes_changed") })
 
 define_component(#{
     metadata: #{
-        id: "components/textarea", "export": "Textarea", version: "0.1.1",
+        id: "components/textarea", "export": "Textarea", version: "0.1.2",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
         dependencies: [], capabilities: #{}, assets: [],
     },
     schema: #{
         props: #{
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+            label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
             value: #{ schema: #{ type: "string" }, required: true, sensitive: false },
             placeholder: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
             disabled: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
@@ -118,7 +119,7 @@ fn render_Textarea(ctx, props) {
                     .opacity(0.72))
         ))
         .accessibility_role("text_field")
-        .accessibility_label(if "placeholder" in props { props.placeholder } else { "" })
+        .accessibility_label(props.label)
         .accessibility_value(props.value)
         .accessibility_invalid(error);
 

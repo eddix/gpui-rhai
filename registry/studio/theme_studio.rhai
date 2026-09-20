@@ -59,7 +59,7 @@ fn color_field(name, value) {
             text(name).with_style(style().typography("caption").font_weight(700)
                 .text_color(theme_color("text_muted"))),
             input::Input(#{
-                key: `studio-${name}`, value: value, placeholder: "#rrggbb",
+                key: `studio-${name}`, label: `${name} color`, value: value, placeholder: "#rrggbb",
                 on_change: native_handler(`theme_studio.set_${name}`)
             })
         ]).with_style(style().flex_grow().gap(px(2)))
@@ -179,7 +179,7 @@ fn editor(ctx) {
         ]).with_style(style().gap(px(2)).padding_bottom(px(8))
             .border_bottom(px(1)).border_color(theme_color("border"))),
         label::Label(#{ text: "Theme file", description: "Open edits the file; Import creates a copy." }),
-        input::Input(#{ key: "studio-path", value: ctx.get_state("path"),
+        input::Input(#{ key: "studio-path", label: "Theme file", value: ctx.get_state("path"),
             placeholder: "ui/theme.rhai", on_change: native_handler("theme_studio.set_path") }),
         row([
             button::Button(#{ text: "New", size: "sm", variant: "outline",
@@ -192,16 +192,16 @@ fn editor(ctx) {
                 on_click: native_handler("theme_studio.save") }),
         ]).with_style(style().gap(px(4))),
         combobox::Combobox(#{
-            key: "studio-builtin", placeholder: "Load a bundled theme", searchable: true,
+            key: "studio-builtin", label: "Bundled theme", placeholder: "Load a bundled theme", searchable: true,
             options: __BUILTIN_OPTIONS__, selected: [], open: ctx.get_state("builtin_open"),
             query: ctx.get_state("builtin_query"),
             on_change: native_handler("theme_studio.builtin"),
             on_open_change: Fn("set_builtin_open"), on_query_change: Fn("set_builtin_query")
         }),
         divider::Divider(#{}),
-        input::Input(#{ key: "studio-family", value: ctx.get_state("family"),
+        input::Input(#{ key: "studio-family", label: "Theme family", value: ctx.get_state("family"),
             placeholder: "Family", on_change: native_handler("theme_studio.set_family") }),
-        input::Input(#{ key: "studio-variant", value: ctx.get_state("variant"),
+        input::Input(#{ key: "studio-variant", label: "Theme variant", value: ctx.get_state("variant"),
             placeholder: "Variant", on_change: native_handler("theme_studio.set_variant") }),
         row([
             button::Button(#{ text: "Dark", size: "sm",
@@ -298,28 +298,28 @@ fn specimen_actions() {
 }
 
 fn specimen_inputs() {
-    let field = input::Input(#{ key: "specimen-field", value: "Ada Lovelace",
+    let field = input::Input(#{ key: "specimen-field", label: "Name", value: "Ada Lovelace",
         placeholder: "Name" });
     column([
         specimen_title("INPUTS", "Idle, populated, error, read-only and multiline."),
         row([
-            input::Input(#{ key: "specimen-input", value: "", placeholder: "Placeholder" })
+            input::Input(#{ key: "specimen-input", label: "Empty input", value: "", placeholder: "Placeholder" })
                 .with_style(style().width(px(160))),
-            input::Input(#{ key: "specimen-error", value: "Invalid", error: true })
+            input::Input(#{ key: "specimen-error", label: "Invalid input", value: "Invalid", error: true })
                 .with_style(style().width(px(160))),
-            input::Input(#{ key: "specimen-readonly", value: "Read only", read_only: true })
+            input::Input(#{ key: "specimen-readonly", label: "Read-only input", value: "Read only", read_only: true })
                 .with_style(style().width(px(160))),
         ]).with_style(style().gap(px(6)).flex_wrap()),
         form_field::FormField(#{ id: "specimen-name", label: "Name", required: true,
             control: field, description: "One shared field contract", error: "Example error" }),
-        textarea::Textarea(#{ key: "specimen-textarea", value: "Two lines\nof themed text",
+        textarea::Textarea(#{ key: "specimen-textarea", label: "Notes", value: "Two lines\nof themed text",
             rows: 2, max_length: 120, show_count: true }),
         row([
-            select::Select(#{ key: "specimen-select", value: "nord", open: false, query: "", clearable: true,
+            select::Select(#{ key: "specimen-select", label: "Theme", value: "nord", open: false, query: "", clearable: true,
                 width: px(160), options: [#{ value: "nord", label: "Nord" }, #{ value: "gruvbox", label: "Gruvbox" }] }),
-            combobox::Combobox(#{ key: "specimen-combobox", selected: ["dark"], open: false, query: "",
+            combobox::Combobox(#{ key: "specimen-combobox", label: "Appearance", selected: ["dark"], open: false, query: "",
                 width: px(160), options: [#{ value: "dark", label: "Dark" }, #{ value: "light", label: "Light" }] }),
-            date_picker::DatePicker(#{ key: "specimen-date", value: "2026-09-01",
+            date_picker::DatePicker(#{ key: "specimen-date", label: "Appointment date", value: "2026-09-01",
                 width: px(160), placeholder: "Date", presets: [#{ label: "Today", value: "2026-09-01" }] }),
         ]).with_style(style().gap(px(6)).flex_wrap())
     ]).with_style(style().gap(px(7)))
@@ -419,7 +419,7 @@ fn specimen_data() {
             selection_mode: "multiple", selected_keys: ["two"],
             sort: #{ key: "name", direction: "ascending" }, group_by: "state",
             on_group_toggle: Fn("noop") }),
-        pagination::Pagination(#{ key: "specimen-pages", total_items: 128,
+        pagination::Pagination(#{ key: "specimen-pages", label: "Users pagination", total_items: 128,
             current_page: 3, page_size: 10, page_size_options: [10, 25, 50] })
     ]).with_style(style().gap(px(7)))
 }
@@ -464,8 +464,8 @@ fn specimen_p0(ctx) {
     let grouped_input = input_group::InputGroup(#{ label: "Search", prefix: icon::Icon(#{
             source: asset("app/icons/search"), size: "md", label: "Search" }),
         suffix: kbd::Kbd(#{ text: "⌘ K" }),
-        control: input::Input(#{ key: "p0-input", value: "", placeholder: "Search" }) });
-    let contextual = context_menu::ContextMenu(#{ key: "p0-context",
+        control: input::Input(#{ key: "p0-input", label: "Search", value: "", placeholder: "Search" }) });
+    let contextual = context_menu::ContextMenu(#{ key: "p0-context", label: "Card actions",
         trigger: card::Card(#{ content: text("Right-click this card") }),
         open: ctx.get_state("p0_context_open"), active_value: ctx.get_state("p0_context_active"),
         items: [#{ kind: "item", value: "copy", label: "Copy", shortcut: "⌘C" },
@@ -533,17 +533,17 @@ fn specimen_p0(ctx) {
 }
 
 fn specimen_overlays(ctx) {
-    let menu_node = menu::Menu(#{ key: "specimen-menu",
+    let menu_node = menu::Menu(#{ key: "specimen-menu", label: "Example menu",
         trigger: button::Button(#{ text: "Menu", size: "sm", variant: "outline" }),
         open: ctx.get_state("menu_open"), active_value: "open",
         items: [#{ kind: "item", value: "open", label: "Open", checked: true },
             #{ kind: "item", value: "disabled", label: "Disabled", disabled: true }],
         on_action: Fn("noop"), on_active_change: Fn("noop"), on_open_change: Fn("set_menu") });
-    let popover_node = popover::Popover(#{ key: "specimen-popover",
+    let popover_node = popover::Popover(#{ key: "specimen-popover", label: "Example popover",
         trigger: button::Button(#{ text: "Popover", size: "sm", variant: "outline" }),
         content: text("Opaque themed popover"), open: ctx.get_state("popover_open"),
         on_open_change: Fn("set_popover") });
-    let tooltip_node = tooltip::Tooltip(#{ key: "specimen-tooltip",
+    let tooltip_node = tooltip::Tooltip(#{ key: "specimen-tooltip", label: "Example tooltip",
         trigger: button::Button(#{ text: "Tooltip", size: "sm", variant: "ghost" }),
         content: text("Delayed native tooltip"), placement: "top" });
     let dialog_node = dialog::Dialog(#{ key: "specimen-dialog", title: "Confirm theme",
@@ -625,7 +625,7 @@ fn gallery_header(ctx) {
 
 fn gallery_title_bar(ctx) {
     let compact = ctx.viewport_class() == "compact";
-    let themes = combobox::Combobox(#{ key: "gallery-theme", options: gallery_theme_options(), mode: "single",
+    let themes = combobox::Combobox(#{ key: "gallery-theme", label: "Gallery theme", options: gallery_theme_options(), mode: "single",
             selected: [ctx.get_state("gallery_theme")], open: ctx.get_state("gallery_theme_open"),
             query: ctx.get_state("gallery_theme_query"), searchable: true, placeholder: "Theme",
             width: px(if compact { 150 } else { 240 }), trigger_height: 26,

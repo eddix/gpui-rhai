@@ -12,6 +12,17 @@ cargo run -p gpui-rhai --example component_gallery
 
 Theme Studio renders the same exhaustive specimen while editing a theme.
 
+Version 0.1.2 freezes this 51-component foundation: component IDs and exports,
+controlled-state ownership, semantic event payloads, the `xs`/`sm`/`md`/`lg`
+size vocabulary, and declared style parts are the maintained base contract.
+Future catalog additions must compose the same public atoms and generic runtime
+mechanisms; they do not justify parallel private primitives.
+
+Every interactive field, choice, menu, navigation region, overlay surface, and
+progress indicator has an explicit textual accessible name. Input placeholders
+are hints, not names. An Icon without its optional `label` is decorative
+presentation; IconButton always requires an action label.
+
 For a custom macOS titlebar, configure GPUI's transparent `TitlebarOptions` in
 the trusted Host and pass `inset_start: 70` to the Rhai `TitleBar`. Rendering a
 bar alone deliberately does not change native window behavior. This keeps an
@@ -34,7 +45,8 @@ policy.
 - `Card`, `GroupBox`, and `Empty` standardize common composition without hiding
   their node slots.
 - `Kbd`, `Progress`, `Spinner`, and `Skeleton` cover shortcut, determinate,
-  indeterminate, and placeholder presentation. Spinner animation runs on the
+  indeterminate, and placeholder presentation. Progress exposes an explicit
+  `0..max` range plus a bounded pixel width. Spinner animation runs on the
   native runtime clock and settles visibly under reduced motion.
 - `TitleBar` and `StatusBar` provide source-owned application chrome with
   logical start/center/end slots. They do not acquire native window authority;

@@ -2,26 +2,27 @@
 {
   "id": "components/tooltip",
   "export": "Tooltip",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": [],
   "capabilities": {}
 }
 */
 // Native delayed tooltip using the per-window overlay scheduler.
-// Props: key, trigger/content slots, placement, show/hide delay, disabled.
+// Props: key, label, trigger/content slots, placement, show/hide delay, disabled.
 // Parts: root, trigger, content.
 // State/events: stateless delayed overlay; emits no semantic events.
-// Example: Tooltip(#{ key: "help", trigger: text("?"), content: text("Help") })
+// Example: Tooltip(#{ key: "help", label: "Help", trigger: text("?"), content: text("Help") })
 
 define_component(#{
     metadata: #{
-        id: "components/tooltip", "export": "Tooltip", version: "0.1.1",
+        id: "components/tooltip", "export": "Tooltip", version: "0.1.2",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 }, dependencies: [], capabilities: #{},
     },
     schema: #{
         props: #{
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+            label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
             trigger: #{ schema: #{ type: "node" }, required: true, sensitive: false },
             content: #{ schema: #{ type: "node" }, required: true, sensitive: false },
             placement: #{ schema: #{ type: "string", allowed: ["top", "bottom", "left", "right"] }, required: false, sensitive: false,
@@ -53,7 +54,7 @@ fn render_Tooltip(ctx, props) {
             .radius(theme_radius("sm")).typography("body_small")
             .background(theme_color("text_primary"))
             .text_color(theme_color("surface"))
-    )).accessibility_role("tooltip");
+    )).accessibility_role("tooltip").accessibility_label(props.label);
     overlay(props.trigger.with_style(ctx.component_style("trigger", style())), content, #{
         id: props.key,
         kind: "tooltip",

@@ -989,6 +989,7 @@ fn combobox_pointer_updates_transactional_rhai_caller_state(cx: &mut TestAppCont
                             text(`Selected: ${selected[0]}`),
                             combobox::Combobox(#{
                                 key: "theme",
+                                label: "Theme",
                                 options: [
                                     #{ value: "default-dark", label: "Default Dark" },
                                     #{ value: "tokyo-night", label: "Tokyo Night" },
@@ -1042,7 +1043,7 @@ fn combobox_pointer_updates_transactional_rhai_caller_state(cx: &mut TestAppCont
     let trigger = visual.update(|_, cx| {
         view.accessibility_snapshot(cx)
             .unwrap()
-            .find_by_role_and_name("combobox", "")
+            .find_by_role_and_name("combobox", "Theme")
             .next()
             .unwrap()
             .geometry
@@ -2039,7 +2040,7 @@ fn native_input_updates_rhai_state_and_clipboard_with_unicode(cx: &mut TestAppCo
                 fn changed(ctx, value) { ctx.set_state("value", value); }
                 fn view(ctx) {
                     input::Input(#{
-                        key: "name", value: ctx.get_state("value"),
+                        key: "name", label: "Name", value: ctx.get_state("value"),
                         placeholder: "Name", on_change: Fn("changed")
                     })
                 }
@@ -2156,12 +2157,12 @@ fn native_textarea_wraps_inserts_newlines_and_limits_graphemes(cx: &mut TestAppC
                 fn view(ctx) {
                     column([
                         textarea::Textarea(#{
-                            key: "notes", value: ctx.get_state("value"),
+                            key: "notes", label: "Notes", value: ctx.get_state("value"),
                             placeholder: "Notes", min_rows: 2, max_rows: 4,
                             max_length: 5, autofocus: true, on_change: Fn("changed")
                         }),
                         textarea::Textarea(#{
-                            key: "reference", value: ctx.get_state("read_only_value"),
+                            key: "reference", label: "Reference", value: ctx.get_state("read_only_value"),
                             read_only: true, rows: 2,
                             on_change: Fn("changed_read_only")
                         })
@@ -2290,7 +2291,7 @@ fn read_only_input_allows_selection_and_copy_but_rejects_edits(cx: &mut TestAppC
                 fn changed(ctx, value) { ctx.set_state("value", value); }
                 fn view(ctx) {
                     input::Input(#{
-                        key: "reference", value: ctx.get_state("value"),
+                        key: "reference", label: "Reference", value: ctx.get_state("value"),
                         read_only: true, on_change: Fn("changed")
                     })
                 }
@@ -2406,7 +2407,7 @@ fn menu_trigger_routes_roving_and_enter_keys_through_current_rhai_state(cx: &mut
                 }
                 fn view(ctx) {
                     menu::Menu(#{
-                        key: "file", trigger: text("File"),
+                        key: "file", label: "File menu", trigger: text("File"),
                         open: ctx.get_state("open"), active_value: ctx.get_state("active"),
                         items: [
                             #{ kind: "item", value: "new", label: "New" },
@@ -4306,7 +4307,7 @@ fn view(ctx) {
                 .accessibility_role("button")
                 .accessibility_label("open palette"),
             column([
-                input::Input(#{ key: "filter", value: ctx.get_state("value"),
+                input::Input(#{ key: "filter", label: "Filter", value: ctx.get_state("value"),
                     placeholder: "filter", on_change: Fn("value_changed") })
             ]).with_style(style().width(px(320)).padding(px(8))),
             #{ id: "palette", kind: "dialog", placement: "center",
@@ -4836,7 +4837,7 @@ fn context_menu_anchors_at_the_right_click_and_closes_with_escape(cx: &mut TestA
                     fn view(ctx) {
                         column([
                             text(`context-open:${ctx.get_state("open")}`),
-                            context_menu::ContextMenu(#{ key: "row-menu",
+                            context_menu::ContextMenu(#{ key: "row-menu", label: "Row actions",
                                 trigger: text("Context target").with_style(style()
                                     .width(px(220)).height(px(80)).padding(px(12))
                                     .background(theme_color("surface_raised"))),
@@ -5109,7 +5110,7 @@ fn command_dialog_filters_from_native_input_and_executes_with_enter(cx: &mut Tes
     let search = visual.update(|_, cx| {
         view.accessibility_snapshot(cx)
             .unwrap()
-            .find_by_role_and_name("text_field", "Type a command")
+            .find_by_role_and_name("text_field", "Command palette")
             .next()
             .unwrap()
             .geometry
@@ -5834,7 +5835,7 @@ fn component_gallery_switches_categories_and_live_themes(cx: &mut TestAppContext
     let trigger = visual.update(|_, cx| {
         let snapshot = view.accessibility_snapshot(cx).unwrap();
         let trigger = snapshot
-            .find_by_role_and_name("combobox", "Theme")
+            .find_by_role_and_name("combobox", "Gallery theme")
             .next()
             .unwrap();
         assert_eq!(
@@ -5854,7 +5855,7 @@ fn component_gallery_switches_categories_and_live_themes(cx: &mut TestAppContext
     let search = visual.update(|_, cx| {
         view.accessibility_snapshot(cx)
             .unwrap()
-            .find_by_role_and_name("text_field", "Search")
+            .find_by_role_and_name("text_field", "Gallery theme")
             .next()
             .unwrap()
             .geometry
@@ -5884,7 +5885,7 @@ fn component_gallery_switches_categories_and_live_themes(cx: &mut TestAppContext
     visual.update(|_, cx| {
         let snapshot = view.accessibility_snapshot(cx).unwrap();
         let trigger = snapshot
-            .find_by_role_and_name("combobox", "Theme")
+            .find_by_role_and_name("combobox", "Gallery theme")
             .next()
             .unwrap();
         assert_eq!(trigger.value, Some(UiValue::String("Nord".to_owned())));
@@ -5932,7 +5933,7 @@ fn view(ctx) {
                 .accessibility_role("button")
                 .accessibility_label("open palette"),
             column([
-                input::Input(#{ key: "filter", value: ctx.get_state("value"),
+                input::Input(#{ key: "filter", label: "Filter", value: ctx.get_state("value"),
                     placeholder: "filter", on_change: Fn("value_changed") })
             // key handlers force an interaction wrapper, and wrappers are
             // tab stops by default -- without tab_stop(false) the overlay's

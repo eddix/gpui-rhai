@@ -10,7 +10,7 @@ locale affects presentation only.
 
 `registry/components/date_picker.rhai` exports `DatePicker(props)` with:
 
-- required `key: string`;
+- required `key: string` and accessible `label: string`;
 - `value: optional<string>`;
 - optional `min_date` and `max_date`, both strict ISO dates;
 - `placeholder: string` for an empty value;

@@ -105,7 +105,7 @@ fn profile_fields(ctx, name, error) {
             id: "name-field", label: "Name", required: true,
             description: "Displayed to collaborators", error: error,
             control: input::Input(#{
-                key: "name", value: name, placeholder: "Ada Lovelace",
+                key: "name", label: "Name", value: name, placeholder: "Ada Lovelace",
                 error: error != (), on_change: Fn("set_name")
             })
         }),
@@ -136,7 +136,7 @@ fn advanced_fields(ctx) {
         ]).with_style(style().gap(theme_spacing("xs"))),
         text("Country or region"),
         select::Select(#{
-            key: "country", value: ctx.get_state("country"),
+            key: "country", label: "Country or region", value: ctx.get_state("country"),
             open: ctx.get_state("country_open"), query: ctx.get_state("country_query"), searchable: true,
             clearable: true, placeholder: "Choose a country",
             options: [
@@ -149,7 +149,7 @@ fn advanced_fields(ctx) {
         }),
         text("Appointment date"),
         date_picker::DatePicker(#{
-            key: "appointment", value: ctx.get_state("appointment"),
+            key: "appointment", label: "Appointment date", value: ctx.get_state("appointment"),
             min_date: "2026-08-30", max_date: "2026-12-31", clearable: true,
             placeholder: "Choose a date",
             presets: [
@@ -159,18 +159,18 @@ fn advanced_fields(ctx) {
         }),
         text("Notes"),
         textarea::Textarea(#{
-            key: "notes", value: ctx.get_state("notes"),
+            key: "notes", label: "Notes", value: ctx.get_state("notes"),
             placeholder: "Add feedback or context", min_rows: 3, max_rows: 6,
             max_length: 240, show_count: true,
             error: ctx.get_state("notes") == "", on_change: Fn("set_notes")
         }),
         row([
             textarea::Textarea(#{
-                key: "fixed-note", value: ctx.get_state("fixed_note"),
+                key: "fixed-note", label: "Fixed note", value: ctx.get_state("fixed_note"),
                 rows: 2, read_only: true
             }).with_style(style().width(px(145))),
             textarea::Textarea(#{
-                key: "limit-note", value: ctx.get_state("limit_note"),
+                key: "limit-note", label: "Limited note", value: ctx.get_state("limit_note"),
                 min_rows: 1, max_rows: 2, max_length: 10, show_count: true,
                 on_change: Fn("set_limit_note")
             }).with_style(style().width(px(145)))

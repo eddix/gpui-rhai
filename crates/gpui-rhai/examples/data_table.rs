@@ -163,7 +163,7 @@ fn view(ctx) {
             on_row_click: Fn("row_clicked"), on_group_toggle: Fn("toggle_group")
         }),
         pagination::Pagination(#{
-            key: "users-pages", total_items: __ROW_COUNT__,
+            key: "users-pages", label: "Users pagination", total_items: __ROW_COUNT__,
             current_page: ctx.get_state("current_page"), page_size: ctx.get_state("page_size"),
             page_size_options: [10, 25, 50, 100], on_change: Fn("set_pagination")
         })

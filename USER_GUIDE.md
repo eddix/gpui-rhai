@@ -202,6 +202,7 @@ fn set_name(ctx, value) { ctx.set_state("name", value); }
 
 input::Input(#{
     key: "profile-name",
+    label: "Name",
     value: ctx.get_state("name"),
     placeholder: "Ada Lovelace",
     on_change: Fn("set_name"),
@@ -248,6 +249,14 @@ Component schemas define required/optional props, event payloads, slots, parts,
 state, dependencies, assets, and supported runtime API range. Unknown props and
 invalid values fail before the component is committed.
 
+Interactive components use explicit accessible names. `Input`, `Textarea`,
+`Combobox`, `Select`, `DatePicker`, `Pagination`, `Menu`, `ContextMenu`,
+`Popover`, `Tooltip`, and `Progress` require a textual `label` even when an
+adjacent visual label exists. A placeholder is only a visual hint and is never
+used as the control name. Omit Icon's optional `label` only when the icon is
+decorative; a meaningful standalone image must provide one. IconButton always
+requires its own action label.
+
 Formal component render functions are pure automatic reuse boundaries. When
 root state changes, unchanged non-slot props and a clean component subtree let
 the runtime reuse the prior component before calling Rhai. State, dependency
@@ -276,7 +285,9 @@ intentional one-off. Edit the copied component source when the product needs a
 structural or behavioral fork; do not hide one behind a growing stack of visual
 overrides. See [Component stylesheets](docs/component-styles.md).
 
-The bundled catalog contains 50 official source components:
+The bundled catalog contains 51 official source components. Version 0.1.2
+freezes their IDs, exports, controlled-state boundaries, semantic events, size
+vocabulary, and style-part contract as the component foundation:
 
 - foundations and status: Label, Divider, Icon, Avatar, Badge, Tag, Alert,
   Card, GroupBox, Empty, Kbd, Progress, Spinner, Skeleton, TitleBar, and
@@ -349,6 +360,7 @@ fn selected(ctx, value) {
 
 select::Select(#{
     key: "country",
+    label: "Country",
     value: ctx.get_state("country"),
     open: ctx.get_state("country_open"),
     query: ctx.get_state("country_query"),

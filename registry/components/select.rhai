@@ -2,7 +2,7 @@
 {
   "id": "components/select",
   "export": "Select",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": ["components/combobox"],
   "capabilities": {},
@@ -10,20 +10,21 @@
 }
 */
 // Scalar controlled Select composed from the public Rhai Combobox component.
-// Props: key/options/value/open/query/placeholder/searchable/disabled/error/size/width and callbacks.
+// Props: key/label/options/value/open/query/placeholder/searchable/disabled/error/size/width and callbacks.
 // Events: change(optional<string>), open_change(bool), and query_change(string).
 // State: caller owns value/open/query; Combobox owns only active-option navigation.
-// Example: Select(#{ key: "country", options: countries, value: "cn", open: false, query: "", on_change: Fn("changed") })
+// Example: Select(#{ key: "country", label: "Country", options: countries, value: "cn", open: false, query: "", on_change: Fn("changed") })
 
 import "components/combobox" as combobox;
 
 define_component(#{
-    metadata: #{ id: "components/select", "export": "Select", version: "0.1.1",
+    metadata: #{ id: "components/select", "export": "Select", version: "0.1.2",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
         dependencies: ["components/combobox"], capabilities: #{}, assets: [] },
     schema: #{
         props: #{
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+            label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
             options: #{ schema: #{ type: "array", max_items: 100000, items: #{
                 type: "object", allow_unknown: false, fields: #{
                     value: #{ schema: #{ type: "string" }, required: true, sensitive: false },
@@ -96,7 +97,7 @@ fn render_Select(ctx, props) {
     } else { theme_color("border") };
     let empty_text = prop_or(props, "empty_text", "");
     let node = combobox::Combobox(#{
-        key: `${props.key}-combobox`, options: props.options, mode: "single",
+        key: `${props.key}-combobox`, label: props.label, options: props.options, mode: "single",
         selected: selected, open: props.open, query: props.query,
         searchable: prop_or(props, "searchable", false),
         placeholder: prop_or(props, "placeholder", ""),

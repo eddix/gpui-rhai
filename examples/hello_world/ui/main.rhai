@@ -31,6 +31,7 @@ fn view(ctx) {
             .with_style(style().text_color(theme_color("text_muted"))),
         input::Input(#{
             key: "name",
+            label: "Name",
             value: ctx.get_state("name"),
             placeholder: "Type your name",
             on_change: Fn("name_changed")

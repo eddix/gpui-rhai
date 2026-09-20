@@ -2,7 +2,7 @@
 {
   "id": "components/pagination",
   "export": "Pagination",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": ["components/button", "components/icon", "components/select"],
   "capabilities": {},
@@ -11,23 +11,24 @@
 */
 // Pagination is a stateless Rhai composition for one-based controlled page state.
 //
-// Props: key, total_items, current_page, page_size/options, boundary/sibling counts,
+// Props: key, label, total_items, current_page, page_size/options, boundary/sibling counts,
 //        summary visibility, size, and atomic on_change.
 // Events: change({ current_page, page_size }).
-// Example: Pagination(#{ key: "users-pages", total_items: 128, current_page: 3, page_size: 10, on_change: Fn("page_changed") })
+// Example: Pagination(#{ key: "users-pages", label: "Users pagination", total_items: 128, current_page: 3, page_size: 10, on_change: Fn("page_changed") })
 
 import "components/button" as button;
 import "components/icon" as icon;
 import "components/select" as select;
 
 define_component(#{
-    metadata: #{ id: "components/pagination", "export": "Pagination", version: "0.1.1",
+    metadata: #{ id: "components/pagination", "export": "Pagination", version: "0.1.2",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
         dependencies: ["components/button", "components/icon", "components/select"], capabilities: #{},
         assets: ["icons/chevron_left.svg", "icons/chevron_right.svg"] },
     schema: #{
         props: #{
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+            label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
             total_items: #{ schema: #{ type: "integer", min: 0 }, required: true, sensitive: false },
             current_page: #{ schema: #{ type: "integer", min: 1 }, required: true, sensitive: false },
             page_size: #{ schema: #{ type: "integer", min: 1 }, required: true, sensitive: false },
@@ -191,7 +192,7 @@ fn render_Pagination(ctx, props) {
         children.push(row([
             text(ctx.t("pagination.per_page")).with_style(ctx.component_style("page_size_label", style())),
             select::Select(#{
-                key: `${props.key}-page-size`, options: select_options,
+                key: `${props.key}-page-size`, label: ctx.t("pagination.per_page"), options: select_options,
                 value: `${props.page_size}`, open: ctx.get_state("page_size_open"),
                 query: ctx.get_state("page_size_query"), size: size, width: px(96),
                 on_change: Fn("pagination_size"), on_open_change: Fn("page_size_open"),
@@ -205,4 +206,5 @@ fn render_Pagination(ctx, props) {
             .items_center().justify_between().gap(theme_spacing("sm"))
             .typography("body")))
         .accessibility_role("navigation")
+        .accessibility_label(props.label)
 }

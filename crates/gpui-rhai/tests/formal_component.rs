@@ -844,7 +844,7 @@ fn composed_semantic_callback_props_execute_in_the_caller_state_scope() {
                 fn set_open(ctx, value) { ctx.set_state("open", value); }
                 fn view(ctx) {
                     combobox::Combobox(#{
-                        key: "theme", options: [#{ value: "dark", label: "Dark" }],
+                        key: "theme", label: "Theme", options: [#{ value: "dark", label: "Dark" }],
                         selected: [], open: ctx.get_state("open"), query: "",
                         on_open_change: Fn("set_open")
                     })
@@ -1063,6 +1063,7 @@ fn dirty_transparent_child_promotes_to_the_nearest_replaceable_component() {
                 fn view(ctx) {
                     select::Select(#{
                         key: "region",
+                        label: "Region",
                         options: [#{ value: "cn", label: "China" }],
                         value: (), open: true, query: "",
                         empty_text: "No regions",

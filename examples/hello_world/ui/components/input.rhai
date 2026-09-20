@@ -2,7 +2,7 @@
 {
   "id": "components/input",
   "export": "Input",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": [],
   "capabilities": {}
@@ -10,16 +10,16 @@
 */
 // Input is a controlled single-line native text input.
 //
-// Props: key, value, placeholder, disabled, read_only, error, callbacks.
+// Props: key, label, value, placeholder, disabled, read_only, error, callbacks.
 // Events: change(string), submit(string), focus(null), blur(null).
 // State: native keyed TextInput Entity. Parts: root, input.
-// Example: Input(#{ key: "name", value: name, on_change: Fn("name_changed") })
+// Example: Input(#{ key: "name", label: "Name", value: name, on_change: Fn("name_changed") })
 
 define_component(#{
     metadata: #{
         id: "components/input",
         "export": "Input",
-        version: "0.1.0",
+        version: "0.1.2",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
         dependencies: [],
         capabilities: #{},
@@ -27,6 +27,11 @@ define_component(#{
     schema: #{
         props: #{
             key: #{
+                schema: #{ type: "string" },
+                required: true,
+                sensitive: false,
+            },
+            label: #{
                 schema: #{ type: "string" },
                 required: true,
                 sensitive: false,
@@ -127,7 +132,5 @@ fn render_Input(ctx, props) {
                 .typography("body")
         )))
         .accessibility_role("text_field")
-        .accessibility_label(
-            if "placeholder" in props { props.placeholder } else { "" }
-        )
+        .accessibility_label(props.label)
 }

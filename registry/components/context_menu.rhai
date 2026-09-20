@@ -2,27 +2,28 @@
 {
   "id": "components/context_menu",
   "export": "ContextMenu",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": ["components/menu"],
   "capabilities": {}
 }
 */
 // Controlled pointer-anchored action menu sharing Menu items and keyboard behavior.
-// Props: key, trigger, open, active_value, items, placement, and Menu callbacks.
+// Props: key, label, trigger, open, active_value, items, placement, and Menu callbacks.
 // Events: action(string), active_change(string), and open_change(bool).
 // State: caller owns open/active values; component retains only the last pointer anchor.
 // Parts: root, trigger, content, item, separator, shortcut, submenu.
-// Example: ContextMenu(#{ key: "row-menu", trigger: row_node, open: open, active_value: "copy", items: items, on_open_change: Fn("opened") })
+// Example: ContextMenu(#{ key: "row-menu", label: "Row actions", trigger: row_node, open: open, active_value: "copy", items: items, on_open_change: Fn("opened") })
 
 import "components/menu" as menu;
 
 define_component(#{
-    metadata: #{ id: "components/context_menu", "export": "ContextMenu", version: "0.1.1",
+    metadata: #{ id: "components/context_menu", "export": "ContextMenu", version: "0.1.2",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 }, dependencies: ["components/menu"], capabilities: #{} },
     schema: #{
         props: #{
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+            label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
             trigger: #{ schema: #{ type: "node" }, required: true, sensitive: false },
             open: #{ schema: #{ type: "bool" }, required: true, sensitive: false },
             active_value: #{ schema: #{ type: "string" }, required: true, sensitive: false },
@@ -78,7 +79,7 @@ fn render_ContextMenu(ctx, props) {
     let trigger = props.trigger.tab_stop(false)
         .with_style(ctx.component_style("trigger", style()));
     menu::Menu(#{
-        key: props.key, trigger: trigger, open: props.open, active_value: props.active_value,
+        key: props.key, label: props.label, trigger: trigger, open: props.open, active_value: props.active_value,
         items: props.items, placement: if "placement" in props { props.placement } else { "bottom" },
         anchor: ctx.get_state("anchor"), activate_on_trigger: false,
         on_context_request: Fn("pointer_open"),

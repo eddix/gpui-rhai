@@ -462,8 +462,11 @@ Version `0.1.0` is the first published baseline. Before 1.0, dogfooding still
 prefers the strongest final design over compatibility shims; deliberate source
 and Rust API breaks are documented in the next release rather than preserved as
 deprecated aliases, dual parsers, old component formats, or SDK-managed
-downstream migration. The current target is `0.1.1`; `RUNTIME_API_VERSION`
-remains 1 until its actual runtime contract needs a coordinated change.
+downstream migration. Version `0.1.2` freezes the first complete 51-component
+foundation. The next planned feature release, `0.1.3`, concentrates on the
+generic motion system rather than expanding the basic component layer;
+`RUNTIME_API_VERSION` remains 1 until its actual runtime contract needs a
+coordinated change.
 
 ## 15. Completion and acceptance
 
