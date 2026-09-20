@@ -2,7 +2,7 @@
 {
   "id": "components/popover",
   "export": "Popover",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": [],
   "capabilities": {}
@@ -10,17 +10,17 @@
 */
 // Popover renders controlled content through the native per-window overlay layer.
 //
-// Props: key, trigger/content slots, open, placement, gap, dismissal policy,
+// Props: key, label, trigger/content slots, open, placement, gap, dismissal policy,
 //        on_open_change.
 // Events: open_change(bool). State: controlled by the caller.
 // Parts: root, trigger, content.
-// Example: Popover(#{ key: "profile", trigger: text("Open"), content: text("Profile"), open: true })
+// Example: Popover(#{ key: "profile", label: "Profile", trigger: text("Open"), content: text("Profile"), open: true })
 
 define_component(#{
     metadata: #{
         id: "components/popover",
         "export": "Popover",
-        version: "0.1.1",
+        version: "0.1.2",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
         dependencies: [],
         capabilities: #{},
@@ -28,6 +28,7 @@ define_component(#{
     schema: #{
         props: #{
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+            label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
             parent_overlay: #{
                 schema: #{ type: "optional", value: #{ type: "string" } },
                 required: false,
@@ -97,7 +98,8 @@ fn render_Popover(ctx, props) {
                 .background(theme_color("surface"))
                 .typography("body")
         ))
-        .accessibility_role("dialog");
+        .accessibility_role("dialog")
+        .accessibility_label(props.label);
     let config = #{
         id: props.key,
         kind: "popover",

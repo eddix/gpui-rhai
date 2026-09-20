@@ -8,7 +8,7 @@ nor Combobox has a privileged Rust node or private state machine.
 
 `registry/components/select.rhai` exports `Select(props)` with:
 
-- required `key: string`;
+- required `key: string` and accessible `label: string`;
 - `options: array<{ value, label, disabled?, group?, keywords? }>`;
 - `value: optional<string>`;
 - required controlled `open: bool` and `query: string`;

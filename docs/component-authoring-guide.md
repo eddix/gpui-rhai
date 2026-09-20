@@ -76,6 +76,13 @@ then caller `part_styles`. Named `virtual_collection` item renderers use the
 same context method; its retained Style-only snapshot cannot expose nodes,
 callbacks, or arbitrary Dynamic values to deferred rendering.
 
+An interactive component must receive an explicit, non-incidental accessible
+name. Declare a required textual `label` when visible content alone is not the
+component's stable name, and forward it through nested source components.
+Placeholder text, current values, icon asset IDs, and empty-string defaults are
+not accessible names. A purely decorative node should use presentation
+semantics instead of exposing an empty image/control label.
+
 Formal render is pure and is also the automatic reuse boundary. A root `view`
 rerun can return the previous component subtree without calling its Rhai render
 when normalized props and the render environment are unchanged and neither the

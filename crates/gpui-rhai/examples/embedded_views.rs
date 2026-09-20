@@ -53,6 +53,7 @@ fn view(ctx) {
         button::Button(#{ text: "Increment", size: "sm", on_click: Fn("increment") }),
         combobox::Combobox(#{
             key: "shared-combobox",
+            label: "Shared choice",
             options: [
                 #{ value: "one", label: "A deliberately wide combobox option" },
                 #{ value: "two", label: "Second option" }

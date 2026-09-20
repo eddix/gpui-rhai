@@ -8,7 +8,7 @@ does not require a native Rust node. Its controlled state is the pair
 
 `registry/components/pagination.rhai` exports `Pagination(props)` with:
 
-- required `key: string`;
+- required `key: string` and navigation-region `label: string`;
 - `total_items: integer >= 0`;
 - `page_size: integer > 0`;
 - `current_page: integer >= 1`;

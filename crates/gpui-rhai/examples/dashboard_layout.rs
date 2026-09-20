@@ -79,6 +79,7 @@ fn view(ctx) {
             ]).with_style(style().gap(px(4))),
             popover::Popover(#{
                 key: "profile",
+                label: "Profile",
                 trigger: avatar::Avatar(#{ name: "Ada Lovelace", initials: "AL", presence: "online" }),
                 content: column([
                     text("Ada Lovelace"),

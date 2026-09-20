@@ -65,7 +65,7 @@ const DATE_PICKER_TEST_APP: &str = r#"
     fn changed(ctx, value) { () }
     fn view(ctx) {
         date_picker::DatePicker(#{
-            key: "appointment", value: "2026-09-01",
+            key: "appointment", label: "Appointment date", value: "2026-09-01",
             min_date: "2026-08-30", max_date: "2026-12-31",
             placeholder: "Appointment", clearable: true,
             presets: [#{ label: "Launch", value: "2026-09-01" }],
@@ -217,6 +217,61 @@ fn combobox_source() -> EmbeddedScriptSource {
         (
             ModuleId::parse("components/input").unwrap(),
             INPUT.to_owned(),
+        ),
+    ]))
+}
+
+fn accessible_name_contract_source() -> EmbeddedScriptSource {
+    EmbeddedScriptSource::new(BTreeMap::from([
+        (
+            ModuleId::parse("components/button").unwrap(),
+            BUTTON.to_owned(),
+        ),
+        (ModuleId::parse("components/icon").unwrap(), ICON.to_owned()),
+        (
+            ModuleId::parse("components/input").unwrap(),
+            INPUT.to_owned(),
+        ),
+        (
+            ModuleId::parse("components/textarea").unwrap(),
+            TEXTAREA.to_owned(),
+        ),
+        (
+            ModuleId::parse("components/divider").unwrap(),
+            DIVIDER.to_owned(),
+        ),
+        (
+            ModuleId::parse("components/combobox").unwrap(),
+            COMBOBOX.to_owned(),
+        ),
+        (
+            ModuleId::parse("components/select").unwrap(),
+            SELECT.to_owned(),
+        ),
+        (
+            ModuleId::parse("components/date_picker").unwrap(),
+            DATE_PICKER.to_owned(),
+        ),
+        (
+            ModuleId::parse("components/pagination").unwrap(),
+            PAGINATION.to_owned(),
+        ),
+        (ModuleId::parse("components/menu").unwrap(), MENU.to_owned()),
+        (
+            ModuleId::parse("components/context_menu").unwrap(),
+            CONTEXT_MENU.to_owned(),
+        ),
+        (
+            ModuleId::parse("components/popover").unwrap(),
+            POPOVER.to_owned(),
+        ),
+        (
+            ModuleId::parse("components/tooltip").unwrap(),
+            TOOLTIP.to_owned(),
+        ),
+        (
+            ModuleId::parse("components/progress").unwrap(),
+            PROGRESS.to_owned(),
         ),
     ]))
 }
@@ -531,6 +586,96 @@ fn official_components_validate_props_and_merge_standard_style_overrides() {
         )
         .unwrap();
     assert!(rejecting_engine.render(&invalid).is_err());
+}
+
+#[test]
+fn interactive_component_contracts_require_explicit_accessible_names() {
+    let source = accessible_name_contract_source();
+    let mut engine = RuntimeEngine::new();
+    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
+    engine
+        .compile_self_contained_named(
+            "ui/accessible_names.rhai",
+            r#"
+                import "components/input" as input;
+                import "components/textarea" as textarea;
+                import "components/combobox" as combobox;
+                import "components/select" as select;
+                import "components/date_picker" as date_picker;
+                import "components/pagination" as pagination;
+                import "components/menu" as menu;
+                import "components/context_menu" as context_menu;
+                import "components/popover" as popover;
+                import "components/tooltip" as tooltip;
+                import "components/progress" as progress;
+                fn view() { text("ok") }
+            "#,
+        )
+        .unwrap();
+    let registry = engine.component_exports().unwrap();
+    for id in [
+        "components/input",
+        "components/textarea",
+        "components/combobox",
+        "components/select",
+        "components/date_picker",
+        "components/pagination",
+        "components/menu",
+        "components/context_menu",
+        "components/popover",
+        "components/tooltip",
+        "components/progress",
+    ] {
+        let definition = registry
+            .get(&ModuleId::parse(id).unwrap())
+            .unwrap_or_else(|| panic!("missing imported component {id}"));
+        let label = definition
+            .schema
+            .props
+            .get("label")
+            .unwrap_or_else(|| panic!("{id} must declare a label prop"));
+        assert!(label.required, "{id} label must be required");
+        assert!(
+            label.default.is_none(),
+            "{id} label must not have a fallback"
+        );
+    }
+}
+
+#[test]
+fn unlabeled_icon_is_decorative_presentation() {
+    let source = EmbeddedScriptSource::new(BTreeMap::from([(
+        ModuleId::parse("components/icon").unwrap(),
+        ICON.to_owned(),
+    )]));
+    let mut engine = RuntimeEngine::new();
+    engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
+    let compiled = engine
+        .compile_self_contained_named(
+            "ui/decorative_icon.rhai",
+            r#"
+                import "components/icon" as icon;
+                fn view(ctx) { icon::Icon(#{ source: asset("app/check"), size: "sm" }) }
+            "#,
+        )
+        .unwrap();
+    let root = engine
+        .render_with_context(
+            &compiled,
+            UiContext::new(
+                Rc::new(RefCell::new(UiRuntimeState::new())),
+                ComponentInstancePath::root("App", "root"),
+                Some("main".to_owned()),
+                ExecutionPhase::Render,
+                BTreeMap::new(),
+            ),
+        )
+        .unwrap();
+    assert_eq!(
+        root.attributes().get("role"),
+        Some(&UiValue::String("presentation".to_owned()))
+    );
+    assert!(!root.attributes().contains_key("label"));
 }
 
 #[test]
@@ -908,7 +1053,7 @@ fn public_launch_static_components_compile_and_compose() {
                             content: text("Enabled") }),
                         input_group::InputGroup(#{ label: "Search", prefix: text("⌕"),
                             suffix: kbd::Kbd(#{ text: "⌘ K" }),
-                            control: input::Input(#{ key: "search", value: "", placeholder: "Search" }) }),
+                            control: input::Input(#{ key: "search", label: "Search", value: "", placeholder: "Search" }) }),
                         kbd::Kbd(#{ text: "⌘ K", label: "Command K" })
                     ])
                 }
@@ -1103,6 +1248,7 @@ fn official_input_wraps_keyed_native_text_input_primitive() {
                 fn view(ctx) {
                     input::Input(#{
                         key: "name",
+                        label: "Name",
                         value: "Alice",
                         placeholder: "Name",
                         read_only: true,
@@ -1145,7 +1291,7 @@ fn official_textarea_wraps_independent_multiline_primitive() {
                 fn changed(ctx, value) { () }
                 fn view(ctx) {
                     textarea::Textarea(#{
-                        key: "notes", value: "Line one\nLine two",
+                        key: "notes", label: "Notes", value: "Line one\nLine two",
                         min_rows: 2, max_rows: 6, max_length: 100,
                         on_change: Fn("changed")
                     })
@@ -1253,6 +1399,7 @@ fn official_popover_and_dialog_use_native_overlay_nodes() {
                     column([
                         popover::Popover(#{
                             key: "help",
+                            label: "Help",
                             trigger: text("Help"),
                             content: text("Popover content"),
                             open: true,
@@ -1327,7 +1474,7 @@ fn context_menu_and_sheet_use_generic_pointer_and_edge_overlay_policies() {
                 fn view(ctx) {
                     column([
                         context_menu::ContextMenu(#{
-                            key: "row-actions", trigger: text("Right click"), open: false,
+                            key: "row-actions", label: "Row actions", trigger: text("Right click"), open: false,
                             active_value: "copy", items: [
                                 #{ kind: "item", value: "copy", label: "Copy", shortcut: "⌘C" }
                             ], on_action: Fn("changed"), on_active_change: Fn("changed"),
@@ -1997,6 +2144,7 @@ fn official_combobox_is_public_overlay_and_virtual_collection_composition() {
                 fn view(ctx) {
                     combobox_component::Combobox(#{
                         key: "theme",
+                        label: "Theme",
                         options: [
                             #{ value: "default", label: "Default" },
                             #{ value: "tokyo", label: "Tokyo Night", keywords: ["night"] },
@@ -2081,7 +2229,7 @@ fn official_combobox_groups_and_routes_keyboard_in_rhai() {
                 import "components/combobox" as combobox;
                 fn view(ctx) {
                     combobox::Combobox(#{
-                        key: "grouped", open: false, selected: [], query: "",
+                        key: "grouped", label: "Grouped choices", open: false, selected: [], query: "",
                         options: [
                             #{ value: "a", label: "Alpha", group: "Second" },
                             #{ value: "b", label: "Beta", group: "First", disabled: true },
@@ -2187,7 +2335,7 @@ fn official_combobox_rejects_invalid_choice_identity() {
                 import "components/combobox" as combobox;
                 fn view(ctx) {{
                     combobox::Combobox(#{{
-                        key: "invalid", options: {options}, selected: {selected}, open: false, query: ""
+                        key: "invalid", label: "Invalid choices", options: {options}, selected: {selected}, open: false, query: ""
                     }})
                 }}
             "#
@@ -2233,7 +2381,7 @@ fn official_select_uses_scalar_controlled_choice_semantics() {
                 fn changed(ctx, value) { () }
                 fn view(ctx) {
                     select::Select(#{
-                        key: "country", value: (), open: false, query: "",
+                        key: "country", label: "Country", value: (), open: false, query: "",
                         searchable: true, clearable: true,
                         empty_text: "No countries",
                         options: [
@@ -2678,7 +2826,7 @@ fn official_pagination_is_pure_rhai_composition() {
                 fn changed(ctx, value) { () }
                 fn view(ctx) {
                     pagination::Pagination(#{
-                        key: "users-pages", total_items: 5000,
+                        key: "users-pages", label: "Users pagination", total_items: 5000,
                         current_page: 250, page_size: 10,
                         page_size_options: [10, 25, 50],
                         on_change: Fn("changed")
@@ -2765,7 +2913,7 @@ fn official_pagination_rejects_duplicate_page_sizes() {
                 import "components/pagination" as pagination;
                 fn view(ctx) {
                     pagination::Pagination(#{
-                        key: "pages", total_items: 100, current_page: 1,
+                        key: "pages", label: "Pagination", total_items: 100, current_page: 1,
                         page_size: 10, page_size_options: [10, 10]
                     })
                 }
@@ -2908,7 +3056,7 @@ fn official_pagination_page_size_emits_one_atomic_reset() {
                 }
                 fn view(ctx) {
                     pagination::Pagination(#{
-                        key: "pages", total_items: 100,
+                        key: "pages", label: "Pagination", total_items: 100,
                         current_page: ctx.get_state("current_page"),
                         page_size: ctx.get_state("page_size"),
                         page_size_options: [10, 25], on_change: Fn("changed")
@@ -3428,8 +3576,8 @@ fn m2_visual_primitives_export_fallbacks_and_rust_animations() {
                 fn view(ctx) {
                     column([
                         avatar::Avatar(#{ name: "Ada", presence: "online" }),
-                        progress::Progress(#{ key: "download", value: 42, max: 100 }),
-                        progress::Progress(#{ key: "loading", indeterminate: true }),
+                        progress::Progress(#{ key: "download", label: "Download", value: 42, max: 100 }),
+                        progress::Progress(#{ key: "loading", label: "Loading", indeterminate: true }),
                         skeleton::Skeleton(#{ key: "card", width: 240, height: 80 }),
                         spinner::Spinner(#{ key: "loading-spinner", label: "Loading" })
                     ])
@@ -3462,6 +3610,14 @@ fn m2_visual_primitives_export_fallbacks_and_rust_animations() {
         determinate[0].animations()[0],
         gpui_rhai::AnimationSpec::Transition(_)
     ));
+    assert_eq!(
+        children[1].attributes().get("value_min"),
+        Some(&UiValue::Float(0.0))
+    );
+    assert_eq!(
+        children[1].attributes().get("value_max"),
+        Some(&UiValue::Float(100.0))
+    );
     let UiNodeKind::Box {
         children: indeterminate,
     } = children[2].kind()
@@ -3608,11 +3764,11 @@ fn tooltip_and_menu_use_window_overlay_policies() {
                 fn view(ctx) {
                     column([
                         tooltip::Tooltip(#{
-                            key: "help", trigger: text("?"), content: text("Help"),
+                            key: "help", label: "Help", trigger: text("?"), content: text("Help"),
                             show_delay_ms: 250, hide_delay_ms: 75
                         }),
                         menu::Menu(#{
-                            key: "file", trigger: text("File"), open: true,
+                            key: "file", label: "File menu", trigger: text("File"), open: true,
                             active_value: "open",
                             items: [
                                 #{ kind: "item", value: "new", label: "New", shortcut: "⌘N" },
@@ -3681,14 +3837,14 @@ fn nested_menu_preserves_parent_overlay_identity() {
                 fn changed(ctx, value) { () }
                 fn view(ctx) {
                     let child = menu::Menu(#{
-                        key: "file-more", parent_overlay: "file", trigger: text("More"),
+                        key: "file-more", label: "More actions", parent_overlay: "file", trigger: text("More"),
                         open: true, active_value: "export", placement: "right",
                         items: [#{ kind: "item", value: "export", label: "Export" }],
                         on_action: Fn("changed"), on_active_change: Fn("changed"),
                         on_open_change: Fn("changed")
                     });
                     menu::Menu(#{
-                        key: "file", trigger: text("File"), open: true,
+                        key: "file", label: "File menu", trigger: text("File"), open: true,
                         active_value: "more",
                         items: [#{
                             kind: "submenu", value: "more", label: "More", submenu: child

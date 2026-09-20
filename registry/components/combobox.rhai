@@ -2,7 +2,7 @@
 {
   "id": "components/combobox",
   "export": "Combobox",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": ["components/input"],
   "capabilities": {},
@@ -10,21 +10,22 @@
 }
 */
 // Public Rhai choice composition over Overlay, Input, and virtual_collection.
-// Props: key/options/mode, controlled selected/open/query, search and slots.
+// Props: key/label/options/mode, controlled selected/open/query, search and slots.
 // Events: change(array<string>), open_change(bool), query_change(string).
 // State: caller owns selected/open/query; component owns only active-option navigation.
-// Example: Combobox(#{ key: "country", options: options, selected: ["uk"], open: false, query: "", on_change: Fn("changed") })
+// Example: Combobox(#{ key: "country", label: "Country", options: options, selected: ["uk"], open: false, query: "", on_change: Fn("changed") })
 
 import "components/input" as input;
 
 define_component(#{
-    metadata: #{ id: "components/combobox", "export": "Combobox", version: "0.1.1",
+    metadata: #{ id: "components/combobox", "export": "Combobox", version: "0.1.2",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
         dependencies: ["components/input"], capabilities: #{},
         assets: ["icons/check.svg", "icons/close.svg", "icons/chevron_down.svg", "icons/chevron_up.svg"] },
     schema: #{
         props: #{
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+            label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
             parent_overlay: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
             options: #{ schema: #{ type: "array", max_items: 100000, items: #{
                 type: "object", allow_unknown: false, fields: #{
@@ -387,7 +388,7 @@ fn render_Combobox(ctx, props) {
         .with_style(ctx.component_style("trigger", trigger_style))
         .disabled(prop_or(props, "disabled", false)).tab_stop(true)
         .accessibility_role("combobox").accessibility_checked(open)
-        .accessibility_label(placeholder).accessibility_value(selected_label);
+        .accessibility_label(props.label).accessibility_value(selected_label);
     if enabled.len > 0 {
         trigger = trigger
             .on_key_value("up", Fn("navigate_action"),
@@ -413,7 +414,7 @@ fn render_Combobox(ctx, props) {
     if "header" in props && props.header != () { content.push(props.header); }
     if prop_or(props, "searchable", false) {
         content.push(input::Input(#{
-            key: `${props.key}-search`, value: query,
+            key: `${props.key}-search`, label: props.label, value: query,
             placeholder: prop_or(props, "search_placeholder", "Search"),
             on_change: Fn("query_action")
         }).with_style(ctx.component_style("search", style())));
@@ -425,7 +426,7 @@ fn render_Combobox(ctx, props) {
                     .typography("body_small").text_color(theme_color("text_muted")))) });
     } else {
         content.push(virtual_collection(#{
-            key: `${props.key}-options`, label: placeholder,
+            key: `${props.key}-options`, label: props.label,
             data: data, estimated_height: row_height,
             height: prop_or(props, "max_visible", 8) * row_height,
             overdraw_pixels: row_height * 2, alignment: "top", follow_tail: false
@@ -438,7 +439,7 @@ fn render_Combobox(ctx, props) {
                 .border(px(1)).border_color(theme_color("border"))
                 .radius(theme_radius("md")).background(theme_color("surface"))
                 .focus(style().border_color(theme_color("focus_ring")))))
-        .tab_stop(true).accessibility_role("listbox").accessibility_label(placeholder);
+        .tab_stop(true).accessibility_role("listbox").accessibility_label(props.label);
 
     if enabled.len > 0 {
         panel = panel

@@ -2385,7 +2385,8 @@ mod tests {
         let snippets = read(&directory.path().join(".gpui-rhai/editor/snippets.json")).unwrap();
         assert!(snippets.contains("import \\\"components/combobox\\\" as combobox;"));
         assert!(snippets.contains("${1:key}"));
-        assert!(snippets.contains("options: ${3:options}"));
+        assert!(snippets.contains("label: ${2:label}"));
+        assert!(snippets.contains("options: ${4:options}"));
         let definitions = read(
             &directory
                 .path()

@@ -2,7 +2,7 @@
 {
   "id": "components/toast",
   "export": "Toast",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": [],
   "capabilities": {},
@@ -10,13 +10,13 @@
 }
 */
 // Controlled Toast composition over public Layer, declarative timeout, atoms, and hover events.
-// Props: key, items, max_visible, on_dismiss. Events: dismiss(string).
+// Props: key, items, max_visible, dismiss_label, on_dismiss. Events: dismiss(string).
 // State: caller owns items; runtime timers own one-shot deadline and pause/resume state.
 // Example: Toast(#{ key: "toasts", items: items, on_dismiss: Fn("dismissed") })
 
 define_component(#{
     metadata: #{
-        id: "components/toast", "export": "Toast", version: "0.1.1",
+        id: "components/toast", "export": "Toast", version: "0.1.2",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 }, dependencies: [], capabilities: #{},
         assets: ["icons/close.svg"],
     },
@@ -25,6 +25,8 @@ define_component(#{
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
             max_visible: #{ schema: #{ type: "integer", min: 1, max: 10 }, required: false, sensitive: false,
                 "default": #{ type: "integer", value: 3 } },
+            dismiss_label: #{ schema: #{ type: "string" }, required: false, sensitive: false,
+                "default": #{ type: "string", value: "Dismiss notification" } },
             items: #{ schema: #{ type: "array", max_items: 100, items: #{
                 type: "object", allow_unknown: false, fields: #{
                     id: #{ schema: #{ type: "string" }, required: true, sensitive: false },
@@ -77,7 +79,7 @@ fn variant_color(variant) {
     else { theme_color("border") }
 }
 
-fn toast_node(ctx, item) {
+fn toast_node(ctx, item, dismiss_label) {
     let variant = prop_or(item, "variant", "neutral");
     let header = [text(item.title)
         .with_style(ctx.component_style("title", style()))];
@@ -87,7 +89,7 @@ fn toast_node(ctx, item) {
                 .width(px(18)).height(px(18)).items_center().justify_center()
                 .text_color(theme_color("text_muted"))
                 .radius(theme_radius("sm")).hover(style().background(theme_color("surface_hover")))))
-            .accessibility_role("button").accessibility_label("Dismiss")
+            .accessibility_role("button").accessibility_label(dismiss_label)
             .on_click_value(Fn("toast_manual_dismiss"), item.id));
     }
     let children = [row(header).with_style(style().items_center().justify_between()
@@ -139,7 +141,7 @@ fn render_Toast(ctx, props) {
         let item = props.items[index];
         timeout(timer_key(item.id), prop_or(item, "duration_ms", 5000),
             prop_or(item, "paused", false), Fn("toast_timeout"), item.id);
-        let node = toast_node(ctx, item);
+        let node = toast_node(ctx, item, prop_or(props, "dismiss_label", "Dismiss notification"));
         let region = prop_or(item, "region", "top_right");
         if region == "top_left" { top_left.push(node); }
         else if region == "bottom_left" { bottom_left.push(node); }

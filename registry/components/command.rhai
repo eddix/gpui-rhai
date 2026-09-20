@@ -263,7 +263,7 @@ fn render_Command(ctx, props) {
     };
     let data = model.data;
     let active = model.active;
-    let search = input::Input(#{ key: `${props.key}-search`, value: query,
+    let search = input::Input(#{ key: `${props.key}-search`, label: props.label, value: query,
         placeholder: prop_or(props, "placeholder", "Type a command"),
         disabled: prop_or(props, "disabled", false),
         autofocus: prop_or(props, "autofocus", false),

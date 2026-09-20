@@ -9,7 +9,8 @@ A `multiline` flag on the existing single-line element is not sufficient.
 
 `registry/components/textarea.rhai` exports `Textarea(props)` with:
 
-- required `key: string` and controlled `value: string`;
+- required `key: string`, accessible `label: string`, and controlled
+  `value: string`;
 - optional `placeholder`;
 - `disabled`, `read_only`, and `error`;
 - `size: "xs" | "sm" | "md" | "lg"`;

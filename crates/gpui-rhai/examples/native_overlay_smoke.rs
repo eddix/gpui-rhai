@@ -96,6 +96,7 @@ fn view(ctx) {
         text("Switch to Tokyo Night").on_click(Fn("use_tokyo_night")),
         combobox_component::Combobox(#{
             key: "theme-picker",
+            label: "Theme",
             options: combobox_options(),
             mode: "single",
             selected: ctx.get_state("selected"),
@@ -112,6 +113,7 @@ fn view(ctx) {
         }),
         popover::Popover(#{
             key: "account-help",
+            label: "Account help",
             trigger: text("Toggle popover").with_style(
                 style()
                     .padding(px(8))
@@ -125,6 +127,7 @@ fn view(ctx) {
         }),
         tooltip::Tooltip(#{
             key: "hover-help",
+            label: "Hover help",
             trigger: text("Hover for tooltip").with_style(
                 style().padding(px(8)).radius(px(6)).background(theme_color("surface_raised"))
             ),
@@ -139,6 +142,7 @@ fn view(ctx) {
             title: "Native overlay smoke test",
             content: popover::Popover(#{
                 key: "dialog-help",
+                label: "Dialog help",
                 parent_overlay: "confirm-dialog",
                 trigger: text("Nested popover"),
                 content: text("This child shares the dialog overlay coordinator."),

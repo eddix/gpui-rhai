@@ -146,6 +146,7 @@ fn view(ctx) {
             }),
             popover::Popover(#{
                 key: "settings-help",
+                label: "Settings help",
                 trigger: help_trigger()
                     .animate(transition("opacity", 0.65, help_opacity, 180, "ease_out")),
                 content: text("Theme changes preserve keyed state and the compiled Rhai AST."),
@@ -161,6 +162,7 @@ fn view(ctx) {
         }),
         combobox_component::Combobox(#{
             key: "theme-picker",
+            label: "Color theme",
             options: [
                 #{ value: "default-light", label: "Default Light", keywords: ["light"] },
                 #{ value: "default-dark", label: "Default Dark", keywords: ["dark"] },

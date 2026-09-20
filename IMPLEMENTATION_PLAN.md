@@ -9,8 +9,8 @@ complete delivery.
 
 Constraints that apply to every section:
 
-- treat published `0.1.0` as the baseline; current work targets `0.1.1` and
-  keeps `RUNTIME_API_VERSION` 1;
+- treat published `0.1.0` as the baseline; `0.1.2` freezes the component
+  foundation, `0.1.3` targets generic motion, and `RUNTIME_API_VERSION` stays 1;
 - accept destructive Rust/Rhai/schema/registry migration;
 - add no compatibility shim, deprecated alias, dual path, or downstream app
   adapter;
@@ -416,7 +416,7 @@ without compatibility shims.
 - Register every component and transitive dependency in the CLI, metadata,
   definitions, copied-source update path, and Theme Studio.
 - Add one polished `component_gallery` example that interactively exercises all
-  50 official components, category navigation, all theme hot switches, and
+  51 official components, category navigation, all theme hot switches, and
   important controlled states. Theme Studio remains the exhaustive theme-state
   contract; the gallery is the user-facing experience demo.
 - Update User Guide, component authoring/API docs, examples, release notes,
@@ -442,3 +442,18 @@ without compatibility shims.
 **P0 gate:** no component is experimental; the full workspace, CLI, native
 macOS interaction, registry, Theme Studio, gallery preparation/smoke, Clippy,
 rustdoc, package, release build, and checked-in visual baseline audits pass.
+
+### P0.6 0.1.2 component-foundation freeze
+
+- Freeze the 51 existing component IDs, exports, controlled-state boundaries,
+  semantic events, size vocabulary, declared parts, and square visual language
+  as the maintained base layer.
+- Require explicit accessible names for interactive fields, choices,
+  navigation, overlays, menus, and progress; placeholders remain visual hints,
+  never implicit names. Decorative Icon instances use presentation semantics.
+- Keep Breadcrumb, persistent Sidebar, Tree, Resizable composition, editor, and
+  terminal work outside this release. Future source components may extend the
+  catalog without weakening or duplicating the frozen primitives.
+- Treat the generic motion/property-source system as the principal `0.1.3`
+  product workstream. Component-specific animation shortcuts are not part of
+  the 0.1.2 freeze.

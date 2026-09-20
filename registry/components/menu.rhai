@@ -2,7 +2,7 @@
 {
   "id": "components/menu",
   "export": "Menu",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": ["components/divider"],
   "capabilities": {},
@@ -10,23 +10,24 @@
 }
 */
 // Controlled in-window menu with roving selection and nested submenu nodes.
-// Props: key, parent_overlay, trigger, open, active_value, items, placement,
+// Props: key, label, parent_overlay, trigger, open, active_value, items, placement,
 // initial_focus (panel|first: where focus lands on each open), callbacks.
 // Events: action(string), active_change(string), open_change(bool).
 // State: controlled open/active values.
-// Example: Menu(#{ key: "file", trigger: text("File"), open: true, active_value: "open", items: items })
+// Example: Menu(#{ key: "file", label: "File menu", trigger: text("File"), open: true, active_value: "open", items: items })
 
 import "components/divider" as divider;
 
 define_component(#{
     metadata: #{
-        id: "components/menu", "export": "Menu", version: "0.1.1",
+        id: "components/menu", "export": "Menu", version: "0.1.2",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
         dependencies: ["components/divider"], capabilities: #{}, assets: ["icons/check.svg"],
     },
     schema: #{
         props: #{
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+            label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
             parent_overlay: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
             trigger: #{ schema: #{ type: "node" }, required: true, sensitive: false },
             open: #{ schema: #{ type: "bool" }, required: true, sensitive: false },
@@ -175,7 +176,8 @@ fn render_Menu(ctx, props) {
                 .focus(style().border_color(theme_color("focus_ring")))
         ))
         .tab_stop(true)
-        .accessibility_role("menu");
+        .accessibility_role("menu")
+        .accessibility_label(props.label);
     if active_change != () {
         content = content
             .on_key_value("up", active_change, next_item(props.items, props.active_value, -1))

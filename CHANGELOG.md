@@ -5,7 +5,7 @@ All notable runtime, CLI, and registry changes are documented here. Version
 component schema, manifest, locale, and generated-source changes follow
 semantic versioning from this release.
 
-## 0.1.2 - Unreleased
+## 0.1.2 - 2026-09-20
 
 - `Style::flex_grow_weight` and Rhai's overloaded `style().flex_grow(weight)`
   now expose GPUI's positive numeric grow factor. Table `flex` column values are
@@ -15,11 +15,25 @@ semantic versioning from this release.
 - Table can opt into native divider resizing with per-column eligibility and
   min/max bounds. Pointer movement updates an optional fixed-width NativeSignal
   without running Rhai; release emits one persistable `column_resize` event,
-  while logical arrow keys provide an accessible 8px step. Auto-fit remains
-  outside the contract until virtual data providers can supply measurement.
+  while logical arrow keys provide an accessible 8px step. Double-click
+  auto-fit measures the header and bounded realized rows through GPUI text
+  layout for both Array and NativeCollection inputs.
 - Bundled themes now use a readable dense-desktop typography scale: caption
   11/16, body-small 12/16, body 13/18, subtitle 14/20, title 16/22, heading
   18/24, display 24/32, and display-large 28/36px.
+- The 51-component source catalog is frozen as the 0.1.2 foundation. Input,
+  Textarea, Combobox, Select, DatePicker, Pagination, Menu, ContextMenu,
+  Popover, Tooltip, and Progress now require an explicit accessible `label`
+  instead of deriving names from placeholders or empty fallbacks. This is an
+  intentional pre-1.0 source-schema break with no compatibility shim.
+- Unlabeled Icon instances now expose presentation semantics, Divider exposes
+  orientation, Progress exposes its `0..max` range and a bounded width contract,
+  and Toast accepts an application-localizable `dismiss_label` without making
+  locale configuration a rendering requirement.
+- IconButton owns square icon-only action geometry, Button owns typed
+  prefix/suffix icon-and-text composition, inline SVG uses the node box
+  consistently, and the CLI/editor metadata, Theme Studio, Component Gallery,
+  examples, tests, and guide all consume the same frozen schemas.
 
 ## 0.1.1 - 2026-09-08
 

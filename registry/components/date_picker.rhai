@@ -2,7 +2,7 @@
 {
   "id": "components/date_picker",
   "export": "DatePicker",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
   "dependencies": [],
   "capabilities": {},
@@ -10,13 +10,13 @@
 }
 */
 // Controlled single-date field composed from public date data helpers, atoms, and Overlay.
-// Props: key, optional strict ISO value/min/max, localized presentation, presets, and on_change.
+// Props: key, label, optional strict ISO value/min/max, localized presentation, presets, and on_change.
 // Events: change(optional<string>). State: keyed open/visible-month/focused-date transients.
-// Example: DatePicker(#{ key: "appointment", value: "2026-09-01", on_change: Fn("changed") })
+// Example: DatePicker(#{ key: "appointment", label: "Appointment date", value: "2026-09-01", on_change: Fn("changed") })
 
 define_component(#{
     metadata: #{
-        id: "components/date_picker", "export": "DatePicker", version: "0.1.1",
+        id: "components/date_picker", "export": "DatePicker", version: "0.1.2",
         runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
         dependencies: [], capabilities: #{},
         assets: ["icons/calendar.svg", "icons/date_previous.svg", "icons/date_next.svg", "icons/close.svg"],
@@ -24,6 +24,7 @@ define_component(#{
     schema: #{
         props: #{
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+            label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
             parent_overlay: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
             value: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
             min_date: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
@@ -244,7 +245,7 @@ fn render_DatePicker(ctx, props) {
         .with_style(ctx.component_style("trigger", trigger_style))
         .disabled(prop_or(props, "disabled", false)).tab_stop(true)
         .accessibility_role("combobox").accessibility_checked(open)
-        .accessibility_label(placeholder).accessibility_value(value)
+        .accessibility_label(props.label).accessibility_value(value)
         .accessibility_invalid(error);
 
     let previous = date_checked_add_months(focused_date, -1);
