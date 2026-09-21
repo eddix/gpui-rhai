@@ -29,6 +29,7 @@ pub(crate) struct NodeSlotRuntime {
     pub text_selection: crate::renderer::TextSelectionRegistry,
     pub host_focus: Option<gpui::FocusHandle>,
     pub direction: crate::TextDirection,
+    pub ambient_text_color: Option<crate::Rgba8>,
     pub base_path: String,
     pub view_id: String,
     pub retained_roots: BTreeMap<String, crate::NodeId>,
@@ -55,6 +56,7 @@ impl NodeSlotRuntime {
             text_selection: &self.text_selection,
             host_focus: self.host_focus.as_ref(),
             direction: self.direction,
+            ambient_text_color: self.ambient_text_color,
             root_path: &self.base_path,
             view_id: &self.view_id,
         };

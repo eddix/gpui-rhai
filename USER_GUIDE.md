@@ -665,9 +665,10 @@ under `ui/assets` and are referenced by logical identity:
 image_source(asset("app/icons/check"))
 ```
 
-SVGs may use `currentColor`. The renderer resolves the node's semantic text
-color and retints cached SVG bytes. Shared icons should use a consistent 24×24
-viewBox and optical center.
+SVGs may use `currentColor`. The renderer resolves the nearest effective
+semantic text color: a color declared on the SVG wins, otherwise the value is
+inherited through its ancestors just like adjacent text. Shared icons should
+use a consistent 24×24 viewBox and optical center.
 
 See [Style](docs/style.md), [Assets](docs/assets.md), [Canvas](docs/canvas.md),
 and [Locale and RTL](docs/locale-and-rtl.md).

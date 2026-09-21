@@ -5,6 +5,13 @@ All notable runtime, CLI, and registry changes are documented here. Version
 component schema, manifest, locale, and generated-source changes follow
 semantic versioning from this release.
 
+## 0.1.4 - Unreleased
+
+- Inline and asset-backed SVG `currentColor` now inherits the nearest effective
+  semantic text color while preserving node-local overrides, including inside
+  deferred virtual rows. A centralized compatibility shim compensates for the
+  pinned GPUI 0.2.2 in-memory SVG RGBA/BGRA decode mismatch.
+
 ## 0.1.3 - 2026-09-21
 
 - Runtime API 2 replaces the node animation prototype with one generic Motion

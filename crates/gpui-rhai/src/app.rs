@@ -3222,6 +3222,7 @@ impl Render for ScriptHostView {
             text_selection: &self.text_selection,
             host_focus: Some(&self.host_focus),
             direction: snapshot.direction,
+            ambient_text_color: None,
             root_path: &motion_root,
             view_id: &self.view_id,
         };
