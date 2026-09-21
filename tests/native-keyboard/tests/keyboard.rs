@@ -64,6 +64,8 @@ fn tinted_svg_image_bytes_match_gpui_bgra_contract(cx: &mut TestAppContext) {
         Some([0xab, 0x34, 0x12, 0xff].as_slice()),
         "GPUI RenderImage requires BGRA even though its 0.2.2 SVG decoder returns raw RGBA"
     );
+}
+
 #[gpui::test]
 fn host_slot_renders_native_content_without_leaking_events_to_rhai(cx: &mut TestAppContext) {
     cx.update(gpui_rhai::install);
