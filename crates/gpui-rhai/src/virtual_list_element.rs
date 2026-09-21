@@ -574,6 +574,7 @@ mod tests {
             follow_tail: false,
             reveal_key: None,
             sticky_headers: std::sync::Arc::new(BTreeSet::new()),
+            inherited_motion_group: None,
         };
         assert!(estimated_target_is_initially_visible(&content, 1));
         assert!(estimated_target_is_initially_visible(&content, 11));

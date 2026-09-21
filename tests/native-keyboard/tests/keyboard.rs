@@ -36,33 +36,64 @@ mod motion_gallery_example;
 
 #[gpui::test]
 fn tinted_svg_image_bytes_match_gpui_bgra_contract(cx: &mut TestAppContext) {
-    let registry = AssetRegistry::new();
-    registry
-        .register(
-            "app",
-            InMemoryAssetProvider::new(std::collections::BTreeMap::from([(
-                "pixel".to_owned(),
-                AssetData {
-                    mime_type: "image/svg+xml".to_owned(),
-                    bytes: br#"<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1" viewBox="0 0 1 1"><rect width="1" height="1" fill="currentColor"/></svg>"#.to_vec(),
-                },
-            )])),
-        )
-        .unwrap();
-    let handle = registry
-        .load_image(&AssetId::parse("app/pixel").unwrap())
-        .unwrap();
-    let ImageSource::Image(image) = registry
-        .image_source_tinted(handle.opaque(), Some(Rgba8::from_rgb_hex(0x0012_34ab)))
-        .unwrap()
-    else {
-        panic!("SVG asset should resolve to an in-memory image");
+    let pixel = |body: &str, color: Option<Rgba8>| {
+        let registry = AssetRegistry::new();
+        let svg = format!(
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"><rect width="1" height="1" {body}/></svg>"#
+        );
+        registry
+            .register(
+                "app",
+                InMemoryAssetProvider::new(std::collections::BTreeMap::from([(
+                    "pixel".to_owned(),
+                    AssetData {
+                        mime_type: "image/svg+xml".to_owned(),
+                        bytes: svg.into_bytes(),
+                    },
+                )])),
+            )
+            .unwrap();
+        let handle = registry
+            .load_image(&AssetId::parse("app/pixel").unwrap())
+            .unwrap();
+        let source = color.map_or_else(
+            || registry.image_source(handle.opaque()),
+            |color| registry.image_source_tinted(handle.opaque(), Some(color)),
+        );
+        let ImageSource::Image(image) = source.unwrap() else {
+            panic!("SVG asset should resolve to an in-memory image");
+        };
+        cx.update(|app| {
+            image
+                .to_image_data(app.svg_renderer())
+                .unwrap()
+                .as_bytes(0)
+                .unwrap()
+                .to_vec()
+        })
     };
-    let decoded = cx.update(|app| image.to_image_data(app.svg_renderer()).unwrap());
+
     assert_eq!(
-        decoded.as_bytes(0),
-        Some([0xab, 0x34, 0x12, 0xff].as_slice()),
-        "GPUI RenderImage requires BGRA even though its 0.2.2 SVG decoder returns raw RGBA"
+        pixel(
+            "fill=\"currentColor\"",
+            Some(Rgba8::from_rgb_hex(0x0012_34ab))
+        ),
+        [0xab, 0x34, 0x12, 0xff]
+    );
+    assert_eq!(pixel("fill=\"#ff0000\"", None), [0x00, 0x00, 0xff, 0xff]);
+    assert_eq!(
+        pixel(
+            "fill=\"currentColor\"",
+            Some(Rgba8::from_rgba_hex(0x1234_ab00))
+        )[3],
+        0
+    );
+    assert_eq!(
+        pixel(
+            "fill=\"currentColor\"",
+            Some(Rgba8::from_rgba_hex(0x1234_ab80))
+        ),
+        [0xab, 0x34, 0x12, 0x80]
     );
 }
 
@@ -162,6 +193,90 @@ fn host_slot_renders_native_content_without_leaking_events_to_rhai(cx: &mut Test
     let mut texts = Vec::new();
     node_texts(&root, &mut texts);
     assert!(texts.contains(&"script:0".to_owned()), "{texts:?}");
+}
+
+#[gpui::test]
+fn host_slot_preserves_an_independent_script_view_host(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let resident_entry = ModuleId::parse("resident").unwrap();
+    let resident = EmbeddedScriptView::new(
+        resident_entry.clone(),
+        EmbeddedScriptSource::new(std::collections::BTreeMap::from([(
+            resident_entry,
+            r#"fn view(ctx) {
+                text("Resident").accessibility_role("status").accessibility_label("Resident")
+            }"#
+            .to_owned(),
+        )])),
+        include_str!("../../../registry/themes/default_dark.rhai"),
+    )
+    .prepare()
+    .unwrap();
+    let shell_entry = ModuleId::parse("shell").unwrap();
+    let shell_source = EmbeddedScriptSource::new(std::collections::BTreeMap::from([(
+        shell_entry.clone(),
+        r#"fn view(ctx) {
+            gpui_rhai::HostSlot(#{ key: "slot", name: "content" })
+                .with_style(style().width(px(300)).height(px(160)))
+        }"#
+        .to_owned(),
+    )]));
+    let captured = Rc::new(RefCell::new(None));
+    let captured_for_window = Rc::clone(&captured);
+    let window = cx.add_window(move |window, cx| {
+        let shell_host = ScriptViewHost::new("shell-host", cx).unwrap();
+        let resident_host = ScriptViewHost::new("resident-host", cx).unwrap();
+        let resident = resident
+            .mount(
+                ScriptViewConfig::new("resident-view"),
+                resident_host,
+                window,
+                cx,
+            )
+            .unwrap();
+        let slots = HostSlotRegistry::new()
+            .with_script_view("content", resident.clone())
+            .unwrap();
+        let shell = EmbeddedScriptView::new(
+            shell_entry,
+            shell_source,
+            include_str!("../../../registry/themes/default_dark.rhai"),
+        )
+        .extension(slots)
+        .prepare()
+        .unwrap()
+        .mount(
+            ScriptViewConfig::new("shell-view"),
+            shell_host.clone(),
+            window,
+            cx,
+        )
+        .unwrap();
+        *captured_for_window.borrow_mut() = Some(resident);
+        SingleEmbeddedHost {
+            host: shell_host,
+            view: shell,
+        }
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    cx.run_until_parked();
+
+    let resident = captured.borrow().as_ref().unwrap().clone();
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    for _ in 0..4 {
+        cx.background_executor
+            .advance_clock(std::time::Duration::from_millis(16));
+        visual.run_until_parked();
+    }
+    assert_eq!(visual.update(|_, cx| resident.last_error(cx).unwrap()), None);
+    assert_eq!(resident.state(), gpui_rhai::ScriptViewState::Active);
+    let snapshot = visual.update(|_, cx| resident.accessibility_snapshot(cx).unwrap());
+    let node = snapshot
+        .find_by_role_and_name("status", "Resident")
+        .next()
+        .expect("resident semantics remain owned by the resident view");
+    assert!(node.geometry.is_some(), "resident view was not presented");
 }
 
 fn official_icon_assets() -> Vec<(String, AssetData)> {
@@ -3352,6 +3467,97 @@ fn selectable_text_uses_native_selection_and_copy_semantics(cx: &mut TestAppCont
         cx.read_from_clipboard().and_then(|item| item.text()),
         Some("Copy this 错误\nsecond line".to_owned())
     );
+}
+
+#[gpui::test]
+fn inherited_motion_group_survives_incremental_component_update(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let entry = ModuleId::parse("main").unwrap();
+    let prepared = EmbeddedScriptView::new(
+        entry.clone(),
+        EmbeddedScriptSource::new(std::collections::BTreeMap::from([(
+            entry,
+            r#"
+                define_component(#{
+                    metadata: #{ id: "components/group_probe", "export": "GroupProbe",
+                        version: "0.1.0", runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
+                        dependencies: [], capabilities: #{} },
+                    schema: #{ props: #{ key: #{ schema: #{ type: "string" },
+                        required: true, sensitive: false } }, state: #{ fields: #{ count: #{
+                        schema: #{ type: "integer" },
+                        "default": #{ type: "integer", value: 0 } } } },
+                        events: #{}, slots: #{}, parts: ["root"] },
+                    render: Fn("render_probe"),
+                });
+                fn increment(ctx, payload) { ctx.set_state("count", ctx.get_state("count") + 1); }
+                fn render_probe(ctx, props) {
+                    text(`count:${ctx.get_state("count")}`)
+                        .with_key("child").test_id("group-child")
+                        .accessibility_role("button")
+                        .accessibility_label(`count:${ctx.get_state("count")}`)
+                        .with_style(style().width(px(100)).height(px(30)))
+                        .on_click(Fn("increment"))
+                        .shared_layout("item").layout_motion(100, "linear")
+                }
+                fn view(ctx) {
+                    motion_group("outer", [render_component(
+                        "components/group_probe", #{ key: "probe" })])
+                }
+            "#
+            .to_owned(),
+        )])),
+        include_str!("../../../registry/themes/default_dark.rhai"),
+    )
+    .prepare()
+    .unwrap();
+    let captured = Rc::new(RefCell::new(None));
+    let captured_for_window = Rc::clone(&captured);
+    let window = cx.add_window(move |window, cx| {
+        let host = ScriptViewHost::new("motion-group-window", cx).unwrap();
+        let view = prepared
+            .mount(
+                ScriptViewConfig::new("motion-group-view"),
+                host.clone(),
+                window,
+                cx,
+            )
+            .unwrap();
+        *captured_for_window.borrow_mut() = Some(view.clone());
+        SingleEmbeddedHost { host, view }
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    cx.run_until_parked();
+
+    let view = captured.borrow().as_ref().unwrap().clone();
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    visual.run_until_parked();
+    visual
+        .update(|window, cx| {
+            view.automate(
+                gpui_rhai::AutomationCommand::Dispatch {
+                    locator: gpui_rhai::AutomationLocator::TestId {
+                        id: "group-child".to_owned(),
+                    },
+                    event: "click".to_owned(),
+                    payload: None,
+                },
+                window,
+                cx,
+            )
+        })
+        .unwrap();
+    visual.run_until_parked();
+
+    let snapshot = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
+    assert!(
+        snapshot
+            .find_by_role_and_name("button", "count:1")
+            .next()
+            .is_some(),
+        "incremental component output did not retain its inherited motion group"
+    );
+    assert_eq!(visual.update(|_, cx| view.last_error(cx).unwrap()), None);
 }
 
 #[gpui::test]

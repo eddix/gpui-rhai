@@ -51,9 +51,12 @@ component scope.
 
 SVG assets may use `currentColor`. The renderer resolves the nearest effective
 semantic text color, with a color on the image or SVG node taking precedence
-over inherited ancestors. It tints bytes and caches by asset identity plus
-RGBA. Theme switching recolors icons without script recompilation or state
-loss.
+over inherited ancestors. The bounded compatibility adapter renders the whole
+SVG to a standard RGBA PNG before GPUI decoding, preserving fixed colors,
+gradients, SVG opacity, and the semantic color's alpha while avoiding GPUI
+0.2.2's in-memory SVG channel mismatch. Asset and inline results are cached by
+identity/source plus RGBA. Theme switching recolors icons without script
+recompilation or state loss.
 
 ## Inline SVG atom
 

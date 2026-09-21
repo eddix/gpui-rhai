@@ -14,6 +14,9 @@ icon or raster image assets are currently included.
   `examples/input.rs`; the source notice and Zed Industries copyright are
   retained in that module and the distributed Apache license.
 - Rhai 1.26.0 — MIT OR Apache-2.0.
+- resvg/usvg 0.45.1 — MIT OR Apache-2.0; tiny-skia 0.11.4 — BSD-3-Clause.
+  The SVG compatibility adapter uses them to produce bounded standard PNG
+  images before the pinned GPUI decoder consumes the pixels.
 - notify 8.2.0 — CC0-1.0 (development hot reload only).
 - Jiff 0.2.35 — Unlicense OR MIT.
 - similar 3.2.0 — Apache-2.0.

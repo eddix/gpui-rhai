@@ -93,7 +93,9 @@ impl HostSlotRegistry {
     /// Register an independently mounted script view as opaque slot content.
     ///
     /// The Host remains responsible for suspending or disposing the nested
-    /// view. The outer Rhai program receives no nested-view authority.
+    /// view. The outer Rhai program receives no nested-view authority. A view
+    /// from another [`crate::ScriptViewHost`] is rendered inside its own Host
+    /// frame boundary; a view already inside the active Host reuses it.
     ///
     /// # Errors
     ///
@@ -104,7 +106,7 @@ impl HostSlotRegistry {
         view: ScriptViewHandle,
     ) -> Result<Self, HostSlotError> {
         self.with_slot(name, move |_, _| {
-            view.flex_item().map_err(|error| error.to_string())
+            view.host_slot_item().map_err(|error| error.to_string())
         })
     }
 

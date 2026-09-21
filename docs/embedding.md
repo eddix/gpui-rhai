@@ -121,6 +121,12 @@ suspend or dispose a slotted `ScriptViewHandle` explicitly. An unknown slot or
 disposed nested view becomes a normal custom-primitive diagnostic instead of a
 partial script transaction.
 
+`with_script_view` detects whether the resident view's Host frame is already
+active. It reuses a shared Host without nesting the domain, and otherwise wraps
+the resident element in its own `ScriptViewHost::container`. Shell and resident
+may therefore belong to different overlay/focus domains in the same GPUI
+window without transferring lifecycle authority.
+
 ## Host-owned chrome and the active theme
 
 Each mounted view exposes its own read-only `ThemeHandle`. Its snapshot is the

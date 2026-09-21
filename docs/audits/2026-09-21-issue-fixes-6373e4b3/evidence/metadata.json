@@ -1,0 +1,67 @@
+{
+  "schema": "gpui-rhai-issue-audit-v1",
+  "date": "2026-09-21",
+  "commit": "6373e4b3016fc4da2560fe7f106feec812912dde",
+  "comparison": "29413b9d683d0fba10c92816fe629f495c05ba30",
+  "reviewed_prs": [
+    63,
+    64
+  ],
+  "issues_read": [
+    56,
+    57,
+    58,
+    59,
+    60,
+    61,
+    65
+  ],
+  "product_changes": false,
+  "github_mutations": false,
+  "tests": {
+    "workspace-tests": {
+      "passed": 507,
+      "failed": 0,
+      "ignored": 0
+    },
+    "native-tests": {
+      "passed": 62,
+      "failed": 0,
+      "ignored": 0
+    },
+    "performance-tests": {
+      "passed": 2,
+      "failed": 0,
+      "ignored": 2
+    }
+  },
+  "expanded_native": {
+    "passed": 5,
+    "failed": 4,
+    "exit_code": 101,
+    "interpretation": "correct behavior assertions; failures are product findings"
+  },
+  "findings": {
+    "P1": 1,
+    "P2": 3
+  },
+  "previous_motion_acceptance": "passed",
+  "rustc": "rustc 1.94.0 (4a4ef493e 2026-03-02)\nbinary: rustc\ncommit-hash: 4a4ef493e3a1488c6e321570238084b38948f6db\ncommit-date: 2026-03-02\nhost: aarch64-apple-darwin\nrelease: 1.94.0\nLLVM version: 21.1.8\n",
+  "os": "ProductName:\t\tmacOS\nProductVersion:\t\t26.6.2\nBuildVersion:\t\t25G83\n",
+  "cpu": "Apple M1",
+  "ci": [
+    {
+      "conclusion": "success",
+      "databaseId": 35569565777,
+      "headSha": "6373e4b3016fc4da2560fe7f106feec812912dde",
+      "name": "CI",
+      "status": "completed",
+      "url": "https://github.com/eddix/gpui-rhai/actions/runs/35569565777"
+    }
+  ],
+  "limitations": [
+    "Issue 60 not reproduced in fixed/relative parent fixtures; downstream parent/Host layout not provided",
+    "Issue 65 full downstream float scenario not available; inherited shared group failure reproduced independently",
+    "No physical screenshot, full nested-view drag performance or 120 Hz certification"
+  ]
+}

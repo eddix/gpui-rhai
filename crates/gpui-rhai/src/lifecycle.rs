@@ -424,7 +424,16 @@ impl ScriptLifecycle {
                 }
                 items.retain(|index, _| indices.contains(index));
                 if !missing.is_empty() {
-                    items.extend(engine.realize_virtual_collection(&id, &missing)?);
+                    let inherited_motion_group = root
+                        .virtual_collection_spec(&id)
+                        .and_then(|spec| spec.inherited_motion_group.clone());
+                    let mut realized = engine.realize_virtual_collection(&id, &missing)?;
+                    if let Some(group) = inherited_motion_group {
+                        for node in realized.values_mut() {
+                            crate::node::apply_motion_group(node, &group);
+                        }
+                    }
+                    items.extend(realized);
                 }
                 if !root.replace_virtual_collection_items(&id, items.clone()) {
                     return Err(LifecycleError::MissingVirtualCollection(id));
