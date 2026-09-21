@@ -782,6 +782,12 @@ descendant on every closed → open edge. The historical default is
 an interaction wrapper and is a tab stop by default; use `tab_stop(false)` when
 that container should not precede an inner filter input in the focus order.
 
+An anchored overlay can opt into `match_trigger_width: true`. Its native
+wrapper then follows the styled overlay-root allocation and provides that width
+to both the trigger and popup. Combobox uses this policy so `relative(...)` and
+caller-applied flex growth track the parent layout instead of collapsing to
+content width.
+
 While a modal is open, Overlay reasserts that focus remains inside its panel on
 every focus-driven GPUI frame. An embedding Host must not repeatedly focus an
 ancestor to keep shortcuts alive; register Host shortcuts on the surrounding

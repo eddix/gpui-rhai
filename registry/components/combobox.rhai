@@ -2,7 +2,7 @@
 {
   "id": "components/combobox",
   "export": "Combobox",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": ["components/input"],
   "capabilities": {},
@@ -18,7 +18,7 @@
 import "components/input" as input;
 
 define_component(#{
-    metadata: #{ id: "components/combobox", "export": "Combobox", version: "0.1.3",
+    metadata: #{ id: "components/combobox", "export": "Combobox", version: "0.1.4",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
         dependencies: ["components/input"], capabilities: #{},
         assets: ["icons/check.svg", "icons/close.svg", "icons/chevron_down.svg", "icons/chevron_up.svg"] },
@@ -372,7 +372,8 @@ fn render_Combobox(ctx, props) {
             .focus(style().border_color(theme_color("focus_ring")))
             .disabled(style().text_color(theme_color("disabled")).opacity(0.72))
     } else {
-        style().width(width).height(px(prop_or(props, "trigger_height", 32)))
+        style().width(relative(1.0)).min_width(px(0))
+            .height(px(prop_or(props, "trigger_height", 32)))
             .padding_x(px(10)).gap(px(8)).items_center()
             .border(px(1)).border_color(if open { theme_color("focus_ring") }
                 else { theme_color("border") })
@@ -435,7 +436,8 @@ fn render_Combobox(ctx, props) {
     if "footer" in props && props.footer != () { content.push(props.footer); }
     let panel = column(content).with_key(`${props.key}-panel`)
         .with_style(ctx.component_style("panel",
-            style().width(width).gap(px(4)).padding(px(4))
+            style().width(if custom_trigger { width } else { relative(1.0) })
+                .min_width(px(0)).gap(px(4)).padding(px(4))
                 .border(px(1)).border_color(theme_color("border"))
                 .radius(theme_radius("md")).background(theme_color("surface"))
                 .focus(style().border_color(theme_color("focus_ring")))))
@@ -469,13 +471,16 @@ fn render_Combobox(ctx, props) {
 
     let overlay_config = #{
         id: props.key, kind: "popover", placement: prop_or(props, "placement", "bottom"),
-        open: open, gap: 4, modal: false, dismiss_on_escape: true, dismiss_on_outside: true
+        open: open, gap: 4, modal: false, dismiss_on_escape: true, dismiss_on_outside: true,
+        match_trigger_width: !custom_trigger
     };
     if "parent_overlay" in props && props.parent_overlay != () {
         overlay_config.parent = props.parent_overlay;
     }
+    let root_style = if custom_trigger { style() }
+        else { style().width(width).min_width(px(0)) };
     let node = overlay(trigger, panel, overlay_config)
-        .with_key(props.key).with_style(ctx.component_style("root", style()))
+        .with_key(props.key).with_style(ctx.component_style("root", root_style))
         .on_open_change(if reset_query { Fn("open_action_reset") } else { Fn("open_action") });
     if enabled.len > 0 {
         node = node

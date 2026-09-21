@@ -262,6 +262,12 @@ flipping/clamping, the parent-child dismiss stack, outside-click routing,
 Escape routing, modal policy, and per-frame cleanup. Rhai supplies only stable
 IDs, parent IDs, content, and controlled policy callbacks.
 
+Anchored overlays may opt into a shared trigger-width layout contract. The
+native overlay wrapper then consumes its outer node's realized width and makes
+the trigger and deferred panel use the same containing width. This keeps
+relative/flex Combobox and Select layouts responsive without moving choice
+policy into Rust.
+
 An Overlay may use its trigger bounds or one validated event-coordinate anchor.
 ContextMenu records the last secondary-click point as component-local transient
 geometry. Sheet uses the same modal host and logical start/end placement but a

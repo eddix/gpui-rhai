@@ -17,6 +17,11 @@ nor Combobox has a privileged Rust node or private state machine.
 - `size`, `placement`, `max_visible`, and optional `width: Length`;
 - optional `on_change`, `on_open_change`, and `on_query_change` callbacks.
 
+Relative width and caller-applied flex sizing are forwarded through the
+Combobox root. The trigger consumes that realized allocation and the popup
+panel matches the trigger after layout; a sibling Select with a fixed width can
+therefore remain fixed while another Combobox grows with the row.
+
 Rhai `()` is the only empty-value sentinel. Empty-string option values remain
 legal and distinct from null. Option values must be unique, an externally
 controlled value must name an option, and a disabled option may remain selected

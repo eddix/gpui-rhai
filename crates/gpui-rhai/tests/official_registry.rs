@@ -2196,6 +2196,7 @@ fn official_combobox_is_public_overlay_and_virtual_collection_composition() {
     };
     assert_eq!(spec.id.as_str(), "theme");
     assert!(spec.open);
+    assert_eq!(spec.width_policy, gpui_rhai::OverlayWidthPolicy::Content);
     assert!(
         matches!(trigger.kind(), UiNodeKind::Text { text } if text == "Custom theme trigger"),
         "a custom trigger must be the interactive trigger, not a child of default trigger chrome"
