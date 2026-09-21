@@ -1,10 +1,12 @@
+use std::sync::Arc;
+
 use thiserror::Error;
 
 const MAX_INLINE_SVG_BYTES: usize = 64 * 1024;
 const MAX_INLINE_SVG_ELEMENTS: usize = 2_048;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct InlineSvg(String);
+pub struct InlineSvg(Arc<str>);
 
 impl InlineSvg {
     /// Validate bounded self-contained SVG markup.
@@ -59,12 +61,16 @@ impl InlineSvg {
         }
         usvg::Tree::from_str(trimmed, &usvg::Options::default())
             .map_err(|error| InlineSvgError::InvalidMarkup(error.to_string()))?;
-        Ok(Self(source))
+        Ok(Self(Arc::from(source)))
     }
 
     #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+
+    pub(crate) fn shared_source(&self) -> Arc<str> {
+        Arc::clone(&self.0)
     }
 
     #[must_use]

@@ -1,0 +1,34 @@
+    Blocking waiting for file lock on artifact directory
+   Compiling gpui-rhai-issue-audit-6373e4b3 v0.0.0 (/var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T/gpui-rhai-issue-audit.ekobAY)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 13.02s
+     Running tests/edges.rs (tests/native-keyboard/target/debug/deps/edges-49cc4897dce139d8)
+
+running 9 tests
+SVG alpha=0 actual=[0, 0, 0, 0]
+SVG currentColor BGRA=[171, 52, 18, 255]; fixed red actual=[0, 0, 255, 255], expected=[0,0,255,255]
+test svg_fixed_colors_preserve_bgra ... ok
+test svg_semantic_color_preserves_alpha ... ok
+motion_group mode=none click=Ok(Dispatch { report: AutomationDispatchReport { target: 2, visited: [2], invoked: 1, default_prevented: false, stopped: true } }) count1=true last_error=None
+HostSlot native clicks=1 ancestor capture unchanged=true
+test host_slot_capture_isolation ... ok
+HostSlot flex slot=GeometryBounds { x: 0.0, y: 30.0, width: 300.0, height: 210.0 } native=Bounds { origin: Point { x: 0px, y: 30px }, size: Size { 300px × 210px } }
+test host_slot_fills_flex_height ... ok
+node prop enter_motion property=opacity dispatch=Ok(Dispatch { report: AutomationDispatchReport { target: 2, visited: [2], invoked: 1, default_prevented: false, stopped: true } }) value1=true
+Table parent=fixed fill=false outer=GeometryBounds { x: 0.0, y: 30.0, width: 600.0, height: 462.0 } rows=16 native=Some(Bounds { origin: Point { x: 1px, y: 61px }, size: Size { 598px × 430px } }) virtual=[VirtualCollectionMetrics { id: VirtualCollectionId { component: ComponentInstancePath([ComponentInstanceSegment { component: "View", key: "table-fixed" }, ComponentInstanceSegment { component: "Table", key: "table" }]), key: "table-body" }, item_count: 15, realized_count: 15, realized_range: 0..15, requested_count: 0, requested_range: 0..0, visible_range: 0..15, viewport_height: 430.0, scroll_item: 0, scroll_offset: 0.0, is_scrolled: false, sticky_header: None, bottom_align: false, follow_tail: false }] error=None
+Table parent=relative fill=false outer=GeometryBounds { x: 0.0, y: 30.0, width: 600.0, height: 462.0 } rows=16 native=Some(Bounds { origin: Point { x: 1px, y: 61px }, size: Size { 598px × 430px } }) virtual=[VirtualCollectionMetrics { id: VirtualCollectionId { component: ComponentInstancePath([ComponentInstanceSegment { component: "View", key: "table-fixed" }, ComponentInstanceSegment { component: "Table", key: "table" }]), key: "table-body" }, item_count: 15, realized_count: 15, realized_range: 0..15, requested_count: 0, requested_range: 0..0, visible_range: 0..15, viewport_height: 430.0, scroll_item: 0, scroll_offset: 0.0, is_scrolled: false, sticky_header: None, bottom_align: false, follow_tail: false }] error=None
+motion_group mode=explicit click=Ok(Dispatch { report: AutomationDispatchReport { target: 2, visited: [2], invoked: 1, default_prevented: false, stopped: true } }) count1=true last_error=None
+node prop enter_motion property=translate_y dispatch=Ok(Dispatch { report: AutomationDispatchReport { target: 2, visited: [2], invoked: 1, default_prevented: false, stopped: true } }) value1=true
+test enter_motion_on_owned_node_prop_keeps_callbacks_live ... ok
+HostSlot with_script_view separate_host=false explicit_container=false resident_error=None
+Table parent=fixed fill=true outer=GeometryBounds { x: 0.0, y: 30.0, width: 600.0, height: 470.0 } rows=16 native=Some(Bounds { origin: Point { x: 1px, y: 61px }, size: Size { 598px × 438px } }) virtual=[VirtualCollectionMetrics { id: VirtualCollectionId { component: ComponentInstancePath([ComponentInstanceSegment { component: "View", key: "table-fill" }, ComponentInstanceSegment { component: "Table", key: "table" }]), key: "table-body" }, item_count: 15, realized_count: 15, realized_range: 0..15, requested_count: 0, requested_range: 0..0, visible_range: 0..15, viewport_height: 438.0, scroll_item: 0, scroll_offset: 0.0, is_scrolled: false, sticky_header: None, bottom_align: false, follow_tail: false }] error=None
+test table_fill_height_realizes_rows ... ok
+Table parent=relative fill=true outer=GeometryBounds { x: 0.0, y: 30.0, width: 600.0, height: 1050.0 } rows=16 native=Some(Bounds { origin: Point { x: 1px, y: 61px }, size: Size { 598px × 1018px } }) virtual=[VirtualCollectionMetrics { id: VirtualCollectionId { component: ComponentInstancePath([ComponentInstanceSegment { component: "View", key: "table-fill" }, ComponentInstanceSegment { component: "Table", key: "table" }]), key: "table-body" }, item_count: 15, realized_count: 15, realized_range: 0..15, requested_count: 0, requested_range: 0..0, visible_range: 0..15, viewport_height: 1018.0, scroll_item: 0, scroll_offset: 0.0, is_scrolled: false, sticky_header: None, bottom_align: false, follow_tail: false }] error=None
+test table_relative_parent_fill_height_realizes_rows ... ok
+motion_group mode=inherited click=Ok(Dispatch { report: AutomationDispatchReport { target: 2, visited: [2], invoked: 1, default_prevented: false, stopped: true } }) count1=true last_error=None
+test motion_group_survives_incremental_component_updates ... ok
+HostSlot with_script_view separate_host=true explicit_container=false resident_error=None
+HostSlot with_script_view separate_host=true explicit_container=true resident_error=None
+test host_slot_preserves_independent_script_view_host ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.33s
+

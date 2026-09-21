@@ -1,0 +1,91 @@
+{
+  "schema": "gpui-rhai-audit-acceptance-v1",
+  "date": "2026-09-21",
+  "commit": "050c7fa2c98e0104c2afd687450f388893cf7566",
+  "baseline": "6373e4b3016fc4da2560fe7f106feec812912dde",
+  "product_changes": false,
+  "github_mutations": false,
+  "baseline_tests": {
+    "workspace-tests": {
+      "passed": 509,
+      "failed": 0,
+      "ignored": 0
+    },
+    "native-tests": {
+      "passed": 64,
+      "failed": 0,
+      "ignored": 0
+    },
+    "performance-tests": {
+      "passed": 2,
+      "failed": 0,
+      "ignored": 2
+    }
+  },
+  "original_regressions": {
+    "passed": 9,
+    "failed": 0
+  },
+  "new_native_tests": {
+    "passed": 2,
+    "failed": 2,
+    "exit_code": 101
+  },
+  "findings": [
+    {
+      "id": "J01",
+      "priority": "P1",
+      "evidence": "release public API timing plus source call chain"
+    },
+    {
+      "id": "J02",
+      "priority": "P2",
+      "evidence": "native pixel test and pinned GPUI control"
+    },
+    {
+      "id": "J03",
+      "priority": "P2",
+      "evidence": "native pixel test, source and SVG color contract"
+    },
+    {
+      "id": "J04",
+      "priority": "P2",
+      "evidence": "source only; no OOM/stress measurement"
+    }
+  ],
+  "benchmark": {
+    "profile": "release with thin LTO",
+    "samples_per_size": 3,
+    "sizes": [
+      256,
+      1024,
+      2048
+    ],
+    "measurement": "successful foreground drain call only; excludes worker wait and callback invocation"
+  },
+  "references": [
+    {
+      "title": "SVG 2: The effect of the color property",
+      "url": "https://www.w3.org/TR/SVG2/painting.html#ColorProperty"
+    }
+  ],
+  "rustc": "rustc 1.94.0 (4a4ef493e 2026-03-02)\nbinary: rustc\ncommit-hash: 4a4ef493e3a1488c6e321570238084b38948f6db\ncommit-date: 2026-03-02\nhost: aarch64-apple-darwin\nrelease: 1.94.0\nLLVM version: 21.1.8\n",
+  "os": "ProductName:\t\tmacOS\nProductVersion:\t\t26.6.2\nBuildVersion:\t\t25G83\n",
+  "cpu": "Apple M1",
+  "ci_runs": [
+    {
+      "conclusion": "success",
+      "databaseId": 35588566657,
+      "headSha": "050c7fa2c98e0104c2afd687450f388893cf7566",
+      "name": "CI",
+      "status": "completed",
+      "url": "https://github.com/eddix/gpui-rhai/actions/runs/35588566657"
+    }
+  ],
+  "unverified": [
+    "OOM/cache stress",
+    "full physical display frame timing",
+    "full downstream issue 60/65 integration scenarios",
+    "2 ignored performance cases"
+  ]
+}

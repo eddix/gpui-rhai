@@ -1,0 +1,4 @@
+245:    inline_svg_images: BTreeMap<(String, Option<u32>), Arc<Image>>,
+264:            inline_svg_images: BTreeMap::new(),
+811:            .inline_svg_images
+821:            .inline_svg_images

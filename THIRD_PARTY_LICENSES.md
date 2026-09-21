@@ -17,6 +17,8 @@ icon or raster image assets are currently included.
 - resvg/usvg 0.45.1 — MIT OR Apache-2.0; tiny-skia 0.11.4 — BSD-3-Clause.
   The SVG compatibility adapter uses them to produce bounded standard PNG
   images before the pinned GPUI decoder consumes the pixels.
+- roxmltree 0.20.0 — MIT OR Apache-2.0. It locates the SVG root and preserves
+  document-local color cascade semantics when an inherited color is supplied.
 - notify 8.2.0 — CC0-1.0 (development hot reload only).
 - Jiff 0.2.35 — Unlicense OR MIT.
 - similar 3.2.0 — Apache-2.0.

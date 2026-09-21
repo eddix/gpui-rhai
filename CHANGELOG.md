@@ -8,10 +8,13 @@ semantic versioning from this release.
 ## 0.1.4 - Unreleased
 
 - Inline and asset-backed SVG `currentColor` now inherits the nearest effective
-  semantic text color while preserving node-local overrides, including inside
-  deferred virtual rows. A complete bounded SVG-to-PNG adapter preserves fixed
-  colors, gradients, and semantic alpha while routing all pixels through
-  GPUI's correct PNG RGBA-to-BGRA conversion.
+  semantic text color as an SVG cascade default while preserving document-local
+  `color` overrides, including inside deferred virtual rows. The complete
+  adapter preserves fixed colors, gradients, semantic alpha, system-font text,
+  generic families, and fallback. Public async decode performs parsing,
+  rasterization, encoding, and image preparation off the foreground thread;
+  cold inline/tint variants use the GPUI background executor and a shared
+  256-entry/128-MiB LRU with observable hit/miss/byte/eviction counters.
 - IconButton adds a controlled `selected` state. Transparent and secondary
   variants use the semantic accent foreground without adding a filled
   container, while the node exposes pressed accessibility semantics.

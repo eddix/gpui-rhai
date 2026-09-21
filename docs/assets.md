@@ -45,18 +45,38 @@ let decode = ctx.start_image_decode(
 );
 ```
 
-Raster validation/decode may run on a worker. Rhai callbacks return to the
-foreground thread, are generation-bound, and cancel with their app/window/
-component scope.
+Raster validation/decode runs on a worker. SVG validation, font resolution,
+color inheritance, rasterization, PNG encoding, and image preparation also
+finish on that worker; the foreground drain only installs the prepared handle
+and delivers callbacks. Rhai callbacks are generation-bound and cancel with
+their app/window/component scope. Deterministic declarative preload remains a
+synchronous preparation-phase API and must not be moved into an interaction
+handler.
 
-SVG assets may use `currentColor`. The renderer resolves the nearest effective
-semantic text color, with a color on the image or SVG node taking precedence
-over inherited ancestors. The bounded compatibility adapter renders the whole
-SVG to a standard RGBA PNG before GPUI decoding, preserving fixed colors,
-gradients, SVG opacity, and the semantic color's alpha while avoiding GPUI
-0.2.2's in-memory SVG channel mismatch. Asset and inline results are cached by
-identity/source plus RGBA. Theme switching recolors icons without script
-recompilation or state loss.
+SVG assets may use `currentColor`. The renderer supplies the nearest effective
+semantic text color as the root's inherited default; an explicit `color`
+property on any SVG element therefore retains normal SVG cascade priority.
+The compatibility adapter renders the whole document through the same lazy
+system-font resolver as GPUI 0.2.2, then produces standard RGBA PNG/BGRA render
+data. Fixed colors, gradients, SVG opacity, semantic alpha, text, generic font
+families, and font fallback all survive the adapter while avoiding GPUI 0.2.2's
+in-memory SVG channel mismatch.
+
+Cold inline and semantic-color variants are prepared through GPUI's background
+executor. Their shared LRU cache is bounded to 256 entries and 128 MiB including
+retained source text and ready BGRA pixels; stale pending work cannot publish
+after eviction. `AssetRegistry::svg_cache_stats()` exposes entries, bytes,
+limits, hits, misses, and evictions. Namespace refresh clears variants, while
+an image already cloned by the current frame remains valid. Theme switching
+recolors icons without script recompilation or state loss.
+
+SVG text uses GPUI's pinned `usvg` system-font database and resolver. Generic
+serif/sans/monospace aliases are normalized to an actually installed platform
+family (Arial/Helvetica first on macOS, DejaVu/Liberation/Noto fallbacks on
+Linux). Fonts registered as application-owned in-memory `FontSource` values
+currently affect GPUI text but are not injected into that separate SVG
+database; SVG markup should name an installed family and provide a generic
+fallback.
 
 ## Inline SVG atom
 
@@ -84,8 +104,8 @@ shared icons. GPUI remains the rendering backend; invalid markup is a script
 evaluation error and preserves the last-good tree.
 
 In file-backed development, supported asset changes refresh the provider
-transactionally. Existing logical identity remains stable, tinted cache entries
-are replaced, and affected windows invalidate.
+transactionally. Existing logical identity remains stable, SVG variants and
+pending work are invalidated, and affected windows repaint.
 
 ## Declared fonts
 

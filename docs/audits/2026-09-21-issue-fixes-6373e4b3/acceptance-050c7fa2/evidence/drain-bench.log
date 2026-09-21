@@ -1,0 +1,3 @@
+side=256 start_ms_p50=0.015 foreground_drain_ms_p50=0.364 drain_samples_ms=[0.358583, 0.363875, 0.8522500000000001]
+side=1024 start_ms_p50=0.017 foreground_drain_ms_p50=6.015 drain_samples_ms=[5.959625, 6.015084000000001, 6.226583]
+side=2048 start_ms_p50=0.022 foreground_drain_ms_p50=18.064 drain_samples_ms=[17.7, 18.063625, 21.373333000000002]
