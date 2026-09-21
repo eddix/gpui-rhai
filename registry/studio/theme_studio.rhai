@@ -266,6 +266,7 @@ fn specimen_typography() {
 
 fn specimen_actions() {
     let search_icon = svg("<svg width='24' height='24' viewBox='0 0 24 24' fill='none'><circle cx='11' cy='11' r='6' stroke='currentColor' stroke-width='2'/><path d='M16 16L21 21' stroke='currentColor' stroke-width='2'/></svg>");
+    let selected_search_icon = svg("<svg width='24' height='24' viewBox='0 0 24 24' fill='none'><circle cx='11' cy='11' r='6' stroke='currentColor' stroke-width='2'/><path d='M16 16L21 21' stroke='currentColor' stroke-width='2'/></svg>");
     let launch_icon = svg("<svg width='24' height='24' viewBox='0 0 24 24' fill='none'><path d='M5 12H19M13 6L19 12L13 18' stroke='currentColor' stroke-width='2'/></svg>");
     column([
         specimen_title("ACTIONS", "Variants, sizes, tags and disabled states."),
@@ -286,6 +287,8 @@ fn specimen_actions() {
         ]).with_style(style().gap(px(5)).items_center()),
         row([
             icon_button::IconButton(#{ icon: search_icon, label: "Search", size: "md", variant: "outline" }),
+            icon_button::IconButton(#{ icon: selected_search_icon, label: "Selected search",
+                selected: true, size: "md", variant: "ghost" }),
             button::Button(#{ text: "Launch", prefix: launch_icon, variant: "secondary" }),
         ]).with_style(style().gap(px(5)).items_center()),
         row([

@@ -35,6 +35,14 @@ pub struct OverlayNodeSpec {
     pub tooltip_delays: Option<TooltipDelays>,
     pub initial_focus: OverlayInitialFocus,
     pub activate_on_trigger: bool,
+    pub width_policy: OverlayWidthPolicy,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum OverlayWidthPolicy {
+    #[default]
+    Content,
+    MatchTrigger,
 }
 
 /// Where focus lands on each closed -> open presentation cycle of a modal
@@ -2729,6 +2737,11 @@ pub(crate) fn overlay_node(
     let modal = optional_bool(&mut config, "modal")?
         .unwrap_or(matches!(kind, OverlayKind::Dialog | OverlayKind::Sheet));
     let activate_on_trigger = optional_bool(&mut config, "activate_on_trigger")?.unwrap_or(true);
+    let width_policy = if optional_bool(&mut config, "match_trigger_width")?.unwrap_or(false) {
+        OverlayWidthPolicy::MatchTrigger
+    } else {
+        OverlayWidthPolicy::Content
+    };
     let initial_focus = match optional_string(&mut config, "initial_focus")?.as_deref() {
         None | Some("panel") => OverlayInitialFocus::Panel,
         Some("first") => OverlayInitialFocus::First,
@@ -2769,6 +2782,7 @@ pub(crate) fn overlay_node(
                 tooltip_delays,
                 initial_focus,
                 activate_on_trigger,
+                width_policy,
             },
         ),
         call,

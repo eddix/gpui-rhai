@@ -40,6 +40,11 @@ The important rules are:
    privileged operations, high-frequency work, or a mechanism scripts should
    compose rather than implement.
 
+When a Rhai-authored shell must wrap an existing Host element or mounted view,
+register it with `HostSlotRegistry`. The script receives only an opaque,
+styleable box through `gpui_rhai::HostSlot`; ownership, events, suspension, and
+disposal stay on the Rust side.
+
 See [Architecture](docs/architecture.md) for the complete runtime design.
 
 ## 2. Start a project
@@ -255,7 +260,10 @@ Interactive components use explicit accessible names. `Input`, `Textarea`,
 adjacent visual label exists. A placeholder is only a visual hint and is never
 used as the control name. Omit Icon's optional `label` only when the icon is
 decorative; a meaningful standalone image must provide one. IconButton always
-requires its own action label.
+requires its own action label. For persistent icon-only tool state, pass the
+controlled `selected` prop; transparent variants keep their container while
+switching the glyph to the semantic accent and exposing pressed accessibility
+state.
 
 Formal component render functions are pure automatic reuse boundaries. When
 root state changes, unchanged non-slot props and a clean component subtree let
@@ -778,6 +786,12 @@ descendant on every closed → open edge. The historical default is
 `initial_focus: "panel"`. A structural container with key/click handlers gets
 an interaction wrapper and is a tab stop by default; use `tab_stop(false)` when
 that container should not precede an inner filter input in the focus order.
+
+An anchored overlay can opt into `match_trigger_width: true`. Its native
+wrapper then follows the styled overlay-root allocation and provides that width
+to both the trigger and popup. Combobox uses this policy so `relative(...)` and
+caller-applied flex growth track the parent layout instead of collapsing to
+content width.
 
 While a modal is open, Overlay reasserts that focus remains inside its panel on
 every focus-driven GPUI frame. An embedding Host must not repeatedly focus an

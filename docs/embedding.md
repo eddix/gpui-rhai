@@ -84,6 +84,43 @@ Several Hosts may intentionally coexist in one window. Capture routing is
 limited to each Host container, so their Overlay domains do not dismiss one
 another. Use one shared Host whenever sibling widgets should coordinate.
 
+## Rhai shells around Host-owned content
+
+`HostSlotRegistry` lets a script lay out an opaque element or independently
+mounted view without exposing GPUI objects or nested-view lifecycle to Rhai.
+Register slots before preparing the outer script view:
+
+```rust
+let slots = gpui_rhai::HostSlotRegistry::new()
+    .with_script_view("content", resident_view.clone())?;
+
+let shell = gpui_rhai::EmbeddedScriptView::new(entry, sources, theme)
+    .extension(slots)
+    .prepare()?;
+```
+
+Use a small script helper to make the stable primitive key explicit:
+
+```rhai
+fn host_slot(name) {
+    gpui_rhai::HostSlot(#{ key: name, name: name })
+}
+
+column([
+    header_bar(),
+    host_slot("content").with_style(
+        style().flex_grow().min_height(px(0))
+    ),
+])
+```
+
+The slot is a clipped normal layout box. Pointer, wheel, click, and key events
+stop at its native boundary after the Host content handles them; no Rhai event
+or semantic subtree is synthesized for the opaque content. The Host must still
+suspend or dispose a slotted `ScriptViewHandle` explicitly. An unknown slot or
+disposed nested view becomes a normal custom-primitive diagnostic instead of a
+partial script transaction.
+
 ## Host-owned chrome and the active theme
 
 Each mounted view exposes its own read-only `ThemeHandle`. Its snapshot is the

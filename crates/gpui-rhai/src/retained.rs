@@ -723,6 +723,7 @@ mod tests {
                 },
                 tooltip_delays: None,
                 activate_on_trigger: true,
+                width_policy: crate::OverlayWidthPolicy::Content,
             },
         );
         tree.reconcile(overlay).unwrap();

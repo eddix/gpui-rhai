@@ -8,13 +8,13 @@ use gpui::{
     FocusHandle, GlobalElementId, InspectorElementId, InteractiveElement, IntoElement,
     KeyDownEvent, LayoutId, MouseDownEvent, ParentElement, Pixels, Point, SharedString,
     StatefulInteractiveElement, Style as GpuiStyle, Styled, WeakFocusHandle, Window, deferred, div,
-    point, px, rgba, size,
+    point, px, relative, rgba, size,
 };
 
 use crate::{
     FocusToken, LayerNodeSpec, LayerPlacement, OverlayBounds, OverlayId, OverlayInitialFocus,
-    OverlayKind, OverlayManager, OverlayNodeSpec, OverlayPlacement, OverlaySpec, PlacementResult,
-    Rgba8,
+    OverlayKind, OverlayManager, OverlayNodeSpec, OverlayPlacement, OverlaySpec,
+    OverlayWidthPolicy, PlacementResult, Rgba8,
 };
 
 pub(crate) type OpenChangeHandler = Rc<dyn Fn(bool, &mut Window, &mut App)>;
@@ -571,7 +571,7 @@ impl ScriptOverlayElement {
         let dismiss_on_escape = self.spec.dismiss.escape;
         let focus_ring = self.focus_ring;
         let focus_surface = self.focus_surface;
-        div()
+        let mut trigger = div()
             .id(SharedString::from(format!("{}-trigger", self.id)))
             .track_focus(trigger_focus)
             .tab_stop(activate_on_trigger && click_callback.is_some())
@@ -638,8 +638,11 @@ impl ScriptOverlayElement {
                         cx,
                     );
                 }
-            })
-            .into_any_element()
+            });
+        if self.spec.width_policy == OverlayWidthPolicy::MatchTrigger {
+            trigger = trigger.w_full();
+        }
+        trigger.into_any_element()
     }
 
     fn build_overlay(
@@ -659,7 +662,7 @@ impl ScriptOverlayElement {
         let hover_coordinator = self.coordinator.clone();
         let hover_id = self.spec.id.clone();
         let tooltip_delays = self.spec.tooltip_delays;
-        let panel = div()
+        let mut panel = div()
             .id(SharedString::from(format!("{}-panel", self.id)))
             .track_focus(panel_focus)
             .tab_stop(true)
@@ -703,11 +706,18 @@ impl ScriptOverlayElement {
                 }
             })
             .child(self.content.take().expect("overlay content rendered once"));
+        if self.spec.width_policy == OverlayWidthPolicy::MatchTrigger {
+            panel = panel.w_full();
+        }
 
         let overlay = if matches!(self.spec.kind, OverlayKind::Dialog | OverlayKind::Sheet) {
             self.build_modal_backdrop(panel, viewport)
         } else {
-            div().absolute().child(panel).into_any_element()
+            let mut overlay = div().absolute();
+            if self.spec.width_policy == OverlayWidthPolicy::MatchTrigger {
+                overlay = overlay.w_full();
+            }
+            overlay.child(panel).into_any_element()
         };
         if self.spec.parent.is_some() {
             // GPUI 0.2.x forbids calling `defer_draw` while it is already
@@ -853,14 +863,14 @@ impl Element for ScriptOverlayElement {
                     .as_mut()
                     .map(|overlay| overlay.request_layout(window, cx));
                 let children = std::iter::once(trigger_layout).chain(overlay_layout);
-                let layout = window.request_layout(
-                    GpuiStyle {
-                        display: Display::Flex,
-                        ..GpuiStyle::default()
-                    },
-                    children,
-                    cx,
-                );
+                let mut style = GpuiStyle {
+                    display: Display::Flex,
+                    ..GpuiStyle::default()
+                };
+                if self.spec.width_policy == OverlayWidthPolicy::MatchTrigger {
+                    style.size.width = relative(1.0).into();
+                }
+                let layout = window.request_layout(style, children, cx);
                 (
                     (
                         layout,

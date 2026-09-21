@@ -20,6 +20,11 @@ No GPUI `Window`, `App`, `Context`, `Div`, or `AnyElement` enters a Rhai
 `Dynamic`. Custom Rust primitives are the intentional extension point for
 mechanisms that require those types.
 
+`HostSlotRegistry` is a narrow adapter over that same primitive seam for opaque
+Host content. A script can position and size a named box, but receives no GPUI
+value, event payload, semantic subtree, or lifecycle authority for the element
+or independently mounted view inside it.
+
 The final atomic surface starts with `box(children)` and layout-transparent
 `fragment(children)`. `row`, `column`, and `stack` construct Box snapshots.
 Fragment may carry only children, source, key; nested fragments are flattened
@@ -261,6 +266,12 @@ register measured anchor/panel bounds during prepaint. The coordinator owns
 flipping/clamping, the parent-child dismiss stack, outside-click routing,
 Escape routing, modal policy, and per-frame cleanup. Rhai supplies only stable
 IDs, parent IDs, content, and controlled policy callbacks.
+
+Anchored overlays may opt into a shared trigger-width layout contract. The
+native overlay wrapper then consumes its outer node's realized width and makes
+the trigger and deferred panel use the same containing width. This keeps
+relative/flex Combobox and Select layouts responsive without moving choice
+policy into Rust.
 
 An Overlay may use its trigger bounds or one validated event-coordinate anchor.
 ContextMenu records the last secondary-click point as component-local transient

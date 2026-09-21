@@ -4998,6 +4998,7 @@ mod tests {
             tooltip_delays: None,
             initial_focus: crate::OverlayInitialFocus::Panel,
             activate_on_trigger: false,
+            width_policy: crate::OverlayWidthPolicy::Content,
         };
         assert_eq!(
             scoped_overlay_spec(
