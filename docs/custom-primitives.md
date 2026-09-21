@@ -25,10 +25,21 @@ engine.register_primitive(
         events,
         state: ComponentStateSchema::default(),
         lifecycle: false,
+        effect: None,
     },
     StatusCard,
 )?;
 ```
+
+Typed GPU/effect extensions set `effect: Some(EffectPrimitiveDescriptor { .. })`
+and must declare supported platforms, positive instance and per-instance cost
+budgets, scoped lifecycle, reduced-motion support, and quality-tier support.
+Registration fails on an unsupported current platform. Mounting beyond the
+declared instance budget fails deterministically. `PrimitiveTheme` exposes the
+effective `MotionPreference`, `MotionQuality`, and resolved `ThemeMotion`
+tokens, so Host effects follow the same policy as Rhai-authored motion. This is
+the 0.1.3 ShaderSurface extension seam; it does not accept arbitrary shader
+source.
 
 Rhai imports no Rust types and calls the generated namespace constructor:
 

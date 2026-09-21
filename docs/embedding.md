@@ -210,7 +210,7 @@ last-good declarative tree, component state, native primitive entities, input
 selection/undo state, scroll positions, and virtual-list measurements. It
 closes the view's overlays and Layers, releases focus and pointer capture, runs
 the optional `suspend(ctx)` hook, cleans every active declarative effect, and
-freezes declarative timers and animations.
+freezes declarative timers and Motion.
 
 ```rust
 view.suspend(window, cx)?;
@@ -232,7 +232,7 @@ are held in a bounded queue (256 per runtime) and delivered immediately before
 the resume hook. Long-lived subscriptions must be created by declarative
 effects and are therefore cancelled by effect cleanup. Effect-owned tasks are
 cancelled with the same activation; ordinary one-shot component work continues.
-Timers and animations resume from their frozen progress and never catch up the
+Timers and Motion resume from their frozen progress and never catch up the
 elapsed wall time.
 
 The optional script hooks are:

@@ -23,9 +23,15 @@ use gpui_rhai::{
 #[path = "../../../crates/gpui-rhai/examples/table_1000.rs"]
 mod table_1000_example;
 
-#[allow(dead_code)]
+// Both gallery examples intentionally embed the release registry snapshot so
+// this independent harness exercises their real preparation paths together.
+#[allow(clippy::duplicate_mod, dead_code)]
 #[path = "../../../crates/gpui-rhai/examples/component_gallery.rs"]
 mod component_gallery_example;
+
+#[allow(clippy::duplicate_mod, dead_code)]
+#[path = "../../../crates/gpui-rhai/examples/motion_gallery.rs"]
+mod motion_gallery_example;
 
 fn official_icon_assets() -> Vec<(String, AssetData)> {
     [
@@ -703,7 +709,7 @@ fn element_bounds_self_heals_after_first_prepaint_and_resolves_event_keys(
             r#"
                 define_component(#{
                     metadata: #{ id: "tests/geometry_probe", "export": "GeometryProbe",
-                        version: "0.1.0", runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
+                        version: "0.1.0", runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
                         dependencies: [], capabilities: #{} },
                     schema: #{ props: #{ key: #{ schema: #{ type: "string" }, required: true, sensitive: false } },
                         state: #{ fields: #{ event_measured: #{ schema: #{ type: "bool" },
@@ -807,7 +813,7 @@ fn node_prop_component_keeps_latest_ui_when_receiver_rerenders(cx: &mut TestAppC
                 r#"
                     define_component(#{
                         metadata: #{ id: "components/slot_stateful", "export": "SlotStateful",
-                            version: "0.1.0", runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
+                            version: "0.1.0", runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
                             dependencies: [], capabilities: #{} },
                         schema: #{ props: #{ key: #{ schema: #{ type: "string" }, required: true, sensitive: false } },
                             state: #{ fields: #{ value: #{ schema: #{ type: "string" },
@@ -829,7 +835,7 @@ fn node_prop_component_keeps_latest_ui_when_receiver_rerenders(cx: &mut TestAppC
                 r#"
                     define_component(#{
                         metadata: #{ id: "components/slot_receiver", "export": "SlotReceiver",
-                            version: "0.1.0", runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
+                            version: "0.1.0", runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
                             dependencies: [], capabilities: #{} },
                         schema: #{ props: #{
                                 key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
@@ -943,14 +949,14 @@ fn prepared_failure_view() -> gpui_rhai::PreparedScriptView {
   "id": "components/broken_panel",
   "export": "BrokenPanel",
   "version": "0.1.3",
-  "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
+  "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": [],
   "capabilities": {}
 }
 */
                 define_component(#{
                     metadata: #{ id: "components/broken_panel", "export": "BrokenPanel",
-                        version: "0.1.3", runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
+                        version: "0.1.3", runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
                         dependencies: [], capabilities: #{} },
                     schema: #{ props: #{
                         broken: #{ schema: #{ type: "bool" }, required: true, sensitive: false },
@@ -1473,7 +1479,7 @@ fn async_workers_wake_the_view_without_input_or_manual_poll(cx: &mut TestAppCont
                 import "helpers/state" as state;
                 define_component(#{
                     metadata: #{ id: "tests/ticker", "export": "Ticker", version: "0.1.0",
-                        runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
+                        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
                         dependencies: [], capabilities: #{ "app.ticker": "*" } },
                     schema: #{
                         props: #{ key: #{ schema: #{ type: "string" }, required: true, sensitive: false } },
@@ -1661,7 +1667,7 @@ fn effect_restart_still_delivers_async_task_results(cx: &mut TestAppContext) {
                 r#"
                 define_component(#{
                     metadata: #{ id: "widgets/loader", "export": "Loader", version: "0.1.0",
-                        runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
+                        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
                         dependencies: [], capabilities: #{ "app.echo": "*" } },
                     schema: #{
                         props: #{ key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
@@ -1821,7 +1827,7 @@ fn effect_start_state_write_restarts_sibling_effect_and_delivers(cx: &mut TestAp
                 r#"
                 define_component(#{
                     metadata: #{ id: "widgets/nested", "export": "Nested", version: "0.1.0",
-                        runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
+                        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
                         dependencies: [], capabilities: #{ "app.echo": "*" } },
                     schema: #{
                         props: #{ key: #{ schema: #{ type: "string" }, required: true, sensitive: false } },
@@ -1984,7 +1990,7 @@ fn subscription_callback_state_write_restarts_effect_and_delivers(cx: &mut TestA
                 r#"
                 define_component(#{
                     metadata: #{ id: "widgets/watcher", "export": "Watcher", version: "0.1.0",
-                        runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
+                        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
                         dependencies: [], capabilities: #{ "app.echo": "*", "app.push": "*" } },
                     schema: #{
                         props: #{ key: #{ schema: #{ type: "string" }, required: true, sensitive: false } },
@@ -6092,4 +6098,363 @@ fn set_theme_during_typing_keeps_input_focus(cx: &mut TestAppContext) {
         texts.contains(&"typed:ab".to_owned()),
         "focus must survive theme swaps: {texts:?}"
     );
+}
+
+#[gpui::test]
+fn motion_gallery_mounts_and_renders_a_real_frame(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let prepared = motion_gallery_example::prepared().expect("prepare the official motion gallery");
+    let captured = Rc::new(RefCell::new(None));
+    let captured_for_window = Rc::clone(&captured);
+    let window = cx.add_window(move |window, cx| {
+        let host = ScriptViewHost::new("motion-gallery-window", cx).unwrap();
+        let view = prepared
+            .mount(
+                ScriptViewConfig::new("motion-gallery-view"),
+                host.clone(),
+                window,
+                cx,
+            )
+            .expect("mount the official motion gallery");
+        *captured_for_window.borrow_mut() = Some(view.clone());
+        SingleEmbeddedHost { host, view }
+    });
+
+    cx.refresh().expect("render the first gallery frame");
+    let view = captured.borrow().as_ref().unwrap().clone();
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    assert!(
+        visual.update(|_, cx| view.root(cx).unwrap().is_some()),
+        "the mounted gallery must retain a rendered root"
+    );
+    let initial = visual.update(|_, cx| {
+        let root = view.root(cx).unwrap().unwrap();
+        let mut texts = Vec::new();
+        node_texts(&root, &mut texts);
+        texts
+    });
+    assert!(
+        initial.iter().position(|text| text == "One")
+            < initial.iter().position(|text| text == "Three")
+    );
+    for id in ["reorder", "play"] {
+        visual
+            .update(|window, cx| {
+                view.automate(
+                    gpui_rhai::AutomationCommand::Dispatch {
+                        locator: gpui_rhai::AutomationLocator::TestId { id: id.to_owned() },
+                        event: "click".to_owned(),
+                        payload: None,
+                    },
+                    window,
+                    cx,
+                )
+            })
+            .unwrap();
+    }
+    visual.run_until_parked();
+    let changed = visual.update(|_, cx| {
+        let root = view.root(cx).unwrap().unwrap();
+        let mut texts = Vec::new();
+        node_texts(&root, &mut texts);
+        texts
+    });
+    assert!(
+        changed.iter().position(|text| text == "Three")
+            < changed.iter().position(|text| text == "One")
+    );
+    assert!(changed.iter().any(|text| text == "Timeline: playing"));
+}
+
+#[gpui::test]
+fn host_none_policy_snaps_layout_motion_in_the_presented_frame(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let manual = gpui_rhai::ManualRuntimeClock::new(std::time::Instant::now());
+    let entry = ModuleId::parse("main").unwrap();
+    let prepared = EmbeddedScriptView::new(
+        entry.clone(),
+        EmbeddedScriptSource::new(std::collections::BTreeMap::from([(
+            entry,
+            r#"
+                fn state_schema(){#{fields:#{x:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}}}}}
+                fn move_card(ctx, payload) { ctx.set_state("x", 100); }
+                fn init(ctx) { ctx.register_action("card.move", Fn("move_card")); }
+                fn view(ctx) {
+                    column([
+                        text("Card").with_key("card").test_id("card")
+                            .accessibility_role("button").accessibility_label("Card")
+                            .layout_motion(1000, "linear")
+                            .with_style(style().width(px(100)).height(px(30))
+                                .margin_left(px(ctx.get_state("x"))))
+                    ])
+                }
+            "#
+            .to_owned(),
+        )])),
+        include_str!("../../../registry/themes/default_dark.rhai"),
+    )
+    .runtime_clock(manual.clock())
+    .motion_preference(gpui_rhai::MotionPreference::None)
+    .prepare()
+    .unwrap();
+    let captured = Rc::new(RefCell::new(None));
+    let captured_for_window = Rc::clone(&captured);
+    let window = cx.add_window(move |window, cx| {
+        let host = ScriptViewHost::new("none-motion-window", cx).unwrap();
+        let view = prepared
+            .mount(
+                ScriptViewConfig::new("none-motion-view"),
+                host.clone(),
+                window,
+                cx,
+            )
+            .unwrap();
+        *captured_for_window.borrow_mut() = Some(view.clone());
+        SingleEmbeddedHost { host, view }
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+
+    let view = captured.borrow().as_ref().unwrap().clone();
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    visual
+        .update(|window, cx| {
+            view.automate(
+                gpui_rhai::AutomationCommand::Action {
+                    id: "card.move".to_owned(),
+                    payload: None,
+                },
+                window,
+                cx,
+            )
+        })
+        .unwrap();
+    visual.run_until_parked();
+    cx.refresh().unwrap();
+
+    let changed = visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .find_by_role_and_name("button", "Card")
+            .next()
+            .unwrap()
+            .geometry
+            .unwrap()
+    });
+    assert_eq!(changed.layout.x, 100.0);
+    assert_eq!(changed.visual.x, 100.0);
+
+    manual.advance(std::time::Duration::from_millis(500));
+    cx.refresh().unwrap();
+    let later = visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .find_by_role_and_name("button", "Card")
+            .next()
+            .unwrap()
+            .geometry
+            .unwrap()
+    });
+    assert_eq!(later.visual.x, 100.0, "None must not retain a hidden animation");
+}
+
+#[gpui::test]
+fn canvas_morph_hit_testing_follows_the_presented_path(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let entry = ModuleId::parse("main").unwrap();
+    let source = r#"
+        fn state_schema(){#{fields:#{hit:#{schema:#{type:"string"},
+            "default":#{type:"string",value:"unseen"}}}}}
+        fn hit(ctx,event) {
+            ctx.set_state("hit", if event.canvas_key == () { "none" } else { event.canvas_key });
+        }
+        fn view(ctx) {
+            column([
+                canvas(canvas_scene([
+                    canvas_morph_stroke_path("shape",
+                        [path_move(20.0,20.0),path_line(180.0,20.0)],
+                        [path_move(20.0,80.0),path_line(180.0,80.0)],
+                        10.0, theme_color("accent"))
+                ])).with_key("canvas")
+                    .accessibility_role("button").accessibility_label("Canvas")
+                    .with_style(style().width(px(200)).height(px(100)))
+                    .on("pointer_down", Fn("hit"))
+                    .motion(motion_transition("path_progress",1.0,1.0,
+                        #{duration_ms:1000,easing:"linear"})),
+                text(ctx.get_state("hit")).with_key("result")
+                    .accessibility_role("status")
+                    .accessibility_label(ctx.get_state("hit"))
+            ])
+        }
+    "#;
+    let manual = gpui_rhai::ManualRuntimeClock::new(std::time::Instant::now());
+    let prepared = EmbeddedScriptView::new(
+        entry.clone(),
+        EmbeddedScriptSource::new(std::collections::BTreeMap::from([(
+            entry,
+            source.to_owned(),
+        )])),
+        include_str!("../../../registry/themes/default_dark.rhai"),
+    )
+    .runtime_clock(manual.clock())
+    .prepare()
+    .unwrap();
+    let captured = Rc::new(RefCell::new(None));
+    let captured_for_window = Rc::clone(&captured);
+    let window = cx.add_window(move |window, cx| {
+        let host = ScriptViewHost::new("canvas-morph-window", cx).unwrap();
+        let view = prepared
+            .mount(
+                ScriptViewConfig::new("canvas-morph-view"),
+                host.clone(),
+                window,
+                cx,
+            )
+            .unwrap();
+        *captured_for_window.borrow_mut() = Some(view.clone());
+        SingleEmbeddedHost { host, view }
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    cx.run_until_parked();
+    let view = captured.borrow().as_ref().unwrap().clone();
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    let bounds = visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .find_by_role_and_name("button", "Canvas")
+            .next()
+            .unwrap()
+            .geometry
+            .unwrap()
+            .visual
+    });
+    visual.simulate_click(
+        point(
+            px((bounds.x + 100.0) as f32),
+            px((bounds.y + 80.0) as f32),
+        ),
+        Modifiers::default(),
+    );
+    visual.run_until_parked();
+    assert!(visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .find_by_role_and_name("status", "shape")
+            .next()
+            .is_some()
+    }));
+    visual.simulate_click(
+        point(
+            px((bounds.x + 100.0) as f32),
+            px((bounds.y + 20.0) as f32),
+        ),
+        Modifiers::default(),
+    );
+    visual.run_until_parked();
+    assert!(visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .find_by_role_and_name("status", "none")
+            .next()
+            .is_some()
+    }));
+}
+
+#[gpui::test]
+fn timeline_rebinds_a_replaced_child_in_presented_frames(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let entry = ModuleId::parse("main").unwrap();
+    let source = r#"
+        fn state_schema(){#{fields:#{switched:#{schema:#{type:"bool"},
+            "default":#{type:"bool",value:false}}}}}
+        fn replace_target(ctx,event){ctx.set_state("switched",true);}
+        fn repaint(ctx,event){}
+        fn init(ctx){
+            ctx.register_action("audit.replace",Fn("replace_target"));
+            ctx.register_action("audit.repaint",Fn("repaint"));
+        }
+        fn view(ctx){
+            let child=if ctx.get_state("switched"){box([])}else{text("Title")};
+            column([child.with_key("title").accessibility_role("button")
+                .accessibility_label("Title")
+                .with_style(style().width(px(100)).height(px(30)))])
+                .with_key("panel").timeline(motion_timeline("intro",
+                    motion_track("title",motion_transition("width",100.0,200.0,
+                        #{duration_ms:1000,easing:"linear"})),#{}))
+        }
+    "#;
+    let manual = gpui_rhai::ManualRuntimeClock::new(std::time::Instant::now());
+    let prepared = EmbeddedScriptView::new(
+        entry.clone(),
+        EmbeddedScriptSource::new(std::collections::BTreeMap::from([(
+            entry,
+            source.to_owned(),
+        )])),
+        include_str!("../../../registry/themes/default_dark.rhai"),
+    )
+    .runtime_clock(manual.clock())
+    .prepare()
+    .unwrap();
+    let captured = Rc::new(RefCell::new(None));
+    let captured_for_window = Rc::clone(&captured);
+    let window = cx.add_window(move |window, cx| {
+        let host = ScriptViewHost::new("timeline-target-window", cx).unwrap();
+        let view = prepared
+            .mount(
+                ScriptViewConfig::new("timeline-target-view"),
+                host.clone(),
+                window,
+                cx,
+            )
+            .unwrap();
+        *captured_for_window.borrow_mut() = Some(view.clone());
+        SingleEmbeddedHost { host, view }
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    cx.run_until_parked();
+    let view = captured.borrow().as_ref().unwrap().clone();
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    let mut widths = vec![visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .find_by_role_and_name("button", "Title")
+            .next()
+            .unwrap()
+            .geometry
+            .unwrap()
+            .visual
+            .width
+    })];
+    for id in ["audit.replace", "audit.repaint"] {
+        manual.advance(std::time::Duration::from_millis(250));
+        visual
+            .update(|window, cx| {
+                view.automate(
+                    gpui_rhai::AutomationCommand::Action {
+                        id: id.to_owned(),
+                        payload: None,
+                    },
+                    window,
+                    cx,
+                )
+            })
+            .unwrap();
+        visual.run_until_parked();
+        cx.refresh().unwrap();
+        visual.run_until_parked();
+        widths.push(visual.update(|_, cx| {
+            view.accessibility_snapshot(cx)
+                .unwrap()
+                .find_by_role_and_name("button", "Title")
+                .next()
+                .unwrap()
+                .geometry
+                .unwrap()
+                .visual
+                .width
+        }));
+    }
+    assert!(widths[2] > 110.0, "presented widths: {widths:?}");
 }

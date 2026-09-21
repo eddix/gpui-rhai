@@ -24,8 +24,9 @@ use toml_edit::{Array, DocumentMut, InlineTable, Item, Value};
 pub mod theme_studio;
 
 use gpui_rhai_registry::{
-    AR_LOCALE, BUNDLED_ASSET_SOURCES, BUNDLED_COMPONENT_SOURCES_BY_ID, BUNDLED_THEME_SOURCES,
-    DEFAULT_THEME, EN_LOCALE, STUDIO_SOURCE, ZH_CN_LOCALE,
+    AR_LOCALE, BUNDLED_ASSET_SOURCES, BUNDLED_COMPONENT_SOURCES_BY_ID,
+    BUNDLED_MOTION_SOURCES_BY_ID, BUNDLED_THEME_SOURCES, DEFAULT_THEME, EN_LOCALE, STUDIO_SOURCE,
+    ZH_CN_LOCALE,
 };
 #[cfg(test)]
 use gpui_rhai_registry::{
@@ -72,7 +73,10 @@ impl BundledRegistry {
             .iter()
             .copied()
             .collect::<BTreeMap<_, _>>();
-        for &(catalog_id, source) in BUNDLED_COMPONENT_SOURCES_BY_ID {
+        for &(catalog_id, source) in BUNDLED_COMPONENT_SOURCES_BY_ID
+            .iter()
+            .chain(BUNDLED_MOTION_SOURCES_BY_ID)
+        {
             let metadata = parse_component_header(source)?;
             let id = metadata.id.clone();
             if id.as_str() != catalog_id {
@@ -1071,10 +1075,12 @@ fn with_final_newline(source: &str) -> String {
 
 fn component_relative_path(id: &ModuleId) -> Result<PathBuf, ProjectError> {
     let path = id.as_str();
-    let component = path
+    let (directory, component) = path
         .strip_prefix("components/")
+        .map(|name| ("components", name))
+        .or_else(|| path.strip_prefix("motion/").map(|name| ("motion", name)))
         .ok_or_else(|| ProjectError::InvalidComponentPath(id.clone()))?;
-    Ok(PathBuf::from("components")
+    Ok(PathBuf::from(directory)
         .join(component)
         .with_extension("rhai"))
 }
@@ -2141,7 +2147,7 @@ mod tests {
         let project = Project::new(directory.path());
         project.plan_init().unwrap().apply().unwrap();
         let registry = BundledRegistry::load().unwrap();
-        assert_eq!(registry.entries.len(), 51);
+        assert_eq!(registry.entries.len(), 61);
         let requested = registry
             .entries
             .keys()
@@ -2185,7 +2191,7 @@ mod tests {
         let entry = registry.entries.get_mut(&id).unwrap();
         let source = entry
             .source
-            .replace("0.1.2", "0.2.0")
+            .replace("0.1.3", "0.2.0")
             .replace("// Button presents a desktop action.", upstream_purpose);
         let source: &'static str = Box::leak(source.into_boxed_str());
         entry.metadata = parse_component_header(source).unwrap();
@@ -2245,7 +2251,7 @@ mod tests {
         let entry = registry.entries.get_mut(&button).unwrap();
         let source = entry
             .source
-            .replace("0.1.2", "0.2.0")
+            .replace("0.1.3", "0.2.0")
             .replace("dependencies: []", "dependencies: [\"components/badge\"]")
             .replace(
                 "\"dependencies\": []",

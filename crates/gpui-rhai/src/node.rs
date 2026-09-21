@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::rc::{Rc, Weak};
 
@@ -7,9 +7,10 @@ use rhai::{
     Array, CustomType, Dynamic, EvalAltResult, FLOAT, FnPtr, INT, ImmutableString, Map,
     NativeCallContext, Position, TypeBuilder,
 };
+use unicode_segmentation::UnicodeSegmentation;
 
 use crate::{
-    AnimationSpec, AssetId, ComponentInstancePath, HostCallback, OpaqueHandle, OverlayId,
+    AssetId, ComponentInstancePath, HostCallback, MotionSource, OpaqueHandle, OverlayId,
     OverlayKind, OverlayPlacement, PrimitiveNode, ScriptCallback, ScriptGeneration, Style,
     UiEventBinding, UiEventHandler, UiValue,
 };
@@ -112,9 +113,11 @@ pub struct SourceLocation {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Span {
     text: ImmutableString,
+    key: Option<ImmutableString>,
     color: Option<crate::ColorValue>,
     bold: bool,
     italic: bool,
+    motions: Vec<MotionSource>,
 }
 
 impl Span {
@@ -122,15 +125,31 @@ impl Span {
     pub fn new(text: impl Into<ImmutableString>) -> Self {
         Self {
             text: text.into(),
+            key: None,
             color: None,
             bold: false,
             italic: false,
+            motions: Vec::new(),
         }
     }
 
     #[must_use]
     pub fn color(mut self, color: crate::ColorValue) -> Self {
         self.color = Some(color);
+        self
+    }
+
+    #[must_use]
+    pub fn with_key(mut self, key: impl Into<ImmutableString>) -> Self {
+        self.key = Some(key.into());
+        self
+    }
+
+    #[must_use]
+    pub fn motion(mut self, source: MotionSource) -> Self {
+        self.motions
+            .retain(|existing| existing.property() != source.property());
+        self.motions.push(source);
         self
     }
 
@@ -149,6 +168,16 @@ impl Span {
     #[must_use]
     pub fn text(&self) -> &str {
         self.text.as_str()
+    }
+
+    #[must_use]
+    pub fn key(&self) -> Option<&str> {
+        self.key.as_deref()
+    }
+
+    #[must_use]
+    pub fn motions(&self) -> &[MotionSource] {
+        &self.motions
     }
 
     #[must_use]
@@ -171,8 +200,14 @@ impl CustomType for Span {
     fn build(mut builder: TypeBuilder<Self>) {
         builder
             .with_name("Span")
+            .with_fn("with_key", |span: &mut Self, key: ImmutableString| {
+                span.clone().with_key(key)
+            })
             .with_fn("color", |span: &mut Self, color: crate::ColorValue| {
                 span.clone().color(color)
+            })
+            .with_fn("motion", |span: &mut Self, source: MotionSource| {
+                span.clone().motion(source)
             })
             .with_fn("bold", |span: &mut Self| span.clone().bold())
             .with_fn("italic", |span: &mut Self| span.clone().italic());
@@ -259,7 +294,10 @@ pub struct UiNode {
     attributes: BTreeMap<String, UiValue>,
     handlers: BTreeMap<String, Vec<UiEventBinding>>,
     handler_payloads: BTreeMap<String, UiValue>,
-    animations: Vec<AnimationSpec>,
+    motions: Vec<MotionSource>,
+    exit_motions: Vec<MotionSource>,
+    progress_motions: Vec<crate::MotionProgressBinding>,
+    timelines: Vec<crate::MotionTimeline>,
     signal_bindings: BTreeMap<crate::SignalProperty, crate::NativeSignal>,
     element_ref: Option<crate::ElementRef>,
     presentation: Vec<NodePresentationMutation>,
@@ -354,7 +392,10 @@ enum NodePresentationMutation {
     Attribute(String, UiValue),
     Handler(String, UiEventBinding),
     HandlerPayload(String, UiValue),
-    Animation(AnimationSpec),
+    Motion(MotionSource),
+    ExitMotion(MotionSource),
+    ProgressMotion(crate::MotionProgressBinding),
+    Timeline(Box<crate::MotionTimeline>),
 }
 
 impl NodePresentationMutation {
@@ -379,19 +420,38 @@ impl NodePresentationMutation {
             Self::HandlerPayload(event, payload) => {
                 node.handler_payloads.insert(event.clone(), payload.clone());
             }
-            Self::Animation(animation) => {
-                node.animations
+            Self::Motion(animation) => {
+                node.motions
                     .retain(|existing| existing.property() != animation.property());
-                node.animations.push(*animation);
+                node.motions.push(animation.clone());
+            }
+            Self::ExitMotion(motion) => {
+                node.exit_motions
+                    .retain(|existing| existing.property() != motion.property());
+                node.exit_motions.push(motion.clone());
+            }
+            Self::ProgressMotion(binding) => {
+                node.progress_motions
+                    .retain(|existing| existing.property() != binding.property());
+                node.progress_motions.push(binding.clone());
+            }
+            Self::Timeline(timeline) => {
+                node.timelines
+                    .retain(|existing| existing.name != timeline.name);
+                node.timelines.push(timeline.as_ref().clone());
             }
         }
     }
 
     fn bind_generation(&mut self, generation: ScriptGeneration) {
-        if let Self::Handler(_, binding) = self
-            && let Some(callback) = binding.handler_mut().as_script_mut()
-        {
-            callback.bind_generation(generation);
+        match self {
+            Self::Handler(_, binding) => {
+                if let Some(callback) = binding.handler_mut().as_script_mut() {
+                    callback.bind_generation(generation);
+                }
+            }
+            Self::Timeline(timeline) => timeline.bind_generation(generation),
+            _ => {}
         }
     }
 
@@ -402,13 +462,19 @@ impl NodePresentationMutation {
         events: &BTreeMap<String, crate::EventSchema>,
         native_context: Option<&crate::invocation::ScriptInvocationContext>,
     ) {
-        if let Self::Handler(_, binding) = self
-            && let Some(callback) = binding.handler_mut().as_script_mut()
-        {
-            callback.bind_component_scope_if_unset(component, incarnation, events.clone());
-            if let Some(context) = native_context {
-                callback.bind_native_context_if_unset(context.clone());
+        match self {
+            Self::Handler(_, binding) => {
+                if let Some(callback) = binding.handler_mut().as_script_mut() {
+                    callback.bind_component_scope_if_unset(component, incarnation, events.clone());
+                    if let Some(context) = native_context {
+                        callback.bind_native_context_if_unset(context.clone());
+                    }
+                }
             }
+            Self::Timeline(timeline) => {
+                timeline.bind_component_scope(component, incarnation, events, native_context);
+            }
+            _ => {}
         }
     }
 }
@@ -576,7 +642,10 @@ impl UiNode {
             attributes: BTreeMap::new(),
             handlers: BTreeMap::new(),
             handler_payloads: BTreeMap::new(),
-            animations: Vec::new(),
+            motions: Vec::new(),
+            exit_motions: Vec::new(),
+            progress_motions: Vec::new(),
+            timelines: Vec::new(),
             signal_bindings: BTreeMap::new(),
             element_ref: None,
             presentation: Vec::new(),
@@ -597,7 +666,10 @@ impl UiNode {
             attributes: BTreeMap::new(),
             handlers: BTreeMap::new(),
             handler_payloads: BTreeMap::new(),
-            animations: Vec::new(),
+            motions: Vec::new(),
+            exit_motions: Vec::new(),
+            progress_motions: Vec::new(),
+            timelines: Vec::new(),
             signal_bindings: BTreeMap::new(),
             element_ref: None,
             presentation: Vec::new(),
@@ -638,7 +710,10 @@ impl UiNode {
             attributes: BTreeMap::new(),
             handlers: BTreeMap::new(),
             handler_payloads: BTreeMap::new(),
-            animations: Vec::new(),
+            motions: Vec::new(),
+            exit_motions: Vec::new(),
+            progress_motions: Vec::new(),
+            timelines: Vec::new(),
             signal_bindings: BTreeMap::new(),
             element_ref: None,
             presentation: Vec::new(),
@@ -679,7 +754,10 @@ impl UiNode {
             attributes: BTreeMap::new(),
             handlers: BTreeMap::new(),
             handler_payloads: BTreeMap::new(),
-            animations: Vec::new(),
+            motions: Vec::new(),
+            exit_motions: Vec::new(),
+            progress_motions: Vec::new(),
+            timelines: Vec::new(),
             signal_bindings: BTreeMap::new(),
             element_ref: None,
             presentation: Vec::new(),
@@ -702,7 +780,10 @@ impl UiNode {
             attributes: BTreeMap::new(),
             handlers: BTreeMap::new(),
             handler_payloads: BTreeMap::new(),
-            animations: Vec::new(),
+            motions: Vec::new(),
+            exit_motions: Vec::new(),
+            progress_motions: Vec::new(),
+            timelines: Vec::new(),
             signal_bindings: BTreeMap::new(),
             element_ref: None,
             presentation: Vec::new(),
@@ -731,7 +812,10 @@ impl UiNode {
             attributes: BTreeMap::new(),
             handlers: BTreeMap::new(),
             handler_payloads: BTreeMap::new(),
-            animations: Vec::new(),
+            motions: Vec::new(),
+            exit_motions: Vec::new(),
+            progress_motions: Vec::new(),
+            timelines: Vec::new(),
             signal_bindings: BTreeMap::new(),
             element_ref: None,
             presentation: Vec::new(),
@@ -772,7 +856,10 @@ impl UiNode {
             attributes: BTreeMap::new(),
             handlers: BTreeMap::new(),
             handler_payloads: BTreeMap::new(),
-            animations: Vec::new(),
+            motions: Vec::new(),
+            exit_motions: Vec::new(),
+            progress_motions: Vec::new(),
+            timelines: Vec::new(),
             signal_bindings: BTreeMap::new(),
             element_ref: None,
             presentation: Vec::new(),
@@ -796,7 +883,10 @@ impl UiNode {
             attributes: BTreeMap::new(),
             handlers: BTreeMap::new(),
             handler_payloads: BTreeMap::new(),
-            animations: Vec::new(),
+            motions: Vec::new(),
+            exit_motions: Vec::new(),
+            progress_motions: Vec::new(),
+            timelines: Vec::new(),
             signal_bindings: BTreeMap::new(),
             element_ref: None,
             presentation: Vec::new(),
@@ -820,7 +910,10 @@ impl UiNode {
             attributes: BTreeMap::new(),
             handlers: BTreeMap::new(),
             handler_payloads: BTreeMap::new(),
-            animations: Vec::new(),
+            motions: Vec::new(),
+            exit_motions: Vec::new(),
+            progress_motions: Vec::new(),
+            timelines: Vec::new(),
             signal_bindings: BTreeMap::new(),
             element_ref: None,
             presentation: Vec::new(),
@@ -841,7 +934,10 @@ impl UiNode {
             attributes: BTreeMap::new(),
             handlers: BTreeMap::new(),
             handler_payloads: BTreeMap::new(),
-            animations: Vec::new(),
+            motions: Vec::new(),
+            exit_motions: Vec::new(),
+            progress_motions: Vec::new(),
+            timelines: Vec::new(),
             signal_bindings: BTreeMap::new(),
             element_ref: None,
             presentation: Vec::new(),
@@ -1215,8 +1311,81 @@ impl UiNode {
     }
 
     #[must_use]
-    pub fn with_animation(mut self, animation: AnimationSpec) -> Self {
-        self.apply_presentation_mutation(NodePresentationMutation::Animation(animation));
+    pub fn with_motion(mut self, animation: MotionSource) -> Self {
+        self.apply_presentation_mutation(NodePresentationMutation::Motion(animation));
+        self
+    }
+
+    #[must_use]
+    pub fn with_exit_motion(mut self, motion: MotionSource) -> Self {
+        self.apply_presentation_mutation(NodePresentationMutation::ExitMotion(motion));
+        self
+    }
+
+    #[must_use]
+    pub fn with_progress_motion(mut self, binding: crate::MotionProgressBinding) -> Self {
+        self.apply_presentation_mutation(NodePresentationMutation::ProgressMotion(binding));
+        self
+    }
+
+    #[must_use]
+    pub fn with_motion_replay_key(mut self, key: impl Into<String>) -> Self {
+        self.apply_presentation_mutation(NodePresentationMutation::Attribute(
+            "motion_replay_key".to_owned(),
+            UiValue::String(key.into()),
+        ));
+        self
+    }
+
+    #[must_use]
+    pub fn with_motion_particle_count(mut self, count: usize) -> Self {
+        self.apply_presentation_mutation(NodePresentationMutation::Attribute(
+            "motion_particle_count".to_owned(),
+            UiValue::Integer(INT::try_from(count).unwrap_or(INT::MAX)),
+        ));
+        self
+    }
+
+    #[must_use]
+    pub fn with_timeline(mut self, timeline: crate::MotionTimeline) -> Self {
+        self.apply_presentation_mutation(NodePresentationMutation::Timeline(Box::new(timeline)));
+        self
+    }
+
+    /// Opt this node into committed-geometry layout motion.
+    #[must_use]
+    pub fn with_layout_motion(mut self, duration_ms: u64, easing: crate::MotionEasing) -> Self {
+        self.apply_presentation_mutation(NodePresentationMutation::Attribute(
+            "layout_motion_duration_ms".to_owned(),
+            UiValue::Integer(INT::try_from(duration_ms).unwrap_or(INT::MAX)),
+        ));
+        self.apply_presentation_mutation(NodePresentationMutation::Attribute(
+            "layout_motion_easing".to_owned(),
+            UiValue::String(easing.as_str().to_owned()),
+        ));
+        self
+    }
+
+    /// Assign a same-window shared-layout identity to this real node.
+    #[must_use]
+    pub fn with_shared_layout(mut self, group: impl Into<String>, id: impl Into<String>) -> Self {
+        self.apply_presentation_mutation(NodePresentationMutation::Attribute(
+            "shared_layout_group".to_owned(),
+            UiValue::String(group.into()),
+        ));
+        self.apply_presentation_mutation(NodePresentationMutation::Attribute(
+            "shared_layout_id".to_owned(),
+            UiValue::String(id.into()),
+        ));
+        self
+    }
+
+    #[must_use]
+    pub fn with_shared_layout_id(mut self, id: impl Into<String>) -> Self {
+        self.apply_presentation_mutation(NodePresentationMutation::Attribute(
+            "shared_layout_id".to_owned(),
+            UiValue::String(id.into()),
+        ));
         self
     }
 
@@ -1250,8 +1419,83 @@ impl UiNode {
     }
 
     #[must_use]
-    pub fn animations(&self) -> &[AnimationSpec] {
-        &self.animations
+    pub fn motions(&self) -> &[MotionSource] {
+        &self.motions
+    }
+
+    #[must_use]
+    pub fn exit_motions(&self) -> &[MotionSource] {
+        &self.exit_motions
+    }
+
+    #[must_use]
+    pub fn progress_motions(&self) -> &[crate::MotionProgressBinding] {
+        &self.progress_motions
+    }
+
+    pub(crate) fn motion_ghost(&self) -> Option<Self> {
+        self.motion_ghost_node(true)
+    }
+
+    fn motion_ghost_node(&self, root: bool) -> Option<Self> {
+        let mut ghost = self.clone();
+        ghost.handlers.clear();
+        ghost.handler_payloads.clear();
+        ghost.signal_bindings.clear();
+        ghost.element_ref = None;
+        ghost.component_root = None;
+        ghost.component_snapshot = None;
+        ghost.presentation.clear();
+        ghost.motions.clear();
+        ghost.exit_motions.clear();
+        ghost.progress_motions.clear();
+        ghost.timelines.clear();
+        ghost.attributes.clear();
+        ghost
+            .attributes
+            .insert("motion_ghost".to_owned(), UiValue::Bool(true));
+        ghost.style.base.hit_test = None;
+        ghost.style.base.cursor = None;
+        if root {
+            ghost.style.base.margin = crate::LayoutEdgeLengths::default();
+            ghost.style.base.position = None;
+            ghost.style.base.top = None;
+            ghost.style.base.right = None;
+            ghost.style.base.bottom = None;
+            ghost.style.base.left = None;
+            ghost.style.base.translate_x = None;
+            ghost.style.base.translate_y = None;
+            ghost.style.base.align_self = None;
+            ghost.style.base.flex_grow = None;
+            ghost.style.base.flex_grow_weight = None;
+            ghost.style.base.flex_shrink = None;
+            ghost.style.base.flex_basis = None;
+        }
+        match &mut ghost.kind {
+            UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => {
+                *children = children
+                    .iter()
+                    .map(|child| child.motion_ghost_node(false))
+                    .collect::<Option<Vec<_>>>()?;
+            }
+            UiNodeKind::Text { .. }
+            | UiNodeKind::RichText { .. }
+            | UiNodeKind::Canvas { .. }
+            | UiNodeKind::Svg { .. }
+            | UiNodeKind::Image { .. }
+            | UiNodeKind::DirectionalImage { .. } => {}
+            UiNodeKind::Custom { .. }
+            | UiNodeKind::Overlay { .. }
+            | UiNodeKind::Layer { .. }
+            | UiNodeKind::VirtualCollection { .. }
+            | UiNodeKind::ErrorBoundary { .. } => return None,
+        }
+        Some(ghost)
+    }
+
+    #[must_use]
+    pub fn timelines(&self) -> &[crate::MotionTimeline] {
+        &self.timelines
     }
 
     pub(crate) fn bind_generation(&mut self, generation: ScriptGeneration) {
@@ -1261,6 +1505,9 @@ impl UiNode {
                     callback.bind_generation(generation);
                 }
             }
+        }
+        for timeline in &mut self.timelines {
+            timeline.bind_generation(generation);
         }
         for mutation in &mut self.presentation {
             mutation.bind_generation(generation);
@@ -1313,6 +1560,9 @@ impl UiNode {
                     }
                 }
             }
+        }
+        for timeline in &mut self.timelines {
+            timeline.bind_component_scope(component, incarnation, events, native_context);
         }
         for mutation in &mut self.presentation {
             mutation.bind_component_scope(component, incarnation, events, native_context);
@@ -1554,10 +1804,78 @@ impl CustomType for UiNode {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn register_node_behavior_methods(builder: &mut TypeBuilder<UiNode>) {
     builder
-        .with_fn("animate", |node: &mut UiNode, animation: AnimationSpec| {
-            node.clone().with_animation(animation)
+        .with_fn("motion", |node: &mut UiNode, animation: MotionSource| {
+            node.clone().with_motion(animation)
+        })
+        .with_fn("enter_motion", |node: &mut UiNode, motion: MotionSource| {
+            node.clone().with_motion(motion)
+        })
+        .with_fn("exit_motion", |node: &mut UiNode, motion: MotionSource| {
+            node.clone().with_exit_motion(motion)
+        })
+        .with_fn(
+            "progress_motion",
+            |node: &mut UiNode, binding: crate::MotionProgressBinding| {
+                node.clone().with_progress_motion(binding)
+            },
+        )
+        .with_fn(
+            "motion_replay_key",
+            |node: &mut UiNode, key: ImmutableString| {
+                node.clone().with_motion_replay_key(key.to_string())
+            },
+        )
+        .with_fn(
+            "motion_particle_count",
+            |node: &mut UiNode, count: INT| -> Result<UiNode, Box<EvalAltResult>> {
+                let count = usize::try_from(count).map_err(|_| {
+                    Box::new(EvalAltResult::ErrorRuntime(
+                        "motion particle count must be non-negative".into(),
+                        Position::NONE,
+                    ))
+                })?;
+                Ok(node.clone().with_motion_particle_count(count))
+            },
+        )
+        .with_fn(
+            "timeline",
+            |node: &mut UiNode, timeline: crate::MotionTimeline| {
+                node.clone().with_timeline(timeline)
+            },
+        )
+        .with_fn(
+            "layout_motion",
+            |node: &mut UiNode,
+             duration_ms: INT,
+             easing: ImmutableString|
+             -> Result<UiNode, Box<EvalAltResult>> {
+                let duration_ms = u64::try_from(duration_ms).map_err(|_| {
+                    Box::new(EvalAltResult::ErrorRuntime(
+                        "layout motion duration must be non-negative".into(),
+                        Position::NONE,
+                    ))
+                })?;
+                let easing = crate::MotionEasing::parse(easing.as_str()).map_err(|error| {
+                    Box::new(EvalAltResult::ErrorRuntime(
+                        error.to_string().into(),
+                        Position::NONE,
+                    ))
+                })?;
+                Ok(node.clone().with_layout_motion(duration_ms, easing))
+            },
+        )
+        .with_fn(
+            "shared_layout",
+            |node: &mut UiNode, group: ImmutableString, id: ImmutableString| {
+                node.clone()
+                    .with_shared_layout(group.to_string(), id.to_string())
+            },
+        )
+        .with_fn("shared_layout", |node: &mut UiNode, id: ImmutableString| {
+            node.clone().with_shared_layout_id(id.to_string())
         })
         .with_fn("disabled", |node: &mut UiNode, disabled: bool| {
             node.clone()
@@ -2114,6 +2432,22 @@ pub(crate) fn rich_text_node(
             })
         })
         .collect::<Result<Vec<_>, _>>()?;
+    let text = spans.iter().map(Span::text).collect::<String>();
+    let mut boundaries = text
+        .grapheme_indices(true)
+        .map(|(index, _)| index)
+        .collect::<BTreeSet<_>>();
+    boundaries.insert(text.len());
+    let mut offset = 0usize;
+    for (index, span) in spans.iter().enumerate() {
+        offset = offset.saturating_add(span.text().len());
+        if !boundaries.contains(&offset) {
+            return Err(Box::new(EvalAltResult::ErrorRuntime(
+                format!("text span {index} splits an extended grapheme cluster").into(),
+                Position::NONE,
+            )));
+        }
+    }
     Ok(with_call_source(UiNode::rich_text(spans), call))
 }
 
@@ -2149,6 +2483,70 @@ pub(crate) fn fragment_node(
 ) -> Result<UiNode, Box<rhai::EvalAltResult>> {
     collect_children(children, "fragment")
         .map(|children| with_call_source(UiNode::fragment(children), call))
+}
+
+#[allow(clippy::needless_pass_by_value)]
+pub(crate) fn motion_group_node(
+    call: NativeCallContext<'_>,
+    id: ImmutableString,
+    children: Array,
+) -> Result<UiNode, Box<EvalAltResult>> {
+    let id = id.to_string();
+    if id.is_empty()
+        || id.len() > 128
+        || !id
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '_' | '-'))
+    {
+        return Err(Box::new(EvalAltResult::ErrorRuntime(
+            "motion group id must be 1-128 safe ASCII characters".into(),
+            Position::NONE,
+        )));
+    }
+    let mut node = fragment_node(call, children)?;
+    apply_motion_group(&mut node, &id);
+    Ok(node)
+}
+
+fn apply_motion_group(node: &mut UiNode, group: &str) {
+    if node.attributes.contains_key("shared_layout_id")
+        && !node.attributes.contains_key("shared_layout_group")
+    {
+        node.attributes.insert(
+            "shared_layout_group".to_owned(),
+            UiValue::String(group.to_owned()),
+        );
+    }
+    match &mut node.kind {
+        UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => {
+            for child in children {
+                apply_motion_group(child, group);
+            }
+        }
+        UiNodeKind::Overlay {
+            trigger, content, ..
+        } => {
+            apply_motion_group(trigger, group);
+            apply_motion_group(content, group);
+        }
+        UiNodeKind::Layer { content, .. } => apply_motion_group(content, group),
+        UiNodeKind::ErrorBoundary { child, fallback } => {
+            apply_motion_group(child, group);
+            apply_motion_group(fallback, group);
+        }
+        UiNodeKind::VirtualCollection { spec } => {
+            for child in spec.realized.values_mut() {
+                apply_motion_group(child, group);
+            }
+        }
+        UiNodeKind::Text { .. }
+        | UiNodeKind::RichText { .. }
+        | UiNodeKind::Canvas { .. }
+        | UiNodeKind::Svg { .. }
+        | UiNodeKind::Custom { .. }
+        | UiNodeKind::Image { .. }
+        | UiNodeKind::DirectionalImage { .. } => {}
+    }
 }
 
 pub(crate) fn stack_node(
@@ -2574,8 +2972,8 @@ fn collect_children(
 mod tests {
     use super::*;
     use crate::{
-        AnimationProperty, ColorValue, Easing, EventPropagation, Length, Rgba8, SignalId,
-        SignalKind, SignalProperty, TransitionSpec,
+        ColorValue, EventPropagation, Length, MotionProperty, MotionTransition, Rgba8, SignalId,
+        SignalKind, SignalProperty,
     };
 
     #[test]
@@ -2627,13 +3025,12 @@ mod tests {
             crate::ElementRef::new(crate::ElementRefId::new(component.clone(), "target").unwrap());
         let style = Style::new().width(Length::pixels(120.0).unwrap());
         let part_style = Style::new().height(Length::pixels(24.0).unwrap());
-        let animation = AnimationSpec::Transition(TransitionSpec {
-            property: AnimationProperty::Opacity,
-            from: 0.0,
-            to: 1.0,
-            duration_ms: 100,
-            easing: Easing::Linear,
-        });
+        let animation = MotionSource::Transition(MotionTransition::new(
+            MotionProperty::Opacity,
+            0.0,
+            1.0,
+            100,
+        ));
         let mut presented = UiNode::text("old")
             .with_key("owned")
             .with_component_root(component.clone())
@@ -2649,7 +3046,7 @@ mod tests {
                 crate::HostCallback::new("outer.click", |_, _, _| EventPropagation::Handled),
             )
             .with_handler_payload("click", UiValue::Integer(7))
-            .with_animation(animation);
+            .with_motion(animation.clone());
         assert_eq!(presented.presentation.len(), 9);
 
         let replacement = UiNode::text("new")
@@ -2674,7 +3071,7 @@ mod tests {
             presented.handler_payload("click"),
             Some(&UiValue::Integer(7))
         );
-        assert_eq!(presented.animations(), &[animation]);
+        assert_eq!(presented.motions(), &[animation]);
         assert_eq!(presented.presentation.len(), 9);
     }
 

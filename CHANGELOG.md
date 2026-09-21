@@ -5,7 +5,63 @@ All notable runtime, CLI, and registry changes are documented here. Version
 component schema, manifest, locale, and generated-source changes follow
 semantic versioning from this release.
 
-## 0.1.3 - Unreleased
+## 0.1.3 - 2026-09-21
+
+- Runtime API 2 replaces the node animation prototype with one generic Motion
+  engine shared by Rhai and Rust. Strict transition, spring, keyframe, inertia,
+  replay-key, reduced-motion, quality, budget, Inspector, and deterministic
+  clock contracts replace `.animate`, `transition`, `spring`, and
+  `loop_transition` without compatibility aliases.
+- Explicit timelines support delay, sequence, parallel, stagger,
+  repeat/reverse, typed scoped handles, play/pause/resume/restart/seek, and
+  post-frame complete/cancel delivery. Compatible hot reload preserves active
+  timeline progress and refreshes generation-bound callbacks.
+- Native hover/press/focus, in-view, viewport, and scroll progress avoid
+  frame-time Rhai. Pointer payloads expose movement and velocity for bounded
+  inertia. Enter/replay, paint-only exit ghosts, opt-in committed-geometry
+  layout motion, transparent MotionGroup, and same-domain shared-layout IDs
+  participate in transactional lifecycle and budgets.
+- RichText supports grapheme-safe native span opacity motion. Canvas adds
+  native 2D scale/skew/rotation, path trim, arc-length follow, and strict
+  compatible-topology morphing. General arbitrary-subtree transform, arbitrary
+  shaders, and 3D remain explicit future capabilities.
+- Themes now carry duration/easing/spring/distance/stagger motion roles with
+  tracked hot switching. Host effect primitives declare platforms, lifecycle,
+  instance/cost budgets, reduced-motion support, quality tiers, and receive the
+  resolved policy through `PrimitiveTheme`.
+- Ten optional public-substrate components ship under `motion/*`, including
+  TextReveal, NumberTicker, Marquee, Shimmer, BorderBeam, Orbit, Particles,
+  AnimatedTabs, ReorderList, and SharedLayoutCards. The CLI installs them into
+  `ui/motion`, and the separate `motion_gallery` example exercises the pack.
+- Motion reconciliation compiles timeline targets and property ownership
+  atomically. Handles are bound to runtime/view/component incarnation and
+  generation; play is idempotent, pause/seek are position-complete, control
+  commands recheck policy and budget, and direct/timeline physics share one
+  finite sampler with velocity-preserving retargets.
+- Display-frame sampling is scoped per presentation domain; terminal event
+  batches are frozen by the frame that samples them and delivered after that
+  frame commits, in independent transactions.
+  Suspended views, virtual rows, exit ghosts, layout/trigger motion, and slot
+  rendering share the Host clock, policy, and stable identity rules.
+- Canvas affine, morph, trim, clip and non-scaling stroke motion use one
+  presented geometry for painting and hit testing. Axis-aligned clipped paths
+  explicitly reject affine motion, and unsupported exit-ghost subtrees fail
+  reconciliation instead of silently degrading.
+- Mounted motion identity is now `presentation domain + retained NodeId`, while
+  headless Rust reconciliation uses collision-free encoded path segments.
+  Root remount, hot reload and resume-reload transfer authority explicitly;
+  live reconciliation cannot reclaim independently playing exit scenes.
+- Unconstrained and non-bouncing inertia use closed-form exponential sampling;
+  bouncing constraints use analytical collision segments instead of replaying
+  a 240 Hz history on every frame.
+- Compatible timelines now refresh resolved retained-target bindings without
+  resetting playback position. Presentation teardown uses exact domain
+  boundaries and clears suspension tombstones; candidate budgets are checked
+  once against the complete final plan. Inertia safety caps preserve the actual
+  cap-time sample unless explicit snap points request an attachment.
+- `motion_gallery` now mounts in the native GPUI harness and exposes live
+  timeline controls, controlled tabs, keyed reorder, and shared-layout
+  selection rather than only verifying source preparation.
 
 - Mounted script failures now expose one atomic human/structured error record.
   `ScriptViewHandle::last_diagnostic()` preserves the Rhai error kind, bounded

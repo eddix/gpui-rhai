@@ -2,8 +2,8 @@
 {
   "id": "components/command_dialog",
   "export": "CommandDialog",
-  "version": "0.1.1",
-  "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
+  "version": "0.1.3",
+  "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": ["components/command", "components/dialog"],
   "capabilities": {}
 }
@@ -19,8 +19,8 @@ import "components/command" as command;
 import "components/dialog" as dialog;
 
 define_component(#{
-    metadata: #{ id: "components/command_dialog", "export": "CommandDialog", version: "0.1.1",
-        runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
+    metadata: #{ id: "components/command_dialog", "export": "CommandDialog", version: "0.1.3",
+        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
         dependencies: ["components/command", "components/dialog"], capabilities: #{} },
     schema: #{
         props: #{

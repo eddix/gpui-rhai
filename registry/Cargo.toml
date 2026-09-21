@@ -14,6 +14,7 @@ categories = ["gui", "development-tools"]
 include = [
     "src/**/*.rs",
     "components/**/*.rhai",
+    "motion/**/*.rhai",
     "themes/**/*.rhai",
     "locales/**/*.rhai",
     "studio/**/*.rhai",

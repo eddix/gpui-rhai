@@ -2,8 +2,8 @@
 {
   "id": "components/collapsible",
   "export": "Collapsible",
-  "version": "0.1.1",
-  "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
+  "version": "0.1.3",
+  "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": [],
   "capabilities": {}
 }
@@ -15,8 +15,8 @@
 
 define_component(#{
     metadata: #{
-        id: "components/collapsible", "export": "Collapsible", version: "0.1.1",
-        runtime_api: #{ min_inclusive: 1, max_exclusive: 2 }, dependencies: [], capabilities: #{},
+        id: "components/collapsible", "export": "Collapsible", version: "0.1.3",
+        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{},
     },
     schema: #{
         props: #{
@@ -65,7 +65,9 @@ fn render_Collapsible(ctx, props) {
         .with_key(`${props.key}-content`)
         .with_style(style().height(px(if props.open { height } else { 0 })).clip()
             .border_top(px(1)).border_color(theme_color("border")))
-        .animate(transition("clip_height", 0.0, if props.open { height * 1.0 } else { 0.0 }, 150, "ease_out"));
+        .motion(motion_transition("clip_height", 0.0, if props.open { height * 1.0 } else { 0.0 },
+            #{ duration_ms: ctx.motion_duration("fast"), easing: ctx.motion_easing("entrance"),
+                intent: "feedback" }));
     column([trigger, panel]).with_key(props.key)
         .with_style(ctx.component_style("root", style()
             .border(px(1)).border_color(theme_color("border"))

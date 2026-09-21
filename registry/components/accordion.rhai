@@ -2,22 +2,22 @@
 {
   "id": "components/accordion",
   "export": "Accordion",
-  "version": "0.1.1",
-  "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
+  "version": "0.1.3",
+  "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": [],
   "capabilities": {},
   "assets": ["icons/minus.svg", "icons/plus.svg"]
 }
 */
-// Controlled single/multiple accordion with Rust-side clip animations.
+// Controlled single/multiple accordion with Rust-side clip motion.
 // Props: key, items, expanded, mode, disabled, on_change.
 // State/events: controlled expanded values; emits change(array<string>).
 // Example: Accordion(#{ key: "faq", items: items, expanded: [], on_change: Fn("changed") })
 
 define_component(#{
     metadata: #{
-        id: "components/accordion", "export": "Accordion", version: "0.1.1",
-        runtime_api: #{ min_inclusive: 1, max_exclusive: 2 }, dependencies: [], capabilities: #{},
+        id: "components/accordion", "export": "Accordion", version: "0.1.3",
+        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{},
         assets: ["icons/minus.svg", "icons/plus.svg"],
     },
     schema: #{
@@ -100,7 +100,9 @@ fn render_Accordion(ctx, props) {
         let panel = column([panel_content])
             .with_key(`${item.key}-content`)
             .with_style(style().height(px(if open { height } else { 0 })).clip())
-            .animate(transition("clip_height", 0.0, if open { height * 1.0 } else { 0.0 }, 150, "ease_out"));
+            .motion(motion_transition("clip_height", 0.0, if open { height * 1.0 } else { 0.0 },
+                #{ duration_ms: ctx.motion_duration("fast"), easing: ctx.motion_easing("entrance"),
+                    intent: "feedback" }));
         items.push(column([trigger, panel]).with_key(item.key)
             .with_style(ctx.component_style("item", style()
                 .border_bottom(px(1)).border_color(theme_color("border")))));

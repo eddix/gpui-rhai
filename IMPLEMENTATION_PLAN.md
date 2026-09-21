@@ -9,8 +9,8 @@ complete delivery.
 
 Constraints that apply to every section:
 
-- treat published `0.1.0` as the baseline; `0.1.2` freezes the component
-  foundation, `0.1.3` targets generic motion, and `RUNTIME_API_VERSION` stays 1;
+- treat published `0.1.2` / Runtime API 1 as the frozen component baseline;
+  `0.1.3` is the deliberate Runtime API 2 break for generic Motion;
 - accept destructive Rust/Rhai/schema/registry migration;
 - add no compatibility shim, deprecated alias, dual path, or downstream app
   adapter;
@@ -26,7 +26,7 @@ Constraints that apply to every section:
 The implementation is not complete until all invariants hold together:
 
 1. Rhai and Rust snapshots reconcile into one RetainedUiTree.
-2. Stable keyed identity owns focus, scroll, capture, signals, animation,
+2. Stable keyed identity owns focus, scroll, capture, signals, Motion,
    accessibility, and retained primitive Entities.
 3. Formal components rerender independently from tracked dependencies.
 4. Rhai and Host/native handlers use one ordered event propagation contract.
@@ -186,7 +186,7 @@ performance probes demonstrate unchanged subtrees do not execute Rhai.
 **D gate:** atomic-only scripts reproduce the artistic showcase and Canvas
 interaction probes across theme/font hot changes with no private registry API.
 
-## 7. Workstream E: property sources, signals, and animation
+## 7. Workstream E: property sources, signals, and Motion Runtime 2
 
 ### E1. NativeSignal
 
@@ -197,7 +197,7 @@ interaction probes across theme/font hot changes with no private registry API.
 - Make state/signal synchronization explicit and transactional.
 - Track writers, bindings, values, and timing in Inspector/automation.
 
-### E2. PropertySource and animation
+### E2. PropertySource and Motion
 
 - Give each animatable property exactly one literal/signal/transition/spring/
   keyframes/derived source.
@@ -210,6 +210,31 @@ interaction probes across theme/font hot changes with no private registry API.
 **E gate:** deterministic clock tests cover interruption, state-style target
 changes, reduced motion, exit/remount, and layout transitions without Rhai
 per-frame execution.
+
+### E3. Final 0.1.3 motion surface
+
+- Remove `.animate`, `transition`, `spring`, and `loop_transition` without
+  aliases; migrate official source and component metadata to Runtime API 2.
+- Add strict transition/spring/keyframe/inertia sources, replay keys, native
+  hover/press/focus/in-view/viewport/scroll progress, and pointer velocity.
+- Add sequence/parallel/stagger/delay timelines, typed scoped handles,
+  play/pause/resume/restart/seek, and post-frame completion/cancellation.
+- Add paint-only exit ghosts, opt-in committed-geometry layout motion,
+  layout-transparent MotionGroup, and unique same-domain shared layout IDs.
+- Add grapheme-safe span motion and Canvas path trim, follow, and compatible
+  morphing. Keep general 3D and arbitrary ShaderSurface source out of 0.1.3.
+- Add semantic theme motion tokens, exact hot-switch readers, Host-enforced
+  reduced-motion and quality policy, deterministic resource budgets, and
+  Inspector timeline state.
+- Add the optional `motion/*` source pack, CLI installation, and the separate
+  Motion Gallery. Official components may use only the same public substrate.
+- Extend Host primitives with typed effect platform, lifecycle, budget,
+  reduced-motion, quality, and resolved-theme declarations.
+
+**0.1.3 gate:** macOS real-frame and visual certification; portable workspace,
+CLI, registry, strict Clippy, rustdoc, package and release checks; deterministic
+manual-clock coverage for sources/timelines/lifecycle; no frame-time Rhai and
+no compatibility surface from Runtime API 1.
 
 ## 8. Workstream F: event, ref, focus, scroll, overlay, accessibility
 
@@ -363,9 +388,10 @@ review.
 
 ## 13. Public-launch P0 component completion
 
-This workstream shipped in the 0.1.0 baseline. Runtime API 1 remains current;
-subsequent pre-1.0 releases may make explicitly documented source/API breaks
-without compatibility shims.
+This workstream shipped across the 0.1.0–0.1.2 Runtime API 1 baseline. Runtime
+API 2 begins with the coordinated 0.1.3 Motion break; later pre-1.0 releases
+may still make explicitly documented source/API breaks without compatibility
+shims.
 
 ### P0.1 Public taxonomy
 

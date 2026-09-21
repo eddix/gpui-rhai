@@ -1,0 +1,22 @@
+Probe project: /var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T//gpui-rhai-audit.CrOrQg
+   Compiling gpui-rhai-audit-probes v0.0.0 (/var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T/gpui-rhai-audit.CrOrQg)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 5.80s
+     Running `target/debug/gpui-rhai-audit-probes`
+paused_seek expected_pause=.3 expected_seek=.7 actual_pause=Some(0.1) actual_seek=Some(0.1)
+old_handle_reused=true new_state=Some(Cancelled)
+none_policy_restart state=Some(Playing) sample=Some(0.25) needs_frame=true
+autoreverse final_tick=Some(0.0) final_snapshot=Some(1.0)
+same_spring_at_1s direct=0.45 timeline=1.0000488441862754
+retarget_velocity before=Some(2.88) after=Some(0.0)
+extreme_physics_accepted=true
+extreme_physics_value=Some(NaN)
+two_property_owners_accepted=true
+missing_unsupported_target_accepted=true
+exit_with_committed_view_geometry active_motion_sources=0
+suspended_shared_tick before=Some(20.0) after=Some(100.0)
+play_bypasses_active_budget limit=1 accepted=true active=2
+foreign_view_handle_cancel_accepted=true
+failed_host_reconcile error=true leaked_active_sources=1
+repeated_play before=Some(0.4) after=Some(0.0)
+seek_back_future_track expected_x=0 actual_x=Some(50.0)
+virtual_row_motion renderer_key_present=false stored_keys=[MotionKey { component: ComponentInstancePath([ComponentInstanceSegment { component: "UiNode", key: "root/item:0" }]), property: Opacity }]

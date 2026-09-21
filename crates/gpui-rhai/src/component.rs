@@ -939,7 +939,7 @@ mod tests {
             id: ModuleId::parse(id).unwrap(),
             export: export.to_owned(),
             version: Version::new(0, 1, 0),
-            runtime_api: RuntimeApiRange::new(1, 2),
+            runtime_api: RuntimeApiRange::new(2, 3),
             dependencies: BTreeSet::new(),
             capabilities: BTreeMap::new(),
             assets: BTreeSet::new(),
@@ -1105,7 +1105,9 @@ mod tests {
     #[test]
     fn registry_resolves_dependencies_first() {
         let mut registry = ComponentRegistry::new();
-        registry.register(button(), 1).unwrap();
+        registry
+            .register(button(), crate::RUNTIME_API_VERSION)
+            .unwrap();
         let mut popover_metadata = metadata("components/popover", "Popover");
         popover_metadata
             .dependencies
@@ -1113,7 +1115,7 @@ mod tests {
         registry
             .register(
                 ComponentDefinition::new(popover_metadata, ComponentSchema::default()).unwrap(),
-                1,
+                crate::RUNTIME_API_VERSION,
             )
             .unwrap();
 
@@ -1135,7 +1137,7 @@ mod tests {
   "id": "components/button",
   "export": "Button",
   "version": "0.1.0",
-  "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
+  "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": [],
   "capabilities": {},
   "assets": []

@@ -18,12 +18,17 @@ The budgets are diagnostics, not permission to move per-frame policy into Rhai.
   1 MiB strings.
 - Declarative timers are one-shot, component-scoped, capped by
   `RuntimeBudgets::timers`, and polled with other foreground deliveries; they do
-  not create one OS thread per timeout. Timers and animation share a monotonic
+  not create one OS thread per timeout. Timers and Motion share a monotonic
   `RuntimeClock`; deterministic probes inject and advance `ManualRuntimeClock`
   instead of sleeping.
 - Generic portal Layers, retained Canvas scenes, and Canvas command/segment
   complexity have independent Host-configurable limits; candidate trees cross
   all three gates before commit.
+- Motion declarations, active sources, keyframes, timelines, timeline steps,
+  exit ghosts, shared-layout snapshots, and particles have independent
+  `RuntimeBudgets`. Crossing a limit rejects the candidate/operation; the
+  runtime never silently drops random particles or callbacks. High/medium/low
+  quality is an explicit Host-selected input.
 - Store fields, locale reads, discrete viewport classes, and retained geometry
   are exact formal-component dependencies. Native-only locale direction repaint
   is queued separately, so it does not force an otherwise clean Rhai root.

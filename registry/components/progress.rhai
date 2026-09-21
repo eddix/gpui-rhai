@@ -2,8 +2,8 @@
 {
   "id": "components/progress",
   "export": "Progress",
-  "version": "0.1.2",
-  "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
+  "version": "0.1.3",
+  "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": [],
   "capabilities": {}
 }
@@ -15,8 +15,8 @@
 
 define_component(#{
     metadata: #{
-        id: "components/progress", "export": "Progress", version: "0.1.2",
-        runtime_api: #{ min_inclusive: 1, max_exclusive: 2 }, dependencies: [], capabilities: #{},
+        id: "components/progress", "export": "Progress", version: "0.1.3",
+        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{},
     },
     schema: #{
         props: #{
@@ -51,9 +51,13 @@ fn render_Progress(ctx, props) {
                 .height(px(4)).radius(px(0)).background(theme_color("accent"))
         ));
     indicator = if indeterminate {
-        indicator.animate(loop_transition("translate_x", -indeterminate_width, width, 900, "ease_in_out"))
+        indicator.motion(motion_transition("translate_x", -indeterminate_width, width,
+            #{ duration_ms: ctx.motion_duration("ambient"), easing: ctx.motion_easing("standard"),
+                iterations: "infinite", intent: "essential" }))
     } else {
-        indicator.animate(transition("width", 0.0, ratio * width, 220, "ease_out"))
+        indicator.motion(motion_transition("width", 0.0, ratio * width,
+            #{ duration_ms: ctx.motion_duration("normal"), easing: ctx.motion_easing("entrance"),
+                intent: "feedback" }))
     };
     row([indicator])
         .with_key(props.key)

@@ -5,17 +5,20 @@ use gpui::AnyElement;
 use crate::overlay_element::WindowOverlayCoordinator;
 use crate::renderer::{GpuiNodeRenderer, OwnedColorResolver, WindowRenderResources};
 use crate::{
-    AnimationKey, AssetRegistry, InteractionState, NodeEventDispatcher, PrimitiveRegistry, UiNode,
+    AssetRegistry, InteractionState, MotionKey, NodeEventDispatcher, PrimitiveRegistry, UiNode,
 };
 
 #[derive(Clone)]
 pub(crate) struct NodeSlotRuntime {
+    pub now: std::time::Instant,
     pub colors: OwnedColorResolver,
     pub primitives: PrimitiveRegistry,
     pub assets: AssetRegistry,
     pub dispatcher: NodeEventDispatcher,
     pub overlays: WindowOverlayCoordinator,
-    pub animations: BTreeMap<AnimationKey, f64>,
+    pub motions: BTreeMap<MotionKey, f64>,
+    pub motion_preference: crate::MotionPreference,
+    pub motion_quality: crate::MotionQuality,
     pub signals: crate::SignalRegistry,
     pub geometry: crate::GeometryRegistry,
     pub pointer_capture: crate::PointerCaptureRegistry,
@@ -35,10 +38,13 @@ pub(crate) struct NodeSlotRuntime {
 impl NodeSlotRuntime {
     pub(crate) fn render(&self, node: &UiNode, slot: &str) -> AnyElement {
         let resources = WindowRenderResources {
+            now: self.now,
+            motion_preference: self.motion_preference,
+            motion_quality: self.motion_quality,
             assets: &self.assets,
             dispatcher: &self.dispatcher,
             overlays: &self.overlays,
-            animations: &self.animations,
+            motions: &self.motions,
             signals: &self.signals,
             geometry: &self.geometry,
             pointer_capture: &self.pointer_capture,

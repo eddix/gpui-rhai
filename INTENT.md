@@ -260,18 +260,21 @@ merge and component part composition determine values. Only documented
 typography, direction, and selection properties inherit. Runtime states apply
 in a fixed order after base styles; disabled wins over pointer states.
 
-### 8.2 Property sources and animation
+### 8.2 Property sources and Motion
 
 Each animatable property has one typed source: literal, signal, transition,
-spring, keyframes, or derived signal. Rust samples animation; Rhai never runs
-per frame. The engine supports delay/easing, retargeting, repeat/reverse,
-enter/exit, layout transitions, shared layout IDs within a compatible Host
-layer, reduced-motion policy, and a deterministic test clock.
+spring, keyframes, inertia, progress driver, or derived signal. Rust samples
+Motion; Rhai never runs per frame. The engine supports delay/easing,
+retargeting, repeat/reverse, explicit timelines and typed handles,
+enter/exit, layout transitions, shared layout IDs within a compatible
+view/window presentation domain, reduced-motion/quality policy, and a
+deterministic test clock.
 
 Exit nodes leave layout, input, focus, and accessibility immediately while a
 noninteractive paint ghost finishes visual exit. Layout transitions use
 committed old/new geometry and paint transforms rather than rerunning layout
-each animation frame.
+each Motion frame. General GPUI 0.2.2 subtree scale/rotation is not simulated;
+typed Canvas/path primitives own those transforms.
 
 ### 8.3 Colors and themes
 
@@ -313,7 +316,7 @@ filesystem, Git, editing, merge, LSP, or patch-application authority.
 Canvas is a declarative retained vector scene with keyed rectangles, rounded
 rectangles, circles/ellipses, lines, paths, fill/stroke, linear gradients,
 clipping, opacity, and 2D transforms. It never calls Rhai during GPUI paint.
-Shapes participate in diff, signal/animation binding, path hit testing,
+Shapes participate in diff, signal/Motion binding, path hit testing,
 capture/bubble events, accessibility, Inspector, automation, and Host resource
 budgets. Applications may alternatively handle one Canvas event using content
 coordinates and perform their own hit policy.
@@ -469,10 +472,11 @@ prefers the strongest final design over compatibility shims; deliberate source
 and Rust API breaks are documented in the next release rather than preserved as
 deprecated aliases, dual parsers, old component formats, or SDK-managed
 downstream migration. Version `0.1.2` freezes the first complete 51-component
-foundation. The next planned feature release, `0.1.3`, concentrates on the
-generic motion system rather than expanding the basic component layer;
-`RUNTIME_API_VERSION` remains 1 until its actual runtime contract needs a
-coordinated change.
+foundation on Runtime API 1. Version `0.1.3` is the coordinated Runtime API 2
+break for the generic Motion system: the old animation constructors and
+`.animate` surface are removed rather than carried as aliases. Optional
+first-party effects live under `motion/*`; arbitrary shaders and general 3D are
+a later independently versioned capability.
 
 ## 15. Completion and acceptance
 

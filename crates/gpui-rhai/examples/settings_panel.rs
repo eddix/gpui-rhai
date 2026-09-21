@@ -148,7 +148,8 @@ fn view(ctx) {
                 key: "settings-help",
                 label: "Settings help",
                 trigger: help_trigger()
-                    .animate(transition("opacity", 0.65, help_opacity, 180, "ease_out")),
+                    .motion(motion_transition("opacity", 0.65, help_opacity,
+                        #{ duration_ms: 180, easing: "ease_out", intent: "feedback" })),
                 content: text("Theme changes preserve keyed state and the compiled Rhai AST."),
                 open: ctx.get_state("help_open"),
                 placement: "left",

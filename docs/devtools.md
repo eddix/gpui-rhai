@@ -16,10 +16,11 @@ The inspector reports:
 - component and store state, with schema-sensitive fields redacted;
 - the selected theme and semantic color tokens;
 - pending invalidations, bounded runtime traces, and recent script timings.
-- exact locale/viewport reader counts; native signals with value/revision/last
+- exact locale/theme/viewport reader counts; native signals with value/revision/last
   writer; effect dependencies, activation, and callbacks; monotonic clock
-  elapsed time; active/settled animation kind/value/target/velocity/progress/
-  repeat state; timer deadline/pause/generation; element-ref to `NodeId`
+  elapsed time; active/settled Motion source kind/value/target/velocity/repeat
+  state; timeline handle/playback/seek duration/track count; timer
+  deadline/pause/generation; element-ref to `NodeId`
   bindings; virtual item/realized/requested/visible windows and tail policy;
   active sticky-section index; committed geometry and pointer captures.
 

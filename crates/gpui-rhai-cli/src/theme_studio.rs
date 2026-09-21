@@ -8,7 +8,7 @@ use std::rc::Rc;
 use gpui_rhai::{
     AssetData, ColorValue, ComponentInstancePath, EmbeddedScriptSource, EmbeddedScriptView,
     EventResponse, Length, ModuleId, NativeEvent, NativeHandlerDescriptor, NativeHandlerId, Rgba8,
-    RuntimeEngine, ScriptApplication, ScriptViewExtension, ThemeMode, ThemeTokenValue,
+    RuntimeEngine, ScriptApplication, ScriptViewExtension, ThemeMode, ThemeMotion, ThemeTokenValue,
     ThemeTypography, ThemeVariant, UiRuntimeState, UiValue, ValueSchema, load_theme_source,
 };
 
@@ -608,6 +608,7 @@ fn canonical_source(theme: &ThemeVariant, attribution: &[String]) -> String {
     write_length_map(&mut output, "spacing", &theme.tokens.spacing);
     write_length_map(&mut output, "radii", &theme.tokens.radii);
     write_typography(&mut output, &theme.tokens.typography);
+    write_motion(&mut output, &theme.tokens.motion);
     if !theme.tokens.namespaces.is_empty() {
         output.push_str("            namespaces: #{\n");
         for (namespace, tokens) in &theme.tokens.namespaces {
@@ -639,6 +640,39 @@ fn canonical_source(theme: &ThemeVariant, attribution: &[String]) -> String {
     }
     output.push_str("        },\n    }\n}\n");
     output
+}
+
+fn write_motion(output: &mut String, motion: &ThemeMotion) {
+    output.push_str("            motion: #{\n");
+    output.push_str("                durations_ms: #{\n");
+    for (name, value) in &motion.durations_ms {
+        let _ = writeln!(output, "                    {name}: {value},");
+    }
+    output.push_str("                },\n                easings: #{\n");
+    for (name, value) in &motion.easings {
+        let _ = writeln!(
+            output,
+            "                    {name}: {},",
+            json_string(value.as_str())
+        );
+    }
+    output.push_str("                },\n                springs: #{\n");
+    for (name, value) in &motion.springs {
+        let _ = writeln!(
+            output,
+            "                    {name}: #{{ stiffness: {:?}, damping: {:?}, mass: {:?} }},",
+            value.stiffness, value.damping, value.mass
+        );
+    }
+    output.push_str("                },\n                distances: #{\n");
+    for (name, value) in &motion.distances {
+        let _ = writeln!(output, "                    {name}: {value:?},");
+    }
+    output.push_str("                },\n                staggers_ms: #{\n");
+    for (name, value) in &motion.staggers_ms {
+        let _ = writeln!(output, "                    {name}: {value},");
+    }
+    output.push_str("                },\n            },\n");
 }
 
 fn write_typography(output: &mut String, typography: &ThemeTypography) {

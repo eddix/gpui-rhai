@@ -217,6 +217,63 @@ bundled_components!(
     ),
 );
 
+macro_rules! bundled_motion {
+    ($(($constant:ident, $id:literal, $path:literal)),+ $(,)?) => {
+        $(pub const $constant: &str = include_str!($path);)+
+
+        /// Optional first-party motion components, built only from the public
+        /// Runtime API 2 substrate.
+        pub const BUNDLED_MOTION_SOURCES_BY_ID: &[(&str, &str)] = &[
+            $(($id, $constant),)+
+        ];
+
+        pub const BUNDLED_MOTION_SOURCES: &[&str] = &[
+            $($constant,)+
+        ];
+    };
+}
+
+bundled_motion!(
+    (
+        TEXT_REVEAL_SOURCE,
+        "motion/text_reveal",
+        "../motion/text_reveal.rhai"
+    ),
+    (
+        NUMBER_TICKER_SOURCE,
+        "motion/number_ticker",
+        "../motion/number_ticker.rhai"
+    ),
+    (MARQUEE_SOURCE, "motion/marquee", "../motion/marquee.rhai"),
+    (SHIMMER_SOURCE, "motion/shimmer", "../motion/shimmer.rhai"),
+    (
+        BORDER_BEAM_SOURCE,
+        "motion/border_beam",
+        "../motion/border_beam.rhai"
+    ),
+    (ORBIT_SOURCE, "motion/orbit", "../motion/orbit.rhai"),
+    (
+        PARTICLES_SOURCE,
+        "motion/particles",
+        "../motion/particles.rhai"
+    ),
+    (
+        ANIMATED_TABS_SOURCE,
+        "motion/animated_tabs",
+        "../motion/animated_tabs.rhai"
+    ),
+    (
+        REORDER_LIST_SOURCE,
+        "motion/reorder_list",
+        "../motion/reorder_list.rhai"
+    ),
+    (
+        SHARED_LAYOUT_CARDS_SOURCE,
+        "motion/shared_layout_cards",
+        "../motion/shared_layout_cards.rhai"
+    ),
+);
+
 macro_rules! bundled_assets {
     ($(($constant:ident, $id:literal, $path:literal)),+ $(,)?) => {
         $(pub const $constant: &str = include_str!($path);)+
@@ -340,10 +397,17 @@ mod tests {
     fn release_snapshot_has_the_expected_catalog_size() {
         assert_eq!(BUNDLED_COMPONENT_SOURCES.len(), 51);
         assert_eq!(BUNDLED_COMPONENT_SOURCES_BY_ID.len(), 51);
+        assert_eq!(BUNDLED_MOTION_SOURCES.len(), 10);
+        assert_eq!(BUNDLED_MOTION_SOURCES_BY_ID.len(), 10);
         assert_eq!(BUNDLED_ASSET_SOURCES.len(), 18);
         assert_eq!(BUNDLED_THEME_SOURCES.len(), 15);
         assert!(
             BUNDLED_COMPONENT_SOURCES
+                .iter()
+                .all(|source| !source.is_empty())
+        );
+        assert!(
+            BUNDLED_MOTION_SOURCES
                 .iter()
                 .all(|source| !source.is_empty())
         );

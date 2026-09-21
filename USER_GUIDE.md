@@ -843,8 +843,8 @@ Guidelines:
   row grouping. Group values are non-empty strings from a declared column;
   headers count as virtual items, skip selection, and stick by default through
   the generic virtual-collection mechanism.
-- Use native pointer/wheel handlers and `NativeSignal` for coalesced or
-  per-frame values such as playheads, drags, and animation parameters.
+- Use native pointer/wheel handlers, Motion, and `NativeSignal` for coalesced
+  or per-frame values such as playheads and drags.
 - Bind native signals directly to supported properties. Sampling a signal with
   `ctx.get_signal` during render disables bailout for that component subtree,
   because signal reads intentionally do not create rerender dependencies.
@@ -859,6 +859,51 @@ See [Performance](docs/performance.md), [Virtual lists](docs/virtual-list.md),
 [Rust-owned collections](docs/native-collections.md), and
 [Native document viewers](docs/document-viewers.md), and [Custom
 primitives](docs/custom-primitives.md).
+
+### Motion is a native runtime path
+
+Runtime API 2 uses `motion_transition`, `motion_spring`, `motion_keyframes`,
+and `motion_inertia`, attached with `.motion(...)`. The old `.animate(...)`,
+`transition`, `spring`, and `loop_transition` API does not exist in 0.1.3.
+
+Use stable node keys and keep one source per property. Rhai declares sources,
+timelines, trigger intent, and callbacks; Rust samples frames. Do not build a
+timer loop that repeatedly calls Rhai to update an animation.
+
+Use `motion_hover`, `motion_press`, `motion_focus`, `motion_in_view`,
+`motion_viewport`, and `motion_scroll` for native trigger/progress paths. Use
+explicit timelines only when sequence/parallel/stagger, seeking, or completion
+callbacks are actually needed. Enter and exit require stable keys; exit ghosts
+are paint-only and own no callbacks or resources. Layout motion is opt-in so
+direct manipulation never lags behind the pointer.
+
+Resolve timeline handles inside the declaring component callback. They are
+bound to the current view, component incarnation, script generation, and live
+timeline instance; never cache one across remount or reload. `play_motion`
+resumes/idempotently keeps the current position, while `restart_motion` is the
+only rewind operation. Completion and cancellation callbacks run after the
+sampled frame commits. Compatible progress migrates to a newly
+generation-bound handle during reload; the previous handle becomes stale.
+
+Mounted motion follows retained NodeId rather than concatenated user keys, so
+reorder preserves identity while a true remount restarts it. Keys containing
+slashes, numeric text, or `item:` are safe.
+If a timeline-owned child remounts while its parent timeline stays compatible,
+the runtime preserves the timeline position and rebinds the track to the new
+child. Closing a window completely clears its suspended presentation state;
+later reuse of the same window/view ID starts cleanly.
+
+Canvas morph/trim/stroke/clip and rotate/scale/skew share one presented geometry
+for paint and hit testing.
+Do not combine it with a command-level axis-aligned path clip: Runtime API 2
+rejects that combination because GPUI cannot preserve the same transformed
+clip semantics.
+
+Theme motion values come from `ctx.motion_duration`, `motion_easing`,
+`motion_spring`, `motion_distance`, and `motion_stagger`. Hosts set the upper
+bound with `MotionPreference` and the effect tier with `MotionQuality`; scripts
+may classify intent but cannot relax Host policy. See [Motion Runtime
+2](docs/motion.md) for the complete Rhai and Rust APIs.
 
 ## 12. Hot reload, errors, and production
 

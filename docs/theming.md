@@ -40,6 +40,15 @@ The typography block may also select one shared `family` and ordered
 policy remains intact. Components call `style().typography("body")`; explicit
 font properties chained afterward override individual role values.
 
+Motion has semantic duration (`instant`, `fast`, `normal`, `slow`, `ambient`),
+easing (`standard`, `entrance`, `exit`, `emphasized`), spring (`responsive`,
+`gentle`, `bouncy`), distance (`subtle`, `moderate`, `large`), and stagger
+(`tight`, `normal`, `relaxed`) roles. Themes may override the validated default
+table with a `tokens.motion` block. Components read roles through
+`ctx.motion_duration`, `motion_easing`, `motion_spring`, `motion_distance`, and
+`motion_stagger`; those reads are tracked so a hot theme switch rerenders only
+the affected component sources and retargets from the current sample.
+
 `registry/themes/default_light.rhai` and `default_dark.rhai` demonstrate the
 serialized `ThemeVariant` shape.
 

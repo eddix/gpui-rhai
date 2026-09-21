@@ -2,8 +2,8 @@
 {
   "id": "components/alert",
   "export": "Alert",
-  "version": "0.1.1",
-  "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
+  "version": "0.1.3",
+  "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": [],
   "capabilities": {},
   "assets": ["icons/check.svg", "icons/close.svg", "icons/info.svg", "icons/warning.svg"]
@@ -16,8 +16,8 @@
 // Example: Alert(#{ title: "Saved", description: "Changes are live.", variant: "success" })
 
 define_component(#{
-    metadata: #{ id: "components/alert", "export": "Alert", version: "0.1.1",
-        runtime_api: #{ min_inclusive: 1, max_exclusive: 2 }, dependencies: [], capabilities: #{},
+    metadata: #{ id: "components/alert", "export": "Alert", version: "0.1.3",
+        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{},
         assets: ["icons/check.svg", "icons/close.svg", "icons/info.svg", "icons/warning.svg"] },
     schema: #{
         props: #{

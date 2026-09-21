@@ -1,0 +1,14 @@
+Native probe project: /var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T//gpui-rhai-motion-native.gYVmED
+    Blocking waiting for file lock on artifact directory
+   Compiling gpui-rhai-motion-review-native v0.0.0 (/var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T/gpui-rhai-motion-native.gYVmED)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 13.00s
+     Running tests/policy.rs (tests/native-keyboard/target/debug/deps/policy-0c5be9fa41d0ce27)
+
+running 2 tests
+target replacement presented widths at 0/250/500 ms = [100.0, 125.0, 150.0]
+test timeline_rebinds_a_replaced_child_in_presented_frames ... ok
+path_progress=1 painted_y=80: hit_at_y80=true missed_at_y80=false; original_y20_still_hits=false
+test morphed_path_hit_follows_presented_endpoint ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.32s
+

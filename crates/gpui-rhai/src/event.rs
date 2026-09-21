@@ -51,6 +51,7 @@ pub struct PointerEventData {
     pub local: LogicalPoint,
     pub content: LogicalPoint,
     pub movement: LogicalPoint,
+    pub velocity: LogicalPoint,
     pub button: Option<String>,
     pub buttons: Vec<String>,
     pub modifiers: EventModifiers,
@@ -76,6 +77,7 @@ impl PointerEventData {
             ("local".to_owned(), point_value(self.local)),
             ("content".to_owned(), point_value(self.content)),
             ("movement".to_owned(), point_value(self.movement)),
+            ("velocity".to_owned(), point_value(self.velocity)),
             (
                 "button".to_owned(),
                 self.button.map_or(UiValue::Null, UiValue::String),

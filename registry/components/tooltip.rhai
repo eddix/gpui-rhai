@@ -2,8 +2,8 @@
 {
   "id": "components/tooltip",
   "export": "Tooltip",
-  "version": "0.1.2",
-  "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
+  "version": "0.1.3",
+  "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": [],
   "capabilities": {}
 }
@@ -16,8 +16,8 @@
 
 define_component(#{
     metadata: #{
-        id: "components/tooltip", "export": "Tooltip", version: "0.1.2",
-        runtime_api: #{ min_inclusive: 1, max_exclusive: 2 }, dependencies: [], capabilities: #{},
+        id: "components/tooltip", "export": "Tooltip", version: "0.1.3",
+        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{},
     },
     schema: #{
         props: #{

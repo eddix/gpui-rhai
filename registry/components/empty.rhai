@@ -2,8 +2,8 @@
 {
   "id": "components/empty",
   "export": "Empty",
-  "version": "0.1.1",
-  "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
+  "version": "0.1.3",
+  "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": [],
   "capabilities": {}
 }
@@ -15,8 +15,8 @@
 // Example: Empty(#{ title: "No projects", description: "Create one to begin." })
 
 define_component(#{
-    metadata: #{ id: "components/empty", "export": "Empty", version: "0.1.1",
-        runtime_api: #{ min_inclusive: 1, max_exclusive: 2 }, dependencies: [], capabilities: #{} },
+    metadata: #{ id: "components/empty", "export": "Empty", version: "0.1.3",
+        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{} },
     schema: #{
         props: #{
             title: #{ schema: #{ type: "string" }, required: true, sensitive: false },

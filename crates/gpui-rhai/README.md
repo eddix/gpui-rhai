@@ -24,7 +24,7 @@ gpui-rhai check
   transactional reconciliation;
 - a stable `UiNode` boundary instead of exposing GPUI `Window`, `Context`,
   `Div`, or `AnyElement` to scripts;
-- native input/textarea, overlays, virtual collections, canvas, animation,
+- native input/textarea, overlays, virtual collections, Canvas, Motion Runtime 2,
   CodeViewer, DiffViewer, accessibility, themes, locales, and Host extensions;
 - `FileScriptView` and `EmbeddedScriptView` preparation for standalone or
   embedded GPUI windows;

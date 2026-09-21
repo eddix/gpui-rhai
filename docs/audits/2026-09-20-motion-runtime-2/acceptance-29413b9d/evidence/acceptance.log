@@ -1,0 +1,26 @@
+   Compiling gpui-rhai v0.1.3 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai)
+   Compiling gpui-rhai-motion-acceptance-29413b9d v0.0.0 (/tmp/gpui-rhai-motion-review-29413b9d/acceptance)
+warning: function `timeline` is never used
+  --> src/main.rs:13:4
+   |
+13 | fn timeline(name: &str, target: &str, p: MotionProperty, autoplay: bool) -> MotionTimeline {
+   |    ^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `gpui-rhai-motion-acceptance-29413b9d` (bin "gpui-rhai-motion-acceptance-29413b9d") generated 1 warning
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 44.96s
+     Running `target/debug/gpui-rhai-motion-acceptance-29413b9d`
+PASS target rebind + generation migration preserves idle, sample=100, old targets removed
+PASS target rebind + generation migration preserves paused, sample=125, old targets removed
+PASS target rebind + generation migration preserves completed, sample=200, old targets removed
+PASS budget permutation=abc, failed candidate restores handles/events/limit, next valid candidate accepted
+PASS budget permutation=acb, failed candidate restores handles/events/limit, next valid candidate accepted
+PASS budget permutation=bac, failed candidate restores handles/events/limit, next valid candidate accepted
+PASS budget permutation=bca, failed candidate restores handles/events/limit, next valid candidate accepted
+PASS budget permutation=cab, failed candidate restores handles/events/limit, next valid candidate accepted
+PASS budget permutation=cba, failed candidate restores handles/events/limit, next valid candidate accepted
+PASS inertia continuity/direct-timeline parity over 56 parameter combinations
+PASS paused teardown/reopen cycle=0
+PASS paused teardown/reopen cycle=1
+PASS paused teardown/reopen cycle=2

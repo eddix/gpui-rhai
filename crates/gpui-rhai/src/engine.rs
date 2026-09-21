@@ -13,7 +13,6 @@ use rhai::{
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::animation::register_animation_api;
 use crate::asset::{AssetId, ImageDecodeHandle, asset_id_from_script};
 use crate::backend::{AstInterpreter, ExecutionBackend};
 use crate::canvas::register_canvas_api;
@@ -24,11 +23,12 @@ use crate::column_resize::{
 use crate::component::{ComponentExportCollector, ComponentExportError, ComponentRegistry};
 use crate::context::{UiContext, register_ui_context_api};
 use crate::date::register_date_api;
+use crate::motion::register_motion_api;
 use crate::node::{
     asset_image_node, box_node, canvas_node, column_node, directional_asset_image_node,
     directional_image_node, error_boundary_node, fragment_node, generic_directional_image_node,
-    generic_image_node, image_node, layer_node, lazy_error_boundary_node, overlay_node,
-    rich_text_node, row_node, span_value, stack_node, svg_node, text_node,
+    generic_image_node, image_node, layer_node, lazy_error_boundary_node, motion_group_node,
+    overlay_node, rich_text_node, row_node, span_value, stack_node, svg_node, text_node,
 };
 use crate::primitive::{PrimitiveDescriptor, PrimitiveError, PrimitiveHandler, PrimitiveRegistry};
 use crate::range_input::{RangeInputPrimitiveHandler, range_input_primitive_descriptor};
@@ -636,7 +636,7 @@ impl RuntimeEngine {
         register_ui_context_api(&mut engine);
         register_date_api(&mut engine);
         register_style_api(&mut engine);
-        register_animation_api(&mut engine);
+        register_motion_api(&mut engine);
         register_text_area_api(&mut engine);
         register_canvas_api(&mut engine);
         let evaluation_generation = Rc::new(Cell::new(ScriptGeneration::default()));
@@ -1988,6 +1988,9 @@ fn register_node_apis(engine: &mut Engine) {
     FuncRegistration::new("fragment")
         .in_global_namespace()
         .register_into_engine(engine, fragment_node);
+    FuncRegistration::new("motion_group")
+        .in_global_namespace()
+        .register_into_engine(engine, motion_group_node);
     FuncRegistration::new("stack")
         .in_global_namespace()
         .register_into_engine(engine, stack_node);
@@ -4063,7 +4066,7 @@ mod tests {
                     define_component(#{
                         metadata: #{
                             id: "components/message", "export": "Message", version: "0.1.0",
-                            runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
+                            runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
                             dependencies: [], capabilities: #{}
                         },
                         schema: #{ props: #{}, state: #{ fields: #{} }, events: #{}, slots: #{}, parts: [] },
@@ -4459,7 +4462,7 @@ mod tests {
                     define_component(#{
                         metadata: #{ id: "components/broken", "export": "Broken",
                             version: "0.1.3",
-                            runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
+                            runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
                             dependencies: [], capabilities: #{} },
                         schema: #{ props: #{}, state: #{ fields: #{} }, events: #{},
                             slots: #{}, parts: [] },
@@ -4604,7 +4607,7 @@ mod tests {
         let module = r#"
             define_component(#{
                 metadata: #{ id: "components/heavy", "export": "Heavy", version: "0.1.1",
-                    runtime_api: #{ min_inclusive: 1, max_exclusive: 2 }, dependencies: [], capabilities: #{} },
+                    runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{} },
                 schema: #{ props: #{}, state: #{ fields: #{} }, events: #{}, slots: #{}, parts: ["root"] },
                 render: Fn("render_Heavy")
             });
@@ -4641,7 +4644,7 @@ mod tests {
         let module = r#"
             define_component(#{
                 metadata: #{ id: "components/probe", "export": "Probe", version: "0.1.1",
-                    runtime_api: #{ min_inclusive: 1, max_exclusive: 2 }, dependencies: [], capabilities: #{} },
+                    runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{} },
                 schema: #{ props: #{ key: #{ schema: #{ type: "string" }, required: true, sensitive: false } },
                     state: #{ fields: #{ heavy: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: false } } } },
                     events: #{}, slots: #{}, parts: ["root"] },
@@ -4711,7 +4714,7 @@ mod tests {
         let module = r#"
             define_component(#{
                 metadata: #{ id: "components/probe", "export": "Probe", version: "0.1.1",
-                    runtime_api: #{ min_inclusive: 1, max_exclusive: 2 }, dependencies: [], capabilities: #{} },
+                    runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{} },
                 schema: #{ props: #{ key: #{ schema: #{ type: "string" }, required: true, sensitive: false } },
                     state: #{ fields: #{ heavy: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: false } } } },
                     events: #{}, slots: #{}, parts: ["root"] }, render: Fn("render_Probe") }
@@ -4886,7 +4889,7 @@ mod tests {
         let module = r#"
             define_component(#{
                 metadata: #{ id: "components/counter", "export": "Counter", version: "0.1.1",
-                    runtime_api: #{ min_inclusive: 1, max_exclusive: 2 }, dependencies: [], capabilities: #{} },
+                    runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{} },
                 schema: #{ props: #{}, state: #{ fields: #{} }, events: #{}, slots: #{}, parts: ["root"] },
                 render: Fn("render_Counter")
             });
@@ -4940,7 +4943,7 @@ mod tests {
         let module = r#"
             define_component(#{
                 metadata: #{ id: "components/incarnation", "export": "Counter", version: "0.1.1",
-                    runtime_api: #{ min_inclusive: 1, max_exclusive: 2 }, dependencies: [], capabilities: #{} },
+                    runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{} },
                 schema: #{ props: #{ key: #{ schema: #{ type: "string" }, required: true, sensitive: false } },
                     state: #{ fields: #{ count: #{ schema: #{ type: "integer" }, "default": #{ type: "integer", value: 0 } } } },
                     events: #{}, slots: #{}, parts: ["root"] }, render: Fn("render_Counter")

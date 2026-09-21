@@ -2,8 +2,8 @@
 {
   "id": "components/form_field",
   "export": "FormField",
-  "version": "0.1.1",
-  "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
+  "version": "0.1.3",
+  "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": ["components/label"],
   "capabilities": {}
 }
@@ -17,8 +17,8 @@ import "components/label" as label_component;
 
 define_component(#{
     metadata: #{
-        id: "components/form_field", "export": "FormField", version: "0.1.1",
-        runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
+        id: "components/form_field", "export": "FormField", version: "0.1.3",
+        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
         dependencies: ["components/label"], capabilities: #{},
     },
     schema: #{

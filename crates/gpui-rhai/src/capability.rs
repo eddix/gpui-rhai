@@ -713,7 +713,7 @@ mod tests {
                 id: ModuleId::parse("components/remote_status").unwrap(),
                 export: "RemoteStatus".to_owned(),
                 version: Version::new(0, 1, 0),
-                runtime_api: RuntimeApiRange::new(1, 2),
+                runtime_api: RuntimeApiRange::new(2, 3),
                 dependencies: BTreeSet::new(),
                 capabilities: BTreeMap::from([(
                     "app.echo".to_owned(),

@@ -11,6 +11,7 @@ struct LocaleReader {
 #[derive(Clone, Debug, Default)]
 pub(crate) struct EnvironmentDependencyRegistry {
     locale: BTreeSet<LocaleReader>,
+    theme: BTreeSet<LocaleReader>,
     viewport: BTreeMap<String, BTreeSet<ComponentInstancePath>>,
 }
 
@@ -23,8 +24,13 @@ impl EnvironmentDependencyRegistry {
         self.viewport.values().map(BTreeSet::len).sum()
     }
 
+    pub fn theme_reader_count(&self) -> usize {
+        self.theme.len()
+    }
+
     pub fn reset_reader(&mut self, component: &ComponentInstancePath) {
         self.locale.retain(|reader| &reader.component != component);
+        self.theme.retain(|reader| &reader.component != component);
         for readers in self.viewport.values_mut() {
             readers.remove(component);
         }
@@ -36,6 +42,39 @@ impl EnvironmentDependencyRegistry {
             window: window.map(ToOwned::to_owned),
             component: component.clone(),
         });
+    }
+
+    pub fn track_theme(&mut self, window: Option<&str>, component: &ComponentInstancePath) {
+        self.theme.insert(LocaleReader {
+            window: window.map(ToOwned::to_owned),
+            component: component.clone(),
+        });
+    }
+
+    pub fn invalidate_theme_app(&self) -> BTreeSet<ComponentInstancePath> {
+        self.theme
+            .iter()
+            .map(|reader| reader.component.clone())
+            .collect()
+    }
+
+    pub fn invalidate_theme_window(&self, window: &str) -> BTreeSet<ComponentInstancePath> {
+        self.theme
+            .iter()
+            .filter(|reader| reader.window.as_deref() == Some(window))
+            .map(|reader| reader.component.clone())
+            .collect()
+    }
+
+    pub fn invalidate_theme_scope(
+        &self,
+        scope: &ComponentInstancePath,
+    ) -> BTreeSet<ComponentInstancePath> {
+        self.theme
+            .iter()
+            .filter(|reader| reader.component.is_within(scope))
+            .map(|reader| reader.component.clone())
+            .collect()
     }
 
     pub fn track_viewport(&mut self, window: &str, component: &ComponentInstancePath) {
@@ -78,11 +117,15 @@ impl EnvironmentDependencyRegistry {
     pub fn remove_window(&mut self, window: &str) {
         self.locale
             .retain(|reader| reader.window.as_deref() != Some(window));
+        self.theme
+            .retain(|reader| reader.window.as_deref() != Some(window));
         self.viewport.remove(window);
     }
 
     pub fn remove_scope(&mut self, scope: &ComponentInstancePath) {
         self.locale
+            .retain(|reader| !reader.component.is_within(scope));
+        self.theme
             .retain(|reader| !reader.component.is_within(scope));
         for readers in self.viewport.values_mut() {
             readers.retain(|component| !component.is_within(scope));
@@ -99,6 +142,7 @@ impl EnvironmentDependencyRegistry {
             !component.is_within(root) || component == root || active.contains(component)
         };
         self.locale.retain(|reader| retain(&reader.component));
+        self.theme.retain(|reader| retain(&reader.component));
         for readers in self.viewport.values_mut() {
             readers.retain(&retain);
         }

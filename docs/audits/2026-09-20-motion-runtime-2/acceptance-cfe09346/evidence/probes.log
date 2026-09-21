@@ -1,0 +1,11 @@
+Probe project: /var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T//gpui-rhai-audit.tn1uph
+   Compiling gpui-rhai-audit-probes v0.0.0 (/var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T/gpui-rhai-audit.tn1uph)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 5.52s
+     Running `target/debug/gpui-rhai-audit-probes`
+retained_target_replacement old=NodeId(2) new=NodeId(3) old_unmounted=true old_sample=Some(125.0) new_sample=None
+headless_same_property direct_keys=[MotionKey { component: ComponentInstancePath([ComponentInstanceSegment { component: "UiNode", key: "root/key:7469746c65" }]), property: Opacity }] timeline_keys=[MotionKey { component: ComponentInstancePath([ComponentInstanceSegment { component: "UiNode", key: "root/title" }]), property: Opacity }] keys_equal=false
+two_timeline_budget order=ba expected_active1 actual=Err(Motion(ActiveBudget { actual: 2, limit: 1 }))
+two_timeline_budget order=ab expected_active1 actual=Ok(true)
+inertia_no_snap_points t9999=632.0837690449821 t10000=1000 one_ms_jump=367.9162309550179
+reopen_after_suspended_release expected_width20 actual=[0.0] needs_frame=false
+release_w_affects_w2_ghost before_active=1 after_active=0 remaining={}

@@ -54,7 +54,6 @@ pub mod window;
 
 pub mod accessibility;
 pub mod action;
-pub mod animation;
 pub mod app;
 pub mod asset;
 pub mod async_runtime;
@@ -64,16 +63,13 @@ pub mod budget;
 pub mod canvas;
 pub mod capability;
 pub mod clock;
+pub mod motion;
 
 pub use gpui;
 
 pub use accessibility::{AccessibilityError, AccessibilityNode, AccessibilityTree};
 pub use action::{
     ActionError, ActionId, ActionInvocation, ActionRegistry, DispatchScriptAction, KeyBindingSpec,
-};
-pub use animation::{
-    AnimationError, AnimationFrame, AnimationKey, AnimationProperty, AnimationRuntime,
-    AnimationSnapshot, AnimationSpec, Easing, MotionPreference, SpringSpec, TransitionSpec,
 };
 pub use app::{
     EmbeddedScriptView, FileScriptView, PreparedScriptView, ScriptApplication, ScriptViewConfig,
@@ -96,8 +92,8 @@ pub use automation::{
 };
 pub use budget::{RuntimeBudgetError, RuntimeBudgets};
 pub use canvas::{
-    CanvasClipRect, CanvasCommand, CanvasError, CanvasFill, CanvasPathSegment, CanvasScene,
-    CanvasTransform,
+    CanvasClipRect, CanvasCommand, CanvasError, CanvasFill, CanvasPathSample, CanvasPathSegment,
+    CanvasScene, CanvasTransform,
 };
 pub use capability::{
     AppManifest, AsyncCapabilityHandler, CapabilityDescriptor, CapabilityError, CapabilityHandler,
@@ -125,8 +121,9 @@ pub use dependency::{
 #[cfg(feature = "dev-reload")]
 pub use dependency::{FileChangeBatch, FileWatcher, WatcherError};
 pub use devtools::{
-    InspectorComponent, InspectorEffect, InspectorElementRef, InspectorNode, InspectorSignal,
-    InspectorSnapshot, InspectorTimer, RuntimeTrace, RuntimeTraceKind, TraceBuffer,
+    InspectorComponent, InspectorEffect, InspectorElementRef, InspectorMotion, InspectorNode,
+    InspectorSignal, InspectorSnapshot, InspectorTimeline, InspectorTimer, RuntimeTrace,
+    RuntimeTraceKind, TraceBuffer,
 };
 pub use diagnostic::{
     Diagnostic, DiagnosticCode, DiagnosticContext, DiagnosticContextError, DiagnosticErrorKind,
@@ -165,6 +162,14 @@ pub use locale::{
     LocaleManager, NumberFormatOptions, NumberMetadata, TextDirection, format_date_with_metadata,
     format_integer_with_metadata, format_number_with_metadata, load_locale_source,
 };
+pub use motion::{
+    MotionEasing, MotionError, MotionFrame, MotionHandle, MotionInertia, MotionIntent, MotionKey,
+    MotionKeyframe, MotionKeyframes, MotionPlaybackState, MotionPreference, MotionProgressBinding,
+    MotionProgressDriver, MotionProperty, MotionQuality, MotionResourceUsage, MotionRuntime,
+    MotionSnapshot, MotionSource, MotionSpring, MotionTimeline, MotionTimelineEvent,
+    MotionTimelineEventKind, MotionTimelineSnapshot, MotionTimelineStep, MotionTrack,
+    MotionTransition,
+};
 pub use native_collection::{
     NativeCollection, NativeCollectionError, NativeCollectionRegistry, VirtualCollectionData,
 };
@@ -182,10 +187,10 @@ pub use overlay::{
     OverlayPlacement, OverlaySpec, PlacementResult, TooltipScheduler, TooltipTransition,
 };
 pub use primitive::{
-    PrimitiveDescriptor, PrimitiveError, PrimitiveEventEmitter, PrimitiveHandler, PrimitiveId,
-    PrimitiveInstance, PrimitiveInstanceId, PrimitiveNode, PrimitiveProps, PrimitiveRegistry,
-    PrimitiveResourceError, PrimitiveResourceHandle, PrimitiveResourceScope, PrimitiveTheme,
-    PrimitiveValue,
+    EffectPrimitiveDescriptor, PrimitiveDescriptor, PrimitiveError, PrimitiveEventEmitter,
+    PrimitiveHandler, PrimitiveId, PrimitiveInstance, PrimitiveInstanceId, PrimitiveNode,
+    PrimitivePlatform, PrimitiveProps, PrimitiveRegistry, PrimitiveResourceError,
+    PrimitiveResourceHandle, PrimitiveResourceScope, PrimitiveTheme, PrimitiveValue,
 };
 pub use range_input::{RangeInputPrimitiveHandler, range_input_primitive_descriptor};
 pub use reload::{LiveScript, ReloadOutcome};
@@ -229,9 +234,9 @@ pub use text_input::{
 };
 pub use theme::{
     REQUIRED_TYPOGRAPHY, ResolvedTheme, ResolvedTypography, SystemAppearance, ThemeError,
-    ThemeFamily, ThemeManager, ThemeMode, ThemePreference, ThemeSelection, ThemeSnapshot,
-    ThemeTokenValue, ThemeTokens, ThemeTypography, ThemeVariant, TypographyToken,
-    load_theme_source,
+    ThemeFamily, ThemeManager, ThemeMode, ThemeMotion, ThemeMotionSpring, ThemePreference,
+    ThemeSelection, ThemeSnapshot, ThemeTokenValue, ThemeTokens, ThemeTypography, ThemeVariant,
+    TypographyToken, load_theme_source,
 };
 pub use timer::{TimerDescriptor, TimerError, TimerId, TimerRegistry, TimerSnapshot};
 pub use value::{
@@ -246,4 +251,4 @@ pub use window::{
 };
 
 /// The first runtime API generation understood by component source.
-pub const RUNTIME_API_VERSION: u32 = 1;
+pub const RUNTIME_API_VERSION: u32 = 2;

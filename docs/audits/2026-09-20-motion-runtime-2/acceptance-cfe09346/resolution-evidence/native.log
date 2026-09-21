@@ -1,0 +1,7 @@
+running 2 tests
+target replacement presented widths at 0/250/500 ms = [100.0, 125.0, 150.0]
+test timeline_rebinds_a_replaced_child_in_presented_frames ... ok
+path_progress=1 painted_y=80: hit_at_y80=true missed_at_y80=false; original_y20_still_hits=false
+test morphed_path_hit_follows_presented_endpoint ... ok
+
+test result: ok. 2 passed; 0 failed

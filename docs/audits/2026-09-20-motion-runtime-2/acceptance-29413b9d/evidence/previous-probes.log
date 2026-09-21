@@ -1,0 +1,14 @@
+Probe project: /var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T//gpui-rhai-audit.UDUN0d
+    Blocking waiting for file lock on artifact directory
+   Compiling gpui-rhai v0.1.3 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai)
+   Compiling gpui-rhai-cli v0.1.3 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai-cli)
+   Compiling gpui-rhai-audit-probes v0.0.0 (/var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T/gpui-rhai-audit.UDUN0d)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 3m 14s
+     Running `target/debug/gpui-rhai-audit-probes`
+retained_target_replacement old=NodeId(2) new=NodeId(3) old_unmounted=true old_sample=None new_sample=Some(125.0)
+headless_same_property direct_keys=[MotionKey { component: ComponentInstancePath([ComponentInstanceSegment { component: "UiNode", key: "root/key:7469746c65" }]), property: Opacity }] timeline_keys=[MotionKey { component: ComponentInstancePath([ComponentInstanceSegment { component: "UiNode", key: "root/key:7469746c65" }]), property: Opacity }] keys_equal=true
+two_timeline_budget order=ba expected_active1 actual=Ok(true)
+two_timeline_budget order=ab expected_active1 actual=Ok(true)
+inertia_no_snap_points t9999=632.0837690449821 t10000=632.1205588285576 one_ms_jump=0.03678978357550022
+reopen_after_suspended_release expected_width20 actual=[20.0] needs_frame=true
+release_w_affects_w2_ghost before_active=1 after_active=1 remaining={MotionKey { component: ComponentInstancePath([ComponentInstanceSegment { component: "UiNode", key: "window:w2/view:v2/root/ghost:2" }]), property: Opacity }: 1.0}

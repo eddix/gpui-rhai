@@ -2,8 +2,8 @@
 {
   "id": "components/skeleton",
   "export": "Skeleton",
-  "version": "0.1.1",
-  "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
+  "version": "0.1.3",
+  "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": [],
   "capabilities": {}
 }
@@ -15,8 +15,8 @@
 
 define_component(#{
     metadata: #{
-        id: "components/skeleton", "export": "Skeleton", version: "0.1.1",
-        runtime_api: #{ min_inclusive: 1, max_exclusive: 2 }, dependencies: [], capabilities: #{},
+        id: "components/skeleton", "export": "Skeleton", version: "0.1.3",
+        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{},
     },
     schema: #{
         props: #{
@@ -48,6 +48,9 @@ fn render_Skeleton(ctx, props) {
         ))
         .accessibility_role("presentation");
     if !("animated" in props) || props.animated {
-        node.animate(loop_transition("opacity", 0.42, 0.72, 1100, "ease_in_out"))
+        node.motion(motion_transition("opacity", 0.42, 0.72,
+            #{ duration_ms: ctx.motion_duration("ambient"), easing: ctx.motion_easing("standard"),
+                iterations: "infinite",
+                autoreverse: true, intent: "decorative" }))
     } else { node }
 }

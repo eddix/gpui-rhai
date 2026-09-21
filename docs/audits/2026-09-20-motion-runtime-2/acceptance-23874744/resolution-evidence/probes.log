@@ -1,0 +1,10 @@
+PASS pause/seek and stale instance rejection
+PASS None restart does not animate
+reload new_context_lookup=Ok(generation=2) old_handle_still_valid=None progress=[0.25]
+resume_reload state=Running expected_width=40 actual=[40.0] needs_frame=true
+ghost after_unrelated_update expected_active=1 actual_active=1 opacity=0.9
+policy reduced_before=1.0 None_after=0.0
+timeline_autoreverse normal_terminal=0.0 none_terminal=0.0
+slash_key reconcile=Ok(distinct=2)
+root_remount old_handle_retained=false sample=0.0
+budget_replace_playing_timeline_with_idle_plus_direct actual=Ok(true)

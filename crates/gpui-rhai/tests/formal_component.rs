@@ -17,7 +17,7 @@ const COUNTER: &str = r#"
   "id": "components/counter",
   "export": "Counter",
   "version": "0.1.0",
-  "runtime_api": { "min_inclusive": 1, "max_exclusive": 2 },
+  "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": [],
   "capabilities": {}
 }
@@ -29,7 +29,7 @@ const COUNTER: &str = r#"
 define_component(#{
     metadata: #{
         id: "components/counter", "export": "Counter", version: "0.1.0",
-        runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
+        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
         dependencies: [], capabilities: #{}
     },
     schema: #{
@@ -77,7 +77,7 @@ const EFFECT_PROBE: &str = r#"
 define_component(#{
     metadata: #{
         id: "components/effect_probe", "export": "EffectProbe", version: "0.1.0",
-        runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
+        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
         dependencies: [], capabilities: #{ "app.echo": "^1" }
     },
     schema: #{
@@ -154,7 +154,7 @@ const EQUIVALENCE_COUNTER: &str = r#"
 define_component(#{
     metadata: #{
         id: "components/equivalence_counter", "export": "EquivalenceCounter", version: "0.1.0",
-        runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
+        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
         dependencies: [], capabilities: #{}
     },
     schema: #{
@@ -197,7 +197,7 @@ import "components/equivalence_counter" as counter;
 define_component(#{
     metadata: #{
         id: "components/counter_panel", "export": "CounterPanel", version: "0.1.0",
-        runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
+        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
         dependencies: ["components/equivalence_counter"], capabilities: #{}
     },
     schema: #{
@@ -233,7 +233,7 @@ const STORE_READER: &str = r#"
 define_component(#{
     metadata: #{
         id: "components/store_reader", "export": "StoreReader", version: "0.1.0",
-        runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
+        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
         dependencies: [], capabilities: #{}
     },
     schema: #{
@@ -265,7 +265,7 @@ const SIGNAL_PROBE: &str = r#"
 define_component(#{
     metadata: #{
         id: "components/signal_probe", "export": "SignalProbe", version: "0.1.0",
-        runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
+        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
         dependencies: [], capabilities: #{}
     },
     schema: #{
@@ -306,7 +306,7 @@ const REF_PROBE: &str = r#"
 define_component(#{
     metadata: #{
         id: "components/ref_probe", "export": "RefProbe", version: "0.1.0",
-        runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
+        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
         dependencies: [], capabilities: #{}
     },
     schema: #{
@@ -340,7 +340,7 @@ fn view(ctx) {
 const NODE_PROP_STATEFUL: &str = r#"
 define_component(#{
     metadata: #{ id: "components/node_prop_stateful", "export": "NodePropStateful",
-        version: "0.1.0", runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
+        version: "0.1.0", runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
         dependencies: [], capabilities: #{} },
     schema: #{ props: #{ key: #{ schema: #{ type: "string" }, required: true, sensitive: false } },
         state: #{ fields: #{ value: #{ schema: #{ type: "string" },
@@ -355,7 +355,7 @@ fn render_NodePropStateful(ctx, props) { text(ctx.get_state("value")) }
 const NODE_PROP_RECEIVER: &str = r#"
 define_component(#{
     metadata: #{ id: "components/node_prop_receiver", "export": "NodePropReceiver",
-        version: "0.1.0", runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
+        version: "0.1.0", runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
         dependencies: [], capabilities: #{} },
     schema: #{ props: #{
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
@@ -949,7 +949,7 @@ fn nested_callback_scope_is_never_inferred_from_a_private_function_name() {
     let inner = r#"
         define_component(#{
             metadata: #{ id: "components/inner_collision", "export": "InnerCollision",
-                version: "0.1.0", runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
+                version: "0.1.0", runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
                 dependencies: [], capabilities: #{} },
             schema: #{ props: #{ on_change: #{ schema: #{ type: "callback" },
                     required: true, sensitive: false } },
@@ -965,7 +965,7 @@ fn nested_callback_scope_is_never_inferred_from_a_private_function_name() {
         import "components/inner_collision" as inner;
         define_component(#{
             metadata: #{ id: "components/outer_collision", "export": "OuterCollision",
-                version: "0.1.0", runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
+                version: "0.1.0", runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
                 dependencies: ["components/inner_collision"], capabilities: #{} },
             schema: #{ props: #{ on_change: #{ schema: #{ type: "callback" },
                     required: true, sensitive: false } },
@@ -2038,7 +2038,7 @@ fn data_backed_virtual_collection_realizes_only_requested_items_off_layout_path(
                 define_component(#{
                     metadata: #{
                         id: "components/virtual_item", "export": "VirtualItem", version: "0.1.0",
-                        runtime_api: #{ min_inclusive: 1, max_exclusive: 2 },
+                        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
                         dependencies: [], capabilities: #{}
                     },
                     schema: #{

@@ -24,6 +24,7 @@ security, testing, and troubleshooting.
 - [Locale and RTL](locale-and-rtl.md)
 - [Assets and fonts](assets.md)
 - [Retained Canvas scenes](canvas.md)
+- [Motion Runtime 2](motion.md)
 - [Native virtual collections](virtual-list.md) and [Rust-owned collection data](native-collections.md)
 - [Native text documents and read-only viewers](document-viewers.md)
 - [Accessibility status](accessibility.md)

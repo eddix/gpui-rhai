@@ -1,0 +1,49 @@
+{
+  "schema": "gpui-rhai-audit-acceptance-v1",
+  "completed_date": "2026-09-21",
+  "timezone": "Asia/Shanghai",
+  "commit": "cfe09346c19074c5180cc7a723e5bc87a375f881",
+  "baseline": "23874744ccdf92c887785a13a83716b24a3925c6",
+  "product_changes": false,
+  "rustc": "rustc 1.94.0 (4a4ef493e 2026-03-02)\nbinary: rustc\ncommit-hash: 4a4ef493e3a1488c6e321570238084b38948f6db\ncommit-date: 2026-03-02\nhost: aarch64-apple-darwin\nrelease: 1.94.0\nLLVM version: 21.1.8\n",
+  "os": "ProductName:\t\tmacOS\nProductVersion:\t\t26.6.2\nBuildVersion:\t\t25G83\n",
+  "cpu": "Apple M1",
+  "baseline_tests": {
+    "workspace-tests": {
+      "passed": 501,
+      "failed": 0,
+      "ignored": 0
+    },
+    "native-tests": {
+      "passed": 58,
+      "failed": 0,
+      "ignored": 0
+    },
+    "performance-tests": {
+      "passed": 2,
+      "failed": 0,
+      "ignored": 2
+    }
+  },
+  "new_native_tests": {
+    "passed": 1,
+    "failed": 1,
+    "exit_code": 101,
+    "failure": "timeline_rebinds_a_replaced_child_in_presented_frames"
+  },
+  "public_probes": "characterization logs, exit 0 is not correctness approval",
+  "benchmark": {
+    "profile": "release with thin LTO",
+    "samples": 100,
+    "warmup": 10,
+    "source": "../acceptance-23874744/bench.rs",
+    "measurement": "tick + snapshot, excluding GPUI layout/paint/GPU",
+    "build_separated_from_measurement": true
+  },
+  "ci_runs": [],
+  "findings": {
+    "P1": 2,
+    "P2": 2,
+    "all_reproduced": true
+  }
+}

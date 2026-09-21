@@ -19,9 +19,9 @@ use crate::overlay_element::{ScriptLayerElement, ScriptOverlayElement, WindowOve
 use crate::slot_runtime::NodeSlotRuntime;
 use crate::virtual_list_element::VirtualListEntityElement;
 use crate::{
-    Align, AnimationKey, AnimationProperty, AssetRegistry, ColorValue, CursorKind, DisplayMode,
-    EventPropagation, EventResponse, FlexDirection, FlexWrapMode, FontSlant, HitTestBehavior,
-    ImageSourceSpec, InteractionState, Justify, LayoutLength, Length, NodeId, OverflowMode,
+    Align, AssetRegistry, ColorValue, CursorKind, DisplayMode, EventPropagation, EventResponse,
+    FlexDirection, FlexWrapMode, FontSlant, HitTestBehavior, ImageSourceSpec, InteractionState,
+    Justify, LayoutLength, Length, MotionKey, MotionProperty, NodeId, OverflowMode,
     OverlayNodeSpec, PositionMode, PrimitiveRegistry, PseudoState, RadiusToken, RetainedUiTree,
     Rgba8, ScriptCallback, SignedLength, SpacingToken, Style, StyleProperties, TextAlignMode,
     TextDirection, UiEventHandler, UiNode, UiNodeKind, UiValue, WhiteSpaceMode,
@@ -448,7 +448,20 @@ impl PointerPayloadContext {
                 "canvas_key".to_owned(),
                 self.canvas
                     .as_ref()
-                    .and_then(|scene| scene.hit_test(x, y))
+                    .and_then(|scene| {
+                        let geometry = geometry?;
+                        let transform = self
+                            .node
+                            .map(|node| self.geometry.canvas_transform(node))
+                            .unwrap_or_default();
+                        scene.hit_test_presented(
+                            x,
+                            y,
+                            geometry.layout.width,
+                            geometry.layout.height,
+                            transform,
+                        )
+                    })
                     .map_or(UiValue::Null, |key| UiValue::String(key.to_owned())),
             );
         }
@@ -548,6 +561,45 @@ fn apply_hover_handler(
             apply_event_response(response, window, cx);
         }
     })
+}
+
+fn apply_motion_trigger_handlers(
+    mut element: Stateful<Div>,
+    node: Option<NodeId>,
+    bindings: &[crate::MotionProgressBinding],
+    geometry: &crate::GeometryRegistry,
+) -> Stateful<Div> {
+    let Some(node) = node else {
+        return element;
+    };
+    if bindings
+        .iter()
+        .any(|binding| binding.driver == crate::MotionProgressDriver::Hover)
+    {
+        let geometry = geometry.clone();
+        element = element.on_hover(move |hovered, window, _| {
+            geometry.set_motion_trigger(node, crate::MotionProgressDriver::Hover, *hovered);
+            window.request_animation_frame();
+        });
+    }
+    if bindings
+        .iter()
+        .any(|binding| binding.driver == crate::MotionProgressDriver::Press)
+    {
+        let down_geometry = geometry.clone();
+        element = element.on_any_mouse_down(move |_, window, _| {
+            down_geometry.set_motion_trigger(node, crate::MotionProgressDriver::Press, true);
+            window.request_animation_frame();
+        });
+        for button in MouseButton::all() {
+            let up_geometry = geometry.clone();
+            element = element.on_mouse_up(button, move |_, window, _| {
+                up_geometry.set_motion_trigger(node, crate::MotionProgressDriver::Press, false);
+                window.request_animation_frame();
+            });
+        }
+    }
+    element
 }
 
 fn apply_pointer_down_handlers(
@@ -683,8 +735,14 @@ fn apply_pointer_motion_handlers(
         let dispatcher = dispatcher.clone();
         let captures = captures.clone();
         let payload_context = (*payload_context).clone();
+        let last_pointer = Rc::new(RefCell::new(None::<(crate::LogicalPoint, f64)>));
         element = element.on_mouse_move(move |event, window, app| {
-            let payload = payload_context.enrich(mouse_move_payload(event));
+            let payload = pointer_motion_payload(
+                mouse_move_payload(event),
+                logical_point(event.position),
+                &last_pointer,
+            );
+            let payload = payload_context.enrich(payload);
             let response = dispatch_ui_handler_phases(
                 &pointer_move,
                 "pointer_move",
@@ -716,6 +774,50 @@ fn apply_pointer_motion_handlers(
         });
     }
     element
+}
+
+fn pointer_motion_payload(
+    payload: UiValue,
+    position: crate::LogicalPoint,
+    last: &Rc<RefCell<Option<(crate::LogicalPoint, f64)>>>,
+) -> UiValue {
+    let UiValue::Map(mut payload) = payload else {
+        return payload;
+    };
+    let timestamp = event_timestamp_ms();
+    let previous = last.borrow_mut().replace((position, timestamp));
+    let (movement, velocity) = previous.map_or_else(
+        || {
+            (
+                crate::LogicalPoint::default(),
+                crate::LogicalPoint::default(),
+            )
+        },
+        |(previous, previous_timestamp)| {
+            let movement = crate::LogicalPoint {
+                x: position.x - previous.x,
+                y: position.y - previous.y,
+            };
+            let elapsed = (timestamp - previous_timestamp).max(0.001) / 1_000.0;
+            (
+                movement,
+                crate::LogicalPoint {
+                    x: movement.x / elapsed,
+                    y: movement.y / elapsed,
+                },
+            )
+        },
+    );
+    payload.insert(
+        "movement".to_owned(),
+        logical_point_value(movement.x, movement.y),
+    );
+    payload.insert(
+        "velocity".to_owned(),
+        logical_point_value(velocity.x, velocity.y),
+    );
+    payload.insert("timestamp_ms".to_owned(), UiValue::Float(timestamp));
+    UiValue::Map(payload)
 }
 
 fn mouse_down_payload(event: &MouseDownEvent) -> UiValue {
@@ -775,6 +877,7 @@ fn pointer_payload(
         local: position,
         content: position,
         movement: crate::LogicalPoint::default(),
+        velocity: crate::LogicalPoint::default(),
         button: button.map(mouse_button_name),
         buttons: buttons.into_iter().map(mouse_button_name).collect(),
         modifiers: event_modifiers(modifiers),
@@ -1044,6 +1147,10 @@ pub trait ColorResolver {
             Length::ThemeSpacing(_) | Length::ThemeRadius(_) => None,
         }
     }
+
+    fn resolve_motion(&self) -> crate::ThemeMotion {
+        crate::ThemeMotion::default()
+    }
 }
 
 fn default_typography(role: &str) -> Option<crate::ResolvedTypography> {
@@ -1085,6 +1192,7 @@ pub(crate) struct OwnedColorResolver {
     spacing: BTreeMap<SpacingToken, Length>,
     radii: BTreeMap<RadiusToken, Length>,
     typography: BTreeMap<String, crate::ResolvedTypography>,
+    motion: crate::ThemeMotion,
 }
 
 impl OwnedColorResolver {
@@ -1149,6 +1257,7 @@ impl OwnedColorResolver {
             spacing,
             radii,
             typography,
+            motion: colors.resolve_motion(),
         }
     }
 }
@@ -1169,6 +1278,10 @@ impl ColorResolver for OwnedColorResolver {
         }
     }
 
+    fn resolve_motion(&self) -> crate::ThemeMotion {
+        self.motion.clone()
+    }
+
     fn resolve_typography(&self, role: &str) -> Option<crate::ResolvedTypography> {
         self.typography.get(role).cloned()
     }
@@ -1179,13 +1292,16 @@ impl ColorResolver for OwnedColorResolver {
 pub struct GpuiNodeRenderer;
 
 struct RenderEnvironment<'a, C> {
+    now: Instant,
+    motion_preference: crate::MotionPreference,
+    motion_quality: crate::MotionQuality,
     colors: &'a C,
     interaction: &'a InteractionState,
     primitives: &'a PrimitiveRegistry,
     dispatcher: Option<&'a NodeEventDispatcher>,
     assets: Option<&'a AssetRegistry>,
     overlays: &'a WindowOverlayCoordinator,
-    animations: &'a BTreeMap<AnimationKey, f64>,
+    motions: &'a BTreeMap<MotionKey, f64>,
     signals: &'a crate::SignalRegistry,
     geometry: &'a crate::GeometryRegistry,
     pointer_capture: &'a crate::PointerCaptureRegistry,
@@ -1202,10 +1318,13 @@ struct RenderEnvironment<'a, C> {
 }
 
 pub(crate) struct WindowRenderResources<'a> {
+    pub now: Instant,
+    pub motion_preference: crate::MotionPreference,
+    pub motion_quality: crate::MotionQuality,
     pub assets: &'a AssetRegistry,
     pub dispatcher: &'a NodeEventDispatcher,
     pub overlays: &'a WindowOverlayCoordinator,
-    pub animations: &'a BTreeMap<AnimationKey, f64>,
+    pub motions: &'a BTreeMap<MotionKey, f64>,
     pub signals: &'a crate::SignalRegistry,
     pub geometry: &'a crate::GeometryRegistry,
     pub pointer_capture: &'a crate::PointerCaptureRegistry,
@@ -1254,7 +1373,7 @@ impl GpuiNodeRenderer {
         primitives: &PrimitiveRegistry,
     ) -> AnyElement {
         let overlays = WindowOverlayCoordinator::default();
-        let animations = BTreeMap::new();
+        let motions = BTreeMap::new();
         let signals = crate::SignalRegistry::new();
         let geometry = crate::GeometryRegistry::new();
         let pointer_capture = crate::PointerCaptureRegistry::new();
@@ -1264,13 +1383,16 @@ impl GpuiNodeRenderer {
         let virtual_requests = crate::VirtualRequestRegistry::new();
         let text_selection = TextSelectionRegistry::default();
         let environment = RenderEnvironment {
+            now: Instant::now(),
+            motion_preference: crate::MotionPreference::Normal,
+            motion_quality: crate::MotionQuality::High,
             colors,
             interaction,
             primitives,
             dispatcher: None,
             assets: None,
             overlays: &overlays,
-            animations: &animations,
+            motions: &motions,
             signals: &signals,
             geometry: &geometry,
             pointer_capture: &pointer_capture,
@@ -1296,7 +1418,7 @@ impl GpuiNodeRenderer {
         primitives: &PrimitiveRegistry,
     ) -> AnyElement {
         let overlays = WindowOverlayCoordinator::default();
-        let animations = BTreeMap::new();
+        let motions = BTreeMap::new();
         let signals = crate::SignalRegistry::new();
         let geometry = crate::GeometryRegistry::new();
         let pointer_capture = crate::PointerCaptureRegistry::new();
@@ -1306,13 +1428,16 @@ impl GpuiNodeRenderer {
         let virtual_requests = crate::VirtualRequestRegistry::new();
         let text_selection = TextSelectionRegistry::default();
         let environment = RenderEnvironment {
+            now: Instant::now(),
+            motion_preference: crate::MotionPreference::Normal,
+            motion_quality: crate::MotionQuality::High,
             colors,
             interaction,
             primitives,
             dispatcher: None,
             assets: None,
             overlays: &overlays,
-            animations: &animations,
+            motions: &motions,
             signals: &signals,
             geometry: &geometry,
             pointer_capture: &pointer_capture,
@@ -1346,7 +1471,7 @@ impl GpuiNodeRenderer {
         dispatcher: &NodeEventDispatcher,
     ) -> AnyElement {
         let overlays = WindowOverlayCoordinator::default();
-        let animations = BTreeMap::new();
+        let motions = BTreeMap::new();
         let signals = crate::SignalRegistry::new();
         let geometry = crate::GeometryRegistry::new();
         let pointer_capture = crate::PointerCaptureRegistry::new();
@@ -1356,13 +1481,16 @@ impl GpuiNodeRenderer {
         let virtual_requests = crate::VirtualRequestRegistry::new();
         let text_selection = TextSelectionRegistry::default();
         let environment = RenderEnvironment {
+            now: Instant::now(),
+            motion_preference: crate::MotionPreference::Normal,
+            motion_quality: crate::MotionQuality::High,
             colors,
             interaction,
             primitives,
             dispatcher: Some(dispatcher),
             assets: None,
             overlays: &overlays,
-            animations: &animations,
+            motions: &motions,
             signals: &signals,
             geometry: &geometry,
             pointer_capture: &pointer_capture,
@@ -1396,7 +1524,7 @@ impl GpuiNodeRenderer {
         dispatcher: &NodeEventDispatcher,
     ) -> AnyElement {
         let overlays = WindowOverlayCoordinator::default();
-        let animations = BTreeMap::new();
+        let motions = BTreeMap::new();
         let signals = crate::SignalRegistry::new();
         let geometry = crate::GeometryRegistry::new();
         let pointer_capture = crate::PointerCaptureRegistry::new();
@@ -1406,13 +1534,16 @@ impl GpuiNodeRenderer {
         let virtual_requests = crate::VirtualRequestRegistry::new();
         let text_selection = TextSelectionRegistry::default();
         let environment = RenderEnvironment {
+            now: Instant::now(),
+            motion_preference: crate::MotionPreference::Normal,
+            motion_quality: crate::MotionQuality::High,
             colors,
             interaction,
             primitives,
             dispatcher: Some(dispatcher),
             assets: None,
             overlays: &overlays,
-            animations: &animations,
+            motions: &motions,
             signals: &signals,
             geometry: &geometry,
             pointer_capture: &pointer_capture,
@@ -1440,7 +1571,7 @@ impl GpuiNodeRenderer {
         dispatcher: &NodeEventDispatcher,
     ) -> AnyElement {
         let overlays = WindowOverlayCoordinator::default();
-        let animations = BTreeMap::new();
+        let motions = BTreeMap::new();
         let signals = crate::SignalRegistry::new();
         let geometry = crate::GeometryRegistry::new();
         let pointer_capture = crate::PointerCaptureRegistry::new();
@@ -1450,10 +1581,13 @@ impl GpuiNodeRenderer {
         let virtual_requests = crate::VirtualRequestRegistry::new();
         let text_selection = TextSelectionRegistry::default();
         let resources = WindowRenderResources {
+            now: Instant::now(),
+            motion_preference: crate::MotionPreference::Normal,
+            motion_quality: crate::MotionQuality::High,
             assets,
             dispatcher,
             overlays: &overlays,
-            animations: &animations,
+            motions: &motions,
             signals: &signals,
             geometry: &geometry,
             pointer_capture: &pointer_capture,
@@ -1495,13 +1629,16 @@ impl GpuiNodeRenderer {
         resources: &WindowRenderResources<'_>,
     ) -> AnyElement {
         let environment = RenderEnvironment {
+            now: resources.now,
+            motion_preference: resources.motion_preference,
+            motion_quality: resources.motion_quality,
             colors,
             interaction,
             primitives,
             dispatcher: Some(resources.dispatcher),
             assets: Some(resources.assets),
             overlays: resources.overlays,
-            animations: resources.animations,
+            motions: resources.motions,
             signals: resources.signals,
             geometry: resources.geometry,
             pointer_capture: resources.pointer_capture,
@@ -1543,13 +1680,16 @@ impl GpuiNodeRenderer {
         path: &str,
     ) -> AnyElement {
         let environment = RenderEnvironment {
+            now: resources.now,
+            motion_preference: resources.motion_preference,
+            motion_quality: resources.motion_quality,
             colors,
             interaction,
             primitives,
             dispatcher: Some(resources.dispatcher),
             assets: Some(resources.assets),
             overlays: resources.overlays,
-            animations: resources.animations,
+            motions: resources.motions,
             signals: resources.signals,
             geometry: resources.geometry,
             pointer_capture: resources.pointer_capture,
@@ -1577,13 +1717,16 @@ impl GpuiNodeRenderer {
         retained: RetainedSubtree<'_>,
     ) -> AnyElement {
         let environment = RenderEnvironment {
+            now: resources.now,
+            motion_preference: resources.motion_preference,
+            motion_quality: resources.motion_quality,
             colors,
             interaction,
             primitives,
             dispatcher: Some(resources.dispatcher),
             assets: Some(resources.assets),
             overlays: resources.overlays,
-            animations: resources.animations,
+            motions: resources.motions,
             signals: resources.signals,
             geometry: resources.geometry,
             pointer_capture: resources.pointer_capture,
@@ -1613,10 +1756,29 @@ impl GpuiNodeRenderer {
         } else {
             environment.interaction.clone()
         };
-        let animation = node_animation(environment.animations, path);
+        let motion_path = retained_id.map_or_else(
+            || path.to_owned(),
+            |node| crate::motion::retained_node_path(path, node),
+        );
+        let mut animation = node_motion(environment.motions, &motion_path);
+        if let Some(retained_id) = retained_id {
+            for binding in node.progress_motions() {
+                if let Some(value) = environment
+                    .geometry
+                    .motion_progress(retained_id, binding.property())
+                {
+                    animation.set(binding.property(), value);
+                }
+            }
+            if matches!(node.kind(), UiNodeKind::Canvas { .. }) {
+                environment
+                    .geometry
+                    .update_canvas_transform(retained_id, animation.canvas_transform());
+            }
+        }
         let signals = node_signals(environment.signals, node);
         let mut resolved_style = node.style().resolve(&local_interaction);
-        apply_animated_dimensions(&mut resolved_style, animation);
+        apply_motion_dimensions(&mut resolved_style, animation);
         apply_signal_style(&mut resolved_style, &signals);
         normalize_text_content_layout(node, &mut resolved_style);
         let mut element = apply_style(
@@ -1647,7 +1809,7 @@ impl GpuiNodeRenderer {
             boundary_fallback,
             path,
             retained_id,
-            animation.rotate,
+            animation,
         );
         let translate_x = signals
             .translate_x
@@ -1658,6 +1820,8 @@ impl GpuiNodeRenderer {
             .or(animation.translate_y)
             .or(resolved_style.translate_y);
         let element = translated(populated, translate_x, translate_y);
+        let layout_motion = layout_motion_spec(node, environment.now);
+        let progress_motions = node.progress_motions().to_vec();
         match retained_id {
             Some(node) => GeometryTrackedElement {
                 child: Some(element),
@@ -1665,12 +1829,25 @@ impl GpuiNodeRenderer {
                 registry: environment.geometry.clone(),
                 translate_x: translate_x.unwrap_or(0.0),
                 translate_y: translate_y.unwrap_or(0.0),
+                layout_motion,
+                progress_motions,
+                scroll_handles: scroll_handles_for_node(
+                    environment.retained,
+                    retained_id,
+                    environment.scroll_handles,
+                ),
+                focus_handle: retained_id
+                    .and_then(|node| environment.focus_handles.get(&node))
+                    .cloned(),
+                now: environment.now,
+                motion_preference: environment.motion_preference,
             }
             .into_any_element(),
             None => element,
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     fn populate_with_interactions<C: ColorResolver>(
         element: Div,
         node: &UiNode,
@@ -1678,7 +1855,7 @@ impl GpuiNodeRenderer {
         boundary_fallback: Option<&UiNode>,
         path: &str,
         retained_id: Option<NodeId>,
-        rotation: Option<f64>,
+        motion: NodeMotionValues,
     ) -> AnyElement {
         let click = (!node.event_handlers("click").is_empty()).then(|| {
             (
@@ -1699,7 +1876,15 @@ impl GpuiNodeRenderer {
         let needs = u8::from(click.is_some())
             | u8::from(hover.is_some()) << 1
             | u8::from(!key_handlers.is_empty()) << 2
-            | u8::from(hit_test.is_some()) << 3;
+            | u8::from(hit_test.is_some()) << 3
+            | u8::from(node.progress_motions().iter().any(|binding| {
+                matches!(
+                    binding.driver,
+                    crate::MotionProgressDriver::Hover
+                        | crate::MotionProgressDriver::Press
+                        | crate::MotionProgressDriver::Focus
+                )
+            })) << 4;
         if !node_needs_interaction_wrapper(node, needs) {
             return Self::populate(
                 element,
@@ -1708,7 +1893,7 @@ impl GpuiNodeRenderer {
                 boundary_fallback,
                 path,
                 retained_id,
-                rotation,
+                motion,
             );
         }
 
@@ -1733,6 +1918,12 @@ impl GpuiNodeRenderer {
         let element = apply_hit_test(element, hit_test);
         let element = apply_tab_behavior(element, node);
         let element = apply_environment_scroll(element, node, retained_id, environment);
+        let element = apply_motion_trigger_handlers(
+            element,
+            retained_id,
+            node.progress_motions(),
+            environment.geometry,
+        );
         let element = element.on_click(move |event, window, cx| {
             if matches!(event, ClickEvent::Mouse(_))
                 && let Some((bindings, payload)) = &click
@@ -1778,7 +1969,7 @@ impl GpuiNodeRenderer {
             boundary_fallback,
             path,
             retained_id,
-            rotation,
+            motion,
         )
     }
 
@@ -1789,17 +1980,26 @@ impl GpuiNodeRenderer {
         boundary_fallback: Option<&UiNode>,
         path: &str,
         retained_id: Option<NodeId>,
-        rotation: Option<f64>,
+        motion: NodeMotionValues,
     ) -> AnyElement {
         match node.kind() {
             UiNodeKind::Text { text } => {
                 render_text_node(element, node, text.as_str(), environment, path, retained_id)
             }
             UiNodeKind::RichText { text, spans } => element
-                .child(styled_text(text.as_str(), spans, environment.colors))
+                .child(styled_text(
+                    text.as_str(),
+                    spans,
+                    environment.colors,
+                    environment.motions,
+                    &retained_id.map_or_else(
+                        || path.to_owned(),
+                        |node| crate::motion::retained_node_path(path, node),
+                    ),
+                ))
                 .into_any_element(),
             UiNodeKind::Canvas { scene } => {
-                render_canvas(element, scene, environment.colors, rotation)
+                render_canvas(element, scene, environment.colors, motion)
             }
             UiNodeKind::Svg { source } => render_inline_svg(element, node, source, environment),
             UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => {
@@ -1819,9 +2019,11 @@ impl GpuiNodeRenderer {
                     retained_id,
                     boundary_fallback.cloned(),
                     environment.dispatcher.cloned(),
-                    crate::PrimitiveTheme::capture_with_direction(
+                    crate::PrimitiveTheme::capture_with_motion_policy(
                         environment.colors,
                         environment.direction,
+                        environment.motion_preference,
+                        environment.motion_quality,
                     ),
                 ))
                 .into_any_element(),
@@ -1880,6 +2082,30 @@ impl GpuiNodeRenderer {
                 .into_any_element(),
         }
     }
+}
+
+pub(crate) fn render_motion_ghost(
+    ghost: &crate::motion::MotionGhost,
+    colors: &impl ColorResolver,
+    primitives: &PrimitiveRegistry,
+    resources: &WindowRenderResources<'_>,
+) -> AnyElement {
+    let child = GpuiNodeRenderer::render_subtree_with_window_runtime(
+        &ghost.node,
+        colors,
+        &InteractionState::default(),
+        primitives,
+        resources,
+        &ghost.path,
+    );
+    div()
+        .absolute()
+        .left(px(f64_to_f32(ghost.bounds.x)))
+        .top(px(f64_to_f32(ghost.bounds.y)))
+        .w(px(f64_to_f32(ghost.bounds.width)))
+        .h(px(f64_to_f32(ghost.bounds.height)))
+        .child(child)
+        .into_any_element()
 }
 
 fn render_layer_node<C: ColorResolver>(
@@ -2187,7 +2413,13 @@ fn retained_child_id(
         .map(crate::RetainedChildLink::node)
 }
 
-fn styled_text(text: &str, spans: &[crate::Span], colors: &impl ColorResolver) -> StyledText {
+fn styled_text(
+    text: &str,
+    spans: &[crate::Span],
+    colors: &impl ColorResolver,
+    motions: &BTreeMap<MotionKey, f64>,
+    path: &str,
+) -> StyledText {
     let mut offset = 0usize;
     let highlights = spans.iter().filter_map(|span| {
         let start = offset;
@@ -2199,6 +2431,14 @@ fn styled_text(text: &str, spans: &[crate::Span], colors: &impl ColorResolver) -
                 .map(|color| rgba(color.as_rgba_hex()).into()),
             font_weight: span.is_bold().then_some(FontWeight::BOLD),
             font_style: span.is_italic().then_some(FontStyle::Italic),
+            fade_out: span.key().and_then(|key| {
+                motions
+                    .get(&MotionKey::for_node(
+                        &crate::motion::span_motion_path(path, key),
+                        MotionProperty::Opacity,
+                    ))
+                    .map(|opacity| f64_to_f32(1.0 - opacity.clamp(0.0, 1.0)))
+            }),
             ..HighlightStyle::default()
         };
         (style != HighlightStyle::default()).then_some((start..offset, style))
@@ -2210,14 +2450,14 @@ fn render_canvas(
     element: impl ParentElement + IntoElement,
     scene: &crate::CanvasScene,
     colors: &impl ColorResolver,
-    rotate: Option<f64>,
+    motion: NodeMotionValues,
 ) -> AnyElement {
     let scene = scene.clone();
     let colors = OwnedColorResolver::capture(colors);
     let canvas = gpui::canvas(
         |_, _, _| (),
         move |bounds, (), window, _| {
-            paint_canvas_scene(bounds, &scene, &colors, rotate.unwrap_or(0.0), window);
+            paint_canvas_scene(bounds, &scene, &colors, motion, window);
         },
     )
     .size_full();
@@ -2228,7 +2468,7 @@ fn paint_canvas_scene(
     bounds: Bounds<Pixels>,
     scene: &crate::CanvasScene,
     colors: &impl ColorResolver,
-    rotate: f64,
+    motion: NodeMotionValues,
     window: &mut Window,
 ) {
     for command in scene.commands() {
@@ -2242,16 +2482,18 @@ fn paint_canvas_scene(
                 ..
             } => {
                 if let Some(color) = colors.resolve(color) {
-                    window.paint_quad(gpui::fill(
-                        Bounds::new(
-                            point(
-                                bounds.origin.x + px(f64_to_f32(*x)),
-                                bounds.origin.y + px(f64_to_f32(*y)),
-                            ),
-                            gpui::size(px(f64_to_f32(*width)), px(f64_to_f32(*height))),
-                        ),
+                    paint_canvas_polygon(
+                        [
+                            (*x, *y),
+                            (x + width, *y),
+                            (x + width, y + height),
+                            (*x, y + height),
+                        ],
+                        bounds,
+                        motion,
                         rgba(color.as_rgba_hex()),
-                    ));
+                        window,
+                    );
                 }
             }
             crate::CanvasCommand::Circle {
@@ -2262,21 +2504,14 @@ fn paint_canvas_scene(
                 ..
             } => {
                 if let Some(color) = colors.resolve(color) {
-                    let radius = px(f64_to_f32(*radius));
-                    window.paint_quad(gpui::quad(
-                        Bounds::new(
-                            point(
-                                bounds.origin.x + px(f64_to_f32(*center_x)) - radius,
-                                bounds.origin.y + px(f64_to_f32(*center_y)) - radius,
-                            ),
-                            gpui::size(radius * 2.0, radius * 2.0),
-                        ),
-                        radius,
-                        rgba(color.as_rgba_hex()),
-                        px(0.0),
-                        gpui::transparent_black(),
-                        gpui::BorderStyle::default(),
-                    ));
+                    let points = (0..48).map(|index| {
+                        let angle = std::f64::consts::TAU * f64::from(index) / 48.0;
+                        (
+                            center_x + radius * angle.cos(),
+                            center_y + radius * angle.sin(),
+                        )
+                    });
+                    paint_canvas_polygon(points, bounds, motion, rgba(color.as_rgba_hex()), window);
                 }
             }
             crate::CanvasCommand::Line {
@@ -2290,86 +2525,128 @@ fn paint_canvas_scene(
             } => {
                 if let Some(color) = colors.resolve(color) {
                     let mut path = gpui::PathBuilder::stroke(px(f64_to_f32(*width)));
-                    path.move_to(rotated_canvas_point(bounds, *from_x, *from_y, rotate));
-                    path.line_to(rotated_canvas_point(bounds, *to_x, *to_y, rotate));
+                    path.move_to(node_canvas_point(bounds, *from_x, *from_y, motion));
+                    path.line_to(node_canvas_point(bounds, *to_x, *to_y, motion));
                     if let Ok(path) = path.build() {
                         window.paint_path(path, rgba(color.as_rgba_hex()));
                     }
                 }
             }
-            crate::CanvasCommand::Path { .. } => {
-                paint_canvas_path(bounds, command, colors, rotate, window);
+            crate::CanvasCommand::Path { .. } | crate::CanvasCommand::MorphPath { .. } => {
+                paint_canvas_path(bounds, command, colors, motion, window);
             }
         }
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn paint_canvas_path(
     bounds: Bounds<Pixels>,
     command: &crate::CanvasCommand,
     colors: &impl ColorResolver,
-    rotate: f64,
+    motion: NodeMotionValues,
     window: &mut Window,
 ) {
-    let crate::CanvasCommand::Path {
-        segments,
-        fill,
-        stroke,
-        transform,
-        clip,
-        ..
-    } = command
-    else {
-        return;
+    let interpolated;
+    let (segments, fill, stroke, transform, clip, is_morph) = match command {
+        crate::CanvasCommand::Path {
+            segments,
+            fill,
+            stroke,
+            transform,
+            clip,
+            ..
+        } => (
+            segments.as_slice(),
+            fill.as_ref(),
+            stroke.as_ref(),
+            transform,
+            clip,
+            false,
+        ),
+        crate::CanvasCommand::MorphPath {
+            from,
+            to,
+            stroke,
+            transform,
+            clip,
+            ..
+        } => {
+            interpolated =
+                crate::canvas::interpolate_path(from, to, motion.path_progress.unwrap_or(0.0))
+                    .unwrap_or_else(|| from.clone());
+            (
+                interpolated.as_slice(),
+                None,
+                Some(stroke),
+                transform,
+                clip,
+                true,
+            )
+        }
+        _ => return,
     };
-    let mut builder = stroke
-        .as_ref()
-        .map_or_else(gpui::PathBuilder::fill, |(_, width)| {
-            gpui::PathBuilder::stroke(px(f64_to_f32(*width)))
-        });
-    for segment in segments {
-        match segment {
-            crate::CanvasPathSegment::Move { x, y } => {
-                builder.move_to(canvas_path_point(bounds, *transform, *x, *y, rotate));
+    let mut builder = stroke.map_or_else(gpui::PathBuilder::fill, |(_, width)| {
+        gpui::PathBuilder::stroke(px(f64_to_f32(*width)))
+    });
+    if !is_morph && stroke.is_some() && motion.path_progress.is_some_and(|progress| progress < 1.0)
+    {
+        let paths = crate::canvas::trimmed_canvas_paths(
+            crate::canvas::flatten_path(segments, *transform),
+            motion.path_progress.unwrap_or(1.0).clamp(0.0, 1.0),
+        );
+        for path in paths {
+            if let Some((first, rest)) = path.split_first() {
+                builder.move_to(node_canvas_point(bounds, first.0, first.1, motion));
+                for point in rest {
+                    builder.line_to(node_canvas_point(bounds, point.0, point.1, motion));
+                }
             }
-            crate::CanvasPathSegment::Line { x, y } => {
-                builder.line_to(canvas_path_point(bounds, *transform, *x, *y, rotate));
+        }
+    } else {
+        for segment in segments {
+            match segment {
+                crate::CanvasPathSegment::Move { x, y } => {
+                    builder.move_to(canvas_path_point(bounds, *transform, *x, *y, motion));
+                }
+                crate::CanvasPathSegment::Line { x, y } => {
+                    builder.line_to(canvas_path_point(bounds, *transform, *x, *y, motion));
+                }
+                crate::CanvasPathSegment::Quadratic {
+                    x,
+                    y,
+                    control_x,
+                    control_y,
+                } => builder.curve_to(
+                    canvas_path_point(bounds, *transform, *x, *y, motion),
+                    canvas_path_point(bounds, *transform, *control_x, *control_y, motion),
+                ),
+                crate::CanvasPathSegment::Cubic {
+                    x,
+                    y,
+                    control_a_x,
+                    control_a_y,
+                    control_b_x,
+                    control_b_y,
+                } => builder.cubic_bezier_to(
+                    canvas_path_point(bounds, *transform, *x, *y, motion),
+                    canvas_path_point(bounds, *transform, *control_a_x, *control_a_y, motion),
+                    canvas_path_point(bounds, *transform, *control_b_x, *control_b_y, motion),
+                ),
+                crate::CanvasPathSegment::Close => builder.close(),
             }
-            crate::CanvasPathSegment::Quadratic {
-                x,
-                y,
-                control_x,
-                control_y,
-            } => builder.curve_to(
-                canvas_path_point(bounds, *transform, *x, *y, rotate),
-                canvas_path_point(bounds, *transform, *control_x, *control_y, rotate),
-            ),
-            crate::CanvasPathSegment::Cubic {
-                x,
-                y,
-                control_a_x,
-                control_a_y,
-                control_b_x,
-                control_b_y,
-            } => builder.cubic_bezier_to(
-                canvas_path_point(bounds, *transform, *x, *y, rotate),
-                canvas_path_point(bounds, *transform, *control_a_x, *control_a_y, rotate),
-                canvas_path_point(bounds, *transform, *control_b_x, *control_b_y, rotate),
-            ),
-            crate::CanvasPathSegment::Close => builder.close(),
         }
     }
     let Ok(path) = builder.build() else {
         return;
     };
     let paint = stroke
-        .as_ref()
         .and_then(|(color, _)| {
             colors
                 .resolve(color)
                 .map(|color| Background::from(rgba(color.as_rgba_hex())))
         })
-        .or_else(|| fill.as_ref().and_then(|fill| canvas_fill(fill, colors)));
+        .or_else(|| fill.and_then(|fill| canvas_fill(fill, colors)));
     let Some(paint) = paint else {
         return;
     };
@@ -2386,6 +2663,28 @@ fn paint_canvas_path(
         window.with_content_mask(Some(mask), |window| window.paint_path(path, paint));
     } else {
         window.paint_path(path, paint);
+    }
+}
+
+fn paint_canvas_polygon(
+    points: impl IntoIterator<Item = (f64, f64)>,
+    bounds: Bounds<Pixels>,
+    motion: NodeMotionValues,
+    paint: impl Into<Background>,
+    window: &mut Window,
+) {
+    let mut points = points.into_iter();
+    let Some((x, y)) = points.next() else {
+        return;
+    };
+    let mut path = gpui::PathBuilder::fill();
+    path.move_to(node_canvas_point(bounds, x, y, motion));
+    for (x, y) in points {
+        path.line_to(node_canvas_point(bounds, x, y, motion));
+    }
+    path.close();
+    if let Ok(path) = path.build() {
+        window.paint_path(path, paint.into());
     }
 }
 
@@ -2411,32 +2710,37 @@ fn canvas_path_point(
     transform: crate::CanvasTransform,
     x: f64,
     y: f64,
-    node_rotate: f64,
+    motion: NodeMotionValues,
 ) -> Point<Pixels> {
     let radians = transform.rotate_degrees.to_radians();
     let scaled_x = x * transform.scale;
     let scaled_y = y * transform.scale;
     let rotated_x = scaled_x * radians.cos() - scaled_y * radians.sin();
     let rotated_y = scaled_x * radians.sin() + scaled_y * radians.cos();
-    rotated_canvas_point(
+    node_canvas_point(
         bounds,
         rotated_x + transform.translate_x,
         rotated_y + transform.translate_y,
-        node_rotate,
+        motion,
     )
 }
 
-fn rotated_canvas_point(bounds: Bounds<Pixels>, x: f64, y: f64, degrees: f64) -> Point<Pixels> {
-    let center_x = f64::from(bounds.size.width) / 2.0;
-    let center_y = f64::from(bounds.size.height) / 2.0;
-    let radians = degrees.to_radians();
-    let local_x = x - center_x;
-    let local_y = y - center_y;
-    let rotated_x = local_x * radians.cos() - local_y * radians.sin() + center_x;
-    let rotated_y = local_x * radians.sin() + local_y * radians.cos() + center_y;
+fn node_canvas_point(
+    bounds: Bounds<Pixels>,
+    x: f64,
+    y: f64,
+    motion: NodeMotionValues,
+) -> Point<Pixels> {
+    let (transformed_x, transformed_y) = crate::canvas::canvas_motion_point(
+        f64::from(bounds.size.width),
+        f64::from(bounds.size.height),
+        x,
+        y,
+        motion.canvas_transform(),
+    );
     point(
-        bounds.origin.x + px(f64_to_f32(rotated_x)),
-        bounds.origin.y + px(f64_to_f32(rotated_y)),
+        bounds.origin.x + px(f64_to_f32(transformed_x)),
+        bounds.origin.y + px(f64_to_f32(transformed_y)),
     )
 }
 
@@ -2713,6 +3017,7 @@ fn native_virtual_collection_element<C: ColorResolver>(
         retained_link_subtrees(tree, retained_roots.values().copied())
     });
     let runtime = NodeSlotRuntime {
+        now: environment.now,
         colors: OwnedColorResolver::capture(environment.colors),
         primitives: environment.primitives.clone(),
         assets: environment.assets.cloned().unwrap_or_default(),
@@ -2721,7 +3026,9 @@ fn native_virtual_collection_element<C: ColorResolver>(
             .cloned()
             .unwrap_or_else(|| NodeEventDispatcher::new(|_, _, _, _, _| EventPropagation::Handled)),
         overlays: environment.overlays.clone(),
-        animations: environment.animations.clone(),
+        motions: environment.motions.clone(),
+        motion_preference: environment.motion_preference,
+        motion_quality: environment.motion_quality,
         signals: environment.signals.clone(),
         geometry: environment.geometry.clone(),
         pointer_capture: environment.pointer_capture.clone(),
@@ -2758,14 +3065,50 @@ fn retained_link_subtrees(
 }
 
 #[derive(Clone, Copy, Default)]
-struct NodeAnimationValues {
+struct NodeMotionValues {
     opacity: Option<f64>,
     translate_x: Option<f64>,
     translate_y: Option<f64>,
     rotate: Option<f64>,
+    scale_x: Option<f64>,
+    scale_y: Option<f64>,
+    skew_x: Option<f64>,
+    skew_y: Option<f64>,
     width: Option<f64>,
     height: Option<f64>,
     clip_height: Option<f64>,
+    path_progress: Option<f64>,
+}
+
+impl NodeMotionValues {
+    fn set(&mut self, property: MotionProperty, value: f64) {
+        let target = match property {
+            MotionProperty::Opacity => &mut self.opacity,
+            MotionProperty::TranslateX => &mut self.translate_x,
+            MotionProperty::TranslateY => &mut self.translate_y,
+            MotionProperty::Rotate => &mut self.rotate,
+            MotionProperty::ScaleX => &mut self.scale_x,
+            MotionProperty::ScaleY => &mut self.scale_y,
+            MotionProperty::SkewX => &mut self.skew_x,
+            MotionProperty::SkewY => &mut self.skew_y,
+            MotionProperty::Width => &mut self.width,
+            MotionProperty::Height => &mut self.height,
+            MotionProperty::ClipHeight => &mut self.clip_height,
+            MotionProperty::PathProgress => &mut self.path_progress,
+        };
+        *target = Some(value);
+    }
+
+    fn canvas_transform(self) -> crate::geometry::CanvasMotionTransform {
+        crate::geometry::CanvasMotionTransform {
+            rotate: self.rotate.unwrap_or(0.0),
+            scale_x: self.scale_x.unwrap_or(1.0),
+            scale_y: self.scale_y.unwrap_or(1.0),
+            skew_x: self.skew_x.unwrap_or(0.0),
+            skew_y: self.skew_y.unwrap_or(0.0),
+            path_progress: self.path_progress,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -2846,20 +3189,25 @@ fn apply_signal_style(style: &mut StyleProperties, values: &NodeSignalValues) {
     }
 }
 
-fn node_animation(values: &BTreeMap<AnimationKey, f64>, path: &str) -> NodeAnimationValues {
-    let value = |property| values.get(&AnimationKey::for_node(path, property)).copied();
-    NodeAnimationValues {
-        opacity: value(AnimationProperty::Opacity),
-        translate_x: value(AnimationProperty::TranslateX),
-        translate_y: value(AnimationProperty::TranslateY),
-        rotate: value(AnimationProperty::Rotate),
-        width: value(AnimationProperty::Width),
-        height: value(AnimationProperty::Height),
-        clip_height: value(AnimationProperty::ClipHeight),
+fn node_motion(values: &BTreeMap<MotionKey, f64>, path: &str) -> NodeMotionValues {
+    let value = |property| values.get(&MotionKey::for_node(path, property)).copied();
+    NodeMotionValues {
+        opacity: value(MotionProperty::Opacity),
+        translate_x: value(MotionProperty::TranslateX),
+        translate_y: value(MotionProperty::TranslateY),
+        rotate: value(MotionProperty::Rotate),
+        scale_x: value(MotionProperty::ScaleX),
+        scale_y: value(MotionProperty::ScaleY),
+        skew_x: value(MotionProperty::SkewX),
+        skew_y: value(MotionProperty::SkewY),
+        width: value(MotionProperty::Width),
+        height: value(MotionProperty::Height),
+        clip_height: value(MotionProperty::ClipHeight),
+        path_progress: value(MotionProperty::PathProgress),
     }
 }
 
-fn apply_animated_dimensions(style: &mut StyleProperties, values: NodeAnimationValues) {
+fn apply_motion_dimensions(style: &mut StyleProperties, values: NodeMotionValues) {
     if let Some(width) = values.width {
         style.width = Some(Length::Pixels(width.max(0.0)).into());
     }
@@ -3084,6 +3432,7 @@ impl Element for SelectableText {
         self.text.request_layout(None, inspector_id, window, cx)
     }
 
+    #[allow(clippy::too_many_lines)]
     fn prepaint(
         &mut self,
         _id: Option<&GlobalElementId>,
@@ -3199,12 +3548,52 @@ impl IntoElement for SelectableText {
     }
 }
 
+fn layout_motion_spec(node: &UiNode, now: Instant) -> Option<LayoutMotionRenderSpec> {
+    let duration_ms = match node.attributes().get("layout_motion_duration_ms") {
+        Some(UiValue::Integer(value)) => u64::try_from(*value).ok()?,
+        _ => return None,
+    };
+    let easing = match node.attributes().get("layout_motion_easing") {
+        Some(UiValue::String(value)) => crate::MotionEasing::parse(value).ok()?,
+        _ => crate::MotionEasing::EaseOut,
+    };
+    let shared = match (
+        node.attributes().get("shared_layout_group"),
+        node.attributes().get("shared_layout_id"),
+    ) {
+        (Some(UiValue::String(group)), Some(UiValue::String(id))) => {
+            Some((group.clone(), id.clone()))
+        }
+        _ => None,
+    };
+    Some(LayoutMotionRenderSpec {
+        now,
+        duration: std::time::Duration::from_millis(duration_ms),
+        easing,
+        shared,
+    })
+}
+
 struct GeometryTrackedElement {
     child: Option<AnyElement>,
     node: NodeId,
     registry: crate::GeometryRegistry,
     translate_x: f64,
     translate_y: f64,
+    layout_motion: Option<LayoutMotionRenderSpec>,
+    progress_motions: Vec<crate::MotionProgressBinding>,
+    scroll_handles: Vec<ScrollHandle>,
+    focus_handle: Option<FocusHandle>,
+    now: Instant,
+    motion_preference: crate::MotionPreference,
+}
+
+#[derive(Clone, Debug)]
+struct LayoutMotionRenderSpec {
+    now: Instant,
+    duration: std::time::Duration,
+    easing: crate::MotionEasing,
+    shared: Option<(String, String)>,
 }
 
 impl Element for GeometryTrackedElement {
@@ -3231,6 +3620,7 @@ impl Element for GeometryTrackedElement {
         (layout, child)
     }
 
+    #[allow(clippy::too_many_lines)]
     fn prepaint(
         &mut self,
         _id: Option<&GlobalElementId>,
@@ -3246,18 +3636,136 @@ impl Element for GeometryTrackedElement {
             f64::from(bounds.size.width),
             f64::from(bounds.size.height),
         ) {
+            let viewport = window.viewport_size();
+            for binding in &self.progress_motions {
+                if binding.driver == crate::MotionProgressDriver::Focus {
+                    self.registry.set_motion_trigger(
+                        self.node,
+                        crate::MotionProgressDriver::Focus,
+                        self.focus_handle
+                            .as_ref()
+                            .is_some_and(|handle| handle.contains_focused(window, cx)),
+                    );
+                }
+                if matches!(
+                    binding.driver,
+                    crate::MotionProgressDriver::Hover
+                        | crate::MotionProgressDriver::Press
+                        | crate::MotionProgressDriver::Focus
+                ) {
+                    let sample = self.registry.sample_motion_trigger(
+                        self.node,
+                        binding,
+                        self.motion_preference,
+                        self.now,
+                    );
+                    let changed = self.registry.update_motion_progress(
+                        self.node,
+                        binding.property(),
+                        sample.value,
+                    );
+                    if changed || sample.active {
+                        window.request_animation_frame();
+                    }
+                    continue;
+                }
+                let progress = match binding.driver {
+                    crate::MotionProgressDriver::InView => {
+                        let visible_width = (layout.x + layout.width)
+                            .min(f64::from(viewport.width))
+                            .max(0.0)
+                            - layout.x.max(0.0);
+                        let visible_height = (layout.y + layout.height)
+                            .min(f64::from(viewport.height))
+                            .max(0.0)
+                            - layout.y.max(0.0);
+                        if layout.width <= f64::EPSILON || layout.height <= f64::EPSILON {
+                            0.0
+                        } else {
+                            (visible_width.max(0.0) * visible_height.max(0.0)
+                                / (layout.width * layout.height))
+                                .clamp(0.0, 1.0)
+                        }
+                    }
+                    crate::MotionProgressDriver::Viewport => ((f64::from(viewport.height)
+                        - layout.y)
+                        / (f64::from(viewport.height) + layout.height).max(1.0))
+                    .clamp(0.0, 1.0),
+                    crate::MotionProgressDriver::ScrollX => {
+                        self.scroll_handles.first().map_or(0.0, |handle| {
+                            let maximum = f64::from(handle.max_offset().width).abs();
+                            if maximum <= f64::EPSILON {
+                                0.0
+                            } else {
+                                (-f64::from(handle.offset().x) / maximum).clamp(0.0, 1.0)
+                            }
+                        })
+                    }
+                    crate::MotionProgressDriver::ScrollY => {
+                        self.scroll_handles.first().map_or(0.0, |handle| {
+                            let maximum = f64::from(handle.max_offset().height).abs();
+                            if maximum <= f64::EPSILON {
+                                0.0
+                            } else {
+                                (-f64::from(handle.offset().y) / maximum).clamp(0.0, 1.0)
+                            }
+                        })
+                    }
+                    crate::MotionProgressDriver::Hover
+                    | crate::MotionProgressDriver::Press
+                    | crate::MotionProgressDriver::Focus => unreachable!(),
+                };
+                let value = crate::motion::sample_progress_source(&binding.source, progress);
+                if self
+                    .registry
+                    .update_motion_progress(self.node, binding.property(), value)
+                {
+                    window.request_animation_frame();
+                }
+            }
+            let sample = self.layout_motion.as_ref().map_or_else(
+                crate::geometry::LayoutMotionSample::default,
+                |spec| {
+                    self.registry.sample_layout_motion(
+                        self.node,
+                        layout,
+                        crate::geometry::LayoutMotionRequest {
+                            shared: spec
+                                .shared
+                                .as_ref()
+                                .map(|(group, id)| (group.as_str(), id.as_str())),
+                            duration: spec.duration,
+                            easing: spec.easing,
+                            preference: self.motion_preference,
+                            now: spec.now,
+                        },
+                    )
+                },
+            );
+            if sample.active {
+                window.request_animation_frame();
+            }
             self.registry.update(
                 self.node,
                 crate::ElementGeometry {
                     layout,
                     visual: crate::GeometryBounds {
-                        x: layout.x + self.translate_x,
-                        y: layout.y + self.translate_y,
-                        ..layout
+                        x: layout.x + self.translate_x + sample.offset_x,
+                        y: layout.y + self.translate_y + sample.offset_y,
+                        width: layout.width * sample.scale_x,
+                        height: layout.height * sample.scale_y,
                     },
                     clip: None,
                 },
             );
+            let offset = point(
+                px(f64_to_f32(sample.offset_x)),
+                px(f64_to_f32(sample.offset_y)),
+            );
+            if offset != Point::default() {
+                window.with_element_offset(offset, |window| child.prepaint(window, cx));
+                return;
+            }
         }
         child.prepaint(window, cx);
     }
@@ -4259,24 +4767,24 @@ mod tests {
     }
 
     #[test]
-    fn sampled_animation_values_override_dimensions_and_transform_without_rhai() {
+    fn sampled_motion_values_override_dimensions_and_transform_without_rhai() {
         let values = BTreeMap::from([
             (
-                AnimationKey::for_node("root/card", AnimationProperty::Width),
+                MotionKey::for_node("root/card", MotionProperty::Width),
                 180.0,
             ),
             (
-                AnimationKey::for_node("root/card", AnimationProperty::ClipHeight),
+                MotionKey::for_node("root/card", MotionProperty::ClipHeight),
                 64.0,
             ),
             (
-                AnimationKey::for_node("root/card", AnimationProperty::TranslateX),
+                MotionKey::for_node("root/card", MotionProperty::TranslateX),
                 12.0,
             ),
         ]);
-        let sampled = node_animation(&values, "root/card");
+        let sampled = node_motion(&values, "root/card");
         let mut style = StyleProperties::default();
-        apply_animated_dimensions(&mut style, sampled);
+        apply_motion_dimensions(&mut style, sampled);
         assert_eq!(style.width, Some(Length::Pixels(180.0).into()));
         assert_eq!(style.height, Some(Length::Pixels(64.0).into()));
         assert_eq!(sampled.translate_x, Some(12.0));
@@ -4532,5 +5040,64 @@ mod tests {
             scroll_handles_for_node(Some(&nested), Some(ids["target"]), &handles).len(),
             2
         );
+    }
+
+    #[test]
+    fn canvas_motion_uses_one_affine_transform_for_paint_and_hit_testing() {
+        let scene = crate::CanvasScene::new(vec![crate::CanvasCommand::Rect {
+            key: "target".to_owned(),
+            x: 20.0,
+            y: 25.0,
+            width: 20.0,
+            height: 20.0,
+            fill: ColorValue::Token("accent".to_owned()),
+        }])
+        .unwrap();
+        let mut tree = crate::RetainedUiTree::new();
+        tree.reconcile(UiNode::canvas(scene.clone()).with_key("canvas"))
+            .unwrap();
+        let node = tree.root_id().unwrap();
+        let geometry = crate::GeometryRegistry::new();
+        let bounds = crate::GeometryBounds::new(100.0, 50.0, 120.0, 90.0).unwrap();
+        geometry.update(
+            node,
+            crate::ElementGeometry {
+                layout: bounds,
+                visual: bounds,
+                clip: None,
+            },
+        );
+        let transform = crate::geometry::CanvasMotionTransform {
+            rotate: 31.0,
+            scale_x: 1.4,
+            scale_y: 0.7,
+            skew_x: 12.0,
+            skew_y: -8.0,
+            path_progress: None,
+        };
+        geometry.update_canvas_transform(node, transform);
+        let motion = NodeMotionValues {
+            rotate: Some(transform.rotate),
+            scale_x: Some(transform.scale_x),
+            scale_y: Some(transform.scale_y),
+            skew_x: Some(transform.skew_x),
+            skew_y: Some(transform.skew_y),
+            ..NodeMotionValues::default()
+        };
+        let paint_bounds = Bounds::new(point(px(100.0), px(50.0)), gpui::size(px(120.0), px(90.0)));
+        let painted = node_canvas_point(paint_bounds, 30.0, 35.0, motion);
+        let context = PointerPayloadContext::retained(node, geometry, Some(scene), Vec::new());
+        let payload = context.enrich(pointer_payload(
+            painted,
+            Some(MouseButton::Left),
+            vec![MouseButton::Left],
+            Modifiers::default(),
+            1,
+            false,
+        ));
+        let UiValue::Map(payload) = payload else {
+            unreachable!()
+        };
+        assert_eq!(payload["canvas_key"], UiValue::String("target".to_owned()));
     }
 }

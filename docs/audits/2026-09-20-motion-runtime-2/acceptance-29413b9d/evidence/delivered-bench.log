@@ -1,0 +1,11 @@
+   Compiling gpui-rhai-motion-bench-29413b9d v0.0.0 (/var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T/gpui-rhai-motion-bench.f8mA5w)
+    Finished `release` profile [optimized] target(s) in 6.73s
+     Running `target/release/gpui-rhai-motion-bench-29413b9d`
+age_s=1 count=100 inertia=false p50_ms=0.0992 p95_ms=0.1003
+age_s=1 count=100 inertia=true p50_ms=0.1041 p95_ms=0.1058
+age_s=1 count=1000 inertia=false p50_ms=0.6730 p95_ms=1.0037
+age_s=1 count=1000 inertia=true p50_ms=0.6166 p95_ms=0.6854
+age_s=8 count=100 inertia=false p50_ms=0.0481 p95_ms=0.0532
+age_s=8 count=100 inertia=true p50_ms=0.0496 p95_ms=0.0542
+age_s=8 count=1000 inertia=false p50_ms=0.5992 p95_ms=0.6291
+age_s=8 count=1000 inertia=true p50_ms=0.6183 p95_ms=0.6438
