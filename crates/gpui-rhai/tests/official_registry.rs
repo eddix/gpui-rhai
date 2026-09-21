@@ -3,10 +3,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
 use gpui_rhai::{
-    AssetData, ComponentInstancePath, ComponentStateSchema, EmbeddedScriptSource, ExecutionPhase,
-    InMemoryAssetProvider, ModuleId, OpaqueHandle, RestrictedModuleResolver, RuntimeEngine,
-    ScriptCallback, ScriptLifecycle, StateField, UiContext, UiNodeKind, UiRuntimeState, UiValue,
-    ValueSchema, parse_component_header,
+    AssetData, ColorValue, ComponentInstancePath, ComponentStateSchema, EmbeddedScriptSource,
+    ExecutionPhase, InMemoryAssetProvider, ModuleId, OpaqueHandle, RestrictedModuleResolver,
+    RuntimeEngine, ScriptCallback, ScriptLifecycle, StateField, UiContext, UiNodeKind,
+    UiRuntimeState, UiValue, ValueSchema, parse_component_header,
 };
 
 const BUTTON: &str = include_str!("../../../registry/components/button.rhai");
@@ -1674,7 +1674,7 @@ fn command_array_items_keep_text_semantics_with_rich_visual_content() {
 }
 
 #[test]
-fn icon_button_owns_a_square_target_and_sized_icon_slot() {
+fn icon_button_owns_a_square_target_and_selected_icon_state() {
     let source = EmbeddedScriptSource::new(BTreeMap::from([
         (
             ModuleId::parse("components/button").unwrap(),
@@ -1695,7 +1695,7 @@ fn icon_button_owns_a_square_target_and_sized_icon_slot() {
                 fn view(ctx) {
                     icon_button::IconButton(#{
                         icon: svg("<svg width='24' height='24' viewBox='0 0 24 24'><path fill='currentColor' d='M4 4L20 20M20 4L4 20'/></svg>"),
-                        label: "Close", size: "md", variant: "outline"
+                        label: "Close", size: "md", variant: "ghost", selected: true
                     })
                 }
             "#,
@@ -1721,6 +1721,11 @@ fn icon_button_owns_a_square_target_and_sized_icon_slot() {
         root.attributes().get("label"),
         Some(&UiValue::String("Close".to_owned()))
     );
+    assert_eq!(root.attributes().get("pressed"), Some(&UiValue::Bool(true)));
+    assert_eq!(
+        root.style().base.text_color,
+        Some(ColorValue::Token("accent".to_owned()))
+    );
     let UiNodeKind::Box { children } = root.kind() else {
         panic!("IconButton must render a centered row");
     };
@@ -1732,7 +1737,10 @@ fn icon_button_owns_a_square_target_and_sized_icon_slot() {
         children[0].style().base.height,
         Some(gpui_rhai::Length::Pixels(16.0).into())
     );
-    assert!(children[0].style().base.text_color.is_some());
+    assert_eq!(
+        children[0].style().base.text_color,
+        Some(ColorValue::Token("accent".to_owned()))
+    );
 }
 
 #[test]

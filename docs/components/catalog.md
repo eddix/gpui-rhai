@@ -55,10 +55,12 @@ policy.
 ## Actions, choices, and forms
 
 - `Button`, `IconButton`, and `ButtonGroup` express actions. `IconButton` owns a
-  square hit target and requires an accessible label; `Button` uses its typed
-  `prefix`/`suffix` slots for icons mixed with text. `Toggle`/`ToggleGroup` express
-  pressed tool state; `Checkbox`, `Radio`/`RadioGroup`, and `Switch` retain
-  their separate selection and setting semantics.
+  square hit target and requires an accessible label. Its controlled `selected`
+  state uses an accent foreground without adding a container and exposes button
+  pressed semantics. `Button` uses its typed `prefix`/`suffix` slots for icons
+  mixed with text. `Toggle`/`ToggleGroup` express labeled pressed tool state;
+  `Checkbox`, `Radio`/`RadioGroup`, and `Switch` retain their separate selection
+  and setting semantics.
 - `Input`, `InputGroup`, `Textarea`, and `FormField` use the retained native
   editing core and explicit semantic relationships.
 - `Select` is scalar choice. `Combobox` is searchable single/multiple choice.

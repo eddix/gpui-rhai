@@ -255,7 +255,10 @@ Interactive components use explicit accessible names. `Input`, `Textarea`,
 adjacent visual label exists. A placeholder is only a visual hint and is never
 used as the control name. Omit Icon's optional `label` only when the icon is
 decorative; a meaningful standalone image must provide one. IconButton always
-requires its own action label.
+requires its own action label. For persistent icon-only tool state, pass the
+controlled `selected` prop; transparent variants keep their container while
+switching the glyph to the semantic accent and exposing pressed accessibility
+state.
 
 Formal component render functions are pure automatic reuse boundaries. When
 root state changes, unchanged non-slot props and a clean component subtree let
