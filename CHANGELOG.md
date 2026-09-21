@@ -5,7 +5,7 @@ All notable runtime, CLI, and registry changes are documented here. Version
 component schema, manifest, locale, and generated-source changes follow
 semantic versioning from this release.
 
-## 0.1.3 - Unreleased
+## 0.1.3 - 2026-09-21
 
 - Runtime API 2 replaces the node animation prototype with one generic Motion
   engine shared by Rhai and Rust. Strict transition, spring, keyframe, inertia,

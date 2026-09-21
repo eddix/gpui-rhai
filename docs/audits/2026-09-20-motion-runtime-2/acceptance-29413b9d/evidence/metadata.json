@@ -1,0 +1,58 @@
+{
+  "schema": "gpui-rhai-audit-acceptance-v1",
+  "date": "2026-09-21",
+  "timezone": "Asia/Shanghai",
+  "commit": "29413b9d683d0fba10c92816fe629f495c05ba30",
+  "baseline": "cfe09346c19074c5180cc7a723e5bc87a375f881",
+  "result": "F01-F04 accepted; no new blocking finding within reviewed changes and expanded cases",
+  "product_changes": false,
+  "rustc": "rustc 1.94.0 (4a4ef493e 2026-03-02)\nbinary: rustc\ncommit-hash: 4a4ef493e3a1488c6e321570238084b38948f6db\ncommit-date: 2026-03-02\nhost: aarch64-apple-darwin\nrelease: 1.94.0\nLLVM version: 21.1.8\n",
+  "os": "ProductName:\t\tmacOS\nProductVersion:\t\t26.6.2\nBuildVersion:\t\t25G83\n",
+  "cpu": "Apple M1",
+  "baseline_tests": {
+    "workspace-tests": {
+      "passed": 503,
+      "failed": 0,
+      "ignored": 0
+    },
+    "native-tests": {
+      "passed": 59,
+      "failed": 0,
+      "ignored": 0
+    },
+    "performance-tests": {
+      "passed": 2,
+      "failed": 0,
+      "ignored": 2
+    }
+  },
+  "previous_native_regressions": {
+    "passed": 2,
+    "failed": 0
+  },
+  "expanded_positive_assertions": {
+    "result": "passed",
+    "playback_and_generation_cases": 3,
+    "timeline_order_permutations": 6,
+    "over_budget_rollback_and_limit_preservation": true,
+    "inertia_parameter_combinations": 56,
+    "repeated_paused_teardown_cycles": 3,
+    "isolated_package_name": "gpui-rhai-motion-acceptance-29413b9d"
+  },
+  "benchmark": {
+    "profile": "release with thin LTO",
+    "samples": 100,
+    "warmup": 10,
+    "source": "../acceptance-23874744/bench.rs",
+    "measurement": "tick + snapshot only",
+    "isolated_package_name": "gpui-rhai-motion-bench-29413b9d"
+  },
+  "ci_runs": [],
+  "new_findings": [],
+  "unverified": [
+    "physical display-link ordering",
+    "120 Hz full application frame timing",
+    "other operating systems",
+    "2 ignored performance tests"
+  ]
+}

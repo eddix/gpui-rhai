@@ -1,0 +1,17 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.65s
+     Running tests/e2e.rs (tests/performance/target/debug/deps/e2e-247d83d6e302b956)
+
+running 3 tests
+test document_end_to_end_baseline ... ignored, run with scripts/benchmark.sh
+test table_1000_end_to_end_baseline ... ignored, run with scripts/benchmark.sh
+test table_1000_example::tests::one_thousand_row_workload_prepares ... ok
+
+test result: ok. 1 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 1.04s
+
+     Running tests/state_structure.rs (tests/performance/target/debug/deps/state_structure-fa0dca42d23ff0bb)
+
+running 1 test
+test five_thousand_component_mounts_and_large_store_rollback_remain_structural ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s
+
