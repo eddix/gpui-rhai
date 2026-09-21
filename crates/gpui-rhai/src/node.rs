@@ -404,6 +404,7 @@ enum NodePresentationMutation {
     ExitMotion(MotionSource),
     ProgressMotion(crate::MotionProgressBinding),
     Timeline(Box<crate::MotionTimeline>),
+    MotionGroup(String),
 }
 
 impl NodePresentationMutation {
@@ -448,6 +449,7 @@ impl NodePresentationMutation {
                     .retain(|existing| existing.name != timeline.name);
                 node.timelines.push(timeline.as_ref().clone());
             }
+            Self::MotionGroup(group) => apply_motion_group_contents(node, group),
         }
     }
 
@@ -2516,7 +2518,15 @@ pub(crate) fn motion_group_node(
     Ok(node)
 }
 
-fn apply_motion_group(node: &mut UiNode, group: &str) {
+pub(crate) fn apply_motion_group(node: &mut UiNode, group: &str) {
+    if node.component_root.is_some() {
+        node.apply_presentation_mutation(NodePresentationMutation::MotionGroup(group.to_owned()));
+    } else {
+        apply_motion_group_contents(node, group);
+    }
+}
+
+fn apply_motion_group_contents(node: &mut UiNode, group: &str) {
     if node.attributes.contains_key("shared_layout_id")
         && !node.attributes.contains_key("shared_layout_group")
     {
@@ -2543,6 +2553,9 @@ fn apply_motion_group(node: &mut UiNode, group: &str) {
             apply_motion_group(fallback, group);
         }
         UiNodeKind::VirtualCollection { spec } => {
+            if spec.inherited_motion_group.is_none() {
+                spec.inherited_motion_group = Some(group.to_owned());
+            }
             for child in spec.realized.values_mut() {
                 apply_motion_group(child, group);
             }
@@ -3111,5 +3124,37 @@ mod tests {
         presented.hydrate_component_subtrees();
         assert!(matches!(presented.kind(), UiNodeKind::Text { text } if text == "updated"));
         assert_eq!(presented.style().base.opacity, Some(0.5));
+    }
+
+    #[test]
+    fn inherited_motion_group_replays_across_nested_component_replacement() {
+        let outer = ComponentInstancePath::root("Outer", "root");
+        let inner = outer.child("Inner", "child");
+        let inner_node = UiNode::text("initial")
+            .with_shared_layout_id("item")
+            .with_component_root(inner.clone());
+        let mut root = UiNode::column(vec![inner_node]).with_component_root(outer);
+
+        apply_motion_group(&mut root, "outer-group");
+        let UiNodeKind::Box { children } = root.kind() else {
+            panic!("expected component column");
+        };
+        assert_eq!(
+            children[0].attributes().get("shared_layout_group"),
+            Some(&UiValue::String("outer-group".to_owned()))
+        );
+
+        let replacement = UiNode::text("updated")
+            .with_shared_layout_id("item")
+            .with_component_root(inner.clone());
+        assert!(root.replace_component_subtree(&inner, replacement));
+        let UiNodeKind::Box { children } = root.kind() else {
+            panic!("expected component column");
+        };
+        assert_eq!(
+            children[0].attributes().get("shared_layout_group"),
+            Some(&UiValue::String("outer-group".to_owned()))
+        );
+        assert!(matches!(children[0].kind(), UiNodeKind::Text { text } if text == "updated"));
     }
 }

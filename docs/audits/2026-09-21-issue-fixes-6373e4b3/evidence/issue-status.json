@@ -1,0 +1,51 @@
+[
+  {
+    "number": 65,
+    "title": "0.1.3: any motion on the float chain (shared_layout / enter_motion) breaks widget float interactions",
+    "state": "OPEN",
+    "closedAt": null,
+    "url": "https://github.com/eddix/gpui-rhai/issues/65"
+  },
+  {
+    "number": 61,
+    "title": "Combobox/Select width only honors fixed px: relative() degrades to content width, no flex-adaptive trigger",
+    "state": "CLOSED",
+    "closedAt": "2026-09-21T06:41:34Z",
+    "url": "https://github.com/eddix/gpui-rhai/issues/61"
+  },
+  {
+    "number": 60,
+    "title": "0.1.2 regression: Table with fill_height realizes zero rows (header renders, body empty)",
+    "state": "OPEN",
+    "closedAt": null,
+    "url": "https://github.com/eddix/gpui-rhai/issues/60"
+  },
+  {
+    "number": 59,
+    "title": "Host element slot: let a script view embed an opaque host-provided element (unblocks rhai-side chrome shells around host content)",
+    "state": "CLOSED",
+    "closedAt": "2026-09-21T06:41:34Z",
+    "url": "https://github.com/eddix/gpui-rhai/issues/59"
+  },
+  {
+    "number": 58,
+    "title": "Inline svg tint renders with red/blue swapped: gpui 0.2.2 ImageFormat::Svg skips the RGBA->BGRA conversion every other decode path performs",
+    "state": "CLOSED",
+    "closedAt": "2026-09-21T06:13:44Z",
+    "url": "https://github.com/eddix/gpui-rhai/issues/58"
+  },
+  {
+    "number": 57,
+    "title": "IconButton: no way to express a selected/toggled state (accent foreground, no fill) — icon color is locked to the variant",
+    "state": "CLOSED",
+    "closedAt": "2026-09-21T06:41:33Z",
+    "url": "https://github.com/eddix/gpui-rhai/issues/57"
+  },
+  {
+    "number": 56,
+    "title": "Inline svg() currentColor does not inherit ambient text color: unstyled icons silently render black",
+    "state": "CLOSED",
+    "closedAt": "2026-09-21T06:13:44Z",
+    "url": "https://github.com/eddix/gpui-rhai/issues/56"
+  }
+]

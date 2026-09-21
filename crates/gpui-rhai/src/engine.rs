@@ -3010,6 +3010,7 @@ impl DecodedVirtualCollection {
             follow_tail: self.follow_tail,
             reveal_key: self.reveal_key,
             sticky_headers: self.sticky_headers,
+            inherited_motion_group: None,
         }
     }
 }

@@ -121,6 +121,13 @@ and other pointer-following resize remains immediate. The generic GPUI 0.2.2
 FLIP layer guarantees positional transforms; typed Canvas/path primitives own
 scale and rotation.
 
+Group membership is inherited presentation context. When a formal component
+or virtual item declares only `.shared_layout(id)`, an enclosing
+`motion_group(group, ...)` supplies the group and the runtime replays that
+context after component-local incremental updates, nested replacement, hot
+reload, and later virtual realization. A node-local
+`.shared_layout(group, id)` remains explicit and takes precedence.
+
 ## Text and paths
 
 `motion_text_spans(text, config)` segments Unicode extended grapheme clusters

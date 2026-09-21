@@ -1979,6 +1979,7 @@ dependencies = [
  "jiff",
  "notify",
  "regex",
+ "resvg",
  "rhai",
  "semver",
  "serde",

@@ -9,8 +9,9 @@ semantic versioning from this release.
 
 - Inline and asset-backed SVG `currentColor` now inherits the nearest effective
   semantic text color while preserving node-local overrides, including inside
-  deferred virtual rows. A centralized compatibility shim compensates for the
-  pinned GPUI 0.2.2 in-memory SVG RGBA/BGRA decode mismatch.
+  deferred virtual rows. A complete bounded SVG-to-PNG adapter preserves fixed
+  colors, gradients, and semantic alpha while routing all pixels through
+  GPUI's correct PNG RGBA-to-BGRA conversion.
 - IconButton adds a controlled `selected` state. Transparent and secondary
   variants use the semantic accent foreground without adding a filled
   container, while the node exposes pressed accessibility semantics.
@@ -20,6 +21,11 @@ semantic versioning from this release.
 - Rust Hosts can register opaque named elements, entities, or independently
   mounted script views through `HostSlotRegistry`. Rhai can place and size the
   keyed box, while events and lifecycle authority remain on the Host side.
+  Slotted script views retain their own `ScriptViewHost` frame boundary even
+  when the surrounding shell belongs to another Host.
+- Inherited `motion_group` membership is now a replayable presentation
+  mutation. Component-local incremental rerenders, nested component
+  replacement, and later virtual item realization preserve the group context.
 
 ## 0.1.3 - 2026-09-21
 

@@ -883,6 +883,15 @@ impl ScriptViewHandle {
             .into_any_element())
     }
 
+    pub(crate) fn host_slot_item(&self) -> Result<AnyElement, ScriptViewError> {
+        let item = self.flex_item()?;
+        if self.0.host.frame_active() {
+            Ok(item)
+        } else {
+            Ok(self.0.host.container(item))
+        }
+    }
+
     /// Quiesce this retained view without discarding script or native UI state.
     ///
     /// # Errors

@@ -31,6 +31,9 @@ pub struct VirtualCollectionNodeSpec {
     pub reveal_key: Option<String>,
     /// Item indices whose realized nodes act as top-pinned section headers.
     pub sticky_headers: Arc<BTreeSet<usize>>,
+    /// Presentation-only motion group inherited from a surrounding
+    /// `motion_group`; applied to items realized after the initial render.
+    pub inherited_motion_group: Option<String>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -559,6 +562,7 @@ mod tests {
             follow_tail: true,
             reveal_key: None,
             sticky_headers: Arc::new(BTreeSet::new()),
+            inherited_motion_group: None,
         };
         let registry = VirtualRequestRegistry::new();
         registry.report_frame(&spec, 120.0, 1, 3.5, Some(1..3));

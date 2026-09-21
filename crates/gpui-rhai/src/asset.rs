@@ -16,6 +16,10 @@ use crate::{
     ScriptGeneration, UiValue,
 };
 
+const MAX_SVG_RASTER_DIMENSION: u32 = 16_384;
+const MAX_SVG_RASTER_DIMENSION_F32: f32 = 16_384.0;
+const MAX_SVG_RASTER_PIXELS: u64 = 16_777_216;
+
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct AssetId(String);
 
@@ -238,6 +242,7 @@ struct AssetRegistryInner {
     images: BTreeMap<u64, Arc<Image>>,
     image_data: BTreeMap<u64, AssetData>,
     tinted_images: BTreeMap<(u64, u32), Arc<Image>>,
+    inline_svg_images: BTreeMap<(String, Option<u32>), Arc<Image>>,
     next_id: u64,
     next_decode_id: u64,
     pending_decodes: BTreeMap<u64, PendingImageDecode>,
@@ -256,6 +261,7 @@ impl Default for AssetRegistryInner {
             images: BTreeMap::new(),
             image_data: BTreeMap::new(),
             tinted_images: BTreeMap::new(),
+            inline_svg_images: BTreeMap::new(),
             next_id: 0,
             next_decode_id: 1,
             pending_decodes: BTreeMap::new(),
@@ -371,11 +377,8 @@ impl AssetRegistry {
                     if data.bytes.is_empty() {
                         return Err(AssetError::Empty(asset.clone()));
                     }
-                    Ok((
-                        handle.opaque.id(),
-                        data.clone(),
-                        Arc::new(Image::from_bytes(format, data.bytes)),
-                    ))
+                    let image = prepare_image(format, &data, None)?;
+                    Ok((handle.opaque.id(), data.clone(), image))
                 })
                 .collect::<Result<Vec<_>, AssetError>>()?
         };
@@ -427,7 +430,7 @@ impl AssetRegistry {
         if data.bytes.is_empty() {
             return Err(AssetError::Empty(id.clone()));
         }
-        let image = Arc::new(Image::from_bytes(format, data.bytes.clone()));
+        let image = prepare_image(format, &data, None)?;
         let mut inner = self
             .inner
             .try_borrow_mut()
@@ -689,8 +692,10 @@ impl AssetRegistry {
             }
             let (callback, payload) = match message.result {
                 Ok((format, data)) => {
-                    let handle = install_decoded_image(&mut inner, pending.asset, format, data);
-                    (pending.success, UiValue::Handle(handle.opaque().clone()))
+                    match install_decoded_image(&mut inner, pending.asset, format, data) {
+                        Ok(handle) => (pending.success, UiValue::Handle(handle.opaque().clone())),
+                        Err(error) => (pending.error, UiValue::String(error.to_string())),
+                    }
                 }
                 Err(message) => (pending.error, UiValue::String(message)),
             };
@@ -779,8 +784,7 @@ impl AssetRegistry {
             if let Some(image) = inner.tinted_images.get(&key) {
                 image.clone()
             } else {
-                let bytes = tint_svg(&data.bytes, color)?;
-                let image = Arc::new(Image::from_bytes(ImageFormat::Svg, bytes));
+                let image = svg_image(&data.bytes, Some(color))?;
                 inner.tinted_images.insert(key, image.clone());
                 image
             }
@@ -792,6 +796,31 @@ impl AssetRegistry {
                 .ok_or(AssetError::UnknownHandle(handle.id()))?
         };
         Ok(ImageSource::Image(image))
+    }
+
+    pub(crate) fn inline_svg_image(
+        &self,
+        source: &str,
+        color: Option<Rgba8>,
+    ) -> Result<Arc<Image>, AssetError> {
+        let key = (source.to_owned(), color.map(Rgba8::as_rgba_hex));
+        if let Some(image) = self
+            .inner
+            .try_borrow()
+            .map_err(|_| AssetError::Borrowed)?
+            .inline_svg_images
+            .get(&key)
+            .cloned()
+        {
+            return Ok(image);
+        }
+        let image = svg_image(source.as_bytes(), color)?;
+        self.inner
+            .try_borrow_mut()
+            .map_err(|_| AssetError::Borrowed)?
+            .inline_svg_images
+            .insert(key, Arc::clone(&image));
+        Ok(image)
     }
 
     #[cfg(test)]
@@ -808,23 +837,33 @@ fn install_decoded_image(
     asset: AssetId,
     format: ImageFormat,
     data: AssetData,
-) -> ImageHandle {
+) -> Result<ImageHandle, AssetError> {
     if let Some(handle) = inner.by_asset.get(&asset) {
-        return handle.clone();
+        return Ok(handle.clone());
     }
+    let image = prepare_image(format, &data, None)?;
     inner.next_id = inner.next_id.saturating_add(1);
     let image_id = inner.next_id;
     let handle = ImageHandle {
         opaque: OpaqueHandle::new("image", image_id),
         asset: asset.clone(),
     };
-    inner.images.insert(
-        image_id,
-        Arc::new(Image::from_bytes(format, data.bytes.clone())),
-    );
+    inner.images.insert(image_id, image);
     inner.image_data.insert(image_id, data);
     inner.by_asset.insert(asset, handle.clone());
-    handle
+    Ok(handle)
+}
+
+fn prepare_image(
+    format: ImageFormat,
+    data: &AssetData,
+    color: Option<Rgba8>,
+) -> Result<Arc<Image>, AssetError> {
+    if format == ImageFormat::Svg {
+        svg_image(&data.bytes, color)
+    } else {
+        Ok(Arc::new(Image::from_bytes(format, data.bytes.clone())))
+    }
 }
 
 fn decode_asset_data(data: AssetData) -> Result<(ImageFormat, AssetData), String> {
@@ -860,28 +899,55 @@ fn raster_image_format(format: ImageFormat) -> Option<image::ImageFormat> {
     }
 }
 
-fn tint_svg(bytes: &[u8], color: Rgba8) -> Result<Vec<u8>, AssetError> {
+pub(crate) fn svg_image(bytes: &[u8], color: Option<Rgba8>) -> Result<Arc<Image>, AssetError> {
+    // GPUI 0.2.2's ImageSource::Image SVG decoder publishes premultiplied RGBA
+    // bytes as a BGRA RenderImage. Rasterizing the complete document to PNG
+    // here preserves every SVG color/alpha operation and then uses GPUI's
+    // correct PNG RGBA-to-BGRA path. Remove this adapter as one unit when the
+    // pinned GPUI SVG decoder is fixed.
     let source = std::str::from_utf8(bytes).map_err(|_| AssetError::InvalidSvg)?;
     if !source.contains("<svg") {
         return Err(AssetError::InvalidSvg);
     }
-    Ok(tint_svg_current_color(source, color).into_bytes())
+    let tinted;
+    let source = if let Some(color) = color {
+        tinted = tint_svg_current_color(source, color);
+        tinted.as_str()
+    } else {
+        source
+    };
+    let tree = usvg::Tree::from_str(source, &usvg::Options::default())
+        .map_err(|_| AssetError::InvalidSvg)?;
+    let width = svg_raster_dimension(tree.size().width()).ok_or(AssetError::InvalidSvg)?;
+    let height = svg_raster_dimension(tree.size().height()).ok_or(AssetError::InvalidSvg)?;
+    if u64::from(width).saturating_mul(u64::from(height)) > MAX_SVG_RASTER_PIXELS {
+        return Err(AssetError::InvalidSvg);
+    }
+    let mut pixmap = resvg::tiny_skia::Pixmap::new(width, height).ok_or(AssetError::InvalidSvg)?;
+    resvg::render(
+        &tree,
+        resvg::tiny_skia::Transform::identity(),
+        &mut pixmap.as_mut(),
+    );
+    let png = pixmap.encode_png().map_err(|_| AssetError::InvalidSvg)?;
+    Ok(Arc::new(Image::from_bytes(ImageFormat::Png, png)))
+}
+
+fn svg_raster_dimension(value: f32) -> Option<u32> {
+    let value = value.ceil();
+    if !value.is_finite() || !(1.0..=MAX_SVG_RASTER_DIMENSION_F32).contains(&value) {
+        return None;
+    }
+    let parsed = value.to_string().parse::<u32>().ok()?;
+    (parsed <= MAX_SVG_RASTER_DIMENSION).then_some(parsed)
 }
 
 pub(crate) fn tint_svg_current_color(source: &str, color: Rgba8) -> String {
-    // GPUI 0.2.2's ImageDecoder routes ImageSource::Image through
-    // Image::to_image_data. Its raster branches convert RGBA to BGRA, but its
-    // SVG branch does not even though RenderImage is documented as BGRA. Keep
-    // this compensation centralized and delete it when the pinned GPUI fixes
-    // that branch.
     let rgba = color.as_rgba_hex();
-    let red = (rgba >> 24) & 0xff;
-    let green = (rgba >> 16) & 0xff;
-    let blue = (rgba >> 8) & 0xff;
-    let bgra_source_literal = format!("#{blue:02x}{green:02x}{red:02x}");
+    let source_literal = format!("#{rgba:08x}");
     source
-        .replace("currentColor", &bgra_source_literal)
-        .replace("currentcolor", &bgra_source_literal)
+        .replace("currentColor", &source_literal)
+        .replace("currentcolor", &source_literal)
 }
 
 fn valid_segment(value: &str) -> bool {
@@ -974,7 +1040,8 @@ mod tests {
                     "check".to_owned(),
                     AssetData {
                         mime_type: "image/svg+xml".to_owned(),
-                        bytes: b"<svg xmlns=\"http://www.w3.org/2000/svg\"/>".to_vec(),
+                        bytes: br#"<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>"#
+                            .to_vec(),
                     },
                 )])),
             )
@@ -995,7 +1062,7 @@ mod tests {
         let registry = AssetRegistry::new();
         let data = AssetData {
             mime_type: "image/svg+xml".to_owned(),
-            bytes: b"<svg xmlns='http://www.w3.org/2000/svg'/>".to_vec(),
+            bytes: br#"<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>"#.to_vec(),
         };
         registry
             .register(
@@ -1022,7 +1089,7 @@ mod tests {
     fn namespace_refresh_preserves_handle_and_replaces_cached_bytes() {
         let data = Rc::new(RefCell::new(AssetData {
             mime_type: "image/svg+xml".to_owned(),
-            bytes: b"<svg data-version=\"one\"/>".to_vec(),
+            bytes: br#"<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1" data-version="one"/>"#.to_vec(),
         }));
         let registry = AssetRegistry::new();
         registry
@@ -1030,12 +1097,14 @@ mod tests {
             .unwrap();
         let id = AssetId::parse("app/icon").unwrap();
         let handle = registry.load_image(&id).unwrap();
-        data.borrow_mut().bytes = b"<svg data-version=\"two\"/>".to_vec();
+        data.borrow_mut().bytes =
+            br#"<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1" data-version="two"/>"#
+                .to_vec();
         assert_eq!(registry.refresh_namespace("app").unwrap(), 1);
         assert_eq!(registry.load_image(&id).unwrap(), handle);
         assert_eq!(
             registry.inner.borrow().image_data[&handle.opaque.id()].bytes,
-            b"<svg data-version=\"two\"/>"
+            br#"<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1" data-version="two"/>"#
         );
     }
 
@@ -1068,7 +1137,36 @@ mod tests {
             panic!("asset registry must return in-memory images");
         };
         assert!(Arc::ptr_eq(&first, &second));
-        assert!(String::from_utf8_lossy(&first.bytes).contains("#ab3412"));
+        assert_eq!(first.format, ImageFormat::Png);
+        assert_eq!(
+            image::load_from_memory(&first.bytes)
+                .unwrap()
+                .into_rgba8()
+                .into_raw(),
+            [0x12, 0x34, 0xab, 0xff]
+        );
+    }
+
+    #[test]
+    fn svg_raster_adapter_preserves_fixed_color_gradient_and_semantic_alpha() {
+        let mixed = br##"<svg xmlns="http://www.w3.org/2000/svg" width="2" height="1"><rect width="1" height="1" fill="currentColor"/><rect x="1" width="1" height="1" fill="#ff0000"/></svg>"##;
+        let image = svg_image(mixed, Some(Rgba8::from_rgba_hex(0x1234_ab80))).unwrap();
+        let pixels = image::load_from_memory(&image.bytes)
+            .unwrap()
+            .into_rgba8()
+            .into_raw();
+        assert_eq!(&pixels[0..4], &[0x12, 0x34, 0xab, 0x80]);
+        assert_eq!(&pixels[4..8], &[0xff, 0x00, 0x00, 0xff]);
+
+        let gradient = br##"<svg xmlns="http://www.w3.org/2000/svg" width="4" height="1"><defs><linearGradient id="g"><stop offset="0" stop-color="#ff0000"/><stop offset="1" stop-color="#0000ff"/></linearGradient></defs><rect width="4" height="1" fill="url(#g)"/></svg>"##;
+        let image = svg_image(gradient, None).unwrap();
+        let pixels = image::load_from_memory(&image.bytes)
+            .unwrap()
+            .into_rgba8()
+            .into_raw();
+        assert!(pixels[0] > pixels[2], "gradient must begin red: {pixels:?}");
+        let last = &pixels[pixels.len() - 4..];
+        assert!(last[2] > last[0], "gradient must end blue: {pixels:?}");
     }
 
     #[test]

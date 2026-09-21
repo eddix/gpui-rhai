@@ -2264,6 +2264,7 @@ dependencies = [
  "image",
  "jiff",
  "regex",
+ "resvg",
  "rhai",
  "semver",
  "serde",
