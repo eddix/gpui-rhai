@@ -17,6 +17,7 @@ mod environment_dependency;
 pub mod event;
 pub mod font;
 pub mod geometry;
+pub mod host_slot;
 pub mod inline_svg;
 mod invocation;
 pub mod lifecycle;
@@ -155,6 +156,7 @@ pub use event::{
 };
 pub use font::{FontError, FontSource, validate_font_sources};
 pub use geometry::{ElementGeometry, GeometryBounds, GeometryError, GeometryRegistry};
+pub use host_slot::{HostSlotError, HostSlotRegistry};
 pub use inline_svg::{InlineSvg, InlineSvgError};
 pub use lifecycle::{LifecycleError, LifecycleState, ScriptLifecycle};
 pub use locale::{

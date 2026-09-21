@@ -20,6 +20,11 @@ No GPUI `Window`, `App`, `Context`, `Div`, or `AnyElement` enters a Rhai
 `Dynamic`. Custom Rust primitives are the intentional extension point for
 mechanisms that require those types.
 
+`HostSlotRegistry` is a narrow adapter over that same primitive seam for opaque
+Host content. A script can position and size a named box, but receives no GPUI
+value, event payload, semantic subtree, or lifecycle authority for the element
+or independently mounted view inside it.
+
 The final atomic surface starts with `box(children)` and layout-transparent
 `fragment(children)`. `row`, `column`, and `stack` construct Box snapshots.
 Fragment may carry only children, source, key; nested fragments are flattened

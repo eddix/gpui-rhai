@@ -40,6 +40,11 @@ The important rules are:
    privileged operations, high-frequency work, or a mechanism scripts should
    compose rather than implement.
 
+When a Rhai-authored shell must wrap an existing Host element or mounted view,
+register it with `HostSlotRegistry`. The script receives only an opaque,
+styleable box through `gpui_rhai::HostSlot`; ownership, events, suspension, and
+disposal stay on the Rust side.
+
 See [Architecture](docs/architecture.md) for the complete runtime design.
 
 ## 2. Start a project

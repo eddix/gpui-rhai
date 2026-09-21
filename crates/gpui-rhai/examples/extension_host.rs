@@ -4,11 +4,11 @@ use std::time::Duration;
 use gpui::{AnyElement, App, IntoElement, ParentElement, Styled, Window, div, px, rgba};
 use gpui_rhai::{
     AppManifest, AsyncCapabilityHandler, CapabilityDescriptor, CapabilityHandler, CapabilityId,
-    CapabilityMethod, ComponentStateSchema, EmbeddedScriptSource, EmbeddedScriptView, ModuleId,
-    ObjectField, PrimitiveDescriptor, PrimitiveEventEmitter, PrimitiveHandler, PrimitiveId,
-    PrimitiveInstance, PrimitiveValue, RuntimeEngine, ScriptApplication, ScriptViewExtension,
-    SubscriptionCapabilityHandler, SubscriptionWork, TaskWork, UiRuntimeState, UiValue,
-    ValueSchema,
+    CapabilityMethod, ComponentStateSchema, EmbeddedScriptSource, EmbeddedScriptView,
+    HostSlotRegistry, ModuleId, ObjectField, PrimitiveDescriptor, PrimitiveEventEmitter,
+    PrimitiveHandler, PrimitiveId, PrimitiveInstance, PrimitiveValue, RuntimeEngine,
+    ScriptApplication, ScriptViewExtension, SubscriptionCapabilityHandler, SubscriptionWork,
+    TaskWork, UiRuntimeState, UiValue, ValueSchema,
 };
 use semver::Version;
 
@@ -48,6 +48,7 @@ fn render_Ticker(ctx, props) {
     text(`Subscription tick: ${ctx.get_state("tick")}`)
 }
 fn Ticker() { render_component("examples/ticker", #{ key: "ticker" }) }
+fn host_slot(name) { gpui_rhai::HostSlot(#{ key: name, name: name }) }
 
 fn init(ctx) {
     let message = ctx.call_capability("app.text_transform", "uppercase", "extension ready");
@@ -59,6 +60,7 @@ fn view(ctx) {
     column([
         text("Host extension"),
         my_app::StatusCard(#{ message: ctx.get_state("message") }),
+        host_slot("native-footer").with_style(style().width(relative(1.0)).height(px(32))),
         Ticker(),
         text("The card above is rendered by a Rust primitive.")
             .with_style(style().text_color(theme_color("text_muted")))
@@ -249,9 +251,18 @@ fn main() {
         .expect("static capability requirement")
         .with_capability("app.ticker", "*")
         .expect("static capability requirement");
+    let host_slots = HostSlotRegistry::new()
+        .with_slot("native-footer", |_, _| {
+            Ok(div()
+                .size_full()
+                .child("Opaque element supplied by the Rust Host")
+                .into_any_element())
+        })
+        .expect("static host slot name");
 
     EmbeddedScriptView::new(entry, scripts, DEFAULT_DARK)
         .extension(DemoExtension)
+        .extension(host_slots)
         .manifest(manifest)
         .prepare()
         .and_then(|prepared| {

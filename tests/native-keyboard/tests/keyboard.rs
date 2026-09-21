@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use gpui::{
@@ -10,11 +10,12 @@ use gpui::{
 use gpui_rhai::{
     ActionId, AssetData, AssetId, AssetRegistry, ComponentInstancePath, EmbeddedScriptSource,
     EmbeddedScriptView, EventPropagation, ExecutionOperation, GpuiNodeRenderer, HostCallback,
-    InMemoryAssetProvider, InteractionState, KeyBindingSpec, LiteralColorResolver, ModuleId,
-    NodeEventDispatcher, OverlayDismissPolicy, OverlayId, OverlayKind, OverlayNodeSpec,
-    OverlayPlacement, PrimitiveEventEmitter, PrimitiveHandler, PrimitiveInstance, PrimitiveNode,
-    PrimitiveProps, PrimitiveRegistry, PrimitiveTheme, PrimitiveValue, RestrictedModuleResolver,
-    Rgba8, RuntimeEngine, ScriptLifecycle, ScriptViewConfig, ScriptViewHandle, ScriptViewHost,
+    HostSlotRegistry, InMemoryAssetProvider, InteractionState, KeyBindingSpec,
+    LiteralColorResolver, ModuleId, NodeEventDispatcher, OverlayDismissPolicy, OverlayId,
+    OverlayKind, OverlayNodeSpec, OverlayPlacement, PrimitiveEventEmitter, PrimitiveHandler,
+    PrimitiveInstance, PrimitiveNode, PrimitiveProps, PrimitiveRegistry, PrimitiveTheme,
+    PrimitiveValue, RestrictedModuleResolver, Rgba8, RuntimeEngine, ScriptLifecycle,
+    ScriptViewConfig, ScriptViewHandle, ScriptViewHost,
     TextInputPrimitiveHandler, UiNode, UiNodeKind, UiRuntimeState, UiValue, init_text_area, init_text_input,
     text_input_primitive_descriptor,
 };
@@ -63,6 +64,102 @@ fn tinted_svg_image_bytes_match_gpui_bgra_contract(cx: &mut TestAppContext) {
         Some([0xab, 0x34, 0x12, 0xff].as_slice()),
         "GPUI RenderImage requires BGRA even though its 0.2.2 SVG decoder returns raw RGBA"
     );
+#[gpui::test]
+fn host_slot_renders_native_content_without_leaking_events_to_rhai(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let native_clicks = Rc::new(Cell::new(0_u32));
+    let native_clicks_factory = Rc::clone(&native_clicks);
+    let slots = HostSlotRegistry::new()
+        .with_slot("content", move |_, _| {
+            let native_clicks = Rc::clone(&native_clicks_factory);
+            Ok(div()
+                .id("native-host-slot-content")
+                .size_full()
+                .on_click(move |_, _, _| native_clicks.set(native_clicks.get() + 1))
+                .child("Native host content")
+                .into_any_element())
+        })
+        .unwrap();
+    let entry = ModuleId::parse("main").unwrap();
+    let prepared = EmbeddedScriptView::new(
+        entry.clone(),
+        EmbeddedScriptSource::new(std::collections::BTreeMap::from([(
+            entry,
+            r#"
+                fn state_schema() { #{ fields: #{ clicks: #{ schema: #{ type: "integer" },
+                    "default": #{ type: "integer", value: 0 } } } } }
+                fn clicked(ctx, payload) { ctx.set_state("clicks", ctx.get_state("clicks") + 1); }
+                fn host_slot(name) { gpui_rhai::HostSlot(#{ key: name, name: name }) }
+                fn view(ctx) {
+                    column([
+                        text(`script:${ctx.get_state("clicks")}`),
+                        host_slot("content")
+                            .accessibility_role("group").accessibility_label("Host content")
+                            .with_style(style().width(px(220)).height(px(120)))
+                    ]).on_click(Fn("clicked"))
+                }
+            "#
+            .to_owned(),
+        )])),
+        include_str!("../../../registry/themes/default_dark.rhai"),
+    )
+    .extension(slots)
+    .prepare()
+    .unwrap();
+    let captured = Rc::new(RefCell::new(None));
+    let captured_for_window = Rc::clone(&captured);
+    let window = cx.add_window(move |window, cx| {
+        let host = ScriptViewHost::new("host-slot-window", cx).unwrap();
+        let view = prepared
+            .mount(
+                ScriptViewConfig::new("host-slot-view"),
+                host.clone(),
+                window,
+                cx,
+            )
+            .unwrap();
+        *captured_for_window.borrow_mut() = Some(view.clone());
+        SingleEmbeddedHost { host, view }
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    cx.run_until_parked();
+
+    let view = captured.borrow().as_ref().unwrap().clone();
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    visual.run_until_parked();
+    let result = visual
+        .update(|window, cx| {
+            view.automate(
+                gpui_rhai::AutomationCommand::Query {
+                    locator: gpui_rhai::AutomationLocator::RoleName {
+                        role: "group".to_owned(),
+                        name: "Host content".to_owned(),
+                    },
+                },
+                window,
+                cx,
+            )
+        })
+        .unwrap();
+    let gpui_rhai::AutomationResult::Node { node } = result else {
+        panic!("expected host slot node");
+    };
+    let bounds = node.bounds.expect("host slot has committed bounds");
+    visual.simulate_click(
+        point(
+            px((bounds.x + bounds.width / 2.0) as f32),
+            px((bounds.y + bounds.height / 2.0) as f32),
+        ),
+        Modifiers::default(),
+    );
+    visual.run_until_parked();
+
+    assert_eq!(native_clicks.get(), 1);
+    let root = visual.update(|_, cx| view.root(cx).unwrap().unwrap());
+    let mut texts = Vec::new();
+    node_texts(&root, &mut texts);
+    assert!(texts.contains(&"script:0".to_owned()), "{texts:?}");
 }
 
 fn official_icon_assets() -> Vec<(String, AssetData)> {
