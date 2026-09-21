@@ -23,11 +23,13 @@ use gpui_rhai::{
 #[path = "../../../crates/gpui-rhai/examples/table_1000.rs"]
 mod table_1000_example;
 
-#[allow(dead_code)]
+// Both gallery examples intentionally embed the release registry snapshot so
+// this independent harness exercises their real preparation paths together.
+#[allow(clippy::duplicate_mod, dead_code)]
 #[path = "../../../crates/gpui-rhai/examples/component_gallery.rs"]
 mod component_gallery_example;
 
-#[allow(dead_code)]
+#[allow(clippy::duplicate_mod, dead_code)]
 #[path = "../../../crates/gpui-rhai/examples/motion_gallery.rs"]
 mod motion_gallery_example;
 
