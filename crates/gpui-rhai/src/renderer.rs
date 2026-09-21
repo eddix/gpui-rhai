@@ -1291,6 +1291,7 @@ impl ColorResolver for OwnedColorResolver {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct GpuiNodeRenderer;
 
+#[derive(Clone, Copy)]
 struct RenderEnvironment<'a, C> {
     now: Instant,
     motion_preference: crate::MotionPreference,
@@ -1312,9 +1313,23 @@ struct RenderEnvironment<'a, C> {
     text_selection: &'a TextSelectionRegistry,
     host_focus: Option<&'a FocusHandle>,
     direction: TextDirection,
+    ambient_text_color: Option<Rgba8>,
     view_id: &'a str,
     retained: Option<&'a RetainedUiTree>,
     retained_links: Option<&'a BTreeMap<NodeId, Vec<crate::RetainedChildLink>>>,
+}
+
+impl<C: ColorResolver> RenderEnvironment<'_, C> {
+    fn with_resolved_text_color(&self, style: &StyleProperties) -> Self {
+        Self {
+            ambient_text_color: resolve_ambient_text_color(
+                style,
+                self.colors,
+                self.ambient_text_color,
+            ),
+            ..*self
+        }
+    }
 }
 
 pub(crate) struct WindowRenderResources<'a> {
@@ -1335,6 +1350,7 @@ pub(crate) struct WindowRenderResources<'a> {
     pub text_selection: &'a TextSelectionRegistry,
     pub host_focus: Option<&'a FocusHandle>,
     pub direction: TextDirection,
+    pub ambient_text_color: Option<Rgba8>,
     pub root_path: &'a str,
     pub view_id: &'a str,
 }
@@ -1403,6 +1419,7 @@ impl GpuiNodeRenderer {
             text_selection: &text_selection,
             host_focus: None,
             direction: TextDirection::LeftToRight,
+            ambient_text_color: None,
             view_id: "standalone",
             retained: None,
             retained_links: None,
@@ -1448,6 +1465,7 @@ impl GpuiNodeRenderer {
             text_selection: &text_selection,
             host_focus: None,
             direction: TextDirection::LeftToRight,
+            ambient_text_color: None,
             view_id: "standalone",
             retained: Some(tree),
             retained_links: None,
@@ -1501,6 +1519,7 @@ impl GpuiNodeRenderer {
             text_selection: &text_selection,
             host_focus: None,
             direction: TextDirection::LeftToRight,
+            ambient_text_color: None,
             view_id: "standalone",
             retained: Some(tree),
             retained_links: None,
@@ -1554,6 +1573,7 @@ impl GpuiNodeRenderer {
             text_selection: &text_selection,
             host_focus: None,
             direction: TextDirection::LeftToRight,
+            ambient_text_color: None,
             view_id: "standalone",
             retained: None,
             retained_links: None,
@@ -1598,6 +1618,7 @@ impl GpuiNodeRenderer {
             text_selection: &text_selection,
             host_focus: None,
             direction: TextDirection::LeftToRight,
+            ambient_text_color: None,
             root_path: "root",
             view_id: "standalone",
         };
@@ -1649,6 +1670,7 @@ impl GpuiNodeRenderer {
             text_selection: resources.text_selection,
             host_focus: resources.host_focus,
             direction: resources.direction,
+            ambient_text_color: resources.ambient_text_color,
             view_id: resources.view_id,
             retained: Some(tree),
             retained_links: None,
@@ -1700,6 +1722,7 @@ impl GpuiNodeRenderer {
             text_selection: resources.text_selection,
             host_focus: resources.host_focus,
             direction: resources.direction,
+            ambient_text_color: resources.ambient_text_color,
             view_id: resources.view_id,
             retained: None,
             retained_links: None,
@@ -1737,6 +1760,7 @@ impl GpuiNodeRenderer {
             text_selection: resources.text_selection,
             host_focus: resources.host_focus,
             direction: resources.direction,
+            ambient_text_color: resources.ambient_text_color,
             view_id: resources.view_id,
             retained: None,
             retained_links: Some(retained.links),
@@ -1781,6 +1805,7 @@ impl GpuiNodeRenderer {
         apply_motion_dimensions(&mut resolved_style, animation);
         apply_signal_style(&mut resolved_style, &signals);
         normalize_text_content_layout(node, &mut resolved_style);
+        let local_environment = environment.with_resolved_text_color(&resolved_style);
         let mut element = apply_style(
             div(),
             &resolved_style,
@@ -1805,7 +1830,7 @@ impl GpuiNodeRenderer {
         let populated = Self::populate_with_interactions(
             element,
             node,
-            environment,
+            &local_environment,
             boundary_fallback,
             path,
             retained_id,
@@ -2027,7 +2052,7 @@ impl GpuiNodeRenderer {
                     ),
                 ))
                 .into_any_element(),
-            UiNodeKind::Image { source } => render_image(element, node, source, environment),
+            UiNodeKind::Image { source } => render_image(element, source, environment),
             UiNodeKind::DirectionalImage {
                 left_to_right,
                 right_to_left,
@@ -2036,7 +2061,7 @@ impl GpuiNodeRenderer {
                     TextDirection::LeftToRight => left_to_right,
                     TextDirection::RightToLeft => right_to_left,
                 };
-                render_image(element, node, source, environment)
+                render_image(element, source, environment)
             }
             UiNodeKind::Overlay {
                 trigger,
@@ -2106,6 +2131,18 @@ pub(crate) fn render_motion_ghost(
         .h(px(f64_to_f32(ghost.bounds.height)))
         .child(child)
         .into_any_element()
+}
+
+fn resolve_ambient_text_color<C: ColorResolver>(
+    style: &StyleProperties,
+    colors: &C,
+    inherited: Option<Rgba8>,
+) -> Option<Rgba8> {
+    style
+        .text_color
+        .as_ref()
+        .and_then(|color| colors.resolve(color))
+        .or(inherited)
 }
 
 fn render_layer_node<C: ColorResolver>(
@@ -2746,21 +2783,10 @@ fn node_canvas_point(
 
 fn render_image<C: ColorResolver>(
     element: impl ParentElement + IntoElement,
-    node: &UiNode,
     source: &ImageSourceSpec,
     environment: &RenderEnvironment<'_, C>,
 ) -> AnyElement {
-    let interaction = if is_disabled(node) {
-        environment.interaction.clone().with(PseudoState::Disabled)
-    } else {
-        environment.interaction.clone()
-    };
-    let tint = node
-        .style()
-        .resolve(&interaction)
-        .text_color
-        .as_ref()
-        .and_then(|color| environment.colors.resolve(color));
+    let tint = environment.ambient_text_color;
     environment.assets.map_or_else(
         || div().child("Image registry unavailable").into_any_element(),
         |assets| {
@@ -2792,21 +2818,11 @@ fn render_inline_svg<C: ColorResolver>(
         environment.interaction.clone()
     };
     let resolved_style = node.style().resolve(&interaction);
-    let color = resolved_style
-        .text_color
-        .as_ref()
-        .and_then(|color| environment.colors.resolve(color));
+    let color = environment.ambient_text_color;
     let fills_styled_box = resolved_style.width.is_some() || resolved_style.height.is_some();
     let bytes = color.map_or_else(
         || source.as_str().as_bytes().to_vec(),
-        |color| {
-            let rgb = color.as_rgba_hex() >> 8;
-            source
-                .as_str()
-                .replace("currentColor", &format!("#{rgb:06x}"))
-                .replace("currentcolor", &format!("#{rgb:06x}"))
-                .into_bytes()
-        },
+        |color| crate::asset::tint_svg_current_color(source.as_str(), color).into_bytes(),
     );
     element
         .child(inline_svg_image(bytes, fills_styled_box))
@@ -3039,6 +3055,7 @@ fn native_virtual_collection_element<C: ColorResolver>(
         text_selection: environment.text_selection.clone(),
         host_focus: environment.host_focus.cloned(),
         direction: environment.direction,
+        ambient_text_color: environment.ambient_text_color,
         base_path: path.to_owned(),
         view_id: environment.view_id.to_owned(),
         retained_roots,
@@ -4713,6 +4730,60 @@ mod tests {
         let mut intrinsic = inline_svg_image(bytes, false);
         assert_eq!(intrinsic.style().size.width, None);
         assert_eq!(intrinsic.style().size.height, None);
+    }
+
+    #[test]
+    fn ambient_text_color_inherits_and_a_local_value_wins() {
+        let inherited = Rgba8::from_rgb_hex(0x0012_34ab);
+        assert_eq!(
+            resolve_ambient_text_color(&Style::new().base, &LiteralColorResolver, Some(inherited)),
+            Some(inherited)
+        );
+
+        let local = Rgba8::from_rgb_hex(0x00ab_cd12);
+        assert_eq!(
+            resolve_ambient_text_color(
+                &Style::new().text_color(ColorValue::Literal(local)).base,
+                &LiteralColorResolver,
+                Some(inherited)
+            ),
+            Some(local)
+        );
+    }
+
+    #[test]
+    fn asset_svg_uses_an_ancestor_text_color() {
+        let assets = AssetRegistry::new();
+        assets
+            .register(
+                "app",
+                crate::InMemoryAssetProvider::new(BTreeMap::from([(
+                    "icon".to_owned(),
+                    crate::AssetData {
+                        mime_type: "image/svg+xml".to_owned(),
+                        bytes: br#"<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"><rect width="1" height="1" fill="currentColor"/></svg>"#.to_vec(),
+                    },
+                )])),
+            )
+            .unwrap();
+        let handle = assets
+            .load_image(&crate::AssetId::parse("app/icon").unwrap())
+            .unwrap();
+        let color = Rgba8::from_rgb_hex(0x0012_34ab);
+        let root = UiNode::row(vec![UiNode::image(handle.opaque().clone())])
+            .with_style(&Style::new().text_color(ColorValue::Literal(color)));
+        let dispatcher = NodeEventDispatcher::new(|_, _, _, _, _| EventPropagation::Handled);
+
+        let _element = GpuiNodeRenderer::render_with_runtime(
+            &root,
+            &LiteralColorResolver,
+            &InteractionState::default(),
+            &PrimitiveRegistry::new(),
+            &assets,
+            &dispatcher,
+        );
+
+        assert!(assets.has_tinted_image(handle.opaque(), color));
     }
 
     #[test]

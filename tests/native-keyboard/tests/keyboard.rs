@@ -2,20 +2,20 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use gpui::{
-    Context, FocusHandle, InteractiveElement, IntoElement, Modifiers, MouseButton, MouseDownEvent,
-    MouseUpEvent, ParentElement, Render, ScrollDelta, ScrollWheelEvent,
+    Context, FocusHandle, ImageSource, InteractiveElement, IntoElement, Modifiers, MouseButton,
+    MouseDownEvent, MouseUpEvent, ParentElement, Render, ScrollDelta, ScrollWheelEvent,
     StatefulInteractiveElement, Styled, TestAppContext, VisualTestContext, Window, div, point, px,
     size,
 };
 use gpui_rhai::{
-    ActionId, AssetData, ComponentInstancePath, EmbeddedScriptSource, EmbeddedScriptView,
-    EventPropagation, ExecutionOperation, GpuiNodeRenderer, HostCallback, InteractionState,
-    KeyBindingSpec, LiteralColorResolver, ModuleId, NodeEventDispatcher, OverlayDismissPolicy,
-    OverlayId, OverlayKind, OverlayNodeSpec, OverlayPlacement, PrimitiveEventEmitter,
-    PrimitiveHandler, PrimitiveInstance, PrimitiveNode, PrimitiveProps, PrimitiveRegistry,
-    PrimitiveTheme, PrimitiveValue, RestrictedModuleResolver, RuntimeEngine, ScriptLifecycle,
-    ScriptViewConfig, ScriptViewHandle, ScriptViewHost, TextInputPrimitiveHandler, UiNode,
-    UiNodeKind, UiRuntimeState, UiValue, init_text_area, init_text_input,
+    ActionId, AssetData, AssetId, AssetRegistry, ComponentInstancePath, EmbeddedScriptSource,
+    EmbeddedScriptView, EventPropagation, ExecutionOperation, GpuiNodeRenderer, HostCallback,
+    InMemoryAssetProvider, InteractionState, KeyBindingSpec, LiteralColorResolver, ModuleId,
+    NodeEventDispatcher, OverlayDismissPolicy, OverlayId, OverlayKind, OverlayNodeSpec,
+    OverlayPlacement, PrimitiveEventEmitter, PrimitiveHandler, PrimitiveInstance, PrimitiveNode,
+    PrimitiveProps, PrimitiveRegistry, PrimitiveTheme, PrimitiveValue, RestrictedModuleResolver,
+    Rgba8, RuntimeEngine, ScriptLifecycle, ScriptViewConfig, ScriptViewHandle, ScriptViewHost,
+    TextInputPrimitiveHandler, UiNode, UiNodeKind, UiRuntimeState, UiValue, init_text_area, init_text_input,
     text_input_primitive_descriptor,
 };
 
@@ -32,6 +32,38 @@ mod component_gallery_example;
 #[allow(clippy::duplicate_mod, dead_code)]
 #[path = "../../../crates/gpui-rhai/examples/motion_gallery.rs"]
 mod motion_gallery_example;
+
+#[gpui::test]
+fn tinted_svg_image_bytes_match_gpui_bgra_contract(cx: &mut TestAppContext) {
+    let registry = AssetRegistry::new();
+    registry
+        .register(
+            "app",
+            InMemoryAssetProvider::new(std::collections::BTreeMap::from([(
+                "pixel".to_owned(),
+                AssetData {
+                    mime_type: "image/svg+xml".to_owned(),
+                    bytes: br#"<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1" viewBox="0 0 1 1"><rect width="1" height="1" fill="currentColor"/></svg>"#.to_vec(),
+                },
+            )])),
+        )
+        .unwrap();
+    let handle = registry
+        .load_image(&AssetId::parse("app/pixel").unwrap())
+        .unwrap();
+    let ImageSource::Image(image) = registry
+        .image_source_tinted(handle.opaque(), Some(Rgba8::from_rgb_hex(0x0012_34ab)))
+        .unwrap()
+    else {
+        panic!("SVG asset should resolve to an in-memory image");
+    };
+    let decoded = cx.update(|app| image.to_image_data(app.svg_renderer()).unwrap());
+    assert_eq!(
+        decoded.as_bytes(0),
+        Some([0xab, 0x34, 0x12, 0xff].as_slice()),
+        "GPUI RenderImage requires BGRA even though its 0.2.2 SVG decoder returns raw RGBA"
+    );
+}
 
 fn official_icon_assets() -> Vec<(String, AssetData)> {
     [

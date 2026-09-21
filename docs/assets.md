@@ -49,9 +49,11 @@ Raster validation/decode may run on a worker. Rhai callbacks return to the
 foreground thread, are generation-bound, and cancel with their app/window/
 component scope.
 
-SVG assets may use `currentColor`. The renderer resolves semantic text color,
-tints bytes, and caches by asset identity plus RGBA. Theme switching recolors
-icons without script recompilation or state loss.
+SVG assets may use `currentColor`. The renderer resolves the nearest effective
+semantic text color, with a color on the image or SVG node taking precedence
+over inherited ancestors. It tints bytes and caches by asset identity plus
+RGBA. Theme switching recolors icons without script recompilation or state
+loss.
 
 ## Inline SVG atom
 
@@ -66,6 +68,9 @@ references before a node is accepted.
 svg("<svg viewBox='0 0 16 16'><path fill='currentColor' d='M2 8L7 13L14 3'/></svg>")
     .with_style(style().width(px(16)).height(px(16)).text_color(theme_color("accent")))
 ```
+
+The explicit `text_color` above is optional when an ancestor already declares
+the intended foreground color.
 
 Styled width and height define the SVG viewport. GPUI fits the SVG into that
 node box instead of painting the root document's intrinsic dimensions outside

@@ -793,6 +793,14 @@ impl AssetRegistry {
         };
         Ok(ImageSource::Image(image))
     }
+
+    #[cfg(test)]
+    pub(crate) fn has_tinted_image(&self, handle: &OpaqueHandle, color: Rgba8) -> bool {
+        self.inner
+            .borrow()
+            .tinted_images
+            .contains_key(&(handle.id(), color.as_rgba_hex()))
+    }
 }
 
 fn install_decoded_image(
@@ -857,11 +865,23 @@ fn tint_svg(bytes: &[u8], color: Rgba8) -> Result<Vec<u8>, AssetError> {
     if !source.contains("<svg") {
         return Err(AssetError::InvalidSvg);
     }
-    let rgb = color.as_rgba_hex() >> 8;
-    Ok(source
-        .replace("currentColor", &format!("#{rgb:06x}"))
-        .replace("currentcolor", &format!("#{rgb:06x}"))
-        .into_bytes())
+    Ok(tint_svg_current_color(source, color).into_bytes())
+}
+
+pub(crate) fn tint_svg_current_color(source: &str, color: Rgba8) -> String {
+    // GPUI 0.2.2's ImageDecoder routes ImageSource::Image through
+    // Image::to_image_data. Its raster branches convert RGBA to BGRA, but its
+    // SVG branch does not even though RenderImage is documented as BGRA. Keep
+    // this compensation centralized and delete it when the pinned GPUI fixes
+    // that branch.
+    let rgba = color.as_rgba_hex();
+    let red = (rgba >> 24) & 0xff;
+    let green = (rgba >> 16) & 0xff;
+    let blue = (rgba >> 8) & 0xff;
+    let bgra_source_literal = format!("#{blue:02x}{green:02x}{red:02x}");
+    source
+        .replace("currentColor", &bgra_source_literal)
+        .replace("currentcolor", &bgra_source_literal)
 }
 
 fn valid_segment(value: &str) -> bool {
@@ -1029,7 +1049,7 @@ mod tests {
                     "check".to_owned(),
                     AssetData {
                         mime_type: "image/svg+xml".to_owned(),
-                        bytes: b"<svg stroke=\"currentColor\"/>".to_vec(),
+                        bytes: br#"<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1" viewBox="0 0 1 1"><rect width="1" height="1" fill="currentColor"/></svg>"#.to_vec(),
                     },
                 )])),
             )
@@ -1048,7 +1068,7 @@ mod tests {
             panic!("asset registry must return in-memory images");
         };
         assert!(Arc::ptr_eq(&first, &second));
-        assert!(String::from_utf8_lossy(&first.bytes).contains("#1234ab"));
+        assert!(String::from_utf8_lossy(&first.bytes).contains("#ab3412"));
     }
 
     #[test]
