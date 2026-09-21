@@ -59,6 +59,10 @@ currently sampled value and velocity. Presentation domain, retained NodeId,
 component incarnation, script generation, property, and allocated motion
 instance jointly determine authority and lifetime. Human-readable timeline
 targets and fallback headless paths are planning inputs, not mounted identity.
+Keeping a timeline owner preserves playback state, not stale child bindings:
+each accepted retained tree recompiles target/property bindings to the current
+NodeIds. Resource admission evaluates the fully installed candidate plan, not
+the order in which individual declarations were visited.
 
 The old public `AnimationSpec`, `transition`, `spring`, `loop_transition` and
 `node.animate` surface is removed without aliases. Official source, examples,
@@ -101,6 +105,9 @@ window/presentation domain; duplicate source/target identity is an error.
 
 View suspension freezes timelines and resumes without adding elapsed wall
 time. Unmount, incarnation replacement and window close cancel scoped motion.
+Presentation teardown also clears suspension tombstones and uses segmented
+domain ownership, so reusing a window ID cannot inherit a prior pause and
+prefix-neighbor windows cannot be reclaimed accidentally.
 Business progress remains in state/store/NativeSignal; motion state is a
 transient presentation projection.
 

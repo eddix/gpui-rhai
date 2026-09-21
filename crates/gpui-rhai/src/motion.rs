@@ -1007,11 +1007,14 @@ impl MotionRuntime {
             ));
         }
         let (mut tracks, duration_ms) = compile_timeline(&spec.root)?;
-        if let Some(identities) = identities {
-            for track in &mut tracks {
-                let target = resolve_timeline_target(&owner.target_root, &track.target);
-                track.resolved_path = identities.get(&target).cloned();
-            }
+        for track in &mut tracks {
+            let target = resolve_timeline_target(&owner.target_root, &track.target);
+            track.resolved_path = Some(
+                identities
+                    .and_then(|identities| identities.get(&target))
+                    .cloned()
+                    .unwrap_or(target),
+            );
         }
         let logical = TimelineLogicalKey {
             domain: owner.domain.clone(),
@@ -1025,6 +1028,8 @@ impl MotionRuntime {
                 && previous_handle.owner == owner.component
                 && previous_handle.incarnation == owner.incarnation
             {
+                active.tracks = tracks;
+                active.duration_ms = duration_ms;
                 active.spec.on_complete = spec.on_complete;
                 active.spec.on_cancel = spec.on_cancel;
                 if previous_handle.generation == owner.generation {
@@ -1603,6 +1608,13 @@ impl MotionRuntime {
             }
             self.timeline_index.retain(|_, active| active != &handle);
         }
+    }
+
+    pub(crate) fn release_node_scope(&mut self, path: &str) {
+        self.cancel_node_scope(path);
+        self.suspended_scopes
+            .retain(|scope| !path_contains_scope(path, scope));
+        self.discard_timeline_events_in_scope(path);
     }
 
     #[must_use]
@@ -2224,8 +2236,7 @@ fn sample_inertia_at(spec: &MotionInertia, elapsed: Duration) -> (f64, f64) {
         let mut position = spec.from + spec.velocity * (1.0 - decay) / spec.friction;
         let mut velocity = spec.velocity * decay;
         if elapsed >= Duration::from_millis(inertia_settle_ms(spec)) {
-            position = nearest_snap(inertia_target(spec), &spec.snap_points)
-                .unwrap_or_else(|| inertia_target(spec));
+            position = nearest_snap(position, &spec.snap_points).unwrap_or(position);
             velocity = 0.0;
         }
         return (position, velocity);
@@ -2427,6 +2438,8 @@ pub(crate) fn reconcile_node_motion_scoped_owned(
         validate_source(spec)?;
     }
     let mut candidate = runtime.transaction_snapshot();
+    let active_limit = candidate.active_limit;
+    candidate.active_limit = usize::MAX;
     if context.identities.is_none() {
         let signature = format!(
             "{:?}:{}",
@@ -2513,6 +2526,15 @@ pub(crate) fn reconcile_node_motion_scoped_owned(
         )?;
     }
     candidate.retain_timeline_scope(root_path, &handles);
+    let usage = candidate.resource_usage();
+    let active = usage.active.saturating_add(usage.geometry_slots);
+    if active > active_limit {
+        return Err(MotionError::ActiveBudget {
+            actual: active,
+            limit: active_limit,
+        });
+    }
+    candidate.active_limit = active_limit;
     let values = candidate.snapshot(now);
     *runtime = candidate;
     Ok(values)
@@ -4817,6 +4839,11 @@ mod tests {
             assert!((position - expected_position).abs() < 1.0e-9);
             assert!((velocity - expected_velocity).abs() < 1.0e-9);
         }
+        let before_cap = sample_inertia_at(&spec, Duration::from_millis(9_999)).0;
+        let at_cap = sample_inertia_at(&spec, Duration::from_millis(10_000)).0;
+        let after_cap = sample_inertia_at(&spec, Duration::from_millis(11_000)).0;
+        assert!((at_cap - before_cap).abs() < 0.1);
+        assert!((after_cap - at_cap).abs() < f64::EPSILON);
     }
 
     #[test]
@@ -5032,6 +5059,39 @@ mod tests {
         let values = reconcile_node_motion(&nested, &mut runtime, now).unwrap();
         assert_eq!(values.len(), 4);
 
+        let direct = UiNode::column(vec![
+            UiNode::text("Title")
+                .with_key("title")
+                .with_motion(transition(MotionProperty::Opacity, 0.0, 1.0, 100)),
+        ])
+        .with_key("panel");
+        let timeline_target = UiNode::column(vec![UiNode::text("Title").with_key("title")])
+            .with_key("panel")
+            .with_timeline(MotionTimeline::new(
+                "child",
+                MotionTimelineStep::Track(MotionTrack {
+                    target: "title".to_owned(),
+                    source: transition(MotionProperty::Opacity, 0.0, 1.0, 100),
+                }),
+            ));
+        let direct_keys = reconcile_node_motion(
+            &direct,
+            &mut MotionRuntime::new(MotionPreference::Normal),
+            now,
+        )
+        .unwrap()
+        .into_keys()
+        .collect::<Vec<_>>();
+        let timeline_keys = reconcile_node_motion(
+            &timeline_target,
+            &mut MotionRuntime::new(MotionPreference::Normal),
+            now,
+        )
+        .unwrap()
+        .into_keys()
+        .collect::<Vec<_>>();
+        assert_eq!(direct_keys, timeline_keys);
+
         let timeline = || {
             MotionTimeline::new(
                 "intro",
@@ -5071,15 +5131,18 @@ mod tests {
     #[test]
     fn retained_timeline_targets_resolve_to_the_target_node_identity() {
         let now = Instant::now();
-        let root = UiNode::column(vec![UiNode::text("Title").with_key("title")])
-            .with_key("panel")
-            .with_timeline(MotionTimeline::new(
+        let timeline = || {
+            MotionTimeline::new(
                 "intro",
                 MotionTimelineStep::Track(MotionTrack {
                     target: "title".to_owned(),
                     source: transition(MotionProperty::Opacity, 0.0, 1.0, 100),
                 }),
-            ));
+            )
+        };
+        let root = UiNode::column(vec![UiNode::text("Title").with_key("title")])
+            .with_key("panel")
+            .with_timeline(timeline());
         let mut retained = crate::RetainedUiTree::new();
         retained.reconcile(root.clone()).unwrap();
         let title = retained
@@ -5110,6 +5173,46 @@ mod tests {
             &retained_node_path("root", title),
             MotionProperty::Opacity,
         )));
+
+        let replacement = UiNode::column(vec![UiNode::box_node(Vec::new()).with_key("title")])
+            .with_key("panel")
+            .with_timeline(timeline());
+        retained.reconcile(replacement.clone()).unwrap();
+        let replacement_title = retained
+            .nodes()
+            .find(|node| node.key() == Some("title"))
+            .unwrap()
+            .id();
+        assert_ne!(title, replacement_title);
+        let replacement_identities =
+            retained_motion_identities(&replacement, &retained, "root").unwrap();
+        let values = reconcile_node_motion_scoped_owned(
+            &replacement,
+            &mut runtime,
+            now + Duration::from_millis(50),
+            "root",
+            MotionReconcileContext {
+                domain: "root",
+                root_component: &component,
+                root_incarnation: ComponentIncarnation::unscoped(),
+                generation: ScriptGeneration::initial(),
+                incarnations: &incarnations,
+                identities: Some(&replacement_identities),
+            },
+        )
+        .unwrap();
+        assert!(!values.contains_key(&MotionKey::for_node(
+            &retained_node_path("root", title),
+            MotionProperty::Opacity,
+        )));
+        assert!(
+            (values[&MotionKey::for_node(
+                &retained_node_path("root", replacement_title),
+                MotionProperty::Opacity,
+            )] - 0.5)
+                .abs()
+                < 0.01
+        );
     }
 
     #[test]
@@ -5204,5 +5307,45 @@ mod tests {
             runtime.timeline_state(&handle),
             Some(MotionPlaybackState::Idle)
         );
+    }
+
+    #[test]
+    fn timeline_budget_is_independent_of_declaration_order() {
+        let now = Instant::now();
+        let timeline = |name: &str, property: MotionProperty, autoplay: bool| {
+            let mut timeline = MotionTimeline::new(
+                name,
+                MotionTimelineStep::Track(MotionTrack {
+                    target: ".".to_owned(),
+                    source: transition(property, 0.0, 1.0, 100),
+                }),
+            );
+            timeline.autoplay = autoplay;
+            timeline
+        };
+        for reversed in [false, true] {
+            let mut runtime = MotionRuntime::new(MotionPreference::Normal);
+            runtime.set_active_limit(1);
+            let initial = UiNode::text("x")
+                .with_key("x")
+                .with_timeline(timeline("a", MotionProperty::Opacity, true))
+                .with_timeline(timeline("b", MotionProperty::Width, false));
+            reconcile_node_motion(&initial, &mut runtime, now).unwrap();
+            let first = timeline("a", MotionProperty::Opacity, false);
+            let second = timeline("b", MotionProperty::Width, true);
+            let replacement = if reversed {
+                UiNode::text("x")
+                    .with_key("x")
+                    .with_timeline(second)
+                    .with_timeline(first)
+            } else {
+                UiNode::text("x")
+                    .with_key("x")
+                    .with_timeline(first)
+                    .with_timeline(second)
+            };
+            reconcile_node_motion(&replacement, &mut runtime, now).unwrap();
+            assert_eq!(runtime.resource_usage().active, 1);
+        }
     }
 }

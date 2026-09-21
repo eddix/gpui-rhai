@@ -23,6 +23,13 @@ use crate::{
     UiValuePathSegment, WindowCommandError, WindowCommandRegistry,
 };
 
+fn domain_is_within(domain: &str, scope: &str) -> bool {
+    domain == scope
+        || domain
+            .strip_prefix(scope)
+            .is_some_and(|suffix| suffix.starts_with('/'))
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ExecutionPhase {
     Init,
@@ -367,20 +374,20 @@ impl UiRuntimeState {
             locale.remove_window(window);
             locale.remove_scope(root);
         }
-        self.motions.cancel_node_scope(&format!("window:{window}"));
+        let window_scope = format!("window:{window}");
+        self.motions.release_node_scope(&window_scope);
         let removed_ghosts = self
             .motion_ghosts
             .iter()
-            .filter(|ghost| ghost.domain.starts_with(&format!("window:{window}")))
+            .filter(|ghost| domain_is_within(&ghost.domain, &window_scope))
             .map(|ghost| ghost.path.clone())
             .collect::<Vec<_>>();
         self.motion_ghosts
-            .retain(|ghost| !ghost.domain.starts_with(&format!("window:{window}")));
+            .retain(|ghost| !domain_is_within(&ghost.domain, &window_scope));
         for path in removed_ghosts {
             self.motions.cancel_node_scope(&path);
         }
-        self.motions
-            .discard_timeline_events_in_scope(&format!("window:{window}"));
+        self.motions.discard_timeline_events_in_scope(&window_scope);
         self.motion_values = self.motions.snapshot(self.clock.now());
         self.effects.remove_scope(root);
         self.signals.remove_scope(root);
@@ -4874,6 +4881,67 @@ mod tests {
         second_capture.capture(0, second_node);
         assert_eq!(first_capture.captured(0), Some(first_node));
         assert_eq!(second_capture.captured(0), Some(second_node));
+    }
+
+    #[test]
+    fn window_release_uses_segment_boundaries_and_clears_suspend_tombstones() {
+        let now = std::time::Instant::now();
+        let transition = || {
+            let mut spec =
+                crate::MotionTransition::new(crate::MotionProperty::Opacity, 0.0, 1.0, 1_000);
+            spec.easing = crate::MotionEasing::Linear;
+            crate::MotionSource::Transition(spec)
+        };
+        let mut state = UiRuntimeState::new();
+        let ghost_path = "window:w2/view:v2/root/ghost:1";
+        state
+            .motions
+            .start_exit(
+                ComponentInstancePath::root("UiNode", ghost_path),
+                transition(),
+                now,
+            )
+            .unwrap();
+        state.motion_ghosts.push(crate::motion::MotionGhost {
+            id: "1".to_owned(),
+            node: crate::UiNode::text("ghost"),
+            bounds: crate::GeometryBounds::new(0.0, 0.0, 10.0, 10.0).unwrap(),
+            path: ghost_path.to_owned(),
+            domain: "window:w2/view:v2/root".to_owned(),
+        });
+        state
+            .release_window("w", &ComponentInstancePath::root("View", "v"))
+            .unwrap();
+        assert_eq!(state.motion_ghosts.len(), 1);
+        assert_eq!(state.motions.resource_usage().active, 1);
+
+        let mut reopened = UiRuntimeState::new();
+        let scope = "window:w/view:v/root";
+        reopened
+            .motions
+            .start(
+                ComponentInstancePath::root("UiNode", format!("{scope}/node:1")),
+                transition(),
+                now,
+            )
+            .unwrap();
+        reopened
+            .motions
+            .suspend_node_scope(scope, now + Duration::from_millis(200));
+        reopened
+            .release_window("w", &ComponentInstancePath::root("View", "v"))
+            .unwrap();
+        let key = reopened
+            .motions
+            .start(
+                ComponentInstancePath::root("UiNode", format!("{scope}/node:2")),
+                transition(),
+                now + Duration::from_millis(200),
+            )
+            .unwrap();
+        let frame = reopened.motions.tick(now + Duration::from_millis(400));
+        assert!(frame.needs_frame);
+        assert!((frame.values[&key] - 0.2).abs() < 0.01);
     }
 
     #[test]

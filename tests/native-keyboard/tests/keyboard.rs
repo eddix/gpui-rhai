@@ -6358,3 +6358,101 @@ fn canvas_morph_hit_testing_follows_the_presented_path(cx: &mut TestAppContext) 
             .is_some()
     }));
 }
+
+#[gpui::test]
+fn timeline_rebinds_a_replaced_child_in_presented_frames(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let entry = ModuleId::parse("main").unwrap();
+    let source = r#"
+        fn state_schema(){#{fields:#{switched:#{schema:#{type:"bool"},
+            "default":#{type:"bool",value:false}}}}}
+        fn replace_target(ctx,event){ctx.set_state("switched",true);}
+        fn repaint(ctx,event){}
+        fn init(ctx){
+            ctx.register_action("audit.replace",Fn("replace_target"));
+            ctx.register_action("audit.repaint",Fn("repaint"));
+        }
+        fn view(ctx){
+            let child=if ctx.get_state("switched"){box([])}else{text("Title")};
+            column([child.with_key("title").accessibility_role("button")
+                .accessibility_label("Title")
+                .with_style(style().width(px(100)).height(px(30)))])
+                .with_key("panel").timeline(motion_timeline("intro",
+                    motion_track("title",motion_transition("width",100.0,200.0,
+                        #{duration_ms:1000,easing:"linear"})),#{}))
+        }
+    "#;
+    let manual = gpui_rhai::ManualRuntimeClock::new(std::time::Instant::now());
+    let prepared = EmbeddedScriptView::new(
+        entry.clone(),
+        EmbeddedScriptSource::new(std::collections::BTreeMap::from([(
+            entry,
+            source.to_owned(),
+        )])),
+        include_str!("../../../registry/themes/default_dark.rhai"),
+    )
+    .runtime_clock(manual.clock())
+    .prepare()
+    .unwrap();
+    let captured = Rc::new(RefCell::new(None));
+    let captured_for_window = Rc::clone(&captured);
+    let window = cx.add_window(move |window, cx| {
+        let host = ScriptViewHost::new("timeline-target-window", cx).unwrap();
+        let view = prepared
+            .mount(
+                ScriptViewConfig::new("timeline-target-view"),
+                host.clone(),
+                window,
+                cx,
+            )
+            .unwrap();
+        *captured_for_window.borrow_mut() = Some(view.clone());
+        SingleEmbeddedHost { host, view }
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    cx.run_until_parked();
+    let view = captured.borrow().as_ref().unwrap().clone();
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    let mut widths = vec![visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .find_by_role_and_name("button", "Title")
+            .next()
+            .unwrap()
+            .geometry
+            .unwrap()
+            .visual
+            .width
+    })];
+    for id in ["audit.replace", "audit.repaint"] {
+        manual.advance(std::time::Duration::from_millis(250));
+        visual
+            .update(|window, cx| {
+                view.automate(
+                    gpui_rhai::AutomationCommand::Action {
+                        id: id.to_owned(),
+                        payload: None,
+                    },
+                    window,
+                    cx,
+                )
+            })
+            .unwrap();
+        visual.run_until_parked();
+        cx.refresh().unwrap();
+        visual.run_until_parked();
+        widths.push(visual.update(|_, cx| {
+            view.accessibility_snapshot(cx)
+                .unwrap()
+                .find_by_role_and_name("button", "Title")
+                .next()
+                .unwrap()
+                .geometry
+                .unwrap()
+                .visual
+                .width
+        }));
+    }
+    assert!(widths[2] > 110.0, "presented widths: {widths:?}");
+}

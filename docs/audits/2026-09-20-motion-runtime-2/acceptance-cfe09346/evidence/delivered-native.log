@@ -1,0 +1,23 @@
+Native probe project: /var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T//gpui-rhai-motion-native.3zuPJ0
+   Compiling gpui-rhai-motion-review-native v0.0.0 (/var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T/gpui-rhai-motion-native.3zuPJ0)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.83s
+     Running tests/policy.rs (tests/native-keyboard/target/debug/deps/policy-0c5be9fa41d0ce27)
+
+running 2 tests
+target replacement presented widths at 0/250/500 ms = [100.0, 100.0, 100.0]
+
+thread 'timeline_rebinds_a_replaced_child_in_presented_frames' (39805803) panicked at tests/policy.rs:197:5:
+the current child must keep receiving the declared width track after its retained NodeId changes
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+path_progress=1 painted_y=80: hit_at_y80=true missed_at_y80=false; original_y20_still_hits=false
+test timeline_rebinds_a_replaced_child_in_presented_frames ... FAILED
+test morphed_path_hit_follows_presented_endpoint ... ok
+
+failures:
+
+failures:
+    timeline_rebinds_a_replaced_child_in_presented_frames
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.85s
+
+error: test failed, to rerun pass `--test policy`

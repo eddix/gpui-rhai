@@ -54,6 +54,11 @@ semantic versioning from this release.
 - Unconstrained and non-bouncing inertia use closed-form exponential sampling;
   bouncing constraints use analytical collision segments instead of replaying
   a 240 Hz history on every frame.
+- Compatible timelines now refresh resolved retained-target bindings without
+  resetting playback position. Presentation teardown uses exact domain
+  boundaries and clears suspension tombstones; candidate budgets are checked
+  once against the complete final plan. Inertia safety caps preserve the actual
+  cap-time sample unless explicit snap points request an attachment.
 - `motion_gallery` now mounts in the native GPUI harness and exposes live
   timeline controls, controlled tabs, keyed reorder, and shared-layout
   selection rather than only verifying source preparation.

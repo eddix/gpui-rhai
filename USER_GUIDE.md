@@ -888,6 +888,10 @@ generation-bound handle during reload; the previous handle becomes stale.
 Mounted motion follows retained NodeId rather than concatenated user keys, so
 reorder preserves identity while a true remount restarts it. Keys containing
 slashes, numeric text, or `item:` are safe.
+If a timeline-owned child remounts while its parent timeline stays compatible,
+the runtime preserves the timeline position and rebinds the track to the new
+child. Closing a window completely clears its suspended presentation state;
+later reuse of the same window/view ID starts cleanly.
 
 Canvas morph/trim/stroke/clip and rotate/scale/skew share one presented geometry
 for paint and hit testing.

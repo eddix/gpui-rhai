@@ -1,0 +1,11 @@
+Native probe project: /var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T//gpui-rhai-motion-native.a9v5wd
+   Compiling gpui-rhai-motion-review-native v0.0.0 (/var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T/gpui-rhai-motion-native.a9v5wd)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.28s
+     Running tests/policy.rs (tests/native-keyboard/target/debug/deps/policy-0c5be9fa41d0ce27)
+
+running 1 test
+path_progress=1 painted_y=80: hit_at_y80=true missed_at_y80=false; original_y20_still_hits=false
+test morphed_path_hit_follows_presented_endpoint ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.86s
+

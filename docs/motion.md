@@ -169,6 +169,13 @@ reconciliation uses collision-free encoded path segments, so keys containing
 `/`, numeric text, or reserved-looking prefixes do not alias. Inertia uses
 closed-form exponential/collision sampling rather than reintegrating its full
 age every frame.
+Compatible timeline rerenders preserve time position while replacing their
+resolved target bindings, so a child remount receives the current sample and
+the old NodeId disappears immediately. Candidate budgets are evaluated once
+from the completely installed plan, independent of declaration order. Window
+release is a stronger boundary than cancel: it clears suspension state and
+cannot match neighboring IDs such as `w2`. An inertia duration cap freezes its
+actual sample; only explicit snap points may move it to an attachment.
 
 ## Rust Hosts and the effect seam
 
