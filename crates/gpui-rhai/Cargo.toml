@@ -32,6 +32,7 @@ image.workspace = true
 jiff.workspace = true
 usvg.workspace = true
 resvg.workspace = true
+roxmltree.workspace = true
 event-listener.workspace = true
 similar.workspace = true
 syntect.workspace = true

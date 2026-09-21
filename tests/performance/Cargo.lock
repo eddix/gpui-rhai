@@ -2267,6 +2267,7 @@ dependencies = [
  "regex",
  "resvg",
  "rhai",
+ "roxmltree",
  "semver",
  "serde",
  "serde_json",

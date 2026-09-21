@@ -1,13 +1,14 @@
 use std::cell::RefCell;
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
+use std::sync::{Arc, LazyLock};
 
-use gpui::{Image, ImageFormat, ImageSource};
+use gpui::{AppContext as _, Image, ImageCacheError, ImageFormat, ImageSource, RenderImage};
 use rhai::{CustomType, TypeBuilder};
 use thiserror::Error;
 
@@ -19,6 +20,8 @@ use crate::{
 const MAX_SVG_RASTER_DIMENSION: u32 = 16_384;
 const MAX_SVG_RASTER_DIMENSION_F32: f32 = 16_384.0;
 const MAX_SVG_RASTER_PIXELS: u64 = 16_777_216;
+const SVG_VARIANT_CACHE_MAX_ENTRIES: usize = 256;
+const SVG_VARIANT_CACHE_MAX_BYTES: usize = 128 * 1024 * 1024;
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct AssetId(String);
@@ -210,7 +213,276 @@ struct PendingImageDecode {
 
 struct ImageDecodeMessage {
     id: u64,
-    result: Result<(ImageFormat, AssetData), String>,
+    result: Result<PreparedImageData, String>,
+}
+
+struct PreparedImageData {
+    data: StoredAssetData,
+    image: Arc<Image>,
+}
+
+#[derive(Clone, Debug)]
+struct StoredAssetData {
+    mime_type: String,
+    content: StoredAssetContent,
+}
+
+#[derive(Clone, Debug)]
+enum StoredAssetContent {
+    Svg(Arc<str>),
+    Raster,
+}
+
+impl StoredAssetData {
+    fn from_validated(data: AssetData, format: ImageFormat) -> Result<Self, AssetError> {
+        let content = if format == ImageFormat::Svg {
+            StoredAssetContent::Svg(Arc::from(
+                String::from_utf8(data.bytes).map_err(|_| AssetError::InvalidSvg)?,
+            ))
+        } else {
+            StoredAssetContent::Raster
+        };
+        Ok(Self {
+            mime_type: data.mime_type,
+            content,
+        })
+    }
+
+    fn svg_source(&self) -> Option<Arc<str>> {
+        match &self.content {
+            StoredAssetContent::Svg(source) => Some(Arc::clone(source)),
+            StoredAssetContent::Raster => None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct SvgRasterSource {
+    source: Arc<str>,
+    color: Option<u32>,
+}
+
+impl SvgRasterSource {
+    fn new(source: Arc<str>, color: Option<Rgba8>) -> Self {
+        Self {
+            source,
+            color: color.map(Rgba8::as_rgba_hex),
+        }
+    }
+
+    fn source_bytes(&self) -> usize {
+        self.source.len()
+    }
+
+    fn color(&self) -> Option<Rgba8> {
+        self.color.map(Rgba8::from_rgba_hex)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SvgCacheStats {
+    pub entries: usize,
+    pub bytes: usize,
+    pub max_entries: usize,
+    pub max_bytes: usize,
+    pub hits: u64,
+    pub misses: u64,
+    pub evictions: u64,
+}
+
+#[derive(Clone, Debug)]
+struct SvgVariantCacheEntry {
+    bytes: usize,
+    last_access: u64,
+    state: SvgVariantCacheState,
+}
+
+#[derive(Clone, Debug)]
+enum SvgVariantCacheState {
+    Pending {
+        token: u64,
+        canceled: Arc<AtomicBool>,
+    },
+    Ready(Result<Arc<RenderImage>, ImageCacheError>),
+}
+
+struct SvgVariantMessage {
+    source: SvgRasterSource,
+    token: u64,
+    result: Result<Arc<RenderImage>, ImageCacheError>,
+}
+
+struct SvgVariantCache {
+    entries: BTreeMap<SvgRasterSource, SvgVariantCacheEntry>,
+    bytes: usize,
+    max_entries: usize,
+    max_bytes: usize,
+    access_clock: u64,
+    next_token: u64,
+    hits: u64,
+    misses: u64,
+    evictions: u64,
+    sender: Sender<SvgVariantMessage>,
+    receiver: Receiver<SvgVariantMessage>,
+}
+
+impl Default for SvgVariantCache {
+    fn default() -> Self {
+        let (sender, receiver) = channel();
+        Self {
+            entries: BTreeMap::new(),
+            bytes: 0,
+            max_entries: SVG_VARIANT_CACHE_MAX_ENTRIES,
+            max_bytes: SVG_VARIANT_CACHE_MAX_BYTES,
+            access_clock: 0,
+            next_token: 1,
+            hits: 0,
+            misses: 0,
+            evictions: 0,
+            sender,
+            receiver,
+        }
+    }
+}
+
+impl SvgVariantCache {
+    #[cfg(test)]
+    fn with_limits(max_entries: usize, max_bytes: usize) -> Self {
+        let mut cache = Self::default();
+        cache.max_entries = max_entries;
+        cache.max_bytes = max_bytes;
+        cache
+    }
+
+    fn drain(&mut self) {
+        while let Ok(message) = self.receiver.try_recv() {
+            let Some(entry) = self.entries.get_mut(&message.source) else {
+                continue;
+            };
+            let SvgVariantCacheState::Pending { token, canceled } = &entry.state else {
+                continue;
+            };
+            if *token != message.token || canceled.load(Ordering::Acquire) {
+                continue;
+            }
+            let rendered_bytes = message
+                .result
+                .as_ref()
+                .ok()
+                .and_then(|image| image.as_bytes(0))
+                .map_or(0, <[u8]>::len);
+            let new_bytes = message.source.source_bytes().saturating_add(rendered_bytes);
+            self.bytes = self.bytes.saturating_sub(entry.bytes);
+            entry.bytes = new_bytes;
+            entry.state = SvgVariantCacheState::Ready(message.result);
+            self.bytes = self.bytes.saturating_add(new_bytes);
+        }
+    }
+
+    fn clear(&mut self) {
+        for entry in self.entries.values() {
+            if let SvgVariantCacheState::Pending { canceled, .. } = &entry.state {
+                canceled.store(true, Ordering::Release);
+            }
+        }
+        self.evictions = self
+            .evictions
+            .saturating_add(u64::try_from(self.entries.len()).unwrap_or(u64::MAX));
+        self.entries.clear();
+        self.bytes = 0;
+        while self.receiver.try_recv().is_ok() {}
+    }
+
+    fn access(&mut self, source: &SvgRasterSource) -> SvgVariantAccess {
+        self.drain();
+        self.access_clock = self.access_clock.saturating_add(1);
+        if let Some(entry) = self.entries.get_mut(source) {
+            entry.last_access = self.access_clock;
+            self.hits = self.hits.saturating_add(1);
+            let access = match &entry.state {
+                SvgVariantCacheState::Pending { .. } => SvgVariantAccess::Pending,
+                SvgVariantCacheState::Ready(result) => SvgVariantAccess::Ready(result.clone()),
+            };
+            self.enforce_limits(Some(source));
+            return access;
+        }
+        let bytes = source.source_bytes();
+        let token = self.next_token;
+        self.next_token = self.next_token.saturating_add(1);
+        let canceled = Arc::new(AtomicBool::new(false));
+        self.entries.insert(
+            source.clone(),
+            SvgVariantCacheEntry {
+                bytes,
+                last_access: self.access_clock,
+                state: SvgVariantCacheState::Pending {
+                    token,
+                    canceled: Arc::clone(&canceled),
+                },
+            },
+        );
+        self.bytes = self.bytes.saturating_add(bytes);
+        self.misses = self.misses.saturating_add(1);
+        self.enforce_limits(Some(source));
+        SvgVariantAccess::Start {
+            token,
+            canceled,
+            sender: self.sender.clone(),
+        }
+    }
+
+    fn enforce_limits(&mut self, protected: Option<&SvgRasterSource>) {
+        while self.entries.len() > self.max_entries || self.bytes > self.max_bytes {
+            let candidate = self
+                .entries
+                .iter()
+                .filter(|(source, _)| protected != Some(*source))
+                .min_by_key(|(_, entry)| entry.last_access)
+                .map(|(source, _)| source.clone())
+                .or_else(|| protected.cloned());
+            let Some(candidate) = candidate else {
+                break;
+            };
+            let Some(entry) = self.entries.remove(&candidate) else {
+                break;
+            };
+            if let SvgVariantCacheState::Pending { canceled, .. } = entry.state {
+                canceled.store(true, Ordering::Release);
+            }
+            self.bytes = self.bytes.saturating_sub(entry.bytes);
+            self.evictions = self.evictions.saturating_add(1);
+        }
+    }
+
+    fn stats(&mut self) -> SvgCacheStats {
+        self.drain();
+        self.enforce_limits(None);
+        SvgCacheStats {
+            entries: self.entries.len(),
+            bytes: self.bytes,
+            max_entries: self.max_entries,
+            max_bytes: self.max_bytes,
+            hits: self.hits,
+            misses: self.misses,
+            evictions: self.evictions,
+        }
+    }
+}
+
+impl Drop for SvgVariantCache {
+    fn drop(&mut self) {
+        self.clear();
+    }
+}
+
+enum SvgVariantAccess {
+    Start {
+        token: u64,
+        canceled: Arc<AtomicBool>,
+        sender: Sender<SvgVariantMessage>,
+    },
+    Pending,
+    Ready(Result<Arc<RenderImage>, ImageCacheError>),
 }
 
 #[derive(Clone, Debug)]
@@ -240,9 +512,8 @@ struct AssetRegistryInner {
     providers: BTreeMap<String, Box<dyn AssetProvider>>,
     by_asset: BTreeMap<AssetId, ImageHandle>,
     images: BTreeMap<u64, Arc<Image>>,
-    image_data: BTreeMap<u64, AssetData>,
-    tinted_images: BTreeMap<(u64, u32), Arc<Image>>,
-    inline_svg_images: BTreeMap<(String, Option<u32>), Arc<Image>>,
+    image_data: BTreeMap<u64, StoredAssetData>,
+    svg_variants: SvgVariantCache,
     next_id: u64,
     next_decode_id: u64,
     pending_decodes: BTreeMap<u64, PendingImageDecode>,
@@ -260,8 +531,7 @@ impl Default for AssetRegistryInner {
             by_asset: BTreeMap::new(),
             images: BTreeMap::new(),
             image_data: BTreeMap::new(),
-            tinted_images: BTreeMap::new(),
-            inline_svg_images: BTreeMap::new(),
+            svg_variants: SvgVariantCache::default(),
             next_id: 0,
             next_decode_id: 1,
             pending_decodes: BTreeMap::new(),
@@ -377,8 +647,9 @@ impl AssetRegistry {
                     if data.bytes.is_empty() {
                         return Err(AssetError::Empty(asset.clone()));
                     }
-                    let image = prepare_image(format, &data, None)?;
-                    Ok((handle.opaque.id(), data.clone(), image))
+                    let image = prepare_image(format, &data.bytes, None)?;
+                    let stored = StoredAssetData::from_validated(data, format)?;
+                    Ok((handle.opaque.id(), stored, image))
                 })
                 .collect::<Result<Vec<_>, AssetError>>()?
         };
@@ -389,9 +660,9 @@ impl AssetRegistry {
         for (id, data, image) in &refreshed {
             inner.images.insert(*id, Arc::clone(image));
             inner.image_data.insert(*id, data.clone());
-            inner
-                .tinted_images
-                .retain(|(image_id, _), _| image_id != id);
+        }
+        if !refreshed.is_empty() {
+            inner.svg_variants.clear();
         }
         Ok(refreshed.len())
     }
@@ -430,7 +701,8 @@ impl AssetRegistry {
         if data.bytes.is_empty() {
             return Err(AssetError::Empty(id.clone()));
         }
-        let image = prepare_image(format, &data, None)?;
+        let image = prepare_image(format, &data.bytes, None)?;
+        let data = StoredAssetData::from_validated(data, format)?;
         let mut inner = self
             .inner
             .try_borrow_mut()
@@ -691,11 +963,9 @@ impl AssetRegistry {
                 continue;
             }
             let (callback, payload) = match message.result {
-                Ok((format, data)) => {
-                    match install_decoded_image(&mut inner, pending.asset, format, data) {
-                        Ok(handle) => (pending.success, UiValue::Handle(handle.opaque().clone())),
-                        Err(error) => (pending.error, UiValue::String(error.to_string())),
-                    }
+                Ok(prepared) => {
+                    let handle = install_decoded_image(&mut inner, pending.asset, prepared);
+                    (pending.success, UiValue::Handle(handle.opaque().clone()))
                 }
                 Err(message) => (pending.error, UiValue::String(message)),
             };
@@ -770,103 +1040,124 @@ impl AssetRegistry {
         if handle.kind() != "image" {
             return Err(AssetError::WrongHandleKind(handle.kind().to_owned()));
         }
-        let mut inner = self
-            .inner
-            .try_borrow_mut()
-            .map_err(|_| AssetError::Borrowed)?;
-        let Some(data) = inner.image_data.get(&handle.id()).cloned() else {
+        let inner = self.inner.try_borrow().map_err(|_| AssetError::Borrowed)?;
+        let Some(data) = inner.image_data.get(&handle.id()) else {
             return Err(AssetError::UnknownHandle(handle.id()));
         };
-        let image = if data.mime_type == "image/svg+xml"
+        if data.mime_type == "image/svg+xml"
             && let Some(color) = color
+            && let Some(source) = data.svg_source()
+            && svg_uses_external_current_color(&source)
         {
-            let key = (handle.id(), color.as_rgba_hex());
-            if let Some(image) = inner.tinted_images.get(&key) {
-                image.clone()
-            } else {
-                let image = svg_image(&data.bytes, Some(color))?;
-                inner.tinted_images.insert(key, image.clone());
-                image
-            }
-        } else {
-            inner
-                .images
-                .get(&handle.id())
-                .cloned()
-                .ok_or(AssetError::UnknownHandle(handle.id()))?
-        };
+            drop(inner);
+            return Ok(self.svg_variant_image_source(SvgRasterSource::new(source, Some(color))));
+        }
+        let image = inner
+            .images
+            .get(&handle.id())
+            .cloned()
+            .ok_or(AssetError::UnknownHandle(handle.id()))?;
         Ok(ImageSource::Image(image))
     }
 
-    pub(crate) fn inline_svg_image(
-        &self,
-        source: &str,
-        color: Option<Rgba8>,
-    ) -> Result<Arc<Image>, AssetError> {
-        let key = (source.to_owned(), color.map(Rgba8::as_rgba_hex));
-        if let Some(image) = self
-            .inner
-            .try_borrow()
-            .map_err(|_| AssetError::Borrowed)?
-            .inline_svg_images
-            .get(&key)
-            .cloned()
-        {
-            return Ok(image);
-        }
-        let image = svg_image(source.as_bytes(), color)?;
-        self.inner
-            .try_borrow_mut()
-            .map_err(|_| AssetError::Borrowed)?
-            .inline_svg_images
-            .insert(key, Arc::clone(&image));
-        Ok(image)
+    pub(crate) fn inline_svg_source(&self, source: Arc<str>, color: Option<Rgba8>) -> ImageSource {
+        self.svg_variant_image_source(SvgRasterSource::new(source, color))
     }
 
-    #[cfg(test)]
-    pub(crate) fn has_tinted_image(&self, handle: &OpaqueHandle, color: Rgba8) -> bool {
+    fn svg_variant_image_source(&self, source: SvgRasterSource) -> ImageSource {
+        let registry = self.clone();
+        ImageSource::from(move |window: &mut gpui::Window, cx: &mut gpui::App| {
+            let access = {
+                let Ok(mut inner) = registry.inner.try_borrow_mut() else {
+                    return Some(Err(ImageCacheError::Asset(
+                        AssetError::Borrowed.to_string().into(),
+                    )));
+                };
+                inner.svg_variants.access(&source)
+            };
+            match access {
+                SvgVariantAccess::Ready(result) => Some(result),
+                SvgVariantAccess::Pending => {
+                    window.request_animation_frame();
+                    None
+                }
+                SvgVariantAccess::Start {
+                    token,
+                    canceled,
+                    sender,
+                } => {
+                    let source = source.clone();
+                    cx.background_spawn(async move {
+                        if canceled.load(Ordering::Acquire) {
+                            return;
+                        }
+                        let result = svg_render_image(source.source.as_bytes(), source.color())
+                            .map_err(|error| ImageCacheError::Asset(error.to_string().into()));
+                        if !canceled.load(Ordering::Acquire) {
+                            let _ = sender.send(SvgVariantMessage {
+                                source,
+                                token,
+                                result,
+                            });
+                        }
+                    })
+                    .detach();
+                    window.request_animation_frame();
+                    None
+                }
+            }
+        })
+    }
+
+    /// Return bounded SVG variant-cache usage and lifetime counters.
+    ///
+    /// The byte count includes retained SVG source text and ready BGRA pixels.
+    /// Pending or canceled background work is never counted as a ready image.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AssetError::Borrowed`] during conflicting registry access.
+    pub fn svg_cache_stats(&self) -> Result<SvgCacheStats, AssetError> {
         self.inner
-            .borrow()
-            .tinted_images
-            .contains_key(&(handle.id(), color.as_rgba_hex()))
+            .try_borrow_mut()
+            .map(|mut inner| inner.svg_variants.stats())
+            .map_err(|_| AssetError::Borrowed)
     }
 }
 
 fn install_decoded_image(
     inner: &mut AssetRegistryInner,
     asset: AssetId,
-    format: ImageFormat,
-    data: AssetData,
-) -> Result<ImageHandle, AssetError> {
+    prepared: PreparedImageData,
+) -> ImageHandle {
     if let Some(handle) = inner.by_asset.get(&asset) {
-        return Ok(handle.clone());
+        return handle.clone();
     }
-    let image = prepare_image(format, &data, None)?;
     inner.next_id = inner.next_id.saturating_add(1);
     let image_id = inner.next_id;
     let handle = ImageHandle {
         opaque: OpaqueHandle::new("image", image_id),
         asset: asset.clone(),
     };
-    inner.images.insert(image_id, image);
-    inner.image_data.insert(image_id, data);
+    inner.images.insert(image_id, prepared.image);
+    inner.image_data.insert(image_id, prepared.data);
     inner.by_asset.insert(asset, handle.clone());
-    Ok(handle)
+    handle
 }
 
 fn prepare_image(
     format: ImageFormat,
-    data: &AssetData,
+    bytes: &[u8],
     color: Option<Rgba8>,
 ) -> Result<Arc<Image>, AssetError> {
     if format == ImageFormat::Svg {
-        svg_image(&data.bytes, color)
+        svg_image(bytes, color)
     } else {
-        Ok(Arc::new(Image::from_bytes(format, data.bytes.clone())))
+        Ok(Arc::new(Image::from_bytes(format, bytes.to_vec())))
     }
 }
 
-fn decode_asset_data(data: AssetData) -> Result<(ImageFormat, AssetData), String> {
+fn decode_asset_data(data: AssetData) -> Result<PreparedImageData, String> {
     if data.bytes.is_empty() {
         return Err("image data is empty".to_owned());
     }
@@ -884,7 +1175,9 @@ fn decode_asset_data(data: AssetData) -> Result<(ImageFormat, AssetData), String
         image::load_from_memory_with_format(&data.bytes, raster_format)
             .map_err(|error| format!("raster image decode failed: {error}"))?;
     }
-    Ok((format, data))
+    let image = prepare_image(format, &data.bytes, None).map_err(|error| error.to_string())?;
+    let data = StoredAssetData::from_validated(data, format).map_err(|error| error.to_string())?;
+    Ok(PreparedImageData { data, image })
 }
 
 fn raster_image_format(format: ImageFormat) -> Option<image::ImageFormat> {
@@ -905,19 +1198,27 @@ pub(crate) fn svg_image(bytes: &[u8], color: Option<Rgba8>) -> Result<Arc<Image>
     // here preserves every SVG color/alpha operation and then uses GPUI's
     // correct PNG RGBA-to-BGRA path. Remove this adapter as one unit when the
     // pinned GPUI SVG decoder is fixed.
-    let source = std::str::from_utf8(bytes).map_err(|_| AssetError::InvalidSvg)?;
-    if !source.contains("<svg") {
-        return Err(AssetError::InvalidSvg);
+    let pixmap = svg_pixmap(bytes, color)?;
+    let png = pixmap.encode_png().map_err(|_| AssetError::InvalidSvg)?;
+    Ok(Arc::new(Image::from_bytes(ImageFormat::Png, png)))
+}
+
+fn svg_render_image(bytes: &[u8], color: Option<Rgba8>) -> Result<Arc<RenderImage>, AssetError> {
+    let pixmap = svg_pixmap(bytes, color)?;
+    let png = pixmap.encode_png().map_err(|_| AssetError::InvalidSvg)?;
+    let mut bgra = image::load_from_memory_with_format(&png, image::ImageFormat::Png)
+        .map_err(|_| AssetError::InvalidSvg)?
+        .into_rgba8();
+    for pixel in bgra.chunks_exact_mut(4) {
+        pixel.swap(0, 2);
     }
-    let tinted;
-    let source = if let Some(color) = color {
-        tinted = tint_svg_current_color(source, color);
-        tinted.as_str()
-    } else {
-        source
-    };
-    let tree = usvg::Tree::from_str(source, &usvg::Options::default())
-        .map_err(|_| AssetError::InvalidSvg)?;
+    Ok(Arc::new(RenderImage::new(vec![image::Frame::new(bgra)])))
+}
+
+fn svg_pixmap(bytes: &[u8], color: Option<Rgba8>) -> Result<resvg::tiny_skia::Pixmap, AssetError> {
+    let source = std::str::from_utf8(bytes).map_err(|_| AssetError::InvalidSvg)?;
+    let source = inherited_svg_color(source, color)?;
+    let tree = usvg::Tree::from_str(&source, &svg_options()).map_err(|_| AssetError::InvalidSvg)?;
     let width = svg_raster_dimension(tree.size().width()).ok_or(AssetError::InvalidSvg)?;
     let height = svg_raster_dimension(tree.size().height()).ok_or(AssetError::InvalidSvg)?;
     if u64::from(width).saturating_mul(u64::from(height)) > MAX_SVG_RASTER_PIXELS {
@@ -929,8 +1230,89 @@ pub(crate) fn svg_image(bytes: &[u8], color: Option<Rgba8>) -> Result<Arc<Image>
         resvg::tiny_skia::Transform::identity(),
         &mut pixmap.as_mut(),
     );
-    let png = pixmap.encode_png().map_err(|_| AssetError::InvalidSvg)?;
-    Ok(Arc::new(Image::from_bytes(ImageFormat::Png, png)))
+    Ok(pixmap)
+}
+
+fn svg_options() -> usvg::Options<'static> {
+    static FONT_DB: LazyLock<Arc<usvg::fontdb::Database>> = LazyLock::new(|| {
+        let mut database = usvg::fontdb::Database::new();
+        database.load_system_fonts();
+        let first_family = database
+            .faces()
+            .find_map(|face| face.families.first().map(|family| family.0.clone()));
+        if let Some(family) = available_font_family(
+            &database,
+            &[
+                "Arial",
+                "Helvetica",
+                "DejaVu Sans",
+                "Liberation Sans",
+                "Noto Sans",
+            ],
+        )
+        .or_else(|| first_family.clone())
+        {
+            database.set_sans_serif_family(family.clone());
+            database.set_cursive_family(family.clone());
+            database.set_fantasy_family(family);
+        }
+        if let Some(family) = available_font_family(
+            &database,
+            &[
+                "Times New Roman",
+                "Times",
+                "DejaVu Serif",
+                "Liberation Serif",
+                "Noto Serif",
+            ],
+        )
+        .or_else(|| first_family.clone())
+        {
+            database.set_serif_family(family);
+        }
+        if let Some(family) = available_font_family(
+            &database,
+            &[
+                "Courier New",
+                "Menlo",
+                "DejaVu Sans Mono",
+                "Liberation Mono",
+                "Noto Sans Mono",
+            ],
+        )
+        .or(first_family)
+        {
+            database.set_monospace_family(family);
+        }
+        Arc::new(database)
+    });
+    let default_font_resolver = usvg::FontResolver::default_font_selector();
+    let font_resolver = Box::new(
+        move |font: &usvg::Font, database: &mut Arc<usvg::fontdb::Database>| {
+            if database.is_empty() {
+                *database = Arc::clone(&FONT_DB);
+            }
+            default_font_resolver(font, database)
+        },
+    );
+    usvg::Options {
+        font_resolver: usvg::FontResolver {
+            select_font: font_resolver,
+            select_fallback: usvg::FontResolver::default_fallback_selector(),
+        },
+        ..Default::default()
+    }
+}
+
+fn available_font_family(database: &usvg::fontdb::Database, candidates: &[&str]) -> Option<String> {
+    candidates.iter().find_map(|candidate| {
+        database.faces().find_map(|face| {
+            face.families
+                .iter()
+                .find(|family| family.0.eq_ignore_ascii_case(candidate))
+                .map(|family| family.0.clone())
+        })
+    })
 }
 
 fn svg_raster_dimension(value: f32) -> Option<u32> {
@@ -942,12 +1324,111 @@ fn svg_raster_dimension(value: f32) -> Option<u32> {
     (parsed <= MAX_SVG_RASTER_DIMENSION).then_some(parsed)
 }
 
-pub(crate) fn tint_svg_current_color(source: &str, color: Rgba8) -> String {
-    let rgba = color.as_rgba_hex();
-    let source_literal = format!("#{rgba:08x}");
-    source
-        .replace("currentColor", &source_literal)
-        .replace("currentcolor", &source_literal)
+fn inherited_svg_color(source: &str, color: Option<Rgba8>) -> Result<String, AssetError> {
+    let document = roxmltree::Document::parse(source).map_err(|_| AssetError::InvalidSvg)?;
+    let root = document.root_element();
+    if root.tag_name().name() != "svg" {
+        return Err(AssetError::InvalidSvg);
+    }
+    let Some(color) = color else {
+        return Ok(source.to_owned());
+    };
+    if let Some(attribute) = root
+        .attributes()
+        .find(|attribute| attribute.name() == "color")
+    {
+        if is_explicit_svg_color_value(attribute.value()) {
+            return Ok(source.to_owned());
+        }
+        let range = attribute.range();
+        let mut inherited = String::with_capacity(source.len().saturating_add(8));
+        inherited.push_str(&source[..range.start]);
+        let _ = write!(inherited, "color=\"#{:08x}\"", color.as_rgba_hex());
+        inherited.push_str(&source[range.end..]);
+        return Ok(inherited);
+    }
+    let root_start = root.range().start;
+    let bytes = source.as_bytes();
+    let mut name_end = root_start.saturating_add(1);
+    while bytes
+        .get(name_end)
+        .is_some_and(|byte| !byte.is_ascii_whitespace() && !matches!(byte, b'/' | b'>'))
+    {
+        name_end = name_end.saturating_add(1);
+    }
+    if name_end <= root_start.saturating_add(1) || name_end > source.len() {
+        return Err(AssetError::InvalidSvg);
+    }
+    let mut inherited = String::with_capacity(source.len().saturating_add(20));
+    inherited.push_str(&source[..name_end]);
+    let _ = write!(inherited, " color=\"#{:08x}\"", color.as_rgba_hex());
+    inherited.push_str(&source[name_end..]);
+    Ok(inherited)
+}
+
+fn svg_uses_external_current_color(source: &str) -> bool {
+    if !source
+        .as_bytes()
+        .windows(b"currentColor".len())
+        .any(|candidate| candidate.eq_ignore_ascii_case(b"currentColor"))
+    {
+        return false;
+    }
+    let Ok(document) = roxmltree::Document::parse(source) else {
+        return true;
+    };
+    let mut found_attribute_use = false;
+    for node in document.descendants().filter(roxmltree::Node::is_element) {
+        let uses_current_color = node.attributes().any(|attribute| {
+            attribute
+                .value()
+                .as_bytes()
+                .windows(b"currentColor".len())
+                .any(|candidate| candidate.eq_ignore_ascii_case(b"currentColor"))
+        });
+        if !uses_current_color {
+            continue;
+        }
+        found_attribute_use = true;
+        let mut ancestor = Some(node);
+        let mut locally_resolved = false;
+        while let Some(element) = ancestor {
+            if element_has_explicit_color(element) {
+                locally_resolved = true;
+                break;
+            }
+            ancestor = element.parent_element();
+        }
+        if !locally_resolved {
+            return true;
+        }
+    }
+    !found_attribute_use
+}
+
+fn element_has_explicit_color(node: roxmltree::Node<'_, '_>) -> bool {
+    if node
+        .attribute("color")
+        .is_some_and(is_explicit_svg_color_value)
+    {
+        return true;
+    }
+    node.attribute("style").is_some_and(|style| {
+        style.split(';').any(|declaration| {
+            let Some((name, value)) = declaration.split_once(':') else {
+                return false;
+            };
+            name.trim().eq_ignore_ascii_case("color") && is_explicit_svg_color_value(value)
+        })
+    })
+}
+
+fn is_explicit_svg_color_value(value: &str) -> bool {
+    let value = value.trim();
+    !value.eq_ignore_ascii_case("inherit")
+        && !value.eq_ignore_ascii_case("currentColor")
+        && !value.eq_ignore_ascii_case("unset")
+        && !value.eq_ignore_ascii_case("revert")
 }
 
 fn valid_segment(value: &str) -> bool {
@@ -1103,43 +1584,46 @@ mod tests {
         assert_eq!(registry.refresh_namespace("app").unwrap(), 1);
         assert_eq!(registry.load_image(&id).unwrap(), handle);
         assert_eq!(
-            registry.inner.borrow().image_data[&handle.opaque.id()].bytes,
+            registry.inner.borrow().image_data[&handle.opaque.id()]
+                .svg_source()
+                .unwrap()
+                .as_bytes(),
             br#"<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1" data-version="two"/>"#
         );
     }
 
     #[test]
-    fn svg_current_color_is_semantically_tinted_and_cached() {
-        let registry = AssetRegistry::new();
-        registry
-            .register(
-                "core",
-                InMemoryAssetProvider::new(BTreeMap::from([(
-                    "check".to_owned(),
-                    AssetData {
-                        mime_type: "image/svg+xml".to_owned(),
-                        bytes: br#"<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1" viewBox="0 0 1 1"><rect width="1" height="1" fill="currentColor"/></svg>"#.to_vec(),
-                    },
-                )])),
-            )
-            .unwrap();
-        let handle = registry
-            .load_image(&AssetId::parse("core/check").unwrap())
-            .unwrap();
-        let color = Rgba8::from_rgb_hex(0x0012_34ab);
-        let first = registry
-            .image_source_tinted(handle.opaque(), Some(color))
-            .unwrap();
-        let second = registry
-            .image_source_tinted(handle.opaque(), Some(color))
-            .unwrap();
-        let (ImageSource::Image(first), ImageSource::Image(second)) = (first, second) else {
-            panic!("asset registry must return in-memory images");
-        };
-        assert!(Arc::ptr_eq(&first, &second));
-        assert_eq!(first.format, ImageFormat::Png);
+    fn svg_current_color_uses_external_default_without_overriding_local_color() {
+        let inherited = br#"<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"><rect width="1" height="1" fill="currentColor"/></svg>"#;
+        assert!(svg_uses_external_current_color(
+            std::str::from_utf8(inherited).unwrap()
+        ));
+        let image = svg_image(inherited, Some(Rgba8::from_rgba_hex(0x1234_ab80))).unwrap();
         assert_eq!(
-            image::load_from_memory(&first.bytes)
+            image::load_from_memory(&image.bytes)
+                .unwrap()
+                .into_rgba8()
+                .into_raw(),
+            [0x12, 0x34, 0xab, 0x80]
+        );
+
+        let local = br##"<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"><rect width="1" height="1" color="#ff0000" fill="currentColor"/></svg>"##;
+        assert!(!svg_uses_external_current_color(
+            std::str::from_utf8(local).unwrap()
+        ));
+        let image = svg_image(local, Some(Rgba8::from_rgba_hex(0x00ff_00ff))).unwrap();
+        assert_eq!(
+            image::load_from_memory(&image.bytes)
+                .unwrap()
+                .into_rgba8()
+                .into_raw(),
+            [0xff, 0x00, 0x00, 0xff]
+        );
+
+        let root_inherit = br#"<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1" color="inherit"><rect width="1" height="1" fill="currentColor"/></svg>"#;
+        let image = svg_image(root_inherit, Some(Rgba8::from_rgba_hex(0x1234_abff))).unwrap();
+        assert_eq!(
+            image::load_from_memory(&image.bytes)
                 .unwrap()
                 .into_rgba8()
                 .into_raw(),
@@ -1167,6 +1651,33 @@ mod tests {
         assert!(pixels[0] > pixels[2], "gradient must begin red: {pixels:?}");
         let last = &pixels[pixels.len() - 4..];
         assert!(last[2] > last[0], "gradient must end blue: {pixels:?}");
+    }
+
+    #[test]
+    fn svg_variant_cache_is_lru_bounded_and_observable() {
+        let mut cache = SvgVariantCache::with_limits(2, 120);
+        let mut first_canceled = None;
+        for index in 0..3 {
+            let source = SvgRasterSource::new(
+                Arc::from(format!(
+                    "<svg width='1' height='1' data-index='{index}'>{}</svg>",
+                    "x".repeat(20)
+                )),
+                None,
+            );
+            let SvgVariantAccess::Start { canceled, .. } = cache.access(&source) else {
+                panic!("new SVG source must start one worker");
+            };
+            if index == 0 {
+                first_canceled = Some(canceled);
+            }
+        }
+        let stats = cache.stats();
+        assert!(stats.entries <= 2);
+        assert_eq!(stats.misses, 3);
+        assert!(stats.evictions >= 1);
+        assert!(first_canceled.unwrap().load(Ordering::Acquire));
+        assert!(stats.bytes <= stats.max_bytes);
     }
 
     #[test]

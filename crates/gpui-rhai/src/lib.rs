@@ -79,7 +79,7 @@ pub use app::{
 };
 pub use asset::{
     AssetData, AssetError, AssetId, AssetProvider, AssetRegistry, DirectoryAssetProvider,
-    ImageDecodeHandle, ImageHandle, InMemoryAssetProvider,
+    ImageDecodeHandle, ImageHandle, InMemoryAssetProvider, SvgCacheStats,
 };
 pub use async_runtime::{
     AsyncDelivery, AsyncRuntimeError, AsyncScope, SubscriptionCloseReason,

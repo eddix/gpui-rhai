@@ -1,0 +1,6 @@
+   Compiling gpui-rhai-svg-drain-bench-050c7fa2 v0.0.0 (/var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T/gpui-rhai-svg-drain.SLJFL9)
+    Finished `release` profile [optimized] target(s) in 38.58s
+     Running `target/release/gpui-rhai-svg-drain-bench-050c7fa2`
+side=256 start_ms_p50=0.016 foreground_drain_ms_p50=0.389 drain_samples_ms=[0.375583, 0.3885, 0.8448330000000001]
+side=1024 start_ms_p50=0.025 foreground_drain_ms_p50=6.227 drain_samples_ms=[5.9811250000000005, 6.227, 6.441083]
+side=2048 start_ms_p50=0.038 foreground_drain_ms_p50=18.603 drain_samples_ms=[17.780583999999998, 18.603208, 20.177332999999997]

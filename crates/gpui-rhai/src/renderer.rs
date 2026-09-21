@@ -7,8 +7,8 @@ use std::time::Instant;
 use gpui::{
     AlignSelf as GpuiAlignSelf, AnyElement, App, Background, Bounds, BoxShadow, ClickEvent,
     ContentMask, Context, CursorStyle, DispatchPhase, Div, Element, ElementId, FocusHandle,
-    FontFallbacks, FontFeatures, FontStyle, FontWeight, GlobalElementId, HighlightStyle, Image,
-    Img, InspectorElementId, InteractiveElement, IntoElement, LayoutId, Modifiers, MouseButton,
+    FontFallbacks, FontFeatures, FontStyle, FontWeight, GlobalElementId, HighlightStyle, Img,
+    InspectorElementId, InteractiveElement, IntoElement, LayoutId, Modifiers, MouseButton,
     MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point, Render,
     ScrollHandle, ScrollWheelEvent, SharedString, Stateful, StatefulInteractiveElement, Styled,
     StyledText, TextAlign, Window, auto, div, img, linear_color_stop, linear_gradient, point, px,
@@ -2821,20 +2821,15 @@ fn render_inline_svg<C: ColorResolver>(
     let color = environment.ambient_text_color;
     let fills_styled_box = resolved_style.width.is_some() || resolved_style.height.is_some();
     let image = environment.assets.map_or_else(
-        || crate::asset::svg_image(source.as_str().as_bytes(), color),
-        |assets| assets.inline_svg_image(source.as_str(), color),
+        || AssetRegistry::new().inline_svg_source(source.shared_source(), color),
+        |assets| assets.inline_svg_source(source.shared_source(), color),
     );
-    match image {
-        Ok(image) => element
-            .child(inline_svg_image(image, fills_styled_box))
-            .into_any_element(),
-        Err(error) => div()
-            .child(format!("Inline SVG error: {error}"))
-            .into_any_element(),
-    }
+    element
+        .child(inline_svg_image(image, fills_styled_box))
+        .into_any_element()
 }
 
-fn inline_svg_image(source: Arc<Image>, fills_styled_box: bool) -> Img {
+fn inline_svg_image(source: impl Into<gpui::ImageSource>, fills_styled_box: bool) -> Img {
     let image = img(source);
     if fills_styled_box {
         image.size_full()
@@ -4789,7 +4784,12 @@ mod tests {
             &dispatcher,
         );
 
-        assert!(assets.has_tinted_image(handle.opaque(), color));
+        assert!(matches!(
+            assets
+                .image_source_tinted(handle.opaque(), Some(color))
+                .unwrap(),
+            gpui::ImageSource::Custom(_)
+        ));
     }
 
     #[test]

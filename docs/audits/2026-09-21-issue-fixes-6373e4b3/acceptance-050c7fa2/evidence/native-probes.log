@@ -1,0 +1,51 @@
+   Compiling gpui-rhai-svg-audit-050c7fa2 v0.0.0 (/tmp/gpui-rhai-review-050c7fa2/native)
+warning: unused imports: `InteractiveElement`, `Modifiers`, `StatefulInteractiveElement`, `Styled`, `div`, `point`, and `px`
+ --> tests/edges.rs:2:27
+  |
+2 |     Context, ImageSource, InteractiveElement, IntoElement, Modifiers, Render,
+  |                           ^^^^^^^^^^^^^^^^^^               ^^^^^^^^^
+3 |     StatefulInteractiveElement, Styled, TestAppContext, VisualTestContext, Window, WindowHandle,
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^
+4 |     div, point, px,
+  |     ^^^  ^^^^^  ^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `Cell`
+ --> tests/edges.rs:8:12
+  |
+8 |     cell::{Cell, RefCell},
+  |            ^^^^
+
+warning: `gpui-rhai-svg-audit-050c7fa2` (test "edges") generated 2 warnings (run `cargo fix --test "edges" -p gpui-rhai-svg-audit-050c7fa2` to apply 2 suggestions)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.59s
+     Running tests/edges.rs (tests/native-keyboard/target/debug/deps/edges-fcede29b3dd865c8)
+
+running 4 tests
+SVG own color red: no ambient=[0, 0, 255, 255]; ambient green=[0, 255, 0, 255]
+
+thread 'svg_document_color_overrides_inherited_tint' (41006648) panicked at tests/edges.rs:123:341:
+assertion `left == right` failed: ambient color must not override an explicit SVG color property
+  left: [0, 255, 0, 255]
+ right: [0, 0, 255, 255]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test svg_document_color_overrides_inherited_tint ... FAILED
+SVG text nontransparent pixels: pinned GPUI=893; PNG adapter=0
+
+thread 'svg_text_survives_raster_adapter' (41006649) panicked at tests/edges.rs:125:1115:
+SVG text disappeared in the adapter
+test svg_text_survives_raster_adapter ... FAILED
+changed formal component groups=["b"]
+test changing_inherited_group_does_not_keep_old_presentation ... ok
+changed virtual item groups=["b", "b", "b", "b", "b", "b", "b", "b"], error=None
+test virtual_items_keep_current_inherited_group ... ok
+
+failures:
+
+failures:
+    svg_document_color_overrides_inherited_tint
+    svg_text_survives_raster_adapter
+
+test result: FAILED. 2 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.30s
+
+error: test failed, to rerun pass `--test edges`
