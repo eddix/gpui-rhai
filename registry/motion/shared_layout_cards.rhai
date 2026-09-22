@@ -2,7 +2,7 @@
 {
   "id": "motion/shared_layout_cards",
   "export": "SharedLayoutCards",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": [],
   "capabilities": {}
@@ -12,7 +12,7 @@
 // Example: SharedLayoutCards(#{ key: "cards", selected: "a", cards: cards })
 
 define_component(#{
-    metadata: #{ id: "motion/shared_layout_cards", "export": "SharedLayoutCards", version: "0.1.3",
+    metadata: #{ id: "motion/shared_layout_cards", "export": "SharedLayoutCards", version: "0.1.4",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{} },
     schema: #{ props: #{
         key: #{ schema: #{ type: "string" }, required: true, sensitive: false },

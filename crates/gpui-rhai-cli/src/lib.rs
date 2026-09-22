@@ -2191,7 +2191,7 @@ mod tests {
         let entry = registry.entries.get_mut(&id).unwrap();
         let source = entry
             .source
-            .replace("0.1.3", "0.2.0")
+            .replace("0.1.4", "0.2.0")
             .replace("// Button presents a desktop action.", upstream_purpose);
         let source: &'static str = Box::leak(source.into_boxed_str());
         entry.metadata = parse_component_header(source).unwrap();
@@ -2251,7 +2251,7 @@ mod tests {
         let entry = registry.entries.get_mut(&button).unwrap();
         let source = entry
             .source
-            .replace("0.1.3", "0.2.0")
+            .replace("0.1.4", "0.2.0")
             .replace("dependencies: []", "dependencies: [\"components/badge\"]")
             .replace(
                 "\"dependencies\": []",

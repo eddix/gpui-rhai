@@ -2,7 +2,7 @@
 {
   "id": "components/accordion",
   "export": "Accordion",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": [],
   "capabilities": {},
@@ -16,7 +16,7 @@
 
 define_component(#{
     metadata: #{
-        id: "components/accordion", "export": "Accordion", version: "0.1.3",
+        id: "components/accordion", "export": "Accordion", version: "0.1.4",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{},
         assets: ["icons/minus.svg", "icons/plus.svg"],
     },

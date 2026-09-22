@@ -11,6 +11,8 @@ Constraints that apply to every section:
 
 - treat published `0.1.2` / Runtime API 1 as the frozen component baseline;
   `0.1.3` is the deliberate Runtime API 2 break for generic Motion;
+- treat `0.1.4` as the Runtime API 2 hardening release for SVG rendering,
+  HostSlot composition, adaptive overlays, and incremental motion presentation;
 - accept destructive Rust/Rhai/schema/registry migration;
 - add no compatibility shim, deprecated alias, dual path, or downstream app
   adapter;

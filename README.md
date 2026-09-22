@@ -10,11 +10,12 @@ This is not a traditional opaque component crate. The runtime is a Cargo
 dependency, while components, themes, the typed component stylesheet, locale bundles, and small assets are
 copied into the application repository and owned by the application developer.
 
-The runtime remains under active implementation, while version 0.1.2 freezes
-the first complete 51-component foundation. The authoritative product contract
-is in [INTENT.md](INTENT.md), and the dependency-ordered implementation plan is
-in [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md). Version 0.1.3 focuses on
-generic motion rather than another basic-component expansion.
+The runtime remains under active implementation. Version 0.1.2 froze the first
+complete 51-component foundation, 0.1.3 introduced Motion Runtime 2, and 0.1.4
+hardens SVG rendering, Rust Host composition, adaptive overlays, and incremental
+motion presentation without changing Runtime API 2. The authoritative product
+contract is in [INTENT.md](INTENT.md), and the dependency-ordered implementation
+plan is in [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md).
 
 The implemented complex-control line is specified under
 [docs/components](docs/components/) for DatePicker, Select, Table, Pagination,
