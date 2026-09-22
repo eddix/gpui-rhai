@@ -524,6 +524,14 @@ pub struct RuntimeEngine {
     native_handlers: crate::NativeHandlerRegistry,
     syntax_registry: crate::SyntaxRegistry,
     document_runtime: crate::DocumentRuntimeConfig,
+    #[cfg(feature = "charts")]
+    chart_transforms: crate::ChartTransformRegistry,
+    #[cfg(feature = "charts")]
+    chart_geo: crate::ChartGeoRegistry,
+    #[cfg(feature = "charts")]
+    chart_series: crate::ChartSeriesRegistry,
+    #[cfg(feature = "charts")]
+    chart_formatters: crate::ChartFormatterRegistry,
     virtual_collections: BTreeMap<crate::VirtualCollectionId, VirtualCollectionRecipe>,
 }
 
@@ -597,6 +605,13 @@ impl RuntimeEngine {
     pub(crate) fn candidate_engine(&self) -> Self {
         let mut candidate = Self::new();
         candidate.slow_threshold = self.slow_threshold;
+        #[cfg(feature = "charts")]
+        {
+            candidate.chart_transforms.copy_from(&self.chart_transforms);
+            candidate.chart_geo.copy_from(&self.chart_geo);
+            candidate.chart_series.copy_from(&self.chart_series);
+            candidate.chart_formatters.copy_from(&self.chart_formatters);
+        }
         candidate
     }
 
@@ -632,6 +647,8 @@ impl RuntimeEngine {
         engine.build_type::<crate::NativeHandlerRef>();
         crate::native_collection::register_native_collection_api(&mut engine);
         crate::document::register_document_api(&mut engine);
+        #[cfg(feature = "charts")]
+        crate::chart::register_chart_data_api(&mut engine);
         engine.build_type::<crate::Span>();
         register_ui_context_api(&mut engine);
         register_date_api(&mut engine);
@@ -650,6 +667,14 @@ impl RuntimeEngine {
         let native_handlers = crate::NativeHandlerRegistry::new();
         let syntax_registry = crate::SyntaxRegistry::new();
         let document_runtime = crate::DocumentRuntimeConfig::new();
+        #[cfg(feature = "charts")]
+        let chart_transforms = crate::ChartTransformRegistry::new();
+        #[cfg(feature = "charts")]
+        let chart_geo = crate::ChartGeoRegistry::new();
+        #[cfg(feature = "charts")]
+        let chart_series = crate::ChartSeriesRegistry::new();
+        #[cfg(feature = "charts")]
+        let chart_formatters = crate::ChartFormatterRegistry::new();
         register_native_handler_api(&mut engine, &native_handlers);
 
         register_node_apis(&mut engine);
@@ -680,6 +705,14 @@ impl RuntimeEngine {
             native_handlers,
             syntax_registry,
             document_runtime,
+            #[cfg(feature = "charts")]
+            chart_transforms,
+            #[cfg(feature = "charts")]
+            chart_geo,
+            #[cfg(feature = "charts")]
+            chart_series,
+            #[cfg(feature = "charts")]
+            chart_formatters,
             virtual_collections: BTreeMap::new(),
         };
         runtime.register_builtin_primitives();
@@ -729,6 +762,17 @@ impl RuntimeEngine {
             ),
         )
         .expect("built-in DiffViewer primitive descriptor is valid");
+        #[cfg(feature = "charts")]
+        self.register_primitive(
+            crate::chart_primitive_descriptor(),
+            crate::ChartPrimitiveHandler::new(
+                self.chart_transforms.clone(),
+                self.chart_geo.clone(),
+                self.chart_series.clone(),
+                self.chart_formatters.clone(),
+            ),
+        )
+        .expect("built-in Chart primitive descriptor is valid");
     }
 
     /// Compile the default application entry source.
@@ -1843,6 +1887,96 @@ impl RuntimeEngine {
     #[must_use]
     pub fn document_runtime_config(&self) -> crate::DocumentRuntimeConfig {
         self.document_runtime.clone()
+    }
+
+    /// Register one trusted Rust chart transform.
+    ///
+    /// # Errors
+    ///
+    /// Returns an invalid or duplicate transform ID diagnostic.
+    #[cfg(feature = "charts")]
+    pub fn register_chart_transform(
+        &self,
+        id: impl Into<String>,
+        transform: impl crate::HostChartTransform + 'static,
+    ) -> Result<(), crate::ChartTransformError> {
+        self.chart_transforms.register(id, transform)
+    }
+
+    /// Register Host-owned GeoJSON/SVG geometry or typed map features.
+    ///
+    /// # Errors
+    ///
+    /// Returns an invalid or duplicate map diagnostic.
+    #[cfg(feature = "charts")]
+    pub fn register_chart_map(&self, map: crate::ChartGeoMap) -> Result<(), crate::ChartGeoError> {
+        self.chart_geo.register_map(map)
+    }
+
+    /// Register one trusted Rust geo projection.
+    ///
+    /// # Errors
+    ///
+    /// Returns an invalid or duplicate projection ID diagnostic.
+    #[cfg(feature = "charts")]
+    pub fn register_chart_projection(
+        &self,
+        id: impl Into<String>,
+        projection: impl crate::ChartGeoProjection + 'static,
+    ) -> Result<(), crate::ChartGeoError> {
+        self.chart_geo.register_projection(id, projection)
+    }
+
+    /// Register one trusted Rust custom chart series renderer.
+    ///
+    /// # Errors
+    ///
+    /// Returns an invalid or duplicate renderer ID diagnostic.
+    #[cfg(feature = "charts")]
+    pub fn register_chart_series(
+        &self,
+        id: impl Into<String>,
+        renderer: impl crate::HostChartSeries + 'static,
+    ) -> Result<(), crate::ChartSeriesExtensionError> {
+        self.chart_series.register(id, renderer)
+    }
+
+    /// Register one trusted Rust chart value formatter.
+    ///
+    /// # Errors
+    ///
+    /// Returns an invalid or duplicate formatter ID diagnostic.
+    #[cfg(feature = "charts")]
+    pub fn register_chart_formatter(
+        &self,
+        id: impl Into<String>,
+        formatter: impl crate::HostChartFormatter + 'static,
+    ) -> Result<(), crate::ChartFormatterError> {
+        self.chart_formatters.register(id, formatter)
+    }
+
+    #[cfg(feature = "charts")]
+    #[must_use]
+    pub fn chart_transform_registry(&self) -> crate::ChartTransformRegistry {
+        self.chart_transforms.clone()
+    }
+
+    #[cfg(feature = "charts")]
+    #[must_use]
+    pub fn chart_geo_registry(&self) -> crate::ChartGeoRegistry {
+        self.chart_geo.clone()
+    }
+
+    #[cfg(feature = "charts")]
+    #[must_use]
+    pub fn chart_series_registry(&self) -> crate::ChartSeriesRegistry {
+        self.chart_series.clone()
+    }
+
+    #[cfg(feature = "charts")]
+    #[must_use]
+    pub fn chart_formatter_registry(&self) -> crate::ChartFormatterRegistry {
+        self.chart_formatters.clone()
     }
 
     pub fn set_slow_threshold(&mut self, threshold: Duration) {

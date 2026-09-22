@@ -357,6 +357,19 @@ impl LocaleManager {
         &self.app
     }
 
+    /// Resolve the selected locale identifier at the nearest scope.
+    ///
+    /// # Errors
+    ///
+    /// Returns if internally stored selection data no longer names a bundle.
+    pub fn locale(
+        &self,
+        window: Option<&str>,
+        component: Option<&ComponentInstancePath>,
+    ) -> Result<&str, LocaleError> {
+        Ok(self.selected_bundle(window, component)?.locale.as_str())
+    }
+
     /// Resolve a message using nearest scope and fallback bundle.
     ///
     /// # Errors

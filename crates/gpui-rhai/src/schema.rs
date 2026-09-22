@@ -70,6 +70,8 @@ pub enum ValueSchema {
     Signal,
     Collection,
     Document,
+    #[cfg(feature = "charts")]
+    ChartData,
     Ref,
     Handle {
         kind: String,
@@ -251,6 +253,8 @@ impl ValueSchema {
             | Self::Document
             | Self::Ref
             | Self::Handle { .. } => Ok(()),
+            #[cfg(feature = "charts")]
+            Self::ChartData => Ok(()),
         }
     }
 
@@ -365,6 +369,14 @@ impl ValueSchema {
                 value,
                 path,
                 "NativeTextDocument",
+                issues,
+            ),
+            #[cfg(feature = "charts")]
+            Self::ChartData => expect_type(
+                value.is::<crate::NativeChartData>(),
+                value,
+                path,
+                "NativeChartData",
                 issues,
             ),
             Self::Ref => expect_type(value.is::<ElementRef>(), value, path, "ElementRef", issues),

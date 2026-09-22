@@ -788,7 +788,7 @@ fn bundled_theme_text_pairs_meet_small_text_contrast() {
 }
 
 #[test]
-fn bundled_themes_materialize_complete_document_palettes() {
+fn bundled_themes_materialize_complete_document_and_chart_palettes() {
     let engine = RuntimeEngine::new();
     for &(name, source) in BUNDLED_THEMES {
         let theme =
@@ -815,6 +815,23 @@ fn bundled_themes_materialize_complete_document_palettes() {
             "diff.inline_right",
             "diff.gutter",
             "diff.fold",
+            "charts.axis",
+            "charts.grid",
+            "charts.tooltip_surface",
+            "charts.tooltip_text",
+            "charts.positive",
+            "charts.negative",
+            "charts.selection",
+            "charts.map_missing",
+            "charts.crosshair",
+            "charts.palette_1",
+            "charts.palette_2",
+            "charts.palette_3",
+            "charts.palette_4",
+            "charts.palette_5",
+            "charts.palette_6",
+            "charts.palette_7",
+            "charts.palette_8",
         ] {
             assert!(
                 theme.tokens.color(token).is_some(),

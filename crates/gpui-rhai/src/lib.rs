@@ -53,6 +53,9 @@ pub mod virtual_list;
 mod virtual_list_element;
 pub mod window;
 
+#[cfg(feature = "charts")]
+pub mod chart;
+
 pub mod accessibility;
 pub mod action;
 pub mod app;
@@ -101,6 +104,8 @@ pub use capability::{
     CapabilityId, CapabilityMethod, CapabilityRegistry, SubscriptionCapabilityHandler,
     SubscriptionWork, TaskWork,
 };
+#[cfg(feature = "charts")]
+pub use chart::*;
 pub use clock::{ManualRuntimeClock, RuntimeClock, RuntimeClockSource};
 pub use column_resize::{ColumnResizePrimitiveHandler, column_resize_primitive_descriptor};
 pub use component::{

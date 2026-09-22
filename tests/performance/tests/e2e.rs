@@ -14,6 +14,9 @@ use gpui_rhai::{
 use serde::Serialize;
 
 #[allow(dead_code)]
+#[path = "../../../crates/gpui-rhai/examples/chart_gallery.rs"]
+mod chart_gallery_example;
+#[allow(dead_code)]
 #[path = "../../../crates/gpui-rhai/examples/table_1000.rs"]
 mod table_1000_example;
 
@@ -202,9 +205,7 @@ fn sample_from(total_us: u64, snapshot: &ScriptViewPerformanceSnapshot) -> Sampl
     let reused_component_subtrees = snapshot
         .timings
         .iter()
-        .filter(|timing| {
-            matches!(timing.operation, ExecutionOperation::ComponentReuse(_))
-        })
+        .filter(|timing| matches!(timing.operation, ExecutionOperation::ComponentReuse(_)))
         .count();
     let reused_components = snapshot
         .timings
@@ -699,8 +700,8 @@ fn document_end_to_end_baseline(cx: &mut TestAppContext) {
     .unwrap();
     let direct_string_rhai_prepare_us = micros(direct_started);
 
-    let native = gpui_rhai::NativeTextDocument::new("benchmark", 1, Arc::<str>::from(left.clone()))
-        .unwrap();
+    let native =
+        gpui_rhai::NativeTextDocument::new("benchmark", 1, Arc::<str>::from(left.clone())).unwrap();
     let native_main = "import \"components/code_viewer\" as code_viewer;\nfn view(ctx) { code_viewer::CodeViewer(#{ key: \"bench\", label: \"Benchmark\", language: \"rhai\", source: ctx.get_native_text_document(\"benchmark\") }) }";
     let mut native_sources = document_component_source();
     native_sources.insert(entry.clone(), native_main.to_owned());
@@ -757,6 +758,7 @@ fn view(ctx) {
     ]).with_style(style().width(relative(1)).height(relative(1))
         .min_width(px(0)).min_height(px(0)))
 }
+
 "#;
     let mut native_ui_sources = document_component_source();
     native_ui_sources.insert(
@@ -830,7 +832,10 @@ fn view(ctx) {
         visual.simulate_resize(dimensions);
         resize_dispatch_us.push(micros(started));
         let snapshot = settle(cx, &mut visual, &view);
-        assert_eq!(snapshot.dirty_components, 0, "document resize did not settle");
+        assert_eq!(
+            snapshot.dirty_components, 0,
+            "document resize did not settle"
+        );
         resize_settle_us.push(micros(started));
     }
     resize_dispatch_us.sort_unstable();
@@ -854,6 +859,169 @@ fn view(ctx) {
         native_ui_resize_settle_p95_us,
         diff_hunks: diff.hunk_count,
         diff_rows: diff.rows.len(),
+    };
+    println!("{}", serde_json::to_string_pretty(&report).unwrap());
+}
+
+#[derive(Serialize)]
+struct ChartBenchmarkReport {
+    schema: &'static str,
+    points: usize,
+    prepare_us: u64,
+    mount_first_frame_us: u64,
+    resize_p50_us: u64,
+    resize_p95_us: u64,
+    streaming_p50_us: u64,
+    streaming_p95_us: u64,
+    retained_nodes: usize,
+    rhai_operations_after_stream: u64,
+}
+
+fn chart_stream_chunk(start: usize, rows: usize) -> gpui_rhai::ChartDataset {
+    #[allow(clippy::cast_precision_loss)]
+    let values = (start..start + rows)
+        .map(|index| {
+            let x = index as f64;
+            std::collections::BTreeMap::from([
+                (
+                    "id".to_owned(),
+                    gpui_rhai::ChartValue::String(format!("p{index}")),
+                ),
+                ("x".to_owned(), gpui_rhai::ChartValue::Number(x)),
+                (
+                    "y".to_owned(),
+                    gpui_rhai::ChartValue::Number(
+                        (x / 270.0).sin() * 20.0 + (x / 67.0).cos() * 4.0,
+                    ),
+                ),
+            ])
+        })
+        .collect::<Vec<_>>();
+    gpui_rhai::ChartDataset::from_chart_rows(
+        "main",
+        &values,
+        Some("id".to_owned()),
+        gpui_rhai::ChartDataLimits::default(),
+    )
+    .unwrap()
+}
+
+fn settle_chart(
+    cx: &TestAppContext,
+    visual: &mut VisualTestContext,
+    view: &ScriptViewHandle,
+) -> ScriptViewPerformanceSnapshot {
+    let mut combined = settle(cx, visual, view);
+    for _ in 0..12 {
+        cx.background_executor
+            .advance_clock(Duration::from_millis(16));
+        visual
+            .update(|window, app| {
+                view.automate(AutomationCommand::AdvanceTime { millis: 16 }, window, app)
+            })
+            .unwrap();
+        visual.run_until_parked();
+        merge_snapshot(&mut combined, take_snapshot(visual, view));
+    }
+    combined
+}
+
+#[gpui::test]
+#[ignore = "run with scripts/benchmark.sh"]
+#[allow(clippy::too_many_lines)]
+fn chart_end_to_end_baseline(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let samples = env_usize(
+        "GPUI_RHAI_BENCH_SAMPLES",
+        if cfg!(debug_assertions) { 3 } else { 30 },
+    );
+    let warmup = env_usize(
+        "GPUI_RHAI_BENCH_WARMUP",
+        if cfg!(debug_assertions) { 1 } else { 5 },
+    );
+    let points = env_usize("GPUI_RHAI_CHART_BENCH_POINTS", 100_000);
+    let stream = chart_gallery_example::stream_data(points);
+    let prepare_started = Instant::now();
+    let runtime_clock = gpui_rhai::ManualRuntimeClock::new(Instant::now());
+    let prepared = chart_gallery_example::gallery_view(stream.clone())
+        .runtime_clock(runtime_clock.clock())
+        .prepare()
+        .unwrap();
+    let prepare_us = micros(prepare_started);
+
+    let captured = Rc::new(RefCell::new(None));
+    let captured_for_window = Rc::clone(&captured);
+    let mount_started = Instant::now();
+    let window = cx.add_window(move |window, cx| {
+        let host = ScriptViewHost::new("chart-benchmark-window", cx).unwrap();
+        let view = prepared
+            .mount(
+                ScriptViewConfig::new("chart-benchmark-view"),
+                host.clone(),
+                window,
+                cx,
+            )
+            .unwrap();
+        *captured_for_window.borrow_mut() = Some(view.clone());
+        BenchmarkHost { host, view }
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    cx.run_until_parked();
+    let view = captured.borrow().as_ref().unwrap().clone();
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    visual.simulate_resize(size(px(1_180.0), px(820.0)));
+    let cold = settle_chart(cx, &mut visual, &view);
+    let mount_first_frame_us = micros(mount_started);
+
+    let mut resize = Vec::with_capacity(samples);
+    for index in 0..warmup + samples {
+        let dimensions = if index.is_multiple_of(2) {
+            size(px(980.0), px(720.0))
+        } else {
+            size(px(1_180.0), px(820.0))
+        };
+        let started = Instant::now();
+        visual.simulate_resize(dimensions);
+        let _ = settle_chart(cx, &mut visual, &view);
+        if index >= warmup {
+            resize.push(micros(started));
+        }
+    }
+
+    let mut streaming = Vec::with_capacity(samples);
+    let mut next = points;
+    let mut operations = 0_u64;
+    for index in 0..warmup + samples {
+        let chunk = chart_stream_chunk(next, 128);
+        next += 128;
+        let started = Instant::now();
+        stream.append_sliding("main", &chunk, points).unwrap();
+        let snapshot = settle_chart(cx, &mut visual, &view);
+        operations = operations.saturating_add(
+            snapshot
+                .timings
+                .iter()
+                .map(|timing| timing.operations)
+                .sum::<u64>(),
+        );
+        if index >= warmup {
+            streaming.push(micros(started));
+        }
+    }
+    resize.sort_unstable();
+    streaming.sort_unstable();
+    let report = ChartBenchmarkReport {
+        schema: "gpui-rhai-chart-e2e-v1",
+        points,
+        prepare_us,
+        mount_first_frame_us,
+        resize_p50_us: percentile(&resize, 50),
+        resize_p95_us: percentile(&resize, 95),
+        streaming_p50_us: percentile(&streaming, 50),
+        streaming_p95_us: percentile(&streaming, 95),
+        retained_nodes: cold.retained_nodes,
+        rhai_operations_after_stream: operations,
     };
     println!("{}", serde_json::to_string_pretty(&report).unwrap());
 }

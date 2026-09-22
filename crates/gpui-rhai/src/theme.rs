@@ -313,6 +313,32 @@ impl ThemeTokens {
                     .or_insert(ThemeTokenValue::Color(value));
             }
         }
+        let charts = self.namespaces.entry("charts".to_owned()).or_default();
+        for (name, value) in [
+            ("axis", color("text_muted")),
+            ("grid", color("border").map(|value| with_alpha(value, 0x55))),
+            ("tooltip_surface", color("surface_raised")),
+            ("tooltip_text", color("text_primary")),
+            ("positive", color("success")),
+            ("negative", color("danger")),
+            ("selection", color("accent")),
+            ("map_missing", color("surface_hover")),
+            ("crosshair", color("focus_ring")),
+            ("palette_1", color("accent")),
+            ("palette_2", color("success")),
+            ("palette_3", color("warning")),
+            ("palette_4", color("danger")),
+            ("palette_5", color("focus_ring")),
+            ("palette_6", color("accent_hover")),
+            ("palette_7", color("text_muted")),
+            ("palette_8", color("selection")),
+        ] {
+            if let Some(value) = value {
+                charts
+                    .entry(name.to_owned())
+                    .or_insert(ThemeTokenValue::Color(value));
+            }
+        }
     }
 
     /// Validate the initial semantic token contract.
@@ -558,17 +584,7 @@ impl ThemeVariant {
 }
 
 impl ThemeTokenOverrides {
-    /// Apply these preferences to one decoded theme and validate the candidate.
-    ///
-    /// Namespace entries are merged by token name, so a host can override one
-    /// chart or document token without replacing the rest of that namespace.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`ThemeError`] if an override introduces an invalid token name,
-    /// length, typography role, motion value, or leaves the theme incomplete.
-    pub fn apply(&self, variant: &ThemeVariant) -> Result<ThemeVariant, ThemeError> {
-        let mut variant = variant.clone();
+    fn merge_into(&self, variant: &mut ThemeVariant) {
         variant.tokens.colors.extend(self.colors.clone());
         variant.tokens.spacing.extend(self.spacing.clone());
         variant.tokens.radii.extend(self.radii.clone());
@@ -616,8 +632,6 @@ impl ThemeTokenOverrides {
                 .or_default()
                 .extend(tokens.clone());
         }
-        variant.validate()?;
-        Ok(variant)
     }
 
     #[must_use]
@@ -1083,6 +1097,34 @@ pub fn load_theme_source(
     source_name: &str,
     source: &str,
 ) -> Result<ThemeVariant, ThemeError> {
+    let mut theme = decode_theme_source(engine, source_name, source)?;
+    theme.tokens.install_document_defaults();
+    theme.validate()?;
+    Ok(theme)
+}
+
+pub(crate) fn load_theme_source_with_overrides(
+    engine: &Engine,
+    source_name: &str,
+    source: &str,
+    overrides: &ThemeTokenOverrides,
+) -> Result<ThemeVariant, ThemeError> {
+    let theme = decode_theme_source(engine, source_name, source)?;
+    let mut original = theme.clone();
+    original.tokens.install_document_defaults();
+    original.validate()?;
+    let mut candidate = theme;
+    overrides.merge_into(&mut candidate);
+    candidate.tokens.install_document_defaults();
+    candidate.validate()?;
+    Ok(candidate)
+}
+
+fn decode_theme_source(
+    engine: &Engine,
+    source_name: &str,
+    source: &str,
+) -> Result<ThemeVariant, ThemeError> {
     let mut ast = engine
         .compile(source)
         .map_err(|error| ThemeError::Script(error.to_string()))?;
@@ -1092,11 +1134,8 @@ pub fn load_theme_source(
     let raw: Dynamic = engine
         .call_fn(&mut Scope::new(), &ast, "theme", ())
         .map_err(|error| ThemeError::Script(error.to_string()))?;
-    let mut theme = rhai::serde::from_dynamic::<ThemeVariant>(&raw)
-        .map_err(|error| ThemeError::Decode(error.to_string()))?;
-    theme.tokens.install_document_defaults();
-    theme.validate()?;
-    Ok(theme)
+    rhai::serde::from_dynamic::<ThemeVariant>(&raw)
+        .map_err(|error| ThemeError::Decode(error.to_string()))
 }
 
 const fn with_alpha(color: Rgba8, alpha: u8) -> Rgba8 {
@@ -1536,7 +1575,8 @@ mod tests {
             ..ThemeTokenOverrides::default()
         };
 
-        variant = overrides.apply(&variant).unwrap();
+        overrides.merge_into(&mut variant);
+        variant.validate().unwrap();
 
         assert_eq!(variant.tokens.colors["surface"], original_surface);
         assert_eq!(
@@ -1572,8 +1612,10 @@ mod tests {
             ..ThemeTokenOverrides::default()
         };
 
+        let mut candidate = variant;
+        overrides.merge_into(&mut candidate);
         assert!(matches!(
-            overrides.apply(&variant),
+            candidate.validate(),
             Err(ThemeError::InvalidLength { token, .. }) if token == "md"
         ));
     }

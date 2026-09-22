@@ -40,6 +40,12 @@ contexts, arbitrary Rust values, filesystem paths, URLs, sockets, or process API
 - `NativeHandlerRef` is resolvable by Rhai only after trusted Rust registers a
   namespaced descriptor; declared event payload schemas are checked before the
   Rust handler runs.
+- Chart row arrays, typed columns, transform pipelines, geo sources, prepared
+  marks, streaming revisions, and export dimensions are bounded and validated.
+  `NativeChartData` notifications expose only the newest immutable Rust
+  snapshot; no Engine/Dynamic/FnPtr crosses the worker boundary. Rhai receives
+  no network, map acquisition, geocoding, filesystem export, per-row transform,
+  or per-mark renderer authority.
 
 ## Host responsibilities
 
@@ -51,6 +57,11 @@ Rust source; do not load unreviewed remote scripts at runtime.
 
 The runtime uses safe Rust. A custom primitive is native Rust code and therefore
 belongs to the host trust boundary, not the script sandbox.
+
+Chart transform, formatter, projection, map, and custom-series registrations
+are the same trusted compile-time Rust boundary. Hosts remain responsible for
+map/data licensing, extension runtime cost, and domain authorization. Returned
+series marks are revalidated but the extension code itself is not sandboxed.
 
 A Host-augmented `UiNode` may contain an opaque Rust event closure. The Host
 owns its blocking behavior, side effects, stale references, and retain cycles;

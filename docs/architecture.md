@@ -349,6 +349,25 @@ direction an explicit copy command rather than application policy.
 
 Short-lived render elements never enter persistent runtime state.
 
+## Native visualization scenes
+
+The optional Chart Runtime is a retained native mechanism parallel to Canvas
+and native documents, not a privileged opaque component family. Rhai or Rust
+provides a typed Chart specification plus small row data or a revisioned
+`NativeChartData` handle. Background-safe Rust transforms and sampling produce
+immutable typed series data; foreground layout produces one prepared scene
+consumed by paint, hit testing, keyboard semantics, linked interaction,
+Inspector diagnostics, and static export. Streaming notifications coalesce to
+the latest revision and never carry Rhai `Dynamic`, `FnPtr`, or Engine state.
+
+Source-owned `charts/chart` adapters invoke the same public lifecycle primitive
+available to applications. Trusted compile-time Host extensions may add a
+transform, formatter, geo projection/source, or series renderer, but returned
+marks re-enter the common validation and budget boundary. Map data, network
+access, geocoding, arbitrary Rhai per-mark rendering, dynamic plugins, and 3D
+are outside this layer. See [ADR 0021](adr/0021-chart-runtime.md) and the
+[Chart guide](charts.md).
+
 Window width is reduced to a configurable `compact`/`regular`/`wide` class.
 Crossing a breakpoint reruns `view`; ordinary resizing remains native GPUI
 layout and does not drive continuous Rhai evaluation.

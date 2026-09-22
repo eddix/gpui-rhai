@@ -152,3 +152,13 @@ resource limits and extension points.
 Overlay open values are controlled. Portal order, outside/Escape dismissal,
 focus containment/restoration, pointer coordinates, and viewport placement are
 generic Host behavior.
+
+## Optional Chart source pack
+
+The chart pack is versioned separately from the frozen 51-component foundation
+and requires the optional Cargo `charts` feature. It provides formal `Chart`,
+`BarChart`, `LineChart`, `PieChart`, and `MapChart` source components. The
+generic module also exports single-kind Area, Scatter, Heatmap, Candlestick,
+Donut, Radar, Gauge, Funnel, GeoScatter, and GeoLines adapters over the public
+native Chart primitive. Mixed series and multiple coordinate regions use
+`Chart` directly. See the [Chart Runtime guide](../charts.md).

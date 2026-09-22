@@ -11,6 +11,7 @@ cargo install gpui-rhai-cli --locked
 
 gpui-rhai init
 gpui-rhai add button input form_field
+gpui-rhai add chart
 gpui-rhai check
 gpui-rhai dev
 ```

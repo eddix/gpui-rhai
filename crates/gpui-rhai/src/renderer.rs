@@ -1294,6 +1294,7 @@ pub struct GpuiNodeRenderer;
 #[derive(Clone, Copy)]
 struct RenderEnvironment<'a, C> {
     now: Instant,
+    clock: &'a crate::RuntimeClock,
     motion_preference: crate::MotionPreference,
     motion_quality: crate::MotionQuality,
     colors: &'a C,
@@ -1313,6 +1314,8 @@ struct RenderEnvironment<'a, C> {
     text_selection: &'a TextSelectionRegistry,
     host_focus: Option<&'a FocusHandle>,
     direction: TextDirection,
+    locale: &'a str,
+    number: Option<&'a crate::NumberMetadata>,
     ambient_text_color: Option<Rgba8>,
     view_id: &'a str,
     retained: Option<&'a RetainedUiTree>,
@@ -1334,6 +1337,7 @@ impl<C: ColorResolver> RenderEnvironment<'_, C> {
 
 pub(crate) struct WindowRenderResources<'a> {
     pub now: Instant,
+    pub clock: &'a crate::RuntimeClock,
     pub motion_preference: crate::MotionPreference,
     pub motion_quality: crate::MotionQuality,
     pub assets: &'a AssetRegistry,
@@ -1350,6 +1354,8 @@ pub(crate) struct WindowRenderResources<'a> {
     pub text_selection: &'a TextSelectionRegistry,
     pub host_focus: Option<&'a FocusHandle>,
     pub direction: TextDirection,
+    pub locale: &'a str,
+    pub number: Option<&'a crate::NumberMetadata>,
     pub ambient_text_color: Option<Rgba8>,
     pub root_path: &'a str,
     pub view_id: &'a str,
@@ -1400,6 +1406,7 @@ impl GpuiNodeRenderer {
         let text_selection = TextSelectionRegistry::default();
         let environment = RenderEnvironment {
             now: Instant::now(),
+            clock: &crate::RuntimeClock::default(),
             motion_preference: crate::MotionPreference::Normal,
             motion_quality: crate::MotionQuality::High,
             colors,
@@ -1419,6 +1426,8 @@ impl GpuiNodeRenderer {
             text_selection: &text_selection,
             host_focus: None,
             direction: TextDirection::LeftToRight,
+            locale: "en",
+            number: None,
             ambient_text_color: None,
             view_id: "standalone",
             retained: None,
@@ -1446,6 +1455,7 @@ impl GpuiNodeRenderer {
         let text_selection = TextSelectionRegistry::default();
         let environment = RenderEnvironment {
             now: Instant::now(),
+            clock: &crate::RuntimeClock::default(),
             motion_preference: crate::MotionPreference::Normal,
             motion_quality: crate::MotionQuality::High,
             colors,
@@ -1465,6 +1475,8 @@ impl GpuiNodeRenderer {
             text_selection: &text_selection,
             host_focus: None,
             direction: TextDirection::LeftToRight,
+            locale: "en",
+            number: None,
             ambient_text_color: None,
             view_id: "standalone",
             retained: Some(tree),
@@ -1500,6 +1512,7 @@ impl GpuiNodeRenderer {
         let text_selection = TextSelectionRegistry::default();
         let environment = RenderEnvironment {
             now: Instant::now(),
+            clock: &crate::RuntimeClock::default(),
             motion_preference: crate::MotionPreference::Normal,
             motion_quality: crate::MotionQuality::High,
             colors,
@@ -1519,6 +1532,8 @@ impl GpuiNodeRenderer {
             text_selection: &text_selection,
             host_focus: None,
             direction: TextDirection::LeftToRight,
+            locale: "en",
+            number: None,
             ambient_text_color: None,
             view_id: "standalone",
             retained: Some(tree),
@@ -1554,6 +1569,7 @@ impl GpuiNodeRenderer {
         let text_selection = TextSelectionRegistry::default();
         let environment = RenderEnvironment {
             now: Instant::now(),
+            clock: &crate::RuntimeClock::default(),
             motion_preference: crate::MotionPreference::Normal,
             motion_quality: crate::MotionQuality::High,
             colors,
@@ -1573,6 +1589,8 @@ impl GpuiNodeRenderer {
             text_selection: &text_selection,
             host_focus: None,
             direction: TextDirection::LeftToRight,
+            locale: "en",
+            number: None,
             ambient_text_color: None,
             view_id: "standalone",
             retained: None,
@@ -1602,6 +1620,7 @@ impl GpuiNodeRenderer {
         let text_selection = TextSelectionRegistry::default();
         let resources = WindowRenderResources {
             now: Instant::now(),
+            clock: &crate::RuntimeClock::default(),
             motion_preference: crate::MotionPreference::Normal,
             motion_quality: crate::MotionQuality::High,
             assets,
@@ -1618,6 +1637,8 @@ impl GpuiNodeRenderer {
             text_selection: &text_selection,
             host_focus: None,
             direction: TextDirection::LeftToRight,
+            locale: "en",
+            number: None,
             ambient_text_color: None,
             root_path: "root",
             view_id: "standalone",
@@ -1651,6 +1672,7 @@ impl GpuiNodeRenderer {
     ) -> AnyElement {
         let environment = RenderEnvironment {
             now: resources.now,
+            clock: resources.clock,
             motion_preference: resources.motion_preference,
             motion_quality: resources.motion_quality,
             colors,
@@ -1670,6 +1692,8 @@ impl GpuiNodeRenderer {
             text_selection: resources.text_selection,
             host_focus: resources.host_focus,
             direction: resources.direction,
+            locale: resources.locale,
+            number: resources.number,
             ambient_text_color: resources.ambient_text_color,
             view_id: resources.view_id,
             retained: Some(tree),
@@ -1703,6 +1727,7 @@ impl GpuiNodeRenderer {
     ) -> AnyElement {
         let environment = RenderEnvironment {
             now: resources.now,
+            clock: resources.clock,
             motion_preference: resources.motion_preference,
             motion_quality: resources.motion_quality,
             colors,
@@ -1722,6 +1747,8 @@ impl GpuiNodeRenderer {
             text_selection: resources.text_selection,
             host_focus: resources.host_focus,
             direction: resources.direction,
+            locale: resources.locale,
+            number: resources.number,
             ambient_text_color: resources.ambient_text_color,
             view_id: resources.view_id,
             retained: None,
@@ -1741,6 +1768,7 @@ impl GpuiNodeRenderer {
     ) -> AnyElement {
         let environment = RenderEnvironment {
             now: resources.now,
+            clock: resources.clock,
             motion_preference: resources.motion_preference,
             motion_quality: resources.motion_quality,
             colors,
@@ -1760,6 +1788,8 @@ impl GpuiNodeRenderer {
             text_selection: resources.text_selection,
             host_focus: resources.host_focus,
             direction: resources.direction,
+            locale: resources.locale,
+            number: resources.number,
             ambient_text_color: resources.ambient_text_color,
             view_id: resources.view_id,
             retained: None,
@@ -1998,6 +2028,7 @@ impl GpuiNodeRenderer {
         )
     }
 
+    #[allow(clippy::too_many_lines)]
     fn populate<C: ColorResolver>(
         element: impl ParentElement + IntoElement,
         node: &UiNode,
@@ -2044,9 +2075,12 @@ impl GpuiNodeRenderer {
                     retained_id,
                     boundary_fallback.cloned(),
                     environment.dispatcher.cloned(),
-                    crate::PrimitiveTheme::capture_with_motion_policy(
+                    crate::PrimitiveTheme::capture_with_environment(
                         environment.colors,
                         environment.direction,
+                        environment.locale,
+                        environment.number,
+                        environment.clock.clone(),
                         environment.motion_preference,
                         environment.motion_quality,
                     ),
@@ -3034,6 +3068,7 @@ fn native_virtual_collection_element<C: ColorResolver>(
     });
     let runtime = NodeSlotRuntime {
         now: environment.now,
+        clock: environment.clock.clone(),
         colors: OwnedColorResolver::capture(environment.colors),
         primitives: environment.primitives.clone(),
         assets: environment.assets.cloned().unwrap_or_default(),
@@ -3055,6 +3090,8 @@ fn native_virtual_collection_element<C: ColorResolver>(
         text_selection: environment.text_selection.clone(),
         host_focus: environment.host_focus.cloned(),
         direction: environment.direction,
+        locale: environment.locale.to_owned(),
+        number: environment.number.cloned(),
         ambient_text_color: environment.ambient_text_color,
         base_path: path.to_owned(),
         view_id: environment.view_id.to_owned(),

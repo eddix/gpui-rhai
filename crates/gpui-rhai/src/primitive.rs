@@ -148,6 +148,8 @@ pub enum PrimitiveValue {
     Signal(crate::NativeSignal),
     Ref(crate::ElementRef),
     Document(crate::NativeTextDocument),
+    #[cfg(feature = "charts")]
+    ChartData(crate::NativeChartData),
 }
 
 /// Read-only semantic theme values captured for one native primitive render.
@@ -162,9 +164,12 @@ pub struct PrimitiveTheme {
     radii: BTreeMap<RadiusToken, Length>,
     typography: BTreeMap<String, crate::ResolvedTypography>,
     direction: crate::TextDirection,
+    locale: String,
+    number: Option<crate::NumberMetadata>,
     motion: crate::ThemeMotion,
     motion_preference: crate::MotionPreference,
     motion_quality: crate::MotionQuality,
+    clock: crate::RuntimeClock,
 }
 
 impl Default for PrimitiveTheme {
@@ -175,9 +180,12 @@ impl Default for PrimitiveTheme {
             radii: BTreeMap::new(),
             typography: BTreeMap::new(),
             direction: crate::TextDirection::LeftToRight,
+            locale: "en".to_owned(),
+            number: None,
             motion: crate::ThemeMotion::default(),
             motion_preference: crate::MotionPreference::Normal,
             motion_quality: crate::MotionQuality::High,
+            clock: crate::RuntimeClock::default(),
         }
     }
 }
@@ -201,9 +209,31 @@ impl PrimitiveTheme {
         )
     }
 
+    #[cfg(test)]
     pub(crate) fn capture_with_motion_policy(
         colors: &impl ColorResolver,
         direction: crate::TextDirection,
+        motion_preference: crate::MotionPreference,
+        motion_quality: crate::MotionQuality,
+    ) -> Self {
+        Self::capture_with_environment(
+            colors,
+            direction,
+            "en",
+            None,
+            crate::RuntimeClock::default(),
+            motion_preference,
+            motion_quality,
+        )
+    }
+
+    #[allow(clippy::too_many_lines)]
+    pub(crate) fn capture_with_environment(
+        colors: &impl ColorResolver,
+        direction: crate::TextDirection,
+        locale: &str,
+        number: Option<&crate::NumberMetadata>,
+        clock: crate::RuntimeClock,
         motion_preference: crate::MotionPreference,
         motion_quality: crate::MotionQuality,
     ) -> Self {
@@ -246,6 +276,23 @@ impl PrimitiveTheme {
             "diff.inline_right",
             "diff.gutter",
             "diff.fold",
+            "charts.axis",
+            "charts.grid",
+            "charts.tooltip_surface",
+            "charts.tooltip_text",
+            "charts.positive",
+            "charts.negative",
+            "charts.selection",
+            "charts.map_missing",
+            "charts.crosshair",
+            "charts.palette_1",
+            "charts.palette_2",
+            "charts.palette_3",
+            "charts.palette_4",
+            "charts.palette_5",
+            "charts.palette_6",
+            "charts.palette_7",
+            "charts.palette_8",
         ];
         Self {
             colors: TOKENS
@@ -286,9 +333,12 @@ impl PrimitiveTheme {
                 })
                 .collect(),
             direction,
+            locale: locale.to_owned(),
+            number: number.cloned(),
             motion: colors.resolve_motion(),
             motion_preference,
             motion_quality,
+            clock,
         }
     }
 
@@ -320,6 +370,16 @@ impl PrimitiveTheme {
     }
 
     #[must_use]
+    pub fn locale(&self) -> &str {
+        &self.locale
+    }
+
+    #[must_use]
+    pub const fn number_metadata(&self) -> Option<&crate::NumberMetadata> {
+        self.number.as_ref()
+    }
+
+    #[must_use]
     pub const fn motion_preference(&self) -> crate::MotionPreference {
         self.motion_preference
     }
@@ -327,6 +387,11 @@ impl PrimitiveTheme {
     #[must_use]
     pub const fn motion_quality(&self) -> crate::MotionQuality {
         self.motion_quality
+    }
+
+    #[must_use]
+    pub fn now(&self) -> std::time::Instant {
+        self.clock.now()
     }
 
     #[must_use]
@@ -432,6 +497,8 @@ impl PrimitiveProps {
                 | PrimitiveValue::Signal(_)
                 | PrimitiveValue::Ref(_)
                 | PrimitiveValue::Document(_) => {}
+                #[cfg(feature = "charts")]
+                PrimitiveValue::ChartData(_) => {}
             }
         }
     }
@@ -1419,6 +1486,10 @@ fn convert_prop(
         ValueSchema::Ref => Ok(PrimitiveValue::Ref(value.cast::<crate::ElementRef>())),
         ValueSchema::Document => Ok(PrimitiveValue::Document(
             value.cast::<crate::NativeTextDocument>(),
+        )),
+        #[cfg(feature = "charts")]
+        ValueSchema::ChartData => Ok(PrimitiveValue::ChartData(
+            value.cast::<crate::NativeChartData>(),
         )),
         _ => UiValue::from_dynamic(value)
             .map(PrimitiveValue::Data)

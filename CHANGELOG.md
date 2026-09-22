@@ -11,6 +11,14 @@ semantic versioning from this release.
   every file-backed or embedded theme. Partial color, spacing, radius,
   typography, motion, and namespaced-token overrides survive theme switching
   and file-theme hot reload without rewriting third-party Rhai source.
+- The optional `charts` feature adds one native composable Chart Runtime with
+  Cartesian2D, Polar and Host-owned Geo2D regions; 15 built-in series; typed
+  columnar and streaming `NativeChartData`; native transforms/downsampling;
+  hover, tooltip, crosshair, zoom/pan, brush, selection, keyboard and linked
+  charts; annotations; theme/motion/locale integration; Host transform,
+  formatter, projection and custom-series extensions; and Host-only SVG/PNG
+  export. The CLI installs `charts/chart` and enables the feature, while the
+  mounted `chart_gallery` exercises every series plus a 100,000-row data path.
 
 ## 0.1.4 - 2026-09-22
 

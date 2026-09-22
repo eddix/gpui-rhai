@@ -33,7 +33,7 @@ use crate::{
     ScriptSource, ScriptWindowSpec, SystemAppearance, TextDirection, ThemeManager, ThemeSelection,
     ThemeSnapshot, ThemeTokenOverrides, ThemeVariant, UiRuntimeState, UiValue, ViewportBreakpoints,
     WindowCommand, WindowCommandPolicy, init_text_area, init_text_input, load_component_styles,
-    load_locale_source, load_theme_source,
+    load_locale_source,
 };
 
 #[cfg(feature = "dev-reload")]
@@ -2082,10 +2082,7 @@ fn load_theme_with_overrides(
     source: &str,
     overrides: &ThemeTokenOverrides,
 ) -> Result<ThemeVariant, ScriptViewError> {
-    let variant = load_theme_source(engine, source_name, source)
-        .map_err(|error| ScriptViewError::Theme(error.to_string()))?;
-    overrides
-        .apply(&variant)
+    crate::theme::load_theme_source_with_overrides(engine, source_name, source, overrides)
         .map_err(|error| ScriptViewError::Theme(error.to_string()))
 }
 
@@ -2991,6 +2988,7 @@ fn nearest_scroll_ancestor(
 
 struct ScriptRenderSnapshot {
     now: Instant,
+    clock: crate::RuntimeClock,
     motion_preference: crate::MotionPreference,
     motion_quality: crate::MotionQuality,
     assets: AssetRegistry,
@@ -3002,6 +3000,8 @@ struct ScriptRenderSnapshot {
     pointer_capture: crate::PointerCaptureRegistry,
     virtual_requests: crate::VirtualRequestRegistry,
     direction: TextDirection,
+    locale: String,
+    number: Option<crate::NumberMetadata>,
 }
 
 struct ScriptViewTransaction {
@@ -3265,6 +3265,7 @@ impl Render for ScriptHostView {
         self.publish_theme_after_render(&snapshot.theme, cx);
         let render_resources = crate::renderer::WindowRenderResources {
             now: snapshot.now,
+            clock: &snapshot.clock,
             motion_preference: snapshot.motion_preference,
             motion_quality: snapshot.motion_quality,
             assets: &snapshot.assets,
@@ -3281,6 +3282,8 @@ impl Render for ScriptHostView {
             text_selection: &self.text_selection,
             host_focus: Some(&self.host_focus),
             direction: snapshot.direction,
+            locale: &snapshot.locale,
+            number: snapshot.number.as_ref(),
             ambient_text_color: None,
             root_path: &motion_root,
             view_id: &self.view_id,
@@ -3668,9 +3671,21 @@ impl ScriptHostView {
             .as_ref()
             .and_then(|locale| locale.direction(Some(&self.window_id), Some(root)).ok())
             .unwrap_or(TextDirection::LeftToRight);
+        let locale = runtime
+            .locale
+            .as_ref()
+            .and_then(|locale| locale.locale(Some(&self.window_id), Some(root)).ok())
+            .unwrap_or("en")
+            .to_owned();
+        let number = runtime
+            .locale
+            .as_ref()
+            .and_then(|locale| locale.number(Some(&self.window_id), Some(root)).ok())
+            .cloned();
         let motion_domain = format!("window:{}/view:{}/root", self.window_id, self.view_id);
         ScriptRenderSnapshot {
             now: runtime.clock.now(),
+            clock: runtime.clock.clone(),
             motion_preference: runtime.motions.preference(),
             motion_quality: runtime.motions.quality(),
             assets: runtime.assets.clone(),
@@ -3687,6 +3702,8 @@ impl ScriptHostView {
             pointer_capture: runtime.pointer_capture_for(Some(&self.view_id)),
             virtual_requests: runtime.virtual_requests.clone(),
             direction,
+            locale,
+            number,
         }
     }
 
@@ -4877,17 +4894,13 @@ impl ScriptHostView {
     #[cfg(feature = "dev-reload")]
     fn reload_theme(&mut self) -> Result<(), String> {
         let source = fs::read_to_string(&self.theme_path).map_err(|error| error.to_string())?;
-        let primary = load_theme_source(
+        let primary = crate::theme::load_theme_source_with_overrides(
             self.engine.engine(),
             &self.theme_path.to_string_lossy(),
             &source,
+            &self.factory.theme_token_overrides,
         )
         .map_err(|error| error.to_string())?;
-        let primary = self
-            .factory
-            .theme_token_overrides
-            .apply(&primary)
-            .map_err(|error| error.to_string())?;
         let runtime = self.lifecycle.runtime();
         let previous = runtime
             .borrow()
@@ -5328,7 +5341,7 @@ mod tests {
     #[test]
     fn theme_handle_state_only_advances_for_an_effective_theme_change() {
         let engine = RuntimeEngine::new();
-        let dark = load_theme_source(
+        let dark = crate::load_theme_source(
             engine.engine(),
             "default_dark.rhai",
             include_str!("../../../registry/themes/default_dark.rhai"),
@@ -5431,6 +5444,10 @@ mod tests {
             "fn view(ctx) { text(\"theme override\") }".to_owned(),
         )]));
         let overrides = ThemeTokenOverrides {
+            colors: BTreeMap::from([(
+                "accent".to_owned(),
+                crate::Rgba8::from_rgb_hex(0x00aa_55cc),
+            )]),
             radii: BTreeMap::from([
                 ("sm".to_owned(), crate::Length::Pixels(4.0)),
                 ("md".to_owned(), crate::Length::Pixels(7.0)),
@@ -5453,6 +5470,10 @@ mod tests {
         assert_eq!(
             prepared.theme.tokens.radii["md"],
             crate::Length::Pixels(7.0)
+        );
+        assert_eq!(
+            prepared.theme.tokens.color("charts.palette_1"),
+            Some(crate::Rgba8::from_rgb_hex(0x00aa_55cc))
         );
 
         let mut runtime = prepared.factory.runtime.borrow_mut();

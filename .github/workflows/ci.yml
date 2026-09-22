@@ -75,6 +75,7 @@ jobs:
       - name: Release build
         run: |
           cargo build --release -p gpui-rhai --examples
+          cargo build --release -p gpui-rhai --example chart_gallery --features charts
           cargo build --release -p gpui-rhai-cli
       - name: Audit release artifacts
         run: bash scripts/audit-release-artifacts.sh

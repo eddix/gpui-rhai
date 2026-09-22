@@ -780,6 +780,22 @@ Everforest, Gruvbox, Hackerman, Nord, Retro 82, Hermarchy, Futurism, and
 Aetheria variants. See [Bundled themes](docs/bundled-themes.md),
 [Theming](docs/theming.md), and [Theme Studio](docs/theme-studio.md).
 
+## 9.1 Native charts
+
+Enable the optional `charts` Cargo feature or run `gpui-rhai add chart` to use
+the source-owned `charts/chart` component over the native Chart Runtime. Small
+Rhai object arrays become typed columns once; large and streaming data remains
+Rust-owned in `NativeChartData` and is read with
+`ctx.get_native_chart_data(name)`. Pointer/wheel hot paths, transforms,
+downsampling, layout, motion, hit testing, linked charts, accessibility
+projection, and export do not execute per-datum Rhai.
+
+The first release includes Bar/Stacked Bar, Line/Area, Scatter, Pie/Donut,
+Heatmap, Map/Choropleth, GeoScatter, GeoLines, Candlestick, Radar, Gauge, and
+Funnel over Cartesian2D, Polar, and Host-supplied Geo2D maps. See
+[Chart Runtime](docs/charts.md) for specifications, extension APIs, performance
+contracts, and the explicit deferred boundary.
+
 ## 10. Overlays, focus, and multiple views
 
 Combobox, Select, DatePicker, Menu, Popover, Dialog, and Tooltip use the generic

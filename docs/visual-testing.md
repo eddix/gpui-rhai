@@ -39,6 +39,16 @@ bash scripts/build-macos-test-app.sh component_gallery tokyo-night en sheet
 bash scripts/build-macos-test-app.sh component_gallery default-dark en compact reduced
 ```
 
+Capture `chart_gallery` after every built-in series has installed its prepared
+scene, including Default Light/Dark, one community theme, Arabic RTL, normal,
+reduced, and disabled motion, narrow/wide resize, tooltip/crosshair, Cartesian
+brush, linked zoom, annotations, Host GeoJSON, and the 100,000-row native line
+series. Theme and locale controls must update existing Chart entities without
+recompiling Rhai or losing controlled selection/viewport state. The checked-in
+PNG matrix is added only after the first maintainer visual acceptance pass;
+the automated mounted benchmark already guards preparation, layout/paint,
+resize, and streaming completion.
+
 The complex-control expansion adds:
 
 - `form_showcase` states for searchable/grouped Select, fixed-Clock DatePicker
@@ -111,8 +121,8 @@ an open parent Dialog, guarding GPUI 0.2.x against nested `defer_draw` panics.
 Three-view embedding cases cover automatic bounds, runtime isolation, shared
 Host overlays, duplicate local IDs, click-through dismissal, key conflicts,
 and dispose/remount.
-The independent workspace currently has 53 tests: 51 GPUI integration cases
-plus `table_1000` and Component Gallery preparation guards. It contains no
+The independent workspace currently has 65 tests spanning GPUI integration,
+native document/motion behavior, and embedded example preparation guards. It contains no
 deleted Table/choice/date/toast native constructor and also guards that window-level
 pointer-capture listeners register during paint rather than GPUI layout.
 The launch additions cover CommandDialog autofocus/filter/Enter execution,

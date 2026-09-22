@@ -26,6 +26,8 @@ gpui-rhai check
   `Div`, or `AnyElement` to scripts;
 - native input/textarea, overlays, virtual collections, Canvas, Motion Runtime 2,
   CodeViewer, DiffViewer, accessibility, themes, locales, and Host extensions;
+- optional native composable charts with typed/streaming data, Geo2D,
+  interaction, motion, Rust extensions, and SVG/PNG export;
 - `FileScriptView` and `EmbeddedScriptView` preparation for standalone or
   embedded GPUI windows;
 - explicit resource budgets and no dependency on `gpui-component`.

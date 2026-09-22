@@ -25,6 +25,8 @@ security, testing, and troubleshooting.
 - [Assets and fonts](assets.md)
 - [Retained Canvas scenes](canvas.md)
 - [Motion Runtime 2](motion.md)
+- [Chart Runtime architecture decision](adr/0021-chart-runtime.md)
+- [Native Chart Runtime](charts.md)
 - [Native virtual collections](virtual-list.md) and [Rust-owned collection data](native-collections.md)
 - [Native text documents and read-only viewers](document-viewers.md)
 - [Accessibility status](accessibility.md)
@@ -53,6 +55,7 @@ Complex component contracts:
 - [Rhai execution backends](rhai-execution-backends.md)
 - [Release checklist](release-checklist.md)
 - [0.1.4 release notes](releases/0.1.4.md)
+- [0.1.5 draft release notes](releases/0.1.5.md)
 - [Core Runtime v2 evidence ledger](core-runtime-v2-audit.md)
 
 Architecture decisions and their test evidence are recorded under

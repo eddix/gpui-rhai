@@ -24,7 +24,7 @@ use toml_edit::{Array, DocumentMut, InlineTable, Item, Value};
 pub mod theme_studio;
 
 use gpui_rhai_registry::{
-    AR_LOCALE, BUNDLED_ASSET_SOURCES, BUNDLED_COMPONENT_SOURCES_BY_ID,
+    AR_LOCALE, BUNDLED_ASSET_SOURCES, BUNDLED_CHART_SOURCES_BY_ID, BUNDLED_COMPONENT_SOURCES_BY_ID,
     BUNDLED_MOTION_SOURCES_BY_ID, BUNDLED_THEME_SOURCES, DEFAULT_THEME, EN_LOCALE, STUDIO_SOURCE,
     ZH_CN_LOCALE,
 };
@@ -76,6 +76,7 @@ impl BundledRegistry {
         for &(catalog_id, source) in BUNDLED_COMPONENT_SOURCES_BY_ID
             .iter()
             .chain(BUNDLED_MOTION_SOURCES_BY_ID)
+            .chain(BUNDLED_CHART_SOURCES_BY_ID)
         {
             let metadata = parse_component_header(source)?;
             let id = metadata.id.clone();
@@ -137,6 +138,11 @@ impl BundledRegistry {
         for request in requested {
             let normalized = if request.contains('/') {
                 request.clone()
+            } else if self
+                .entries
+                .contains_key(&ModuleId::parse(format!("charts/{request}"))?)
+            {
+                format!("charts/{request}")
             } else {
                 format!("components/{request}")
             };
@@ -269,6 +275,9 @@ impl Project {
         let mut manifest: LocalManifest = toml::from_str(&manifest_source)?;
         let resolved = registry.resolve(requested)?;
         let mut plan = ProjectPlan::new(self.root.clone());
+        if resolved.iter().any(|id| id.as_str().starts_with("charts/")) {
+            self.plan_enable_dependency_feature(&mut plan, "charts")?;
+        }
         for id in resolved {
             if manifest.components.contains_key(id.as_str()) {
                 continue;
@@ -322,6 +331,65 @@ impl Project {
             manifest_source,
         );
         Ok(plan)
+    }
+
+    fn plan_enable_dependency_feature(
+        &self,
+        plan: &mut ProjectPlan,
+        feature: &str,
+    ) -> Result<(), ProjectError> {
+        let path = self.root.join("Cargo.toml");
+        let source = read(&path)?;
+        let mut document =
+            source
+                .parse::<DocumentMut>()
+                .map_err(|source| ProjectError::CargoToml {
+                    path: path.clone(),
+                    source,
+                })?;
+        let dependency = document
+            .get_mut("dependencies")
+            .and_then(Item::as_table_mut)
+            .and_then(|dependencies| dependencies.get_mut("gpui-rhai"))
+            .ok_or_else(|| ProjectError::MissingRuntimeDependency(path.clone()))?;
+        match dependency {
+            Item::Value(Value::String(version)) => {
+                let version = version.value().to_owned();
+                let mut features = Array::new();
+                features.push(feature);
+                let mut table = InlineTable::new();
+                table.insert("version", Value::from(version));
+                table.insert("features", Value::Array(features));
+                *dependency = Item::Value(Value::InlineTable(table));
+            }
+            Item::Value(Value::InlineTable(table)) => {
+                let features = table
+                    .entry("features")
+                    .or_insert(Value::Array(Array::new()));
+                let Value::Array(features) = features else {
+                    return Err(ProjectError::InvalidRuntimeFeatures(path));
+                };
+                if !features.iter().any(|value| value.as_str() == Some(feature)) {
+                    features.push(feature);
+                }
+            }
+            Item::Table(table) => {
+                if !table.contains_key("features") {
+                    table.insert("features", Item::Value(Value::Array(Array::new())));
+                }
+                let features = table
+                    .get_mut("features")
+                    .and_then(Item::as_value_mut)
+                    .and_then(Value::as_array_mut)
+                    .ok_or_else(|| ProjectError::InvalidRuntimeFeatures(path.clone()))?;
+                if !features.iter().any(|value| value.as_str() == Some(feature)) {
+                    features.push(feature);
+                }
+            }
+            _ => return Err(ProjectError::InvalidRuntimeDependency(path)),
+        }
+        plan.update(path, document.to_string(), source);
+        Ok(())
     }
 
     /// Validate installed baselines, headers, themes, app manifest, imports, and
@@ -1079,6 +1147,7 @@ fn component_relative_path(id: &ModuleId) -> Result<PathBuf, ProjectError> {
         .strip_prefix("components/")
         .map(|name| ("components", name))
         .or_else(|| path.strip_prefix("motion/").map(|name| ("motion", name)))
+        .or_else(|| path.strip_prefix("charts/").map(|name| ("charts", name)))
         .ok_or_else(|| ProjectError::InvalidComponentPath(id.clone()))?;
     Ok(PathBuf::from(directory)
         .join(component)
@@ -1680,6 +1749,12 @@ pub enum ProjectError {
         path: PathBuf,
         source: toml_edit::TomlError,
     },
+    #[error("Cargo.toml `{0}` has no gpui-rhai dependency to configure")]
+    MissingRuntimeDependency(PathBuf),
+    #[error("Cargo.toml `{0}` uses an unsupported gpui-rhai dependency shape")]
+    InvalidRuntimeDependency(PathBuf),
+    #[error("Cargo.toml `{0}` has a non-array gpui-rhai feature list")]
+    InvalidRuntimeFeatures(PathBuf),
     #[error("initialization would overwrite existing file `{0}`")]
     WouldOverwrite(PathBuf),
     #[error("file `{path}` changed after planning: {detail}")]
@@ -2084,6 +2159,32 @@ mod tests {
     }
 
     #[test]
+    fn adding_chart_installs_source_and_enables_the_runtime_feature() {
+        let directory = fixture();
+        let project = Project::new(directory.path());
+        project.plan_init().unwrap().apply().unwrap();
+        project
+            .plan_add(&BundledRegistry::load().unwrap(), &["bar_chart".to_owned()])
+            .unwrap()
+            .apply()
+            .unwrap();
+
+        assert!(directory.path().join("ui/charts/chart.rhai").exists());
+        assert!(directory.path().join("ui/charts/bar_chart.rhai").exists());
+        let cargo = read(&directory.path().join("Cargo.toml")).unwrap();
+        let cargo = cargo.parse::<DocumentMut>().unwrap();
+        let features = cargo["dependencies"]["gpui-rhai"]["features"]
+            .as_array()
+            .unwrap();
+        assert!(
+            features
+                .iter()
+                .any(|value| value.as_str() == Some("charts"))
+        );
+        project.check().unwrap();
+    }
+
+    #[test]
     fn complex_components_install_transitive_sources_and_assets() {
         let directory = fixture();
         let project = Project::new(directory.path());
@@ -2147,7 +2248,7 @@ mod tests {
         let project = Project::new(directory.path());
         project.plan_init().unwrap().apply().unwrap();
         let registry = BundledRegistry::load().unwrap();
-        assert_eq!(registry.entries.len(), 61);
+        assert_eq!(registry.entries.len(), 66);
         let requested = registry
             .entries
             .keys()

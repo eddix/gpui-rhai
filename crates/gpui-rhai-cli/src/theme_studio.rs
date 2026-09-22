@@ -1029,6 +1029,15 @@ mod tests {
                 ),
             ]),
         );
+        let theme = gpui_rhai::ThemeManager::from_variants(
+            [theme],
+            gpui_rhai::ThemeSelection::new("Default", "Dark"),
+        )
+        .unwrap()
+        .resolve(None, None, gpui_rhai::SystemAppearance::Dark)
+        .unwrap()
+        .variant()
+        .clone();
         let source = canonical_source(&theme, &["// Attribution".to_owned()]);
         assert!(source.starts_with("// Attribution\n\n"));
         let engine = RuntimeEngine::new();

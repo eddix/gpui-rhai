@@ -274,6 +274,8 @@ pub enum ComponentPropValue {
     Signal(crate::NativeSignal),
     Collection(crate::NativeCollection),
     Document(crate::NativeTextDocument),
+    #[cfg(feature = "charts")]
+    ChartData(crate::NativeChartData),
     Ref(crate::ElementRef),
 }
 
@@ -444,6 +446,10 @@ fn convert_component_prop(
         )),
         ValueSchema::Document => Ok(ComponentPropValue::Document(
             value.cast::<crate::NativeTextDocument>(),
+        )),
+        #[cfg(feature = "charts")]
+        ValueSchema::ChartData => Ok(ComponentPropValue::ChartData(
+            value.cast::<crate::NativeChartData>(),
         )),
         ValueSchema::Ref => Ok(ComponentPropValue::Ref(value.cast::<crate::ElementRef>())),
         _ => UiValue::from_dynamic(value)
