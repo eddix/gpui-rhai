@@ -2,7 +2,7 @@
 {
   "id": "components/scroll_area",
   "export": "ScrollArea",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": [],
   "capabilities": {}
@@ -15,7 +15,7 @@
 // Example: ScrollArea(#{ key: "logs", label: "Logs", height: px(240), content: long_content })
 
 define_component(#{
-    metadata: #{ id: "components/scroll_area", "export": "ScrollArea", version: "0.1.3",
+    metadata: #{ id: "components/scroll_area", "export": "ScrollArea", version: "0.1.4",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{} },
     schema: #{
         props: #{

@@ -475,8 +475,10 @@ downstream migration. Version `0.1.2` freezes the first complete 51-component
 foundation on Runtime API 1. Version `0.1.3` is the coordinated Runtime API 2
 break for the generic Motion system: the old animation constructors and
 `.animate` surface are removed rather than carried as aliases. Optional
-first-party effects live under `motion/*`; arbitrary shaders and general 3D are
-a later independently versioned capability.
+first-party effects live under `motion/*`. Version `0.1.4` keeps Runtime API 2
+and hardens the Rust Host composition, SVG, overlay, and retained-presentation
+boundaries found during dogfooding; arbitrary shaders and general 3D remain a
+later independently versioned capability.
 
 ## 15. Completion and acceptance
 

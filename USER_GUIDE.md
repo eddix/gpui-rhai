@@ -678,6 +678,16 @@ semantic text color: a color declared on the SVG wins, otherwise the value is
 inherited through its ancestors just like adjacent text. Shared icons should
 use a consistent 24×24 viewBox and optical center.
 
+Declared assets are synchronously validated during preparation. Dynamic
+`start_image_decode` work and cold inline/tinted SVG variants perform parsing,
+font resolution, rasterization, and image conversion on background workers;
+the GPUI image element automatically repaints when a variant becomes ready.
+Do not treat construction-time pixel availability as part of the component
+contract. Rust Hosts can inspect the bounded shared variant cache through
+`AssetRegistry::svg_cache_stats()`. SVG text resolves system-installed fonts and
+generic fallbacks; Host-provided in-memory `FontSource` values currently apply
+to GPUI text, not to the separate SVG font database.
+
 See [Style](docs/style.md), [Assets](docs/assets.md), [Canvas](docs/canvas.md),
 and [Locale and RTL](docs/locale-and-rtl.md).
 

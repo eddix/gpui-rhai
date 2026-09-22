@@ -2,7 +2,7 @@
 {
   "id": "components/input_group",
   "export": "InputGroup",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": [],
   "capabilities": {}
@@ -15,7 +15,7 @@
 // Example: InputGroup(#{ label: "Search", prefix: search_icon, control: input_node })
 
 define_component(#{
-    metadata: #{ id: "components/input_group", "export": "InputGroup", version: "0.1.3",
+    metadata: #{ id: "components/input_group", "export": "InputGroup", version: "0.1.4",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{} },
     schema: #{
         props: #{

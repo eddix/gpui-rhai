@@ -51,4 +51,7 @@ Versions 0.1.0 through 0.1.2 use `RUNTIME_API_VERSION` 1. Version 0.1.3 moves
 to Runtime API 2 and deliberately removes the old animation surface; verify
 official components, copied examples, CLI metadata, Motion Gallery, reduced
 motion, timelines, exit ghosts, layout/shared-layout behavior, and motion
-budgets together.
+budgets together. Version 0.1.4 stays on Runtime API 2; additionally verify
+background SVG preparation and fonts/color cascade, bounded variant-cache
+eviction, HostSlot cross-Host framing, adaptive overlay widths, IconButton
+selected semantics, and inherited motion-group replay.

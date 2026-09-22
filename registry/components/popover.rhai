@@ -2,7 +2,7 @@
 {
   "id": "components/popover",
   "export": "Popover",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": [],
   "capabilities": {}
@@ -20,7 +20,7 @@ define_component(#{
     metadata: #{
         id: "components/popover",
         "export": "Popover",
-        version: "0.1.3",
+        version: "0.1.4",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
         dependencies: [],
         capabilities: #{},
