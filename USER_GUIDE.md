@@ -736,6 +736,16 @@ scale, and all eight typography size/line-height/weight roles plus an optional
 font family/fallback stack. These values are editable data in `ui/theme.rhai`,
 not hard-coded Rust constants.
 
+Rust Hosts may layer user preferences uniformly over every default, bundled,
+and user-supplied variant with
+`FileScriptView::theme_token_overrides` or
+`EmbeddedScriptView::theme_token_overrides`. `ThemeTokenOverrides` partially
+merges semantic colors, spacing/radii, typography roles, motion roles, and
+namespaced tokens; it never changes theme identity. Overrides are validated on
+startup and reapplied after file-theme hot reload. Use this for preferences
+such as UI font/scale, corner scale, motion timing, and visualization palettes;
+continue to use `styles.rhai` for component-specific structure and styling.
+
 Use `style().typography("caption" | "body_small" | "body" | "subtitle" |
 "title" | "heading" | "display" | "display_large")` instead of copying font
 sizes and line heights into components. Theme values remain symbolic until

@@ -5,6 +5,13 @@ All notable runtime, CLI, and registry changes are documented here. Version
 component schema, manifest, locale, and generated-source changes follow
 semantic versioning from this release.
 
+## 0.1.5 - Unreleased
+
+- Rust Hosts can apply one validated `ThemeTokenOverrides` preference layer to
+  every file-backed or embedded theme. Partial color, spacing, radius,
+  typography, motion, and namespaced-token overrides survive theme switching
+  and file-theme hot reload without rewriting third-party Rhai source.
+
 ## 0.1.4 - 2026-09-22
 
 - Inline and asset-backed SVG `currentColor` now inherits the nearest effective

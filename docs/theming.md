@@ -65,6 +65,38 @@ Changing a selection increments only the theme generation. It does not
 recompile Rhai modules or discard component state. Editing `theme.rhai` during
 development hot-reloads the validated variant in the existing window.
 
+## Host user-preference overrides
+
+An embedding Host can apply one validated partial token layer to every loaded
+theme. This is the appropriate boundary for application/user preferences such
+as a platform-specific corner scale, preferred UI font, text scale, motion
+timing, or chart palette. It avoids cloning or rewriting bundled and user theme
+source:
+
+```rust
+use std::collections::BTreeMap;
+use gpui_rhai::{EmbeddedScriptView, Length, ThemeTokenOverrides};
+
+let view = EmbeddedScriptView::new(entry, scripts, default_theme)
+    .theme_sources(additional_themes)
+    .theme_token_overrides(ThemeTokenOverrides {
+        radii: BTreeMap::from([
+            ("sm".into(), Length::Pixels(4.0)),
+            ("md".into(), Length::Pixels(7.0)),
+            ("lg".into(), Length::Pixels(10.0)),
+        ]),
+        ..ThemeTokenOverrides::default()
+    });
+```
+
+`FileScriptView` exposes the same builder. Overrides merge colors, spacing,
+radii, individual typography roles, motion roles, and individual namespaced
+tokens. Typography family and fallback entries replace their respective theme
+values when supplied. Theme identity and mode are deliberately not
+overridable. The resulting variant must pass the normal token validation or
+preparation/reload rejects the candidate and retains the last-good theme. File
+theme hot reload reapplies the Host layer automatically.
+
 Rhai may select fixed variants with `set_theme`, `set_window_theme`, and
 `set_local_theme`, or follow the actual GPUI `WindowAppearance` with the
 corresponding `*_theme_system(family)` methods. App-level changes invalidate all

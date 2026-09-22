@@ -63,6 +63,42 @@ pub struct ThemeTokens {
     pub namespaces: BTreeMap<String, BTreeMap<String, ThemeTokenValue>>,
 }
 
+/// Host-owned token preferences applied uniformly to every loaded theme.
+///
+/// Overrides are intentionally partial: absent entries inherit the value from
+/// each theme, while present entries replace it. Theme family, variant name,
+/// and color mode are never host-overridable through this type.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ThemeTokenOverrides {
+    pub colors: BTreeMap<String, Rgba8>,
+    pub spacing: BTreeMap<String, Length>,
+    pub radii: BTreeMap<String, Length>,
+    pub typography: ThemeTypographyOverrides,
+    pub motion: ThemeMotionOverrides,
+    pub namespaces: BTreeMap<String, BTreeMap<String, ThemeTokenValue>>,
+}
+
+/// Partial host preferences for the shared typography system.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ThemeTypographyOverrides {
+    /// Replaces the theme's primary family when present.
+    pub family: Option<String>,
+    /// Replaces, rather than appends to, the fallback stack when present.
+    pub fallbacks: Option<Vec<String>>,
+    /// Replaces individual typography roles by name.
+    pub roles: BTreeMap<String, TypographyToken>,
+}
+
+/// Partial host preferences for semantic motion tokens.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ThemeMotionOverrides {
+    pub durations_ms: BTreeMap<String, u64>,
+    pub easings: BTreeMap<String, crate::MotionEasing>,
+    pub springs: BTreeMap<String, ThemeMotionSpring>,
+    pub distances: BTreeMap<String, f64>,
+    pub staggers_ms: BTreeMap<String, u64>,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ThemeMotion {
     pub durations_ms: BTreeMap<String, u64>,
@@ -518,6 +554,80 @@ impl ThemeVariant {
     #[must_use]
     pub fn typography(&self, role: &str) -> Option<ResolvedTypography> {
         self.tokens.typography.resolve(role)
+    }
+}
+
+impl ThemeTokenOverrides {
+    /// Apply these preferences to one decoded theme and validate the candidate.
+    ///
+    /// Namespace entries are merged by token name, so a host can override one
+    /// chart or document token without replacing the rest of that namespace.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ThemeError`] if an override introduces an invalid token name,
+    /// length, typography role, motion value, or leaves the theme incomplete.
+    pub fn apply(&self, variant: &ThemeVariant) -> Result<ThemeVariant, ThemeError> {
+        let mut variant = variant.clone();
+        variant.tokens.colors.extend(self.colors.clone());
+        variant.tokens.spacing.extend(self.spacing.clone());
+        variant.tokens.radii.extend(self.radii.clone());
+        if let Some(family) = &self.typography.family {
+            variant.tokens.typography.family = Some(family.clone());
+        }
+        if let Some(fallbacks) = &self.typography.fallbacks {
+            variant.tokens.typography.fallbacks.clone_from(fallbacks);
+        }
+        variant
+            .tokens
+            .typography
+            .roles
+            .extend(self.typography.roles.clone());
+        variant
+            .tokens
+            .motion
+            .durations_ms
+            .extend(self.motion.durations_ms.clone());
+        variant
+            .tokens
+            .motion
+            .easings
+            .extend(self.motion.easings.clone());
+        variant
+            .tokens
+            .motion
+            .springs
+            .extend(self.motion.springs.clone());
+        variant
+            .tokens
+            .motion
+            .distances
+            .extend(self.motion.distances.clone());
+        variant
+            .tokens
+            .motion
+            .staggers_ms
+            .extend(self.motion.staggers_ms.clone());
+        for (namespace, tokens) in &self.namespaces {
+            variant
+                .tokens
+                .namespaces
+                .entry(namespace.clone())
+                .or_default()
+                .extend(tokens.clone());
+        }
+        variant.validate()?;
+        Ok(variant)
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.colors.is_empty()
+            && self.spacing.is_empty()
+            && self.radii.is_empty()
+            && self.typography == ThemeTypographyOverrides::default()
+            && self.motion == ThemeMotionOverrides::default()
+            && self.namespaces.is_empty()
     }
 }
 
@@ -1388,6 +1498,83 @@ mod tests {
         assert!(matches!(
             invalid.validate(),
             Err(ThemeError::NestedLengthToken(token)) if token == "sm"
+        ));
+    }
+
+    #[test]
+    fn host_token_overrides_are_partial_merged_and_validated() {
+        let mut variant = ThemeVariant {
+            family: "Default".to_owned(),
+            name: "Dark".to_owned(),
+            mode: ThemeMode::Dark,
+            tokens: tokens(0x0066_99ff),
+        };
+        let original_surface = variant.tokens.colors["surface"];
+        let overrides = ThemeTokenOverrides {
+            colors: BTreeMap::from([("accent".to_owned(), Rgba8::from_rgb_hex(0xff00_99ff))]),
+            radii: BTreeMap::from([
+                ("sm".to_owned(), Length::Pixels(3.0)),
+                ("md".to_owned(), Length::Pixels(6.0)),
+                ("lg".to_owned(), Length::Pixels(9.0)),
+            ]),
+            typography: ThemeTypographyOverrides {
+                family: Some("Host Sans".to_owned()),
+                roles: BTreeMap::from([("body".to_owned(), type_token(15.0, 21.0, 500))]),
+                ..ThemeTypographyOverrides::default()
+            },
+            motion: ThemeMotionOverrides {
+                durations_ms: BTreeMap::from([("normal".to_owned(), 240)]),
+                ..ThemeMotionOverrides::default()
+            },
+            namespaces: BTreeMap::from([(
+                "charts".to_owned(),
+                BTreeMap::from([(
+                    "axis".to_owned(),
+                    ThemeTokenValue::Color(Rgba8::from_rgb_hex(0x7788_99ff)),
+                )]),
+            )]),
+            ..ThemeTokenOverrides::default()
+        };
+
+        variant = overrides.apply(&variant).unwrap();
+
+        assert_eq!(variant.tokens.colors["surface"], original_surface);
+        assert_eq!(
+            variant.tokens.colors["accent"],
+            Rgba8::from_rgb_hex(0xff00_99ff)
+        );
+        assert_eq!(variant.tokens.radii["md"], Length::Pixels(6.0));
+        assert_eq!(
+            variant.tokens.typography.family.as_deref(),
+            Some("Host Sans")
+        );
+        assert_eq!(
+            variant.tokens.typography.roles["body"],
+            type_token(15.0, 21.0, 500)
+        );
+        assert_eq!(variant.tokens.motion.durations_ms["normal"], 240);
+        assert_eq!(
+            variant.tokens.token("charts.axis"),
+            Some(&ThemeTokenValue::Color(Rgba8::from_rgb_hex(0x7788_99ff)))
+        );
+    }
+
+    #[test]
+    fn invalid_host_token_override_rejects_the_candidate_theme() {
+        let variant = ThemeVariant {
+            family: "Default".to_owned(),
+            name: "Dark".to_owned(),
+            mode: ThemeMode::Dark,
+            tokens: tokens(0x0066_99ff),
+        };
+        let overrides = ThemeTokenOverrides {
+            radii: BTreeMap::from([("md".to_owned(), Length::Pixels(f64::NAN))]),
+            ..ThemeTokenOverrides::default()
+        };
+
+        assert!(matches!(
+            overrides.apply(&variant),
+            Err(ThemeError::InvalidLength { token, .. }) if token == "md"
         ));
     }
 

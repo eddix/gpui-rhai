@@ -31,8 +31,8 @@ use crate::{
     NodeEventDispatcher, PrimitiveRegistry, ResponsiveError, ResponsiveRuntime,
     RestrictedModuleResolver, RuntimeEngine, RuntimeError, ScriptCallback, ScriptLifecycle,
     ScriptSource, ScriptWindowSpec, SystemAppearance, TextDirection, ThemeManager, ThemeSelection,
-    ThemeSnapshot, ThemeVariant, UiRuntimeState, UiValue, ViewportBreakpoints, WindowCommand,
-    WindowCommandPolicy, init_text_area, init_text_input, load_component_styles,
+    ThemeSnapshot, ThemeTokenOverrides, ThemeVariant, UiRuntimeState, UiValue, ViewportBreakpoints,
+    WindowCommand, WindowCommandPolicy, init_text_area, init_text_input, load_component_styles,
     load_locale_source, load_theme_source,
 };
 
@@ -1226,6 +1226,7 @@ pub struct FileScriptView {
     calendar_clock: crate::CalendarClock,
     runtime_clock: crate::RuntimeClock,
     fonts: Vec<crate::FontSource>,
+    theme_token_overrides: ThemeTokenOverrides,
 }
 
 impl FileScriptView {
@@ -1242,6 +1243,7 @@ impl FileScriptView {
             calendar_clock: crate::CalendarClock::default(),
             runtime_clock: crate::RuntimeClock::default(),
             fonts: Vec::new(),
+            theme_token_overrides: ThemeTokenOverrides::default(),
         }
     }
 
@@ -1305,6 +1307,13 @@ impl FileScriptView {
         self
     }
 
+    /// Apply host-owned user preferences to every theme loaded by this view.
+    #[must_use]
+    pub fn theme_token_overrides(mut self, overrides: ThemeTokenOverrides) -> Self {
+        self.theme_token_overrides = overrides;
+        self
+    }
+
     /// Read, compile, initialize, and render the app before opening GPUI.
     ///
     /// # Errors
@@ -1323,7 +1332,8 @@ impl FileScriptView {
                 .configure_engine(&mut engine)
                 .map_err(ScriptViewError::Extension)?;
         }
-        let (ui_root, theme_path, theme) = load_primary_file_theme(&engine, &self.entry)?;
+        let (ui_root, theme_path, theme) =
+            load_primary_file_theme(&engine, &self.entry, &self.theme_token_overrides)?;
         let style_path = ui_root.join("styles.rhai");
         let mut fonts = self.fonts;
         fonts.extend(load_file_fonts(&ui_root.join("fonts"))?);
@@ -1355,6 +1365,7 @@ impl FileScriptView {
             engine.engine(),
             &ui_root.join("themes"),
             &theme,
+            &self.theme_token_overrides,
         )?);
         runtime_state.replace_component_styles_from_host(component_styles);
         register_file_assets(&runtime_state, &ui_root)?;
@@ -1377,6 +1388,8 @@ impl FileScriptView {
             runtime,
             extensions,
             theme: theme.clone(),
+            #[cfg(feature = "dev-reload")]
+            theme_token_overrides: self.theme_token_overrides.clone(),
             show_error_banner: Cell::new(true),
             #[cfg(feature = "dev-reload")]
             development: self.development,
@@ -1416,6 +1429,7 @@ pub struct EmbeddedScriptView {
     calendar_clock: crate::CalendarClock,
     runtime_clock: crate::RuntimeClock,
     fonts: Vec<crate::FontSource>,
+    theme_token_overrides: ThemeTokenOverrides,
 }
 
 impl EmbeddedScriptView {
@@ -1444,6 +1458,7 @@ impl EmbeddedScriptView {
             calendar_clock: crate::CalendarClock::default(),
             runtime_clock: crate::RuntimeClock::default(),
             fonts: Vec::new(),
+            theme_token_overrides: ThemeTokenOverrides::default(),
         }
     }
 
@@ -1538,6 +1553,13 @@ impl EmbeddedScriptView {
         self
     }
 
+    /// Apply host-owned user preferences to every embedded theme.
+    #[must_use]
+    pub fn theme_token_overrides(mut self, overrides: ThemeTokenOverrides) -> Self {
+        self.theme_token_overrides = overrides;
+        self
+    }
+
     /// Compile and initialize a fully embedded application.
     ///
     /// # Errors
@@ -1554,8 +1576,12 @@ impl EmbeddedScriptView {
                 .configure_engine(&mut engine)
                 .map_err(ScriptViewError::Extension)?;
         }
-        let theme = load_theme_source(engine.engine(), "<embedded-theme>", &self.theme_source)
-            .map_err(|error| ScriptViewError::Theme(error.to_string()))?;
+        let theme = load_theme_with_overrides(
+            engine.engine(),
+            "<embedded-theme>",
+            &self.theme_source,
+            &self.theme_token_overrides,
+        )?;
         engine.set_module_resolver(RestrictedModuleResolver::from_source(&self.scripts)?);
         let compiled = engine.with_program_preparation(|engine| {
             preload_component_modules(engine, self.scripts.module_ids())?;
@@ -1585,7 +1611,12 @@ impl EmbeddedScriptView {
         runtime_state.calendar_clock = self.calendar_clock;
         runtime_state.clock = self.runtime_clock;
         runtime_state.locale = load_embedded_locales(engine.engine(), self.locales)?;
-        runtime_state.theme = Some(load_embedded_themes(engine.engine(), self.themes, &theme)?);
+        runtime_state.theme = Some(load_embedded_themes(
+            engine.engine(),
+            self.themes,
+            &theme,
+            &self.theme_token_overrides,
+        )?);
         runtime_state.replace_component_styles_from_host(component_styles);
         if !self.assets.is_empty() {
             runtime_state
@@ -1611,6 +1642,8 @@ impl EmbeddedScriptView {
             runtime,
             extensions,
             theme: theme.clone(),
+            #[cfg(feature = "dev-reload")]
+            theme_token_overrides: self.theme_token_overrides.clone(),
             show_error_banner: Cell::new(true),
             #[cfg(feature = "dev-reload")]
             development: self.development,
@@ -1663,14 +1696,14 @@ fn load_embedded_themes(
     engine: &rhai::Engine,
     sources: Vec<(String, String)>,
     primary: &ThemeVariant,
+    overrides: &ThemeTokenOverrides,
 ) -> Result<ThemeManager, ScriptViewError> {
     let mut variants = BTreeMap::from([(
         (primary.family.clone(), primary.name.clone()),
         primary.clone(),
     )]);
     for (name, source) in sources {
-        let variant = load_theme_source(engine, &name, &source)
-            .map_err(|error| ScriptViewError::Theme(error.to_string()))?;
+        let variant = load_theme_with_overrides(engine, &name, &source, overrides)?;
         insert_theme_variant(&mut variants, variant)?;
     }
     theme_manager(variants.into_values(), primary)
@@ -1705,6 +1738,7 @@ fn load_file_manifest(root: &Path, entry: &Path) -> Result<AppManifest, ScriptVi
 fn load_primary_file_theme(
     engine: &RuntimeEngine,
     entry: &Path,
+    overrides: &ThemeTokenOverrides,
 ) -> Result<(PathBuf, PathBuf, ThemeVariant), ScriptViewError> {
     let root = entry
         .parent()
@@ -1715,8 +1749,8 @@ fn load_primary_file_theme(
         path: path.clone(),
         source,
     })?;
-    let theme = load_theme_source(engine.engine(), &path.to_string_lossy(), &source)
-        .map_err(|error| ScriptViewError::Theme(error.to_string()))?;
+    let theme =
+        load_theme_with_overrides(engine.engine(), &path.to_string_lossy(), &source, overrides)?;
     Ok((root, path, theme))
 }
 
@@ -2004,6 +2038,7 @@ fn load_theme_directory(
     engine: &rhai::Engine,
     directory: &Path,
     primary: &ThemeVariant,
+    overrides: &ThemeTokenOverrides,
 ) -> Result<ThemeManager, ScriptViewError> {
     let mut variants = BTreeMap::from([(
         (primary.family.clone(), primary.name.clone()),
@@ -2033,12 +2068,25 @@ fn load_theme_directory(
                 path: path.clone(),
                 source,
             })?;
-            let variant = load_theme_source(engine, &path.to_string_lossy(), &source)
-                .map_err(|error| ScriptViewError::Theme(error.to_string()))?;
+            let variant =
+                load_theme_with_overrides(engine, &path.to_string_lossy(), &source, overrides)?;
             insert_theme_variant(&mut variants, variant)?;
         }
     }
     theme_manager(variants.into_values(), primary)
+}
+
+fn load_theme_with_overrides(
+    engine: &rhai::Engine,
+    source_name: &str,
+    source: &str,
+    overrides: &ThemeTokenOverrides,
+) -> Result<ThemeVariant, ScriptViewError> {
+    let variant = load_theme_source(engine, source_name, source)
+        .map_err(|error| ScriptViewError::Theme(error.to_string()))?;
+    overrides
+        .apply(&variant)
+        .map_err(|error| ScriptViewError::Theme(error.to_string()))
 }
 
 fn insert_theme_variant(
@@ -2083,6 +2131,8 @@ struct ScriptWindowFactory {
     runtime: Rc<RefCell<UiRuntimeState>>,
     extensions: Rc<Vec<Box<dyn ScriptViewExtension>>>,
     theme: ThemeVariant,
+    #[cfg(feature = "dev-reload")]
+    theme_token_overrides: ThemeTokenOverrides,
     show_error_banner: Cell<bool>,
     #[cfg(feature = "dev-reload")]
     development: bool,
@@ -4833,15 +4883,24 @@ impl ScriptHostView {
             &source,
         )
         .map_err(|error| error.to_string())?;
+        let primary = self
+            .factory
+            .theme_token_overrides
+            .apply(&primary)
+            .map_err(|error| error.to_string())?;
         let runtime = self.lifecycle.runtime();
         let previous = runtime
             .borrow()
             .theme
             .as_ref()
             .map(|themes| themes.app_preference().clone());
-        let mut themes =
-            load_theme_directory(self.engine.engine(), &self.ui_root.join("themes"), &primary)
-                .map_err(|error| error.to_string())?;
+        let mut themes = load_theme_directory(
+            self.engine.engine(),
+            &self.ui_root.join("themes"),
+            &primary,
+            &self.factory.theme_token_overrides,
+        )
+        .map_err(|error| error.to_string())?;
         if let Some(previous) = previous {
             themes
                 .set_app(previous)
@@ -5362,6 +5421,56 @@ mod tests {
         let (engine, lifecycle) = start_prepared(prepared, "widget", "main");
         assert!(engine.is_current(lifecycle.generation()));
         assert!(lifecycle.root().is_some());
+    }
+
+    #[test]
+    fn embedded_host_theme_overrides_cover_primary_and_additional_variants() {
+        let entry = ModuleId::parse("main").unwrap();
+        let scripts = EmbeddedScriptSource::new(BTreeMap::from([(
+            entry.clone(),
+            "fn view(ctx) { text(\"theme override\") }".to_owned(),
+        )]));
+        let overrides = ThemeTokenOverrides {
+            radii: BTreeMap::from([
+                ("sm".to_owned(), crate::Length::Pixels(4.0)),
+                ("md".to_owned(), crate::Length::Pixels(7.0)),
+                ("lg".to_owned(), crate::Length::Pixels(10.0)),
+            ]),
+            ..ThemeTokenOverrides::default()
+        };
+        let prepared = EmbeddedScriptView::new(
+            entry,
+            scripts,
+            include_str!("../../../registry/themes/default_dark.rhai"),
+        )
+        .theme_sources([(
+            "nord.rhai".to_owned(),
+            include_str!("../../../registry/themes/nord.rhai").to_owned(),
+        )])
+        .theme_token_overrides(overrides)
+        .prepare()
+        .unwrap();
+        assert_eq!(
+            prepared.theme.tokens.radii["md"],
+            crate::Length::Pixels(7.0)
+        );
+
+        let mut runtime = prepared.factory.runtime.borrow_mut();
+        let themes = runtime.theme.as_mut().unwrap();
+        themes
+            .set_app(crate::ThemePreference::Fixed {
+                selection: ThemeSelection::new("Nord", "Dark"),
+            })
+            .unwrap();
+        assert_eq!(
+            themes
+                .resolve(None, None, SystemAppearance::Dark)
+                .unwrap()
+                .variant()
+                .tokens
+                .radii["md"],
+            crate::Length::Pixels(7.0)
+        );
     }
 
     #[test]
