@@ -1,0 +1,25 @@
+   Compiling gpui-rhai-chart-audit-e09b5b2f v0.0.0 (/var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T/chart-audit-public-3ekfdhcy)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.33s
+     Running `target/debug/gpui-rhai-chart-audit-e09b5b2f`
+STACK plot=ChartRect { x: 52.0, y: 24.0, width: 546.0, height: 322.0 } bars=[("a:a", Rect(ChartRect { x: 90.22, y: 24.0, width: 196.56, height: 230.0 })), ("a:b", Rect(ChartRect { x: 363.22, y: 138.99999999999997, width: 196.56, height: 115.00000000000003 })), ("b:a", Rect(ChartRect { x: 90.22, y: -206.0, width: 196.56, height: 230.0 })), ("b:b", Rect(ChartRect { x: 363.22, y: 138.99999999999997, width: 196.56, height: 92.00000000000003 }))]
+AUTO_LOG_Y result=Err(Scale(LogDomain))
+NUMERIC_CATEGORY interactive=Ok(0)
+NULL_GAP line_geometry=Some(Polyline { points: [ChartPoint { x: 52.0, y: 238.66666666666669 }, ChartPoint { x: 598.0, y: 24.0 }], width: 2.0 })
+LARGE_NULL_LINE prepare=Err(Transform(NonNumeric { row: 2400 }))
+HIDDEN_PALETTE b_marks=[("legend", Some(Rgba8(2110755327))), ("a", Some(Rgba8(2057500671)))]
+PNG_LABELS png_equal_despite_different_title=true svg_equal=false
+EXPORT_OUTPUT=/Users/eddix/Codes/github.com/eddix/gpui-rhai/docs/audits/2026-09-23-charts-e09b5b2f/evidence
+MULTI_REGION duplicate_mark_keys=["grid:y:0", "grid:y:1", "grid:y:2", "grid:y:3", "grid:x:0", "grid:x:1", "grid:x:2", "grid:x:3", "grid:x:4", "grid:x:5", "axis:x", "axis:y"]
+AGGREGATE group_column_type=String rows=[{"g": String("1"), "total": Number(1.0)}, {"g": String("2"), "total": Number(3.0)}]
+DUPLICATE_REGISTRATION err=true subsequent_result=Some(Integer(2))
+GAUGE25_OVER100 value_equals_full_track=true
+RADAR_TENFOLD identical_polygons=true
+SHARED_X_DIFFERENT_Y x1=Circle { center: ChartPoint { x: 598.0, y: 54.0 }, radius: 5.0 } x100=Circle { center: ChartPoint { x: 598.0, y: 54.0 }, radius: 5.0 }
+CATEGORY_LOCALE_LABELS ["188.5", "461.5"]
+FILTER_TYPO Err(Data(MissingKeyDimension("id")))
+SAMPLED_IDENTITY source_rows=5000 interactive=4000 unreachable_example=r4
+VALID_FILTER_NO_MATCHES=Err(Data(MissingKeyDimension("id")))
+LOG_BAR_EXPLICIT_MIN marks=Ok(0)
+CUSTOM_POLAR renderer_calls=0 returned_data_marks=0 diagnostics=[]
+GEO_REJECTED_PROJECTION result=None emitted=[Circle { center: ChartPoint { x: 325.0, y: 287.6531076928052 }, radius: 3.0 }] diagnostics=[]
+ENCODE_TRANSFORM_OUTPUT=Err(MissingDimension { series: "s", dimension: "total" })

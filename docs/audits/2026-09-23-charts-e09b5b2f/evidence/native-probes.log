@@ -1,0 +1,50 @@
+   Compiling gpui-rhai-chart-native-audit-e09b5b2f v0.0.0 (/tmp/gpui-rhai-chart-audit-e09b5b2f/native)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.93s
+     Running tests/interaction.rs (tests/native-keyboard/target/debug/deps/interaction-a11e6c92ec0f9e29)
+
+running 5 tests
+BarChart(spec.series without kind) parsed=Err(Missing("chart.series[0].kind"))
+
+thread 'specialized_adapter_populates_series_kind' (43666074) panicked at tests/interaction.rs:26:763:
+adapter failed to fill kind in supplied spec
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test specialized_adapter_populates_series_kind ... FAILED
+chart semantic nodes after keyboard focus=[("figure", "Control", "", None)]
+
+thread 'focused_chart_data_is_exposed_to_semantics' (43666073) panicked at tests/interaction.rs:24:1046:
+focused/selected datum is absent from the public semantic tree
+test focused_chart_data_is_exposed_to_semantics ... FAILED
+data key=normal: select|legend=1|0
+brush=none legend_callbacks=1
+controlled zoom=1, wheel proposals=3|0.9048374180359595|0.7408182206817177
+
+thread 'controlled_zoom_does_not_drift_when_host_keeps_value' (43666071) panicked at tests/interaction.rs:15:907:
+controlled zoom ignored unchanged model value and compounded local state
+test controlled_zoom_does_not_drift_when_host_keeps_value ... FAILED
+brush=xy legend_callbacks=0
+
+thread 'brush_does_not_disable_legend_controls' (43666070) panicked at tests/interaction.rs:22:492:
+assertion `left == right` failed: enabling brush swallowed legend click outside plot
+  left: "0"
+ right: "1"
+test brush_does_not_disable_legend_controls ... FAILED
+data key=legend: select|legend=0|1
+
+thread 'datum_key_cannot_turn_data_into_a_legend_control' (43666072) panicked at tests/interaction.rs:31:941:
+assertion `left == right` failed: a valid datum key was interpreted as a UI control tag
+  left: "0|1"
+ right: "1|0"
+test datum_key_cannot_turn_data_into_a_legend_control ... FAILED
+
+failures:
+
+failures:
+    brush_does_not_disable_legend_controls
+    controlled_zoom_does_not_drift_when_host_keeps_value
+    datum_key_cannot_turn_data_into_a_legend_control
+    focused_chart_data_is_exposed_to_semantics
+    specialized_adapter_populates_series_kind
+
+test result: FAILED. 0 passed; 5 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.86s
+
+error: test failed, to rerun pass `--test interaction`

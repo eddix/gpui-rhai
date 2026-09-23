@@ -1,0 +1,164 @@
+     Locking 104 packages to latest Rust 1.94.0 compatible versions
+      Adding addr2line v0.25.1
+      Adding as-raw-xcb-connection v1.0.1
+      Adding ash v0.38.0+1.3.281
+      Adding ash-window v0.13.0
+      Adding ashpd v0.11.1
+      Adding backtrace v0.3.76
+      Adding blade-graphics v0.7.1
+      Adding blade-macros v0.3.0
+      Adding blade-util v0.3.0
+      Adding block2 v0.6.2
+      Adding bytemuck_derive v1.12.0
+      Adding calloop-wayland-source v0.3.0
+      Adding cocoa v0.25.0
+      Adding cocoa-foundation v0.1.2
+      Adding core-graphics v0.23.2
+      Adding core-graphics-helmer-fork v0.24.0
+      Adding cosmic-text v0.14.2
+      Adding dispatch v0.2.0
+      Adding dispatch2 v0.3.1
+      Adding downcast-rs v1.2.1
+      Adding filedescriptor v0.8.3
+      Adding font-types v0.12.4
+      Adding fontdb v0.16.2
+      Adding gethostname v1.1.0
+      Adding gimli v0.32.3
+      Adding git2 v0.20.4
+      Adding glow v0.16.0
+      Adding gpu-alloc v0.6.2
+      Adding gpu-alloc-ash v0.7.1
+      Adding gpu-alloc-types v0.3.1
+      Adding hashbrown v0.14.5
+      Adding hidden-trait v0.1.2
+      Adding is-docker v0.2.0
+      Adding is-wsl v0.4.0
+      Adding khronos-egl v6.0.0
+      Adding libgit2-sys v0.18.8+1.9.7
+      Adding libz-sys v1.1.29
+      Adding mint v0.5.9
+      Adding ntapi v0.4.3
+      Adding objc-foundation v0.1.1
+      Adding objc2 v0.6.4
+      Adding objc2-app-kit v0.3.2
+      Adding objc2-core-foundation v0.3.2
+      Adding objc2-encode v4.1.0
+      Adding objc2-foundation v0.3.2
+      Adding objc2-metal v0.3.2
+      Adding objc2-quartz-core v0.3.2
+      Adding objc2-ui-kit v0.3.2
+      Adding objc_exception v0.1.2
+      Adding objc_id v0.1.1
+      Adding object v0.37.3
+      Adding open v5.4.2
+      Adding quick-xml v0.41.0
+      Adding rangemap v1.8.0
+      Adding raw-window-metal v0.4.0
+      Adding read-fonts v0.41.0
+      Adding rustc-demangle v0.1.28
+      Adding rustybuzz v0.14.1
+      Adding scoped-tls v1.0.1
+      Adding screencapturekit v0.2.8
+      Adding screencapturekit-sys v0.2.8
+      Adding self_cell v1.3.0
+      Adding skrifa v0.44.0
+      Adding smol_str v0.2.2
+      Adding spirv v0.3.0+sdk-1.3.268.0
+      Adding swash v0.2.10
+      Adding syn v1.0.109
+      Adding sys-locale v0.3.2
+      Adding sysinfo v0.31.4
+      Adding tao-core-video-sys v0.2.0
+      Adding ttf-parser v0.20.0
+      Adding ttf-parser v0.21.1
+      Adding unicode-bidi-mirroring v0.2.0
+      Adding unicode-ccc v0.2.0
+      Adding unicode-linebreak v0.1.5
+      Adding vcpkg v0.2.15
+      Adding wayland-backend v0.3.17
+      Adding wayland-client v0.31.15
+      Adding wayland-cursor v0.31.14
+      Adding wayland-protocols v0.31.2
+      Adding wayland-protocols v0.32.13
+      Adding wayland-protocols-plasma v0.2.0
+      Adding wayland-scanner v0.31.11
+      Adding wayland-sys v0.31.11
+      Adding windows v0.57.0
+      Adding windows-capture v1.5.0
+      Adding windows-core v0.57.0
+      Adding windows-implement v0.57.0
+      Adding windows-interface v0.57.0
+      Adding windows-result v0.1.2
+      Adding x11 v2.21.0
+      Adding x11-clipboard v0.9.3
+      Adding x11rb v0.13.2
+      Adding x11rb-protocol v0.13.2
+      Adding xcb v1.7.1
+      Adding xcursor v0.3.11
+      Adding xim-ctext v0.3.0
+      Adding xim-parser v0.2.2
+      Adding xkbcommon v0.8.0
+      Adding xkeysym v0.2.1
+      Adding yazi v0.2.1
+      Adding zed-scap v0.0.8-zed
+      Adding zed-xim v0.4.0-zed
+      Adding zeno v0.3.3
+   Compiling cpufeatures v0.3.0
+   Compiling sha2 v0.11.0
+   Compiling rust-embed-utils v8.12.0
+   Compiling rust-embed-impl v8.12.0
+   Compiling rust-embed v8.12.0
+   Compiling gpui_util v0.2.2
+   Compiling gpui_http_client v0.2.2
+   Compiling gpui v0.2.2
+   Compiling gpui-rhai v0.1.5 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai)
+   Compiling gpui-rhai-chart-native-audit-e09b5b2f v0.0.0 (/var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T/chart-audit-native-9ywabwad)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 38.90s
+     Running tests/interaction.rs (tests/native-keyboard/target/debug/deps/interaction-1d1611478c40d639)
+
+running 5 tests
+BarChart(spec.series without kind) parsed=Err(Missing("chart.series[0].kind"))
+
+thread 'specialized_adapter_populates_series_kind' (43677293) panicked at tests/interaction.rs:218:5:
+adapter failed to fill kind in supplied spec
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test specialized_adapter_populates_series_kind ... FAILED
+brush=none legend_callbacks=1
+chart semantic nodes after keyboard focus=[("figure", "Control", "", None)]
+
+thread 'focused_chart_data_is_exposed_to_semantics' (43677292) panicked at tests/interaction.rs:195:5:
+focused/selected datum is absent from the public semantic tree
+test focused_chart_data_is_exposed_to_semantics ... FAILED
+data key=normal: select|legend=1|0
+controlled zoom=1, wheel proposals=3|0.9048374180359595|0.7408182206817177
+
+thread 'controlled_zoom_does_not_drift_when_host_keeps_value' (43677290) panicked at tests/interaction.rs:111:5:
+controlled zoom ignored unchanged model value and compounded local state
+test controlled_zoom_does_not_drift_when_host_keeps_value ... FAILED
+brush=xy legend_callbacks=0
+
+thread 'brush_does_not_disable_legend_controls' (43677289) panicked at tests/interaction.rs:152:5:
+assertion `left == right` failed: enabling brush swallowed legend click outside plot
+  left: "0"
+ right: "1"
+test brush_does_not_disable_legend_controls ... FAILED
+data key=legend: select|legend=0|1
+
+thread 'datum_key_cannot_turn_data_into_a_legend_control' (43677291) panicked at tests/interaction.rs:256:5:
+assertion `left == right` failed: a valid datum key was interpreted as a UI control tag
+  left: "0|1"
+ right: "1|0"
+test datum_key_cannot_turn_data_into_a_legend_control ... FAILED
+
+failures:
+
+failures:
+    brush_does_not_disable_legend_controls
+    controlled_zoom_does_not_drift_when_host_keeps_value
+    datum_key_cannot_turn_data_into_a_legend_control
+    focused_chart_data_is_exposed_to_semantics
+    specialized_adapter_populates_series_kind
+
+test result: FAILED. 0 passed; 5 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.88s
+
+error: test failed, to rerun pass `--test interaction`
