@@ -1,0 +1,39 @@
+   Compiling chart-acceptance-public-16cf8e51 v0.0.0 (/var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T/chart-acceptance-public-8i4lw2c_)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 5.82s
+     Running `target/debug/chart-acceptance-public-16cf8e51`
+STACK plot=ChartRect { x: 52.0, y: 24.0, width: 546.0, height: 322.0 } bars=[("main:a:a", Rect(ChartRect { x: 90.22, y: 158.16666666666666, width: 196.56, height: 134.16666666666666 })), ("main:a:b", Rect(ChartRect { x: 363.22, y: 225.25, width: 196.56, height: 67.08333333333331 })), ("main:b:a", Rect(ChartRect { x: 90.22, y: 24.0, width: 196.56, height: 134.16666666666666 })), ("main:b:b", Rect(ChartRect { x: 363.22, y: 292.3333333333333, width: 196.56, height: 53.666666666666686 }))]
+AUTO_LOG_Y result=Ok(14)
+NUMERIC_CATEGORY interactive=Ok(2)
+NULL_GAP line_geometry=None
+LARGE_NULL_LINE prepare=Ok("ok")
+HIDDEN_PALETTE b_marks=[("legend", Some(Rgba8(2110755327))), ("a", Some(Rgba8(2110755327)))]
+PNG_LABELS png_equal_despite_different_title=false svg_equal=false
+EXPORT_OUTPUT=/Users/eddix/Codes/github.com/eddix/gpui-rhai/docs/audits/2026-09-23-charts-e09b5b2f/acceptance-16cf8e51/evidence
+MULTI_REGION duplicate_mark_keys=[]
+AGGREGATE group_column_type=Integer rows=[{"g": Integer(1), "total": Number(1.0)}, {"g": Integer(2), "total": Number(3.0)}]
+DUPLICATE_REGISTRATION err=true subsequent_result=Some(Integer(1))
+GAUGE25_OVER100 value_equals_full_track=false
+RADAR_TENFOLD identical_polygons=false
+SHARED_X_DIFFERENT_Y x1=Rect(ChartRect { x: 52.46, y: 49.0, width: 10.0, height: 10.0 }) x100=Polygon([ChartPoint { x: 598.0, y: 49.0 }, ChartPoint { x: 603.0, y: 54.0 }, ChartPoint { x: 598.0, y: 59.0 }, ChartPoint { x: 593.0, y: 54.0 }])
+CATEGORY_LOCALE_LABELS ["Alpha", "Beta"]
+FILTER_TYPO Err(UnknownFilterOperator("typo"))
+SAMPLED_IDENTITY source_rows=5000 interactive=4000 unreachable_example=r4
+VALID_FILTER_NO_MATCHES=Ok((0, 3))
+LOG_BAR_EXPLICIT_MIN marks=Ok(2)
+CUSTOM_POLAR renderer_calls=1 returned_data_marks=1 diagnostics=[]
+GEO_REJECTED_PROJECTION result=None emitted=[] diagnostics=[ChartDiagnostic { severity: Warning, code: "chart.datum.projection_rejected", message: "series `g` skipped invalid datum at row 0", series: Some("g"), datum: Some("polar") }]
+ENCODE_TRANSFORM_OUTPUT=Ok("ok")
+EXPLICIT_DOMAIN_ZOOM unchanged_marks=true unchanged_labels=true metadata={"main:x:__implicit_x": ChartAxisDomain { full: (0.0, 100.0), visible: (25.0, 75.0) }, "main:y:__implicit_y": ChartAxisDomain { full: (0.0, 100.0), visible: (25.0, 75.0) }}
+LOG_ZOOM_OUT=Err(Scale(LogDomain))
+MULTI_AXIS_ANNOTATION=Err(DuplicateMarkIdentity("main:annotation:limit"))
+IMPLICIT_AND_EXPLICIT_AXIS=Err(DuplicateMarkIdentity("main:grid:x:0"))
+BUSINESS_KEY_LINE_ZERO=Err(DuplicateMarkIdentity("main:s:line:0"))
+FILTER_EMPTY_LAYOUT=Err(Scale(EmptyCategory))
+DRAW_SAMPLE_CHANGES_DOMAIN domains={"main:x:__implicit_x": ChartAxisDomain { full: (0.0, 3.0), visible: (0.0, 3.0) }, "main:y:__implicit_y": ChartAxisDomain { full: (0.0, 1000.0), visible: (0.0, 1000.0) }} semantics=[("a", Some(0.0)), ("b", Some(-500.0)), ("c", Some(1000.0)), ("d", Some(0.0))]
+GAUGE_DATUM_ID=[("value", Some(ChartDatumRef { dataset: "main", series: "g", key: "measurement-1" }))]
+GEO_VIEWPORT_IGNORED unchanged_marks=true map_ids=[("feature", Some(ChartDatumRef { dataset: "main", series: "m", key: "feature" }))] semantics=[ChartSemanticDatum { series_key: "m", datum_key: "measurement-1", name: "feature", value: Some(25.0), selected: false }]
+CUSTOM_FAILURE_cartesian_2d=Err(CustomSeries(Failed { id: "reject", message: "candidate rejected" }))
+CUSTOM_FAILURE_polar=Ok([ChartDiagnostic { severity: Error, code: "chart.custom_series", message: "chart series renderer `reject` failed: candidate rejected", series: Some("c"), datum: None }])
+CUSTOM_FAILURE_geo_2d=Ok([ChartDiagnostic { severity: Error, code: "chart.custom_series", message: "chart series renderer `reject` failed: candidate rejected", series: Some("c"), datum: None }])
+EMPTY_AGGREGATE_SCHEMA columns=0 rows=0
+AUTO_CATEGORY_LOCALE_LABELS=["188.5", "461.5"]

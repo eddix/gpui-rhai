@@ -1,0 +1,22 @@
+   Compiling gpui-rhai v0.1.5 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai)
+   Compiling gpui-rhai-performance-tests v0.0.0 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/performance)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 37.29s
+     Running tests/e2e.rs (tests/performance/target/debug/deps/e2e-4e8b8dce2a6d0430)
+
+running 6 tests
+test chart_end_to_end_baseline ... ignored, run with scripts/benchmark.sh
+test document_end_to_end_baseline ... ignored, run with scripts/benchmark.sh
+test table_1000_end_to_end_baseline ... ignored, run with scripts/benchmark.sh
+test chart_gallery_example::registry_snapshot::tests::release_snapshot_has_the_expected_catalog_size ... ok
+test chart_gallery_example::tests::complete_chart_gallery_prepares_with_host_map_and_100k_data ... ok
+test table_1000_example::tests::one_thousand_row_workload_prepares ... ok
+
+test result: ok. 3 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 1.00s
+
+     Running tests/state_structure.rs (tests/performance/target/debug/deps/state_structure-a3263b5c406d7cc5)
+
+running 1 test
+test five_thousand_component_mounts_and_large_store_rollback_remain_structural ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.20s
+

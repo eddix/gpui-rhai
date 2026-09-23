@@ -1,0 +1,116 @@
+     Locking 104 packages to latest Rust 1.94.0 compatible versions
+      Adding addr2line v0.25.1
+      Adding as-raw-xcb-connection v1.0.1
+      Adding ash v0.38.0+1.3.281
+      Adding ash-window v0.13.0
+      Adding ashpd v0.11.1
+      Adding backtrace v0.3.76
+      Adding blade-graphics v0.7.1
+      Adding blade-macros v0.3.0
+      Adding blade-util v0.3.0
+      Adding block2 v0.6.2
+      Adding bytemuck_derive v1.12.0
+      Adding calloop-wayland-source v0.3.0
+      Adding cocoa v0.25.0
+      Adding cocoa-foundation v0.1.2
+      Adding core-graphics v0.23.2
+      Adding core-graphics-helmer-fork v0.24.0
+      Adding cosmic-text v0.14.2
+      Adding dispatch v0.2.0
+      Adding dispatch2 v0.3.1
+      Adding downcast-rs v1.2.1
+      Adding filedescriptor v0.8.3
+      Adding font-types v0.12.4
+      Adding fontdb v0.16.2
+      Adding gethostname v1.1.0
+      Adding gimli v0.32.3
+      Adding git2 v0.20.4
+      Adding glow v0.16.0
+      Adding gpu-alloc v0.6.2
+      Adding gpu-alloc-ash v0.7.1
+      Adding gpu-alloc-types v0.3.1
+      Adding hashbrown v0.14.5
+      Adding hidden-trait v0.1.2
+      Adding is-docker v0.2.0
+      Adding is-wsl v0.4.0
+      Adding khronos-egl v6.0.0
+      Adding libgit2-sys v0.18.8+1.9.7
+      Adding libz-sys v1.1.29
+      Adding mint v0.5.9
+      Adding ntapi v0.4.3
+      Adding objc-foundation v0.1.1
+      Adding objc2 v0.6.4
+      Adding objc2-app-kit v0.3.2
+      Adding objc2-core-foundation v0.3.2
+      Adding objc2-encode v4.1.0
+      Adding objc2-foundation v0.3.2
+      Adding objc2-metal v0.3.2
+      Adding objc2-quartz-core v0.3.2
+      Adding objc2-ui-kit v0.3.2
+      Adding objc_exception v0.1.2
+      Adding objc_id v0.1.1
+      Adding object v0.37.3
+      Adding open v5.4.2
+      Adding quick-xml v0.41.0
+      Adding rangemap v1.8.0
+      Adding raw-window-metal v0.4.0
+      Adding read-fonts v0.41.0
+      Adding rustc-demangle v0.1.28
+      Adding rustybuzz v0.14.1
+      Adding scoped-tls v1.0.1
+      Adding screencapturekit v0.2.8
+      Adding screencapturekit-sys v0.2.8
+      Adding self_cell v1.3.0
+      Adding skrifa v0.44.0
+      Adding smol_str v0.2.2
+      Adding spirv v0.3.0+sdk-1.3.268.0
+      Adding swash v0.2.10
+      Adding syn v1.0.109
+      Adding sys-locale v0.3.2
+      Adding sysinfo v0.31.4
+      Adding tao-core-video-sys v0.2.0
+      Adding ttf-parser v0.20.0
+      Adding ttf-parser v0.21.1
+      Adding unicode-bidi-mirroring v0.2.0
+      Adding unicode-ccc v0.2.0
+      Adding unicode-linebreak v0.1.5
+      Adding vcpkg v0.2.15
+      Adding wayland-backend v0.3.17
+      Adding wayland-client v0.31.15
+      Adding wayland-cursor v0.31.14
+      Adding wayland-protocols v0.31.2
+      Adding wayland-protocols v0.32.13
+      Adding wayland-protocols-plasma v0.2.0
+      Adding wayland-scanner v0.31.11
+      Adding wayland-sys v0.31.11
+      Adding windows v0.57.0
+      Adding windows-capture v1.5.0
+      Adding windows-core v0.57.0
+      Adding windows-implement v0.57.0
+      Adding windows-interface v0.57.0
+      Adding windows-result v0.1.2
+      Adding x11 v2.21.0
+      Adding x11-clipboard v0.9.3
+      Adding x11rb v0.13.2
+      Adding x11rb-protocol v0.13.2
+      Adding xcb v1.7.1
+      Adding xcursor v0.3.11
+      Adding xim-ctext v0.3.0
+      Adding xim-parser v0.2.2
+      Adding xkbcommon v0.8.0
+      Adding xkeysym v0.2.1
+      Adding yazi v0.2.1
+      Adding zed-scap v0.0.8-zed
+      Adding zed-xim v0.4.0-zed
+      Adding zeno v0.3.3
+   Compiling chart-acceptance-native-16cf8e51 v0.0.0 (/var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T/chart-acceptance-linked-c3jpvnn5)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.31s
+     Running tests/review.rs (tests/native-keyboard/target/debug/deps/review-b027f1fa41b478c3)
+
+running 1 test
+IDLE_LINK link=false layouts_before=2 after=2 delta=0
+PROBE_GUARD: idle linked chart host reached 64 renders without parking; stopping test process
+error: test failed, to rerun pass `--test review`
+
+Caused by:
+  process didn't exit successfully: `/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/deps/review-b027f1fa41b478c3 idle_linked_charts_do_not_repeat_layout --nocapture` (exit status: 70)
