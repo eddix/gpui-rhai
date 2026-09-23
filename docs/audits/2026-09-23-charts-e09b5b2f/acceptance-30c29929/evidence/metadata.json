@@ -1,0 +1,30 @@
+{
+  "reviewed_head": "30c29929011d4237c62a0b1d73ca94875e635cae",
+  "previous_chart_fix": "7d66a14d",
+  "workspace_tests": 560,
+  "native_tests": 84,
+  "chart_native_tests": 15,
+  "previous_independent_native_tests": {
+    "passed": 2,
+    "failed": 0
+  },
+  "new_native_tests": {
+    "passed": 0,
+    "failed": 3
+  },
+  "fault_injection": "Two tests intentionally panic once inside native lifecycle hooks; framework catches these and returns Err. Assertions check state coherence and retry, not that the injected hook succeeds.",
+  "motion_test": "ManualRuntimeClock; 60 seconds advanced only while suspended; normal motion, not reduced/none.",
+  "performance": {
+    "passed": 4,
+    "ignored": 3
+  },
+  "product_files_modified_by_review": false,
+  "reference_images_added": false,
+  "pre_existing_changes": "UI documentation consolidation and reference-image deletion kept unchanged",
+  "cargo_lock_sha256": "d1820fe7422b5b6b40cfd8eff84e0981ecf2015944166bed0bd90253ead28697",
+  "delivery_runners_verified": {
+    "public_exit": 0,
+    "native_exit": 101
+  },
+  "charts_dirty_diff": ""
+}
