@@ -1,0 +1,23 @@
+{
+  "reviewed_commit": "a8d2ef0f8b90df4915d3150941ee49baa9dd23bd",
+  "previous_reviewed_commit": "16cf8e51f23cbd281ad34b50440f50939ed23448",
+  "workspace_tests": 555,
+  "native_tests": 80,
+  "chart_native_tests": 11,
+  "independent_native_tests": {
+    "passed": 6,
+    "failed": 3
+  },
+  "performance": {
+    "passed": 4,
+    "ignored": 3
+  },
+  "product_files_modified_by_review": false,
+  "pre_existing_worktree_changes": "UI documentation consolidation and three reference screenshot deletions retained unchanged",
+  "charts_dirty_diff": "",
+  "cargo_lock_sha256": "d1820fe7422b5b6b40cfd8eff84e0981ecf2015944166bed0bd90253ead28697",
+  "delivery_runners_verified": {
+    "public_exit": 0,
+    "native_exit": 101
+  }
+}
