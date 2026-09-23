@@ -725,6 +725,64 @@ impl ScriptViewExtension for MotionExtension {
     }
 }
 
+struct ClockBomb {
+    clock: ManualRuntimeClock,
+    fail: Rc<std::cell::Cell<bool>>,
+}
+
+impl PrimitiveHandler for ClockBomb {
+    fn resume(&mut self, _: &PrimitiveInstanceId, _: &mut gpui::App) {
+        if self.fail.replace(false) {
+            self.clock.advance(Duration::from_secs(60));
+            panic!("injected slow native resume failure");
+        }
+    }
+
+    fn render(
+        &mut self,
+        _: &PrimitiveInstance,
+        _: &PrimitiveEventEmitter,
+        _: &PrimitiveTheme,
+        _: &mut Window,
+        _: &mut gpui::App,
+    ) -> Result<gpui::AnyElement, String> {
+        Ok(gpui::div().into_any_element())
+    }
+}
+
+struct FailedResumeMotionExtension {
+    motion: MotionExtension,
+    clock: ManualRuntimeClock,
+    fail: Rc<std::cell::Cell<bool>>,
+}
+
+impl ScriptViewExtension for FailedResumeMotionExtension {
+    fn configure_engine(&self, engine: &mut RuntimeEngine) -> Result<(), String> {
+        self.motion.configure_engine(engine)?;
+        engine
+            .register_primitive(
+                PrimitiveDescriptor {
+                    id: PrimitiveId::parse("zz_lifecycle.clock_bomb").unwrap(),
+                    export: "ClockBomb".to_owned(),
+                    props: BTreeMap::new(),
+                    events: BTreeMap::new(),
+                    state: ComponentStateSchema::default(),
+                    lifecycle: true,
+                    effect: None,
+                },
+                ClockBomb {
+                    clock: self.clock.clone(),
+                    fail: self.fail.clone(),
+                },
+            )
+            .map_err(|error| error.to_string())
+    }
+
+    fn configure_runtime(&self, runtime: &mut UiRuntimeState) -> Result<(), String> {
+        self.motion.configure_runtime(runtime)
+    }
+}
+
 fn moving_data(y: i64) -> ChartDataset {
     ChartDataset::from_rows(
         "main",
@@ -739,14 +797,15 @@ fn moving_data(y: i64) -> ChartDataset {
     .unwrap()
 }
 
-#[gpui::test]
-fn chart_motion_freezes_across_view_suspension(cx: &mut TestAppContext) {
-    cx.update(gpui_rhai::install);
-    let clock = ManualRuntimeClock::new(std::time::Instant::now());
-    let data = NativeChartData::new([moving_data(0)], ChartDataLimits::default()).unwrap();
-    let positions = Arc::new(std::sync::Mutex::new(Vec::new()));
+fn mount_extended_chart(
+    cx: &mut TestAppContext,
+    name: &str,
+    script: &str,
+    extension: impl ScriptViewExtension + 'static,
+    clock: RuntimeClock,
+    preference: MotionPreference,
+) -> (WindowHandle<Host>, ScriptViewHandle) {
     let entry = ModuleId::parse("main").unwrap();
-    let script = r#"import "charts/chart" as chart;fn state_schema(){#{fields:#{hits:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}}}}}fn clicked(ctx,p){ctx.set_state("hits",ctx.get_state("hits")+1);}fn view(ctx){column([text("Status").accessibility_role("status").accessibility_label(ctx.get_state("hits").to_string()),chart::Chart(#{key:"c",data:ctx.get_native_chart_data("motion_stream"),spec:#{title:"Control",legend:#{visible:false},motion:#{duration:"slow",easing:"standard"},series:[#{key:"s",kind:"custom",renderer:"moving",encode:#{x:"x",y:"y"}}]},on_select:Fn("clicked")}).with_style(style().width(px(420)).height(px(300)))])}"#;
     let prepared = EmbeddedScriptView::new(
         entry.clone(),
         EmbeddedScriptSource::new(BTreeMap::from([
@@ -758,25 +817,18 @@ fn chart_motion_freezes_across_view_suspension(cx: &mut TestAppContext) {
         ])),
         source("registry/themes/default_dark.rhai"),
     )
-    .extension(MotionExtension {
-        data: data.clone(),
-        positions: positions.clone(),
-    })
-    .runtime_clock(clock.clock())
-    .motion_preference(MotionPreference::Normal)
+    .extension(extension)
+    .runtime_clock(clock)
+    .motion_preference(preference)
     .prepare()
     .unwrap();
     let captured = Rc::new(RefCell::new(None));
     let capture = captured.clone();
+    let name = name.to_owned();
     let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("chart-frozen-motion", cx).unwrap();
+        let host = ScriptViewHost::new(&name, cx).unwrap();
         let view = prepared
-            .mount(
-                ScriptViewConfig::new("chart-frozen-motion"),
-                host.clone(),
-                window,
-                cx,
-            )
+            .mount(ScriptViewConfig::new(&name), host.clone(), window, cx)
             .unwrap();
         *capture.borrow_mut() = Some(view.clone());
         Host { host, view }
@@ -784,6 +836,27 @@ fn chart_motion_freezes_across_view_suspension(cx: &mut TestAppContext) {
     cx.run_until_parked();
     cx.refresh().unwrap();
     let view = captured.borrow().as_ref().unwrap().clone();
+    (window, view)
+}
+
+#[gpui::test]
+fn chart_motion_freezes_across_view_suspension(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let clock = ManualRuntimeClock::new(std::time::Instant::now());
+    let data = NativeChartData::new([moving_data(0)], ChartDataLimits::default()).unwrap();
+    let positions = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let script = r#"import "charts/chart" as chart;fn state_schema(){#{fields:#{hits:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}}}}}fn clicked(ctx,p){ctx.set_state("hits",ctx.get_state("hits")+1);}fn view(ctx){column([text("Status").accessibility_role("status").accessibility_label(ctx.get_state("hits").to_string()),chart::Chart(#{key:"c",data:ctx.get_native_chart_data("motion_stream"),spec:#{title:"Control",legend:#{visible:false},motion:#{duration:"slow",easing:"standard"},series:[#{key:"s",kind:"custom",renderer:"moving",encode:#{x:"x",y:"y"}}]},on_select:Fn("clicked")}).with_style(style().width(px(420)).height(px(300)))])}"#;
+    let (window, view) = mount_extended_chart(
+        cx,
+        "chart-frozen-motion",
+        script,
+        MotionExtension {
+            data: data.clone(),
+            positions: positions.clone(),
+        },
+        clock.clock(),
+        MotionPreference::Normal,
+    );
     let mut visual = VisualTestContext::from_window(*window, cx);
     pump(cx, &mut visual);
     clock.advance(Duration::from_secs(2));
@@ -800,6 +873,304 @@ fn chart_motion_freezes_across_view_suspension(cx: &mut TestAppContext) {
     pump(cx, &mut visual);
     click_chart_coordinate(&mut visual, &view, old);
     assert_eq!(status(&mut visual, &view), "2");
+}
+
+#[gpui::test]
+fn failed_resume_prepare_does_not_consume_chart_motion_time(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let clock = ManualRuntimeClock::new(std::time::Instant::now());
+    let data = NativeChartData::new([moving_data(0)], ChartDataLimits::default()).unwrap();
+    let positions = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let fail = Rc::new(std::cell::Cell::new(true));
+    let script = r#"import "charts/chart" as chart;fn state_schema(){#{fields:#{hits:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}}}}}fn clicked(ctx,p){ctx.set_state("hits",ctx.get_state("hits")+1);}fn view(ctx){column([text("Status").accessibility_role("status").accessibility_label(ctx.get_state("hits").to_string()),chart::Chart(#{key:"c",data:ctx.get_native_chart_data("motion_stream"),spec:#{title:"Control",legend:#{visible:false},motion:#{duration:"slow",easing:"standard"},series:[#{key:"s",kind:"custom",renderer:"moving",encode:#{x:"x",y:"y"}}]},on_select:Fn("clicked")}).with_style(style().width(px(420)).height(px(300))),zz_lifecycle::ClockBomb(#{key:"bomb"}).with_key("bomb")])}"#;
+    let (window, view) = mount_extended_chart(
+        cx,
+        "chart-failed-resume-motion",
+        script,
+        FailedResumeMotionExtension {
+            motion: MotionExtension {
+                data: data.clone(),
+                positions: positions.clone(),
+            },
+            clock: clock.clone(),
+            fail,
+        },
+        clock.clock(),
+        MotionPreference::Normal,
+    );
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    pump(cx, &mut visual);
+    clock.advance(Duration::from_secs(2));
+    pump(cx, &mut visual);
+    let old = positions.lock().unwrap()[0];
+    data.replace([moving_data(1)]).unwrap();
+    pump(cx, &mut visual);
+    click_chart_coordinate(&mut visual, &view, old);
+    assert_eq!(status(&mut visual, &view), "1");
+    visual.update(|window, cx| view.suspend(window, cx).unwrap());
+    clock.advance(Duration::from_secs(60));
+    assert!(visual.update(|_, cx| view.resume(cx)).is_err());
+    assert_eq!(view.state(), ScriptViewState::Suspended);
+    visual.update(|_, cx| view.resume(cx).unwrap());
+    pump(cx, &mut visual);
+    click_chart_coordinate(&mut visual, &view, old);
+    assert_eq!(status(&mut visual, &view), "2");
+}
+
+fn presented_revision(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> u64 {
+    visual.update(|_, cx| {
+        let snapshot = view.accessibility_snapshot(cx).unwrap();
+        let node = snapshot
+            .find_by_role_and_name("figure", "Control")
+            .next()
+            .unwrap();
+        let Some(UiValue::Map(values)) = &node.value else {
+            panic!("missing chart projection")
+        };
+        let UiValue::Integer(revision) = values["revision"] else {
+            panic!("missing presented revision")
+        };
+        u64::try_from(revision).unwrap()
+    })
+}
+
+#[gpui::test]
+fn resume_finishes_prepared_but_unpresented_frame(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let data = NativeChartData::new([moving_data(0)], ChartDataLimits::default()).unwrap();
+    let positions = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let script = r#"import "charts/chart" as chart;fn view(ctx){chart::Chart(#{key:"c",data:ctx.get_native_chart_data("motion_stream"),spec:#{title:"Control",legend:#{visible:false},series:[#{key:"s",kind:"custom",renderer:"moving",encode:#{x:"x",y:"y"}}]}}).with_style(style().width(px(420)).height(px(300)))}"#;
+    let (window, view) = mount_extended_chart(
+        cx,
+        "chart-pending-frame",
+        script,
+        MotionExtension {
+            data: data.clone(),
+            positions: positions.clone(),
+        },
+        RuntimeClock::default(),
+        MotionPreference::None,
+    );
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    pump(cx, &mut visual);
+    let old_revision = presented_revision(&mut visual, &view);
+    let old_layouts = positions.lock().unwrap().len();
+    let wanted = data.replace([moving_data(1)]).unwrap();
+    let mut steps = 0;
+    while positions.lock().unwrap().len() == old_layouts {
+        assert!(steps < 100);
+        assert!(cx.background_executor.tick());
+        steps += 1;
+    }
+    assert_eq!(presented_revision(&mut visual, &view), old_revision);
+    visual.update(|window, cx| view.suspend(window, cx).unwrap());
+    visual.run_until_parked();
+    visual.update(|_, cx| view.resume(cx).unwrap());
+    pump(cx, &mut visual);
+    assert_eq!(presented_revision(&mut visual, &view), wanted);
+}
+
+struct ViewportMarker(Arc<std::sync::Mutex<Vec<ChartPoint>>>);
+
+impl HostChartSeries for ViewportMarker {
+    fn layout(&self, context: ChartCustomSeriesContext<'_>) -> Result<Vec<ChartMark>, String> {
+        let center = ChartPoint {
+            x: context.x_scale.unwrap().map_number(2.0).unwrap(),
+            y: context.bounds.center().y,
+        };
+        self.0.lock().unwrap().push(center);
+        Ok(vec![ChartMark {
+            key: "viewport_marker".to_owned(),
+            region_key: context.spec.coordinate.clone(),
+            role: ChartMarkRole::Data,
+            datum: Some(ChartDatumRef {
+                dataset: context.spec.dataset.clone(),
+                series: context.spec.key.clone(),
+                key: "r0".to_owned(),
+            }),
+            series_key: context.spec.key.clone(),
+            datum_key: "r0".to_owned(),
+            geometry: ChartMarkGeometry::Rect(ChartRect {
+                x: center.x - 6.0,
+                y: center.y - 6.0,
+                width: 12.0,
+                height: 12.0,
+            }),
+            fill: Some(context.theme.palette[0]),
+            stroke: None,
+            label: "r0".to_owned(),
+            value: Some(2.0),
+            interactive: true,
+            selected: false,
+        }])
+    }
+}
+
+struct ViewportExtension(Arc<std::sync::Mutex<Vec<ChartPoint>>>);
+
+impl ScriptViewExtension for ViewportExtension {
+    fn configure_engine(&self, engine: &mut RuntimeEngine) -> Result<(), String> {
+        engine
+            .register_chart_series("viewport_marker", ViewportMarker(self.0.clone()))
+            .map_err(|error| error.to_string())
+    }
+}
+
+#[gpui::test]
+fn canceling_preview_rebuilds_the_committed_frame(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let positions = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let script = r#"import "charts/chart" as chart;fn state_schema(){#{fields:#{hits:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}}}}}fn clicked(ctx,p){ctx.set_state("hits",ctx.get_state("hits")+1);}fn view(ctx){column([text("Status").accessibility_role("status").accessibility_label(ctx.get_state("hits").to_string()),chart::Chart(#{key:"c",key_dimension:"id",zoom:1.0,viewport_revision:0,data:[#{id:"r0",x:2,y:0},#{id:"r1",x:10,y:1}],spec:#{title:"Control",legend:#{visible:false},axes:[#{key:"x",position:"bottom",min:0,max:10}],series:[#{key:"s",kind:"custom",renderer:"viewport_marker",encode:#{x:"x",y:"y"}}]},on_select:Fn("clicked")}).with_style(style().width(px(420)).height(px(300)))])}"#;
+    let (window, view) = mount_extended_chart(
+        cx,
+        "chart-cancel-preview",
+        script,
+        ViewportExtension(positions.clone()),
+        RuntimeClock::default(),
+        MotionPreference::None,
+    );
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    pump(cx, &mut visual);
+    let committed = positions.lock().unwrap()[0];
+    let bounds = chart_bounds(&mut visual, &view);
+    visual.simulate_event(ScrollWheelEvent {
+        position: point(
+            px((bounds.x + 180.0) as f32),
+            px((bounds.y + 160.0) as f32),
+        ),
+        delta: ScrollDelta::Pixels(point(px(0.0), px(400.0 * std::f32::consts::LN_2))),
+        touch_phase: gpui::TouchPhase::Started,
+        ..Default::default()
+    });
+    pump(cx, &mut visual);
+    let preview = *positions.lock().unwrap().last().unwrap();
+    assert!((preview.x - committed.x).abs() > 20.0);
+    visual.update(|window, cx| view.suspend(window, cx).unwrap());
+    visual.update(|_, cx| view.resume(cx).unwrap());
+    pump(cx, &mut visual);
+    click_chart_coordinate(&mut visual, &view, committed);
+    assert_eq!(status(&mut visual, &view), "1");
+}
+
+struct GeoMarker(Arc<std::sync::Mutex<BTreeMap<String, ChartPoint>>>);
+
+impl HostChartSeries for GeoMarker {
+    fn layout(&self, context: ChartCustomSeriesContext<'_>) -> Result<Vec<ChartMark>, String> {
+        let center = ChartPoint {
+            x: context.bounds.x + 30.0,
+            y: context.bounds.y + 30.0,
+        };
+        self.0
+            .lock()
+            .unwrap()
+            .insert(context.spec.key.clone(), center);
+        Ok(vec![ChartMark {
+            key: format!("geo:{}", context.spec.key),
+            region_key: context.spec.coordinate.clone(),
+            role: ChartMarkRole::Data,
+            datum: Some(ChartDatumRef {
+                dataset: context.spec.dataset.clone(),
+                series: context.spec.key.clone(),
+                key: "r0".to_owned(),
+            }),
+            series_key: context.spec.key.clone(),
+            datum_key: "r0".to_owned(),
+            geometry: ChartMarkGeometry::Rect(ChartRect {
+                x: center.x - 10.0,
+                y: center.y - 10.0,
+                width: 20.0,
+                height: 20.0,
+            }),
+            fill: Some(context.theme.palette[0]),
+            stroke: None,
+            label: "r0".to_owned(),
+            value: None,
+            interactive: true,
+            selected: false,
+        }])
+    }
+}
+
+struct GeoExtension(Arc<std::sync::Mutex<BTreeMap<String, ChartPoint>>>);
+
+impl ScriptViewExtension for GeoExtension {
+    fn configure_engine(&self, engine: &mut RuntimeEngine) -> Result<(), String> {
+        engine
+            .register_chart_map(
+                ChartGeoMap::from_geojson(
+                    "map",
+                    r#"{"type":"FeatureCollection","features":[{"type":"Feature","id":"square","properties":{},"geometry":{"type":"Polygon","coordinates":[[[0,0],[10,0],[10,10],[0,10],[0,0]]]}}]}"#,
+                )
+                .unwrap(),
+            )
+            .map_err(|error| error.to_string())?;
+        engine
+            .register_chart_series("geo_marker", GeoMarker(self.0.clone()))
+            .map_err(|error| error.to_string())
+    }
+}
+
+#[gpui::test]
+fn geo_link_group_synchronizes_acknowledged_camera(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let positions = Arc::new(std::sync::Mutex::new(BTreeMap::new()));
+    let script = r#"import "charts/chart" as chart;fn state_schema(){#{fields:#{z:#{schema:#{type:"float"},"default":#{type:"float",value:1.0}},rev:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}},source_hits:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}},target_hits:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}}}}}fn zoomed(ctx,p){ctx.set_state("z",p.zoom);ctx.set_state("rev",p.viewport_revision);}fn source_clicked(ctx,p){ctx.set_state("source_hits",ctx.get_state("source_hits")+1);}fn target_clicked(ctx,p){ctx.set_state("target_hits",ctx.get_state("target_hits")+1);}fn one(ctx,k){chart::Chart(#{key:k,key_dimension:"id",data:[#{id:"r0",x:0,y:0}],zoom:if k=="source"{ctx.get_state("z")}else{1.0},viewport_revision:if k=="source"{ctx.get_state("rev")}else{0},spec:#{title:k,legend:#{visible:false},link_group:"maps",link_domain:"location",regions:[#{key:"main",kind:"geo_2d",map:"map"}],series:[#{key:k,kind:"custom",renderer:"geo_marker",encode:#{x:"x",y:"y"}}]},on_zoom_change:if k=="source"{Fn("zoomed")}else{()},on_select:if k=="source"{Fn("source_clicked")}else{Fn("target_clicked")}}).with_style(style().width(px(280)).height(px(240)))}fn view(ctx){column([text("Status").accessibility_role("status").accessibility_label(`${ctx.get_state("source_hits")}|${ctx.get_state("target_hits")}|${ctx.get_state("z")}`),row([one(ctx,"source"),one(ctx,"target")])])}"#;
+    let (window, view) = mount_extended_chart(
+        cx,
+        "chart-geo-link",
+        script,
+        GeoExtension(positions.clone()),
+        RuntimeClock::default(),
+        MotionPreference::None,
+    );
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    pump(cx, &mut visual);
+    let source_position = positions.lock().unwrap()["source"];
+    let target_position = positions.lock().unwrap()["target"];
+    let source = figure_coordinate(&mut visual, &view, "source", source_position);
+    let target = figure_coordinate(&mut visual, &view, "target", target_position);
+    visual.simulate_click(source, Modifiers::default());
+    visual.simulate_click(target, Modifiers::default());
+    visual.run_until_parked();
+    let wheel = figure_coordinate(
+        &mut visual,
+        &view,
+        "source",
+        ChartPoint { x: 150.0, y: 140.0 },
+    );
+    visual.simulate_event(ScrollWheelEvent {
+        position: wheel,
+        delta: ScrollDelta::Lines(point(0.0, -25.0)),
+        touch_phase: gpui::TouchPhase::Moved,
+        ..Default::default()
+    });
+    pump(cx, &mut visual);
+    visual.simulate_click(source, Modifiers::default());
+    visual.simulate_click(target, Modifiers::default());
+    visual.run_until_parked();
+    assert!(status(&mut visual, &view).starts_with("1|1|"));
+}
+
+fn figure_coordinate(
+    visual: &mut VisualTestContext,
+    view: &ScriptViewHandle,
+    name: &str,
+    coordinate: ChartPoint,
+) -> gpui::Point<gpui::Pixels> {
+    visual.update(|_, cx| {
+        let snapshot = view.accessibility_snapshot(cx).unwrap();
+        let bounds = snapshot
+            .find_by_role_and_name("figure", name)
+            .next()
+            .unwrap()
+            .geometry
+            .unwrap()
+            .visual;
+        point(
+            px((bounds.x + coordinate.x + 1.0) as f32),
+            px((bounds.y + coordinate.y + 1.0) as f32),
+        )
+    })
 }
 
 fn click_chart_coordinate(

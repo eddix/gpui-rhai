@@ -95,6 +95,28 @@ Each `(region, axis ID)` is compiled once per scene from one contribution set,
 including preserved empty schemas. Series, ticks, annotations, custom series,
 hit testing, and export consume that same coordinate fact.
 
+### Frame transaction and ownership
+
+Chart state has four distinct stages: requested input, prepared data, frame
+candidate, and presented frame. A `DataKey` combines source identity with data
+revision. A `FrameKey` also includes a foreground-owned frame epoch advanced by
+viewport, bounds, spec, theme, selection, or link changes. Background tasks
+carry both a cancellation generation and their content key. Only an active,
+matching candidate installed on the foreground executor may replace the
+presented frame.
+
+Prepared data is reusable input, never evidence of presentation. Paint, hit
+testing, accessibility, and semantic events read one presented scene/key pair;
+they may intentionally lag the requested key while a candidate is pending.
+Suspend, preview cancellation, resize, and theme changes use the same key
+comparison to resume missing work.
+
+The owning ScriptView commits native resume only after every prepare hook and
+the script resume transaction succeed. Chart activity time starts at that
+commit hook. A failed prepare is compensated without advancing animation time;
+failed compensation disposes and unmounts the view instead of advertising a
+quiescent tombstone.
+
 ### Interaction and linkage
 
 Hover, tooltip, crosshair, and active drag state are native transient state.
@@ -115,6 +137,11 @@ annotation, grid, or axis identities.
 Charts may join an explicit link group with a declared domain. Crosshair,
 zoom, selection, and highlight synchronization stays native and does not route
 each pointer event through Rhai.
+
+Viewport link payloads are coordinate-typed. Cartesian payloads bind named
+region/axis logical windows. Geo payloads bind map/projection identity and a
+normalized camera. Incompatible or unsupported coordinate payloads are not
+reinterpreted through another coordinate model.
 
 Charts are visualization surfaces, not editors. Dragging marks to mutate the
 underlying dataset is outside the runtime contract; Hosts can build explicit

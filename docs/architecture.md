@@ -232,7 +232,8 @@ completions are discarded.
 
 Native primitive lifecycle hooks run as a compensated prepare phase. A hook
 failure does not short-circuit later instances, expose a mixed public state, or
-prevent a real retry.
+prevent a real retry. Compensation failure is terminal: the view is disposed
+and all registered primitive resources are unmounted.
 
 During development, a polling filesystem watcher feeds a dependency graph.
 Changed modules and their transitive dependants are compiled transactionally.

@@ -165,3 +165,23 @@ fn native_suspend_failure_compensates_every_instance_and_retries(cx: &mut TestAp
     ));
     assert!(states.iter().all(|state| !state.active.get()));
 }
+
+#[gpui::test]
+fn failed_compensation_faults_and_quarantines_the_view(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let states = (0..3)
+        .map(|_| Rc::new(NativeState::default()))
+        .collect::<Vec<_>>();
+    let (window, view) = mount(cx, "native-compensation-failure", states.clone());
+    let mut visual = gpui::VisualTestContext::from_window(*window, cx);
+    visual.update(|window, cx| view.suspend(window, cx).unwrap());
+    states[1].fail_resume.set(true);
+    states[0].fail_suspend.set(true);
+    assert!(visual.update(|_, cx| view.resume(cx)).is_err());
+    assert_eq!(view.state(), ScriptViewState::Disposed);
+    assert!(states.iter().all(|state| !state.active.get()));
+    assert!(matches!(
+        visual.update(|_, cx| view.resume(cx)),
+        Err(ScriptViewError::DisposedView(_))
+    ));
+}

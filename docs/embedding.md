@@ -263,6 +263,10 @@ one fails, and successfully changed peers are compensated. A failed suspend
 therefore remains Active and retryable; a failed resume remains Suspended and
 retryable. The public view state changes only after native and script phases
 both succeed.
+If compensation itself fails, the framework quarantines the view by disposing
+it and unmounting every registered primitive. It never reports ordinary
+`Suspended` while a native resource may still be active; the Host must recreate
+that view.
 
 ```rust
 view.suspend(window, cx)?;

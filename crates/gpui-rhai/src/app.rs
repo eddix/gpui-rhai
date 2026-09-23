@@ -4108,6 +4108,12 @@ impl ScriptHostView {
         if let Err(error) = self.primitives.suspend_mounted(cx) {
             let rollback = self.primitives.resume_mounted(cx).err();
             let message = native_lifecycle_error("suspend", &error, rollback.as_ref());
+            if rollback.is_some() {
+                self.host
+                    .quiesce_view(&self.view_id, &self.host_focus, window, cx);
+                let message = self.fault_native_lifecycle(message, cx);
+                return Err(ScriptViewError::Suspend(message));
+            }
             self.set_plain_failure(message.clone());
             return Err(ScriptViewError::Suspend(message));
         }
@@ -4115,10 +4121,17 @@ impl ScriptHostView {
             Ok(changed) => changed,
             Err(error) => {
                 let rollback = self.primitives.resume_mounted(cx).err();
-                let message = rollback.map_or_else(
+                let rollback_failed = rollback.is_some();
+                let message = rollback.as_ref().map_or_else(
                     || error.to_string(),
                     |rollback| format!("{error}; native rollback failed: {rollback}"),
                 );
+                if rollback_failed {
+                    self.host
+                        .quiesce_view(&self.view_id, &self.host_focus, window, cx);
+                    let message = self.fault_native_lifecycle(message, cx);
+                    return Err(ScriptViewError::Suspend(message));
+                }
                 self.set_plain_failure(message);
                 return Err(error.into());
             }
@@ -4210,6 +4223,13 @@ impl ScriptHostView {
         });
         match result {
             Ok(changed) => {
+                if let Err(error) = self.primitives.commit_resume_mounted(cx) {
+                    let rollback = self.primitives.suspend_mounted(cx).err();
+                    let message =
+                        native_lifecycle_error("commit resume", &error, rollback.as_ref());
+                    let message = self.fault_native_lifecycle(message, cx);
+                    return Err(ScriptViewError::Resume(message));
+                }
                 self.state.set(ScriptViewState::Active);
                 self.activity_wake.notify();
                 if let Some(error) = pending_reload_error {
@@ -4234,7 +4254,7 @@ impl ScriptHostView {
                     let message = format!(
                         "{public_error}; native suspend compensation failed: {native_rollback}"
                     );
-                    self.set_plain_failure(message.clone());
+                    let message = self.fault_native_lifecycle(message, cx);
                     Err(ScriptViewError::Resume(message))
                 } else {
                     self.set_failure(error);
@@ -4248,10 +4268,21 @@ impl ScriptHostView {
         if let Err(error) = self.primitives.resume_mounted(cx) {
             let rollback = self.primitives.suspend_mounted(cx).err();
             let message = native_lifecycle_error("resume", &error, rollback.as_ref());
+            if rollback.is_some() {
+                let message = self.fault_native_lifecycle(message, cx);
+                return Err(ScriptViewError::Resume(message));
+            }
             self.set_plain_failure(message.clone());
             return Err(ScriptViewError::Resume(message));
         }
         Ok(())
+    }
+
+    fn fault_native_lifecycle(&mut self, message: String, cx: &mut Context<Self>) -> String {
+        self.set_plain_failure(message.clone());
+        self.release_view();
+        cx.notify();
+        message
     }
 
     fn collect_suspended_deliveries(&mut self) -> Result<(), ScriptViewError> {

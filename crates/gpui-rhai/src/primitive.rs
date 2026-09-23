@@ -868,6 +868,10 @@ pub trait PrimitiveHandler {
     /// is not marked active until every primitive and the script transaction succeed.
     fn resume(&mut self, _instance: &PrimitiveInstanceId, _cx: &mut App) {}
 
+    /// Commit a successfully prepared resume after the script transaction has
+    /// also succeeded. Activity time and event delivery may begin here.
+    fn commit_resume(&mut self, _instance: &PrimitiveInstanceId, _cx: &mut App) {}
+
     /// Render the primitive into a native GPUI element.
     ///
     /// # Errors
@@ -1155,6 +1159,27 @@ impl PrimitiveRegistry {
                 && let Err(error) = guard_primitive_panic(&instance.primitive, "resume", || {
                     entry.handler.resume(&instance, cx);
                 })
+                && first_error.is_none()
+            {
+                first_error = Some(error);
+            }
+        }
+        first_error.map_or(Ok(()), Err)
+    }
+
+    pub(crate) fn commit_resume_mounted(&self, cx: &mut App) -> Result<(), PrimitiveError> {
+        let mut inner = self
+            .inner
+            .try_borrow_mut()
+            .map_err(|_| PrimitiveError::Borrowed)?;
+        let instances = inner.mounted.keys().cloned().collect::<Vec<_>>();
+        let mut first_error = None;
+        for instance in instances {
+            if let Some(entry) = inner.entries.get_mut(&instance.primitive)
+                && let Err(error) =
+                    guard_primitive_panic(&instance.primitive, "commit resume", || {
+                        entry.handler.commit_resume(&instance, cx);
+                    })
                 && first_error.is_none()
             {
                 first_error = Some(error);

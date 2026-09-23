@@ -138,6 +138,10 @@ Selection (`selected_keys`), legend visibility (`hidden_series`), and viewport
 (`zoom`, `pan_x`, `pan_y`) are controllable. Charts sharing both
 `link_group` and `link_domain` synchronize hover, selection highlight, zoom,
 and pan through weak native entity links without Rhai event fan-out.
+Cartesian links carry explicit region/axis logical windows. Geo links carry a
+normalized camera plus map/projection identity; only compatible Geo regions
+consume them. Polar and incompatible coordinate bindings do not silently reuse
+Cartesian axis metadata.
 
 Viewport gestures maintain a transient native preview. Each `zoom_change`
 payload includes a monotonic `viewport_revision`; after accepting, clamping, or
@@ -159,6 +163,13 @@ Cartesian zoom compiles a visible data-domain window and regenerates both
 scales and ticks. Explicit Started/Moved/Ended gestures commit only at Ended;
 the short idle timer is reserved for platform input that supplies no reliable
 end phase.
+
+The runtime distinguishes requested input, prepared data, a layout candidate,
+and the presented frame. `DataKey` includes source identity and data revision;
+`FrameKey` additionally changes for viewport, theme, selection, spec, and size.
+Only successful foreground installation advances the presented key. A prepared
+revision or cancelled task is never treated as proof that the requested frame
+is visible; accessibility exposes both data revision and presented frame epoch.
 
 Chart transitions use one aggregated chart resource and the existing Motion
 theme duration/easing plus Host normal/reduced/none policy. Compatible keyed

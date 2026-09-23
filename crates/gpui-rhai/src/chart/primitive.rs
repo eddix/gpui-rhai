@@ -19,9 +19,9 @@ use gpui::{
 };
 
 use super::{
-    ChartAxisDirection, ChartAxisDomain, ChartAxisScale, ChartBrushMode, ChartDataLimits,
-    ChartDataSnapshot, ChartDataset, ChartFormatterRegistry, ChartGeoRegistry, ChartMark,
-    ChartMarkGeometry, ChartMarkRole, ChartPoint, ChartPreparedData, ChartRect,
+    ChartAxisDirection, ChartAxisDomain, ChartAxisScale, ChartBrushMode, ChartCoordinateKind,
+    ChartDataLimits, ChartDataSnapshot, ChartDataset, ChartFormatterRegistry, ChartGeoRegistry,
+    ChartMark, ChartMarkGeometry, ChartMarkRole, ChartPoint, ChartPreparedData, ChartRect,
     ChartSeriesRegistry, ChartSpec, ChartTheme, ChartTransformRegistry, ChartViewport,
     NativeChartData, PreparedChartScene, apply_chart_selection, layout_chart_scene_with_viewport,
     prepare_chart_data,
@@ -103,10 +103,28 @@ type ChartLinkMembers = BTreeMap<ChartLinkKey, BTreeSet<WeakEntity<ChartEntity>>
 type ChartLinkSelections =
     BTreeMap<ChartLinkKey, BTreeMap<WeakEntity<ChartEntity>, BTreeSet<String>>>;
 
-#[derive(Clone, Copy, Debug, Default)]
-struct ChartLinkedViewport {
-    x: Option<(f64, f64)>,
-    y: Option<(f64, f64)>,
+#[derive(Clone, Debug, Default)]
+enum ChartLinkedViewport {
+    Cartesian {
+        region: String,
+        x: Option<ChartLinkedAxis>,
+        y: Option<ChartLinkedAxis>,
+    },
+    Geo {
+        region: String,
+        map: String,
+        projection: String,
+        zoom: f64,
+        normalized_pan: ChartPoint,
+    },
+    #[default]
+    Unsupported,
+}
+
+#[derive(Clone, Debug)]
+struct ChartLinkedAxis {
+    key: String,
+    visible: (f64, f64),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -115,6 +133,18 @@ struct ChartViewportProposal {
     input_generation: u64,
     zoom: f64,
     pan: ChartPoint,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ChartDataKey {
+    source_epoch: u64,
+    revision: u64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ChartFrameKey {
+    data: ChartDataKey,
+    frame_epoch: u64,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -128,6 +158,7 @@ enum ChartWheelGesture {
 enum ChartActivity {
     #[default]
     Active,
+    PreparingResume,
     Suspended,
 }
 
@@ -182,13 +213,15 @@ impl ChartLinkRegistry {
         &self,
         key: &(String, String),
         source: &WeakEntity<ChartEntity>,
-        viewport: ChartLinkedViewport,
+        viewport: &ChartLinkedViewport,
         cx: &mut App,
     ) {
         for member in self.members(key) {
             if &member != source {
+                let viewport = (*viewport).clone();
                 let _ = member.update(cx, |chart, cx| {
                     if chart.apply_linked_viewport(viewport) {
+                        chart.invalidate_frame();
                         chart.rebuild_scene_with_motion(cx, false);
                     }
                 });
@@ -259,6 +292,7 @@ impl ChartLinkRegistry {
             let _ = member.update(cx, |chart, cx| {
                 if chart.linked_selected != linked {
                     chart.linked_selected = linked;
+                    chart.invalidate_frame();
                     chart.rebuild_scene(cx);
                 }
             });
@@ -276,7 +310,9 @@ struct ChartEntity {
     formatters: ChartFormatterRegistry,
     links: ChartLinkRegistry,
     prepared: Option<ChartPreparedData>,
+    prepared_key: Option<ChartDataKey>,
     scene: Option<PreparedChartScene>,
+    presented_key: Option<ChartFrameKey>,
     previous_scene: Option<PreparedChartScene>,
     bounds: Option<Bounds<Pixels>>,
     error: Option<String>,
@@ -288,6 +324,9 @@ struct ChartEntity {
     pan_origin: Option<Point<Pixels>>,
     brush: Option<(ChartPoint, ChartPoint)>,
     job: u64,
+    data_source_epoch: u64,
+    requested_data_key: ChartDataKey,
+    frame_epoch: u64,
     prepare_task: Option<Task<()>>,
     layout_job: u64,
     layout_task: Option<Task<()>>,
@@ -320,6 +359,11 @@ impl ChartEntity {
         let zoom = config.zoom;
         let pan = config.pan;
         let viewport_revision = config.viewport_revision;
+        let data_source_epoch = 1;
+        let requested_data_key = ChartDataKey {
+            source_epoch: data_source_epoch,
+            revision: config.data.snapshot().revision(),
+        };
         Self {
             focus: cx.focus_handle(),
             config,
@@ -330,7 +374,9 @@ impl ChartEntity {
             formatters,
             links,
             prepared: None,
+            prepared_key: None,
             scene: None,
+            presented_key: None,
             previous_scene: None,
             bounds: None,
             error: None,
@@ -342,6 +388,9 @@ impl ChartEntity {
             pan_origin: None,
             brush: None,
             job: 0,
+            data_source_epoch,
+            requested_data_key,
+            frame_epoch: 1,
             prepare_task: None,
             layout_job: 0,
             layout_task: None,
@@ -366,12 +415,40 @@ impl ChartEntity {
         self.start_prepare(cx);
     }
 
+    fn current_frame_key(&self) -> ChartFrameKey {
+        ChartFrameKey {
+            data: self.requested_data_key,
+            frame_epoch: self.frame_epoch,
+        }
+    }
+
+    fn invalidate_frame(&mut self) {
+        self.frame_epoch = self.frame_epoch.saturating_add(1);
+    }
+
+    fn replace_data_request(&mut self, revision: u64, new_source: bool) {
+        if new_source {
+            self.data_source_epoch = self.data_source_epoch.saturating_add(1);
+        }
+        let next = ChartDataKey {
+            source_epoch: self.data_source_epoch,
+            revision,
+        };
+        if self.requested_data_key != next {
+            self.requested_data_key = next;
+            self.invalidate_frame();
+        }
+    }
+
     fn suspend(&mut self, cx: &mut Context<Self>) {
-        if self.activity == ChartActivity::Suspended {
+        if self.activity != ChartActivity::Active {
             return;
         }
+        let was_active = self.activity == ChartActivity::Active;
         self.activity = ChartActivity::Suspended;
-        self.suspended_at = Some(self.config.theme.now());
+        if was_active {
+            self.suspended_at = Some(self.config.theme.now());
+        }
         self.job = self.job.saturating_add(1);
         self.layout_job = self.layout_job.saturating_add(1);
         self.wheel_generation = self.wheel_generation.saturating_add(1);
@@ -387,13 +464,26 @@ impl ChartEntity {
         self.viewport_preview_dirty = false;
         self.viewport_commit_in_flight = false;
         self.pending_viewport = None;
+        let viewport_changed =
+            (self.zoom - self.config.zoom).abs() > f64::EPSILON || self.pan != self.config.pan;
         self.zoom = self.config.zoom;
         self.pan = self.config.pan;
+        if viewport_changed {
+            self.invalidate_frame();
+        }
         cx.notify();
     }
 
     fn resume(&mut self, cx: &mut Context<Self>) {
-        if self.activity == ChartActivity::Active {
+        if self.activity != ChartActivity::Suspended {
+            return;
+        }
+        self.activity = ChartActivity::PreparingResume;
+        cx.notify();
+    }
+
+    fn commit_resume(&mut self, cx: &mut Context<Self>) {
+        if self.activity != ChartActivity::PreparingResume {
             return;
         }
         self.activity = ChartActivity::Active;
@@ -408,12 +498,11 @@ impl ChartEntity {
         }
         self.restart_data_listener(cx);
         let source_revision = self.config.data.snapshot().revision();
-        if self
-            .prepared
-            .as_ref()
-            .is_none_or(|prepared| prepared.revision() != source_revision)
-        {
+        self.replace_data_request(source_revision, false);
+        if self.prepared_key != Some(self.requested_data_key) {
             self.start_prepare(cx);
+        } else if self.presented_key != Some(self.current_frame_key()) {
+            self.rebuild_scene(cx);
         } else {
             cx.notify();
         }
@@ -436,20 +525,14 @@ impl ChartEntity {
             (self.config.zoom - config.zoom).abs() > f64::EPSILON || self.config.pan != config.pan;
         let pending_viewport = self.pending_viewport;
         let had_pending_viewport = pending_viewport.is_some();
-        let explicit_revision_protocol = self.config.viewport_revision > 0
-            || config.viewport_revision > 0
-            || pending_viewport.is_some_and(|proposal| proposal.revision > 1);
         let acknowledges_pending =
             pending_viewport.is_some_and(|proposal| config.viewport_revision >= proposal.revision);
-        let legacy_acknowledgement =
-            had_pending_viewport && !explicit_revision_protocol && external_viewport_changed;
         let programmatic_viewport_change = !had_pending_viewport && external_viewport_changed;
         let theme_changed = primitive_chart_theme(&self.config.theme)
             != primitive_chart_theme(&config.theme)
             || self.config.theme.motion_preference() != config.theme.motion_preference()
             || self.config.theme.motion_quality() != config.theme.motion_quality();
-        let acknowledge_viewport =
-            acknowledges_pending || legacy_acknowledgement || programmatic_viewport_change;
+        let acknowledge_viewport = acknowledges_pending || programmatic_viewport_change;
         let committed_viewport = acknowledge_viewport.then_some((config.zoom, config.pan));
         let previous_local_viewport = (self.zoom, self.pan);
         self.config = config;
@@ -494,12 +577,16 @@ impl ChartEntity {
         let local_viewport_changed = acknowledge_viewport
             && ((previous_local_viewport.0 - self.zoom).abs() > f64::EPSILON
                 || previous_local_viewport.1 != self.pan);
+        if data_changed || spec_changed {
+            let revision = self.config.data.snapshot().revision();
+            self.replace_data_request(revision, true);
+        }
         self.events = events;
         if let (Some((zoom, pan)), Some(key)) = (committed_viewport, next_link.clone()) {
             let links = self.links.clone();
             let source = cx.weak_entity();
             let viewport = self.linked_viewport_for(zoom, pan);
-            cx.defer(move |cx| links.broadcast_zoom(&key, &source, viewport, cx));
+            cx.defer(move |cx| links.broadcast_zoom(&key, &source, &viewport, cx));
         }
         if let Some(key) = next_link
             && (selection_changed || previous_link.as_ref() != Some(&key))
@@ -517,15 +604,17 @@ impl ChartEntity {
         if data_changed || spec_changed {
             self.start_prepare(cx);
         } else if selection_changed || linked_selection_changed || theme_changed {
+            self.invalidate_frame();
             self.rebuild_scene(cx);
         } else if local_viewport_changed {
+            self.invalidate_frame();
             self.rebuild_scene_with_motion(cx, false);
         }
     }
 
     fn restart_data_listener(&mut self, cx: &mut Context<Self>) {
         self.data_task = None;
-        if self.activity == ChartActivity::Suspended {
+        if self.activity != ChartActivity::Active {
             return;
         }
         let Some(data) = self.config.data.native().cloned() else {
@@ -544,15 +633,17 @@ impl ChartEntity {
     }
 
     fn start_prepare(&mut self, cx: &mut Context<Self>) {
-        if self.activity == ChartActivity::Suspended {
+        if self.activity != ChartActivity::Active {
             return;
         }
+        let data = self.config.data.snapshot();
+        self.replace_data_request(data.revision(), false);
+        let data_key = self.requested_data_key;
         self.job = self.job.saturating_add(1);
         self.layout_job = self.layout_job.saturating_add(1);
         self.layout_task = None;
         let job = self.job;
         let spec = self.config.spec.clone();
-        let data = self.config.data.snapshot();
         let transforms = self.transforms.clone();
         let custom_series = self.custom_series.clone();
         let formatters = self.formatters.clone();
@@ -564,13 +655,17 @@ impl ChartEntity {
                 })
                 .await;
             let _ = this.update(cx, |chart, cx| {
-                if chart.activity == ChartActivity::Suspended || chart.job != job {
+                if chart.activity != ChartActivity::Active
+                    || chart.job != job
+                    || chart.requested_data_key != data_key
+                {
                     return;
                 }
                 chart.prepare_task = None;
                 match result {
                     Ok(prepared) => {
                         chart.prepared = Some(prepared);
+                        chart.prepared_key = Some(data_key);
                         chart.error = None;
                         chart.rebuild_scene(cx);
                     }
@@ -588,13 +683,17 @@ impl ChartEntity {
     }
 
     fn rebuild_scene_with_motion(&mut self, cx: &mut Context<Self>, animate: bool) {
-        if self.activity == ChartActivity::Suspended {
+        if self.activity != ChartActivity::Active {
             return;
         }
         let (Some(prepared), Some(bounds)) = (self.prepared.clone(), self.bounds) else {
             cx.notify();
             return;
         };
+        if self.prepared_key != Some(self.requested_data_key) {
+            return;
+        }
+        let frame_key = self.current_frame_key();
         self.layout_job = self.layout_job.saturating_add(1);
         let job = self.layout_job;
         let theme = primitive_chart_theme(&self.config.theme);
@@ -626,13 +725,17 @@ impl ChartEntity {
                 })
                 .await;
             let _ = this.update(cx, |chart, cx| {
-                if chart.activity == ChartActivity::Suspended || chart.layout_job != job {
+                if chart.activity != ChartActivity::Active
+                    || chart.layout_job != job
+                    || chart.current_frame_key() != frame_key
+                {
                     return;
                 }
                 chart.layout_task = None;
                 match result {
                     Ok(scene) => {
                         chart.scene = Some(scene.clone());
+                        chart.presented_key = Some(frame_key);
                         if animate
                             && chart_motion_duration(&chart.config)
                                 .is_some_and(|duration| !duration.is_zero())
@@ -662,6 +765,7 @@ impl ChartEntity {
             .is_none_or(|previous| previous.size != bounds.size);
         self.bounds = Some(bounds);
         if size_changed && self.activity == ChartActivity::Active {
+            self.invalidate_frame();
             self.rebuild_scene(cx);
         }
     }
@@ -670,20 +774,56 @@ impl ChartEntity {
         let Some(scene) = &self.scene else {
             return ChartLinkedViewport::default();
         };
-        let Some(plot) = scene.plot_regions.values().next().copied() else {
+        let Some(region) = self.config.spec.regions.first() else {
             return ChartLinkedViewport::default();
         };
-        ChartLinkedViewport {
-            x: scene.axis_domains.iter().find_map(|(key, domain)| {
-                (key.contains(":x:") && domain.scale != ChartAxisScale::Category)
-                    .then(|| linked_visible_domain(*domain, zoom, pan.x, plot.width))
-                    .flatten()
-            }),
-            y: scene.axis_domains.iter().find_map(|(key, domain)| {
-                (key.contains(":y:") && domain.scale != ChartAxisScale::Category)
-                    .then(|| linked_visible_domain(*domain, zoom, pan.y, -plot.height))
-                    .flatten()
-            }),
+        let Some(plot) = scene.plot_regions.get(&region.key).copied() else {
+            return ChartLinkedViewport::default();
+        };
+        match region.kind {
+            ChartCoordinateKind::Cartesian2d => {
+                let x_prefix = format!("{}:x:", region.key);
+                let y_prefix = format!("{}:y:", region.key);
+                let x = scene.axis_domains.iter().find_map(|(key, domain)| {
+                    let identity = key.strip_prefix(&x_prefix)?;
+                    if domain.scale == ChartAxisScale::Category {
+                        return None;
+                    }
+                    Some(ChartLinkedAxis {
+                        key: identity.to_owned(),
+                        visible: linked_visible_domain(*domain, zoom, pan.x, plot.width)?,
+                    })
+                });
+                let y = scene.axis_domains.iter().find_map(|(key, domain)| {
+                    let identity = key.strip_prefix(&y_prefix)?;
+                    if domain.scale == ChartAxisScale::Category {
+                        return None;
+                    }
+                    Some(ChartLinkedAxis {
+                        key: identity.to_owned(),
+                        visible: linked_visible_domain(*domain, zoom, pan.y, -plot.height)?,
+                    })
+                });
+                ChartLinkedViewport::Cartesian {
+                    region: region.key.clone(),
+                    x,
+                    y,
+                }
+            }
+            ChartCoordinateKind::Geo2d => ChartLinkedViewport::Geo {
+                region: region.key.clone(),
+                map: region.map.clone().unwrap_or_default(),
+                projection: region
+                    .projection
+                    .clone()
+                    .unwrap_or_else(|| "equirectangular".to_owned()),
+                zoom,
+                normalized_pan: ChartPoint {
+                    x: pan.x / plot.width.max(f64::EPSILON),
+                    y: pan.y / plot.height.max(f64::EPSILON),
+                },
+            },
+            ChartCoordinateKind::Polar => ChartLinkedViewport::Unsupported,
         }
     }
 
@@ -691,16 +831,57 @@ impl ChartEntity {
         let Some(scene) = &self.scene else {
             return false;
         };
-        let Some(plot) = scene.plot_regions.values().next().copied() else {
+        let (region, x, y) = match linked {
+            ChartLinkedViewport::Cartesian { region, x, y } => (region, x, y),
+            ChartLinkedViewport::Geo {
+                region,
+                map,
+                projection,
+                zoom,
+                normalized_pan,
+            } => {
+                let Some(target) = self.config.spec.regions.iter().find(|target| {
+                    target.key == region
+                        && target.kind == ChartCoordinateKind::Geo2d
+                        && target.map.as_deref() == Some(map.as_str())
+                        && target.projection.as_deref().unwrap_or("equirectangular") == projection
+                }) else {
+                    return false;
+                };
+                let Some(plot) = scene.plot_regions.get(&target.key) else {
+                    return false;
+                };
+                let pan = ChartPoint {
+                    x: normalized_pan.x * plot.width,
+                    y: normalized_pan.y * plot.height,
+                };
+                let changed = (self.zoom - zoom).abs() > f64::EPSILON || self.pan != pan;
+                self.zoom = zoom;
+                self.pan = pan;
+                return changed;
+            }
+            ChartLinkedViewport::Unsupported => return false,
+        };
+        let Some(plot) = scene.plot_regions.get(&region).copied() else {
             return false;
         };
-        let x_domain = scene.axis_domains.iter().find_map(|(key, domain)| {
-            (key.contains(":x:") && domain.scale != ChartAxisScale::Category).then_some(*domain)
+        let x_domain = x.as_ref().and_then(|axis| {
+            scene
+                .axis_domains
+                .get(&format!("{region}:x:{}", axis.key))
+                .copied()
         });
-        let y_domain = scene.axis_domains.iter().find_map(|(key, domain)| {
-            (key.contains(":y:") && domain.scale != ChartAxisScale::Category).then_some(*domain)
+        let y_domain = y.as_ref().and_then(|axis| {
+            scene
+                .axis_domains
+                .get(&format!("{region}:y:{}", axis.key))
+                .copied()
         });
-        let Some((visible, domain)) = linked.x.zip(x_domain).or_else(|| linked.y.zip(y_domain))
+        let Some((visible, domain)) = x
+            .as_ref()
+            .map(|axis| axis.visible)
+            .zip(x_domain)
+            .or_else(|| y.as_ref().map(|axis| axis.visible).zip(y_domain))
         else {
             return false;
         };
@@ -716,12 +897,20 @@ impl ChartEntity {
             return false;
         }
         let zoom = (full_span / visible_span).clamp(0.5, 20.0);
-        let pan_x = linked.x.zip(x_domain).map_or(0.0, |(visible, domain)| {
-            linked_pan(domain, visible, plot.width, zoom)
-        });
-        let pan_y = linked.y.zip(y_domain).map_or(0.0, |(visible, domain)| {
-            linked_pan(domain, visible, -plot.height, zoom)
-        });
+        let pan_x = x
+            .as_ref()
+            .map(|axis| axis.visible)
+            .zip(x_domain)
+            .map_or(0.0, |(visible, domain)| {
+                linked_pan(domain, visible, plot.width, zoom)
+            });
+        let pan_y = y
+            .as_ref()
+            .map(|axis| axis.visible)
+            .zip(y_domain)
+            .map_or(0.0, |(visible, domain)| {
+                linked_pan(domain, visible, -plot.height, zoom)
+            });
         let changed = (self.zoom - zoom).abs() > f64::EPSILON
             || (self.pan.x - pan_x).abs() > f64::EPSILON
             || (self.pan.y - pan_y).abs() > f64::EPSILON;
@@ -756,6 +945,7 @@ impl ChartEntity {
                 self.viewport_input_generation = self.viewport_input_generation.saturating_add(1);
                 self.viewport_preview_dirty = true;
                 self.pan_origin = Some(event.position);
+                self.invalidate_frame();
                 self.rebuild_scene_with_motion(cx, false);
             }
             return;
@@ -866,6 +1056,7 @@ impl ChartEntity {
         self.zoom = next;
         self.viewport_input_generation = self.viewport_input_generation.saturating_add(1);
         self.viewport_preview_dirty = true;
+        self.invalidate_frame();
         self.rebuild_scene_with_motion(cx, false);
         cx.stop_propagation();
         if self.wheel_gesture == ChartWheelGesture::Explicit {
@@ -1438,6 +1629,7 @@ impl PrimitiveHandler for ChartPrimitiveHandler {
     ) -> Option<crate::PrimitiveAccessibilityProjection> {
         let chart = self.instances.get(instance)?.read(cx);
         let scene = chart.scene.as_ref()?;
+        let presented_key = chart.presented_key?;
         let active = chart.focused.as_ref().and_then(|key| {
             scene
                 .marks
@@ -1482,6 +1674,16 @@ impl PrimitiveHandler for ChartPrimitiveHandler {
                     UiValue::Integer(i64::try_from(scene.revision).unwrap_or(i64::MAX)),
                 ),
                 (
+                    "source_epoch".to_owned(),
+                    UiValue::Integer(
+                        i64::try_from(presented_key.data.source_epoch).unwrap_or(i64::MAX),
+                    ),
+                ),
+                (
+                    "frame_epoch".to_owned(),
+                    UiValue::Integer(i64::try_from(presented_key.frame_epoch).unwrap_or(i64::MAX)),
+                ),
+                (
                     "mark_count".to_owned(),
                     UiValue::Integer(i64::try_from(scene.marks.len()).unwrap_or(i64::MAX)),
                 ),
@@ -1522,6 +1724,12 @@ impl PrimitiveHandler for ChartPrimitiveHandler {
     fn resume(&mut self, instance: &PrimitiveInstanceId, cx: &mut App) {
         if let Some(entity) = self.instances.get(instance) {
             entity.update(cx, ChartEntity::resume);
+        }
+    }
+
+    fn commit_resume(&mut self, instance: &PrimitiveInstanceId, cx: &mut App) {
+        if let Some(entity) = self.instances.get(instance) {
+            entity.update(cx, ChartEntity::commit_resume);
         }
     }
 
