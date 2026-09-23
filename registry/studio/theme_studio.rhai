@@ -611,8 +611,7 @@ fn specimen(ctx) {
         specimen_data(),
         specimen_documents(),
         specimen_p0(ctx)
-    ]).with_style(style().padding(px(16)).gap(px(14)).background(theme_color("surface"))
-        .typography("body"))
+    ]).with_style(style().padding(px(16)).gap(px(14)).typography("body"))
 }
 
 fn gallery_theme_options() {
@@ -695,7 +694,8 @@ fn view(ctx) {
         column([
             gallery_title_bar(ctx),
             gallery_header(ctx),
-            column([gallery_content(ctx)]).with_style(style().flex_grow().min_height(px(0)).overflow_y_scroll()),
+            column([gallery_content(ctx)]).with_style(style().flex_grow().min_height(px(0))
+                .overflow_y_scroll().background(theme_color("surface"))),
             gallery_status_bar(ctx)
         ]).with_style(style().width(relative(1.0)).height(relative(1.0)).background(theme_color("surface")))
     } else {
