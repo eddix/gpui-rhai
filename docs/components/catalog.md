@@ -12,6 +12,11 @@ cargo run -p gpui-rhai --example component_gallery
 
 Theme Studio renders the same exhaustive specimen while editing a theme.
 
+The implemented 0.1.5 visual revision for Tabs, Button, and Badge is documented in the
+[control visual specification (简体中文)](control-visual-spec.zh-CN.md).
+It includes dimensions, theme roles, props/style parts, motion, and native
+acceptance criteria. ToggleGroup notes remain future design reference.
+
 Version 0.1.2 freezes this 51-component foundation: component IDs and exports,
 controlled-state ownership, semantic event payloads, the `xs`/`sm`/`md`/`lg`
 size vocabulary, and declared style parts are the maintained base contract.
@@ -40,7 +45,10 @@ policy.
 
 - `Label`, `Divider`, and `Icon` provide semantic text and visual structure.
 - `Avatar`, `Badge`, and `Tag` are distinct: Badge is read-only status,
-  while Tag may represent removable application metadata.
+  while Tag may represent removable application metadata. The accepted Badge
+  revision tightens its text enclosure relative to Button: medium Badge uses
+  a line-height-plus-4px box and 6px horizontal padding per side, independently
+  of whether its appearance is filled, subtle, or outlined.
 - `Alert` is persistent inline feedback; `Toast` is transient layered feedback.
 - `Card`, `GroupBox`, and `Empty` standardize common composition without hiding
   their node slots.
@@ -61,6 +69,10 @@ policy.
   mixed with text. `Toggle`/`ToggleGroup` express labeled pressed tool state;
   `Checkbox`, `Radio`/`RadioGroup`, and `Switch` retain their separate selection
   and setting semantics.
+- The deferred ToggleGroup visual target uses equal-size button segments and
+  a single 1px separator at each internal edge. Its selected fill belongs to
+  each pressed segment, unlike the single inset thumb used by Tabs. Ordinary
+  ButtonGroup does not acquire an equal-width requirement.
 - `Input`, `InputGroup`, `Textarea`, and `FormField` use the retained native
   editing core and explicit semantic relationships.
 - `Select` is scalar choice. `Combobox` is searchable single/multiple choice.
@@ -85,6 +97,13 @@ visibility. The normal element-ref scroll commands remain available.
 documented keyboard policies. `Table` and public `virtual_collection` accept
 Array or Rust-owned NativeCollection data. `ScrollArea` handles arbitrary
 non-virtual content.
+
+Tabs now replaces the selected rail with a continuous
+track and a single inset thumb. Unselected items have no button container or
+separator. Content-width and explicit equal-width layouts, icon headers, the
+3px inset, and target `indicator` / `tab_selected` parts are specified in the
+[control visual specification](control-visual-spec.zh-CN.md); new fields and
+parts are available from the 0.1.5 source schema.
 
 ## Command and CommandDialog
 

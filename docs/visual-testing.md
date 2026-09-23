@@ -7,6 +7,34 @@ status/loading, navigation, data/virtualization, assets, and overlays. The
 default metrics and state vocabulary are defined in
 `registry-design-system.md`.
 
+## Tabs, Button, and Badge control baseline
+
+The 2026-09-23
+[Tabs / Button / Badge specification](components/control-visual-spec.zh-CN.md)
+defines the 0.1.5 control baseline. Its user-supplied reference images remain
+design input rather than native evidence.
+
+After implementation, add one contextual specimen containing:
+
+- Tabs with the first, middle, and last item selected; the track inset remains
+  3px at every outer edge, with no dividers or selected rail;
+- content-width and equal-width Tabs, unequal English/CJK labels, icons with
+  text and icon-only headers, horizontal/vertical and LTR/RTL layouts;
+- normal, focused, hovered, disabled, scrolling, interrupted transition, and
+  Reduced/None states; focus must not obscure persistent selection;
+- Button and Badge using the same text and color treatment, including a
+  filled Badge; their density difference must survive removing color cues.
+
+Capture Default Light/Dark, Tokyo Night/Storm, and Catppuccin Latte/Mocha at
+settled frames. Inspect the remaining bundled themes in the same specimen.
+Record logical bounds as well as 1x/2x screenshots so text/line-height and
+track-inset assertions do not depend on screenshot scaling. Add mounted tests
+for controlled-value rejection, keyboard/disabled behavior, overflow reveal,
+and an indicator that owns neither input nor accessibility focus. The permanent
+geometry and controlled-state assertions live in
+`tests/native-keyboard/tests/control_visuals.rs`.
+Do not replace those assertions with snapshot-only tests.
+
 ## Deterministic matrix
 
 Capture `settings_panel`, `dashboard_layout`, and `form_showcase` at their

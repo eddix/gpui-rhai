@@ -2290,9 +2290,10 @@ mod tests {
         let mut registry = BundledRegistry::load().unwrap();
         let id = ModuleId::parse("components/button").unwrap();
         let entry = registry.entries.get_mut(&id).unwrap();
+        let installed_version = entry.metadata.version.to_string();
         let source = entry
             .source
-            .replace("0.1.4", "0.2.0")
+            .replace(&installed_version, "0.2.0")
             .replace("// Button presents a desktop action.", upstream_purpose);
         let source: &'static str = Box::leak(source.into_boxed_str());
         entry.metadata = parse_component_header(source).unwrap();
@@ -2350,9 +2351,10 @@ mod tests {
         let mut registry = BundledRegistry::load().unwrap();
         let button = ModuleId::parse("components/button").unwrap();
         let entry = registry.entries.get_mut(&button).unwrap();
+        let installed_version = entry.metadata.version.to_string();
         let source = entry
             .source
-            .replace("0.1.4", "0.2.0")
+            .replace(&installed_version, "0.2.0")
             .replace("dependencies: []", "dependencies: [\"components/badge\"]")
             .replace(
                 "\"dependencies\": []",

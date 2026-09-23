@@ -7,6 +7,12 @@ semantic versioning from this release.
 
 ## 0.1.5 - Unreleased
 
+- Button now uses size-specific action padding and a 600-weight label while
+  respecting resolved line height. Badge uses the compact 18/20px geometry,
+  4/6px horizontal padding, and 500-weight text. Tabs replaces the selected
+  rail with one continuous track and inset selection surface, adds
+  content/equal layouts plus icon headers and style parts, and moves the shared
+  indicator through the existing Motion Runtime when given a stable key.
 - Rust Hosts can apply one validated `ThemeTokenOverrides` preference layer to
   every file-backed or embedded theme. Partial color, spacing, radius,
   typography, motion, and namespaced-token overrides survive theme switching

@@ -292,6 +292,12 @@ fn specimen_actions() {
             button::Button(#{ text: "Launch", prefix: launch_icon, variant: "secondary" }),
         ]).with_style(style().gap(px(5)).items_center()),
         row([
+            button::Button(#{ text: "Density", size: "md", variant: "primary" }),
+            badge::Badge(#{ text: "Density", size: "md", variant: "accent" }),
+            button::Button(#{ text: "Compact", size: "xs", variant: "outline" }),
+            badge::Badge(#{ text: "Compact", size: "sm", variant: "neutral" }),
+        ]).with_style(style().gap(px(8)).items_center()),
+        row([
             tag::Tag(#{ text: "ACCENT", variant: "accent" }),
             tag::Tag(#{ text: "SUCCESS", variant: "success" }),
             tag::Tag(#{ text: "WARNING", variant: "warning" }),
@@ -386,11 +392,22 @@ fn specimen_chrome() {
 }
 
 fn specimen_navigation() {
+    let music_icon = svg("<svg width='24' height='24' viewBox='0 0 24 24' fill='none'><path d='M9 18V5L20 3V16M9 9L20 7' stroke='currentColor' stroke-width='2'/><circle cx='6' cy='18' r='3' stroke='currentColor' stroke-width='2'/><circle cx='17' cy='16' r='3' stroke='currentColor' stroke-width='2'/></svg>");
+    let trace_icon = svg("<svg width='24' height='24' viewBox='0 0 24 24' fill='none'><path d='M3 12H7L10 5L14 19L17 12H21' stroke='currentColor' stroke-width='2'/></svg>");
+    let lock_icon = svg("<svg width='24' height='24' viewBox='0 0 24 24' fill='none'><rect x='5' y='10' width='14' height='10' stroke='currentColor' stroke-width='2'/><path d='M8 10V7A4 4 0 0116 7V10' stroke='currentColor' stroke-width='2'/></svg>");
     column([
-        specimen_title("NAVIGATION", "Tabs, accordion and collapsible use tiled state."),
-        tabs::Tabs(#{ label: "Preview tabs", value: "status", tabs: [
+        specimen_title("NAVIGATION", "Tabs use one continuous track and one inset selection surface."),
+        tabs::Tabs(#{ label: "Equal preview tabs", value: "trace", layout: "equal",
+            motion_key: "studio-equal-tabs", tabs: [
+            #{ value: "status", label: "Status", icon: music_icon, content: text("Foreground healthy") },
+            #{ value: "trace", label: "Trace delivery", icon: trace_icon, content: text("No failed deliveries") },
+            #{ value: "locked", label: "Locked", icon: lock_icon, label_visible: false,
+                content: text(""), disabled: true }
+        ] }).with_style(style().width(px(420))),
+        tabs::Tabs(#{ label: "Content preview tabs", value: "status", layout: "content",
+            motion_key: "studio-content-tabs", tabs: [
             #{ value: "status", label: "Status", content: text("Foreground healthy") },
-            #{ value: "trace", label: "Trace", content: text("No failed deliveries") },
+            #{ value: "trace", label: "详细追踪记录", content: text("No failed deliveries") },
             #{ value: "locked", label: "Locked", content: text(""), disabled: true }
         ] }),
         accordion::Accordion(#{ key: "specimen-accordion", expanded: ["runtime"], mode: "multiple",

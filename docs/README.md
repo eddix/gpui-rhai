@@ -19,6 +19,7 @@ security, testing, and troubleshooting.
 
 - [Component authoring](component-authoring-guide.md)
 - [Registry design system](registry-design-system.md)
+- [Tabs / Button / Badge visual specification (简体中文; implemented in 0.1.5)](components/control-visual-spec.zh-CN.md)
 - [Typed Style surface](style.md) and [component stylesheets](component-styles.md)
 - [Theming](theming.md), [bundled themes](bundled-themes.md), and [Theme Studio](theme-studio.md)
 - [Locale and RTL](locale-and-rtl.md)
@@ -34,6 +35,7 @@ security, testing, and troubleshooting.
 
 Complex component contracts:
 
+- [Tabs visual/interaction contract and Button/Badge density](components/control-visual-spec.zh-CN.md)
 - [DatePicker](components/date-picker.md)
 - [Combobox](components/combobox.md)
 - [Select](components/select.md)
