@@ -913,7 +913,8 @@ impl ScriptViewHandle {
     /// # Errors
     ///
     /// Returns after disposal or when pending delivery, resume hook, reload, or
-    /// the first restored render fails. Failure leaves the view suspended.
+    /// the first restored render fails. A compensable failure leaves the view
+    /// suspended; failed compensation disposes and quarantines the view.
     pub fn resume(&self, cx: &mut App) -> Result<bool, ScriptViewError> {
         match self.require_not_disposed()? {
             ScriptViewState::Active => return Ok(false),
@@ -4106,7 +4107,7 @@ impl ScriptHostView {
         cx: &mut Context<Self>,
     ) -> Result<bool, ScriptViewError> {
         if let Err(error) = self.primitives.suspend_mounted(cx) {
-            let rollback = self.primitives.resume_mounted(cx).err();
+            let rollback = self.restore_native_active(cx).err();
             let message = native_lifecycle_error("suspend", &error, rollback.as_ref());
             if rollback.is_some() {
                 self.host
@@ -4120,7 +4121,7 @@ impl ScriptHostView {
         let changed = match self.lifecycle.suspend(&mut self.engine) {
             Ok(changed) => changed,
             Err(error) => {
-                let rollback = self.primitives.resume_mounted(cx).err();
+                let rollback = self.restore_native_active(cx).err();
                 let rollback_failed = rollback.is_some();
                 let message = rollback.as_ref().map_or_else(
                     || error.to_string(),
@@ -4137,7 +4138,10 @@ impl ScriptHostView {
             }
         };
         if !changed {
-            let _ = self.primitives.resume_mounted(cx);
+            if let Err(error) = self.restore_native_active(cx) {
+                let message = self.fault_native_lifecycle(error.to_string(), cx);
+                return Err(ScriptViewError::Suspend(message));
+            }
             return Ok(false);
         }
         self.host
@@ -4276,6 +4280,14 @@ impl ScriptHostView {
             return Err(ScriptViewError::Resume(message));
         }
         Ok(())
+    }
+
+    fn restore_native_active(
+        &mut self,
+        cx: &mut Context<Self>,
+    ) -> Result<(), crate::PrimitiveError> {
+        self.primitives.resume_mounted(cx)?;
+        self.primitives.commit_resume_mounted(cx)
     }
 
     fn fault_native_lifecycle(&mut self, message: String, cx: &mut Context<Self>) -> String {

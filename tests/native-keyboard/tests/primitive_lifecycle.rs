@@ -24,6 +24,7 @@ impl Render for Host {
 #[derive(Default)]
 struct NativeState {
     active: Cell<bool>,
+    prepared_resume: Cell<bool>,
     fail_resume: Cell<bool>,
     fail_suspend: Cell<bool>,
     resumes: Cell<usize>,
@@ -45,6 +46,7 @@ impl PrimitiveHandler for HookPrimitive {
             "injected native suspend failure"
         );
         self.0.active.set(false);
+        self.0.prepared_resume.set(false);
     }
 
     fn resume(&mut self, _: &PrimitiveInstanceId, _: &mut gpui::App) {
@@ -53,7 +55,13 @@ impl PrimitiveHandler for HookPrimitive {
             !self.0.fail_resume.replace(false),
             "injected native resume failure"
         );
-        self.0.active.set(true);
+        self.0.prepared_resume.set(true);
+    }
+
+    fn commit_resume(&mut self, _: &PrimitiveInstanceId, _: &mut gpui::App) {
+        if self.0.prepared_resume.replace(false) {
+            self.0.active.set(true);
+        }
     }
 
     fn render(
@@ -69,6 +77,7 @@ impl PrimitiveHandler for HookPrimitive {
 
     fn unmount(&mut self, _: &PrimitiveInstanceId) {
         self.0.active.set(false);
+        self.0.prepared_resume.set(false);
     }
 }
 

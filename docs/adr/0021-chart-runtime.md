@@ -141,7 +141,10 @@ each pointer event through Rhai.
 Viewport link payloads are coordinate-typed. Cartesian payloads bind named
 region/axis logical windows. Geo payloads bind map/projection identity and a
 normalized camera. Incompatible or unsupported coordinate payloads are not
-reinterpreted through another coordinate model.
+reinterpreted through another coordinate model. LinkRegistry owns the latest
+source/version projection for each group. Targets retain that projection across
+suspension, and Cartesian X/Y windows enter the coordinate compiler directly
+instead of being reduced to one zoom/pan pair.
 
 Charts are visualization surfaces, not editors. Dragging marks to mutate the
 underlying dataset is outside the runtime contract; Hosts can build explicit

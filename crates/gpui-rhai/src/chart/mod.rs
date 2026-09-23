@@ -52,4 +52,6 @@ pub use transform::{
 };
 
 pub(crate) use data::register_chart_data_api;
-pub(crate) use scene::apply_chart_selection;
+pub(crate) use scene::{
+    apply_chart_selection, chart_region_rect, layout_chart_scene_with_axis_windows,
+};

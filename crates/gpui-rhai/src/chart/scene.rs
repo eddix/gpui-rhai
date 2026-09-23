@@ -701,6 +701,26 @@ pub fn layout_chart_scene_with_viewport(
     geo: &ChartGeoRegistry,
     viewport: ChartViewport,
 ) -> Result<PreparedChartScene, ChartPrepareError> {
+    layout_chart_scene_with_axis_windows(
+        prepared,
+        width,
+        height,
+        theme,
+        geo,
+        viewport,
+        &BTreeMap::new(),
+    )
+}
+
+pub(crate) fn layout_chart_scene_with_axis_windows(
+    prepared: &ChartPreparedData,
+    width: f64,
+    height: f64,
+    theme: &ChartTheme,
+    geo: &ChartGeoRegistry,
+    viewport: ChartViewport,
+    axis_windows: &BTreeMap<String, (f64, f64)>,
+) -> Result<PreparedChartScene, ChartPrepareError> {
     if !width.is_finite() || !height.is_finite() || width <= 0.0 || height <= 0.0 {
         return Err(ChartPrepareError::InvalidViewport { width, height });
     }
@@ -737,6 +757,7 @@ pub fn layout_chart_scene_with_viewport(
                 &prepared.custom_series,
                 &prepared.formatters,
                 viewport,
+                axis_windows,
                 &mut axis_domains,
             )?,
             ChartCoordinateKind::Polar => layout_polar(
@@ -987,6 +1008,15 @@ fn region_rects(spec: &ChartSpec, width: f64, height: f64) -> BTreeMap<String, C
         .collect()
 }
 
+pub(crate) fn chart_region_rect(
+    spec: &ChartSpec,
+    width: f64,
+    height: f64,
+    region: &str,
+) -> Option<ChartRect> {
+    region_rects(spec, width, height).remove(region)
+}
+
 fn add_title_and_legend(
     spec: &ChartSpec,
     series: &[PreparedSeries],
@@ -1133,6 +1163,7 @@ fn compile_cartesian_axis(
     identity: &str,
     bounds: ChartRect,
     viewport: ChartViewport,
+    visible_override: Option<(f64, f64)>,
 ) -> Result<(ChartScale, ChartAxisDomain), ChartPrepareError> {
     let axis = spec.axes.iter().find(|axis| axis.key == identity);
     let categorical = axis.is_some_and(|axis| axis.scale == ChartAxisScale::Category)
@@ -1190,6 +1221,8 @@ fn compile_cartesian_axis(
     };
     let visible = if categorical {
         full
+    } else if let Some(visible) = visible_override {
+        visible
     } else {
         viewport_domain(
             full,
@@ -1227,6 +1260,7 @@ fn layout_cartesian(
     custom_series: &ChartSeriesRegistry,
     formatters: &ChartFormatterRegistry,
     viewport: ChartViewport,
+    axis_windows: &BTreeMap<String, (f64, f64)>,
     axis_domains: &mut BTreeMap<String, ChartAxisDomain>,
 ) -> Result<(), ChartPrepareError> {
     let mut groups = BTreeMap::<(String, String), Vec<&PreparedSeries>>::new();
@@ -1305,8 +1339,15 @@ fn layout_cartesian(
             .copied()
             .filter(|series| resolved_axis_key(spec, &series.spec, ChartChannel::X) == *key)
             .collect::<Vec<_>>();
-        let plan =
-            compile_cartesian_axis(spec, &contributors, ChartChannel::X, key, bounds, viewport)?;
+        let plan = compile_cartesian_axis(
+            spec,
+            &contributors,
+            ChartChannel::X,
+            key,
+            bounds,
+            viewport,
+            axis_windows.get(&format!("{region}:x:{key}")).copied(),
+        )?;
         axis_domains.insert(format!("{region}:x:{key}"), plan.1);
         horizontal_plans.insert(key.clone(), plan);
     }
@@ -1320,8 +1361,15 @@ fn layout_cartesian(
             .copied()
             .filter(|series| resolved_axis_key(spec, &series.spec, ChartChannel::Y) == *key)
             .collect::<Vec<_>>();
-        let plan =
-            compile_cartesian_axis(spec, &contributors, ChartChannel::Y, key, bounds, viewport)?;
+        let plan = compile_cartesian_axis(
+            spec,
+            &contributors,
+            ChartChannel::Y,
+            key,
+            bounds,
+            viewport,
+            axis_windows.get(&format!("{region}:y:{key}")).copied(),
+        )?;
         axis_domains.insert(format!("{region}:y:{key}"), plan.1);
         vertical_plans.insert(key.clone(), plan);
     }

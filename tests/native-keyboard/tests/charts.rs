@@ -970,6 +970,36 @@ fn resume_finishes_prepared_but_unpresented_frame(cx: &mut TestAppContext) {
     assert_eq!(presented_revision(&mut visual, &view), wanted);
 }
 
+#[gpui::test]
+fn failed_script_suspend_restores_committed_chart_activity(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let data = NativeChartData::new([moving_data(0)], ChartDataLimits::default()).unwrap();
+    let positions = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let script = r#"import "charts/chart" as chart;fn suspend(ctx){throw "injected script suspend failure";}fn view(ctx){chart::Chart(#{key:"c",data:ctx.get_native_chart_data("motion_stream"),spec:#{title:"Control",legend:#{visible:false},series:[#{key:"s",kind:"custom",renderer:"moving",encode:#{x:"x",y:"y"}}]}}).with_style(style().width(px(420)).height(px(300)))}"#;
+    let (window, view) = mount_extended_chart(
+        cx,
+        "chart-failed-script-suspend",
+        script,
+        MotionExtension {
+            data: data.clone(),
+            positions,
+        },
+        RuntimeClock::default(),
+        MotionPreference::None,
+    );
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    pump(cx, &mut visual);
+    assert!(
+        visual
+            .update(|window, cx| view.suspend(window, cx))
+            .is_err()
+    );
+    assert_eq!(view.state(), ScriptViewState::Active);
+    let wanted = data.replace([moving_data(1)]).unwrap();
+    pump(cx, &mut visual);
+    assert_eq!(presented_revision(&mut visual, &view), wanted);
+}
+
 struct ViewportMarker(Arc<std::sync::Mutex<Vec<ChartPoint>>>);
 
 impl HostChartSeries for ViewportMarker {
@@ -1053,6 +1083,78 @@ fn canceling_preview_rebuilds_the_committed_frame(cx: &mut TestAppContext) {
 }
 
 struct GeoMarker(Arc<std::sync::Mutex<BTreeMap<String, ChartPoint>>>);
+
+type AxisWindows = Arc<std::sync::Mutex<BTreeMap<String, ((f64, f64), (f64, f64))>>>;
+
+struct AxisProbe(AxisWindows);
+
+impl HostChartSeries for AxisProbe {
+    fn layout(&self, context: ChartCustomSeriesContext<'_>) -> Result<Vec<ChartMark>, String> {
+        let x = context.x_scale.unwrap();
+        let y = context.y_scale.unwrap();
+        self.0.lock().unwrap().insert(
+            context.spec.key.clone(),
+            (
+                (
+                    x.invert(context.bounds.x).unwrap(),
+                    x.invert(context.bounds.x + context.bounds.width).unwrap(),
+                ),
+                (
+                    y.invert(context.bounds.y + context.bounds.height).unwrap(),
+                    y.invert(context.bounds.y).unwrap(),
+                ),
+            ),
+        );
+        Ok(Vec::new())
+    }
+}
+
+struct AxisProbeExtension(AxisWindows);
+
+impl ScriptViewExtension for AxisProbeExtension {
+    fn configure_engine(&self, engine: &mut RuntimeEngine) -> Result<(), String> {
+        engine
+            .register_chart_series("axis_probe", AxisProbe(self.0.clone()))
+            .map_err(|error| error.to_string())
+    }
+}
+
+#[gpui::test]
+fn linked_cartesian_axes_keep_independent_logical_windows(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let windows = AxisWindows::default();
+    let script = r#"import "charts/chart" as chart;fn state_schema(){#{fields:#{z:#{schema:#{type:"float"},"default":#{type:"float",value:1.0}},rev:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}}}}}fn zoomed(ctx,p){ctx.set_state("z",p.zoom);ctx.set_state("rev",p.viewport_revision);}fn one(ctx,k){chart::Chart(#{key:k,key_dimension:"id",data:[#{id:"r0",x:0,y:0},#{id:"r1",x:100,y:100}],zoom:if k=="source"{ctx.get_state("z")}else{1.0},viewport_revision:if k=="source"{ctx.get_state("rev")}else{0},spec:#{title:k,legend:#{visible:false},link_group:"xy",link_domain:"same_values",axes:[#{key:"x",position:"bottom",min:0,max:if k=="source"{100}else{200}},#{key:"y",position:"left",min:0,max:100}],series:[#{key:k,kind:"custom",renderer:"axis_probe",encode:#{x:"x",y:"y"}}]},on_zoom_change:if k=="source"{Fn("zoomed")}else{()}}).with_style(style().width(px(280)).height(px(240)))}fn view(ctx){row([one(ctx,"source"),one(ctx,"target")])}"#;
+    let (window, view) = mount_extended_chart(
+        cx,
+        "chart-linked-axis-windows",
+        script,
+        AxisProbeExtension(windows.clone()),
+        RuntimeClock::default(),
+        MotionPreference::None,
+    );
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    pump(cx, &mut visual);
+    let wheel = figure_coordinate(
+        &mut visual,
+        &view,
+        "source",
+        ChartPoint { x: 150.0, y: 140.0 },
+    );
+    visual.simulate_event(ScrollWheelEvent {
+        position: wheel,
+        delta: ScrollDelta::Lines(point(0.0, -25.0)),
+        touch_phase: gpui::TouchPhase::Moved,
+        ..Default::default()
+    });
+    pump(cx, &mut visual);
+    let windows = windows.lock().unwrap();
+    let source = windows["source"];
+    let target = windows["target"];
+    for (source, target) in [(source.0, target.0), (source.1, target.1)] {
+        assert!((source.0 - target.0).abs() < 0.000_001);
+        assert!((source.1 - target.1).abs() < 0.000_001);
+    }
+}
 
 impl HostChartSeries for GeoMarker {
     fn layout(&self, context: ChartCustomSeriesContext<'_>) -> Result<Vec<ChartMark>, String> {
@@ -1144,6 +1246,13 @@ fn geo_link_group_synchronizes_acknowledged_camera(cx: &mut TestAppContext) {
         touch_phase: gpui::TouchPhase::Moved,
         ..Default::default()
     });
+    pump(cx, &mut visual);
+    visual.simulate_click(source, Modifiers::default());
+    visual.simulate_click(target, Modifiers::default());
+    visual.run_until_parked();
+    assert!(status(&mut visual, &view).starts_with("1|1|"));
+    visual.update(|window, cx| view.suspend(window, cx).unwrap());
+    visual.update(|_, cx| view.resume(cx).unwrap());
     pump(cx, &mut visual);
     visual.simulate_click(source, Modifiers::default());
     visual.simulate_click(target, Modifiers::default());

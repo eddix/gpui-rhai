@@ -60,5 +60,5 @@ contracts independently; all built-in series/coordinates, every theme and
 locale direction, normal/reduced/none motion, Host token overrides, 10k
 interactive and 100k streaming/downsampled paths, malformed data, GeoJSON/SVG
 maps, linked interaction, custom Rust extensions, terminal SVG/PNG export,
-Chart Gallery release smoke, and `gpui-rhai-chart-e2e-v1` together. Do not add
+Chart Gallery release smoke, and `gpui-rhai-chart-e2e-v2` together. Do not add
 boundary datasets or network/geocoding authority to the release package.

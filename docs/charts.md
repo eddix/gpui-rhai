@@ -141,7 +141,10 @@ and pan through weak native entity links without Rhai event fan-out.
 Cartesian links carry explicit region/axis logical windows. Geo links carry a
 normalized camera plus map/projection identity; only compatible Geo regions
 consume them. Polar and incompatible coordinate bindings do not silently reuse
-Cartesian axis metadata.
+Cartesian axis metadata. The LinkRegistry retains the latest sourced projection
+and version, so target views preserve it across redraw and suspend/resume. Each
+Cartesian axis window enters the coordinate plan independently; it is never
+collapsed into one shared zoom scalar.
 
 Viewport gestures maintain a transient native preview. Each `zoom_change`
 payload includes a monotonic `viewport_revision`; after accepting, clamping, or
