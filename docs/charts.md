@@ -31,6 +31,7 @@ chart::Chart(#{
     zoom: zoom,
     pan_x: pan_x,
     pan_y: pan_y,
+    viewport_revision: viewport_revision,
     spec: #{
         title: "Requests",
         series: [
@@ -132,11 +133,24 @@ Selection (`selected_keys`), legend visibility (`hidden_series`), and viewport
 `link_group` and `link_domain` synchronize hover, selection highlight, zoom,
 and pan through weak native entity links without Rhai event fan-out.
 
-Viewport gestures maintain a transient native preview, but the next Host render
-is the acknowledgement boundary. Repeating an unchanged controlled value
-rejects the proposal instead of allowing preview state to drift. Cartesian zoom
-compiles a visible data-domain window and regenerates both scales and ticks;
-wheel callbacks are committed once per completed gesture.
+Viewport gestures maintain a transient native preview. Each `zoom_change`
+payload includes a monotonic `viewport_revision`; after accepting, clamping, or
+rejecting that proposal, the Host writes the same revision back together with
+its controlled `zoom`, `pan_x`, and `pan_y` values. Unrelated renders do not
+acknowledge or reset a pending preview, while a same-value write with the new
+revision explicitly rejects it. For example:
+
+```rhai
+fn zoomed(ctx, proposal) {
+    ctx.set_state("zoom", proposal.zoom); // accept, or keep the old value to reject
+    ctx.set_state("pan_x", proposal.pan_x);
+    ctx.set_state("pan_y", proposal.pan_y);
+    ctx.set_state("viewport_revision", proposal.viewport_revision);
+}
+```
+
+Cartesian zoom compiles a visible data-domain window and regenerates both
+scales and ticks; wheel callbacks are committed once per completed gesture.
 
 Chart transitions use one aggregated chart resource and the existing Motion
 theme duration/easing plus Host normal/reduced/none policy. Compatible keyed

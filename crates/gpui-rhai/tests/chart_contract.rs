@@ -348,12 +348,12 @@ fn gauge_and_radar_share_explicit_value_domains() {
     let track = gauge
         .marks
         .iter()
-        .find(|mark| mark.key.ends_with("gauge:track"))
+        .find(|mark| mark.role == ChartMarkRole::Decoration && mark.datum_key == "gauge_track")
         .unwrap();
     let value = gauge
         .marks
         .iter()
-        .find(|mark| mark.key.ends_with("gauge:value"))
+        .find(|mark| mark.role == ChartMarkRole::Data && mark.series_key == "g")
         .unwrap();
     assert_ne!(track.geometry, value.geometry);
 
@@ -374,12 +374,12 @@ fn gauge_and_radar_share_explicit_value_domains() {
     let a = radar
         .marks
         .iter()
-        .find(|mark| mark.key.ends_with("a:radar"))
+        .find(|mark| mark.role == ChartMarkRole::Decoration && mark.series_key == "a")
         .unwrap();
     let b = radar
         .marks
         .iter()
-        .find(|mark| mark.key.ends_with("b:radar"))
+        .find(|mark| mark.role == ChartMarkRole::Decoration && mark.series_key == "b")
         .unwrap();
     assert_ne!(a.geometry, b.geometry);
 }
@@ -580,4 +580,360 @@ fn failed_duplicate_registration_is_atomic_and_custom_polar_is_dispatched() {
     .unwrap();
     assert_eq!(calls.load(Ordering::Relaxed), 1);
     assert!(scene.marks.iter().any(|mark| mark.key == "main:custom:a"));
+}
+
+#[test]
+fn viewport_uses_the_resolved_axis_plan_for_explicit_log_and_category_scales() {
+    let explicit = prepared(
+        json!({
+            "legend":{"visible":false},
+            "axes":[
+                {"key":"x","position":"bottom","min":0,"max":100},
+                {"key":"y","position":"left","min":0,"max":100}
+            ],
+            "series":[{"key":"s","kind":"scatter","x_axis":"x","y_axis":"y","encode":{"x":"x","y":"y"}}]
+        }),
+        [dataset(
+            "main",
+            json!([{"id":"a","x":0,"y":0},{"id":"b","x":100,"y":100}]),
+        )],
+    );
+    let base = layout_chart_scene(
+        &explicit,
+        640.0,
+        400.0,
+        &ChartTheme::default(),
+        &ChartGeoRegistry::new(),
+    )
+    .unwrap();
+    let zoomed = layout_chart_scene_with_viewport(
+        &explicit,
+        640.0,
+        400.0,
+        &ChartTheme::default(),
+        &ChartGeoRegistry::new(),
+        ChartViewport {
+            zoom: 2.0,
+            pan: ChartPoint::default(),
+        },
+    )
+    .unwrap();
+    assert_ne!(base.marks, zoomed.marks);
+    assert_ne!(base.labels, zoomed.labels);
+    let x = zoomed
+        .axis_domains
+        .iter()
+        .find_map(|(key, domain)| key.contains(":x:").then_some(domain))
+        .unwrap();
+    assert_eq!(x.full, (0.0, 100.0));
+    assert_eq!(x.visible, (25.0, 75.0));
+
+    let log = prepared(
+        json!({
+            "axes":[{"key":"y","position":"left","scale":"log"}],
+            "series":[{"key":"s","kind":"line","y_axis":"y","encode":{"x":"x","y":"y"}}]
+        }),
+        [dataset(
+            "main",
+            json!([{"id":"a","x":0,"y":1},{"id":"b","x":1,"y":10}]),
+        )],
+    );
+    let log_scene = layout_chart_scene_with_viewport(
+        &log,
+        640.0,
+        400.0,
+        &ChartTheme::default(),
+        &ChartGeoRegistry::new(),
+        ChartViewport {
+            zoom: 0.5,
+            pan: ChartPoint::default(),
+        },
+    )
+    .unwrap();
+    let log_y = log_scene
+        .axis_domains
+        .iter()
+        .find_map(|(key, domain)| key.contains(":y:").then_some(domain))
+        .unwrap();
+    assert!(log_y.visible.0 > 0.0 && log_y.visible.1 > log_y.visible.0);
+
+    let categories = scene(
+        json!({
+            "axes":[{"key":"x","position":"bottom"}],
+            "series":[{"key":"s","kind":"bar","x_axis":"x","encode":{"x":"x","y":"y"}}]
+        }),
+        dataset(
+            "main",
+            json!([{"id":"a","x":"Alpha","y":1},{"id":"b","x":"Beta","y":2}]),
+        ),
+    );
+    assert!(categories.labels.iter().any(|label| label.text == "Alpha"));
+    assert!(categories.labels.iter().any(|label| label.text == "Beta"));
+}
+
+#[test]
+fn normalized_axis_and_structured_mark_identities_accept_legal_combinations() {
+    let data = dataset(
+        "main",
+        json!([{"id":"line:0","x":0,"y":1},{"id":"b","x":1,"y":2}]),
+    );
+    for spec in [
+        json!({
+            "axes":[
+                {"key":"x","position":"bottom"},
+                {"key":"ya","position":"left"},
+                {"key":"yb","position":"right"}
+            ],
+            "annotations":[{"key":"limit","kind":"baseline","axis":"y","value":1}],
+            "series":[
+                {"key":"a","kind":"scatter","x_axis":"x","y_axis":"ya","encode":{"x":"x","y":"y"}},
+                {"key":"b","kind":"scatter","x_axis":"x","y_axis":"yb","encode":{"x":"x","y":"y"}}
+            ]
+        }),
+        json!({
+            "axes":[{"key":"x","position":"bottom"}],
+            "series":[
+                {"key":"a","kind":"scatter","encode":{"x":"x","y":"y"}},
+                {"key":"b","kind":"scatter","x_axis":"x","encode":{"x":"x","y":"y"}}
+            ]
+        }),
+        json!({"series":[{"key":"s","kind":"line","encode":{"x":"x","y":"y"}}]}),
+    ] {
+        let scene = scene(spec, data.clone());
+        assert_eq!(
+            scene
+                .marks
+                .iter()
+                .map(|mark| &mark.key)
+                .collect::<BTreeSet<_>>()
+                .len(),
+            scene.marks.len()
+        );
+    }
+}
+
+#[test]
+fn empty_data_preserves_schema_and_produces_a_valid_scene() {
+    let input = dataset(
+        "main",
+        json!([{"id":"a","g":1,"x":"A","y":1},{"id":"b","g":2,"x":"B","y":2}]),
+    );
+    let filtered = apply_chart_transforms(
+        &input,
+        &[
+            ChartTransformSpec::Filter {
+                dimension: "y".to_owned(),
+                operator: "gt".to_owned(),
+                value: UiValue::Integer(99),
+            },
+            ChartTransformSpec::Aggregate {
+                group_by: vec!["g".to_owned()],
+                dimension: "y".to_owned(),
+                operation: "sum".to_owned(),
+                output: "total".to_owned(),
+            },
+        ],
+        &ChartTransformRegistry::new(),
+        ChartTransformContext::default(),
+    )
+    .unwrap();
+    assert!(filtered.is_empty());
+    assert_eq!(
+        filtered.column("g").unwrap().data_type(),
+        ChartDataType::Integer
+    );
+    assert_eq!(
+        filtered.column("total").unwrap().data_type(),
+        ChartDataType::Number
+    );
+
+    let mut empty_spec = ChartSpec::from_ui_value(&ui(json!({
+        "series":[{"key":"s","kind":"bar","encode":{"x":"x","y":"y"}}]
+    })))
+    .unwrap();
+    empty_spec.series[0].transforms = vec![ChartTransformSpec::Filter {
+        dimension: "y".to_owned(),
+        operator: "gt".to_owned(),
+        value: UiValue::Integer(99),
+    }];
+    let native = NativeChartData::new([input], ChartDataLimits::default()).unwrap();
+    let empty_prepared = prepare_chart_data(
+        empty_spec,
+        &native.snapshot(),
+        &ChartTransformRegistry::new(),
+        &ChartSeriesRegistry::new(),
+        &ChartFormatterRegistry::new(),
+    )
+    .unwrap();
+    let empty_scene = layout_chart_scene(
+        &empty_prepared,
+        640.0,
+        400.0,
+        &ChartTheme::default(),
+        &ChartGeoRegistry::new(),
+    )
+    .unwrap();
+    assert!(
+        !empty_scene
+            .marks
+            .iter()
+            .any(|mark| mark.role == ChartMarkRole::Data)
+    );
+}
+
+#[test]
+fn draw_sampling_does_not_change_the_semantic_domain() {
+    let sample_data = dataset(
+        "main",
+        json!([
+            {"id":"a","x":0,"y":0},
+            {"id":"b","x":1,"y":-500},
+            {"id":"c","x":2,"y":1000},
+            {"id":"d","x":3,"y":0}
+        ]),
+    );
+    let mut sample_spec = ChartSpec::from_ui_value(&ui(json!({
+        "series":[{"key":"s","kind":"line","encode":{"x":"x","y":"y"}}]
+    })))
+    .unwrap();
+    sample_spec.series[0].transforms = vec![ChartTransformSpec::Downsample {
+        x: "x".to_owned(),
+        y: "y".to_owned(),
+        threshold: 3,
+    }];
+    let native = NativeChartData::new([sample_data], ChartDataLimits::default()).unwrap();
+    let sampled = prepare_chart_data(
+        sample_spec,
+        &native.snapshot(),
+        &ChartTransformRegistry::new(),
+        &ChartSeriesRegistry::new(),
+        &ChartFormatterRegistry::new(),
+    )
+    .unwrap();
+    let sampled = layout_chart_scene(
+        &sampled,
+        640.0,
+        400.0,
+        &ChartTheme::default(),
+        &ChartGeoRegistry::new(),
+    )
+    .unwrap();
+    let y = sampled
+        .axis_domains
+        .iter()
+        .find_map(|(key, domain)| key.contains(":y:").then_some(domain))
+        .unwrap();
+    assert!(y.full.0 <= -500.0 && y.full.1 >= 1000.0);
+}
+
+#[test]
+fn geo_viewport_and_complex_series_keep_business_identity() {
+    let data = dataset(
+        "main",
+        json!([{"id":"measurement-1","name":"feature","v":25}]),
+    );
+    let gauge = scene(
+        json!({
+            "regions":[{"key":"main","kind":"polar"}],
+            "axes":[{"key":"r","position":"radial","min":0,"max":100}],
+            "series":[{"key":"g","kind":"gauge","encode":{"name":"name","value":"v"}}]
+        }),
+        data.clone(),
+    );
+    let gauge_mark = gauge
+        .marks
+        .iter()
+        .find(|mark| mark.role == ChartMarkRole::Data)
+        .unwrap();
+    assert_eq!(gauge_mark.datum.as_ref().unwrap().key, "measurement-1");
+    assert_eq!(gauge_mark.datum_key, "measurement-1");
+
+    let geo = ChartGeoRegistry::new();
+    geo.register_map(
+        ChartGeoMap::from_geojson(
+            "map",
+            r#"{"type":"FeatureCollection","features":[{"type":"Feature","id":"feature","properties":{},"geometry":{"type":"Polygon","coordinates":[[[0,0],[20,0],[20,20],[0,20],[0,0]]]}}]}"#,
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let prepared = prepared(
+        json!({
+            "regions":[{"key":"main","kind":"geo_2d","map":"map"}],
+            "series":[{"key":"m","kind":"map","encode":{"name":"name","value":"v"}}]
+        }),
+        [data],
+    );
+    let base = layout_chart_scene(&prepared, 640.0, 400.0, &ChartTheme::default(), &geo).unwrap();
+    let zoomed = layout_chart_scene_with_viewport(
+        &prepared,
+        640.0,
+        400.0,
+        &ChartTheme::default(),
+        &geo,
+        ChartViewport {
+            zoom: 2.0,
+            pan: ChartPoint { x: 30.0, y: 10.0 },
+        },
+    )
+    .unwrap();
+    assert_ne!(base.marks, zoomed.marks);
+    let map_mark = base
+        .marks
+        .iter()
+        .find(|mark| mark.role == ChartMarkRole::Data)
+        .unwrap();
+    assert_eq!(map_mark.datum.as_ref().unwrap().key, "measurement-1");
+    assert_eq!(map_mark.datum_key, "measurement-1");
+}
+
+#[test]
+fn custom_series_failures_are_atomic_across_coordinate_systems() {
+    struct Reject;
+    impl HostChartSeries for Reject {
+        fn layout(&self, _: ChartCustomSeriesContext<'_>) -> Result<Vec<ChartMark>, String> {
+            Err("candidate rejected".to_owned())
+        }
+    }
+
+    let geo = ChartGeoRegistry::new();
+    geo.register_map(
+        ChartGeoMap::from_geojson(
+            "map",
+            r#"{"type":"FeatureCollection","features":[{"type":"Feature","id":"feature","properties":{},"geometry":{"type":"Polygon","coordinates":[[[0,0],[20,0],[20,20],[0,20],[0,0]]]}}]}"#,
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    for coordinate in ["cartesian_2d", "polar", "geo_2d"] {
+        let registry = ChartSeriesRegistry::new();
+        registry.register("reject", Reject).unwrap();
+        let region = if coordinate == "geo_2d" {
+            json!({"key":"main","kind":coordinate,"map":"map"})
+        } else {
+            json!({"key":"main","kind":coordinate})
+        };
+        let spec = ChartSpec::from_ui_value(&ui(json!({
+            "regions":[region],
+            "series":[{"key":"custom","kind":"custom","renderer":"reject","encode":{"x":"x","y":"y"}}]
+        })))
+        .unwrap();
+        let native = NativeChartData::new(
+            [dataset("main", json!([{"id":"a","x":1,"y":2}]))],
+            ChartDataLimits::default(),
+        )
+        .unwrap();
+        let prepared = prepare_chart_data(
+            spec,
+            &native.snapshot(),
+            &ChartTransformRegistry::new(),
+            &registry,
+            &ChartFormatterRegistry::new(),
+        )
+        .unwrap();
+        assert!(
+            layout_chart_scene(&prepared, 640.0, 400.0, &ChartTheme::default(), &geo,).is_err(),
+            "{coordinate} swallowed a custom renderer failure"
+        );
+    }
 }

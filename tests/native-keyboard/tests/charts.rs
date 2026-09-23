@@ -1,6 +1,8 @@
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use gpui::{
@@ -102,8 +104,8 @@ fn chart_controlled_zoom_rejects_unacknowledged_preview(cx: &mut TestAppContext)
     let script = r#"
  import "charts/chart" as chart;
  fn state_schema(){#{fields:#{n:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}},first:#{schema:#{type:"float"},"default":#{type:"float",value:0.0}},last:#{schema:#{type:"float"},"default":#{type:"float",value:0.0}}}}}
- fn zoomed(ctx,p){let n=ctx.get_state("n");if n==0{ctx.set_state("first",p.zoom);}ctx.set_state("last",p.zoom);ctx.set_state("n",n+1);}
- fn view(ctx){column([text("Status").accessibility_role("status").accessibility_label(`${ctx.get_state("n")}|${ctx.get_state("first")}|${ctx.get_state("last")}`),chart::Chart(#{key:"c",key_dimension:"id",zoom:1.0,pan_x:0.0,pan_y:0.0,data:[#{id:"a",x:0,y:1},#{id:"b",x:1,y:2}],spec:#{title:"Control",series:[#{key:"s",kind:"scatter",encode:#{x:"x",y:"y"}}]},on_zoom_change:Fn("zoomed")}).with_style(style().width(px(420)).height(px(300)))])}
+ fn zoomed(ctx,p){let n=ctx.get_state("n");if n==0{ctx.set_state("first",p.zoom);}ctx.set_state("last",p.zoom);ctx.set_state("n",p.viewport_revision);}
+ fn view(ctx){column([text("Status").accessibility_role("status").accessibility_label(`${ctx.get_state("n")}|${ctx.get_state("first")}|${ctx.get_state("last")}`),chart::Chart(#{key:"c",key_dimension:"id",zoom:1.0,pan_x:0.0,pan_y:0.0,viewport_revision:ctx.get_state("n"),data:[#{id:"a",x:0,y:1},#{id:"b",x:1,y:2}],spec:#{title:"Control",series:[#{key:"s",kind:"scatter",encode:#{x:"x",y:"y"}}]},on_zoom_change:Fn("zoomed")}).with_style(style().width(px(420)).height(px(300)))])}
  "#;
     let (window, view) = mount(cx, script, "chart-controlled-zoom");
     let mut visual = VisualTestContext::from_window(*window, cx);
@@ -128,7 +130,108 @@ fn chart_controlled_zoom_rejects_unacknowledged_preview(cx: &mut TestAppContext)
     assert_eq!(values[0], "3");
     let first = values[1].parse::<f64>().unwrap();
     let last = values[2].parse::<f64>().unwrap();
+    assert!(
+        (first - (-0.1_f64).exp()).abs() < 0.00001,
+        "wheel input was lost before proposal: {result}"
+    );
     assert!((first - last).abs() < 0.00001, "{result}");
+}
+
+const CONTROLLED_ZOOM_SOURCE: &str = r#"
+ import "charts/chart" as chart;
+ fn state_schema(){#{fields:#{n:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}},z:#{schema:#{type:"float"},"default":#{type:"float",value:1.0}}}}}
+ fn zoomed(ctx,p){ctx.set_state("n",p.viewport_revision);ctx.set_state("z",p.zoom);}
+ fn view(ctx){column([text("Status").accessibility_role("status").accessibility_label(`${ctx.get_state("n")}|${ctx.get_state("z")}`),chart::Chart(#{key:"c",key_dimension:"id",zoom:ctx.get_state("z"),viewport_revision:ctx.get_state("n"),data:[#{id:"a",x:0,y:0},#{id:"b",x:1,y:1}],spec:#{title:"Control",series:[#{key:"s",kind:"scatter",encode:#{x:"x",y:"y"}}]},on_zoom_change:Fn("zoomed")}).with_style(style().width(px(420)).height(px(300)))])}
+"#;
+
+fn chart_position(
+    visual: &mut VisualTestContext,
+    view: &ScriptViewHandle,
+) -> gpui::Point<gpui::Pixels> {
+    let bounds = chart_bounds(visual, view);
+    point(
+        px((bounds.x + 180.0) as f32),
+        px((bounds.y + 160.0) as f32),
+    )
+}
+
+#[gpui::test]
+fn chart_phase_less_mouse_wheel_commits(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let (window, view) = mount(cx, CONTROLLED_ZOOM_SOURCE, "chart-phase-less-wheel");
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    pump(cx, &mut visual);
+    let position = chart_position(&mut visual, &view);
+    visual.simulate_event(ScrollWheelEvent {
+        position,
+        delta: ScrollDelta::Lines(point(0.0, 1.0)),
+        touch_phase: gpui::TouchPhase::Moved,
+        ..Default::default()
+    });
+    pump(cx, &mut visual);
+    assert!(!status(&mut visual, &view).starts_with("0|"));
+}
+
+#[gpui::test]
+fn chart_trackpad_preview_survives_intermediate_draw(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let (window, view) = mount(cx, CONTROLLED_ZOOM_SOURCE, "chart-framed-wheel");
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    pump(cx, &mut visual);
+    let position = chart_position(&mut visual, &view);
+    visual.simulate_event(ScrollWheelEvent {
+        position,
+        delta: ScrollDelta::Pixels(point(px(0.0), px(40.0))),
+        touch_phase: gpui::TouchPhase::Started,
+        ..Default::default()
+    });
+    pump(cx, &mut visual);
+    visual.simulate_event(ScrollWheelEvent {
+        position,
+        delta: ScrollDelta::Pixels(point(px(0.0), px(0.0))),
+        touch_phase: gpui::TouchPhase::Ended,
+        ..Default::default()
+    });
+    pump(cx, &mut visual);
+    let zoom = status(&mut visual, &view)
+        .split('|')
+        .nth(1)
+        .unwrap()
+        .parse::<f64>()
+        .unwrap();
+    assert!((zoom - (-0.1_f64).exp()).abs() < 0.00001);
+}
+
+#[gpui::test]
+fn unrelated_host_render_does_not_acknowledge_a_viewport_proposal(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let script = r#"
+ import "charts/chart" as chart;
+ fn state_schema(){#{fields:#{n:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}},last:#{schema:#{type:"float"},"default":#{type:"float",value:1.0}}}}}
+ fn zoomed(ctx,p){ctx.set_state("n",ctx.get_state("n")+1);ctx.set_state("last",p.zoom);}
+ fn view(ctx){column([text("Status").accessibility_role("status").accessibility_label(`${ctx.get_state("n")}|${ctx.get_state("last")}`),chart::Chart(#{key:"c",key_dimension:"id",zoom:1.0,viewport_revision:0,data:[#{id:"a",x:0,y:0},#{id:"b",x:1,y:1}],spec:#{title:"Control",series:[#{key:"s",kind:"scatter",encode:#{x:"x",y:"y"}}]},on_zoom_change:Fn("zoomed")}).with_style(style().width(px(420)).height(px(300)))])}
+ "#;
+    let (window, view) = mount(cx, script, "chart-delayed-viewport-ack");
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    pump(cx, &mut visual);
+    let position = chart_position(&mut visual, &view);
+    for _ in 0..2 {
+        visual.simulate_event(ScrollWheelEvent {
+            position,
+            delta: ScrollDelta::Lines(point(0.0, 1.0)),
+            touch_phase: gpui::TouchPhase::Moved,
+            ..Default::default()
+        });
+        pump(cx, &mut visual);
+    }
+    let result = status(&mut visual, &view);
+    let values = result.split('|').collect::<Vec<_>>();
+    assert_eq!(values[0], "2");
+    let zoom = values[1].parse::<f64>().unwrap();
+    assert!(
+        (zoom - (-0.08_f64).exp()).abs() < 0.00001,
+        "unrelated script state update reset the pending preview: {result}"
+    );
 }
 
 #[gpui::test]
@@ -214,4 +317,135 @@ fn chart_business_key_cannot_become_a_control_role(cx: &mut TestAppContext) {
         visual.run_until_parked();
         assert_eq!(status(&mut visual, &view), "1|0");
     }
+}
+
+#[gpui::test]
+fn chart_gauge_activation_returns_the_source_row_key(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let script = r#"import "charts/chart" as chart;
+ fn state_schema(){#{fields:#{last:#{schema:#{type:"string"},"default":#{type:"string",value:"none"}}}}}
+ fn selected(ctx,p){ctx.set_state("last",p.datum_key);}
+ fn view(ctx){column([text("Status").accessibility_role("status").accessibility_label(ctx.get_state("last")),chart::Chart(#{key:"c",key_dimension:"id",data:[#{id:"measurement-1",v:25}],spec:#{title:"Control",regions:[#{key:"main",kind:"polar"}],axes:[#{key:"r",position:"radial",min:0,max:100}],series:[#{key:"g",kind:"gauge",encode:#{value:"v",name:"id"}}]},on_select:Fn("selected")}).with_style(style().width(px(420)).height(px(300)))])}"#;
+    let (window, view) = mount(cx, script, "chart-gauge-key");
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    pump(cx, &mut visual);
+    let position = chart_position(&mut visual, &view);
+    visual.simulate_click(position, Modifiers::default());
+    visual.simulate_keystrokes("home");
+    visual.simulate_keystrokes("enter");
+    visual.run_until_parked();
+    assert_eq!(status(&mut visual, &view), "measurement-1");
+}
+
+struct CountExtension(Arc<AtomicUsize>);
+
+impl ScriptViewExtension for CountExtension {
+    fn configure_engine(&self, engine: &mut RuntimeEngine) -> Result<(), String> {
+        engine
+            .register_chart_series("count", CountRenderer(self.0.clone()))
+            .map_err(|error| error.to_string())
+    }
+}
+
+struct CountRenderer(Arc<AtomicUsize>);
+
+impl HostChartSeries for CountRenderer {
+    fn layout(&self, _: ChartCustomSeriesContext<'_>) -> Result<Vec<ChartMark>, String> {
+        let calls = self.0.fetch_add(1, Ordering::Relaxed) + 1;
+        assert!(calls < 64, "linked charts entered a repeated layout loop");
+        Ok(Vec::new())
+    }
+}
+
+fn mount_with_layout_counter(
+    cx: &mut TestAppContext,
+    script: &str,
+    name: &str,
+    counter: Arc<AtomicUsize>,
+) -> (WindowHandle<Host>, ScriptViewHandle) {
+    let entry = ModuleId::parse("main").unwrap();
+    let prepared = EmbeddedScriptView::new(
+        entry.clone(),
+        EmbeddedScriptSource::new(BTreeMap::from([
+            (entry, script.to_owned()),
+            (
+                ModuleId::parse("charts/chart").unwrap(),
+                source("registry/charts/chart.rhai"),
+            ),
+        ])),
+        source("registry/themes/default_dark.rhai"),
+    )
+    .extension(CountExtension(counter))
+    .motion_preference(MotionPreference::None)
+    .prepare()
+    .unwrap();
+    let captured = Rc::new(RefCell::new(None));
+    let capture = captured.clone();
+    let name = name.to_owned();
+    let window = cx.add_window(move |window, cx| {
+        let host = ScriptViewHost::new(&name, cx).unwrap();
+        let view = prepared
+            .mount(ScriptViewConfig::new(&name), host.clone(), window, cx)
+            .unwrap();
+        *capture.borrow_mut() = Some(view.clone());
+        Host { host, view }
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    let view = captured.borrow().as_ref().unwrap().clone();
+    (window, view)
+}
+
+#[gpui::test]
+fn idle_linked_charts_do_not_repeat_layout(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    for linked in [false, true] {
+        let link = if linked {
+            r#",link_group:"shared",link_domain:"time""#
+        } else {
+            ""
+        };
+        let script = r#"import "charts/chart" as chart;
+ fn one(k){chart::Chart(#{key:k,key_dimension:"id",data:[#{id:"a",x:0,y:0},#{id:"b",x:1,y:1}],spec:#{title:kLINK,series:[#{key:"s",kind:"custom",renderer:"count",encode:#{x:"x",y:"y"}}]}}).with_style(style().width(px(300)).height(px(220)))}
+ fn view(ctx){row([one("left"),one("right")])}"#
+            .replace("kLINK", &format!("k{link}"));
+        let counter = Arc::new(AtomicUsize::new(0));
+        let (window, _) = mount_with_layout_counter(
+            cx,
+            &script,
+            &format!("chart-idle-link-{linked}"),
+            counter.clone(),
+        );
+        let mut visual = VisualTestContext::from_window(*window, cx);
+        pump(cx, &mut visual);
+        let before = counter.load(Ordering::Relaxed);
+        pump(cx, &mut visual);
+        assert_eq!(counter.load(Ordering::Relaxed), before);
+    }
+}
+
+#[gpui::test]
+fn linked_selection_keeps_each_chart_source_instead_of_last_writer_wins(
+    cx: &mut TestAppContext,
+) {
+    cx.update(gpui_rhai::install);
+    let script = r#"import "charts/chart" as chart;
+ fn one(k,selected){chart::Chart(#{key:k,key_dimension:"id",selected_keys:[selected],data:[#{id:"a",x:0,y:1},#{id:"b",x:1,y:2},#{id:"c",x:2,y:3}],spec:#{title:k,link_group:"shared",link_domain:"time",series:[#{key:"s",kind:"scatter",encode:#{x:"x",y:"y",name:"id"}}]}}).with_style(style().width(px(280)).height(px(220)))}
+ fn view(ctx){row([one("left","a"),one("middle","b"),one("right","c")])}"#;
+    let (window, view) = mount(cx, script, "chart-linked-selection-sources");
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    pump(cx, &mut visual);
+    visual.update(|_, cx| {
+        let snapshot = view.accessibility_snapshot(cx).unwrap();
+        for title in ["left", "middle", "right"] {
+            let description = &snapshot
+                .find_by_role_and_name("figure", title)
+                .next()
+                .unwrap()
+                .description;
+            for key in ["a", "b", "c"] {
+                assert!(description.contains(key), "{title}: {description}");
+            }
+        }
+    });
 }

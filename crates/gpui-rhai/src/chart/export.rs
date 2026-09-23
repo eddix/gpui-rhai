@@ -451,7 +451,7 @@ mod tests {
         let geo = ChartGeoRegistry::new();
         let svg = export_chart_svg(&prepared, &request, &theme, &geo).unwrap();
         assert!(svg.contains("A &amp; B"));
-        assert!(svg.contains("data-key=\"main:bars:a\""));
+        assert!(svg.contains("data-key=\"data|4:main|4:bars|1:a|4:body\""));
         let png = export_chart_png(&prepared, &request, &theme, &geo).unwrap();
         assert!(png.starts_with(b"\x89PNG\r\n\x1a\n"));
     }

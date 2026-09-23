@@ -726,6 +726,10 @@ impl ChartDataSnapshot {
             .iter()
             .map(|(name, dataset)| (name.as_str(), dataset))
     }
+
+    pub(crate) fn same_identity(&self, other: &Self) -> bool {
+        self.revision == other.revision && Arc::ptr_eq(&self.datasets, &other.datasets)
+    }
 }
 
 struct NativeChartDataInner {

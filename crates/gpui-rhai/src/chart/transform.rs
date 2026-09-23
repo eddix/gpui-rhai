@@ -6,7 +6,10 @@ use std::sync::{Arc, RwLock};
 
 use thiserror::Error;
 
-use super::{ChartDataError, ChartDataLimits, ChartDataset, ChartTransformSpec, ChartValue};
+use super::{
+    ChartColumn, ChartColumnValues, ChartDataError, ChartDataLimits, ChartDataset, ChartNullBitmap,
+    ChartTransformSpec, ChartValue,
+};
 use crate::UiValue;
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -306,6 +309,19 @@ fn aggregate(
             Ok(row)
         })
         .collect::<Result<Vec<_>, ChartTransformError>>()?;
+    if rows.is_empty() {
+        let empty = input.select_rows(&[])?;
+        let mut columns = group_by
+            .iter()
+            .filter_map(|name| empty.column(name).cloned())
+            .collect::<Vec<_>>();
+        columns.push(ChartColumn::new(
+            output,
+            ChartColumnValues::Number(Vec::<f64>::new().into()),
+            ChartNullBitmap::from_validity(Vec::<bool>::new()),
+        )?);
+        return Ok(ChartDataset::new(input.name(), columns, None, limits)?);
+    }
     Ok(ChartDataset::from_chart_rows(
         input.name(),
         &rows,
@@ -559,39 +575,111 @@ fn downsample_lttb(
     let y = require_column(input, y)?;
     let mut segments = Vec::<Vec<(usize, f64, f64)>>::new();
     let mut current = Vec::new();
-    let mut separators = Vec::new();
+    let mut separators = Vec::<usize>::new();
+    let mut pending_separator = None;
     for index in 0..input.len() {
         if let (Some(x), Some(y)) = (
             x.value(index).and_then(|value| value.as_number()),
             y.value(index).and_then(|value| value.as_number()),
         ) {
-            current.push((index, x, y));
-        } else {
-            if !current.is_empty() {
-                segments.push(std::mem::take(&mut current));
+            if current.is_empty()
+                && !segments.is_empty()
+                && let Some(separator) = pending_separator.take()
+            {
+                separators.push(separator);
             }
-            separators.push(index);
+            current.push((index, x, y));
+        } else if !current.is_empty() {
+            segments.push(std::mem::take(&mut current));
+            pending_separator = Some(index);
+        } else if !segments.is_empty() && pending_separator.is_none() {
+            pending_separator = Some(index);
         }
     }
     if !current.is_empty() {
         segments.push(current);
     }
-    let valid_count = segments.iter().map(Vec::len).sum::<usize>();
-    if valid_count == 0 {
-        return Ok(input.clone());
+    if segments.is_empty() {
+        return Ok(input.select_rows(&[])?);
     }
-    let available = threshold.saturating_sub(separators.len()).max(3);
-    let mut selected = separators;
-    for segment in segments {
-        let allocated = ((usize_to_f64(segment.len()) / usize_to_f64(valid_count)
-            * usize_to_f64(available))
-        .round() as usize)
-            .clamp(3.min(segment.len()), segment.len());
-        selected.extend(lttb_segment(&segment, allocated));
+
+    let max_segments = threshold.div_ceil(2).max(1);
+    let kept = evenly_spaced_indexes(segments.len(), segments.len().min(max_segments));
+    let separator_count = kept.len().saturating_sub(1);
+    let point_budget = threshold.saturating_sub(separator_count).max(1);
+    let lengths = kept
+        .iter()
+        .map(|index| segments[*index].len())
+        .collect::<Vec<_>>();
+    let allocations = allocate_segment_budget(&lengths, point_budget);
+    let mut selected = Vec::with_capacity(threshold);
+    for (position, (segment_index, allocation)) in kept.iter().copied().zip(allocations).enumerate()
+    {
+        selected.extend(sample_segment(&segments[segment_index], allocation));
+        if let Some(next) = kept.get(position + 1) {
+            let separator_index = segment_index.min(separators.len().saturating_sub(1));
+            if segment_index < *next
+                && let Some(separator) = separators.get(separator_index)
+            {
+                selected.push(*separator);
+            }
+        }
     }
     selected.sort_unstable();
     selected.dedup();
+    debug_assert!(selected.len() <= threshold);
     Ok(input.select_rows(&selected)?)
+}
+
+fn evenly_spaced_indexes(len: usize, count: usize) -> Vec<usize> {
+    if count >= len {
+        return (0..len).collect();
+    }
+    if count <= 1 {
+        return vec![len / 2];
+    }
+    (0..count)
+        .map(|index| index * (len - 1) / (count - 1))
+        .collect()
+}
+
+fn allocate_segment_budget(lengths: &[usize], budget: usize) -> Vec<usize> {
+    let mut allocated = vec![1; lengths.len()];
+    let requested = budget.saturating_sub(lengths.len());
+    let capacities = lengths
+        .iter()
+        .map(|length| length.saturating_sub(1))
+        .collect::<Vec<_>>();
+    let total_capacity = capacities.iter().sum::<usize>();
+    if requested == 0 || total_capacity == 0 {
+        return allocated;
+    }
+    let remaining = requested.min(total_capacity);
+    let mut remainders = Vec::with_capacity(lengths.len());
+    let mut used = 0_usize;
+    for (index, capacity) in capacities.iter().copied().enumerate() {
+        let weighted = remaining as u128 * capacity as u128;
+        let extra = usize::try_from(weighted / total_capacity as u128).unwrap_or(capacity);
+        allocated[index] += extra.min(capacity);
+        used += extra.min(capacity);
+        remainders.push((index, weighted % total_capacity as u128));
+    }
+    remainders.sort_by(|left, right| right.1.cmp(&left.1).then(left.0.cmp(&right.0)));
+    for (index, _) in remainders.into_iter().take(remaining.saturating_sub(used)) {
+        if allocated[index] < lengths[index] {
+            allocated[index] += 1;
+        }
+    }
+    allocated
+}
+
+fn sample_segment(points: &[(usize, f64, f64)], threshold: usize) -> Vec<usize> {
+    match threshold {
+        0 => Vec::new(),
+        1 => vec![points[points.len() / 2].0],
+        2 if points.len() > 1 => vec![points[0].0, points[points.len() - 1].0],
+        _ => lttb_segment(points, threshold),
+    }
 }
 
 fn lttb_segment(points: &[(usize, f64, f64)], threshold: usize) -> Vec<usize> {
@@ -816,5 +904,52 @@ mod tests {
         ));
         assert_eq!(source.len(), 8);
         assert!(source.column("average").is_none());
+    }
+
+    #[test]
+    fn lttb_collapses_null_runs_and_respects_the_total_budget() {
+        let rows = (0..1_000)
+            .map(|index| {
+                BTreeMap::from([
+                    ("id".to_owned(), ChartValue::String(format!("p{index}"))),
+                    ("x".to_owned(), ChartValue::Number(usize_to_f64(index))),
+                    (
+                        "y".to_owned(),
+                        if index % 3 == 1 {
+                            ChartValue::Null
+                        } else {
+                            ChartValue::Number(usize_to_f64(index))
+                        },
+                    ),
+                ])
+            })
+            .collect::<Vec<_>>();
+        let source = ChartDataset::from_chart_rows(
+            "main",
+            &rows,
+            Some("id".to_owned()),
+            ChartDataLimits::default(),
+        )
+        .unwrap();
+        let sampled = apply_chart_transforms(
+            &source,
+            &[ChartTransformSpec::Downsample {
+                x: "x".to_owned(),
+                y: "y".to_owned(),
+                threshold: 100,
+            }],
+            &ChartTransformRegistry::new(),
+            ChartTransformContext::default(),
+        )
+        .unwrap();
+        assert!(sampled.len() <= 100);
+        assert!(
+            (0..sampled.len()).any(|index| sampled
+                .column("y")
+                .unwrap()
+                .value(index)
+                .is_some_and(|value| value == ChartValue::Null)),
+            "sampling removed every gap separator"
+        );
     }
 }

@@ -98,7 +98,9 @@ low-frequency semantic events. Brush supports Cartesian x/y/xy rectangles and
 Geo region/rectangle selection; freehand lasso is deferred.
 
 Controlled viewport state has a committed value, transient gesture preview,
-and Host acknowledgement. Cartesian viewport state compiles into a visible
+and an explicit monotonic Host acknowledgement revision. A redraw is not an
+acknowledgement; the Host writes the proposal revision back after accepting,
+clamping, or rejecting it. Cartesian viewport state compiles into a visible
 domain window, so axes and marks always share one mapper. Mark role, structural
 mark identity, and `DatumRef` are separate types; business data cannot collide
 with legend, annotation, grid, or axis identities.
