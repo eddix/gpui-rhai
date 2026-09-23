@@ -1,0 +1,12 @@
+{
+  "schema": "gpui-rhai-chart-e2e-v2",
+  "points": 100000,
+  "prepare_us": 142956,
+  "mount_first_frame_us": 140076,
+  "resize_p50_us": 29443,
+  "resize_p95_us": 36932,
+  "streaming_p50_us": 85574,
+  "streaming_p95_us": 103737,
+  "retained_nodes": 53,
+  "rhai_operations_after_stream": 0
+}
