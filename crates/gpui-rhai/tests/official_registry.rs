@@ -908,6 +908,17 @@ fn official_component_sources_reject_decorative_visual_drift() {
 }
 
 #[test]
+fn tabs_and_table_use_semantic_theme_state_surfaces() {
+    assert!(TABS.contains("padding(theme_spacing(\"xxs\"))"));
+    assert!(TABS.contains("gap(theme_spacing(\"xxs\"))"));
+    assert!(TABS.contains("radius(theme_radius(\"sm\"))"));
+    assert!(!TABS.contains("radius(px(5))"));
+    assert!(!TABS.contains("radius(px(8))"));
+    assert!(TABLE.contains("base.background(theme_color(\"selection\"))"));
+    assert!(TABLE.contains("ctx.component_style(\"row_selected\""));
+}
+
+#[test]
 fn window_bars_are_source_owned_compositions_without_native_authority() {
     let source = EmbeddedScriptSource::new(BTreeMap::from([
         (

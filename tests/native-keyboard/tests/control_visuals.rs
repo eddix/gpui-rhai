@@ -117,12 +117,12 @@ fn view(ctx){column([
     let list = tree.find_by_role_and_name("tablist", "Sections").next().unwrap().geometry.unwrap().visual;
     let tabs = tree.nodes().filter(|node| node.role == "tab").collect::<Vec<_>>();
     assert_eq!(tabs.len(), 3);
-    assert_eq!(list.height, 32.0);
+    assert_eq!(list.height, 30.0);
     let bounds = tabs.iter().map(|tab| tab.geometry.unwrap().visual).collect::<Vec<_>>();
-    assert_eq!(bounds[0].y - list.y, 3.0);
+    assert_eq!(bounds[0].y - list.y, 2.0);
     assert_eq!(bounds[0].height, 26.0);
-    assert_eq!(bounds[0].x - list.x, 3.0);
-    assert!((list.x + list.width - (bounds[2].x + bounds[2].width) - 3.0).abs() < 0.01);
+    assert_eq!(bounds[0].x - list.x, 2.0);
+    assert!((list.x + list.width - (bounds[2].x + bounds[2].width) - 2.0).abs() < 0.01);
     assert!((bounds[0].width - bounds[1].width).abs() <= 0.5, "list={list:?}, tabs={bounds:?}");
     assert!((bounds[1].width - bounds[2].width).abs() <= 0.5, "list={list:?}, tabs={bounds:?}");
     assert_eq!(tabs[2].name, "Icon only");
@@ -203,9 +203,9 @@ fn view(ctx){column([
         .collect::<Vec<_>>();
     assert_eq!(vertical_tabs.len(), 3);
     assert!(vertical_tabs.iter().all(|tab| (tab.width - vertical_tabs[0].width).abs() < 0.01));
-    assert_eq!(vertical_tabs[0].y - vertical_list.y, 3.0);
+    assert_eq!(vertical_tabs[0].y - vertical_list.y, 2.0);
     let last = vertical_tabs.last().unwrap();
-    assert!((vertical_list.y + vertical_list.height - (last.y + last.height) - 3.0).abs() < 0.01);
+    assert!((vertical_list.y + vertical_list.height - (last.y + last.height) - 2.0).abs() < 0.01);
 }
 
 #[gpui::test]

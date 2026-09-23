@@ -13,6 +13,7 @@ fn theme() {
             selection: 0x252e56ff, disabled: 0x6d7db6ff,
         },
         spacing: #{
+            xxs: #{ unit: "pixels", value: 2.0 },
             xs: #{ unit: "pixels", value: 4.0 }, sm: #{ unit: "pixels", value: 8.0 },
             md: #{ unit: "pixels", value: 12.0 }, lg: #{ unit: "pixels", value: 16.0 },
         },

@@ -17,7 +17,8 @@ The `on_*` colors are foregrounds for text and marks rendered on their matching
 filled semantic color. Themes choose them independently; deriving them from
 `text_primary` is not reliably accessible across light and dark palettes.
 
-Spacing uses `xs`, `sm`, `md`, and `lg`. Radii use `sm`, `md`, and `lg`.
+Spacing uses `xxs`, `xs`, `sm`, `md`, and `lg`; `xxs` is the compact 2px
+structural gap/inset used by dense controls. Radii use `sm`, `md`, and `lg`.
 Official themes map all three radii to `0px`: rectangular controls and panels
 are square by default. Components give explicit half-size radii only to
 semantic circles such as Avatar, Radio, presence dots, and slider thumbs.

@@ -108,8 +108,7 @@ fn render_Tabs(ctx, props) {
         if selected {
             let indicator = row([]).with_key("indicator").with_style(ctx.component_style("indicator",
                 style().absolute().left(px(0)).right(px(0)).top(px(0)).bottom(px(0))
-                    .radius(px(5)).background(theme_color("surface_raised"))
-                    .border(px(1)).border_color(theme_color("border"))));
+                    .radius(theme_radius("sm")).background(theme_color("surface_raised"))));
             if motion_key != "" {
                 indicator = indicator.shared_layout(motion_key, "indicator")
                     .layout_motion(ctx.motion_duration("fast"), ctx.motion_easing("standard"));
@@ -143,12 +142,12 @@ fn render_Tabs(ctx, props) {
             .background(theme_color("surface")).typography("body"))); }
     }
     let list = if orientation == "vertical" { column(headers) } else { row(headers) };
-    let list_style = style().relative().padding(px(3)).gap(px(2))
-        .background(theme_color("surface_hover")).radius(px(8)).min_width(px(0));
+    let list_style = style().relative().padding(theme_spacing("xxs")).gap(theme_spacing("xxs"))
+        .background(theme_color("surface_hover")).radius(theme_radius("sm")).min_width(px(0));
     if orientation == "vertical" {
         list_style = list_style.min_width(px(120)).self_start();
     } else {
-        list_style = list_style.height(px(32)).items_center().overflow_x_scroll();
+        list_style = list_style.height(px(30)).items_center().overflow_x_scroll();
         if layout == "equal" { list_style = list_style.width(relative(1.0)); }
         else { list_style = list_style.width(auto()).self_start(); }
     }

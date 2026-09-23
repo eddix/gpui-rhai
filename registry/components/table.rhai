@@ -2,7 +2,7 @@
 {
   "id": "components/table",
   "export": "Table",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": [],
   "capabilities": {},
@@ -19,7 +19,7 @@
 //     columns: columns, height: 420 })
 
 define_component(#{
-    metadata: #{ id: "components/table", "export": "Table", version: "0.1.4",
+    metadata: #{ id: "components/table", "export": "Table", version: "0.1.5",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
         dependencies: [], capabilities: #{},
         assets: ["icons/disclosure_down.svg", "icons/chevron_right.svg", "icons/sort_ascending.svg", "icons/sort_descending.svg"] },
@@ -108,7 +108,8 @@ define_component(#{
             empty: #{ required: false, multiple: false },
         },
         parts: ["root", "header", "header_cell", "resize_handle", "body", "group_header",
-            "group_indicator", "group_label", "group_count", "loading", "empty"],
+            "group_indicator", "group_label", "group_count", "row", "row_selected",
+            "loading", "empty"],
     },
     render: Fn("render_Table")
 });
@@ -216,20 +217,24 @@ fn render_table_row(resize_signals, ctx, payload) {
         }
         cells.push(node);
     }
-    let base = style().height(px(item.height)).items_center()
+    let base = ctx.component_style("row", style().width(relative(1.0))
+        .height(px(item.height)).items_center()
         .overflow_hidden()
         .border_bottom(px(1)).border_color(theme_color("border"))
-        .background(if item.selected { theme_color("selection") }
-            else if item.striped { theme_color("surface_raised") }
-            else { rgba(0x00000000) });
-    if !item.selected {
+        .background(if item.striped { theme_color("surface_raised") }
+            else { rgba(0x00000000) }));
+    if item.selected {
+        base = ctx.component_style("row_selected",
+            base.background(theme_color("selection")));
+    } else {
         base = base.hover(style().background(theme_color("surface_hover")));
     }
     let node = row(cells)
         .with_key(payload.key)
         .with_style(base)
         .accessibility_role("row")
-        .accessibility_label(item.label);
+        .accessibility_label(item.label)
+        .accessibility_checked(item.selected);
     node.on_click_value(Fn("row_action"), #{ key: payload.key, selection: item.selection })
 }
 

@@ -26,7 +26,7 @@ const REQUIRED_COLORS: &[&str] = &[
     "selection",
     "disabled",
 ];
-const REQUIRED_SPACING: &[&str] = &["xs", "sm", "md", "lg"];
+const REQUIRED_SPACING: &[&str] = &["xxs", "xs", "sm", "md", "lg"];
 const REQUIRED_RADII: &[&str] = &["sm", "md", "lg"];
 const REQUIRED_MOTION_DURATIONS: &[&str] = &["instant", "fast", "normal", "slow", "ambient"];
 const REQUIRED_MOTION_EASINGS: &[&str] = &["standard", "entrance", "exit", "emphasized"];
@@ -1251,6 +1251,7 @@ mod tests {
                 })
                 .collect(),
             spacing: BTreeMap::from([
+                ("xxs".to_owned(), Length::Pixels(2.0)),
                 ("xs".to_owned(), Length::Pixels(4.0)),
                 ("sm".to_owned(), Length::Pixels(8.0)),
                 ("md".to_owned(), Length::Pixels(12.0)),
