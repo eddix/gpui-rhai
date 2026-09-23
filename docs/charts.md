@@ -55,7 +55,10 @@ chart::Chart(#{
 `CandlestickChart`, `PieChart`, `DonutChart`, `RadarChart`, `GaugeChart`,
 `FunnelChart`, `MapChart`, `GeoScatterChart`, and `GeoLinesChart` are ergonomic
 single-kind adapters exported by the same source module. Use `Chart` for mixed
-series or multiple coordinate regions.
+series or multiple coordinate regions. The separately installable formal
+`charts/bar_chart`, `charts/line_chart`, `charts/pie_chart`, and
+`charts/map_chart` components forward the same controlled viewport fields,
+including `viewport_revision`.
 
 Every data event identifies a datum structurally with `dataset`, `series_key`,
 `datum_key`, `region_key`, and the presented data `revision`. Business keys are
@@ -116,6 +119,9 @@ aggregate output can be bound directly. Empty filters and all-null subsets keep
 their typed columns. Large line/area series are automatically downsampled only
 for drawing. The transformed semantic data and all stable keys remain available
 to selection and accessibility, while null gaps remain separate draw segments.
+Numeric/time lines use LTTB directly; categorical lines use their stable
+category ordinal only for sampling geometry, while retaining the original
+category values and business keys.
 
 Trusted Hosts may register a typed transform with
 `RuntimeEngine::register_chart_transform`. Per-row Rhai transforms and
@@ -150,7 +156,9 @@ fn zoomed(ctx, proposal) {
 ```
 
 Cartesian zoom compiles a visible data-domain window and regenerates both
-scales and ticks; wheel callbacks are committed once per completed gesture.
+scales and ticks. Explicit Started/Moved/Ended gestures commit only at Ended;
+the short idle timer is reserved for platform input that supplies no reliable
+end phase.
 
 Chart transitions use one aggregated chart resource and the existing Motion
 theme duration/easing plus Host normal/reduced/none policy. Compatible keyed
@@ -168,6 +176,10 @@ One `(region, axis key)` compiles exactly one shared scale from every bound
 series. Stacked bars contribute positive and negative interval endpoints to the
 domain and distinct stack groups occupy distinct band slots. Gauge uses its
 radial-axis domain; Radar aligns stable indicators and uses one shared domain.
+For an unqualified Cartesian annotation, each channel binds to the first
+declared axis in that region that has non-empty visible series. Axis IDs and
+series iteration order therefore do not choose annotation mathematics; an
+empty axis group falls through to the next declared active axis.
 
 Time columns are typed epoch milliseconds. A time axis requires an explicit
 `UTC`, `offset:<minutes>`, or IANA timezone; ambiguous date strings are not

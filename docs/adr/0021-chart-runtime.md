@@ -73,8 +73,9 @@ The supported performance contract is approximately 10,000 fully interactive
 marks and 100,000 Rust-downsampled points on the reference macOS environment.
 Downsampling affects drawing only. The transformed semantic dataset, stable
 keys, active/selected accessibility projection, and provenance remain intact;
-null gaps divide independent draw segments. Semantic aggregation is explicit
-and inspectable.
+null gaps divide independent draw segments. Categorical series sample against
+stable ordinal geometry without replacing their original values or keys.
+Semantic aggregation is explicit and inspectable.
 
 ### Foreground, background, and Rhai
 
@@ -100,10 +101,12 @@ Geo region/rectangle selection; freehand lasso is deferred.
 Controlled viewport state has a committed value, transient gesture preview,
 and an explicit monotonic Host acknowledgement revision. A redraw is not an
 acknowledgement; the Host writes the proposal revision back after accepting,
-clamping, or rejecting it. Cartesian viewport state compiles into a visible
-domain window, so axes and marks always share one mapper. Mark role, structural
-mark identity, and `DatumRef` are separate types; business data cannot collide
-with legend, annotation, grid, or axis identities.
+clamping, or rejecting it. Proposal snapshots and later input generations are
+separate, so a delayed acknowledgement cannot consume a newer preview.
+Cartesian viewport state compiles into a visible domain window, so axes and
+marks always share one mapper. Mark role, structural mark identity, and
+`DatumRef` are separate types; business data cannot collide with legend,
+annotation, grid, or axis identities.
 
 Charts may join an explicit link group with a declared domain. Crosshair,
 zoom, selection, and highlight synchronization stays native and does not route

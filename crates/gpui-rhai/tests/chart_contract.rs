@@ -340,6 +340,50 @@ fn null_gaps_survive_automatic_sampling_and_semantics_keep_all_keys() {
 }
 
 #[test]
+fn categorical_line_and_area_survive_the_automatic_sampling_boundary() {
+    for kind in ["line", "area"] {
+        for row_count in [3_999, 4_000, 4_001, 10_000] {
+            let rows = (0..row_count)
+                .map(|index| {
+                    json!({
+                        "id": format!("r{index}"),
+                        "x": format!("C{index}"),
+                        "y": if index == row_count / 2 {
+                            Value::Null
+                        } else {
+                            json!(index % 7)
+                        }
+                    })
+                })
+                .collect::<Vec<_>>();
+            let scene = scene(
+                json!({
+                    "legend":{"visible":false},
+                    "series":[{"key":"s","kind":kind,"encode":{"x":"x","y":"y"}}]
+                }),
+                dataset("main", Value::Array(rows)),
+            );
+            assert_eq!(scene.semantics.len(), row_count, "{kind} {row_count}");
+            assert!(
+                scene
+                    .marks
+                    .iter()
+                    .any(|mark| mark.role == ChartMarkRole::Data),
+                "{kind} disappeared at {row_count} rows"
+            );
+            assert!(
+                scene.semantics.iter().any(|datum| datum.datum_key == "r0")
+                    && scene
+                        .semantics
+                        .iter()
+                        .any(|datum| datum.datum_key == format!("r{}", row_count - 1)),
+                "{kind} changed category identity at {row_count} rows"
+            );
+        }
+    }
+}
+
+#[test]
 fn gauge_and_radar_share_explicit_value_domains() {
     let gauge = scene(
         json!({"regions":[{"key":"main","kind":"polar"}],"axes":[{"key":"r","position":"radial","min":0,"max":100}],"series":[{"key":"g","kind":"gauge","encode":{"name":"id","value":"v"}}]}),
@@ -672,6 +716,61 @@ fn viewport_uses_the_resolved_axis_plan_for_explicit_log_and_category_scales() {
 }
 
 #[test]
+fn pan_moves_content_with_the_pointer_on_normal_and_reversed_axes() {
+    for direction in ["normal", "reversed"] {
+        let prepared = prepared(
+            json!({
+                "legend":{"visible":false},
+                "axes":[
+                    {"key":"x","position":"bottom","direction":direction,"min":0,"max":100},
+                    {"key":"y","position":"left","direction":direction,"min":0,"max":100}
+                ],
+                "series":[{"key":"s","kind":"scatter","x_axis":"x","y_axis":"y","encode":{"x":"x","y":"y"}}]
+            }),
+            [dataset(
+                "main",
+                json!([{"id":"a","x":20,"y":20},{"id":"b","x":80,"y":80}]),
+            )],
+        );
+        let base = layout_chart_scene(
+            &prepared,
+            640.0,
+            400.0,
+            &ChartTheme::default(),
+            &ChartGeoRegistry::new(),
+        )
+        .unwrap();
+        let panned = layout_chart_scene_with_viewport(
+            &prepared,
+            640.0,
+            400.0,
+            &ChartTheme::default(),
+            &ChartGeoRegistry::new(),
+            ChartViewport {
+                zoom: 1.0,
+                pan: ChartPoint { x: 20.0, y: 20.0 },
+            },
+        )
+        .unwrap();
+        let base = center(
+            base.marks
+                .iter()
+                .find(|mark| mark.role == ChartMarkRole::Data && mark.datum_key == "a")
+                .unwrap(),
+        );
+        let panned = center(
+            panned
+                .marks
+                .iter()
+                .find(|mark| mark.role == ChartMarkRole::Data && mark.datum_key == "a")
+                .unwrap(),
+        );
+        assert!((panned.x - base.x - 20.0).abs() < 0.01, "{direction}");
+        assert!((panned.y - base.y - 20.0).abs() < 0.01, "{direction}");
+    }
+}
+
+#[test]
 fn normalized_axis_and_structured_mark_identities_accept_legal_combinations() {
     let data = dataset(
         "main",
@@ -710,6 +809,97 @@ fn normalized_axis_and_structured_mark_identities_accept_legal_combinations() {
             scene.marks.len()
         );
     }
+}
+
+#[test]
+fn primary_axis_and_annotations_do_not_depend_on_axis_names_or_empty_groups() {
+    let data = dataset(
+        "main",
+        json!([
+            {"id":"a","x":0,"a":0,"b":0},
+            {"id":"b","x":1,"a":10,"b":1000}
+        ]),
+    );
+    let mut annotation_positions = Vec::new();
+    for (left, right) in [("a_left", "z_right"), ("z_left", "a_right")] {
+        let scene = scene(
+            json!({
+                "legend":{"visible":false},
+                "axes":[
+                    {"key":"x","position":"bottom"},
+                    {"key":left,"position":"left"},
+                    {"key":right,"position":"right"}
+                ],
+                "annotations":[{"key":"threshold","kind":"baseline","axis":"y","value":5}],
+                "series":[
+                    {"key":"a","kind":"line","x_axis":"x","y_axis":left,"encode":{"x":"x","y":"a"}},
+                    {"key":"b","kind":"line","x_axis":"x","y_axis":right,"encode":{"x":"x","y":"b"}}
+                ]
+            }),
+            data.clone(),
+        );
+        annotation_positions.push(center(
+            scene
+                .marks
+                .iter()
+                .find(|mark| mark.role == ChartMarkRole::Annotation)
+                .unwrap(),
+        ));
+    }
+    assert!(
+        (annotation_positions[0].y - annotation_positions[1].y).abs() < 0.01,
+        "renaming axis IDs changed annotation semantics"
+    );
+
+    let shared = dataset(
+        "main",
+        json!([{"id":"a","x":0,"y":0},{"id":"b","x":10,"y":10}]),
+    );
+    let empty = shared.select_rows(&[]).unwrap();
+    let full = ChartDataset::from_chart_rows(
+        "other",
+        &shared.rows(),
+        Some("id".to_owned()),
+        ChartDataLimits::default(),
+    )
+    .unwrap();
+    let prepared = prepared(
+        json!({
+            "axes":[
+                {"key":"x","position":"bottom"},
+                {"key":"a_empty","position":"left"},
+                {"key":"z_full","position":"right"}
+            ],
+            "annotations":[{"key":"baseline","kind":"baseline","axis":"y","value":5}],
+            "series":[
+                {"key":"empty","kind":"line","x_axis":"x","y_axis":"a_empty","encode":{"x":"x","y":"y"}},
+                {"key":"full","kind":"line","dataset":"other","x_axis":"x","y_axis":"z_full","encode":{"x":"x","y":"y"}}
+            ]
+        }),
+        [empty, full],
+    );
+    let scene = layout_chart_scene(
+        &prepared,
+        640.0,
+        400.0,
+        &ChartTheme::default(),
+        &ChartGeoRegistry::new(),
+    )
+    .unwrap();
+    assert!(
+        scene
+            .labels
+            .iter()
+            .any(|label| label.key.starts_with("axis:main:x:"))
+    );
+    assert_eq!(
+        scene
+            .marks
+            .iter()
+            .filter(|mark| mark.role == ChartMarkRole::Annotation)
+            .count(),
+        1
+    );
 }
 
 #[test]

@@ -52,6 +52,7 @@ pub struct ChartAxisDomain {
     pub full: (f64, f64),
     pub visible: (f64, f64),
     pub scale: ChartAxisScale,
+    pub direction: ChartAxisDirection,
 }
 
 impl Default for ChartViewport {
@@ -883,6 +884,31 @@ fn semantic_data(series: &[PreparedSeries]) -> Vec<ChartSemanticDatum> {
     output
 }
 
+pub(crate) fn apply_chart_selection(
+    scene: &mut PreparedChartScene,
+    selected: &BTreeSet<String>,
+    color: Rgba8,
+) {
+    let mut marks = scene.marks.to_vec();
+    for mark in &mut marks {
+        if mark.role == ChartMarkRole::Data
+            && mark
+                .datum
+                .as_ref()
+                .is_some_and(|datum| selected.contains(&datum.key))
+        {
+            mark.selected = true;
+            mark.stroke = Some((color, 2.0));
+        }
+    }
+    scene.marks = marks.into();
+    let mut semantics = scene.semantics.to_vec();
+    for datum in &mut semantics {
+        datum.selected = selected.contains(&datum.datum_key);
+    }
+    scene.semantics = semantics.into();
+}
+
 fn validate_series_dimensions(
     series: &ChartSeriesSpec,
     dataset: &ChartDataset,
@@ -1124,9 +1150,68 @@ fn layout_cartesian(
             .or_default()
             .push(*series);
     }
+    let groups = groups
+        .into_iter()
+        .filter(|(_, group)| {
+            group
+                .iter()
+                .any(|series| !series.semantic_dataset.is_empty())
+        })
+        .collect::<Vec<_>>();
+    if groups.is_empty() {
+        if let Some(series) = series.first() {
+            push_diagnostic(
+                diagnostics,
+                ChartDiagnostic {
+                    severity: ChartDiagnosticSeverity::Warning,
+                    code: "chart.empty".to_owned(),
+                    message: format!(
+                        "coordinate region `{}` has no transformed rows",
+                        series.spec.coordinate
+                    ),
+                    series: None,
+                    datum: None,
+                },
+            );
+        }
+        return Ok(());
+    }
+    let region = &groups[0].1[0].spec.coordinate;
+    let primary_axis = |channel| {
+        spec.axes
+            .iter()
+            .filter(|axis| axis.region == *region)
+            .find(|axis| {
+                let orientation_matches = match channel {
+                    ChartChannel::X => matches!(
+                        axis.position,
+                        ChartAxisPosition::Top | ChartAxisPosition::Bottom
+                    ),
+                    ChartChannel::Y => matches!(
+                        axis.position,
+                        ChartAxisPosition::Left | ChartAxisPosition::Right
+                    ),
+                    _ => false,
+                };
+                orientation_matches
+                    && groups.iter().any(|((x_key, y_key), _)| match channel {
+                        ChartChannel::X => x_key == &axis.key,
+                        ChartChannel::Y => y_key == &axis.key,
+                        _ => false,
+                    })
+            })
+            .map(|axis| axis.key.clone())
+    };
+    let primary_x = primary_axis(ChartChannel::X).unwrap_or_else(|| groups[0].0.0.clone());
+    let primary_y = primary_axis(ChartChannel::Y).unwrap_or_else(|| groups[0].0.1.clone());
+    let annotation_group = groups
+        .iter()
+        .find(|((x_key, y_key), _)| x_key == &primary_x && y_key == &primary_y)
+        .or_else(|| groups.iter().find(|((_, y_key), _)| y_key == &primary_y))
+        .or_else(|| groups.iter().find(|((x_key, _), _)| x_key == &primary_x))
+        .map_or_else(|| groups[0].0.clone(), |(keys, _)| keys.clone());
     let mut drawn_x = BTreeSet::new();
     let mut drawn_y = BTreeSet::new();
-    let mut drew_annotations = false;
     for ((x_key, y_key), group) in groups {
         let x_domain_series = series
             .iter()
@@ -1156,9 +1241,9 @@ fn layout_cartesian(
             &x_key,
             &y_key,
             axis_domains,
-            !drew_annotations,
+            (x_key.as_str(), y_key.as_str())
+                == (annotation_group.0.as_str(), annotation_group.1.as_str()),
         )?;
-        drew_annotations = true;
     }
     Ok(())
 }
@@ -1274,13 +1359,15 @@ fn layout_cartesian_group(
     };
     let horizontal_full_domain = resolve_axis_domain(x_axis, inferred_horizontal_domain);
     let vertical_full_domain = resolve_axis_domain(y_axis, inferred_vertical_domain);
+    let horizontal_direction = x_axis.map_or(ChartAxisDirection::Normal, |axis| axis.direction);
+    let vertical_direction = y_axis.map_or(ChartAxisDirection::Normal, |axis| axis.direction);
     let mut x_domain = horizontal_full_domain;
     let mut y_domain = vertical_full_domain;
     if !x_categorical {
         x_domain = viewport_domain(
             x_domain,
             viewport.zoom,
-            viewport.pan.x,
+            direction_adjusted_pan(viewport.pan.x, horizontal_direction),
             bounds.width,
             x_axis.map_or(ChartAxisScale::Linear, |axis| axis.scale),
         );
@@ -1289,7 +1376,7 @@ fn layout_cartesian_group(
         y_domain = viewport_domain(
             y_domain,
             viewport.zoom,
-            viewport.pan.y,
+            direction_adjusted_pan(viewport.pan.y, vertical_direction),
             -bounds.height,
             y_axis.map_or(ChartAxisScale::Linear, |axis| axis.scale),
         );
@@ -1307,6 +1394,7 @@ fn layout_cartesian_group(
                     scale => scale,
                 })
             },
+            direction: horizontal_direction,
         },
     );
     axis_domains.insert(
@@ -1322,6 +1410,7 @@ fn layout_cartesian_group(
                     scale => scale,
                 })
             },
+            direction: vertical_direction,
         },
     );
     let x_scale = if x_categorical {
@@ -3222,6 +3311,14 @@ fn cartesian_y_domain(series: &[&PreparedSeries], include_zero: bool) -> Option<
         }
     }
     min.zip(max)
+}
+
+fn direction_adjusted_pan(pan: f64, direction: ChartAxisDirection) -> f64 {
+    if direction == ChartAxisDirection::Reversed {
+        -pan
+    } else {
+        pan
+    }
 }
 
 fn viewport_domain(

@@ -573,15 +573,24 @@ fn downsample_lttb(
     }
     let x = require_column(input, x)?;
     let y = require_column(input, y)?;
+    let categorical_x = matches!(
+        x.data_type(),
+        super::ChartDataType::String | super::ChartDataType::Bool
+    );
     let mut segments = Vec::<Vec<(usize, f64, f64)>>::new();
     let mut current = Vec::new();
     let mut separators = Vec::<usize>::new();
     let mut pending_separator = None;
     for index in 0..input.len() {
-        if let (Some(x), Some(y)) = (
-            x.value(index).and_then(|value| value.as_number()),
-            y.value(index).and_then(|value| value.as_number()),
-        ) {
+        let x = x.value(index).and_then(|value| {
+            if categorical_x {
+                (value != ChartValue::Null).then(|| usize_to_f64(index))
+            } else {
+                value.as_number()
+            }
+        });
+        let y = y.value(index).and_then(|value| value.as_number());
+        if let (Some(x), Some(y)) = (x, y) {
             if current.is_empty()
                 && !segments.is_empty()
                 && let Some(separator) = pending_separator.take()

@@ -141,16 +141,7 @@ fn export_scene(
         geo,
         request.viewport,
     )?;
-    if !request.selected_keys.is_empty() {
-        let mut marks = scene.marks.to_vec();
-        for mark in &mut marks {
-            if request.selected_keys.contains(&mark.datum_key) {
-                mark.selected = true;
-                mark.stroke = Some((export_theme.selection, 2.0));
-            }
-        }
-        scene.marks = marks.into();
-    }
+    super::apply_chart_selection(&mut scene, &request.selected_keys, export_theme.selection);
     Ok(scene)
 }
 
@@ -379,10 +370,10 @@ mod tests {
         ChartTooltipSpec, ChartTransformRegistry, ChartValue, NativeChartData, prepare_chart_data,
     };
 
-    fn prepared() -> ChartPreparedData {
+    fn prepared_with_id(id: &str) -> ChartPreparedData {
         let rows = vec![
             BTreeMap::from([
-                ("id".to_owned(), ChartValue::String("a".to_owned())),
+                ("id".to_owned(), ChartValue::String(id.to_owned())),
                 ("x".to_owned(), ChartValue::String("A".to_owned())),
                 ("y".to_owned(), ChartValue::Number(4.0)),
             ]),
@@ -443,6 +434,10 @@ mod tests {
         .unwrap()
     }
 
+    fn prepared() -> ChartPreparedData {
+        prepared_with_id("a")
+    }
+
     #[test]
     fn svg_and_png_export_the_same_prepared_terminal_scene() {
         let prepared = prepared();
@@ -454,5 +449,28 @@ mod tests {
         assert!(svg.contains("data-key=\"data|4:main|4:bars|1:a|4:body\""));
         let png = export_chart_png(&prepared, &request, &theme, &geo).unwrap();
         assert!(png.starts_with(b"\x89PNG\r\n\x1a\n"));
+    }
+
+    #[test]
+    fn selected_business_key_does_not_style_the_legend_control() {
+        let prepared = prepared_with_id("legend");
+        let request = ChartExportRequest::terminal(640, 400, "en-US")
+            .with_view_state(ChartViewport::default(), ["legend".to_owned()]);
+        let svg = export_chart_svg(
+            &prepared,
+            &request,
+            &ChartTheme::default(),
+            &ChartGeoRegistry::new(),
+        )
+        .unwrap();
+        let legend = svg
+            .split("data-key=\"legend:bars\"")
+            .nth(1)
+            .unwrap()
+            .split("/>")
+            .next()
+            .unwrap();
+        assert!(legend.contains("stroke=\"none\""), "{legend}");
+        assert!(legend.contains("stroke-width=\"0\""), "{legend}");
     }
 }

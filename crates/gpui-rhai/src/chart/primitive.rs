@@ -19,11 +19,12 @@ use gpui::{
 };
 
 use super::{
-    ChartAxisDomain, ChartAxisScale, ChartBrushMode, ChartDataLimits, ChartDataSnapshot,
-    ChartDataset, ChartFormatterRegistry, ChartGeoRegistry, ChartMark, ChartMarkGeometry,
-    ChartMarkRole, ChartPoint, ChartPreparedData, ChartRect, ChartSeriesRegistry, ChartSpec,
-    ChartTheme, ChartTransformRegistry, ChartViewport, NativeChartData, PreparedChartScene,
-    layout_chart_scene_with_viewport, prepare_chart_data,
+    ChartAxisDirection, ChartAxisDomain, ChartAxisScale, ChartBrushMode, ChartDataLimits,
+    ChartDataSnapshot, ChartDataset, ChartFormatterRegistry, ChartGeoRegistry, ChartMark,
+    ChartMarkGeometry, ChartMarkRole, ChartPoint, ChartPreparedData, ChartRect,
+    ChartSeriesRegistry, ChartSpec, ChartTheme, ChartTransformRegistry, ChartViewport,
+    NativeChartData, PreparedChartScene, apply_chart_selection, layout_chart_scene_with_viewport,
+    prepare_chart_data,
 };
 use crate::{
     ComponentStateSchema, EffectPrimitiveDescriptor, EventSchema, ObjectField, PrimitiveDescriptor,
@@ -106,6 +107,21 @@ type ChartLinkSelections =
 struct ChartLinkedViewport {
     x: Option<(f64, f64)>,
     y: Option<(f64, f64)>,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ChartViewportProposal {
+    revision: u64,
+    input_generation: u64,
+    zoom: f64,
+    pan: ChartPoint,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum ChartWheelGesture {
+    #[default]
+    PhaseLess,
+    Explicit,
 }
 
 impl ChartLinkRegistry {
@@ -273,8 +289,10 @@ struct ChartEntity {
     wheel_generation: u64,
     viewport_preview_dirty: bool,
     viewport_commit_in_flight: bool,
+    viewport_input_generation: u64,
+    wheel_gesture: ChartWheelGesture,
     next_viewport_revision: u64,
-    pending_viewport_revision: Option<u64>,
+    pending_viewport: Option<ChartViewportProposal>,
     transition_started: Option<Instant>,
     linked_selected: BTreeSet<String>,
 }
@@ -323,8 +341,10 @@ impl ChartEntity {
             wheel_generation: 0,
             viewport_preview_dirty: false,
             viewport_commit_in_flight: false,
+            viewport_input_generation: 0,
+            wheel_gesture: ChartWheelGesture::default(),
             next_viewport_revision: viewport_revision,
-            pending_viewport_revision: None,
+            pending_viewport: None,
             transition_started: None,
             linked_selected: BTreeSet::new(),
         }
@@ -350,15 +370,13 @@ impl ChartEntity {
         let linked_selection_changed = self.linked_selected != linked_selected;
         let external_viewport_changed =
             (self.config.zoom - config.zoom).abs() > f64::EPSILON || self.config.pan != config.pan;
-        let had_pending_viewport = self.pending_viewport_revision.is_some();
+        let pending_viewport = self.pending_viewport;
+        let had_pending_viewport = pending_viewport.is_some();
         let explicit_revision_protocol = self.config.viewport_revision > 0
             || config.viewport_revision > 0
-            || self
-                .pending_viewport_revision
-                .is_some_and(|revision| revision > 1);
-        let acknowledges_pending = self
-            .pending_viewport_revision
-            .is_some_and(|revision| config.viewport_revision >= revision);
+            || pending_viewport.is_some_and(|proposal| proposal.revision > 1);
+        let acknowledges_pending =
+            pending_viewport.is_some_and(|proposal| config.viewport_revision >= proposal.revision);
         let legacy_acknowledgement =
             had_pending_viewport && !explicit_revision_protocol && external_viewport_changed;
         let programmatic_viewport_change = !had_pending_viewport && external_viewport_changed;
@@ -368,8 +386,8 @@ impl ChartEntity {
             || self.config.theme.motion_quality() != config.theme.motion_quality();
         let acknowledge_viewport =
             acknowledges_pending || legacy_acknowledgement || programmatic_viewport_change;
-        let local_viewport_changed = acknowledge_viewport
-            && ((self.zoom - config.zoom).abs() > f64::EPSILON || self.pan != config.pan);
+        let committed_viewport = acknowledge_viewport.then_some((config.zoom, config.pan));
+        let previous_local_viewport = (self.zoom, self.pan);
         self.config = config;
         self.linked_selected = linked_selected;
         if previous_link != next_link
@@ -382,21 +400,41 @@ impl ChartEntity {
             });
         }
         if acknowledge_viewport {
-            self.zoom = self.config.zoom;
-            self.pan = self.config.pan;
+            let has_newer_preview = pending_viewport
+                .is_some_and(|proposal| self.viewport_input_generation > proposal.input_generation);
+            if let Some(proposal) = pending_viewport.filter(|_| has_newer_preview) {
+                let zoom_ratio = if proposal.zoom.abs() > f64::EPSILON {
+                    self.zoom / proposal.zoom
+                } else {
+                    1.0
+                };
+                self.zoom = (self.config.zoom * zoom_ratio).clamp(0.5, 20.0);
+                self.pan = ChartPoint {
+                    x: self.config.pan.x + self.pan.x - proposal.pan.x,
+                    y: self.config.pan.y + self.pan.y - proposal.pan.y,
+                };
+                self.viewport_preview_dirty = true;
+            } else {
+                self.zoom = self.config.zoom;
+                self.pan = self.config.pan;
+                self.viewport_preview_dirty = false;
+                self.wheel_generation = self.wheel_generation.saturating_add(1);
+                self.wheel_commit_task = None;
+            }
             self.viewport_commit_in_flight = false;
-            self.viewport_preview_dirty = false;
             self.next_viewport_revision = self
                 .next_viewport_revision
                 .max(self.config.viewport_revision);
-            self.pending_viewport_revision = None;
-            self.wheel_commit_task = None;
+            self.pending_viewport = None;
         }
+        let local_viewport_changed = acknowledge_viewport
+            && ((previous_local_viewport.0 - self.zoom).abs() > f64::EPSILON
+                || previous_local_viewport.1 != self.pan);
         self.events = events;
-        if acknowledge_viewport && let Some(key) = next_link.clone() {
+        if let (Some((zoom, pan)), Some(key)) = (committed_viewport, next_link.clone()) {
             let links = self.links.clone();
             let source = cx.weak_entity();
-            let viewport = self.linked_viewport();
+            let viewport = self.linked_viewport_for(zoom, pan);
             cx.defer(move |cx| links.broadcast_zoom(&key, &source, viewport, cx));
         }
         if let Some(key) = next_link
@@ -510,7 +548,7 @@ impl ChartEntity {
                         &geo,
                         viewport,
                     )?;
-                    apply_selection(&mut scene, &selected, theme.selection);
+                    apply_chart_selection(&mut scene, &selected, theme.selection);
                     Ok::<_, super::ChartPrepareError>(scene)
                 })
                 .await;
@@ -555,7 +593,7 @@ impl ChartEntity {
         }
     }
 
-    fn linked_viewport(&self) -> ChartLinkedViewport {
+    fn linked_viewport_for(&self, zoom: f64, pan: ChartPoint) -> ChartLinkedViewport {
         let Some(scene) = &self.scene else {
             return ChartLinkedViewport::default();
         };
@@ -565,12 +603,12 @@ impl ChartEntity {
         ChartLinkedViewport {
             x: scene.axis_domains.iter().find_map(|(key, domain)| {
                 (key.contains(":x:") && domain.scale != ChartAxisScale::Category)
-                    .then(|| linked_visible_domain(*domain, self.zoom, self.pan.x, plot.width))
+                    .then(|| linked_visible_domain(*domain, zoom, pan.x, plot.width))
                     .flatten()
             }),
             y: scene.axis_domains.iter().find_map(|(key, domain)| {
                 (key.contains(":y:") && domain.scale != ChartAxisScale::Category)
-                    .then(|| linked_visible_domain(*domain, self.zoom, self.pan.y, -plot.height))
+                    .then(|| linked_visible_domain(*domain, zoom, pan.y, -plot.height))
                     .flatten()
             }),
         }
@@ -642,6 +680,7 @@ impl ChartEntity {
             if let Some(origin) = self.pan_origin {
                 self.pan.x += f64::from(event.position.x - origin.x);
                 self.pan.y += f64::from(event.position.y - origin.y);
+                self.viewport_input_generation = self.viewport_input_generation.saturating_add(1);
                 self.viewport_preview_dirty = true;
                 self.pan_origin = Some(event.position);
                 self.rebuild_scene_with_motion(cx, false);
@@ -736,9 +775,15 @@ impl ChartEntity {
     fn wheel(&mut self, event: &ScrollWheelEvent, window: &mut Window, cx: &mut Context<Self>) {
         let delta = event.delta.pixel_delta(px(16.0));
         if matches!(event.touch_phase, gpui::TouchPhase::Ended) {
+            self.wheel_gesture = ChartWheelGesture::PhaseLess;
             self.emit_viewport_change(window, cx);
             cx.stop_propagation();
             return;
+        }
+        if matches!(event.touch_phase, gpui::TouchPhase::Started) {
+            self.wheel_gesture = ChartWheelGesture::Explicit;
+            self.wheel_generation = self.wheel_generation.saturating_add(1);
+            self.wheel_commit_task = None;
         }
         let factor = (-f64::from(delta.y) / 400.0).exp();
         let next = (self.zoom * factor).clamp(0.5, 20.0);
@@ -746,9 +791,13 @@ impl ChartEntity {
             return;
         }
         self.zoom = next;
+        self.viewport_input_generation = self.viewport_input_generation.saturating_add(1);
         self.viewport_preview_dirty = true;
         self.rebuild_scene_with_motion(cx, false);
         cx.stop_propagation();
+        if self.wheel_gesture == ChartWheelGesture::Explicit {
+            return;
+        }
         if event.delta.precise() {
             self.schedule_wheel_commit(window, cx);
         } else {
@@ -780,7 +829,12 @@ impl ChartEntity {
             .max(self.config.viewport_revision)
             .saturating_add(1);
         let viewport_revision = self.next_viewport_revision;
-        self.pending_viewport_revision = Some(viewport_revision);
+        self.pending_viewport = Some(ChartViewportProposal {
+            revision: viewport_revision,
+            input_generation: self.viewport_input_generation,
+            zoom: self.zoom,
+            pan: self.pan,
+        });
         self.wheel_generation = self.wheel_generation.saturating_add(1);
         self.wheel_commit_task = None;
         let events = self.events.clone();
@@ -1568,7 +1622,12 @@ fn linked_pan(domain: ChartAxisDomain, visible: (f64, f64), range: f64, zoom: f6
     }
     let full_center = f64::midpoint(full.0, full.1);
     let visible_center = f64::midpoint(visible.0, visible.1);
-    (full_center - visible_center) * range * zoom / full_span
+    let pan = (full_center - visible_center) * range * zoom / full_span;
+    if domain.direction == ChartAxisDirection::Reversed {
+        -pan
+    } else {
+        pan
+    }
 }
 
 fn axis_domain_space(domain: (f64, f64), scale: ChartAxisScale) -> Option<(f64, f64)> {
@@ -1591,6 +1650,11 @@ fn linked_visible_domain(
         return Some(domain.full);
     }
     let visible_span = span / zoom;
+    let pan = if domain.direction == ChartAxisDirection::Reversed {
+        -pan
+    } else {
+        pan
+    };
     let center = f64::midpoint(full.0, full.1) - pan * span / (range * zoom);
     let visible = (center - visible_span / 2.0, center + visible_span / 2.0);
     if domain.scale == ChartAxisScale::Log {
@@ -1694,31 +1758,6 @@ fn chart_motion_duration(config: &ChartConfig) -> Option<Duration> {
         millis
     };
     Some(Duration::from_millis(millis))
-}
-
-fn apply_selection(
-    scene: &mut PreparedChartScene,
-    selected: &BTreeSet<String>,
-    color: crate::Rgba8,
-) {
-    let mut marks = scene.marks.to_vec();
-    for mark in &mut marks {
-        if mark.role == ChartMarkRole::Data
-            && mark
-                .datum
-                .as_ref()
-                .is_some_and(|datum| selected.contains(&datum.key))
-        {
-            mark.selected = true;
-            mark.stroke = Some((color, 2.0));
-        }
-    }
-    scene.marks = marks.into();
-    let mut semantics = scene.semantics.to_vec();
-    for datum in &mut semantics {
-        datum.selected = selected.contains(&datum.datum_key);
-    }
-    scene.semantics = semantics.into();
 }
 
 fn mark_payload(mark: &ChartMark, revision: u64) -> UiValue {
@@ -2370,21 +2409,27 @@ mod tests {
 
     #[test]
     fn linked_domain_round_trip_is_independent_of_chart_size_and_full_domain() {
-        let source = ChartAxisDomain {
-            full: (0.0, 100.0),
-            visible: (0.0, 100.0),
-            scale: ChartAxisScale::Linear,
-        };
-        let source_visible = linked_visible_domain(source, 2.0, 40.0, 500.0).unwrap();
-        let target = ChartAxisDomain {
-            full: (-100.0, 300.0),
-            visible: (-100.0, 300.0),
-            scale: ChartAxisScale::Linear,
-        };
-        let target_zoom = (target.full.1 - target.full.0) / (source_visible.1 - source_visible.0);
-        let target_pan = linked_pan(target, source_visible, 900.0, target_zoom);
-        let target_visible = linked_visible_domain(target, target_zoom, target_pan, 900.0).unwrap();
-        assert!((source_visible.0 - target_visible.0).abs() < 0.000_001);
-        assert!((source_visible.1 - target_visible.1).abs() < 0.000_001);
+        for direction in [ChartAxisDirection::Normal, ChartAxisDirection::Reversed] {
+            let source = ChartAxisDomain {
+                full: (0.0, 100.0),
+                visible: (0.0, 100.0),
+                scale: ChartAxisScale::Linear,
+                direction,
+            };
+            let source_visible = linked_visible_domain(source, 2.0, 40.0, 500.0).unwrap();
+            let target = ChartAxisDomain {
+                full: (-100.0, 300.0),
+                visible: (-100.0, 300.0),
+                scale: ChartAxisScale::Linear,
+                direction,
+            };
+            let target_zoom =
+                (target.full.1 - target.full.0) / (source_visible.1 - source_visible.0);
+            let target_pan = linked_pan(target, source_visible, 900.0, target_zoom);
+            let target_visible =
+                linked_visible_domain(target, target_zoom, target_pan, 900.0).unwrap();
+            assert!((source_visible.0 - target_visible.0).abs() < 0.000_001);
+            assert!((source_visible.1 - target_visible.1).abs() < 0.000_001);
+        }
     }
 }

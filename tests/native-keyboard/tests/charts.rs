@@ -41,6 +41,22 @@ fn mount(cx: &mut TestAppContext, script: &str, name: &str) -> (WindowHandle<Hos
                 ModuleId::parse("charts/chart").unwrap(),
                 source("registry/charts/chart.rhai"),
             ),
+            (
+                ModuleId::parse("charts/bar_chart").unwrap(),
+                source("registry/charts/bar_chart.rhai"),
+            ),
+            (
+                ModuleId::parse("charts/line_chart").unwrap(),
+                source("registry/charts/line_chart.rhai"),
+            ),
+            (
+                ModuleId::parse("charts/pie_chart").unwrap(),
+                source("registry/charts/pie_chart.rhai"),
+            ),
+            (
+                ModuleId::parse("charts/map_chart").unwrap(),
+                source("registry/charts/map_chart.rhai"),
+            ),
         ])),
         source("registry/themes/default_dark.rhai"),
     )
@@ -155,6 +171,32 @@ fn chart_position(
     )
 }
 
+fn click_named(
+    visual: &mut VisualTestContext,
+    view: &ScriptViewHandle,
+    role: &str,
+    name: &str,
+) {
+    let bounds = visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .find_by_role_and_name(role, name)
+            .next()
+            .unwrap()
+            .geometry
+            .unwrap()
+            .visual
+    });
+    visual.simulate_click(
+        point(
+            px((bounds.x + bounds.width / 2.0) as f32),
+            px((bounds.y + bounds.height / 2.0) as f32),
+        ),
+        Modifiers::default(),
+    );
+    visual.run_until_parked();
+}
+
 #[gpui::test]
 fn chart_phase_less_mouse_wheel_commits(cx: &mut TestAppContext) {
     cx.update(gpui_rhai::install);
@@ -186,6 +228,10 @@ fn chart_trackpad_preview_survives_intermediate_draw(cx: &mut TestAppContext) {
         ..Default::default()
     });
     pump(cx, &mut visual);
+    assert!(
+        status(&mut visual, &view).starts_with("0|"),
+        "an explicitly started gesture committed before Ended"
+    );
     visual.simulate_event(ScrollWheelEvent {
         position,
         delta: ScrollDelta::Pixels(point(px(0.0), px(0.0))),
@@ -232,6 +278,48 @@ fn unrelated_host_render_does_not_acknowledge_a_viewport_proposal(cx: &mut TestA
         (zoom - (-0.08_f64).exp()).abs() < 0.00001,
         "unrelated script state update reset the pending preview: {result}"
     );
+}
+
+#[gpui::test]
+fn acknowledging_an_old_proposal_preserves_the_current_gesture(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let script = r#"import "charts/chart" as chart;
+ fn state_schema(){#{fields:#{count:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}},rev:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}},z:#{schema:#{type:"float"},"default":#{type:"float",value:1.0}},pending_rev:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}},pending_z:#{schema:#{type:"float"},"default":#{type:"float",value:1.0}}}}}
+ fn zoomed(ctx,p){ctx.set_state("count",ctx.get_state("count")+1);ctx.set_state("pending_rev",p.viewport_revision);ctx.set_state("pending_z",p.zoom);}
+ fn acknowledge(ctx,p){ctx.set_state("rev",ctx.get_state("pending_rev"));ctx.set_state("z",ctx.get_state("pending_z"));}
+ fn view(ctx){column([text("Status").accessibility_role("status").accessibility_label(`${ctx.get_state("count")}|${ctx.get_state("pending_z")}`),text("Acknowledge").accessibility_role("button").accessibility_label("Acknowledge").on_click(Fn("acknowledge")).with_style(style().width(px(140)).height(px(32))),chart::Chart(#{key:"c",key_dimension:"id",zoom:ctx.get_state("z"),viewport_revision:ctx.get_state("rev"),data:[#{id:"a",x:0,y:0},#{id:"b",x:1,y:1}],spec:#{title:"Control",series:[#{key:"s",kind:"scatter",encode:#{x:"x",y:"y"}}]},on_zoom_change:Fn("zoomed")}).with_style(style().width(px(420)).height(px(300)))])}"#;
+    let (window, view) = mount(cx, script, "chart-overlapping-ack");
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    pump(cx, &mut visual);
+    let position = chart_position(&mut visual, &view);
+    visual.simulate_event(ScrollWheelEvent {
+        position,
+        delta: ScrollDelta::Lines(point(0.0, 1.0)),
+        touch_phase: gpui::TouchPhase::Moved,
+        ..Default::default()
+    });
+    visual.run_until_parked();
+    assert!(status(&mut visual, &view).starts_with("1|"));
+
+    visual.simulate_event(ScrollWheelEvent {
+        position,
+        delta: ScrollDelta::Pixels(point(px(0.0), px(40.0))),
+        touch_phase: gpui::TouchPhase::Started,
+        ..Default::default()
+    });
+    visual.run_until_parked();
+    click_named(&mut visual, &view, "button", "Acknowledge");
+    visual.simulate_event(ScrollWheelEvent {
+        position,
+        delta: ScrollDelta::Pixels(point(px(0.0), px(0.0))),
+        touch_phase: gpui::TouchPhase::Ended,
+        ..Default::default()
+    });
+    pump(cx, &mut visual);
+    let result = status(&mut visual, &view);
+    assert_eq!(result.split('|').next(), Some("2"), "{result}");
+    let proposed = result.split('|').nth(1).unwrap().parse::<f64>().unwrap();
+    assert!((proposed - (-0.14_f64).exp()).abs() < 0.00001, "{result}");
 }
 
 #[gpui::test]
@@ -296,6 +384,39 @@ fn chart_adapter_normalizes_full_spec_series_kind(cx: &mut TestAppContext) {
         panic!("missing spec")
     };
     assert_eq!(ChartSpec::from_ui_value(spec).unwrap().series[0].kind, ChartSeriesKind::Bar);
+}
+
+#[gpui::test]
+fn formal_chart_adapters_forward_the_viewport_revision(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    for (name, script) in [
+        (
+            "bar",
+            r#"import "charts/bar_chart" as adapter;fn view(ctx){adapter::BarChart(#{key:"c",key_dimension:"id",viewport_revision:7,data:[#{id:"a",x:"A",y:1}],encode:#{x:"x",y:"y"}})}"#,
+        ),
+        (
+            "line",
+            r#"import "charts/line_chart" as adapter;fn view(ctx){adapter::LineChart(#{key:"c",key_dimension:"id",viewport_revision:7,data:[#{id:"a",x:"A",y:1}],encode:#{x:"x",y:"y"}})}"#,
+        ),
+        (
+            "pie",
+            r#"import "charts/pie_chart" as adapter;fn view(ctx){adapter::PieChart(#{key:"c",key_dimension:"id",viewport_revision:7,data:[#{id:"a",name:"A",value:1}],encode:#{name:"name",value:"value"}})}"#,
+        ),
+        (
+            "map",
+            r#"import "charts/map_chart" as adapter;fn view(ctx){adapter::MapChart(#{key:"c",key_dimension:"id",viewport_revision:7,map:"world",data:[#{id:"a",name:"A",value:1}],encode:#{name:"name",value:"value"}})}"#,
+        ),
+    ] {
+        let (_, view) = mount(cx, script, &format!("formal-{name}-viewport"));
+        let root = cx.update(|app| view.root(app).unwrap().unwrap());
+        let UiNodeKind::Custom { primitive } = root.kind() else {
+            panic!("formal {name} adapter must produce the chart primitive")
+        };
+        assert!(matches!(
+            primitive.props.get("viewport_revision"),
+            Some(PrimitiveValue::Data(UiValue::Integer(7)))
+        ));
+    }
 }
 
 #[gpui::test]

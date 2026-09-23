@@ -52,3 +52,4 @@ pub use transform::{
 };
 
 pub(crate) use data::register_chart_data_api;
+pub(crate) use scene::apply_chart_selection;
