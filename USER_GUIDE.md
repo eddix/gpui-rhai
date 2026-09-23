@@ -784,11 +784,17 @@ Aetheria variants. See [Bundled themes](docs/bundled-themes.md),
 
 Enable the optional `charts` Cargo feature or run `gpui-rhai add chart` to use
 the source-owned `charts/chart` component over the native Chart Runtime. Small
-Rhai object arrays become typed columns once; large and streaming data remains
+Rhai object arrays are cached as typed columns until their durable content
+changes; large and streaming data remains
 Rust-owned in `NativeChartData` and is read with
 `ctx.get_native_chart_data(name)`. Pointer/wheel hot paths, transforms,
 downsampling, layout, motion, hit testing, linked charts, accessibility
 projection, and export do not execute per-datum Rhai.
+
+Selection and viewport props are controlled. A gesture emits one proposal at
+commit; the next Host render accepts, clamps, or rejects it. Selection and brush
+events include dataset, series, region, datum, and presented revision identity,
+so Hosts should not infer chart control roles from application key strings.
 
 The first release includes Bar/Stacked Bar, Line/Area, Scatter, Pie/Donut,
 Heatmap, Map/Choropleth, GeoScatter, GeoLines, Candlestick, Radar, Gauge, and

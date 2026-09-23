@@ -128,23 +128,25 @@ viewport-wrap resize. It deliberately includes
 Rhai execution and native presentation work; the core diff timer alone is not
 presented as end-to-end performance.
 
-The same harness emits `gpui-rhai-chart-e2e-v1`: it mounts the complete Chart
+The same harness emits `gpui-rhai-chart-e2e-v2`: it mounts the complete Chart
 Gallery, lays out and paints a 100,000-row `NativeChartData` line series,
 alternates native window sizes, and measures bounded 128-row sliding-window
-revisions through foreground scene installation. Set
+revisions through foreground scene installation. Version 2 asserts that the
+target `NativeChartData` revision is actually installed before recording a
+sample; earlier reports could stop after scheduling background work. Set
 `GPUI_RHAI_CHART_BENCH_POINTS` to change the point count. Compare chart reports
 only when theme, window/display configuration, feature set, and point count
 match.
 
-Chart reference smoke on 2026-09-23, Macmini9,1, macOS 26.6.2,
+Chart contract baseline on 2026-09-23, Macmini9,1, macOS 26.6.2,
 `rustc 1.94.0`, release profile, 100,000 points, one warmup and three measured
 samples:
 
 ```text
-gallery prepare                         = 120.08ms
-mount and terminal first frame          =  69.35ms
-native resize p50 / p95                 =  22.41 / 22.56ms
-128-row sliding update p50 / p95        =  47.59 / 47.72ms
+gallery prepare                         = 132.59ms
+mount and terminal first frame          = 118.20ms
+native resize p50 / p95                 =  25.41 / 25.71ms
+128-row sliding update p50 / p95        =  81.54 / 81.99ms
 Rhai operations after streaming updates =   0
 ```
 

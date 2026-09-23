@@ -969,10 +969,13 @@ impl ScriptViewHandle {
             .runtime()
             .borrow()
             .geometry_for(Some(&view.view_id));
-        Ok(crate::AccessibilityTree::from_presented(
-            view.lifecycle.retained(),
-            &geometry,
-        )?)
+        let mut tree =
+            crate::AccessibilityTree::from_presented(view.lifecycle.retained(), &geometry)?;
+        tree.apply_primitive_projections(
+            view.primitives
+                .accessibility_projections(view.lifecycle.retained(), cx),
+        );
+        Ok(tree)
     }
 
     /// Snapshot the stable language-neutral automation tree.
@@ -1015,8 +1018,12 @@ impl ScriptViewHandle {
                     .runtime()
                     .borrow()
                     .geometry_for(Some(&view.view_id));
-                let tree =
+                let mut tree =
                     crate::AccessibilityTree::from_presented(view.lifecycle.retained(), &geometry)?;
+                tree.apply_primitive_projections(
+                    view.primitives
+                        .accessibility_projections(view.lifecycle.retained(), cx),
+                );
                 let id = crate::automation::resolve_locator(&tree, &locator)?;
                 let node = tree
                     .node(id)
@@ -3566,8 +3573,12 @@ impl ScriptHostView {
         self.clear_failure();
         let runtime = self.lifecycle.runtime();
         let geometry = runtime.borrow().geometry_for(Some(&self.view_id));
-        let accessibility =
+        let mut accessibility =
             crate::AccessibilityTree::from_presented(self.lifecycle.retained(), &geometry)?;
+        accessibility.apply_primitive_projections(
+            self.primitives
+                .accessibility_projections(self.lifecycle.retained(), cx),
+        );
         let target = crate::automation::resolve_locator(&accessibility, locator)?;
         let target_node = self
             .lifecycle

@@ -56,6 +56,12 @@ chart::Chart(#{
 single-kind adapters exported by the same source module. Use `Chart` for mixed
 series or multiple coordinate regions.
 
+Every data event identifies a datum structurally with `dataset`, `series_key`,
+`datum_key`, `region_key`, and the presented data `revision`. Business keys are
+never interpreted as legend, axis, or annotation roles. Brush events retain a
+bounded `keys` list for simple controlled state and additionally expose
+unambiguous `data` references for linked or multi-series charts.
+
 The first coordinate systems are `cartesian_2d`, `polar`, and `geo_2d`.
 Regions are named and series bind to them explicitly. One chart may contain a
 grid of multiple regions.
@@ -103,10 +109,12 @@ pipelines support:
 - moving window;
 - LTTB line/area downsampling.
 
-Transforms execute in Rust on immutable candidates. Large line/area series are
-automatically downsampled for drawing when no explicit policy is supplied.
-Rendered marks retain original datum keys; Inspector diagnostics disclose the
-sample count. Aggregation intentionally creates new semantic data.
+Transforms execute in Rust on immutable candidates. Every stage preserves or
+declares its output schema; encode validation happens after the pipeline, so an
+aggregate output can be bound directly. Empty filters and all-null subsets keep
+their typed columns. Large line/area series are automatically downsampled only
+for drawing. The transformed semantic data and all stable keys remain available
+to selection and accessibility, while null gaps remain separate draw segments.
 
 Trusted Hosts may register a typed transform with
 `RuntimeEngine::register_chart_transform`. Per-row Rhai transforms and
@@ -124,6 +132,12 @@ Selection (`selected_keys`), legend visibility (`hidden_series`), and viewport
 `link_group` and `link_domain` synchronize hover, selection highlight, zoom,
 and pan through weak native entity links without Rhai event fan-out.
 
+Viewport gestures maintain a transient native preview, but the next Host render
+is the acknowledgement boundary. Repeating an unchanged controlled value
+rejects the proposal instead of allowing preview state to drift. Cartesian zoom
+compiles a visible data-domain window and regenerates both scales and ticks;
+wheel callbacks are committed once per completed gesture.
+
 Chart transitions use one aggregated chart resource and the existing Motion
 theme duration/easing plus Host normal/reduced/none policy. Compatible keyed
 rectangles, circles, polylines, and polygons interpolate; entering lines draw by
@@ -135,6 +149,11 @@ global Motion sources.
 Axes support auto/linear/log/category/time scales, explicit normal/reversed
 direction, position, domain, title, and declarative formatting. RTL changes
 text and legend layout, never axis direction implicitly.
+
+One `(region, axis key)` compiles exactly one shared scale from every bound
+series. Stacked bars contribute positive and negative interval endpoints to the
+domain and distinct stack groups occupy distinct band slots. Gauge uses its
+radial-axis domain; Radar aligns stable indicators and uses one shared domain.
 
 Time columns are typed epoch milliseconds. A time axis requires an explicit
 `UTC`, `offset:<minutes>`, or IANA timezone; ambiguous date strings are not
@@ -169,20 +188,25 @@ rectangle/region selection. Freehand lasso is not part of 0.1.5.
 ## Rust extensions and export
 
 `RuntimeEngine::register_chart_series` installs a compile-time trusted custom
-series renderer. It receives the typed dataset, coordinate scales, plot bounds,
-and resolved chart theme, and returns public `ChartMark` geometry. Returned
-marks are validated for series identity, duplicate keys, finite geometry, and
-budgets, then join the same motion, hit-test, tooltip, semantic, Inspector, and
-export scene as built-ins. Dynamic libraries, downloaded plugins, Wasm, and a
-Rhai `renderItem` equivalent are outside the trust model.
+series renderer. It receives typed data, custom options, theme, and a typed
+Cartesian, Polar, or Geo coordinate context. Returned marks declare a role,
+region, and optional `ChartDatumRef`; identity, geometry, coordinate ownership,
+and budgets are validated before commit. Duplicate registration is atomic and
+never replaces the installed implementation.
 
 Host-only `export_chart_svg` and `export_chart_png` render an explicit terminal
-scene with bounded size, locale, theme, data revision, and registered geo
-sources. They return bytes/text and grant Rhai no filesystem authority.
+scene with bounded size, complete locale context, optional acknowledged
+viewport/selection, data revision, and registered geo sources. PNG uses the
+same system-font environment as the SVG adapter, including CJK fallback.
+
+The retained figure's accessibility projection includes the presented revision,
+summary, stable active datum, selected data outside the draw sample, and bounded
+counts. Keyboard focus is retained by mark identity rather than array index.
 
 ## Performance contract
 
-The target envelope is roughly 10,000 fully interactive marks or 100,000
+The hard envelope is 10,000 interactive marks, 200,000 total marks,
+2,000,000 prepared vertices, or 100,000
 Rust-downsampled/streaming points on the reference macOS environment. The
 `chart_gallery` example includes all built-in series and a 100,000-row
 `NativeChartData` line series:

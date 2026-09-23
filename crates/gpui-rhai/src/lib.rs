@@ -194,10 +194,11 @@ pub use overlay::{
     OverlayPlacement, OverlaySpec, PlacementResult, TooltipScheduler, TooltipTransition,
 };
 pub use primitive::{
-    EffectPrimitiveDescriptor, PrimitiveDescriptor, PrimitiveError, PrimitiveEventEmitter,
-    PrimitiveHandler, PrimitiveId, PrimitiveInstance, PrimitiveInstanceId, PrimitiveNode,
-    PrimitivePlatform, PrimitiveProps, PrimitiveRegistry, PrimitiveResourceError,
-    PrimitiveResourceHandle, PrimitiveResourceScope, PrimitiveTheme, PrimitiveValue,
+    EffectPrimitiveDescriptor, PrimitiveAccessibilityProjection, PrimitiveDescriptor,
+    PrimitiveError, PrimitiveEventEmitter, PrimitiveHandler, PrimitiveId, PrimitiveInstance,
+    PrimitiveInstanceId, PrimitiveNode, PrimitivePlatform, PrimitiveProps, PrimitiveRegistry,
+    PrimitiveResourceError, PrimitiveResourceHandle, PrimitiveResourceScope, PrimitiveTheme,
+    PrimitiveValue,
 };
 pub use range_input::{RangeInputPrimitiveHandler, range_input_primitive_descriptor};
 pub use reload::{LiveScript, ReloadOutcome};

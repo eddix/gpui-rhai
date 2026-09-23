@@ -22,8 +22,9 @@ pub use export::{
     ChartExportError, ChartExportMotion, ChartExportRequest, export_chart_png, export_chart_svg,
 };
 pub use extension::{
-    ChartCustomSeriesContext, ChartFormatterError, ChartFormatterRegistry,
-    ChartSeriesExtensionError, ChartSeriesRegistry, HostChartFormatter, HostChartSeries,
+    ChartCustomCoordinateContext, ChartCustomSeriesContext, ChartFormatterError,
+    ChartFormatterRegistry, ChartSeriesExtensionError, ChartSeriesRegistry, HostChartFormatter,
+    HostChartSeries,
 };
 pub use geo::{
     ChartGeoBounds, ChartGeoError, ChartGeoFeature, ChartGeoMap, ChartGeoPoint, ChartGeoProjection,
@@ -32,9 +33,10 @@ pub use geo::{
 pub use primitive::{ChartPrimitiveHandler, chart_primitive_descriptor};
 pub use scale::{ChartScale, ChartScaleError, ChartTick};
 pub use scene::{
-    ChartLabel, ChartLabelAnchor, ChartMark, ChartMarkGeometry, ChartPoint, ChartPrepareError,
-    ChartPreparedData, ChartRect, ChartSemanticDatum, ChartTheme, PreparedChartScene,
-    interpolate_chart_scene, layout_chart_scene, prepare_chart_data,
+    ChartAxisDomain, ChartDatumRef, ChartLabel, ChartLabelAnchor, ChartMark, ChartMarkGeometry,
+    ChartMarkRole, ChartPoint, ChartPrepareError, ChartPreparedData, ChartRect, ChartSemanticDatum,
+    ChartTheme, ChartViewport, PreparedChartScene, interpolate_chart_scene, layout_chart_scene,
+    layout_chart_scene_with_viewport, prepare_chart_data,
 };
 pub use spec::{
     ChartAnnotation, ChartAnnotationKind, ChartAnnotationValue, ChartAxisDirection,

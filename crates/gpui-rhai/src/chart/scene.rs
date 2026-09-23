@@ -23,6 +23,8 @@ use crate::Rgba8;
 
 const MAX_DIAGNOSTICS: usize = 100;
 const MAX_INTERACTIVE_MARKS: usize = 10_000;
+const MAX_SCENE_MARKS: usize = 200_000;
+const MAX_SCENE_VERTICES: usize = 2_000_000;
 const DEFAULT_SAMPLE_THRESHOLD: usize = 4_000;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -37,6 +39,27 @@ pub struct ChartRect {
     pub y: f64,
     pub width: f64,
     pub height: f64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ChartViewport {
+    pub zoom: f64,
+    pub pan: ChartPoint,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ChartAxisDomain {
+    pub full: (f64, f64),
+    pub visible: (f64, f64),
+}
+
+impl Default for ChartViewport {
+    fn default() -> Self {
+        Self {
+            zoom: 1.0,
+            pan: ChartPoint::default(),
+        }
+    }
 }
 
 impl ChartRect {
@@ -72,9 +95,29 @@ pub enum ChartMarkGeometry {
     CompoundPolygon(Arc<[Arc<[ChartPoint]>]>),
 }
 
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct ChartDatumRef {
+    pub dataset: String,
+    pub series: String,
+    pub key: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ChartMarkRole {
+    Data,
+    Legend,
+    Annotation,
+    Axis,
+    Grid,
+    Decoration,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct ChartMark {
     pub key: String,
+    pub region_key: String,
+    pub role: ChartMarkRole,
+    pub datum: Option<ChartDatumRef>,
     pub series_key: String,
     pub datum_key: String,
     pub geometry: ChartMarkGeometry,
@@ -123,6 +166,8 @@ pub struct ChartTheme {
     pub selection: Rgba8,
     pub map_missing: Rgba8,
     pub crosshair: Rgba8,
+    pub tooltip_surface: Rgba8,
+    pub tooltip_text: Rgba8,
     pub palette: Arc<[Rgba8]>,
     pub locale: String,
     pub number: Option<crate::NumberMetadata>,
@@ -143,6 +188,8 @@ impl Default for ChartTheme {
             selection: Rgba8::from_rgb_hex(0x007a_a2f7),
             map_missing: Rgba8::from_rgb_hex(0x0030_353f),
             crosshair: Rgba8::from_rgb_hex(0x00c0_caf5),
+            tooltip_surface: Rgba8::from_rgb_hex(0x0018_1b22),
+            tooltip_text: Rgba8::from_rgb_hex(0x00e6_e9ef),
             palette: vec![
                 Rgba8::from_rgb_hex(0x007a_a2f7),
                 Rgba8::from_rgb_hex(0x007d_cf91),
@@ -165,8 +212,10 @@ impl Default for ChartTheme {
 #[derive(Clone, Debug)]
 struct PreparedSeries {
     spec: ChartSeriesSpec,
+    semantic_dataset: ChartDataset,
     dataset: ChartDataset,
     sampled: bool,
+    color_index: usize,
 }
 
 #[derive(Clone, Debug)]
@@ -209,8 +258,12 @@ pub struct PreparedChartScene {
     pub width: f64,
     pub height: f64,
     pub plot_regions: BTreeMap<String, ChartRect>,
+    pub axis_domains: BTreeMap<String, ChartAxisDomain>,
     pub marks: Arc<[ChartMark]>,
     pub labels: Arc<[ChartLabel]>,
+    /// Bounded semantic data is derived from the transformed data set, not the
+    /// draw sample, so downsampling never makes a selected datum disappear.
+    pub semantics: Arc<[ChartSemanticDatum]>,
     pub diagnostics: Arc<[ChartDiagnostic]>,
     pub summary: String,
     pub sampled_series: Arc<[String]>,
@@ -219,25 +272,23 @@ pub struct PreparedChartScene {
 impl PreparedChartScene {
     #[must_use]
     pub fn hit_test(&self, point: ChartPoint) -> Option<&ChartMark> {
-        self.marks
-            .iter()
-            .rev()
-            .find(|mark| mark.interactive && mark_hit_test(mark, point))
+        self.marks.iter().rev().find(|mark| {
+            mark.interactive
+                && (mark.role != ChartMarkRole::Data
+                    || self
+                        .plot_regions
+                        .get(&mark.region_key)
+                        .is_some_and(|region| region.contains(point)))
+                && mark_hit_test(mark, point)
+        })
     }
 
     #[must_use]
     pub fn semantic_projection(&self, limit: usize) -> Vec<ChartSemanticDatum> {
-        self.marks
+        self.semantics
             .iter()
-            .filter(|mark| mark.interactive)
             .take(limit.min(1_000))
-            .map(|mark| ChartSemanticDatum {
-                series_key: mark.series_key.clone(),
-                datum_key: mark.datum_key.clone(),
-                name: mark.label.clone(),
-                value: mark.value,
-                selected: mark.selected,
-            })
+            .cloned()
             .collect()
     }
 }
@@ -509,18 +560,23 @@ pub fn prepare_chart_data(
     spec.validate()?;
     let mut diagnostics = Vec::new();
     let mut prepared = Vec::with_capacity(spec.series.len());
-    for series in &spec.series {
+    for (color_index, series) in spec.series.iter().enumerate() {
         let source = data
             .dataset(&series.dataset)
             .ok_or_else(|| ChartPrepareError::MissingDataset(series.dataset.clone()))?;
-        validate_series_dimensions(series, source)?;
-        let original_len = source.len();
+        let semantic_transforms = series
+            .transforms
+            .iter()
+            .filter(|transform| !matches!(transform, super::ChartTransformSpec::Downsample { .. }))
+            .cloned()
+            .collect::<Vec<_>>();
         let mut dataset = apply_chart_transforms(
             source,
-            &series.transforms,
+            &semantic_transforms,
             transforms,
             ChartTransformContext::default(),
         )?;
+        validate_series_dimensions(series, &dataset)?;
         if dataset.key_dimension().is_none() {
             dataset = dataset.with_replacement_identity(&series.key)?;
             push_diagnostic(
@@ -537,12 +593,22 @@ pub fn prepare_chart_data(
                 },
             );
         }
-        let explicitly_sampled = series
+        let semantic_dataset = dataset.clone();
+        let original_len = semantic_dataset.len();
+        let explicit_downsample = series
             .transforms
             .iter()
-            .any(|transform| matches!(transform, super::ChartTransformSpec::Downsample { .. }));
-        if !explicitly_sampled
-            && matches!(series.kind, ChartSeriesKind::Line | ChartSeriesKind::Area)
+            .filter(|transform| matches!(transform, super::ChartTransformSpec::Downsample { .. }))
+            .cloned()
+            .collect::<Vec<_>>();
+        if !explicit_downsample.is_empty() {
+            dataset = apply_chart_transforms(
+                &dataset,
+                &explicit_downsample,
+                transforms,
+                ChartTransformContext::default(),
+            )?;
+        } else if matches!(series.kind, ChartSeriesKind::Line | ChartSeriesKind::Area)
             && dataset.len() > DEFAULT_SAMPLE_THRESHOLD
             && let (Some(x), Some(y)) = (
                 series.encode.dimension(ChartChannel::X),
@@ -580,8 +646,10 @@ pub fn prepare_chart_data(
         }
         prepared.push(PreparedSeries {
             spec: series.clone(),
+            semantic_dataset,
             dataset,
             sampled,
+            color_index,
         });
     }
     Ok(ChartPreparedData {
@@ -606,6 +674,31 @@ pub fn layout_chart_scene(
     theme: &ChartTheme,
     geo: &ChartGeoRegistry,
 ) -> Result<PreparedChartScene, ChartPrepareError> {
+    layout_chart_scene_with_viewport(
+        prepared,
+        width,
+        height,
+        theme,
+        geo,
+        ChartViewport::default(),
+    )
+}
+
+/// Lay out one acknowledged viewport. Cartesian marks and ticks share the
+/// same visible domain instead of applying a post-layout pixel transform.
+///
+/// # Errors
+///
+/// Returns the same validated viewport, scale, geo, formatter, or custom
+/// series errors as [`layout_chart_scene`].
+pub fn layout_chart_scene_with_viewport(
+    prepared: &ChartPreparedData,
+    width: f64,
+    height: f64,
+    theme: &ChartTheme,
+    geo: &ChartGeoRegistry,
+    viewport: ChartViewport,
+) -> Result<PreparedChartScene, ChartPrepareError> {
     if !width.is_finite() || !height.is_finite() || width <= 0.0 || height <= 0.0 {
         return Err(ChartPrepareError::InvalidViewport { width, height });
     }
@@ -613,6 +706,7 @@ pub fn layout_chart_scene(
     let regions = region_rects(&prepared.spec, width, height);
     let mut marks = Vec::new();
     let mut labels = Vec::new();
+    let mut axis_domains = BTreeMap::new();
     add_title_and_legend(
         &prepared.spec,
         &prepared.series,
@@ -640,8 +734,12 @@ pub fn layout_chart_scene(
                 &mut diagnostics,
                 &prepared.custom_series,
                 &prepared.formatters,
+                viewport,
+                &mut axis_domains,
             )?,
             ChartCoordinateKind::Polar => layout_polar(
+                &prepared.spec,
+                &region.key,
                 &series,
                 bounds,
                 theme,
@@ -676,6 +774,23 @@ pub fn layout_chart_scene(
                 );
             }
         }
+    }
+    let mut mark_ids = BTreeSet::new();
+    if let Some(duplicate) = marks
+        .iter()
+        .find_map(|mark| (!mark_ids.insert(mark.key.clone())).then(|| mark.key.clone()))
+    {
+        return Err(ChartPrepareError::DuplicateMarkIdentity(duplicate));
+    }
+    let vertices = marks
+        .iter()
+        .map(|mark| geometry_vertex_count(&mark.geometry))
+        .fold(0_usize, usize::saturating_add);
+    if marks.len() > MAX_SCENE_MARKS || vertices > MAX_SCENE_VERTICES {
+        return Err(ChartPrepareError::SceneBudget {
+            marks: marks.len(),
+            vertices,
+        });
     }
     let interactive = marks.iter().filter(|mark| mark.interactive).count();
     if interactive > MAX_INTERACTIVE_MARKS {
@@ -713,13 +828,16 @@ pub fn layout_chart_scene(
             marks.len()
         )
     });
+    let semantics = semantic_data(&prepared.series);
     Ok(PreparedChartScene {
         revision: prepared.revision,
         width,
         height,
         plot_regions: regions,
+        axis_domains,
         marks: marks.into(),
         labels: labels.into(),
+        semantics: semantics.into(),
         diagnostics: diagnostics.into(),
         summary,
         sampled_series: prepared
@@ -728,6 +846,38 @@ pub fn layout_chart_scene(
             .collect::<Vec<_>>()
             .into(),
     })
+}
+
+fn semantic_data(series: &[PreparedSeries]) -> Vec<ChartSemanticDatum> {
+    let mut output = Vec::new();
+    for prepared in series.iter().filter(|series| series.spec.visible) {
+        let name = prepared
+            .spec
+            .encode
+            .dimension(ChartChannel::Name)
+            .and_then(|dimension| prepared.semantic_dataset.column(dimension));
+        let value = [ChartChannel::Value, ChartChannel::Y]
+            .into_iter()
+            .find_map(|channel| {
+                prepared
+                    .spec
+                    .encode
+                    .dimension(channel)
+                    .and_then(|dimension| prepared.semantic_dataset.column(dimension))
+            });
+        for row in 0..prepared.semantic_dataset.len() {
+            output.push(ChartSemanticDatum {
+                series_key: prepared.spec.key.clone(),
+                datum_key: datum_key(&prepared.semantic_dataset, row),
+                name: datum_label(name, &prepared.semantic_dataset, row, &prepared.spec.name),
+                value: value
+                    .and_then(|column| column.value(row))
+                    .and_then(|value| value.as_number()),
+                selected: false,
+            });
+        }
+    }
+    output
 }
 
 fn validate_series_dimensions(
@@ -800,8 +950,8 @@ fn region_rects(spec: &ChartSpec, width: f64, height: f64) -> BTreeMap<String, C
                 ChartRect {
                     x: left + f64::from(region.column) * column_width,
                     y: top + f64::from(region.row) * row_height,
-                    width: f64::from(region.column_span) * column_width - 18.0,
-                    height: f64::from(region.row_span) * row_height - 18.0,
+                    width: (f64::from(region.column_span) * column_width - 18.0).max(1.0),
+                    height: (f64::from(region.row_span) * row_height - 18.0).max(1.0),
                 },
             )
         })
@@ -845,8 +995,8 @@ fn add_title_and_legend(
         super::ChartLegendPosition::Top | super::ChartLegendPosition::Bottom
     );
     let mut cursor = 20.0;
-    for (index, series) in series.iter().enumerate() {
-        let color = series_color(&series.spec, index, theme);
+    for series in series {
+        let color = series_color(series, theme);
         let logical_x = if horizontal && theme.direction == crate::TextDirection::RightToLeft {
             width - cursor - 12.0
         } else {
@@ -872,6 +1022,9 @@ fn add_title_and_legend(
         };
         marks.push(ChartMark {
             key: format!("legend:{}", series.spec.key),
+            region_key: "__viewport".to_owned(),
+            role: ChartMarkRole::Legend,
+            datum: None,
             series_key: series.spec.key.clone(),
             datum_key: "legend".to_owned(),
             geometry: ChartMarkGeometry::Rect(ChartRect {
@@ -928,21 +1081,45 @@ fn layout_cartesian(
     diagnostics: &mut Vec<ChartDiagnostic>,
     custom_series: &ChartSeriesRegistry,
     formatters: &ChartFormatterRegistry,
+    viewport: ChartViewport,
+    axis_domains: &mut BTreeMap<String, ChartAxisDomain>,
 ) -> Result<(), ChartPrepareError> {
     let mut groups = BTreeMap::<(String, String), Vec<&PreparedSeries>>::new();
     for series in series {
         groups
             .entry((
-                series.spec.x_axis.clone().unwrap_or_default(),
-                series.spec.y_axis.clone().unwrap_or_default(),
+                series
+                    .spec
+                    .x_axis
+                    .clone()
+                    .unwrap_or_else(|| "__implicit_x".to_owned()),
+                series
+                    .spec
+                    .y_axis
+                    .clone()
+                    .unwrap_or_else(|| "__implicit_y".to_owned()),
             ))
             .or_default()
             .push(*series);
     }
-    for group in groups.into_values() {
+    let mut drawn_x = BTreeSet::new();
+    let mut drawn_y = BTreeSet::new();
+    for ((x_key, y_key), group) in groups {
+        let x_domain_series = series
+            .iter()
+            .copied()
+            .filter(|series| series.spec.x_axis.as_deref().unwrap_or("__implicit_x") == x_key)
+            .collect::<Vec<_>>();
+        let y_domain_series = series
+            .iter()
+            .copied()
+            .filter(|series| series.spec.y_axis.as_deref().unwrap_or("__implicit_y") == y_key)
+            .collect::<Vec<_>>();
         layout_cartesian_group(
             spec,
             &group,
+            &x_domain_series,
+            &y_domain_series,
             bounds,
             theme,
             marks,
@@ -950,6 +1127,12 @@ fn layout_cartesian(
             diagnostics,
             custom_series,
             formatters,
+            drawn_x.insert(x_key.clone()),
+            drawn_y.insert(y_key.clone()),
+            viewport,
+            &x_key,
+            &y_key,
+            axis_domains,
         )?;
     }
     Ok(())
@@ -959,6 +1142,8 @@ fn layout_cartesian(
 fn layout_cartesian_group(
     spec: &ChartSpec,
     series: &[&PreparedSeries],
+    x_domain_series: &[&PreparedSeries],
+    y_domain_series: &[&PreparedSeries],
     bounds: ChartRect,
     theme: &ChartTheme,
     marks: &mut Vec<ChartMark>,
@@ -966,6 +1151,12 @@ fn layout_cartesian_group(
     diagnostics: &mut Vec<ChartDiagnostic>,
     custom_series: &ChartSeriesRegistry,
     formatters: &ChartFormatterRegistry,
+    render_horizontal_axis: bool,
+    render_vertical_axis: bool,
+    viewport: ChartViewport,
+    x_identity: &str,
+    y_identity: &str,
+    axis_domains: &mut BTreeMap<String, ChartAxisDomain>,
 ) -> Result<(), ChartPrepareError> {
     if series.is_empty() {
         return Ok(());
@@ -978,7 +1169,7 @@ fn layout_cartesian_group(
             series: series[0].spec.key.clone(),
             dimension: "x".to_owned(),
         })?;
-    let mut x_categorical = series.iter().any(|series| {
+    let mut x_categorical = x_domain_series.iter().any(|series| {
         series
             .dataset
             .column(
@@ -995,7 +1186,7 @@ fn layout_cartesian_group(
                 )
             })
     });
-    let mut y_categorical = series.iter().any(|series| {
+    let mut y_categorical = y_domain_series.iter().any(|series| {
         series
             .spec
             .encode
@@ -1039,25 +1230,51 @@ fn layout_cartesian_group(
     x_categorical |= x_axis.is_some_and(|axis| axis.scale == ChartAxisScale::Category);
     y_categorical |= y_axis.is_some_and(|axis| axis.scale == ChartAxisScale::Category);
     let categories = if x_categorical {
-        collect_categories(series, ChartChannel::X)
+        collect_categories(x_domain_series, ChartChannel::X)
     } else {
         Vec::new()
     };
     let y_categories = if y_categorical {
-        collect_categories(series, ChartChannel::Y)
+        collect_categories(y_domain_series, ChartChannel::Y)
     } else {
         Vec::new()
     };
-    let x_domain = if x_categorical {
+    let mut x_domain = if x_categorical {
         (0.0, usize_to_f64(categories.len().max(1)))
     } else {
-        numeric_domain(series, ChartChannel::X, false).unwrap_or((0.0, 1.0))
+        numeric_domain(x_domain_series, ChartChannel::X, false).unwrap_or((0.0, 1.0))
     };
-    let y_domain = if y_categorical {
+    let mut y_domain = if y_categorical {
         (0.0, usize_to_f64(y_categories.len().max(1)))
     } else {
-        numeric_domain(series, ChartChannel::Y, true).unwrap_or((0.0, 1.0))
+        cartesian_y_domain(
+            y_domain_series,
+            !y_axis.is_some_and(|axis| axis.scale == ChartAxisScale::Log),
+        )
+        .unwrap_or((0.0, 1.0))
     };
+    let horizontal_full_domain = x_domain;
+    let vertical_full_domain = y_domain;
+    if !x_categorical {
+        x_domain = viewport_domain(x_domain, viewport.zoom, viewport.pan.x, bounds.width);
+    }
+    if !y_categorical {
+        y_domain = viewport_domain(y_domain, viewport.zoom, viewport.pan.y, -bounds.height);
+    }
+    axis_domains.insert(
+        format!("{}:x:{x_identity}", series[0].spec.coordinate),
+        ChartAxisDomain {
+            full: horizontal_full_domain,
+            visible: x_domain,
+        },
+    );
+    axis_domains.insert(
+        format!("{}:y:{y_identity}", series[0].spec.coordinate),
+        ChartAxisDomain {
+            full: vertical_full_domain,
+            visible: y_domain,
+        },
+    );
     let x_scale = if x_categorical {
         ChartScale::category(
             categories.clone(),
@@ -1079,7 +1296,18 @@ fn layout_cartesian_group(
         build_continuous_scale(y_axis, y_domain, bounds.y + bounds.height, bounds.y)?
     };
     add_cartesian_axes(
-        &x_scale, &y_scale, x_axis, y_axis, bounds, theme, formatters, marks, labels,
+        &series[0].spec.coordinate,
+        &x_scale,
+        &y_scale,
+        x_axis,
+        y_axis,
+        bounds,
+        theme,
+        formatters,
+        marks,
+        labels,
+        render_horizontal_axis,
+        render_vertical_axis,
     )?;
     layout_cartesian_annotations(
         spec,
@@ -1092,15 +1320,25 @@ fn layout_cartesian_group(
         labels,
     );
 
-    let bar_series = series
+    let bar_slots = series
         .iter()
         .filter(|series| series.spec.kind == ChartSeriesKind::Bar)
-        .count()
-        .max(1);
-    let mut bar_index = 0_usize;
-    let mut stacks = BTreeMap::<(String, String), f64>::new();
-    for (series_index, prepared) in series.iter().enumerate() {
-        let color = series_color(&prepared.spec, series_index, theme);
+        .map(|series| {
+            series.spec.stack.as_ref().map_or_else(
+                || format!("series:{}", series.spec.key),
+                |stack| format!("stack:{stack}"),
+            )
+        })
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .enumerate()
+        .map(|(index, key)| (key, index))
+        .collect::<BTreeMap<_, _>>();
+    let slot_count = bar_slots.len().max(1);
+    let mut positive_stacks = BTreeMap::<(String, String), f64>::new();
+    let mut negative_stacks = BTreeMap::<(String, String), f64>::new();
+    for prepared in series {
+        let color = series_color(prepared, theme);
         match prepared.spec.kind {
             ChartSeriesKind::Bar => {
                 let x_name = prepared.spec.encode.dimension(ChartChannel::X).unwrap();
@@ -1111,11 +1349,12 @@ fn layout_cartesian_group(
                     .band_width()
                     .unwrap_or(bounds.width / usize_to_f64(prepared.dataset.len().max(1)));
                 let stack_key = prepared.spec.stack.clone();
-                let series_bar_width = if stack_key.is_some() {
-                    band * 0.72
-                } else {
-                    band * 0.72 / usize_to_f64(bar_series)
-                };
+                let slot_key = stack_key.as_ref().map_or_else(
+                    || format!("series:{}", prepared.spec.key),
+                    |stack| format!("stack:{stack}"),
+                );
+                let slot = bar_slots.get(&slot_key).copied().unwrap_or(0);
+                let series_bar_width = band * 0.72 / usize_to_f64(slot_count);
                 for row in 0..prepared.dataset.len() {
                     let Some(x_value) = x.value(row) else {
                         continue;
@@ -1135,12 +1374,25 @@ fn layout_cartesian_group(
                         continue;
                     };
                     let (start, end) = if let Some(stack) = &stack_key {
-                        let running = stacks.entry((stack.clone(), category)).or_default();
+                        let running = if value >= 0.0 {
+                            positive_stacks
+                                .entry((stack.clone(), category))
+                                .or_default()
+                        } else {
+                            negative_stacks
+                                .entry((stack.clone(), category))
+                                .or_default()
+                        };
                         let start = *running;
                         *running += value;
                         (start, *running)
                     } else {
-                        (0.0, value)
+                        let baseline = if matches!(y_scale, ChartScale::Log(_)) {
+                            y_domain.0
+                        } else {
+                            0.0
+                        };
+                        (baseline, value)
                     };
                     let Some(y_start) = y_scale.map_number(start) else {
                         continue;
@@ -1148,12 +1400,8 @@ fn layout_cartesian_group(
                     let Some(y_end) = y_scale.map_number(end) else {
                         continue;
                     };
-                    let offset = if stack_key.is_some() {
-                        0.0
-                    } else {
-                        (usize_to_f64(bar_index) - (usize_to_f64(bar_series) - 1.0) / 2.0)
-                            * series_bar_width
-                    };
+                    let offset = (usize_to_f64(slot) - (usize_to_f64(slot_count) - 1.0) / 2.0)
+                        * series_bar_width;
                     add_rect_mark(
                         marks,
                         &prepared.spec,
@@ -1165,22 +1413,28 @@ fn layout_cartesian_group(
                             width: series_bar_width.max(1.0),
                             height: (y_end - y_start).abs().max(1.0),
                         },
-                        Some(if value >= 0.0 { color } else { theme.negative }),
+                        Some(if value >= 0.0 {
+                            datum_color(prepared, row, theme, color)
+                        } else {
+                            theme.negative
+                        }),
                         None,
                         value,
                     );
                 }
-                bar_index += 1;
             }
             ChartSeriesKind::Line | ChartSeriesKind::Area => {
-                let points = series_points(prepared, &x_scale, &y_scale, diagnostics);
-                if points.len() >= 2 {
+                let segments = series_segments(prepared, &x_scale, &y_scale, diagnostics);
+                for (segment_index, points) in segments.into_iter().enumerate() {
+                    if points.is_empty() {
+                        continue;
+                    }
                     let line_points = if prepared.spec.smooth {
                         smooth_polyline(&points.iter().map(|point| point.0).collect::<Vec<_>>(), 8)
                     } else {
                         points.iter().map(|point| point.0).collect::<Vec<_>>()
                     };
-                    if prepared.spec.kind == ChartSeriesKind::Area {
+                    if prepared.spec.kind == ChartSeriesKind::Area && line_points.len() >= 2 {
                         let baseline = y_scale.map_number(0.0).unwrap_or(bounds.y + bounds.height);
                         let mut polygon = Vec::with_capacity(line_points.len() + 2);
                         polygon.push(ChartPoint {
@@ -1193,7 +1447,13 @@ fn layout_cartesian_group(
                             y: baseline,
                         });
                         marks.push(ChartMark {
-                            key: format!("{}:area", prepared.spec.key),
+                            key: format!(
+                                "{}:{}:area:{segment_index}",
+                                prepared.spec.coordinate, prepared.spec.key
+                            ),
+                            region_key: prepared.spec.coordinate.clone(),
+                            role: ChartMarkRole::Decoration,
+                            datum: None,
                             series_key: prepared.spec.key.clone(),
                             datum_key: "area".to_owned(),
                             geometry: ChartMarkGeometry::Polygon(polygon.into()),
@@ -1205,21 +1465,29 @@ fn layout_cartesian_group(
                             selected: false,
                         });
                     }
-                    marks.push(ChartMark {
-                        key: format!("{}:line", prepared.spec.key),
-                        series_key: prepared.spec.key.clone(),
-                        datum_key: "line".to_owned(),
-                        geometry: ChartMarkGeometry::Polyline {
-                            points: line_points.into(),
-                            width: 2.0,
-                        },
-                        fill: None,
-                        stroke: Some((color, 2.0)),
-                        label: prepared.spec.name.clone(),
-                        value: None,
-                        interactive: false,
-                        selected: false,
-                    });
+                    if line_points.len() >= 2 {
+                        marks.push(ChartMark {
+                            key: format!(
+                                "{}:{}:line:{segment_index}",
+                                prepared.spec.coordinate, prepared.spec.key
+                            ),
+                            region_key: prepared.spec.coordinate.clone(),
+                            role: ChartMarkRole::Decoration,
+                            datum: None,
+                            series_key: prepared.spec.key.clone(),
+                            datum_key: "line".to_owned(),
+                            geometry: ChartMarkGeometry::Polyline {
+                                points: line_points.into(),
+                                width: 2.0,
+                            },
+                            fill: None,
+                            stroke: Some((color, 2.0)),
+                            label: prepared.spec.name.clone(),
+                            value: None,
+                            interactive: false,
+                            selected: false,
+                        });
+                    }
                     for (point, row, value) in points {
                         add_circle_mark(
                             marks,
@@ -1228,14 +1496,16 @@ fn layout_cartesian_group(
                             row,
                             point,
                             4.0,
-                            color,
+                            datum_color(prepared, row, theme, color),
                             value,
                         );
                     }
                 }
             }
             ChartSeriesKind::Scatter => {
-                let points = series_points(prepared, &x_scale, &y_scale, diagnostics);
+                let points = series_segments(prepared, &x_scale, &y_scale, diagnostics)
+                    .into_iter()
+                    .flatten();
                 let size_column = prepared
                     .spec
                     .encode
@@ -1253,7 +1523,7 @@ fn layout_cartesian_group(
                         row,
                         point,
                         radius,
-                        color,
+                        datum_color(prepared, row, theme, color),
                         value,
                     );
                 }
@@ -1299,6 +1569,10 @@ fn layout_cartesian_group(
                         theme,
                         x_scale: Some(&x_scale),
                         y_scale: Some(&y_scale),
+                        coordinate: super::ChartCustomCoordinateContext::Cartesian {
+                            x: &x_scale,
+                            y: &y_scale,
+                        },
                     },
                 )?);
             }
@@ -1333,7 +1607,10 @@ fn layout_cartesian_annotations(
                     continue;
                 };
                 marks.push(ChartMark {
-                    key: format!("annotation:{}", annotation.key),
+                    key: format!("{region}:annotation:{}", annotation.key),
+                    region_key: region.to_owned(),
+                    role: ChartMarkRole::Annotation,
+                    datum: None,
                     series_key: "__annotation".to_owned(),
                     datum_key: annotation.key.clone(),
                     geometry: ChartMarkGeometry::Circle {
@@ -1368,7 +1645,9 @@ fn layout_cartesian_annotations(
                 let geometry = annotation_line(*axis, value, x_scale, y_scale, bounds);
                 if let Some((start, end)) = geometry {
                     let mut mark = line_mark(
-                        format!("annotation:{}", annotation.key),
+                        format!("{region}:annotation:{}", annotation.key),
+                        region,
+                        ChartMarkRole::Annotation,
                         start,
                         end,
                         color,
@@ -1489,7 +1768,10 @@ fn annotation_area(
     color: Rgba8,
 ) -> ChartMark {
     ChartMark {
-        key: format!("annotation:{}", annotation.key),
+        key: format!("{}:annotation:{}", annotation.region, annotation.key),
+        region_key: annotation.region.clone(),
+        role: ChartMarkRole::Annotation,
+        datum: None,
         series_key: "__annotation".to_owned(),
         datum_key: annotation.key.clone(),
         geometry: ChartMarkGeometry::Rect(rect),
@@ -1539,6 +1821,7 @@ fn build_continuous_scale(
 }
 
 fn add_cartesian_axes(
+    region: &str,
     x: &ChartScale,
     y: &ChartScale,
     x_axis: Option<&super::ChartAxisSpec>,
@@ -1548,115 +1831,165 @@ fn add_cartesian_axes(
     formatters: &ChartFormatterRegistry,
     marks: &mut Vec<ChartMark>,
     labels: &mut Vec<ChartLabel>,
+    draw_x: bool,
+    draw_y: bool,
 ) -> Result<(), ChartPrepareError> {
     let x_key = x_axis.map_or("x", |axis| axis.key.as_str());
     let y_key = y_axis.map_or("y", |axis| axis.key.as_str());
     let y_right = y_axis.is_some_and(|axis| axis.position == ChartAxisPosition::Right);
     let x_top = x_axis.is_some_and(|axis| axis.position == ChartAxisPosition::Top);
-    for (index, tick) in y.ticks(6).into_iter().enumerate() {
-        marks.push(line_mark(
-            format!("grid:{y_key}:{index}"),
-            ChartPoint {
-                x: bounds.x,
-                y: tick.position,
-            },
-            ChartPoint {
-                x: bounds.x + bounds.width,
-                y: tick.position,
-            },
-            theme.grid,
-            1.0,
-        ));
-        labels.push(ChartLabel {
-            key: format!("axis:{y_key}:{index}"),
-            position: ChartPoint {
-                x: if y_right {
-                    bounds.x + bounds.width + 8.0
-                } else {
-                    bounds.x - 8.0
+    if draw_y {
+        for (index, tick) in y.ticks(6).into_iter().enumerate() {
+            marks.push(line_mark(
+                format!("{region}:grid:{y_key}:{index}"),
+                region,
+                ChartMarkRole::Grid,
+                ChartPoint {
+                    x: bounds.x,
+                    y: tick.position,
                 },
-                y: tick.position - 8.0,
-            },
-            text: format_axis_tick(&tick, y_axis, theme, formatters)?,
-            color: theme.muted_text,
-            anchor: if y_right {
-                ChartLabelAnchor::Start
-            } else {
-                ChartLabelAnchor::End
-            },
-        });
-    }
-    for (index, tick) in x.ticks(8).into_iter().enumerate() {
+                ChartPoint {
+                    x: bounds.x + bounds.width,
+                    y: tick.position,
+                },
+                theme.grid,
+                1.0,
+            ));
+            labels.push(ChartLabel {
+                key: format!("axis:{region}:{y_key}:{index}"),
+                position: ChartPoint {
+                    x: if y_right {
+                        bounds.x + bounds.width + 8.0
+                    } else {
+                        bounds.x - 8.0
+                    },
+                    y: tick.position - 8.0,
+                },
+                text: format_axis_tick(&tick, y_axis, theme, formatters)?,
+                color: theme.muted_text,
+                anchor: if y_right {
+                    ChartLabelAnchor::Start
+                } else {
+                    ChartLabelAnchor::End
+                },
+            });
+        }
         marks.push(line_mark(
-            format!("grid:{x_key}:{index}"),
+            format!("{region}:axis:{y_key}"),
+            region,
+            ChartMarkRole::Axis,
             ChartPoint {
-                x: tick.position,
+                x: if y_right {
+                    bounds.x + bounds.width
+                } else {
+                    bounds.x
+                },
                 y: bounds.y,
             },
             ChartPoint {
-                x: tick.position,
+                x: if y_right {
+                    bounds.x + bounds.width
+                } else {
+                    bounds.x
+                },
                 y: bounds.y + bounds.height,
             },
-            theme.grid,
+            theme.axis,
             1.0,
         ));
-        labels.push(ChartLabel {
-            key: format!("axis:{x_key}:{index}"),
-            position: ChartPoint {
-                x: tick.position,
-                y: if x_top {
-                    bounds.y - 18.0
+        if let Some(title) = y_axis.and_then(|axis| axis.title.as_ref()) {
+            labels.push(ChartLabel {
+                key: format!("axis-title:{region}:{y_key}"),
+                position: ChartPoint {
+                    x: if y_right {
+                        bounds.x + bounds.width + 8.0
+                    } else {
+                        bounds.x - 8.0
+                    },
+                    y: bounds.y - 18.0,
+                },
+                text: title.clone(),
+                color: theme.text,
+                anchor: if y_right {
+                    ChartLabelAnchor::Start
                 } else {
-                    bounds.y + bounds.height + 6.0
+                    ChartLabelAnchor::End
+                },
+            });
+        }
+    }
+    if draw_x {
+        for (index, tick) in x.ticks(8).into_iter().enumerate() {
+            marks.push(line_mark(
+                format!("{region}:grid:{x_key}:{index}"),
+                region,
+                ChartMarkRole::Grid,
+                ChartPoint {
+                    x: tick.position,
+                    y: bounds.y,
+                },
+                ChartPoint {
+                    x: tick.position,
+                    y: bounds.y + bounds.height,
+                },
+                theme.grid,
+                1.0,
+            ));
+            labels.push(ChartLabel {
+                key: format!("axis:{region}:{x_key}:{index}"),
+                position: ChartPoint {
+                    x: tick.position,
+                    y: if x_top {
+                        bounds.y - 18.0
+                    } else {
+                        bounds.y + bounds.height + 6.0
+                    },
+                },
+                text: format_axis_tick(&tick, x_axis, theme, formatters)?,
+                color: theme.muted_text,
+                anchor: ChartLabelAnchor::Center,
+            });
+        }
+        marks.push(line_mark(
+            format!("{region}:axis:{x_key}"),
+            region,
+            ChartMarkRole::Axis,
+            ChartPoint {
+                x: bounds.x,
+                y: if x_top {
+                    bounds.y
+                } else {
+                    bounds.y + bounds.height
                 },
             },
-            text: format_axis_tick(&tick, x_axis, theme, formatters)?,
-            color: theme.muted_text,
-            anchor: ChartLabelAnchor::Center,
-        });
+            ChartPoint {
+                x: bounds.x + bounds.width,
+                y: if x_top {
+                    bounds.y
+                } else {
+                    bounds.y + bounds.height
+                },
+            },
+            theme.axis,
+            1.0,
+        ));
+        if let Some(title) = x_axis.and_then(|axis| axis.title.as_ref()) {
+            labels.push(ChartLabel {
+                key: format!("axis-title:{region}:{x_key}"),
+                position: ChartPoint {
+                    x: bounds.x + bounds.width / 2.0,
+                    y: if x_top {
+                        bounds.y - 34.0
+                    } else {
+                        bounds.y + bounds.height + 24.0
+                    },
+                },
+                text: title.clone(),
+                color: theme.text,
+                anchor: ChartLabelAnchor::Center,
+            });
+        }
     }
-    marks.push(line_mark(
-        format!("axis:{x_key}"),
-        ChartPoint {
-            x: bounds.x,
-            y: if x_top {
-                bounds.y
-            } else {
-                bounds.y + bounds.height
-            },
-        },
-        ChartPoint {
-            x: bounds.x + bounds.width,
-            y: if x_top {
-                bounds.y
-            } else {
-                bounds.y + bounds.height
-            },
-        },
-        theme.axis,
-        1.0,
-    ));
-    marks.push(line_mark(
-        format!("axis:{y_key}"),
-        ChartPoint {
-            x: if y_right {
-                bounds.x + bounds.width
-            } else {
-                bounds.x
-            },
-            y: bounds.y,
-        },
-        ChartPoint {
-            x: if y_right {
-                bounds.x + bounds.width
-            } else {
-                bounds.x
-            },
-            y: bounds.y + bounds.height,
-        },
-        theme.axis,
-        1.0,
-    ));
     Ok(())
 }
 
@@ -1669,6 +2002,9 @@ fn format_axis_tick(
     let Some(axis) = axis else {
         return Ok(tick.label.clone());
     };
+    if axis.scale == ChartAxisScale::Category {
+        return Ok(tick.label.clone());
+    }
     let format = &axis.format;
     if let Some(formatter) = &format.formatter {
         return formatters.format(formatter, tick.value, &theme.locale, format);
@@ -1681,7 +2017,11 @@ fn format_axis_tick(
     if !value.is_finite() {
         value = 0.0;
     }
-    let body = if let Some(number) = &theme.number
+    let body = if format.compact && value.abs() >= 1_000_000.0 {
+        format!("{:.1}M", value / 1_000_000.0)
+    } else if format.compact && value.abs() >= 1_000.0 {
+        format!("{:.1}K", value / 1_000.0)
+    } else if let Some(number) = &theme.number
         && !matches!(axis.scale, ChartAxisScale::Time)
     {
         crate::format_number_with_metadata(
@@ -1696,10 +2036,6 @@ fn format_axis_tick(
         .unwrap_or_else(|_| tick.label.clone())
     } else if let Some(precision) = format.precision {
         format!("{value:.precision$}", precision = usize::from(precision))
-    } else if format.compact && value.abs() >= 1_000_000.0 {
-        format!("{:.1}M", value / 1_000_000.0)
-    } else if format.compact && value.abs() >= 1_000.0 {
-        format!("{:.1}K", value / 1_000.0)
     } else {
         tick.label.clone()
     };
@@ -1744,12 +2080,12 @@ fn smooth_polyline(points: &[ChartPoint], steps: usize) -> Vec<ChartPoint> {
     output
 }
 
-fn series_points(
+fn series_segments(
     prepared: &PreparedSeries,
     x_scale: &ChartScale,
     y_scale: &ChartScale,
     diagnostics: &mut Vec<ChartDiagnostic>,
-) -> Vec<(ChartPoint, usize, f64)> {
+) -> Vec<Vec<(ChartPoint, usize, f64)>> {
     let x = prepared
         .dataset
         .column(prepared.spec.encode.dimension(ChartChannel::X).unwrap())
@@ -1758,49 +2094,67 @@ fn series_points(
         .dataset
         .column(prepared.spec.encode.dimension(ChartChannel::Y).unwrap())
         .unwrap();
-    (0..prepared.dataset.len())
-        .filter_map(|row| {
-            let x_value = x.value(row)?;
-            let Some(y_value) = y.value(row).and_then(|value| value.as_number()) else {
-                datum_diagnostic(
-                    diagnostics,
-                    &prepared.spec,
-                    &prepared.dataset,
-                    row,
-                    "non_numeric_y",
-                );
-                return None;
-            };
-            let Some(mapped_x) = map_value(x_scale, &x_value) else {
-                datum_diagnostic(
-                    diagnostics,
-                    &prepared.spec,
-                    &prepared.dataset,
-                    row,
-                    "invalid_x",
-                );
-                return None;
-            };
-            let Some(mapped_y) = y_scale.map_number(y_value) else {
-                datum_diagnostic(
-                    diagnostics,
-                    &prepared.spec,
-                    &prepared.dataset,
-                    row,
-                    "invalid_y",
-                );
-                return None;
-            };
-            Some((
-                ChartPoint {
-                    x: mapped_x,
-                    y: mapped_y,
-                },
+    let mut segments = Vec::new();
+    let mut current = Vec::new();
+    for row in 0..prepared.dataset.len() {
+        let Some(x_value) = x.value(row) else {
+            if !current.is_empty() {
+                segments.push(std::mem::take(&mut current));
+            }
+            continue;
+        };
+        let Some(y_value) = y.value(row).and_then(|value| value.as_number()) else {
+            datum_diagnostic(
+                diagnostics,
+                &prepared.spec,
+                &prepared.dataset,
                 row,
-                y_value,
-            ))
-        })
-        .collect()
+                "non_numeric_y",
+            );
+            if !current.is_empty() {
+                segments.push(std::mem::take(&mut current));
+            }
+            continue;
+        };
+        let Some(mapped_x) = map_value(x_scale, &x_value) else {
+            datum_diagnostic(
+                diagnostics,
+                &prepared.spec,
+                &prepared.dataset,
+                row,
+                "invalid_x",
+            );
+            if !current.is_empty() {
+                segments.push(std::mem::take(&mut current));
+            }
+            continue;
+        };
+        let Some(mapped_y) = y_scale.map_number(y_value) else {
+            datum_diagnostic(
+                diagnostics,
+                &prepared.spec,
+                &prepared.dataset,
+                row,
+                "invalid_y",
+            );
+            if !current.is_empty() {
+                segments.push(std::mem::take(&mut current));
+            }
+            continue;
+        };
+        current.push((
+            ChartPoint {
+                x: mapped_x,
+                y: mapped_y,
+            },
+            row,
+            y_value,
+        ));
+    }
+    if !current.is_empty() {
+        segments.push(current);
+    }
+    segments
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1925,10 +2279,13 @@ fn layout_candlestick(
         };
         marks.push(line_mark(
             format!(
-                "{}:{}:wick",
+                "{}:{}:{}:wick",
+                prepared.spec.coordinate,
                 prepared.spec.key,
                 datum_key(&prepared.dataset, row)
             ),
+            &prepared.spec.coordinate,
+            ChartMarkRole::Decoration,
             ChartPoint {
                 x: center,
                 y: high_y,
@@ -1958,8 +2315,82 @@ fn layout_candlestick(
     }
 }
 
+fn radar_indicator_order(series: &[&PreparedSeries]) -> Vec<String> {
+    let mut seen = BTreeSet::new();
+    let mut indicators = Vec::new();
+    for prepared in series
+        .iter()
+        .filter(|series| series.spec.kind == ChartSeriesKind::Radar)
+    {
+        let Some(name) = prepared
+            .spec
+            .encode
+            .dimension(ChartChannel::Name)
+            .and_then(|dimension| prepared.dataset.column(dimension))
+        else {
+            continue;
+        };
+        for row in 0..prepared.dataset.len() {
+            if let Some(indicator) = name.value(row).map(|value| value.display_text())
+                && seen.insert(indicator.clone())
+            {
+                indicators.push(indicator);
+            }
+        }
+    }
+    indicators
+}
+
+fn polar_value_domain(
+    series: &[&PreparedSeries],
+    kind: ChartSeriesKind,
+    axis: Option<&super::ChartAxisSpec>,
+) -> (f64, f64) {
+    let mut min = axis.and_then(|axis| axis.min);
+    let mut max = axis.and_then(|axis| axis.max);
+    for prepared in series.iter().filter(|series| series.spec.kind == kind) {
+        let Some(value) = prepared
+            .spec
+            .encode
+            .dimension(ChartChannel::Value)
+            .and_then(|dimension| prepared.dataset.column(dimension))
+        else {
+            continue;
+        };
+        for row in 0..prepared.dataset.len() {
+            if let Some(value) = value.value(row).and_then(|value| value.as_number()) {
+                if axis.and_then(|axis| axis.min).is_none() {
+                    min = Some(min.map_or(value, |current| current.min(value)));
+                }
+                if axis.and_then(|axis| axis.max).is_none() {
+                    max = Some(max.map_or(value, |current| current.max(value)));
+                }
+            }
+        }
+    }
+    let mut min = min.unwrap_or(0.0);
+    let mut max = max.unwrap_or_else(|| {
+        if kind == ChartSeriesKind::Gauge {
+            100.0
+        } else {
+            1.0
+        }
+    });
+    if (max - min).abs() <= f64::EPSILON {
+        if kind == ChartSeriesKind::Gauge {
+            min = 0.0;
+            max = 100.0_f64.max(max);
+        } else {
+            max = min + min.abs().max(1.0);
+        }
+    }
+    (min, max)
+}
+
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 fn layout_polar(
+    spec: &ChartSpec,
+    region: &str,
     series: &[&PreparedSeries],
     bounds: ChartRect,
     theme: &ChartTheme,
@@ -1970,8 +2401,53 @@ fn layout_polar(
 ) {
     let center = bounds.center();
     let radius = bounds.width.min(bounds.height) * 0.42;
-    for (series_index, prepared) in series.iter().enumerate() {
-        let color = series_color(&prepared.spec, series_index, theme);
+    let radial_axis = spec
+        .axes
+        .iter()
+        .find(|axis| axis.region == region && axis.position == ChartAxisPosition::Radial);
+    let radar_indicators = radar_indicator_order(series);
+    let radar_domain = polar_value_domain(series, ChartSeriesKind::Radar, radial_axis);
+    for prepared in series {
+        let color = series_color(prepared, theme);
+        if prepared.spec.kind == ChartSeriesKind::Custom {
+            let renderer = prepared
+                .spec
+                .renderer
+                .as_deref()
+                .expect("validated custom series renderer");
+            match custom_series.layout(
+                renderer,
+                super::ChartCustomSeriesContext {
+                    spec: &prepared.spec,
+                    dataset: &prepared.dataset,
+                    bounds,
+                    theme,
+                    x_scale: None,
+                    y_scale: None,
+                    coordinate: super::ChartCustomCoordinateContext::Polar {
+                        center,
+                        radius,
+                        value_domain: (
+                            radial_axis.and_then(|axis| axis.min).unwrap_or(0.0),
+                            radial_axis.and_then(|axis| axis.max).unwrap_or(1.0),
+                        ),
+                    },
+                },
+            ) {
+                Ok(custom) => marks.extend(custom),
+                Err(error) => push_diagnostic(
+                    diagnostics,
+                    ChartDiagnostic {
+                        severity: ChartDiagnosticSeverity::Error,
+                        code: "chart.custom_series".to_owned(),
+                        message: error.to_string(),
+                        series: Some(prepared.spec.key.clone()),
+                        datum: None,
+                    },
+                ),
+            }
+            continue;
+        }
         let name = prepared
             .spec
             .encode
@@ -2017,13 +2493,26 @@ fn layout_polar(
                         angle + sweep,
                         theme.motion_quality,
                     );
-                    let datum_color = theme.palette[(series_index + row) % theme.palette.len()];
+                    let datum_color = datum_color(
+                        prepared,
+                        row,
+                        theme,
+                        theme.palette[(prepared.color_index + row) % theme.palette.len()],
+                    );
                     marks.push(ChartMark {
                         key: format!(
-                            "{}:{}",
+                            "{}:{}:{}",
+                            prepared.spec.coordinate,
                             prepared.spec.key,
                             datum_key(&prepared.dataset, row)
                         ),
+                        region_key: prepared.spec.coordinate.clone(),
+                        role: ChartMarkRole::Data,
+                        datum: Some(ChartDatumRef {
+                            dataset: prepared.spec.dataset.clone(),
+                            series: prepared.spec.key.clone(),
+                            key: datum_key(&prepared.dataset, row),
+                        }),
                         series_key: prepared.spec.key.clone(),
                         datum_key: datum_key(&prepared.dataset, row),
                         geometry: ChartMarkGeometry::Polygon(polygon.into()),
@@ -2040,31 +2529,33 @@ fn layout_polar(
             ChartSeriesKind::Radar => {
                 let values = (0..prepared.dataset.len())
                     .filter_map(|row| {
-                        value
-                            .value(row)
-                            .and_then(|value| value.as_number())
-                            .map(|value| (row, value.max(0.0)))
+                        Some((
+                            name.and_then(|column| column.value(row))?.display_text(),
+                            value.value(row)?.as_number()?,
+                        ))
                     })
-                    .collect::<Vec<_>>();
-                let max = values
-                    .iter()
-                    .map(|(_, value)| *value)
-                    .reduce(f64::max)
-                    .unwrap_or(1.0)
-                    .max(1.0);
-                let count = values.len().max(1);
-                let points = values
+                    .collect::<BTreeMap<_, _>>();
+                let count = radar_indicators.len().max(1);
+                let points = radar_indicators
                     .iter()
                     .enumerate()
-                    .map(|(index, (_, value))| {
+                    .map(|(index, indicator)| {
+                        let value = values.get(indicator).copied().unwrap_or(radar_domain.0);
                         let angle = -std::f64::consts::FRAC_PI_2
                             + std::f64::consts::TAU * usize_to_f64(index) / usize_to_f64(count);
-                        polar_point(center, radius * value / max, angle)
+                        polar_point(
+                            center,
+                            radius * normalize(value, radar_domain.0, radar_domain.1),
+                            angle,
+                        )
                     })
                     .collect::<Vec<_>>();
                 if points.len() >= 3 {
                     marks.push(ChartMark {
-                        key: format!("{}:radar", prepared.spec.key),
+                        key: format!("{}:{}:radar", prepared.spec.coordinate, prepared.spec.key),
+                        region_key: prepared.spec.coordinate.clone(),
+                        role: ChartMarkRole::Data,
+                        datum: None,
                         series_key: prepared.spec.key.clone(),
                         datum_key: "radar".to_owned(),
                         geometry: ChartMarkGeometry::Polygon(points.into()),
@@ -2082,24 +2573,37 @@ fn layout_polar(
                     .value(0)
                     .and_then(|value| value.as_number())
                     .unwrap_or(0.0);
-                let max = (0..prepared.dataset.len())
-                    .filter_map(|row| value.value(row).and_then(|value| value.as_number()))
-                    .reduce(f64::max)
-                    .unwrap_or(100.0)
-                    .max(current)
-                    .max(1.0);
+                let domain = polar_value_domain(
+                    std::slice::from_ref(prepared),
+                    ChartSeriesKind::Gauge,
+                    radial_axis,
+                );
                 let start = std::f64::consts::PI * 0.75;
                 let sweep = std::f64::consts::PI * 1.5;
                 for (key, end, fill) in [
                     ("track", start + sweep, with_alpha(theme.axis, 0x55)),
                     (
                         "value",
-                        start + sweep * (current / max).clamp(0.0, 1.0),
+                        start + sweep * normalize(current, domain.0, domain.1),
                         color,
                     ),
                 ] {
                     marks.push(ChartMark {
-                        key: format!("{}:gauge:{key}", prepared.spec.key),
+                        key: format!(
+                            "{}:{}:gauge:{key}",
+                            prepared.spec.coordinate, prepared.spec.key
+                        ),
+                        region_key: prepared.spec.coordinate.clone(),
+                        role: if key == "value" {
+                            ChartMarkRole::Data
+                        } else {
+                            ChartMarkRole::Decoration
+                        },
+                        datum: (key == "value").then(|| ChartDatumRef {
+                            dataset: prepared.spec.dataset.clone(),
+                            series: prepared.spec.key.clone(),
+                            key: datum_key(&prepared.dataset, 0),
+                        }),
                         series_key: prepared.spec.key.clone(),
                         datum_key: key.to_owned(),
                         geometry: ChartMarkGeometry::Polygon(
@@ -2133,7 +2637,7 @@ fn layout_polar(
                 });
             }
             ChartSeriesKind::Funnel => {
-                let mut rows = (0..prepared.dataset.len())
+                let rows = (0..prepared.dataset.len())
                     .filter_map(|row| {
                         value
                             .value(row)
@@ -2141,16 +2645,18 @@ fn layout_polar(
                             .map(|value| (row, value.max(0.0)))
                     })
                     .collect::<Vec<_>>();
-                rows.sort_by(|left, right| right.1.total_cmp(&left.1));
-                let max = rows.first().map_or(1.0, |row| row.1.max(1.0));
+                let max = rows
+                    .iter()
+                    .map(|row| row.1)
+                    .reduce(f64::max)
+                    .unwrap_or(1.0)
+                    .max(1.0);
                 let row_height = bounds.height / usize_to_f64(rows.len().max(1));
-                for (index, (row, value)) in rows.into_iter().enumerate() {
+                for (index, (row, value)) in rows.iter().copied().enumerate() {
                     let top_width = bounds.width * value / max;
-                    let next_width = if index + 1 < prepared.dataset.len() {
-                        top_width * 0.82
-                    } else {
-                        top_width * 0.68
-                    };
+                    let next_width = rows
+                        .get(index + 1)
+                        .map_or(top_width, |next| bounds.width * next.1 / max);
                     let y = bounds.y + usize_to_f64(index) * row_height;
                     let polygon = vec![
                         ChartPoint {
@@ -2172,14 +2678,27 @@ fn layout_polar(
                     ];
                     marks.push(ChartMark {
                         key: format!(
-                            "{}:{}",
+                            "{}:{}:{}",
+                            prepared.spec.coordinate,
                             prepared.spec.key,
                             datum_key(&prepared.dataset, row)
                         ),
+                        region_key: prepared.spec.coordinate.clone(),
+                        role: ChartMarkRole::Data,
+                        datum: Some(ChartDatumRef {
+                            dataset: prepared.spec.dataset.clone(),
+                            series: prepared.spec.key.clone(),
+                            key: datum_key(&prepared.dataset, row),
+                        }),
                         series_key: prepared.spec.key.clone(),
                         datum_key: datum_key(&prepared.dataset, row),
                         geometry: ChartMarkGeometry::Polygon(polygon.into()),
-                        fill: Some(theme.palette[(series_index + index) % theme.palette.len()]),
+                        fill: Some(datum_color(
+                            prepared,
+                            row,
+                            theme,
+                            theme.palette[(prepared.color_index + index) % theme.palette.len()],
+                        )),
                         stroke: None,
                         label: datum_label(name, &prepared.dataset, row, &prepared.spec.name),
                         value: Some(value),
@@ -2188,36 +2707,7 @@ fn layout_polar(
                     });
                 }
             }
-            ChartSeriesKind::Custom => {
-                let renderer = prepared
-                    .spec
-                    .renderer
-                    .as_deref()
-                    .expect("validated custom series renderer");
-                match custom_series.layout(
-                    renderer,
-                    super::ChartCustomSeriesContext {
-                        spec: &prepared.spec,
-                        dataset: &prepared.dataset,
-                        bounds,
-                        theme,
-                        x_scale: None,
-                        y_scale: None,
-                    },
-                ) {
-                    Ok(custom) => marks.extend(custom),
-                    Err(error) => push_diagnostic(
-                        diagnostics,
-                        ChartDiagnostic {
-                            severity: ChartDiagnosticSeverity::Error,
-                            code: "chart.custom_series".to_owned(),
-                            message: error.to_string(),
-                            series: Some(prepared.spec.key.clone()),
-                            datum: None,
-                        },
-                    ),
-                }
-            }
+            ChartSeriesKind::Custom => unreachable!("custom series are dispatched above"),
             _ => {
                 push_diagnostic(
                     diagnostics,
@@ -2247,8 +2737,8 @@ fn layout_geo(
     custom_series: &ChartSeriesRegistry,
 ) {
     let scale = geo_scale(map, bounds);
-    for (series_index, prepared) in series.iter().enumerate() {
-        let color = series_color(&prepared.spec, series_index, theme);
+    for prepared in series {
+        let color = series_color(prepared, theme);
         match prepared.spec.kind {
             ChartSeriesKind::Map => {
                 let name = prepared
@@ -2286,7 +2776,17 @@ fn layout_geo(
                         })
                         .collect::<Vec<Arc<[ChartPoint]>>>();
                     marks.push(ChartMark {
-                        key: format!("{}:{}", prepared.spec.key, feature.key),
+                        key: format!(
+                            "{}:{}:{}",
+                            prepared.spec.coordinate, prepared.spec.key, feature.key
+                        ),
+                        region_key: prepared.spec.coordinate.clone(),
+                        role: ChartMarkRole::Data,
+                        datum: Some(ChartDatumRef {
+                            dataset: prepared.spec.dataset.clone(),
+                            series: prepared.spec.key.clone(),
+                            key: feature.key.clone(),
+                        }),
                         series_key: prepared.spec.key.clone(),
                         datum_key: feature.key.clone(),
                         geometry: ChartMarkGeometry::CompoundPolygon(rings.into()),
@@ -2334,9 +2834,21 @@ fn layout_geo(
                     let Some(y) = latitude.value(row).and_then(|value| value.as_number()) else {
                         continue;
                     };
-                    let point = projection
-                        .and_then(|projection| projection.project(x, y))
-                        .unwrap_or(ChartGeoPoint { x, y });
+                    let point = if let Some(projection) = projection {
+                        let Some(point) = projection.project(x, y) else {
+                            datum_diagnostic(
+                                diagnostics,
+                                &prepared.spec,
+                                &prepared.dataset,
+                                row,
+                                "projection_rejected",
+                            );
+                            continue;
+                        };
+                        point
+                    } else {
+                        ChartGeoPoint { x, y }
+                    };
                     let point = scale_geo_point(point, scale);
                     let numeric = value
                         .and_then(|column| column.value(row))
@@ -2370,20 +2882,42 @@ fn layout_geo(
                     let [Some(sx), Some(sy), Some(tx), Some(ty)] = values else {
                         continue;
                     };
-                    let start = projection
-                        .and_then(|projection| projection.project(sx, sy))
-                        .unwrap_or(ChartGeoPoint { x: sx, y: sy });
-                    let end = projection
-                        .and_then(|projection| projection.project(tx, ty))
-                        .unwrap_or(ChartGeoPoint { x: tx, y: ty });
+                    let (start, end) = if let Some(projection) = projection {
+                        let (Some(start), Some(end)) =
+                            (projection.project(sx, sy), projection.project(tx, ty))
+                        else {
+                            datum_diagnostic(
+                                diagnostics,
+                                &prepared.spec,
+                                &prepared.dataset,
+                                row,
+                                "projection_rejected",
+                            );
+                            continue;
+                        };
+                        (start, end)
+                    } else {
+                        (
+                            ChartGeoPoint { x: sx, y: sy },
+                            ChartGeoPoint { x: tx, y: ty },
+                        )
+                    };
                     let start = scale_geo_point(start, scale);
                     let end = scale_geo_point(end, scale);
                     marks.push(ChartMark {
                         key: format!(
-                            "{}:{}",
+                            "{}:{}:{}",
+                            prepared.spec.coordinate,
                             prepared.spec.key,
                             datum_key(&prepared.dataset, row)
                         ),
+                        region_key: prepared.spec.coordinate.clone(),
+                        role: ChartMarkRole::Data,
+                        datum: Some(ChartDatumRef {
+                            dataset: prepared.spec.dataset.clone(),
+                            series: prepared.spec.key.clone(),
+                            key: datum_key(&prepared.dataset, row),
+                        }),
                         series_key: prepared.spec.key.clone(),
                         datum_key: datum_key(&prepared.dataset, row),
                         geometry: ChartMarkGeometry::Polyline {
@@ -2414,6 +2948,7 @@ fn layout_geo(
                         theme,
                         x_scale: None,
                         y_scale: None,
+                        coordinate: super::ChartCustomCoordinateContext::Geo { projection, scale },
                     },
                 ) {
                     Ok(custom) => marks.extend(custom),
@@ -2508,15 +3043,70 @@ fn numeric_domain(
     min.zip(max)
 }
 
+fn cartesian_y_domain(series: &[&PreparedSeries], include_zero: bool) -> Option<(f64, f64)> {
+    let mut min = include_zero.then_some(0.0);
+    let mut max = include_zero.then_some(0.0);
+    let mut positive = BTreeMap::<(String, String), f64>::new();
+    let mut negative = BTreeMap::<(String, String), f64>::new();
+    for prepared in series {
+        if prepared.spec.kind == ChartSeriesKind::Bar
+            && let Some(stack) = &prepared.spec.stack
+            && let (Some(x_name), Some(y_name)) = (
+                prepared.spec.encode.dimension(ChartChannel::X),
+                prepared.spec.encode.dimension(ChartChannel::Y),
+            )
+            && let (Some(x), Some(y)) = (
+                prepared.dataset.column(x_name),
+                prepared.dataset.column(y_name),
+            )
+        {
+            for row in 0..prepared.dataset.len() {
+                let Some(category) = x.value(row).map(|value| value.display_text()) else {
+                    continue;
+                };
+                let Some(value) = y.value(row).and_then(|value| value.as_number()) else {
+                    continue;
+                };
+                let running = if value >= 0.0 {
+                    positive.entry((stack.clone(), category)).or_default()
+                } else {
+                    negative.entry((stack.clone(), category)).or_default()
+                };
+                *running += value;
+                min = Some(min.map_or(*running, |current| current.min(*running)));
+                max = Some(max.map_or(*running, |current| current.max(*running)));
+            }
+        } else if let Some((series_min, series_max)) =
+            numeric_domain(std::slice::from_ref(prepared), ChartChannel::Y, false)
+        {
+            min = Some(min.map_or(series_min, |current| current.min(series_min)));
+            max = Some(max.map_or(series_max, |current| current.max(series_max)));
+        }
+    }
+    min.zip(max)
+}
+
+fn viewport_domain(domain: (f64, f64), zoom: f64, pan_pixels: f64, range_delta: f64) -> (f64, f64) {
+    let zoom = if zoom.is_finite() {
+        zoom.clamp(0.5, 20.0)
+    } else {
+        1.0
+    };
+    let span = domain.1 - domain.0;
+    if !span.is_finite() || span <= f64::EPSILON || range_delta.abs() <= f64::EPSILON {
+        return domain;
+    }
+    let visible = span / zoom;
+    let center = domain.0 + span / 2.0 - pan_pixels * span / (range_delta * zoom);
+    (center - visible / 2.0, center + visible / 2.0)
+}
+
 fn map_value(scale: &ChartScale, value: &ChartValue) -> Option<f64> {
-    value
-        .as_number()
-        .and_then(|value| scale.map_number(value))
-        .or_else(|| {
-            matches!(value, ChartValue::String(_) | ChartValue::Bool(_))
-                .then(|| scale.map_category(&value.display_text()))
-                .flatten()
-        })
+    if matches!(scale, ChartScale::Category(_)) {
+        scale.map_category(&value.display_text())
+    } else {
+        value.as_number().and_then(|value| scale.map_number(value))
+    }
 }
 
 fn add_rect_mark(
@@ -2531,7 +3121,14 @@ fn add_rect_mark(
 ) {
     let datum = datum_key(dataset, row);
     marks.push(ChartMark {
-        key: format!("{}:{datum}", spec.key),
+        key: format!("{}:{}:{datum}", spec.coordinate, spec.key),
+        region_key: spec.coordinate.clone(),
+        role: ChartMarkRole::Data,
+        datum: Some(ChartDatumRef {
+            dataset: spec.dataset.clone(),
+            series: spec.key.clone(),
+            key: datum.clone(),
+        }),
         series_key: spec.key.clone(),
         datum_key: datum,
         geometry: ChartMarkGeometry::Rect(rect),
@@ -2556,11 +3153,65 @@ fn add_circle_mark(
     value: f64,
 ) {
     let datum = datum_key(dataset, row);
+    let geometry = match series_pattern(&spec.key) {
+        0 => ChartMarkGeometry::Circle { center, radius },
+        1 => ChartMarkGeometry::Rect(ChartRect {
+            x: center.x - radius,
+            y: center.y - radius,
+            width: radius * 2.0,
+            height: radius * 2.0,
+        }),
+        2 => ChartMarkGeometry::Polygon(
+            vec![
+                ChartPoint {
+                    x: center.x,
+                    y: center.y - radius,
+                },
+                ChartPoint {
+                    x: center.x + radius,
+                    y: center.y,
+                },
+                ChartPoint {
+                    x: center.x,
+                    y: center.y + radius,
+                },
+                ChartPoint {
+                    x: center.x - radius,
+                    y: center.y,
+                },
+            ]
+            .into(),
+        ),
+        _ => ChartMarkGeometry::Polygon(
+            vec![
+                ChartPoint {
+                    x: center.x,
+                    y: center.y - radius,
+                },
+                ChartPoint {
+                    x: center.x + radius,
+                    y: center.y + radius,
+                },
+                ChartPoint {
+                    x: center.x - radius,
+                    y: center.y + radius,
+                },
+            ]
+            .into(),
+        ),
+    };
     marks.push(ChartMark {
-        key: format!("{}:{datum}", spec.key),
+        key: format!("{}:{}:{datum}", spec.coordinate, spec.key),
+        region_key: spec.coordinate.clone(),
+        role: ChartMarkRole::Data,
+        datum: Some(ChartDatumRef {
+            dataset: spec.dataset.clone(),
+            series: spec.key.clone(),
+            key: datum.clone(),
+        }),
         series_key: spec.key.clone(),
         datum_key: datum,
-        geometry: ChartMarkGeometry::Circle { center, radius },
+        geometry,
         fill: Some(fill),
         stroke: None,
         label: datum_label(None, dataset, row, &spec.name),
@@ -2572,6 +3223,8 @@ fn add_circle_mark(
 
 fn line_mark(
     key: String,
+    region: &str,
+    role: ChartMarkRole,
     start: ChartPoint,
     end: ChartPoint,
     color: Rgba8,
@@ -2579,6 +3232,9 @@ fn line_mark(
 ) -> ChartMark {
     ChartMark {
         key,
+        region_key: region.to_owned(),
+        role,
+        datum: None,
         series_key: "__axis".to_owned(),
         datum_key: String::new(),
         geometry: ChartMarkGeometry::Polyline {
@@ -2635,11 +3291,37 @@ fn push_diagnostic(diagnostics: &mut Vec<ChartDiagnostic>, diagnostic: ChartDiag
     }
 }
 
-fn series_color(spec: &ChartSeriesSpec, index: usize, theme: &ChartTheme) -> Rgba8 {
-    spec.color
+fn series_color(prepared: &PreparedSeries, theme: &ChartTheme) -> Rgba8 {
+    prepared
+        .spec
+        .color
         .as_deref()
         .and_then(parse_hex_color)
-        .unwrap_or_else(|| theme.palette[index % theme.palette.len()])
+        .unwrap_or_else(|| theme.palette[prepared.color_index % theme.palette.len()])
+}
+
+fn datum_color(
+    prepared: &PreparedSeries,
+    row: usize,
+    theme: &ChartTheme,
+    fallback: Rgba8,
+) -> Rgba8 {
+    let Some(value) = prepared
+        .spec
+        .encode
+        .dimension(ChartChannel::Color)
+        .and_then(|dimension| prepared.dataset.column(dimension))
+        .and_then(|column| column.value(row))
+    else {
+        return fallback;
+    };
+    let identity = value.display_text();
+    parse_hex_color(&identity).unwrap_or_else(|| {
+        let index = identity.as_bytes().iter().fold(0_usize, |hash, byte| {
+            hash.wrapping_mul(31).wrapping_add(usize::from(*byte))
+        });
+        theme.palette[index % theme.palette.len()]
+    })
 }
 
 fn parse_hex_color(value: &str) -> Option<Rgba8> {
@@ -2785,6 +3467,17 @@ fn point_in_polygon(point: ChartPoint, polygon: &[ChartPoint]) -> bool {
     inside
 }
 
+fn geometry_vertex_count(geometry: &ChartMarkGeometry) -> usize {
+    match geometry {
+        ChartMarkGeometry::Rect(_) => 4,
+        ChartMarkGeometry::Circle { .. } => 32,
+        ChartMarkGeometry::Polyline { points, .. } | ChartMarkGeometry::Polygon(points) => {
+            points.len()
+        }
+        ChartMarkGeometry::CompoundPolygon(rings) => rings.iter().map(|ring| ring.len()).sum(),
+    }
+}
+
 fn distance_to_segment(point: ChartPoint, start: ChartPoint, end: ChartPoint) -> f64 {
     let dx = end.x - start.x;
     let dy = end.y - start.y;
@@ -2823,6 +3516,10 @@ pub enum ChartPrepareError {
     CustomSeries(#[from] ChartSeriesExtensionError),
     #[error(transparent)]
     Formatter(#[from] ChartFormatterError),
+    #[error("chart scene contains duplicate mark identity `{0}`")]
+    DuplicateMarkIdentity(String),
+    #[error("chart scene exceeds resource budget: {marks} marks, {vertices} vertices")]
+    SceneBudget { marks: usize, vertices: usize },
     #[error("chart dataset `{0}` does not exist")]
     MissingDataset(String),
     #[error("chart series `{series}` encodes missing dimension `{dimension}`")]
@@ -2902,6 +3599,7 @@ mod tests {
                 smooth: false,
                 transforms: Vec::new(),
                 renderer: None,
+                options: crate::UiValue::Null,
             }],
             legend: ChartLegendSpec::default(),
             tooltip: ChartTooltipSpec::default(),
@@ -3007,6 +3705,10 @@ mod tests {
                         "category".to_owned(),
                         ChartValue::String(if index < 2 { "north" } else { "south" }.to_owned()),
                     ),
+                    (
+                        "indicator".to_owned(),
+                        ChartValue::String(format!("metric_{index}")),
+                    ),
                     ("x".to_owned(), ChartValue::Number(value)),
                     ("y".to_owned(), ChartValue::Number(value * 2.0)),
                     ("value".to_owned(), ChartValue::Number(value * 3.0)),
@@ -3074,9 +3776,12 @@ mod tests {
                     (ChartChannel::Y, "y".to_owned()),
                     (ChartChannel::Value, "value".to_owned()),
                 ]),
+                ChartSeriesKind::Radar => ChartEncode::new([
+                    (ChartChannel::Name, "indicator".to_owned()),
+                    (ChartChannel::Value, "value".to_owned()),
+                ]),
                 ChartSeriesKind::Pie
                 | ChartSeriesKind::Donut
-                | ChartSeriesKind::Radar
                 | ChartSeriesKind::Gauge
                 | ChartSeriesKind::Funnel
                 | ChartSeriesKind::Map => ChartEncode::new([
@@ -3131,6 +3836,7 @@ mod tests {
                     smooth: true,
                     transforms: Vec::new(),
                     renderer: None,
+                    options: crate::UiValue::Null,
                 }],
                 legend: ChartLegendSpec::default(),
                 tooltip: ChartTooltipSpec::default(),
@@ -3165,6 +3871,13 @@ mod tests {
     fn sampled_motion_scene_is_the_hit_test_scene() {
         let mark = |x| ChartMark {
             key: "series:datum".to_owned(),
+            region_key: "main".to_owned(),
+            role: ChartMarkRole::Data,
+            datum: Some(ChartDatumRef {
+                dataset: "main".to_owned(),
+                series: "series".to_owned(),
+                key: "datum".to_owned(),
+            }),
             series_key: "series".to_owned(),
             datum_key: "datum".to_owned(),
             geometry: ChartMarkGeometry::Rect(ChartRect {
@@ -3184,9 +3897,19 @@ mod tests {
             revision: 1,
             width: 200.0,
             height: 100.0,
-            plot_regions: BTreeMap::new(),
+            plot_regions: BTreeMap::from([(
+                "main".to_owned(),
+                ChartRect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 100.0,
+                    height: 100.0,
+                },
+            )]),
+            axis_domains: BTreeMap::new(),
             marks: vec![mark].into(),
             labels: Vec::new().into(),
+            semantics: Vec::new().into(),
             diagnostics: Vec::new().into(),
             summary: String::new(),
             sampled_series: Vec::new().into(),

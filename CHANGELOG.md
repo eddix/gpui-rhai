@@ -19,6 +19,12 @@ semantic versioning from this release.
   formatter, projection and custom-series extensions; and Host-only SVG/PNG
   export. The CLI installs `charts/chart` and enables the feature, while the
   mounted `chart_gallery` exercises every series plus a 100,000-row data path.
+- Chart preparation keeps transformed semantic data separate from drawing,
+  compiles one shared scale per named axis, computes signed stack and Polar
+  domains correctly, uses typed mark roles and structural datum identity,
+  acknowledges controlled viewport proposals, exposes active/selected native
+  semantics, preserves text in PNG export, and rejects duplicate Host extension
+  registration without replacing the installed implementation.
 
 ## 0.1.4 - 2026-09-22
 

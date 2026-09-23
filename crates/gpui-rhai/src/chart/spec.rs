@@ -327,6 +327,7 @@ pub struct ChartSeriesSpec {
     pub smooth: bool,
     pub transforms: Vec<ChartTransformSpec>,
     pub renderer: Option<String>,
+    pub options: UiValue,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -606,6 +607,9 @@ impl ChartSpec {
             if series.kind == ChartSeriesKind::Custom && series.renderer.is_none() {
                 return Err(ChartSpecError::MissingCustomRenderer(series.key.clone()));
             }
+            if series.kind != ChartSeriesKind::Custom && series.options != UiValue::Null {
+                return Err(ChartSpecError::UnsupportedSeriesOptions(series.key.clone()));
+            }
             for axis in [&series.x_axis, &series.y_axis].into_iter().flatten() {
                 let axis = self
                     .axes
@@ -844,6 +848,7 @@ fn parse_series(value: &UiValue, index: usize) -> Result<ChartSeriesSpec, ChartS
             "smooth",
             "transforms",
             "renderer",
+            "options",
         ],
         &path,
     )?;
@@ -897,6 +902,7 @@ fn parse_series(value: &UiValue, index: usize) -> Result<ChartSeriesSpec, ChartS
             .transpose()?
             .unwrap_or_default(),
         renderer: optional_identifier(value, "renderer")?,
+        options: value.get("options").cloned().unwrap_or(UiValue::Null),
     })
 }
 
@@ -1499,6 +1505,8 @@ pub enum ChartSpecError {
     IncompleteLink,
     #[error("custom chart series `{0}` requires a registered renderer ID")]
     MissingCustomRenderer(String),
+    #[error("built-in chart series `{0}` does not accept custom options")]
+    UnsupportedSeriesOptions(String),
     #[error("chart annotation `{0}` is duplicated")]
     DuplicateAnnotation(String),
     #[error("chart annotation value `{0}` must be a finite number or category string")]
@@ -1548,6 +1556,7 @@ mod tests {
                     smooth: true,
                     transforms: Vec::new(),
                     renderer: None,
+                    options: UiValue::Null,
                 },
                 ChartSeriesSpec {
                     key: "share".to_owned(),
@@ -1567,6 +1576,7 @@ mod tests {
                     smooth: false,
                     transforms: Vec::new(),
                     renderer: None,
+                    options: UiValue::Null,
                 },
             ],
             legend: ChartLegendSpec::default(),

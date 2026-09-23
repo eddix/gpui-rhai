@@ -248,6 +248,55 @@ impl ChartColumn {
         &self.nulls
     }
 
+    fn select_rows(&self, indices: &[usize]) -> Result<Self, ChartDataError> {
+        let validity = indices
+            .iter()
+            .map(|index| !self.nulls.is_null(*index))
+            .collect::<Vec<_>>();
+        let values = match &self.values {
+            ChartColumnValues::Number(values) => ChartColumnValues::Number(
+                indices
+                    .iter()
+                    .map(|index| values[*index])
+                    .collect::<Vec<_>>()
+                    .into(),
+            ),
+            ChartColumnValues::Integer(values) => ChartColumnValues::Integer(
+                indices
+                    .iter()
+                    .map(|index| values[*index])
+                    .collect::<Vec<_>>()
+                    .into(),
+            ),
+            ChartColumnValues::Timestamp(values) => ChartColumnValues::Timestamp(
+                indices
+                    .iter()
+                    .map(|index| values[*index])
+                    .collect::<Vec<_>>()
+                    .into(),
+            ),
+            ChartColumnValues::Bool(values) => ChartColumnValues::Bool(
+                indices
+                    .iter()
+                    .map(|index| values[*index])
+                    .collect::<Vec<_>>()
+                    .into(),
+            ),
+            ChartColumnValues::String(values) => ChartColumnValues::String(
+                indices
+                    .iter()
+                    .map(|index| values[*index].clone())
+                    .collect::<Vec<_>>()
+                    .into(),
+            ),
+        };
+        Self::new(
+            self.name.clone(),
+            values,
+            ChartNullBitmap::from_validity(validity),
+        )
+    }
+
     fn append(&self, other: &Self, skip: usize) -> Result<Self, ChartDataError> {
         if self.name != other.name || self.data_type() != other.data_type() {
             return Err(ChartDataError::SchemaMismatch);
@@ -569,13 +618,14 @@ impl ChartDataset {
                 len: self.len,
             });
         }
-        let rows = indices
-            .iter()
-            .filter_map(|index| self.row(*index))
-            .collect::<Vec<_>>();
-        Self::from_chart_rows(
+        let columns = self
+            .columns
+            .values()
+            .map(|column| column.select_rows(indices))
+            .collect::<Result<Vec<_>, _>>()?;
+        Self::new(
             self.name.clone(),
-            &rows,
+            columns,
             self.key_dimension.clone(),
             ChartDataLimits::default(),
         )

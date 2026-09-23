@@ -1,10 +1,11 @@
+use std::collections::BTreeSet;
 use std::fmt::Write as _;
 
 use thiserror::Error;
 
 use super::{
     ChartGeoRegistry, ChartMarkGeometry, ChartPrepareError, ChartPreparedData, ChartTheme,
-    PreparedChartScene, layout_chart_scene,
+    ChartViewport, PreparedChartScene, layout_chart_scene_with_viewport,
 };
 
 const MAX_EXPORT_DIMENSION: u32 = 8_192;
@@ -15,13 +16,17 @@ pub enum ChartExportMotion {
     Terminal,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ChartExportRequest {
     pub width: u32,
     pub height: u32,
     pub locale: String,
     pub expected_revision: Option<u64>,
     pub motion: ChartExportMotion,
+    pub viewport: ChartViewport,
+    pub selected_keys: BTreeSet<String>,
+    pub number: Option<crate::NumberMetadata>,
+    pub direction: Option<crate::TextDirection>,
 }
 
 impl ChartExportRequest {
@@ -33,7 +38,33 @@ impl ChartExportRequest {
             locale: locale.into(),
             expected_revision: None,
             motion: ChartExportMotion::Terminal,
+            viewport: ChartViewport::default(),
+            selected_keys: BTreeSet::new(),
+            number: None,
+            direction: None,
         }
+    }
+
+    #[must_use]
+    pub fn with_view_state(
+        mut self,
+        viewport: ChartViewport,
+        selected_keys: impl IntoIterator<Item = String>,
+    ) -> Self {
+        self.viewport = viewport;
+        self.selected_keys = selected_keys.into_iter().collect();
+        self
+    }
+
+    #[must_use]
+    pub fn with_locale_context(
+        mut self,
+        number: Option<crate::NumberMetadata>,
+        direction: crate::TextDirection,
+    ) -> Self {
+        self.number = number;
+        self.direction = Some(direction);
+        self
     }
 }
 
@@ -65,7 +96,7 @@ pub fn export_chart_png(
     geo: &ChartGeoRegistry,
 ) -> Result<Vec<u8>, ChartExportError> {
     let svg = export_chart_svg(prepared, request, theme, geo)?;
-    let tree = usvg::Tree::from_str(&svg, &usvg::Options::default())
+    let tree = usvg::Tree::from_str(&svg, &crate::asset::svg_options())
         .map_err(|error| ChartExportError::Svg(error.to_string()))?;
     let mut pixmap = resvg::tiny_skia::Pixmap::new(request.width, request.height)
         .ok_or(ChartExportError::Allocation)?;
@@ -96,13 +127,31 @@ fn export_scene(
     }
     let mut export_theme = theme.clone();
     export_theme.locale.clone_from(&request.locale);
-    Ok(layout_chart_scene(
+    if request.number.is_some() {
+        export_theme.number.clone_from(&request.number);
+    }
+    if let Some(direction) = request.direction {
+        export_theme.direction = direction;
+    }
+    let mut scene = layout_chart_scene_with_viewport(
         prepared,
         f64::from(request.width),
         f64::from(request.height),
         &export_theme,
         geo,
-    )?)
+        request.viewport,
+    )?;
+    if !request.selected_keys.is_empty() {
+        let mut marks = scene.marks.to_vec();
+        for mark in &mut marks {
+            if request.selected_keys.contains(&mark.datum_key) {
+                mark.selected = true;
+                mark.stroke = Some((export_theme.selection, 2.0));
+            }
+        }
+        scene.marks = marks.into();
+    }
+    Ok(scene)
 }
 
 fn validate_request(request: &ChartExportRequest) -> Result<(), ChartExportError> {
@@ -135,7 +184,31 @@ fn scene_to_svg(scene: &PreparedChartScene, theme: &ChartTheme, locale: &str) ->
         escape_xml(locale),
         color_hex(theme.background)
     );
+    output.push_str("<defs>");
+    for (key, region) in &scene.plot_regions {
+        let _ = write!(
+            output,
+            r#"<clipPath id="clip-{}"><rect x="{}" y="{}" width="{}" height="{}"/></clipPath>"#,
+            escape_xml(key),
+            format_number(region.x),
+            format_number(region.y),
+            format_number(region.width),
+            format_number(region.height),
+        );
+    }
+    output.push_str("</defs>");
     for mark in scene.marks.iter() {
+        let clipped = matches!(
+            mark.role,
+            super::ChartMarkRole::Data | super::ChartMarkRole::Decoration
+        ) && scene.plot_regions.contains_key(&mark.region_key);
+        if clipped {
+            let _ = write!(
+                output,
+                r#"<g clip-path="url(#clip-{})">"#,
+                escape_xml(&mark.region_key)
+            );
+        }
         let fill = mark.fill.map_or_else(|| "none".to_owned(), color_hex);
         let (stroke, stroke_width) = mark.stroke.map_or_else(
             || ("none".to_owned(), 0.0),
@@ -219,6 +292,9 @@ fn scene_to_svg(scene: &PreparedChartScene, theme: &ChartTheme, locale: &str) ->
                     format_number(stroke_width)
                 );
             }
+        }
+        if clipped {
+            output.push_str("</g>");
         }
     }
     for label in scene.labels.iter() {
@@ -347,6 +423,7 @@ mod tests {
                 smooth: false,
                 transforms: Vec::new(),
                 renderer: None,
+                options: crate::UiValue::Null,
             }],
             legend: ChartLegendSpec::default(),
             tooltip: ChartTooltipSpec::default(),
@@ -374,7 +451,7 @@ mod tests {
         let geo = ChartGeoRegistry::new();
         let svg = export_chart_svg(&prepared, &request, &theme, &geo).unwrap();
         assert!(svg.contains("A &amp; B"));
-        assert!(svg.contains("data-key=\"bars:a\""));
+        assert!(svg.contains("data-key=\"main:bars:a\""));
         let png = export_chart_png(&prepared, &request, &theme, &geo).unwrap();
         assert!(png.starts_with(b"\x89PNG\r\n\x1a\n"));
     }

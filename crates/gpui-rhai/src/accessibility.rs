@@ -125,6 +125,26 @@ impl AccessibilityTree {
             .values()
             .filter(move |node| node.test_id.as_deref() == Some(id))
     }
+
+    pub(crate) fn apply_primitive_projections(
+        &mut self,
+        projections: BTreeMap<NodeId, crate::PrimitiveAccessibilityProjection>,
+    ) {
+        for (id, projection) in projections {
+            let Some(node) = self.nodes.get_mut(&id) else {
+                continue;
+            };
+            if !projection.description.is_empty() {
+                if !node.description.is_empty() {
+                    node.description.push_str("; ");
+                }
+                node.description.push_str(&projection.description);
+            }
+            if projection.value.is_some() {
+                node.value = projection.value;
+            }
+        }
+    }
 }
 
 fn semantic_labels(

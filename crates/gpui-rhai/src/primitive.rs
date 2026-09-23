@@ -826,6 +826,17 @@ pub trait PrimitiveHandler {
         1
     }
 
+    /// Contribute a bounded semantic summary for the retained primitive node.
+    /// Native internals remain private; accessibility and automation receive
+    /// only durable, already-presented values.
+    fn accessibility(
+        &self,
+        _instance: &PrimitiveInstanceId,
+        _cx: &App,
+    ) -> Option<PrimitiveAccessibilityProjection> {
+        None
+    }
+
     /// Called once before the first render of a keyed lifecycle primitive.
     ///
     /// # Errors
@@ -864,6 +875,12 @@ pub trait PrimitiveHandler {
 
     /// Called when a previously mounted keyed primitive is no longer reachable.
     fn unmount(&mut self, _instance: &PrimitiveInstanceId) {}
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct PrimitiveAccessibilityProjection {
+    pub description: String,
+    pub value: Option<UiValue>,
 }
 
 struct PrimitiveEntry {
@@ -1015,6 +1032,32 @@ impl PrimitiveRegistry {
                 source,
             })?;
         Ok(payload)
+    }
+
+    pub(crate) fn accessibility_projections(
+        &self,
+        tree: &crate::RetainedUiTree,
+        cx: &App,
+    ) -> BTreeMap<crate::NodeId, PrimitiveAccessibilityProjection> {
+        let Ok(inner) = self.inner.try_borrow() else {
+            return BTreeMap::new();
+        };
+        tree.nodes()
+            .filter_map(|node| {
+                let primitive = node.primitive()?.clone();
+                let instance = PrimitiveInstanceId {
+                    primitive: primitive.clone(),
+                    key: node.key()?.to_owned(),
+                    node: node.id(),
+                };
+                let projection = inner
+                    .entries
+                    .get(&primitive)?
+                    .handler
+                    .accessibility(&instance, cx)?;
+                Some((node.id(), projection))
+            })
+            .collect()
     }
 
     /// Unmount keyed lifecycle instances absent from the successful node tree.

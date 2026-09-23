@@ -9,7 +9,7 @@ use gpui::{Context, IntoElement, Render, TestAppContext, VisualTestContext, Wind
 use gpui_rhai::{
     AutomationCommand, AutomationLocator, ExecutionOperation, ExecutionTiming, ScriptViewConfig,
     ScriptViewExtension, ScriptViewHandle, ScriptViewHost, ScriptViewPerformanceSnapshot,
-    VirtualCollectionId,
+    UiValue, VirtualCollectionId,
 };
 use serde::Serialize;
 
@@ -926,6 +926,24 @@ fn settle_chart(
     combined
 }
 
+fn presented_chart_revision(
+    visual: &mut VisualTestContext,
+    view: &ScriptViewHandle,
+    name: &str,
+) -> Option<u64> {
+    visual.update(|_, cx| {
+        let tree = view.accessibility_snapshot(cx).ok()?;
+        let chart = tree.find_by_role_and_name("figure", name).next()?;
+        let UiValue::Map(value) = chart.value.as_ref()? else {
+            return None;
+        };
+        let UiValue::Integer(revision) = value.get("revision")? else {
+            return None;
+        };
+        u64::try_from(*revision).ok()
+    })
+}
+
 #[gpui::test]
 #[ignore = "run with scripts/benchmark.sh"]
 #[allow(clippy::too_many_lines)]
@@ -998,6 +1016,11 @@ fn chart_end_to_end_baseline(cx: &mut TestAppContext) {
         let started = Instant::now();
         stream.append_sliding("main", &chunk, points).unwrap();
         let snapshot = settle_chart(cx, &mut visual, &view);
+        assert_eq!(
+            presented_chart_revision(&mut visual, &view, "line"),
+            Some(stream.revision()),
+            "benchmark stopped before the target NativeChartData revision was presented"
+        );
         operations = operations.saturating_add(
             snapshot
                 .timings
@@ -1012,7 +1035,7 @@ fn chart_end_to_end_baseline(cx: &mut TestAppContext) {
     resize.sort_unstable();
     streaming.sort_unstable();
     let report = ChartBenchmarkReport {
-        schema: "gpui-rhai-chart-e2e-v1",
+        schema: "gpui-rhai-chart-e2e-v2",
         points,
         prepare_us,
         mount_first_frame_us,

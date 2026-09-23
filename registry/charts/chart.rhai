@@ -47,6 +47,9 @@ define_component(#{
         state: #{ fields: #{} },
         events: #{
             select: #{ payload: #{ type: "object", allow_unknown: false, fields: #{
+                dataset: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+                region_key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+                revision: #{ schema: #{ type: "integer", min: 0 }, required: true, sensitive: false },
                 series_key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
                 datum_key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
                 name: #{ schema: #{ type: "string" }, required: true, sensitive: false },
@@ -59,6 +62,13 @@ define_component(#{
             } } },
             brush_change: #{ payload: #{ type: "object", allow_unknown: false, fields: #{
                 keys: #{ schema: #{ type: "array", items: #{ type: "string" }, max_items: 10000 }, required: true, sensitive: false },
+                data: #{ schema: #{ type: "array", max_items: 10000, items: #{ type: "object", allow_unknown: false, fields: #{
+                    dataset: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+                    series_key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+                    datum_key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+                    region_key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+                } } }, required: true, sensitive: false },
+                revision: #{ schema: #{ type: "integer", min: 0 }, required: true, sensitive: false },
                 x: #{ schema: #{ type: "number" }, required: true, sensitive: false },
                 y: #{ schema: #{ type: "number" }, required: true, sensitive: false },
                 width: #{ schema: #{ type: "number" }, required: true, sensitive: false },
@@ -119,7 +129,9 @@ fn specialized_chart(props, kind, coordinate_kind) {
         };
     } else {
         chart_props.spec = props.spec;
-        for series in chart_props.spec.series { series.kind = kind; }
+        for index in 0..chart_props.spec.series.len {
+            chart_props.spec.series[index].kind = kind;
+        }
     }
     Chart(chart_props)
 }

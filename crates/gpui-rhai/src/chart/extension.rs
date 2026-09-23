@@ -1,13 +1,48 @@
-use std::collections::BTreeMap;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet, btree_map::Entry};
 use std::sync::{Arc, RwLock};
 
 use thiserror::Error;
 
 use super::{
-    ChartDataset, ChartFormatSpec, ChartMark, ChartMarkGeometry, ChartRect, ChartScale,
-    ChartSeriesSpec, ChartTheme,
+    ChartDataset, ChartFormatSpec, ChartGeoPoint, ChartGeoProjection, ChartMark, ChartMarkGeometry,
+    ChartPoint, ChartRect, ChartScale, ChartSeriesSpec, ChartTheme,
 };
+
+pub enum ChartCustomCoordinateContext<'a> {
+    Cartesian {
+        x: &'a ChartScale,
+        y: &'a ChartScale,
+    },
+    Polar {
+        center: ChartPoint,
+        radius: f64,
+        value_domain: (f64, f64),
+    },
+    Geo {
+        projection: Option<&'a dyn ChartGeoProjection>,
+        scale: (f64, f64, f64),
+    },
+}
+
+impl ChartCustomCoordinateContext<'_> {
+    #[must_use]
+    pub fn project_geo(&self, longitude: f64, latitude: f64) -> Option<ChartPoint> {
+        let Self::Geo { projection, scale } = self else {
+            return None;
+        };
+        let point = projection.map_or(
+            Some(ChartGeoPoint {
+                x: longitude,
+                y: latitude,
+            }),
+            |projection| projection.project(longitude, latitude),
+        )?;
+        Some(ChartPoint {
+            x: point.x * scale.0 + scale.1,
+            y: point.y * scale.0 + scale.2,
+        })
+    }
+}
 
 pub struct ChartCustomSeriesContext<'a> {
     pub spec: &'a ChartSeriesSpec,
@@ -16,6 +51,7 @@ pub struct ChartCustomSeriesContext<'a> {
     pub theme: &'a ChartTheme,
     pub x_scale: Option<&'a ChartScale>,
     pub y_scale: Option<&'a ChartScale>,
+    pub coordinate: ChartCustomCoordinateContext<'a>,
 }
 
 /// Compile-time trusted Rust custom series extension.
@@ -77,8 +113,11 @@ impl ChartSeriesRegistry {
             .inner
             .write()
             .map_err(|_| ChartSeriesExtensionError::Poisoned)?;
-        if registry.insert(id.clone(), Arc::new(renderer)).is_some() {
-            return Err(ChartSeriesExtensionError::Duplicate(id));
+        match registry.entry(id.clone()) {
+            Entry::Vacant(entry) => {
+                entry.insert(Arc::new(renderer));
+            }
+            Entry::Occupied(_) => return Err(ChartSeriesExtensionError::Duplicate(id)),
         }
         Ok(())
     }
@@ -95,7 +134,7 @@ impl ChartSeriesRegistry {
             .get(id)
             .cloned()
             .ok_or_else(|| ChartSeriesExtensionError::Unknown(id.to_owned()))?;
-        let series_key = context.spec.key.clone();
+        let spec = context.spec.clone();
         let marks =
             renderer
                 .layout(context)
@@ -103,7 +142,7 @@ impl ChartSeriesRegistry {
                     id: id.to_owned(),
                     message,
                 })?;
-        validate_custom_marks(&series_key, &marks)?;
+        validate_custom_marks(&spec, &marks)?;
         Ok(marks)
     }
 
@@ -122,25 +161,32 @@ impl ChartSeriesRegistry {
 }
 
 fn validate_custom_marks(
-    series_key: &str,
+    spec: &ChartSeriesSpec,
     marks: &[ChartMark],
 ) -> Result<(), ChartSeriesExtensionError> {
     if marks.len() > 100_000 {
         return Err(ChartSeriesExtensionError::InvalidMarks {
-            series: series_key.to_owned(),
+            series: spec.key.clone(),
             message: "more than 100000 marks".to_owned(),
         });
     }
     let mut keys = BTreeSet::new();
     for mark in marks {
-        if mark.series_key != series_key
+        if mark.series_key != spec.key
+            || mark.region_key != spec.coordinate
             || mark.key.is_empty()
             || mark.datum_key.is_empty()
+            || (mark.role == super::ChartMarkRole::Data
+                && mark.datum.as_ref().is_none_or(|datum| {
+                    datum.series != spec.key
+                        || datum.dataset != spec.dataset
+                        || datum.key != mark.datum_key
+                }))
             || !keys.insert(mark.key.clone())
             || !geometry_is_finite(&mark.geometry)
         {
             return Err(ChartSeriesExtensionError::InvalidMarks {
-                series: series_key.to_owned(),
+                series: spec.key.clone(),
                 message: format!("invalid or duplicate mark `{}`", mark.key),
             });
         }
@@ -270,8 +316,11 @@ impl ChartFormatterRegistry {
             .inner
             .write()
             .map_err(|_| ChartFormatterError::Poisoned)?;
-        if registry.insert(id.clone(), Arc::new(formatter)).is_some() {
-            return Err(ChartFormatterError::Duplicate(id));
+        match registry.entry(id.clone()) {
+            Entry::Vacant(entry) => {
+                entry.insert(Arc::new(formatter));
+            }
+            Entry::Occupied(_) => return Err(ChartFormatterError::Duplicate(id)),
         }
         Ok(())
     }

@@ -11,18 +11,18 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use gpui::{
-    AnyElement, App, AppContext, Bounds, Context, Element, ElementId, Entity, FocusHandle,
-    GlobalElementId, InspectorElementId, InteractiveElement, IntoElement, KeyDownEvent, LayoutId,
-    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point,
-    Render, ScrollWheelEvent, Styled, Task, WeakEntity, Window, canvas, div, fill, point, px, rgba,
-    size,
+    AnyElement, App, AppContext, Bounds, ContentMask, Context, Element, ElementId, Entity,
+    FocusHandle, GlobalElementId, InspectorElementId, InteractiveElement, IntoElement,
+    KeyDownEvent, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
+    ParentElement, Pixels, Point, Render, ScrollWheelEvent, Styled, Task, WeakEntity, Window,
+    canvas, div, fill, point, px, rgba, size,
 };
 
 use super::{
     ChartBrushMode, ChartDataLimits, ChartDataSnapshot, ChartDataset, ChartFormatterRegistry,
-    ChartGeoRegistry, ChartMark, ChartMarkGeometry, ChartPoint, ChartPreparedData, ChartRect,
-    ChartSeriesRegistry, ChartSpec, ChartTheme, ChartTransformRegistry, NativeChartData,
-    PreparedChartScene, layout_chart_scene, prepare_chart_data,
+    ChartGeoRegistry, ChartMark, ChartMarkGeometry, ChartMarkRole, ChartPoint, ChartPreparedData,
+    ChartRect, ChartSeriesRegistry, ChartSpec, ChartTheme, ChartTransformRegistry, ChartViewport,
+    NativeChartData, PreparedChartScene, layout_chart_scene_with_viewport, prepare_chart_data,
 };
 use crate::{
     ComponentStateSchema, EffectPrimitiveDescriptor, EventSchema, ObjectField, PrimitiveDescriptor,
@@ -72,6 +72,23 @@ struct ChartConfig {
     theme: PrimitiveTheme,
 }
 
+#[derive(Clone, Debug)]
+struct ChartSourceCache {
+    spec_prop: PrimitiveValue,
+    data_prop: PrimitiveValue,
+    key_dimension: Option<String>,
+    spec: ChartSpec,
+    data: ChartDataInput,
+}
+
+impl ChartSourceCache {
+    fn matches(&self, props: &PrimitiveProps) -> bool {
+        props.get("spec") == Some(&self.spec_prop)
+            && props.get("data") == Some(&self.data_prop)
+            && data_string_prop(props, "key_dimension") == self.key_dimension
+    }
+}
+
 #[derive(Clone, Default)]
 struct ChartLinkRegistry {
     members: Rc<RefCell<ChartLinkMembers>>,
@@ -79,6 +96,12 @@ struct ChartLinkRegistry {
 
 type ChartLinkKey = (String, String);
 type ChartLinkMembers = BTreeMap<ChartLinkKey, BTreeSet<WeakEntity<ChartEntity>>>;
+
+#[derive(Clone, Copy, Debug, Default)]
+struct ChartLinkedViewport {
+    x: Option<(f64, f64)>,
+    y: Option<(f64, f64)>,
+}
 
 impl ChartLinkRegistry {
     fn register(&self, key: Option<(String, String)>, entity: WeakEntity<ChartEntity>) {
@@ -108,16 +131,14 @@ impl ChartLinkRegistry {
         &self,
         key: &(String, String),
         source: &WeakEntity<ChartEntity>,
-        zoom: f64,
-        pan: ChartPoint,
+        viewport: ChartLinkedViewport,
         cx: &mut App,
     ) {
         for member in self.members(key) {
             if &member != source {
                 let _ = member.update(cx, |chart, cx| {
-                    chart.zoom = zoom;
-                    chart.pan = pan;
-                    cx.notify();
+                    chart.apply_linked_viewport(viewport);
+                    chart.rebuild_scene_with_motion(cx, false);
                 });
             }
         }
@@ -146,19 +167,18 @@ impl ChartLinkRegistry {
         }
     }
 
-    fn broadcast_selection(
+    fn broadcast_selection_set(
         &self,
         key: &(String, String),
         source: &WeakEntity<ChartEntity>,
-        datum: &str,
+        selected: &BTreeSet<String>,
         cx: &mut App,
     ) {
         for member in self.members(key) {
             if &member != source {
-                let datum = datum.to_owned();
+                let selected = selected.clone();
                 let _ = member.update(cx, |chart, cx| {
-                    chart.linked_selected.clear();
-                    chart.linked_selected.insert(datum);
+                    chart.linked_selected = selected;
                     chart.rebuild_scene(cx);
                 });
             }
@@ -181,7 +201,7 @@ struct ChartEntity {
     bounds: Option<Bounds<Pixels>>,
     error: Option<String>,
     hovered: Option<String>,
-    focused: Option<usize>,
+    focused: Option<String>,
     zoom: f64,
     pan: ChartPoint,
     dragging_pan: bool,
@@ -189,6 +209,8 @@ struct ChartEntity {
     brush: Option<(ChartPoint, ChartPoint)>,
     job: u64,
     prepare_task: Option<Task<()>>,
+    layout_job: u64,
+    layout_task: Option<Task<()>>,
     data_task: Option<Task<()>>,
     transition_started: Option<Instant>,
     linked_selected: BTreeSet<String>,
@@ -230,6 +252,8 @@ impl ChartEntity {
             brush: None,
             job: 0,
             prepare_task: None,
+            layout_job: 0,
+            layout_task: None,
             data_task: None,
             transition_started: None,
             linked_selected: BTreeSet::new(),
@@ -247,21 +271,34 @@ impl ChartEntity {
         events: PrimitiveEventEmitter,
         cx: &mut Context<Self>,
     ) {
+        let previous_link = link_key(&self.config.spec);
+        let next_link = link_key(&config.spec);
         let data_changed = !self.config.data.same_source(&config.data);
         let spec_changed = self.config.spec != config.spec;
         let selection_changed = self.config.selected != config.selected;
         let viewport_changed =
-            (self.config.zoom - config.zoom).abs() > f64::EPSILON || self.config.pan != config.pan;
+            (self.zoom - config.zoom).abs() > f64::EPSILON || self.pan != config.pan;
         let theme_changed = primitive_chart_theme(&self.config.theme)
             != primitive_chart_theme(&config.theme)
             || self.config.theme.motion_preference() != config.theme.motion_preference()
             || self.config.theme.motion_quality() != config.theme.motion_quality();
         self.config = config;
-        if viewport_changed {
-            self.zoom = self.config.zoom;
-            self.pan = self.config.pan;
+        if previous_link != next_link {
+            self.linked_selected.clear();
         }
+        // Every controlled render is an acknowledgement. Re-applying an
+        // unchanged Host value intentionally rejects a transient preview.
+        self.zoom = self.config.zoom;
+        self.pan = self.config.pan;
         self.events = events;
+        if let Some(key) = next_link {
+            let links = self.links.clone();
+            let source = cx.weak_entity();
+            let selected = self.config.selected.clone();
+            cx.defer(move |cx| {
+                links.broadcast_selection_set(&key, &source, &selected, cx);
+            });
+        }
         if data_changed {
             self.restart_data_listener(cx);
         }
@@ -270,7 +307,7 @@ impl ChartEntity {
         } else if selection_changed || theme_changed {
             self.rebuild_scene(cx);
         } else if viewport_changed {
-            cx.notify();
+            self.rebuild_scene_with_motion(cx, false);
         }
     }
 
@@ -293,6 +330,8 @@ impl ChartEntity {
 
     fn start_prepare(&mut self, cx: &mut Context<Self>) {
         self.job = self.job.saturating_add(1);
+        self.layout_job = self.layout_job.saturating_add(1);
+        self.layout_task = None;
         let job = self.job;
         let spec = self.config.spec.clone();
         let data = self.config.data.snapshot();
@@ -327,56 +366,140 @@ impl ChartEntity {
     }
 
     fn rebuild_scene(&mut self, cx: &mut Context<Self>) {
-        let (Some(prepared), Some(bounds)) = (&self.prepared, self.bounds) else {
+        self.rebuild_scene_with_motion(cx, true);
+    }
+
+    fn rebuild_scene_with_motion(&mut self, cx: &mut Context<Self>, animate: bool) {
+        let (Some(prepared), Some(bounds)) = (self.prepared.clone(), self.bounds) else {
             cx.notify();
             return;
         };
+        self.layout_job = self.layout_job.saturating_add(1);
+        let job = self.layout_job;
         let theme = primitive_chart_theme(&self.config.theme);
-        match layout_chart_scene(
-            prepared,
-            f64::from(bounds.size.width),
-            f64::from(bounds.size.height),
-            &theme,
-            &self.geo,
-        ) {
-            Ok(mut scene) => {
-                let selected = self
-                    .config
-                    .selected
-                    .union(&self.linked_selected)
-                    .cloned()
-                    .collect();
-                apply_selection(&mut scene, &selected, theme.selection);
-                let previous = self.current_scene_sample();
-                self.scene = Some(scene.clone());
-                if chart_motion_duration(&self.config).is_some_and(|duration| !duration.is_zero()) {
-                    self.previous_scene = Some(previous.unwrap_or_else(|| {
-                        let mut empty = scene;
-                        empty.marks = Vec::new().into();
-                        empty
-                    }));
-                    self.transition_started = Some(self.config.theme.now());
-                } else {
-                    self.previous_scene = None;
-                    self.transition_started = None;
+        let geo = self.geo.clone();
+        let viewport = ChartViewport {
+            zoom: self.zoom,
+            pan: self.pan,
+        };
+        let selected = self
+            .config
+            .selected
+            .union(&self.linked_selected)
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        let previous = self.current_scene_sample();
+        self.layout_task = Some(cx.spawn(async move |this, cx| {
+            let result = cx
+                .background_spawn(async move {
+                    let mut scene = layout_chart_scene_with_viewport(
+                        &prepared,
+                        f64::from(bounds.size.width),
+                        f64::from(bounds.size.height),
+                        &theme,
+                        &geo,
+                        viewport,
+                    )?;
+                    apply_selection(&mut scene, &selected, theme.selection);
+                    Ok::<_, super::ChartPrepareError>(scene)
+                })
+                .await;
+            let _ = this.update(cx, |chart, cx| {
+                if chart.layout_job != job {
+                    return;
                 }
-                self.error = None;
-            }
-            Err(error) => self.error = Some(error.to_string()),
-        }
-        cx.notify();
+                chart.layout_task = None;
+                match result {
+                    Ok(scene) => {
+                        chart.scene = Some(scene.clone());
+                        if animate
+                            && chart_motion_duration(&chart.config)
+                                .is_some_and(|duration| !duration.is_zero())
+                        {
+                            chart.previous_scene = Some(previous.unwrap_or_else(|| {
+                                let mut empty = scene;
+                                empty.marks = Vec::new().into();
+                                empty
+                            }));
+                            chart.transition_started = Some(chart.config.theme.now());
+                        } else {
+                            chart.previous_scene = None;
+                            chart.transition_started = None;
+                        }
+                        chart.error = None;
+                    }
+                    Err(error) => chart.error = Some(error.to_string()),
+                }
+                cx.notify();
+            });
+        }));
     }
 
     fn set_bounds(&mut self, bounds: Bounds<Pixels>, cx: &mut Context<Self>) {
-        if self.bounds != Some(bounds) {
-            self.bounds = Some(bounds);
+        let size_changed = self
+            .bounds
+            .is_none_or(|previous| previous.size != bounds.size);
+        self.bounds = Some(bounds);
+        if size_changed {
             self.rebuild_scene(cx);
         }
     }
 
+    fn linked_viewport(&self) -> ChartLinkedViewport {
+        let Some(scene) = &self.scene else {
+            return ChartLinkedViewport::default();
+        };
+        let Some(plot) = scene.plot_regions.values().next().copied() else {
+            return ChartLinkedViewport::default();
+        };
+        ChartLinkedViewport {
+            x: scene.axis_domains.iter().find_map(|(key, domain)| {
+                key.contains(":x:")
+                    .then(|| linked_visible_domain(domain.full, self.zoom, self.pan.x, plot.width))
+            }),
+            y: scene.axis_domains.iter().find_map(|(key, domain)| {
+                key.contains(":y:").then(|| {
+                    linked_visible_domain(domain.full, self.zoom, self.pan.y, -plot.height)
+                })
+            }),
+        }
+    }
+
+    fn apply_linked_viewport(&mut self, linked: ChartLinkedViewport) {
+        let Some(scene) = &self.scene else { return };
+        let Some(plot) = scene.plot_regions.values().next().copied() else {
+            return;
+        };
+        let x_domain = scene
+            .axis_domains
+            .iter()
+            .find_map(|(key, domain)| key.contains(":x:").then_some(*domain));
+        let y_domain = scene
+            .axis_domains
+            .iter()
+            .find_map(|(key, domain)| key.contains(":y:").then_some(*domain));
+        let (Some(visible), Some(full)) = (
+            linked.x.or(linked.y),
+            x_domain.or(y_domain).map(|domain| domain.full),
+        ) else {
+            return;
+        };
+        let visible_span = visible.1 - visible.0;
+        let full_span = full.1 - full.0;
+        if visible_span <= f64::EPSILON || full_span <= f64::EPSILON {
+            return;
+        }
+        self.zoom = (full_span / visible_span).clamp(0.5, 20.0);
+        self.pan.x = linked.x.zip(x_domain).map_or(0.0, |(visible, domain)| {
+            linked_pan(domain.full, visible, plot.width, self.zoom)
+        });
+        self.pan.y = linked.y.zip(y_domain).map_or(0.0, |(visible, domain)| {
+            linked_pan(domain.full, visible, -plot.height, self.zoom)
+        });
+    }
+
     fn local_point(&self, position: Point<Pixels>) -> Option<ChartPoint> {
         self.visual_point(position)
-            .map(|point| self.inverse_view_point(point))
     }
 
     fn visual_point(&self, position: Point<Pixels>) -> Option<ChartPoint> {
@@ -390,50 +513,7 @@ impl ChartEntity {
     fn hit_mark_at(&self, position: Point<Pixels>) -> Option<ChartMark> {
         let scene = self.current_scene_sample()?;
         let visual = self.visual_point(position)?;
-        if let Some(mark) = scene.marks.iter().rev().find(|mark| {
-            mark.interactive
-                && mark_is_viewport_fixed(mark)
-                && super::scene::mark_hit_test(mark, visual)
-        }) {
-            return Some(mark.clone());
-        }
-        let data = self.inverse_view_point(visual);
-        scene
-            .marks
-            .iter()
-            .rev()
-            .find(|mark| {
-                !mark_is_viewport_fixed(mark)
-                    && mark.interactive
-                    && super::scene::mark_hit_test(mark, data)
-            })
-            .cloned()
-    }
-
-    fn inverse_view_point(&self, point: ChartPoint) -> ChartPoint {
-        let center = self
-            .bounds
-            .map_or(ChartPoint::default(), |bounds| ChartPoint {
-                x: f64::from(bounds.size.width) / 2.0,
-                y: f64::from(bounds.size.height) / 2.0,
-            });
-        ChartPoint {
-            x: (point.x - center.x - self.pan.x) / self.zoom + center.x,
-            y: (point.y - center.y - self.pan.y) / self.zoom + center.y,
-        }
-    }
-
-    fn transformed_point(&self, point: ChartPoint) -> ChartPoint {
-        let center = self
-            .bounds
-            .map_or(ChartPoint::default(), |bounds| ChartPoint {
-                x: f64::from(bounds.size.width) / 2.0,
-                y: f64::from(bounds.size.height) / 2.0,
-            });
-        ChartPoint {
-            x: center.x + (point.x - center.x) * self.zoom + self.pan.x,
-            y: center.y + (point.y - center.y) * self.zoom + self.pan.y,
-        }
+        scene.hit_test(visual).cloned()
     }
 
     fn mouse_move(&mut self, event: &MouseMoveEvent, window: &mut Window, cx: &mut Context<Self>) {
@@ -442,7 +522,7 @@ impl ChartEntity {
                 self.pan.x += f64::from(event.position.x - origin.x);
                 self.pan.y += f64::from(event.position.y - origin.y);
                 self.pan_origin = Some(event.position);
-                cx.notify();
+                self.rebuild_scene_with_motion(cx, false);
             }
             return;
         }
@@ -478,8 +558,24 @@ impl ChartEntity {
                 self.dragging_pan = true;
                 self.pan_origin = Some(event.position);
             }
-            MouseButton::Left if !matches!(self.config.spec.brush, ChartBrushMode::None) => {
-                if let Some(point) = self.local_point(event.position) {
+            MouseButton::Left => {
+                if let Some(mark) = self.hit_mark_at(event.position)
+                    && matches!(mark.role, ChartMarkRole::Legend | ChartMarkRole::Annotation)
+                {
+                    match mark.role {
+                        ChartMarkRole::Legend => self.emit_legend(mark, window, cx),
+                        ChartMarkRole::Annotation => self.emit_annotation(mark, window, cx),
+                        _ => unreachable!(),
+                    }
+                } else if !matches!(self.config.spec.brush, ChartBrushMode::None)
+                    && let Some(point) = self.local_point(event.position)
+                    && self.current_scene_sample().is_some_and(|scene| {
+                        scene
+                            .plot_regions
+                            .values()
+                            .any(|region| region.contains(point))
+                    })
+                {
                     let point = if self.config.spec.brush == ChartBrushMode::GeoRegion {
                         self.current_scene_sample()
                             .and_then(|scene| scene.hit_test(point).cloned())
@@ -490,17 +586,10 @@ impl ChartEntity {
                         point
                     };
                     self.brush = Some((point, point));
-                }
-            }
-            MouseButton::Left => {
-                if let Some(mark) = self.hit_mark_at(event.position) {
-                    if mark.datum_key == "legend" {
-                        self.emit_legend(mark, window, cx);
-                    } else if mark.series_key == "__annotation" {
-                        self.emit_annotation(mark, window, cx);
-                    } else {
-                        self.emit_select(&mark, window, cx);
-                    }
+                } else if let Some(mark) = self.hit_mark_at(event.position)
+                    && mark.role == ChartMarkRole::Data
+                {
+                    self.emit_select(&mark, window, cx);
                 }
             }
             MouseButton::Right | MouseButton::Navigate(_) => {}
@@ -524,15 +613,18 @@ impl ChartEntity {
 
     fn wheel(&mut self, event: &ScrollWheelEvent, window: &mut Window, cx: &mut Context<Self>) {
         let delta = event.delta.pixel_delta(px(16.0));
+        if matches!(event.touch_phase, gpui::TouchPhase::Ended) {
+            self.emit_viewport_change(window, cx);
+            return;
+        }
         let factor = (-f64::from(delta.y) / 400.0).exp();
         let next = (self.zoom * factor).clamp(0.5, 20.0);
         if (next - self.zoom).abs() <= f64::EPSILON {
             return;
         }
         self.zoom = next;
-        self.emit_viewport_change(window, cx);
+        self.rebuild_scene_with_motion(cx, false);
         cx.stop_propagation();
-        cx.notify();
     }
 
     fn emit_viewport_change(&self, window: &mut Window, cx: &mut Context<Self>) {
@@ -542,8 +634,7 @@ impl ChartEntity {
                 self.links.clone(),
                 key,
                 cx.weak_entity(),
-                self.zoom,
-                self.pan,
+                self.linked_viewport(),
             )
         });
         let payload = UiValue::Map(BTreeMap::from([
@@ -553,8 +644,8 @@ impl ChartEntity {
         ]));
         window.defer(cx, move |window, cx| {
             let _ = events.emit("zoom_change", payload, window, cx);
-            if let Some((links, key, source, zoom, pan)) = linked {
-                links.broadcast_zoom(&key, &source, zoom, pan, cx);
+            if let Some((links, key, source, viewport)) = linked {
+                links.broadcast_zoom(&key, &source, viewport, cx);
             }
         });
     }
@@ -566,9 +657,11 @@ impl ChartEntity {
         let interactive = scene
             .marks
             .iter()
-            .enumerate()
-            .filter(|(_, mark)| mark.interactive && mark.datum_key != "legend")
-            .map(|(index, _)| index)
+            .filter(|mark| {
+                mark.interactive
+                    && matches!(mark.role, ChartMarkRole::Data | ChartMarkRole::Annotation)
+            })
+            .map(|mark| mark.key.clone())
             .collect::<Vec<_>>();
         if interactive.is_empty() {
             return;
@@ -577,33 +670,36 @@ impl ChartEntity {
             "left" | "up" => {
                 let current = self
                     .focused
-                    .and_then(|index| interactive.iter().position(|value| *value == index))
+                    .as_ref()
+                    .and_then(|key| interactive.iter().position(|value| value == key))
                     .unwrap_or(0);
                 let next = if current == 0 {
                     interactive.len() - 1
                 } else {
                     current - 1
                 };
-                self.focused = Some(interactive[next]);
+                self.focused = Some(interactive[next].clone());
                 cx.stop_propagation();
                 cx.notify();
             }
             "right" | "down" => {
                 let current = self
                     .focused
-                    .and_then(|index| interactive.iter().position(|value| *value == index))
+                    .as_ref()
+                    .and_then(|key| interactive.iter().position(|value| value == key))
                     .unwrap_or(interactive.len() - 1);
-                self.focused = Some(interactive[(current + 1) % interactive.len()]);
+                self.focused = Some(interactive[(current + 1) % interactive.len()].clone());
                 cx.stop_propagation();
                 cx.notify();
             }
             "enter" | "space" => {
                 if let Some(mark) = self
                     .focused
-                    .and_then(|index| scene.marks.get(index))
+                    .as_ref()
+                    .and_then(|key| scene.marks.iter().find(|mark| mark.key == *key))
                     .cloned()
                 {
-                    if mark.series_key == "__annotation" {
+                    if mark.role == ChartMarkRole::Annotation {
                         self.emit_annotation(mark, window, cx);
                     } else {
                         self.emit_select(&mark, window, cx);
@@ -612,12 +708,12 @@ impl ChartEntity {
                 }
             }
             "home" => {
-                self.focused = interactive.first().copied();
+                self.focused = interactive.first().cloned();
                 cx.stop_propagation();
                 cx.notify();
             }
             "end" => {
-                self.focused = interactive.last().copied();
+                self.focused = interactive.last().cloned();
                 cx.stop_propagation();
                 cx.notify();
             }
@@ -627,19 +723,15 @@ impl ChartEntity {
 
     fn emit_select(&self, mark: &ChartMark, window: &mut Window, cx: &mut Context<Self>) {
         let events = self.events.clone();
-        let payload = mark_payload(mark);
+        let payload = mark_payload(mark, self.scene.as_ref().map_or(0, |scene| scene.revision));
         let linked = link_key(&self.config.spec).map(|key| {
-            (
-                self.links.clone(),
-                key,
-                cx.weak_entity(),
-                mark.datum_key.clone(),
-            )
+            let selected = BTreeSet::from([mark.datum_key.clone()]);
+            (self.links.clone(), key, cx.weak_entity(), selected)
         });
         window.defer(cx, move |window, cx| {
             let _ = events.emit("select", payload, window, cx);
-            if let Some((links, key, source, datum)) = linked {
-                links.broadcast_selection(&key, &source, &datum, cx);
+            if let Some((links, key, source, selected)) = linked {
+                links.broadcast_selection_set(&key, &source, &selected, cx);
             }
         });
     }
@@ -700,13 +792,45 @@ impl ChartEntity {
             .marks
             .iter()
             .filter(|mark| {
-                mark.interactive && mark_center(mark).is_some_and(|point| rect.contains(point))
+                mark.role == ChartMarkRole::Data
+                    && mark.interactive
+                    && mark_center(mark).is_some_and(|point| rect.contains(point))
             })
             .map(|mark| UiValue::String(mark.datum_key.clone()))
+            .collect::<Vec<_>>();
+        let data = scene
+            .marks
+            .iter()
+            .filter(|mark| {
+                mark.role == ChartMarkRole::Data
+                    && mark.interactive
+                    && mark_center(mark).is_some_and(|point| rect.contains(point))
+            })
+            .filter_map(|mark| {
+                mark.datum.as_ref().map(|datum| {
+                    UiValue::Map(BTreeMap::from([
+                        ("dataset".to_owned(), UiValue::String(datum.dataset.clone())),
+                        (
+                            "series_key".to_owned(),
+                            UiValue::String(datum.series.clone()),
+                        ),
+                        ("datum_key".to_owned(), UiValue::String(datum.key.clone())),
+                        (
+                            "region_key".to_owned(),
+                            UiValue::String(mark.region_key.clone()),
+                        ),
+                    ]))
+                })
+            })
             .collect::<Vec<_>>();
         let events = self.events.clone();
         let payload = UiValue::Map(BTreeMap::from([
             ("keys".to_owned(), UiValue::Array(keys)),
+            ("data".to_owned(), UiValue::Array(data)),
+            (
+                "revision".to_owned(),
+                UiValue::Integer(i64::try_from(scene.revision).unwrap_or(i64::MAX)),
+            ),
             ("x".to_owned(), UiValue::Float(rect.x)),
             ("y".to_owned(), UiValue::Float(rect.y)),
             ("width".to_owned(), UiValue::Float(rect.width)),
@@ -772,9 +896,7 @@ impl Render for ChartEntity {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let scene = self.displayed_scene(window);
         let hovered = self.hovered.clone();
-        let focused = self.focused;
-        let zoom = self.zoom;
-        let pan = self.pan;
+        let focused = self.focused.clone();
         let chart_theme = primitive_chart_theme(&self.config.theme);
         let background = chart_theme.background;
         let crosshair = self.config.spec.tooltip.crosshair;
@@ -788,9 +910,9 @@ impl Render for ChartEntity {
                         bounds,
                         scene,
                         hovered.as_deref(),
-                        focused,
-                        zoom,
-                        pan,
+                        focused.as_deref(),
+                        1.0,
+                        ChartPoint::default(),
                         crosshair.then_some(crosshair_color),
                         window,
                     );
@@ -818,11 +940,7 @@ impl Render for ChartEntity {
             .child(chart_canvas);
         if let Some(scene) = &scene {
             for label in scene.labels.iter() {
-                let position = if label_is_viewport_fixed(label) {
-                    label.position
-                } else {
-                    self.transformed_point(label.position)
-                };
+                let position = label.position;
                 let mut element = div()
                     .absolute()
                     .left(px(f64_to_f32(position.x)))
@@ -844,12 +962,41 @@ impl Render for ChartEntity {
                     .and_then(|key| scene.marks.iter().find(|mark| mark.key == key))
                 && let Some(position) = mark_center(mark)
             {
-                let position = self.transformed_point(position);
                 let chart_theme = primitive_chart_theme(&self.config.theme);
                 let tooltip_x = if chart_theme.direction == crate::TextDirection::RightToLeft {
                     position.x - 172.0
                 } else {
                     position.x + 12.0
+                };
+                let tooltip_text = if self.config.spec.tooltip.shared {
+                    scene
+                        .marks
+                        .iter()
+                        .filter(|candidate| {
+                            candidate.role == ChartMarkRole::Data
+                                && candidate.region_key == mark.region_key
+                                && mark_center(candidate)
+                                    .is_some_and(|center| (center.x - position.x).abs() <= 1.0)
+                        })
+                        .map(|candidate| match candidate.value {
+                            Some(value) => format!(
+                                "{}: {}",
+                                candidate.label,
+                                format_tooltip_value(value, &chart_theme)
+                            ),
+                            None => candidate.label.clone(),
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                } else {
+                    match mark.value {
+                        Some(value) => format!(
+                            "{}: {}",
+                            mark.label,
+                            format_tooltip_value(value, &chart_theme)
+                        ),
+                        None => mark.label.clone(),
+                    }
                 };
                 root = root.child(
                     div()
@@ -859,19 +1006,14 @@ impl Render for ChartEntity {
                         .p(px(8.0))
                         .border_1()
                         .border_color(rgba(chart_theme.axis.as_rgba_hex()))
-                        .bg(rgba(chart_theme.background.as_rgba_hex()))
-                        .text_color(rgba(chart_theme.text.as_rgba_hex()))
+                        .bg(rgba(chart_theme.tooltip_surface.as_rgba_hex()))
+                        .text_color(rgba(chart_theme.tooltip_text.as_rgba_hex()))
                         .text_size(px(12.0))
-                        .child(match mark.value {
-                            Some(value) => format!("{}: {value}", mark.label),
-                            None => mark.label.clone(),
-                        }),
+                        .child(tooltip_text),
                 );
             }
         }
         if let Some((start, end)) = self.brush {
-            let start = self.transformed_point(start);
-            let end = self.transformed_point(end);
             let selection = primitive_chart_theme(&self.config.theme).selection;
             root = root.child(
                 div()
@@ -972,6 +1114,7 @@ impl IntoElement for ChartBoundsRecorder {
 #[derive(Default)]
 pub struct ChartPrimitiveHandler {
     instances: BTreeMap<PrimitiveInstanceId, Entity<ChartEntity>>,
+    sources: BTreeMap<PrimitiveInstanceId, ChartSourceCache>,
     transforms: ChartTransformRegistry,
     geo: ChartGeoRegistry,
     custom_series: ChartSeriesRegistry,
@@ -989,6 +1132,7 @@ impl ChartPrimitiveHandler {
     ) -> Self {
         Self {
             instances: BTreeMap::new(),
+            sources: BTreeMap::new(),
             transforms,
             geo,
             custom_series,
@@ -1011,6 +1155,88 @@ impl PrimitiveHandler for ChartPrimitiveHandler {
         }
     }
 
+    fn accessibility(
+        &self,
+        instance: &PrimitiveInstanceId,
+        cx: &App,
+    ) -> Option<crate::PrimitiveAccessibilityProjection> {
+        let chart = self.instances.get(instance)?.read(cx);
+        let scene = chart.scene.as_ref()?;
+        let active = chart.focused.as_ref().and_then(|key| {
+            scene
+                .marks
+                .iter()
+                .find(|mark| mark.key == *key)
+                .and_then(|mark| mark.datum.as_ref())
+                .and_then(|datum| {
+                    scene.semantics.iter().find(|semantic| {
+                        semantic.series_key == datum.series && semantic.datum_key == datum.key
+                    })
+                })
+        });
+        let mut important = scene
+            .semantics
+            .iter()
+            .filter(|datum| datum.selected)
+            .take(16)
+            .collect::<Vec<_>>();
+        if let Some(active) = active
+            && !important.contains(&active)
+        {
+            important.insert(0, active);
+        }
+        let details = important
+            .iter()
+            .map(|datum| match datum.value {
+                Some(value) => format!("{} {}={value}", datum.series_key, datum.name),
+                None => format!("{} {}", datum.series_key, datum.name),
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        let description = if details.is_empty() {
+            scene.summary.clone()
+        } else {
+            format!("{}; active or selected data: {details}", scene.summary)
+        };
+        Some(crate::PrimitiveAccessibilityProjection {
+            description,
+            value: Some(UiValue::Map(BTreeMap::from([
+                (
+                    "revision".to_owned(),
+                    UiValue::Integer(i64::try_from(scene.revision).unwrap_or(i64::MAX)),
+                ),
+                (
+                    "mark_count".to_owned(),
+                    UiValue::Integer(i64::try_from(scene.marks.len()).unwrap_or(i64::MAX)),
+                ),
+                (
+                    "semantic_count".to_owned(),
+                    UiValue::Integer(i64::try_from(scene.semantics.len()).unwrap_or(i64::MAX)),
+                ),
+                (
+                    "active".to_owned(),
+                    active.map_or(UiValue::Null, |datum| {
+                        UiValue::Map(BTreeMap::from([
+                            (
+                                "series_key".to_owned(),
+                                UiValue::String(datum.series_key.clone()),
+                            ),
+                            (
+                                "datum_key".to_owned(),
+                                UiValue::String(datum.datum_key.clone()),
+                            ),
+                            ("name".to_owned(), UiValue::String(datum.name.clone())),
+                            (
+                                "value".to_owned(),
+                                datum.value.map_or(UiValue::Null, UiValue::Float),
+                            ),
+                        ]))
+                    }),
+                ),
+            ]))),
+        })
+    }
+
     fn render(
         &mut self,
         instance: &PrimitiveInstance,
@@ -1024,7 +1250,7 @@ impl PrimitiveHandler for ChartPrimitiveHandler {
             .clone()
             .ok_or_else(|| "ChartPrimitive requires a stable key".to_owned())?;
         let existing = self.instances.get(&id).cloned();
-        let config = match parse_config(&instance.node.props, theme) {
+        let parsed = match parse_config(&instance.node.props, theme, self.sources.get(&id)) {
             Ok(config) => config,
             Err(error) => {
                 if let Some(entity) = existing {
@@ -1037,6 +1263,8 @@ impl PrimitiveHandler for ChartPrimitiveHandler {
                 return Err(error);
             }
         };
+        let (config, source) = parsed;
+        self.sources.insert(id.clone(), source);
         let Some(entity) = existing else {
             let entity = cx.new(|cx| {
                 ChartEntity::new(
@@ -1065,23 +1293,65 @@ impl PrimitiveHandler for ChartPrimitiveHandler {
     }
 
     fn unmount(&mut self, instance: &PrimitiveInstanceId) {
+        self.sources.remove(instance);
         if let Some(entity) = self.instances.remove(instance) {
             self.links.unregister(&entity.downgrade());
         }
     }
 }
 
-fn parse_config(props: &PrimitiveProps, theme: &PrimitiveTheme) -> Result<ChartConfig, String> {
-    let spec = match props.get("spec") {
-        Some(PrimitiveValue::Data(value)) => {
+fn parse_config(
+    props: &PrimitiveProps,
+    theme: &PrimitiveTheme,
+    cached: Option<&ChartSourceCache>,
+) -> Result<(ChartConfig, ChartSourceCache), String> {
+    let source = if let Some(cached) = cached.filter(|cached| cached.matches(props)) {
+        cached.clone()
+    } else {
+        parse_chart_source(props)?
+    };
+    let hidden = string_set_prop(props, "hidden_series");
+    let mut spec = source.spec.clone();
+    for series in &mut spec.series {
+        if hidden.contains(&series.key) {
+            series.visible = false;
+        }
+    }
+    Ok((
+        ChartConfig {
+            spec,
+            data: source.data.clone(),
+            selected: string_set_prop(props, "selected_keys"),
+            zoom: number_prop(props, "zoom").unwrap_or(1.0),
+            pan: ChartPoint {
+                x: number_prop(props, "pan_x").unwrap_or(0.0),
+                y: number_prop(props, "pan_y").unwrap_or(0.0),
+            },
+            theme: theme.clone(),
+        },
+        source,
+    ))
+}
+
+fn parse_chart_source(props: &PrimitiveProps) -> Result<ChartSourceCache, String> {
+    let spec_prop = props
+        .get("spec")
+        .cloned()
+        .ok_or_else(|| "chart spec is required".to_owned())?;
+    let spec = match &spec_prop {
+        PrimitiveValue::Data(value) => {
             ChartSpec::from_ui_value(value).map_err(|error| error.to_string())?
         }
-        _ => return Err("chart spec is required".to_owned()),
+        _ => return Err("chart spec must be durable data".to_owned()),
     };
     let key_dimension = data_string_prop(props, "key_dimension");
-    let data = match props.get("data") {
-        Some(PrimitiveValue::ChartData(data)) => ChartDataInput::Native(data.clone()),
-        Some(PrimitiveValue::Data(UiValue::Array(rows))) => {
+    let data_prop = props
+        .get("data")
+        .cloned()
+        .ok_or_else(|| "chart data is required".to_owned())?;
+    let data = match &data_prop {
+        PrimitiveValue::ChartData(data) => ChartDataInput::Native(data.clone()),
+        PrimitiveValue::Data(UiValue::Array(rows)) => {
             let rows = rows
                 .iter()
                 .enumerate()
@@ -1095,37 +1365,50 @@ fn parse_config(props: &PrimitiveProps, theme: &PrimitiveTheme) -> Result<ChartC
                     "inline chart data is limited to 10000 rows; use NativeChartData".to_owned(),
                 );
             }
-            let dataset =
-                ChartDataset::from_rows("main", &rows, key_dimension, ChartDataLimits::default())
-                    .map_err(|error| error.to_string())?;
+            let dataset = ChartDataset::from_rows(
+                "main",
+                &rows,
+                key_dimension.clone(),
+                ChartDataLimits::default(),
+            )
+            .map_err(|error| error.to_string())?;
             let data = NativeChartData::new([dataset], ChartDataLimits::default())
                 .map_err(|error| error.to_string())?;
             ChartDataInput::Inline(data.snapshot())
         }
         _ => return Err("chart data must be an array of objects or NativeChartData".to_owned()),
     };
-    let hidden = string_set_prop(props, "hidden_series");
-    let mut spec = spec;
-    for series in &mut spec.series {
-        if hidden.contains(&series.key) {
-            series.visible = false;
-        }
-    }
-    Ok(ChartConfig {
+    Ok(ChartSourceCache {
+        spec_prop,
+        data_prop,
+        key_dimension,
         spec,
         data,
-        selected: string_set_prop(props, "selected_keys"),
-        zoom: number_prop(props, "zoom").unwrap_or(1.0),
-        pan: ChartPoint {
-            x: number_prop(props, "pan_x").unwrap_or(0.0),
-            y: number_prop(props, "pan_y").unwrap_or(0.0),
-        },
-        theme: theme.clone(),
     })
 }
 
 fn link_key(spec: &ChartSpec) -> Option<(String, String)> {
     spec.link_group.clone().zip(spec.link_domain.clone())
+}
+
+fn linked_pan(full: (f64, f64), visible: (f64, f64), range: f64, zoom: f64) -> f64 {
+    let full_span = full.1 - full.0;
+    if full_span <= f64::EPSILON {
+        return 0.0;
+    }
+    let full_center = f64::midpoint(full.0, full.1);
+    let visible_center = f64::midpoint(visible.0, visible.1);
+    (full_center - visible_center) * range * zoom / full_span
+}
+
+fn linked_visible_domain(full: (f64, f64), zoom: f64, pan: f64, range: f64) -> (f64, f64) {
+    let span = full.1 - full.0;
+    if span <= f64::EPSILON || range.abs() <= f64::EPSILON {
+        return full;
+    }
+    let visible = span / zoom;
+    let center = f64::midpoint(full.0, full.1) - pan * span / (range * zoom);
+    (center - visible / 2.0, center + visible / 2.0)
 }
 
 fn data_string_prop(props: &PrimitiveProps, name: &str) -> Option<String> {
@@ -1182,6 +1465,12 @@ fn primitive_chart_theme(theme: &PrimitiveTheme) -> ChartTheme {
         crosshair: theme
             .color("charts.crosshair")
             .unwrap_or(fallback.crosshair),
+        tooltip_surface: theme
+            .color("charts.tooltip_surface")
+            .unwrap_or(fallback.tooltip_surface),
+        tooltip_text: theme
+            .color("charts.tooltip_text")
+            .unwrap_or(fallback.tooltip_text),
         palette: palette.into(),
         locale: theme.locale().to_owned(),
         number: theme.number_metadata().cloned(),
@@ -1224,10 +1513,28 @@ fn apply_selection(
         }
     }
     scene.marks = marks.into();
+    let mut semantics = scene.semantics.to_vec();
+    for datum in &mut semantics {
+        datum.selected = selected.contains(&datum.datum_key);
+    }
+    scene.semantics = semantics.into();
 }
 
-fn mark_payload(mark: &ChartMark) -> UiValue {
+fn mark_payload(mark: &ChartMark, revision: u64) -> UiValue {
+    let dataset = mark
+        .datum
+        .as_ref()
+        .map_or_else(String::new, |datum| datum.dataset.clone());
     UiValue::Map(BTreeMap::from([
+        ("dataset".to_owned(), UiValue::String(dataset)),
+        (
+            "region_key".to_owned(),
+            UiValue::String(mark.region_key.clone()),
+        ),
+        (
+            "revision".to_owned(),
+            UiValue::Integer(i64::try_from(revision).unwrap_or(i64::MAX)),
+        ),
         (
             "series_key".to_owned(),
             UiValue::String(mark.series_key.clone()),
@@ -1266,18 +1573,17 @@ fn mark_center(mark: &ChartMark) -> Option<ChartPoint> {
 }
 
 fn mark_is_viewport_fixed(mark: &ChartMark) -> bool {
-    mark.series_key == "__axis" || mark.datum_key == "legend"
-}
-
-fn label_is_viewport_fixed(label: &super::ChartLabel) -> bool {
-    label.key == "title" || label.key.starts_with("axis:") || label.key.starts_with("legend-label:")
+    matches!(
+        mark.role,
+        ChartMarkRole::Axis | ChartMarkRole::Grid | ChartMarkRole::Legend
+    )
 }
 
 fn paint_chart_scene(
     bounds: Bounds<Pixels>,
     scene: &PreparedChartScene,
     hovered: Option<&str>,
-    focused: Option<usize>,
+    focused: Option<&str>,
     zoom: f64,
     pan: ChartPoint,
     crosshair: Option<crate::Rgba8>,
@@ -1287,12 +1593,13 @@ fn paint_chart_scene(
         x: f64::from(bounds.size.width) / 2.0,
         y: f64::from(bounds.size.height) / 2.0,
     };
-    for (index, mark) in scene.marks.iter().enumerate() {
+    for mark in scene.marks.iter() {
         let transformed = !mark_is_viewport_fixed(mark);
         let scale = if transformed { zoom } else { 1.0 };
         let map = |point| map_chart_point(bounds, center, zoom, pan, point, transformed);
-        let emphasized =
-            hovered == Some(mark.key.as_str()) || focused == Some(index) || mark.selected;
+        let emphasized = hovered == Some(mark.key.as_str())
+            || focused == Some(mark.key.as_str())
+            || mark.selected;
         let fill_color = mark.fill.map(|color| {
             if emphasized {
                 lighten(color, 0.18)
@@ -1300,7 +1607,19 @@ fn paint_chart_scene(
                 color
             }
         });
-        match &mark.geometry {
+        let clip = matches!(mark.role, ChartMarkRole::Data | ChartMarkRole::Decoration)
+            .then(|| scene.plot_regions.get(&mark.region_key))
+            .flatten()
+            .map(|region| ContentMask {
+                bounds: Bounds::new(
+                    point(
+                        bounds.origin.x + px(f64_to_f32(region.x)),
+                        bounds.origin.y + px(f64_to_f32(region.y)),
+                    ),
+                    size(px(f64_to_f32(region.width)), px(f64_to_f32(region.height))),
+                ),
+            });
+        window.with_content_mask(clip, |window| match &mark.geometry {
             ChartMarkGeometry::Rect(rect) => {
                 let origin = map(ChartPoint {
                     x: rect.x,
@@ -1318,47 +1637,23 @@ fn paint_chart_scene(
                 }
                 let painted_bounds = Bounds::new(origin, chart_size);
                 paint_rect_stroke(painted_bounds, mark.stroke, window);
-                if let Some(color) = fill_color {
-                    paint_rect_pattern(
-                        painted_bounds,
-                        super::scene::series_pattern(&mark.series_key),
-                        lighten(color, 0.36),
-                        window,
-                    );
-                }
             }
             ChartMarkGeometry::Circle { center, radius } => {
                 let center = map(*center);
                 let radius = px(f64_to_f32(radius * scale));
-                if let Some(color) = fill_color {
-                    paint_symbol(
-                        center,
-                        radius,
-                        super::scene::series_pattern(&mark.series_key),
-                        color,
-                        window,
-                    );
-                }
+                paint_circle(center, radius, fill_color, mark.stroke, window);
             }
             ChartMarkGeometry::Polyline { points, width } => {
                 if points.len() < 2 {
-                    continue;
+                    return;
                 }
                 if let Some((color, _)) = mark.stroke {
-                    paint_polyline(
-                        points,
-                        *width,
-                        scale,
-                        super::scene::series_pattern(&mark.series_key),
-                        color,
-                        &map,
-                        window,
-                    );
+                    paint_polyline(points, *width, scale, color, &map, window);
                 }
             }
             ChartMarkGeometry::Polygon(points) => {
                 if points.len() < 3 {
-                    continue;
+                    return;
                 }
                 if let Some(color) = fill_color {
                     let mut path = gpui::PathBuilder::fill();
@@ -1385,7 +1680,7 @@ fn paint_chart_scene(
             }
             ChartMarkGeometry::CompoundPolygon(rings) => {
                 if rings.is_empty() {
-                    continue;
+                    return;
                 }
                 if let Some(color) = fill_color {
                     let mut path = gpui::PathBuilder::fill();
@@ -1420,7 +1715,7 @@ fn paint_chart_scene(
                     }
                 }
             }
-        }
+        });
     }
     if let Some(color) = crosshair
         && let Some(mark) = hovered.and_then(|key| scene.marks.iter().find(|mark| mark.key == key))
@@ -1495,14 +1790,28 @@ fn map_chart_point(
     )
 }
 
-fn paint_symbol(
+fn paint_circle(
     center: Point<Pixels>,
     radius: Pixels,
-    pattern: usize,
-    color: crate::Rgba8,
+    fill_color: Option<crate::Rgba8>,
+    stroke: Option<(crate::Rgba8, f64)>,
     window: &mut Window,
 ) {
-    if pattern == 0 {
+    if let Some((color, width)) = stroke {
+        let width = px(f64_to_f32(width));
+        window.paint_quad(gpui::quad(
+            Bounds::new(
+                point(center.x - radius - width, center.y - radius - width),
+                size((radius + width) * 2.0, (radius + width) * 2.0),
+            ),
+            gpui::Corners::all(radius + width),
+            rgba(color.as_rgba_hex()),
+            gpui::Edges::default(),
+            rgba(0),
+            gpui::BorderStyle::default(),
+        ));
+    }
+    if let Some(color) = fill_color {
         window.paint_quad(gpui::quad(
             Bounds::new(
                 point(center.x - radius, center.y - radius),
@@ -1514,40 +1823,6 @@ fn paint_symbol(
             rgba(0),
             gpui::BorderStyle::default(),
         ));
-        return;
-    }
-    if pattern == 1 {
-        window.paint_quad(fill(
-            Bounds::new(
-                point(center.x - radius, center.y - radius),
-                size(radius * 2.0, radius * 2.0),
-            ),
-            rgba(color.as_rgba_hex()),
-        ));
-        return;
-    }
-    let points = if pattern == 2 {
-        vec![
-            point(center.x, center.y - radius),
-            point(center.x + radius, center.y),
-            point(center.x, center.y + radius),
-            point(center.x - radius, center.y),
-        ]
-    } else {
-        vec![
-            point(center.x, center.y - radius),
-            point(center.x + radius, center.y + radius),
-            point(center.x - radius, center.y + radius),
-        ]
-    };
-    let mut path = gpui::PathBuilder::fill();
-    path.move_to(points[0]);
-    for point in &points[1..] {
-        path.line_to(*point);
-    }
-    path.close();
-    if let Ok(path) = path.build() {
-        window.paint_path(path, rgba(color.as_rgba_hex()));
     }
 }
 
@@ -1555,83 +1830,17 @@ fn paint_polyline(
     points: &[ChartPoint],
     width: f64,
     zoom: f64,
-    pattern: usize,
     color: crate::Rgba8,
     map: &impl Fn(ChartPoint) -> Point<Pixels>,
     window: &mut Window,
 ) {
-    if pattern == 0 {
-        let mut path = gpui::PathBuilder::stroke(px(f64_to_f32(width * zoom)));
-        path.move_to(map(points[0]));
-        for point in &points[1..] {
-            path.line_to(map(*point));
-        }
-        if let Ok(path) = path.build() {
-            window.paint_path(path, rgba(color.as_rgba_hex()));
-        }
-        return;
+    let mut path = gpui::PathBuilder::stroke(px(f64_to_f32(width * zoom)));
+    path.move_to(map(points[0]));
+    for point in &points[1..] {
+        path.line_to(map(*point));
     }
-    let dash = if pattern == 3 { 2.0 } else { 8.0 } / zoom.max(0.1);
-    let gap = 5.0 / zoom.max(0.1);
-    for segment in points.windows(2) {
-        let start = segment[0];
-        let end = segment[1];
-        let length = (end.x - start.x).hypot(end.y - start.y);
-        if length <= f64::EPSILON {
-            continue;
-        }
-        let mut offset = 0.0;
-        while offset < length {
-            let from = offset / length;
-            let to = (offset + dash).min(length) / length;
-            let from = ChartPoint {
-                x: start.x + (end.x - start.x) * from,
-                y: start.y + (end.y - start.y) * from,
-            };
-            let to = ChartPoint {
-                x: start.x + (end.x - start.x) * to,
-                y: start.y + (end.y - start.y) * to,
-            };
-            let mut path = gpui::PathBuilder::stroke(px(f64_to_f32(width * zoom)));
-            path.move_to(map(from));
-            path.line_to(map(to));
-            if let Ok(path) = path.build() {
-                window.paint_path(path, rgba(color.as_rgba_hex()));
-            }
-            offset += dash + gap;
-        }
-    }
-}
-
-fn paint_rect_pattern(
-    bounds: Bounds<Pixels>,
-    pattern: usize,
-    color: crate::Rgba8,
-    window: &mut Window,
-) {
-    if pattern == 0 {
-        return;
-    }
-    let spacing = px(6.0);
-    if matches!(pattern, 1 | 3) {
-        let mut x = bounds.origin.x + spacing;
-        while x < bounds.right() {
-            window.paint_quad(fill(
-                Bounds::new(point(x, bounds.origin.y), size(px(1.0), bounds.size.height)),
-                rgba(color.as_rgba_hex()),
-            ));
-            x += spacing;
-        }
-    }
-    if matches!(pattern, 2 | 3) {
-        let mut y = bounds.origin.y + spacing;
-        while y < bounds.bottom() {
-            window.paint_quad(fill(
-                Bounds::new(point(bounds.origin.x, y), size(bounds.size.width, px(1.0))),
-                rgba(color.as_rgba_hex()),
-            ));
-            y += spacing;
-        }
+    if let Ok(path) = path.build() {
+        window.paint_path(path, rgba(color.as_rgba_hex()));
     }
 }
 
@@ -1674,6 +1883,24 @@ fn with_alpha(color: crate::Rgba8, alpha: u8) -> crate::Rgba8 {
     crate::Rgba8::from_rgba_hex((color.as_rgba_hex() & 0xffff_ff00) | u32::from(alpha))
 }
 
+fn format_tooltip_value(value: f64, theme: &ChartTheme) -> String {
+    theme.number.as_ref().map_or_else(
+        || value.to_string(),
+        |number| {
+            crate::format_number_with_metadata(
+                value,
+                crate::NumberFormatOptions {
+                    min_fraction_digits: 0,
+                    max_fraction_digits: 3,
+                    grouping: true,
+                },
+                number,
+            )
+            .unwrap_or_else(|_| value.to_string())
+        },
+    )
+}
+
 #[allow(clippy::cast_precision_loss)]
 fn usize_to_f64(value: usize) -> f64 {
     value as f64
@@ -1692,6 +1919,27 @@ pub fn chart_primitive_descriptor() -> PrimitiveDescriptor {
     let string_array = ValueSchema::Array {
         items: Box::new(ValueSchema::string()),
         max_items: Some(10_000),
+    };
+    let datum_ref = ValueSchema::Object {
+        fields: BTreeMap::from([
+            (
+                "dataset".to_owned(),
+                ObjectField::required(ValueSchema::string()),
+            ),
+            (
+                "series_key".to_owned(),
+                ObjectField::required(ValueSchema::string()),
+            ),
+            (
+                "datum_key".to_owned(),
+                ObjectField::required(ValueSchema::string()),
+            ),
+            (
+                "region_key".to_owned(),
+                ObjectField::required(ValueSchema::string()),
+            ),
+        ]),
+        allow_unknown: false,
     };
     PrimitiveDescriptor {
         id: PrimitiveId::parse("gpui_rhai.chart").expect("static primitive ID"),
@@ -1767,6 +2015,18 @@ pub fn chart_primitive_descriptor() -> PrimitiveDescriptor {
                     payload: ValueSchema::Object {
                         fields: BTreeMap::from([
                             (
+                                "dataset".to_owned(),
+                                ObjectField::required(ValueSchema::string()),
+                            ),
+                            (
+                                "region_key".to_owned(),
+                                ObjectField::required(ValueSchema::string()),
+                            ),
+                            (
+                                "revision".to_owned(),
+                                ObjectField::required(ValueSchema::bounded_integer(Some(0), None)),
+                            ),
+                            (
                                 "series_key".to_owned(),
                                 ObjectField::required(ValueSchema::string()),
                             ),
@@ -1820,6 +2080,17 @@ pub fn chart_primitive_descriptor() -> PrimitiveDescriptor {
                                     items: Box::new(ValueSchema::string()),
                                     max_items: Some(10_000),
                                 }),
+                            ),
+                            (
+                                "data".to_owned(),
+                                ObjectField::required(ValueSchema::Array {
+                                    items: Box::new(datum_ref),
+                                    max_items: Some(10_000),
+                                }),
+                            ),
+                            (
+                                "revision".to_owned(),
+                                ObjectField::required(ValueSchema::bounded_integer(Some(0), None)),
                             ),
                             ("x".to_owned(), ObjectField::required(ValueSchema::number())),
                             ("y".to_owned(), ObjectField::required(ValueSchema::number())),
@@ -1888,5 +2159,21 @@ pub fn chart_primitive_descriptor() -> PrimitiveDescriptor {
             reduced_motion: true,
             quality_tiers: true,
         }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn linked_domain_round_trip_is_independent_of_chart_size_and_full_domain() {
+        let source_visible = linked_visible_domain((0.0, 100.0), 2.0, 40.0, 500.0);
+        let target_full = (-100.0, 300.0);
+        let target_zoom = (target_full.1 - target_full.0) / (source_visible.1 - source_visible.0);
+        let target_pan = linked_pan(target_full, source_visible, 900.0, target_zoom);
+        let target_visible = linked_visible_domain(target_full, target_zoom, target_pan, 900.0);
+        assert!((source_visible.0 - target_visible.0).abs() < 0.000_001);
+        assert!((source_visible.1 - target_visible.1).abs() < 0.000_001);
     }
 }

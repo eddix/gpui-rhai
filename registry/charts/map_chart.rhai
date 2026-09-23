@@ -22,8 +22,8 @@ define_component(#{
     schema: #{ props: #{
         key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
         data: #{ schema: #{ type: "one_of", variants: [#{ type: "array", items: #{ type: "ui_value" }, max_items: 10000 }, #{ type: "chart_data" }] }, required: true, sensitive: false },
-        encode: #{ schema: #{ type: "ui_value" }, required: true, sensitive: false },
-        map: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+        encode: #{ schema: #{ type: "optional", value: #{ type: "ui_value" } }, required: false, sensitive: false },
+        map: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
         projection: #{ schema: #{ type: "string" }, required: false, sensitive: false, "default": #{ type: "string", value: "equirectangular" } },
         key_dimension: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
         title: #{ schema: #{ type: "string" }, required: false, sensitive: false, "default": #{ type: "string", value: "Map" } },

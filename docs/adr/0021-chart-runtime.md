@@ -71,8 +71,10 @@ whole-series replacement semantics.
 
 The supported performance contract is approximately 10,000 fully interactive
 marks and 100,000 Rust-downsampled points on the reference macOS environment.
-Downsampling affects drawing only: hit results and selections map back to
-original datum keys, while semantic aggregation is explicit and inspectable.
+Downsampling affects drawing only. The transformed semantic dataset, stable
+keys, active/selected accessibility projection, and provenance remain intact;
+null gaps divide independent draw segments. Semantic aggregation is explicit
+and inspectable.
 
 ### Foreground, background, and Rhai
 
@@ -81,10 +83,12 @@ prepared chart scene remain on the foreground thread. Typed, owned data and
 pure preparation jobs may cross to the background executor. Rhai `Engine`,
 `Dynamic`, `FnPtr`, and stored call contexts never cross threads.
 
-Scale calculation, transforms, sampling, geometry preparation, hit indices,
-and export run in Rust. Pointer move, wheel, brush, and drag hot paths are
-native. Rhai receives bounded semantic events such as selection committed,
-zoom changed, legend toggled, and annotation activated.
+Transform and layout candidates, including scale calculation, sampling and
+geometry preparation, run as typed Rust background work. Candidate identity is
+versioned and stale jobs cannot install. GPUI mutation remains foreground.
+Pointer move, wheel, brush, and drag hot paths are native. Rhai receives bounded
+semantic events such as selection committed, zoom changed, legend toggled, and
+annotation activated.
 
 ### Interaction and linkage
 
@@ -92,6 +96,12 @@ Hover, tooltip, crosshair, and active drag state are native transient state.
 Selection, legend visibility, and zoom are controllable state and emit
 low-frequency semantic events. Brush supports Cartesian x/y/xy rectangles and
 Geo region/rectangle selection; freehand lasso is deferred.
+
+Controlled viewport state has a committed value, transient gesture preview,
+and Host acknowledgement. Cartesian viewport state compiles into a visible
+domain window, so axes and marks always share one mapper. Mark role, structural
+mark identity, and `DatumRef` are separate types; business data cannot collide
+with legend, annotation, grid, or axis identities.
 
 Charts may join an explicit link group with a declared domain. Crosshair,
 zoom, selection, and highlight synchronization stays native and does not route

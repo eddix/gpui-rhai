@@ -1,6 +1,6 @@
 #![allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, btree_map::Entry};
 use std::sync::{Arc, RwLock};
 
 use serde_json::Value;
@@ -319,11 +319,11 @@ impl ChartGeoRegistry {
     /// Returns for a duplicate map or poisoned registry.
     pub fn register_map(&self, map: ChartGeoMap) -> Result<(), ChartGeoError> {
         let mut maps = self.maps.write().map_err(|_| ChartGeoError::Poisoned)?;
-        if maps
-            .insert(map.key.clone(), Arc::new(map.clone()))
-            .is_some()
-        {
-            return Err(ChartGeoError::DuplicateMap(map.key));
+        match maps.entry(map.key.clone()) {
+            Entry::Vacant(entry) => {
+                entry.insert(Arc::new(map));
+            }
+            Entry::Occupied(_) => return Err(ChartGeoError::DuplicateMap(map.key)),
         }
         Ok(())
     }
@@ -344,11 +344,11 @@ impl ChartGeoRegistry {
             .projections
             .write()
             .map_err(|_| ChartGeoError::Poisoned)?;
-        if projections
-            .insert(id.clone(), Arc::new(projection))
-            .is_some()
-        {
-            return Err(ChartGeoError::DuplicateProjection(id));
+        match projections.entry(id.clone()) {
+            Entry::Vacant(entry) => {
+                entry.insert(Arc::new(projection));
+            }
+            Entry::Occupied(_) => return Err(ChartGeoError::DuplicateProjection(id)),
         }
         Ok(())
     }

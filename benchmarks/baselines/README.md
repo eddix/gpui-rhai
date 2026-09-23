@@ -17,5 +17,5 @@ virtual-item Rhai durations and operation deltas are separate fields; v1 files
 created before that attribution are not comparable. Compare Table reports only
 when `metadata.data_backend` also matches: eager Rhai arrays and
 `native_collection` intentionally exercise different ownership models.
-Chart reports use `gpui-rhai-chart-e2e-v1` and additionally require the same
+Chart reports use `gpui-rhai-chart-e2e-v2` and additionally require the same
 point count, theme, and chart feature configuration.

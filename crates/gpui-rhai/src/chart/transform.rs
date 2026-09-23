@@ -1,7 +1,7 @@
 #![allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 
 use std::cmp::Ordering;
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, VecDeque, btree_map::Entry};
 use std::sync::{Arc, RwLock};
 
 use thiserror::Error;
@@ -73,8 +73,11 @@ impl ChartTransformRegistry {
             .inner
             .write()
             .map_err(|_| ChartTransformError::Poisoned)?;
-        if registry.insert(id.clone(), Arc::new(transform)).is_some() {
-            return Err(ChartTransformError::DuplicateHost(id));
+        match registry.entry(id.clone()) {
+            Entry::Vacant(entry) => {
+                entry.insert(Arc::new(transform));
+            }
+            Entry::Occupied(_) => return Err(ChartTransformError::DuplicateHost(id)),
         }
         Ok(())
     }
@@ -206,6 +209,14 @@ fn filter(
     operator: &str,
     expected: &UiValue,
 ) -> Result<ChartDataset, ChartTransformError> {
+    if !matches!(
+        operator,
+        "eq" | "ne" | "lt" | "lte" | "gt" | "gte" | "contains"
+    ) {
+        return Err(ChartTransformError::UnknownFilterOperator(
+            operator.to_owned(),
+        ));
+    }
     let column = require_column(input, dimension)?;
     let expected = ui_scalar(expected)?;
     let indices = (0..input.len())
@@ -266,27 +277,31 @@ fn aggregate(
     validate_output(output)?;
     let value_column = require_column(input, dimension)?;
     let group_columns = group_columns(input, group_by)?;
-    let mut groups = BTreeMap::<Vec<String>, Vec<f64>>::new();
+    let mut groups = BTreeMap::<Vec<TypedGroupKey>, (Vec<ChartValue>, Vec<ChartValue>)>::new();
     for row in 0..input.len() {
-        let key = group_columns
+        let values = group_columns
             .iter()
-            .map(|column| column.value(row).unwrap_or(ChartValue::Null).display_text())
+            .map(|column| column.value(row).unwrap_or(ChartValue::Null))
             .collect::<Vec<_>>();
-        if let Some(value) = value_column.value(row).and_then(|value| value.as_number()) {
-            groups.entry(key).or_default().push(value);
+        let key = values.iter().map(TypedGroupKey::from).collect::<Vec<_>>();
+        let entry = groups.entry(key).or_insert_with(|| (values, Vec::new()));
+        if let Some(value) = value_column.value(row)
+            && !matches!(value, ChartValue::Null)
+        {
+            entry.1.push(value);
         }
     }
     let rows = groups
         .into_iter()
-        .map(|(key, values)| {
+        .map(|(_, (key, values))| {
             let mut row = group_by
                 .iter()
                 .cloned()
-                .zip(key.into_iter().map(ChartValue::String))
+                .zip(key)
                 .collect::<BTreeMap<_, _>>();
             row.insert(
                 output.to_owned(),
-                ChartValue::Number(reduce(&values, operation)?),
+                ChartValue::Number(reduce_values(&values, operation)?),
             );
             Ok(row)
         })
@@ -297,6 +312,40 @@ fn aggregate(
         None,
         limits,
     )?)
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum TypedGroupKey {
+    Null,
+    Number(u64),
+    Integer(i64),
+    Timestamp(i64),
+    Bool(bool),
+    String(String),
+}
+
+impl From<&ChartValue> for TypedGroupKey {
+    fn from(value: &ChartValue) -> Self {
+        match value {
+            ChartValue::Null => Self::Null,
+            ChartValue::Number(value) => Self::Number(value.to_bits()),
+            ChartValue::Integer(value) => Self::Integer(*value),
+            ChartValue::Timestamp(value) => Self::Timestamp(*value),
+            ChartValue::Bool(value) => Self::Bool(*value),
+            ChartValue::String(value) => Self::String(value.clone()),
+        }
+    }
+}
+
+fn reduce_values(values: &[ChartValue], operation: &str) -> Result<f64, ChartTransformError> {
+    if operation == "count" {
+        return Ok(usize_to_f64(values.len()));
+    }
+    let numbers = values
+        .iter()
+        .filter_map(ChartValue::as_number)
+        .collect::<Vec<_>>();
+    reduce(&numbers, operation)
 }
 
 fn reduce(values: &[f64], operation: &str) -> Result<f64, ChartTransformError> {
@@ -508,48 +557,76 @@ fn downsample_lttb(
     }
     let x = require_column(input, x)?;
     let y = require_column(input, y)?;
-    let points = (0..input.len())
-        .map(|index| {
-            let x = x
-                .value(index)
-                .and_then(|value| value.as_number())
-                .ok_or(ChartTransformError::NonNumeric { row: index })?;
-            let y = y
-                .value(index)
-                .and_then(|value| value.as_number())
-                .ok_or(ChartTransformError::NonNumeric { row: index })?;
-            Ok((x, y))
-        })
-        .collect::<Result<Vec<_>, ChartTransformError>>()?;
+    let mut segments = Vec::<Vec<(usize, f64, f64)>>::new();
+    let mut current = Vec::new();
+    let mut separators = Vec::new();
+    for index in 0..input.len() {
+        if let (Some(x), Some(y)) = (
+            x.value(index).and_then(|value| value.as_number()),
+            y.value(index).and_then(|value| value.as_number()),
+        ) {
+            current.push((index, x, y));
+        } else {
+            if !current.is_empty() {
+                segments.push(std::mem::take(&mut current));
+            }
+            separators.push(index);
+        }
+    }
+    if !current.is_empty() {
+        segments.push(current);
+    }
+    let valid_count = segments.iter().map(Vec::len).sum::<usize>();
+    if valid_count == 0 {
+        return Ok(input.clone());
+    }
+    let available = threshold.saturating_sub(separators.len()).max(3);
+    let mut selected = separators;
+    for segment in segments {
+        let allocated = ((usize_to_f64(segment.len()) / usize_to_f64(valid_count)
+            * usize_to_f64(available))
+        .round() as usize)
+            .clamp(3.min(segment.len()), segment.len());
+        selected.extend(lttb_segment(&segment, allocated));
+    }
+    selected.sort_unstable();
+    selected.dedup();
+    Ok(input.select_rows(&selected)?)
+}
+
+fn lttb_segment(points: &[(usize, f64, f64)], threshold: usize) -> Vec<usize> {
+    if points.len() <= threshold || threshold < 3 {
+        return points.iter().map(|point| point.0).collect();
+    }
     let bucket_size =
-        usize_to_f64(input.len().saturating_sub(2)) / usize_to_f64(threshold.saturating_sub(2));
+        usize_to_f64(points.len().saturating_sub(2)) / usize_to_f64(threshold.saturating_sub(2));
     let mut selected = Vec::with_capacity(threshold);
-    selected.push(0);
+    selected.push(points[0].0);
     let mut anchor = 0;
     for bucket in 0..threshold.saturating_sub(2) {
         let next_start =
-            ((usize_to_f64(bucket + 1) * bucket_size).floor() as usize + 1).min(input.len() - 1);
+            ((usize_to_f64(bucket + 1) * bucket_size).floor() as usize + 1).min(points.len() - 1);
         let next_end =
-            ((usize_to_f64(bucket + 2) * bucket_size).floor() as usize + 1).min(input.len());
+            ((usize_to_f64(bucket + 2) * bucket_size).floor() as usize + 1).min(points.len());
         let average = if next_start < next_end {
             let slice = &points[next_start..next_end];
             let count = usize_to_f64(slice.len());
             (
-                slice.iter().map(|point| point.0).sum::<f64>() / count,
                 slice.iter().map(|point| point.1).sum::<f64>() / count,
+                slice.iter().map(|point| point.2).sum::<f64>() / count,
             )
         } else {
-            points[input.len() - 1]
+            (points[points.len() - 1].1, points[points.len() - 1].2)
         };
         let start =
-            ((usize_to_f64(bucket) * bucket_size).floor() as usize + 1).min(input.len() - 1);
+            ((usize_to_f64(bucket) * bucket_size).floor() as usize + 1).min(points.len() - 1);
         let end = ((usize_to_f64(bucket + 1) * bucket_size).floor() as usize + 1)
-            .min(input.len() - 1)
+            .min(points.len() - 1)
             .max(start + 1);
-        let anchor_point = points[anchor];
+        let anchor_point = (points[anchor].1, points[anchor].2);
         let (candidate, _) = (start..end)
             .map(|index| {
-                let point = points[index];
+                let point = (points[index].1, points[index].2);
                 let area = ((anchor_point.0 - average.0) * (point.1 - anchor_point.1)
                     - (anchor_point.0 - point.0) * (average.1 - anchor_point.1))
                     .abs();
@@ -557,11 +634,11 @@ fn downsample_lttb(
             })
             .max_by(|left, right| left.1.total_cmp(&right.1))
             .unwrap_or((start, 0.0));
-        selected.push(candidate);
+        selected.push(points[candidate].0);
         anchor = candidate;
     }
-    selected.push(input.len() - 1);
-    Ok(input.select_rows(&selected)?)
+    selected.push(points[points.len() - 1].0);
+    selected
 }
 
 fn require_column<'a>(
@@ -644,6 +721,8 @@ pub enum ChartTransformError {
     NonNumeric { row: usize },
     #[error("chart filter value must be a durable scalar")]
     InvalidFilterValue,
+    #[error("chart filter operator `{0}` is not supported")]
+    UnknownFilterOperator(String),
     #[error("chart aggregate operation `{0}` is not supported")]
     UnknownOperation(String),
     #[error("chart transform output `{0}` must be a safe identifier")]
