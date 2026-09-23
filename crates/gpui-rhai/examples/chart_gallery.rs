@@ -143,8 +143,10 @@ fn view(ctx) {
             card("Geo scatter", geo("geo_scatter", "geo_scatter", #{ longitude: "lon", latitude: "lat", value: "value" })),
             card("Geo lines", geo("geo_lines", "geo_lines", #{ source_longitude: "source_lon", source_latitude: "source_lat", target_longitude: "target_lon", target_latitude: "target_lat" })),
         ]).with_style(style().gap(px(16))),
-    ]).with_style(style().width(relative(1.0)).padding(px(24)).gap(px(18))
-        .overflow_y_scroll().background(theme_color("surface")).text_color(theme_color("text_primary")))
+    ]).with_style(style().width(relative(1.0)).height(relative(1.0)).min_height(px(0))
+        .padding(px(24)).gap(px(18)).overflow_y_scroll()
+        .background(theme_color("surface")).text_color(theme_color("text_primary")))
+        .scrollbars("hidden", "auto")
 }
 "#;
 

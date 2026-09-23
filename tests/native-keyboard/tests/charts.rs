@@ -11,6 +11,10 @@ use gpui::{
 };
 use gpui_rhai::*;
 
+#[allow(clippy::duplicate_mod, dead_code)]
+#[path = "../../../crates/gpui-rhai/examples/chart_gallery.rs"]
+mod chart_gallery_example;
+
 struct Host {
     host: ScriptViewHost,
     view: ScriptViewHandle,
@@ -85,6 +89,28 @@ fn mount(cx: &mut TestAppContext, script: &str, name: &str) -> (WindowHandle<Hos
     (window, view)
 }
 
+fn mount_prepared(
+    cx: &mut TestAppContext,
+    prepared: PreparedScriptView,
+    name: &str,
+) -> (WindowHandle<Host>, ScriptViewHandle) {
+    let captured = Rc::new(RefCell::new(None));
+    let capture = captured.clone();
+    let name = name.to_owned();
+    let window = cx.add_window(move |window, cx| {
+        let host = ScriptViewHost::new(&name, cx).unwrap();
+        let view = prepared
+            .mount(ScriptViewConfig::new(&name), host.clone(), window, cx)
+            .unwrap();
+        *capture.borrow_mut() = Some(view.clone());
+        Host { host, view }
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    let view = captured.borrow().as_ref().unwrap().clone();
+    (window, view)
+}
+
 fn pump(cx: &mut TestAppContext, visual: &mut VisualTestContext) {
     for _ in 0..8 {
         cx.background_executor.advance_clock(Duration::from_millis(20));
@@ -117,6 +143,40 @@ fn chart_bounds(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> Geom
             .unwrap()
             .visual
     })
+}
+
+#[gpui::test]
+fn chart_gallery_uses_a_window_bounded_scroll_viewport(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let prepared = chart_gallery_example::prepared_with_stream(
+        chart_gallery_example::stream_data(64),
+    )
+    .unwrap();
+    let (window, view) = mount_prepared(cx, prepared, "chart-gallery-scroll");
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    pump(cx, &mut visual);
+    let figure_y = |visual: &mut VisualTestContext| {
+        visual.update(|_, cx| {
+            view.accessibility_snapshot(cx)
+                .unwrap()
+                .find_by_role_and_name("figure", "pie")
+                .next()
+                .unwrap()
+                .geometry
+                .unwrap()
+                .visual
+                .y
+        })
+    };
+    let before = figure_y(&mut visual);
+    visual.simulate_event(ScrollWheelEvent {
+        position: point(px(4.0), px(400.0)),
+        delta: ScrollDelta::Pixels(point(px(0.0), px(-700.0))),
+        ..ScrollWheelEvent::default()
+    });
+    pump(cx, &mut visual);
+    let after = figure_y(&mut visual);
+    assert!(after < before - 300.0, "before={before}, after={after}");
 }
 
 #[gpui::test]
@@ -432,24 +492,24 @@ fn chart_adapter_normalizes_full_spec_series_kind(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn formal_chart_adapters_forward_the_viewport_revision(cx: &mut TestAppContext) {
+fn formal_chart_adapters_forward_the_controlled_viewport(cx: &mut TestAppContext) {
     cx.update(gpui_rhai::install);
     for (name, script) in [
         (
             "bar",
-            r#"import "charts/bar_chart" as adapter;fn view(ctx){adapter::BarChart(#{key:"c",key_dimension:"id",viewport_revision:7,data:[#{id:"a",x:"A",y:1}],encode:#{x:"x",y:"y"}})}"#,
+            r#"import "charts/bar_chart" as adapter;fn view(ctx){adapter::BarChart(#{key:"c",key_dimension:"id",viewport:#{kind:"cartesian",region:"main",y:#{key:"y",min:0,max:2}},viewport_revision:7,data:[#{id:"a",x:"A",y:1}],encode:#{x:"x",y:"y"}})}"#,
         ),
         (
             "line",
-            r#"import "charts/line_chart" as adapter;fn view(ctx){adapter::LineChart(#{key:"c",key_dimension:"id",viewport_revision:7,data:[#{id:"a",x:"A",y:1}],encode:#{x:"x",y:"y"}})}"#,
+            r#"import "charts/line_chart" as adapter;fn view(ctx){adapter::LineChart(#{key:"c",key_dimension:"id",viewport:#{kind:"cartesian",region:"main",y:#{key:"y",min:0,max:2}},viewport_revision:7,data:[#{id:"a",x:"A",y:1}],encode:#{x:"x",y:"y"}})}"#,
         ),
         (
             "pie",
-            r#"import "charts/pie_chart" as adapter;fn view(ctx){adapter::PieChart(#{key:"c",key_dimension:"id",viewport_revision:7,data:[#{id:"a",name:"A",value:1}],encode:#{name:"name",value:"value"}})}"#,
+            r#"import "charts/pie_chart" as adapter;fn view(ctx){adapter::PieChart(#{key:"c",key_dimension:"id",viewport:#{kind:"cartesian",region:"main",y:#{key:"y",min:0,max:2}},viewport_revision:7,data:[#{id:"a",name:"A",value:1}],encode:#{name:"name",value:"value"}})}"#,
         ),
         (
             "map",
-            r#"import "charts/map_chart" as adapter;fn view(ctx){adapter::MapChart(#{key:"c",key_dimension:"id",viewport_revision:7,map:"world",data:[#{id:"a",name:"A",value:1}],encode:#{name:"name",value:"value"}})}"#,
+            r#"import "charts/map_chart" as adapter;fn view(ctx){adapter::MapChart(#{key:"c",key_dimension:"id",viewport:#{kind:"cartesian",region:"main",y:#{key:"y",min:0,max:2}},viewport_revision:7,map:"world",data:[#{id:"a",name:"A",value:1}],encode:#{name:"name",value:"value"}})}"#,
         ),
     ] {
         let (_, view) = mount(cx, script, &format!("formal-{name}-viewport"));
@@ -460,6 +520,10 @@ fn formal_chart_adapters_forward_the_viewport_revision(cx: &mut TestAppContext) 
         assert!(matches!(
             primitive.props.get("viewport_revision"),
             Some(PrimitiveValue::Data(UiValue::Integer(7)))
+        ));
+        assert!(matches!(
+            primitive.props.get("viewport"),
+            Some(PrimitiveValue::Data(UiValue::Map(_)))
         ));
     }
 }
@@ -1117,6 +1181,133 @@ impl ScriptViewExtension for AxisProbeExtension {
             .register_chart_series("axis_probe", AxisProbe(self.0.clone()))
             .map_err(|error| error.to_string())
     }
+}
+
+fn axis_window(windows: &AxisWindows, chart: &str) -> (f64, f64) {
+    windows.lock().unwrap()[chart].0
+}
+
+fn wheel_figure(
+    visual: &mut VisualTestContext,
+    view: &ScriptViewHandle,
+    chart: &str,
+    delta: f32,
+    phase: gpui::TouchPhase,
+) {
+    let position = figure_coordinate(
+        visual,
+        view,
+        chart,
+        ChartPoint { x: 150.0, y: 140.0 },
+    );
+    visual.simulate_event(ScrollWheelEvent {
+        position,
+        delta: ScrollDelta::Pixels(point(px(0.0), px(delta))),
+        touch_phase: phase,
+        ..Default::default()
+    });
+}
+
+fn same_window(left: (f64, f64), right: (f64, f64)) -> bool {
+    (left.0 - right.0).abs() < 0.000_001 && (left.1 - right.1).abs() < 0.000_001
+}
+
+#[gpui::test]
+fn linked_target_gesture_uses_its_effective_axis_window(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let windows = AxisWindows::default();
+    let script = r#"import "charts/chart" as chart;
+fn state_schema(){#{fields:#{zs:#{schema:#{type:"float"},"default":#{type:"float",value:1.0}},zt:#{schema:#{type:"float"},"default":#{type:"float",value:1.0}},rs:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}},rt:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}}}}}
+fn zs(ctx,p){ctx.set_state("zs",p.zoom);ctx.set_state("rs",p.viewport_revision);}fn zt(ctx,p){ctx.set_state("zt",p.zoom);ctx.set_state("rt",p.viewport_revision);}
+fn one(ctx,k,z,r,cb){chart::Chart(#{key:k,key_dimension:"id",data:[#{id:"r0",x:0,y:0},#{id:"r1",x:100,y:100}],zoom:z,viewport_revision:r,spec:#{title:k,legend:#{visible:false},link_group:"shared",link_domain:"same_values",axes:[#{key:"x",position:"bottom",min:0,max:100},#{key:"y",position:"left",min:0,max:100}],series:[#{key:k,kind:"custom",renderer:"axis_probe",encode:#{x:"x",y:"y"}}]},on_zoom_change:cb}).with_style(style().width(px(280)).height(px(240)))}
+fn view(ctx){row([one(ctx,"source",ctx.get_state("zs"),ctx.get_state("rs"),Fn("zs")),one(ctx,"target",ctx.get_state("zt"),ctx.get_state("rt"),Fn("zt"))])}"#;
+    let (window, view) = mount_extended_chart(
+        cx,
+        "chart-linked-target-gesture",
+        script,
+        AxisProbeExtension(windows.clone()),
+        RuntimeClock::default(),
+        MotionPreference::None,
+    );
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    pump(cx, &mut visual);
+    wheel_figure(&mut visual, &view, "source", -400.0, gpui::TouchPhase::Started);
+    wheel_figure(&mut visual, &view, "source", 0.0, gpui::TouchPhase::Ended);
+    pump(cx, &mut visual);
+    let linked = axis_window(&windows, "target");
+    wheel_figure(&mut visual, &view, "target", -200.0, gpui::TouchPhase::Started);
+    pump(cx, &mut visual);
+    let preview = axis_window(&windows, "target");
+    wheel_figure(&mut visual, &view, "target", 0.0, gpui::TouchPhase::Ended);
+    pump(cx, &mut visual);
+    let committed = axis_window(&windows, "target");
+    let source = axis_window(&windows, "source");
+    assert!(preview.1 - preview.0 < linked.1 - linked.0);
+    assert!(same_window(preview, committed));
+    assert!(same_window(committed, source));
+}
+
+#[gpui::test]
+fn link_projection_identity_includes_the_group(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let windows = AxisWindows::default();
+    let script = r#"import "charts/chart" as chart;
+fn state_schema(){#{fields:#{group:#{schema:#{type:"string"},"default":#{type:"string",value:"group_a"}},za:#{schema:#{type:"float"},"default":#{type:"float",value:1.0}},zb:#{schema:#{type:"float"},"default":#{type:"float",value:1.0}},ra:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}},rb:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}}}}}
+fn za(ctx,p){ctx.set_state("za",p.zoom);ctx.set_state("ra",p.viewport_revision);}fn zb(ctx,p){ctx.set_state("zb",p.zoom);ctx.set_state("rb",p.viewport_revision);}fn change_group(ctx,p){ctx.set_state("group","group_b");}
+fn one(ctx,k,g,z,r,cb){chart::Chart(#{key:k,key_dimension:"id",data:[#{id:"r0",x:0,y:0},#{id:"r1",x:100,y:100}],zoom:z,viewport_revision:r,spec:#{title:k,legend:#{visible:false},link_group:g,link_domain:"same_values",axes:[#{key:"x",position:"bottom",min:0,max:100},#{key:"y",position:"left",min:0,max:100}],series:[#{key:k,kind:"custom",renderer:"axis_probe",encode:#{x:"x",y:"y"}}]},on_zoom_change:cb}).with_style(style().width(px(280)).height(px(240)))}
+fn view(ctx){column([text("Switch").accessibility_role("button").accessibility_label("Switch").on_click(Fn("change_group")).with_style(style().width(px(140)).height(px(32))),row([one(ctx,"a","group_a",ctx.get_state("za"),ctx.get_state("ra"),Fn("za")),one(ctx,"b","group_b",ctx.get_state("zb"),ctx.get_state("rb"),Fn("zb")),one(ctx,"target",ctx.get_state("group"),1.0,0,())])])}"#;
+    let (window, view) = mount_extended_chart(
+        cx,
+        "chart-link-group-identity",
+        script,
+        AxisProbeExtension(windows.clone()),
+        RuntimeClock::default(),
+        MotionPreference::None,
+    );
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    pump(cx, &mut visual);
+    for (chart, delta) in [("a", -200.0), ("b", -400.0)] {
+        wheel_figure(&mut visual, &view, chart, delta, gpui::TouchPhase::Started);
+        wheel_figure(&mut visual, &view, chart, 0.0, gpui::TouchPhase::Ended);
+        pump(cx, &mut visual);
+    }
+    let before = axis_window(&windows, "target");
+    assert!(same_window(before, axis_window(&windows, "a")));
+    click_named(&mut visual, &view, "button", "Switch");
+    pump(cx, &mut visual);
+    assert!(same_window(
+        axis_window(&windows, "target"),
+        axis_window(&windows, "b")
+    ));
+}
+
+#[gpui::test]
+fn resize_reprojects_without_discarding_active_preview(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let windows = AxisWindows::default();
+    let script = r#"import "charts/chart" as chart;
+fn state_schema(){#{fields:#{w:#{schema:#{type:"float"},"default":#{type:"float",value:280.0}},z:#{schema:#{type:"float"},"default":#{type:"float",value:1.0}},rev:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}}}}}
+fn wider(ctx,p){ctx.set_state("w",420.0);}fn zoomed(ctx,p){ctx.set_state("z",p.zoom);ctx.set_state("rev",p.viewport_revision);}
+fn view(ctx){column([text("Resize").accessibility_role("button").accessibility_label("Resize").on_click(Fn("wider")).with_style(style().width(px(140)).height(px(32))),chart::Chart(#{key:"c",key_dimension:"id",data:[#{id:"r0",x:0,y:0},#{id:"r1",x:100,y:100}],zoom:ctx.get_state("z"),viewport_revision:ctx.get_state("rev"),spec:#{title:"c",legend:#{visible:false},axes:[#{key:"x",position:"bottom",min:0,max:100},#{key:"y",position:"left",min:0,max:100}],series:[#{key:"c",kind:"custom",renderer:"axis_probe",encode:#{x:"x",y:"y"}}]},on_zoom_change:Fn("zoomed")}).with_style(style().width(px(ctx.get_state("w"))).height(px(240)))])}"#;
+    let (window, view) = mount_extended_chart(
+        cx,
+        "chart-resize-preview",
+        script,
+        AxisProbeExtension(windows.clone()),
+        RuntimeClock::default(),
+        MotionPreference::None,
+    );
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    pump(cx, &mut visual);
+    wheel_figure(&mut visual, &view, "c", -200.0, gpui::TouchPhase::Started);
+    pump(cx, &mut visual);
+    let preview = axis_window(&windows, "c");
+    click_named(&mut visual, &view, "button", "Resize");
+    pump(cx, &mut visual);
+    assert!(same_window(preview, axis_window(&windows, "c")));
+    wheel_figure(&mut visual, &view, "c", 0.0, gpui::TouchPhase::Ended);
+    pump(cx, &mut visual);
+    assert!(same_window(preview, axis_window(&windows, "c")));
 }
 
 #[gpui::test]

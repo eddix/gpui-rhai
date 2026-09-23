@@ -35,6 +35,7 @@ define_component(#{
         zoom: #{ schema: #{ type: "number", min: 0.5, max: 20.0 }, required: false, sensitive: false, "default": #{ type: "float", value: 1.0 } },
         pan_x: #{ schema: #{ type: "number" }, required: false, sensitive: false, "default": #{ type: "float", value: 0.0 } },
         pan_y: #{ schema: #{ type: "number" }, required: false, sensitive: false, "default": #{ type: "float", value: 0.0 } },
+        viewport: #{ schema: #{ type: "optional", value: #{ type: "ui_value" } }, required: false, sensitive: false },
         viewport_revision: #{ schema: #{ type: "integer", min: 0 }, required: false, sensitive: false, "default": #{ type: "integer", value: 0 } },
         on_select: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false },
         on_zoom_change: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false },

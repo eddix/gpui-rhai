@@ -5,7 +5,7 @@
     clippy::too_many_lines
 )]
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
@@ -71,6 +71,7 @@ struct ChartConfig {
     selected: BTreeSet<String>,
     zoom: f64,
     pan: ChartPoint,
+    viewport: Option<ChartLinkedViewport>,
     viewport_revision: u64,
     theme: PrimitiveTheme,
 }
@@ -97,6 +98,7 @@ struct ChartLinkRegistry {
     members: Rc<RefCell<ChartLinkMembers>>,
     selections: Rc<RefCell<ChartLinkSelections>>,
     viewports: Rc<RefCell<BTreeMap<ChartLinkKey, ChartLinkViewportState>>>,
+    next_viewport_commit: Rc<Cell<u64>>,
 }
 
 type ChartLinkKey = (String, String);
@@ -107,17 +109,18 @@ type ChartLinkSelections =
 #[derive(Clone)]
 struct ChartLinkViewportState {
     source: WeakEntity<ChartEntity>,
-    version: u64,
+    commit: u64,
     viewport: ChartLinkedViewport,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 struct ChartLinkedProjection {
-    version: u64,
+    key: ChartLinkKey,
+    commit: u64,
     viewport: ChartLinkedViewport,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 enum ChartLinkedViewport {
     Cartesian {
         region: String,
@@ -135,18 +138,19 @@ enum ChartLinkedViewport {
     Unsupported,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 struct ChartLinkedAxis {
     key: String,
     visible: (f64, f64),
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 struct ChartViewportProposal {
     revision: u64,
     input_generation: u64,
     zoom: f64,
     pan: ChartPoint,
+    projection: Option<ChartLinkedViewport>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -240,9 +244,11 @@ impl ChartLinkRegistry {
         key: Option<&ChartLinkKey>,
         target: &WeakEntity<ChartEntity>,
     ) -> Option<ChartLinkedProjection> {
-        let state = self.viewports.borrow().get(key?).cloned()?;
+        let key = key?;
+        let state = self.viewports.borrow().get(key).cloned()?;
         (state.source != *target).then_some(ChartLinkedProjection {
-            version: state.version,
+            key: key.clone(),
+            commit: state.commit,
             viewport: state.viewport,
         })
     }
@@ -254,25 +260,25 @@ impl ChartLinkRegistry {
         viewport: &ChartLinkedViewport,
         cx: &mut App,
     ) {
-        let version = {
+        let commit = {
+            let commit = self.next_viewport_commit.get().saturating_add(1);
+            self.next_viewport_commit.set(commit);
             let mut viewports = self.viewports.borrow_mut();
-            let version = viewports
-                .get(key)
-                .map_or(1, |state| state.version.saturating_add(1));
             viewports.insert(
                 key.clone(),
                 ChartLinkViewportState {
                     source: source.clone(),
-                    version,
+                    commit,
                     viewport: viewport.clone(),
                 },
             );
-            version
+            commit
         };
         for member in self.members(key) {
             if &member != source {
                 let projection = ChartLinkedProjection {
-                    version,
+                    key: key.clone(),
+                    commit,
                     viewport: (*viewport).clone(),
                 };
                 let _ = member.update(cx, |chart, cx| {
@@ -400,6 +406,8 @@ struct ChartEntity {
     transition_started: Option<Instant>,
     linked_selected: BTreeSet<String>,
     linked_projection: Option<ChartLinkedProjection>,
+    local_committed_projection: Option<ChartLinkedViewport>,
+    effective_projection: Option<ChartLinkedViewport>,
     linked_axis_windows: BTreeMap<String, (f64, f64)>,
 }
 
@@ -416,6 +424,7 @@ impl ChartEntity {
     ) -> Self {
         let zoom = config.zoom;
         let pan = config.pan;
+        let effective_projection = config.viewport.clone();
         let viewport_revision = config.viewport_revision;
         let data_source_epoch = 1;
         let requested_data_key = ChartDataKey {
@@ -466,11 +475,14 @@ impl ChartEntity {
             transition_started: None,
             linked_selected: BTreeSet::new(),
             linked_projection: None,
+            local_committed_projection: effective_projection.clone(),
+            effective_projection,
             linked_axis_windows: BTreeMap::new(),
         }
     }
 
     fn start(&mut self, cx: &mut Context<Self>) {
+        self.materialize_effective_projection();
         self.restart_data_listener(cx);
         self.start_prepare(cx);
     }
@@ -525,7 +537,7 @@ impl ChartEntity {
         self.viewport_commit_in_flight = false;
         self.pending_viewport = None;
         let previous_viewport = (self.zoom, self.pan, self.linked_axis_windows.clone());
-        self.restore_effective_linked_viewport();
+        self.restore_committed_viewport();
         let viewport_changed = (previous_viewport.0 - self.zoom).abs() > f64::EPSILON
             || previous_viewport.1 != self.pan
             || previous_viewport.2 != self.linked_axis_windows;
@@ -583,20 +595,21 @@ impl ChartEntity {
         let spec_changed = self.config.spec != config.spec;
         let selection_changed = self.config.selected != config.selected;
         let linked_selection_changed = self.linked_selected != linked_selected;
-        let external_viewport_changed =
-            (self.config.zoom - config.zoom).abs() > f64::EPSILON || self.config.pan != config.pan;
-        let pending_viewport = self.pending_viewport;
+        let external_viewport_changed = (self.config.zoom - config.zoom).abs() > f64::EPSILON
+            || self.config.pan != config.pan
+            || self.config.viewport != config.viewport;
+        let pending_viewport = self.pending_viewport.clone();
         let had_pending_viewport = pending_viewport.is_some();
-        let acknowledges_pending =
-            pending_viewport.is_some_and(|proposal| config.viewport_revision >= proposal.revision);
+        let acknowledges_pending = pending_viewport
+            .as_ref()
+            .is_some_and(|proposal| config.viewport_revision >= proposal.revision);
         let programmatic_viewport_change = !had_pending_viewport && external_viewport_changed;
         let theme_changed = primitive_chart_theme(&self.config.theme)
             != primitive_chart_theme(&config.theme)
             || self.config.theme.motion_preference() != config.theme.motion_preference()
             || self.config.theme.motion_quality() != config.theme.motion_quality();
         let acknowledge_viewport = acknowledges_pending || programmatic_viewport_change;
-        let committed_viewport = acknowledge_viewport.then_some((config.zoom, config.pan));
-        let previous_local_viewport = (self.zoom, self.pan);
+        let previous_local_viewport = (self.zoom, self.pan, self.linked_axis_windows.clone());
         self.config = config;
         self.linked_selected = linked_selected;
         if previous_link != next_link
@@ -608,50 +621,120 @@ impl ChartEntity {
                 links.broadcast_selection_set(&key, &source, &BTreeSet::new(), cx);
             });
         }
-        if acknowledge_viewport {
-            let has_newer_preview = pending_viewport
-                .is_some_and(|proposal| self.viewport_input_generation > proposal.input_generation);
-            if let Some(proposal) = pending_viewport.filter(|_| has_newer_preview) {
+        let mut committed_projection = None;
+        let mut local_viewport_authority = false;
+        if acknowledges_pending {
+            let proposal = pending_viewport
+                .as_ref()
+                .expect("acknowledgement requires a pending viewport");
+            let has_newer_preview = self.viewport_input_generation > proposal.input_generation;
+            let accepted = viewport_matches_proposal(&self.config, proposal);
+            self.linked_projection = None;
+            local_viewport_authority = true;
+            if accepted {
+                self.local_committed_projection
+                    .clone_from(&proposal.projection);
+                committed_projection = Some(
+                    proposal
+                        .projection
+                        .clone()
+                        .unwrap_or_else(|| self.linked_viewport_for(proposal.zoom, proposal.pan)),
+                );
+                if has_newer_preview {
+                    self.viewport_preview_dirty = true;
+                } else {
+                    self.effective_projection.clone_from(&proposal.projection);
+                    self.zoom = proposal.zoom;
+                    self.pan = proposal.pan;
+                    self.materialize_effective_projection();
+                    self.viewport_preview_dirty = false;
+                    self.wheel_generation = self.wheel_generation.saturating_add(1);
+                    self.wheel_commit_task = None;
+                }
+            } else {
+                let current_projection = self.effective_projection.clone();
+                let proposal_projection = proposal.projection.clone();
                 let zoom_ratio = if proposal.zoom.abs() > f64::EPSILON {
                     self.zoom / proposal.zoom
                 } else {
                     1.0
                 };
-                self.zoom = (self.config.zoom * zoom_ratio).clamp(0.5, 20.0);
-                self.pan = ChartPoint {
-                    x: self.config.pan.x + self.pan.x - proposal.pan.x,
-                    y: self.config.pan.y + self.pan.y - proposal.pan.y,
+                let pan_delta = ChartPoint {
+                    x: self.pan.x - proposal.pan.x,
+                    y: self.pan.y - proposal.pan.y,
                 };
-                self.viewport_preview_dirty = true;
-            } else {
+                self.local_committed_projection = self.config.viewport.clone();
+                self.effective_projection = self.config.viewport.clone();
                 self.zoom = self.config.zoom;
                 self.pan = self.config.pan;
-                self.viewport_preview_dirty = false;
-                self.wheel_generation = self.wheel_generation.saturating_add(1);
-                self.wheel_commit_task = None;
+                self.linked_axis_windows.clear();
+                if self.effective_projection.is_some() {
+                    self.materialize_effective_projection();
+                }
+                let base_projection = self
+                    .effective_projection
+                    .clone()
+                    .unwrap_or_else(|| self.linked_viewport_for(self.zoom, self.pan));
+                committed_projection = Some(base_projection.clone());
+                if has_newer_preview {
+                    self.effective_projection = rebase_viewport_projection(
+                        base_projection,
+                        proposal_projection,
+                        current_projection,
+                    );
+                    self.zoom = (self.config.zoom * zoom_ratio).clamp(0.5, 20.0);
+                    self.pan = ChartPoint {
+                        x: self.config.pan.x + pan_delta.x,
+                        y: self.config.pan.y + pan_delta.y,
+                    };
+                    self.materialize_effective_projection();
+                    self.viewport_preview_dirty = true;
+                } else {
+                    self.viewport_preview_dirty = false;
+                    self.wheel_generation = self.wheel_generation.saturating_add(1);
+                    self.wheel_commit_task = None;
+                }
             }
             self.viewport_commit_in_flight = false;
             self.next_viewport_revision = self
                 .next_viewport_revision
                 .max(self.config.viewport_revision);
             self.pending_viewport = None;
+        } else if programmatic_viewport_change {
+            self.linked_projection = None;
+            self.local_committed_projection = self.config.viewport.clone();
+            self.effective_projection = self.config.viewport.clone();
+            if self.effective_projection.is_some() {
+                self.materialize_effective_projection();
+            } else {
+                self.zoom = self.config.zoom;
+                self.pan = self.config.pan;
+                self.linked_axis_windows.clear();
+            }
+            committed_projection = Some(
+                self.effective_projection
+                    .clone()
+                    .unwrap_or_else(|| self.linked_viewport_for(self.zoom, self.pan)),
+            );
+            local_viewport_authority = true;
         }
-        let linked_viewport_changed = self.apply_linked_projection(linked_projection);
-        if acknowledge_viewport && self.linked_projection.is_some() && !linked_viewport_changed {
-            self.restore_effective_linked_viewport();
-        }
+        let linked_viewport_changed = if local_viewport_authority {
+            false
+        } else {
+            self.apply_linked_projection(linked_projection)
+        };
         let local_viewport_changed = acknowledge_viewport
             && ((previous_local_viewport.0 - self.zoom).abs() > f64::EPSILON
-                || previous_local_viewport.1 != self.pan);
+                || previous_local_viewport.1 != self.pan
+                || previous_local_viewport.2 != self.linked_axis_windows);
         if data_changed || spec_changed {
             let revision = self.config.data.snapshot().revision();
             self.replace_data_request(revision, true);
         }
         self.events = events;
-        if let (Some((zoom, pan)), Some(key)) = (committed_viewport, next_link.clone()) {
+        if let (Some(viewport), Some(key)) = (committed_projection, next_link.clone()) {
             let links = self.links.clone();
             let source = cx.weak_entity();
-            let viewport = self.linked_viewport_for(zoom, pan);
             cx.defer(move |cx| links.broadcast_zoom(&key, &source, &viewport, cx));
         }
         if let Some(key) = next_link
@@ -807,6 +890,7 @@ impl ChartEntity {
                 match result {
                     Ok(scene) => {
                         chart.scene = Some(scene.clone());
+                        chart.materialize_effective_projection();
                         chart.presented_key = Some(frame_key);
                         if animate
                             && chart_motion_duration(&chart.config)
@@ -837,7 +921,7 @@ impl ChartEntity {
             .is_none_or(|previous| previous.size != bounds.size);
         self.bounds = Some(bounds);
         if size_changed && self.activity == ChartActivity::Active {
-            self.restore_effective_linked_viewport();
+            self.materialize_effective_projection();
             self.invalidate_frame();
             self.rebuild_scene(cx);
         }
@@ -901,43 +985,68 @@ impl ChartEntity {
     }
 
     fn apply_linked_projection(&mut self, projection: Option<ChartLinkedProjection>) -> bool {
-        let previous_version = self.linked_projection.as_ref().map(|state| state.version);
-        let next_version = projection.as_ref().map(|state| state.version);
-        if previous_version == next_version {
+        let previous_identity = self
+            .linked_projection
+            .as_ref()
+            .map(|state| (&state.key, state.commit));
+        let next_identity = projection.as_ref().map(|state| (&state.key, state.commit));
+        if previous_identity == next_identity {
             return false;
         }
         let previous_windows = self.linked_axis_windows.clone();
         let previous_viewport = (self.zoom, self.pan);
         self.linked_projection = projection;
-        self.restore_effective_linked_viewport();
-        previous_version != self.linked_projection.as_ref().map(|state| state.version)
-            || previous_windows != self.linked_axis_windows
+        if self.viewport_preview_dirty
+            || self.dragging_pan
+            || self.wheel_gesture == ChartWheelGesture::Explicit
+        {
+            return false;
+        }
+        self.restore_committed_viewport();
+        previous_windows != self.linked_axis_windows
             || (previous_viewport.0 - self.zoom).abs() > f64::EPSILON
             || previous_viewport.1 != self.pan
     }
 
-    fn restore_effective_linked_viewport(&mut self) {
+    fn restore_committed_viewport(&mut self) {
+        self.effective_projection = self
+            .linked_projection
+            .as_ref()
+            .map(|projection| projection.viewport.clone())
+            .or_else(|| self.local_committed_projection.clone());
+        if self.effective_projection.is_some() {
+            self.materialize_effective_projection();
+            return;
+        }
         self.zoom = self.config.zoom;
         self.pan = self.config.pan;
         self.linked_axis_windows.clear();
-        let Some(projection) = self.linked_projection.as_ref() else {
+    }
+
+    fn materialize_effective_projection(&mut self) {
+        self.linked_axis_windows.clear();
+        let Some(projection) = self.effective_projection.clone() else {
             return;
         };
-        match &projection.viewport {
+        match projection {
             ChartLinkedViewport::Cartesian { region, x, y } => {
                 if !self.config.spec.regions.iter().any(|target| {
-                    target.key == *region && target.kind == ChartCoordinateKind::Cartesian2d
+                    target.key == region && target.kind == ChartCoordinateKind::Cartesian2d
                 }) {
+                    self.effective_projection = None;
+                    self.zoom = self.config.zoom;
+                    self.pan = self.config.pan;
                     return;
                 }
-                if let Some(axis) = x {
+                if let Some(axis) = &x {
                     self.linked_axis_windows
                         .insert(format!("{region}:x:{}", axis.key), axis.visible);
                 }
-                if let Some(axis) = y {
+                if let Some(axis) = &y {
                     self.linked_axis_windows
                         .insert(format!("{region}:y:{}", axis.key), axis.visible);
                 }
+                self.sync_scalar_from_cartesian(&region, x.as_ref(), y.as_ref());
             }
             ChartLinkedViewport::Geo {
                 region,
@@ -947,11 +1056,15 @@ impl ChartEntity {
                 normalized_pan,
             } => {
                 let Some(_target) = self.config.spec.regions.iter().find(|target| {
-                    target.key == *region
+                    target.key == region
                         && target.kind == ChartCoordinateKind::Geo2d
                         && target.map.as_deref() == Some(map.as_str())
-                        && target.projection.as_deref().unwrap_or("equirectangular") == projection
+                        && target.projection.as_deref().unwrap_or("equirectangular")
+                            == projection.as_str()
                 }) else {
+                    self.effective_projection = None;
+                    self.zoom = self.config.zoom;
+                    self.pan = self.config.pan;
                     return;
                 };
                 let plot = self.bounds.and_then(|bounds| {
@@ -959,18 +1072,179 @@ impl ChartEntity {
                         &self.config.spec,
                         f64::from(bounds.size.width),
                         f64::from(bounds.size.height),
-                        region,
+                        &region,
                     )
                 });
                 let size = plot.map_or((1.0, 1.0), |plot| (plot.width, plot.height));
-                self.zoom = *zoom;
+                self.zoom = zoom;
                 self.pan = ChartPoint {
                     x: normalized_pan.x * size.0,
                     y: normalized_pan.y * size.1,
                 };
             }
-            ChartLinkedViewport::Unsupported => {}
+            ChartLinkedViewport::Unsupported => {
+                self.effective_projection = None;
+                self.zoom = self.config.zoom;
+                self.pan = self.config.pan;
+            }
         }
+    }
+
+    fn sync_scalar_from_cartesian(
+        &mut self,
+        region: &str,
+        x: Option<&ChartLinkedAxis>,
+        y: Option<&ChartLinkedAxis>,
+    ) {
+        let Some(scene) = &self.scene else {
+            return;
+        };
+        let plot = self
+            .bounds
+            .and_then(|bounds| {
+                chart_region_rect(
+                    &self.config.spec,
+                    f64::from(bounds.size.width),
+                    f64::from(bounds.size.height),
+                    region,
+                )
+            })
+            .or_else(|| scene.plot_regions.get(region).copied());
+        let Some(plot) = plot else { return };
+        let axis_state = |channel: &str, axis: &ChartLinkedAxis, range: f64| {
+            let domain = scene
+                .axis_domains
+                .get(&format!("{region}:{channel}:{}", axis.key))
+                .copied()?;
+            let full = axis_domain_space(domain.full, domain.scale)?;
+            let visible = axis_domain_space(axis.visible, domain.scale)?;
+            let full_span = full.1 - full.0;
+            let visible_span = visible.1 - visible.0;
+            if full_span <= f64::EPSILON || visible_span <= f64::EPSILON {
+                return None;
+            }
+            let zoom = (full_span / visible_span).clamp(0.5, 20.0);
+            Some((zoom, linked_pan(domain, axis.visible, range, zoom)))
+        };
+        let x_state = x.and_then(|axis| axis_state("x", axis, plot.width));
+        let y_state = y.and_then(|axis| axis_state("y", axis, -plot.height));
+        if let Some((zoom, pan)) = x_state {
+            self.zoom = zoom;
+            self.pan.x = pan;
+        } else if let Some((zoom, _)) = y_state {
+            self.zoom = zoom;
+        }
+        if let Some((_, pan)) = y_state {
+            self.pan.y = pan;
+        }
+    }
+
+    fn ensure_effective_projection(&mut self) {
+        if self.effective_projection.is_some() {
+            return;
+        }
+        let projection = self.linked_viewport_for(self.zoom, self.pan);
+        if !matches!(projection, ChartLinkedViewport::Unsupported) {
+            self.effective_projection = Some(projection);
+            self.materialize_effective_projection();
+        }
+    }
+
+    fn zoom_effective_viewport(&mut self, factor: f64) -> bool {
+        let next_zoom = (self.zoom * factor).clamp(0.5, 20.0);
+        if (next_zoom - self.zoom).abs() <= f64::EPSILON {
+            return false;
+        }
+        let applied_factor = next_zoom / self.zoom;
+        self.ensure_effective_projection();
+        let scales = self.scene.as_ref().map(|scene| scene.axis_domains.clone());
+        if let Some(projection) = self.effective_projection.as_mut() {
+            match projection {
+                ChartLinkedViewport::Cartesian { region, x, y } => {
+                    for (channel, axis) in [("x", x), ("y", y)] {
+                        let Some(axis) = axis else { continue };
+                        let scale = scales
+                            .as_ref()
+                            .and_then(|domains| {
+                                domains.get(&format!("{region}:{channel}:{}", axis.key))
+                            })
+                            .map_or(ChartAxisScale::Linear, |domain| domain.scale);
+                        axis.visible = zoom_axis_window(axis.visible, scale, applied_factor);
+                    }
+                }
+                ChartLinkedViewport::Geo { zoom, .. } => *zoom = next_zoom,
+                ChartLinkedViewport::Unsupported => return false,
+            }
+            self.materialize_effective_projection();
+        } else {
+            self.zoom = next_zoom;
+        }
+        true
+    }
+
+    fn pan_effective_viewport(&mut self, delta: ChartPoint) -> bool {
+        self.ensure_effective_projection();
+        let scene = self.scene.clone();
+        if let Some(projection) = self.effective_projection.as_mut() {
+            match projection {
+                ChartLinkedViewport::Cartesian { region, x, y } => {
+                    let Some(scene) = scene.as_ref() else {
+                        return false;
+                    };
+                    let plot = self
+                        .bounds
+                        .and_then(|bounds| {
+                            chart_region_rect(
+                                &self.config.spec,
+                                f64::from(bounds.size.width),
+                                f64::from(bounds.size.height),
+                                region,
+                            )
+                        })
+                        .or_else(|| scene.plot_regions.get(region).copied());
+                    let Some(plot) = plot else { return false };
+                    for (channel, axis, pixels, range) in [
+                        ("x", x, delta.x, plot.width),
+                        ("y", y, delta.y, -plot.height),
+                    ] {
+                        let Some(axis) = axis else { continue };
+                        let Some(domain) = scene
+                            .axis_domains
+                            .get(&format!("{region}:{channel}:{}", axis.key))
+                            .copied()
+                        else {
+                            continue;
+                        };
+                        axis.visible = pan_axis_window(axis.visible, domain, pixels, range);
+                    }
+                }
+                ChartLinkedViewport::Geo {
+                    region,
+                    normalized_pan,
+                    ..
+                } => {
+                    let Some(bounds) = self.bounds else {
+                        return false;
+                    };
+                    let Some(plot) = chart_region_rect(
+                        &self.config.spec,
+                        f64::from(bounds.size.width),
+                        f64::from(bounds.size.height),
+                        region,
+                    ) else {
+                        return false;
+                    };
+                    normalized_pan.x += delta.x / plot.width.max(f64::EPSILON);
+                    normalized_pan.y += delta.y / plot.height.max(f64::EPSILON);
+                }
+                ChartLinkedViewport::Unsupported => return false,
+            }
+            self.materialize_effective_projection();
+        } else {
+            self.pan.x += delta.x;
+            self.pan.y += delta.y;
+        }
+        true
     }
 
     fn local_point(&self, position: Point<Pixels>) -> Option<ChartPoint> {
@@ -994,8 +1268,13 @@ impl ChartEntity {
     fn mouse_move(&mut self, event: &MouseMoveEvent, window: &mut Window, cx: &mut Context<Self>) {
         if self.dragging_pan {
             if let Some(origin) = self.pan_origin {
-                self.pan.x += f64::from(event.position.x - origin.x);
-                self.pan.y += f64::from(event.position.y - origin.y);
+                let changed = self.pan_effective_viewport(ChartPoint {
+                    x: f64::from(event.position.x - origin.x),
+                    y: f64::from(event.position.y - origin.y),
+                });
+                if !changed {
+                    return;
+                }
                 self.viewport_input_generation = self.viewport_input_generation.saturating_add(1);
                 self.viewport_preview_dirty = true;
                 self.pan_origin = Some(event.position);
@@ -1103,11 +1382,9 @@ impl ChartEntity {
             self.wheel_commit_task = None;
         }
         let factor = (-f64::from(delta.y) / 400.0).exp();
-        let next = (self.zoom * factor).clamp(0.5, 20.0);
-        if (next - self.zoom).abs() <= f64::EPSILON {
+        if !self.zoom_effective_viewport(factor) {
             return;
         }
-        self.zoom = next;
         self.viewport_input_generation = self.viewport_input_generation.saturating_add(1);
         self.viewport_preview_dirty = true;
         self.invalidate_frame();
@@ -1147,11 +1424,13 @@ impl ChartEntity {
             .max(self.config.viewport_revision)
             .saturating_add(1);
         let viewport_revision = self.next_viewport_revision;
+        let projection = self.effective_projection.clone();
         self.pending_viewport = Some(ChartViewportProposal {
             revision: viewport_revision,
             input_generation: self.viewport_input_generation,
             zoom: self.zoom,
             pan: self.pan,
+            projection: projection.clone(),
         });
         self.wheel_generation = self.wheel_generation.saturating_add(1);
         self.wheel_commit_task = None;
@@ -1161,6 +1440,12 @@ impl ChartEntity {
             ("zoom".to_owned(), UiValue::Float(self.zoom)),
             ("pan_x".to_owned(), UiValue::Float(self.pan.x)),
             ("pan_y".to_owned(), UiValue::Float(self.pan.y)),
+            (
+                "viewport".to_owned(),
+                projection
+                    .as_ref()
+                    .map_or(UiValue::Null, linked_viewport_value),
+            ),
             (
                 "viewport_revision".to_owned(),
                 UiValue::Integer(i64::try_from(viewport_revision).unwrap_or(i64::MAX)),
@@ -1462,19 +1747,27 @@ impl Render for ChartEntity {
         if let Some(scene) = &scene {
             for label in scene.labels.iter() {
                 let position = label.position;
-                let mut element = div()
+                let element = div()
                     .absolute()
-                    .left(px(f64_to_f32(position.x)))
                     .top(px(f64_to_f32(position.y)))
+                    .whitespace_nowrap()
                     .text_size(px(12.0))
-                    .text_color(rgba(label.color.as_rgba_hex()))
-                    .child(label.text.clone());
-                element = match label.anchor {
-                    super::ChartLabelAnchor::Start => element,
-                    super::ChartLabelAnchor::Center => element.ml(px(-20.0)),
-                    super::ChartLabelAnchor::End => element.ml(px(-52.0)),
+                    .text_color(rgba(label.color.as_rgba_hex()));
+                let element = match label.anchor {
+                    super::ChartLabelAnchor::Start => element
+                        .left(px(f64_to_f32(position.x)))
+                        .right(px(0.0))
+                        .text_left(),
+                    super::ChartLabelAnchor::Center => element
+                        .left(px(f64_to_f32(position.x - 40.0)))
+                        .w(px(80.0))
+                        .text_center(),
+                    super::ChartLabelAnchor::End => element
+                        .left(px(0.0))
+                        .w(px(f64_to_f32(position.x.max(0.0))))
+                        .text_right(),
                 };
-                root = root.child(element);
+                root = root.child(element.child(label.text.clone()));
             }
             if self.config.spec.tooltip.visible
                 && let Some(mark) = self
@@ -1879,10 +2172,10 @@ fn parse_config(
     cached: Option<&ChartSourceCache>,
 ) -> Result<(ChartConfig, Option<ChartSourceCache>), String> {
     if let Some(cached) = cached.filter(|cached| cached.matches(props)) {
-        return Ok((chart_config_from_source(cached, props, theme), None));
+        return Ok((chart_config_from_source(cached, props, theme)?, None));
     }
     let source = parse_chart_source(props)?;
-    let config = chart_config_from_source(&source, props, theme);
+    let config = chart_config_from_source(&source, props, theme)?;
     Ok((config, Some(source)))
 }
 
@@ -1890,7 +2183,7 @@ fn chart_config_from_source(
     source: &ChartSourceCache,
     props: &PrimitiveProps,
     theme: &PrimitiveTheme,
-) -> ChartConfig {
+) -> Result<ChartConfig, String> {
     let hidden = string_set_prop(props, "hidden_series");
     let mut spec = source.spec.clone();
     for series in &mut spec.series {
@@ -1898,7 +2191,7 @@ fn chart_config_from_source(
             series.visible = false;
         }
     }
-    ChartConfig {
+    Ok(ChartConfig {
         spec,
         data: source.data.clone(),
         selected: string_set_prop(props, "selected_keys"),
@@ -1907,9 +2200,10 @@ fn chart_config_from_source(
             x: number_prop(props, "pan_x").unwrap_or(0.0),
             y: number_prop(props, "pan_y").unwrap_or(0.0),
         },
+        viewport: viewport_prop(props)?,
         viewport_revision: integer_prop(props, "viewport_revision").unwrap_or(0),
         theme: theme.clone(),
-    }
+    })
 }
 
 fn parse_chart_source(props: &PrimitiveProps) -> Result<ChartSourceCache, String> {
@@ -1970,7 +2264,6 @@ fn link_key(spec: &ChartSpec) -> Option<(String, String)> {
     spec.link_group.clone().zip(spec.link_domain.clone())
 }
 
-#[cfg(test)]
 fn linked_pan(domain: ChartAxisDomain, visible: (f64, f64), range: f64, zoom: f64) -> f64 {
     let Some(full) = axis_domain_space(domain.full, domain.scale) else {
         return 0.0;
@@ -1989,6 +2282,172 @@ fn linked_pan(domain: ChartAxisDomain, visible: (f64, f64), range: f64, zoom: f6
         -pan
     } else {
         pan
+    }
+}
+
+fn viewport_matches_proposal(config: &ChartConfig, proposal: &ChartViewportProposal) -> bool {
+    if config.viewport.is_some() {
+        return config.viewport == proposal.projection;
+    }
+    (config.zoom - proposal.zoom).abs() <= 0.000_001
+        && (config.pan.x - proposal.pan.x).abs() <= 0.000_001
+        && (config.pan.y - proposal.pan.y).abs() <= 0.000_001
+}
+
+fn zoom_axis_window(visible: (f64, f64), scale: ChartAxisScale, factor: f64) -> (f64, f64) {
+    let Some(visible_space) = axis_domain_space(visible, scale) else {
+        return visible;
+    };
+    let center = f64::midpoint(visible_space.0, visible_space.1);
+    let half = (visible_space.1 - visible_space.0) / factor / 2.0;
+    let next = (center - half, center + half);
+    if scale == ChartAxisScale::Log {
+        (next.0.exp(), next.1.exp())
+    } else {
+        next
+    }
+}
+
+fn pan_axis_window(
+    visible: (f64, f64),
+    domain: ChartAxisDomain,
+    pixels: f64,
+    range: f64,
+) -> (f64, f64) {
+    let Some(visible_space) = axis_domain_space(visible, domain.scale) else {
+        return visible;
+    };
+    if range.abs() <= f64::EPSILON {
+        return visible;
+    }
+    let pixels = if domain.direction == ChartAxisDirection::Reversed {
+        -pixels
+    } else {
+        pixels
+    };
+    let shift = -pixels * (visible_space.1 - visible_space.0) / range;
+    let next = (visible_space.0 + shift, visible_space.1 + shift);
+    if domain.scale == ChartAxisScale::Log {
+        (next.0.exp(), next.1.exp())
+    } else {
+        next
+    }
+}
+
+fn rebase_axis_window(base: (f64, f64), accepted: (f64, f64), current: (f64, f64)) -> (f64, f64) {
+    let accepted_span = accepted.1 - accepted.0;
+    if accepted_span.abs() <= f64::EPSILON {
+        return current;
+    }
+    let base_span = base.1 - base.0;
+    let span_ratio = (current.1 - current.0) / accepted_span;
+    let center_offset = (f64::midpoint(current.0, current.1)
+        - f64::midpoint(accepted.0, accepted.1))
+        / accepted_span;
+    let center = f64::midpoint(base.0, base.1) + center_offset * base_span;
+    let half = base_span * span_ratio / 2.0;
+    (center - half, center + half)
+}
+
+fn rebase_linked_axis(
+    base: Option<ChartLinkedAxis>,
+    accepted: Option<ChartLinkedAxis>,
+    current: Option<ChartLinkedAxis>,
+) -> Option<ChartLinkedAxis> {
+    let current = current?;
+    let accepted = accepted.filter(|axis| axis.key == current.key)?;
+    let base = base.filter(|axis| axis.key == current.key)?;
+    Some(ChartLinkedAxis {
+        key: current.key,
+        visible: rebase_axis_window(base.visible, accepted.visible, current.visible),
+    })
+}
+
+fn rebase_viewport_projection(
+    base: ChartLinkedViewport,
+    accepted: Option<ChartLinkedViewport>,
+    current: Option<ChartLinkedViewport>,
+) -> Option<ChartLinkedViewport> {
+    match (base, accepted?, current?) {
+        (
+            ChartLinkedViewport::Cartesian {
+                region: base_region,
+                x: base_x,
+                y: base_y,
+            },
+            ChartLinkedViewport::Cartesian {
+                region: accepted_region,
+                x: accepted_x,
+                y: accepted_y,
+            },
+            ChartLinkedViewport::Cartesian {
+                region: current_region,
+                x: current_x,
+                y: current_y,
+            },
+        ) if base_region == accepted_region && accepted_region == current_region => {
+            Some(ChartLinkedViewport::Cartesian {
+                region: current_region,
+                x: rebase_linked_axis(base_x, accepted_x, current_x),
+                y: rebase_linked_axis(base_y, accepted_y, current_y),
+            })
+        }
+        (
+            ChartLinkedViewport::Geo {
+                region: base_region,
+                map: base_map,
+                projection: base_projection,
+                zoom: base_zoom,
+                normalized_pan: base_pan,
+            },
+            ChartLinkedViewport::Geo {
+                region: accepted_region,
+                map: accepted_map,
+                projection: accepted_projection,
+                zoom: accepted_zoom,
+                normalized_pan: accepted_pan,
+            },
+            ChartLinkedViewport::Geo {
+                region: current_region,
+                map: current_map,
+                projection: current_projection,
+                zoom: current_zoom,
+                normalized_pan: current_pan,
+            },
+        ) if (
+            base_region.as_str(),
+            base_map.as_str(),
+            base_projection.as_str(),
+        ) == (
+            accepted_region.as_str(),
+            accepted_map.as_str(),
+            accepted_projection.as_str(),
+        ) && (
+            accepted_region.as_str(),
+            accepted_map.as_str(),
+            accepted_projection.as_str(),
+        ) == (
+            current_region.as_str(),
+            current_map.as_str(),
+            current_projection.as_str(),
+        ) =>
+        {
+            Some(ChartLinkedViewport::Geo {
+                region: current_region,
+                map: current_map,
+                projection: current_projection,
+                zoom: if accepted_zoom.abs() <= f64::EPSILON {
+                    current_zoom
+                } else {
+                    (base_zoom * current_zoom / accepted_zoom).clamp(0.5, 20.0)
+                },
+                normalized_pan: ChartPoint {
+                    x: base_pan.x + current_pan.x - accepted_pan.x,
+                    y: base_pan.y + current_pan.y - accepted_pan.y,
+                },
+            })
+        }
+        (_, _, current) => Some(current),
     }
 }
 
@@ -2023,6 +2482,134 @@ fn linked_visible_domain(
         Some((visible.0.exp(), visible.1.exp()))
     } else {
         Some(visible)
+    }
+}
+
+fn viewport_string(map: &BTreeMap<String, UiValue>, name: &str) -> Result<String, String> {
+    match map.get(name) {
+        Some(UiValue::String(value)) if !value.is_empty() => Ok(value.clone()),
+        _ => Err(format!(
+            "chart viewport `{name}` must be a non-empty string"
+        )),
+    }
+}
+
+fn viewport_number(map: &BTreeMap<String, UiValue>, name: &str) -> Result<f64, String> {
+    let value = match map.get(name) {
+        Some(UiValue::Float(value)) => *value,
+        Some(UiValue::Integer(value)) => value
+            .to_string()
+            .parse::<f64>()
+            .map_err(|_| format!("chart viewport `{name}` is outside numeric range"))?,
+        _ => return Err(format!("chart viewport `{name}` must be a number")),
+    };
+    value
+        .is_finite()
+        .then_some(value)
+        .ok_or_else(|| format!("chart viewport `{name}` must be finite"))
+}
+
+fn viewport_axis(value: Option<&UiValue>, name: &str) -> Result<Option<ChartLinkedAxis>, String> {
+    let Some(value) = value else { return Ok(None) };
+    let UiValue::Map(map) = value else {
+        return Err(format!("chart viewport `{name}` must be an object"));
+    };
+    let min = viewport_number(map, "min")?;
+    let max = viewport_number(map, "max")?;
+    if min >= max {
+        return Err(format!("chart viewport `{name}` requires min < max"));
+    }
+    Ok(Some(ChartLinkedAxis {
+        key: viewport_string(map, "key")?,
+        visible: (min, max),
+    }))
+}
+
+fn viewport_prop(props: &PrimitiveProps) -> Result<Option<ChartLinkedViewport>, String> {
+    let Some(value) = props.get("viewport") else {
+        return Ok(None);
+    };
+    let PrimitiveValue::Data(value) = value else {
+        return Err("chart viewport must be durable data".to_owned());
+    };
+    if matches!(value, UiValue::Null) {
+        return Ok(None);
+    }
+    let UiValue::Map(map) = value else {
+        return Err("chart viewport must be an object".to_owned());
+    };
+    match viewport_string(map, "kind")?.as_str() {
+        "cartesian" => {
+            let x = viewport_axis(map.get("x"), "x")?;
+            let y = viewport_axis(map.get("y"), "y")?;
+            if x.is_none() && y.is_none() {
+                return Err("cartesian chart viewport requires x or y".to_owned());
+            }
+            Ok(Some(ChartLinkedViewport::Cartesian {
+                region: viewport_string(map, "region")?,
+                x,
+                y,
+            }))
+        }
+        "geo" => {
+            let zoom = viewport_number(map, "zoom")?;
+            if !(0.5..=20.0).contains(&zoom) {
+                return Err("geo chart viewport zoom must be between 0.5 and 20".to_owned());
+            }
+            Ok(Some(ChartLinkedViewport::Geo {
+                region: viewport_string(map, "region")?,
+                map: viewport_string(map, "map")?,
+                projection: viewport_string(map, "projection")?,
+                zoom,
+                normalized_pan: ChartPoint {
+                    x: viewport_number(map, "pan_x")?,
+                    y: viewport_number(map, "pan_y")?,
+                },
+            }))
+        }
+        kind => Err(format!("unknown chart viewport kind `{kind}`")),
+    }
+}
+
+fn linked_axis_value(axis: &ChartLinkedAxis) -> UiValue {
+    UiValue::Map(BTreeMap::from([
+        ("key".to_owned(), UiValue::String(axis.key.clone())),
+        ("min".to_owned(), UiValue::Float(axis.visible.0)),
+        ("max".to_owned(), UiValue::Float(axis.visible.1)),
+    ]))
+}
+
+fn linked_viewport_value(viewport: &ChartLinkedViewport) -> UiValue {
+    match viewport {
+        ChartLinkedViewport::Cartesian { region, x, y } => {
+            let mut value = BTreeMap::from([
+                ("kind".to_owned(), UiValue::String("cartesian".to_owned())),
+                ("region".to_owned(), UiValue::String(region.clone())),
+            ]);
+            if let Some(axis) = x {
+                value.insert("x".to_owned(), linked_axis_value(axis));
+            }
+            if let Some(axis) = y {
+                value.insert("y".to_owned(), linked_axis_value(axis));
+            }
+            UiValue::Map(value)
+        }
+        ChartLinkedViewport::Geo {
+            region,
+            map,
+            projection,
+            zoom,
+            normalized_pan,
+        } => UiValue::Map(BTreeMap::from([
+            ("kind".to_owned(), UiValue::String("geo".to_owned())),
+            ("region".to_owned(), UiValue::String(region.clone())),
+            ("map".to_owned(), UiValue::String(map.clone())),
+            ("projection".to_owned(), UiValue::String(projection.clone())),
+            ("zoom".to_owned(), UiValue::Float(*zoom)),
+            ("pan_x".to_owned(), UiValue::Float(normalized_pan.x)),
+            ("pan_y".to_owned(), UiValue::Float(normalized_pan.y)),
+        ])),
+        ChartLinkedViewport::Unsupported => UiValue::Null,
     }
 }
 
@@ -2582,6 +3169,10 @@ pub fn chart_primitive_descriptor() -> PrimitiveDescriptor {
                 ObjectField::optional(ValueSchema::number()).with_default(UiValue::Float(0.0)),
             ),
             (
+                "viewport".to_owned(),
+                ObjectField::optional(ValueSchema::UiValue).with_default(UiValue::Null),
+            ),
+            (
                 "viewport_revision".to_owned(),
                 ObjectField::optional(ValueSchema::bounded_integer(Some(0), None))
                     .with_default(UiValue::Integer(0)),
@@ -2662,6 +3253,10 @@ pub fn chart_primitive_descriptor() -> PrimitiveDescriptor {
                             (
                                 "pan_y".to_owned(),
                                 ObjectField::required(ValueSchema::number()),
+                            ),
+                            (
+                                "viewport".to_owned(),
+                                ObjectField::required(ValueSchema::UiValue),
                             ),
                             (
                                 "viewport_revision".to_owned(),
@@ -2793,5 +3388,38 @@ mod tests {
             assert!((source_visible.0 - target_visible.0).abs() < 0.000_001);
             assert!((source_visible.1 - target_visible.1).abs() < 0.000_001);
         }
+    }
+
+    #[test]
+    fn typed_viewport_round_trips_without_collapsing_axis_windows() {
+        let viewport = ChartLinkedViewport::Cartesian {
+            region: "main".to_owned(),
+            x: Some(ChartLinkedAxis {
+                key: "time".to_owned(),
+                visible: (12.5, 41.0),
+            }),
+            y: Some(ChartLinkedAxis {
+                key: "value".to_owned(),
+                visible: (-8.0, 240.0),
+            }),
+        };
+        let props = PrimitiveProps::new().with(
+            "viewport",
+            PrimitiveValue::Data(linked_viewport_value(&viewport)),
+        );
+        assert_eq!(viewport_prop(&props).unwrap(), Some(viewport));
+
+        let geo = ChartLinkedViewport::Geo {
+            region: "map".to_owned(),
+            map: "world".to_owned(),
+            projection: "mercator".to_owned(),
+            zoom: 3.0,
+            normalized_pan: ChartPoint { x: 0.25, y: -0.5 },
+        };
+        let props = PrimitiveProps::new().with(
+            "viewport",
+            PrimitiveValue::Data(linked_viewport_value(&geo)),
+        );
+        assert_eq!(viewport_prop(&props).unwrap(), Some(geo));
     }
 }

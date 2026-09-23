@@ -124,11 +124,12 @@ Selection, legend visibility, and zoom are controllable state and emit
 low-frequency semantic events. Brush supports Cartesian x/y/xy rectangles and
 Geo region/rectangle selection; freehand lasso is deferred.
 
-Controlled viewport state has a committed value, transient gesture preview,
-and an explicit monotonic Host acknowledgement revision. A redraw is not an
-acknowledgement; the Host writes the proposal revision back after accepting,
-clamping, or rejecting it. Proposal snapshots and later input generations are
-separate, so a delayed acknowledgement cannot consume a newer preview.
+Controlled viewport state has one coordinate-typed effective value, a gesture
+base/preview, and an explicit monotonic Host acknowledgement revision. A redraw
+or bounds change is not an acknowledgement; the Host writes the proposal
+revision and exact typed viewport back after accepting, clamping, or rejecting
+it. Proposal snapshots and later input generations are separate, so a delayed
+acknowledgement cannot consume a newer preview.
 Cartesian viewport state compiles into a visible domain window, so axes and
 marks always share one mapper. Mark role, structural mark identity, and
 `DatumRef` are separate types; business data cannot collide with legend,
@@ -142,9 +143,10 @@ Viewport link payloads are coordinate-typed. Cartesian payloads bind named
 region/axis logical windows. Geo payloads bind map/projection identity and a
 normalized camera. Incompatible or unsupported coordinate payloads are not
 reinterpreted through another coordinate model. LinkRegistry owns the latest
-source/version projection for each group. Targets retain that projection across
-suspension, and Cartesian X/Y windows enter the coordinate compiler directly
-instead of being reduced to one zoom/pan pair.
+source and globally unique commit identity for each group/domain. Targets
+retain that projection across suspension without confusing equal counters from
+different groups, and Cartesian X/Y windows enter the coordinate compiler
+directly instead of being reduced to one zoom/pan pair.
 
 Charts are visualization surfaces, not editors. Dragging marks to mutate the
 underlying dataset is outside the runtime contract; Hosts can build explicit

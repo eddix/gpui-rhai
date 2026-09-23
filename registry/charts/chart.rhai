@@ -38,6 +38,7 @@ define_component(#{
                 "default": #{ type: "float", value: 0.0 } },
             pan_y: #{ schema: #{ type: "number" }, required: false, sensitive: false,
                 "default": #{ type: "float", value: 0.0 } },
+            viewport: #{ schema: #{ type: "optional", value: #{ type: "ui_value" } }, required: false, sensitive: false },
             viewport_revision: #{ schema: #{ type: "integer", min: 0 }, required: false, sensitive: false,
                 "default": #{ type: "integer", value: 0 } },
             on_select: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false },
@@ -61,6 +62,7 @@ define_component(#{
                 zoom: #{ schema: #{ type: "number" }, required: true, sensitive: false },
                 pan_x: #{ schema: #{ type: "number" }, required: true, sensitive: false },
                 pan_y: #{ schema: #{ type: "number" }, required: true, sensitive: false },
+                viewport: #{ schema: #{ type: "ui_value" }, required: true, sensitive: false },
                 viewport_revision: #{ schema: #{ type: "integer", min: 0 }, required: true, sensitive: false },
             } } },
             brush_change: #{ payload: #{ type: "object", allow_unknown: false, fields: #{
@@ -112,6 +114,7 @@ fn specialized_chart(props, kind, coordinate_kind) {
         style: prop_or(props, "style", style()),
         part_styles: prop_or(props, "part_styles", #{}),
     };
+    if "viewport" in props && props.viewport != () { chart_props.viewport = props.viewport; }
     if !("spec" in props) || props.spec == () {
         let coordinate = if coordinate_kind == "geo_2d" {
             #{ key: "main", kind: coordinate_kind, map: prop_or(props, "map", "map"),
@@ -165,7 +168,7 @@ fn render_Chart(ctx, props) {
     let root = ctx.component_style("root", style()
         .width(relative(1.0)).height(relative(1.0)).min_width(px(0)).min_height(px(0))
         .background(theme_color("surface")).border(px(1)).border_color(theme_color("border")));
-    gpui_rhai::ChartPrimitive(#{
+    let primitive_props = #{
         key: props.key,
         spec: props.spec,
         data: props.data,
@@ -181,6 +184,8 @@ fn render_Chart(ctx, props) {
         on_brush_change: if "on_brush_change" in props && props.on_brush_change != () { Fn("emit_brush") } else { () },
         on_legend_change: if "on_legend_change" in props && props.on_legend_change != () { Fn("emit_legend") } else { () },
         on_annotation_activate: if "on_annotation_activate" in props && props.on_annotation_activate != () { Fn("emit_annotation") } else { () },
-    }).with_key(props.key).with_style(root).accessibility_role("figure")
+    };
+    if "viewport" in props && props.viewport != () { primitive_props.viewport = props.viewport; }
+    gpui_rhai::ChartPrimitive(primitive_props).with_key(props.key).with_style(root).accessibility_role("figure")
         .accessibility_label(if "title" in props.spec { props.spec.title } else { "Chart" })
 }

@@ -28,9 +28,7 @@ chart::Chart(#{
     data: rows,
     selected_keys: selected,
     hidden_series: hidden,
-    zoom: zoom,
-    pan_x: pan_x,
-    pan_y: pan_y,
+    viewport: viewport,
     viewport_revision: viewport_revision,
     spec: #{
         title: "Requests",
@@ -134,33 +132,43 @@ keyboard active-mark navigation stay native. Arrow keys move focus, Home/End
 jump, and Enter/Space activate the focused datum. Semantic callbacks are
 bounded commit events rather than raw pointer streams.
 
-Selection (`selected_keys`), legend visibility (`hidden_series`), and viewport
-(`zoom`, `pan_x`, `pan_y`) are controllable. Charts sharing both
+Selection (`selected_keys`), legend visibility (`hidden_series`), and the typed
+`viewport` are controllable. `zoom`/`pan_x`/`pan_y` remain concise shorthand
+when one scalar camera is sufficient; the runtime normalizes them at the input
+boundary. Charts sharing both
 `link_group` and `link_domain` synchronize hover, selection highlight, zoom,
 and pan through weak native entity links without Rhai event fan-out.
 Cartesian links carry explicit region/axis logical windows. Geo links carry a
 normalized camera plus map/projection identity; only compatible Geo regions
 consume them. Polar and incompatible coordinate bindings do not silently reuse
 Cartesian axis metadata. The LinkRegistry retains the latest sourced projection
-and version, so target views preserve it across redraw and suspend/resume. Each
-Cartesian axis window enters the coordinate plan independently; it is never
-collapsed into one shared zoom scalar.
+with its group/domain and globally unique commit identity, so target views
+preserve it across redraw and suspend/resume without aliasing another group.
+Each Cartesian axis window enters the coordinate plan independently; it is
+never collapsed into one shared zoom scalar.
 
 Viewport gestures maintain a transient native preview. Each `zoom_change`
-payload includes a monotonic `viewport_revision`; after accepting, clamping, or
-rejecting that proposal, the Host writes the same revision back together with
-its controlled `zoom`, `pan_x`, and `pan_y` values. Unrelated renders do not
+payload includes the exact typed `viewport` and a monotonic
+`viewport_revision`; after accepting, clamping, or rejecting that proposal,
+the Host writes the same revision back together with its controlled viewport.
+Unrelated renders do not
 acknowledge or reset a pending preview, while a same-value write with the new
 revision explicitly rejects it. For example:
 
 ```rhai
 fn zoomed(ctx, proposal) {
-    ctx.set_state("zoom", proposal.zoom); // accept, or keep the old value to reject
-    ctx.set_state("pan_x", proposal.pan_x);
-    ctx.set_state("pan_y", proposal.pan_y);
+    ctx.set_state("viewport", proposal.viewport); // accept exact windows/camera
     ctx.set_state("viewport_revision", proposal.viewport_revision);
 }
 ```
+
+A Cartesian viewport is
+`#{kind:"cartesian", region, x:#{key,min,max}, y:#{key,min,max}}` (either axis
+may be omitted). A Geo viewport is
+`#{kind:"geo", region, map, projection, zoom, pan_x, pan_y}` where pan is
+normalized to the plot size. Keeping the typed value is required when linked
+charts have independent X/Y windows that cannot be represented by one scalar
+zoom/pan tuple.
 
 Cartesian zoom compiles a visible data-domain window and regenerates both
 scales and ticks. Explicit Started/Moved/Ended gestures commit only at Ended;
