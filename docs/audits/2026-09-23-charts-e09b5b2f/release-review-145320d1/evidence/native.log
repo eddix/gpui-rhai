@@ -1,0 +1,117 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.48s
+     Running tests/charts.rs (tests/native-keyboard/target/debug/deps/charts-531e8835c5c92445)
+
+running 20 tests
+test chart_adapter_normalizes_full_spec_series_kind ... ok
+test canceling_preview_rebuilds_the_committed_frame ... ok
+test chart_motion_freezes_across_view_suspension ... ok
+test chart_gauge_activation_returns_the_source_row_key ... ok
+test acknowledging_an_old_proposal_preserves_the_current_gesture ... ok
+test chart_controlled_zoom_rejects_unacknowledged_preview ... ok
+test chart_business_key_cannot_become_a_control_role ... ok
+test chart_brush_does_not_capture_legend_control ... ok
+test chart_semantics_expose_active_and_selected_datum ... ok
+test chart_phase_less_mouse_wheel_commits ... ok
+test chart_trackpad_preview_survives_intermediate_draw ... ok
+test failed_resume_prepare_does_not_consume_chart_motion_time ... ok
+test suspended_chart_coalesces_stream_updates_until_resume ... ok
+test geo_link_group_synchronizes_acknowledged_camera ... ok
+test resume_finishes_prepared_but_unpresented_frame ... ok
+test idle_linked_charts_do_not_repeat_layout ... ok
+test linked_selection_keeps_each_chart_source_instead_of_last_writer_wins ... ok
+test unrelated_host_render_does_not_acknowledge_a_viewport_proposal ... ok
+test formal_chart_adapters_forward_the_viewport_revision ... ok
+test resumed_chart_discards_an_interrupted_explicit_wheel_gesture ... ok
+
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.26s
+
+     Running tests/control_visuals.rs (tests/native-keyboard/target/debug/deps/control_visuals-bbfa43cd2b0430fd)
+
+running 4 tests
+test tabs_content_and_vertical_layout_use_natural_and_consistent_slots ... ok
+test button_and_badge_keep_distinct_density_with_the_same_label ... ok
+test animated_tabs_moves_one_shared_indicator_after_controlled_commit ... ok
+test tabs_equal_layout_preserves_track_inset_and_controlled_value ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.05s
+
+     Running tests/keyboard.rs (tests/native-keyboard/target/debug/deps/keyboard-65101f5d35f45187)
+
+running 65 tests
+test click_context_exposes_untracked_event_target_visual_bounds ... ok
+test canvas_morph_hit_testing_follows_the_presented_path ... ok
+test automation_commands_use_mounted_handlers_actions_and_clock ... ok
+test autofocus_input_receives_typing_without_any_click ... ok
+test component_gallery_example::registry_snapshot::tests::release_snapshot_has_the_expected_catalog_size ... ok
+test async_workers_wake_the_view_without_input_or_manual_poll ... ok
+test code_and_diff_viewers_mount_native_document_surfaces ... ok
+test custom_primitive_rejects_invalid_payload_before_host_callback ... ok
+test combobox_pointer_updates_transactional_rhai_caller_state ... ok
+test context_menu_anchors_at_the_right_click_and_closes_with_escape ... ok
+test effect_restart_still_delivers_async_task_results ... ok
+test effect_start_state_write_restarts_sibling_effect_and_delivers ... ok
+test element_bounds_self_heals_after_first_prepaint_and_resolves_event_keys ... ok
+test explicit_occlusion_blocks_pointer_hits_to_painted_siblings ... ok
+test embedded_view_suspend_resume_retains_state_and_rejects_new_elements ... ok
+test combobox_relative_width_tracks_flex_space_and_sizes_its_panel ... ok
+test host_callbacks_dispatch_without_a_script_runtime ... ok
+test host_can_suppress_the_builtin_error_banner_without_hiding_last_error ... ok
+test host_none_policy_snaps_layout_motion_in_the_presented_frame ... ok
+test duplicate_local_overlay_ids_are_namespaced_per_embedded_view ... ok
+test host_slot_preserves_an_independent_script_view_host ... ok
+test host_slot_renders_native_content_without_leaking_events_to_rhai ... ok
+test inherited_motion_group_survives_incremental_component_update ... ok
+test modal_dialog_reclaims_focus_stolen_by_an_embedding_host ... ok
+test motion_gallery_example::registry_snapshot::tests::release_snapshot_has_the_expected_catalog_size ... ok
+test grouped_command_initial_reveal_keeps_its_first_header_natural ... ok
+test motion_gallery_example::tests::complete_motion_pack_prepares_together ... ok
+test command_dialog_filters_from_native_input_and_executes_with_enter ... ok
+test mounted_view_exposes_failed_render_while_retaining_last_good_root ... ok
+test menu_trigger_routes_roving_and_enter_keys_through_current_rhai_state ... ok
+test native_input_updates_rhai_state_and_clipboard_with_unicode ... ok
+test native_text_document_revision_invalidates_exact_viewer_reader ... ok
+test motion_gallery_mounts_and_renders_a_real_frame ... ok
+test nested_overlay_renders_inside_parent_deferred_subtree ... ok
+test multiple_embedded_views_share_host_mechanics_but_isolate_runtime_state ... ok
+test node_prop_component_keeps_latest_ui_when_receiver_rerenders ... ok
+test overlay_default_panel_focus_keeps_keyboard_on_panel ... ok
+test read_only_input_allows_selection_and_copy_but_rejects_edits ... ok
+test script_runtime_install_is_idempotent_and_key_conflicts_are_explicit ... ok
+test scroll_area_thumb_drag_updates_the_retained_scroll_handle ... ok
+test native_textarea_wraps_inserts_newlines_and_limits_graphemes ... ok
+test selectable_text_uses_native_selection_and_copy_semantics ... ok
+test overlay_initial_focus_first_reaches_input_on_every_open ... ok
+test set_theme_during_typing_keeps_input_focus ... ok
+test sheet_uses_the_viewport_end_edge_and_restores_controlled_open_state ... ok
+test slider_previews_drag_natively_and_commits_once_before_keyboard_steps ... ok
+test slider_reverses_horizontal_pointer_and_arrow_semantics_in_rtl ... ok
+test subscription_callback_state_write_restarts_effect_and_delivers ... ok
+test tab_order_skips_disabled_nodes_and_enter_activates_focus ... ok
+test separate_hosts_in_one_window_keep_overlay_domains_isolated ... ok
+test grouped_table_headers_stick_through_the_native_virtual_list ... ok
+test svg_raster_adapter_uses_the_gpui_system_font_environment ... ok
+test table_1000_example::tests::one_thousand_row_workload_prepares ... ok
+test table_flex_columns_distribute_remaining_width_by_weight ... ok
+test text_input_primitive_dispatches_host_callbacks ... ok
+test table_does_not_expand_an_auto_min_width_host_flex_column_across_frames ... ok
+test tinted_svg_image_bytes_match_gpui_bgra_contract ... ok
+test timeline_rebinds_a_replaced_child_in_presented_frames ... ok
+test virtual_collection_fill_height_uses_the_resolved_flex_viewport ... ok
+test table_column_resize_previews_natively_and_emits_once_on_commit ... ok
+test command_preserves_manual_scroll_and_reveals_controlled_active_item ... ok
+test native_collection_table_autofit_stays_on_the_realized_rust_path ... ok
+test table_1000_tracks_the_resized_window_viewport ... ok
+test component_gallery_switches_categories_and_live_themes ... ok
+test component_gallery_example::tests::every_gallery_category_prepares_with_all_official_sources ... ok
+
+test result: ok. 65 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 16.49s
+
+     Running tests/primitive_lifecycle.rs (tests/native-keyboard/target/debug/deps/primitive_lifecycle-7ad1ab3e20192482)
+
+running 3 tests
+test failed_compensation_faults_and_quarantines_the_view ... ok
+test native_resume_failure_remains_suspended_and_retryable ... ok
+test native_suspend_failure_compensates_every_instance_and_retries ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.04s
+

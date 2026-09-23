@@ -1,0 +1,42 @@
+{
+  "audit_date": "2026-09-23",
+  "head": "145320d17d43fd10cfe5150495fd43cfa7d90381",
+  "previous_audit_baseline": "a31da5a81b02421bc5dbc1b34a7ffc883aa0160b",
+  "rustc": "rustc 1.94.0 (4a4ef493e 2026-03-02)\nbinary: rustc\ncommit-hash: 4a4ef493e3a1488c6e321570238084b38948f6db\ncommit-date: 2026-03-02\nhost: aarch64-apple-darwin\nrelease: 1.94.0\nLLVM version: 21.1.8",
+  "os": "ProductName:\t\tmacOS\nProductVersion:\t\t26.6.2\nBuildVersion:\t\t25G83",
+  "hardware_model": "Macmini9,1",
+  "gpui": "0.2.2",
+  "rhai": "1.26.0",
+  "benchmark": {
+    "profile": "release",
+    "points": 100000,
+    "warmups": 5,
+    "samples": 30,
+    "schema": "gpui-rhai-chart-e2e-v2",
+    "executor": "GPUI TestAppContext",
+    "exit_code": 0
+  },
+  "new_native": {
+    "passed": 8,
+    "failed": 4,
+    "distinct_findings": 3,
+    "exit_code": 101
+  },
+  "previous_core_native": {
+    "passed": 8,
+    "failed": 0,
+    "exit_code": 0
+  },
+  "reused_helper_sha256": "2c01f5b70658fd8100bda71fc8c32641f937f722172d8b80c653bed299200010",
+  "preexisting_changes_preserved": [
+    "docs/README.md",
+    "docs/components/assets/badge-density-reference.png (deleted)",
+    "docs/components/assets/button-density-reference.png (deleted)",
+    "docs/components/assets/tabs-track-reference.png (deleted)",
+    "docs/components/catalog.md",
+    "docs/components/control-visual-spec.zh-CN.md (deleted)",
+    "docs/registry-design-system.md",
+    "docs/visual-testing.md"
+  ],
+  "scope": "Chart 0.1.5 readiness; no publication, no product code edits, no new images"
+}
