@@ -179,7 +179,9 @@ radial-axis domain; Radar aligns stable indicators and uses one shared domain.
 For an unqualified Cartesian annotation, each channel binds to the first
 declared axis in that region that has non-empty visible series. Axis IDs and
 series iteration order therefore do not choose annotation mathematics; an
-empty axis group falls through to the next declared active axis.
+empty axis group falls through to the next declared active axis. X and Y scales
+are compiled independently, so an annotation does not require a real series to
+reference that exact axis pair.
 
 Time columns are typed epoch milliseconds. A time axis requires an explicit
 `UTC`, `offset:<minutes>`, or IANA timezone; ambiguous date strings are not

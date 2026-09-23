@@ -18,7 +18,12 @@ struct Host {
 
 impl Render for Host {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        self.host.container(self.view.element().unwrap())
+        let element = if self.view.state() == ScriptViewState::Active {
+            self.view.element().unwrap()
+        } else {
+            gpui::div().into_any_element()
+        };
+        self.host.container(element)
     }
 }
 
@@ -323,6 +328,46 @@ fn acknowledging_an_old_proposal_preserves_the_current_gesture(cx: &mut TestAppC
 }
 
 #[gpui::test]
+fn resumed_chart_discards_an_interrupted_explicit_wheel_gesture(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    for active_gesture in [false, true] {
+        let (window, view) = mount(
+            cx,
+            CONTROLLED_ZOOM_SOURCE,
+            &format!("chart-resume-wheel-{active_gesture}"),
+        );
+        let mut visual = VisualTestContext::from_window(*window, cx);
+        pump(cx, &mut visual);
+        if active_gesture {
+            let position = chart_position(&mut visual, &view);
+            visual.simulate_event(ScrollWheelEvent {
+                position,
+                delta: ScrollDelta::Pixels(point(px(0.0), px(40.0))),
+                touch_phase: gpui::TouchPhase::Started,
+                ..Default::default()
+            });
+            visual.run_until_parked();
+        }
+        visual.update(|window, cx| view.suspend(window, cx).unwrap());
+        visual.run_until_parked();
+        visual.update(|_, cx| view.resume(cx).unwrap());
+        pump(cx, &mut visual);
+        let position = chart_position(&mut visual, &view);
+        visual.simulate_event(ScrollWheelEvent {
+            position,
+            delta: ScrollDelta::Lines(point(0.0, 1.0)),
+            touch_phase: gpui::TouchPhase::Moved,
+            ..Default::default()
+        });
+        pump(cx, &mut visual);
+        assert!(
+            status(&mut visual, &view).starts_with("1|"),
+            "active_gesture={active_gesture}"
+        );
+    }
+}
+
+#[gpui::test]
 fn chart_brush_does_not_capture_legend_control(cx: &mut TestAppContext) {
     cx.update(gpui_rhai::install);
     for brush in ["none", "xy"] {
@@ -478,6 +523,44 @@ impl HostChartSeries for CountRenderer {
     }
 }
 
+struct StreamExtension {
+    data: NativeChartData,
+    counter: Arc<AtomicUsize>,
+}
+
+impl ScriptViewExtension for StreamExtension {
+    fn configure_engine(&self, engine: &mut RuntimeEngine) -> Result<(), String> {
+        engine
+            .register_chart_series("stream_count", CountRenderer(self.counter.clone()))
+            .map_err(|error| error.to_string())
+    }
+
+    fn configure_runtime(&self, runtime: &mut UiRuntimeState) -> Result<(), String> {
+        runtime
+            .register_native_chart_data("stream", self.data.clone())
+            .map_err(|error| error.to_string())
+    }
+}
+
+fn streaming_rows(offset: i64) -> ChartDataset {
+    let rows = (0..2)
+        .map(|index| {
+            BTreeMap::from([
+                ("id".to_owned(), UiValue::String(format!("r{index}"))),
+                ("x".to_owned(), UiValue::Integer(index)),
+                ("y".to_owned(), UiValue::Integer(index + offset)),
+            ])
+        })
+        .collect::<Vec<_>>();
+    ChartDataset::from_rows(
+        "main",
+        &rows,
+        Some("id".to_owned()),
+        ChartDataLimits::default(),
+    )
+    .unwrap()
+}
+
 fn mount_with_layout_counter(
     cx: &mut TestAppContext,
     script: &str,
@@ -515,6 +598,71 @@ fn mount_with_layout_counter(
     cx.refresh().unwrap();
     let view = captured.borrow().as_ref().unwrap().clone();
     (window, view)
+}
+
+fn mount_streaming_chart(
+    cx: &mut TestAppContext,
+    data: NativeChartData,
+    counter: Arc<AtomicUsize>,
+) -> (WindowHandle<Host>, ScriptViewHandle) {
+    let entry = ModuleId::parse("main").unwrap();
+    let script = r#"import "charts/chart" as chart;fn view(ctx){chart::Chart(#{key:"c",data:ctx.get_native_chart_data("stream"),spec:#{title:"Control",series:[#{key:"s",kind:"custom",renderer:"stream_count",encode:#{x:"x",y:"y"}}]}}).with_style(style().width(px(420)).height(px(300)))}"#;
+    let prepared = EmbeddedScriptView::new(
+        entry.clone(),
+        EmbeddedScriptSource::new(BTreeMap::from([
+            (entry, script.to_owned()),
+            (
+                ModuleId::parse("charts/chart").unwrap(),
+                source("registry/charts/chart.rhai"),
+            ),
+        ])),
+        source("registry/themes/default_dark.rhai"),
+    )
+    .extension(StreamExtension { data, counter })
+    .motion_preference(MotionPreference::None)
+    .prepare()
+    .unwrap();
+    let captured = Rc::new(RefCell::new(None));
+    let capture = captured.clone();
+    let window = cx.add_window(move |window, cx| {
+        let host = ScriptViewHost::new("chart-suspend-stream", cx).unwrap();
+        let view = prepared
+            .mount(
+                ScriptViewConfig::new("chart-suspend-stream"),
+                host.clone(),
+                window,
+                cx,
+            )
+            .unwrap();
+        *capture.borrow_mut() = Some(view.clone());
+        Host { host, view }
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    let view = captured.borrow().as_ref().unwrap().clone();
+    (window, view)
+}
+
+#[gpui::test]
+fn suspended_chart_coalesces_stream_updates_until_resume(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let data = NativeChartData::new([streaming_rows(0)], ChartDataLimits::default()).unwrap();
+    let counter = Arc::new(AtomicUsize::new(0));
+    let (window, view) = mount_streaming_chart(cx, data.clone(), counter.clone());
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    pump(cx, &mut visual);
+    visual.update(|window, cx| view.suspend(window, cx).unwrap());
+    visual.run_until_parked();
+    let before = counter.load(Ordering::Relaxed);
+    for revision in 1..=3 {
+        data.replace([streaming_rows(revision)]).unwrap();
+        visual.run_until_parked();
+    }
+    assert_eq!(counter.load(Ordering::Relaxed), before);
+
+    visual.update(|_, cx| view.resume(cx).unwrap());
+    pump(cx, &mut visual);
+    assert_eq!(counter.load(Ordering::Relaxed), before + 1);
 }
 
 #[gpui::test]

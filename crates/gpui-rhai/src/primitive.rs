@@ -859,6 +859,12 @@ pub trait PrimitiveHandler {
         Ok(())
     }
 
+    /// Quiesce one retained native instance while its owning script view is suspended.
+    fn suspend(&mut self, _instance: &PrimitiveInstanceId, _cx: &mut App) {}
+
+    /// Resume one retained native instance after its owning script view becomes active.
+    fn resume(&mut self, _instance: &PrimitiveInstanceId, _cx: &mut App) {}
+
     /// Render the primitive into a native GPUI element.
     ///
     /// # Errors
@@ -1112,6 +1118,38 @@ impl PrimitiveRegistry {
     pub fn retain_tree(&self, tree: &crate::RetainedUiTree) -> Result<(), PrimitiveError> {
         let active = collect_primitive_instances(tree);
         self.retain_mounted(&active)
+    }
+
+    pub(crate) fn suspend_mounted(&self, cx: &mut App) -> Result<(), PrimitiveError> {
+        let mut inner = self
+            .inner
+            .try_borrow_mut()
+            .map_err(|_| PrimitiveError::Borrowed)?;
+        let instances = inner.mounted.keys().cloned().collect::<Vec<_>>();
+        for instance in instances {
+            if let Some(entry) = inner.entries.get_mut(&instance.primitive) {
+                guard_primitive_panic(&instance.primitive, "suspend", || {
+                    entry.handler.suspend(&instance, cx);
+                })?;
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) fn resume_mounted(&self, cx: &mut App) -> Result<(), PrimitiveError> {
+        let mut inner = self
+            .inner
+            .try_borrow_mut()
+            .map_err(|_| PrimitiveError::Borrowed)?;
+        let instances = inner.mounted.keys().cloned().collect::<Vec<_>>();
+        for instance in instances {
+            if let Some(entry) = inner.entries.get_mut(&instance.primitive) {
+                guard_primitive_panic(&instance.primitive, "resume", || {
+                    entry.handler.resume(&instance, cx);
+                })?;
+            }
+        }
+        Ok(())
     }
 
     pub(crate) fn element(

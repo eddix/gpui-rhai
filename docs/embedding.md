@@ -253,7 +253,11 @@ last-good declarative tree, component state, native primitive entities, input
 selection/undo state, scroll positions, and virtual-list measurements. It
 closes the view's overlays and Layers, releases focus and pointer capture, runs
 the optional `suspend(ctx)` hook, cleans every active declarative effect, and
-freezes declarative timers and Motion.
+freezes declarative timers and Motion. Retained native primitives receive the
+same lifecycle boundary: they quiesce owned subscriptions, timers, background
+candidate installation, and active gestures while retaining committed native
+state. On resume they re-establish subscriptions before reading the latest
+Host-owned revision, so bursts coalesce to one current-state rebuild.
 
 ```rust
 view.suspend(window, cx)?;

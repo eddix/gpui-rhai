@@ -124,6 +124,13 @@ enum ChartWheelGesture {
     Explicit,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum ChartActivity {
+    #[default]
+    Active,
+    Suspended,
+}
+
 impl ChartLinkRegistry {
     fn register(&self, key: Option<(String, String)>, entity: WeakEntity<ChartEntity>) {
         let mut members = self.members.borrow_mut();
@@ -287,6 +294,7 @@ struct ChartEntity {
     data_task: Option<Task<()>>,
     wheel_commit_task: Option<Task<()>>,
     wheel_generation: u64,
+    activity: ChartActivity,
     viewport_preview_dirty: bool,
     viewport_commit_in_flight: bool,
     viewport_input_generation: u64,
@@ -339,6 +347,7 @@ impl ChartEntity {
             data_task: None,
             wheel_commit_task: None,
             wheel_generation: 0,
+            activity: ChartActivity::Active,
             viewport_preview_dirty: false,
             viewport_commit_in_flight: false,
             viewport_input_generation: 0,
@@ -351,6 +360,40 @@ impl ChartEntity {
     }
 
     fn start(&mut self, cx: &mut Context<Self>) {
+        self.restart_data_listener(cx);
+        self.start_prepare(cx);
+    }
+
+    fn suspend(&mut self, cx: &mut Context<Self>) {
+        if self.activity == ChartActivity::Suspended {
+            return;
+        }
+        self.activity = ChartActivity::Suspended;
+        self.job = self.job.saturating_add(1);
+        self.layout_job = self.layout_job.saturating_add(1);
+        self.wheel_generation = self.wheel_generation.saturating_add(1);
+        self.data_task = None;
+        self.prepare_task = None;
+        self.layout_task = None;
+        self.wheel_commit_task = None;
+        self.wheel_gesture = ChartWheelGesture::PhaseLess;
+        self.dragging_pan = false;
+        self.pan_origin = None;
+        self.brush = None;
+        self.hovered = None;
+        self.viewport_preview_dirty = false;
+        self.viewport_commit_in_flight = false;
+        self.pending_viewport = None;
+        self.zoom = self.config.zoom;
+        self.pan = self.config.pan;
+        cx.notify();
+    }
+
+    fn resume(&mut self, cx: &mut Context<Self>) {
+        if self.activity == ChartActivity::Active {
+            return;
+        }
+        self.activity = ChartActivity::Active;
         self.restart_data_listener(cx);
         self.start_prepare(cx);
     }
@@ -461,6 +504,9 @@ impl ChartEntity {
 
     fn restart_data_listener(&mut self, cx: &mut Context<Self>) {
         self.data_task = None;
+        if self.activity == ChartActivity::Suspended {
+            return;
+        }
         let Some(data) = self.config.data.native().cloned() else {
             return;
         };
@@ -477,6 +523,9 @@ impl ChartEntity {
     }
 
     fn start_prepare(&mut self, cx: &mut Context<Self>) {
+        if self.activity == ChartActivity::Suspended {
+            return;
+        }
         self.job = self.job.saturating_add(1);
         self.layout_job = self.layout_job.saturating_add(1);
         self.layout_task = None;
@@ -494,7 +543,7 @@ impl ChartEntity {
                 })
                 .await;
             let _ = this.update(cx, |chart, cx| {
-                if chart.job != job {
+                if chart.activity == ChartActivity::Suspended || chart.job != job {
                     return;
                 }
                 chart.prepare_task = None;
@@ -518,6 +567,9 @@ impl ChartEntity {
     }
 
     fn rebuild_scene_with_motion(&mut self, cx: &mut Context<Self>, animate: bool) {
+        if self.activity == ChartActivity::Suspended {
+            return;
+        }
         let (Some(prepared), Some(bounds)) = (self.prepared.clone(), self.bounds) else {
             cx.notify();
             return;
@@ -553,7 +605,7 @@ impl ChartEntity {
                 })
                 .await;
             let _ = this.update(cx, |chart, cx| {
-                if chart.layout_job != job {
+                if chart.activity == ChartActivity::Suspended || chart.layout_job != job {
                     return;
                 }
                 chart.layout_task = None;
@@ -588,7 +640,7 @@ impl ChartEntity {
             .bounds
             .is_none_or(|previous| previous.size != bounds.size);
         self.bounds = Some(bounds);
-        if size_changed {
+        if size_changed && self.activity == ChartActivity::Active {
             self.rebuild_scene(cx);
         }
     }
@@ -1438,6 +1490,18 @@ impl PrimitiveHandler for ChartPrimitiveHandler {
                 ),
             ]))),
         })
+    }
+
+    fn suspend(&mut self, instance: &PrimitiveInstanceId, cx: &mut App) {
+        if let Some(entity) = self.instances.get(instance) {
+            entity.update(cx, ChartEntity::suspend);
+        }
+    }
+
+    fn resume(&mut self, instance: &PrimitiveInstanceId, cx: &mut App) {
+        if let Some(entity) = self.instances.get(instance) {
+            entity.update(cx, ChartEntity::resume);
+        }
     }
 
     fn render(

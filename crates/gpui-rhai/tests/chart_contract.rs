@@ -878,7 +878,7 @@ fn primary_axis_and_annotations_do_not_depend_on_axis_names_or_empty_groups() {
         }),
         [empty, full],
     );
-    let scene = layout_chart_scene(
+    let empty_group_scene = layout_chart_scene(
         &prepared,
         640.0,
         400.0,
@@ -887,19 +887,56 @@ fn primary_axis_and_annotations_do_not_depend_on_axis_names_or_empty_groups() {
     )
     .unwrap();
     assert!(
-        scene
+        empty_group_scene
             .labels
             .iter()
             .any(|label| label.key.starts_with("axis:main:x:"))
     );
     assert_eq!(
-        scene
+        empty_group_scene
             .marks
             .iter()
             .filter(|mark| mark.role == ChartMarkRole::Annotation)
             .count(),
         1
     );
+}
+
+#[test]
+fn annotations_compile_independent_crossed_primary_axes() {
+    let crossed = scene(
+        json!({
+            "legend":{"visible":false},
+            "axes":[
+                {"key":"primary_x","position":"bottom"},
+                {"key":"primary_y","position":"left"},
+                {"key":"secondary_x","position":"top"},
+                {"key":"secondary_y","position":"right"}
+            ],
+            "series":[
+                {"key":"a","kind":"scatter","x_axis":"primary_x","y_axis":"secondary_y","encode":{"x":"x1","y":"y2"}},
+                {"key":"b","kind":"scatter","x_axis":"secondary_x","y_axis":"primary_y","encode":{"x":"x2","y":"y1"}}
+            ],
+            "annotations":[{"key":"center","kind":"mark_point","x":5,"y":5}]
+        }),
+        dataset(
+            "main",
+            json!([
+                {"id":"a","x1":0,"x2":0,"y1":0,"y2":0},
+                {"id":"b","x1":10,"x2":1000,"y1":10,"y2":1000}
+            ]),
+        ),
+    );
+    let expected = crossed.plot_regions["main"].center();
+    let actual = center(
+        crossed
+            .marks
+            .iter()
+            .find(|mark| mark.role == ChartMarkRole::Annotation)
+            .unwrap(),
+    );
+    assert!((actual.x - expected.x).abs() < 0.01, "{actual:?}");
+    assert!((actual.y - expected.y).abs() < 0.01, "{actual:?}");
 }
 
 #[test]

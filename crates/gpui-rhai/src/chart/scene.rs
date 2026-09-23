@@ -1126,6 +1126,95 @@ fn resolved_axis_key(spec: &ChartSpec, series: &ChartSeriesSpec, channel: ChartC
         )
 }
 
+fn compile_cartesian_axis(
+    spec: &ChartSpec,
+    series: &[&PreparedSeries],
+    channel: ChartChannel,
+    identity: &str,
+    bounds: ChartRect,
+    viewport: ChartViewport,
+) -> Result<(ChartScale, ChartAxisDomain), ChartPrepareError> {
+    let axis = spec.axes.iter().find(|axis| axis.key == identity);
+    let categorical = axis.is_some_and(|axis| axis.scale == ChartAxisScale::Category)
+        || series.iter().any(|prepared| {
+            prepared
+                .spec
+                .encode
+                .dimension(channel)
+                .and_then(|name| prepared.semantic_dataset.column(name))
+                .is_some_and(|column| {
+                    matches!(
+                        column.data_type(),
+                        super::ChartDataType::String | super::ChartDataType::Bool
+                    )
+                })
+        });
+    let categories = if categorical {
+        collect_categories(series, channel)
+    } else {
+        Vec::new()
+    };
+    let inferred = if categorical {
+        (0.0, usize_to_f64(categories.len().max(1)))
+    } else if channel == ChartChannel::Y {
+        cartesian_y_domain(
+            series,
+            !axis.is_some_and(|axis| axis.scale == ChartAxisScale::Log),
+        )
+        .unwrap_or((0.0, 1.0))
+    } else {
+        numeric_domain(series, channel, false).unwrap_or((0.0, 1.0))
+    };
+    let full = resolve_axis_domain(axis, inferred);
+    let direction = axis.map_or(ChartAxisDirection::Normal, |axis| axis.direction);
+    let scale_kind = if categorical {
+        ChartAxisScale::Category
+    } else {
+        axis.map_or(ChartAxisScale::Linear, |axis| match axis.scale {
+            ChartAxisScale::Auto | ChartAxisScale::Category => ChartAxisScale::Linear,
+            scale => scale,
+        })
+    };
+    let (range_start, range_end, pan) = if channel == ChartChannel::Y {
+        (
+            bounds.y + bounds.height,
+            bounds.y,
+            direction_adjusted_pan(viewport.pan.y, direction),
+        )
+    } else {
+        (
+            bounds.x,
+            bounds.x + bounds.width,
+            direction_adjusted_pan(viewport.pan.x, direction),
+        )
+    };
+    let visible = if categorical {
+        full
+    } else {
+        viewport_domain(
+            full,
+            viewport.zoom,
+            pan,
+            range_end - range_start,
+            scale_kind,
+        )
+    };
+    let scale = if categorical {
+        ChartScale::category(categories, range_start, range_end, direction)?
+    } else {
+        build_continuous_scale(axis, visible, range_start, range_end)?
+    };
+    Ok((
+        scale,
+        ChartAxisDomain {
+            full,
+            visible,
+            scale: scale_kind,
+            direction,
+        },
+    ))
+}
+
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 fn layout_cartesian(
     spec: &ChartSpec,
@@ -1204,12 +1293,6 @@ fn layout_cartesian(
     };
     let primary_x = primary_axis(ChartChannel::X).unwrap_or_else(|| groups[0].0.0.clone());
     let primary_y = primary_axis(ChartChannel::Y).unwrap_or_else(|| groups[0].0.1.clone());
-    let annotation_group = groups
-        .iter()
-        .find(|((x_key, y_key), _)| x_key == &primary_x && y_key == &primary_y)
-        .or_else(|| groups.iter().find(|((_, y_key), _)| y_key == &primary_y))
-        .or_else(|| groups.iter().find(|((x_key, _), _)| x_key == &primary_x))
-        .map_or_else(|| groups[0].0.clone(), |(keys, _)| keys.clone());
     let mut drawn_x = BTreeSet::new();
     let mut drawn_y = BTreeSet::new();
     for ((x_key, y_key), group) in groups {
@@ -1241,9 +1324,48 @@ fn layout_cartesian(
             &x_key,
             &y_key,
             axis_domains,
-            (x_key.as_str(), y_key.as_str())
-                == (annotation_group.0.as_str(), annotation_group.1.as_str()),
         )?;
+    }
+    if spec
+        .annotations
+        .iter()
+        .any(|annotation| annotation.region == *region)
+    {
+        let horizontal_annotation_series = series
+            .iter()
+            .copied()
+            .filter(|series| {
+                !series.semantic_dataset.is_empty()
+                    && resolved_axis_key(spec, &series.spec, ChartChannel::X) == primary_x
+            })
+            .collect::<Vec<_>>();
+        let vertical_annotation_series = series
+            .iter()
+            .copied()
+            .filter(|series| {
+                !series.semantic_dataset.is_empty()
+                    && resolved_axis_key(spec, &series.spec, ChartChannel::Y) == primary_y
+            })
+            .collect::<Vec<_>>();
+        let (x_scale, _) = compile_cartesian_axis(
+            spec,
+            &horizontal_annotation_series,
+            ChartChannel::X,
+            &primary_x,
+            bounds,
+            viewport,
+        )?;
+        let (y_scale, _) = compile_cartesian_axis(
+            spec,
+            &vertical_annotation_series,
+            ChartChannel::Y,
+            &primary_y,
+            bounds,
+            viewport,
+        )?;
+        layout_cartesian_annotations(
+            spec, region, &x_scale, &y_scale, bounds, theme, marks, labels,
+        );
     }
     Ok(())
 }
@@ -1267,7 +1389,6 @@ fn layout_cartesian_group(
     x_identity: &str,
     y_identity: &str,
     axis_domains: &mut BTreeMap<String, ChartAxisDomain>,
-    render_annotations: bool,
 ) -> Result<(), ChartPrepareError> {
     if series.is_empty() {
         return Ok(());
@@ -1291,148 +1412,32 @@ fn layout_cartesian_group(
         );
         return Ok(());
     }
-    let x_dimension = series[0]
-        .spec
-        .encode
-        .dimension(ChartChannel::X)
-        .ok_or_else(|| ChartPrepareError::MissingDimension {
-            series: series[0].spec.key.clone(),
-            dimension: "x".to_owned(),
-        })?;
-    let mut x_categorical = x_domain_series.iter().any(|series| {
-        series
-            .semantic_dataset
-            .column(
-                series
-                    .spec
-                    .encode
-                    .dimension(ChartChannel::X)
-                    .unwrap_or(x_dimension),
-            )
-            .is_some_and(|column| {
-                matches!(
-                    column.data_type(),
-                    super::ChartDataType::String | super::ChartDataType::Bool
-                )
-            })
-    });
-    let mut y_categorical = y_domain_series.iter().any(|series| {
-        series
-            .spec
-            .encode
-            .dimension(ChartChannel::Y)
-            .and_then(|name| series.semantic_dataset.column(name))
-            .is_some_and(|column| {
-                matches!(
-                    column.data_type(),
-                    super::ChartDataType::String | super::ChartDataType::Bool
-                )
-            })
-    });
     let x_axis = spec.axes.iter().find(|axis| axis.key == x_identity);
     let y_axis = spec.axes.iter().find(|axis| axis.key == y_identity);
-    x_categorical |= x_axis.is_some_and(|axis| axis.scale == ChartAxisScale::Category);
-    y_categorical |= y_axis.is_some_and(|axis| axis.scale == ChartAxisScale::Category);
-    let categories = if x_categorical {
-        collect_categories(x_domain_series, ChartChannel::X)
-    } else {
-        Vec::new()
-    };
-    let y_categories = if y_categorical {
-        collect_categories(y_domain_series, ChartChannel::Y)
-    } else {
-        Vec::new()
-    };
-    let inferred_horizontal_domain = if x_categorical {
-        (0.0, usize_to_f64(categories.len().max(1)))
-    } else {
-        numeric_domain(x_domain_series, ChartChannel::X, false).unwrap_or((0.0, 1.0))
-    };
-    let inferred_vertical_domain = if y_categorical {
-        (0.0, usize_to_f64(y_categories.len().max(1)))
-    } else {
-        cartesian_y_domain(
-            y_domain_series,
-            !y_axis.is_some_and(|axis| axis.scale == ChartAxisScale::Log),
-        )
-        .unwrap_or((0.0, 1.0))
-    };
-    let horizontal_full_domain = resolve_axis_domain(x_axis, inferred_horizontal_domain);
-    let vertical_full_domain = resolve_axis_domain(y_axis, inferred_vertical_domain);
-    let horizontal_direction = x_axis.map_or(ChartAxisDirection::Normal, |axis| axis.direction);
-    let vertical_direction = y_axis.map_or(ChartAxisDirection::Normal, |axis| axis.direction);
-    let mut x_domain = horizontal_full_domain;
-    let mut y_domain = vertical_full_domain;
-    if !x_categorical {
-        x_domain = viewport_domain(
-            x_domain,
-            viewport.zoom,
-            direction_adjusted_pan(viewport.pan.x, horizontal_direction),
-            bounds.width,
-            x_axis.map_or(ChartAxisScale::Linear, |axis| axis.scale),
-        );
-    }
-    if !y_categorical {
-        y_domain = viewport_domain(
-            y_domain,
-            viewport.zoom,
-            direction_adjusted_pan(viewport.pan.y, vertical_direction),
-            -bounds.height,
-            y_axis.map_or(ChartAxisScale::Linear, |axis| axis.scale),
-        );
-    }
+    let (x_scale, x_domain) = compile_cartesian_axis(
+        spec,
+        x_domain_series,
+        ChartChannel::X,
+        x_identity,
+        bounds,
+        viewport,
+    )?;
+    let (y_scale, y_domain) = compile_cartesian_axis(
+        spec,
+        y_domain_series,
+        ChartChannel::Y,
+        y_identity,
+        bounds,
+        viewport,
+    )?;
     axis_domains.insert(
         format!("{}:x:{x_identity}", series[0].spec.coordinate),
-        ChartAxisDomain {
-            full: horizontal_full_domain,
-            visible: x_domain,
-            scale: if x_categorical {
-                ChartAxisScale::Category
-            } else {
-                x_axis.map_or(ChartAxisScale::Linear, |axis| match axis.scale {
-                    ChartAxisScale::Auto | ChartAxisScale::Category => ChartAxisScale::Linear,
-                    scale => scale,
-                })
-            },
-            direction: horizontal_direction,
-        },
+        x_domain,
     );
     axis_domains.insert(
         format!("{}:y:{y_identity}", series[0].spec.coordinate),
-        ChartAxisDomain {
-            full: vertical_full_domain,
-            visible: y_domain,
-            scale: if y_categorical {
-                ChartAxisScale::Category
-            } else {
-                y_axis.map_or(ChartAxisScale::Linear, |axis| match axis.scale {
-                    ChartAxisScale::Auto | ChartAxisScale::Category => ChartAxisScale::Linear,
-                    scale => scale,
-                })
-            },
-            direction: vertical_direction,
-        },
+        y_domain,
     );
-    let x_scale = if x_categorical {
-        ChartScale::category(
-            categories.clone(),
-            bounds.x,
-            bounds.x + bounds.width,
-            x_axis.map_or(ChartAxisDirection::Normal, |axis| axis.direction),
-        )?
-    } else {
-        build_continuous_scale(x_axis, x_domain, bounds.x, bounds.x + bounds.width)?
-    };
-    let y_scale = if y_categorical {
-        ChartScale::category(
-            y_categories,
-            bounds.y + bounds.height,
-            bounds.y,
-            y_axis.map_or(ChartAxisDirection::Normal, |axis| axis.direction),
-        )?
-    } else {
-        build_continuous_scale(y_axis, y_domain, bounds.y + bounds.height, bounds.y)?
-    };
     add_cartesian_axes(
         &series[0].spec.coordinate,
         &x_scale,
@@ -1447,19 +1452,6 @@ fn layout_cartesian_group(
         render_horizontal_axis,
         render_vertical_axis,
     )?;
-    if render_annotations {
-        layout_cartesian_annotations(
-            spec,
-            &series[0].spec.coordinate,
-            &x_scale,
-            &y_scale,
-            bounds,
-            theme,
-            marks,
-            labels,
-        );
-    }
-
     let bar_slots = series
         .iter()
         .filter(|series| series.spec.kind == ChartSeriesKind::Bar)
@@ -1528,7 +1520,7 @@ fn layout_cartesian_group(
                         (start, *running)
                     } else {
                         let baseline = if matches!(y_scale, ChartScale::Log(_)) {
-                            y_domain.0
+                            y_domain.visible.0
                         } else {
                             0.0
                         };

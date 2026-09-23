@@ -4099,6 +4099,11 @@ impl ScriptHostView {
         self.host
             .quiesce_view(&self.view_id, &self.host_focus, window, cx);
         self.state.set(ScriptViewState::Suspended);
+        if let Err(error) = self.primitives.suspend_mounted(cx) {
+            self.set_plain_failure(error.to_string());
+            cx.notify();
+            return Err(ScriptViewError::Suspend(error.to_string()));
+        }
         self.clear_failure();
         cx.notify();
         Ok(true)
@@ -4177,6 +4182,7 @@ impl ScriptHostView {
         });
         match result {
             Ok(changed) => {
+                self.resume_native_primitives(cx)?;
                 self.state.set(ScriptViewState::Active);
                 self.activity_wake.notify();
                 if let Some(error) = pending_reload_error {
@@ -4200,6 +4206,15 @@ impl ScriptHostView {
                 Err(public_error)
             }
         }
+    }
+
+    fn resume_native_primitives(&mut self, cx: &mut Context<Self>) -> Result<(), ScriptViewError> {
+        self.primitives.resume_mounted(cx).map_err(|error| {
+            self.state.set(ScriptViewState::Active);
+            self.set_plain_failure(error.to_string());
+            cx.notify();
+            ScriptViewError::Resume(error.to_string())
+        })
     }
 
     fn collect_suspended_deliveries(&mut self) -> Result<(), ScriptViewError> {
@@ -5099,6 +5114,8 @@ pub enum ScriptViewError {
     DisposedView(String),
     #[error("script view `{0}` is suspended; resume it before rendering or interaction")]
     SuspendedView(String),
+    #[error("script view suspend failed: {0}")]
+    Suspend(String),
     #[error("script view resume failed: {0}")]
     Resume(String),
     #[error(

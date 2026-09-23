@@ -221,11 +221,14 @@ The only required function is `view(ctx)`. `init(ctx)`, `suspend(ctx)`,
 calls made during `view`. A suspended lifecycle is a fully retained tombstone:
 state, tree, native entities, scroll/input state, and measurements remain, while
 effects are cleaned, subscriptions and effect tasks are cancelled, timers and
-motion freezes, presentation layers close, and event/Rhai execution stops.
+motion freezes, retained primitive lifecycle hooks quiesce native subscriptions
+and gestures, presentation layers close, and event/Rhai execution stops.
 Resume applies bounded current-generation completions, invokes the hook,
 reconciles once, then starts fresh effect activations in one rollback-safe
-transaction. A candidate hot-reload generation migrates through that same
-resume transaction; stale-generation completions are discarded.
+transaction. Native primitive subscriptions resume from the latest Host-owned
+revision rather than replaying every suspended update. A candidate hot-reload
+generation migrates through that same resume transaction; stale-generation
+completions are discarded.
 
 During development, a polling filesystem watcher feeds a dependency graph.
 Changed modules and their transitive dependants are compiled transactionally.
