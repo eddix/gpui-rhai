@@ -164,7 +164,9 @@ Chart transitions use one aggregated chart resource and the existing Motion
 theme duration/easing plus Host normal/reduced/none policy. Compatible keyed
 rectangles, circles, polylines, and polygons interpolate; entering lines draw by
 path progress and removed marks fade. A chart does not register thousands of
-global Motion sources.
+global Motion sources. View suspension shifts the aggregated transition time
+origin, so the first resumed frame equals the frozen frame and suspended wall
+time is never consumed as animation progress.
 
 ## Axes, time, formatting, and locale
 
@@ -182,6 +184,10 @@ series iteration order therefore do not choose annotation mathematics; an
 empty axis group falls through to the next declared active axis. X and Y scales
 are compiled independently, so an annotation does not require a real series to
 reference that exact axis pair.
+
+Axis type/domain inference is cached once per scene and includes preserved
+empty schemas. Series geometry, ticks, annotations, and custom-series contexts
+therefore cannot infer different mappers for the same axis ID.
 
 Time columns are typed epoch milliseconds. A time axis requires an explicit
 `UTC`, `offset:<minutes>`, or IANA timezone; ambiguous date strings are not

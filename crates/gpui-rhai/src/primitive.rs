@@ -859,10 +859,13 @@ pub trait PrimitiveHandler {
         Ok(())
     }
 
-    /// Quiesce one retained native instance while its owning script view is suspended.
+    /// Prepare one retained native instance to cross into suspended state.
+    /// Implementations must be idempotent because a failed peer is compensated
+    /// and the whole operation may be retried.
     fn suspend(&mut self, _instance: &PrimitiveInstanceId, _cx: &mut App) {}
 
-    /// Resume one retained native instance after its owning script view becomes active.
+    /// Prepare one suspended native instance to become active. The public view
+    /// is not marked active until every primitive and the script transaction succeed.
     fn resume(&mut self, _instance: &PrimitiveInstanceId, _cx: &mut App) {}
 
     /// Render the primitive into a native GPUI element.
@@ -1126,14 +1129,18 @@ impl PrimitiveRegistry {
             .try_borrow_mut()
             .map_err(|_| PrimitiveError::Borrowed)?;
         let instances = inner.mounted.keys().cloned().collect::<Vec<_>>();
+        let mut first_error = None;
         for instance in instances {
-            if let Some(entry) = inner.entries.get_mut(&instance.primitive) {
-                guard_primitive_panic(&instance.primitive, "suspend", || {
+            if let Some(entry) = inner.entries.get_mut(&instance.primitive)
+                && let Err(error) = guard_primitive_panic(&instance.primitive, "suspend", || {
                     entry.handler.suspend(&instance, cx);
-                })?;
+                })
+                && first_error.is_none()
+            {
+                first_error = Some(error);
             }
         }
-        Ok(())
+        first_error.map_or(Ok(()), Err)
     }
 
     pub(crate) fn resume_mounted(&self, cx: &mut App) -> Result<(), PrimitiveError> {
@@ -1142,14 +1149,18 @@ impl PrimitiveRegistry {
             .try_borrow_mut()
             .map_err(|_| PrimitiveError::Borrowed)?;
         let instances = inner.mounted.keys().cloned().collect::<Vec<_>>();
+        let mut first_error = None;
         for instance in instances {
-            if let Some(entry) = inner.entries.get_mut(&instance.primitive) {
-                guard_primitive_panic(&instance.primitive, "resume", || {
+            if let Some(entry) = inner.entries.get_mut(&instance.primitive)
+                && let Err(error) = guard_primitive_panic(&instance.primitive, "resume", || {
                     entry.handler.resume(&instance, cx);
-                })?;
+                })
+                && first_error.is_none()
+            {
+                first_error = Some(error);
             }
         }
-        Ok(())
+        first_error.map_or(Ok(()), Err)
     }
 
     pub(crate) fn element(

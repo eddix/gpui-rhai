@@ -258,6 +258,11 @@ same lifecycle boundary: they quiesce owned subscriptions, timers, background
 candidate installation, and active gestures while retaining committed native
 state. On resume they re-establish subscriptions before reading the latest
 Host-owned revision, so bursts coalesce to one current-state rebuild.
+Native hooks are a prepare phase: all mounted instances are notified even when
+one fails, and successfully changed peers are compensated. A failed suspend
+therefore remains Active and retryable; a failed resume remains Suspended and
+retryable. The public view state changes only after native and script phases
+both succeed.
 
 ```rust
 view.suspend(window, cx)?;

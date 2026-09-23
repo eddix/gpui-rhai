@@ -91,6 +91,10 @@ Pointer move, wheel, brush, and drag hot paths are native. Rhai receives bounded
 semantic events such as selection committed, zoom changed, legend toggled, and
 annotation activated.
 
+Each `(region, axis ID)` is compiled once per scene from one contribution set,
+including preserved empty schemas. Series, ticks, annotations, custom series,
+hit testing, and export consume that same coordinate fact.
+
 ### Interaction and linkage
 
 Hover, tooltip, crosshair, and active drag state are native transient state.
@@ -127,8 +131,10 @@ Motion Runtime clock, samplers, theme roles, quality, budgets, and reduced
 motion policy. Bars interpolate geometry, lines support path progress and
 compatible morphing, pie uses angles, and maps interpolate visual values.
 Reduced motion simplifies/shortens transitions; `None` immediately commits
-terminal state. A chart consumes one declared chart budget rather than one
-global Motion source per datum.
+terminal state. Suspension freezes the aggregated transition origin and resume
+does not consume suspended wall time or restart an unchanged transition. A
+chart consumes one declared chart budget rather than one global Motion source
+per datum.
 
 Locale affects labels, legends, and tooltip layout. RTL does not implicitly
 reverse axes; axis direction is explicit. Time dimensions use typed timestamps

@@ -1293,24 +1293,49 @@ fn layout_cartesian(
     };
     let primary_x = primary_axis(ChartChannel::X).unwrap_or_else(|| groups[0].0.0.clone());
     let primary_y = primary_axis(ChartChannel::Y).unwrap_or_else(|| groups[0].0.1.clone());
+    let mut horizontal_plans = BTreeMap::<String, (ChartScale, ChartAxisDomain)>::new();
+    let mut vertical_plans = BTreeMap::<String, (ChartScale, ChartAxisDomain)>::new();
+    for key in groups
+        .iter()
+        .map(|(keys, _)| &keys.0)
+        .collect::<BTreeSet<_>>()
+    {
+        let contributors = series
+            .iter()
+            .copied()
+            .filter(|series| resolved_axis_key(spec, &series.spec, ChartChannel::X) == *key)
+            .collect::<Vec<_>>();
+        let plan =
+            compile_cartesian_axis(spec, &contributors, ChartChannel::X, key, bounds, viewport)?;
+        axis_domains.insert(format!("{region}:x:{key}"), plan.1);
+        horizontal_plans.insert(key.clone(), plan);
+    }
+    for key in groups
+        .iter()
+        .map(|(keys, _)| &keys.1)
+        .collect::<BTreeSet<_>>()
+    {
+        let contributors = series
+            .iter()
+            .copied()
+            .filter(|series| resolved_axis_key(spec, &series.spec, ChartChannel::Y) == *key)
+            .collect::<Vec<_>>();
+        let plan =
+            compile_cartesian_axis(spec, &contributors, ChartChannel::Y, key, bounds, viewport)?;
+        axis_domains.insert(format!("{region}:y:{key}"), plan.1);
+        vertical_plans.insert(key.clone(), plan);
+    }
     let mut drawn_x = BTreeSet::new();
     let mut drawn_y = BTreeSet::new();
     for ((x_key, y_key), group) in groups {
-        let x_domain_series = series
-            .iter()
-            .copied()
-            .filter(|series| resolved_axis_key(spec, &series.spec, ChartChannel::X) == x_key)
-            .collect::<Vec<_>>();
-        let y_domain_series = series
-            .iter()
-            .copied()
-            .filter(|series| resolved_axis_key(spec, &series.spec, ChartChannel::Y) == y_key)
-            .collect::<Vec<_>>();
+        let (x_scale, _) = &horizontal_plans[&x_key];
+        let (y_scale, y_domain) = &vertical_plans[&y_key];
         layout_cartesian_group(
             spec,
             &group,
-            &x_domain_series,
-            &y_domain_series,
+            x_scale,
+            y_scale,
+            *y_domain,
             bounds,
             theme,
             marks,
@@ -1320,10 +1345,8 @@ fn layout_cartesian(
             formatters,
             drawn_x.insert(x_key.clone()),
             drawn_y.insert(y_key.clone()),
-            viewport,
             &x_key,
             &y_key,
-            axis_domains,
         )?;
     }
     if spec
@@ -1331,41 +1354,9 @@ fn layout_cartesian(
         .iter()
         .any(|annotation| annotation.region == *region)
     {
-        let horizontal_annotation_series = series
-            .iter()
-            .copied()
-            .filter(|series| {
-                !series.semantic_dataset.is_empty()
-                    && resolved_axis_key(spec, &series.spec, ChartChannel::X) == primary_x
-            })
-            .collect::<Vec<_>>();
-        let vertical_annotation_series = series
-            .iter()
-            .copied()
-            .filter(|series| {
-                !series.semantic_dataset.is_empty()
-                    && resolved_axis_key(spec, &series.spec, ChartChannel::Y) == primary_y
-            })
-            .collect::<Vec<_>>();
-        let (x_scale, _) = compile_cartesian_axis(
-            spec,
-            &horizontal_annotation_series,
-            ChartChannel::X,
-            &primary_x,
-            bounds,
-            viewport,
-        )?;
-        let (y_scale, _) = compile_cartesian_axis(
-            spec,
-            &vertical_annotation_series,
-            ChartChannel::Y,
-            &primary_y,
-            bounds,
-            viewport,
-        )?;
-        layout_cartesian_annotations(
-            spec, region, &x_scale, &y_scale, bounds, theme, marks, labels,
-        );
+        let x_scale = &horizontal_plans[&primary_x].0;
+        let y_scale = &vertical_plans[&primary_y].0;
+        layout_cartesian_annotations(spec, region, x_scale, y_scale, bounds, theme, marks, labels);
     }
     Ok(())
 }
@@ -1374,8 +1365,9 @@ fn layout_cartesian(
 fn layout_cartesian_group(
     spec: &ChartSpec,
     series: &[&PreparedSeries],
-    x_domain_series: &[&PreparedSeries],
-    y_domain_series: &[&PreparedSeries],
+    x_scale: &ChartScale,
+    y_scale: &ChartScale,
+    y_domain: ChartAxisDomain,
     bounds: ChartRect,
     theme: &ChartTheme,
     marks: &mut Vec<ChartMark>,
@@ -1385,10 +1377,8 @@ fn layout_cartesian_group(
     formatters: &ChartFormatterRegistry,
     render_horizontal_axis: bool,
     render_vertical_axis: bool,
-    viewport: ChartViewport,
     x_identity: &str,
     y_identity: &str,
-    axis_domains: &mut BTreeMap<String, ChartAxisDomain>,
 ) -> Result<(), ChartPrepareError> {
     if series.is_empty() {
         return Ok(());
@@ -1414,34 +1404,10 @@ fn layout_cartesian_group(
     }
     let x_axis = spec.axes.iter().find(|axis| axis.key == x_identity);
     let y_axis = spec.axes.iter().find(|axis| axis.key == y_identity);
-    let (x_scale, x_domain) = compile_cartesian_axis(
-        spec,
-        x_domain_series,
-        ChartChannel::X,
-        x_identity,
-        bounds,
-        viewport,
-    )?;
-    let (y_scale, y_domain) = compile_cartesian_axis(
-        spec,
-        y_domain_series,
-        ChartChannel::Y,
-        y_identity,
-        bounds,
-        viewport,
-    )?;
-    axis_domains.insert(
-        format!("{}:x:{x_identity}", series[0].spec.coordinate),
-        x_domain,
-    );
-    axis_domains.insert(
-        format!("{}:y:{y_identity}", series[0].spec.coordinate),
-        y_domain,
-    );
     add_cartesian_axes(
         &series[0].spec.coordinate,
-        &x_scale,
-        &y_scale,
+        x_scale,
+        y_scale,
         x_axis,
         y_axis,
         bounds,
@@ -1502,7 +1468,7 @@ fn layout_cartesian_group(
                         continue;
                     };
                     let category = x_value.display_text();
-                    let Some(center) = map_value(&x_scale, &x_value) else {
+                    let Some(center) = map_value(x_scale, &x_value) else {
                         continue;
                     };
                     let (start, end) = if let Some(stack) = &stack_key {
@@ -1556,7 +1522,7 @@ fn layout_cartesian_group(
                 }
             }
             ChartSeriesKind::Line | ChartSeriesKind::Area => {
-                let segments = series_segments(prepared, &x_scale, &y_scale, diagnostics);
+                let segments = series_segments(prepared, x_scale, y_scale, diagnostics);
                 for (segment_index, points) in segments.into_iter().enumerate() {
                     if points.is_empty() {
                         continue;
@@ -1641,7 +1607,7 @@ fn layout_cartesian_group(
                 }
             }
             ChartSeriesKind::Scatter => {
-                let points = series_segments(prepared, &x_scale, &y_scale, diagnostics)
+                let points = series_segments(prepared, x_scale, y_scale, diagnostics)
                     .into_iter()
                     .flatten();
                 let size_column = prepared
@@ -1668,8 +1634,8 @@ fn layout_cartesian_group(
             }
             ChartSeriesKind::Heatmap => layout_heatmap(
                 prepared,
-                &x_scale,
-                &y_scale,
+                x_scale,
+                y_scale,
                 bounds,
                 theme,
                 marks,
@@ -1677,8 +1643,8 @@ fn layout_cartesian_group(
             ),
             ChartSeriesKind::Candlestick => layout_candlestick(
                 prepared,
-                &x_scale,
-                &y_scale,
+                x_scale,
+                y_scale,
                 bounds,
                 theme,
                 marks,
@@ -1705,11 +1671,11 @@ fn layout_cartesian_group(
                         dataset: &prepared.dataset,
                         bounds,
                         theme,
-                        x_scale: Some(&x_scale),
-                        y_scale: Some(&y_scale),
+                        x_scale: Some(x_scale),
+                        y_scale: Some(y_scale),
                         coordinate: super::ChartCustomCoordinateContext::Cartesian {
-                            x: &x_scale,
-                            y: &y_scale,
+                            x: x_scale,
+                            y: y_scale,
                         },
                     },
                 )?);
@@ -1862,9 +1828,12 @@ fn layout_cartesian_annotations(
 }
 
 fn map_annotation_value(scale: &ChartScale, value: &ChartAnnotationValue) -> Option<f64> {
-    match value {
-        ChartAnnotationValue::Number(value) => scale.map_number(*value),
-        ChartAnnotationValue::Category(value) => scale.map_category(value),
+    match (scale, value) {
+        (ChartScale::Category(_), ChartAnnotationValue::Number(value)) => {
+            scale.map_category(&value.to_string())
+        }
+        (_, ChartAnnotationValue::Number(value)) => scale.map_number(*value),
+        (_, ChartAnnotationValue::Category(value)) => scale.map_category(value),
     }
 }
 

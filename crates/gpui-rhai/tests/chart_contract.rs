@@ -940,6 +940,74 @@ fn annotations_compile_independent_crossed_primary_axes() {
 }
 
 #[test]
+fn axis_schema_fact_is_shared_by_data_ticks_and_annotations() {
+    let empty = dataset("main", json!([{"id":"empty","x":"A","y":1}]))
+        .select_rows(&[])
+        .unwrap();
+    let numeric_source = dataset(
+        "main",
+        json!([{"id":"zero","x":0,"y":0},{"id":"ten","x":10,"y":10}]),
+    );
+    let numeric = ChartDataset::from_chart_rows(
+        "numeric",
+        &numeric_source.rows(),
+        Some("id".to_owned()),
+        ChartDataLimits::default(),
+    )
+    .unwrap();
+    let prepared = prepared(
+        json!({
+            "legend":{"visible":false},
+            "axes":[
+                {"key":"x","position":"bottom"},
+                {"key":"empty_y","position":"left"},
+                {"key":"numeric_y","position":"right"}
+            ],
+            "series":[
+                {"key":"empty","kind":"scatter","x_axis":"x","y_axis":"empty_y","encode":{"x":"x","y":"y"}},
+                {"key":"numeric","kind":"scatter","dataset":"numeric","x_axis":"x","y_axis":"numeric_y","encode":{"x":"x","y":"y"}}
+            ],
+            "annotations":[{"key":"same_value","kind":"mark_point","x":10,"y":10}]
+        }),
+        [empty, numeric],
+    );
+    let scene = layout_chart_scene(
+        &prepared,
+        640.0,
+        400.0,
+        &ChartTheme::default(),
+        &ChartGeoRegistry::new(),
+    )
+    .unwrap();
+    let data = center(
+        scene
+            .marks
+            .iter()
+            .find(|mark| mark.role == ChartMarkRole::Data && mark.datum_key == "ten")
+            .unwrap(),
+    );
+    let annotation = center(
+        scene
+            .marks
+            .iter()
+            .find(|mark| mark.role == ChartMarkRole::Annotation)
+            .unwrap(),
+    );
+    assert!(
+        (data.x - annotation.x).abs() < 0.01,
+        "{data:?} {annotation:?}"
+    );
+    assert!(
+        (data.y - annotation.y).abs() < 0.01,
+        "{data:?} {annotation:?}"
+    );
+    assert_eq!(
+        scene.axis_domains["main:x:x"].scale,
+        ChartAxisScale::Category
+    );
+}
+
+#[test]
 fn empty_data_preserves_schema_and_produces_a_valid_scene() {
     let input = dataset(
         "main",

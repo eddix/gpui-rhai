@@ -301,6 +301,7 @@ struct ChartEntity {
     wheel_gesture: ChartWheelGesture,
     next_viewport_revision: u64,
     pending_viewport: Option<ChartViewportProposal>,
+    suspended_at: Option<Instant>,
     transition_started: Option<Instant>,
     linked_selected: BTreeSet<String>,
 }
@@ -354,6 +355,7 @@ impl ChartEntity {
             wheel_gesture: ChartWheelGesture::default(),
             next_viewport_revision: viewport_revision,
             pending_viewport: None,
+            suspended_at: None,
             transition_started: None,
             linked_selected: BTreeSet::new(),
         }
@@ -369,6 +371,7 @@ impl ChartEntity {
             return;
         }
         self.activity = ChartActivity::Suspended;
+        self.suspended_at = Some(self.config.theme.now());
         self.job = self.job.saturating_add(1);
         self.layout_job = self.layout_job.saturating_add(1);
         self.wheel_generation = self.wheel_generation.saturating_add(1);
@@ -394,8 +397,26 @@ impl ChartEntity {
             return;
         }
         self.activity = ChartActivity::Active;
+        if let Some(suspended_at) = self.suspended_at.take()
+            && let Some(started) = self.transition_started.as_mut()
+        {
+            *started += self
+                .config
+                .theme
+                .now()
+                .saturating_duration_since(suspended_at);
+        }
         self.restart_data_listener(cx);
-        self.start_prepare(cx);
+        let source_revision = self.config.data.snapshot().revision();
+        if self
+            .prepared
+            .as_ref()
+            .is_none_or(|prepared| prepared.revision() != source_revision)
+        {
+            self.start_prepare(cx);
+        } else {
+            cx.notify();
+        }
     }
 
     fn update_config(

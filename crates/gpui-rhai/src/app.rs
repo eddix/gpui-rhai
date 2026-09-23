@@ -3383,6 +3383,19 @@ impl Render for ScriptHostView {
     }
 }
 
+fn native_lifecycle_error(
+    operation: &str,
+    error: &crate::PrimitiveError,
+    rollback: Option<&crate::PrimitiveError>,
+) -> String {
+    rollback.map_or_else(
+        || format!("native primitive {operation} failed: {error}"),
+        |rollback| {
+            format!("native primitive {operation} failed: {error}; compensation failed: {rollback}")
+        },
+    )
+}
+
 impl ScriptHostView {
     fn sample_motion_frame(&mut self, domain: &str) -> (bool, Vec<crate::MotionTimelineEvent>) {
         let runtime = self.lifecycle.runtime();
@@ -4092,23 +4105,37 @@ impl ScriptHostView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Result<bool, ScriptViewError> {
-        let changed = self.lifecycle.suspend(&mut self.engine)?;
+        if let Err(error) = self.primitives.suspend_mounted(cx) {
+            let rollback = self.primitives.resume_mounted(cx).err();
+            let message = native_lifecycle_error("suspend", &error, rollback.as_ref());
+            self.set_plain_failure(message.clone());
+            return Err(ScriptViewError::Suspend(message));
+        }
+        let changed = match self.lifecycle.suspend(&mut self.engine) {
+            Ok(changed) => changed,
+            Err(error) => {
+                let rollback = self.primitives.resume_mounted(cx).err();
+                let message = rollback.map_or_else(
+                    || error.to_string(),
+                    |rollback| format!("{error}; native rollback failed: {rollback}"),
+                );
+                self.set_plain_failure(message);
+                return Err(error.into());
+            }
+        };
         if !changed {
+            let _ = self.primitives.resume_mounted(cx);
             return Ok(false);
         }
         self.host
             .quiesce_view(&self.view_id, &self.host_focus, window, cx);
         self.state.set(ScriptViewState::Suspended);
-        if let Err(error) = self.primitives.suspend_mounted(cx) {
-            self.set_plain_failure(error.to_string());
-            cx.notify();
-            return Err(ScriptViewError::Suspend(error.to_string()));
-        }
         self.clear_failure();
         cx.notify();
         Ok(true)
     }
 
+    #[allow(clippy::too_many_lines)]
     fn resume_view(&mut self, cx: &mut Context<Self>) -> Result<bool, ScriptViewError> {
         if self.state.get() == ScriptViewState::Active {
             return Ok(false);
@@ -4142,6 +4169,7 @@ impl ScriptHostView {
                 return Err(ScriptViewError::Resume(error.to_string()));
             }
         }
+        self.prepare_native_resume(cx)?;
         let result = self.run_script_transaction(|view| {
             if migrating {
                 view.lifecycle
@@ -4182,7 +4210,6 @@ impl ScriptHostView {
         });
         match result {
             Ok(changed) => {
-                self.resume_native_primitives(cx)?;
                 self.state.set(ScriptViewState::Active);
                 self.activity_wake.notify();
                 if let Some(error) = pending_reload_error {
@@ -4195,6 +4222,7 @@ impl ScriptHostView {
                 Ok(changed)
             }
             Err(error) => {
+                let native_rollback = self.primitives.suspend_mounted(cx).err();
                 if let Some(previous_exports) = previous_exports {
                     let _ = self.engine.restore_component_exports(previous_exports);
                 }
@@ -4202,19 +4230,28 @@ impl ScriptHostView {
                     let _ = self.engine.restore_component_renderers(previous_renderers);
                 }
                 let public_error = error.clone().into_view_error();
-                self.set_failure(error);
-                Err(public_error)
+                if let Some(native_rollback) = native_rollback {
+                    let message = format!(
+                        "{public_error}; native suspend compensation failed: {native_rollback}"
+                    );
+                    self.set_plain_failure(message.clone());
+                    Err(ScriptViewError::Resume(message))
+                } else {
+                    self.set_failure(error);
+                    Err(public_error)
+                }
             }
         }
     }
 
-    fn resume_native_primitives(&mut self, cx: &mut Context<Self>) -> Result<(), ScriptViewError> {
-        self.primitives.resume_mounted(cx).map_err(|error| {
-            self.state.set(ScriptViewState::Active);
-            self.set_plain_failure(error.to_string());
-            cx.notify();
-            ScriptViewError::Resume(error.to_string())
-        })
+    fn prepare_native_resume(&mut self, cx: &mut Context<Self>) -> Result<(), ScriptViewError> {
+        if let Err(error) = self.primitives.resume_mounted(cx) {
+            let rollback = self.primitives.suspend_mounted(cx).err();
+            let message = native_lifecycle_error("resume", &error, rollback.as_ref());
+            self.set_plain_failure(message.clone());
+            return Err(ScriptViewError::Resume(message));
+        }
+        Ok(())
     }
 
     fn collect_suspended_deliveries(&mut self) -> Result<(), ScriptViewError> {

@@ -665,6 +665,159 @@ fn suspended_chart_coalesces_stream_updates_until_resume(cx: &mut TestAppContext
     assert_eq!(counter.load(Ordering::Relaxed), before + 1);
 }
 
+struct MotionExtension {
+    data: NativeChartData,
+    positions: Arc<std::sync::Mutex<Vec<ChartPoint>>>,
+}
+
+struct MovingRenderer(Arc<std::sync::Mutex<Vec<ChartPoint>>>);
+
+impl HostChartSeries for MovingRenderer {
+    fn layout(&self, context: ChartCustomSeriesContext<'_>) -> Result<Vec<ChartMark>, String> {
+        let value = context
+            .dataset
+            .column("y")
+            .unwrap()
+            .value(0)
+            .unwrap()
+            .as_number()
+            .unwrap();
+        let rect = ChartRect {
+            x: context.bounds.x + 20.0 + value * 200.0,
+            y: context.bounds.y + 30.0,
+            width: 40.0,
+            height: 40.0,
+        };
+        self.0.lock().unwrap().push(rect.center());
+        Ok(vec![ChartMark {
+            key: "moving".to_owned(),
+            region_key: context.spec.coordinate.clone(),
+            role: ChartMarkRole::Data,
+            datum: Some(ChartDatumRef {
+                dataset: context.spec.dataset.clone(),
+                series: context.spec.key.clone(),
+                key: "r0".to_owned(),
+            }),
+            series_key: context.spec.key.clone(),
+            datum_key: "r0".to_owned(),
+            geometry: ChartMarkGeometry::Rect(rect),
+            fill: Some(context.theme.palette[0]),
+            stroke: None,
+            label: "moving".to_owned(),
+            value: Some(value),
+            interactive: true,
+            selected: false,
+        }])
+    }
+}
+
+impl ScriptViewExtension for MotionExtension {
+    fn configure_engine(&self, engine: &mut RuntimeEngine) -> Result<(), String> {
+        engine
+            .register_chart_series("moving", MovingRenderer(self.positions.clone()))
+            .map_err(|error| error.to_string())
+    }
+
+    fn configure_runtime(&self, runtime: &mut UiRuntimeState) -> Result<(), String> {
+        runtime
+            .register_native_chart_data("motion_stream", self.data.clone())
+            .map_err(|error| error.to_string())
+    }
+}
+
+fn moving_data(y: i64) -> ChartDataset {
+    ChartDataset::from_rows(
+        "main",
+        &[BTreeMap::from([
+            ("id".to_owned(), UiValue::String("r0".to_owned())),
+            ("x".to_owned(), UiValue::Integer(0)),
+            ("y".to_owned(), UiValue::Integer(y)),
+        ])],
+        Some("id".to_owned()),
+        ChartDataLimits::default(),
+    )
+    .unwrap()
+}
+
+#[gpui::test]
+fn chart_motion_freezes_across_view_suspension(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let clock = ManualRuntimeClock::new(std::time::Instant::now());
+    let data = NativeChartData::new([moving_data(0)], ChartDataLimits::default()).unwrap();
+    let positions = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let entry = ModuleId::parse("main").unwrap();
+    let script = r#"import "charts/chart" as chart;fn state_schema(){#{fields:#{hits:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}}}}}fn clicked(ctx,p){ctx.set_state("hits",ctx.get_state("hits")+1);}fn view(ctx){column([text("Status").accessibility_role("status").accessibility_label(ctx.get_state("hits").to_string()),chart::Chart(#{key:"c",data:ctx.get_native_chart_data("motion_stream"),spec:#{title:"Control",legend:#{visible:false},motion:#{duration:"slow",easing:"standard"},series:[#{key:"s",kind:"custom",renderer:"moving",encode:#{x:"x",y:"y"}}]},on_select:Fn("clicked")}).with_style(style().width(px(420)).height(px(300)))])}"#;
+    let prepared = EmbeddedScriptView::new(
+        entry.clone(),
+        EmbeddedScriptSource::new(BTreeMap::from([
+            (entry, script.to_owned()),
+            (
+                ModuleId::parse("charts/chart").unwrap(),
+                source("registry/charts/chart.rhai"),
+            ),
+        ])),
+        source("registry/themes/default_dark.rhai"),
+    )
+    .extension(MotionExtension {
+        data: data.clone(),
+        positions: positions.clone(),
+    })
+    .runtime_clock(clock.clock())
+    .motion_preference(MotionPreference::Normal)
+    .prepare()
+    .unwrap();
+    let captured = Rc::new(RefCell::new(None));
+    let capture = captured.clone();
+    let window = cx.add_window(move |window, cx| {
+        let host = ScriptViewHost::new("chart-frozen-motion", cx).unwrap();
+        let view = prepared
+            .mount(
+                ScriptViewConfig::new("chart-frozen-motion"),
+                host.clone(),
+                window,
+                cx,
+            )
+            .unwrap();
+        *capture.borrow_mut() = Some(view.clone());
+        Host { host, view }
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    let view = captured.borrow().as_ref().unwrap().clone();
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    pump(cx, &mut visual);
+    clock.advance(Duration::from_secs(2));
+    pump(cx, &mut visual);
+    let old = positions.lock().unwrap()[0];
+    data.replace([moving_data(1)]).unwrap();
+    pump(cx, &mut visual);
+    click_chart_coordinate(&mut visual, &view, old);
+    assert_eq!(status(&mut visual, &view), "1");
+    visual.update(|window, cx| view.suspend(window, cx).unwrap());
+    visual.run_until_parked();
+    clock.advance(Duration::from_secs(60));
+    visual.update(|_, cx| view.resume(cx).unwrap());
+    pump(cx, &mut visual);
+    click_chart_coordinate(&mut visual, &view, old);
+    assert_eq!(status(&mut visual, &view), "2");
+}
+
+fn click_chart_coordinate(
+    visual: &mut VisualTestContext,
+    view: &ScriptViewHandle,
+    coordinate: ChartPoint,
+) {
+    let bounds = chart_bounds(visual, view);
+    visual.simulate_click(
+        point(
+            px((bounds.x + coordinate.x + 1.0) as f32),
+            px((bounds.y + coordinate.y + 1.0) as f32),
+        ),
+        Modifiers::default(),
+    );
+    visual.run_until_parked();
+}
+
 #[gpui::test]
 fn idle_linked_charts_do_not_repeat_layout(cx: &mut TestAppContext) {
     cx.update(gpui_rhai::install);

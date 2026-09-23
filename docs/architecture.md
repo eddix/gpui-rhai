@@ -230,6 +230,10 @@ revision rather than replaying every suspended update. A candidate hot-reload
 generation migrates through that same resume transaction; stale-generation
 completions are discarded.
 
+Native primitive lifecycle hooks run as a compensated prepare phase. A hook
+failure does not short-circuit later instances, expose a mixed public state, or
+prevent a real retry.
+
 During development, a polling filesystem watcher feeds a dependency graph.
 Changed modules and their transitive dependants are compiled transactionally.
 The GPUI Entity is updated only on the foreground thread.
