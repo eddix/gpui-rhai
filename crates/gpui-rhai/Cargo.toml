@@ -15,6 +15,7 @@ include = ["src/**/*.rs", "README.md", "LICENSE-*", "Cargo.toml"]
 
 [features]
 default = []
+charts = []
 dev-reload = ["dep:notify"]
 grain-backend = ["rhai/grain"]
 
@@ -40,6 +41,10 @@ regex.workspace = true
 
 [dev-dependencies]
 tempfile = "3"
+
+[[example]]
+name = "chart_gallery"
+required-features = ["charts"]
 
 [lints]
 workspace = true

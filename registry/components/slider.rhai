@@ -2,7 +2,7 @@
 {
   "id": "components/slider",
   "export": "Slider",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": [],
   "capabilities": {}
@@ -16,7 +16,7 @@
 // Example: Slider(#{ key: "volume", value: 40, min: 0, max: 100, step: 5, label: "Volume", on_change: Fn("changed") })
 
 define_component(#{
-    metadata: #{ id: "components/slider", "export": "Slider", version: "0.1.4",
+    metadata: #{ id: "components/slider", "export": "Slider", version: "0.1.5",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{} },
     schema: #{
         props: #{
@@ -89,7 +89,7 @@ fn render_Slider(ctx, props) {
     }
     column([
         row(header).with_style(ctx.component_style("header", style()
-            .items_center().justify_between().gap(px(8)))),
+            .items_center().justify_between().gap(theme_spacing("sm")))),
         control
-    ]).with_key(props.key).with_style(ctx.component_style("root", style().gap(px(5))))
+    ]).with_key(props.key).with_style(ctx.component_style("root", style().gap(theme_spacing("xs"))))
 }

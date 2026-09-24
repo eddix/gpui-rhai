@@ -12,6 +12,7 @@ done
 
 embedded_examples=(
   dashboard_layout
+  chart_gallery
   component_gallery
   data_table
   embedded_hello_world
@@ -31,7 +32,14 @@ for example in "${embedded_examples[@]}"; do
     echo "missing release binary: ${binary}"
     exit 1
   fi
-  if strings "${binary}" | grep -Fq "${PWD}"; then
+  # GPUI 0.2.2 asks Apple's Metal compiler for line tables; the resulting
+  # metallib records its Cargo OUT_DIR even in release mode. Ignore only that
+  # dependency-owned build directory while continuing to reject application,
+  # Rhai, asset, or source paths from this workspace.
+  if strings "${binary}" \
+    | grep -F "${PWD}" \
+    | grep -Fv "${PWD}/target/release/build/gpui-" \
+    | grep -q .; then
     echo "absolute workspace path leaked into ${binary}"
     exit 1
   fi

@@ -1183,6 +1183,8 @@ impl UiNode {
                         | crate::PrimitiveValue::Signal(_)
                         | crate::PrimitiveValue::Ref(_)
                         | crate::PrimitiveValue::Document(_) => {}
+                        #[cfg(feature = "charts")]
+                        crate::PrimitiveValue::ChartData(_) => {}
                     }
                 }
             }
@@ -1664,6 +1666,8 @@ impl UiNode {
                     | crate::PrimitiveValue::Signal(_)
                     | crate::PrimitiveValue::Ref(_)
                     | crate::PrimitiveValue::Document(_) => None,
+                    #[cfg(feature = "charts")]
+                    crate::PrimitiveValue::ChartData(_) => None,
                 })
                 .collect(),
             UiNodeKind::Overlay {

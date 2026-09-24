@@ -2,7 +2,7 @@
 {
   "id": "motion/number_ticker",
   "export": "NumberTicker",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": [],
   "capabilities": {}
@@ -12,7 +12,7 @@
 // Example: NumberTicker(#{ key: "count", value: 42 })
 
 define_component(#{
-    metadata: #{ id: "motion/number_ticker", "export": "NumberTicker", version: "0.1.4",
+    metadata: #{ id: "motion/number_ticker", "export": "NumberTicker", version: "0.1.5",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{} },
     schema: #{
         props: #{

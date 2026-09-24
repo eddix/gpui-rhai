@@ -274,6 +274,27 @@ bundled_motion!(
     ),
 );
 
+/// Optional visualization components backed by the native `charts` feature.
+pub const CHART_SOURCE: &str = include_str!("../charts/chart.rhai");
+pub const BAR_CHART_SOURCE: &str = include_str!("../charts/bar_chart.rhai");
+pub const LINE_CHART_SOURCE: &str = include_str!("../charts/line_chart.rhai");
+pub const PIE_CHART_SOURCE: &str = include_str!("../charts/pie_chart.rhai");
+pub const MAP_CHART_SOURCE: &str = include_str!("../charts/map_chart.rhai");
+pub const BUNDLED_CHART_SOURCES_BY_ID: &[(&str, &str)] = &[
+    ("charts/chart", CHART_SOURCE),
+    ("charts/bar_chart", BAR_CHART_SOURCE),
+    ("charts/line_chart", LINE_CHART_SOURCE),
+    ("charts/pie_chart", PIE_CHART_SOURCE),
+    ("charts/map_chart", MAP_CHART_SOURCE),
+];
+pub const BUNDLED_CHART_SOURCES: &[&str] = &[
+    CHART_SOURCE,
+    BAR_CHART_SOURCE,
+    LINE_CHART_SOURCE,
+    PIE_CHART_SOURCE,
+    MAP_CHART_SOURCE,
+];
+
 macro_rules! bundled_assets {
     ($(($constant:ident, $id:literal, $path:literal)),+ $(,)?) => {
         $(pub const $constant: &str = include_str!($path);)+
@@ -399,6 +420,8 @@ mod tests {
         assert_eq!(BUNDLED_COMPONENT_SOURCES_BY_ID.len(), 51);
         assert_eq!(BUNDLED_MOTION_SOURCES.len(), 10);
         assert_eq!(BUNDLED_MOTION_SOURCES_BY_ID.len(), 10);
+        assert_eq!(BUNDLED_CHART_SOURCES.len(), 5);
+        assert_eq!(BUNDLED_CHART_SOURCES_BY_ID.len(), 5);
         assert_eq!(BUNDLED_ASSET_SOURCES.len(), 18);
         assert_eq!(BUNDLED_THEME_SOURCES.len(), 15);
         assert!(
@@ -408,6 +431,11 @@ mod tests {
         );
         assert!(
             BUNDLED_MOTION_SOURCES
+                .iter()
+                .all(|source| !source.is_empty())
+        );
+        assert!(
+            BUNDLED_CHART_SOURCES
                 .iter()
                 .all(|source| !source.is_empty())
         );

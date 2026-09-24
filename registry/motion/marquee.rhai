@@ -2,7 +2,7 @@
 {
   "id": "motion/marquee",
   "export": "Marquee",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": [],
   "capabilities": {}
@@ -12,7 +12,7 @@
 // Example: Marquee(#{ key: "news", content: text("News"), distance: 320 })
 
 define_component(#{
-    metadata: #{ id: "motion/marquee", "export": "Marquee", version: "0.1.4",
+    metadata: #{ id: "motion/marquee", "export": "Marquee", version: "0.1.5",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{} },
     schema: #{
         props: #{

@@ -2,7 +2,7 @@
 {
   "id": "components/popover",
   "export": "Popover",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": [],
   "capabilities": {}
@@ -20,7 +20,7 @@ define_component(#{
     metadata: #{
         id: "components/popover",
         "export": "Popover",
-        version: "0.1.4",
+        version: "0.1.5",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
         dependencies: [],
         capabilities: #{},
@@ -90,8 +90,8 @@ fn render_Popover(ctx, props) {
         .with_style(ctx.component_style("content",
             style()
                 .width(px(240))
-                .padding(px(10))
-                .gap(px(8))
+                .padding(theme_spacing("sm"))
+                .gap(theme_spacing("sm"))
                 .radius(theme_radius("md"))
                 .border(px(1))
                 .border_color(theme_color("border"))

@@ -124,7 +124,10 @@ impl MotionEasing {
         }
     }
 
-    fn sample(self, progress: f64) -> f64 {
+    /// Sample the stable easing curve at a clamped normalized progress value.
+    #[must_use]
+    pub fn sample(self, progress: f64) -> f64 {
+        let progress = progress.clamp(0.0, 1.0);
         match self {
             Self::Linear => progress,
             Self::EaseIn => progress * progress,

@@ -1,0 +1,56 @@
+{
+  "date": "2026-09-24",
+  "started": "2026-09-23",
+  "head": "42afce01139f73d6cb921f43f036e36adc2e0b9c",
+  "previous_baseline": "145320d17d43fd10cfe5150495fd43cfa7d90381",
+  "environment": {
+    "rustc": "rustc 1.94.0 (4a4ef493e 2026-03-02)\nbinary: rustc\ncommit-hash: 4a4ef493e3a1488c6e321570238084b38948f6db\ncommit-date: 2026-03-02\nhost: aarch64-apple-darwin\nrelease: 1.94.0\nLLVM version: 21.1.8",
+    "os": "ProductName:\t\tmacOS\nProductVersion:\t\t26.6.2\nBuildVersion:\t\t25G83",
+    "model": "Macmini9,1",
+    "gpui": "0.2.2",
+    "rhai": "1.26.0"
+  },
+  "results": {
+    "previous_native": {
+      "passed": 12,
+      "failed": 0,
+      "exit_code": 0
+    },
+    "new_native": {
+      "passed": 15,
+      "failed": 3,
+      "old_controls": 12,
+      "new_positive_controls": 3,
+      "new_findings": 3,
+      "exit_code": 101
+    },
+    "workspace": {
+      "passed": 561,
+      "failed": 0
+    },
+    "native_suite": {
+      "passed": 94,
+      "failed": 0
+    },
+    "performance_default": {
+      "passed": 4,
+      "ignored": 3,
+      "failed": 0
+    }
+  },
+  "benchmark": {
+    "profile": "release",
+    "points": 100000,
+    "warmup_per_run": 5,
+    "samples_per_run": 30,
+    "runs": 2,
+    "schema": "gpui-rhai-chart-e2e-v2",
+    "executor": "GPUI TestAppContext",
+    "controlled_ab_comparison": false
+  },
+  "helpers": {
+    "core-review-a31da5a8/native-probes.rs": "2c01f5b70658fd8100bda71fc8c32641f937f722172d8b80c653bed299200010",
+    "release-review-145320d1/native-probes.rs": "2569d50ae2f9a6c644ae9cb9c74153df80028c9478c9502e45c1a00a35ee8ce0"
+  },
+  "worktree": "Product clean; preexisting UI documentation consolidation and reference-image deletions preserved. Added only this audit directory. No new images or product edits."
+}

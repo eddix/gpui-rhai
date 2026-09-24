@@ -784,11 +784,16 @@ fn bundled_theme_text_pairs_meet_small_text_contrast() {
             ) >= 3.0,
             "{name}: focus ring does not reach 3:1 against the surface"
         );
+        let tabs_foreground = theme.tokens.color("tabs.foreground").unwrap();
+        assert!(
+            contrast(tabs_foreground, theme.tokens.colors["surface_hover"]) >= 4.5,
+            "{name}: enabled tab foreground is unreadable on its track"
+        );
     }
 }
 
 #[test]
-fn bundled_themes_materialize_complete_document_palettes() {
+fn bundled_themes_materialize_complete_document_and_chart_palettes() {
     let engine = RuntimeEngine::new();
     for &(name, source) in BUNDLED_THEMES {
         let theme =
@@ -815,12 +820,34 @@ fn bundled_themes_materialize_complete_document_palettes() {
             "diff.inline_right",
             "diff.gutter",
             "diff.fold",
+            "charts.axis",
+            "charts.grid",
+            "charts.tooltip_surface",
+            "charts.tooltip_text",
+            "charts.positive",
+            "charts.negative",
+            "charts.selection",
+            "charts.map_missing",
+            "charts.crosshair",
+            "charts.palette_1",
+            "charts.palette_2",
+            "charts.palette_3",
+            "charts.palette_4",
+            "charts.palette_5",
+            "charts.palette_6",
+            "charts.palette_7",
+            "charts.palette_8",
+            "table.selection",
+            "tabs.foreground",
         ] {
             assert!(
                 theme.tokens.color(token).is_some(),
                 "{name}: missing {token}"
             );
         }
+        let table_selection = theme.tokens.color("table.selection").unwrap();
+        assert_eq!(table_selection.as_rgba_hex() & 0xff, 0xff);
+        assert_ne!(table_selection, theme.tokens.colors["surface"]);
     }
 }
 
@@ -887,7 +914,40 @@ fn official_component_sources_reject_decorative_visual_drift() {
                 "official component {id} hard-codes a palette color: {line}"
             );
         }
+        for line in source.lines().filter(|line| {
+            [
+                ".padding(px(",
+                ".padding_x(px(",
+                ".padding_y(px(",
+                ".padding_start(px(",
+                ".padding_end(px(",
+                ".gap(px(",
+                ".margin(px(",
+            ]
+            .iter()
+            .any(|pattern| line.contains(pattern))
+        }) {
+            let allowed_structure = (id == "icon_button" && line.contains(".padding(px(0))"))
+                || (id == "switch" && line.contains(".padding(px(2))"))
+                || (id == "title_bar"
+                    && (line.contains("gap(px(0))") || line.contains("padding_start(px(inset))")));
+            assert!(
+                allowed_structure,
+                "official component {id} hard-codes visual spacing: {line}"
+            );
+        }
     }
+}
+
+#[test]
+fn tabs_and_table_use_semantic_theme_state_surfaces() {
+    assert!(TABS.contains("padding(theme_spacing(\"xxs\"))"));
+    assert!(TABS.contains("gap(theme_spacing(\"xxs\"))"));
+    assert!(TABS.contains("radius(theme_radius(\"sm\"))"));
+    assert!(!TABS.contains("radius(px(5))"));
+    assert!(!TABS.contains("radius(px(8))"));
+    assert!(TABLE.contains("theme_color(\"table.selection\")"));
+    assert!(TABLE.contains("if item.selected { \"row_selected\" }"));
 }
 
 #[test]
@@ -2595,6 +2655,10 @@ fn official_table_is_public_data_backed_rhai_composition() {
     let UiNodeKind::Box { children: cells } = row.kind() else {
         panic!("table row must remain a public row composition");
     };
+    assert!(cells.iter().all(|cell| matches!(
+        cell.style().base.background.as_ref(),
+        Some(gpui_rhai::ColorValue::Token(token)) if token == "table.selection"
+    )));
     assert_table_column_width_contract(header_cells);
     assert_table_column_width_contract(cells);
     assert_resizable_table_width_signals(header_cells);
@@ -2608,6 +2672,7 @@ fn official_table_is_public_data_backed_rhai_composition() {
 }
 
 #[test]
+#[allow(clippy::too_many_lines)]
 fn official_table_groups_array_rows_with_controlled_collapse() {
     let source = EmbeddedScriptSource::new(BTreeMap::from([(
         ModuleId::parse("components/table").unwrap(),
@@ -2641,6 +2706,7 @@ fn official_table_groups_array_rows_with_controlled_collapse() {
                                 width: #{ kind: "fixed", value: 100 } }
                         ],
                         group_by: "track",
+                        selection_mode: "multiple", selected_keys: ["b"],
                         collapsed_groups: ctx.get_state("collapsed"),
                         on_group_toggle: Fn("toggled")
                     })
@@ -2671,6 +2737,15 @@ fn official_table_groups_array_rows_with_controlled_collapse() {
     };
     assert_eq!(spec.data.len(), 5);
     assert_eq!(spec.sticky_headers.as_ref(), &BTreeSet::from([0, 3]));
+    let selected = spec
+        .realized
+        .values()
+        .find(|row| row.attributes().get("checked") == Some(&UiValue::Bool(true)))
+        .expect("selected grouped row");
+    assert!(matches!(
+        selected.style().base.background.as_ref(),
+        Some(gpui_rhai::ColorValue::Token(token)) if token == "table.selection"
+    ));
     let first_group = spec.realized.get(&0).expect("first group header");
     assert_eq!(
         first_group.attributes().get("label"),

@@ -1,6 +1,7 @@
 {
   "examples": [
     "artistic_showcase",
+    "chart_gallery",
     "code_viewer",
     "component_gallery",
     "dashboard_layout",

@@ -2,7 +2,7 @@
 {
   "id": "components/input_group",
   "export": "InputGroup",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": [],
   "capabilities": {}
@@ -15,7 +15,7 @@
 // Example: InputGroup(#{ label: "Search", prefix: search_icon, control: input_node })
 
 define_component(#{
-    metadata: #{ id: "components/input_group", "export": "InputGroup", version: "0.1.4",
+    metadata: #{ id: "components/input_group", "export": "InputGroup", version: "0.1.5",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{} },
     schema: #{
         props: #{
@@ -39,14 +39,14 @@ fn render_InputGroup(ctx, props) {
     let children = [];
     if "prefix" in props && props.prefix != () {
         children.push(props.prefix.with_style(ctx.component_style("prefix", style()
-            .height(px(30)).padding_start(px(9)).items_center().justify_center()
+            .height(px(30)).padding_start(theme_spacing("sm")).items_center().justify_center()
             .text_color(theme_color("text_muted")))));
     }
     children.push(props.control.with_style(ctx.component_style("control", style()
         .height(px(30)).flex_grow().border(px(0)).radius(px(0)).background(rgba(0x00000000)))));
     if "suffix" in props && props.suffix != () {
         children.push(props.suffix.with_style(ctx.component_style("suffix", style()
-            .height(px(30)).padding_end(px(9)).items_center().justify_center()
+            .height(px(30)).padding_end(theme_spacing("sm")).items_center().justify_center()
             .text_color(theme_color("text_muted")))));
     }
     row(children).with_style(ctx.component_style("root", style()

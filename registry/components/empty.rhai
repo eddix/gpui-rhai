@@ -2,7 +2,7 @@
 {
   "id": "components/empty",
   "export": "Empty",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": [],
   "capabilities": {}
@@ -15,7 +15,7 @@
 // Example: Empty(#{ title: "No projects", description: "Create one to begin." })
 
 define_component(#{
-    metadata: #{ id: "components/empty", "export": "Empty", version: "0.1.4",
+    metadata: #{ id: "components/empty", "export": "Empty", version: "0.1.5",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{} },
     schema: #{
         props: #{
@@ -58,10 +58,10 @@ fn render_Empty(ctx, props) {
     }
     if "actions" in props && props.actions.len > 0 {
         children.push(row(props.actions).with_style(ctx.component_style("actions", style()
-            .padding_top(px(4)).gap(px(8)).items_center().justify_center())));
+            .padding_top(theme_spacing("xs")).gap(theme_spacing("sm")).items_center().justify_center())));
     }
     column(children).with_style(ctx.component_style("root", style()
-        .min_height(px(180)).padding(px(24)).gap(px(8)).items_center().justify_center()
+        .min_height(px(180)).padding(theme_spacing("lg")).gap(theme_spacing("sm")).items_center().justify_center()
         .radius(theme_radius("md")).border(px(1)).border_dashed()
         .border_color(theme_color("border")).background(theme_color("surface"))))
         .accessibility_role("status").accessibility_label(props.title)

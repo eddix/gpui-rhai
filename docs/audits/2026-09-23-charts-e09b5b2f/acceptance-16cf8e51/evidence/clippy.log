@@ -1,0 +1,4 @@
+    Checking gpui-rhai-registry v0.1.5 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/registry)
+    Checking gpui-rhai v0.1.5 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai)
+    Checking gpui-rhai-cli v0.1.5 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai-cli)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 8.03s

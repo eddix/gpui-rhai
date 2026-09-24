@@ -17,10 +17,27 @@ The `on_*` colors are foregrounds for text and marks rendered on their matching
 filled semantic color. Themes choose them independently; deriving them from
 `text_primary` is not reliably accessible across light and dark palettes.
 
-Spacing uses `xs`, `sm`, `md`, and `lg`. Radii use `sm`, `md`, and `lg`.
+Spacing uses `xxs`, `xs`, `sm`, `md`, and `lg`; `xxs` is the compact 2px
+structural gap/inset used by dense controls. Radii use `sm`, `md`, and `lg`.
 Official themes map all three radii to `0px`: rectangular controls and panels
 are square by default. Components give explicit half-size radii only to
 semantic circles such as Avatar, Radio, presence dots, and slider thumbs.
+
+The runtime derives `table.selection` as an opaque 28% accent / 72% surface mix
+unless the theme supplies an explicit namespaced override. Precompositing keeps
+the result stable inside virtualized paint layers. Table uses this stronger
+component selection surface without changing the global text/input `selection`
+role.
+
+Enabled Tabs use the derived `tabs.foreground` role on `surface_hover`. The
+runtime keeps `text_muted` when that pair reaches 4.5:1 and otherwise mixes
+toward `text_primary` only as far as needed. Themes may override the namespaced
+role explicitly.
+
+Validated custom namespace colors are preserved in ordinary, virtual, overlay,
+and native-primitive theme snapshots. Native extensions may therefore read a
+Host token such as `brand.tint` through `PrimitiveTheme::color` without adding
+the token name to gpui-rhai itself.
 
 Typography requires eight semantic roles:
 
@@ -64,6 +81,38 @@ component-subtree scope. The closest subtree override wins.
 Changing a selection increments only the theme generation. It does not
 recompile Rhai modules or discard component state. Editing `theme.rhai` during
 development hot-reloads the validated variant in the existing window.
+
+## Host user-preference overrides
+
+An embedding Host can apply one validated partial token layer to every loaded
+theme. This is the appropriate boundary for application/user preferences such
+as a platform-specific corner scale, preferred UI font, text scale, motion
+timing, or chart palette. It avoids cloning or rewriting bundled and user theme
+source:
+
+```rust
+use std::collections::BTreeMap;
+use gpui_rhai::{EmbeddedScriptView, Length, ThemeTokenOverrides};
+
+let view = EmbeddedScriptView::new(entry, scripts, default_theme)
+    .theme_sources(additional_themes)
+    .theme_token_overrides(ThemeTokenOverrides {
+        radii: BTreeMap::from([
+            ("sm".into(), Length::Pixels(4.0)),
+            ("md".into(), Length::Pixels(7.0)),
+            ("lg".into(), Length::Pixels(10.0)),
+        ]),
+        ..ThemeTokenOverrides::default()
+    });
+```
+
+`FileScriptView` exposes the same builder. Overrides merge colors, spacing,
+radii, individual typography roles, motion roles, and individual namespaced
+tokens. Typography family and fallback entries replace their respective theme
+values when supplied. Theme identity and mode are deliberately not
+overridable. The resulting variant must pass the normal token validation or
+preparation/reload rejects the candidate and retains the last-good theme. File
+theme hot reload reapplies the Host layer automatically.
 
 Rhai may select fixed variants with `set_theme`, `set_window_theme`, and
 `set_local_theme`, or follow the actual GPUI `WindowAppearance` with the

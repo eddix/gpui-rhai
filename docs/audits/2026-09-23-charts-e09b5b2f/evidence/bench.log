@@ -1,0 +1,5 @@
+   Compiling gpui-rhai-chart-bench-e09b5b2f v0.0.0 (/tmp/gpui-rhai-chart-audit-e09b5b2f/bench)
+    Finished `release` profile [optimized] target(s) in 6.32s
+     Running `target/release/gpui-rhai-chart-bench-e09b5b2f`
+inline_config_data rows=1000 p50_ms=0.726 p95_ms=1.442
+inline_config_data rows=10000 p50_ms=7.448 p95_ms=7.810

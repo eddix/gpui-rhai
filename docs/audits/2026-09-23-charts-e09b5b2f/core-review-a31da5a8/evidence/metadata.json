@@ -1,0 +1,30 @@
+{
+  "reviewed_head": "a31da5a81b02421bc5dbc1b34a7ffc883aa0160b",
+  "scope": "Fifth-round acceptance plus core model review: authority, versions, commit, activity and link domains",
+  "workspace_tests": 561,
+  "native_tests": 87,
+  "previous_native_probes": {
+    "passed": 3,
+    "failed": 0
+  },
+  "core_native_probes": {
+    "passed": 3,
+    "failed": 5
+  },
+  "performance": {
+    "passed": 4,
+    "ignored": 3
+  },
+  "new_defect_groups": {
+    "P1": 2,
+    "P2": 2
+  },
+  "product_code_modified": false,
+  "images_added": false,
+  "prior_worktree_changes": "UI documentation consolidation and reference-image deletion retained unchanged",
+  "cargo_lock_sha256": "d1820fe7422b5b6b40cfd8eff84e0981ecf2015944166bed0bd90253ead28697",
+  "delivery_runner_verified": {
+    "native_exit": 101
+  },
+  "product_dirty_diff": ""
+}

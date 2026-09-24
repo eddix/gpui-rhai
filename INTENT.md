@@ -480,6 +480,16 @@ and hardens the Rust Host composition, SVG, overlay, and retained-presentation
 boundaries found during dogfooding; arbitrary shaders and general 3D remain a
 later independently versioned capability.
 
+Version `0.1.5` adds an optional native Chart Runtime without changing Runtime
+API 2. Rhai declares composable Cartesian2D, Polar, and Host-owned Geo2D
+visualizations; Rust owns typed/streaming data, transforms, scales, aggregated
+Motion sampling, layout, hit testing, linked interaction, accessibility
+projection, and SVG/PNG export. Source-owned chart adapters use the same public
+primitive as applications. The common library bundles no map datasets, does no
+network/geocoding, and exposes only compile-time trusted Rust transform,
+formatter, projection, and custom-series extensions. Graph/hierarchy/flow
+layouts and 3D/Globe are explicit later workstreams.
+
 ## 15. Completion and acceptance
 
 The maintainer reviews one final delivery, not intermediate product states. The

@@ -1233,7 +1233,7 @@ fn svg_pixmap(bytes: &[u8], color: Option<Rgba8>) -> Result<resvg::tiny_skia::Pi
     Ok(pixmap)
 }
 
-fn svg_options() -> usvg::Options<'static> {
+pub(crate) fn svg_options() -> usvg::Options<'static> {
     static FONT_DB: LazyLock<Arc<usvg::fontdb::Database>> = LazyLock::new(|| {
         let mut database = usvg::fontdb::Database::new();
         database.load_system_fonts();

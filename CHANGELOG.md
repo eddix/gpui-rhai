@@ -5,6 +5,43 @@ All notable runtime, CLI, and registry changes are documented here. Version
 component schema, manifest, locale, and generated-source changes follow
 semantic versioning from this release.
 
+## 0.1.5 - 2026-09-24
+
+- Button and Badge retain distinct action/status density while consuming the
+  shared spacing/radius/typography scale. Tabs replaces the selected rail with
+  one adaptive continuous track and inset selection surface, adds content/equal
+  layouts plus icon headers and style parts, and moves the shared indicator
+  through Motion Runtime when given a stable key.
+- Rust Hosts can apply one validated `ThemeTokenOverrides` preference layer to
+  every file-backed or embedded theme. Partial color, spacing, radius,
+  typography, motion, and namespaced-token overrides survive theme switching
+  and file-theme hot reload without rewriting third-party Rhai source.
+- Complete theme snapshots preserve arbitrary validated namespace colors in
+  ordinary, virtual, overlay and native paths. Official components now map
+  visual density to `xxs/xs/sm/md/lg`; `tabs.foreground` guarantees readable
+  enabled tabs and `table.selection` owns a stable selected-row surface.
+- The optional `charts` feature adds one native composable Chart Runtime with
+  Cartesian2D, Polar and Host-owned Geo2D regions; 15 built-in series; typed
+  columnar and streaming `NativeChartData`; native transforms/downsampling;
+  hover, tooltip, crosshair, zoom/pan, brush, selection, keyboard and linked
+  charts; annotations; theme/motion/locale integration; Host transform,
+  formatter, projection and custom-series extensions; and Host-only SVG/PNG
+  export. The CLI installs `charts/chart` and enables the feature, while the
+  mounted `chart_gallery` exercises every series plus a 100,000-row data path.
+- Chart preparation keeps transformed semantic data separate from drawing,
+  compiles one shared scale per named axis, computes signed stack and Polar
+  domains correctly, uses typed mark roles and structural datum identity,
+  acknowledges controlled viewport proposals, exposes active/selected native
+  semantics, preserves text in PNG export, and rejects duplicate Host extension
+  registration without replacing the installed implementation.
+- Chart viewport state is coordinate-typed and versioned across Host control,
+  link groups, gestures, resize and suspend/resume. Native and exported labels
+  share Host typography, including family/fallback, size, line height and
+  weight.
+- Prepared/presented frame identity, lifecycle compensation, streaming
+  coalescing and activity time now close atomically; irrecoverable mixed native
+  state disposes the affected view rather than masquerading as suspended.
+
 ## 0.1.4 - 2026-09-22
 
 - Inline and asset-backed SVG `currentColor` now inherits the nearest effective

@@ -127,7 +127,11 @@ fn table_columns() {
 
 fn table_controls(ctx) {
     row([
-        text("Data table").with_style(style().font_size(rem(1.25))),
+        row([
+            text("Data table").with_style(style().font_size(rem(1.25))),
+            text(`${ctx.get_state("selected").len} selected`).with_style(
+                theme_typography("body_small").text_color(theme_color("text_muted")))
+        ]).with_style(style().gap(theme_spacing("sm")).items_center()),
         row([
             button::Button(#{ text: "Single", size: "xs", variant: "ghost" })
                 .on_click_value(Fn("set_selection_mode"), "single"),

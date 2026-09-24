@@ -1,0 +1,28 @@
+{
+  "reviewed_head": "243b0098ebebef36db60f2d82ac021eea6a13252",
+  "chart_fix_commit": "7d66a14d52fe527610583d477ac2f723f200fccd",
+  "previous_reviewed_commit": "a8d2ef0f8b90df4915d3150941ee49baa9dd23bd",
+  "workspace_tests": 559,
+  "native_tests": 82,
+  "chart_native_tests": 13,
+  "previous_independent_native_tests": {
+    "passed": 9,
+    "failed": 0
+  },
+  "new_native_tests": {
+    "passed": 0,
+    "failed": 2
+  },
+  "performance": {
+    "passed": 4,
+    "ignored": 3
+  },
+  "product_files_modified_by_review": false,
+  "reference_images_added": false,
+  "existing_worktree_changes": "UI documentation consolidation and reference image deletions left intact",
+  "cargo_lock_sha256": "d1820fe7422b5b6b40cfd8eff84e0981ecf2015944166bed0bd90253ead28697",
+  "delivery_runners_verified": {
+    "public_exit": 0,
+    "native_exit": 101
+  }
+}

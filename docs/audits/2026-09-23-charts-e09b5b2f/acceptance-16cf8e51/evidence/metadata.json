@@ -1,0 +1,27 @@
+{
+  "reviewed_commit": "16cf8e51f23cbd281ad34b50440f50939ed23448",
+  "original_baseline": "e09b5b2febe1b20aed3f471ce5b7f841eb2980c6",
+  "scope": "Chart remediation in 16cf8e51; concurrent Tabs/Button/Badge source edits excluded",
+  "workspace_tests": 548,
+  "native_tests": 70,
+  "performance_tests": {
+    "passed": 4,
+    "ignored": 3
+  },
+  "original_native_probes": {
+    "passed": 5,
+    "zoom_proposals": "1.0,1.0,1.0; insufficient assertion"
+  },
+  "new_native_assertions": {
+    "failed": 4
+  },
+  "linked_probe": "Host render guard exits with code 70 on render 64; nonlinked layout count stays 2",
+  "charts_dirty_diff": "",
+  "cargo_lock_sha256": "d1820fe7422b5b6b40cfd8eff84e0981ecf2015944166bed0bd90253ead28697",
+  "delivery_runners_verified": {
+    "public_exit": 0,
+    "native_exit": 101,
+    "linked_cargo_exit": 70,
+    "linked_child_exit": 70
+  }
+}

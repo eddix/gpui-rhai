@@ -26,7 +26,7 @@ const REQUIRED_COLORS: &[&str] = &[
     "selection",
     "disabled",
 ];
-const REQUIRED_SPACING: &[&str] = &["xs", "sm", "md", "lg"];
+const REQUIRED_SPACING: &[&str] = &["xxs", "xs", "sm", "md", "lg"];
 const REQUIRED_RADII: &[&str] = &["sm", "md", "lg"];
 const REQUIRED_MOTION_DURATIONS: &[&str] = &["instant", "fast", "normal", "slow", "ambient"];
 const REQUIRED_MOTION_EASINGS: &[&str] = &["standard", "entrance", "exit", "emphasized"];
@@ -61,6 +61,42 @@ pub struct ThemeTokens {
     pub motion: ThemeMotion,
     #[serde(default)]
     pub namespaces: BTreeMap<String, BTreeMap<String, ThemeTokenValue>>,
+}
+
+/// Host-owned token preferences applied uniformly to every loaded theme.
+///
+/// Overrides are intentionally partial: absent entries inherit the value from
+/// each theme, while present entries replace it. Theme family, variant name,
+/// and color mode are never host-overridable through this type.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ThemeTokenOverrides {
+    pub colors: BTreeMap<String, Rgba8>,
+    pub spacing: BTreeMap<String, Length>,
+    pub radii: BTreeMap<String, Length>,
+    pub typography: ThemeTypographyOverrides,
+    pub motion: ThemeMotionOverrides,
+    pub namespaces: BTreeMap<String, BTreeMap<String, ThemeTokenValue>>,
+}
+
+/// Partial host preferences for the shared typography system.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ThemeTypographyOverrides {
+    /// Replaces the theme's primary family when present.
+    pub family: Option<String>,
+    /// Replaces, rather than appends to, the fallback stack when present.
+    pub fallbacks: Option<Vec<String>>,
+    /// Replaces individual typography roles by name.
+    pub roles: BTreeMap<String, TypographyToken>,
+}
+
+/// Partial host preferences for semantic motion tokens.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ThemeMotionOverrides {
+    pub durations_ms: BTreeMap<String, u64>,
+    pub easings: BTreeMap<String, crate::MotionEasing>,
+    pub springs: BTreeMap<String, ThemeMotionSpring>,
+    pub distances: BTreeMap<String, f64>,
+    pub staggers_ms: BTreeMap<String, u64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -276,6 +312,55 @@ impl ThemeTokens {
                 diff.entry(name.to_owned())
                     .or_insert(ThemeTokenValue::Color(value));
             }
+        }
+        let charts = self.namespaces.entry("charts".to_owned()).or_default();
+        for (name, value) in [
+            ("axis", color("text_muted")),
+            ("grid", color("border").map(|value| with_alpha(value, 0x55))),
+            ("tooltip_surface", color("surface_raised")),
+            ("tooltip_text", color("text_primary")),
+            ("positive", color("success")),
+            ("negative", color("danger")),
+            ("selection", color("accent")),
+            ("map_missing", color("surface_hover")),
+            ("crosshair", color("focus_ring")),
+            ("palette_1", color("accent")),
+            ("palette_2", color("success")),
+            ("palette_3", color("warning")),
+            ("palette_4", color("danger")),
+            ("palette_5", color("focus_ring")),
+            ("palette_6", color("accent_hover")),
+            ("palette_7", color("text_muted")),
+            ("palette_8", color("selection")),
+        ] {
+            if let Some(value) = value {
+                charts
+                    .entry(name.to_owned())
+                    .or_insert(ThemeTokenValue::Color(value));
+            }
+        }
+        self.install_component_defaults();
+    }
+
+    fn install_component_defaults(&mut self) {
+        let color = |name: &str| self.colors.get(name).copied();
+        let table_selection = color("surface")
+            .zip(color("accent"))
+            .map(|(surface, accent)| mix_opaque(surface, accent, 0x48));
+        let table = self.namespaces.entry("table".to_owned()).or_default();
+        if let Some(value) = table_selection {
+            table
+                .entry("selection".to_owned())
+                .or_insert(ThemeTokenValue::Color(value));
+        }
+        let tabs_foreground = color("text_muted")
+            .zip(color("text_primary"))
+            .zip(color("surface_hover"))
+            .map(|((muted, primary), surface)| readable_secondary(muted, primary, surface));
+        let tabs = self.namespaces.entry("tabs".to_owned()).or_default();
+        if let Some(value) = tabs_foreground {
+            tabs.entry("foreground".to_owned())
+                .or_insert(ThemeTokenValue::Color(value));
         }
     }
 
@@ -521,6 +606,68 @@ impl ThemeVariant {
     }
 }
 
+impl ThemeTokenOverrides {
+    fn merge_into(&self, variant: &mut ThemeVariant) {
+        variant.tokens.colors.extend(self.colors.clone());
+        variant.tokens.spacing.extend(self.spacing.clone());
+        variant.tokens.radii.extend(self.radii.clone());
+        if let Some(family) = &self.typography.family {
+            variant.tokens.typography.family = Some(family.clone());
+        }
+        if let Some(fallbacks) = &self.typography.fallbacks {
+            variant.tokens.typography.fallbacks.clone_from(fallbacks);
+        }
+        variant
+            .tokens
+            .typography
+            .roles
+            .extend(self.typography.roles.clone());
+        variant
+            .tokens
+            .motion
+            .durations_ms
+            .extend(self.motion.durations_ms.clone());
+        variant
+            .tokens
+            .motion
+            .easings
+            .extend(self.motion.easings.clone());
+        variant
+            .tokens
+            .motion
+            .springs
+            .extend(self.motion.springs.clone());
+        variant
+            .tokens
+            .motion
+            .distances
+            .extend(self.motion.distances.clone());
+        variant
+            .tokens
+            .motion
+            .staggers_ms
+            .extend(self.motion.staggers_ms.clone());
+        for (namespace, tokens) in &self.namespaces {
+            variant
+                .tokens
+                .namespaces
+                .entry(namespace.clone())
+                .or_default()
+                .extend(tokens.clone());
+        }
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.colors.is_empty()
+            && self.spacing.is_empty()
+            && self.radii.is_empty()
+            && self.typography == ThemeTypographyOverrides::default()
+            && self.motion == ThemeMotionOverrides::default()
+            && self.namespaces.is_empty()
+    }
+}
+
 impl ColorResolver for ThemeVariant {
     fn resolve(&self, color: &ColorValue) -> Option<Rgba8> {
         match color {
@@ -535,6 +682,18 @@ impl ColorResolver for ThemeVariant {
             Length::ThemeRadius(token) => self.tokens.radii.get(token.as_str()).copied(),
             Length::Pixels(_) | Length::Rems(_) | Length::Relative(_) => Some(length),
         }
+    }
+
+    fn color_snapshot(&self) -> BTreeMap<String, Rgba8> {
+        let mut colors = self.tokens.colors.clone();
+        for (namespace, values) in &self.tokens.namespaces {
+            for (name, value) in values {
+                if let ThemeTokenValue::Color(color) = value {
+                    colors.insert(format!("{namespace}.{name}"), *color);
+                }
+            }
+        }
+        colors
     }
 
     fn resolve_typography(&self, role: &str) -> Option<ResolvedTypography> {
@@ -973,6 +1132,34 @@ pub fn load_theme_source(
     source_name: &str,
     source: &str,
 ) -> Result<ThemeVariant, ThemeError> {
+    let mut theme = decode_theme_source(engine, source_name, source)?;
+    theme.tokens.install_document_defaults();
+    theme.validate()?;
+    Ok(theme)
+}
+
+pub(crate) fn load_theme_source_with_overrides(
+    engine: &Engine,
+    source_name: &str,
+    source: &str,
+    overrides: &ThemeTokenOverrides,
+) -> Result<ThemeVariant, ThemeError> {
+    let theme = decode_theme_source(engine, source_name, source)?;
+    let mut original = theme.clone();
+    original.tokens.install_document_defaults();
+    original.validate()?;
+    let mut candidate = theme;
+    overrides.merge_into(&mut candidate);
+    candidate.tokens.install_document_defaults();
+    candidate.validate()?;
+    Ok(candidate)
+}
+
+fn decode_theme_source(
+    engine: &Engine,
+    source_name: &str,
+    source: &str,
+) -> Result<ThemeVariant, ThemeError> {
     let mut ast = engine
         .compile(source)
         .map_err(|error| ThemeError::Script(error.to_string()))?;
@@ -982,15 +1169,70 @@ pub fn load_theme_source(
     let raw: Dynamic = engine
         .call_fn(&mut Scope::new(), &ast, "theme", ())
         .map_err(|error| ThemeError::Script(error.to_string()))?;
-    let mut theme = rhai::serde::from_dynamic::<ThemeVariant>(&raw)
-        .map_err(|error| ThemeError::Decode(error.to_string()))?;
-    theme.tokens.install_document_defaults();
-    theme.validate()?;
-    Ok(theme)
+    rhai::serde::from_dynamic::<ThemeVariant>(&raw)
+        .map_err(|error| ThemeError::Decode(error.to_string()))
 }
 
 const fn with_alpha(color: Rgba8, alpha: u8) -> Rgba8 {
     Rgba8::from_rgba_hex((color.as_rgba_hex() & 0xffff_ff00) | alpha as u32)
+}
+
+const fn mix_opaque(background: Rgba8, foreground: Rgba8, weight: u8) -> Rgba8 {
+    let background = background.as_rgba_hex();
+    let foreground = foreground.as_rgba_hex();
+    let inverse = 255_u32 - weight as u32;
+    let weight = weight as u32;
+    Rgba8::from_rgba_hex(
+        (mix_channel(background, foreground, inverse, weight, 24) << 24)
+            | (mix_channel(background, foreground, inverse, weight, 16) << 16)
+            | (mix_channel(background, foreground, inverse, weight, 8) << 8)
+            | 0xff,
+    )
+}
+
+const fn mix_channel(
+    background: u32,
+    foreground: u32,
+    inverse: u32,
+    weight: u32,
+    shift: u32,
+) -> u32 {
+    let back = (background >> shift) & 0xff;
+    let front = (foreground >> shift) & 0xff;
+    (back * inverse + front * weight + 127) / 255
+}
+
+fn readable_secondary(muted: Rgba8, primary: Rgba8, surface: Rgba8) -> Rgba8 {
+    if contrast_ratio(muted, surface) >= 4.5 {
+        return muted;
+    }
+    for step in 1_u8..=16 {
+        let weight = u8::try_from(u16::from(step) * 255 / 16).unwrap_or(255);
+        let candidate = mix_opaque(muted, primary, weight);
+        if contrast_ratio(candidate, surface) >= 4.5 {
+            return candidate;
+        }
+    }
+    primary
+}
+
+fn contrast_ratio(left: Rgba8, right: Rgba8) -> f64 {
+    let left = relative_luminance(left);
+    let right = relative_luminance(right);
+    (left.max(right) + 0.05) / (left.min(right) + 0.05)
+}
+
+fn relative_luminance(color: Rgba8) -> f64 {
+    let color = color.as_rgba_hex();
+    let channel = |shift| {
+        let encoded = f64::from(((color >> shift) & 0xff_u32) as u8) / 255.0;
+        if encoded <= 0.04045 {
+            encoded / 12.92
+        } else {
+            ((encoded + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    0.2126 * channel(24) + 0.7152 * channel(16) + 0.0722 * channel(8)
 }
 
 #[derive(Debug, Error)]
@@ -1102,6 +1344,7 @@ mod tests {
                 })
                 .collect(),
             spacing: BTreeMap::from([
+                ("xxs".to_owned(), Length::Pixels(2.0)),
                 ("xs".to_owned(), Length::Pixels(4.0)),
                 ("sm".to_owned(), Length::Pixels(8.0)),
                 ("md".to_owned(), Length::Pixels(12.0)),
@@ -1388,6 +1631,86 @@ mod tests {
         assert!(matches!(
             invalid.validate(),
             Err(ThemeError::NestedLengthToken(token)) if token == "sm"
+        ));
+    }
+
+    #[test]
+    fn host_token_overrides_are_partial_merged_and_validated() {
+        let mut variant = ThemeVariant {
+            family: "Default".to_owned(),
+            name: "Dark".to_owned(),
+            mode: ThemeMode::Dark,
+            tokens: tokens(0x0066_99ff),
+        };
+        let original_surface = variant.tokens.colors["surface"];
+        let overrides = ThemeTokenOverrides {
+            colors: BTreeMap::from([("accent".to_owned(), Rgba8::from_rgb_hex(0xff00_99ff))]),
+            radii: BTreeMap::from([
+                ("sm".to_owned(), Length::Pixels(3.0)),
+                ("md".to_owned(), Length::Pixels(6.0)),
+                ("lg".to_owned(), Length::Pixels(9.0)),
+            ]),
+            typography: ThemeTypographyOverrides {
+                family: Some("Host Sans".to_owned()),
+                roles: BTreeMap::from([("body".to_owned(), type_token(15.0, 21.0, 500))]),
+                ..ThemeTypographyOverrides::default()
+            },
+            motion: ThemeMotionOverrides {
+                durations_ms: BTreeMap::from([("normal".to_owned(), 240)]),
+                ..ThemeMotionOverrides::default()
+            },
+            namespaces: BTreeMap::from([(
+                "charts".to_owned(),
+                BTreeMap::from([(
+                    "axis".to_owned(),
+                    ThemeTokenValue::Color(Rgba8::from_rgb_hex(0x7788_99ff)),
+                )]),
+            )]),
+            ..ThemeTokenOverrides::default()
+        };
+
+        overrides.merge_into(&mut variant);
+        variant.validate().unwrap();
+
+        assert_eq!(variant.tokens.colors["surface"], original_surface);
+        assert_eq!(
+            variant.tokens.colors["accent"],
+            Rgba8::from_rgb_hex(0xff00_99ff)
+        );
+        assert_eq!(variant.tokens.radii["md"], Length::Pixels(6.0));
+        assert_eq!(
+            variant.tokens.typography.family.as_deref(),
+            Some("Host Sans")
+        );
+        assert_eq!(
+            variant.tokens.typography.roles["body"],
+            type_token(15.0, 21.0, 500)
+        );
+        assert_eq!(variant.tokens.motion.durations_ms["normal"], 240);
+        assert_eq!(
+            variant.tokens.token("charts.axis"),
+            Some(&ThemeTokenValue::Color(Rgba8::from_rgb_hex(0x7788_99ff)))
+        );
+    }
+
+    #[test]
+    fn invalid_host_token_override_rejects_the_candidate_theme() {
+        let variant = ThemeVariant {
+            family: "Default".to_owned(),
+            name: "Dark".to_owned(),
+            mode: ThemeMode::Dark,
+            tokens: tokens(0x0066_99ff),
+        };
+        let overrides = ThemeTokenOverrides {
+            radii: BTreeMap::from([("md".to_owned(), Length::Pixels(f64::NAN))]),
+            ..ThemeTokenOverrides::default()
+        };
+
+        let mut candidate = variant;
+        overrides.merge_into(&mut candidate);
+        assert!(matches!(
+            candidate.validate(),
+            Err(ThemeError::InvalidLength { token, .. }) if token == "md"
         ));
     }
 

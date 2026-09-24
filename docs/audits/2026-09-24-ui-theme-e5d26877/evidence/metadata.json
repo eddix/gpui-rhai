@@ -1,0 +1,28 @@
+{
+  "date": "2026-09-24",
+  "head": "e5d268776151a950f81f3d7e68e4bb2feff2d973",
+  "previous_baseline": "42afce01139f73d6cb921f43f036e36adc2e0b9c",
+  "rustc": "rustc 1.94.0 (4a4ef493e 2026-03-02)\nbinary: rustc\ncommit-hash: 4a4ef493e3a1488c6e321570238084b38948f6db\ncommit-date: 2026-03-02\nhost: aarch64-apple-darwin\nrelease: 1.94.0\nLLVM version: 21.1.8",
+  "os": "ProductName:\t\tmacOS\nProductVersion:\t\t26.6.2\nBuildVersion:\t\t25G83",
+  "hardware_model": "Macmini9,1",
+  "gpui": "0.2.2",
+  "rhai": "1.26.0",
+  "scope": "Chart repair acceptance + all 51 registry component style sources + all 15 bundled theme contrast + native token/geometry probes + actual Component Gallery in Default Light, Default Dark and Gruvbox",
+  "changes": "Audit artifacts and maintained textual visual specifications only; no product edits or new images. Existing image deletions preserved, not committed.",
+  "new_native": {
+    "passed": 0,
+    "failed": 3,
+    "distinct_groups": 2,
+    "exit_code": 101
+  },
+  "previous_native": {
+    "passed": 18,
+    "failed": 0,
+    "exit_code": 0
+  },
+  "maintained_specs_sha256": {
+    "docs/registry-design-system.md": "dafbc7a1df44bbb49b3c04630aa777fbd75c317d8666aa3f77abaf59b96c1c13",
+    "docs/visual-testing.md": "d5d28fae8f29e216d1366e7e224f15f27ddf9453a7ab6d2beaa7884fdc669ee7"
+  },
+  "reference_images_absent_in_worktree_but_deletions_uncommitted": true
+}

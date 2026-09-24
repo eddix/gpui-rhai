@@ -1,0 +1,21 @@
+{
+  "baseline_head": "e09b5b2febe1b20aed3f471ce5b7f841eb2980c6",
+  "base": "c3b6d43973336b2eb49b4426aaad48557924a23f",
+  "audit_date": "2026-09-23",
+  "rustc": "rustc 1.94.0 (4a4ef493e 2026-03-02)\nbinary: rustc\ncommit-hash: 4a4ef493e3a1488c6e321570238084b38948f6db\ncommit-date: 2026-03-02\nhost: aarch64-apple-darwin\nrelease: 1.94.0\nLLVM version: 21.1.8",
+  "os": "ProductName:\t\tmacOS\nProductVersion:\t\t26.6.2\nBuildVersion:\t\t25G83",
+  "cpu": "Apple M1",
+  "workspace_cargo_lock_sha256": "d1820fe7422b5b6b40cfd8eff84e0981ecf2015944166bed0bd90253ead28697",
+  "workspace_test_count": 537,
+  "existing_native_test_count": 65,
+  "existing_native_enables_charts": false,
+  "audit_native_test_count": 5,
+  "audit_native_failures": 5,
+  "product_files_modified": false,
+  "release_microbenchmark": {
+    "warmups": 5,
+    "samples": 20,
+    "percentile": "nearest-rank",
+    "scope": "row clone + ChartDataset::from_rows + NativeChartData::new; excludes Rhai/layout/paint"
+  }
+}

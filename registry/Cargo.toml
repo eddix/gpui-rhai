@@ -15,6 +15,7 @@ include = [
     "src/**/*.rs",
     "components/**/*.rhai",
     "motion/**/*.rhai",
+    "charts/**/*.rhai",
     "themes/**/*.rhai",
     "locales/**/*.rhai",
     "studio/**/*.rhai",

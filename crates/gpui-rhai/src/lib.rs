@@ -53,6 +53,9 @@ pub mod virtual_list;
 mod virtual_list_element;
 pub mod window;
 
+#[cfg(feature = "charts")]
+pub mod chart;
+
 pub mod accessibility;
 pub mod action;
 pub mod app;
@@ -101,6 +104,8 @@ pub use capability::{
     CapabilityId, CapabilityMethod, CapabilityRegistry, SubscriptionCapabilityHandler,
     SubscriptionWork, TaskWork,
 };
+#[cfg(feature = "charts")]
+pub use chart::*;
 pub use clock::{ManualRuntimeClock, RuntimeClock, RuntimeClockSource};
 pub use column_resize::{ColumnResizePrimitiveHandler, column_resize_primitive_descriptor};
 pub use component::{
@@ -189,10 +194,11 @@ pub use overlay::{
     OverlayPlacement, OverlaySpec, PlacementResult, TooltipScheduler, TooltipTransition,
 };
 pub use primitive::{
-    EffectPrimitiveDescriptor, PrimitiveDescriptor, PrimitiveError, PrimitiveEventEmitter,
-    PrimitiveHandler, PrimitiveId, PrimitiveInstance, PrimitiveInstanceId, PrimitiveNode,
-    PrimitivePlatform, PrimitiveProps, PrimitiveRegistry, PrimitiveResourceError,
-    PrimitiveResourceHandle, PrimitiveResourceScope, PrimitiveTheme, PrimitiveValue,
+    EffectPrimitiveDescriptor, PrimitiveAccessibilityProjection, PrimitiveDescriptor,
+    PrimitiveError, PrimitiveEventEmitter, PrimitiveHandler, PrimitiveId, PrimitiveInstance,
+    PrimitiveInstanceId, PrimitiveNode, PrimitivePlatform, PrimitiveProps, PrimitiveRegistry,
+    PrimitiveResourceError, PrimitiveResourceHandle, PrimitiveResourceScope, PrimitiveTheme,
+    PrimitiveValue,
 };
 pub use range_input::{RangeInputPrimitiveHandler, range_input_primitive_descriptor};
 pub use reload::{LiveScript, ReloadOutcome};
@@ -236,9 +242,10 @@ pub use text_input::{
 };
 pub use theme::{
     REQUIRED_TYPOGRAPHY, ResolvedTheme, ResolvedTypography, SystemAppearance, ThemeError,
-    ThemeFamily, ThemeManager, ThemeMode, ThemeMotion, ThemeMotionSpring, ThemePreference,
-    ThemeSelection, ThemeSnapshot, ThemeTokenValue, ThemeTokens, ThemeTypography, ThemeVariant,
-    TypographyToken, load_theme_source,
+    ThemeFamily, ThemeManager, ThemeMode, ThemeMotion, ThemeMotionOverrides, ThemeMotionSpring,
+    ThemePreference, ThemeSelection, ThemeSnapshot, ThemeTokenOverrides, ThemeTokenValue,
+    ThemeTokens, ThemeTypography, ThemeTypographyOverrides, ThemeVariant, TypographyToken,
+    load_theme_source,
 };
 pub use timer::{TimerDescriptor, TimerError, TimerId, TimerRegistry, TimerSnapshot};
 pub use value::{

@@ -2,7 +2,7 @@
 {
   "id": "components/button",
   "export": "Button",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": [],
   "capabilities": {}
@@ -20,7 +20,7 @@ define_component(#{
     metadata: #{
         id: "components/button",
         "export": "Button",
-        version: "0.1.4",
+        version: "0.1.5",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
         dependencies: [],
         capabilities: #{},
@@ -109,6 +109,12 @@ fn button_height(size) {
 }
 
 fn button_typography(size) { if size == "xs" { "body_small" } else { "body" } }
+fn button_padding(size) {
+    if size == "xs" || size == "sm" { theme_spacing("sm") }
+    else if size == "lg" { theme_spacing("lg") }
+    else { theme_spacing("md") }
+}
+fn button_vertical_padding(size) { if size == "xs" { theme_spacing("xxs") } else { theme_spacing("xs") } }
 
 fn button_background(variant) {
     if variant == "danger" { theme_color("danger") }
@@ -163,16 +169,17 @@ fn render_Button(ctx, props) {
         .flex_row()
         .items_center()
         .justify_center()
-        .height(px(button_height(size)))
-        .padding_x(px(10))
-        .gap(px(8))
+        .min_height(px(button_height(size)))
+        .padding_x(button_padding(size))
+        .padding_y(button_vertical_padding(size))
+        .gap(theme_spacing("xs"))
         .radius(theme_radius("md"))
         .border(px(1))
         .border_color(button_border(variant))
         .background(button_background(variant))
         .text_color(button_foreground(variant))
         .typography(button_typography(size))
-        .font_weight(700)
+        .font_weight(600)
         .focus(style().border_color(theme_color("focus_ring")))
         .active(style().opacity(0.86))
         .disabled(style()

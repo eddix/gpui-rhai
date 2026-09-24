@@ -2,7 +2,7 @@
 {
   "id": "components/sheet",
   "export": "Sheet",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": [],
   "capabilities": {}
@@ -16,7 +16,7 @@
 // Example: Sheet(#{ key: "inspector", open: true, side: "end", title: "Inspector", content: panel, on_open_change: Fn("opened") })
 
 define_component(#{
-    metadata: #{ id: "components/sheet", "export": "Sheet", version: "0.1.4",
+    metadata: #{ id: "components/sheet", "export": "Sheet", version: "0.1.5",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{} },
     schema: #{
         props: #{
@@ -58,10 +58,10 @@ fn render_Sheet(ctx, props) {
     children.push(props.content.with_style(ctx.component_style("content", style().flex_grow())));
     if "actions" in props && props.actions.len > 0 {
         children.push(row(props.actions).with_style(ctx.component_style("actions", style()
-            .padding_top(px(10)).gap(px(8)).justify_end()
+        .padding_top(theme_spacing("sm")).gap(theme_spacing("sm")).justify_end()
             .border_top(px(1)).border_color(theme_color("border")))));
     }
-    let panel_style = style().padding(px(16)).gap(px(12))
+    let panel_style = style().padding(theme_spacing("lg")).gap(theme_spacing("md"))
         .background(theme_color("surface")).border(px(1)).border_color(theme_color("border"));
     if side == "start" || side == "end" {
         panel_style = panel_style.width(px(size)).height(relative(1.0));

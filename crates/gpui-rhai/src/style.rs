@@ -144,6 +144,7 @@ impl From<SignedLength> for LayoutLength {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SpacingToken {
+    Xxs,
     Xs,
     Sm,
     Md,
@@ -154,6 +155,7 @@ impl SpacingToken {
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
+            Self::Xxs => "xxs",
             Self::Xs => "xs",
             Self::Sm => "sm",
             Self::Md => "md",
@@ -163,6 +165,7 @@ impl SpacingToken {
 
     fn parse(value: &str) -> Result<Self, LengthError> {
         match value {
+            "xxs" => Ok(Self::Xxs),
             "xs" => Ok(Self::Xs),
             "sm" => Ok(Self::Sm),
             "md" => Ok(Self::Md),

@@ -1971,7 +1971,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-rhai"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "event-listener 5.4.2",
  "gpui",
@@ -1996,7 +1996,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-rhai-cli"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "clap",
  "gpui-rhai",
@@ -2012,7 +2012,7 @@ dependencies = [
 
 [[package]]
 name = "gpui-rhai-registry"
-version = "0.1.4"
+version = "0.1.5"
 
 [[package]]
 name = "gpui_collections"

@@ -2,7 +2,7 @@
 {
   "id": "components/input",
   "export": "Input",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": [],
   "capabilities": {}
@@ -10,7 +10,7 @@
 */
 // Input is a controlled single-line native text input.
 //
-// Props: key, label, value, placeholder, disabled, read_only, error, callbacks.
+// Props: key, label, value, placeholder, disabled, read_only, error, autofocus, callbacks.
 // Events: change(string), submit(string), focus(null), blur(null).
 // State: native keyed TextInput Entity. Parts: root, input.
 // Example: Input(#{ key: "name", label: "Name", value: name, on_change: Fn("name_changed") })
@@ -19,7 +19,7 @@ define_component(#{
     metadata: #{
         id: "components/input",
         "export": "Input",
-        version: "0.1.4",
+        version: "0.1.5",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
         dependencies: [],
         capabilities: #{},
@@ -31,11 +31,7 @@ define_component(#{
                 required: true,
                 sensitive: false,
             },
-            label: #{
-                schema: #{ type: "string" },
-                required: true,
-                sensitive: false,
-            },
+            label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
             value: #{
                 schema: #{ type: "string" },
                 required: true,
@@ -53,6 +49,12 @@ define_component(#{
                 "default": #{ type: "bool", value: false },
             },
             read_only: #{
+                schema: #{ type: "bool" },
+                required: false,
+                sensitive: false,
+                "default": #{ type: "bool", value: false },
+            },
+            autofocus: #{
                 schema: #{ type: "bool" },
                 required: false,
                 sensitive: false,
@@ -115,6 +117,7 @@ fn render_Input(ctx, props) {
         disabled: disabled,
         read_only: read_only,
         typography: "body",
+        autofocus: if "autofocus" in props { props.autofocus } else { false },
         on_change: optional_prop(props, "on_change"),
         on_submit: optional_prop(props, "on_submit"),
         on_focus: optional_prop(props, "on_focus"),
@@ -123,13 +126,18 @@ fn render_Input(ctx, props) {
         .with_style(ctx.component_style("root", ctx.component_style("input",
             style()
                 .height(px(32))
-                .padding_x(px(8))
+                .padding_x(theme_spacing("sm"))
                 .items_center()
                 .radius(theme_radius("md"))
                 .border(px(1))
                 .border_color(border)
-                .background(theme_color("surface_raised"))
+                .background(theme_color("surface"))
                 .typography("body")
+                .focus(style().border_color(theme_color("focus_ring")))
+                .disabled(style()
+                    .background(theme_color("surface_raised"))
+                    .text_color(theme_color("disabled"))
+                    .opacity(0.72))
         )))
         .accessibility_role("text_field")
         .accessibility_label(props.label)

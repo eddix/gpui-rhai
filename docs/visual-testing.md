@@ -7,6 +7,51 @@ status/loading, navigation, data/virtualization, assets, and overlays. The
 default metrics and state vocabulary are defined in
 `registry-design-system.md`.
 
+## Tabs, Button, and Badge control baseline
+
+The maintained [registry visual system](registry-design-system.md) defines
+control appearance; the [Tabs contract](components/catalog.md#tabs) defines
+its public props, semantics, and style parts.
+
+Maintain one contextual specimen containing:
+
+- Tabs with the first, middle, and last item selected; the track inset remains
+  the resolved `spacing.xxs` at every outer edge, with no dividers or selected rail;
+- content-width and equal-width Tabs, unequal English/CJK labels, icons with
+  text and icon-only headers, horizontal/vertical and LTR/RTL layouts;
+- normal, focused, hovered, disabled, scrolling, interrupted transition, and
+  Reduced/None states; focus must not obscure persistent selection;
+- Button and Badge using the same text and color treatment, including a
+  filled Badge; their density difference must survive removing color cues.
+
+Capture Default Light/Dark, Tokyo Night/Storm, and Catppuccin Latte/Mocha at
+settled frames. Inspect the remaining bundled themes in the same specimen.
+Record logical bounds as well as 1x/2x screenshots so text/line-height and
+track-inset assertions do not depend on screenshot scaling. Mounted tests must
+cover controlled-value rejection, keyboard/disabled behavior, local overflow
+scrolling, and an indicator that owns neither input nor accessibility focus.
+Also check rapid interrupted transitions, first mount, resize, theme/locale
+changes, and Reduced/None presentation without spurious change callbacks.
+Button disabled/loading must suppress actions without changing its height;
+Badge adds no action focus stop. The permanent geometry and controlled-state
+assertions live in `tests/native-keyboard/tests/control_visuals.rs`.
+Also mount the specimen with deliberately different valid Host spacing/radius
+overrides and larger typography. Verify all four track insets, text containment,
+theme-responsive Button/Badge density, square and rounded rectangular surfaces,
+native/virtualized token parity, and theme switching with preserved state.
+Testing only bundled themes with identical spacing and zero radii cannot detect
+literal-token substitution. Color checks must use the actual foreground/surface
+pair for every state, including enabled but unselected Tabs.
+
+Third-party reference screenshots are not project assets. Keep requirement
+documents text-only; any product captures used during an audit remain outside
+the repository unless their inclusion is explicitly approved for baselines.
+Automatic selected-tab reveal, adaptive tab height for larger fonts, and the
+future ToggleGroup appearance remain
+[known gaps](registry-design-system.md#known-implementation-gaps), not certified
+behavior. Add their geometry and interaction assertions when implemented.
+Do not replace those assertions with snapshot-only tests.
+
 ## Deterministic matrix
 
 Capture `settings_panel`, `dashboard_layout`, and `form_showcase` at their
@@ -38,6 +83,16 @@ bash scripts/build-macos-test-app.sh component_gallery catppuccin-mocha ar forms
 bash scripts/build-macos-test-app.sh component_gallery tokyo-night en sheet
 bash scripts/build-macos-test-app.sh component_gallery default-dark en compact reduced
 ```
+
+Capture `chart_gallery` after every built-in series has installed its prepared
+scene, including Default Light/Dark, one community theme, Arabic RTL, normal,
+reduced, and disabled motion, narrow/wide resize, tooltip/crosshair, Cartesian
+brush, linked zoom, annotations, Host GeoJSON, and the 100,000-row native line
+series. Theme and locale controls must update existing Chart entities without
+recompiling Rhai or losing controlled selection/viewport state. The checked-in
+PNG matrix is added only after the first maintainer visual acceptance pass;
+the automated mounted benchmark already guards preparation, layout/paint,
+resize, and streaming completion.
 
 The complex-control expansion adds:
 
@@ -111,8 +166,8 @@ an open parent Dialog, guarding GPUI 0.2.x against nested `defer_draw` panics.
 Three-view embedding cases cover automatic bounds, runtime isolation, shared
 Host overlays, duplicate local IDs, click-through dismissal, key conflicts,
 and dispose/remount.
-The independent workspace currently has 53 tests: 51 GPUI integration cases
-plus `table_1000` and Component Gallery preparation guards. It contains no
+The independent workspace currently has 65 tests spanning GPUI integration,
+native document/motion behavior, and embedded example preparation guards. It contains no
 deleted Table/choice/date/toast native constructor and also guards that window-level
 pointer-capture listeners register during paint rather than GPUI layout.
 The launch additions cover CommandDialog autofocus/filter/Enter execution,

@@ -2,7 +2,7 @@
 {
   "id": "components/context_menu",
   "export": "ContextMenu",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": ["components/menu"],
   "capabilities": {}
@@ -18,7 +18,7 @@
 import "components/menu" as menu;
 
 define_component(#{
-    metadata: #{ id: "components/context_menu", "export": "ContextMenu", version: "0.1.4",
+    metadata: #{ id: "components/context_menu", "export": "ContextMenu", version: "0.1.5",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: ["components/menu"], capabilities: #{} },
     schema: #{
         props: #{

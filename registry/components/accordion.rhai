@@ -2,7 +2,7 @@
 {
   "id": "components/accordion",
   "export": "Accordion",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": [],
   "capabilities": {},
@@ -16,7 +16,7 @@
 
 define_component(#{
     metadata: #{
-        id: "components/accordion", "export": "Accordion", version: "0.1.4",
+        id: "components/accordion", "export": "Accordion", version: "0.1.5",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{},
         assets: ["icons/minus.svg", "icons/plus.svg"],
     },
@@ -73,7 +73,7 @@ fn render_Accordion(ctx, props) {
         let toggle_color = if open { theme_color("accent") } else { theme_color("text_muted") };
         let trigger_background = if open { theme_color("surface_raised") }
             else { rgba(0x00000000) };
-        let trigger_style = style().height(px(32)).padding_x(px(10))
+        let trigger_style = style().height(px(32)).padding_x(theme_spacing("sm"))
             .justify_between().items_center().typography("body")
             .font_weight(700).background(trigger_background)
             .border(px(1)).border_color(rgba(0x00000000));
@@ -96,7 +96,7 @@ fn render_Accordion(ctx, props) {
         }
         let height = item.content_height;
         let panel_content = item.content.with_style(ctx.component_style("content", style()
-            .padding(px(10)).typography("body")));
+                .padding(theme_spacing("sm")).typography("body")));
         let panel = column([panel_content])
             .with_key(`${item.key}-content`)
             .with_style(style().height(px(if open { height } else { 0 })).clip())

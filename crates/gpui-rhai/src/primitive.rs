@@ -148,6 +148,8 @@ pub enum PrimitiveValue {
     Signal(crate::NativeSignal),
     Ref(crate::ElementRef),
     Document(crate::NativeTextDocument),
+    #[cfg(feature = "charts")]
+    ChartData(crate::NativeChartData),
 }
 
 /// Read-only semantic theme values captured for one native primitive render.
@@ -162,10 +164,84 @@ pub struct PrimitiveTheme {
     radii: BTreeMap<RadiusToken, Length>,
     typography: BTreeMap<String, crate::ResolvedTypography>,
     direction: crate::TextDirection,
+    locale: String,
+    number: Option<crate::NumberMetadata>,
     motion: crate::ThemeMotion,
     motion_preference: crate::MotionPreference,
     motion_quality: crate::MotionQuality,
+    clock: crate::RuntimeClock,
 }
+
+pub(crate) const RUNTIME_THEME_COLOR_TOKENS: &[&str] = &[
+    "surface",
+    "surface_raised",
+    "surface_hover",
+    "text_primary",
+    "text_muted",
+    "accent",
+    "accent_hover",
+    "on_accent",
+    "danger",
+    "on_danger",
+    "warning",
+    "on_warning",
+    "success",
+    "on_success",
+    "border",
+    "focus_ring",
+    "selection",
+    "disabled",
+    "syntax.comment",
+    "syntax.string",
+    "syntax.number",
+    "syntax.keyword",
+    "syntax.function",
+    "syntax.type",
+    "syntax.variable",
+    "syntax.constant",
+    "syntax.operator",
+    "syntax.punctuation",
+    "syntax.tag",
+    "syntax.attribute",
+    "document.search_match",
+    "document.search_current",
+    "diff.left_only",
+    "diff.right_only",
+    "diff.modified",
+    "diff.inline_left",
+    "diff.inline_right",
+    "diff.gutter",
+    "diff.fold",
+    "charts.axis",
+    "charts.grid",
+    "charts.tooltip_surface",
+    "charts.tooltip_text",
+    "charts.positive",
+    "charts.negative",
+    "charts.selection",
+    "charts.map_missing",
+    "charts.crosshair",
+    "charts.palette_1",
+    "charts.palette_2",
+    "charts.palette_3",
+    "charts.palette_4",
+    "charts.palette_5",
+    "charts.palette_6",
+    "charts.palette_7",
+    "charts.palette_8",
+    "table.selection",
+];
+
+pub(crate) const RUNTIME_THEME_SPACING_TOKENS: &[SpacingToken] = &[
+    SpacingToken::Xxs,
+    SpacingToken::Xs,
+    SpacingToken::Sm,
+    SpacingToken::Md,
+    SpacingToken::Lg,
+];
+
+pub(crate) const RUNTIME_THEME_RADIUS_TOKENS: &[RadiusToken] =
+    &[RadiusToken::Sm, RadiusToken::Md, RadiusToken::Lg];
 
 impl Default for PrimitiveTheme {
     fn default() -> Self {
@@ -175,9 +251,12 @@ impl Default for PrimitiveTheme {
             radii: BTreeMap::new(),
             typography: BTreeMap::new(),
             direction: crate::TextDirection::LeftToRight,
+            locale: "en".to_owned(),
+            number: None,
             motion: crate::ThemeMotion::default(),
             motion_preference: crate::MotionPreference::Normal,
             motion_quality: crate::MotionQuality::High,
+            clock: crate::RuntimeClock::default(),
         }
     }
 }
@@ -201,76 +280,48 @@ impl PrimitiveTheme {
         )
     }
 
+    #[cfg(test)]
     pub(crate) fn capture_with_motion_policy(
         colors: &impl ColorResolver,
         direction: crate::TextDirection,
         motion_preference: crate::MotionPreference,
         motion_quality: crate::MotionQuality,
     ) -> Self {
-        const TOKENS: &[&str] = &[
-            "surface",
-            "surface_raised",
-            "surface_hover",
-            "text_primary",
-            "text_muted",
-            "accent",
-            "accent_hover",
-            "on_accent",
-            "danger",
-            "on_danger",
-            "warning",
-            "on_warning",
-            "success",
-            "on_success",
-            "border",
-            "focus_ring",
-            "disabled",
-            "syntax.comment",
-            "syntax.string",
-            "syntax.number",
-            "syntax.keyword",
-            "syntax.function",
-            "syntax.type",
-            "syntax.variable",
-            "syntax.constant",
-            "syntax.operator",
-            "syntax.punctuation",
-            "syntax.tag",
-            "syntax.attribute",
-            "document.search_match",
-            "document.search_current",
-            "diff.left_only",
-            "diff.right_only",
-            "diff.modified",
-            "diff.inline_left",
-            "diff.inline_right",
-            "diff.gutter",
-            "diff.fold",
-        ];
+        Self::capture_with_environment(
+            colors,
+            direction,
+            "en",
+            None,
+            crate::RuntimeClock::default(),
+            motion_preference,
+            motion_quality,
+        )
+    }
+
+    #[allow(clippy::too_many_lines)]
+    pub(crate) fn capture_with_environment(
+        colors: &impl ColorResolver,
+        direction: crate::TextDirection,
+        locale: &str,
+        number: Option<&crate::NumberMetadata>,
+        clock: crate::RuntimeClock,
+        motion_preference: crate::MotionPreference,
+        motion_quality: crate::MotionQuality,
+    ) -> Self {
         Self {
-            colors: TOKENS
+            colors: colors.color_snapshot(),
+            spacing: RUNTIME_THEME_SPACING_TOKENS
                 .iter()
+                .copied()
                 .filter_map(|token| {
                     colors
-                        .resolve(&ColorValue::Token((*token).to_owned()))
-                        .map(|value| ((*token).to_owned(), value))
+                        .resolve_length(Length::ThemeSpacing(token))
+                        .map(|value| (token, value))
                 })
                 .collect(),
-            spacing: [
-                SpacingToken::Xs,
-                SpacingToken::Sm,
-                SpacingToken::Md,
-                SpacingToken::Lg,
-            ]
-            .into_iter()
-            .filter_map(|token| {
-                colors
-                    .resolve_length(Length::ThemeSpacing(token))
-                    .map(|value| (token, value))
-            })
-            .collect(),
-            radii: [RadiusToken::Sm, RadiusToken::Md, RadiusToken::Lg]
-                .into_iter()
+            radii: RUNTIME_THEME_RADIUS_TOKENS
+                .iter()
+                .copied()
                 .filter_map(|token| {
                     colors
                         .resolve_length(Length::ThemeRadius(token))
@@ -286,9 +337,12 @@ impl PrimitiveTheme {
                 })
                 .collect(),
             direction,
+            locale: locale.to_owned(),
+            number: number.cloned(),
             motion: colors.resolve_motion(),
             motion_preference,
             motion_quality,
+            clock,
         }
     }
 
@@ -320,6 +374,16 @@ impl PrimitiveTheme {
     }
 
     #[must_use]
+    pub fn locale(&self) -> &str {
+        &self.locale
+    }
+
+    #[must_use]
+    pub const fn number_metadata(&self) -> Option<&crate::NumberMetadata> {
+        self.number.as_ref()
+    }
+
+    #[must_use]
     pub const fn motion_preference(&self) -> crate::MotionPreference {
         self.motion_preference
     }
@@ -327,6 +391,11 @@ impl PrimitiveTheme {
     #[must_use]
     pub const fn motion_quality(&self) -> crate::MotionQuality {
         self.motion_quality
+    }
+
+    #[must_use]
+    pub fn now(&self) -> std::time::Instant {
+        self.clock.now()
     }
 
     #[must_use]
@@ -347,6 +416,10 @@ impl ColorResolver for PrimitiveTheme {
 
     fn resolve_length(&self, length: Length) -> Option<Length> {
         PrimitiveTheme::resolve_length(self, length)
+    }
+
+    fn color_snapshot(&self) -> BTreeMap<String, Rgba8> {
+        self.colors.clone()
     }
 
     fn resolve_typography(&self, role: &str) -> Option<crate::ResolvedTypography> {
@@ -432,6 +505,8 @@ impl PrimitiveProps {
                 | PrimitiveValue::Signal(_)
                 | PrimitiveValue::Ref(_)
                 | PrimitiveValue::Document(_) => {}
+                #[cfg(feature = "charts")]
+                PrimitiveValue::ChartData(_) => {}
             }
         }
     }
@@ -759,6 +834,17 @@ pub trait PrimitiveHandler {
         1
     }
 
+    /// Contribute a bounded semantic summary for the retained primitive node.
+    /// Native internals remain private; accessibility and automation receive
+    /// only durable, already-presented values.
+    fn accessibility(
+        &self,
+        _instance: &PrimitiveInstanceId,
+        _cx: &App,
+    ) -> Option<PrimitiveAccessibilityProjection> {
+        None
+    }
+
     /// Called once before the first render of a keyed lifecycle primitive.
     ///
     /// # Errors
@@ -781,6 +867,19 @@ pub trait PrimitiveHandler {
         Ok(())
     }
 
+    /// Prepare one retained native instance to cross into suspended state.
+    /// Implementations must be idempotent because a failed peer is compensated
+    /// and the whole operation may be retried.
+    fn suspend(&mut self, _instance: &PrimitiveInstanceId, _cx: &mut App) {}
+
+    /// Prepare one suspended native instance to become active. The public view
+    /// is not marked active until every primitive and the script transaction succeed.
+    fn resume(&mut self, _instance: &PrimitiveInstanceId, _cx: &mut App) {}
+
+    /// Commit a successfully prepared resume after the script transaction has
+    /// also succeeded. Activity time and event delivery may begin here.
+    fn commit_resume(&mut self, _instance: &PrimitiveInstanceId, _cx: &mut App) {}
+
     /// Render the primitive into a native GPUI element.
     ///
     /// # Errors
@@ -797,6 +896,12 @@ pub trait PrimitiveHandler {
 
     /// Called when a previously mounted keyed primitive is no longer reachable.
     fn unmount(&mut self, _instance: &PrimitiveInstanceId) {}
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct PrimitiveAccessibilityProjection {
+    pub description: String,
+    pub value: Option<UiValue>,
 }
 
 struct PrimitiveEntry {
@@ -950,6 +1055,32 @@ impl PrimitiveRegistry {
         Ok(payload)
     }
 
+    pub(crate) fn accessibility_projections(
+        &self,
+        tree: &crate::RetainedUiTree,
+        cx: &App,
+    ) -> BTreeMap<crate::NodeId, PrimitiveAccessibilityProjection> {
+        let Ok(inner) = self.inner.try_borrow() else {
+            return BTreeMap::new();
+        };
+        tree.nodes()
+            .filter_map(|node| {
+                let primitive = node.primitive()?.clone();
+                let instance = PrimitiveInstanceId {
+                    primitive: primitive.clone(),
+                    key: node.key()?.to_owned(),
+                    node: node.id(),
+                };
+                let projection = inner
+                    .entries
+                    .get(&primitive)?
+                    .handler
+                    .accessibility(&instance, cx)?;
+                Some((node.id(), projection))
+            })
+            .collect()
+    }
+
     /// Unmount keyed lifecycle instances absent from the successful node tree.
     ///
     /// # Errors
@@ -1002,6 +1133,67 @@ impl PrimitiveRegistry {
     pub fn retain_tree(&self, tree: &crate::RetainedUiTree) -> Result<(), PrimitiveError> {
         let active = collect_primitive_instances(tree);
         self.retain_mounted(&active)
+    }
+
+    pub(crate) fn suspend_mounted(&self, cx: &mut App) -> Result<(), PrimitiveError> {
+        let mut inner = self
+            .inner
+            .try_borrow_mut()
+            .map_err(|_| PrimitiveError::Borrowed)?;
+        let instances = inner.mounted.keys().cloned().collect::<Vec<_>>();
+        let mut first_error = None;
+        for instance in instances {
+            if let Some(entry) = inner.entries.get_mut(&instance.primitive)
+                && let Err(error) = guard_primitive_panic(&instance.primitive, "suspend", || {
+                    entry.handler.suspend(&instance, cx);
+                })
+                && first_error.is_none()
+            {
+                first_error = Some(error);
+            }
+        }
+        first_error.map_or(Ok(()), Err)
+    }
+
+    pub(crate) fn resume_mounted(&self, cx: &mut App) -> Result<(), PrimitiveError> {
+        let mut inner = self
+            .inner
+            .try_borrow_mut()
+            .map_err(|_| PrimitiveError::Borrowed)?;
+        let instances = inner.mounted.keys().cloned().collect::<Vec<_>>();
+        let mut first_error = None;
+        for instance in instances {
+            if let Some(entry) = inner.entries.get_mut(&instance.primitive)
+                && let Err(error) = guard_primitive_panic(&instance.primitive, "resume", || {
+                    entry.handler.resume(&instance, cx);
+                })
+                && first_error.is_none()
+            {
+                first_error = Some(error);
+            }
+        }
+        first_error.map_or(Ok(()), Err)
+    }
+
+    pub(crate) fn commit_resume_mounted(&self, cx: &mut App) -> Result<(), PrimitiveError> {
+        let mut inner = self
+            .inner
+            .try_borrow_mut()
+            .map_err(|_| PrimitiveError::Borrowed)?;
+        let instances = inner.mounted.keys().cloned().collect::<Vec<_>>();
+        let mut first_error = None;
+        for instance in instances {
+            if let Some(entry) = inner.entries.get_mut(&instance.primitive)
+                && let Err(error) =
+                    guard_primitive_panic(&instance.primitive, "commit resume", || {
+                        entry.handler.commit_resume(&instance, cx);
+                    })
+                && first_error.is_none()
+            {
+                first_error = Some(error);
+            }
+        }
+        first_error.map_or(Ok(()), Err)
     }
 
     pub(crate) fn element(
@@ -1420,6 +1612,10 @@ fn convert_prop(
         ValueSchema::Document => Ok(PrimitiveValue::Document(
             value.cast::<crate::NativeTextDocument>(),
         )),
+        #[cfg(feature = "charts")]
+        ValueSchema::ChartData => Ok(PrimitiveValue::ChartData(
+            value.cast::<crate::NativeChartData>(),
+        )),
         _ => UiValue::from_dynamic(value)
             .map(PrimitiveValue::Data)
             .map_err(Into::into),
@@ -1538,12 +1734,22 @@ mod tests {
 
     impl ColorResolver for TestTheme {
         fn resolve(&self, color: &ColorValue) -> Option<Rgba8> {
-            matches!(color, ColorValue::Token(token) if token == "accent")
-                .then(|| Rgba8::from_rgba_hex(0x1234_56ff))
+            match color {
+                ColorValue::Token(token)
+                    if matches!(token.as_str(), "accent" | "selection" | "table.selection") =>
+                {
+                    Some(Rgba8::from_rgba_hex(0x1234_56ff))
+                }
+                _ => None,
+            }
         }
 
         fn resolve_length(&self, length: Length) -> Option<Length> {
-            (length == Length::ThemeSpacing(SpacingToken::Sm)).then_some(Length::Pixels(6.0))
+            match length {
+                Length::ThemeSpacing(SpacingToken::Xxs) => Some(Length::Pixels(2.0)),
+                Length::ThemeSpacing(SpacingToken::Sm) => Some(Length::Pixels(6.0)),
+                _ => None,
+            }
         }
 
         fn resolve_typography(&self, role: &str) -> Option<crate::ResolvedTypography> {
@@ -1579,6 +1785,14 @@ mod tests {
         );
         assert_eq!(theme.color("unknown"), None);
         assert_eq!(
+            theme.color("selection"),
+            Some(Rgba8::from_rgba_hex(0x1234_56ff))
+        );
+        assert_eq!(
+            theme.color("table.selection"),
+            Some(Rgba8::from_rgba_hex(0x1234_56ff))
+        );
+        assert_eq!(
             theme.resolve_color(&ColorValue::Literal(Rgba8::from_rgba_hex(0xaabb_ccdd))),
             Some(Rgba8::from_rgba_hex(0xaabb_ccdd))
         );
@@ -1587,9 +1801,27 @@ mod tests {
             Some(Length::Pixels(6.0))
         );
         assert_eq!(
+            theme.resolve_length(Length::ThemeSpacing(SpacingToken::Xxs)),
+            Some(Length::Pixels(2.0))
+        );
+        assert_eq!(
             theme.typography("body").unwrap().family.as_deref(),
             Some("JetBrains Mono")
         );
+
+        let engine = crate::RuntimeEngine::new();
+        let loaded = crate::load_theme_source(
+            engine.engine(),
+            "default_light.rhai",
+            include_str!("../../../registry/themes/default_light.rhai"),
+        )
+        .unwrap();
+        let captured = PrimitiveTheme::capture(&loaded);
+        assert_eq!(
+            captured.color("table.selection"),
+            loaded.tokens.color("table.selection")
+        );
+        assert!(captured.color("table.selection").is_some());
     }
 
     fn descriptor() -> PrimitiveDescriptor {

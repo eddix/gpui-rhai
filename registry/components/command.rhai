@@ -2,7 +2,7 @@
 {
   "id": "components/command",
   "export": "Command",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": ["components/input", "components/kbd"],
   "capabilities": {}
@@ -20,7 +20,7 @@ import "components/input" as input;
 import "components/kbd" as kbd;
 
 define_component(#{
-    metadata: #{ id: "components/command", "export": "Command", version: "0.1.4",
+    metadata: #{ id: "components/command", "export": "Command", version: "0.1.5",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
         dependencies: ["components/input", "components/kbd"], capabilities: #{} },
     schema: #{
@@ -162,8 +162,8 @@ fn render_command_row(content, ctx, payload) {
     if item.kind == "group" {
         return text(item.label).with_key(payload.key)
             .with_style(ctx.component_style("group", style()
-                .height(px(item.height)).padding_start(px(9)).padding_end(px(9))
-                .padding_top(px(6)).items_center()
+                .height(px(item.height)).padding_start(theme_spacing("sm")).padding_end(theme_spacing("sm"))
+                .padding_top(theme_spacing("xs")).items_center()
                 .typography("caption").font_weight(400).opacity(0.72)
                 .text_color(theme_color("text_muted"))))
             .accessibility_role("heading").accessibility_label(item.label);
@@ -175,7 +175,8 @@ fn render_command_row(content, ctx, payload) {
     }
     let node = row(children).with_key(payload.key)
         .with_style(ctx.component_style(if item.active { "item_active" } else { "item" }, style()
-            .height(px(item.height)).padding_start(px(18)).padding_end(px(9)).gap(px(8)).items_center()
+            .height(px(item.height)).padding_start(theme_spacing("lg"))
+            .padding_end(theme_spacing("sm")).gap(theme_spacing("sm")).items_center()
             .radius(theme_radius("sm"))
             .background(if item.active { theme_color("selection") } else { rgba(0x00000000) })
             .border_start(px(2)).border_color(if item.active { theme_color("accent") } else { rgba(0x00000000) })
@@ -272,7 +273,7 @@ fn render_Command(ctx, props) {
     let body = if data.len == 0 {
         text(prop_or(props, "empty_text", "No commands found"))
             .with_style(ctx.component_style("empty", style()
-                .min_height(px(88)).padding(px(16)).items_center().justify_center()
+                .min_height(px(88)).padding(theme_spacing("lg")).items_center().justify_center()
                 .typography("body_small").text_color(theme_color("text_muted"))))
             .accessibility_role("status")
     } else {
@@ -290,7 +291,7 @@ fn render_Command(ctx, props) {
     };
     let root = column([search, body]).with_key(props.key)
         .with_style(ctx.component_style("root", style()
-            .gap(px(4)).padding(px(4)).radius(theme_radius("md"))
+            .gap(theme_spacing("xs")).padding(theme_spacing("xs")).radius(theme_radius("md"))
             .border(px(1)).border_color(theme_color("border"))
             .background(theme_color("surface"))))
         .tab_stop(false).accessibility_role("listbox").accessibility_label(props.label);

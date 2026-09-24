@@ -93,6 +93,8 @@ pub struct UiRuntimeState {
     pub stores: StoreRegistry,
     pub native_collections: crate::NativeCollectionRegistry,
     pub native_documents: crate::NativeTextDocumentRegistry,
+    #[cfg(feature = "charts")]
+    pub native_chart_data: BTreeMap<String, crate::NativeChartData>,
     pub actions: ActionRegistry,
     pub capabilities: CapabilityRegistry,
     pub tasks: TaskRegistry,
@@ -250,6 +252,34 @@ impl UiRuntimeState {
         let changed = !invalidated.is_empty();
         self.dirty.extend(invalidated);
         Ok(changed)
+    }
+
+    /// Register or replace one Host-owned streaming chart data handle.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `name` is not a safe identifier.
+    #[cfg(feature = "charts")]
+    pub fn register_native_chart_data(
+        &mut self,
+        name: impl Into<String>,
+        data: crate::NativeChartData,
+    ) -> Result<(), UiContextError> {
+        let name = name.into();
+        if name.is_empty()
+            || name.len() > 128
+            || !name
+                .chars()
+                .next()
+                .is_some_and(|character| character.is_ascii_alphabetic())
+            || !name
+                .chars()
+                .all(|character| character.is_ascii_alphanumeric() || character == '_')
+        {
+            return Err(UiContextError::InvalidChartDataName(name));
+        }
+        self.native_chart_data.insert(name, data);
+        Ok(())
     }
 
     /// Replace the active editable theme variant and invalidate mounted
@@ -1632,6 +1662,27 @@ impl UiContext {
         Ok(runtime
             .native_documents
             .read_tracked(&self.component, name)?)
+    }
+
+    /// Read one Host-owned chart data handle. The handle performs its own
+    /// revision notifications, so this read does not create a Rhai rerender
+    /// dependency for every streaming update.
+    ///
+    /// # Errors
+    ///
+    /// Returns a borrow error or an unknown-data diagnostic.
+    #[cfg(feature = "charts")]
+    pub fn get_native_chart_data(
+        &self,
+        name: &str,
+    ) -> Result<crate::NativeChartData, UiContextError> {
+        self.runtime
+            .try_borrow()
+            .map_err(|_| UiContextError::Borrowed)?
+            .native_chart_data
+            .get(name)
+            .cloned()
+            .ok_or_else(|| UiContextError::UnknownChartData(name.to_owned()))
     }
 
     /// Read and subscribe to one exact app-store path.
@@ -3113,6 +3164,8 @@ impl CustomType for UiContext {
         register_state_store_context_methods(&mut builder);
         register_native_collection_context_methods(&mut builder);
         register_native_document_context_methods(&mut builder);
+        #[cfg(feature = "charts")]
+        register_native_chart_data_context_methods(&mut builder);
         register_signal_context_methods(&mut builder);
         register_element_ref_context_methods(&mut builder);
         register_async_context_methods(&mut builder);
@@ -3142,6 +3195,18 @@ fn register_native_document_context_methods(builder: &mut TypeBuilder<UiContext>
         |context: &mut UiContext, name: ImmutableString| {
             context
                 .get_native_text_document(name.as_str())
+                .map_err(|error| Box::new(context_runtime_error(&error)))
+        },
+    );
+}
+
+#[cfg(feature = "charts")]
+fn register_native_chart_data_context_methods(builder: &mut TypeBuilder<UiContext>) {
+    builder.with_fn(
+        "get_native_chart_data",
+        |context: &mut UiContext, name: ImmutableString| {
+            context
+                .get_native_chart_data(name.as_str())
                 .map_err(|error| Box::new(context_runtime_error(&error)))
         },
     );
@@ -4128,6 +4193,12 @@ pub enum UiContextError {
     LocaleUnavailable,
     #[error("no theme manager is configured for this application")]
     ThemeUnavailable,
+    #[cfg(feature = "charts")]
+    #[error("native chart data name `{0}` must be a safe identifier")]
+    InvalidChartDataName(String),
+    #[cfg(feature = "charts")]
+    #[error("native chart data `{0}` is not registered")]
+    UnknownChartData(String),
     #[error("unknown theme motion {category} token `{role}`")]
     UnknownMotionToken {
         category: &'static str,

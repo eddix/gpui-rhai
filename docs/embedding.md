@@ -253,7 +253,22 @@ last-good declarative tree, component state, native primitive entities, input
 selection/undo state, scroll positions, and virtual-list measurements. It
 closes the view's overlays and Layers, releases focus and pointer capture, runs
 the optional `suspend(ctx)` hook, cleans every active declarative effect, and
-freezes declarative timers and Motion.
+freezes declarative timers and Motion. Retained native primitives receive the
+same lifecycle boundary: they quiesce owned subscriptions, timers, background
+candidate installation, and active gestures while retaining committed native
+state. On resume they re-establish subscriptions before reading the latest
+Host-owned revision, so bursts coalesce to one current-state rebuild.
+Native hooks are a prepare phase: all mounted instances are notified even when
+one fails, and successfully changed peers are compensated. A failed suspend
+therefore remains Active and retryable; a failed resume remains Suspended and
+retryable. The public view state changes only after native and script phases
+both succeed. Compensation back to Active executes both native resume prepare
+and `commit_resume`, so two-phase primitives restart subscriptions and activity
+time exactly as they do on an ordinary successful resume.
+If compensation itself fails, the framework quarantines the view by disposing
+it and unmounting every registered primitive. It never reports ordinary
+`Suspended` while a native resource may still be active; the Host must recreate
+that view.
 
 ```rust
 view.suspend(window, cx)?;

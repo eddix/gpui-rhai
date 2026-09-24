@@ -475,9 +475,7 @@ fn inspect_node(node: &UiNode, path: &str) -> InspectorNode {
         UiNodeKind::Box { children } => ("box".to_owned(), children.iter().collect()),
         UiNodeKind::Fragment { children } => ("fragment".to_owned(), children.iter().collect()),
         UiNodeKind::Custom { primitive } => {
-            for (name, value) in primitive.props.iter() {
-                props.insert(name.to_owned(), primitive_value(value));
-            }
+            props = inspect_primitive_props(primitive);
             (
                 format!("primitive:{}", primitive.primitive.as_str()),
                 Vec::new(),
@@ -555,6 +553,76 @@ fn inspect_node(node: &UiNode, path: &str) -> InspectorNode {
             .collect(),
         style: node.style().resolve(&crate::InteractionState::default()),
         children,
+    }
+}
+
+fn inspect_primitive_props(primitive: &crate::PrimitiveNode) -> BTreeMap<String, String> {
+    let props = primitive
+        .props
+        .iter()
+        .map(|(name, value)| (name.to_owned(), primitive_value(value)))
+        .collect();
+    #[cfg(feature = "charts")]
+    {
+        let mut props = props;
+        if primitive.primitive.as_str() == "gpui_rhai.chart" {
+            inspect_chart_primitive(primitive, &mut props);
+        }
+        props
+    }
+    #[cfg(not(feature = "charts"))]
+    {
+        props
+    }
+}
+
+#[cfg(feature = "charts")]
+fn inspect_chart_primitive(primitive: &crate::PrimitiveNode, props: &mut BTreeMap<String, String>) {
+    let Some(crate::PrimitiveValue::Data(spec)) = primitive.props.get("spec") else {
+        return;
+    };
+    let spec = match crate::ChartSpec::from_ui_value(spec) {
+        Ok(spec) => spec,
+        Err(error) => {
+            props.insert("chart_config_error".to_owned(), error.to_string());
+            return;
+        }
+    };
+    let lengths = match primitive.props.get("data") {
+        Some(crate::PrimitiveValue::ChartData(data)) => data
+            .snapshot()
+            .datasets()
+            .map(|(name, dataset)| (name.to_owned(), dataset.len()))
+            .collect::<BTreeMap<_, _>>(),
+        Some(crate::PrimitiveValue::Data(crate::UiValue::Array(rows))) => {
+            BTreeMap::from([("main".to_owned(), rows.len())])
+        }
+        _ => BTreeMap::new(),
+    };
+    let sampling = spec
+        .series
+        .iter()
+        .filter_map(|series| {
+            let source = lengths.get(&series.dataset).copied()?;
+            let explicit = series
+                .transforms
+                .iter()
+                .find_map(|transform| match transform {
+                    crate::ChartTransformSpec::Downsample { threshold, .. } => Some(*threshold),
+                    _ => None,
+                });
+            let target = explicit.or_else(|| {
+                matches!(
+                    series.kind,
+                    crate::ChartSeriesKind::Line | crate::ChartSeriesKind::Area
+                )
+                .then_some(4_000)
+            })?;
+            (source > target).then(|| format!("{}:{target}/{source}", series.key))
+        })
+        .collect::<Vec<_>>();
+    if !sampling.is_empty() {
+        props.insert("chart_sampling_plan".to_owned(), sampling.join(", "));
     }
 }
 
@@ -636,6 +704,8 @@ fn primitive_value(value: &PrimitiveValue) -> String {
             document.revision(),
             document.text().len()
         ),
+        #[cfg(feature = "charts")]
+        PrimitiveValue::ChartData(data) => format!("chart-data@{}", data.revision()),
     }
 }
 

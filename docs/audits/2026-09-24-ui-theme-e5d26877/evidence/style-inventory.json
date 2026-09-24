@@ -1,0 +1,816 @@
+{
+  "summary": {
+    "components": 51,
+    "files_with_literal_spacing": 35,
+    "literal_spacing_lines": 85,
+    "files_using_spacing_tokens": 5,
+    "spacing_token_lines": 11
+  },
+  "components": [
+    {
+      "file": "registry/components/accordion.rhai",
+      "spacing_literals": [
+        {
+          "line": 76,
+          "text": "let trigger_style = style().height(px(32)).padding_x(px(10))"
+        },
+        {
+          "line": 99,
+          "text": ".padding(px(10)).typography(\"body\")));"
+        }
+      ],
+      "spacing_tokens": [],
+      "radius_literals": []
+    },
+    {
+      "file": "registry/components/alert.rhai",
+      "spacing_literals": [
+        {
+          "line": 92,
+          "text": "children.push(column(body).with_style(ctx.component_style(\"body\", style().gap(px(2)).flex_grow())));"
+        },
+        {
+          "line": 95,
+          "text": ".gap(px(6)).items_center())));"
+        },
+        {
+          "line": 98,
+          "text": ".padding(px(10)).gap(px(9)).items_center().radius(theme_radius(\"md\"))"
+        }
+      ],
+      "spacing_tokens": [],
+      "radius_literals": [
+        {
+          "line": 89,
+          "text": ".radius(px(9)).background(alert_color(variant))"
+        }
+      ]
+    },
+    {
+      "file": "registry/components/alert_dialog.rhai",
+      "spacing_literals": [
+        {
+          "line": 73,
+          "text": "content: column(body).with_style(style().gap(px(8))),"
+        }
+      ],
+      "spacing_tokens": [],
+      "radius_literals": []
+    },
+    {
+      "file": "registry/components/avatar.rhai",
+      "spacing_literals": [],
+      "spacing_tokens": [],
+      "radius_literals": [
+        {
+          "line": 76,
+          "text": ".items_center().justify_center().radius(px(size / 2))"
+        },
+        {
+          "line": 85,
+          "text": ".radius(px(4)).border(px(2)).border_color(theme_color(\"surface\"))"
+        }
+      ]
+    },
+    {
+      "file": "registry/components/badge.rhai",
+      "spacing_literals": [
+        {
+          "line": 62,
+          "text": ".padding_x(px(if size == \"sm\" { 4 } else { 6 }))"
+        },
+        {
+          "line": 63,
+          "text": ".padding_y(px(if size == \"sm\" { 0 } else { 1 })).gap(px(4)).items_center()"
+        }
+      ],
+      "spacing_tokens": [],
+      "radius_literals": [
+        {
+          "line": 57,
+          "text": ".width(px(6)).height(px(6)).radius(px(3)).background(badge_color(variant)))));"
+        }
+      ]
+    },
+    {
+      "file": "registry/components/button.rhai",
+      "spacing_literals": [
+        {
+          "line": 174,
+          "text": ".padding_x(px(button_padding(size)))"
+        },
+        {
+          "line": 175,
+          "text": ".padding_y(px(button_vertical_padding(size)))"
+        },
+        {
+          "line": 176,
+          "text": ".gap(px(6))"
+        }
+      ],
+      "spacing_tokens": [],
+      "radius_literals": []
+    },
+    {
+      "file": "registry/components/button_group.rhai",
+      "spacing_literals": [],
+      "spacing_tokens": [],
+      "radius_literals": [
+        {
+          "line": 43,
+          "text": "let item_style = style().radius(px(0));"
+        }
+      ]
+    },
+    {
+      "file": "registry/components/card.rhai",
+      "spacing_literals": [
+        {
+          "line": 44,
+          "text": ".padding_bottom(px(10)).border_bottom(px(1)).border_color(theme_color(\"border\")))));"
+        },
+        {
+          "line": 49,
+          "text": ".padding_top(px(10)).border_top(px(1)).border_color(theme_color(\"border\")))));"
+        },
+        {
+          "line": 53,
+          "text": ".padding(px(14)).gap(px(12)).radius(theme_radius(\"md\"))"
+        }
+      ],
+      "spacing_tokens": [],
+      "radius_literals": []
+    },
+    {
+      "file": "registry/components/checkbox.rhai",
+      "spacing_literals": [
+        {
+          "line": 82,
+          "text": "style().gap(px(8)).items_center().self_start().padding(px(3))"
+        }
+      ],
+      "spacing_tokens": [],
+      "radius_literals": []
+    },
+    {
+      "file": "registry/components/code_viewer.rhai",
+      "spacing_literals": [],
+      "spacing_tokens": [],
+      "radius_literals": []
+    },
+    {
+      "file": "registry/components/collapsible.rhai",
+      "spacing_literals": [
+        {
+          "line": 47,
+          "text": ".min_height(px(32)).padding_x(px(10)).items_center()"
+        },
+        {
+          "line": 63,
+          "text": ".padding(px(10)).typography(\"body\")));"
+        }
+      ],
+      "spacing_tokens": [],
+      "radius_literals": []
+    },
+    {
+      "file": "registry/components/combobox.rhai",
+      "spacing_literals": [
+        {
+          "line": 246,
+          "text": "style().height(px(24)).padding_x(px(10)).items_center()"
+        },
+        {
+          "line": 252,
+          "text": "style().height(px(item.height)).padding_x(px(8))"
+        },
+        {
+          "line": 253,
+          "text": ".items_center().gap(px(8)).typography(\"body\")"
+        },
+        {
+          "line": 367,
+          "text": "trigger_children.push(row(trigger_actions).with_style(style().gap(px(4)).items_center()));"
+        },
+        {
+          "line": 377,
+          "text": ".padding_x(px(10)).gap(px(8)).items_center()"
+        },
+        {
+          "line": 426,
+          "text": ".with_style(ctx.component_style(\"empty\", style().padding(px(8))"
+        },
+        {
+          "line": 440,
+          "text": ".min_width(px(0)).gap(px(4)).padding(px(4))"
+        }
+      ],
+      "spacing_tokens": [],
+      "radius_literals": []
+    },
+    {
+      "file": "registry/components/command.rhai",
+      "spacing_literals": [
+        {
+          "line": 165,
+          "text": ".height(px(item.height)).padding_start(px(9)).padding_end(px(9))"
+        },
+        {
+          "line": 166,
+          "text": ".padding_top(px(6)).items_center()"
+        },
+        {
+          "line": 178,
+          "text": ".height(px(item.height)).padding_start(px(18)).padding_end(px(9)).gap(px(8)).items_center()"
+        },
+        {
+          "line": 275,
+          "text": ".min_height(px(88)).padding(px(16)).items_center().justify_center()"
+        },
+        {
+          "line": 293,
+          "text": ".gap(px(4)).padding(px(4)).radius(theme_radius(\"md\"))"
+        }
+      ],
+      "spacing_tokens": [],
+      "radius_literals": []
+    },
+    {
+      "file": "registry/components/command_dialog.rhai",
+      "spacing_literals": [],
+      "spacing_tokens": [],
+      "radius_literals": []
+    },
+    {
+      "file": "registry/components/context_menu.rhai",
+      "spacing_literals": [],
+      "spacing_tokens": [],
+      "radius_literals": []
+    },
+    {
+      "file": "registry/components/date_picker.rhai",
+      "spacing_literals": [
+        {
+          "line": 232,
+          "text": ".with_style(style().gap(px(4)).items_center())];"
+        },
+        {
+          "line": 235,
+          "text": "let trigger_style = style().width(width).height(px(size)).padding_x(px(10)).gap(px(8))"
+        },
+        {
+          "line": 368,
+          "text": ".height(px(28)).padding_x(px(8)).items_center()"
+        },
+        {
+          "line": 383,
+          "text": ".with_style(ctx.component_style(\"footer\", style().gap(px(4))"
+        },
+        {
+          "line": 384,
+          "text": ".padding_top(px(6)).border_top(px(1)).border_color(theme_color(\"border\")))));"
+        },
+        {
+          "line": 388,
+          "text": "style().width(px(panel_width)).gap(px(4)).padding(theme_spacing(\"sm\"))"
+        }
+      ],
+      "spacing_tokens": [
+        {
+          "line": 290,
+          "text": "style().items_center().justify_between().padding_x(theme_spacing(\"xs\"))));"
+        },
+        {
+          "line": 388,
+          "text": "style().width(px(panel_width)).gap(px(4)).padding(theme_spacing(\"sm\"))"
+        }
+      ],
+      "radius_literals": []
+    },
+    {
+      "file": "registry/components/dialog.rhai",
+      "spacing_literals": [
+        {
+          "line": 98,
+          "text": "style().gap(px(8)).justify_end().padding_top(px(4))"
+        },
+        {
+          "line": 107,
+          "text": ".padding(px(16))"
+        },
+        {
+          "line": 108,
+          "text": ".gap(px(12))"
+        }
+      ],
+      "spacing_tokens": [],
+      "radius_literals": []
+    },
+    {
+      "file": "registry/components/diff_viewer.rhai",
+      "spacing_literals": [],
+      "spacing_tokens": [],
+      "radius_literals": []
+    },
+    {
+      "file": "registry/components/divider.rhai",
+      "spacing_literals": [],
+      "spacing_tokens": [],
+      "radius_literals": []
+    },
+    {
+      "file": "registry/components/empty.rhai",
+      "spacing_literals": [
+        {
+          "line": 61,
+          "text": ".padding_top(px(4)).gap(px(8)).items_center().justify_center())));"
+        },
+        {
+          "line": 64,
+          "text": ".min_height(px(180)).padding(px(24)).gap(px(8)).items_center().justify_center()"
+        }
+      ],
+      "spacing_tokens": [],
+      "radius_literals": [
+        {
+          "line": 45,
+          "text": ".radius(px(20)).background(theme_color(\"surface_raised\"))"
+        }
+      ]
+    },
+    {
+      "file": "registry/components/form_field.rhai",
+      "spacing_literals": [
+        {
+          "line": 76,
+          "text": ".with_style(ctx.component_style(\"root\", style().gap(px(4))))"
+        }
+      ],
+      "spacing_tokens": [],
+      "radius_literals": []
+    },
+    {
+      "file": "registry/components/group_box.rhai",
+      "spacing_literals": [
+        {
+          "line": 45,
+          "text": "column(header).with_style(style().gap(px(2))),"
+        },
+        {
+          "line": 48,
+          "text": ".padding(px(12)).gap(px(10)).radius(theme_radius(\"md\"))"
+        }
+      ],
+      "spacing_tokens": [],
+      "radius_literals": []
+    },
+    {
+      "file": "registry/components/icon.rhai",
+      "spacing_literals": [],
+      "spacing_tokens": [],
+      "radius_literals": []
+    },
+    {
+      "file": "registry/components/icon_button.rhai",
+      "spacing_literals": [
+        {
+          "line": 132,
+          "text": ".padding(px(0))"
+        }
+      ],
+      "spacing_tokens": [],
+      "radius_literals": []
+    },
+    {
+      "file": "registry/components/input.rhai",
+      "spacing_literals": [
+        {
+          "line": 129,
+          "text": ".padding_x(px(10))"
+        }
+      ],
+      "spacing_tokens": [],
+      "radius_literals": []
+    },
+    {
+      "file": "registry/components/input_group.rhai",
+      "spacing_literals": [
+        {
+          "line": 42,
+          "text": ".height(px(30)).padding_start(px(9)).items_center().justify_center()"
+        },
+        {
+          "line": 49,
+          "text": ".height(px(30)).padding_end(px(9)).items_center().justify_center()"
+        }
+      ],
+      "spacing_tokens": [],
+      "radius_literals": [
+        {
+          "line": 46,
+          "text": ".height(px(30)).flex_grow().border(px(0)).radius(px(0)).background(rgba(0x00000000)))));"
+        }
+      ]
+    },
+    {
+      "file": "registry/components/kbd.rhai",
+      "spacing_literals": [
+        {
+          "line": 33,
+          "text": ".min_width(px(20)).height(px(20)).padding_x(px(5)).items_center().justify_center()"
+        }
+      ],
+      "spacing_tokens": [],
+      "radius_literals": []
+    },
+    {
+      "file": "registry/components/label.rhai",
+      "spacing_literals": [
+        {
+          "line": 73,
+          "text": ".with_style(ctx.component_style(\"root\", style().gap(px(3))))"
+        }
+      ],
+      "spacing_tokens": [],
+      "radius_literals": []
+    },
+    {
+      "file": "registry/components/menu.rhai",
+      "spacing_literals": [
+        {
+          "line": 143,
+          "text": "let item_style = style().height(px(28)).padding_x(px(8)).gap(px(8))"
+        },
+        {
+          "line": 173,
+          "text": "style().width(px(240)).padding(px(4)).gap(px(2)).radius(theme_radius(\"md\"))"
+        }
+      ],
+      "spacing_tokens": [],
+      "radius_literals": []
+    },
+    {
+      "file": "registry/components/pagination.rhai",
+      "spacing_literals": [
+        {
+          "line": 161,
+          "text": "style().items_center().padding_x(px(4)))));"
+        }
+      ],
+      "spacing_tokens": [
+        {
+          "line": 186,
+          "text": "style().gap(theme_spacing(\"xs\")).items_center())));"
+        },
+        {
+          "line": 201,
+          "text": "]).with_style(style().gap(theme_spacing(\"xs\")).items_center()"
+        },
+        {
+          "line": 206,
+          "text": ".items_center().justify_between().gap(theme_spacing(\"sm\"))"
+        }
+      ],
+      "radius_literals": []
+    },
+    {
+      "file": "registry/components/popover.rhai",
+      "spacing_literals": [
+        {
+          "line": 93,
+          "text": ".padding(px(10))"
+        },
+        {
+          "line": 94,
+          "text": ".gap(px(8))"
+        }
+      ],
+      "spacing_tokens": [],
+      "radius_literals": []
+    },
+    {
+      "file": "registry/components/progress.rhai",
+      "spacing_literals": [],
+      "spacing_tokens": [],
+      "radius_literals": [
+        {
+          "line": 51,
+          "text": ".height(px(4)).radius(px(0)).background(theme_color(\"accent\"))"
+        },
+        {
+          "line": 65,
+          "text": "style().width(px(width)).height(px(4)).radius(px(0)).clip()"
+        }
+      ]
+    },
+    {
+      "file": "registry/components/radio.rhai",
+      "spacing_literals": [
+        {
+          "line": 58,
+          "text": "style().gap(px(8)).items_center().self_start().padding(px(3))"
+        }
+      ],
+      "spacing_tokens": [],
+      "radius_literals": [
+        {
+          "line": 48,
+          "text": ".width(px(6)).height(px(6)).radius(px(3))"
+        },
+        {
+          "line": 51,
+          "text": "style().width(px(16)).height(px(16)).radius(px(8))"
+        }
+      ]
+    },
+    {
+      "file": "registry/components/radio_group.rhai",
+      "spacing_literals": [
+        {
+          "line": 116,
+          "text": ".with_style(ctx.component_style(\"root\", style().gap(px(4))))"
+        }
+      ],
+      "spacing_tokens": [],
+      "radius_literals": []
+    },
+    {
+      "file": "registry/components/scroll_area.rhai",
+      "spacing_literals": [],
+      "spacing_tokens": [],
+      "radius_literals": []
+    },
+    {
+      "file": "registry/components/select.rhai",
+      "spacing_literals": [],
+      "spacing_tokens": [],
+      "radius_literals": []
+    },
+    {
+      "file": "registry/components/sheet.rhai",
+      "spacing_literals": [
+        {
+          "line": 61,
+          "text": ".padding_top(px(10)).gap(px(8)).justify_end()"
+        },
+        {
+          "line": 64,
+          "text": "let panel_style = style().padding(px(16)).gap(px(12))"
+        }
+      ],
+      "spacing_tokens": [],
+      "radius_literals": []
+    },
+    {
+      "file": "registry/components/skeleton.rhai",
+      "spacing_literals": [],
+      "spacing_tokens": [],
+      "radius_literals": [
+        {
+          "line": 46,
+          "text": ".radius(px(radius))"
+        }
+      ]
+    },
+    {
+      "file": "registry/components/slider.rhai",
+      "spacing_literals": [
+        {
+          "line": 92,
+          "text": ".items_center().justify_between().gap(px(8)))),"
+        },
+        {
+          "line": 94,
+          "text": "]).with_key(props.key).with_style(ctx.component_style(\"root\", style().gap(px(5))))"
+        }
+      ],
+      "spacing_tokens": [],
+      "radius_literals": [
+        {
+          "line": 66,
+          "text": ".radius(px(0)).background(theme_color(\"surface_hover\"))),"
+        },
+        {
+          "line": 68,
+          "text": ".radius(px(0)).background(theme_color(\"accent\"))),"
+        },
+        {
+          "line": 70,
+          "text": ".width(px(14)).height(px(14)).radius(px(7))"
+        }
+      ]
+    },
+    {
+      "file": "registry/components/spinner.rhai",
+      "spacing_literals": [],
+      "spacing_tokens": [],
+      "radius_literals": []
+    },
+    {
+      "file": "registry/components/status_bar.rhai",
+      "spacing_literals": [
+        {
+          "line": 40,
+          "text": ".height(relative(1.0)).items_center().gap(px(6)).overflow_hidden()"
+        },
+        {
+          "line": 52,
+          "text": ".width(relative(1.0)).height(px(24)).padding_x(px(8)).items_center()"
+        }
+      ],
+      "spacing_tokens": [],
+      "radius_literals": []
+    },
+    {
+      "file": "registry/components/switch.rhai",
+      "spacing_literals": [
+        {
+          "line": 62,
+          "text": ".width(px(34)).height(px(18)).padding(px(2)).radius(theme_radius(\"sm\"))"
+        },
+        {
+          "line": 70,
+          "text": "style().gap(px(8)).items_center().self_start().padding(px(3))"
+        }
+      ],
+      "spacing_tokens": [],
+      "radius_literals": [
+        {
+          "line": 54,
+          "text": ".width(px(12)).height(px(12)).radius(px(0))"
+        }
+      ]
+    },
+    {
+      "file": "registry/components/table.rhai",
+      "spacing_literals": [
+        {
+          "line": 192,
+          "text": "style().height(px(item.height)).padding_x(theme_spacing(\"sm\")).gap(px(6))"
+        },
+        {
+          "line": 366,
+          "text": "style().flex_grow().min_width(px(0)).height(relative(1.0)).items_center().gap(px(5)))];"
+        },
+        {
+          "line": 410,
+          "text": ".padding(px(12)).typography(\"body_small\").text_color(theme_color(\"text_muted\"))))])"
+        },
+        {
+          "line": 419,
+          "text": ".padding(px(12)).typography(\"body_small\").text_color(theme_color(\"text_muted\"))))])"
+        }
+      ],
+      "spacing_tokens": [
+        {
+          "line": 124,
+          "text": "let style = style().padding_x(theme_spacing(\"sm\"));"
+        },
+        {
+          "line": 152,
+          "text": "horizontal_padding: theme_spacing(\"sm\"), extra_width: extra_width,"
+        },
+        {
+          "line": 192,
+          "text": "style().height(px(item.height)).padding_x(theme_spacing(\"sm\")).gap(px(6))"
+        }
+      ],
+      "radius_literals": []
+    },
+    {
+      "file": "registry/components/tabs.rhai",
+      "spacing_literals": [
+        {
+          "line": 83,
+          "text": ".gap(px(6)).typography(\"body\").font_weight(500)"
+        },
+        {
+          "line": 92,
+          "text": "tab_style = tab_style.width(relative(1.0)).padding_x(px(10)).justify_start();"
+        },
+        {
+          "line": 94,
+          "text": "tab_style = tab_style.flex_basis(relative(0)).flex_grow().min_width(px(0)).padding_x(px(10));"
+        },
+        {
+          "line": 96,
+          "text": "tab_style = tab_style.width(px(26)).padding_x(px(0));"
+        },
+        {
+          "line": 98,
+          "text": "tab_style = tab_style.padding_x(px(10));"
+        },
+        {
+          "line": 127,
+          "text": "children.push(row(content).with_style(style().relative().items_center().justify_center().gap(px(6))));"
+        },
+        {
+          "line": 141,
+          "text": ".padding(px(12)).border(px(1)).border_color(theme_color(\"border\"))"
+        },
+        {
+          "line": 171,
+          "text": "let root_style = style().gap(px(6)).margin_end(auto());"
+        }
+      ],
+      "spacing_tokens": [
+        {
+          "line": 145,
+          "text": "let list_style = style().relative().padding(theme_spacing(\"xxs\")).gap(theme_spacing(\"xxs\"))"
+        }
+      ],
+      "radius_literals": []
+    },
+    {
+      "file": "registry/components/tag.rhai",
+      "spacing_literals": [
+        {
+          "line": 93,
+          "text": "style().height(px(22)).padding_x(px(6)).gap(px(6)).items_center()"
+        }
+      ],
+      "spacing_tokens": [],
+      "radius_literals": []
+    },
+    {
+      "file": "registry/components/textarea.rhai",
+      "spacing_literals": [],
+      "spacing_tokens": [
+        {
+          "line": 109,
+          "text": ".padding(theme_spacing(\"sm\"))"
+        },
+        {
+          "line": 146,
+          "text": ".with_style(ctx.component_style(\"root\", style().gap(theme_spacing(\"xs\"))))"
+        }
+      ],
+      "radius_literals": []
+    },
+    {
+      "file": "registry/components/title_bar.rhai",
+      "spacing_literals": [
+        {
+          "line": 65,
+          "text": ".flex_grow().min_width(px(0)).gap(px(0)).overflow_hidden()));"
+        },
+        {
+          "line": 69,
+          "text": ".padding_start(px(inset)).items_center().gap(px(8)).overflow_hidden()));"
+        },
+        {
+          "line": 73,
+          "text": ".items_center().justify_center().gap(px(6)).overflow_hidden()));"
+        },
+        {
+          "line": 77,
+          "text": ".items_center().justify_end().gap(px(6)).overflow_hidden()));"
+        },
+        {
+          "line": 80,
+          "text": ".width(relative(1.0)).height(px(34)).padding_x(px(10)).items_center()"
+        }
+      ],
+      "spacing_tokens": [],
+      "radius_literals": []
+    },
+    {
+      "file": "registry/components/toast.rhai",
+      "spacing_literals": [
+        {
+          "line": 105,
+          "text": "style().width(px(320)).gap(px(4)).padding(px(10))"
+        },
+        {
+          "line": 117,
+          "text": ".with_style(ctx.component_style(\"region\", style().width(px(320)).gap(px(6)))),"
+        }
+      ],
+      "spacing_tokens": [],
+      "radius_literals": []
+    },
+    {
+      "file": "registry/components/toggle.rhai",
+      "spacing_literals": [],
+      "spacing_tokens": [],
+      "radius_literals": []
+    },
+    {
+      "file": "registry/components/toggle_group.rhai",
+      "spacing_literals": [],
+      "spacing_tokens": [],
+      "radius_literals": []
+    },
+    {
+      "file": "registry/components/tooltip.rhai",
+      "spacing_literals": [
+        {
+          "line": 53,
+          "text": "style().max_width(px(320)).padding_x(px(7)).padding_y(px(5))"
+        }
+      ],
+      "spacing_tokens": [],
+      "radius_literals": []
+    }
+  ]
+}

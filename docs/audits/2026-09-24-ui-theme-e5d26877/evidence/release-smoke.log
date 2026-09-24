@@ -1,0 +1,61 @@
+    Finished `release` profile [optimized] target(s) in 0.81s
+    Finished `release` profile [optimized] target(s) in 0.31s
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Finished `release` profile [optimized] target(s) in 0.54s
+scripts/release-smoke.sh: line 27: 16841 Terminated: 15          "target/release/examples/${example}" > "${log}" 2>&1
+release smoke passed: artistic_showcase
+scripts/release-smoke.sh: line 27: 16861 Terminated: 15          "target/release/examples/${example}" > "${log}" 2>&1
+release smoke passed: chart_gallery
+scripts/release-smoke.sh: line 27: 16865 Terminated: 15          "target/release/examples/${example}" > "${log}" 2>&1
+release smoke passed: code_viewer
+scripts/release-smoke.sh: line 27: 16869 Terminated: 15          "target/release/examples/${example}" > "${log}" 2>&1
+release smoke passed: component_gallery
+scripts/release-smoke.sh: line 27: 16873 Terminated: 15          "target/release/examples/${example}" > "${log}" 2>&1
+release smoke passed: dashboard_layout
+scripts/release-smoke.sh: line 27: 16877 Terminated: 15          "target/release/examples/${example}" > "${log}" 2>&1
+release smoke passed: data_table
+scripts/release-smoke.sh: line 27: 16886 Terminated: 15          "target/release/examples/${example}" > "${log}" 2>&1
+release smoke passed: diff_viewer
+scripts/release-smoke.sh: line 27: 16891 Terminated: 15          "target/release/examples/${example}" > "${log}" 2>&1
+release smoke passed: embedded_hello_world
+scripts/release-smoke.sh: line 27: 16895 Terminated: 15          "target/release/examples/${example}" > "${log}" 2>&1
+release smoke passed: embedded_views
+scripts/release-smoke.sh: line 27: 16899 Terminated: 15          "target/release/examples/${example}" > "${log}" 2>&1
+release smoke passed: extension_host
+scripts/release-smoke.sh: line 27: 16903 Terminated: 15          "target/release/examples/${example}" > "${log}" 2>&1
+release smoke passed: form_showcase
+scripts/release-smoke.sh: line 27: 16907 Terminated: 15          "target/release/examples/${example}" > "${log}" 2>&1
+release smoke passed: hello_world
+scripts/release-smoke.sh: line 27: 16911 Terminated: 15          "target/release/examples/${example}" > "${log}" 2>&1
+release smoke passed: host_owned_tree
+scripts/release-smoke.sh: line 27: 16915 Terminated: 15          "target/release/examples/${example}" > "${log}" 2>&1
+release smoke passed: mini_timeline
+scripts/release-smoke.sh: line 27: 16919 Terminated: 15          "target/release/examples/${example}" > "${log}" 2>&1
+release smoke passed: motion_gallery
+scripts/release-smoke.sh: line 27: 16923 Terminated: 15          "target/release/examples/${example}" > "${log}" 2>&1
+release smoke passed: multi_window
+scripts/release-smoke.sh: line 27: 16927 Terminated: 15          "target/release/examples/${example}" > "${log}" 2>&1
+release smoke passed: native_overlay_smoke
+scripts/release-smoke.sh: line 27: 16931 Terminated: 15          "target/release/examples/${example}" > "${log}" 2>&1
+release smoke passed: native_virtual_list_smoke
+release smoke passed: performance_probe
+scripts/release-smoke.sh: line 27: 16938 Terminated: 15          "target/release/examples/${example}" > "${log}" 2>&1
+release smoke passed: phase0_probe
+scripts/release-smoke.sh: line 27: 16942 Terminated: 15          "target/release/examples/${example}" > "${log}" 2>&1
+release smoke passed: settings_panel
+scripts/release-smoke.sh: line 27: 16946 Terminated: 15          "target/release/examples/${example}" > "${log}" 2>&1
+release smoke passed: table_1000
+scripts/release-smoke.sh: line 27: 16950 Terminated: 15          "target/release/examples/${example}" > "${log}" 2>&1
+release smoke passed: variable_height_chat
+scripts/release-smoke.sh: line 56: 16954 Terminated: 15          GPUI_RHAI_THEME_STUDIO=1 target/release/gpui-rhai > "${theme_studio_log}" 2>&1
+release smoke passed: theme studio
+scripts/release-smoke.sh: line 84: 16957 Terminated: 15          GPUI_RHAI_VISUAL_STATE="${state}" "target/release/examples/data_table" > "${log}" 2>&1
+release smoke passed: data_table selected
+scripts/release-smoke.sh: line 84: 16963 Terminated: 15          GPUI_RHAI_VISUAL_STATE="${state}" "target/release/examples/data_table" > "${log}" 2>&1
+release smoke passed: data_table loading
+scripts/release-smoke.sh: line 84: 16967 Terminated: 15          GPUI_RHAI_VISUAL_STATE="${state}" "target/release/examples/data_table" > "${log}" 2>&1
+release smoke passed: data_table empty
+scripts/release-smoke.sh: line 84: 16971 Terminated: 15          GPUI_RHAI_VISUAL_STATE="${state}" "target/release/examples/data_table" > "${log}" 2>&1
+release smoke passed: data_table grouped

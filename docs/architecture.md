@@ -221,11 +221,19 @@ The only required function is `view(ctx)`. `init(ctx)`, `suspend(ctx)`,
 calls made during `view`. A suspended lifecycle is a fully retained tombstone:
 state, tree, native entities, scroll/input state, and measurements remain, while
 effects are cleaned, subscriptions and effect tasks are cancelled, timers and
-motion freezes, presentation layers close, and event/Rhai execution stops.
+motion freezes, retained primitive lifecycle hooks quiesce native subscriptions
+and gestures, presentation layers close, and event/Rhai execution stops.
 Resume applies bounded current-generation completions, invokes the hook,
 reconciles once, then starts fresh effect activations in one rollback-safe
-transaction. A candidate hot-reload generation migrates through that same
-resume transaction; stale-generation completions are discarded.
+transaction. Native primitive subscriptions resume from the latest Host-owned
+revision rather than replaying every suspended update. A candidate hot-reload
+generation migrates through that same resume transaction; stale-generation
+completions are discarded.
+
+Native primitive lifecycle hooks run as a compensated prepare phase. A hook
+failure does not short-circuit later instances, expose a mixed public state, or
+prevent a real retry. Compensation failure is terminal: the view is disposed
+and all registered primitive resources are unmounted.
 
 During development, a polling filesystem watcher feeds a dependency graph.
 Changed modules and their transitive dependants are compiled transactionally.
@@ -348,6 +356,25 @@ per-line Rhai callback. Diff uses neutral left/right semantics and keeps patch
 direction an explicit copy command rather than application policy.
 
 Short-lived render elements never enter persistent runtime state.
+
+## Native visualization scenes
+
+The optional Chart Runtime is a retained native mechanism parallel to Canvas
+and native documents, not a privileged opaque component family. Rhai or Rust
+provides a typed Chart specification plus small row data or a revisioned
+`NativeChartData` handle. Background-safe Rust transforms and sampling produce
+immutable typed series data; foreground layout produces one prepared scene
+consumed by paint, hit testing, keyboard semantics, linked interaction,
+Inspector diagnostics, and static export. Streaming notifications coalesce to
+the latest revision and never carry Rhai `Dynamic`, `FnPtr`, or Engine state.
+
+Source-owned `charts/chart` adapters invoke the same public lifecycle primitive
+available to applications. Trusted compile-time Host extensions may add a
+transform, formatter, geo projection/source, or series renderer, but returned
+marks re-enter the common validation and budget boundary. Map data, network
+access, geocoding, arbitrary Rhai per-mark rendering, dynamic plugins, and 3D
+are outside this layer. See [ADR 0021](adr/0021-chart-runtime.md) and the
+[Chart guide](charts.md).
 
 Window width is reduced to a configurable `compact`/`regular`/`wide` class.
 Crossing a breakpoint reruns `view`; ordinary resizing remains native GPUI

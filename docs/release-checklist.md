@@ -55,3 +55,13 @@ budgets together. Version 0.1.4 stays on Runtime API 2; additionally verify
 background SVG preparation and fonts/color cascade, bounded variant-cache
 eviction, HostSlot cross-Host framing, adaptive overlay widths, IconButton
 selected semantics, and inherited motion-group replay.
+Version 0.1.5 also stays on Runtime API 2. Verify default and `charts` feature
+contracts independently; all built-in series/coordinates, every theme and
+locale direction, normal/reduced/none motion, Host token overrides, 10k
+interactive and 100k streaming/downsampled paths, malformed data, GeoJSON/SVG
+maps, linked interaction, custom Rust extensions, terminal SVG/PNG export,
+Chart Gallery release smoke, and `gpui-rhai-chart-e2e-v2` together. Do not add
+boundary datasets or network/geocoding authority to the release package.
+Also verify custom namespace colors through ordinary/native/virtual snapshots,
+non-default spacing/radius and enlarged typography, bundled Tabs contrast,
+theme-scaled registry components, and matching native/export Chart typography.

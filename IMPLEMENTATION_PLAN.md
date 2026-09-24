@@ -13,6 +13,8 @@ Constraints that apply to every section:
   `0.1.3` is the deliberate Runtime API 2 break for generic Motion;
 - treat `0.1.4` as the Runtime API 2 hardening release for SVG rendering,
   HostSlot composition, adaptive overlays, and incremental motion presentation;
+- treat `0.1.5` as the completed native Chart Runtime and theme-consistency
+  release while retaining Runtime API 2;
 - accept destructive Rust/Rhai/schema/registry migration;
 - add no compatibility shim, deprecated alias, dual path, or downstream app
   adapter;
@@ -485,3 +487,86 @@ rustdoc, package, release build, and checked-in visual baseline audits pass.
 - Treat the generic motion/property-source system as the principal `0.1.3`
   product workstream. Component-specific animation shortcuts are not part of
   the 0.1.2 freeze.
+
+## 14. Workstream K: 0.1.5 native Chart Runtime
+
+ADR 0021 is the complete product contract. These are internal dependency
+stages, not independently supported preview APIs.
+
+### K1. Host preferences and chart feature boundary
+
+- Finish #68 with validated Host token overrides across file, embedded, every
+  variant, selection, and hot reload.
+- Add the optional `charts` Cargo feature and keep chart code unavailable when
+  disabled.
+- Define the `charts.*` theme namespace and install accessible defaults without
+  forcing existing third-party themes to migrate.
+
+### K2. Typed data and preparation
+
+- Implement typed columnar datasets, null bitmaps, dimension schemas, encodes,
+  stable series/datum identity, and bounded diagnostics.
+- Add Rust-owned NativeChartData snapshots and versioned replace/append/sliding
+  updates with display-frame coalescing.
+- Implement native transforms and cancellation/generation-safe background
+  preparation. Add Host transform registration without Rhai values crossing
+  threads.
+
+### K3. Scales, coordinates, and scene
+
+- Implement linear/log/category/time scales, conventional ticks and explicit
+  axis direction/timezone.
+- Implement named Cartesian2D, Polar, and Geo2D regions and shared layout for
+  title, legend, axes, plot areas, annotations, and tooltips.
+- Produce one immutable prepared scene consumed by painting, hit testing,
+  semantics, automation, Inspector, and export.
+- Add Host-registered GeoJSON/SVG maps and projection registration with no
+  bundled map data or network access.
+
+### K4. Series and motion
+
+- Implement Bar/Stacked Bar, Line/Area, Scatter, Pie/Donut, Heatmap,
+  Map/Choropleth, GeoScatter, GeoLines, Candlestick, Radar, Gauge, and Funnel.
+- Reuse Motion Runtime time/easing/spring/quality/reduced-motion policy through
+  one aggregate chart resource and deterministic datum identity.
+- Implement update/enter/exit interpolation, path progress/morph, visual-value
+  transitions, and bounded mark budgets.
+
+### K5. Interaction, accessibility, and linkage
+
+- Implement native hover, tooltip, crosshair, zoom/pan, legend, selection,
+  Cartesian/Geo brush, and keyboard navigation.
+- Emit bounded semantic events and keep pointer/wheel hot paths native.
+- Implement explicit-domain chart link groups for crosshair, zoom, selection,
+  and highlight synchronization.
+- Expose semantic summaries, focused/selected/visible projections, non-color
+  encodings, and Host data-table fallback hooks.
+
+### K6. Extensions, export, and source components
+
+- Add compile-time Rust custom series/transform/projection registration over
+  public chart services.
+- Export prepared terminal scenes to SVG and PNG through Host-only APIs.
+- Build high-level source components and CLI installation metadata without
+  private runtime privileges.
+
+### K7. Gallery and certification
+
+- Build a real mounted Chart Gallery/Studio with mixed coordinates and all
+  series types.
+- Cover every bundled theme, Host overrides, light/dark, viewport sizes,
+  locale/RTL, reduced/none motion, bad data, export, and accessibility.
+- Establish end-to-end 10k interactive and 100k streaming/downsampled
+  benchmarks including reconcile, layout, paint, interaction, and memory.
+- Run workspace/native tests, strict Clippy, rustdoc, packaging, release smoke,
+  and macOS visual/interaction acceptance before publishing 0.1.5.
+
+**K gate:** every consumer observes the same prepared scene and original datum
+identity; no per-frame/per-datum Rhai execution exists; invalid candidates keep
+the last-good scene; Chart Gallery and dogfooding acceptance pass as a complete
+0.1.5 surface.
+
+Status: complete for 0.1.5. Independent viewport, lifecycle, numerical,
+theme/UI and release reviews are archived under `docs/audits/2026-09-23-*` and
+`docs/audits/2026-09-24-*`. Graph/hierarchy/flow layouts, editable marks,
+freehand lasso and 3D/Globe remain separate future workstreams.

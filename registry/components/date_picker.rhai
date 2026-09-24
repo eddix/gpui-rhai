@@ -2,7 +2,7 @@
 {
   "id": "components/date_picker",
   "export": "DatePicker",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": [],
   "capabilities": {},
@@ -16,7 +16,7 @@
 
 define_component(#{
     metadata: #{
-        id: "components/date_picker", "export": "DatePicker", version: "0.1.4",
+        id: "components/date_picker", "export": "DatePicker", version: "0.1.5",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
         dependencies: [], capabilities: #{},
         assets: ["icons/calendar.svg", "icons/date_previous.svg", "icons/date_next.svg", "icons/close.svg"],
@@ -229,10 +229,10 @@ fn render_DatePicker(ctx, props) {
             .text_color(theme_color("text_muted"))))
         .accessibility_role("image").accessibility_label(ctx.t("calendar.open")));
     let trigger_children = [trigger_value, row(trigger_actions)
-        .with_style(style().gap(px(4)).items_center())];
+            .with_style(style().gap(theme_spacing("xs")).items_center())];
     let trigger_border = if error { theme_color("danger") }
         else if open { theme_color("focus_ring") } else { theme_color("border") };
-    let trigger_style = style().width(width).height(px(size)).padding_x(px(10)).gap(px(8))
+    let trigger_style = style().width(width).height(px(size)).padding_x(theme_spacing("sm")).gap(theme_spacing("sm"))
         .items_center().border(px(1)).border_color(trigger_border)
         .radius(theme_radius("md"))
         .background(if open { theme_color("surface_raised") } else { theme_color("surface") })
@@ -365,7 +365,7 @@ fn render_DatePicker(ctx, props) {
             || !date_enabled(preset.value, min_date, max_date);
         let preset_node = text(preset.label).with_key(`preset-${preset.value}`)
             .with_style(ctx.component_style("preset", style()
-                .height(px(28)).padding_x(px(8)).items_center()
+                    .height(px(28)).padding_x(theme_spacing("sm")).items_center()
                 .typography("body_small").border(px(1)).border_color(theme_color("border"))
                 .radius(theme_radius("sm")).hover(style().background(theme_color("surface_hover")))
                 .disabled(style().opacity(0.55))))
@@ -380,12 +380,12 @@ fn render_DatePicker(ctx, props) {
     let panel_children = [header, weekdays, grid];
     if footer_nodes.len > 0 {
         panel_children.push(row(footer_nodes)
-            .with_style(ctx.component_style("footer", style().gap(px(4))
-                .padding_top(px(6)).border_top(px(1)).border_color(theme_color("border")))));
+            .with_style(ctx.component_style("footer", style().gap(theme_spacing("xs"))
+                .padding_top(theme_spacing("xs")).border_top(px(1)).border_color(theme_color("border")))));
     }
     let panel = column(panel_children).with_key(`${props.key}-panel`)
         .with_style(ctx.component_style("panel",
-            style().width(px(panel_width)).gap(px(4)).padding(theme_spacing("sm"))
+            style().width(px(panel_width)).gap(theme_spacing("xs")).padding(theme_spacing("sm"))
                 .border(px(1)).border_color(theme_color("border"))
                 .radius(theme_radius("md")).background(theme_color("surface"))
                 .typography("body")

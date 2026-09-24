@@ -2,7 +2,7 @@
 {
   "id": "components/alert_dialog",
   "export": "AlertDialog",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": ["components/button", "components/dialog"],
   "capabilities": {}
@@ -19,7 +19,7 @@ import "components/button" as button;
 import "components/dialog" as dialog;
 
 define_component(#{
-    metadata: #{ id: "components/alert_dialog", "export": "AlertDialog", version: "0.1.4",
+    metadata: #{ id: "components/alert_dialog", "export": "AlertDialog", version: "0.1.5",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
         dependencies: ["components/button", "components/dialog"], capabilities: #{} },
     schema: #{
@@ -70,7 +70,7 @@ fn render_AlertDialog(ctx, props) {
         on_click: Fn("confirm_action") })
         .with_style(ctx.component_style("confirm", style()));
     dialog::Dialog(#{ key: props.key, open: props.open, title: props.title,
-        content: column(body).with_style(style().gap(px(8))),
+        content: column(body).with_style(style().gap(theme_spacing("sm"))),
         actions: [cancel, confirm], initial_focus: "first", on_open_change: Fn("open_action") })
         .with_style(ctx.component_style("root", style()))
 }

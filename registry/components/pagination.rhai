@@ -2,7 +2,7 @@
 {
   "id": "components/pagination",
   "export": "Pagination",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": ["components/button", "components/icon", "components/select"],
   "capabilities": {},
@@ -21,7 +21,7 @@ import "components/icon" as icon;
 import "components/select" as select;
 
 define_component(#{
-    metadata: #{ id: "components/pagination", "export": "Pagination", version: "0.1.4",
+    metadata: #{ id: "components/pagination", "export": "Pagination", version: "0.1.5",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
         dependencies: ["components/button", "components/icon", "components/select"], capabilities: #{},
         assets: ["icons/chevron_left.svg", "icons/chevron_right.svg"] },
@@ -158,7 +158,7 @@ fn render_Pagination(ctx, props) {
     ) {
         if page == 0 {
             controls.push(row([text("…")]).with_style(ctx.component_style("ellipsis",
-                style().items_center().padding_x(px(4)))));
+            style().items_center().padding_x(theme_spacing("xs")))));
         } else {
             controls.push(page_button(ctx, page, props.current_page, props.page_size, size, callback));
         }

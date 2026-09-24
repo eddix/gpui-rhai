@@ -1,0 +1,22 @@
+   Compiling gpui-rhai v0.1.5 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai)
+   Compiling gpui-rhai-performance-tests v0.0.0 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/performance)
+    Finished `release` profile [optimized] target(s) in 1m 33s
+     Running tests/e2e.rs (tests/performance/target/release/deps/e2e-6470c72ff16f4825)
+
+running 1 test
+test chart_end_to_end_baseline ... {
+  "schema": "gpui-rhai-chart-e2e-v2",
+  "points": 100000,
+  "prepare_us": 138500,
+  "mount_first_frame_us": 129779,
+  "resize_p50_us": 27001,
+  "resize_p95_us": 28161,
+  "streaming_p50_us": 83803,
+  "streaming_p95_us": 96240,
+  "retained_nodes": 53,
+  "rhai_operations_after_stream": 0
+}
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 4.36s
+

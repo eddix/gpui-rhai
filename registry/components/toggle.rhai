@@ -2,7 +2,7 @@
 {
   "id": "components/toggle",
   "export": "Toggle",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": ["components/button"],
   "capabilities": {}
@@ -18,7 +18,7 @@
 import "components/button" as button;
 
 define_component(#{
-    metadata: #{ id: "components/toggle", "export": "Toggle", version: "0.1.4",
+    metadata: #{ id: "components/toggle", "export": "Toggle", version: "0.1.5",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
         dependencies: ["components/button"], capabilities: #{} },
     schema: #{

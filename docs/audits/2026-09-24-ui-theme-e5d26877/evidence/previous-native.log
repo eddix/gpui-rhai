@@ -1,0 +1,174 @@
+     Locking 104 packages to latest Rust 1.94.0 compatible versions
+      Adding addr2line v0.25.1
+      Adding as-raw-xcb-connection v1.0.1
+      Adding ash v0.38.0+1.3.281
+      Adding ash-window v0.13.0
+      Adding ashpd v0.11.1
+      Adding backtrace v0.3.76
+      Adding blade-graphics v0.7.1
+      Adding blade-macros v0.3.0
+      Adding blade-util v0.3.0
+      Adding block2 v0.6.2
+      Adding bytemuck_derive v1.12.0
+      Adding calloop-wayland-source v0.3.0
+      Adding cocoa v0.25.0
+      Adding cocoa-foundation v0.1.2
+      Adding core-graphics v0.23.2
+      Adding core-graphics-helmer-fork v0.24.0
+      Adding cosmic-text v0.14.2
+      Adding dispatch v0.2.0
+      Adding dispatch2 v0.3.1
+      Adding downcast-rs v1.2.1
+      Adding filedescriptor v0.8.3
+      Adding font-types v0.12.4
+      Adding fontdb v0.16.2
+      Adding gethostname v1.1.0
+      Adding gimli v0.32.3
+      Adding git2 v0.20.4
+      Adding glow v0.16.0
+      Adding gpu-alloc v0.6.2
+      Adding gpu-alloc-ash v0.7.1
+      Adding gpu-alloc-types v0.3.1
+      Adding hashbrown v0.14.5
+      Adding hidden-trait v0.1.2
+      Adding is-docker v0.2.0
+      Adding is-wsl v0.4.0
+      Adding khronos-egl v6.0.0
+      Adding libgit2-sys v0.18.8+1.9.7
+      Adding libz-sys v1.1.29
+      Adding mint v0.5.9
+      Adding ntapi v0.4.3
+      Adding objc-foundation v0.1.1
+      Adding objc2 v0.6.4
+      Adding objc2-app-kit v0.3.2
+      Adding objc2-core-foundation v0.3.2
+      Adding objc2-encode v4.1.0
+      Adding objc2-foundation v0.3.2
+      Adding objc2-metal v0.3.2
+      Adding objc2-quartz-core v0.3.2
+      Adding objc2-ui-kit v0.3.2
+      Adding objc_exception v0.1.2
+      Adding objc_id v0.1.1
+      Adding object v0.37.3
+      Adding open v5.4.2
+      Adding quick-xml v0.41.0
+      Adding rangemap v1.8.0
+      Adding raw-window-metal v0.4.0
+      Adding read-fonts v0.41.0
+      Adding rustc-demangle v0.1.28
+      Adding rustybuzz v0.14.1
+      Adding scoped-tls v1.0.1
+      Adding screencapturekit v0.2.8
+      Adding screencapturekit-sys v0.2.8
+      Adding self_cell v1.3.0
+      Adding skrifa v0.44.0
+      Adding smol_str v0.2.2
+      Adding spirv v0.3.0+sdk-1.3.268.0
+      Adding swash v0.2.10
+      Adding syn v1.0.109
+      Adding sys-locale v0.3.2
+      Adding sysinfo v0.31.4
+      Adding tao-core-video-sys v0.2.0
+      Adding ttf-parser v0.20.0
+      Adding ttf-parser v0.21.1
+      Adding unicode-bidi-mirroring v0.2.0
+      Adding unicode-ccc v0.2.0
+      Adding unicode-linebreak v0.1.5
+      Adding vcpkg v0.2.15
+      Adding wayland-backend v0.3.17
+      Adding wayland-client v0.31.15
+      Adding wayland-cursor v0.31.14
+      Adding wayland-protocols v0.31.2
+      Adding wayland-protocols v0.32.13
+      Adding wayland-protocols-plasma v0.2.0
+      Adding wayland-scanner v0.31.11
+      Adding wayland-sys v0.31.11
+      Adding windows v0.57.0
+      Adding windows-capture v1.5.0
+      Adding windows-core v0.57.0
+      Adding windows-implement v0.57.0
+      Adding windows-interface v0.57.0
+      Adding windows-result v0.1.2
+      Adding x11 v2.21.0
+      Adding x11-clipboard v0.9.3
+      Adding x11rb v0.13.2
+      Adding x11rb-protocol v0.13.2
+      Adding xcb v1.7.1
+      Adding xcursor v0.3.11
+      Adding xim-ctext v0.3.0
+      Adding xim-parser v0.2.2
+      Adding xkbcommon v0.8.0
+      Adding xkeysym v0.2.1
+      Adding yazi v0.2.1
+      Adding zed-scap v0.0.8-zed
+      Adding zed-xim v0.4.0-zed
+      Adding zeno v0.3.3
+   Compiling gpui-rhai v0.1.5 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai)
+   Compiling chart-acceptance-native-42afce01 v0.0.0 (/var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T/chart-core-native-fihro7h4)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 22.40s
+     Running tests/review.rs (tests/native-keyboard/target/debug/deps/review-149657c684ceb719)
+
+running 18 tests
+
+thread 'failed_compensation_does_not_claim_quiescent_view' (45573558) panicked at /Users/eddix/Codes/github.com/eddix/gpui-rhai/docs/audits/2026-09-23-charts-e09b5b2f/core-review-a31da5a8/native-probes.rs:128:13:
+injected native resume failure
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+thread 'failed_compensation_does_not_claim_quiescent_view' (45573558) panicked at /Users/eddix/Codes/github.com/eddix/gpui-rhai/docs/audits/2026-09-23-charts-e09b5b2f/core-review-a31da5a8/native-probes.rs:121:13:
+injected native suspend failure
+COMPENSATION_FAILURE result=Err(Resume("native primitive resume failed: primitive `PrimitiveId(\"audit.p1\")` panicked during resume; compensation failed: primitive `PrimitiveId(\"audit.p0\")` panicked during suspend")) view_state=Disposed active=[false, false, false]
+test failed_compensation_does_not_claim_quiescent_view ... ok
+
+thread 'compensation_commit_failure_disposes_chart_resources' (45573557) panicked at tests/review.rs:50:9:
+injected compensation commit failure
+COMPENSATION_COMMIT_FAILURE result=Err(Suspend("failed to evaluate Rhai UI source: Runtime error: injected script suspend failure (line 1, position 48); native rollback failed: primitive `PrimitiveId(\"zz_lifecycle.commit_bomb\")` panicked during commit resume")) state=Disposed unmounted=true layouts_before=1 layouts_after=1
+test compensation_commit_failure_disposes_chart_resources ... ok
+SCRIPT_SUSPEND_ROLLBACK_STREAM result=Err(Lifecycle(Runtime(Evaluate(ErrorRuntime("injected script suspend failure", 1:48))))) view=Active before=1 wanted=2 presented=2 layouts=2
+test failed_script_suspend_restores_chart_streaming_in_active_view ... ok
+FROZEN_MOTION start=ChartPoint { x: 92.0, y: 102.0 } terminal=ChartPoint { x: 292.0, y: 102.0 } hits_before=1 hits_after_old=2 hits_after_terminal=2
+test chart_motion_freezes_across_suspension ... ok
+
+thread 'failed_resume_does_not_consume_chart_motion_time' (45573559) panicked at /Users/eddix/Codes/github.com/eddix/gpui-rhai/docs/audits/2026-09-23-charts-e09b5b2f/core-review-a31da5a8/native-probes.rs:479:13:
+injected slow native resume failure
+CANCELLED_PREVIEW committed=ChartPoint { x: 116.8, y: 148.0 } preview=ChartPoint { x: 165.39999999999998, y: 148.0 } committed_hits=2 preview_hits=2 layouts=3
+
+thread 'failed_suspend_restores_chart_streaming_in_active_view' (45573577) panicked at /Users/eddix/Codes/github.com/eddix/gpui-rhai/docs/audits/2026-09-23-charts-e09b5b2f/core-review-a31da5a8/native-probes.rs:121:13:
+injected native suspend failure
+test canceling_preview_invalidates_presented_viewport ... ok
+SUSPEND_ROLLBACK_STREAM result=Err(Suspend("native primitive suspend failed: primitive `PrimitiveId(\"audit.p1\")` panicked during suspend")) view=Active before=1 wanted=2 presented=2 layouts=2
+GEO_LINK source_hits|target_hits|zoom=1|1|2.718281828459045
+FAILED_RESUME_MOTION failed=Err(Resume("native primitive resume failed: primitive `PrimitiveId(\"zz_lifecycle.clock_bomb\")` panicked during resume")) hits_at_frozen=2 hits_after_target=2
+test failed_resume_does_not_consume_chart_motion_time ... ok
+test failed_suspend_restores_chart_streaming_in_active_view ... ok
+
+thread 'native_suspend_failure_does_not_skip_later_resources' (45573583) panicked at /Users/eddix/Codes/github.com/eddix/gpui-rhai/docs/audits/2026-09-23-charts-e09b5b2f/core-review-a31da5a8/native-probes.rs:121:13:
+injected native suspend failure
+GEO_LINK_RESUME before=1|1|2.718281828459045 after=1|1|2.718281828459045
+SUSPEND_HOOK_FAILURE result=Err(Suspend("native primitive suspend failed: primitive `PrimitiveId(\"audit.p1\")` panicked during suspend")) state=Active active=[true, true, true] retry=Ok(true) suspend_calls=[2, 2, 2]
+
+thread 'native_resume_failure_remains_suspended_and_retryable' (45573582) panicked at /Users/eddix/Codes/github.com/eddix/gpui-rhai/docs/audits/2026-09-23-charts-e09b5b2f/core-review-a31da5a8/native-probes.rs:128:13:
+injected native resume failure
+RESUME_HOOK_FAILURE result=Err(Resume("native primitive resume failed: primitive `PrimitiveId(\"audit.p1\")` panicked during resume")) state_after=Suspended active_after=[false, false, false] retry=Ok(true) resume_calls=[2, 2, 2]
+test native_resume_failure_remains_suspended_and_retryable ... ok
+test acknowledged_geo_link_survives_suspend_resume ... ok
+test native_suspend_failure_does_not_skip_later_resources ... ok
+GEO_SIZED round=0 source_plot=ChartRect { x: 52.0, y: 52.0, width: 304.0, height: 192.0 } target_plot=ChartRect { x: 52.0, y: 52.0, width: 184.0, height: 132.0 } expected=ChartPoint { x: 118.31578947368422, y: 123.25 } hits=1
+LINKED_XY source=((31.606027941427882, 68.39397205857212), (31.606027941427882, 68.39397205857212)) target=((31.606027941427882, 68.39397205857212), (31.606027941427882, 68.39397205857212))
+test linked_cartesian_windows_align_both_axes_with_different_full_domains ... ok
+GEO_LINK source_hits|target_hits|zoom=1|1|2.718281828459045
+PREPARED_NOT_PRESENTED ticks=6 old=1 wanted=2 before_suspend=1 after_resume=2 layouts=3
+test geo_link_group_synchronizes_acknowledged_viewport ... ok
+test resume_finishes_a_prepared_but_unpresented_revision ... ok
+GEO_SIZED round=1 source_plot=ChartRect { x: 52.0, y: 52.0, width: 304.0, height: 192.0 } target_plot=ChartRect { x: 52.0, y: 52.0, width: 324.0, height: 132.0 } expected=ChartPoint { x: 145.94736842105263, y: 123.25 } hits=2
+RESIZE_PREVIEW initial=(0.0, 100.0) preview=(19.67346701436833, 80.32653298563167) resized=(19.67346701436833, 80.32653298563167) committed=(19.67346701436833, 80.32653298563167)
+test resize_keeps_an_active_unlinked_preview ... ok
+test geo_camera_pan_uses_plot_size_before_and_after_target_resize ... ok
+LINKED_TARGET_GESTURE linked=(31.606027941427882, 68.39397205857212) preview=(38.84349199257851, 61.15650800742149) committed=(38.84349199257851, 61.15650800742149) source=(38.84349199257851, 61.15650800742149)
+test linked_target_can_zoom_in_from_its_displayed_window ... ok
+GROUP_VERSION a=(19.67346701436833, 80.32653298563167) b=(31.606027941427882, 68.39397205857212) before=(19.67346701436833, 80.32653298563167) after=(31.606027941427882, 68.39397205857212)
+test changing_link_group_does_not_alias_same_numeric_version ... ok
+SOURCE_UNMOUNT target=(0.0, 100.0)
+test source_unmount_releases_its_link_projection ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.11s
+

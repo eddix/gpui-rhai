@@ -31,9 +31,9 @@ use crate::{
     NodeEventDispatcher, PrimitiveRegistry, ResponsiveError, ResponsiveRuntime,
     RestrictedModuleResolver, RuntimeEngine, RuntimeError, ScriptCallback, ScriptLifecycle,
     ScriptSource, ScriptWindowSpec, SystemAppearance, TextDirection, ThemeManager, ThemeSelection,
-    ThemeSnapshot, ThemeVariant, UiRuntimeState, UiValue, ViewportBreakpoints, WindowCommand,
-    WindowCommandPolicy, init_text_area, init_text_input, load_component_styles,
-    load_locale_source, load_theme_source,
+    ThemeSnapshot, ThemeTokenOverrides, ThemeVariant, UiRuntimeState, UiValue, ViewportBreakpoints,
+    WindowCommand, WindowCommandPolicy, init_text_area, init_text_input, load_component_styles,
+    load_locale_source,
 };
 
 #[cfg(feature = "dev-reload")]
@@ -913,7 +913,8 @@ impl ScriptViewHandle {
     /// # Errors
     ///
     /// Returns after disposal or when pending delivery, resume hook, reload, or
-    /// the first restored render fails. Failure leaves the view suspended.
+    /// the first restored render fails. A compensable failure leaves the view
+    /// suspended; failed compensation disposes and quarantines the view.
     pub fn resume(&self, cx: &mut App) -> Result<bool, ScriptViewError> {
         match self.require_not_disposed()? {
             ScriptViewState::Active => return Ok(false),
@@ -969,10 +970,13 @@ impl ScriptViewHandle {
             .runtime()
             .borrow()
             .geometry_for(Some(&view.view_id));
-        Ok(crate::AccessibilityTree::from_presented(
-            view.lifecycle.retained(),
-            &geometry,
-        )?)
+        let mut tree =
+            crate::AccessibilityTree::from_presented(view.lifecycle.retained(), &geometry)?;
+        tree.apply_primitive_projections(
+            view.primitives
+                .accessibility_projections(view.lifecycle.retained(), cx),
+        );
+        Ok(tree)
     }
 
     /// Snapshot the stable language-neutral automation tree.
@@ -1015,8 +1019,12 @@ impl ScriptViewHandle {
                     .runtime()
                     .borrow()
                     .geometry_for(Some(&view.view_id));
-                let tree =
+                let mut tree =
                     crate::AccessibilityTree::from_presented(view.lifecycle.retained(), &geometry)?;
+                tree.apply_primitive_projections(
+                    view.primitives
+                        .accessibility_projections(view.lifecycle.retained(), cx),
+                );
                 let id = crate::automation::resolve_locator(&tree, &locator)?;
                 let node = tree
                     .node(id)
@@ -1226,6 +1234,7 @@ pub struct FileScriptView {
     calendar_clock: crate::CalendarClock,
     runtime_clock: crate::RuntimeClock,
     fonts: Vec<crate::FontSource>,
+    theme_token_overrides: ThemeTokenOverrides,
 }
 
 impl FileScriptView {
@@ -1242,6 +1251,7 @@ impl FileScriptView {
             calendar_clock: crate::CalendarClock::default(),
             runtime_clock: crate::RuntimeClock::default(),
             fonts: Vec::new(),
+            theme_token_overrides: ThemeTokenOverrides::default(),
         }
     }
 
@@ -1305,6 +1315,13 @@ impl FileScriptView {
         self
     }
 
+    /// Apply host-owned user preferences to every theme loaded by this view.
+    #[must_use]
+    pub fn theme_token_overrides(mut self, overrides: ThemeTokenOverrides) -> Self {
+        self.theme_token_overrides = overrides;
+        self
+    }
+
     /// Read, compile, initialize, and render the app before opening GPUI.
     ///
     /// # Errors
@@ -1323,7 +1340,8 @@ impl FileScriptView {
                 .configure_engine(&mut engine)
                 .map_err(ScriptViewError::Extension)?;
         }
-        let (ui_root, theme_path, theme) = load_primary_file_theme(&engine, &self.entry)?;
+        let (ui_root, theme_path, theme) =
+            load_primary_file_theme(&engine, &self.entry, &self.theme_token_overrides)?;
         let style_path = ui_root.join("styles.rhai");
         let mut fonts = self.fonts;
         fonts.extend(load_file_fonts(&ui_root.join("fonts"))?);
@@ -1355,6 +1373,7 @@ impl FileScriptView {
             engine.engine(),
             &ui_root.join("themes"),
             &theme,
+            &self.theme_token_overrides,
         )?);
         runtime_state.replace_component_styles_from_host(component_styles);
         register_file_assets(&runtime_state, &ui_root)?;
@@ -1377,6 +1396,8 @@ impl FileScriptView {
             runtime,
             extensions,
             theme: theme.clone(),
+            #[cfg(feature = "dev-reload")]
+            theme_token_overrides: self.theme_token_overrides.clone(),
             show_error_banner: Cell::new(true),
             #[cfg(feature = "dev-reload")]
             development: self.development,
@@ -1416,6 +1437,7 @@ pub struct EmbeddedScriptView {
     calendar_clock: crate::CalendarClock,
     runtime_clock: crate::RuntimeClock,
     fonts: Vec<crate::FontSource>,
+    theme_token_overrides: ThemeTokenOverrides,
 }
 
 impl EmbeddedScriptView {
@@ -1444,6 +1466,7 @@ impl EmbeddedScriptView {
             calendar_clock: crate::CalendarClock::default(),
             runtime_clock: crate::RuntimeClock::default(),
             fonts: Vec::new(),
+            theme_token_overrides: ThemeTokenOverrides::default(),
         }
     }
 
@@ -1538,6 +1561,13 @@ impl EmbeddedScriptView {
         self
     }
 
+    /// Apply host-owned user preferences to every embedded theme.
+    #[must_use]
+    pub fn theme_token_overrides(mut self, overrides: ThemeTokenOverrides) -> Self {
+        self.theme_token_overrides = overrides;
+        self
+    }
+
     /// Compile and initialize a fully embedded application.
     ///
     /// # Errors
@@ -1554,8 +1584,12 @@ impl EmbeddedScriptView {
                 .configure_engine(&mut engine)
                 .map_err(ScriptViewError::Extension)?;
         }
-        let theme = load_theme_source(engine.engine(), "<embedded-theme>", &self.theme_source)
-            .map_err(|error| ScriptViewError::Theme(error.to_string()))?;
+        let theme = load_theme_with_overrides(
+            engine.engine(),
+            "<embedded-theme>",
+            &self.theme_source,
+            &self.theme_token_overrides,
+        )?;
         engine.set_module_resolver(RestrictedModuleResolver::from_source(&self.scripts)?);
         let compiled = engine.with_program_preparation(|engine| {
             preload_component_modules(engine, self.scripts.module_ids())?;
@@ -1585,7 +1619,12 @@ impl EmbeddedScriptView {
         runtime_state.calendar_clock = self.calendar_clock;
         runtime_state.clock = self.runtime_clock;
         runtime_state.locale = load_embedded_locales(engine.engine(), self.locales)?;
-        runtime_state.theme = Some(load_embedded_themes(engine.engine(), self.themes, &theme)?);
+        runtime_state.theme = Some(load_embedded_themes(
+            engine.engine(),
+            self.themes,
+            &theme,
+            &self.theme_token_overrides,
+        )?);
         runtime_state.replace_component_styles_from_host(component_styles);
         if !self.assets.is_empty() {
             runtime_state
@@ -1611,6 +1650,8 @@ impl EmbeddedScriptView {
             runtime,
             extensions,
             theme: theme.clone(),
+            #[cfg(feature = "dev-reload")]
+            theme_token_overrides: self.theme_token_overrides.clone(),
             show_error_banner: Cell::new(true),
             #[cfg(feature = "dev-reload")]
             development: self.development,
@@ -1663,14 +1704,14 @@ fn load_embedded_themes(
     engine: &rhai::Engine,
     sources: Vec<(String, String)>,
     primary: &ThemeVariant,
+    overrides: &ThemeTokenOverrides,
 ) -> Result<ThemeManager, ScriptViewError> {
     let mut variants = BTreeMap::from([(
         (primary.family.clone(), primary.name.clone()),
         primary.clone(),
     )]);
     for (name, source) in sources {
-        let variant = load_theme_source(engine, &name, &source)
-            .map_err(|error| ScriptViewError::Theme(error.to_string()))?;
+        let variant = load_theme_with_overrides(engine, &name, &source, overrides)?;
         insert_theme_variant(&mut variants, variant)?;
     }
     theme_manager(variants.into_values(), primary)
@@ -1705,6 +1746,7 @@ fn load_file_manifest(root: &Path, entry: &Path) -> Result<AppManifest, ScriptVi
 fn load_primary_file_theme(
     engine: &RuntimeEngine,
     entry: &Path,
+    overrides: &ThemeTokenOverrides,
 ) -> Result<(PathBuf, PathBuf, ThemeVariant), ScriptViewError> {
     let root = entry
         .parent()
@@ -1715,8 +1757,8 @@ fn load_primary_file_theme(
         path: path.clone(),
         source,
     })?;
-    let theme = load_theme_source(engine.engine(), &path.to_string_lossy(), &source)
-        .map_err(|error| ScriptViewError::Theme(error.to_string()))?;
+    let theme =
+        load_theme_with_overrides(engine.engine(), &path.to_string_lossy(), &source, overrides)?;
     Ok((root, path, theme))
 }
 
@@ -2004,6 +2046,7 @@ fn load_theme_directory(
     engine: &rhai::Engine,
     directory: &Path,
     primary: &ThemeVariant,
+    overrides: &ThemeTokenOverrides,
 ) -> Result<ThemeManager, ScriptViewError> {
     let mut variants = BTreeMap::from([(
         (primary.family.clone(), primary.name.clone()),
@@ -2033,12 +2076,22 @@ fn load_theme_directory(
                 path: path.clone(),
                 source,
             })?;
-            let variant = load_theme_source(engine, &path.to_string_lossy(), &source)
-                .map_err(|error| ScriptViewError::Theme(error.to_string()))?;
+            let variant =
+                load_theme_with_overrides(engine, &path.to_string_lossy(), &source, overrides)?;
             insert_theme_variant(&mut variants, variant)?;
         }
     }
     theme_manager(variants.into_values(), primary)
+}
+
+fn load_theme_with_overrides(
+    engine: &rhai::Engine,
+    source_name: &str,
+    source: &str,
+    overrides: &ThemeTokenOverrides,
+) -> Result<ThemeVariant, ScriptViewError> {
+    crate::theme::load_theme_source_with_overrides(engine, source_name, source, overrides)
+        .map_err(|error| ScriptViewError::Theme(error.to_string()))
 }
 
 fn insert_theme_variant(
@@ -2083,6 +2136,8 @@ struct ScriptWindowFactory {
     runtime: Rc<RefCell<UiRuntimeState>>,
     extensions: Rc<Vec<Box<dyn ScriptViewExtension>>>,
     theme: ThemeVariant,
+    #[cfg(feature = "dev-reload")]
+    theme_token_overrides: ThemeTokenOverrides,
     show_error_banner: Cell<bool>,
     #[cfg(feature = "dev-reload")]
     development: bool,
@@ -2941,6 +2996,7 @@ fn nearest_scroll_ancestor(
 
 struct ScriptRenderSnapshot {
     now: Instant,
+    clock: crate::RuntimeClock,
     motion_preference: crate::MotionPreference,
     motion_quality: crate::MotionQuality,
     assets: AssetRegistry,
@@ -2952,6 +3008,8 @@ struct ScriptRenderSnapshot {
     pointer_capture: crate::PointerCaptureRegistry,
     virtual_requests: crate::VirtualRequestRegistry,
     direction: TextDirection,
+    locale: String,
+    number: Option<crate::NumberMetadata>,
 }
 
 struct ScriptViewTransaction {
@@ -3215,6 +3273,7 @@ impl Render for ScriptHostView {
         self.publish_theme_after_render(&snapshot.theme, cx);
         let render_resources = crate::renderer::WindowRenderResources {
             now: snapshot.now,
+            clock: &snapshot.clock,
             motion_preference: snapshot.motion_preference,
             motion_quality: snapshot.motion_quality,
             assets: &snapshot.assets,
@@ -3231,6 +3290,8 @@ impl Render for ScriptHostView {
             text_selection: &self.text_selection,
             host_focus: Some(&self.host_focus),
             direction: snapshot.direction,
+            locale: &snapshot.locale,
+            number: snapshot.number.as_ref(),
             ambient_text_color: None,
             root_path: &motion_root,
             view_id: &self.view_id,
@@ -3321,6 +3382,19 @@ impl Render for ScriptHostView {
             &self.scroll_handles,
         )
     }
+}
+
+fn native_lifecycle_error(
+    operation: &str,
+    error: &crate::PrimitiveError,
+    rollback: Option<&crate::PrimitiveError>,
+) -> String {
+    rollback.map_or_else(
+        || format!("native primitive {operation} failed: {error}"),
+        |rollback| {
+            format!("native primitive {operation} failed: {error}; compensation failed: {rollback}")
+        },
+    )
 }
 
 impl ScriptHostView {
@@ -3513,8 +3587,12 @@ impl ScriptHostView {
         self.clear_failure();
         let runtime = self.lifecycle.runtime();
         let geometry = runtime.borrow().geometry_for(Some(&self.view_id));
-        let accessibility =
+        let mut accessibility =
             crate::AccessibilityTree::from_presented(self.lifecycle.retained(), &geometry)?;
+        accessibility.apply_primitive_projections(
+            self.primitives
+                .accessibility_projections(self.lifecycle.retained(), cx),
+        );
         let target = crate::automation::resolve_locator(&accessibility, locator)?;
         let target_node = self
             .lifecycle
@@ -3618,9 +3696,21 @@ impl ScriptHostView {
             .as_ref()
             .and_then(|locale| locale.direction(Some(&self.window_id), Some(root)).ok())
             .unwrap_or(TextDirection::LeftToRight);
+        let locale = runtime
+            .locale
+            .as_ref()
+            .and_then(|locale| locale.locale(Some(&self.window_id), Some(root)).ok())
+            .unwrap_or("en")
+            .to_owned();
+        let number = runtime
+            .locale
+            .as_ref()
+            .and_then(|locale| locale.number(Some(&self.window_id), Some(root)).ok())
+            .cloned();
         let motion_domain = format!("window:{}/view:{}/root", self.window_id, self.view_id);
         ScriptRenderSnapshot {
             now: runtime.clock.now(),
+            clock: runtime.clock.clone(),
             motion_preference: runtime.motions.preference(),
             motion_quality: runtime.motions.quality(),
             assets: runtime.assets.clone(),
@@ -3637,6 +3727,8 @@ impl ScriptHostView {
             pointer_capture: runtime.pointer_capture_for(Some(&self.view_id)),
             virtual_requests: runtime.virtual_requests.clone(),
             direction,
+            locale,
+            number,
         }
     }
 
@@ -4014,8 +4106,42 @@ impl ScriptHostView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Result<bool, ScriptViewError> {
-        let changed = self.lifecycle.suspend(&mut self.engine)?;
+        if let Err(error) = self.primitives.suspend_mounted(cx) {
+            let rollback = self.restore_native_active(cx).err();
+            let message = native_lifecycle_error("suspend", &error, rollback.as_ref());
+            if rollback.is_some() {
+                self.host
+                    .quiesce_view(&self.view_id, &self.host_focus, window, cx);
+                let message = self.fault_native_lifecycle(message, cx);
+                return Err(ScriptViewError::Suspend(message));
+            }
+            self.set_plain_failure(message.clone());
+            return Err(ScriptViewError::Suspend(message));
+        }
+        let changed = match self.lifecycle.suspend(&mut self.engine) {
+            Ok(changed) => changed,
+            Err(error) => {
+                let rollback = self.restore_native_active(cx).err();
+                let rollback_failed = rollback.is_some();
+                let message = rollback.as_ref().map_or_else(
+                    || error.to_string(),
+                    |rollback| format!("{error}; native rollback failed: {rollback}"),
+                );
+                if rollback_failed {
+                    self.host
+                        .quiesce_view(&self.view_id, &self.host_focus, window, cx);
+                    let message = self.fault_native_lifecycle(message, cx);
+                    return Err(ScriptViewError::Suspend(message));
+                }
+                self.set_plain_failure(message);
+                return Err(error.into());
+            }
+        };
         if !changed {
+            if let Err(error) = self.restore_native_active(cx) {
+                let message = self.fault_native_lifecycle(error.to_string(), cx);
+                return Err(ScriptViewError::Suspend(message));
+            }
             return Ok(false);
         }
         self.host
@@ -4026,6 +4152,7 @@ impl ScriptHostView {
         Ok(true)
     }
 
+    #[allow(clippy::too_many_lines)]
     fn resume_view(&mut self, cx: &mut Context<Self>) -> Result<bool, ScriptViewError> {
         if self.state.get() == ScriptViewState::Active {
             return Ok(false);
@@ -4059,6 +4186,7 @@ impl ScriptHostView {
                 return Err(ScriptViewError::Resume(error.to_string()));
             }
         }
+        self.prepare_native_resume(cx)?;
         let result = self.run_script_transaction(|view| {
             if migrating {
                 view.lifecycle
@@ -4099,6 +4227,13 @@ impl ScriptHostView {
         });
         match result {
             Ok(changed) => {
+                if let Err(error) = self.primitives.commit_resume_mounted(cx) {
+                    let rollback = self.primitives.suspend_mounted(cx).err();
+                    let message =
+                        native_lifecycle_error("commit resume", &error, rollback.as_ref());
+                    let message = self.fault_native_lifecycle(message, cx);
+                    return Err(ScriptViewError::Resume(message));
+                }
                 self.state.set(ScriptViewState::Active);
                 self.activity_wake.notify();
                 if let Some(error) = pending_reload_error {
@@ -4111,6 +4246,7 @@ impl ScriptHostView {
                 Ok(changed)
             }
             Err(error) => {
+                let native_rollback = self.primitives.suspend_mounted(cx).err();
                 if let Some(previous_exports) = previous_exports {
                     let _ = self.engine.restore_component_exports(previous_exports);
                 }
@@ -4118,10 +4254,47 @@ impl ScriptHostView {
                     let _ = self.engine.restore_component_renderers(previous_renderers);
                 }
                 let public_error = error.clone().into_view_error();
-                self.set_failure(error);
-                Err(public_error)
+                if let Some(native_rollback) = native_rollback {
+                    let message = format!(
+                        "{public_error}; native suspend compensation failed: {native_rollback}"
+                    );
+                    let message = self.fault_native_lifecycle(message, cx);
+                    Err(ScriptViewError::Resume(message))
+                } else {
+                    self.set_failure(error);
+                    Err(public_error)
+                }
             }
         }
+    }
+
+    fn prepare_native_resume(&mut self, cx: &mut Context<Self>) -> Result<(), ScriptViewError> {
+        if let Err(error) = self.primitives.resume_mounted(cx) {
+            let rollback = self.primitives.suspend_mounted(cx).err();
+            let message = native_lifecycle_error("resume", &error, rollback.as_ref());
+            if rollback.is_some() {
+                let message = self.fault_native_lifecycle(message, cx);
+                return Err(ScriptViewError::Resume(message));
+            }
+            self.set_plain_failure(message.clone());
+            return Err(ScriptViewError::Resume(message));
+        }
+        Ok(())
+    }
+
+    fn restore_native_active(
+        &mut self,
+        cx: &mut Context<Self>,
+    ) -> Result<(), crate::PrimitiveError> {
+        self.primitives.resume_mounted(cx)?;
+        self.primitives.commit_resume_mounted(cx)
+    }
+
+    fn fault_native_lifecycle(&mut self, message: String, cx: &mut Context<Self>) -> String {
+        self.set_plain_failure(message.clone());
+        self.release_view();
+        cx.notify();
+        message
     }
 
     fn collect_suspended_deliveries(&mut self) -> Result<(), ScriptViewError> {
@@ -4827,10 +5000,11 @@ impl ScriptHostView {
     #[cfg(feature = "dev-reload")]
     fn reload_theme(&mut self) -> Result<(), String> {
         let source = fs::read_to_string(&self.theme_path).map_err(|error| error.to_string())?;
-        let primary = load_theme_source(
+        let primary = crate::theme::load_theme_source_with_overrides(
             self.engine.engine(),
             &self.theme_path.to_string_lossy(),
             &source,
+            &self.factory.theme_token_overrides,
         )
         .map_err(|error| error.to_string())?;
         let runtime = self.lifecycle.runtime();
@@ -4839,9 +5013,13 @@ impl ScriptHostView {
             .theme
             .as_ref()
             .map(|themes| themes.app_preference().clone());
-        let mut themes =
-            load_theme_directory(self.engine.engine(), &self.ui_root.join("themes"), &primary)
-                .map_err(|error| error.to_string())?;
+        let mut themes = load_theme_directory(
+            self.engine.engine(),
+            &self.ui_root.join("themes"),
+            &primary,
+            &self.factory.theme_token_overrides,
+        )
+        .map_err(|error| error.to_string())?;
         if let Some(previous) = previous {
             themes
                 .set_app(previous)
@@ -5016,6 +5194,8 @@ pub enum ScriptViewError {
     DisposedView(String),
     #[error("script view `{0}` is suspended; resume it before rendering or interaction")]
     SuspendedView(String),
+    #[error("script view suspend failed: {0}")]
+    Suspend(String),
     #[error("script view resume failed: {0}")]
     Resume(String),
     #[error(
@@ -5269,7 +5449,7 @@ mod tests {
     #[test]
     fn theme_handle_state_only_advances_for_an_effective_theme_change() {
         let engine = RuntimeEngine::new();
-        let dark = load_theme_source(
+        let dark = crate::load_theme_source(
             engine.engine(),
             "default_dark.rhai",
             include_str!("../../../registry/themes/default_dark.rhai"),
@@ -5362,6 +5542,64 @@ mod tests {
         let (engine, lifecycle) = start_prepared(prepared, "widget", "main");
         assert!(engine.is_current(lifecycle.generation()));
         assert!(lifecycle.root().is_some());
+    }
+
+    #[test]
+    fn embedded_host_theme_overrides_cover_primary_and_additional_variants() {
+        let entry = ModuleId::parse("main").unwrap();
+        let scripts = EmbeddedScriptSource::new(BTreeMap::from([(
+            entry.clone(),
+            "fn view(ctx) { text(\"theme override\") }".to_owned(),
+        )]));
+        let overrides = ThemeTokenOverrides {
+            colors: BTreeMap::from([(
+                "accent".to_owned(),
+                crate::Rgba8::from_rgb_hex(0x00aa_55cc),
+            )]),
+            radii: BTreeMap::from([
+                ("sm".to_owned(), crate::Length::Pixels(4.0)),
+                ("md".to_owned(), crate::Length::Pixels(7.0)),
+                ("lg".to_owned(), crate::Length::Pixels(10.0)),
+            ]),
+            ..ThemeTokenOverrides::default()
+        };
+        let prepared = EmbeddedScriptView::new(
+            entry,
+            scripts,
+            include_str!("../../../registry/themes/default_dark.rhai"),
+        )
+        .theme_sources([(
+            "nord.rhai".to_owned(),
+            include_str!("../../../registry/themes/nord.rhai").to_owned(),
+        )])
+        .theme_token_overrides(overrides)
+        .prepare()
+        .unwrap();
+        assert_eq!(
+            prepared.theme.tokens.radii["md"],
+            crate::Length::Pixels(7.0)
+        );
+        assert_eq!(
+            prepared.theme.tokens.color("charts.palette_1"),
+            Some(crate::Rgba8::from_rgb_hex(0x00aa_55cc))
+        );
+
+        let mut runtime = prepared.factory.runtime.borrow_mut();
+        let themes = runtime.theme.as_mut().unwrap();
+        themes
+            .set_app(crate::ThemePreference::Fixed {
+                selection: ThemeSelection::new("Nord", "Dark"),
+            })
+            .unwrap();
+        assert_eq!(
+            themes
+                .resolve(None, None, SystemAppearance::Dark)
+                .unwrap()
+                .variant()
+                .tokens
+                .radii["md"],
+            crate::Length::Pixels(7.0)
+        );
     }
 
     #[test]

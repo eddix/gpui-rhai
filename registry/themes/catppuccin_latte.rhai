@@ -27,6 +27,7 @@ fn theme() {
                 disabled: 0x9ca0b0ff,
             },
             spacing: #{
+                xxs: #{ unit: "pixels", value: 2.0 },
                 xs: #{ unit: "pixels", value: 4.0 },
                 sm: #{ unit: "pixels", value: 8.0 },
                 md: #{ unit: "pixels", value: 12.0 },

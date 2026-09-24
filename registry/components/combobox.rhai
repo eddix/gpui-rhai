@@ -2,7 +2,7 @@
 {
   "id": "components/combobox",
   "export": "Combobox",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": ["components/input"],
   "capabilities": {},
@@ -18,7 +18,7 @@
 import "components/input" as input;
 
 define_component(#{
-    metadata: #{ id: "components/combobox", "export": "Combobox", version: "0.1.4",
+    metadata: #{ id: "components/combobox", "export": "Combobox", version: "0.1.5",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
         dependencies: ["components/input"], capabilities: #{},
         assets: ["icons/check.svg", "icons/close.svg", "icons/chevron_down.svg", "icons/chevron_up.svg"] },
@@ -243,14 +243,14 @@ fn render_combobox_row(ctx, payload) {
     if item.kind == "group" {
         return text(item.label).with_key(payload.key)
             .with_style(ctx.component_style("group",
-                style().height(px(24)).padding_x(px(10)).items_center()
+            style().height(px(24)).padding_x(theme_spacing("sm")).items_center()
                     .typography("caption").font_weight(700)
                     .text_color(theme_color("text_muted"))))
             .accessibility_role("presentation").accessibility_label(item.label);
     }
     let row_style = ctx.component_style("option",
-        style().height(px(item.height)).padding_x(px(8))
-            .items_center().gap(px(8)).typography("body")
+        style().height(px(item.height)).padding_x(theme_spacing("sm"))
+            .items_center().gap(theme_spacing("sm")).typography("body")
             .border_start(px(2)).border_color(rgba(0x00000000))
             .hover(style().background(theme_color("surface_hover"))));
     let row_style = if item.selected {
@@ -364,7 +364,7 @@ fn render_Combobox(ctx, props) {
             .with_style(ctx.component_style("indicator",
                 style().width(px(16)).height(px(16)).items_center().justify_center()
                     .text_color(theme_color("text_muted")))));
-        trigger_children.push(row(trigger_actions).with_style(style().gap(px(4)).items_center()));
+        trigger_children.push(row(trigger_actions).with_style(style().gap(theme_spacing("xs")).items_center()));
     }
     let trigger_background = if open { theme_color("surface_raised") } else { theme_color("surface") };
     let trigger_style = if custom_trigger {
@@ -374,7 +374,7 @@ fn render_Combobox(ctx, props) {
     } else {
         style().width(relative(1.0)).min_width(px(0))
             .height(px(prop_or(props, "trigger_height", 32)))
-            .padding_x(px(10)).gap(px(8)).items_center()
+        .padding_x(theme_spacing("sm")).gap(theme_spacing("sm")).items_center()
             .border(px(1)).border_color(if open { theme_color("focus_ring") }
                 else { theme_color("border") })
             .radius(theme_radius("md")).background(trigger_background)
@@ -423,7 +423,7 @@ fn render_Combobox(ctx, props) {
     if ordered.len == 0 {
         content.push(if "empty" in props && props.empty != () { props.empty }
             else { text(prop_or(props, "empty_text", "No results"))
-                .with_style(ctx.component_style("empty", style().padding(px(8))
+            .with_style(ctx.component_style("empty", style().padding(theme_spacing("sm"))
                     .typography("body_small").text_color(theme_color("text_muted")))) });
     } else {
         content.push(virtual_collection(#{
@@ -437,7 +437,7 @@ fn render_Combobox(ctx, props) {
     let panel = column(content).with_key(`${props.key}-panel`)
         .with_style(ctx.component_style("panel",
             style().width(if custom_trigger { width } else { relative(1.0) })
-                .min_width(px(0)).gap(px(4)).padding(px(4))
+            .min_width(px(0)).gap(theme_spacing("xs")).padding(theme_spacing("xs"))
                 .border(px(1)).border_color(theme_color("border"))
                 .radius(theme_radius("md")).background(theme_color("surface"))
                 .focus(style().border_color(theme_color("focus_ring")))))

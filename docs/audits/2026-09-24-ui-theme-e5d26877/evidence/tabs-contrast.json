@@ -1,0 +1,137 @@
+[
+  {
+    "theme": "aetheria",
+    "foreground": "text_muted",
+    "foreground_rgba": "a79ab7ff",
+    "background": "surface_hover",
+    "background_rgba": "2a1840ff",
+    "ratio": 6.099996698766696,
+    "normal_text_4_5": true
+  },
+  {
+    "theme": "catppuccin_latte",
+    "foreground": "text_muted",
+    "foreground_rgba": "686b80ff",
+    "background": "surface_hover",
+    "background_rgba": "e6e9efff",
+    "ratio": 4.312983602440677,
+    "normal_text_4_5": false
+  },
+  {
+    "theme": "catppuccin_mocha",
+    "foreground": "text_muted",
+    "foreground_rgba": "a6adc8ff",
+    "background": "surface_hover",
+    "background_rgba": "45475aff",
+    "ratio": 4.097723013947642,
+    "normal_text_4_5": false
+  },
+  {
+    "theme": "default_dark",
+    "foreground": "text_muted",
+    "foreground_rgba": "929aa8ff",
+    "background": "surface_hover",
+    "background_rgba": "252a34ff",
+    "ratio": 5.077216662999908,
+    "normal_text_4_5": true
+  },
+  {
+    "theme": "default_light",
+    "foreground": "text_muted",
+    "foreground_rgba": "686e78ff",
+    "background": "surface_hover",
+    "background_rgba": "e7e8e3ff",
+    "ratio": 4.168415856207943,
+    "normal_text_4_5": false
+  },
+  {
+    "theme": "ethereal",
+    "foreground": "text_muted",
+    "foreground_rgba": "a3a9c2ff",
+    "background": "surface_hover",
+    "background_rgba": "252e56ff",
+    "ratio": 5.6187099992038085,
+    "normal_text_4_5": true
+  },
+  {
+    "theme": "everforest",
+    "foreground": "text_muted",
+    "foreground_rgba": "a7b0a4ff",
+    "background": "surface_hover",
+    "background_rgba": "3d484dff",
+    "ratio": 4.205675916377681,
+    "normal_text_4_5": false
+  },
+  {
+    "theme": "futurism",
+    "foreground": "text_muted",
+    "foreground_rgba": "9aaec4ff",
+    "background": "surface_hover",
+    "background_rgba": "20375eff",
+    "ratio": 5.21357488514406,
+    "normal_text_4_5": true
+  },
+  {
+    "theme": "gruvbox",
+    "foreground": "text_muted",
+    "foreground_rgba": "a89984ff",
+    "background": "surface_hover",
+    "background_rgba": "504945ff",
+    "ratio": 3.174160025273397,
+    "normal_text_4_5": false
+  },
+  {
+    "theme": "hackerman",
+    "foreground": "text_muted",
+    "foreground_rgba": "9aa5c5ff",
+    "background": "surface_hover",
+    "background_rgba": "1f253aff",
+    "ratio": 6.186696500520976,
+    "normal_text_4_5": true
+  },
+  {
+    "theme": "hermarchy",
+    "foreground": "text_muted",
+    "foreground_rgba": "a5a7a7ff",
+    "background": "surface_hover",
+    "background_rgba": "26333aff",
+    "ratio": 5.371138761637174,
+    "normal_text_4_5": true
+  },
+  {
+    "theme": "nord",
+    "foreground": "text_muted",
+    "foreground_rgba": "aab2c0ff",
+    "background": "surface_hover",
+    "background_rgba": "434c5eff",
+    "ratio": 4.042012174609848,
+    "normal_text_4_5": false
+  },
+  {
+    "theme": "retro_82",
+    "foreground": "text_muted",
+    "foreground_rgba": "a7c9c6ff",
+    "background": "surface_hover",
+    "background_rgba": "134e5aff",
+    "ratio": 5.215351220423251,
+    "normal_text_4_5": true
+  },
+  {
+    "theme": "tokyo_night",
+    "foreground": "text_muted",
+    "foreground_rgba": "a9b1d6ff",
+    "background": "surface_hover",
+    "background_rgba": "292e42ff",
+    "ratio": 6.360902687407353,
+    "normal_text_4_5": true
+  },
+  {
+    "theme": "tokyo_storm",
+    "foreground": "text_muted",
+    "foreground_rgba": "a9b1d6ff",
+    "background": "surface_hover",
+    "background_rgba": "3b4261ff",
+    "ratio": 4.6527200458260145,
+    "normal_text_4_5": true
+  }
+]

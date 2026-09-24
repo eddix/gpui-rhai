@@ -2,7 +2,7 @@
 {
   "id": "components/input",
   "export": "Input",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": [],
   "capabilities": {}
@@ -19,7 +19,7 @@ define_component(#{
     metadata: #{
         id: "components/input",
         "export": "Input",
-        version: "0.1.4",
+        version: "0.1.5",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
         dependencies: [],
         capabilities: #{},
@@ -126,7 +126,7 @@ fn render_Input(ctx, props) {
         .with_style(ctx.component_style("root", ctx.component_style("input",
             style()
                 .height(px(32))
-                .padding_x(px(10))
+                .padding_x(theme_spacing("sm"))
                 .items_center()
                 .radius(theme_radius("md"))
                 .border(px(1))

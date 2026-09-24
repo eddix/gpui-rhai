@@ -2,7 +2,7 @@
 {
   "id": "components/alert",
   "export": "Alert",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": [],
   "capabilities": {},
@@ -16,7 +16,7 @@
 // Example: Alert(#{ title: "Saved", description: "Changes are live.", variant: "success" })
 
 define_component(#{
-    metadata: #{ id: "components/alert", "export": "Alert", version: "0.1.4",
+    metadata: #{ id: "components/alert", "export": "Alert", version: "0.1.5",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{},
         assets: ["icons/check.svg", "icons/close.svg", "icons/info.svg", "icons/warning.svg"] },
     schema: #{
@@ -89,13 +89,13 @@ fn render_Alert(ctx, props) {
                 .radius(px(9)).background(alert_color(variant))
                 .text_color(alert_foreground(variant)))));
     }
-    children.push(column(body).with_style(ctx.component_style("body", style().gap(px(2)).flex_grow())));
+        children.push(column(body).with_style(ctx.component_style("body", style().gap(theme_spacing("xxs")).flex_grow())));
     if "actions" in props && props.actions.len > 0 {
         children.push(row(props.actions).with_style(ctx.component_style("actions", style()
-            .gap(px(6)).items_center())));
+            .gap(theme_spacing("xs")).items_center())));
     }
     row(children).with_style(ctx.component_style("root", style()
-        .padding(px(10)).gap(px(9)).items_center().radius(theme_radius("md"))
+        .padding(theme_spacing("sm")).gap(theme_spacing("sm")).items_center().radius(theme_radius("md"))
         .border(px(1)).border_start(px(3)).border_color(alert_color(variant))
         .background(theme_color("surface"))))
         .accessibility_role(alert_role(variant))

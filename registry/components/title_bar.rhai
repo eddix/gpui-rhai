@@ -2,7 +2,7 @@
 {
   "id": "components/title_bar",
   "export": "TitleBar",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": [],
   "capabilities": {}
@@ -15,7 +15,7 @@
 // Example: TitleBar(#{ label: "Workbench", title: breadcrumb_node, end: [settings_button] })
 
 define_component(#{
-    metadata: #{ id: "components/title_bar", "export": "TitleBar", version: "0.1.4",
+    metadata: #{ id: "components/title_bar", "export": "TitleBar", version: "0.1.5",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{} },
     schema: #{
         props: #{
@@ -66,18 +66,18 @@ fn render_TitleBar(ctx, props) {
     let inset = if "inset_start" in props { props.inset_start } else { 0 };
     let start = row(start_children).with_style(ctx.component_style("start", style()
         .width(relative(0.333333)).min_width(px(0)).height(relative(1.0))
-        .padding_start(px(inset)).items_center().gap(px(8)).overflow_hidden()));
+        .padding_start(px(inset)).items_center().gap(theme_spacing("sm")).overflow_hidden()));
     let center = row(if "center" in props { props.center } else { [] })
         .with_style(ctx.component_style("center", style()
             .width(relative(0.333333)).min_width(px(0)).height(relative(1.0))
-            .items_center().justify_center().gap(px(6)).overflow_hidden()));
+        .items_center().justify_center().gap(theme_spacing("xs")).overflow_hidden()));
     let end = row(if "end" in props { props.end } else { [] })
         .with_style(ctx.component_style("end", style()
             .width(relative(0.333333)).min_width(px(0)).height(relative(1.0))
-            .items_center().justify_end().gap(px(6)).overflow_hidden()));
+        .items_center().justify_end().gap(theme_spacing("xs")).overflow_hidden()));
     row([start, center, end])
         .with_style(ctx.component_style("root", style()
-            .width(relative(1.0)).height(px(34)).padding_x(px(10)).items_center()
+        .width(relative(1.0)).height(px(34)).padding_x(theme_spacing("sm")).items_center()
             .border_bottom(px(1)).border_color(theme_color("border"))
             .background(theme_color("surface_raised")).text_color(theme_color("text_primary"))))
         .accessibility_role("toolbar").accessibility_label(props.label)

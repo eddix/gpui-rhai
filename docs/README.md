@@ -25,6 +25,8 @@ security, testing, and troubleshooting.
 - [Assets and fonts](assets.md)
 - [Retained Canvas scenes](canvas.md)
 - [Motion Runtime 2](motion.md)
+- [Chart Runtime architecture decision](adr/0021-chart-runtime.md)
+- [Native Chart Runtime](charts.md)
 - [Native virtual collections](virtual-list.md) and [Rust-owned collection data](native-collections.md)
 - [Native text documents and read-only viewers](document-viewers.md)
 - [Accessibility status](accessibility.md)
@@ -32,6 +34,7 @@ security, testing, and troubleshooting.
 
 Complex component contracts:
 
+- [Tabs](components/catalog.md#tabs) and [Button/Badge density](registry-design-system.md#button-and-badge-density)
 - [DatePicker](components/date-picker.md)
 - [Combobox](components/combobox.md)
 - [Select](components/select.md)
@@ -52,10 +55,21 @@ Complex component contracts:
 - [Updating copied source](source-updates.md)
 - [Rhai execution backends](rhai-execution-backends.md)
 - [Release checklist](release-checklist.md)
-- [0.1.4 release notes](releases/0.1.4.md)
+- [Release notes and upgrade index](releases/README.md)
+- [0.1.0](releases/0.1.0.md), [0.1.1](releases/0.1.1.md),
+  [0.1.2](releases/0.1.2.md), [0.1.3](releases/0.1.3.md),
+  [0.1.4](releases/0.1.4.md), and [0.1.5](releases/0.1.5.md)
 - [Core Runtime v2 evidence ledger](core-runtime-v2-audit.md)
 
 Architecture decisions and their test evidence are recorded under
 [`docs/adr`](adr/). `INTENT.md` is the product contract;
 `IMPLEMENTATION_PLAN.md` records planned and incomplete work rather than the
 current user-facing API.
+
+Maintain current visual rules in `registry-design-system.md`, public component
+contracts in `components/`, and acceptance procedures in `visual-testing.md`.
+After an iteration lands, merge durable requirements into these documents and
+remove the temporary implementation brief; preserve unfinished work as an
+explicit gap. Third-party reference screenshots are not checked-in component
+specification assets. Product-generated visual test evidence follows the
+separate baseline process in `visual-testing.md`.

@@ -2,7 +2,7 @@
 {
   "id": "components/tag",
   "export": "Tag",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": [],
   "capabilities": {},
@@ -17,7 +17,7 @@
 
 define_component(#{
     metadata: #{
-        id: "components/tag", "export": "Tag", version: "0.1.4",
+        id: "components/tag", "export": "Tag", version: "0.1.5",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
         dependencies: [], capabilities: #{}, assets: ["icons/close.svg"],
     },
@@ -90,7 +90,7 @@ fn render_Tag(ctx, props) {
     }
     row(children)
         .with_style(ctx.component_style("root",
-            style().height(px(22)).padding_x(px(6)).gap(px(6)).items_center()
+            style().height(px(22)).padding_x(theme_spacing("xs")).gap(theme_spacing("xs")).items_center()
                 .radius(theme_radius("sm"))
                 .border(px(1)).border_color(tag_border(variant))
                 .background(tag_color(variant))

@@ -13,6 +13,7 @@ export GPUI_RHAI_STRIP_METAL_DEBUG=1
 export PATH="${PWD}/scripts/tool-wrappers:${PATH}"
 
 cargo build --release -p gpui-rhai --examples
+cargo build --release -p gpui-rhai --example chart_gallery --features charts
 cargo build --release -p gpui-rhai-cli
 
 for example in "${examples[@]}"; do

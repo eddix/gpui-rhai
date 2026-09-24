@@ -2,7 +2,7 @@
 {
   "id": "components/form_field",
   "export": "FormField",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": ["components/label"],
   "capabilities": {}
@@ -17,7 +17,7 @@ import "components/label" as label_component;
 
 define_component(#{
     metadata: #{
-        id: "components/form_field", "export": "FormField", version: "0.1.4",
+        id: "components/form_field", "export": "FormField", version: "0.1.5",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
         dependencies: ["components/label"], capabilities: #{},
     },
@@ -73,7 +73,7 @@ fn render_FormField(ctx, props) {
             .accessibility_id(error_id).accessibility_role("alert"));
     }
     column(children).with_key(props.id)
-        .with_style(ctx.component_style("root", style().gap(px(4))))
+        .with_style(ctx.component_style("root", style().gap(theme_spacing("xs"))))
         .accessibility_role("group")
         .accessibility_label(props.label)
         .accessibility_invalid(error != ())
