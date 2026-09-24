@@ -309,14 +309,7 @@ impl PrimitiveTheme {
         motion_quality: crate::MotionQuality,
     ) -> Self {
         Self {
-            colors: RUNTIME_THEME_COLOR_TOKENS
-                .iter()
-                .filter_map(|token| {
-                    colors
-                        .resolve(&ColorValue::Token((*token).to_owned()))
-                        .map(|value| ((*token).to_owned(), value))
-                })
-                .collect(),
+            colors: colors.color_snapshot(),
             spacing: RUNTIME_THEME_SPACING_TOKENS
                 .iter()
                 .copied()
@@ -423,6 +416,10 @@ impl ColorResolver for PrimitiveTheme {
 
     fn resolve_length(&self, length: Length) -> Option<Length> {
         PrimitiveTheme::resolve_length(self, length)
+    }
+
+    fn color_snapshot(&self) -> BTreeMap<String, Rgba8> {
+        self.colors.clone()
     }
 
     fn resolve_typography(&self, role: &str) -> Option<crate::ResolvedTypography> {

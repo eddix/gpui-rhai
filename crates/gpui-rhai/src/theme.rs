@@ -339,6 +339,11 @@ impl ThemeTokens {
                     .or_insert(ThemeTokenValue::Color(value));
             }
         }
+        self.install_component_defaults();
+    }
+
+    fn install_component_defaults(&mut self) {
+        let color = |name: &str| self.colors.get(name).copied();
         let table_selection = color("surface")
             .zip(color("accent"))
             .map(|(surface, accent)| mix_opaque(surface, accent, 0x48));
@@ -346,6 +351,15 @@ impl ThemeTokens {
         if let Some(value) = table_selection {
             table
                 .entry("selection".to_owned())
+                .or_insert(ThemeTokenValue::Color(value));
+        }
+        let tabs_foreground = color("text_muted")
+            .zip(color("text_primary"))
+            .zip(color("surface_hover"))
+            .map(|((muted, primary), surface)| readable_secondary(muted, primary, surface));
+        let tabs = self.namespaces.entry("tabs".to_owned()).or_default();
+        if let Some(value) = tabs_foreground {
+            tabs.entry("foreground".to_owned())
                 .or_insert(ThemeTokenValue::Color(value));
         }
     }
@@ -668,6 +682,18 @@ impl ColorResolver for ThemeVariant {
             Length::ThemeRadius(token) => self.tokens.radii.get(token.as_str()).copied(),
             Length::Pixels(_) | Length::Rems(_) | Length::Relative(_) => Some(length),
         }
+    }
+
+    fn color_snapshot(&self) -> BTreeMap<String, Rgba8> {
+        let mut colors = self.tokens.colors.clone();
+        for (namespace, values) in &self.tokens.namespaces {
+            for (name, value) in values {
+                if let ThemeTokenValue::Color(color) = value {
+                    colors.insert(format!("{namespace}.{name}"), *color);
+                }
+            }
+        }
+        colors
     }
 
     fn resolve_typography(&self, role: &str) -> Option<ResolvedTypography> {
@@ -1174,6 +1200,39 @@ const fn mix_channel(
     let back = (background >> shift) & 0xff;
     let front = (foreground >> shift) & 0xff;
     (back * inverse + front * weight + 127) / 255
+}
+
+fn readable_secondary(muted: Rgba8, primary: Rgba8, surface: Rgba8) -> Rgba8 {
+    if contrast_ratio(muted, surface) >= 4.5 {
+        return muted;
+    }
+    for step in 1_u8..=16 {
+        let weight = u8::try_from(u16::from(step) * 255 / 16).unwrap_or(255);
+        let candidate = mix_opaque(muted, primary, weight);
+        if contrast_ratio(candidate, surface) >= 4.5 {
+            return candidate;
+        }
+    }
+    primary
+}
+
+fn contrast_ratio(left: Rgba8, right: Rgba8) -> f64 {
+    let left = relative_luminance(left);
+    let right = relative_luminance(right);
+    (left.max(right) + 0.05) / (left.min(right) + 0.05)
+}
+
+fn relative_luminance(color: Rgba8) -> f64 {
+    let color = color.as_rgba_hex();
+    let channel = |shift| {
+        let encoded = f64::from(((color >> shift) & 0xff_u32) as u8) / 255.0;
+        if encoded <= 0.04045 {
+            encoded / 12.92
+        } else {
+            ((encoded + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    0.2126 * channel(24) + 0.7152 * channel(16) + 0.0722 * channel(8)
 }
 
 #[derive(Debug, Error)]

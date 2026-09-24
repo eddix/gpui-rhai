@@ -138,6 +138,7 @@ pub struct ChartLabel {
     pub text: String,
     pub color: Rgba8,
     pub anchor: ChartLabelAnchor,
+    pub role: ChartLabelRole,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -145,6 +146,12 @@ pub enum ChartLabelAnchor {
     Start,
     Center,
     End,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ChartLabelRole {
+    Title,
+    Label,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -175,6 +182,8 @@ pub struct ChartTheme {
     pub number: Option<crate::NumberMetadata>,
     pub motion_quality: crate::MotionQuality,
     pub direction: crate::TextDirection,
+    pub title_typography: crate::ResolvedTypography,
+    pub label_typography: crate::ResolvedTypography,
 }
 
 impl Default for ChartTheme {
@@ -207,7 +216,29 @@ impl Default for ChartTheme {
             number: None,
             motion_quality: crate::MotionQuality::High,
             direction: crate::TextDirection::LeftToRight,
+            title_typography: chart_typography(16.0, 22.0, 700),
+            label_typography: chart_typography(12.0, 16.0, 400),
         }
+    }
+}
+
+fn chart_typography(size: f64, line_height: f64, weight: u16) -> crate::ResolvedTypography {
+    crate::ResolvedTypography {
+        family: None,
+        fallbacks: Vec::new(),
+        size: crate::Length::Pixels(size),
+        line_height: crate::Length::Pixels(line_height),
+        weight,
+    }
+}
+
+fn typography_pixels(value: crate::Length, fallback: f64) -> f64 {
+    match value {
+        crate::Length::Pixels(value) => value,
+        crate::Length::Rems(value) => value * 16.0,
+        crate::Length::Relative(_)
+        | crate::Length::ThemeSpacing(_)
+        | crate::Length::ThemeRadius(_) => fallback,
     }
 }
 
@@ -725,7 +756,7 @@ pub(crate) fn layout_chart_scene_with_axis_windows(
         return Err(ChartPrepareError::InvalidViewport { width, height });
     }
     let mut diagnostics = prepared.diagnostics.to_vec();
-    let regions = region_rects(&prepared.spec, width, height);
+    let regions = region_rects(&prepared.spec, width, height, theme);
     let mut marks = Vec::new();
     let mut labels = Vec::new();
     let mut axis_domains = BTreeMap::new();
@@ -945,30 +976,43 @@ fn validate_series_dimensions(
     Ok(())
 }
 
-fn region_rects(spec: &ChartSpec, width: f64, height: f64) -> BTreeMap<String, ChartRect> {
-    let top = if spec.title.is_some() { 52.0 } else { 24.0 }
-        + if spec.legend.visible && matches!(spec.legend.position, super::ChartLegendPosition::Top)
-        {
-            30.0
-        } else {
-            0.0
-        };
-    let bottom = 36.0
+fn region_rects(
+    spec: &ChartSpec,
+    width: f64,
+    height: f64,
+    theme: &ChartTheme,
+) -> BTreeMap<String, ChartRect> {
+    let title_line = typography_pixels(theme.title_typography.line_height, 22.0);
+    let label_line = typography_pixels(theme.label_typography.line_height, 16.0);
+    let label_size = typography_pixels(theme.label_typography.size, 12.0);
+    let top = if spec.title.is_some() {
+        14.0 + title_line + 16.0
+    } else {
+        label_line + 8.0
+    } + if spec.legend.visible
+        && matches!(spec.legend.position, super::ChartLegendPosition::Top)
+    {
+        label_line + 14.0
+    } else {
+        0.0
+    };
+    let bottom = label_line
+        + 20.0
         + if spec.legend.visible
             && matches!(spec.legend.position, super::ChartLegendPosition::Bottom)
         {
-            30.0
+            label_line + 14.0
         } else {
             0.0
         };
-    let left = 52.0
+    let left = (label_size * 4.0 + 4.0).max(52.0)
         + if spec.legend.visible && matches!(spec.legend.position, super::ChartLegendPosition::Left)
         {
             100.0
         } else {
             0.0
         };
-    let right = 24.0
+    let right = (label_size * 2.0).max(24.0)
         + if spec.legend.visible
             && matches!(spec.legend.position, super::ChartLegendPosition::Right)
         {
@@ -1013,8 +1057,9 @@ pub(crate) fn chart_region_rect(
     width: f64,
     height: f64,
     region: &str,
+    theme: &ChartTheme,
 ) -> Option<ChartRect> {
-    region_rects(spec, width, height).remove(region)
+    region_rects(spec, width, height, theme).remove(region)
 }
 
 fn add_title_and_legend(
@@ -1026,6 +1071,8 @@ fn add_title_and_legend(
     marks: &mut Vec<ChartMark>,
     labels: &mut Vec<ChartLabel>,
 ) {
+    let title_line = typography_pixels(theme.title_typography.line_height, 22.0);
+    let label_line = typography_pixels(theme.label_typography.line_height, 16.0);
     if let Some(title) = &spec.title {
         labels.push(ChartLabel {
             key: "title".to_owned(),
@@ -1044,6 +1091,7 @@ fn add_title_and_legend(
             } else {
                 ChartLabelAnchor::Start
             },
+            role: ChartLabelRole::Title,
         });
     }
     if !spec.legend.visible {
@@ -1064,7 +1112,11 @@ fn add_title_and_legend(
         let position = match spec.legend.position {
             super::ChartLegendPosition::Top => ChartPoint {
                 x: logical_x,
-                y: if spec.title.is_some() { 42.0 } else { 14.0 },
+                y: if spec.title.is_some() {
+                    14.0 + title_line + 6.0
+                } else {
+                    14.0
+                },
             },
             super::ChartLegendPosition::Bottom => ChartPoint {
                 x: logical_x,
@@ -1120,11 +1172,12 @@ fn add_title_and_legend(
             } else {
                 ChartLabelAnchor::Start
             },
+            role: ChartLabelRole::Label,
         });
         cursor += if horizontal {
             72.0 + usize_to_f64(series.spec.name.len()) * 4.0
         } else {
-            24.0
+            label_line + 8.0
         };
     }
 }
@@ -1744,6 +1797,7 @@ fn layout_cartesian_annotations(
     marks: &mut Vec<ChartMark>,
     labels: &mut Vec<ChartLabel>,
 ) {
+    let label_line = typography_pixels(theme.label_typography.line_height, 16.0);
     for annotation in spec.annotations.iter().filter(|item| item.region == region) {
         let color = annotation
             .color
@@ -1784,11 +1838,12 @@ fn layout_cartesian_annotations(
                         key: format!("annotation-label:{}", annotation.key),
                         position: ChartPoint {
                             x: x + 9.0,
-                            y: y - 14.0,
+                            y: y - label_line,
                         },
                         text: label.clone(),
                         color,
                         anchor: ChartLabelAnchor::Start,
+                        role: ChartLabelRole::Label,
                     });
                 }
             }
@@ -1994,6 +2049,7 @@ fn add_cartesian_axes(
     draw_x: bool,
     draw_y: bool,
 ) -> Result<(), ChartPrepareError> {
+    let label_line = typography_pixels(theme.label_typography.line_height, 16.0);
     let x_key = x_axis.map_or("x", |axis| axis.key.as_str());
     let y_key = y_axis.map_or("y", |axis| axis.key.as_str());
     let y_right = y_axis.is_some_and(|axis| axis.position == ChartAxisPosition::Right);
@@ -2023,7 +2079,7 @@ fn add_cartesian_axes(
                     } else {
                         bounds.x - 8.0
                     },
-                    y: tick.position - 8.0,
+                    y: tick.position - label_line / 2.0,
                 },
                 text: format_axis_tick(&tick, y, y_axis, theme, formatters)?,
                 color: theme.muted_text,
@@ -2032,6 +2088,7 @@ fn add_cartesian_axes(
                 } else {
                     ChartLabelAnchor::End
                 },
+                role: ChartLabelRole::Label,
             });
         }
         marks.push(line_mark(
@@ -2066,7 +2123,7 @@ fn add_cartesian_axes(
                     } else {
                         bounds.x - 8.0
                     },
-                    y: bounds.y - 18.0,
+                    y: bounds.y - label_line - 2.0,
                 },
                 text: title.clone(),
                 color: theme.text,
@@ -2075,6 +2132,7 @@ fn add_cartesian_axes(
                 } else {
                     ChartLabelAnchor::End
                 },
+                role: ChartLabelRole::Label,
             });
         }
     }
@@ -2100,7 +2158,7 @@ fn add_cartesian_axes(
                 position: ChartPoint {
                     x: tick.position,
                     y: if x_top {
-                        bounds.y - 18.0
+                        bounds.y - label_line - 2.0
                     } else {
                         bounds.y + bounds.height + 6.0
                     },
@@ -2108,6 +2166,7 @@ fn add_cartesian_axes(
                 text: format_axis_tick(&tick, x, x_axis, theme, formatters)?,
                 color: theme.muted_text,
                 anchor: ChartLabelAnchor::Center,
+                role: ChartLabelRole::Label,
             });
         }
         marks.push(line_mark(
@@ -2139,14 +2198,15 @@ fn add_cartesian_axes(
                 position: ChartPoint {
                     x: bounds.x + bounds.width / 2.0,
                     y: if x_top {
-                        bounds.y - 34.0
+                        bounds.y - label_line * 2.0 - 2.0
                     } else {
-                        bounds.y + bounds.height + 24.0
+                        bounds.y + bounds.height + label_line + 8.0
                     },
                 },
                 text: title.clone(),
                 color: theme.text,
                 anchor: ChartLabelAnchor::Center,
+                role: ChartLabelRole::Label,
             });
         }
     }
@@ -2800,11 +2860,13 @@ fn layout_polar(
                     key: format!("{}:gauge-label", prepared.spec.key),
                     position: ChartPoint {
                         x: center.x,
-                        y: center.y - 8.0,
+                        y: center.y
+                            - typography_pixels(theme.label_typography.line_height, 16.0) / 2.0,
                     },
                     text: current.to_string(),
                     color: theme.text,
                     anchor: ChartLabelAnchor::Center,
+                    role: ChartLabelRole::Label,
                 });
             }
             ChartSeriesKind::Funnel => {

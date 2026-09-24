@@ -12,10 +12,10 @@ use std::time::{Duration, Instant};
 
 use gpui::{
     AnyElement, App, AppContext, Bounds, ContentMask, Context, Element, ElementId, Entity,
-    FocusHandle, GlobalElementId, InspectorElementId, InteractiveElement, IntoElement,
-    KeyDownEvent, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
-    ParentElement, Pixels, Point, Render, ScrollWheelEvent, Styled, Task, WeakEntity, Window,
-    canvas, div, fill, point, px, rgba, size,
+    FocusHandle, FontFallbacks, FontWeight, GlobalElementId, InspectorElementId,
+    InteractiveElement, IntoElement, KeyDownEvent, LayoutId, MouseButton, MouseDownEvent,
+    MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point, Render, ScrollWheelEvent, Styled,
+    Task, WeakEntity, Window, canvas, div, fill, point, px, rgba, size,
 };
 
 use super::{
@@ -1067,12 +1067,14 @@ impl ChartEntity {
                     self.pan = self.config.pan;
                     return;
                 };
+                let theme = primitive_chart_theme(&self.config.theme);
                 let plot = self.bounds.and_then(|bounds| {
                     chart_region_rect(
                         &self.config.spec,
                         f64::from(bounds.size.width),
                         f64::from(bounds.size.height),
                         &region,
+                        &theme,
                     )
                 });
                 let size = plot.map_or((1.0, 1.0), |plot| (plot.width, plot.height));
@@ -1099,6 +1101,7 @@ impl ChartEntity {
         let Some(scene) = &self.scene else {
             return;
         };
+        let theme = primitive_chart_theme(&self.config.theme);
         let plot = self
             .bounds
             .and_then(|bounds| {
@@ -1107,6 +1110,7 @@ impl ChartEntity {
                     f64::from(bounds.size.width),
                     f64::from(bounds.size.height),
                     region,
+                    &theme,
                 )
             })
             .or_else(|| scene.plot_regions.get(region).copied());
@@ -1191,6 +1195,7 @@ impl ChartEntity {
                     let Some(scene) = scene.as_ref() else {
                         return false;
                     };
+                    let theme = primitive_chart_theme(&self.config.theme);
                     let plot = self
                         .bounds
                         .and_then(|bounds| {
@@ -1199,6 +1204,7 @@ impl ChartEntity {
                                 f64::from(bounds.size.width),
                                 f64::from(bounds.size.height),
                                 region,
+                                &theme,
                             )
                         })
                         .or_else(|| scene.plot_regions.get(region).copied());
@@ -1226,11 +1232,13 @@ impl ChartEntity {
                     let Some(bounds) = self.bounds else {
                         return false;
                     };
+                    let theme = primitive_chart_theme(&self.config.theme);
                     let Some(plot) = chart_region_rect(
                         &self.config.spec,
                         f64::from(bounds.size.width),
                         f64::from(bounds.size.height),
                         region,
+                        &theme,
                     ) else {
                         return false;
                     };
@@ -1747,20 +1755,30 @@ impl Render for ChartEntity {
         if let Some(scene) = &scene {
             for label in scene.labels.iter() {
                 let position = label.position;
-                let element = div()
-                    .absolute()
-                    .top(px(f64_to_f32(position.y)))
-                    .whitespace_nowrap()
-                    .text_size(px(12.0))
-                    .text_color(rgba(label.color.as_rgba_hex()));
+                let typography = match label.role {
+                    super::ChartLabelRole::Title => &chart_theme.title_typography,
+                    super::ChartLabelRole::Label => &chart_theme.label_typography,
+                };
+                let font_size = typography_length_pixels(typography.size, 12.0);
+                let character_count = u32::try_from(label.text.chars().count()).unwrap_or(u32::MAX);
+                let label_width =
+                    (f64::from(character_count) * font_size * 0.65 + 8.0).clamp(80.0, 320.0);
+                let element = apply_chart_typography(
+                    div()
+                        .absolute()
+                        .top(px(f64_to_f32(position.y)))
+                        .whitespace_nowrap()
+                        .text_color(rgba(label.color.as_rgba_hex())),
+                    typography,
+                );
                 let element = match label.anchor {
                     super::ChartLabelAnchor::Start => element
                         .left(px(f64_to_f32(position.x)))
                         .right(px(0.0))
                         .text_left(),
                     super::ChartLabelAnchor::Center => element
-                        .left(px(f64_to_f32(position.x - 40.0)))
-                        .w(px(80.0))
+                        .left(px(f64_to_f32(position.x - label_width / 2.0)))
+                        .w(px(f64_to_f32(label_width)))
                         .text_center(),
                     super::ChartLabelAnchor::End => element
                         .left(px(0.0))
@@ -1812,7 +1830,7 @@ impl Render for ChartEntity {
                         None => mark.label.clone(),
                     }
                 };
-                root = root.child(
+                root = root.child(apply_chart_typography(
                     div()
                         .absolute()
                         .left(px(f64_to_f32(tooltip_x.max(4.0))))
@@ -1822,9 +1840,9 @@ impl Render for ChartEntity {
                         .border_color(rgba(chart_theme.axis.as_rgba_hex()))
                         .bg(rgba(chart_theme.tooltip_surface.as_rgba_hex()))
                         .text_color(rgba(chart_theme.tooltip_text.as_rgba_hex()))
-                        .text_size(px(12.0))
                         .child(tooltip_text),
-                );
+                    &chart_theme.label_typography,
+                ));
             }
         }
         if let Some((start, end)) = self.brush {
@@ -2685,6 +2703,12 @@ fn primitive_chart_theme(theme: &PrimitiveTheme) -> ChartTheme {
         number: theme.number_metadata().cloned(),
         motion_quality: theme.motion_quality(),
         direction: theme.direction(),
+        title_typography: theme
+            .typography("title")
+            .unwrap_or_else(|| fallback.title_typography.clone()),
+        label_typography: theme
+            .typography("body_small")
+            .unwrap_or_else(|| fallback.label_typography.clone()),
     }
 }
 
@@ -3088,6 +3112,42 @@ fn usize_to_f64(value: usize) -> f64 {
 }
 fn f64_to_f32(value: f64) -> f32 {
     value.to_string().parse().unwrap_or(0.0)
+}
+
+fn typography_length_pixels(value: crate::Length, fallback: f64) -> f64 {
+    match value {
+        crate::Length::Pixels(value) => value,
+        crate::Length::Rems(value) => value * 16.0,
+        crate::Length::Relative(_)
+        | crate::Length::ThemeSpacing(_)
+        | crate::Length::ThemeRadius(_) => fallback,
+    }
+}
+
+fn apply_chart_typography(
+    mut element: gpui::Div,
+    typography: &crate::ResolvedTypography,
+) -> gpui::Div {
+    element = element
+        .text_size(px(f64_to_f32(typography_length_pixels(
+            typography.size,
+            12.0,
+        ))))
+        .line_height(px(f64_to_f32(typography_length_pixels(
+            typography.line_height,
+            16.0,
+        ))))
+        .font_weight(FontWeight(f32::from(typography.weight)));
+    if let Some(family) = &typography.family {
+        element = element.font_family(family.clone());
+    }
+    if !typography.fallbacks.is_empty() {
+        element
+            .text_style()
+            .get_or_insert_with(Default::default)
+            .font_fallbacks = Some(FontFallbacks::from_fonts(typography.fallbacks.clone()));
+    }
+    element
 }
 
 #[must_use]

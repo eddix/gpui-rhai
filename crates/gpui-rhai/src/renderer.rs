@@ -1137,6 +1137,16 @@ fn retained_handlers(
 pub trait ColorResolver {
     fn resolve(&self, color: &ColorValue) -> Option<Rgba8>;
 
+    fn color_snapshot(&self) -> BTreeMap<String, Rgba8> {
+        crate::primitive::RUNTIME_THEME_COLOR_TOKENS
+            .iter()
+            .filter_map(|token| {
+                self.resolve(&ColorValue::Token((*token).to_owned()))
+                    .map(|value| ((*token).to_owned(), value))
+            })
+            .collect()
+    }
+
     fn resolve_typography(&self, role: &str) -> Option<crate::ResolvedTypography> {
         default_typography(role)
     }
@@ -1224,14 +1234,7 @@ impl OwnedColorResolver {
             })
             .collect();
         Self {
-            tokens: crate::primitive::RUNTIME_THEME_COLOR_TOKENS
-                .iter()
-                .filter_map(|token| {
-                    colors
-                        .resolve(&ColorValue::Token((*token).to_owned()))
-                        .map(|value| ((*token).to_owned(), value))
-                })
-                .collect(),
+            tokens: colors.color_snapshot(),
             spacing,
             radii,
             typography,
@@ -1254,6 +1257,10 @@ impl ColorResolver for OwnedColorResolver {
             Length::ThemeRadius(token) => self.radii.get(&token).copied(),
             Length::Pixels(_) | Length::Rems(_) | Length::Relative(_) => Some(length),
         }
+    }
+
+    fn color_snapshot(&self) -> BTreeMap<String, Rgba8> {
+        self.tokens.clone()
     }
 
     fn resolve_motion(&self) -> crate::ThemeMotion {
@@ -4719,12 +4726,17 @@ mod tests {
     #[test]
     fn owned_color_snapshot_matches_the_native_primitive_theme_surface() {
         let engine = crate::RuntimeEngine::new();
-        let theme = crate::load_theme_source(
+        let mut theme = crate::load_theme_source(
             engine.engine(),
             "default_light.rhai",
             include_str!("../../../registry/themes/default_light.rhai"),
         )
         .unwrap();
+        let custom = Rgba8::from_rgba_hex(0x55aa_ccff);
+        theme.tokens.namespaces.insert(
+            "brand".to_owned(),
+            BTreeMap::from([("tint".to_owned(), crate::ThemeTokenValue::Color(custom))]),
+        );
         let snapshot = OwnedColorResolver::capture(&theme);
         assert_eq!(
             snapshot.resolve(&ColorValue::Token("selection".to_owned())),
@@ -4737,6 +4749,10 @@ mod tests {
         assert_eq!(
             snapshot.resolve_length(Length::ThemeSpacing(SpacingToken::Xxs)),
             theme.tokens.spacing.get("xxs").copied()
+        );
+        assert_eq!(
+            snapshot.resolve(&ColorValue::Token("brand.tint".to_owned())),
+            Some(custom)
         );
     }
 

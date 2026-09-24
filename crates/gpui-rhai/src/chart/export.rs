@@ -294,19 +294,51 @@ fn scene_to_svg(scene: &PreparedChartScene, theme: &ChartTheme, locale: &str) ->
             super::scene::ChartLabelAnchor::Center => "middle",
             super::scene::ChartLabelAnchor::End => "end",
         };
+        let typography = match label.role {
+            super::scene::ChartLabelRole::Title => &theme.title_typography,
+            super::scene::ChartLabelRole::Label => &theme.label_typography,
+        };
+        let font_size = typography_pixels(typography.size, 12.0);
+        let font_family = svg_font_family(typography);
         let _ = write!(
             output,
-            r#"<text data-key="{}" x="{}" y="{}" fill="{}" font-family="system-ui, sans-serif" font-size="12" text-anchor="{}" dominant-baseline="hanging">{}</text>"#,
+            r#"<text data-key="{}" x="{}" y="{}" fill="{}" font-family="{}" font-size="{}" font-weight="{}" text-anchor="{}" dominant-baseline="hanging">{}</text>"#,
             escape_xml(&label.key),
             format_number(label.position.x),
             format_number(label.position.y),
             color_hex(label.color),
+            escape_xml(&font_family),
+            format_number(font_size),
+            typography.weight,
             anchor,
             escape_xml(&label.text)
         );
     }
     output.push_str("</svg>");
     output
+}
+
+fn typography_pixels(value: crate::Length, fallback: f64) -> f64 {
+    match value {
+        crate::Length::Pixels(value) => value,
+        crate::Length::Rems(value) => value * 16.0,
+        crate::Length::Relative(_)
+        | crate::Length::ThemeSpacing(_)
+        | crate::Length::ThemeRadius(_) => fallback,
+    }
+}
+
+fn svg_font_family(typography: &crate::ResolvedTypography) -> String {
+    let mut families = typography
+        .family
+        .iter()
+        .cloned()
+        .chain(typography.fallbacks.iter().cloned())
+        .collect::<Vec<_>>();
+    if families.is_empty() {
+        families.extend(["system-ui".to_owned(), "sans-serif".to_owned()]);
+    }
+    families.join(", ")
 }
 
 fn svg_points(points: &[super::ChartPoint]) -> String {
@@ -449,6 +481,37 @@ mod tests {
         assert!(svg.contains("data-key=\"data|4:main|4:bars|1:a|4:body\""));
         let png = export_chart_png(&prepared, &request, &theme, &geo).unwrap();
         assert!(png.starts_with(b"\x89PNG\r\n\x1a\n"));
+    }
+
+    #[test]
+    fn export_and_layout_share_theme_typography() {
+        let prepared = prepared();
+        let request = ChartExportRequest::terminal(640, 400, "zh-CN");
+        let theme = ChartTheme {
+            title_typography: crate::ResolvedTypography {
+                family: Some("JetBrains Mono".to_owned()),
+                fallbacks: vec!["PingFang SC".to_owned()],
+                size: crate::Length::Pixels(24.0),
+                line_height: crate::Length::Pixels(32.0),
+                weight: 700,
+            },
+            label_typography: crate::ResolvedTypography {
+                family: Some("JetBrains Mono".to_owned()),
+                fallbacks: vec!["PingFang SC".to_owned()],
+                size: crate::Length::Pixels(18.0),
+                line_height: crate::Length::Pixels(26.0),
+                weight: 500,
+            },
+            ..ChartTheme::default()
+        };
+        let geo = ChartGeoRegistry::new();
+        let svg = export_chart_svg(&prepared, &request, &theme, &geo).unwrap();
+        assert!(svg.contains(r#"font-family="JetBrains Mono, PingFang SC""#));
+        assert!(svg.contains(r#"font-size="24" font-weight="700""#));
+        assert!(svg.contains(r#"font-size="18" font-weight="500""#));
+
+        let scene = export_scene(&prepared, &request, &theme, &geo).unwrap();
+        assert!(scene.plot_regions["main"].x > 52.0);
     }
 
     #[test]

@@ -33,10 +33,10 @@ pub use geo::{
 pub use primitive::{ChartPrimitiveHandler, chart_primitive_descriptor};
 pub use scale::{ChartScale, ChartScaleError, ChartTick};
 pub use scene::{
-    ChartAxisDomain, ChartDatumRef, ChartLabel, ChartLabelAnchor, ChartMark, ChartMarkGeometry,
-    ChartMarkRole, ChartPoint, ChartPrepareError, ChartPreparedData, ChartRect, ChartSemanticDatum,
-    ChartTheme, ChartViewport, PreparedChartScene, interpolate_chart_scene, layout_chart_scene,
-    layout_chart_scene_with_viewport, prepare_chart_data,
+    ChartAxisDomain, ChartDatumRef, ChartLabel, ChartLabelAnchor, ChartLabelRole, ChartMark,
+    ChartMarkGeometry, ChartMarkRole, ChartPoint, ChartPrepareError, ChartPreparedData, ChartRect,
+    ChartSemanticDatum, ChartTheme, ChartViewport, PreparedChartScene, interpolate_chart_scene,
+    layout_chart_scene, layout_chart_scene_with_viewport, prepare_chart_data,
 };
 pub use spec::{
     ChartAnnotation, ChartAnnotationKind, ChartAnnotationValue, ChartAxisDirection,

@@ -29,6 +29,16 @@ the result stable inside virtualized paint layers. Table uses this stronger
 component selection surface without changing the global text/input `selection`
 role.
 
+Enabled Tabs use the derived `tabs.foreground` role on `surface_hover`. The
+runtime keeps `text_muted` when that pair reaches 4.5:1 and otherwise mixes
+toward `text_primary` only as far as needed. Themes may override the namespaced
+role explicitly.
+
+Validated custom namespace colors are preserved in ordinary, virtual, overlay,
+and native-primitive theme snapshots. Native extensions may therefore read a
+Host token such as `brand.tint` through `PrimitiveTheme::color` without adding
+the token name to gpui-rhai itself.
+
 Typography requires eight semantic roles:
 
 | Role | Size / line | Weight |

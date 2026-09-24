@@ -182,6 +182,11 @@ Only successful foreground installation advances the presented key. A prepared
 revision or cancelled task is never treated as proof that the requested frame
 is visible; accessibility exposes both data revision and presented frame epoch.
 
+Chart titles consume the theme `title` typography role; axes, legends, values,
+and tooltips consume `body_small`. Native labels and SVG/PNG export share the
+resolved family, fallback stack, size, line height, and weight. Plot margins
+grow with the resolved line box instead of assuming a permanent 12px font.
+
 Chart transitions use one aggregated chart resource and the existing Motion
 theme duration/easing plus Host normal/reduced/none policy. Compatible keyed
 rectangles, circles, polylines, and polygons interpolate; entering lines draw by
