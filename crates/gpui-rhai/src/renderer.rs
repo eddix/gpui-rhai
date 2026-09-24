@@ -1197,40 +1197,18 @@ pub(crate) struct OwnedColorResolver {
 
 impl OwnedColorResolver {
     fn capture(colors: &impl ColorResolver) -> Self {
-        const TOKENS: &[&str] = &[
-            "surface",
-            "surface_raised",
-            "surface_hover",
-            "text_primary",
-            "text_muted",
-            "accent",
-            "accent_hover",
-            "on_accent",
-            "danger",
-            "on_danger",
-            "warning",
-            "on_warning",
-            "success",
-            "on_success",
-            "border",
-            "focus_ring",
-            "disabled",
-        ];
-        let spacing = [
-            SpacingToken::Xs,
-            SpacingToken::Sm,
-            SpacingToken::Md,
-            SpacingToken::Lg,
-        ]
-        .into_iter()
-        .filter_map(|token| {
-            colors
-                .resolve_length(Length::ThemeSpacing(token))
-                .map(|value| (token, value))
-        })
-        .collect();
-        let radii = [RadiusToken::Sm, RadiusToken::Md, RadiusToken::Lg]
-            .into_iter()
+        let spacing = crate::primitive::RUNTIME_THEME_SPACING_TOKENS
+            .iter()
+            .copied()
+            .filter_map(|token| {
+                colors
+                    .resolve_length(Length::ThemeSpacing(token))
+                    .map(|value| (token, value))
+            })
+            .collect();
+        let radii = crate::primitive::RUNTIME_THEME_RADIUS_TOKENS
+            .iter()
+            .copied()
             .filter_map(|token| {
                 colors
                     .resolve_length(Length::ThemeRadius(token))
@@ -1246,7 +1224,7 @@ impl OwnedColorResolver {
             })
             .collect();
         Self {
-            tokens: TOKENS
+            tokens: crate::primitive::RUNTIME_THEME_COLOR_TOKENS
                 .iter()
                 .filter_map(|token| {
                     colors
@@ -4736,6 +4714,30 @@ mod tests {
                 weight: 400,
             })
         }
+    }
+
+    #[test]
+    fn owned_color_snapshot_matches_the_native_primitive_theme_surface() {
+        let engine = crate::RuntimeEngine::new();
+        let theme = crate::load_theme_source(
+            engine.engine(),
+            "default_light.rhai",
+            include_str!("../../../registry/themes/default_light.rhai"),
+        )
+        .unwrap();
+        let snapshot = OwnedColorResolver::capture(&theme);
+        assert_eq!(
+            snapshot.resolve(&ColorValue::Token("selection".to_owned())),
+            theme.tokens.color("selection")
+        );
+        assert_eq!(
+            snapshot.resolve(&ColorValue::Token("table.selection".to_owned())),
+            theme.tokens.color("table.selection")
+        );
+        assert_eq!(
+            snapshot.resolve_length(Length::ThemeSpacing(SpacingToken::Xxs)),
+            theme.tokens.spacing.get("xxs").copied()
+        );
     }
 
     #[test]

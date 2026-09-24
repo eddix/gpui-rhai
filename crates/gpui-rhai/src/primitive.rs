@@ -172,6 +172,77 @@ pub struct PrimitiveTheme {
     clock: crate::RuntimeClock,
 }
 
+pub(crate) const RUNTIME_THEME_COLOR_TOKENS: &[&str] = &[
+    "surface",
+    "surface_raised",
+    "surface_hover",
+    "text_primary",
+    "text_muted",
+    "accent",
+    "accent_hover",
+    "on_accent",
+    "danger",
+    "on_danger",
+    "warning",
+    "on_warning",
+    "success",
+    "on_success",
+    "border",
+    "focus_ring",
+    "selection",
+    "disabled",
+    "syntax.comment",
+    "syntax.string",
+    "syntax.number",
+    "syntax.keyword",
+    "syntax.function",
+    "syntax.type",
+    "syntax.variable",
+    "syntax.constant",
+    "syntax.operator",
+    "syntax.punctuation",
+    "syntax.tag",
+    "syntax.attribute",
+    "document.search_match",
+    "document.search_current",
+    "diff.left_only",
+    "diff.right_only",
+    "diff.modified",
+    "diff.inline_left",
+    "diff.inline_right",
+    "diff.gutter",
+    "diff.fold",
+    "charts.axis",
+    "charts.grid",
+    "charts.tooltip_surface",
+    "charts.tooltip_text",
+    "charts.positive",
+    "charts.negative",
+    "charts.selection",
+    "charts.map_missing",
+    "charts.crosshair",
+    "charts.palette_1",
+    "charts.palette_2",
+    "charts.palette_3",
+    "charts.palette_4",
+    "charts.palette_5",
+    "charts.palette_6",
+    "charts.palette_7",
+    "charts.palette_8",
+    "table.selection",
+];
+
+pub(crate) const RUNTIME_THEME_SPACING_TOKENS: &[SpacingToken] = &[
+    SpacingToken::Xxs,
+    SpacingToken::Xs,
+    SpacingToken::Sm,
+    SpacingToken::Md,
+    SpacingToken::Lg,
+];
+
+pub(crate) const RUNTIME_THEME_RADIUS_TOKENS: &[RadiusToken] =
+    &[RadiusToken::Sm, RadiusToken::Md, RadiusToken::Lg];
+
 impl Default for PrimitiveTheme {
     fn default() -> Self {
         Self {
@@ -237,65 +308,8 @@ impl PrimitiveTheme {
         motion_preference: crate::MotionPreference,
         motion_quality: crate::MotionQuality,
     ) -> Self {
-        const TOKENS: &[&str] = &[
-            "surface",
-            "surface_raised",
-            "surface_hover",
-            "text_primary",
-            "text_muted",
-            "accent",
-            "accent_hover",
-            "on_accent",
-            "danger",
-            "on_danger",
-            "warning",
-            "on_warning",
-            "success",
-            "on_success",
-            "border",
-            "focus_ring",
-            "disabled",
-            "syntax.comment",
-            "syntax.string",
-            "syntax.number",
-            "syntax.keyword",
-            "syntax.function",
-            "syntax.type",
-            "syntax.variable",
-            "syntax.constant",
-            "syntax.operator",
-            "syntax.punctuation",
-            "syntax.tag",
-            "syntax.attribute",
-            "document.search_match",
-            "document.search_current",
-            "diff.left_only",
-            "diff.right_only",
-            "diff.modified",
-            "diff.inline_left",
-            "diff.inline_right",
-            "diff.gutter",
-            "diff.fold",
-            "charts.axis",
-            "charts.grid",
-            "charts.tooltip_surface",
-            "charts.tooltip_text",
-            "charts.positive",
-            "charts.negative",
-            "charts.selection",
-            "charts.map_missing",
-            "charts.crosshair",
-            "charts.palette_1",
-            "charts.palette_2",
-            "charts.palette_3",
-            "charts.palette_4",
-            "charts.palette_5",
-            "charts.palette_6",
-            "charts.palette_7",
-            "charts.palette_8",
-        ];
         Self {
-            colors: TOKENS
+            colors: RUNTIME_THEME_COLOR_TOKENS
                 .iter()
                 .filter_map(|token| {
                     colors
@@ -303,21 +317,18 @@ impl PrimitiveTheme {
                         .map(|value| ((*token).to_owned(), value))
                 })
                 .collect(),
-            spacing: [
-                SpacingToken::Xs,
-                SpacingToken::Sm,
-                SpacingToken::Md,
-                SpacingToken::Lg,
-            ]
-            .into_iter()
-            .filter_map(|token| {
-                colors
-                    .resolve_length(Length::ThemeSpacing(token))
-                    .map(|value| (token, value))
-            })
-            .collect(),
-            radii: [RadiusToken::Sm, RadiusToken::Md, RadiusToken::Lg]
-                .into_iter()
+            spacing: RUNTIME_THEME_SPACING_TOKENS
+                .iter()
+                .copied()
+                .filter_map(|token| {
+                    colors
+                        .resolve_length(Length::ThemeSpacing(token))
+                        .map(|value| (token, value))
+                })
+                .collect(),
+            radii: RUNTIME_THEME_RADIUS_TOKENS
+                .iter()
+                .copied()
                 .filter_map(|token| {
                     colors
                         .resolve_length(Length::ThemeRadius(token))
@@ -1726,12 +1737,22 @@ mod tests {
 
     impl ColorResolver for TestTheme {
         fn resolve(&self, color: &ColorValue) -> Option<Rgba8> {
-            matches!(color, ColorValue::Token(token) if token == "accent")
-                .then(|| Rgba8::from_rgba_hex(0x1234_56ff))
+            match color {
+                ColorValue::Token(token)
+                    if matches!(token.as_str(), "accent" | "selection" | "table.selection") =>
+                {
+                    Some(Rgba8::from_rgba_hex(0x1234_56ff))
+                }
+                _ => None,
+            }
         }
 
         fn resolve_length(&self, length: Length) -> Option<Length> {
-            (length == Length::ThemeSpacing(SpacingToken::Sm)).then_some(Length::Pixels(6.0))
+            match length {
+                Length::ThemeSpacing(SpacingToken::Xxs) => Some(Length::Pixels(2.0)),
+                Length::ThemeSpacing(SpacingToken::Sm) => Some(Length::Pixels(6.0)),
+                _ => None,
+            }
         }
 
         fn resolve_typography(&self, role: &str) -> Option<crate::ResolvedTypography> {
@@ -1767,6 +1788,14 @@ mod tests {
         );
         assert_eq!(theme.color("unknown"), None);
         assert_eq!(
+            theme.color("selection"),
+            Some(Rgba8::from_rgba_hex(0x1234_56ff))
+        );
+        assert_eq!(
+            theme.color("table.selection"),
+            Some(Rgba8::from_rgba_hex(0x1234_56ff))
+        );
+        assert_eq!(
             theme.resolve_color(&ColorValue::Literal(Rgba8::from_rgba_hex(0xaabb_ccdd))),
             Some(Rgba8::from_rgba_hex(0xaabb_ccdd))
         );
@@ -1775,9 +1804,27 @@ mod tests {
             Some(Length::Pixels(6.0))
         );
         assert_eq!(
+            theme.resolve_length(Length::ThemeSpacing(SpacingToken::Xxs)),
+            Some(Length::Pixels(2.0))
+        );
+        assert_eq!(
             theme.typography("body").unwrap().family.as_deref(),
             Some("JetBrains Mono")
         );
+
+        let engine = crate::RuntimeEngine::new();
+        let loaded = crate::load_theme_source(
+            engine.engine(),
+            "default_light.rhai",
+            include_str!("../../../registry/themes/default_light.rhai"),
+        )
+        .unwrap();
+        let captured = PrimitiveTheme::capture(&loaded);
+        assert_eq!(
+            captured.color("table.selection"),
+            loaded.tokens.color("table.selection")
+        );
+        assert!(captured.color("table.selection").is_some());
     }
 
     fn descriptor() -> PrimitiveDescriptor {

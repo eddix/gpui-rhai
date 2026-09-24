@@ -23,6 +23,12 @@ Official themes map all three radii to `0px`: rectangular controls and panels
 are square by default. Components give explicit half-size radii only to
 semantic circles such as Avatar, Radio, presence dots, and slider thumbs.
 
+The runtime derives `table.selection` as an opaque 28% accent / 72% surface mix
+unless the theme supplies an explicit namespaced override. Precompositing keeps
+the result stable inside virtualized paint layers. Table uses this stronger
+component selection surface without changing the global text/input `selection`
+role.
+
 Typography requires eight semantic roles:
 
 | Role | Size / line | Weight |

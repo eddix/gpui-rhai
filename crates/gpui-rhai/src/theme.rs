@@ -339,6 +339,15 @@ impl ThemeTokens {
                     .or_insert(ThemeTokenValue::Color(value));
             }
         }
+        let table_selection = color("surface")
+            .zip(color("accent"))
+            .map(|(surface, accent)| mix_opaque(surface, accent, 0x48));
+        let table = self.namespaces.entry("table".to_owned()).or_default();
+        if let Some(value) = table_selection {
+            table
+                .entry("selection".to_owned())
+                .or_insert(ThemeTokenValue::Color(value));
+        }
     }
 
     /// Validate the initial semantic token contract.
@@ -1140,6 +1149,31 @@ fn decode_theme_source(
 
 const fn with_alpha(color: Rgba8, alpha: u8) -> Rgba8 {
     Rgba8::from_rgba_hex((color.as_rgba_hex() & 0xffff_ff00) | alpha as u32)
+}
+
+const fn mix_opaque(background: Rgba8, foreground: Rgba8, weight: u8) -> Rgba8 {
+    let background = background.as_rgba_hex();
+    let foreground = foreground.as_rgba_hex();
+    let inverse = 255_u32 - weight as u32;
+    let weight = weight as u32;
+    Rgba8::from_rgba_hex(
+        (mix_channel(background, foreground, inverse, weight, 24) << 24)
+            | (mix_channel(background, foreground, inverse, weight, 16) << 16)
+            | (mix_channel(background, foreground, inverse, weight, 8) << 8)
+            | 0xff,
+    )
+}
+
+const fn mix_channel(
+    background: u32,
+    foreground: u32,
+    inverse: u32,
+    weight: u32,
+    shift: u32,
+) -> u32 {
+    let back = (background >> shift) & 0xff;
+    let front = (foreground >> shift) & 0xff;
+    (back * inverse + front * weight + 127) / 255
 }
 
 #[derive(Debug, Error)]

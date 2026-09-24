@@ -33,13 +33,14 @@ LinkRegistry 为每次 viewport 提交分配注册表级单调 commit，并将�
 - 主题 spacing 新增 `xxs`（官方主题为 2px）。Tabs 的 track padding/gap
   使用 `spacing.xxs`，track/thumb 使用 `radius.sm`，选中 thumb 不再增加
   独立边框。
-- Table 的选中态使用主题 `selection` 作为整行背景，并公开 `row` 与
-  `row_selected` 样式 parts；hover/striping 不覆盖选中填充。
+- Table 的选中态使用主题派生的 `table.selection` 不透明 accent/surface
+  混色作为整行背景，并公开 `row` 与 `row_selected` 样式 parts；
+  hover/striping 不覆盖选中填充。
 
 ## 自动验证
 
 - 本轮审计原生探针：18/18 通过。
-- Workspace 全目标、全 feature：563 项通过。
+- Workspace 全目标、全 feature：564 项通过。
 - 原生独立包：100 项通过，其中 Chart 28 项、控件视觉 4 项。
 - Workspace 与原生独立包严格 Clippy、fmt：通过。
 - Chart Gallery 永久测试验证页面滚动确实改变离屏图表的呈现位置。
@@ -49,6 +50,7 @@ LinkRegistry 为每次 viewport 提交分配注册表级单调 commit，并将�
 - 完整 `scripts/release-smoke.sh` 通过，包括 Chart/Component Gallery、全部
   examples、Theme Studio 与 Table 状态矩阵。
 
-macOS 锁屏时无法执行本轮最终人工截图检查；代码、布局和交互门禁不把
-自动测试冒充实机视觉验收。解锁后仍需检查浅/深主题下的轴标签、Tabs、
-Table 选中行，以及 Chart Gallery 全程滚动。
+解锁后的最终实机矩阵已完成：Chart Gallery 在浅/深主题下的轴标签与
+页面滚动通过；Component Gallery 的主题化 Tabs 通过；Table 的浅色多选
+行与深色分组行均显示完整 `table.selection` 背景。滚轮落在 Chart 内部时
+仍由图表缩放消费，落在 Gallery 留白时由页面滚动消费。

@@ -209,29 +209,30 @@ fn render_table_row(resize_signals, ctx, payload) {
                 resize_signals[cell.key], 0.0));
         }
         let node = row(content).with_key(cell.key).with_style(
-            column_style(cell).min_width(px(0)).overflow_hidden()
-                .whitespace_nowrap().text_ellipsis().typography("body")
+            ctx.component_style(if item.selected { "row_selected" } else { "row" },
+                column_style(cell).height(px(item.height)).min_width(px(0)).overflow_hidden()
+                    .items_center().whitespace_nowrap().text_ellipsis().typography("body")
+                    .background(if item.selected { theme_color("table.selection") }
+                        else { rgba(0x00000000) }))
         );
         if "resize_signal_key" in cell {
             node = node.bind_parent_signal(ctx, "width_override", cell.resize_signal_key);
         }
         cells.push(node);
     }
-    let base = ctx.component_style("row", style().width(relative(1.0))
+    let base = style().width(relative(1.0))
         .height(px(item.height)).items_center()
         .overflow_hidden()
         .border_bottom(px(1)).border_color(theme_color("border"))
-        .background(if item.striped { theme_color("surface_raised") }
-            else { rgba(0x00000000) }));
-    if item.selected {
-        base = ctx.component_style("row_selected",
-            base.background(theme_color("selection")));
-    } else {
+        .background(if item.selected { theme_color("table.selection") }
+            else if item.striped { theme_color("surface_raised") }
+            else { rgba(0x00000000) });
+    if !item.selected {
         base = base.hover(style().background(theme_color("surface_hover")));
     }
     let node = row(cells)
         .with_key(payload.key)
-        .with_style(base)
+        .with_style(ctx.component_style(if item.selected { "row_selected" } else { "row" }, base))
         .accessibility_role("row")
         .accessibility_label(item.label)
         .accessibility_checked(item.selected);
