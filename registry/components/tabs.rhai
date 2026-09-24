@@ -79,23 +79,25 @@ fn render_Tabs(ctx, props) {
         let label_visible = if "label_visible" in tab { tab.label_visible } else { true };
         let has_icon = "icon" in tab && tab.icon != ();
         if !label_visible && !has_icon { throw `Tabs item ${tab.value} hides its label without an icon`; }
-        let tab_style = style().relative().height(px(26)).items_center().justify_center()
-            .gap(px(6)).typography("body").font_weight(500)
+        let tab_style = style().relative().min_height(px(26)).padding_y(theme_spacing("xxs"))
+            .items_center().justify_center().gap(theme_spacing("xs"))
+            .typography("body").font_weight(500)
             .border(px(1)).border_color(rgba(0x00000000))
             .text_color(if tab_disabled(tab) { theme_color("disabled") }
                 else if selected { theme_color("text_primary") }
-                else { theme_color("text_muted") })
+                else { theme_color("tabs.foreground") })
             .background(rgba(0x00000000))
             .focus(style().border_color(theme_color("focus_ring")).text_color(theme_color("text_primary")))
             .disabled(style().opacity(0.68));
         if orientation == "vertical" {
-            tab_style = tab_style.width(relative(1.0)).padding_x(px(10)).justify_start();
+            tab_style = tab_style.width(relative(1.0)).padding_x(theme_spacing("sm")).justify_start();
         } else if layout == "equal" {
-            tab_style = tab_style.flex_basis(relative(0)).flex_grow().min_width(px(0)).padding_x(px(10));
+            tab_style = tab_style.flex_basis(relative(0)).flex_grow().min_width(px(0))
+                .padding_x(theme_spacing("sm"));
         } else if !label_visible {
-            tab_style = tab_style.width(px(26)).padding_x(px(0));
+            tab_style = tab_style.min_width(px(26)).padding_x(theme_spacing("xxs"));
         } else {
-            tab_style = tab_style.padding_x(px(10));
+            tab_style = tab_style.padding_x(theme_spacing("sm"));
         }
         tab_style = tab_style.hover(style().text_color(theme_color("text_primary")));
         let resolved_tab_style = ctx.component_style("tab", tab_style);
@@ -123,8 +125,11 @@ fn render_Tabs(ctx, props) {
         if label_visible {
             content.push(text(tab.label).with_style(ctx.component_style("label",
                 style().min_width(px(0)).whitespace_nowrap().text_ellipsis())));
+        } else {
+            content.push(text(" ").with_style(style().width(px(0)).overflow_hidden()));
         }
-        children.push(row(content).with_style(style().relative().items_center().justify_center().gap(px(6))));
+        children.push(row(content).with_style(style().relative().items_center().justify_center()
+            .gap(theme_spacing("xs"))));
 
         let header = row(children).with_key(tab.value)
             .with_style(resolved_tab_style)
@@ -138,7 +143,7 @@ fn render_Tabs(ctx, props) {
         }
         headers.push(header);
         if selected { panel = tab.content.with_style(ctx.component_style("panel", style()
-            .padding(px(12)).border(px(1)).border_color(theme_color("border"))
+            .padding(theme_spacing("md")).border(px(1)).border_color(theme_color("border"))
             .background(theme_color("surface")).typography("body"))); }
     }
     let list = if orientation == "vertical" { column(headers) } else { row(headers) };
@@ -147,7 +152,7 @@ fn render_Tabs(ctx, props) {
     if orientation == "vertical" {
         list_style = list_style.min_width(px(120)).self_start();
     } else {
-        list_style = list_style.height(px(30)).items_center().overflow_x_scroll();
+        list_style = list_style.items_center().overflow_x_scroll();
         if layout == "equal" { list_style = list_style.width(relative(1.0)); }
         else { list_style = list_style.width(auto()).self_start(); }
     }
@@ -168,7 +173,7 @@ fn render_Tabs(ctx, props) {
         }
     }
     let root = if orientation == "vertical" { row([list, panel]) } else { column([list, panel]) };
-    let root_style = style().gap(px(6)).margin_end(auto());
+    let root_style = style().gap(theme_spacing("xs")).margin_end(auto());
     root.with_style(ctx.component_style("root", root_style))
         .accessibility_role("group").accessibility_label(props.label)
 }

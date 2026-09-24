@@ -140,7 +140,7 @@ fn render_Menu(ctx, props) {
             let item_border = if active { theme_color("accent") } else { rgba(0x00000000) };
             let hover_background = if active { theme_color("selection") }
                 else { theme_color("surface_hover") };
-            let item_style = style().height(px(28)).padding_x(px(8)).gap(px(8))
+    let item_style = style().height(px(28)).padding_x(theme_spacing("sm")).gap(theme_spacing("sm"))
                 .items_center().background(item_background).text_color(item_text)
                 .typography("body")
                 .border_start(px(2)).border_color(item_border);
@@ -170,7 +170,7 @@ fn render_Menu(ctx, props) {
     let content = column(children)
         .with_key(`${props.key}-content`)
         .with_style(ctx.component_style("content",
-            style().width(px(240)).padding(px(4)).gap(px(2)).radius(theme_radius("md"))
+        style().width(px(240)).padding(theme_spacing("xs")).gap(theme_spacing("xxs")).radius(theme_radius("md"))
                 .border(px(1)).border_color(theme_color("border"))
                 .background(theme_color("surface"))
                 .focus(style().border_color(theme_color("focus_ring")))

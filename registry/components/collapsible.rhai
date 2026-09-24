@@ -44,7 +44,7 @@ fn render_Collapsible(ctx, props) {
     let disabled = if "disabled" in props { props.disabled } else { false };
     let trigger = props.trigger
         .with_style(ctx.component_style("trigger", style()
-            .min_height(px(32)).padding_x(px(10)).items_center()
+            .min_height(px(32)).padding_x(theme_spacing("sm")).items_center()
             .border(px(1)).border_color(rgba(0x00000000))
             .radius(theme_radius("sm"))
             .typography("body").font_weight(700)
@@ -60,7 +60,7 @@ fn render_Collapsible(ctx, props) {
     }
     let height = props.content_height;
     let panel_content = props.content.with_style(ctx.component_style("content", style()
-        .padding(px(10)).typography("body")));
+            .padding(theme_spacing("sm")).typography("body")));
     let panel = column([panel_content])
         .with_key(`${props.key}-content`)
         .with_style(style().height(px(if props.open { height } else { 0 })).clip()

@@ -12,10 +12,9 @@ cargo run -p gpui-rhai --example component_gallery
 
 Theme Studio renders the same exhaustive specimen while editing a theme.
 
-The implemented 0.1.5 visual revision for Tabs, Button, and Badge is documented in the
-[control visual specification (简体中文)](control-visual-spec.zh-CN.md).
-It includes dimensions, theme roles, props/style parts, motion, and native
-acceptance criteria. ToggleGroup notes remain future design reference.
+The [registry visual system](../registry-design-system.md) is the maintained
+source for component dimensions, color roles, state appearance, and known
+visual gaps. This catalog records component semantics and public contracts.
 
 Version 0.1.2 freezes this 51-component foundation: component IDs and exports,
 controlled-state ownership, semantic event payloads, the `xs`/`sm`/`md`/`lg`
@@ -45,10 +44,9 @@ policy.
 
 - `Label`, `Divider`, and `Icon` provide semantic text and visual structure.
 - `Avatar`, `Badge`, and `Tag` are distinct: Badge is read-only status,
-  while Tag may represent removable application metadata. The accepted Badge
-  revision tightens its text enclosure relative to Button: medium Badge uses
-  a line-height-plus-4px box and 6px horizontal padding per side, independently
-  of whether its appearance is filled, subtle, or outlined.
+  while Tag may represent removable application metadata. Badge keeps a compact
+  text enclosure relative to Button; see the
+  [density metrics](../registry-design-system.md#button-and-badge-density).
 - `Alert` is persistent inline feedback; `Toast` is transient layered feedback.
 - `Card`, `GroupBox`, and `Empty` standardize common composition without hiding
   their node slots.
@@ -69,10 +67,9 @@ policy.
   mixed with text. `Toggle`/`ToggleGroup` express labeled pressed tool state;
   `Checkbox`, `Radio`/`RadioGroup`, and `Switch` retain their separate selection
   and setting semantics.
-- The deferred ToggleGroup visual target uses equal-size button segments and
-  a single 1px separator at each internal edge. Its selected fill belongs to
-  each pressed segment, unlike the single inset thumb used by Tabs. Ordinary
-  ButtonGroup does not acquire an equal-width requirement.
+- ToggleGroup's future segmented appearance is recorded under
+  [known visual gaps](../registry-design-system.md#known-implementation-gaps);
+  it is not part of the current component contract.
 - `Input`, `InputGroup`, `Textarea`, and `FormField` use the retained native
   editing core and explicit semantic relationships.
 - `Select` is scalar choice. `Combobox` is searchable single/multiple choice.
@@ -98,12 +95,55 @@ documented keyboard policies. `Table` and public `virtual_collection` accept
 Array or Rust-owned NativeCollection data. `ScrollArea` handles arbitrary
 non-virtual content.
 
-Tabs now replaces the selected rail with a continuous
-track and a single inset thumb. Unselected items have no button container or
-separator. Content-width and explicit equal-width layouts, icon headers, the
-3px inset, and target `indicator` / `tab_selected` parts are specified in the
-[control visual specification](control-visual-spec.zh-CN.md); new fields and
-parts are available from the 0.1.5 source schema.
+### Tabs
+
+`components/tabs` exports controlled `Tabs(props)`. `value` selects one
+associated content panel; `on_change` receives a `change(string)` proposal.
+The caller owns the accepted value. Clicking or keyboard navigation does not
+independently commit a different panel or thumb position.
+
+| Prop | Contract |
+|---|---|
+| `value` | Required selected string value |
+| `label` | Required accessible name for the tab group |
+| `tabs` | Required array, at most 128 items |
+| `orientation` | `horizontal` (default) or `vertical` |
+| `layout` | `content` (default) or `equal` |
+| `motion_key` | Optional stable string, at most 128 characters; empty means direct positioning, nonempty enables shared-layout thumb motion and must be unique within the view |
+| `on_change` | Optional callback receiving the proposed value |
+
+Each item requires `value: string`, `label: string`, and `content: node`.
+Optional `icon: node` provides decorative header content; `label_visible`
+defaults to true and may be false only when an icon is provided. A textual
+label remains required for icon-only tabs. `disabled` defaults to false.
+`content` is the page panel, never an alternate header slot. Header icons
+must not add a second action or keyboard entry point.
+
+Tabs retains one keyboard entry point, orientation-aware arrow navigation,
+disabled-item skipping, and the runtime's horizontal RTL behavior. It exposes
+group/tablist/tab semantics and selected state, rather than button pressed
+state. The track and inset selection thumb follow the
+[Tabs visual contract](../registry-design-system.md#tabs-track-and-selection-thumb).
+
+| Style part | Responsibility |
+|---|---|
+| `root` | List/panel composition |
+| `list` | Continuous track, padding, radius, and scrolling |
+| `indicator` | Selection thumb fill, border, and radius; no independent action |
+| `tab` | Header slot layout and interaction appearance |
+| `tab_selected` | Selected header styling without a second thumb/background |
+| `label`, `icon` | Header content styling |
+| `panel` | Selected page content |
+
+Styles follow source defaults → component stylesheet → instance overrides.
+`motion/animated_tabs` exposes the same item, orientation, layout, and controlled
+selection contract, requires a stable `key`, and forwards that key as the
+inner Tabs' motion identity. Its own style part is `root`. It uses the shared
+selection thumb instead of replaying opacity over the entire component.
+
+Current limit: horizontal overflow is locally scrollable but controlled
+selection does not automatically reveal an offscreen item. See the visual
+system's [known implementation gaps](../registry-design-system.md#known-implementation-gaps).
 
 ## Command and CommandDialog
 

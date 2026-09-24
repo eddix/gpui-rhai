@@ -73,7 +73,7 @@ fn render_FormField(ctx, props) {
             .accessibility_id(error_id).accessibility_role("alert"));
     }
     column(children).with_key(props.id)
-        .with_style(ctx.component_style("root", style().gap(px(4))))
+        .with_style(ctx.component_style("root", style().gap(theme_spacing("xs"))))
         .accessibility_role("group")
         .accessibility_label(props.label)
         .accessibility_invalid(error != ())

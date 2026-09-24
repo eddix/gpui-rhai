@@ -784,6 +784,11 @@ fn bundled_theme_text_pairs_meet_small_text_contrast() {
             ) >= 3.0,
             "{name}: focus ring does not reach 3:1 against the surface"
         );
+        let tabs_foreground = theme.tokens.color("tabs.foreground").unwrap();
+        assert!(
+            contrast(tabs_foreground, theme.tokens.colors["surface_hover"]) >= 4.5,
+            "{name}: enabled tab foreground is unreadable on its track"
+        );
     }
 }
 
@@ -833,6 +838,7 @@ fn bundled_themes_materialize_complete_document_and_chart_palettes() {
             "charts.palette_7",
             "charts.palette_8",
             "table.selection",
+            "tabs.foreground",
         ] {
             assert!(
                 theme.tokens.color(token).is_some(),
@@ -906,6 +912,28 @@ fn official_component_sources_reject_decorative_visual_drift() {
             assert!(
                 line.contains("rgba(0x00000000)"),
                 "official component {id} hard-codes a palette color: {line}"
+            );
+        }
+        for line in source.lines().filter(|line| {
+            [
+                ".padding(px(",
+                ".padding_x(px(",
+                ".padding_y(px(",
+                ".padding_start(px(",
+                ".padding_end(px(",
+                ".gap(px(",
+                ".margin(px(",
+            ]
+            .iter()
+            .any(|pattern| line.contains(pattern))
+        }) {
+            let allowed_structure = (id == "icon_button" && line.contains(".padding(px(0))"))
+                || (id == "switch" && line.contains(".padding(px(2))"))
+                || (id == "title_bar"
+                    && (line.contains("gap(px(0))") || line.contains("padding_start(px(inset))")));
+            assert!(
+                allowed_structure,
+                "official component {id} hard-codes visual spacing: {line}"
             );
         }
     }

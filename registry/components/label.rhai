@@ -70,7 +70,7 @@ fn render_Label(ctx, props) {
         );
     }
     column(children)
-        .with_style(ctx.component_style("root", style().gap(px(3))))
+        .with_style(ctx.component_style("root", style().gap(theme_spacing("xxs"))))
         .accessibility_role("label")
         .accessibility_label(props.text)
 }

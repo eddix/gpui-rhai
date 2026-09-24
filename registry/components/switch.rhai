@@ -67,7 +67,7 @@ fn render_Switch(ctx, props) {
     let track = row([thumb]).with_style(ctx.component_style("track", track_style));
     let node = row([track, text(props.label).with_style(ctx.component_style("label", style()))])
         .with_style(ctx.component_style("root",
-            style().gap(px(8)).items_center().self_start().padding(px(3))
+        style().gap(theme_spacing("sm")).items_center().self_start().padding(theme_spacing("xxs"))
                 .radius(theme_radius("sm"))
                 .border(px(1)).border_color(rgba(0x00000000))
                 .typography("body")

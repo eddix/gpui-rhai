@@ -42,10 +42,10 @@ fn render_GroupBox(ctx, props) {
             .typography("body_small").text_color(theme_color("text_muted")))));
     }
     column([
-        column(header).with_style(style().gap(px(2))),
+        column(header).with_style(style().gap(theme_spacing("xxs"))),
         props.content.with_style(ctx.component_style("content", style()))
     ]).with_style(ctx.component_style("root", style()
-        .padding(px(12)).gap(px(10)).radius(theme_radius("md"))
+        .padding(theme_spacing("md")).gap(theme_spacing("sm")).radius(theme_radius("md"))
         .border(px(1)).border_color(theme_color("border"))
         .background(theme_color("surface"))
         .disabled(style().opacity(0.62))))

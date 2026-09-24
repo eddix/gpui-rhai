@@ -90,8 +90,8 @@ fn render_Popover(ctx, props) {
         .with_style(ctx.component_style("content",
             style()
                 .width(px(240))
-                .padding(px(10))
-                .gap(px(8))
+                .padding(theme_spacing("sm"))
+                .gap(theme_spacing("sm"))
                 .radius(theme_radius("md"))
                 .border(px(1))
                 .border_color(theme_color("border"))

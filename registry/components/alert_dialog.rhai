@@ -70,7 +70,7 @@ fn render_AlertDialog(ctx, props) {
         on_click: Fn("confirm_action") })
         .with_style(ctx.component_style("confirm", style()));
     dialog::Dialog(#{ key: props.key, open: props.open, title: props.title,
-        content: column(body).with_style(style().gap(px(8))),
+        content: column(body).with_style(style().gap(theme_spacing("sm"))),
         actions: [cancel, confirm], initial_focus: "first", on_open_change: Fn("open_action") })
         .with_style(ctx.component_style("root", style()))
 }

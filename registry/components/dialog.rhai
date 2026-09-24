@@ -95,7 +95,7 @@ fn render_Dialog(ctx, props) {
         children.push(
             row(props.actions)
                 .with_style(ctx.component_style("actions",
-                    style().gap(px(8)).justify_end().padding_top(px(4))
+                style().gap(theme_spacing("sm")).justify_end().padding_top(theme_spacing("xs"))
                         .border_top(px(1)).border_color(theme_color("border"))))
         );
     }
@@ -104,8 +104,8 @@ fn render_Dialog(ctx, props) {
             style()
                 .width(px(420))
                 .max_width(relative(0.9))
-                .padding(px(16))
-                .gap(px(12))
+            .padding(theme_spacing("lg"))
+            .gap(theme_spacing("md"))
                 .radius(theme_radius("md"))
                 .border(px(1))
                 .border_color(theme_color("border"))

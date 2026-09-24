@@ -158,7 +158,7 @@ fn render_Pagination(ctx, props) {
     ) {
         if page == 0 {
             controls.push(row([text("…")]).with_style(ctx.component_style("ellipsis",
-                style().items_center().padding_x(px(4)))));
+            style().items_center().padding_x(theme_spacing("xs")))));
         } else {
             controls.push(page_button(ctx, page, props.current_page, props.page_size, size, callback));
         }

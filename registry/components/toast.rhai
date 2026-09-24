@@ -102,7 +102,7 @@ fn toast_node(ctx, item, dismiss_label) {
     column(children).with_key(item.id)
         .with_style(ctx.component_style(`toast_${variant}`,
             ctx.component_style("toast",
-                style().width(px(320)).gap(px(4)).padding(px(10))
+                    style().width(px(320)).gap(theme_spacing("xs")).padding(theme_spacing("sm"))
                     .border(px(1)).border_color(variant_color(variant))
                     .radius(theme_radius("md")).background(theme_color("surface"))
                     .text_color(theme_color("text_primary")))))
@@ -114,7 +114,7 @@ fn toast_node(ctx, item, dismiss_label) {
 fn region_layer(ctx, key, placement, children) {
     if children.len == 0 { return (); }
     layer(column(children).with_key(`${key}-column`)
-        .with_style(ctx.component_style("region", style().width(px(320)).gap(px(6)))),
+        .with_style(ctx.component_style("region", style().width(px(320)).gap(theme_spacing("xs")))),
         #{ id: key, placement: placement, inset: 10, priority: 9000 })
 }
 

@@ -9,15 +9,14 @@ default metrics and state vocabulary are defined in
 
 ## Tabs, Button, and Badge control baseline
 
-The 2026-09-23
-[Tabs / Button / Badge specification](components/control-visual-spec.zh-CN.md)
-defines the 0.1.5 control baseline. Its user-supplied reference images remain
-design input rather than native evidence.
+The maintained [registry visual system](registry-design-system.md) defines
+control appearance; the [Tabs contract](components/catalog.md#tabs) defines
+its public props, semantics, and style parts.
 
-After implementation, add one contextual specimen containing:
+Maintain one contextual specimen containing:
 
 - Tabs with the first, middle, and last item selected; the track inset remains
-  3px at every outer edge, with no dividers or selected rail;
+  the resolved `spacing.xxs` at every outer edge, with no dividers or selected rail;
 - content-width and equal-width Tabs, unequal English/CJK labels, icons with
   text and icon-only headers, horizontal/vertical and LTR/RTL layouts;
 - normal, focused, hovered, disabled, scrolling, interrupted transition, and
@@ -28,11 +27,29 @@ After implementation, add one contextual specimen containing:
 Capture Default Light/Dark, Tokyo Night/Storm, and Catppuccin Latte/Mocha at
 settled frames. Inspect the remaining bundled themes in the same specimen.
 Record logical bounds as well as 1x/2x screenshots so text/line-height and
-track-inset assertions do not depend on screenshot scaling. Add mounted tests
-for controlled-value rejection, keyboard/disabled behavior, overflow reveal,
-and an indicator that owns neither input nor accessibility focus. The permanent
-geometry and controlled-state assertions live in
-`tests/native-keyboard/tests/control_visuals.rs`.
+track-inset assertions do not depend on screenshot scaling. Mounted tests must
+cover controlled-value rejection, keyboard/disabled behavior, local overflow
+scrolling, and an indicator that owns neither input nor accessibility focus.
+Also check rapid interrupted transitions, first mount, resize, theme/locale
+changes, and Reduced/None presentation without spurious change callbacks.
+Button disabled/loading must suppress actions without changing its height;
+Badge adds no action focus stop. The permanent geometry and controlled-state
+assertions live in `tests/native-keyboard/tests/control_visuals.rs`.
+Also mount the specimen with deliberately different valid Host spacing/radius
+overrides and larger typography. Verify all four track insets, text containment,
+theme-responsive Button/Badge density, square and rounded rectangular surfaces,
+native/virtualized token parity, and theme switching with preserved state.
+Testing only bundled themes with identical spacing and zero radii cannot detect
+literal-token substitution. Color checks must use the actual foreground/surface
+pair for every state, including enabled but unselected Tabs.
+
+Third-party reference screenshots are not project assets. Keep requirement
+documents text-only; any product captures used during an audit remain outside
+the repository unless their inclusion is explicitly approved for baselines.
+Automatic selected-tab reveal, adaptive tab height for larger fonts, and the
+future ToggleGroup appearance remain
+[known gaps](registry-design-system.md#known-implementation-gaps), not certified
+behavior. Add their geometry and interaction assertions when implemented.
 Do not replace those assertions with snapshot-only tests.
 
 ## Deterministic matrix

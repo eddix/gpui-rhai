@@ -19,7 +19,6 @@ security, testing, and troubleshooting.
 
 - [Component authoring](component-authoring-guide.md)
 - [Registry design system](registry-design-system.md)
-- [Tabs / Button / Badge visual specification (简体中文; implemented in 0.1.5)](components/control-visual-spec.zh-CN.md)
 - [Typed Style surface](style.md) and [component stylesheets](component-styles.md)
 - [Theming](theming.md), [bundled themes](bundled-themes.md), and [Theme Studio](theme-studio.md)
 - [Locale and RTL](locale-and-rtl.md)
@@ -35,7 +34,7 @@ security, testing, and troubleshooting.
 
 Complex component contracts:
 
-- [Tabs visual/interaction contract and Button/Badge density](components/control-visual-spec.zh-CN.md)
+- [Tabs](components/catalog.md#tabs) and [Button/Badge density](registry-design-system.md#button-and-badge-density)
 - [DatePicker](components/date-picker.md)
 - [Combobox](components/combobox.md)
 - [Select](components/select.md)
@@ -64,3 +63,11 @@ Architecture decisions and their test evidence are recorded under
 [`docs/adr`](adr/). `INTENT.md` is the product contract;
 `IMPLEMENTATION_PLAN.md` records planned and incomplete work rather than the
 current user-facing API.
+
+Maintain current visual rules in `registry-design-system.md`, public component
+contracts in `components/`, and acceptance procedures in `visual-testing.md`.
+After an iteration lands, merge durable requirements into these documents and
+remove the temporary implementation brief; preserve unfinished work as an
+explicit gap. Third-party reference screenshots are not checked-in component
+specification assets. Product-generated visual test evidence follows the
+separate baseline process in `visual-testing.md`.

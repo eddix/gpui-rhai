@@ -110,12 +110,11 @@ fn button_height(size) {
 
 fn button_typography(size) { if size == "xs" { "body_small" } else { "body" } }
 fn button_padding(size) {
-    if size == "xs" { 8 }
-    else if size == "sm" { 10 }
-    else if size == "lg" { 14 }
-    else { 12 }
+    if size == "xs" || size == "sm" { theme_spacing("sm") }
+    else if size == "lg" { theme_spacing("lg") }
+    else { theme_spacing("md") }
 }
-fn button_vertical_padding(size) { if size == "xs" { 3 } else { 4 } }
+fn button_vertical_padding(size) { if size == "xs" { theme_spacing("xxs") } else { theme_spacing("xs") } }
 
 fn button_background(variant) {
     if variant == "danger" { theme_color("danger") }
@@ -171,9 +170,9 @@ fn render_Button(ctx, props) {
         .items_center()
         .justify_center()
         .min_height(px(button_height(size)))
-        .padding_x(px(button_padding(size)))
-        .padding_y(px(button_vertical_padding(size)))
-        .gap(px(6))
+        .padding_x(button_padding(size))
+        .padding_y(button_vertical_padding(size))
+        .gap(theme_spacing("xs"))
         .radius(theme_radius("md"))
         .border(px(1))
         .border_color(button_border(variant))

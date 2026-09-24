@@ -59,8 +59,9 @@ fn render_Badge(ctx, props) {
     children.push(text(props.text).with_style(ctx.component_style("label", style())));
     row(children).with_style(ctx.component_style("root", style()
         .min_height(px(if size == "sm" { 18 } else { 20 }))
-        .padding_x(px(if size == "sm" { 4 } else { 6 }))
-        .padding_y(px(if size == "sm" { 0 } else { 1 })).gap(px(4)).items_center()
+        .padding_x(theme_spacing("xs"))
+        .padding_y(if size == "sm" { px(0) } else { theme_spacing("xxs") })
+        .gap(theme_spacing("xs")).items_center()
         .radius(theme_radius("sm")).background(theme_color("surface_raised"))
         .border(px(1)).border_color(theme_color("border"))
         .typography(if size == "sm" { "caption" } else { "body_small" }).font_weight(500)

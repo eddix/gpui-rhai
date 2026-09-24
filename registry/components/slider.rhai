@@ -89,7 +89,7 @@ fn render_Slider(ctx, props) {
     }
     column([
         row(header).with_style(ctx.component_style("header", style()
-            .items_center().justify_between().gap(px(8)))),
+            .items_center().justify_between().gap(theme_spacing("sm")))),
         control
-    ]).with_key(props.key).with_style(ctx.component_style("root", style().gap(px(5))))
+    ]).with_key(props.key).with_style(ctx.component_style("root", style().gap(theme_spacing("xs"))))
 }

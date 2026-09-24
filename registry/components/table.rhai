@@ -189,7 +189,7 @@ fn render_table_row(resize_signals, ctx, payload) {
         let node = row([indicator, label, count])
             .with_key(payload.key)
             .with_style(ctx.component_style("group_header",
-                style().height(px(item.height)).padding_x(theme_spacing("sm")).gap(px(6))
+                style().height(px(item.height)).padding_x(theme_spacing("sm")).gap(theme_spacing("xs"))
                     .items_center().border_bottom(px(1)).border_color(theme_color("border"))
                     .background(theme_color("surface_raised")).occlude_except_scroll()))
             .accessibility_role("rowheader")
@@ -363,7 +363,7 @@ fn table_header(ctx, props, columns, resize_signals, current_sort) {
                     .text_color(theme_color("text_primary"))));
         }
         let children = [row(content).with_style(
-            style().flex_grow().min_width(px(0)).height(relative(1.0)).items_center().gap(px(5)))];
+                style().flex_grow().min_width(px(0)).height(relative(1.0)).items_center().gap(theme_spacing("xs")))];
         let header_ref = if resize_enabled { element_ref(column.resize_ref_key) } else { () };
         if resize_enabled {
             children.push(table_resize_handle(
@@ -407,7 +407,7 @@ fn render_Table(ctx, props) {
             props.loading_content
         } else { text("Loading…") };
         return box([header, loading.with_style(ctx.component_style("loading", style()
-            .padding(px(12)).typography("body_small").text_color(theme_color("text_muted"))))])
+            .padding(theme_spacing("md")).typography("body_small").text_color(theme_color("text_muted"))))])
             .with_key(props.key).with_style(ctx.component_style("root", style().flex_col()
                 .border(px(1)).border_color(theme_color("border"))))
             .accessibility_role("table").accessibility_label(props.label);
@@ -416,7 +416,7 @@ fn render_Table(ctx, props) {
         let empty = if "empty" in props && props.empty != () { props.empty }
             else { text(prop_or(props, "empty_text", "No results")) };
         return box([header, empty.with_style(ctx.component_style("empty", style()
-            .padding(px(12)).typography("body_small").text_color(theme_color("text_muted"))))])
+            .padding(theme_spacing("md")).typography("body_small").text_color(theme_color("text_muted"))))])
             .with_key(props.key).with_style(ctx.component_style("root", style().flex_col()
                 .border(px(1)).border_color(theme_color("border"))))
             .accessibility_role("table").accessibility_label(props.label);

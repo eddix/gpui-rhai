@@ -241,6 +241,13 @@ default cursor for controls. Attach normalized accessibility role/label data to
 the root node. Use `padding_start/end` and `margin_start/end` for asymmetric
 inline spacing so caller locale direction remains correct.
 
+Component spacing uses the shared `xxs/xs/sm/md/lg` theme scale: `xxs` for
+hairline-adjacent inset, `xs` for icon/label and compact-control gaps, `sm` for
+ordinary control content padding, `md` for panel content, and `lg` for dialog
+or empty-state outer padding. Keep structural constants such as 1px borders,
+platform titlebar safe insets, explicit row heights, and semantic circles as
+literal geometry rather than disguising them as theme spacing.
+
 Choose a semantic typography role with `style().typography(...)`; do not repeat
 numeric font-size/line-height pairs across component sources. Use `body` for
 ordinary controls, `body_small`/`caption` for compact metadata, and the named

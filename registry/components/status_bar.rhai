@@ -37,7 +37,7 @@ define_component(#{
 fn StatusBar(props) { render_component("components/status_bar", props) }
 fn status_region(ctx, part, children, alignment) {
     let base = style().width(relative(0.333333)).min_width(px(0))
-        .height(relative(1.0)).items_center().gap(px(6)).overflow_hidden()
+            .height(relative(1.0)).items_center().gap(theme_spacing("xs")).overflow_hidden()
         .whitespace_nowrap().text_ellipsis();
     if alignment == "center" { base = base.justify_center(); }
     else if alignment == "end" { base = base.justify_end(); }
@@ -49,7 +49,7 @@ fn render_StatusBar(ctx, props) {
         status_region(ctx, "center", if "center" in props { props.center } else { [] }, "center"),
         status_region(ctx, "end", if "end" in props { props.end } else { [] }, "end"),
     ]).with_style(ctx.component_style("root", style()
-        .width(relative(1.0)).height(px(24)).padding_x(px(8)).items_center()
+        .width(relative(1.0)).height(px(24)).padding_x(theme_spacing("sm")).items_center()
         .border_top(px(1)).border_color(theme_color("border"))
         .background(theme_color("surface_raised"))
         .typography("caption").text_color(theme_color("text_muted"))))
