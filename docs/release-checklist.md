@@ -62,3 +62,6 @@ interactive and 100k streaming/downsampled paths, malformed data, GeoJSON/SVG
 maps, linked interaction, custom Rust extensions, terminal SVG/PNG export,
 Chart Gallery release smoke, and `gpui-rhai-chart-e2e-v2` together. Do not add
 boundary datasets or network/geocoding authority to the release package.
+Also verify custom namespace colors through ordinary/native/virtual snapshots,
+non-default spacing/radius and enlarged typography, bundled Tabs contrast,
+theme-scaled registry components, and matching native/export Chart typography.

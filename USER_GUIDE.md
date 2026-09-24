@@ -52,7 +52,7 @@ See [Architecture](docs/architecture.md) for the complete runtime design.
 Install the versioned CLI from crates.io:
 
 ```text
-cargo install gpui-rhai-cli --locked
+cargo install gpui-rhai-cli --version 0.1.5 --locked
 ```
 
 Then, from a Cargo application root:
@@ -99,6 +99,15 @@ present it writes `gpui-rhai-host-snippet.rs` for deliberate integration.
 ```toml
 gpui-rhai = { version = "0.1", features = ["dev-reload"] }
 ```
+
+### Upgrading an existing application to 0.1.5
+
+Keep `gpui-rhai`, `gpui-rhai-registry` and `gpui-rhai-cli` on 0.1.5 together.
+Run `gpui-rhai update`, inspect its three-way source merges, then run
+`gpui-rhai check`. Custom themes must add `spacing.xxs` (normally 2px).
+Applications adopting linked or independently scaled charts should persist the
+exact `zoom_change.viewport` and `viewport_revision` values. See the
+[release/upgrade index](docs/releases/README.md) for every earlier migration.
 
 For runtime development, replace it temporarily with the checkout you are
 testing:
@@ -731,7 +740,7 @@ theme_color("focus_ring")
 theme_typography("body")
 ```
 
-Theme variants also own the `xs/sm/md/lg` spacing scale, `sm/md/lg` radius
+Theme variants also own the `xxs/xs/sm/md/lg` spacing scale, `sm/md/lg` radius
 scale, and all eight typography size/line-height/weight roles plus an optional
 font family/fallback stack. These values are editable data in `ui/theme.rhai`,
 not hard-coded Rust constants.
@@ -792,7 +801,9 @@ downsampling, layout, motion, hit testing, linked charts, accessibility
 projection, and export do not execute per-datum Rhai.
 
 Selection and viewport props are controlled. A gesture emits one proposal at
-commit; the next Host render accepts, clamps, or rejects it. Selection and brush
+commit; the next Host render accepts, clamps, or rejects it by writing the exact
+coordinate-typed `viewport` and `viewport_revision` back. Scalar zoom/pan is
+only shorthand and cannot represent every independent X/Y window. Selection and brush
 events include dataset, series, region, datum, and presented revision identity,
 so Hosts should not infer chart control roles from application key strings.
 

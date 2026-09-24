@@ -2,7 +2,7 @@
 {
   "id": "components/button",
   "export": "Button",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": [],
   "capabilities": {}
@@ -10,8 +10,9 @@
 */
 // Button presents a desktop action.
 //
-// Props: text (required), prefix/suffix slots, variant, size, disabled, loading, loading_text, on_click.
+// Props: text (required), prefix/suffix slots, variant, size, disabled, loading, loading_text, hoverable, on_click.
 // Events: click(null).
+// State: stateless and controlled by caller props.
 // Parts: root, label, prefix, suffix.
 // Example: Button(#{ text: "Save", variant: "primary", size: "md" })
 
@@ -19,7 +20,7 @@ define_component(#{
     metadata: #{
         id: "components/button",
         "export": "Button",
-        version: "0.1.4",
+        version: "0.1.5",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
         dependencies: [],
         capabilities: #{},
@@ -77,6 +78,12 @@ define_component(#{
                 sensitive: false,
                 "default": #{ type: "string", value: "" },
             },
+            hoverable: #{
+                schema: #{ type: "bool" },
+                required: false,
+                sensitive: false,
+                "default": #{ type: "bool", value: true },
+            },
             on_click: #{
                 schema: #{ type: "optional", value: #{ type: "callback" } },
                 required: false,
@@ -97,9 +104,17 @@ define_component(#{
 fn button_height(size) {
     if size == "xs" { 24 }
     else if size == "sm" { 28 }
-    else if size == "lg" { 40 }
+    else if size == "lg" { 36 }
     else { 32 }
 }
+
+fn button_typography(size) { if size == "xs" { "body_small" } else { "body" } }
+fn button_padding(size) {
+    if size == "xs" || size == "sm" { theme_spacing("sm") }
+    else if size == "lg" { theme_spacing("lg") }
+    else { theme_spacing("md") }
+}
+fn button_vertical_padding(size) { if size == "xs" { theme_spacing("xxs") } else { theme_spacing("xs") } }
 
 fn button_background(variant) {
     if variant == "danger" { theme_color("danger") }
@@ -108,6 +123,22 @@ fn button_background(variant) {
     else if variant == "secondary" { theme_color("surface_raised") }
     else if variant == "ghost" || variant == "outline" { rgba(0x00000000) }
     else { theme_color("accent") }
+}
+
+fn button_border(variant) {
+    if variant == "danger" { theme_color("danger") }
+    else if variant == "warning" { theme_color("warning") }
+    else if variant == "success" { theme_color("success") }
+    else if variant == "primary" { theme_color("accent") }
+    else if variant == "ghost" { rgba(0x00000000) }
+    else { theme_color("border") }
+}
+
+fn button_hover(variant) {
+    if variant == "primary" { theme_color("accent_hover") }
+    else if variant == "secondary" || variant == "ghost" || variant == "outline" {
+        theme_color("surface_hover")
+    } else { button_background(variant) }
 }
 
 fn button_foreground(variant) {
@@ -126,6 +157,8 @@ fn render_Button(ctx, props) {
     let disabled = if "disabled" in props { props.disabled } else { false };
     let loading = if "loading" in props { props.loading } else { false };
     let loading_text = if "loading_text" in props { props.loading_text } else { "" };
+    let hoverable = if "hoverable" in props { props.hoverable } else { true };
+    let interactive = !disabled && !loading && "on_click" in props && props.on_click != ();
     let label = if loading && loading_text != "" {
         `${loading_text} ${props.text}`
     } else {
@@ -136,31 +169,44 @@ fn render_Button(ctx, props) {
         .flex_row()
         .items_center()
         .justify_center()
-        .height(px(button_height(size)))
-        .padding_x(px(12))
-        .gap(px(6))
+        .min_height(px(button_height(size)))
+        .padding_x(button_padding(size))
+        .padding_y(button_vertical_padding(size))
+        .gap(theme_spacing("xs"))
         .radius(theme_radius("md"))
+        .border(px(1))
+        .border_color(button_border(variant))
         .background(button_background(variant))
         .text_color(button_foreground(variant))
-        .typography(if size == "xs" { "body_small" } else { "body" })
-        .font_weight(700)
-        .hover(style().background(theme_color("accent_hover")))
-        .disabled(style().background(theme_color("disabled")));
+        .typography(button_typography(size))
+        .font_weight(600)
+        .focus(style().border_color(theme_color("focus_ring")))
+        .active(style().opacity(0.86))
+        .disabled(style()
+            .background(theme_color("surface_raised"))
+            .border_color(theme_color("border"))
+            .text_color(theme_color("disabled"))
+            .opacity(0.72));
+    if hoverable && !disabled && !loading {
+        base = base.hover(style().background(button_hover(variant)));
+    }
 
     let children = [];
     if "prefix" in props && props.prefix != () {
-        children.push(props.prefix.with_style(ctx.component_style("prefix", style())));
+        children.push(props.prefix.with_style(ctx.component_style("prefix",
+            style().text_color(button_foreground(variant)))));
     }
     children.push(text(label).with_style(ctx.component_style("label", style())));
     if "suffix" in props && props.suffix != () {
-        children.push(props.suffix.with_style(ctx.component_style("suffix", style())));
+        children.push(props.suffix.with_style(ctx.component_style("suffix",
+            style().text_color(button_foreground(variant)))));
     }
     let button = row(children)
         .with_style(ctx.component_style("root", base))
         .disabled(disabled || loading)
         .accessibility_role("button")
         .accessibility_label(props.text);
-    if !disabled && !loading && "on_click" in props && props.on_click != () {
+    if interactive {
         button.on_click(props.on_click)
     } else {
         button

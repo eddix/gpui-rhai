@@ -2,7 +2,7 @@
 {
   "id": "motion/shimmer",
   "export": "Shimmer",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": [],
   "capabilities": {}
@@ -12,7 +12,7 @@
 // Example: Shimmer(#{ key: "loading", width: 220, height: 72 })
 
 define_component(#{
-    metadata: #{ id: "motion/shimmer", "export": "Shimmer", version: "0.1.4",
+    metadata: #{ id: "motion/shimmer", "export": "Shimmer", version: "0.1.5",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{} },
     schema: #{
         props: #{

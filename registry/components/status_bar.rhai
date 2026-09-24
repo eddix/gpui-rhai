@@ -2,7 +2,7 @@
 {
   "id": "components/status_bar",
   "export": "StatusBar",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": [],
   "capabilities": {}
@@ -14,7 +14,7 @@
 // Example: StatusBar(#{ label: "Editor status", start: [text("Ready")], end: [text("UTF-8")] })
 
 define_component(#{
-    metadata: #{ id: "components/status_bar", "export": "StatusBar", version: "0.1.4",
+    metadata: #{ id: "components/status_bar", "export": "StatusBar", version: "0.1.5",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{} },
     schema: #{
         props: #{

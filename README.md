@@ -13,10 +13,11 @@ copied into the application repository and owned by the application developer.
 The runtime remains under active implementation. Version 0.1.2 froze the first
 complete 51-component foundation, 0.1.3 introduced Motion Runtime 2, and 0.1.4
 hardens SVG rendering, Rust Host composition, adaptive overlays, and incremental
-motion presentation without changing Runtime API 2. Version 0.1.5 develops the
+motion presentation without changing Runtime API 2. Version 0.1.5 adds the
 optional native composable [Chart Runtime](docs/charts.md), including typed
 streaming data, 15 series, Host-owned Geo2D maps, linked interaction, Motion
-integration, and static export. The authoritative product
+integration, static export, and complete theme-driven component spacing and
+typography. See the [release and upgrade index](docs/releases/README.md). The authoritative product
 contract is in [INTENT.md](INTENT.md), and the dependency-ordered implementation
 plan is in [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md).
 

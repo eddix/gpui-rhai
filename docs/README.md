@@ -55,8 +55,10 @@ Complex component contracts:
 - [Updating copied source](source-updates.md)
 - [Rhai execution backends](rhai-execution-backends.md)
 - [Release checklist](release-checklist.md)
-- [0.1.4 release notes](releases/0.1.4.md)
-- [0.1.5 draft release notes](releases/0.1.5.md)
+- [Release notes and upgrade index](releases/README.md)
+- [0.1.0](releases/0.1.0.md), [0.1.1](releases/0.1.1.md),
+  [0.1.2](releases/0.1.2.md), [0.1.3](releases/0.1.3.md),
+  [0.1.4](releases/0.1.4.md), and [0.1.5](releases/0.1.5.md)
 - [Core Runtime v2 evidence ledger](core-runtime-v2-audit.md)
 
 Architecture decisions and their test evidence are recorded under

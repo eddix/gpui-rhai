@@ -2,7 +2,7 @@
 {
   "id": "components/tag",
   "export": "Tag",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": [],
   "capabilities": {},
@@ -17,7 +17,7 @@
 
 define_component(#{
     metadata: #{
-        id: "components/tag", "export": "Tag", version: "0.1.4",
+        id: "components/tag", "export": "Tag", version: "0.1.5",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
         dependencies: [], capabilities: #{}, assets: ["icons/close.svg"],
     },

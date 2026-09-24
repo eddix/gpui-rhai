@@ -2,7 +2,7 @@
 {
   "id": "components/radio_group",
   "export": "RadioGroup",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": ["components/radio"],
   "capabilities": {}
@@ -18,7 +18,7 @@ import "components/radio" as radio;
 
 define_component(#{
     metadata: #{
-        id: "components/radio_group", "export": "RadioGroup", version: "0.1.4",
+        id: "components/radio_group", "export": "RadioGroup", version: "0.1.5",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
         dependencies: ["components/radio"], capabilities: #{},
     },

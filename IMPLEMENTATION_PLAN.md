@@ -13,6 +13,8 @@ Constraints that apply to every section:
   `0.1.3` is the deliberate Runtime API 2 break for generic Motion;
 - treat `0.1.4` as the Runtime API 2 hardening release for SVG rendering,
   HostSlot composition, adaptive overlays, and incremental motion presentation;
+- treat `0.1.5` as the completed native Chart Runtime and theme-consistency
+  release while retaining Runtime API 2;
 - accept destructive Rust/Rhai/schema/registry migration;
 - add no compatibility shim, deprecated alias, dual path, or downstream app
   adapter;
@@ -563,3 +565,8 @@ stages, not independently supported preview APIs.
 identity; no per-frame/per-datum Rhai execution exists; invalid candidates keep
 the last-good scene; Chart Gallery and dogfooding acceptance pass as a complete
 0.1.5 surface.
+
+Status: complete for 0.1.5. Independent viewport, lifecycle, numerical,
+theme/UI and release reviews are archived under `docs/audits/2026-09-23-*` and
+`docs/audits/2026-09-24-*`. Graph/hierarchy/flow layouts, editable marks,
+freehand lasso and 3D/Globe remain separate future workstreams.
