@@ -22,6 +22,10 @@ semantic versioning from this release.
   rewriting application manifests. Standalone apps use
   `gpui_platform::application()` internally, while embedded and Host-owned
   trees preserve one window accessibility/focus hierarchy.
+- Component Gallery is now a live workbench instead of a mostly static visual
+  specimen. Enabled fields, choices, navigation, data controls, commands and
+  overlays keep controlled example state, while its status bar reports the
+  latest action and cumulative interaction count.
 - Release remains blocked on a published GPUI family containing upstream text
   hit-test fix #64672 and on the documented macOS/Linux/dogfooding gates.
 

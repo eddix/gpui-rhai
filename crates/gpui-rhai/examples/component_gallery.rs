@@ -267,7 +267,41 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    use gpui_rhai::{
+        ComponentInstancePath, LocaleManager, RestrictedModuleResolver, ScriptLifecycle,
+        ThemeManager, ThemeSelection, UiNode, UiNodeKind, UiRuntimeState, UiValue,
+    };
+
     use super::*;
+
+    fn find_labeled<'a>(node: &'a UiNode, label: &str) -> Option<&'a UiNode> {
+        if node.attributes().get("label") == Some(&UiValue::String(label.to_owned())) {
+            return Some(node);
+        }
+        match node.kind() {
+            UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => {
+                children.iter().find_map(|child| find_labeled(child, label))
+            }
+            UiNodeKind::Overlay {
+                trigger, content, ..
+            } => find_labeled(trigger, label).or_else(|| find_labeled(content, label)),
+            UiNodeKind::Layer { content, .. } => find_labeled(content, label),
+            UiNodeKind::ErrorBoundary { child, fallback } => {
+                find_labeled(child, label).or_else(|| find_labeled(fallback, label))
+            }
+            UiNodeKind::Text { .. }
+            | UiNodeKind::RichText { .. }
+            | UiNodeKind::Canvas { .. }
+            | UiNodeKind::Svg { .. }
+            | UiNodeKind::Custom { .. }
+            | UiNodeKind::Image { .. }
+            | UiNodeKind::DirectionalImage { .. }
+            | UiNodeKind::VirtualCollection { .. } => None,
+        }
+    }
 
     #[test]
     fn every_gallery_category_prepares_with_all_official_sources() {
@@ -305,6 +339,128 @@ mod tests {
         assert_eq!(
             gallery_category(Some("unknown".to_owned()), "default"),
             "all"
+        );
+    }
+
+    #[test]
+    fn gallery_specimens_keep_their_controlled_interaction_contract() {
+        let source = gallery_source("all", "default_dark", "en", "default");
+        for callback in [
+            "set_specimen_input",
+            "set_specimen_checked",
+            "set_specimen_radio_mode",
+            "set_specimen_switch_enabled",
+            "set_specimen_tab_equal",
+            "set_specimen_accordion",
+            "set_specimen_table_selection",
+            "set_specimen_page",
+            "set_p0_pinned",
+            "close_dialog_with",
+        ] {
+            assert!(
+                source.contains(&format!("Fn(\"{callback}\")")),
+                "gallery must retain the {callback} controlled callback"
+            );
+        }
+        assert!(source.contains("interaction_count"));
+        assert!(source.contains("Last interaction:"));
+    }
+
+    #[test]
+    fn gallery_control_callback_updates_owned_state_and_rerenders() {
+        let main = gallery_source("all", "default_dark", "en", "default");
+        let source = scripts(&main);
+        let mut engine = RuntimeEngine::new();
+        engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
+        let compiled = engine
+            .compile_self_contained_named("component-gallery-interactions", &main)
+            .unwrap();
+        let schema = engine.root_state_schema(&compiled).unwrap();
+        let theme = load_theme_source(
+            engine.engine(),
+            "default_dark.rhai",
+            theme_entry("default_dark").1,
+        )
+        .unwrap();
+        let locale = gpui_rhai::load_locale_source(engine.engine(), "en.rhai", EN_LOCALE).unwrap();
+        let mut runtime_state = UiRuntimeState::new();
+        runtime_state.theme = Some(
+            ThemeManager::from_variants([theme], ThemeSelection::new("Default", "Dark")).unwrap(),
+        );
+        runtime_state.locale = Some(LocaleManager::new([locale], "en", "en").unwrap());
+        let runtime = Rc::new(RefCell::new(runtime_state));
+        let root_path = ComponentInstancePath::root("App", "root");
+        let mut lifecycle = ScriptLifecycle::new(
+            compiled,
+            Rc::clone(&runtime),
+            root_path.clone(),
+            Some("main".to_owned()),
+            BTreeMap::new(),
+            &schema,
+        )
+        .unwrap();
+        lifecycle.start(&mut engine).unwrap();
+
+        let checked = find_labeled(lifecycle.root().unwrap(), "Checked")
+            .expect("controlled checkbox must be rendered");
+        let callback = checked
+            .handler("click")
+            .and_then(gpui_rhai::UiEventHandler::as_script)
+            .cloned()
+            .expect("controlled checkbox must retain a click callback");
+        let payload = checked
+            .handler_payload("click")
+            .cloned()
+            .expect("controlled checkbox must carry its next state");
+        let _ = lifecycle
+            .invoke_callback_transactional(&engine, &callback, payload)
+            .unwrap();
+        lifecycle.render(&mut engine).unwrap();
+
+        assert_eq!(
+            runtime
+                .borrow()
+                .component_state
+                .get(&root_path, "specimen_checked"),
+            Some(&UiValue::Bool(false))
+        );
+        assert_eq!(
+            runtime
+                .borrow()
+                .component_state
+                .get(&root_path, "interaction_count"),
+            Some(&UiValue::Integer(1))
+        );
+        let rerendered = find_labeled(lifecycle.root().unwrap(), "Checked").unwrap();
+        assert_eq!(
+            rerendered.attributes().get("checked"),
+            Some(&UiValue::Bool(false))
+        );
+
+        let primary = find_labeled(lifecycle.root().unwrap(), "Primary")
+            .expect("enabled action button must be rendered");
+        let callback = primary
+            .handler("click")
+            .and_then(gpui_rhai::UiEventHandler::as_script)
+            .cloned()
+            .expect("enabled action button must retain a click callback");
+        let _ = lifecycle
+            .invoke_callback_transactional(&engine, &callback, UiValue::Null)
+            .unwrap();
+        lifecycle.render(&mut engine).unwrap();
+        assert_eq!(
+            runtime
+                .borrow()
+                .component_state
+                .get(&root_path, "interaction_count"),
+            Some(&UiValue::Integer(2))
+        );
+        assert_eq!(
+            runtime
+                .borrow()
+                .component_state
+                .get(&root_path, "interaction_status"),
+            Some(&UiValue::String("Primary action".to_owned()))
         );
     }
 }
