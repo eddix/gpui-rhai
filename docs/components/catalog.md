@@ -10,6 +10,12 @@ Run the interactive catalog from this repository:
 cargo run -p gpui-rhai --example component_gallery
 ```
 
+The gallery is a live component workbench, not a static visual catalog. Enabled
+buttons, fields, choices, navigation controls, tables, pagination, commands and
+overlays own example state and respond to pointer or keyboard input. The status
+bar shows the most recent interaction and a running interaction count. Disabled,
+loading, read-only and presentation-only specimens intentionally remain inert.
+
 Theme Studio renders the same exhaustive specimen while editing a theme.
 
 The [registry visual system](../registry-design-system.md) is the maintained

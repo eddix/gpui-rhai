@@ -2,7 +2,7 @@
 {
   "id": "components/collapsible",
   "export": "Collapsible",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": [],
   "capabilities": {}
@@ -15,7 +15,7 @@
 
 define_component(#{
     metadata: #{
-        id: "components/collapsible", "export": "Collapsible", version: "0.1.5",
+        id: "components/collapsible", "export": "Collapsible", version: "0.1.6",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{},
     },
     schema: #{
@@ -54,7 +54,7 @@ fn render_Collapsible(ctx, props) {
             .disabled(style().text_color(theme_color("disabled")).opacity(0.72))))
         .disabled(disabled)
         .accessibility_role("button")
-        .accessibility_checked(props.open);
+        .accessibility_expanded(props.open);
     if !disabled && "on_open_change" in props && props.on_open_change != () {
         trigger = trigger.on_click_value(props.on_open_change, !props.open);
     }

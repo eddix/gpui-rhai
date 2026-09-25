@@ -2,7 +2,7 @@
 {
   "id": "components/kbd",
   "export": "Kbd",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": [],
   "capabilities": {}
@@ -15,7 +15,7 @@
 // Example: Kbd(#{ text: "⌘ K", label: "Command K" })
 
 define_component(#{
-    metadata: #{ id: "components/kbd", "export": "Kbd", version: "0.1.5",
+    metadata: #{ id: "components/kbd", "export": "Kbd", version: "0.1.6",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{} },
     schema: #{
         props: #{

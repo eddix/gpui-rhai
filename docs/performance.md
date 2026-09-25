@@ -183,6 +183,36 @@ ordinary-sized source rather than bulk Host data. The process-global syntax
 pack is warmed before the direct/native Rhai comparison so its one-time load
 does not unfairly charge only the direct-string branch.
 
+## gpui-pre 0.1.6 candidate A/B
+
+The 2026-09-25 backend comparison used the same Macmini9,1, macOS 26.6.2,
+Rust 1.95.0, release profile, 5 warmups and 30 samples for all three points:
+the v0.1.5 tag, the exact post-gpui-pre/pre-AX commit `202e6e73`, and the
+native-AX candidate. Native AX element projection was inactive in the test
+platform; the committed semantic frame and automation semantics remained live.
+
+```text
+                                      v0.1.5     pre-AX      AX candidate
+Chart mount + first frame             112.05ms    123.79ms    119.83ms
+Chart resize p95                       23.87ms     17.74ms     17.83ms
+Chart 128-row stream p95               76.00ms     73.08ms     74.48ms
+Document mount + complete frame       910.45ms    914.95ms    888.89ms
+Document resize settle p95             25.12ms     24.04ms     24.10ms
+Table cold mount + first frame         63.13ms     67.46ms     69.71ms
+Table native resize p95                23.67ms     23.73ms     26.44ms
+Table resize Rhai operations            3,417       3,417       3,714
+```
+
+The first AX implementation created semantic element wrappers even while the
+platform adapter was inactive and reached a 32.75ms Table resize p95. Gating
+native projection with `Window::is_a11y_active()` removed that architectural
+regression. The remaining roughly 2.7ms / 11.4% Table resize delta is accounted
+for by bounded realized cell/row semantics: root Rhai operations remain zero,
+while 297 additional virtual operations create table cell roles and collection
+positions. Typed compound semantic setters keep this below the initial 435-op
+implementation without dropping cell navigation. Chart streaming still runs
+zero Rhai operations.
+
 Each `gpui-rhai-e2e-v2` report retains raw samples and p50/p95/p99 summaries
 together with commit, dirty state, Rust/macOS/hardware metadata, retained node
 counts, data backend, and virtual-collection data/realization metrics. Rhai

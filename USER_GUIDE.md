@@ -52,7 +52,7 @@ See [Architecture](docs/architecture.md) for the complete runtime design.
 Install the versioned CLI from crates.io:
 
 ```text
-cargo install gpui-rhai-cli --version 0.1.5 --locked
+cargo install gpui-rhai-cli --version 0.1.6 --locked
 ```
 
 Then, from a Cargo application root:
@@ -100,13 +100,20 @@ present it writes `gpui-rhai-host-snippet.rs` for deliberate integration.
 gpui-rhai = { version = "0.1", features = ["dev-reload"] }
 ```
 
-### Upgrading an existing application to 0.1.5
+### Upgrading an existing application to 0.1.6
 
-Keep `gpui-rhai`, `gpui-rhai-registry` and `gpui-rhai-cli` on 0.1.5 together.
+Keep `gpui-rhai`, `gpui-rhai-registry` and `gpui-rhai-cli` on 0.1.6 together.
 Run `gpui-rhai update`, inspect its three-way source merges, then run
-`gpui-rhai check`. Custom themes must add `spacing.xxs` (normally 2px).
-Applications adopting linked or independently scaled charts should persist the
-exact `zoom_change.viewport` and `viewport_revision` values. See the
+`gpui-rhai check`. Runtime API remains 2 and existing Rhai sources remain
+compatible. Rust Hosts that directly use GPUI must replace official
+`gpui 0.2.2` with the exact `gpui-pre 0.3.6` core/platform family, or use
+`gpui_rhai::gpui` and `gpui_rhai::gpui_platform` re-exports. The declared MSRV
+is Rust 1.95. See [Embedding](docs/embedding.md) for the exact manifest and
+entrypoint migration.
+
+Custom themes still require `spacing.xxs` (normally 2px). Applications using
+linked or independently scaled charts should persist the exact
+`zoom_change.viewport` and `viewport_revision` values. See the
 [release/upgrade index](docs/releases/README.md) for every earlier migration.
 
 For runtime development, replace it temporarily with the checkout you are

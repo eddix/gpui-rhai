@@ -399,6 +399,7 @@ impl Project {
     ///
     /// Returns [`ProjectError`] for any invalid artifact.
     pub fn check(&self) -> Result<CheckReport, ProjectError> {
+        validate_gpui_dependency_family(&self.root.join("Cargo.toml"))?;
         let manifest_path = self.root.join(".gpui-rhai/manifest.toml");
         let manifest: LocalManifest = toml::from_str(&read(&manifest_path)?)?;
         if manifest.runtime_api != RUNTIME_API_VERSION {
@@ -742,6 +743,107 @@ impl Project {
             Err(ProjectError::DevFailed(status.code()))
         }
     }
+}
+
+fn validate_gpui_dependency_family(path: &Path) -> Result<(), ProjectError> {
+    const GPUI_PRE_VERSION: &str = "=0.3.6";
+    let source = read(path)?;
+    let manifest: toml::Value = toml::from_str(&source)?;
+    let mut tables = Vec::new();
+    for name in ["dependencies", "dev-dependencies", "build-dependencies"] {
+        if let Some(table) = manifest.get(name).and_then(toml::Value::as_table) {
+            tables.push(table);
+        }
+    }
+    if let Some(targets) = manifest.get("target").and_then(toml::Value::as_table) {
+        for target in targets.values().filter_map(toml::Value::as_table) {
+            for name in ["dependencies", "dev-dependencies", "build-dependencies"] {
+                if let Some(table) = target.get(name).and_then(toml::Value::as_table) {
+                    tables.push(table);
+                }
+            }
+        }
+    }
+    for table in tables {
+        for (alias, dependency) in table {
+            let (package, version) = match dependency {
+                toml::Value::String(version) => (alias.clone(), Some(version.clone())),
+                toml::Value::Table(spec)
+                    if spec.get("workspace").and_then(toml::Value::as_bool) == Some(true) =>
+                {
+                    workspace_dependency(path, alias)?.ok_or_else(|| {
+                        ProjectError::GpuiDependency(format!(
+                            "`{alias}` inherits from workspace dependencies, but no workspace declaration was found"
+                        ))
+                    })?
+                }
+                toml::Value::Table(spec) => (
+                    spec.get("package")
+                        .and_then(toml::Value::as_str)
+                        .unwrap_or(alias)
+                        .to_owned(),
+                    spec.get("version")
+                        .and_then(toml::Value::as_str)
+                        .map(ToOwned::to_owned),
+                ),
+                _ => continue,
+            };
+            let expected = match package.as_str() {
+                "gpui" | "gpui-pre" => Some(("gpui", "gpui-pre")),
+                "gpui-pre-platform" => Some(("gpui_platform", "gpui-pre-platform")),
+                _ => None,
+            };
+            let Some((expected_alias, expected_package)) = expected else {
+                continue;
+            };
+            if alias != expected_alias
+                || package != expected_package
+                || version.as_deref() != Some(GPUI_PRE_VERSION)
+            {
+                return Err(ProjectError::GpuiDependency(format!(
+                    "`{alias}` resolves to `{package}` at {version:?}; use `{expected_alias} = {{ package = \"{expected_package}\", version = \"{GPUI_PRE_VERSION}\", default-features = false }}`"
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn workspace_dependency(
+    member_manifest: &Path,
+    alias: &str,
+) -> Result<Option<(String, Option<String>)>, ProjectError> {
+    let Some(directory) = member_manifest.parent() else {
+        return Ok(None);
+    };
+    for ancestor in directory.ancestors() {
+        let candidate = ancestor.join("Cargo.toml");
+        if !candidate.exists() {
+            continue;
+        }
+        let manifest: toml::Value = toml::from_str(&read(&candidate)?)?;
+        let Some(spec) = manifest
+            .get("workspace")
+            .and_then(|workspace| workspace.get("dependencies"))
+            .and_then(|dependencies| dependencies.get(alias))
+        else {
+            continue;
+        };
+        return Ok(match spec {
+            toml::Value::String(version) => Some((alias.to_owned(), Some(version.clone()))),
+            toml::Value::Table(spec) => Some((
+                spec.get("package")
+                    .and_then(toml::Value::as_str)
+                    .unwrap_or(alias)
+                    .to_owned(),
+                spec.get("version")
+                    .and_then(toml::Value::as_str)
+                    .map(ToOwned::to_owned),
+            )),
+            _ => None,
+        });
+    }
+    Ok(None)
 }
 
 fn validate_component_documentation(source: &str, id: &ModuleId) -> Result<(), ProjectError> {
@@ -1755,6 +1857,8 @@ pub enum ProjectError {
     InvalidRuntimeDependency(PathBuf),
     #[error("Cargo.toml `{0}` has a non-array gpui-rhai feature list")]
     InvalidRuntimeFeatures(PathBuf),
+    #[error("incompatible GPUI dependency family: {0}")]
+    GpuiDependency(String),
     #[error("initialization would overwrite existing file `{0}`")]
     WouldOverwrite(PathBuf),
     #[error("file `{path}` changed after planning: {detail}")]
@@ -1935,6 +2039,35 @@ mod tests {
                 .join(".gpui-rhai/baselines/components/button.rhai")
                 .exists()
         );
+    }
+
+    #[test]
+    fn check_rejects_old_or_misaligned_gpui_package_identity() {
+        let directory = fixture();
+        let cargo = directory.path().join("Cargo.toml");
+        fs::write(
+            &cargo,
+            "[package]\nname = \"fixture\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\ngpui = \"=0.2.2\"\n",
+        )
+        .unwrap();
+        assert!(matches!(
+            validate_gpui_dependency_family(&cargo),
+            Err(ProjectError::GpuiDependency(_))
+        ));
+
+        fs::write(
+            &cargo,
+            "[package]\nname = \"fixture\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\ngpui = { package = \"gpui-pre\", version = \"=0.3.6\", default-features = false }\ngpui_platform = { package = \"gpui-pre-platform\", version = \"=0.3.6\", default-features = false }\n",
+        )
+        .unwrap();
+        validate_gpui_dependency_family(&cargo).unwrap();
+
+        fs::write(
+            &cargo,
+            "[workspace]\nmembers = []\n\n[workspace.dependencies]\ngpui = { package = \"gpui-pre\", version = \"=0.3.6\", default-features = false }\ngpui_platform = { package = \"gpui-pre-platform\", version = \"=0.3.6\", default-features = false }\n\n[package]\nname = \"fixture\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\ngpui.workspace = true\ngpui_platform.workspace = true\n",
+        )
+        .unwrap();
+        validate_gpui_dependency_family(&cargo).unwrap();
     }
 
     #[test]

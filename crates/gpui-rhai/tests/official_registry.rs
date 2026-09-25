@@ -2014,7 +2014,7 @@ fn command_array_and_native_models_share_one_enabled_active_sequence() {
                 let active = spec
                     .realized
                     .values()
-                    .filter(|node| node.attributes().get("checked") == Some(&UiValue::Bool(true)))
+                    .filter(|node| node.attributes().get("selected") == Some(&UiValue::Bool(true)))
                     .filter_map(|node| node.attributes().get("label"))
                     .cloned()
                     .collect::<Vec<_>>();
@@ -2107,7 +2107,7 @@ fn command_empty_and_all_disabled_models_have_no_navigation_owner() {
                     unreachable!()
                 };
                 assert!(spec.realized.values().all(|node| {
-                    node.attributes().get("checked") != Some(&UiValue::Bool(true))
+                    node.attributes().get("selected") != Some(&UiValue::Bool(true))
                 }));
             } else {
                 assert_eq!(query, "missing");
@@ -2740,7 +2740,7 @@ fn official_table_groups_array_rows_with_controlled_collapse() {
     let selected = spec
         .realized
         .values()
-        .find(|row| row.attributes().get("checked") == Some(&UiValue::Bool(true)))
+        .find(|row| row.attributes().get("selected") == Some(&UiValue::Bool(true)))
         .expect("selected grouped row");
     assert!(matches!(
         selected.style().base.background.as_ref(),

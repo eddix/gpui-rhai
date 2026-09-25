@@ -15,18 +15,22 @@ permissions:
 jobs:
   portable:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.94.0
+          toolchain: 1.95.0
           components: clippy,rustfmt
       - name: Install native Linux test dependencies
         run: |
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends \
             libxcb1-dev \
+            libfontconfig1-dev \
+            libvulkan1 \
+            libwayland-dev \
+            libx11-xcb-dev \
             libxkbcommon-dev \
             libxkbcommon-x11-dev
       - name: Reject gpui-component dependencies

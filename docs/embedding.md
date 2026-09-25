@@ -21,6 +21,35 @@ registered `NativeCollection` values. The Host shares native interaction
 mechanisms that must coordinate across components: Overlay, Tooltip, Layer,
 outside dismissal, Escape routing, focus fallback, and approved key bindings.
 
+## GPUI package identity
+
+gpui-rhai 0.1.6 uses the exact `gpui-pre 0.3.6` core/platform family while
+preserving the Rust use names `gpui` and `gpui_platform`. Prefer the public
+re-exports so every Host type is guaranteed to match the runtime:
+
+```rust
+use gpui_rhai::gpui::{App, AppContext, Context, Render, Window};
+
+gpui_rhai::gpui_platform::application().run(|cx: &mut App| {
+    gpui_rhai::install(cx);
+    // Open the Host window and mount script views.
+});
+```
+
+Hosts that need direct dependencies must use the same package identity and
+exact family version:
+
+```toml
+[dependencies]
+gpui-rhai = "0.1.6"
+gpui = { package = "gpui-pre", version = "=0.3.6", default-features = false, features = ["font-kit"] }
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.6", default-features = false, features = ["font-kit", "runtime_shaders", "wayland", "x11"] }
+```
+
+Official `gpui 0.2.2` and `gpui-pre` expose similarly named but incompatible
+Rust types. `gpui-rhai check` rejects a project manifest that mixes them; it
+reports the required declaration but never rewrites `Cargo.toml` automatically.
+
 ## Mounting
 
 Install App-level input actions once, create one Host for the window, then mount

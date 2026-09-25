@@ -2,8 +2,8 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use std::time::Duration;
 
 use gpui::{
-    App, AppContext, Application, Bounds, Context, IntoElement, Render, Task, Timer, WeakEntity,
-    Window, WindowBounds, WindowOptions, px, size,
+    App, AppContext, Bounds, Context, IntoElement, Render, Task, WeakEntity, Window, WindowBounds,
+    WindowOptions, px, size,
 };
 use gpui_rhai::{
     ColorValue, EventPropagation, HostCallback, Length, PrimitiveNode, PrimitiveProps,
@@ -57,7 +57,9 @@ impl HostOwnedTree {
         let poll_weak = weak.clone();
         let poll = cx.spawn(async move |_, cx| {
             loop {
-                Timer::after(Duration::from_millis(16)).await;
+                cx.background_executor()
+                    .timer(Duration::from_millis(16))
+                    .await;
                 if poll_weak.update(cx, HostOwnedTree::poll_frames).is_err() {
                     break;
                 }
@@ -239,7 +241,7 @@ fn build_tree(
 }
 
 fn main() {
-    Application::new().run(|cx: &mut App| {
+    gpui_platform::application().run(|cx: &mut App| {
         init_text_input(cx);
         let bounds = Bounds::centered(None, size(px(568.0), px(440.0)), cx);
         cx.open_window(

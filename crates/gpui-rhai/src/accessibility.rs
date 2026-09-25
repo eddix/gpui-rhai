@@ -1,9 +1,11 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 use thiserror::Error;
 
 use crate::{ElementGeometry, GeometryRegistry, NodeId, RetainedNode, RetainedUiTree, UiValue};
 
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Clone, Debug, PartialEq)]
 pub struct AccessibilityNode {
     pub id: NodeId,
@@ -15,17 +17,77 @@ pub struct AccessibilityNode {
     pub test_id: Option<String>,
     pub value: Option<UiValue>,
     pub checked: Option<UiValue>,
+    pub selected: Option<bool>,
     pub pressed: Option<bool>,
     pub expanded: Option<bool>,
     pub orientation: Option<String>,
     pub value_min: Option<f64>,
     pub value_max: Option<f64>,
     pub current: Option<String>,
+    pub placeholder: Option<String>,
+    pub key_shortcuts: Option<String>,
+    pub level: Option<usize>,
+    pub position_in_set: Option<usize>,
+    pub size_of_set: Option<usize>,
+    pub row_index: Option<usize>,
+    pub column_index: Option<usize>,
+    pub row_count: Option<usize>,
+    pub column_count: Option<usize>,
     pub disabled: bool,
+    pub read_only: bool,
     pub invalid: bool,
     pub required: bool,
     pub geometry: Option<ElementGeometry>,
     pub children: Vec<NodeId>,
+}
+
+/// Immutable semantic projection committed with one successful retained tree.
+///
+/// Native accessibility and automation derive from this same projection. It
+/// deliberately excludes presentation geometry, which is joined only after a
+/// GPUI frame commits.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct CommittedSemanticFrame {
+    tree: Arc<AccessibilityTree>,
+}
+
+impl CommittedSemanticFrame {
+    /// Compile and validate the semantic projection for a retained tree.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for duplicate semantic IDs, unsupported roles, or an
+    /// invalid retained traversal.
+    pub fn from_retained(tree: &RetainedUiTree) -> Result<Self, AccessibilityError> {
+        Ok(Self {
+            tree: Arc::new(AccessibilityTree::build(
+                tree,
+                &GeometryRegistry::new(),
+                false,
+            )?),
+        })
+    }
+
+    #[must_use]
+    pub fn root_ids(&self) -> &[NodeId] {
+        self.tree.root_ids()
+    }
+
+    #[must_use]
+    pub fn node(&self, id: NodeId) -> Option<&AccessibilityNode> {
+        self.tree.node(id)
+    }
+
+    pub fn nodes(&self) -> impl ExactSizeIterator<Item = &AccessibilityNode> {
+        self.tree.nodes()
+    }
+
+    pub(crate) fn apply_primitive_projections(
+        &mut self,
+        projections: BTreeMap<NodeId, crate::PrimitiveAccessibilityProjection>,
+    ) {
+        Arc::make_mut(&mut self.tree).apply_primitive_projections(projections);
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -48,7 +110,8 @@ impl AccessibilityTree {
         tree: &RetainedUiTree,
         geometry: &GeometryRegistry,
     ) -> Result<Self, AccessibilityError> {
-        Self::build(tree, geometry, false)
+        let frame = CommittedSemanticFrame::from_retained(tree)?;
+        Ok(Self::from_committed(&frame, tree, geometry, false))
     }
 
     /// Build the semantic tree from nodes that participated in the latest
@@ -62,7 +125,29 @@ impl AccessibilityTree {
         tree: &RetainedUiTree,
         geometry: &GeometryRegistry,
     ) -> Result<Self, AccessibilityError> {
-        Self::build(tree, geometry, true)
+        let frame = CommittedSemanticFrame::from_retained(tree)?;
+        Ok(Self::from_committed(&frame, tree, geometry, true))
+    }
+
+    pub(crate) fn from_committed(
+        frame: &CommittedSemanticFrame,
+        tree: &RetainedUiTree,
+        geometry: &GeometryRegistry,
+        presented_only: bool,
+    ) -> Self {
+        let mut output = Self::default();
+        for root in frame.root_ids() {
+            project_committed_node(
+                frame,
+                tree,
+                geometry,
+                *root,
+                None,
+                presented_only,
+                &mut output,
+            );
+        }
+        output
     }
 
     fn build(
@@ -185,7 +270,7 @@ fn visit_retained(
     if presented_only && !geometry.is_presented(id) {
         return Ok(());
     }
-    let semantic = semantic_node(tree, retained, semantic_parent, geometry, labels);
+    let semantic = semantic_node(tree, retained, semantic_parent, geometry, labels)?;
     let next_parent = if let Some(node) = semantic {
         if semantic_parent.is_none() {
             output.roots.push(id);
@@ -228,14 +313,19 @@ fn semantic_node(
     parent: Option<NodeId>,
     geometry: &GeometryRegistry,
     labels: &BTreeMap<String, String>,
-) -> Option<AccessibilityNode> {
-    let role = string_attribute(node, "role").or_else(|| node.text().map(|_| "text".to_owned()))?;
+) -> Result<Option<AccessibilityNode>, AccessibilityError> {
+    let Some(role) =
+        string_attribute(node, "role").or_else(|| node.text().map(|_| "text".to_owned()))
+    else {
+        return Ok(None);
+    };
+    let _ = native_role(&role)?;
     let explicit_name = string_attribute(node, "label");
     let name = explicit_name
         .or_else(|| referenced_text(node, "labelled_by", labels))
         .or_else(|| node.text().map(ToOwned::to_owned))
         .unwrap_or_default();
-    Some(AccessibilityNode {
+    Ok(Some(AccessibilityNode {
         id: node.id(),
         parent,
         role,
@@ -245,18 +335,122 @@ fn semantic_node(
         test_id: string_attribute(node, "test_id"),
         value: node.attributes().get("value").cloned(),
         checked: node.attributes().get("checked").cloned(),
+        selected: optional_bool_attribute(node, "selected"),
         pressed: optional_bool_attribute(node, "pressed"),
         expanded: optional_bool_attribute(node, "expanded"),
         orientation: string_attribute(node, "orientation"),
         value_min: float_attribute(node, "value_min"),
         value_max: float_attribute(node, "value_max"),
         current: string_attribute(node, "current"),
+        placeholder: string_attribute(node, "placeholder"),
+        key_shortcuts: string_attribute(node, "key_shortcuts"),
+        level: usize_attribute(node, "level"),
+        position_in_set: usize_attribute(node, "position_in_set"),
+        size_of_set: usize_attribute(node, "size_of_set"),
+        row_index: usize_attribute(node, "row_index"),
+        column_index: usize_attribute(node, "column_index"),
+        row_count: usize_attribute(node, "row_count"),
+        column_count: usize_attribute(node, "column_count"),
         disabled: bool_attribute(node, "disabled"),
+        read_only: bool_attribute(node, "read_only"),
         invalid: bool_attribute(node, "invalid"),
         required: bool_attribute(node, "required"),
         geometry: retained_geometry(tree, node, geometry),
         children: Vec::new(),
-    })
+    }))
+}
+
+fn project_committed_node(
+    frame: &CommittedSemanticFrame,
+    tree: &RetainedUiTree,
+    geometry: &GeometryRegistry,
+    id: NodeId,
+    parent: Option<NodeId>,
+    presented_only: bool,
+    output: &mut AccessibilityTree,
+) {
+    if presented_only && !geometry.is_presented(id) {
+        return;
+    }
+    let Some(source) = frame.node(id) else {
+        return;
+    };
+    let children = source.children.clone();
+    let mut node = source.clone();
+    node.parent = parent;
+    node.children.clear();
+    node.geometry = tree
+        .node(id)
+        .and_then(|retained| retained_geometry(tree, retained, geometry));
+    if let Some(semantic_id) = &node.semantic_id {
+        output.semantic_ids.insert(semantic_id.clone(), id);
+    }
+    if let Some(parent) = parent {
+        if let Some(parent) = output.nodes.get_mut(&parent) {
+            parent.children.push(id);
+        }
+    } else {
+        output.roots.push(id);
+    }
+    output.nodes.insert(id, node);
+    for child in children {
+        project_committed_node(
+            frame,
+            tree,
+            geometry,
+            child,
+            Some(id),
+            presented_only,
+            output,
+        );
+    }
+}
+
+pub(crate) fn native_role(role: &str) -> Result<Option<gpui::Role>, AccessibilityError> {
+    use gpui::Role;
+    let role = match role {
+        "alert" => Some(Role::Alert),
+        "button" => Some(Role::Button),
+        "checkbox" => Some(Role::CheckBox),
+        "columnheader" => Some(Role::ColumnHeader),
+        "combobox" => Some(Role::ComboBox),
+        "dialog" => Some(Role::Dialog),
+        "document" => Some(Role::Document),
+        "figure" => Some(Role::Figure),
+        "grid" => Some(Role::Grid),
+        "gridcell" => Some(Role::GridCell),
+        "group" => Some(Role::Group),
+        "heading" => Some(Role::Heading),
+        "image" => Some(Role::Image),
+        "label" => Some(Role::Label),
+        "list" => Some(Role::List),
+        "listbox" => Some(Role::ListBox),
+        "listitem" => Some(Role::ListItem),
+        "menu" => Some(Role::Menu),
+        "menuitem" => Some(Role::MenuItem),
+        "navigation" => Some(Role::Navigation),
+        "option" => Some(Role::ListBoxOption),
+        "presentation" => None,
+        "progressbar" => Some(Role::ProgressIndicator),
+        "radio" => Some(Role::RadioButton),
+        "radiogroup" => Some(Role::RadioGroup),
+        "region" => Some(Role::Region),
+        "row" => Some(Role::Row),
+        "rowheader" => Some(Role::RowHeader),
+        "separator" => Some(Role::Splitter),
+        "slider" => Some(Role::Slider),
+        "status" | "statusbar" => Some(Role::Status),
+        "switch" => Some(Role::Switch),
+        "tab" => Some(Role::Tab),
+        "table" => Some(Role::Table),
+        "tablist" => Some(Role::TabList),
+        "text" => Some(Role::TextRun),
+        "text_field" => Some(Role::TextInput),
+        "toolbar" => Some(Role::Toolbar),
+        "tooltip" => Some(Role::Tooltip),
+        other => return Err(AccessibilityError::UnsupportedRole(other.to_owned())),
+    };
+    Ok(role)
 }
 
 fn retained_geometry(
@@ -318,17 +512,43 @@ fn float_attribute(node: &RetainedNode, name: &str) -> Option<f64> {
     }
 }
 
+fn usize_attribute(node: &RetainedNode, name: &str) -> Option<usize> {
+    match node.attributes().get(name) {
+        Some(UiValue::Integer(value)) => usize::try_from(*value).ok(),
+        _ => None,
+    }
+}
+
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum AccessibilityError {
     #[error("semantic ID `{0}` is declared more than once")]
     DuplicateSemanticId(String),
     #[error("retained accessibility traversal lost node {0}")]
     MissingRetainedNode(NodeId),
+    #[error("unsupported accessibility role `{0}`")]
+    UnsupportedRole(String),
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn committed_frame_rejects_unknown_native_roles_before_presentation() {
+        let mut retained = RetainedUiTree::new();
+        retained
+            .reconcile(
+                crate::UiNode::text("Unknown")
+                    .with_attribute("role", UiValue::String("mystery_widget".to_owned())),
+            )
+            .unwrap();
+        assert_eq!(
+            CommittedSemanticFrame::from_retained(&retained),
+            Err(AccessibilityError::UnsupportedRole(
+                "mystery_widget".to_owned()
+            ))
+        );
+    }
 
     #[test]
     fn semantic_tree_flattens_layout_and_resolves_label_relationships() {

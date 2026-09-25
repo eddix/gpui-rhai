@@ -21,6 +21,7 @@ grain-backend = ["rhai/grain"]
 
 [dependencies]
 gpui.workspace = true
+gpui_platform.workspace = true
 notify = { workspace = true, optional = true }
 rhai.workspace = true
 serde.workspace = true

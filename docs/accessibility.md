@@ -41,11 +41,23 @@ Accessibility and keyboard operation are release requirements.
 - FormField retains stable semantic IDs plus labelled-by, described-by,
   required, and invalid relationships in the runtime tree.
 - Retained reconciliation copies semantic attributes and static text into a
-  stable `AccessibilityTree`; mounted snapshots project only nodes presented in
-  the latest GPUI frame. The tree flattens layout-only nodes, resolves
+  stable `CommittedSemanticFrame`; native GPUI/AccessKit and automation consume
+  that same immutable projection. Mounted snapshots join only geometry from
+  the latest committed presentation frame. The tree flattens layout-only nodes, resolves
   labelled-by/described-by text, rejects duplicate semantic IDs, attaches last
   committed geometry, and supports role/name or semantic-ID lookup through
   `ScriptViewHandle::accessibility_snapshot`.
+- The gpui-pre adapter projects role, localized name/description, author ID,
+  selected/expanded/toggled/current state, scalar and numeric values, ranges,
+  orientation, required/invalid/disabled/read-only state, placeholders,
+  shortcuts, set position and table row/column metadata to AccessKit.
+- Native AX Click/Focus follows GPUI's window dispatch. TextInput, Textarea,
+  Slider and Chart register bounded primitive actions; SetValue and numeric
+  steps re-enter the same controlled event flow as pointer and keyboard input.
+  Disabled, read-only and stale instances never gain authority through AX.
+- Invalid roles are rejected before the retained candidate commits. Legal
+  platform gaps remain visible in the internal semantic frame instead of
+  crashing or inventing unsupported actions.
 
 ## Complex-control behavior
 
@@ -70,27 +82,46 @@ The 2026-08-30 macOS pass includes real `鼠须管` candidate commit and marked-
 Escape cancellation in Textarea; the exact evidence is recorded with the
 visual baselines.
 
-## Pinned GPUI limitation
+## Official component coverage
 
-The pinned GPUI 0.2.2 release uses AccessKit internally but does not expose a
-public element API for assigning arbitrary AccessKit roles, labels, checked or
-current state, or descriptions. GPUI Rhai therefore retains these semantics in UiNode
-snapshots and the stable AccessibilityTree, but cannot yet forward all values to the
-platform accessibility tree without relying on GPUI internals.
+Every official component is assigned one deliberate category; nested controls
+retain their own role and action rather than making the entire composite one
+opaque node.
 
-GPUI 0.2.2 also does not expose the macOS Reduce Motion preference. The host
-and environment APIs above are therefore the supported bridge until GPUI adds a
-public system-preference signal.
+- **Operable controls/composites:** Accordion, AlertDialog, Button,
+  ButtonGroup, Checkbox, Collapsible, Combobox, Command, CommandDialog,
+  ContextMenu, DatePicker, Dialog, FormField, IconButton, Input, InputGroup,
+  Menu, Pagination, Popover, Radio, RadioGroup, Select, Sheet, Slider, Switch,
+  Table, Tabs, Tag when dismissible, Textarea, Toast when dismissible, Toggle,
+  ToggleGroup and Tooltip triggers.
+- **Semantic/read-only surfaces:** Alert, Avatar, Badge, Card, CodeViewer,
+  DiffViewer, Divider, Empty, GroupBox, Kbd, Label, Progress, ScrollArea,
+  Spinner, StatusBar and TitleBar.
+- **Decorative by default:** Skeleton and unlabeled Icon. A labeled Icon is an
+  image node. Presentation/group headers do not become selectable rows.
 
-GPUI 0.2.2 does not expose a public per-element base-direction or bidi-isolation
-API. GPUI Rhai controls logical layout direction and delegates text shaping to
-the platform. Mixed-direction text that requires explicit isolation remains an
-upstream limitation.
+Virtual Table, Command and Combobox project overall collection metadata plus a
+bounded realized semantic window. Chart projects its title/summary and at most
+the focused or selected data summary rather than materializing every source
+datum as an AX node.
 
-This is an explicit upstream gap, not a reason to remove semantic metadata from
-component contracts. The adapter must be added as soon as the pinned GPUI API
-supports it. M1 composite controls still implement deterministic keyboard and
-focus behavior and document any platform-semantic value that cannot be exposed.
+## Current upstream and platform boundaries
+
+The 0.1.6 implementation candidate uses the exact `gpui-pre 0.3.6` family.
+This snapshot exposes public AccessKit roles, properties, synthetic children and
+actions, so the former GPUI 0.2.2 native-semantic limitation no longer applies.
+It remains a community-published snapshot of a traceable Zed commit, not a Zed
+release.
+
+The snapshot still lacks upstream text hit-test fix #64672. It is suitable for
+implementation and validation but remains blocked from release until a complete
+published family contains that fix or equivalent behavior is proved unreachable
+on every supported text path.
+
+GPUI's application-level reduced-motion flag is synchronized only from the
+existing Host-owned policy; this release does not add a second OS preference
+watcher. GPUI also still lacks a public per-element bidi-isolation contract, so
+mixed-direction text requiring explicit isolation remains an upstream gap.
 
 ## Visual evidence
 

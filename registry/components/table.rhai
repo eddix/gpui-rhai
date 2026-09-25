@@ -2,7 +2,7 @@
 {
   "id": "components/table",
   "export": "Table",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": [],
   "capabilities": {},
@@ -19,7 +19,7 @@
 //     columns: columns, height: 420 })
 
 define_component(#{
-    metadata: #{ id: "components/table", "export": "Table", version: "0.1.5",
+    metadata: #{ id: "components/table", "export": "Table", version: "0.1.6",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
         dependencies: [], capabilities: #{},
         assets: ["icons/disclosure_down.svg", "icons/chevron_right.svg", "icons/sort_ascending.svg", "icons/sort_descending.svg"] },
@@ -171,7 +171,7 @@ fn column_resize_key(ctx, payload) {
         width: #{ kind: "fixed", value: width } });
 }
 
-fn render_table_row(resize_signals, ctx, payload) {
+fn render_table_row(resize_signals, total_rows, ctx, payload) {
     let item = payload.item;
     if item.kind == "group" {
         let indicator = image_source(asset(if item.collapsed {
@@ -194,12 +194,14 @@ fn render_table_row(resize_signals, ctx, payload) {
                     .background(theme_color("surface_raised")).occlude_except_scroll()))
             .accessibility_role("rowheader")
             .accessibility_label(`${item.group}, ${item.count}`)
-            .accessibility_checked(item.collapsed);
+            .accessibility_row_index(payload.index + 2)
+            .accessibility_expanded(!item.collapsed);
         return if item.toggle {
             node.on_click_value(Fn("group_action"), item.group)
         } else { node.tab_stop(false) };
     }
     let cells = [];
+    let cell_index = 1;
     for cell in item.cells {
         let content = [text(cell.text).with_key(`${cell.key}-text`)
             .with_style(style().flex_grow().min_width(px(0)).whitespace_nowrap().text_ellipsis())];
@@ -218,7 +220,9 @@ fn render_table_row(resize_signals, ctx, payload) {
         if "resize_signal_key" in cell {
             node = node.bind_parent_signal(ctx, "width_override", cell.resize_signal_key);
         }
+        node = node.accessibility_table_cell(cell.text, cell_index);
         cells.push(node);
+        cell_index += 1;
     }
     let base = style().width(relative(1.0))
         .height(px(item.height)).items_center()
@@ -233,9 +237,8 @@ fn render_table_row(resize_signals, ctx, payload) {
     let node = row(cells)
         .with_key(payload.key)
         .with_style(ctx.component_style(if item.selected { "row_selected" } else { "row" }, base))
-        .accessibility_role("row")
-        .accessibility_label(item.label)
-        .accessibility_checked(item.selected);
+        .accessibility_table_row(item.label, item.selected,
+            payload.index + 2, payload.index + 1, total_rows);
     node.on_click_value(Fn("row_action"), #{ key: payload.key, selection: item.selection })
 }
 
@@ -374,7 +377,7 @@ fn table_header(ctx, props, columns, resize_signals, current_sort) {
                 column_style(column).relative().min_width(px(0)).height(px(30)).items_center()
                     .typography("body_small").font_weight(700)
                     .hover(style().background(theme_color("surface_hover")))))
-            .accessibility_role("columnheader").accessibility_label(column.title);
+            .accessibility_column_header(column.title, index + 1);
         if resize_enabled {
             cell = cell.bind_signal("width_override", resize_signal).with_ref(header_ref);
         }
@@ -387,6 +390,7 @@ fn table_header(ctx, props, columns, resize_signals, current_sort) {
             .border_bottom(px(1)).border_color(theme_color("border"))
             .background(theme_color("surface_raised"))))
         .accessibility_role("row")
+        .accessibility_row_index(1)
 }
 
 fn render_Table(ctx, props) {
@@ -410,7 +414,8 @@ fn render_Table(ctx, props) {
             .padding(theme_spacing("md")).typography("body_small").text_color(theme_color("text_muted"))))])
             .with_key(props.key).with_style(ctx.component_style("root", style().flex_col()
                 .border(px(1)).border_color(theme_color("border"))))
-            .accessibility_role("table").accessibility_label(props.label);
+            .accessibility_role("table").accessibility_label(props.label)
+            .accessibility_row_count(1).accessibility_column_count(columns.len);
     }
     if props.rows.len == 0 {
         let empty = if "empty" in props && props.empty != () { props.empty }
@@ -419,7 +424,8 @@ fn render_Table(ctx, props) {
             .padding(theme_spacing("md")).typography("body_small").text_color(theme_color("text_muted"))))])
             .with_key(props.key).with_style(ctx.component_style("root", style().flex_col()
                 .border(px(1)).border_color(theme_color("border"))))
-            .accessibility_role("table").accessibility_label(props.label);
+            .accessibility_role("table").accessibility_label(props.label)
+            .accessibility_row_count(1).accessibility_column_count(columns.len);
     }
 
     let selected = prop_or(props, "selected_keys", []);
@@ -506,7 +512,8 @@ fn render_Table(ctx, props) {
     let body_style = if fill_height {
         style().flex_grow().min_width(px(0)).min_height(px(0))
     } else { style().min_width(px(0)) };
-    let body = virtual_collection(collection, Fn("render_table_row").curry(model.resize_signals))
+    let body = virtual_collection(collection,
+        Fn("render_table_row").curry(model.resize_signals).curry(data.len))
         .with_style(ctx.component_style("body", body_style));
     let root_style = if fill_height {
         style().flex_col().flex_grow().min_width(px(0)).min_height(px(0))
@@ -515,4 +522,5 @@ fn render_Table(ctx, props) {
         .with_style(ctx.component_style("root", root_style.overflow_x_scroll()
             .border(px(1)).border_color(theme_color("border"))))
         .accessibility_role("table").accessibility_label(props.label)
+        .accessibility_row_count(data.len + 1).accessibility_column_count(columns.len)
 }

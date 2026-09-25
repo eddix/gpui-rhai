@@ -1,0 +1,44 @@
+{
+  "date": "2026-09-24",
+  "reference": {
+    "url": "https://github.com/huacnlee/gpui-omarchy",
+    "path": "/Users/eddix/Codes/github.com/huacnlee/gpui-omarchy",
+    "head": "b186b959382494e2ea31fda94ac3677a82f55528",
+    "branch": "main",
+    "version": "0.1.2",
+    "license": "MIT",
+    "source_rs_files": 31,
+    "source_lines_including_inline_tests": 6144,
+    "gallery_previews": 47,
+    "gallery_overview_pages": 1,
+    "runtime_stack": "gpui-kit 0.6.1 / gpui-base 0.6.1 / gpui-pre 0.3.1",
+    "default_component_facade_enabled": false
+  },
+  "comparison": {
+    "path": "/Users/eddix/Codes/github.com/eddix/gpui-rhai",
+    "head": "120ef2239079ee5e2205c05a9b982768b096a19a",
+    "version": "0.1.5",
+    "runtime_stack": "GPUI 0.2.2 / Rhai 1.26.0"
+  },
+  "validation": {
+    "fmt": "passed",
+    "all_targets": {
+      "passed": 74,
+      "failed": 0,
+      "ignored": 0,
+      "exit_code": 0
+    },
+    "doc_tests": {
+      "passed": 0,
+      "failed": 0,
+      "exit_code": 0
+    },
+    "initial_offline_attempt": "missing gpui-kit cache; retried online successfully",
+    "native_visual_review": false,
+    "wasm_browser_tests_executed": false,
+    "production_latency_benchmark": false
+  },
+  "scope": "Full git clone; source and dependency inspection; upstream native tests; comparative recommendations. No product code or assets copied into gpui-rhai.",
+  "rustc": "rustc 1.94.0 (4a4ef493e 2026-03-02)\nbinary: rustc\ncommit-hash: 4a4ef493e3a1488c6e321570238084b38948f6db\ncommit-date: 2026-03-02\nhost: aarch64-apple-darwin\nrelease: 1.94.0\nLLVM version: 21.1.8",
+  "os": "ProductName:\t\tmacOS\nProductVersion:\t\t26.6.2\nBuildVersion:\t\t25G83"
+}

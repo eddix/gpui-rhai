@@ -1,0 +1,284 @@
+[
+  {
+    "sha": "e9ddcdaf98294e335370e4f7566f80494d273bf2",
+    "date": "2026-09-24T12:37:08Z",
+    "title": "gpui: Make create ElementId more easier from u64 (#64702)",
+    "url": "https://github.com/zed-industries/zed/commit/e9ddcdaf98294e335370e4f7566f80494d273bf2"
+  },
+  {
+    "sha": "e71963a599c64c213aca1c607e7418503a1e787d",
+    "date": "2026-09-23T17:59:33Z",
+    "title": "gpui: Fix panic when hit testing past a wrapped line's width (#64672)",
+    "url": "https://github.com/zed-industries/zed/commit/e71963a599c64c213aca1c607e7418503a1e787d"
+  },
+  {
+    "sha": "9183ba4c5579c083b005d7f4c248d90c914fb46f",
+    "date": "2026-09-23T15:19:11Z",
+    "title": "ui: Fix context menu selecting first entry on open (#64365)",
+    "url": "https://github.com/zed-industries/zed/commit/9183ba4c5579c083b005d7f4c248d90c914fb46f"
+  },
+  {
+    "sha": "ba42ab9d9851f82a7d8f5ae40b941bf5c515fc10",
+    "date": "2026-09-23T03:59:20Z",
+    "title": "gpui: Fix keystroke interception for standalone modifiers (#64537)",
+    "url": "https://github.com/zed-industries/zed/commit/ba42ab9d9851f82a7d8f5ae40b941bf5c515fc10"
+  },
+  {
+    "sha": "0d08af1e53378fc2aca09eed049ab77df1a8439a",
+    "date": "2026-09-18T10:50:41Z",
+    "title": "Share GPUI and scheduler implementations (#64261)",
+    "url": "https://github.com/zed-industries/zed/commit/0d08af1e53378fc2aca09eed049ab77df1a8439a"
+  },
+  {
+    "sha": "94c997e06faabe6538e608c6d04091914f02f86b",
+    "date": "2026-09-18T07:42:25Z",
+    "title": "gpui: Fix debug selectors with cached views (#64433)",
+    "url": "https://github.com/zed-industries/zed/commit/94c997e06faabe6538e608c6d04091914f02f86b"
+  },
+  {
+    "sha": "c24e309d935d83f672dff1df64b2331749bcb44c",
+    "date": "2026-09-17T17:38:24Z",
+    "title": "gpui: Fix manifest path for cross-compilation (#62525)",
+    "url": "https://github.com/zed-industries/zed/commit/c24e309d935d83f672dff1df64b2331749bcb44c"
+  },
+  {
+    "sha": "cf4deb270f04b75ecf5b1d4990591e1146560ea0",
+    "date": "2026-09-17T16:42:31Z",
+    "title": "gpui: Fix centered window bounds to display settings header (#62073)",
+    "url": "https://github.com/zed-industries/zed/commit/cf4deb270f04b75ecf5b1d4990591e1146560ea0"
+  },
+  {
+    "sha": "aec7395e30feba9139c9ab8b9444d672882ddf41",
+    "date": "2026-09-17T08:49:31Z",
+    "title": "Fix cargo shear warnings (#64340)",
+    "url": "https://github.com/zed-industries/zed/commit/aec7395e30feba9139c9ab8b9444d672882ddf41"
+  },
+  {
+    "sha": "0ef92145ff87aab5f19f6b44c9c55a486f4f064f",
+    "date": "2026-09-17T08:24:25Z",
+    "title": "gpui: Improve `PlatformAtlas::get_or_insert_with` (#64331)",
+    "url": "https://github.com/zed-industries/zed/commit/0ef92145ff87aab5f19f6b44c9c55a486f4f064f"
+  },
+  {
+    "sha": "4b47ceb9d328035bde5ef99009e674d9fee07fb7",
+    "date": "2026-09-17T01:46:02Z",
+    "title": "gpui_macos: Migrate screen capture to `objc2` (#64251)",
+    "url": "https://github.com/zed-industries/zed/commit/4b47ceb9d328035bde5ef99009e674d9fee07fb7"
+  },
+  {
+    "sha": "0dea8c63d9a5d747b3d0903adb110a9def1d1020",
+    "date": "2026-09-16T16:04:28Z",
+    "title": "editor: Render point diagnostics without glyphs (#63933)",
+    "url": "https://github.com/zed-industries/zed/commit/0dea8c63d9a5d747b3d0903adb110a9def1d1020"
+  },
+  {
+    "sha": "b0f53ad23be82b698e652c962e0d83fec1eb7760",
+    "date": "2026-09-16T16:02:58Z",
+    "title": "Optimize GPUI inspector's runtime cost by an order of magnitude (#64309)",
+    "url": "https://github.com/zed-industries/zed/commit/b0f53ad23be82b698e652c962e0d83fec1eb7760"
+  },
+  {
+    "sha": "f0fb48c71ab664e3a664c29a9e79332c91252a59",
+    "date": "2026-09-16T16:00:19Z",
+    "title": "gpui: Make ForegroundJournal aware of sleep and window visibility  (#64269)",
+    "url": "https://github.com/zed-industries/zed/commit/f0fb48c71ab664e3a664c29a9e79332c91252a59"
+  },
+  {
+    "sha": "5c9efb75cf73fc56f6316455983e4f04e9330860",
+    "date": "2026-09-16T13:17:03Z",
+    "title": "gpui: Avoid main-thread waits when unlocking web task queues (#64298)",
+    "url": "https://github.com/zed-industries/zed/commit/5c9efb75cf73fc56f6316455983e4f04e9330860"
+  },
+  {
+    "sha": "07df4386262dc3465649e26b68a9d12647b1d6d2",
+    "date": "2026-09-15T12:52:48Z",
+    "title": "Remove `ztracing` dependency from GPUI (#64237)",
+    "url": "https://github.com/zed-industries/zed/commit/07df4386262dc3465649e26b68a9d12647b1d6d2"
+  },
+  {
+    "sha": "b68add5b37a125b3f9d6d04f23a2f93f8eaa57bb",
+    "date": "2026-09-14T23:49:34Z",
+    "title": "gpui: Remove mutex from dynamic font loading (#64204)",
+    "url": "https://github.com/zed-industries/zed/commit/b68add5b37a125b3f9d6d04f23a2f93f8eaa57bb"
+  },
+  {
+    "sha": "9e6e14160c192f682c4d35f4e8d420cc0577ad5f",
+    "date": "2026-09-14T21:18:17Z",
+    "title": "gpui: Support dynamic font installation (#63498)",
+    "url": "https://github.com/zed-industries/zed/commit/9e6e14160c192f682c4d35f4e8d420cc0577ad5f"
+  },
+  {
+    "sha": "d62802d456ac93a5abce5fecd5e98d2b8124485d",
+    "date": "2026-09-14T16:38:51Z",
+    "title": "Fix Trunk link in GPUI examples documentation (#64192)",
+    "url": "https://github.com/zed-industries/zed/commit/d62802d456ac93a5abce5fecd5e98d2b8124485d"
+  },
+  {
+    "sha": "f792c2d72d14130d6758f21662365b0f36384d28",
+    "date": "2026-09-14T14:38:54Z",
+    "title": "gpui: Add `ShapedLineCursor` API (#64185)",
+    "url": "https://github.com/zed-industries/zed/commit/f792c2d72d14130d6758f21662365b0f36384d28"
+  },
+  {
+    "sha": "25b5569dd231e740922cfebafa26b1a6c08531e8",
+    "date": "2026-09-14T12:03:12Z",
+    "title": "project_panel: Add Menu key support to project panel context menu (#46744)",
+    "url": "https://github.com/zed-industries/zed/commit/25b5569dd231e740922cfebafa26b1a6c08531e8"
+  },
+  {
+    "sha": "7960b2a7c9568e90fbe0727332149e5b2a5fd57a",
+    "date": "2026-09-12T20:38:07Z",
+    "title": "gpui: Add Canvas font fallback for web text (#64110)",
+    "url": "https://github.com/zed-industries/zed/commit/7960b2a7c9568e90fbe0727332149e5b2a5fd57a"
+  },
+  {
+    "sha": "3db02c2c77659ad29810594e6249287ea1e791f7",
+    "date": "2026-09-12T03:25:52Z",
+    "title": "gpui: Add is_visible and on_visibility_changed API on Window (#64107)",
+    "url": "https://github.com/zed-industries/zed/commit/3db02c2c77659ad29810594e6249287ea1e791f7"
+  },
+  {
+    "sha": "1a89a92e7e26c1ac810666cc1bd752db8c62d93e",
+    "date": "2026-09-12T03:16:09Z",
+    "title": "gpui: Add unpaced frame-driven renderer sessions (#64109)",
+    "url": "https://github.com/zed-industries/zed/commit/1a89a92e7e26c1ac810666cc1bd752db8c62d93e"
+  },
+  {
+    "sha": "5b4a2153a087055a7f9cb3464f188f1cab9fd678",
+    "date": "2026-09-11T17:14:29Z",
+    "title": "gpui: List only available font families in suggestions (#64095)",
+    "url": "https://github.com/zed-industries/zed/commit/5b4a2153a087055a7f9cb3464f188f1cab9fd678"
+  },
+  {
+    "sha": "3cef31688ae2df816c9ce04fc254c172764485e8",
+    "date": "2026-09-11T11:10:44Z",
+    "title": "Upgrade ACP to 2.1 and futures to 0.3.34 (#64077)",
+    "url": "https://github.com/zed-industries/zed/commit/3cef31688ae2df816c9ce04fc254c172764485e8"
+  },
+  {
+    "sha": "d9e1c024f393832765a03f4de204d6c8cd9abcb2",
+    "date": "2026-09-11T05:25:06Z",
+    "title": "gpui: Long-press to activate tooltips (#63948)",
+    "url": "https://github.com/zed-industries/zed/commit/d9e1c024f393832765a03f4de204d6c8cd9abcb2"
+  },
+  {
+    "sha": "1a84d5d92bd7d6c1cabb116062650af545783fe9",
+    "date": "2026-09-10T21:42:22Z",
+    "title": "project_panel: Fix dragged folders remaining highlighted even after the drag has ended (#64038)",
+    "url": "https://github.com/zed-industries/zed/commit/1a84d5d92bd7d6c1cabb116062650af545783fe9"
+  },
+  {
+    "sha": "6ad3c7f278e513875e0bbde5ee935f6c9a342b9c",
+    "date": "2026-09-10T09:49:08Z",
+    "title": "gpui_web: Simplify keyboard focus model (#63989)",
+    "url": "https://github.com/zed-industries/zed/commit/6ad3c7f278e513875e0bbde5ee935f6c9a342b9c"
+  },
+  {
+    "sha": "450775244fade36db70af2447be24e74edb43368",
+    "date": "2026-09-09T13:49:13Z",
+    "title": "gpui: Prevent idle sleep during AI response streaming (#53130)",
+    "url": "https://github.com/zed-industries/zed/commit/450775244fade36db70af2447be24e74edb43368"
+  },
+  {
+    "sha": "33c6212b055fa8a97b17c8653311c9ccab7fb3b6",
+    "date": "2026-09-09T13:48:50Z",
+    "title": "Restore macOS windows to their original Space after restart (#58886)",
+    "url": "https://github.com/zed-industries/zed/commit/33c6212b055fa8a97b17c8653311c9ccab7fb3b6"
+  },
+  {
+    "sha": "5896274168e06663568f42b5bae142162936e0a6",
+    "date": "2026-09-09T09:30:38Z",
+    "title": "gpui: Replace shared asset futures with owning cache entries (#63934)",
+    "url": "https://github.com/zed-industries/zed/commit/5896274168e06663568f42b5bae142162936e0a6"
+  },
+  {
+    "sha": "20fa2fa80949e94b6eecb48c8a46fbf32b82f1fc",
+    "date": "2026-09-07T15:18:49Z",
+    "title": "Reduce LLVM IR bloat one last time (#63882)",
+    "url": "https://github.com/zed-industries/zed/commit/20fa2fa80949e94b6eecb48c8a46fbf32b82f1fc"
+  },
+  {
+    "sha": "b95b188b59454bc2b01f08a54ab0182c4a55f141",
+    "date": "2026-09-07T14:34:00Z",
+    "title": "gpui: Add scale-factor simulation to `TestWindow` (#63719)",
+    "url": "https://github.com/zed-industries/zed/commit/b95b188b59454bc2b01f08a54ab0182c4a55f141"
+  },
+  {
+    "sha": "c8c07aea5cf82007e524d4fcb31572eb7eeabcd5",
+    "date": "2026-09-04T17:19:04Z",
+    "title": "Add `disable_ai` check for \"Agent Panel\" `MenuItem` (#63580)",
+    "url": "https://github.com/zed-industries/zed/commit/c8c07aea5cf82007e524d4fcb31572eb7eeabcd5"
+  },
+  {
+    "sha": "3ce72bab201ad82418fc9716aad11332624951bc",
+    "date": "2026-09-03T14:36:51Z",
+    "title": "gpui: Add `Hitbox::is_hovered_at` (#63696)",
+    "url": "https://github.com/zed-industries/zed/commit/3ce72bab201ad82418fc9716aad11332624951bc"
+  },
+  {
+    "sha": "d85eade7ab475de6d11a193beccf1951be2ff371",
+    "date": "2026-09-03T09:35:53Z",
+    "title": "which_key: Add a pending key binding indicator (#63343)",
+    "url": "https://github.com/zed-industries/zed/commit/d85eade7ab475de6d11a193beccf1951be2ff371"
+  },
+  {
+    "sha": "f0d8b0b0cde9a5b5000017c1e60db3ebea274b88",
+    "date": "2026-09-03T09:35:52Z",
+    "title": "gpui: Add an option to keep hover listeners active after keyboard input (#63614)",
+    "url": "https://github.com/zed-industries/zed/commit/f0d8b0b0cde9a5b5000017c1e60db3ebea274b88"
+  },
+  {
+    "sha": "b1a7ef0cf66dfbf9d7661170c96d97c7df916c68",
+    "date": "2026-09-02T23:15:40Z",
+    "title": "gpui: Snap recomputed padding to the device pixel grid before clamping scroll (#62296)",
+    "url": "https://github.com/zed-industries/zed/commit/b1a7ef0cf66dfbf9d7661170c96d97c7df916c68"
+  },
+  {
+    "sha": "b3326e13c142fc8f313aca67a93dd6855a1e7e32",
+    "date": "2026-09-02T20:28:07Z",
+    "title": "gpui: Add `TouchDragEvent` API (#63645)",
+    "url": "https://github.com/zed-industries/zed/commit/b3326e13c142fc8f313aca67a93dd6855a1e7e32"
+  },
+  {
+    "sha": "a85cf449ec6e72274ee6f9e8462f702299b04cce",
+    "date": "2026-09-02T18:23:32Z",
+    "title": "gpui: Prevent touch mispredict jitter (#63638)",
+    "url": "https://github.com/zed-industries/zed/commit/a85cf449ec6e72274ee6f9e8462f702299b04cce"
+  },
+  {
+    "sha": "9decdcc1f22d324b5d5b186a3da1418ec0ea4c37",
+    "date": "2026-09-02T18:23:07Z",
+    "title": "gpui_web: Drive IME mirror focus state from GPUI (#63629)",
+    "url": "https://github.com/zed-industries/zed/commit/9decdcc1f22d324b5d5b186a3da1418ec0ea4c37"
+  },
+  {
+    "sha": "6b5e15ed463cdcf28b0d1d49c1a681ad044e308b",
+    "date": "2026-09-02T18:21:25Z",
+    "title": "Bump more dependencies (#63379)",
+    "url": "https://github.com/zed-industries/zed/commit/6b5e15ed463cdcf28b0d1d49c1a681ad044e308b"
+  },
+  {
+    "sha": "97b1e64a177a2fe3c2803e323087b5c2fa6fff1e",
+    "date": "2026-09-02T05:03:27Z",
+    "title": "gpui: Record hang trigger class and set the release frame budget to 24ms (#63586)",
+    "url": "https://github.com/zed-industries/zed/commit/97b1e64a177a2fe3c2803e323087b5c2fa6fff1e"
+  },
+  {
+    "sha": "0855410ccd2040efbbf14d71409166b6c472e0bd",
+    "date": "2026-09-01T16:28:50Z",
+    "title": "gpui: Add long-press gesture recognition (#63561)",
+    "url": "https://github.com/zed-industries/zed/commit/0855410ccd2040efbbf14d71409166b6c472e0bd"
+  },
+  {
+    "sha": "5e28272c1407ced4bae4a90deaea25352a1fbc96",
+    "date": "2026-09-01T14:20:13Z",
+    "title": "gpui: Lock touch scrolling to the dominant axis (#63553)",
+    "url": "https://github.com/zed-industries/zed/commit/5e28272c1407ced4bae4a90deaea25352a1fbc96"
+  },
+  {
+    "sha": "a66fb6aebdee68ee5ae7d191d9dff0d61a42b834",
+    "date": "2026-09-01T12:43:44Z",
+    "title": "gpui_web: Tighten up web keyboard feel (#63533)",
+    "url": "https://github.com/zed-industries/zed/commit/a66fb6aebdee68ee5ae7d191d9dff0d61a42b834"
+  }
+]

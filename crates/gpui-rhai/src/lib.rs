@@ -70,8 +70,11 @@ pub mod clock;
 pub mod motion;
 
 pub use gpui;
+pub use gpui_platform;
 
-pub use accessibility::{AccessibilityError, AccessibilityNode, AccessibilityTree};
+pub use accessibility::{
+    AccessibilityError, AccessibilityNode, AccessibilityTree, CommittedSemanticFrame,
+};
 pub use action::{
     ActionError, ActionId, ActionInvocation, ActionRegistry, DispatchScriptAction, KeyBindingSpec,
 };
@@ -204,6 +207,7 @@ pub use range_input::{RangeInputPrimitiveHandler, range_input_primitive_descript
 pub use reload::{LiveScript, ReloadOutcome};
 pub use renderer::{
     ColorResolver, GpuiNodeRenderer, LiteralColorResolver, NodeEventDispatcher, StaticUiView,
+    StaticUiViewError,
 };
 pub use responsive::{ResponsiveError, ResponsiveRuntime, ViewportBreakpoints, ViewportClass};
 pub use retained::{

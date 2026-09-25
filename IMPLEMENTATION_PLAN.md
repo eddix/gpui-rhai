@@ -1,5 +1,10 @@
 # Core Runtime v2 implementation plan
 
+Next planned dependency iteration: [gpui-pre upgrade plan](docs/plans/2026-09-25-gpui-pre-upgrade.zh-CN.md).
+This is pending work against the 0.1.5 baseline, including platform adaptation,
+native accessibility, and release validation; it does not change the completed
+Runtime v2 contracts recorded below.
+
 ## 1. Execution policy
 
 This plan implements the final Core Runtime v2 described by `INTENT.md`.

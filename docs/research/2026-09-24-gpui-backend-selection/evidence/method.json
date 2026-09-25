@@ -1,0 +1,121 @@
+{
+  "as_of": "2026-09-24",
+  "retrieved_utc": "2026-09-24T14:46:15.291047+00:00",
+  "local_root": "/tmp/gpui-lineage-2026-09-24",
+  "method": "Read-only GitHub/crates.io APIs, exact crate archives, pinned source comparison. No production migration, backend A/B performance benchmark, or cross-platform manual acceptance performed.",
+  "changes": "Only this research directory added; prior gpui-omarchy research preserved.",
+  "ce_published_core_vcs": {
+    "git": {
+      "sha1": "99109e3a77ddadbcb46cba8567e779a651600608",
+      "dirty": true
+    },
+    "path_in_vcs": "crates/gpui"
+  },
+  "ce_github_tags_observed": [],
+  "ce_github_releases_observed": [],
+  "kit_0_6_6_dependencies": [
+    {
+      "id": 37030769,
+      "version_id": 3287371,
+      "crate_id": "gpui-base",
+      "req": "^0.6.6",
+      "optional": false,
+      "default_features": true,
+      "features": [],
+      "target": null,
+      "kind": "normal",
+      "downloads": 0
+    },
+    {
+      "id": 37030768,
+      "version_id": 3287371,
+      "crate_id": "gpui-pre",
+      "req": "=0.3.6",
+      "optional": false,
+      "default_features": true,
+      "features": [],
+      "target": null,
+      "kind": "normal",
+      "downloads": 0
+    },
+    {
+      "id": 37030772,
+      "version_id": 3287371,
+      "crate_id": "gpui-pre",
+      "req": "=0.3.6",
+      "optional": false,
+      "default_features": true,
+      "features": [
+        "test-support"
+      ],
+      "target": null,
+      "kind": "dev",
+      "downloads": 0
+    },
+    {
+      "id": 37030773,
+      "version_id": 3287371,
+      "crate_id": "gpui-pre-platform",
+      "req": "=0.3.6",
+      "optional": false,
+      "default_features": true,
+      "features": [
+        "font-kit",
+        "x11",
+        "wayland",
+        "runtime_shaders"
+      ],
+      "target": "cfg(not(any(target_os = \"ios\", target_os = \"android\")))",
+      "kind": "normal",
+      "downloads": 0
+    },
+    {
+      "id": 37030774,
+      "version_id": 3287371,
+      "crate_id": "gpui-pre-web",
+      "req": "=0.3.6",
+      "optional": false,
+      "default_features": true,
+      "features": [],
+      "target": "cfg(target_family = \"wasm\")",
+      "kind": "normal",
+      "downloads": 0
+    },
+    {
+      "id": 37030770,
+      "version_id": 3287371,
+      "crate_id": "gpui-component",
+      "req": "^0.6.6",
+      "optional": true,
+      "default_features": true,
+      "features": [],
+      "target": null,
+      "kind": "normal",
+      "downloads": 0
+    },
+    {
+      "id": 37030771,
+      "version_id": 3287371,
+      "crate_id": "gpui-kit-assets",
+      "req": "^0.6.6",
+      "optional": true,
+      "default_features": true,
+      "features": [],
+      "target": null,
+      "kind": "normal",
+      "downloads": 0
+    }
+  ],
+  "followup": {
+    "date": "2026-09-24",
+    "scope": "Existing ADR 0020 ShaderSurface/3D plan included in selection weights.",
+    "decision": "Prioritize CE as the GPU substrate candidate if cross-platform ShaderSurface/3D is a first-class product target; validate macOS/Windows GPU sharing/compositing before final migration.",
+    "prototype_executed": false
+  },
+  "latest_scope": {
+    "date": "2026-09-24",
+    "3d_engine": "Rust Host/third-party extension responsibility; not mandatory built-in Runtime capability",
+    "decision": "Upgrade upstream GPUI core via direct gpui-pre family; optional Kit/Base adoption evaluated independently; return to official published family when current enough and accepted.",
+    "details": "upstream-core-vs-kit.zh-CN.md"
+  }
+}
