@@ -2080,6 +2080,33 @@ impl PrimitiveHandler for ChartPrimitiveHandler {
         })
     }
 
+    fn accessibility_actions(
+        &self,
+        _instance: &PrimitiveInstanceId,
+    ) -> Vec<gpui::AccessibleAction> {
+        vec![gpui::AccessibleAction::Focus]
+    }
+
+    fn perform_accessibility_action(
+        &mut self,
+        instance: &PrimitiveInstanceId,
+        action: gpui::AccessibleAction,
+        _data: Option<&gpui::accesskit::ActionData>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Result<(), String> {
+        if action != gpui::AccessibleAction::Focus {
+            return Err("unsupported chart accessibility action".to_owned());
+        }
+        let chart = self
+            .instances
+            .get(instance)
+            .ok_or_else(|| "chart accessibility target is stale".to_owned())?;
+        let focus = chart.read(cx).focus.clone();
+        focus.focus(window, cx);
+        Ok(())
+    }
+
     fn suspend(&mut self, instance: &PrimitiveInstanceId, cx: &mut App) {
         if let Some(entity) = self.instances.get(instance) {
             entity.update(cx, ChartEntity::suspend);

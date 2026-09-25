@@ -2,7 +2,7 @@
 {
   "id": "motion/reorder_list",
   "export": "ReorderList",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": [],
   "capabilities": {}
@@ -12,7 +12,7 @@
 // Example: ReorderList(#{ key: "queue", items: [#{ key: "a", label: "A" }] })
 
 define_component(#{
-    metadata: #{ id: "motion/reorder_list", "export": "ReorderList", version: "0.1.5",
+    metadata: #{ id: "motion/reorder_list", "export": "ReorderList", version: "0.1.6",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{} },
     schema: #{ props: #{
         key: #{ schema: #{ type: "string" }, required: true, sensitive: false },

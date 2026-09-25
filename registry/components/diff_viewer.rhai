@@ -2,7 +2,7 @@
 {
   "id": "components/diff_viewer",
   "export": "DiffViewer",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": [],
   "capabilities": {}
@@ -15,7 +15,7 @@
 // Example: DiffViewer(#{ key: "servers", left: #{ source: a, label: "Server A" }, right: #{ source: b, label: "Server B" }, mode: "split" })
 
 define_component(#{
-    metadata: #{ id: "components/diff_viewer", "export": "DiffViewer", version: "0.1.5",
+    metadata: #{ id: "components/diff_viewer", "export": "DiffViewer", version: "0.1.6",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{} },
     schema: #{
         props: #{

@@ -514,7 +514,7 @@ fn task_delivery(entry: TaskEntry, result: Result<UiValue, String>) -> AsyncDeli
 
 const DEFAULT_SUBSCRIPTION_CAPACITY: usize = 64;
 const MAX_SUBSCRIPTION_CAPACITY: usize = 4_096;
-const MAX_SUBSCRIPTION_THROTTLE: Duration = Duration::from_secs(60);
+const MAX_SUBSCRIPTION_THROTTLE: Duration = Duration::from_mins(1);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SubscriptionDeliveryPolicy {

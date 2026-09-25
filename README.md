@@ -21,6 +21,12 @@ typography. See the [release and upgrade index](docs/releases/README.md). The au
 contract is in [INTENT.md](INTENT.md), and the dependency-ordered implementation
 plan is in [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md).
 
+The 0.1.6 development line upgrades the Rust backend to the exact gpui-pre
+core/platform family, raises MSRV to Rust 1.95, and projects the retained
+semantic frame into native AccessKit. Runtime API 2 and existing Rhai sources
+remain compatible; Rust Hosts must align their GPUI package identity. See
+[Accessibility](docs/accessibility.md) and [Embedding](docs/embedding.md).
+
 The implemented complex-control line is specified under
 [docs/components](docs/components/) for DatePicker, Select, Table, Pagination,
 Textarea, CodeViewer, and DiffViewer.

@@ -2,7 +2,7 @@
 {
   "id": "charts/bar_chart",
   "export": "BarChart",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": ["charts/chart"],
   "capabilities": {}
@@ -17,7 +17,7 @@
 import "charts/chart" as chart;
 
 define_component(#{
-    metadata: #{ id: "charts/bar_chart", "export": "BarChart", version: "0.1.5",
+    metadata: #{ id: "charts/bar_chart", "export": "BarChart", version: "0.1.6",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: ["charts/chart"], capabilities: #{} },
     schema: #{ props: #{
         key: #{ schema: #{ type: "string" }, required: true, sensitive: false },

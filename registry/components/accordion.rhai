@@ -2,7 +2,7 @@
 {
   "id": "components/accordion",
   "export": "Accordion",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": [],
   "capabilities": {},
@@ -16,7 +16,7 @@
 
 define_component(#{
     metadata: #{
-        id: "components/accordion", "export": "Accordion", version: "0.1.5",
+        id: "components/accordion", "export": "Accordion", version: "0.1.6",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{},
         assets: ["icons/minus.svg", "icons/plus.svg"],
     },
@@ -90,7 +90,7 @@ fn render_Accordion(ctx, props) {
             .with_style(ctx.component_style("trigger", trigger_style))
             .disabled(item_disabled)
             .accessibility_role("button")
-            .accessibility_checked(open);
+            .accessibility_expanded(open);
         if !item_disabled && callback != () {
             trigger = trigger.on_click_value(callback, toggled(props.expanded, item.key, mode));
         }

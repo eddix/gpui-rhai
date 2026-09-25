@@ -5874,16 +5874,15 @@ fn command_dialog_filters_from_native_input_and_executes_with_enter(cx: &mut Tes
             && !texts_after_input.contains(&"No commands found".to_owned()),
         "the focused CommandDialog input must filter before submit: {texts_after_input:?}"
     );
-    let initial_open_checked = visual.update(|_, cx| {
+    let initial_open_selected = visual.update(|_, cx| {
         view.accessibility_snapshot(cx)
             .unwrap()
             .find_by_role_and_name("option", "Open file")
             .next()
             .unwrap()
-            .checked
-            .clone()
+            .selected
     });
-    assert_eq!(initial_open_checked, Some(UiValue::Bool(true)));
+    assert_eq!(initial_open_selected, Some(true));
     visual.simulate_keystrokes("down");
     visual.run_until_parked();
     assert!(palette_texts(&mut visual, &view).contains(

@@ -27,6 +27,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends \
             libxcb1-dev \
+            libfontconfig1-dev \
+            libvulkan1 \
+            libwayland-dev \
+            libx11-xcb-dev \
             libxkbcommon-dev \
             libxkbcommon-x11-dev
       - name: Reject gpui-component dependencies

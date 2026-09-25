@@ -35,6 +35,8 @@ pub(crate) struct NodeSlotRuntime {
     pub ambient_text_color: Option<crate::Rgba8>,
     pub base_path: String,
     pub view_id: String,
+    pub semantics: crate::CommittedSemanticFrame,
+    pub a11y_active: bool,
     pub retained_roots: BTreeMap<String, crate::NodeId>,
     pub retained_links: BTreeMap<crate::NodeId, Vec<crate::RetainedChildLink>>,
 }
@@ -65,6 +67,8 @@ impl NodeSlotRuntime {
             ambient_text_color: self.ambient_text_color,
             root_path: &self.base_path,
             view_id: &self.view_id,
+            semantics: &self.semantics,
+            a11y_active: self.a11y_active,
         };
         GpuiNodeRenderer::render_subtree_with_window_runtime_at(
             node,

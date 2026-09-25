@@ -1305,6 +1305,8 @@ struct RenderEnvironment<'a, C> {
     view_id: &'a str,
     retained: Option<&'a RetainedUiTree>,
     retained_links: Option<&'a BTreeMap<NodeId, Vec<crate::RetainedChildLink>>>,
+    semantics: Option<&'a crate::CommittedSemanticFrame>,
+    a11y_active: bool,
 }
 
 impl<C: ColorResolver> RenderEnvironment<'_, C> {
@@ -1344,6 +1346,8 @@ pub(crate) struct WindowRenderResources<'a> {
     pub ambient_text_color: Option<Rgba8>,
     pub root_path: &'a str,
     pub view_id: &'a str,
+    pub semantics: &'a crate::CommittedSemanticFrame,
+    pub a11y_active: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -1417,6 +1421,8 @@ impl GpuiNodeRenderer {
             view_id: "standalone",
             retained: None,
             retained_links: None,
+            semantics: None,
+            a11y_active: false,
         };
         Self::render_internal(node, &environment, None, "root", None)
     }
@@ -1424,6 +1430,29 @@ impl GpuiNodeRenderer {
     #[must_use]
     pub fn render_retained_with_primitives(
         tree: &RetainedUiTree,
+        colors: &impl ColorResolver,
+        interaction: &InteractionState,
+        primitives: &PrimitiveRegistry,
+    ) -> AnyElement {
+        match crate::CommittedSemanticFrame::from_retained(tree) {
+            Ok(semantics) => Self::render_retained_with_committed_semantics(
+                tree,
+                &semantics,
+                false,
+                colors,
+                interaction,
+                primitives,
+            ),
+            Err(error) => div()
+                .child(format!("Invalid accessibility semantics: {error}"))
+                .into_any_element(),
+        }
+    }
+
+    fn render_retained_with_committed_semantics(
+        tree: &RetainedUiTree,
+        semantics: &crate::CommittedSemanticFrame,
+        a11y_active: bool,
         colors: &impl ColorResolver,
         interaction: &InteractionState,
         primitives: &PrimitiveRegistry,
@@ -1466,6 +1495,8 @@ impl GpuiNodeRenderer {
             view_id: "standalone",
             retained: Some(tree),
             retained_links: None,
+            semantics: Some(semantics),
+            a11y_active,
         };
         tree.root().map_or_else(
             || {
@@ -1485,6 +1516,14 @@ impl GpuiNodeRenderer {
         primitives: &PrimitiveRegistry,
         dispatcher: &NodeEventDispatcher,
     ) -> AnyElement {
+        let semantics = match crate::CommittedSemanticFrame::from_retained(tree) {
+            Ok(semantics) => semantics,
+            Err(error) => {
+                return div()
+                    .child(format!("Invalid accessibility semantics: {error}"))
+                    .into_any_element();
+            }
+        };
         let overlays = WindowOverlayCoordinator::default();
         let motions = BTreeMap::new();
         let signals = crate::SignalRegistry::new();
@@ -1523,6 +1562,8 @@ impl GpuiNodeRenderer {
             view_id: "standalone",
             retained: Some(tree),
             retained_links: None,
+            semantics: Some(&semantics),
+            a11y_active: false,
         };
         tree.root().map_or_else(
             || {
@@ -1580,6 +1621,8 @@ impl GpuiNodeRenderer {
             view_id: "standalone",
             retained: None,
             retained_links: None,
+            semantics: None,
+            a11y_active: false,
         };
         Self::render_internal(node, &environment, None, "root", None)
     }
@@ -1627,6 +1670,8 @@ impl GpuiNodeRenderer {
             ambient_text_color: None,
             root_path: "root",
             view_id: "standalone",
+            semantics: &crate::CommittedSemanticFrame::default(),
+            a11y_active: false,
         };
         Self::render_with_window_runtime(node, colors, interaction, primitives, &resources)
     }
@@ -1683,6 +1728,8 @@ impl GpuiNodeRenderer {
             view_id: resources.view_id,
             retained: Some(tree),
             retained_links: None,
+            semantics: Some(resources.semantics),
+            a11y_active: resources.a11y_active,
         };
         tree.root().map_or_else(
             || {
@@ -1738,6 +1785,8 @@ impl GpuiNodeRenderer {
             view_id: resources.view_id,
             retained: None,
             retained_links: None,
+            semantics: Some(resources.semantics),
+            a11y_active: resources.a11y_active,
         };
         Self::render_internal(node, &environment, None, path, None)
     }
@@ -1779,6 +1828,8 @@ impl GpuiNodeRenderer {
             view_id: resources.view_id,
             retained: None,
             retained_links: Some(retained.links),
+            semantics: Some(resources.semantics),
+            a11y_active: resources.a11y_active,
         };
         Self::render_internal(node, &environment, None, path, retained.root)
     }
@@ -1897,7 +1948,7 @@ impl GpuiNodeRenderer {
         retained_id: Option<NodeId>,
         motion: NodeMotionValues,
     ) -> AnyElement {
-        let click = (!node.event_handlers("click").is_empty()).then(|| {
+        let click = (!is_disabled(node) && !node.event_handlers("click").is_empty()).then(|| {
             (
                 node.event_handlers("click").to_vec(),
                 node.handler_payload("click")
@@ -1913,6 +1964,19 @@ impl GpuiNodeRenderer {
         });
         let key_handlers = key_handler_bindings(node);
         let hit_test = resolved_hit_test(node, environment);
+        let semantic = environment
+            .a11y_active
+            .then(|| {
+                retained_id.and_then(|id| environment.semantics.and_then(|frame| frame.node(id)))
+            })
+            .flatten()
+            .filter(|semantic| {
+                crate::accessibility::native_role(&semantic.role)
+                    .ok()
+                    .flatten()
+                    .is_some()
+            })
+            .cloned();
         let needs = u8::from(click.is_some())
             | u8::from(hover.is_some()) << 1
             | u8::from(!key_handlers.is_empty()) << 2
@@ -1924,7 +1988,8 @@ impl GpuiNodeRenderer {
                         | crate::MotionProgressDriver::Press
                         | crate::MotionProgressDriver::Focus
                 )
-            })) << 4;
+            })) << 4
+            | u8::from(semantic.is_some()) << 5;
         if !node_needs_interaction_wrapper(node, needs) {
             return Self::populate(
                 element,
@@ -1955,6 +2020,14 @@ impl GpuiNodeRenderer {
             node.style(),
             environment.colors,
         );
+        let element = apply_native_semantics(element, semantic.as_ref());
+        let element = apply_primitive_accessibility_actions(
+            element,
+            node,
+            retained_id,
+            semantic.as_ref(),
+            environment,
+        );
         let element = apply_hit_test(element, hit_test);
         let element = apply_tab_behavior(element, node);
         let element = apply_environment_scroll(element, node, retained_id, environment);
@@ -1964,22 +2037,25 @@ impl GpuiNodeRenderer {
             node.progress_motions(),
             environment.geometry,
         );
-        let element = element.on_click(move |event, window, cx| {
-            if matches!(event, ClickEvent::Mouse(_))
-                && let Some((bindings, payload)) = &click
-            {
+        let element = if let Some((bindings, payload)) = click {
+            element.on_click(move |event, window, cx| {
+                if !matches!(event, ClickEvent::Mouse(_)) {
+                    return;
+                }
                 let response = dispatch_ui_handlers(
-                    bindings,
+                    &bindings,
                     "click",
-                    payload,
+                    &payload,
                     click_target.snapshot(),
                     window,
                     cx,
                     click_dispatcher.as_ref(),
                 );
                 apply_event_response(response, window, cx);
-            }
-        });
+            })
+        } else {
+            element
+        };
         let element = apply_hover_handler(element, hover, hover_dispatcher, hover_target);
         let element = element.on_key_down(move |event, window, cx| {
             let semantic_key = logical_keyboard_key(event.keystroke.key.as_str(), text_direction);
@@ -2337,12 +2413,245 @@ fn render_flattened_children<C: ColorResolver>(
 }
 
 fn node_needs_interaction_wrapper(node: &UiNode, needs: u8) -> bool {
-    needs & 0b1000 != 0
+    needs & 0b10_1000 != 0
         || !is_disabled(node)
             && (needs & 0b0111 != 0
                 || node_has_focus_declaration(node)
                 || node_has_raw_pointer_handlers(node)
                 || node_scrollable(node))
+}
+
+fn apply_native_semantics(
+    mut element: Stateful<Div>,
+    semantic: Option<&crate::AccessibilityNode>,
+) -> Stateful<Div> {
+    let Some(semantic) = semantic else {
+        return element;
+    };
+    let Some(role) = crate::accessibility::native_role(&semantic.role)
+        .expect("committed semantic roles are validated")
+    else {
+        return element;
+    };
+    element = element.role(role);
+    if let Some(id) = &semantic.semantic_id {
+        element = element.accessibility_id(id.clone());
+    }
+    if !semantic.name.is_empty() {
+        element = element.aria_label(semantic.name.clone());
+    }
+    if !semantic.description.is_empty() {
+        element = element.aria_description(semantic.description.clone());
+    }
+    if let Some(selected) = semantic
+        .selected
+        .or_else(|| selected_from_checked(role, semantic.checked.as_ref()))
+    {
+        element = element.aria_selected(selected);
+    }
+    if let Some(expanded) = semantic
+        .expanded
+        .or_else(|| expanded_from_checked(role, semantic.checked.as_ref()))
+    {
+        element = element.aria_expanded(expanded);
+    }
+    if let Some(toggled) = toggled_from_semantics(role, semantic) {
+        element = element.aria_toggled(toggled);
+    }
+    if let Some(value) = semantic.value.as_ref().and_then(accessibility_value_text) {
+        element = element.aria_value(value);
+    }
+    if let Some(placeholder) = &semantic.placeholder {
+        element = element.aria_placeholder(placeholder.clone());
+    }
+    if let Some(key_shortcuts) = &semantic.key_shortcuts {
+        element = element.aria_keyshortcuts(key_shortcuts.clone());
+    }
+    if let Some(value) = semantic.value.as_ref().and_then(accessibility_number_value) {
+        element = element.aria_numeric_value(value);
+    }
+    if let Some(value) = semantic.value_min {
+        element = element.aria_min_numeric_value(value);
+    }
+    if let Some(value) = semantic.value_max {
+        element = element.aria_max_numeric_value(value);
+    }
+    if let Some(orientation) = semantic.orientation.as_deref() {
+        element = element.aria_orientation(match orientation {
+            "horizontal" => gpui::Orientation::Horizontal,
+            "vertical" => gpui::Orientation::Vertical,
+            _ => unreachable!("committed accessibility orientation is validated"),
+        });
+    }
+    if let Some(level) = semantic.level {
+        element = element.aria_level(level);
+    }
+    if let Some(position) = semantic.position_in_set {
+        element = element.aria_position_in_set(position);
+    }
+    if let Some(size) = semantic.size_of_set {
+        element = element.aria_size_of_set(size);
+    }
+    if let Some(index) = semantic.row_index {
+        element = element.aria_row_index(index);
+    }
+    if let Some(index) = semantic.column_index {
+        element = element.aria_column_index(index);
+    }
+    if let Some(count) = semantic.row_count {
+        element = element.aria_row_count(count);
+    }
+    if let Some(count) = semantic.column_count {
+        element = element.aria_column_count(count);
+    }
+    apply_native_semantic_flags(element, semantic)
+}
+
+fn apply_native_semantic_flags(
+    mut element: Stateful<Div>,
+    semantic: &crate::AccessibilityNode,
+) -> Stateful<Div> {
+    let required = semantic.required;
+    let disabled = semantic.disabled;
+    let read_only = semantic.read_only;
+    let invalid = semantic.invalid;
+    let current = semantic.current.clone();
+    if !(required || disabled || read_only || invalid || current.is_some()) {
+        return element;
+    }
+    element = element.a11y_synthetic_children(move |builder| {
+        let node = builder.parent_node();
+        if required {
+            node.set_required();
+        }
+        if disabled {
+            node.set_disabled();
+        }
+        if read_only {
+            node.set_read_only();
+        }
+        if invalid {
+            node.set_invalid(gpui::accesskit::Invalid::True);
+        }
+        if let Some(current) = current.as_deref() {
+            node.set_aria_current(match current {
+                "page" => gpui::accesskit::AriaCurrent::Page,
+                "step" => gpui::accesskit::AriaCurrent::Step,
+                "location" => gpui::accesskit::AriaCurrent::Location,
+                "date" => gpui::accesskit::AriaCurrent::Date,
+                "time" => gpui::accesskit::AriaCurrent::Time,
+                "true" => gpui::accesskit::AriaCurrent::True,
+                _ => unreachable!("committed aria-current values are validated"),
+            });
+        }
+    });
+    element
+}
+
+fn apply_primitive_accessibility_actions<C: ColorResolver>(
+    mut element: Stateful<Div>,
+    node: &UiNode,
+    retained_id: Option<NodeId>,
+    semantic: Option<&crate::AccessibilityNode>,
+    environment: &RenderEnvironment<'_, C>,
+) -> Stateful<Div> {
+    let Some(semantic) = semantic else {
+        return element;
+    };
+    if semantic.disabled {
+        return element;
+    }
+    let (UiNodeKind::Custom { primitive }, Some(node), Some(key)) =
+        (node.kind(), retained_id, node.key())
+    else {
+        return element;
+    };
+    let instance =
+        crate::PrimitiveInstanceId::new(primitive.primitive.clone(), key.as_str().to_owned(), node);
+    for action in environment
+        .primitives
+        .accessibility_actions(&instance)
+        .into_iter()
+        .filter(|action| !(semantic.read_only && *action == gpui::AccessibleAction::SetValue))
+    {
+        let registry = environment.primitives.clone();
+        let instance = instance.clone();
+        element = element.on_a11y_action(action, move |data, window, cx| {
+            // Stale and disabled native instances intentionally reject the
+            // request without falling through to a second input path.
+            let _ = registry.perform_accessibility_action(&instance, action, data, window, cx);
+        });
+    }
+    element
+}
+
+fn selected_from_checked(role: gpui::Role, checked: Option<&UiValue>) -> Option<bool> {
+    matches!(
+        role,
+        gpui::Role::Tab
+            | gpui::Role::ListBoxOption
+            | gpui::Role::Row
+            | gpui::Role::GridCell
+            | gpui::Role::MenuItem
+    )
+    .then(|| checked.and_then(accessibility_bool_value))
+    .flatten()
+}
+
+fn expanded_from_checked(role: gpui::Role, checked: Option<&UiValue>) -> Option<bool> {
+    matches!(role, gpui::Role::ComboBox)
+        .then(|| checked.and_then(accessibility_bool_value))
+        .flatten()
+}
+
+fn toggled_from_semantics(
+    role: gpui::Role,
+    semantic: &crate::AccessibilityNode,
+) -> Option<gpui::Toggled> {
+    if let Some(pressed) = semantic.pressed {
+        return Some(pressed.into());
+    }
+    if matches!(
+        role,
+        gpui::Role::CheckBox
+            | gpui::Role::RadioButton
+            | gpui::Role::Switch
+            | gpui::Role::MenuItemCheckBox
+            | gpui::Role::MenuItemRadio
+    ) {
+        return match semantic.checked.as_ref() {
+            Some(UiValue::Bool(value)) => Some((*value).into()),
+            Some(UiValue::String(value)) if value == "mixed" => Some(gpui::Toggled::Mixed),
+            _ => None,
+        };
+    }
+    None
+}
+
+fn accessibility_bool_value(value: &UiValue) -> Option<bool> {
+    match value {
+        UiValue::Bool(value) => Some(*value),
+        _ => None,
+    }
+}
+
+fn accessibility_number_value(value: &UiValue) -> Option<f64> {
+    match value {
+        UiValue::Float(value) => Some(*value),
+        UiValue::Integer(value) => value.to_string().parse().ok(),
+        _ => None,
+    }
+}
+
+fn accessibility_value_text(value: &UiValue) -> Option<String> {
+    match value {
+        UiValue::Null | UiValue::Handle(_) => None,
+        UiValue::Bool(value) => Some(value.to_string()),
+        UiValue::Integer(value) => Some(value.to_string()),
+        UiValue::Float(value) => Some(value.to_string()),
+        UiValue::String(value) => Some(value.clone()),
+        UiValue::Array(_) | UiValue::Map(_) => serde_json::to_string(value).ok(),
+    }
 }
 
 fn resolved_hit_test<C: ColorResolver>(
@@ -3080,6 +3389,8 @@ fn native_virtual_collection_element<C: ColorResolver>(
         ambient_text_color: environment.ambient_text_color,
         base_path: path.to_owned(),
         view_id: environment.view_id.to_owned(),
+        semantics: environment.semantics.cloned().unwrap_or_default(),
+        a11y_active: environment.a11y_active,
         retained_roots,
         retained_links,
     };
@@ -4617,7 +4928,16 @@ fn to_f32(value: f64) -> f32 {
 /// Minimal GPUI view for a previously evaluated Rhai tree or a Host-built tree.
 pub struct StaticUiView {
     tree: crate::RetainedUiTree,
+    semantics: crate::CommittedSemanticFrame,
     primitives: PrimitiveRegistry,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum StaticUiViewError {
+    #[error(transparent)]
+    Reconcile(#[from] crate::ReconcileError),
+    #[error(transparent)]
+    Accessibility(#[from] crate::AccessibilityError),
 }
 
 impl StaticUiView {
@@ -4626,7 +4946,7 @@ impl StaticUiView {
     /// # Errors
     ///
     /// Returns structural reconciliation errors such as duplicate sibling keys.
-    pub fn new(root: UiNode) -> Result<Self, crate::ReconcileError> {
+    pub fn new(root: UiNode) -> Result<Self, StaticUiViewError> {
         Self::with_primitives(root, PrimitiveRegistry::new())
     }
 
@@ -4638,10 +4958,15 @@ impl StaticUiView {
     pub fn with_primitives(
         root: UiNode,
         primitives: PrimitiveRegistry,
-    ) -> Result<Self, crate::ReconcileError> {
+    ) -> Result<Self, StaticUiViewError> {
         let mut tree = crate::RetainedUiTree::new();
         tree.reconcile(root)?;
-        Ok(Self { tree, primitives })
+        let semantics = crate::CommittedSemanticFrame::from_retained(&tree)?;
+        Ok(Self {
+            tree,
+            semantics,
+            primitives,
+        })
     }
 
     /// Reconcile and atomically accept a new Host-owned snapshot.
@@ -4653,8 +4978,12 @@ impl StaticUiView {
         &mut self,
         root: UiNode,
         cx: &mut Context<Self>,
-    ) -> Result<crate::ReconcileReport, crate::ReconcileError> {
-        let report = self.tree.reconcile(root)?;
+    ) -> Result<crate::ReconcileReport, StaticUiViewError> {
+        let mut tree = self.tree.clone();
+        let report = tree.reconcile(root)?;
+        let semantics = crate::CommittedSemanticFrame::from_retained(&tree)?;
+        self.tree = tree;
+        self.semantics = semantics;
         cx.notify();
         Ok(report)
     }
@@ -4671,7 +5000,7 @@ impl StaticUiView {
 }
 
 impl Render for StaticUiView {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         if let Err(error) = self.primitives.retain_tree(&self.tree) {
             return div()
                 .child(format!("Custom primitive lifecycle error: {error}"))
@@ -4684,8 +5013,10 @@ impl Render for StaticUiView {
                     .into_any_element()
             },
             |_| {
-                GpuiNodeRenderer::render_retained_with_primitives(
+                GpuiNodeRenderer::render_retained_with_committed_semantics(
                     &self.tree,
+                    &self.semantics,
+                    window.is_a11y_active(),
                     &LiteralColorResolver,
                     &InteractionState::default(),
                     &self.primitives,
@@ -4988,6 +5319,31 @@ mod tests {
         );
         assert_eq!(weighted.style().flex_grow, Some(2.5));
         assert_eq!(weighted.style().flex_basis, Some(relative(0.0).into()));
+    }
+
+    #[test]
+    fn committed_semantics_write_native_role_label_state_and_range() {
+        let source = UiNode::text("ignored")
+            .with_attribute("role", UiValue::String("slider".to_owned()))
+            .with_attribute("label", UiValue::String("Volume".to_owned()))
+            .with_attribute("value", UiValue::Float(25.0))
+            .with_attribute("value_min", UiValue::Float(0.0))
+            .with_attribute("value_max", UiValue::Float(100.0))
+            .with_attribute("orientation", UiValue::String("horizontal".to_owned()));
+        let mut retained = RetainedUiTree::new();
+        retained.reconcile(source).unwrap();
+        let frame = crate::CommittedSemanticFrame::from_retained(&retained).unwrap();
+        let semantic = frame.node(retained.root_id().unwrap()).unwrap();
+        let element = apply_native_semantics(div().id("volume"), Some(semantic));
+        assert_eq!(element.a11y_role(), Some(gpui::Role::Slider));
+        let mut node = gpui::accesskit::Node::new(gpui::Role::Slider);
+        element.write_a11y_info(&mut node);
+        assert_eq!(node.label(), Some("Volume"));
+        assert_eq!(node.value(), Some("25"));
+        assert_eq!(node.numeric_value(), Some(25.0));
+        assert_eq!(node.min_numeric_value(), Some(0.0));
+        assert_eq!(node.max_numeric_value(), Some(100.0));
+        assert_eq!(node.orientation(), Some(gpui::Orientation::Horizontal));
     }
 
     #[test]

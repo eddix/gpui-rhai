@@ -2,7 +2,7 @@
 {
   "id": "components/date_picker",
   "export": "DatePicker",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": [],
   "capabilities": {},
@@ -16,7 +16,7 @@
 
 define_component(#{
     metadata: #{
-        id: "components/date_picker", "export": "DatePicker", version: "0.1.5",
+        id: "components/date_picker", "export": "DatePicker", version: "0.1.6",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
         dependencies: [], capabilities: #{},
         assets: ["icons/calendar.svg", "icons/date_previous.svg", "icons/date_next.svg", "icons/close.svg"],
@@ -244,7 +244,7 @@ fn render_DatePicker(ctx, props) {
     let trigger = row(trigger_children).with_key(`${props.key}-trigger`)
         .with_style(ctx.component_style("trigger", trigger_style))
         .disabled(prop_or(props, "disabled", false)).tab_stop(true)
-        .accessibility_role("combobox").accessibility_checked(open)
+        .accessibility_role("combobox").accessibility_expanded(open)
         .accessibility_label(props.label).accessibility_value(value)
         .accessibility_invalid(error);
 
@@ -346,7 +346,7 @@ fn render_DatePicker(ctx, props) {
                 .with_key(if cell.date == () { `blank-${week_index}-${day_index}` } else { cell.date })
                 .with_style(day_style).disabled(disabled).tab_stop(false)
                 .accessibility_role("gridcell").accessibility_label(label)
-                .accessibility_checked(selected).accessibility_value(cell.date);
+                .accessibility_selected(selected).accessibility_value(cell.date);
             if !disabled {
                 day = day.on_click_value(Fn("choose_date"),
                     #{ date: cell.date, changed: cell.date != value });

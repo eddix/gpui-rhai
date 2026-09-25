@@ -970,8 +970,12 @@ impl ScriptViewHandle {
             .runtime()
             .borrow()
             .geometry_for(Some(&view.view_id));
-        let mut tree =
-            crate::AccessibilityTree::from_presented(view.lifecycle.retained(), &geometry)?;
+        let mut tree = crate::AccessibilityTree::from_committed(
+            view.lifecycle.semantics(),
+            view.lifecycle.retained(),
+            &geometry,
+            true,
+        );
         tree.apply_primitive_projections(
             view.primitives
                 .accessibility_projections(view.lifecycle.retained(), cx),
@@ -1019,8 +1023,12 @@ impl ScriptViewHandle {
                     .runtime()
                     .borrow()
                     .geometry_for(Some(&view.view_id));
-                let mut tree =
-                    crate::AccessibilityTree::from_presented(view.lifecycle.retained(), &geometry)?;
+                let mut tree = crate::AccessibilityTree::from_committed(
+                    view.lifecycle.semantics(),
+                    view.lifecycle.retained(),
+                    &geometry,
+                    true,
+                );
                 tree.apply_primitive_projections(
                     view.primitives
                         .accessibility_projections(view.lifecycle.retained(), cx),
@@ -3275,6 +3283,14 @@ impl Render for ScriptHostView {
         let appearance = system_appearance(window.appearance());
         let snapshot = self.render_snapshot(appearance);
         self.publish_theme_after_render(&snapshot.theme, cx);
+        let a11y_active = window.is_a11y_active();
+        let mut semantics = self.lifecycle.semantics().clone();
+        if a11y_active {
+            semantics.apply_primitive_projections(
+                self.primitives
+                    .accessibility_projections(self.lifecycle.retained(), cx),
+            );
+        }
         let render_resources = crate::renderer::WindowRenderResources {
             now: snapshot.now,
             clock: &snapshot.clock,
@@ -3299,6 +3315,8 @@ impl Render for ScriptHostView {
             ambient_text_color: None,
             root_path: &motion_root,
             view_id: &self.view_id,
+            semantics: &semantics,
+            a11y_active,
         };
         let content = self.lifecycle.retained().root().map_or_else(
             || div().child("Script view has no root").into_any_element(),
@@ -3591,8 +3609,12 @@ impl ScriptHostView {
         self.clear_failure();
         let runtime = self.lifecycle.runtime();
         let geometry = runtime.borrow().geometry_for(Some(&self.view_id));
-        let mut accessibility =
-            crate::AccessibilityTree::from_presented(self.lifecycle.retained(), &geometry)?;
+        let mut accessibility = crate::AccessibilityTree::from_committed(
+            self.lifecycle.semantics(),
+            self.lifecycle.retained(),
+            &geometry,
+            true,
+        );
         accessibility.apply_primitive_projections(
             self.primitives
                 .accessibility_projections(self.lifecycle.retained(), cx),

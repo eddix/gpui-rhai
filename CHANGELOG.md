@@ -5,6 +5,26 @@ All notable runtime, CLI, and registry changes are documented here. Version
 component schema, manifest, locale, and generated-source changes follow
 semantic versioning from this release.
 
+## 0.1.6 - Unreleased
+
+- The Rust backend moves from official `gpui 0.2.2` to the exact
+  `gpui-pre 0.3.6` core/platform family and raises MSRV to Rust 1.95. Rust
+  Hosts must use the same package identity; `gpui-rhai::gpui` and
+  `gpui-rhai::gpui_platform` are the canonical re-exports. Rhai Runtime API 2
+  and existing script/component contracts remain unchanged.
+- A committed semantic frame is now shared by automation and GPUI/AccessKit.
+  Roles, localized names, state, values/ranges, form properties, collection
+  metadata and bounded virtual content reach the native platform tree.
+- Native Click/Focus follows GPUI dispatch. Input, Textarea, Slider and Chart
+  expose bounded AX operations that re-enter existing controlled callbacks;
+  disabled, read-only and stale targets reject actions.
+- `gpui-rhai check` diagnoses old or mixed GPUI package families without
+  rewriting application manifests. Standalone apps use
+  `gpui_platform::application()` internally, while embedded and Host-owned
+  trees preserve one window accessibility/focus hierarchy.
+- Release remains blocked on a published GPUI family containing upstream text
+  hit-test fix #64672 and on the documented macOS/Linux/dogfooding gates.
+
 ## 0.1.5 - 2026-09-24
 
 - Button and Badge retain distinct action/status density while consuming the

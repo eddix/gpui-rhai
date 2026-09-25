@@ -271,7 +271,7 @@ fn view(ctx){column([
     assert_eq!(after.find_by_role_and_name("status", "1").count(), 1);
     let selected = after
         .nodes()
-        .filter(|node| node.role == "tab" && node.checked == Some(UiValue::Bool(true)))
+        .filter(|node| node.role == "tab" && node.selected == Some(true))
         .collect::<Vec<_>>();
     assert_eq!(selected.len(), 1);
     assert_eq!(
@@ -392,7 +392,7 @@ fn view(ctx){animated_tabs::AnimatedTabs(#{key:"visual-tabs",label:"Animated Sec
     let after = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
     let selected = after
         .nodes()
-        .filter(|node| node.role == "tab" && node.checked == Some(UiValue::Bool(true)))
+        .filter(|node| node.role == "tab" && node.selected == Some(true))
         .collect::<Vec<_>>();
     assert_eq!(selected.len(), 1);
     assert_eq!(selected[0].name, "Two");

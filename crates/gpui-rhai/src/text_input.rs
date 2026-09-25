@@ -771,6 +771,61 @@ pub struct TextInputPrimitiveHandler {
 }
 
 impl PrimitiveHandler for TextInputPrimitiveHandler {
+    fn accessibility_actions(
+        &self,
+        _instance: &PrimitiveInstanceId,
+    ) -> Vec<gpui::AccessibleAction> {
+        vec![
+            gpui::AccessibleAction::Focus,
+            gpui::AccessibleAction::SetValue,
+        ]
+    }
+
+    fn perform_accessibility_action(
+        &mut self,
+        instance: &PrimitiveInstanceId,
+        action: gpui::AccessibleAction,
+        data: Option<&gpui::accesskit::ActionData>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Result<(), String> {
+        let entity = self
+            .instances
+            .get(instance)
+            .cloned()
+            .ok_or_else(|| "text input accessibility target is stale".to_owned())?;
+        match action {
+            gpui::AccessibleAction::Focus => {
+                let (disabled, focus) = {
+                    let input = entity.read(cx);
+                    (input.disabled, input.focus.clone())
+                };
+                if disabled {
+                    return Err("disabled text input cannot receive focus".to_owned());
+                }
+                focus.focus(window, cx);
+                Ok(())
+            }
+            gpui::AccessibleAction::SetValue => {
+                let Some(gpui::accesskit::ActionData::Value(value)) = data else {
+                    return Err("text input SetValue requires string data".to_owned());
+                };
+                let callback = {
+                    let input = entity.read(cx);
+                    if input.disabled || input.read_only {
+                        return Err("text input is disabled or read-only".to_owned());
+                    }
+                    input.callbacks.change.clone()
+                };
+                if let Some(callback) = callback {
+                    callback(value.to_string(), window, cx);
+                }
+                Ok(())
+            }
+            _ => Err("unsupported text input accessibility action".to_owned()),
+        }
+    }
+
     fn render(
         &mut self,
         instance: &PrimitiveInstance,

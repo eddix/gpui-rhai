@@ -2,7 +2,7 @@
 {
   "id": "motion/border_beam",
   "export": "BorderBeam",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": [],
   "capabilities": {}
@@ -12,7 +12,7 @@
 // Example: BorderBeam(#{ key: "beam", width: 220, height: 72 })
 
 define_component(#{
-    metadata: #{ id: "motion/border_beam", "export": "BorderBeam", version: "0.1.5",
+    metadata: #{ id: "motion/border_beam", "export": "BorderBeam", version: "0.1.6",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{} },
     schema: #{
         props: #{

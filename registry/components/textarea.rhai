@@ -2,7 +2,7 @@
 {
   "id": "components/textarea",
   "export": "Textarea",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": [],
   "capabilities": {},
@@ -18,7 +18,7 @@
 
 define_component(#{
     metadata: #{
-        id: "components/textarea", "export": "Textarea", version: "0.1.5",
+        id: "components/textarea", "export": "Textarea", version: "0.1.6",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
         dependencies: [], capabilities: #{}, assets: [],
     },
@@ -118,10 +118,15 @@ fn render_Textarea(ctx, props) {
                     .text_color(theme_color("disabled"))
                     .opacity(0.72))
         ))
+        .disabled(disabled)
         .accessibility_role("text_field")
         .accessibility_label(props.label)
         .accessibility_value(props.value)
-        .accessibility_invalid(error);
+        .accessibility_invalid(error)
+        .accessibility_read_only(read_only);
+    let editor = if config.placeholder != () {
+        editor.accessibility_placeholder(config.placeholder)
+    } else { editor };
 
     let children = [editor];
     if "show_count" in props && props.show_count {

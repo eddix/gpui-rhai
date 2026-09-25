@@ -2,7 +2,7 @@
 {
   "id": "components/combobox",
   "export": "Combobox",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": ["components/input"],
   "capabilities": {},
@@ -18,7 +18,7 @@
 import "components/input" as input;
 
 define_component(#{
-    metadata: #{ id: "components/combobox", "export": "Combobox", version: "0.1.5",
+    metadata: #{ id: "components/combobox", "export": "Combobox", version: "0.1.6",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
         dependencies: ["components/input"], capabilities: #{},
         assets: ["icons/check.svg", "icons/close.svg", "icons/chevron_down.svg", "icons/chevron_up.svg"] },
@@ -238,7 +238,7 @@ fn clear_action(ctx, payload) {
     handled()
 }
 
-fn render_combobox_row(ctx, payload) {
+fn render_combobox_row(total_rows, ctx, payload) {
     let item = payload.item;
     if item.kind == "group" {
         return text(item.label).with_key(payload.key)
@@ -272,9 +272,7 @@ fn render_combobox_row(ctx, payload) {
     ])
         .with_key(payload.key).with_style(row_style)
         .disabled(item.disabled).tab_stop(false)
-        .accessibility_role("option")
-        .accessibility_checked(item.selected)
-        .accessibility_label(item.label)
+        .accessibility_option(item.label, item.selected, payload.index + 1, total_rows)
         .accessibility_value(item.value);
     if item.disabled { node }
     else { node.on_click_value(Fn("option_action"), item.action) }
@@ -388,7 +386,7 @@ fn render_Combobox(ctx, props) {
     trigger = trigger.with_key(`${props.key}-trigger`)
         .with_style(ctx.component_style("trigger", trigger_style))
         .disabled(prop_or(props, "disabled", false)).tab_stop(true)
-        .accessibility_role("combobox").accessibility_checked(open)
+        .accessibility_role("combobox").accessibility_expanded(open)
         .accessibility_label(props.label).accessibility_value(selected_label);
     if enabled.len > 0 {
         trigger = trigger
@@ -431,7 +429,8 @@ fn render_Combobox(ctx, props) {
             data: data, estimated_height: row_height,
             height: prop_or(props, "max_visible", 8) * row_height,
             overdraw_pixels: row_height * 2, alignment: "top", follow_tail: false
-        }, Fn("render_combobox_row")).with_style(ctx.component_style("list", style())));
+        }, Fn("render_combobox_row").curry(data.len))
+            .with_style(ctx.component_style("list", style())));
     }
     if "footer" in props && props.footer != () { content.push(props.footer); }
     let panel = column(content).with_key(`${props.key}-panel`)

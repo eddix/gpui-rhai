@@ -1193,11 +1193,12 @@ fn raster_image_format(format: ImageFormat) -> Option<image::ImageFormat> {
 }
 
 pub(crate) fn svg_image(bytes: &[u8], color: Option<Rgba8>) -> Result<Arc<Image>, AssetError> {
-    // GPUI 0.2.2's ImageSource::Image SVG decoder publishes premultiplied RGBA
-    // bytes as a BGRA RenderImage. Rasterizing the complete document to PNG
-    // here preserves every SVG color/alpha operation and then uses GPUI's
-    // correct PNG RGBA-to-BGRA path. Remove this adapter as one unit when the
-    // pinned GPUI SVG decoder is fixed.
+    // gpui-pre 0.3.6 has a correct premultiplied-RGBA to BGRA SVG renderer.
+    // gpui-rhai intentionally keeps this complete-document adapter because it
+    // also owns external currentColor substitution, bounded variant caching,
+    // system-font fallback and off-foreground preparation. Encoding the
+    // resulting RGBA pixmap as PNG lets GPUI perform exactly one RGBA-to-BGRA
+    // conversion; do not add the old channel-swap workaround back here.
     let pixmap = svg_pixmap(bytes, color)?;
     let png = pixmap.encode_png().map_err(|_| AssetError::InvalidSvg)?;
     Ok(Arc::new(Image::from_bytes(ImageFormat::Png, png)))

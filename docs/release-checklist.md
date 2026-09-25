@@ -6,7 +6,7 @@
 2. Run format, all-target/all-feature check, strict Clippy, tests, and rustdoc.
    Run `python3 scripts/verify-target-manifest.py` first; CI, release smoke, and
    the checked-in target inventory must agree.
-3. Test the declared MSRV (`1.94`) and latest stable toolchains.
+3. Test the declared MSRV (`1.95`) and latest stable toolchains.
 4. Run `cargo package` and inspect the file list for `gpui-rhai`,
    `gpui-rhai-registry`, and `gpui-rhai-cli`. A CLI candidate may use
    `--no-verify` only while its exact core/registry version is not yet indexed;
@@ -65,3 +65,11 @@ boundary datasets or network/geocoding authority to the release package.
 Also verify custom namespace colors through ordinary/native/virtual snapshots,
 non-default spacing/radius and enlarged typography, bundled Tabs contrast,
 theme-scaled registry components, and matching native/export Chart typography.
+Version 0.1.6 stays on Runtime API 2 but changes the public Rust GPUI package
+identity and MSRV. Verify the exact core/platform family on every dependency
+graph; standalone, embedded and Host-owned entrypoints; the complete official
+component AX inventory; native VoiceOver actions; bounded virtual/Table/Chart
+semantics; X11 and Wayland backend smoke; macOS builds without a separately
+downloaded Metal Toolchain; and both agreed dogfooding applications. A
+published family without upstream #64672 or equivalent behavior is not
+releasable.
