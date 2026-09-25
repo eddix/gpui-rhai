@@ -70,6 +70,7 @@ pub mod clock;
 pub mod motion;
 
 pub use gpui;
+pub use gpui_platform;
 
 pub use accessibility::{AccessibilityError, AccessibilityNode, AccessibilityTree};
 pub use action::{

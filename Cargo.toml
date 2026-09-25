@@ -9,13 +9,14 @@ resolver = "2"
 [workspace.package]
 version = "0.1.5"
 edition = "2024"
-rust-version = "1.94"
+rust-version = "1.95"
 authors = ["GPUI Rhai contributors"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/eddix/gpui-rhai"
 
 [workspace.dependencies]
-gpui = { version = "=0.2.2", default-features = false, features = ["font-kit"] }
+gpui = { package = "gpui-pre", version = "=0.3.6", default-features = false, features = ["font-kit"] }
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.6", default-features = false, features = ["font-kit", "runtime_shaders", "wayland", "x11"] }
 notify = "8.2.0"
 rhai = { version = "=1.26.0", features = ["internals", "metadata", "serde"] }
 clap = { version = "4.5", features = ["derive"] }
@@ -28,7 +29,7 @@ toml_edit = "0.22"
 unicode-segmentation = "1.13.3"
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp", "tiff"] }
 jiff = { version = "0.2.35", default-features = false, features = ["std", "tz-system", "tzdb-zoneinfo"] }
-usvg = { version = "=0.45.1", default-features = false }
+usvg = { version = "=0.45.1", default-features = false, features = ["text"] }
 resvg = { version = "=0.45.1", default-features = false }
 roxmltree = "=0.20.0"
 event-listener = "5.4.2"

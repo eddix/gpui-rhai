@@ -1317,7 +1317,7 @@ impl ChartEntity {
     }
 
     fn mouse_down(&mut self, event: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
-        self.focus.focus(window);
+        self.focus.focus(window, cx);
         match event.button {
             MouseButton::Middle => {
                 self.dragging_pan = true;
@@ -3142,10 +3142,8 @@ fn apply_chart_typography(
         element = element.font_family(family.clone());
     }
     if !typography.fallbacks.is_empty() {
-        element
-            .text_style()
-            .get_or_insert_with(Default::default)
-            .font_fallbacks = Some(FontFallbacks::from_fonts(typography.fallbacks.clone()));
+        element.text_style().font_fallbacks =
+            Some(FontFallbacks::from_fonts(typography.fallbacks.clone()));
     }
     element
 }

@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::ops::Range;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use gpui::{
     App, Bounds, ClipboardItem, Context, CursorStyle, Element, ElementId, ElementInputHandler,
@@ -418,7 +419,7 @@ impl TextAreaEntity {
         if self.config.disabled {
             return;
         }
-        self.focus.focus(window);
+        self.focus.focus(window, cx);
         self.selecting = true;
         let index = self.index_for_mouse(event.position);
         if event.modifiers.shift {
@@ -556,7 +557,7 @@ impl EntityInputHandler for TextAreaEntity {
 
 #[derive(Clone, Debug)]
 struct TextAreaLayout {
-    lines: Vec<WrappedLine>,
+    lines: Vec<Arc<WrappedLine>>,
     starts: Vec<usize>,
     row_starts: Vec<usize>,
     line_height: Pixels,
@@ -581,7 +582,7 @@ impl TextAreaLayout {
             row += line.wrap_boundaries().len() + 1;
         }
         Self {
-            lines,
+            lines: lines.into_iter().map(Arc::new).collect(),
             starts,
             row_starts,
             line_height,
@@ -903,9 +904,7 @@ impl Render for TextAreaEntity {
             root = root.font_family(family.clone());
         }
         if !self.config.typography.fallbacks.is_empty() {
-            root.text_style()
-                .get_or_insert_with(Default::default)
-                .font_fallbacks = Some(FontFallbacks::from_fonts(
+            root.text_style().font_fallbacks = Some(FontFallbacks::from_fonts(
                 self.config.typography.fallbacks.clone(),
             ));
         }
@@ -915,9 +914,9 @@ impl Render for TextAreaEntity {
             .on_key_down(|event: &KeyDownEvent, window, cx| {
                 if event.keystroke.key.as_str() == "tab" {
                     if event.keystroke.modifiers.shift {
-                        window.focus_prev();
+                        window.focus_prev(cx);
                     } else {
-                        window.focus_next();
+                        window.focus_next(cx);
                     }
                     cx.stop_propagation();
                 }
@@ -1017,7 +1016,7 @@ impl PrimitiveHandler for TextAreaPrimitiveHandler {
                 })
                 .detach();
                 if input.config.autofocus && !input.config.disabled {
-                    input.focus.focus(window);
+                    input.focus.focus(window, cx);
                 }
             });
             self.instances.insert(id, entity.clone());

@@ -9,8 +9,8 @@ use gpui::{
     ElementInputHandler, Entity, EntityInputHandler, FocusHandle, Focusable, FontFallbacks,
     FontWeight, GlobalElementId, IntoElement, KeyBinding, KeyDownEvent, LayoutId, MouseButton,
     MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad, Pixels, Point, Render, ShapedLine,
-    SharedString, Style as GpuiStyle, TextRun, UTF16Selection, UnderlineStyle, Window, actions,
-    div, fill, point, prelude::*, px, relative, rgba, size,
+    SharedString, Style as GpuiStyle, TextAlign, TextRun, UTF16Selection, UnderlineStyle, Window,
+    actions, div, fill, point, prelude::*, px, relative, rgba, size,
 };
 
 pub use crate::text_edit::TextBuffer;
@@ -371,7 +371,7 @@ impl TextInputEntity {
         if self.disabled {
             return;
         }
-        self.focus.focus(window);
+        self.focus.focus(window, cx);
         self.selecting = true;
         let index = self.index_for_mouse(event.position);
         if event.modifiers.shift {
@@ -678,7 +678,14 @@ impl Element for TextElement {
             if let Some(selection) = state.selection.take() {
                 window.paint_quad(selection);
             }
-            let _ = line.paint(state.origin, window.line_height(), window, cx);
+            let _ = line.paint(
+                state.origin,
+                window.line_height(),
+                TextAlign::Left,
+                None,
+                window,
+                cx,
+            );
             if focus.is_focused(window)
                 && let Some(cursor) = state.cursor.take()
             {
@@ -702,9 +709,7 @@ impl Render for TextInputEntity {
             root = root.font_family(family.clone());
         }
         if !self.typography.fallbacks.is_empty() {
-            root.text_style()
-                .get_or_insert_with(Default::default)
-                .font_fallbacks =
+            root.text_style().font_fallbacks =
                 Some(FontFallbacks::from_fonts(self.typography.fallbacks.clone()));
         }
         root.font_weight(FontWeight(f32::from(self.typography.weight)))
@@ -717,9 +722,9 @@ impl Render for TextInputEntity {
                         let shift = event.keystroke.modifiers.shift;
                         window.defer(cx, move |window, cx| tab(shift, window, cx));
                     } else if event.keystroke.modifiers.shift {
-                        window.focus_prev();
+                        window.focus_prev(cx);
                     } else {
-                        window.focus_next();
+                        window.focus_next(cx);
                     }
                     cx.stop_propagation();
                 }
@@ -822,7 +827,7 @@ impl PrimitiveHandler for TextInputPrimitiveHandler {
                 .detach();
                 // Matches TextArea: focus once on first mount when requested.
                 if config.autofocus && !config.disabled {
-                    input.focus.focus(window);
+                    input.focus.focus(window, cx);
                 }
             });
             self.instances.insert(id, entity.clone());

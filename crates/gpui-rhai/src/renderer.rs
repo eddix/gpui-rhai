@@ -3531,14 +3531,14 @@ impl Element for SelectableText {
             let node = self.node;
             let selection = self.selection.clone();
             let host_focus = self.host_focus.clone();
-            window.on_mouse_event(move |event: &MouseDownEvent, phase, window, _| {
+            window.on_mouse_event(move |event: &MouseDownEvent, phase, window, cx| {
                 if phase.bubble() && event.button == MouseButton::Left && hitbox.is_hovered(window)
                 {
                     let index = clamp(layout.index_for_position(event.position));
                     anchor.set(Some(index));
                     selection.begin(owner.clone(), node, layout.text(), hitbox.bounds);
                     if let Some(focus) = &host_focus {
-                        focus.focus(window);
+                        focus.focus(window, cx);
                     }
                     window.refresh();
                 }
@@ -3732,7 +3732,7 @@ impl Element for GeometryTrackedElement {
                     .clamp(0.0, 1.0),
                     crate::MotionProgressDriver::ScrollX => {
                         self.scroll_handles.first().map_or(0.0, |handle| {
-                            let maximum = f64::from(handle.max_offset().width).abs();
+                            let maximum = f64::from(handle.max_offset().x).abs();
                             if maximum <= f64::EPSILON {
                                 0.0
                             } else {
@@ -3742,7 +3742,7 @@ impl Element for GeometryTrackedElement {
                     }
                     crate::MotionProgressDriver::ScrollY => {
                         self.scroll_handles.first().map_or(0.0, |handle| {
-                            let maximum = f64::from(handle.max_offset().height).abs();
+                            let maximum = f64::from(handle.max_offset().y).abs();
                             if maximum <= f64::EPSILON {
                                 0.0
                             } else {
@@ -4214,11 +4214,11 @@ fn apply_layout_dimensions(mut element: Div, style: &StyleProperties) -> Div {
     if let Some(weight) = style.flex_grow_weight {
         element.style().flex_grow = Some(to_f32(weight));
     } else if style.flex_grow == Some(true) {
-        element = element.flex_grow();
+        element = element.flex_grow_1();
     }
     if let Some(shrink) = style.flex_shrink {
         element = if shrink {
-            element.flex_shrink()
+            element.flex_shrink_1()
         } else {
             element.flex_shrink_0()
         };
@@ -4431,16 +4431,10 @@ fn apply_typography(mut element: Div, style: &StyleProperties, direction: TextDi
         element = element.font_family(family.clone());
     }
     if let Some(fallbacks) = &style.font_fallbacks {
-        element
-            .text_style()
-            .get_or_insert_with(Default::default)
-            .font_fallbacks = Some(FontFallbacks::from_fonts(fallbacks.clone()));
+        element.text_style().font_fallbacks = Some(FontFallbacks::from_fonts(fallbacks.clone()));
     }
     if let Some(features) = &style.font_features {
-        element
-            .text_style()
-            .get_or_insert_with(Default::default)
-            .font_features = Some(FontFeatures(Arc::new(
+        element.text_style().font_features = Some(FontFeatures(Arc::new(
             features
                 .iter()
                 .map(|(tag, value)| (tag.clone(), *value))
@@ -4495,6 +4489,7 @@ fn apply_shadows(mut element: Div, style: &StyleProperties, colors: &impl ColorR
                         offset: point(px(f64_to_f32(shadow.x)), px(f64_to_f32(shadow.y))),
                         blur_radius: px(f64_to_f32(shadow.blur)),
                         spread_radius: px(f64_to_f32(shadow.spread)),
+                        inset: false,
                     })
                 })
                 .collect(),

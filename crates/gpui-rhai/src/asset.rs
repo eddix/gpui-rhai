@@ -1188,7 +1188,7 @@ fn raster_image_format(format: ImageFormat) -> Option<image::ImageFormat> {
         ImageFormat::Gif => Some(image::ImageFormat::Gif),
         ImageFormat::Bmp => Some(image::ImageFormat::Bmp),
         ImageFormat::Tiff => Some(image::ImageFormat::Tiff),
-        ImageFormat::Svg => None,
+        ImageFormat::Svg | ImageFormat::Ico | ImageFormat::Pnm => None,
     }
 }
 

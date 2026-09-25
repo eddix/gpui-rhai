@@ -143,7 +143,7 @@ impl RangeInputEntity {
         if self.disabled {
             return;
         }
-        self.focus.focus(window);
+        self.focus.focus(window, cx);
         self.dragging = true;
         self.preview = self.value_at(event.position);
         cx.notify();

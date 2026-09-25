@@ -9,12 +9,11 @@ use std::time::{Duration, Instant};
 use gpui::KeyBinding;
 use gpui::actions;
 use gpui::{
-    AnyElement, AnyWindowHandle, App, AppContext, Application, Bounds, Context, DispatchPhase,
-    Element, ElementId, Entity, FocusHandle, Global, GlobalElementId, InspectorElementId,
+    AnyElement, AnyWindowHandle, App, AppContext, Bounds, Context, DispatchPhase, Element,
+    ElementId, Entity, FocusHandle, Global, GlobalElementId, InspectorElementId,
     InteractiveElement, IntoElement, LayoutId, MouseButton, MouseDownEvent, ParentElement, Pixels,
-    Render, ScrollAnchor, ScrollHandle, SharedString, Styled, Subscription, Task, Timer,
-    TitlebarOptions, Window, WindowAppearance, WindowBounds, WindowOptions, deferred, div, px,
-    rgba, size,
+    Render, ScrollAnchor, ScrollHandle, SharedString, Styled, Subscription, Task, TitlebarOptions,
+    Window, WindowAppearance, WindowBounds, WindowOptions, deferred, div, px, rgba, size,
 };
 use thiserror::Error;
 
@@ -288,10 +287,10 @@ impl ScriptViewHost {
         state.overlays.remove_view(view_id);
     }
 
-    fn quiesce_view(&self, view_id: &str, focus: &FocusHandle, window: &mut Window, cx: &App) {
+    fn quiesce_view(&self, view_id: &str, focus: &FocusHandle, window: &mut Window, cx: &mut App) {
         let fallback = self.inner.borrow().fallback_focus.clone();
         if focus.contains_focused(window, cx) {
-            fallback.focus(window);
+            fallback.focus(window, cx);
         }
         self.inner.borrow().overlays.remove_view(view_id);
     }
@@ -372,7 +371,7 @@ impl Element for ScriptViewHostFrame {
             .iter()
             .any(|focus| focus.contains_focused(window, cx))
         {
-            fallback.focus(window);
+            fallback.focus(window, cx);
         }
         let mut child = self.child.take().expect("host frame lays out once");
         let layout = child.request_layout(window, cx);
@@ -948,9 +947,10 @@ impl ScriptViewHandle {
     /// # Errors
     ///
     /// Returns [`ScriptViewError::DisposedView`] after disposal.
-    pub fn focus(&self, window: &mut Window, cx: &App) -> Result<(), ScriptViewError> {
+    pub fn focus(&self, window: &mut Window, cx: &mut App) -> Result<(), ScriptViewError> {
         self.require_active()?;
-        self.0.entity.read(cx).host_focus.focus(window);
+        let focus = self.0.entity.read(cx).host_focus.clone();
+        focus.focus(window, cx);
         Ok(())
     }
 
@@ -1070,19 +1070,19 @@ impl ScriptViewHandle {
         cx: &mut App,
     ) -> Result<(), ScriptViewError> {
         self.require_active()?;
-        self.0.entity.update(cx, |view, _| {
+        let handle = self.0.entity.update(cx, |view, _| {
             let node = view
                 .lifecycle
                 .runtime()
                 .borrow()
                 .element_refs
                 .resolve(reference)?;
-            let handle = view.focus_handles.get(&node).ok_or_else(|| {
+            view.focus_handles.get(&node).cloned().ok_or_else(|| {
                 ScriptViewError::ElementRef(crate::ElementRefError::Stale(reference.id().clone()))
-            })?;
-            handle.focus(window);
-            Ok::<_, ScriptViewError>(())
-        })
+            })
+        })?;
+        handle.focus(window, cx);
+        Ok(())
     }
 
     #[cfg(feature = "dev-reload")]
@@ -2471,7 +2471,7 @@ impl ScriptApplication {
         let prepared = self.prepared;
         let show_error_banner = self.show_error_banner;
         prepared.factory.show_error_banner.set(show_error_banner);
-        Application::new().run(move |cx: &mut App| {
+        gpui_platform::application().run(move |cx: &mut App| {
             install(cx);
             let host = match ScriptViewHost::new_with_policy(
                 "main",
@@ -2496,7 +2496,7 @@ impl ScriptApplication {
                 KeyBinding::new("f12", ToggleInspector, Some(HOST_KEY_CONTEXT)),
             ]);
             let window_options = standalone_window_options(window_size, window_options, cx);
-            cx.on_window_closed(|cx| {
+            cx.on_window_closed(|cx, _| {
                 if cx.windows().is_empty() {
                     cx.quit();
                 }
@@ -2810,7 +2810,9 @@ fn spawn_host_frame_poll(
                 }
                 ScriptViewState::Active => {}
             }
-            Timer::after(Duration::from_millis(16)).await;
+            cx.background_executor()
+                .timer(Duration::from_millis(16))
+                .await;
             if entity.update(cx, ScriptHostView::poll_async).is_err() {
                 break;
             }
@@ -2847,7 +2849,9 @@ fn spawn_host_reload_poll(
             if state.get() == ScriptViewState::Disposed {
                 break;
             }
-            Timer::after(Duration::from_millis(100)).await;
+            cx.background_executor()
+                .timer(Duration::from_millis(100))
+                .await;
             if entity.update(cx, ScriptHostView::poll_reload).is_err() {
                 break;
             }
@@ -3021,9 +3025,9 @@ struct ScriptViewTransaction {
 fn handle_tab_navigation(event: &gpui::KeyDownEvent, window: &mut Window, cx: &mut App) {
     if event.keystroke.key.as_str() == "tab" {
         if event.keystroke.modifiers.shift {
-            window.focus_prev();
+            window.focus_prev(cx);
         } else {
-            window.focus_next();
+            window.focus_next(cx);
         }
         cx.stop_propagation();
     }
@@ -3819,7 +3823,7 @@ impl ScriptHostView {
             match command {
                 crate::element_ref::ElementCommand::Focus { node, .. } => {
                     if let Some(handle) = self.focus_handles.get(&node) {
-                        handle.focus(window);
+                        handle.focus(window, cx);
                     } else {
                         self.set_plain_failure(format!(
                             "retained node {node} is not focusable or has been unmounted"

@@ -2,7 +2,10 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
-use gpui::{Context, IntoElement, Modifiers, Render, TestAppContext, VisualTestContext, Window, WindowHandle, point, px};
+use gpui::{
+    Context, IntoElement, Modifiers, Render, TestAppContext, VisualTestContext, Window,
+    WindowHandle, point, px,
+};
 use gpui_rhai::*;
 
 const BUTTON: &str = include_str!("../../../registry/components/button.rhai");
@@ -22,7 +25,11 @@ impl Render for Host {
     }
 }
 
-fn mount(cx: &mut TestAppContext, script: &str, name: &str) -> (WindowHandle<Host>, ScriptViewHandle) {
+fn mount(
+    cx: &mut TestAppContext,
+    script: &str,
+    name: &str,
+) -> (WindowHandle<Host>, ScriptViewHandle) {
     mount_with_overrides(cx, script, name, ThemeTokenOverrides::default())
 }
 
@@ -37,8 +44,14 @@ fn mount_with_overrides(
         entry.clone(),
         EmbeddedScriptSource::new(BTreeMap::from([
             (entry, script.to_owned()),
-            (ModuleId::parse("components/button").unwrap(), BUTTON.to_owned()),
-            (ModuleId::parse("components/badge").unwrap(), BADGE.to_owned()),
+            (
+                ModuleId::parse("components/button").unwrap(),
+                BUTTON.to_owned(),
+            ),
+            (
+                ModuleId::parse("components/badge").unwrap(),
+                BADGE.to_owned(),
+            ),
             (ModuleId::parse("components/tabs").unwrap(), TABS.to_owned()),
             (
                 ModuleId::parse("motion/animated_tabs").unwrap(),
@@ -111,7 +124,10 @@ fn view(ctx){tabs::Tabs(#{label:"Sections",value:"one",tabs:[
         .unwrap()
         .visual;
     assert!(tab.height >= 54.0, "tab={tab:?}");
-    assert!((tab.y - list.y - 8.0).abs() < 0.01, "list={list:?}, tab={tab:?}");
+    assert!(
+        (tab.y - list.y - 8.0).abs() < 0.01,
+        "list={list:?}, tab={tab:?}"
+    );
     assert!((list.y + list.height - tab.y - tab.height - 8.0).abs() < 0.01);
 }
 
@@ -135,19 +151,60 @@ fn view(ctx) { row([
     let (window, view) = mount(cx, script, "control-density");
     let mut visual = VisualTestContext::from_window(*window, cx);
     let tree = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
-    let button = tree.find_by_role_and_name("button", "Density").next().unwrap().geometry.unwrap().visual;
-    let badge = tree.find_by_role_and_name("status", "Density").next().unwrap().geometry.unwrap().visual;
+    let button = tree
+        .find_by_role_and_name("button", "Density")
+        .next()
+        .unwrap()
+        .geometry
+        .unwrap()
+        .visual;
+    let badge = tree
+        .find_by_role_and_name("status", "Density")
+        .next()
+        .unwrap()
+        .geometry
+        .unwrap()
+        .visual;
     assert_eq!(button.height, 32.0);
     assert_eq!(badge.height, 22.0);
-    assert!(button.width >= badge.width + 12.0, "button={button:?}, badge={badge:?}");
-    let cjk_button = tree.find_by_role_and_name("button", "中文").next().unwrap().geometry.unwrap().visual;
-    let cjk_badge = tree.find_by_role_and_name("status", "中文").next().unwrap().geometry.unwrap().visual;
+    assert!(
+        button.width >= badge.width + 12.0,
+        "button={button:?}, badge={badge:?}"
+    );
+    let cjk_button = tree
+        .find_by_role_and_name("button", "中文")
+        .next()
+        .unwrap()
+        .geometry
+        .unwrap()
+        .visual;
+    let cjk_badge = tree
+        .find_by_role_and_name("status", "中文")
+        .next()
+        .unwrap()
+        .geometry
+        .unwrap()
+        .visual;
     assert_eq!(cjk_button.height, 24.0);
     assert_eq!(cjk_badge.height, 18.0);
-    let large_button = tree.find_by_role_and_name("button", "Large line").next().unwrap().geometry.unwrap().visual;
-    let large_badge = tree.find_by_role_and_name("status", "Large line").next().unwrap().geometry.unwrap().visual;
-    assert!(large_button.height >= 38.0 && large_badge.height >= 32.0,
-        "large button={large_button:?}, badge={large_badge:?}");
+    let large_button = tree
+        .find_by_role_and_name("button", "Large line")
+        .next()
+        .unwrap()
+        .geometry
+        .unwrap()
+        .visual;
+    let large_badge = tree
+        .find_by_role_and_name("status", "Large line")
+        .next()
+        .unwrap()
+        .geometry
+        .unwrap()
+        .visual;
+    assert!(
+        large_button.height >= 38.0 && large_badge.height >= 32.0,
+        "large button={large_button:?}, badge={large_badge:?}"
+    );
     assert!(large_button.height > large_badge.height);
 }
 
@@ -171,29 +228,56 @@ fn view(ctx){column([
     let (window, view) = mount(cx, script, "tabs-track");
     let mut visual = VisualTestContext::from_window(*window, cx);
     let tree = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
-    let list = tree.find_by_role_and_name("tablist", "Sections").next().unwrap().geometry.unwrap().visual;
-    let tabs = tree.nodes().filter(|node| node.role == "tab").collect::<Vec<_>>();
+    let list = tree
+        .find_by_role_and_name("tablist", "Sections")
+        .next()
+        .unwrap()
+        .geometry
+        .unwrap()
+        .visual;
+    let tabs = tree
+        .nodes()
+        .filter(|node| node.role == "tab")
+        .collect::<Vec<_>>();
     assert_eq!(tabs.len(), 3);
     assert_eq!(list.height, 30.0);
-    let bounds = tabs.iter().map(|tab| tab.geometry.unwrap().visual).collect::<Vec<_>>();
+    let bounds = tabs
+        .iter()
+        .map(|tab| tab.geometry.unwrap().visual)
+        .collect::<Vec<_>>();
     assert_eq!(bounds[0].y - list.y, 2.0);
     assert_eq!(bounds[0].height, 26.0);
     assert_eq!(bounds[0].x - list.x, 2.0);
     assert!((list.x + list.width - (bounds[2].x + bounds[2].width) - 2.0).abs() < 0.01);
-    assert!((bounds[0].width - bounds[1].width).abs() <= 0.5, "list={list:?}, tabs={bounds:?}");
-    assert!((bounds[1].width - bounds[2].width).abs() <= 0.5, "list={list:?}, tabs={bounds:?}");
+    assert!(
+        (bounds[0].width - bounds[1].width).abs() <= 0.5,
+        "list={list:?}, tabs={bounds:?}"
+    );
+    assert!(
+        (bounds[1].width - bounds[2].width).abs() <= 0.5,
+        "list={list:?}, tabs={bounds:?}"
+    );
     assert_eq!(tabs[2].name, "Icon only");
 
     visual.simulate_click(
-        point(px((bounds[1].x + bounds[1].width / 2.0) as f32), px((bounds[1].y + 13.0) as f32)),
+        point(
+            px((bounds[1].x + bounds[1].width / 2.0) as f32),
+            px((bounds[1].y + 13.0) as f32),
+        ),
         Modifiers::default(),
     );
     visual.run_until_parked();
     let after = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
     assert_eq!(after.find_by_role_and_name("status", "1").count(), 1);
-    let selected = after.nodes().filter(|node| node.role == "tab" && node.checked == Some(UiValue::Bool(true))).collect::<Vec<_>>();
+    let selected = after
+        .nodes()
+        .filter(|node| node.role == "tab" && node.checked == Some(UiValue::Bool(true)))
+        .collect::<Vec<_>>();
     assert_eq!(selected.len(), 1);
-    assert_eq!(selected[0].name, "One", "Host rejected the proposal, so selection must not move");
+    assert_eq!(
+        selected[0].name, "One",
+        "Host rejected the proposal, so selection must not move"
+    );
 }
 
 #[gpui::test]
@@ -223,7 +307,10 @@ fn view(ctx){column([
         .geometry
         .unwrap()
         .visual;
-    assert!(content_list.width < 420.0, "content layout stretched: {content_list:?}");
+    assert!(
+        content_list.width < 420.0,
+        "content layout stretched: {content_list:?}"
+    );
     let content_tabs = tree
         .nodes()
         .filter(|node| {
@@ -259,7 +346,11 @@ fn view(ctx){column([
         .map(|node| node.geometry.unwrap().visual)
         .collect::<Vec<_>>();
     assert_eq!(vertical_tabs.len(), 3);
-    assert!(vertical_tabs.iter().all(|tab| (tab.width - vertical_tabs[0].width).abs() < 0.01));
+    assert!(
+        vertical_tabs
+            .iter()
+            .all(|tab| (tab.width - vertical_tabs[0].width).abs() < 0.01)
+    );
     assert_eq!(vertical_tabs[0].y - vertical_list.y, 2.0);
     let last = vertical_tabs.last().unwrap();
     assert!((vertical_list.y + vertical_list.height - (last.y + last.height) - 2.0).abs() < 0.01);
