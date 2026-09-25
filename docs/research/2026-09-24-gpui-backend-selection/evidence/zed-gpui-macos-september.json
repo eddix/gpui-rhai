@@ -1,0 +1,92 @@
+[
+  {
+    "sha": "382ff7a64b334ab59a3dc0e3f3185705f79cd0ab",
+    "date": "2026-09-24T12:15:10Z",
+    "title": "gpui: Stop synthetic mouse drags after button release on macOS (#64175)",
+    "url": "https://github.com/zed-industries/zed/commit/382ff7a64b334ab59a3dc0e3f3185705f79cd0ab"
+  },
+  {
+    "sha": "0eda7703f6c88aa08a25c1d2105ff1ca46f775d4",
+    "date": "2026-09-20T08:26:45Z",
+    "title": "gpui_macos: Release the accessibility adapter when a window is dropped (#64143)",
+    "url": "https://github.com/zed-industries/zed/commit/0eda7703f6c88aa08a25c1d2105ff1ca46f775d4"
+  },
+  {
+    "sha": "aec7395e30feba9139c9ab8b9444d672882ddf41",
+    "date": "2026-09-17T08:49:31Z",
+    "title": "Fix cargo shear warnings (#64340)",
+    "url": "https://github.com/zed-industries/zed/commit/aec7395e30feba9139c9ab8b9444d672882ddf41"
+  },
+  {
+    "sha": "613a80b9e9ce55079deb0e5f135f6ed29c88aa58",
+    "date": "2026-09-17T08:29:46Z",
+    "title": "gpui_macos: Fix traffic lights animation during fullscreen exit (#64339)",
+    "url": "https://github.com/zed-industries/zed/commit/613a80b9e9ce55079deb0e5f135f6ed29c88aa58"
+  },
+  {
+    "sha": "4b47ceb9d328035bde5ef99009e674d9fee07fb7",
+    "date": "2026-09-17T01:46:02Z",
+    "title": "gpui_macos: Migrate screen capture to `objc2` (#64251)",
+    "url": "https://github.com/zed-industries/zed/commit/4b47ceb9d328035bde5ef99009e674d9fee07fb7"
+  },
+  {
+    "sha": "f6838a7c4afecd7c212c43c70165588b92a5a11f",
+    "date": "2026-09-16T13:41:43Z",
+    "title": "gpui_macos: Fix hover feedback when another application is focused (#64301)",
+    "url": "https://github.com/zed-industries/zed/commit/f6838a7c4afecd7c212c43c70165588b92a5a11f"
+  },
+  {
+    "sha": "db7f9ceed788ebfcbbcb18e65927172f1dd7dde9",
+    "date": "2026-09-15T16:28:53Z",
+    "title": "gpui_macos: Improve mouse tracking for normal windows (#64234)",
+    "url": "https://github.com/zed-industries/zed/commit/db7f9ceed788ebfcbbcb18e65927172f1dd7dde9"
+  },
+  {
+    "sha": "3db02c2c77659ad29810594e6249287ea1e791f7",
+    "date": "2026-09-12T03:25:52Z",
+    "title": "gpui: Add is_visible and on_visibility_changed API on Window (#64107)",
+    "url": "https://github.com/zed-industries/zed/commit/3db02c2c77659ad29810594e6249287ea1e791f7"
+  },
+  {
+    "sha": "72c53bf0aae2e619f146d96415f79caf77310455",
+    "date": "2026-09-10T14:52:46Z",
+    "title": "gpui_macos: Migrate `start_external_drag` to `objc2` (#64033)",
+    "url": "https://github.com/zed-industries/zed/commit/72c53bf0aae2e619f146d96415f79caf77310455"
+  },
+  {
+    "sha": "86b2cf96623a12ae3f524c3780b6bcce4443ed23",
+    "date": "2026-09-10T12:02:06Z",
+    "title": "gpui_macos: Migrate `get_sources` to `objc2` (#64031)",
+    "url": "https://github.com/zed-industries/zed/commit/86b2cf96623a12ae3f524c3780b6bcce4443ed23"
+  },
+  {
+    "sha": "d3865b099eae3e453bc45ca9a8f7bc9879081342",
+    "date": "2026-09-10T07:28:42Z",
+    "title": "gpui_macos: Migrate `prompt_for_path` to `objc2` (#63994)",
+    "url": "https://github.com/zed-industries/zed/commit/d3865b099eae3e453bc45ca9a8f7bc9879081342"
+  },
+  {
+    "sha": "907b55f7eabef9b9c4197daec1bb913efae08ebe",
+    "date": "2026-09-09T13:53:54Z",
+    "title": "gpui_macos: Migrate `register_url_scheme` to `objc2` (#63945)",
+    "url": "https://github.com/zed-industries/zed/commit/907b55f7eabef9b9c4197daec1bb913efae08ebe"
+  },
+  {
+    "sha": "450775244fade36db70af2447be24e74edb43368",
+    "date": "2026-09-09T13:49:13Z",
+    "title": "gpui: Prevent idle sleep during AI response streaming (#53130)",
+    "url": "https://github.com/zed-industries/zed/commit/450775244fade36db70af2447be24e74edb43368"
+  },
+  {
+    "sha": "33c6212b055fa8a97b17c8653311c9ccab7fb3b6",
+    "date": "2026-09-09T13:48:50Z",
+    "title": "Restore macOS windows to their original Space after restart (#58886)",
+    "url": "https://github.com/zed-industries/zed/commit/33c6212b055fa8a97b17c8653311c9ccab7fb3b6"
+  },
+  {
+    "sha": "c7801b0c447c1f2cacffaa86b1f0cbdb0d922b6c",
+    "date": "2026-09-07T09:12:55Z",
+    "title": "macos: Honor \"Tiled windows have margins\" for the Fill titlebar action (#63759)",
+    "url": "https://github.com/zed-industries/zed/commit/c7801b0c447c1f2cacffaa86b1f0cbdb0d922b6c"
+  }
+]

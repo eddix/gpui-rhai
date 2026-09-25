@@ -1,0 +1,112 @@
+{
+  "version": {
+    "id": 3284013,
+    "crate": "gpui-pre",
+    "num": "0.3.6",
+    "dl_path": "/api/v1/crates/gpui-pre/0.3.6/download",
+    "readme_path": "/api/v1/crates/gpui-pre/0.3.6/readme",
+    "updated_at": "2026-09-21T03:08:57.497240Z",
+    "created_at": "2026-09-21T03:08:57.497240Z",
+    "downloads": 3187,
+    "features": {
+      "bench": [
+        "bench-support"
+      ],
+      "bench-support": [
+        "profiler",
+        "dep:criterion"
+      ],
+      "default": [
+        "font-kit",
+        "wayland",
+        "x11",
+        "windows-manifest"
+      ],
+      "inspector": [
+        "gpui_macros/inspector"
+      ],
+      "leak-detection": [
+        "backtrace"
+      ],
+      "profiler": [
+        "dep:hdrhistogram"
+      ],
+      "screen-capture": [
+        "scap"
+      ],
+      "stacker": [
+        "dep:stacksafe"
+      ],
+      "test-support": [
+        "leak-detection",
+        "collections/test-support",
+        "http_client/test-support",
+        "wayland",
+        "x11",
+        "proptest"
+      ],
+      "wayland": [],
+      "windows-manifest": [
+        "dep:embed-resource"
+      ],
+      "x11": [
+        "scap?/x11"
+      ]
+    },
+    "yanked": false,
+    "yank_message": null,
+    "lib_links": null,
+    "license": "Apache-2.0",
+    "links": {
+      "dependencies": "/api/v1/crates/gpui-pre/0.3.6/dependencies",
+      "version_downloads": "/api/v1/crates/gpui-pre/0.3.6/downloads",
+      "authors": "/api/v1/crates/gpui-pre/0.3.6/authors"
+    },
+    "crate_size": 5309961,
+    "published_by": {
+      "id": 90689,
+      "login": "huacnlee",
+      "name": "Jason Lee",
+      "avatar": "https://avatars.githubusercontent.com/u/5518?v=4",
+      "url": "https://github.com/huacnlee",
+      "github_username_matches": true,
+      "created_at": "2008-04-07T05:44:36Z"
+    },
+    "audit_actions": [
+      {
+        "action": "publish",
+        "user": {
+          "id": 90689,
+          "login": "huacnlee",
+          "name": "Jason Lee",
+          "avatar": "https://avatars.githubusercontent.com/u/5518?v=4",
+          "url": "https://github.com/huacnlee",
+          "github_username_matches": true,
+          "created_at": "2008-04-07T05:44:36Z"
+        },
+        "time": "2026-09-21T03:08:57.497240Z"
+      }
+    ],
+    "checksum": "a0437c0b83e636a92bd1a39fa1d05fb632ae671289537497b35871ffbe231b84",
+    "rust_version": null,
+    "has_lib": true,
+    "bin_names": [],
+    "edition": "2024",
+    "description": "Zed's GPU-accelerated UI framework (gpui-pre snapshot of zed@bcf6582)",
+    "homepage": "https://gpui.rs",
+    "documentation": null,
+    "repository": "https://github.com/zed-industries/zed",
+    "trustpub_data": null,
+    "linecounts": {
+      "languages": {
+        "Rust": {
+          "code_lines": 61636,
+          "comment_lines": 1375,
+          "files": 87
+        }
+      },
+      "total_code_lines": 61636,
+      "total_comment_lines": 1375
+    }
+  }
+}

@@ -1,0 +1,72 @@
+{
+  "old_gpui": {
+    "role": false,
+    "accessibility_id": false,
+    "aria_label": false,
+    "aria_description": false,
+    "aria_active_descendant": false,
+    "aria_selected": false,
+    "aria_toggled": false,
+    "aria_numeric_value": false,
+    "aria_disabled": false,
+    "aria_modal": false,
+    "aria_live": false,
+    "aria_hidden": false
+  },
+  "ce_release": {
+    "role": true,
+    "accessibility_id": false,
+    "aria_label": true,
+    "aria_description": true,
+    "aria_active_descendant": true,
+    "aria_selected": true,
+    "aria_toggled": true,
+    "aria_numeric_value": true,
+    "aria_disabled": false,
+    "aria_modal": false,
+    "aria_live": false,
+    "aria_hidden": false
+  },
+  "ce_main": {
+    "role": true,
+    "accessibility_id": true,
+    "aria_label": true,
+    "aria_description": true,
+    "aria_active_descendant": true,
+    "aria_selected": true,
+    "aria_toggled": true,
+    "aria_numeric_value": true,
+    "aria_disabled": true,
+    "aria_modal": true,
+    "aria_live": true,
+    "aria_hidden": true
+  },
+  "kit_backend": {
+    "role": true,
+    "accessibility_id": true,
+    "aria_label": true,
+    "aria_description": true,
+    "aria_active_descendant": true,
+    "aria_selected": true,
+    "aria_toggled": true,
+    "aria_numeric_value": true,
+    "aria_disabled": false,
+    "aria_modal": false,
+    "aria_live": false,
+    "aria_hidden": false
+  },
+  "zed_main": {
+    "role": true,
+    "accessibility_id": true,
+    "aria_label": true,
+    "aria_description": true,
+    "aria_active_descendant": true,
+    "aria_selected": true,
+    "aria_toggled": true,
+    "aria_numeric_value": true,
+    "aria_disabled": false,
+    "aria_modal": false,
+    "aria_live": false,
+    "aria_hidden": false
+  }
+}

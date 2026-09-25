@@ -1,0 +1,158 @@
+{
+  "gpui": {
+    "crate": "gpui",
+    "newest_version": "0.2.2",
+    "max_stable_version": "0.2.2",
+    "repository": "https://github.com/zed-industries/zed",
+    "versions": [
+      {
+        "num": "0.2.2",
+        "created_at": "2025-10-22T03:56:29.835700Z",
+        "yanked": false
+      },
+      {
+        "num": "0.2.1",
+        "created_at": "2025-10-14T04:50:51.658529Z",
+        "yanked": false
+      },
+      {
+        "num": "0.2.1-test3",
+        "created_at": "2025-10-14T04:07:15.753179Z",
+        "yanked": true
+      },
+      {
+        "num": "0.2.0",
+        "created_at": "2025-10-09T04:28:33.248962Z",
+        "yanked": false
+      },
+      {
+        "num": "0.2.0-test.4",
+        "created_at": "2025-10-06T01:11:03.634185Z",
+        "yanked": true
+      },
+      {
+        "num": "0.1.0-test",
+        "created_at": "2025-10-05T07:55:50.883375Z",
+        "yanked": true
+      },
+      {
+        "num": "0.1.0",
+        "created_at": "2022-06-23T23:38:59.482625Z",
+        "yanked": true
+      }
+    ],
+    "source": "https://crates.io/api/v1/crates/gpui"
+  },
+  "ce": {
+    "crate": "gpui-ce",
+    "newest_version": "0.2.2",
+    "max_stable_version": "0.2.2",
+    "repository": "https://github.com/gpui-ce/gpui-ce",
+    "versions": [
+      {
+        "num": "0.2.2",
+        "created_at": "2026-08-28T23:15:07.555749Z",
+        "yanked": false
+      },
+      {
+        "num": "0.3.3",
+        "created_at": "2025-12-27T18:35:24.797495Z",
+        "yanked": true
+      },
+      {
+        "num": "0.3.2",
+        "created_at": "2025-12-27T18:26:22.574135Z",
+        "yanked": true
+      }
+    ],
+    "source": "https://crates.io/api/v1/crates/gpui-ce"
+  },
+  "kit": {
+    "crate": "gpui-kit",
+    "newest_version": "0.6.6",
+    "max_stable_version": "0.6.6",
+    "repository": "https://github.com/longbridge/gpui-kit",
+    "versions": [
+      {
+        "num": "0.6.6",
+        "created_at": "2026-09-21T13:27:45.725652Z",
+        "yanked": false
+      },
+      {
+        "num": "0.6.5",
+        "created_at": "2026-09-21T13:06:13.467353Z",
+        "yanked": true
+      },
+      {
+        "num": "0.6.4",
+        "created_at": "2026-09-18T16:37:38.605559Z",
+        "yanked": false
+      },
+      {
+        "num": "0.6.2",
+        "created_at": "2026-09-18T09:20:06.988154Z",
+        "yanked": false
+      },
+      {
+        "num": "0.6.1",
+        "created_at": "2026-09-09T09:52:31.587170Z",
+        "yanked": false
+      },
+      {
+        "num": "0.6.0",
+        "created_at": "2026-09-03T13:10:34.525199Z",
+        "yanked": false
+      },
+      {
+        "num": "0.1.0",
+        "created_at": "2026-09-03T02:32:19.054076Z",
+        "yanked": false
+      }
+    ],
+    "source": "https://crates.io/api/v1/crates/gpui-kit"
+  },
+  "pre": {
+    "crate": "gpui-pre",
+    "newest_version": "0.3.6",
+    "max_stable_version": "0.3.6",
+    "repository": "https://github.com/zed-industries/zed",
+    "versions": [
+      {
+        "num": "0.3.6",
+        "created_at": "2026-09-21T03:08:57.497240Z",
+        "yanked": false
+      },
+      {
+        "num": "0.3.5",
+        "created_at": "2026-09-14T10:33:23.898707Z",
+        "yanked": false
+      },
+      {
+        "num": "0.3.4",
+        "created_at": "2026-09-07T08:37:34.073408Z",
+        "yanked": false
+      },
+      {
+        "num": "0.3.3",
+        "created_at": "2026-09-03T15:00:01.449314Z",
+        "yanked": false
+      },
+      {
+        "num": "0.3.2",
+        "created_at": "2026-09-03T12:15:33.074995Z",
+        "yanked": false
+      },
+      {
+        "num": "0.3.1",
+        "created_at": "2026-09-03T11:24:32.173486Z",
+        "yanked": false
+      },
+      {
+        "num": "0.3.0",
+        "created_at": "2026-09-03T07:43:49.638993Z",
+        "yanked": false
+      }
+    ],
+    "source": "https://crates.io/api/v1/crates/gpui-pre"
+  }
+}
