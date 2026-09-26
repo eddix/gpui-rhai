@@ -49,7 +49,8 @@ Complex component contracts:
 ## Develop the framework
 
 - [Architecture](architecture.md)
-- [gpui-pre 升级实施计划（待实施）](plans/2026-09-25-gpui-pre-upgrade.zh-CN.md)
+- [Acceptance Application、Gallery 与示例体系实施计划（实施中）](plans/2026-09-25-gallery-and-ui-quality.zh-CN.md)
+- [gpui-pre 升级实施与验收计划](plans/2026-09-25-gpui-pre-upgrade.zh-CN.md)
 - [Performance budgets and baselines](performance.md)
 - [Development inspector](devtools.md)
 - [macOS visual and interaction test matrix](visual-testing.md)

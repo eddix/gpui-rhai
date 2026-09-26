@@ -1,9 +1,14 @@
 # Core Runtime v2 implementation plan
 
-Next planned dependency iteration: [gpui-pre upgrade plan](docs/plans/2026-09-25-gpui-pre-upgrade.zh-CN.md).
-This is pending work against the 0.1.5 baseline, including platform adaptation,
-native accessibility, and release validation; it does not change the completed
-Runtime v2 contracts recorded below.
+Next UI/developer-experience iteration: [Acceptance Application, Gallery, and
+examples plan](docs/plans/2026-09-25-gallery-and-ui-quality.zh-CN.md). The
+unified Explore catalog and Operations Workbench are the first priority;
+Omarchy integration and custom UI zoom are explicitly separate future work.
+
+Dependency workstream: [gpui-pre upgrade plan](docs/plans/2026-09-25-gpui-pre-upgrade.zh-CN.md).
+Platform and native accessibility adaptation has a candidate implementation;
+remaining release gates are tracked in the [candidate report](docs/audits/2026-09-25-gpui-pre-upgrade/report.zh-CN.md).
+This work does not replace the Runtime v2 contracts recorded below.
 
 ## 1. Execution policy
 
