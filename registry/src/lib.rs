@@ -431,6 +431,7 @@ pub const INPUT_STORY_SOURCE: &str = include_str!("../stories/components/input.r
 pub const TABLE_STORY_SOURCE: &str = include_str!("../stories/components/table.rhai");
 pub const CHART_INTERACTION_STORY_SOURCE: &str = include_str!("../stories/charts/interaction.rhai");
 pub const CHART_CATALOG_STORY_SOURCE: &str = include_str!("../stories/charts/catalog.rhai");
+pub const CHART_STREAMING_STORY_SOURCE: &str = include_str!("../stories/charts/streaming.rhai");
 pub const MOTION_CATALOG_STORY_SOURCE: &str = include_str!("../stories/motion/catalog.rhai");
 pub const OPERATIONS_STORY_SOURCE: &str = include_str!("../stories/apps/operations.rhai");
 pub const HOST_EMBEDDING_STORY_SOURCE: &str = include_str!("../stories/apps/host_embedding.rhai");
@@ -692,6 +693,23 @@ pub const BUNDLED_STORIES: &[StoryDefinition] = &[
         theme_studio: false,
     },
     StoryDefinition {
+        id: "charts/streaming",
+        title: "Native streaming line",
+        purpose: "Exercise revisioned Host-owned chart data without rebuilding rows in Rhai.",
+        category: "charts",
+        keywords: &["chart", "line", "stream", "native", "performance"],
+        module_ids: &["charts/chart"],
+        source_module: "stories/charts/streaming",
+        source: CHART_STREAMING_STORY_SOURCE,
+        cases: BASIC_CASE,
+        fixture: Some("chart-catalog"),
+        required_features: CHARTS_FEATURE,
+        platforms: DESKTOP_PLATFORMS,
+        test_requirements: &["prepare", "mount", "draw", "streaming", "100k benchmark"],
+        documentation: "docs/charts.md#performance-contract",
+        theme_studio: false,
+    },
+    StoryDefinition {
         id: "motion/catalog",
         title: "Motion Catalog",
         purpose: "Exercise every first-party Motion component and the native timeline controls.",
@@ -815,7 +833,7 @@ mod tests {
         assert_eq!(BUNDLED_CHART_SOURCES_BY_ID.len(), 5);
         assert_eq!(BUNDLED_ASSET_SOURCES.len(), 18);
         assert_eq!(BUNDLED_THEME_SOURCES.len(), 15);
-        assert_eq!(BUNDLED_STORIES.len(), 10);
+        assert_eq!(BUNDLED_STORIES.len(), 11);
         assert!(
             BUNDLED_COMPONENT_SOURCES
                 .iter()

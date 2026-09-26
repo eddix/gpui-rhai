@@ -263,11 +263,12 @@ fn merge_snapshot(
     combined.virtual_collections = next.virtual_collections;
     combined.retained_nodes = next.retained_nodes;
     combined.dirty_components = next.dirty_components;
+    combined.dirty_component_paths = next.dirty_component_paths;
     combined.pending_virtual_requests = next.pending_virtual_requests;
 }
 
 fn settle(
-    cx: &TestAppContext,
+    cx: &mut TestAppContext,
     visual: &mut VisualTestContext,
     view: &ScriptViewHandle,
 ) -> ScriptViewPerformanceSnapshot {
@@ -278,7 +279,7 @@ fn settle(
     let mut combined = take_snapshot(visual, view);
     let mut previous = virtual_signature(&combined);
     let mut stable_observations = 0usize;
-    for _ in 0..12 {
+    for _ in 0..120 {
         cx.background_executor
             .advance_clock(Duration::from_millis(16));
         visual
@@ -287,24 +288,37 @@ fn settle(
             })
             .unwrap();
         visual.run_until_parked();
+        cx.refresh().unwrap();
+        visual.run_until_parked();
+        std::thread::yield_now();
         let next = take_snapshot(visual, view);
         let signature = virtual_signature(&next);
-        if !next.pending_virtual_requests && signature == previous {
+        if !next.pending_virtual_requests
+            && next.dirty_components == 0
+            && signature == previous
+        {
             stable_observations = stable_observations.saturating_add(1);
         } else {
             stable_observations = 0;
         }
         previous = signature;
+        let final_dirty = next.dirty_components;
+        let final_pending = next.pending_virtual_requests;
         merge_snapshot(&mut combined, next);
         if stable_observations >= 1 {
-            assert_eq!(combined.dirty_components, 0);
-            assert!(!combined.pending_virtual_requests);
+            assert_eq!(final_dirty, 0);
+            assert!(!final_pending);
+            combined.dirty_components = final_dirty;
+            combined.pending_virtual_requests = final_pending;
             return combined;
         }
     }
     panic!(
-        "virtual collections did not settle: pending={} signature={previous:?} metrics={:?}",
-        combined.pending_virtual_requests, combined.virtual_collections
+        "view did not settle: dirty={} paths={:?} pending={} signature={previous:?} metrics={:?}",
+        combined.dirty_components,
+        combined.dirty_component_paths,
+        combined.pending_virtual_requests,
+        combined.virtual_collections
     );
 }
 
@@ -336,7 +350,7 @@ struct ButtonScenario<'a> {
 }
 
 fn button_scenario(
-    cx: &TestAppContext,
+    cx: &mut TestAppContext,
     visual: &mut VisualTestContext,
     view: &ScriptViewHandle,
     scenario: ButtonScenario<'_>,
@@ -381,7 +395,7 @@ fn button_scenario(
 }
 
 fn resize_scenario(
-    cx: &TestAppContext,
+    cx: &mut TestAppContext,
     visual: &mut VisualTestContext,
     view: &ScriptViewHandle,
     warmup: usize,
@@ -904,23 +918,43 @@ fn chart_stream_chunk(start: usize, rows: usize) -> gpui_rhai::ChartDataset {
 }
 
 fn settle_chart(
-    cx: &TestAppContext,
+    cx: &mut TestAppContext,
     visual: &mut VisualTestContext,
     view: &ScriptViewHandle,
 ) -> ScriptViewPerformanceSnapshot {
-    let mut combined = settle(cx, visual, view);
-    for _ in 0..12 {
+    visual.run_until_parked();
+    cx.refresh().unwrap();
+    visual.run_until_parked();
+    let mut combined = take_snapshot(visual, view);
+    let mut stable_observations = 0usize;
+    for _ in 0..240 {
         cx.background_executor
             .advance_clock(Duration::from_millis(16));
-        visual
-            .update(|window, app| {
-                view.automate(AutomationCommand::AdvanceTime { millis: 16 }, window, app)
-            })
-            .unwrap();
         visual.run_until_parked();
-        merge_snapshot(&mut combined, take_snapshot(visual, view));
+        cx.refresh().unwrap();
+        visual.run_until_parked();
+        std::thread::yield_now();
+        let next = take_snapshot(visual, view);
+        if next.dirty_components == 0 && !next.pending_virtual_requests {
+            stable_observations = stable_observations.saturating_add(1);
+        } else {
+            stable_observations = 0;
+        }
+        let final_dirty = next.dirty_components;
+        let final_pending = next.pending_virtual_requests;
+        merge_snapshot(&mut combined, next);
+        if stable_observations >= 2 {
+            combined.dirty_components = final_dirty;
+            combined.pending_virtual_requests = final_pending;
+            return combined;
+        }
     }
-    combined
+    panic!(
+        "chart did not settle: dirty={} paths={:?} pending={}",
+        combined.dirty_components,
+        combined.dirty_component_paths,
+        combined.pending_virtual_requests
+    )
 }
 
 fn presented_chart_revision(
@@ -962,9 +996,10 @@ fn chart_end_to_end_baseline(cx: &mut TestAppContext) {
     .unwrap();
     let prepare_started = Instant::now();
     let runtime_clock = gpui_rhai::ManualRuntimeClock::new(Instant::now());
-    let prepared = gpui_rhai_cli::gallery::chart_catalog_view_with_stream(stream.clone())
+    let prepared = gpui_rhai_cli::gallery::chart_streaming_view_with_data(stream.clone())
         .unwrap()
         .runtime_clock(runtime_clock.clock())
+        .motion_preference(gpui_rhai::MotionPreference::None)
         .prepare()
         .unwrap();
     let prepare_us = micros(prepare_started);
