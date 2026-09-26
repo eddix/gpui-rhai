@@ -345,6 +345,23 @@ impl UiRuntimeState {
         Ok(changed)
     }
 
+    /// Replace the Host-owned motion preference without resetting script state.
+    ///
+    /// Returns whether the effective preference changed. Reduced and disabled
+    /// motion settle active work through the same central runtime policy used
+    /// during initial view construction.
+    pub fn set_motion_preference_from_host(&mut self, preference: crate::MotionPreference) -> bool {
+        let previous = self.motions.preference();
+        self.motions.set_preference(preference);
+        let changed = self.motions.preference() != previous;
+        if changed {
+            let now = self.clock.now();
+            self.motion_values = self.motions.snapshot(now);
+            self.mark_all_windows_dirty();
+        }
+        changed
+    }
+
     /// Atomically replace application-wide formal-component style rules.
     ///
     /// Equal replacements are ignored. A changed sheet invalidates every
@@ -5154,5 +5171,25 @@ mod tests {
                     && (*x - 12.0).abs() < f64::EPSILON
                     && (*y - 24.0).abs() < f64::EPSILON
         ));
+    }
+
+    #[test]
+    fn host_motion_preference_changes_without_replacing_runtime_state() {
+        let mut runtime = UiRuntimeState::new();
+        runtime.motions = crate::MotionRuntime::new(crate::MotionPreference::Normal);
+        runtime.responsive.update_window("main", 480.0).unwrap();
+
+        assert!(!runtime.set_motion_preference_from_host(crate::MotionPreference::Normal));
+        assert!(runtime.set_motion_preference_from_host(crate::MotionPreference::Reduced));
+        assert_eq!(
+            runtime.motions.preference(),
+            crate::MotionPreference::Reduced
+        );
+        assert_eq!(
+            runtime.responsive.class("main"),
+            crate::ViewportClass::Compact
+        );
+        assert!(runtime.set_motion_preference_from_host(crate::MotionPreference::None));
+        assert_eq!(runtime.motions.preference(), crate::MotionPreference::None);
     }
 }

@@ -227,6 +227,10 @@ fn operations_workbench_completes_and_cancels_the_deployment_boundary(cx: &mut T
     visual.update(|_, cx| {
         assert!(view.select_theme("Default", "Light", cx).unwrap());
         assert!(view.select_locale("zh-CN", cx).unwrap());
+        assert!(
+            view.set_motion_preference(gpui_rhai::MotionPreference::Reduced, cx)
+                .unwrap()
+        );
     });
     visual.run_until_parked();
     dispatch(&mut visual, &view, "stage-deploy");
