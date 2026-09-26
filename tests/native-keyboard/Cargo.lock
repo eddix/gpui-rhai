@@ -2675,6 +2675,7 @@ dependencies = [
  "gpui-pre",
  "gpui-rhai",
  "gpui-rhai-cli",
+ "gpui-rhai-registry",
  "semver",
  "serde_json",
 ]

@@ -589,6 +589,25 @@ mod tests {
     }
 
     #[test]
+    fn locale_matrix_prepares_editing_documents_and_workbench() {
+        for locale in ["en", "zh-CN", "ar"] {
+            for (story, case) in [
+                ("components/input", "basic"),
+                ("components/catalog", "documents"),
+                ("apps/operations", "empty"),
+            ] {
+                prepare(&GalleryLaunch {
+                    story: story.to_owned(),
+                    case: case.to_owned(),
+                    locale: locale.to_owned(),
+                    ..GalleryLaunch::default()
+                })
+                .unwrap_or_else(|error| panic!("{locale} / {story} / {case}: {error}"));
+            }
+        }
+    }
+
+    #[test]
     fn invalid_story_case_theme_and_locale_are_explicit() {
         let launch = GalleryLaunch {
             story: "missing".to_owned(),

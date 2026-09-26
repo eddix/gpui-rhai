@@ -9,6 +9,7 @@ use gpui_rhai::{
     UiNodeKind,
 };
 use gpui_rhai_cli::gallery::{GalleryLaunch, prepare, stories};
+use gpui_rhai_registry::BUNDLED_THEME_SOURCES;
 
 struct GalleryHost {
     host: ScriptViewHost,
@@ -347,4 +348,169 @@ fn operations_fixture_cases_are_observable_and_streaming_is_bounded(cx: &mut Tes
             .any(|text| text.contains("without Rhai polling")),
         "{texts:?}"
     );
+}
+
+#[gpui::test]
+fn every_bundled_theme_hot_switches_the_shared_design_story(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let (window, view) = mount_story(
+        cx,
+        GalleryLaunch {
+            story: "components/catalog".to_owned(),
+            ..GalleryLaunch::default()
+        },
+        "gallery-theme-matrix",
+    );
+    let mut visual = gpui::VisualTestContext::from_window(*window, cx);
+    let engine = gpui_rhai::RuntimeEngine::new();
+    for (theme_file, source) in BUNDLED_THEME_SOURCES {
+        let theme = gpui_rhai::load_theme_source(engine.engine(), theme_file, source).unwrap();
+        visual.update(|_, cx| {
+            view.select_theme(&theme.family, &theme.name, cx).unwrap();
+        });
+        visual.run_until_parked();
+        let snapshot = visual.update(|_, cx| view.theme_snapshot(cx).unwrap());
+        assert_eq!(snapshot.variant.family, theme.family, "{theme_file}");
+        assert_eq!(snapshot.variant.name, theme.name, "{theme_file}");
+        assert!(
+            visual
+                .update(|_, cx| view.last_error(cx).unwrap())
+                .is_none(),
+            "{theme_file} recorded an error"
+        );
+    }
+}
+
+#[gpui::test]
+fn chart_diagnostic_story_exposes_last_good_invalid_semantics(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let (window, view) = mount_story(
+        cx,
+        GalleryLaunch {
+            story: "charts/interaction".to_owned(),
+            case: "diagnostics".to_owned(),
+            ..GalleryLaunch::default()
+        },
+        "gallery-chart-diagnostic",
+    );
+    let mut visual = gpui::VisualTestContext::from_window(*window, cx);
+    let dispatch_error = visual
+        .update(|window, cx| {
+            view.automate(
+                AutomationCommand::Dispatch {
+                    locator: AutomationLocator::TestId {
+                        id: "break-chart".to_owned(),
+                    },
+                    event: "click".to_owned(),
+                    payload: None,
+                },
+                window,
+                cx,
+            )
+        })
+        .expect_err("breaking the chart must reject the event transaction");
+    assert!(dispatch_error.to_string().contains("piee"));
+    visual.run_until_parked();
+    let error = visual
+        .update(|_, cx| view.last_error(cx).unwrap())
+        .expect("broken spec must reach the view error channel");
+    assert!(error.contains("piee"), "{error}");
+    assert!(visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .find_by_role_and_name("figure", "Diagnostic chart")
+            .next()
+            .is_some_and(|node| node.invalid && node.description.contains("piee"))
+    }));
+}
+
+#[gpui::test]
+fn content_bearing_tabs_stretch_table_and_chart_panels(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let (window, view) = mount_story(
+        cx,
+        GalleryLaunch {
+            story: "components/tabs".to_owned(),
+            ..GalleryLaunch::default()
+        },
+        "gallery-tabs-fill",
+    );
+    let mut visual = gpui::VisualTestContext::from_window(*window, cx);
+    let table_width = visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .find_by_role_and_name("table", "Hosts in Tabs")
+            .next()
+            .and_then(|node| node.geometry)
+            .map(|geometry| geometry.visual.width)
+            .unwrap()
+    });
+    assert!(table_width > 500.0, "table width was {table_width}");
+
+    visual
+        .update(|window, cx| {
+            view.automate(
+                AutomationCommand::Dispatch {
+                    locator: AutomationLocator::RoleName {
+                        role: "tab".to_owned(),
+                        name: "Latency".to_owned(),
+                    },
+                    event: "click".to_owned(),
+                    payload: None,
+                },
+                window,
+                cx,
+            )
+        })
+        .unwrap();
+    visual.run_until_parked();
+    let chart_width = visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .find_by_role_and_name("figure", "Latency")
+            .next()
+            .and_then(|node| node.geometry)
+            .map(|geometry| geometry.visual.width)
+            .unwrap()
+    });
+    assert!(chart_width > 500.0, "chart width was {chart_width}");
+}
+
+#[gpui::test]
+fn host_theme_overrides_survive_live_theme_switches(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let (window, view) = mount_story(
+        cx,
+        GalleryLaunch {
+            story: "apps/operations".to_owned(),
+            case: "theme-overrides".to_owned(),
+            ..GalleryLaunch::default()
+        },
+        "gallery-theme-overrides",
+    );
+    let mut visual = gpui::VisualTestContext::from_window(*window, cx);
+    let assert_radii = |snapshot: gpui_rhai::ThemeSnapshot| {
+        assert_eq!(
+            snapshot.variant.tokens.radii["sm"],
+            gpui_rhai::Length::Pixels(4.0)
+        );
+        assert_eq!(
+            snapshot.variant.tokens.radii["md"],
+            gpui_rhai::Length::Pixels(7.0)
+        );
+        assert_eq!(
+            snapshot.variant.tokens.radii["lg"],
+            gpui_rhai::Length::Pixels(10.0)
+        );
+    };
+    assert_radii(visual.update(|_, cx| view.theme_snapshot(cx).unwrap()));
+    visual.update(|_, cx| {
+        assert!(view.select_theme("Nord", "Dark", cx).unwrap());
+    });
+    visual.run_until_parked();
+    let snapshot = visual.update(|_, cx| view.theme_snapshot(cx).unwrap());
+    assert_eq!(snapshot.variant.family, "Nord");
+    assert_radii(snapshot);
+    let texts = rendered_texts(&mut visual, &view);
+    assert!(texts.iter().any(|text| text == "Selected hosts: 1"));
 }

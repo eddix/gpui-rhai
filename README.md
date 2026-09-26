@@ -66,6 +66,10 @@ all-component specimen. It creates, opens, imports-as-copy, validates, previews,
 and saves gpui-rhai `.rhai` themes; see [Theme Studio](docs/theme-studio.md) and
 the [bundled theme catalog](docs/bundled-themes.md).
 
+`gallery` opens the formal acceptance application: searchable source-backed
+Component/Motion/Chart stories plus the connected Operations Workbench. See
+[Gallery and acceptance application](docs/gallery.md).
+
 Run the repository example with:
 
 ```text
