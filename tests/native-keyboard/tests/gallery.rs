@@ -514,3 +514,90 @@ fn host_theme_overrides_survive_live_theme_switches(cx: &mut TestAppContext) {
     let texts = rendered_texts(&mut visual, &view);
     assert!(texts.iter().any(|text| text == "Selected hosts: 1"));
 }
+
+#[gpui::test]
+fn workbench_sheet_and_command_dialog_share_session_navigation(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let (window, view) = mount_story(
+        cx,
+        GalleryLaunch {
+            story: "apps/operations".to_owned(),
+            case: "large".to_owned(),
+            ..GalleryLaunch::default()
+        },
+        "gallery-workbench-overlays",
+    );
+    let mut visual = gpui::VisualTestContext::from_window(*window, cx);
+    dispatch(&mut visual, &view, "open-host-sheet");
+    assert!(visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .find_by_role_and_name("dialog", "Host details")
+            .next()
+            .is_some()
+    }));
+    dispatch(&mut visual, &view, "compare-from-sheet");
+    let texts = rendered_texts(&mut visual, &view);
+    assert!(texts.iter().any(|text| text == "Configurations"));
+
+    dispatch(&mut visual, &view, "open-command");
+    assert!(visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .find_by_role_and_name("dialog", "Navigate")
+            .next()
+            .is_some()
+    }));
+}
+
+#[gpui::test]
+fn workbench_large_hosts_filter_in_rust_without_materializing_rows_in_rhai(
+    cx: &mut TestAppContext,
+) {
+    cx.update(gpui_rhai::install);
+    let (window, view) = mount_story(
+        cx,
+        GalleryLaunch {
+            story: "apps/operations".to_owned(),
+            case: "large".to_owned(),
+            ..GalleryLaunch::default()
+        },
+        "gallery-workbench-search",
+    );
+    let mut visual = gpui::VisualTestContext::from_window(*window, cx);
+    let result = visual
+        .update(|window, cx| {
+            view.automate(
+                AutomationCommand::Dispatch {
+                    locator: AutomationLocator::RoleName {
+                        role: "button".to_owned(),
+                        name: "Next page".to_owned(),
+                    },
+                    event: "click".to_owned(),
+                    payload: None,
+                },
+                window,
+                cx,
+            )
+        })
+        .unwrap();
+    let AutomationResult::Dispatch { report } = result else {
+        panic!("pagination dispatch returned the wrong automation result");
+    };
+    assert!(report.invoked > 0);
+    visual.run_until_parked();
+    let page_two = rendered_texts(&mut visual, &view);
+    assert!(page_two.iter().any(|text| text.contains("Page 2 / 40")));
+    drop(visual);
+
+    cx.simulate_input(*window, "edge-1000");
+    let mut visual = gpui::VisualTestContext::from_window(*window, cx);
+    visual.run_until_parked();
+    let texts = rendered_texts(&mut visual, &view);
+    assert!(texts.iter().any(|text| text == "edge-1000"), "{texts:?}");
+    assert!(
+        visual
+            .update(|_, cx| view.last_error(cx).unwrap())
+            .is_none()
+    );
+}

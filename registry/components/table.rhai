@@ -12,7 +12,8 @@
 // Data-backed Table composed entirely from public Box/Text/virtual_collection APIs.
 // Use either a positive logical-pixel height or fill_height for flex layouts.
 // Props: key, label, row_key, Array-or-NativeCollection rows, columns,
-// height, loading/empty, sort, selection, optional grouping, and native resize/auto-fit.
+// height, loading/empty, sort, search/page projection, selection, optional grouping,
+// and native resize/auto-fit.
 // Events: sort_change, selection_change, row_click, group_toggle, and column_resize.
 // State: application values are controlled; keyed native width overrides retain drag previews.
 // Example: Table(#{ key: "users", label: "Users", row_key: "id", rows: rows,
@@ -33,6 +34,15 @@ define_component(#{
                     items: #{ type: "map", values: #{ type: "ui_value" } } },
                 #{ type: "collection" },
             ] }, required: true, sensitive: false },
+            query: #{ schema: #{ type: "string" }, required: false, sensitive: false,
+                "default": #{ type: "string", value: "" } },
+            search_fields: #{ schema: #{ type: "array", max_items: 256,
+                items: #{ type: "string" } }, required: false, sensitive: false,
+                "default": #{ type: "array", value: [] } },
+            page: #{ schema: #{ type: "integer", min: 1 }, required: false, sensitive: false,
+                "default": #{ type: "integer", value: 1 } },
+            page_size: #{ schema: #{ type: "optional", value: #{ type: "integer", min: 1 } },
+                required: false, sensitive: false },
             columns: #{ schema: #{ type: "array", max_items: 256, items: #{
                 type: "object", allow_unknown: false, fields: #{
                     key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
@@ -311,6 +321,30 @@ fn unique_group_header_key(value, row_keys, header_keys) {
     key
 }
 
+fn table_row_matches(source, query, search_fields) {
+    if query == "" { return true; }
+    for field in search_fields {
+        if field in source && `${source[field]}`.to_lower().contains(query) { return true; }
+    }
+    false
+}
+
+fn table_array_page(rows, query, search_fields, page, page_size) {
+    let filtered = [];
+    for index in 0..rows.len {
+        if table_row_matches(rows[index], query, search_fields) {
+            filtered.push(#{ source: rows[index], index: index });
+        }
+    }
+    if page_size == () { return filtered; }
+    let start = (page - 1) * page_size;
+    if start >= filtered.len { return []; }
+    let end = if start + page_size < filtered.len { start + page_size } else { filtered.len };
+    let paged = [];
+    for index in start..end { paged.push(filtered[index]); }
+    paged
+}
+
 fn table_column_model(props) {
     let table_resizable = prop_or(props, "resizable_columns", false);
     let requested = false;
@@ -480,6 +514,20 @@ fn render_Table(ctx, props) {
     let group_toggle = "on_group_toggle" in props && props.on_group_toggle != ();
     let sticky_groups = prop_or(props, "sticky_group_headers", true);
     let native_data = is_native_collection(props.rows);
+    let query = prop_or(props, "query", "").to_lower();
+    let search_fields = prop_or(props, "search_fields", []);
+    if query != "" && search_fields.len == 0 {
+        throw "Table non-empty query requires search_fields";
+    }
+    for field in search_fields {
+        let found = field == props.row_key;
+        for column in columns { if column.key == field { found = true; } }
+        if !found { throw `Table search field ${field} is not the row key or a declared column`; }
+    }
+    let page = prop_or(props, "page", 1);
+    let page_size = if "page_size" in props { props.page_size } else { () };
+    let array_rows = if native_data { [] }
+        else { table_array_page(props.rows, query, search_fields, page, page_size) };
     let data;
     let sticky_headers = [];
     if native_data {
@@ -488,20 +536,23 @@ fn render_Table(ctx, props) {
             selected_keys: selected, selection_mode: selection_mode,
             striped: striped, row_height: row_height, sort: current_sort,
             group_by: group_by, collapsed_groups: collapsed, group_toggle: group_toggle,
+            query: query, search_fields: search_fields, page: page, page_size: page_size,
         });
     } else if group_by == () {
         data = [];
-        for index in 0..props.rows.len {
-            data.push(table_row_item(props.rows[index], index, columns, props.row_key,
-                props.label, selected, selection_mode, striped, row_height, index));
+        for display_index in 0..array_rows.len {
+            let row = array_rows[display_index];
+            data.push(table_row_item(row.source, row.index, columns, props.row_key,
+                props.label, selected, selection_mode, striped, row_height, display_index));
         }
     } else {
         data = [];
         let group_order = [];
         let buckets = #{};
         let row_keys = [];
-        for index in 0..props.rows.len {
-            let source = props.rows[index];
+        for entry in array_rows {
+            let source = entry.source;
+            let index = entry.index;
             let group = if group_by in source { source[group_by] } else { () };
             if type_of(group) != "string" || group == "" {
                 throw `Table row ${index} group field ${group_by} must be a non-empty string`;
@@ -534,6 +585,16 @@ fn render_Table(ctx, props) {
                 }
             }
         }
+    }
+    if data.len == 0 {
+        let empty = if "empty" in props && props.empty != () { props.empty }
+            else { text(prop_or(props, "empty_text", "No results")) };
+        return box([header, empty.with_style(ctx.component_style("empty", style()
+            .padding(theme_spacing("md")).typography("body_small").text_color(theme_color("text_muted"))))])
+            .with_key(props.key).with_style(ctx.component_style("root", style().flex_col()
+                .border(px(1)).border_color(theme_color("border"))))
+            .accessibility_role("table").accessibility_label(props.label)
+            .accessibility_row_count(1).accessibility_column_count(columns.len);
     }
     let collection = #{
         key: `${props.key}-body`, label: props.label, data: data,

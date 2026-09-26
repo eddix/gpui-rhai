@@ -915,6 +915,8 @@ Guidelines:
 - Keep large stable row sets in `NativeCollection`; let Rhai declare the Table
   and controlled state while Rust caches sort/group/collapse order and projects
   only visible rows.
+- Use Table `query`/`search_fields` and `page`/`page_size` for controlled
+  Rust-side filtering and paging; reset page one when query or sort changes.
 - Keep large or rapidly replaced source text in `NativeTextDocument`; direct
   strings remain the simple path. CodeViewer and DiffViewer compute from
   immutable typed snapshots on background workers and commit complete matching

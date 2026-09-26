@@ -101,6 +101,9 @@ reads `text_key` from the row and renders a compact Badge after the cell text;
 The same declaration works for Array and `NativeCollection` rows. Native data
 projects only the realized rows and never invokes a per-cell Rhai renderer, so
 status/count pills do not discard Table virtualization or keyboard behavior.
+Table also accepts controlled `query`/`search_fields` and one-based
+`page`/`page_size`; NativeCollection performs sort, filter, page, and group
+ordering in Rust before virtual projection.
 
 ## Navigation and data
 
