@@ -67,6 +67,13 @@
 - macOS AX tree 可见 Button、TextField、Tab、Table、Figure、Dialog、Toast、
   Progress、HostSlot resident semantics。Chart invalid case由原生测试进一步验证
   invalid description。
+- VoiceOver 首次实机激活暴露并稳定复现了一个原生崩溃：普通文本 retained
+  wrapper 被发布为无 `value`/character lengths 的 AccessKit `TextRun`，
+  `accesskit_consumer::text::Range::traverse_text` 在生成节点 value 时解包失败。
+  修复后普通文本按 GPUI 原生约定发布为带直接 value 的 `Label`。重新启动的
+  release Gallery 可完整枚举 Component Catalog、Operations 的 Table/Figure、
+  CommandDialog 与 HostSlot 语义；主题切换、Command 项原生 `Pick` 动作和
+  HostSlot 输入均成功，进程持续存活且未新增 crash report。
 - 当前实机的 `system_profiler SPDisplaysDataType` 报告 LG HDR 4K 为
   5120×2880 物理像素、2560×1440 逻辑分辨率、60 Hz。release Gallery 在该
   2× HiDPI 屏幕完成全屏切换与 resize 观察；这项证据不覆盖 1× DPI 或
@@ -78,8 +85,9 @@ CUA 的 macOS AX `click/setValue` 没有把焦点交给 GPUI TextInputClient，�
 
 ## 尚未完成／仍阻塞
 
-- macOS：真实中文候选窗、VoiceOver 操作、1× DPI、runtime shader 冷启动与
-  120 Hz frame-time 仍需维护者实机签字；当前硬件只有 2× / 60 Hz。
+- macOS：VoiceOver 树遍历、Overlay、原生 `Pick` 动作与 HostSlot 输入已通过；
+  真实中文候选窗、1× DPI、runtime shader 冷启动与 120 Hz frame-time 仍需
+  维护者实机签字，当前硬件只有 2× / 60 Hz。
 - Gallery 新 surface 的 checked-in PNG 基线尚未由维护者视觉接受；当前仅有
   release 窗口观察和既有 38 PNG audit。
 - Linux：X11、Wayland、输入、滚动、Overlay 和基础 AT-SPI 真实窗口矩阵
