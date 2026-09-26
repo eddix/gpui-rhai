@@ -173,7 +173,7 @@ fn render_Tabs(ctx, props) {
         }
     }
     let root = if orientation == "vertical" { row([list, panel]) } else { column([list, panel]) };
-    let root_style = style().gap(theme_spacing("xs")).margin_end(auto());
+    let root_style = style().gap(theme_spacing("xs"));
     root.with_style(ctx.component_style("root", root_style))
         .accessibility_role("group").accessibility_label(props.label)
 }
