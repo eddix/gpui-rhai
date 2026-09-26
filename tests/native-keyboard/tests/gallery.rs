@@ -499,6 +499,57 @@ fn every_bundled_theme_hot_switches_the_shared_design_story(cx: &mut TestAppCont
 }
 
 #[gpui::test]
+fn critical_story_viewport_and_locale_matrix_mounts_real_frames(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let (window, catalog) = mount_story(
+        cx,
+        GalleryLaunch {
+            story: "components/catalog".to_owned(),
+            ..GalleryLaunch::default()
+        },
+        "gallery-responsive-matrix",
+    );
+    let mut visual = gpui::VisualTestContext::from_window(*window, cx);
+    for (width, expected) in [(520.0, "compact"), (800.0, "regular"), (1_120.0, "wide")] {
+        visual.simulate_resize(gpui::size(gpui::px(width), gpui::px(760.0)));
+        visual.run_until_parked();
+        let texts = rendered_texts(&mut visual, &catalog);
+        assert!(
+            texts.iter().any(|text| text == expected),
+            "{width} did not produce {expected}: {texts:?}"
+        );
+    }
+    drop(visual);
+
+    for locale in ["zh-CN", "ar"] {
+        let (window, view) = mount_story(
+            cx,
+            GalleryLaunch {
+                story: "components/input".to_owned(),
+                locale: locale.to_owned(),
+                ..GalleryLaunch::default()
+            },
+            &format!("gallery-locale-{locale}"),
+        );
+        let mut visual = gpui::VisualTestContext::from_window(*window, cx);
+        visual.run_until_parked();
+        assert!(
+            visual
+                .update(|_, cx| view.last_error(cx).unwrap())
+                .is_none(),
+            "{locale} input story recorded an error"
+        );
+        assert!(visual.update(|_, cx| {
+            view.accessibility_snapshot(cx)
+                .unwrap()
+                .find_by_role_and_name("text_field", "Host name")
+                .next()
+                .is_some()
+        }));
+    }
+}
+
+#[gpui::test]
 fn chart_diagnostic_story_exposes_last_good_invalid_semantics(cx: &mut TestAppContext) {
     cx.update(gpui_rhai::install);
     let (window, view) = mount_story(
