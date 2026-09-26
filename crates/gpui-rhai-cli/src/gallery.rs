@@ -1,0 +1,233 @@
+use std::collections::BTreeMap;
+
+use gpui_rhai::{
+    AssetData, EmbeddedScriptSource, EmbeddedScriptView, ModuleId, PreparedScriptView,
+    RuntimeEngine, ScriptApplication, load_theme_source,
+};
+use gpui_rhai_registry::{
+    AR_LOCALE, BUNDLED_ASSET_SOURCES, BUNDLED_CHART_SOURCES_BY_ID, BUNDLED_COMPONENT_SOURCES_BY_ID,
+    BUNDLED_MOTION_SOURCES_BY_ID, BUNDLED_STORIES, BUNDLED_THEME_SOURCES, EN_LOCALE,
+    StoryDefinition, ZH_CN_LOCALE,
+};
+
+pub const DEFAULT_STORY: &str = "components/button";
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GalleryLaunch {
+    pub story: String,
+    pub case: String,
+    pub theme: String,
+    pub locale: String,
+}
+
+impl Default for GalleryLaunch {
+    fn default() -> Self {
+        Self {
+            story: DEFAULT_STORY.to_owned(),
+            case: "basic".to_owned(),
+            theme: "default-dark".to_owned(),
+            locale: "en".to_owned(),
+        }
+    }
+}
+
+#[must_use]
+pub fn stories() -> &'static [StoryDefinition] {
+    BUNDLED_STORIES
+}
+
+#[must_use]
+pub fn list_text() -> String {
+    BUNDLED_STORIES
+        .iter()
+        .map(|story| {
+            let cases = story
+                .cases
+                .iter()
+                .map(|case| case.id)
+                .collect::<Vec<_>>()
+                .join(",");
+            format!(
+                "{}\t{}\t{}\t{}",
+                story.id, story.category, cases, story.title
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn resolve_story(id: &str, case: &str) -> Result<&'static StoryDefinition, String> {
+    let story = BUNDLED_STORIES
+        .iter()
+        .find(|story| story.id == id)
+        .ok_or_else(|| format!("unknown Gallery story `{id}`; run `gpui-rhai gallery --list`"))?;
+    if !story.cases.iter().any(|candidate| candidate.id == case) {
+        return Err(format!(
+            "unknown case `{case}` for Gallery story `{id}`; available: {}",
+            story
+                .cases
+                .iter()
+                .map(|candidate| candidate.id)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+    Ok(story)
+}
+
+fn theme_source(slug: &str) -> Result<(&'static str, &'static str), String> {
+    let normalized = slug.replace('-', "_");
+    BUNDLED_THEME_SOURCES
+        .iter()
+        .copied()
+        .find(|(name, _)| name.strip_suffix(".rhai") == Some(normalized.as_str()))
+        .ok_or_else(|| format!("unknown Gallery theme `{slug}`"))
+}
+
+fn locale_sources(locale: &str) -> Result<[(&'static str, &'static str); 3], String> {
+    if !matches!(locale, "en" | "zh-CN" | "ar") {
+        return Err(format!("unknown Gallery locale `{locale}`"));
+    }
+    Ok([
+        ("en.rhai", EN_LOCALE),
+        ("zh_cn.rhai", ZH_CN_LOCALE),
+        ("ar.rhai", AR_LOCALE),
+    ])
+}
+
+fn story_scripts(story: &StoryDefinition, source: String) -> Result<EmbeddedScriptSource, String> {
+    let mut modules = BTreeMap::new();
+    for &(id, source) in BUNDLED_COMPONENT_SOURCES_BY_ID
+        .iter()
+        .chain(BUNDLED_MOTION_SOURCES_BY_ID)
+        .chain(BUNDLED_CHART_SOURCES_BY_ID)
+    {
+        modules.insert(
+            ModuleId::parse(id).map_err(|error| error.to_string())?,
+            source.to_owned(),
+        );
+    }
+    modules.insert(
+        ModuleId::parse(story.source_module).map_err(|error| error.to_string())?,
+        source,
+    );
+    Ok(EmbeddedScriptSource::new(modules))
+}
+
+fn asset(bytes: &[u8]) -> AssetData {
+    AssetData {
+        mime_type: "image/svg+xml".to_owned(),
+        bytes: bytes.to_vec(),
+    }
+}
+
+/// Prepare one exact bundled story without opening a window.
+///
+/// # Errors
+///
+/// Returns a catalog, theme, locale, source, or runtime preparation error.
+pub fn prepare(launch: &GalleryLaunch) -> Result<PreparedScriptView, String> {
+    let story = resolve_story(&launch.story, &launch.case)?;
+    let (theme_name, primary_theme) = theme_source(&launch.theme)?;
+    let locale_sources = locale_sources(&launch.locale)?;
+    let engine = RuntimeEngine::new();
+    let selected = load_theme_source(engine.engine(), theme_name, primary_theme)
+        .map_err(|error| error.to_string())?;
+    let source = format!(
+        "{}\nfn init(ctx) {{ ctx.set_theme({}, {}); ctx.set_locale({}); }}\n",
+        story.source,
+        serde_json::to_string(&selected.family).map_err(|error| error.to_string())?,
+        serde_json::to_string(&selected.name).map_err(|error| error.to_string())?,
+        serde_json::to_string(&launch.locale).map_err(|error| error.to_string())?,
+    );
+    EmbeddedScriptView::new(
+        ModuleId::parse(story.source_module).map_err(|error| error.to_string())?,
+        story_scripts(story, source)?,
+        primary_theme,
+    )
+    .theme_sources(
+        BUNDLED_THEME_SOURCES
+            .iter()
+            .filter(|(name, _)| *name != theme_name)
+            .map(|(name, source)| ((*name).to_owned(), (*source).to_owned())),
+    )
+    .locale_sources(locale_sources.map(|(name, source)| (name.to_owned(), source.to_owned())))
+    .asset_sources(BUNDLED_ASSET_SOURCES.iter().map(|(path, source)| {
+        (
+            path.strip_suffix(".svg").unwrap_or(path).to_owned(),
+            asset(source.as_bytes()),
+        )
+    }))
+    .prepare()
+    .map_err(|error| error.to_string())
+}
+
+/// Run one exact bundled story in a standalone GPUI window.
+///
+/// # Errors
+///
+/// Returns a preparation or platform application error.
+pub fn run(launch: &GalleryLaunch) -> Result<(), String> {
+    ScriptApplication::new(prepare(launch)?)
+        .window_size(1080.0, 760.0)
+        .run()
+        .map_err(|error| error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn list_is_deterministic_and_does_not_prepare_a_window() {
+        assert_eq!(list_text().lines().count(), BUNDLED_STORIES.len());
+        assert!(list_text().starts_with("components/button\tactions\tbasic\t"));
+    }
+
+    #[test]
+    fn every_bundled_story_prepares_in_its_basic_case() {
+        for story in BUNDLED_STORIES {
+            prepare(&GalleryLaunch {
+                story: story.id.to_owned(),
+                ..GalleryLaunch::default()
+            })
+            .unwrap_or_else(|error| panic!("{}: {error}", story.id));
+        }
+    }
+
+    #[test]
+    fn invalid_story_case_theme_and_locale_are_explicit() {
+        let launch = GalleryLaunch {
+            story: "missing".to_owned(),
+            ..GalleryLaunch::default()
+        };
+        let Err(error) = prepare(&launch) else {
+            panic!("missing story must fail")
+        };
+        assert!(error.contains("unknown Gallery story"));
+        let launch = GalleryLaunch {
+            case: "missing".to_owned(),
+            ..GalleryLaunch::default()
+        };
+        let Err(error) = prepare(&launch) else {
+            panic!("missing case must fail")
+        };
+        assert!(error.contains("unknown case"));
+        let launch = GalleryLaunch {
+            theme: "missing".to_owned(),
+            ..GalleryLaunch::default()
+        };
+        let Err(error) = prepare(&launch) else {
+            panic!("missing theme must fail")
+        };
+        assert!(error.contains("unknown Gallery theme"));
+        let launch = GalleryLaunch {
+            locale: "missing".to_owned(),
+            ..GalleryLaunch::default()
+        };
+        let Err(error) = prepare(&launch) else {
+            panic!("missing locale must fail")
+        };
+        assert!(error.contains("unknown Gallery locale"));
+    }
+}

@@ -43,6 +43,24 @@ enum Command {
         /// Existing gpui-rhai theme to open. Omit to create a new draft.
         path: Option<PathBuf>,
     },
+    /// Browse first-party stories and the Operations Workbench.
+    Gallery {
+        /// Print the bundled story catalog without creating a window.
+        #[arg(long)]
+        list: bool,
+        /// Open one stable story ID.
+        #[arg(long)]
+        story: Option<String>,
+        /// Select a deterministic case within the story.
+        #[arg(long, default_value = "basic")]
+        case: String,
+        /// Select a bundled theme slug.
+        #[arg(long, default_value = "default-dark")]
+        theme: String,
+        /// Select en, zh-CN, or ar.
+        #[arg(long, default_value = "en")]
+        locale: String,
+    },
 }
 
 fn run(cli: Cli) -> Result<(), ProjectError> {
@@ -100,6 +118,28 @@ fn run(cli: Cli) -> Result<(), ProjectError> {
                 println!("would open Theme Studio");
             } else {
                 gpui_rhai_cli::theme_studio::run(root, path).map_err(ProjectError::ThemeStudio)?;
+            }
+        }
+        Command::Gallery {
+            list,
+            story,
+            case,
+            theme,
+            locale,
+        } => {
+            if list {
+                println!("{}", gpui_rhai_cli::gallery::list_text());
+            } else if cli.dry_run {
+                println!("would open Gallery");
+            } else {
+                gpui_rhai_cli::gallery::run(&gpui_rhai_cli::gallery::GalleryLaunch {
+                    story: story
+                        .unwrap_or_else(|| gpui_rhai_cli::gallery::DEFAULT_STORY.to_owned()),
+                    case,
+                    theme,
+                    locale,
+                })
+                .map_err(ProjectError::Gallery)?;
             }
         }
     }
