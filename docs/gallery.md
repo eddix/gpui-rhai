@@ -69,12 +69,13 @@ locale propagation, Reset, and the native Chinese IME regression.
 `apps/operations` is a connected local application rather than a specimen
 grid. Its pages share one formal-component state model:
 
-- Dashboard consumes Rust-owned `NativeChartData`.
+- Dashboard consumes Rust-owned `NativeChartData` and a recent-events
+  `NativeCollection`.
 - Hosts consumes a Rust-owned, virtualized `NativeCollection`, including
   semantic Badge adornments, Rust-side search/sort/page/group projection,
   Pagination, and a controlled Host details Sheet.
-- Configurations combines Input, CodeViewer, DiffViewer, and deployment
-  staging.
+- Configurations combines Input, CodeViewer, DiffViewer, Host-owned revisioned
+  `NativeTextDocument` configuration snapshots, and deployment staging.
 - Deployments presents bounded Host progress, failure, Progress, Badge, and
   Toast feedback.
 - Settings demonstrates state-preserving theme selection.

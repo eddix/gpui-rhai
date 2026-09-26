@@ -5,8 +5,8 @@ use gpui_rhai::gpui::prelude::*;
 use gpui_rhai::{
     AppManifest, AssetData, CapabilityDescriptor, CapabilityId, CapabilityMethod, ChartDataLimits,
     ChartDataset, ChartGeoMap, EmbeddedScriptSource, EmbeddedScriptView, HostSlotRegistry,
-    ModuleId, NativeChartData, NativeCollection, PreparedScriptView, RuntimeEngine,
-    ScriptViewExtension, SubscriptionCapabilityHandler, SubscriptionWork, ThemeMode,
+    ModuleId, NativeChartData, NativeCollection, NativeTextDocument, PreparedScriptView,
+    RuntimeEngine, ScriptViewExtension, SubscriptionCapabilityHandler, SubscriptionWork, ThemeMode,
     ThemeTokenOverrides, ThemeVariant, UiRuntimeState, UiValue, ValueSchema, extract_imports,
     load_theme_source,
 };
@@ -277,6 +277,34 @@ impl ScriptViewExtension for OperationsFixture {
             .native_collections
             .register("operations_hosts", operations_hosts(&self.fixture_case)?)
             .map_err(|error| error.to_string())?;
+        runtime
+            .native_collections
+            .register("operations_events", operations_events(&self.fixture_case)?)
+            .map_err(|error| error.to_string())?;
+        runtime
+            .native_documents
+            .register(
+                "operations_config_left",
+                NativeTextDocument::new(
+                    "operations_config_left",
+                    1,
+                    "server {\n  host = \"edge-01\"\n  channel = \"stable\"\n  port = 443\n}\n",
+                )
+                .map_err(|error| error.to_string())?,
+            )
+            .map_err(|error| error.to_string())?;
+        runtime
+            .native_documents
+            .register(
+                "operations_config_right",
+                NativeTextDocument::new(
+                    "operations_config_right",
+                    1,
+                    "server {\n  host = \"edge-02\"\n  channel = \"candidate\"\n  port = 8443\n}\n",
+                )
+                .map_err(|error| error.to_string())?,
+            )
+            .map_err(|error| error.to_string())?;
         runtime.native_chart_data.insert(
             "operations_metrics".to_owned(),
             operations_metrics(&self.fixture_case)?,
@@ -451,6 +479,57 @@ fn operations_metrics(fixture_case: &str) -> Result<NativeChartData, String> {
     )
     .map_err(|error| error.to_string())?;
     NativeChartData::new([dataset], ChartDataLimits::default()).map_err(|error| error.to_string())
+}
+
+fn operations_events(fixture_case: &str) -> Result<NativeCollection, String> {
+    let rows = if matches!(fixture_case, "loading" | "empty") {
+        Vec::new()
+    } else {
+        let mut rows = vec![
+            ("e1", "09:20", "Configuration verified", "Info", "neutral"),
+            (
+                "e2",
+                "09:18",
+                "edge-02 deployment started",
+                "Active",
+                "accent",
+            ),
+            (
+                "e3",
+                "09:12",
+                "edge-03 drift detected",
+                "Warning",
+                "warning",
+            ),
+        ];
+        if fixture_case == "failure" {
+            rows.push(("e4", "09:22", "edge-04 is unreachable", "Failed", "danger"));
+        }
+        if fixture_case == "streaming" {
+            rows.push((
+                "e5",
+                "09:25",
+                "Metric stream revision advanced",
+                "Live",
+                "success",
+            ));
+        }
+        rows.into_iter()
+            .map(|(id, time, event, severity, variant)| {
+                BTreeMap::from([
+                    ("id".to_owned(), UiValue::String(id.to_owned())),
+                    ("time".to_owned(), UiValue::String(time.to_owned())),
+                    ("event".to_owned(), UiValue::String(event.to_owned())),
+                    ("severity".to_owned(), UiValue::String(severity.to_owned())),
+                    (
+                        "severity_variant".to_owned(),
+                        UiValue::String(variant.to_owned()),
+                    ),
+                ])
+            })
+            .collect()
+    };
+    NativeCollection::new("id", rows).map_err(|error| error.to_string())
 }
 
 #[allow(clippy::cast_precision_loss)]

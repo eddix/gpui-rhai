@@ -269,6 +269,62 @@ fn operations_workbench_completes_and_cancels_the_deployment_boundary(cx: &mut T
 }
 
 #[gpui::test]
+fn workbench_consumes_host_owned_events_and_configuration_documents(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let (dashboard_window, dashboard) = mount_story(
+        cx,
+        GalleryLaunch {
+            story: "apps/operations".to_owned(),
+            ..GalleryLaunch::default()
+        },
+        "operations-host-events",
+    );
+    let mut dashboard_visual =
+        gpui::VisualTestContext::from_window(*dashboard_window, cx);
+    assert!(dashboard_visual.update(|_, cx| {
+        dashboard
+            .accessibility_snapshot(cx)
+            .unwrap()
+            .find_by_role_and_name("table", "Recent operations events")
+            .next()
+            .is_some()
+    }));
+    drop(dashboard_visual);
+
+    let (config_window, config) = mount_story(
+        cx,
+        GalleryLaunch {
+            story: "apps/operations".to_owned(),
+            case: "config-diff".to_owned(),
+            ..GalleryLaunch::default()
+        },
+        "operations-host-config",
+    );
+    let mut config_visual = gpui::VisualTestContext::from_window(*config_window, cx);
+    let invalidated = config_visual
+        .update(|_, cx| {
+            config.replace_native_text_document(
+                "operations_config_right",
+                gpui_rhai::NativeTextDocument::new(
+                    "operations_config_right",
+                    2,
+                    "server {\n  host = \"edge-02\"\n  channel = \"canary\"\n}\n",
+                )
+                .unwrap(),
+                cx,
+            )
+        })
+        .unwrap();
+    assert!(invalidated, "configuration document reader was not tracked");
+    config_visual.run_until_parked();
+    assert!(
+        config_visual
+            .update(|_, cx| config.last_error(cx).unwrap())
+            .is_none()
+    );
+}
+
+#[gpui::test]
 fn operations_workbench_failure_keeps_the_previous_configuration(cx: &mut TestAppContext) {
     cx.executor().allow_parking();
     cx.update(gpui_rhai::install);

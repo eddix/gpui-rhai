@@ -230,7 +230,15 @@ fn dashboard(ctx) {
             spec: #{ interaction: #{ wheel_zoom: "modifier" }, title: "Latency",
                 legend: #{ visible: false }, series: [#{ key: "latency", kind: "line",
                     encode: #{ x: "minute", y: "latency" } }] }
-        }).with_style(style().width(relative(1.0)).height(px(280)))
+        }).with_style(style().width(relative(1.0)).height(px(280))),
+        text("Recent events").with_style(style().typography("title")),
+        table::Table(#{ key: "operations-events", label: "Recent operations events", row_key: "id",
+            rows: ctx.get_native_collection("operations_events"), height: 150,
+            columns: [
+                #{ key: "time", title: "Time", width: #{ kind: "fixed", value: 80 } },
+                #{ key: "event", title: "Event", width: #{ kind: "flex", value: 1 },
+                    adornments: [#{ text_key: "severity", variant_key: "severity_variant", dot: true }] },
+            ] })
     ]).with_style(style().gap(theme_spacing("md")))
 }
 
@@ -282,8 +290,8 @@ fn configurations(ctx) {
     let selected = ctx.get_state("selected_hosts");
     let left_host = if selected.len > 0 { selected[0] } else { "edge-01" };
     let right_host = if selected.len > 1 { selected[1] } else { "edge-02" };
-    let left = `server {\n  host = \"${left_host}\"\n  channel = \"stable\"\n  port = 443\n}\n`;
-    let right = `server {\n  host = \"${right_host}\"\n  channel = \"${ctx.get_state("release_channel")}\"\n  port = 8443\n}\n`;
+    let left = ctx.get_native_text_document("operations_config_left");
+    let right = ctx.get_native_text_document("operations_config_right");
     column([
         page_header("Configurations", "Compare two hosts, then stage a deterministic deployment."),
         input::Input(#{ key: "release-channel", label: "Release channel",
