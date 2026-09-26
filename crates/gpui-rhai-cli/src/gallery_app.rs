@@ -10,7 +10,7 @@ use gpui_rhai::{
     AssetData, EmbeddedScriptSource, EmbeddedScriptView, EventResponse, HostSlotRegistry, ModuleId,
     MotionPreference, NativeEvent, NativeHandlerDescriptor, NativeHandlerId, NativeTextDocument,
     RuntimeEngine, ScriptViewConfig, ScriptViewExtension, ScriptViewHandle, ScriptViewHost,
-    ValueSchema, install, load_theme_source,
+    ValueSchema, install,
 };
 use gpui_rhai_registry::{
     AR_LOCALE, BUNDLED_ASSET_SOURCES, BUNDLED_COMPONENT_SOURCES_BY_ID, BUNDLED_STORIES,
@@ -19,7 +19,8 @@ use gpui_rhai_registry::{
 };
 
 use super::gallery::{
-    GalleryLaunch, host_resident_view, prepare, story_source, view_with_host_slots,
+    GalleryLaunch, bundled_dependency_modules, host_resident_view, prepare, story_source,
+    view_with_host_slots,
 };
 
 const RETAINED_STORY_LIMIT: usize = 8;
@@ -518,24 +519,18 @@ fn prepare_navigation(
         .copied()
         .find(|(name, _)| name.strip_suffix(".rhai") == Some(normalized_theme.as_str()))
         .ok_or_else(|| format!("unknown Gallery theme `{}`", launch.theme))?;
-    let engine = RuntimeEngine::new();
-    let selected = load_theme_source(engine.engine(), theme_name, primary_theme)
-        .map_err(|error| error.to_string())?;
     let source = GALLERY_NAVIGATION_SOURCE.to_owned();
-    let source = format!(
-        "{source}\nfn init(ctx) {{ ctx.set_theme({}, {}); ctx.set_locale({}); }}\n",
-        serde_json::to_string(&selected.family).map_err(|error| error.to_string())?,
-        serde_json::to_string(&selected.name).map_err(|error| error.to_string())?,
-        serde_json::to_string(&launch.locale).map_err(|error| error.to_string())?,
-    );
+    let source = if launch.locale == "en" {
+        format!("{source}\nfn init(ctx) {{}}\n")
+    } else {
+        format!(
+            "{source}\nfn init(ctx) {{ ctx.set_locale({}); }}\n",
+            serde_json::to_string(&launch.locale).map_err(|error| error.to_string())?,
+        )
+    };
     let entry = ModuleId::parse("stories/gallery/navigation").map_err(|error| error.to_string())?;
-    let mut modules = BTreeMap::from([(entry.clone(), source)]);
-    for &(id, source) in BUNDLED_COMPONENT_SOURCES_BY_ID {
-        modules.insert(
-            ModuleId::parse(id).map_err(|error| error.to_string())?,
-            source.to_owned(),
-        );
-    }
+    let mut modules = bundled_dependency_modules(&source, &["components/input"])?;
+    modules.insert(entry.clone(), source);
     EmbeddedScriptView::new(entry, EmbeddedScriptSource::new(modules), primary_theme)
         .theme_sources(
             BUNDLED_THEME_SOURCES
@@ -586,16 +581,15 @@ fn prepare_source_view(
         .copied()
         .find(|(name, _)| name.strip_suffix(".rhai") == Some(normalized_theme.as_str()))
         .ok_or_else(|| format!("unknown Gallery theme `{}`", launch.theme))?;
-    let engine = RuntimeEngine::new();
-    let selected = load_theme_source(engine.engine(), theme_name, primary_theme)
-        .map_err(|error| error.to_string())?;
-    let source = format!(
-        "{}\nfn init(ctx) {{ ctx.set_theme({}, {}); ctx.set_locale({}); }}\n",
-        GALLERY_SOURCE_VIEW_SOURCE,
-        serde_json::to_string(&selected.family).map_err(|error| error.to_string())?,
-        serde_json::to_string(&selected.name).map_err(|error| error.to_string())?,
-        serde_json::to_string(&launch.locale).map_err(|error| error.to_string())?,
-    );
+    let source = if launch.locale == "en" {
+        format!("{GALLERY_SOURCE_VIEW_SOURCE}\nfn init(ctx) {{}}\n")
+    } else {
+        format!(
+            "{}\nfn init(ctx) {{ ctx.set_locale({}); }}\n",
+            GALLERY_SOURCE_VIEW_SOURCE,
+            serde_json::to_string(&launch.locale).map_err(|error| error.to_string())?,
+        )
+    };
     let entry = ModuleId::parse("stories/gallery/source").map_err(|error| error.to_string())?;
     let modules = BTreeMap::from([
         (entry.clone(), source),

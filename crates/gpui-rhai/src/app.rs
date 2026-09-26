@@ -591,6 +591,7 @@ pub struct ScriptViewPerformanceSnapshot {
     pub virtual_collections: Vec<crate::VirtualCollectionMetrics>,
     pub retained_nodes: usize,
     pub dirty_components: usize,
+    pub dirty_component_paths: Vec<String>,
     pub pending_virtual_requests: bool,
 }
 
@@ -796,12 +797,22 @@ impl ScriptViewHandle {
     ) -> Result<ScriptViewPerformanceSnapshot, ScriptViewError> {
         self.require_not_disposed()?;
         Ok(self.0.entity.update(cx, |view, _| {
-            let (virtual_collections, dirty_components, pending_virtual_requests) = {
+            let (
+                virtual_collections,
+                dirty_components,
+                dirty_component_paths,
+                pending_virtual_requests,
+            ) = {
                 let runtime_handle = view.lifecycle.runtime();
                 let runtime = runtime_handle.borrow();
                 (
                     runtime.virtual_requests.inspect(),
                     runtime.dirty_components().len(),
+                    runtime
+                        .dirty_components()
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect(),
                     runtime.has_virtual_requests(),
                 )
             };
@@ -810,6 +821,7 @@ impl ScriptViewHandle {
                 virtual_collections,
                 retained_nodes: view.lifecycle.retained().len(),
                 dirty_components,
+                dirty_component_paths,
                 pending_virtual_requests,
             }
         }))

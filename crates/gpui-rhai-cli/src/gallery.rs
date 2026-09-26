@@ -7,7 +7,8 @@ use gpui_rhai::{
     ChartDataset, ChartGeoMap, EmbeddedScriptSource, EmbeddedScriptView, HostSlotRegistry,
     ModuleId, NativeChartData, NativeCollection, PreparedScriptView, RuntimeEngine,
     ScriptViewExtension, SubscriptionCapabilityHandler, SubscriptionWork, ThemeMode,
-    ThemeTokenOverrides, ThemeVariant, UiRuntimeState, UiValue, ValueSchema, load_theme_source,
+    ThemeTokenOverrides, ThemeVariant, UiRuntimeState, UiValue, ValueSchema, extract_imports,
+    load_theme_source,
 };
 use gpui_rhai_registry::{
     AR_LOCALE, BUNDLED_ASSET_SOURCES, BUNDLED_CHART_SOURCES_BY_ID, BUNDLED_COMPONENT_SOURCES_BY_ID,
@@ -210,17 +211,7 @@ fn locale_sources(locale: &str) -> Result<[(&'static str, &'static str); 3], Str
 }
 
 fn story_scripts(story: &StoryDefinition, source: String) -> Result<EmbeddedScriptSource, String> {
-    let mut modules = BTreeMap::new();
-    for &(id, source) in BUNDLED_COMPONENT_SOURCES_BY_ID
-        .iter()
-        .chain(BUNDLED_MOTION_SOURCES_BY_ID)
-        .chain(BUNDLED_CHART_SOURCES_BY_ID)
-    {
-        modules.insert(
-            ModuleId::parse(id).map_err(|error| error.to_string())?,
-            source.to_owned(),
-        );
-    }
+    let mut modules = bundled_dependency_modules(&source, story.module_ids)?;
     modules.insert(
         ModuleId::parse(story.source_module).map_err(|error| error.to_string())?,
         source,
@@ -228,10 +219,50 @@ fn story_scripts(story: &StoryDefinition, source: String) -> Result<EmbeddedScri
     Ok(EmbeddedScriptSource::new(modules))
 }
 
+fn bundled_module_source(id: &str) -> Option<&'static str> {
+    BUNDLED_COMPONENT_SOURCES_BY_ID
+        .iter()
+        .chain(BUNDLED_MOTION_SOURCES_BY_ID)
+        .chain(BUNDLED_CHART_SOURCES_BY_ID)
+        .find_map(|(candidate, source)| (*candidate == id).then_some(*source))
+}
+
+pub(crate) fn bundled_dependency_modules(
+    root_source: &str,
+    required: &[&str],
+) -> Result<BTreeMap<ModuleId, String>, String> {
+    let mut pending = extract_imports(root_source).map_err(|error| error.to_string())?;
+    for id in required {
+        pending.insert(ModuleId::parse(*id).map_err(|error| error.to_string())?);
+    }
+    let mut modules = BTreeMap::new();
+    while let Some(id) = pending.pop_first() {
+        if modules.contains_key(&id) {
+            continue;
+        }
+        let source = bundled_module_source(id.as_str())
+            .ok_or_else(|| format!("Gallery source imports unknown bundled module `{id}`"))?;
+        pending.extend(extract_imports(source).map_err(|error| error.to_string())?);
+        modules.insert(id, source.to_owned());
+    }
+    Ok(modules)
+}
+
 fn asset(bytes: &[u8]) -> AssetData {
     AssetData {
         mime_type: "image/svg+xml".to_owned(),
         bytes: bytes.to_vec(),
+    }
+}
+
+fn story_init_source(locale: &str) -> Result<String, String> {
+    if locale == "en" {
+        Ok("fn init(ctx) {}".to_owned())
+    } else {
+        Ok(format!(
+            "fn init(ctx) {{ ctx.set_locale({}); }}",
+            serde_json::to_string(locale).map_err(|error| error.to_string())?
+        ))
     }
 }
 
@@ -462,13 +493,7 @@ fn build_view(
     let source = if story.fixture == Some("component-catalog") {
         story_source
     } else {
-        format!(
-            "{}\nfn init(ctx) {{ ctx.set_theme({}, {}); ctx.set_locale({}); }}\n",
-            story_source,
-            serde_json::to_string(&selected.family).map_err(|error| error.to_string())?,
-            serde_json::to_string(&selected.name).map_err(|error| error.to_string())?,
-            serde_json::to_string(&launch.locale).map_err(|error| error.to_string())?,
-        )
+        format!("{}\n{}\n", story_source, story_init_source(&launch.locale)?)
     };
     let entry = ModuleId::parse(story.source_module).map_err(|error| error.to_string())?;
     let mut view =
@@ -539,6 +564,7 @@ pub fn view(launch: &GalleryLaunch) -> Result<EmbeddedScriptView, String> {
     build_view(launch, None, None)
 }
 
+/// Build a Gallery story with a caller-supplied HostSlot registry.
 #[doc(hidden)]
 pub fn view_with_host_slots(
     launch: &GalleryLaunch,
@@ -547,27 +573,19 @@ pub fn view_with_host_slots(
     build_view(launch, None, Some(slots))
 }
 
+/// Build the resident form used by the HostSlot acceptance story.
 #[doc(hidden)]
 pub fn host_resident_view(launch: &GalleryLaunch) -> Result<EmbeddedScriptView, String> {
     let (theme_name, primary_theme) = theme_source(&launch.theme)?;
-    let engine = RuntimeEngine::new();
-    let selected = load_theme_source(engine.engine(), theme_name, primary_theme)
-        .map_err(|error| error.to_string())?;
     let source = format!(
-        "{}\nfn init(ctx) {{ ctx.set_theme({}, {}); ctx.set_locale({}); }}\n",
+        "{}\n{}\n",
         HOST_RESIDENT_STORY_SOURCE,
-        serde_json::to_string(&selected.family).map_err(|error| error.to_string())?,
-        serde_json::to_string(&selected.name).map_err(|error| error.to_string())?,
-        serde_json::to_string(&launch.locale).map_err(|error| error.to_string())?,
+        story_init_source(&launch.locale)?
     );
     let entry = ModuleId::parse("stories/apps/host_resident").map_err(|error| error.to_string())?;
-    let mut modules = BTreeMap::from([(entry.clone(), source)]);
-    for &(id, source) in BUNDLED_COMPONENT_SOURCES_BY_ID {
-        modules.insert(
-            ModuleId::parse(id).map_err(|error| error.to_string())?,
-            source.to_owned(),
-        );
-    }
+    let mut modules =
+        bundled_dependency_modules(&source, &["components/input", "components/textarea"])?;
+    modules.insert(entry.clone(), source);
     Ok(
         EmbeddedScriptView::new(entry, EmbeddedScriptSource::new(modules), primary_theme)
             .theme_sources(
@@ -589,7 +607,7 @@ pub fn host_resident_view(launch: &GalleryLaunch) -> Result<EmbeddedScriptView, 
     )
 }
 
-/// Build the source-identical Chart catalog with benchmark-owned streaming data.
+/// Build the source-identical streaming Chart story with benchmark-owned data.
 ///
 /// This is public for the independent performance workspace; applications
 /// should use [`view`] or [`prepare`] instead.
@@ -598,12 +616,12 @@ pub fn host_resident_view(launch: &GalleryLaunch) -> Result<EmbeddedScriptView, 
 ///
 /// Returns a catalog, theme, locale, source, or runtime assembly error.
 #[doc(hidden)]
-pub fn chart_catalog_view_with_stream(
+pub fn chart_streaming_view_with_data(
     stream: NativeChartData,
 ) -> Result<EmbeddedScriptView, String> {
     build_view(
         &GalleryLaunch {
-            story: "charts/catalog".to_owned(),
+            story: "charts/streaming".to_owned(),
             ..GalleryLaunch::default()
         },
         Some(stream),
