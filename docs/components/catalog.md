@@ -7,7 +7,7 @@ official component receives a private high-level node constructor.
 Run the interactive catalog from this repository:
 
 ```text
-cargo run -p gpui-rhai --example component_gallery
+cargo run --release -p gpui-rhai-cli -- gallery --story components/catalog
 ```
 
 The gallery is a live component workbench, not a static visual catalog. Enabled
@@ -93,6 +93,17 @@ keyboard steps emit one schema-checked `change(number)` request.
 trackpad scrolling; the generic runtime owns themed overlay tracks/thumbs,
 dragging, RTL edge placement, and per-axis `auto`, `always`, or `hidden`
 visibility. The normal element-ref scroll commands remain available.
+
+Table columns may declare up to four structured `adornments`. Each adornment
+reads `text_key` from the row and renders a compact Badge after the cell text;
+`variant` is fixed or `variant_key` reads one of `neutral`, `accent`, `success`,
+`warning`, or `danger` from the row, and `dot` enables the semantic status dot.
+The same declaration works for Array and `NativeCollection` rows. Native data
+projects only the realized rows and never invokes a per-cell Rhai renderer, so
+status/count pills do not discard Table virtualization or keyboard behavior.
+Table also accepts controlled `query`/`search_fields` and one-based
+`page`/`page_size`; NativeCollection performs sort, filter, page, and group
+ordering in Rust before virtual projection.
 
 ## Navigation and data
 

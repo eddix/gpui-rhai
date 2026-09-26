@@ -51,16 +51,14 @@ themes materialize their own syntax/search/diff palette from semantic anchors;
 explicit namespaced overrides remain editable data in the canonical theme.
 
 Product examples remain responsible for realistic application composition;
-Theme Studio is the single exhaustive component/theme contract. The standalone
-`component_gallery` example uses the same specimen source but adds category
-navigation and live switching across every bundled theme:
+Theme Studio is the focused theme editor. The formal Gallery reuses its
+curated specimen source and adds category navigation, exact source display,
+viewport/Motion controls, and live switching across bundled themes:
 
 ```text
-cargo run -p gpui-rhai --example component_gallery
+cargo run --release -p gpui-rhai-cli -- gallery --story components/catalog
 ```
 
-The editor and specimen panes scroll independently. Gallery visual runs also
-accept `GPUI_RHAI_VISUAL_THEME`, `GPUI_RHAI_VISUAL_LOCALE`, and
-`GPUI_RHAI_VISUAL_STATE`; states include the six categories, `compact`,
-`regular`, `documents`, `dialog`, `popover`, `menu`, `toast`, `command-dialog`, `sheet`, and
-`alert-dialog`.
+The editor and specimen panes scroll independently. Gallery launches accept
+`--theme`, `--locale`, `--story`, and `--case`; viewport and Motion policy are
+changed without recompiling or resetting story state.

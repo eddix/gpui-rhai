@@ -839,7 +839,7 @@ fn gallery_content(ctx) {
         column([specimen_documents()])
             .with_style(style().padding(px(14)).gap(px(14)))
     } else if category == "overlays" {
-        column([specimen_overlays(ctx), specimen_p0(ctx)])
+        column([specimen_overlays(ctx)])
             .with_style(style().padding(px(14)).gap(px(14)))
     } else { specimen(ctx) }
 }

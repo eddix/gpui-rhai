@@ -12,6 +12,11 @@ macro_rules! bundled_components {
             $(($id, $constant),)+
         ];
 
+        /// Every official component module ID in deterministic registry order.
+        pub const BUNDLED_COMPONENT_MODULE_IDS: &[&str] = &[
+            $($id,)+
+        ];
+
         /// Every official component source in deterministic installation order.
         pub const BUNDLED_COMPONENT_SOURCES: &[&str] = &[
             $($constant,)+
@@ -392,6 +397,410 @@ pub const ZH_CN_LOCALE: &str = include_str!("../locales/zh_cn.rhai");
 pub const AR_LOCALE: &str = include_str!("../locales/ar.rhai");
 pub const STUDIO_SOURCE: &str = include_str!("../studio/theme_studio.rhai");
 
+/// One deterministic, source-backed case exposed by the first-party Gallery.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StoryCase {
+    pub id: &'static str,
+    pub title: &'static str,
+    pub purpose: &'static str,
+}
+
+/// Static first-party story metadata shared by Gallery, Theme Studio, and tests.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StoryDefinition {
+    pub id: &'static str,
+    pub title: &'static str,
+    pub purpose: &'static str,
+    pub category: &'static str,
+    pub keywords: &'static [&'static str],
+    pub module_ids: &'static [&'static str],
+    pub source_module: &'static str,
+    pub source: &'static str,
+    pub cases: &'static [StoryCase],
+    pub fixture: Option<&'static str>,
+    pub required_features: &'static [&'static str],
+    pub platforms: &'static [&'static str],
+    pub test_requirements: &'static [&'static str],
+    pub documentation: &'static str,
+    pub theme_studio: bool,
+}
+
+pub const BUTTON_STORY_SOURCE: &str = include_str!("../stories/components/button.rhai");
+pub const TABS_STORY_SOURCE: &str = include_str!("../stories/components/tabs.rhai");
+pub const INPUT_STORY_SOURCE: &str = include_str!("../stories/components/input.rhai");
+pub const TABLE_STORY_SOURCE: &str = include_str!("../stories/components/table.rhai");
+pub const CHART_INTERACTION_STORY_SOURCE: &str = include_str!("../stories/charts/interaction.rhai");
+pub const CHART_CATALOG_STORY_SOURCE: &str = include_str!("../stories/charts/catalog.rhai");
+pub const CHART_STREAMING_STORY_SOURCE: &str = include_str!("../stories/charts/streaming.rhai");
+pub const MOTION_CATALOG_STORY_SOURCE: &str = include_str!("../stories/motion/catalog.rhai");
+pub const OPERATIONS_STORY_SOURCE: &str = include_str!("../stories/apps/operations.rhai");
+pub const HOST_EMBEDDING_STORY_SOURCE: &str = include_str!("../stories/apps/host_embedding.rhai");
+pub const HOST_RESIDENT_STORY_SOURCE: &str = include_str!("../stories/apps/host_resident.rhai");
+pub const GALLERY_NAVIGATION_SOURCE: &str = include_str!("../stories/gallery/navigation.rhai");
+pub const GALLERY_SOURCE_VIEW_SOURCE: &str = include_str!("../stories/gallery/source.rhai");
+
+const BASIC_CASE: &[StoryCase] = &[StoryCase {
+    id: "basic",
+    title: "Basic",
+    purpose: "Exercise the normal controlled interaction path.",
+}];
+
+const NO_FEATURES: &[&str] = &[];
+const CHARTS_FEATURE: &[&str] = &["charts"];
+const DESKTOP_PLATFORMS: &[&str] = &["macos", "linux"];
+const STANDARD_STORY_TESTS: &[&str] = &["prepare", "mount", "draw", "semantics", "interaction"];
+const WORKBENCH_TESTS: &[&str] = &[
+    "prepare",
+    "mount",
+    "draw",
+    "semantics",
+    "normal",
+    "cancel",
+    "failure",
+    "streaming",
+    "large",
+];
+
+const COMPONENT_CATALOG_CASES: &[StoryCase] = &[
+    StoryCase {
+        id: "basic",
+        title: "Foundations",
+        purpose: "Inspect actions, status, application chrome, and public-launch foundations.",
+    },
+    StoryCase {
+        id: "forms",
+        title: "Forms",
+        purpose: "Exercise editing, choice, selection, validation, and IME-ready controls.",
+    },
+    StoryCase {
+        id: "navigation",
+        title: "Navigation & data",
+        purpose: "Exercise Tabs, disclosure, virtual Table, sorting, and pagination.",
+    },
+    StoryCase {
+        id: "documents",
+        title: "Code & diff",
+        purpose: "Render the native CodeViewer and direction-neutral DiffViewer surfaces.",
+    },
+    StoryCase {
+        id: "overlays",
+        title: "Commands & overlays",
+        purpose: "Open menus, dialogs, sheets, command surfaces, tooltips, and toasts.",
+    },
+];
+
+const CHART_INTERACTION_CASES: &[StoryCase] = &[
+    StoryCase {
+        id: "basic",
+        title: "Titles & wheel",
+        purpose: "Compare absent/explicit titles and plain-wheel propagation.",
+    },
+    StoryCase {
+        id: "diagnostics",
+        title: "Invalid diagnostics",
+        purpose: "Break a valid chart and inspect last-good rendering plus invalid semantics.",
+    },
+];
+
+const OPERATIONS_CASES: &[StoryCase] = &[
+    StoryCase {
+        id: "basic",
+        title: "Dashboard",
+        purpose: "Enter the complete Operations Workbench on its dashboard.",
+    },
+    StoryCase {
+        id: "config-diff",
+        title: "Configuration diff",
+        purpose: "Start at the cross-host configuration comparison and deployment flow.",
+    },
+    StoryCase {
+        id: "theme-overrides",
+        title: "Host theme overrides",
+        purpose: "Apply nonzero Host radii uniformly and preserve Workbench state across themes.",
+    },
+    StoryCase {
+        id: "loading",
+        title: "Loading",
+        purpose: "Present deterministic loading surfaces without starting background work.",
+    },
+    StoryCase {
+        id: "empty",
+        title: "Empty",
+        purpose: "Present actionable empty Dashboard and Hosts states.",
+    },
+    StoryCase {
+        id: "failure",
+        title: "Partial failure",
+        purpose: "Keep healthy data usable while one host and a simulated deployment fail.",
+    },
+    StoryCase {
+        id: "streaming",
+        title: "Streaming update",
+        purpose: "Consume a bounded Rust subscription and expose its latest revision.",
+    },
+    StoryCase {
+        id: "large",
+        title: "Large dataset",
+        purpose: "Exercise a 1,000-row Rust NativeCollection through the virtualized Table.",
+    },
+];
+
+pub const BUNDLED_STORIES: &[StoryDefinition] = &[
+    StoryDefinition {
+        id: "components/catalog",
+        title: "Component Catalog",
+        purpose: "Browse every official component through the shared responsive design specimen.",
+        category: "components",
+        keywords: &[
+            "component",
+            "control",
+            "form",
+            "navigation",
+            "data",
+            "overlay",
+            "document",
+        ],
+        module_ids: BUNDLED_COMPONENT_MODULE_IDS,
+        source_module: "stories/components/catalog",
+        source: STUDIO_SOURCE,
+        cases: COMPONENT_CATALOG_CASES,
+        fixture: Some("component-catalog"),
+        required_features: NO_FEATURES,
+        platforms: DESKTOP_PLATFORMS,
+        test_requirements: STANDARD_STORY_TESTS,
+        documentation: "docs/components/catalog.md",
+        theme_studio: true,
+    },
+    StoryDefinition {
+        id: "components/button",
+        title: "Button, Badge, and Tag",
+        purpose: "Compare action, status, and metadata density with real activation.",
+        category: "actions",
+        keywords: &["action", "badge", "tag", "density", "button"],
+        module_ids: &["components/button", "components/badge", "components/tag"],
+        source_module: "stories/components/button",
+        source: BUTTON_STORY_SOURCE,
+        cases: BASIC_CASE,
+        fixture: None,
+        required_features: NO_FEATURES,
+        platforms: DESKTOP_PLATFORMS,
+        test_requirements: STANDARD_STORY_TESTS,
+        documentation: "docs/components/catalog.md#actions-choices-and-forms",
+        theme_studio: true,
+    },
+    StoryDefinition {
+        id: "components/input",
+        title: "Input and Textarea",
+        purpose: "Exercise controlled single-line and multiline native editing.",
+        category: "forms",
+        keywords: &["form", "ime", "text", "input", "textarea"],
+        module_ids: &["components/input", "components/textarea"],
+        source_module: "stories/components/input",
+        source: INPUT_STORY_SOURCE,
+        cases: BASIC_CASE,
+        fixture: None,
+        required_features: NO_FEATURES,
+        platforms: DESKTOP_PLATFORMS,
+        test_requirements: STANDARD_STORY_TESTS,
+        documentation: "docs/components/catalog.md#actions-choices-and-forms",
+        theme_studio: true,
+    },
+    StoryDefinition {
+        id: "components/tabs",
+        title: "Tabs",
+        purpose: "Exercise controlled selection, content layout, and disabled navigation.",
+        category: "navigation",
+        keywords: &["navigation", "selection", "panel", "tabs"],
+        module_ids: &["components/tabs", "components/table", "charts/chart"],
+        source_module: "stories/components/tabs",
+        source: TABS_STORY_SOURCE,
+        cases: BASIC_CASE,
+        fixture: None,
+        required_features: CHARTS_FEATURE,
+        platforms: DESKTOP_PLATFORMS,
+        test_requirements: STANDARD_STORY_TESTS,
+        documentation: "docs/components/catalog.md#tabs",
+        theme_studio: true,
+    },
+    StoryDefinition {
+        id: "components/table",
+        title: "Table",
+        purpose: "Exercise controlled sorting, selection, and semantic cell adornments.",
+        category: "data",
+        keywords: &["data", "virtual", "selection", "badge", "table"],
+        module_ids: &["components/table", "components/badge"],
+        source_module: "stories/components/table",
+        source: TABLE_STORY_SOURCE,
+        cases: BASIC_CASE,
+        fixture: None,
+        required_features: NO_FEATURES,
+        platforms: DESKTOP_PLATFORMS,
+        test_requirements: STANDARD_STORY_TESTS,
+        documentation: "docs/components/catalog.md#navigation-and-data",
+        theme_studio: true,
+    },
+    StoryDefinition {
+        id: "charts/interaction",
+        title: "Chart titles and wheel interaction",
+        purpose: "Compare absent and explicit titles while preserving parent scrolling.",
+        category: "charts",
+        keywords: &["chart", "scroll", "wheel", "zoom", "title"],
+        module_ids: &[
+            "charts/chart",
+            "components/scroll_area",
+            "components/button",
+        ],
+        source_module: "stories/charts/interaction",
+        source: CHART_INTERACTION_STORY_SOURCE,
+        cases: CHART_INTERACTION_CASES,
+        fixture: None,
+        required_features: CHARTS_FEATURE,
+        platforms: DESKTOP_PLATFORMS,
+        test_requirements: STANDARD_STORY_TESTS,
+        documentation: "docs/charts.md",
+        theme_studio: false,
+    },
+    StoryDefinition {
+        id: "charts/catalog",
+        title: "Chart Catalog",
+        purpose: "Compare every built-in series family and each source-owned specialized adapter.",
+        category: "charts",
+        keywords: &[
+            "chart",
+            "bar",
+            "line",
+            "pie",
+            "map",
+            "cartesian",
+            "polar",
+            "geo",
+        ],
+        module_ids: &[
+            "charts/chart",
+            "charts/bar_chart",
+            "charts/line_chart",
+            "charts/pie_chart",
+            "charts/map_chart",
+        ],
+        source_module: "stories/charts/catalog",
+        source: CHART_CATALOG_STORY_SOURCE,
+        cases: BASIC_CASE,
+        fixture: Some("chart-catalog"),
+        required_features: CHARTS_FEATURE,
+        platforms: DESKTOP_PLATFORMS,
+        test_requirements: STANDARD_STORY_TESTS,
+        documentation: "docs/charts.md",
+        theme_studio: false,
+    },
+    StoryDefinition {
+        id: "charts/streaming",
+        title: "Native streaming line",
+        purpose: "Exercise revisioned Host-owned chart data without rebuilding rows in Rhai.",
+        category: "charts",
+        keywords: &["chart", "line", "stream", "native", "performance"],
+        module_ids: &["charts/chart"],
+        source_module: "stories/charts/streaming",
+        source: CHART_STREAMING_STORY_SOURCE,
+        cases: BASIC_CASE,
+        fixture: Some("chart-catalog"),
+        required_features: CHARTS_FEATURE,
+        platforms: DESKTOP_PLATFORMS,
+        test_requirements: &["prepare", "mount", "draw", "streaming", "100k benchmark"],
+        documentation: "docs/charts.md#performance-contract",
+        theme_studio: false,
+    },
+    StoryDefinition {
+        id: "motion/catalog",
+        title: "Motion Catalog",
+        purpose: "Exercise every first-party Motion component and the native timeline controls.",
+        category: "motion",
+        keywords: &[
+            "motion",
+            "timeline",
+            "transition",
+            "spring",
+            "reduced",
+            "animation",
+        ],
+        module_ids: &[
+            "motion/text_reveal",
+            "motion/number_ticker",
+            "motion/marquee",
+            "motion/shimmer",
+            "motion/border_beam",
+            "motion/orbit",
+            "motion/particles",
+            "motion/animated_tabs",
+            "motion/reorder_list",
+            "motion/shared_layout_cards",
+        ],
+        source_module: "stories/motion/catalog",
+        source: MOTION_CATALOG_STORY_SOURCE,
+        cases: BASIC_CASE,
+        fixture: None,
+        required_features: NO_FEATURES,
+        platforms: DESKTOP_PLATFORMS,
+        test_requirements: STANDARD_STORY_TESTS,
+        documentation: "docs/motion.md",
+        theme_studio: false,
+    },
+    StoryDefinition {
+        id: "apps/host-embedding",
+        title: "HostSlot resident form",
+        purpose: "Embed an independently mounted Rhai form through an opaque Rust Host boundary.",
+        category: "applications",
+        keywords: &["host", "embedding", "slot", "ime", "input", "resident"],
+        module_ids: &["components/input", "components/textarea"],
+        source_module: "stories/apps/host_embedding",
+        source: HOST_EMBEDDING_STORY_SOURCE,
+        cases: BASIC_CASE,
+        fixture: Some("host-embedding"),
+        required_features: NO_FEATURES,
+        platforms: DESKTOP_PLATFORMS,
+        test_requirements: &["prepare", "mount", "draw", "host-slot", "ime"],
+        documentation: "docs/embedding.md#rhai-shells-around-host-owned-content",
+        theme_studio: false,
+    },
+    StoryDefinition {
+        id: "apps/operations",
+        title: "Operations Workbench",
+        purpose: "Complete a cross-page host inspection, configuration, and deployment task.",
+        category: "applications",
+        keywords: &["application", "operations", "hosts", "config", "deployment"],
+        module_ids: &[
+            "components/button",
+            "components/badge",
+            "components/command",
+            "components/command_dialog",
+            "components/dialog",
+            "components/sheet",
+            "components/input",
+            "components/table",
+            "components/pagination",
+            "components/code_viewer",
+            "components/diff_viewer",
+            "components/progress",
+            "components/toast",
+            "components/alert",
+            "components/empty",
+            "components/skeleton",
+            "components/spinner",
+            "components/title_bar",
+            "components/status_bar",
+            "charts/chart",
+        ],
+        source_module: "stories/apps/operations",
+        source: OPERATIONS_STORY_SOURCE,
+        cases: OPERATIONS_CASES,
+        fixture: Some("operations"),
+        required_features: CHARTS_FEATURE,
+        platforms: DESKTOP_PLATFORMS,
+        test_requirements: WORKBENCH_TESTS,
+        documentation: "docs/gallery.md#operations-workbench",
+        theme_studio: false,
+    },
+];
+
 pub const BUNDLED_THEME_SOURCES: &[(&str, &str)] = &[
     ("default_dark.rhai", DEFAULT_THEME),
     ("default_light.rhai", DEFAULT_LIGHT_THEME),
@@ -424,6 +833,7 @@ mod tests {
         assert_eq!(BUNDLED_CHART_SOURCES_BY_ID.len(), 5);
         assert_eq!(BUNDLED_ASSET_SOURCES.len(), 18);
         assert_eq!(BUNDLED_THEME_SOURCES.len(), 15);
+        assert_eq!(BUNDLED_STORIES.len(), 11);
         assert!(
             BUNDLED_COMPONENT_SOURCES
                 .iter()
@@ -460,5 +870,75 @@ mod tests {
                 .len(),
             BUNDLED_ASSET_SOURCES.len()
         );
+        let story_ids = BUNDLED_STORIES
+            .iter()
+            .map(|story| story.id)
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(story_ids.len(), BUNDLED_STORIES.len());
+        for story in BUNDLED_STORIES {
+            assert!(!story.source.is_empty(), "{} source is empty", story.id);
+            assert!(!story.cases.is_empty(), "{} has no cases", story.id);
+            assert!(!story.platforms.is_empty(), "{} has no platforms", story.id);
+            assert!(
+                !story.test_requirements.is_empty(),
+                "{} has no test requirements",
+                story.id
+            );
+            assert!(
+                story
+                    .required_features
+                    .iter()
+                    .all(|feature| *feature == "charts"),
+                "{} declares an unknown feature",
+                story.id
+            );
+            assert!(story.source_module.starts_with("stories/"));
+            let case_ids = story
+                .cases
+                .iter()
+                .map(|case| case.id)
+                .collect::<std::collections::BTreeSet<_>>();
+            assert_eq!(case_ids.len(), story.cases.len(), "{} case IDs", story.id);
+            for module in story.module_ids {
+                assert!(
+                    BUNDLED_COMPONENT_SOURCES_BY_ID
+                        .iter()
+                        .chain(BUNDLED_MOTION_SOURCES_BY_ID)
+                        .chain(BUNDLED_CHART_SOURCES_BY_ID)
+                        .any(|(id, _)| id == module),
+                    "{} references unknown module {module}",
+                    story.id
+                );
+            }
+        }
+        assert!(!CHART_SOURCE.contains("title: prop_or(props, \"title\", \"\")"));
+        for source in [
+            BAR_CHART_SOURCE,
+            LINE_CHART_SOURCE,
+            PIE_CHART_SOURCE,
+            MAP_CHART_SOURCE,
+        ] {
+            assert!(!source.contains("title: #{ schema: #{ type: \"string\" }, required: false, sensitive: false, \"default\""));
+        }
+    }
+
+    #[test]
+    fn every_public_module_has_story_coverage() {
+        let covered_modules = BUNDLED_STORIES
+            .iter()
+            .flat_map(|story| story.module_ids.iter().copied())
+            .collect::<std::collections::BTreeSet<_>>();
+        for (domain, modules) in [
+            ("component", BUNDLED_COMPONENT_SOURCES_BY_ID),
+            ("Motion", BUNDLED_MOTION_SOURCES_BY_ID),
+            ("Chart", BUNDLED_CHART_SOURCES_BY_ID),
+        ] {
+            for (module, _) in modules {
+                assert!(
+                    covered_modules.contains(module),
+                    "public {domain} module {module} has no Gallery story"
+                );
+            }
+        }
     }
 }

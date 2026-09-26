@@ -43,6 +43,24 @@ enum Command {
         /// Existing gpui-rhai theme to open. Omit to create a new draft.
         path: Option<PathBuf>,
     },
+    /// Browse first-party stories and the Operations Workbench.
+    Gallery {
+        /// Print the bundled story catalog without creating a window.
+        #[arg(long)]
+        list: bool,
+        /// Open one stable story ID.
+        #[arg(long)]
+        story: Option<String>,
+        /// Select a deterministic case within the story.
+        #[arg(long, default_value = "basic")]
+        case: String,
+        /// Select a bundled theme slug.
+        #[arg(long, default_value = "default-dark")]
+        theme: String,
+        /// Select en, zh-CN, or ar.
+        #[arg(long, default_value = "en")]
+        locale: String,
+    },
 }
 
 fn run(cli: Cli) -> Result<(), ProjectError> {
@@ -102,12 +120,44 @@ fn run(cli: Cli) -> Result<(), ProjectError> {
                 gpui_rhai_cli::theme_studio::run(root, path).map_err(ProjectError::ThemeStudio)?;
             }
         }
+        Command::Gallery {
+            list,
+            story,
+            case,
+            theme,
+            locale,
+        } => {
+            if list {
+                println!("{}", gpui_rhai_cli::gallery::list_text());
+            } else if cli.dry_run {
+                println!("would open Gallery");
+            } else {
+                gpui_rhai_cli::gallery::run(&gpui_rhai_cli::gallery::GalleryLaunch {
+                    story: story
+                        .unwrap_or_else(|| gpui_rhai_cli::gallery::DEFAULT_STORY.to_owned()),
+                    case,
+                    theme,
+                    locale,
+                })
+                .map_err(ProjectError::Gallery)?;
+            }
+        }
     }
     Ok(())
 }
 
 fn main() -> ExitCode {
-    let result = if std::env::var("GPUI_RHAI_THEME_STUDIO").is_ok_and(|value| value == "1") {
+    let result = if std::env::var("GPUI_RHAI_GALLERY").is_ok_and(|value| value == "1") {
+        gpui_rhai_cli::gallery::run(&gpui_rhai_cli::gallery::GalleryLaunch {
+            story: std::env::var("GPUI_RHAI_GALLERY_STORY")
+                .unwrap_or_else(|_| gpui_rhai_cli::gallery::DEFAULT_STORY.to_owned()),
+            case: std::env::var("GPUI_RHAI_GALLERY_CASE").unwrap_or_else(|_| "basic".to_owned()),
+            theme: std::env::var("GPUI_RHAI_GALLERY_THEME")
+                .unwrap_or_else(|_| "default-dark".to_owned()),
+            locale: std::env::var("GPUI_RHAI_GALLERY_LOCALE").unwrap_or_else(|_| "en".to_owned()),
+        })
+        .map_err(ProjectError::Gallery)
+    } else if std::env::var("GPUI_RHAI_THEME_STUDIO").is_ok_and(|value| value == "1") {
         std::env::current_dir()
             .map_err(|error| ProjectError::ThemeStudio(error.to_string()))
             .and_then(|root| {

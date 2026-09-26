@@ -2438,7 +2438,14 @@ fn apply_native_semantics(
         element = element.accessibility_id(id.clone());
     }
     if !semantic.name.is_empty() {
-        element = element.aria_label(semantic.name.clone());
+        if semantic.role == "text" {
+            // A retained plain-text wrapper owns the native text value. It
+            // must not masquerade as a value-less AccessKit TextRun; macOS
+            // consumers traverse TextRun values without an Option fallback.
+            element = element.aria_value(semantic.name.clone());
+        } else {
+            element = element.aria_label(semantic.name.clone());
+        }
     }
     if !semantic.description.is_empty() {
         element = element.aria_description(semantic.description.clone());
@@ -5344,6 +5351,23 @@ mod tests {
         assert_eq!(node.min_numeric_value(), Some(0.0));
         assert_eq!(node.max_numeric_value(), Some(100.0));
         assert_eq!(node.orientation(), Some(gpui::Orientation::Horizontal));
+    }
+
+    #[test]
+    fn plain_text_semantics_use_a_valued_native_label() {
+        let mut retained = RetainedUiTree::new();
+        retained.reconcile(UiNode::text("Ready")).unwrap();
+        let frame = crate::CommittedSemanticFrame::from_retained(&retained).unwrap();
+        let semantic = frame.node(retained.root_id().unwrap()).unwrap();
+        let element = apply_native_semantics(div().id("status-text"), Some(semantic));
+
+        assert_eq!(semantic.role, "text");
+        assert_eq!(element.a11y_role(), Some(gpui::Role::Label));
+        let mut node = gpui::accesskit::Node::new(gpui::Role::Label);
+        element.write_a11y_info(&mut node);
+        assert_eq!(node.label(), None);
+        assert_eq!(node.value(), Some("Ready"));
+        assert!(node.character_lengths().is_empty());
     }
 
     #[test]

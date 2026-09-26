@@ -13,6 +13,33 @@ selection, striping and cell payloads only for the GPUI viewport. Both paths
 feed the same public `virtual_collection` and `render_table_row` Rhai function,
 retain stable row keys, and emit the same semantic events.
 
+## Search and paging
+
+`query` and `search_fields` define a case-insensitive substring projection.
+A non-empty query requires at least one field, and every field must be the row
+key or a declared column. `page` is one-based; optional `page_size` applies
+after sorting and filtering and before grouping. Omitting `page_size` preserves
+the unpaged behavior.
+
+```rhai
+table::Table(#{
+    // ordinary Table props...
+    query: ctx.get_state("query"),
+    search_fields: ["host", "region", "status"],
+    page: ctx.get_state("page"),
+    page_size: 25,
+})
+```
+
+Array rows are filtered and sliced in Rhai before virtual items are built.
+NativeCollection performs the same ordering in Rust: it sorts the complete
+source, filters scalar fields, slices the requested page, then builds group
+headers and projects only the virtual window. Query, fields, page, and page
+size participate in the bounded structural-order cache; selection does not.
+Use the collection's `len` property as Pagination's stable registered-row
+total. Callers normally reset `page` to one when `query`, sort, or page size
+changes.
+
 ## Row grouping
 
 Set `group_by` to a declared column key whose row values are non-empty strings:

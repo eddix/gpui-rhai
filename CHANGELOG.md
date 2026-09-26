@@ -5,6 +5,30 @@ All notable runtime, CLI, and registry changes are documented here. Version
 component schema, manifest, locale, and generated-source changes follow
 semantic versioning from this release.
 
+## 0.1.7 - Unreleased
+
+- Adds the formal `gpui-rhai gallery` acceptance application: registry-driven
+  source-backed Component/Motion/Chart stories, exact live Rhai source,
+  category/search/case navigation, per-story Reset and bounded retention,
+  theme/locale/Motion hot switching, and responsive viewport presets.
+- Adds the connected Operations Workbench reference application over
+  deterministic Rust NativeCollection/NativeChartData/subscription fixtures,
+  including normal/cancel/failure, loading, empty, streaming, theme override,
+  configuration diff, and 1,000-row workflows.
+- Table adds semantic cell adornments plus controlled Rust-side search, paging,
+  sort and grouping projection. Chart adds wheel policy, title fixes,
+  observable invalid diagnostics/semantics, and layout regressions. Tabs and
+  HostSlot gain content-fill and Chinese IME acceptance coverage.
+- Adds trusted Host theme, locale, and Motion mutation methods that preserve
+  mounted state. Gallery applies them to cached parent/dependent view groups.
+- Removes the duplicate Component/Motion/Chart Gallery Cargo examples. Internal
+  performance/smoke examples move to explicit classified targets while
+  retaining their binary names; `examples/README.md` is the canonical index.
+- Native and release gates reuse the same stories, mount/draw every case,
+  hot-switch all bundled themes, verify subscription cleanup, launch Gallery
+  from an empty cwd, and benchmark the 100k streaming story at zero Rhai
+  operations per data revision.
+
 ## 0.1.6 - Unreleased
 
 - The Rust backend moves from official `gpui 0.2.2` to the exact

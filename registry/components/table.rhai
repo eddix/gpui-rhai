@@ -4,7 +4,7 @@
   "export": "Table",
   "version": "0.1.6",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
-  "dependencies": [],
+  "dependencies": ["components/badge"],
   "capabilities": {},
   "assets": ["icons/disclosure_down.svg", "icons/chevron_right.svg", "icons/sort_ascending.svg", "icons/sort_descending.svg"]
 }
@@ -12,7 +12,8 @@
 // Data-backed Table composed entirely from public Box/Text/virtual_collection APIs.
 // Use either a positive logical-pixel height or fill_height for flex layouts.
 // Props: key, label, row_key, Array-or-NativeCollection rows, columns,
-// height, loading/empty, sort, selection, optional grouping, and native resize/auto-fit.
+// height, loading/empty, sort, search/page projection, selection, optional grouping,
+// and native resize/auto-fit.
 // Events: sort_change, selection_change, row_click, group_toggle, and column_resize.
 // State: application values are controlled; keyed native width overrides retain drag previews.
 // Example: Table(#{ key: "users", label: "Users", row_key: "id", rows: rows,
@@ -21,7 +22,7 @@
 define_component(#{
     metadata: #{ id: "components/table", "export": "Table", version: "0.1.6",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
-        dependencies: [], capabilities: #{},
+        dependencies: ["components/badge"], capabilities: #{},
         assets: ["icons/disclosure_down.svg", "icons/chevron_right.svg", "icons/sort_ascending.svg", "icons/sort_descending.svg"] },
     schema: #{
         props: #{
@@ -33,6 +34,15 @@ define_component(#{
                     items: #{ type: "map", values: #{ type: "ui_value" } } },
                 #{ type: "collection" },
             ] }, required: true, sensitive: false },
+            query: #{ schema: #{ type: "string" }, required: false, sensitive: false,
+                "default": #{ type: "string", value: "" } },
+            search_fields: #{ schema: #{ type: "array", max_items: 256,
+                items: #{ type: "string" } }, required: false, sensitive: false,
+                "default": #{ type: "array", value: [] } },
+            page: #{ schema: #{ type: "integer", min: 1 }, required: false, sensitive: false,
+                "default": #{ type: "integer", value: 1 } },
+            page_size: #{ schema: #{ type: "optional", value: #{ type: "integer", min: 1 } },
+                required: false, sensitive: false },
             columns: #{ schema: #{ type: "array", max_items: 256, items: #{
                 type: "object", allow_unknown: false, fields: #{
                     key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
@@ -50,6 +60,19 @@ define_component(#{
                         required: false, sensitive: false },
                     max_width: #{ schema: #{ type: "optional", value: #{ type: "number", exclusive_min: 0.0, max: 16384.0 } },
                         required: false, sensitive: false },
+                    adornments: #{ schema: #{ type: "array", max_items: 4, items: #{
+                        type: "object", allow_unknown: false, fields: #{
+                            text_key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+                            variant: #{ schema: #{ type: "string", allowed: ["neutral", "accent", "success", "warning", "danger"] },
+                                required: false, sensitive: false,
+                                "default": #{ type: "string", value: "neutral" } },
+                            variant_key: #{ schema: #{ type: "optional", value: #{ type: "string" } },
+                                required: false, sensitive: false },
+                            dot: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
+                                "default": #{ type: "bool", value: false } },
+                        },
+                    } }, required: false, sensitive: false,
+                        "default": #{ type: "array", value: [] } },
                 },
             } }, required: true, sensitive: false },
             height: #{ schema: #{ type: "optional", value: #{ type: "number", exclusive_min: 0.0 } }, required: false, sensitive: false },
@@ -113,6 +136,8 @@ define_component(#{
     },
     render: Fn("render_Table")
 });
+
+import "components/badge" as badge;
 
 fn Table(props) { render_component("components/table", props) }
 fn prop_or(props, name, fallback) { if name in props { props[name] } else { fallback } }
@@ -205,6 +230,13 @@ fn render_table_row(resize_signals, total_rows, ctx, payload) {
     for cell in item.cells {
         let content = [text(cell.text).with_key(`${cell.key}-text`)
             .with_style(style().flex_grow().min_width(px(0)).whitespace_nowrap().text_ellipsis())];
+        let cell_label = cell.text;
+        for index in 0..cell.adornments.len {
+            let adornment = cell.adornments[index];
+            content.push(badge::Badge(#{ text: adornment.text, variant: adornment.variant,
+                dot: adornment.dot, size: "sm" }).with_key(`${cell.key}-adornment-${index}`));
+            cell_label += `, ${adornment.text}`;
+        }
         if "resize_signal_key" in cell {
             content.push(intrinsic_column_measure(
                 `${payload.key}-${cell.key}-measure`, cell.text,
@@ -220,7 +252,7 @@ fn render_table_row(resize_signals, total_rows, ctx, payload) {
         if "resize_signal_key" in cell {
             node = node.bind_parent_signal(ctx, "width_override", cell.resize_signal_key);
         }
-        node = node.accessibility_table_cell(cell.text, cell_index);
+        node = node.accessibility_table_cell(cell_label, cell_index);
         cells.push(node);
         cell_index += 1;
     }
@@ -256,9 +288,22 @@ fn table_row_item(source, source_index, columns, row_key, label, selected,
         };
     let cells = [];
     for column in columns {
+        let adornments = [];
+        for spec in prop_or(column, "adornments", []) {
+            let adornment_text = if spec.text_key in source { `${source[spec.text_key]}` } else { "" };
+            if adornment_text != "" {
+                let variant = if "variant_key" in spec && spec.variant_key != () && spec.variant_key in source {
+                    `${source[spec.variant_key]}`
+                } else { prop_or(spec, "variant", "neutral") };
+                if !(variant in ["neutral", "accent", "success", "warning", "danger"]) {
+                    throw `Table row ${source_index} adornment variant ${variant} is invalid`;
+                }
+                adornments.push(#{ text: adornment_text, variant: variant, dot: prop_or(spec, "dot", false) });
+            }
+        }
         let cell = #{
             key: column.key, text: if column.key in source { `${source[column.key]}` } else { "" },
-            width: column.width, align: prop_or(column, "align", "start"),
+            width: column.width, align: prop_or(column, "align", "start"), adornments: adornments,
         };
         if "resize_signal_key" in column {
             cell.resize_signal_key = column.resize_signal_key;
@@ -274,6 +319,30 @@ fn unique_group_header_key(value, row_keys, header_keys) {
     let key = `__gpui_rhai_group__:${value}`;
     while key in row_keys || key in header_keys { key = `_${key}`; }
     key
+}
+
+fn table_row_matches(source, query, search_fields) {
+    if query == "" { return true; }
+    for field in search_fields {
+        if field in source && `${source[field]}`.to_lower().contains(query) { return true; }
+    }
+    false
+}
+
+fn table_array_page(rows, query, search_fields, page, page_size) {
+    let filtered = [];
+    for index in 0..rows.len {
+        if table_row_matches(rows[index], query, search_fields) {
+            filtered.push(#{ source: rows[index], index: index });
+        }
+    }
+    if page_size == () { return filtered; }
+    let start = (page - 1) * page_size;
+    if start >= filtered.len { return []; }
+    let end = if start + page_size < filtered.len { start + page_size } else { filtered.len };
+    let paged = [];
+    for index in start..end { paged.push(filtered[index]); }
+    paged
 }
 
 fn table_column_model(props) {
@@ -299,7 +368,7 @@ fn table_column_model(props) {
         let column = #{
             key: source.key, title: source.title, width: source.width,
             align: prop_or(source, "align", "start"), sortable: prop_or(source, "sortable", false),
-            resize_enabled: enabled,
+            resize_enabled: enabled, adornments: prop_or(source, "adornments", []),
         };
         if enabled {
             let min_width = optional_or(source, "min_width", 48.0);
@@ -445,6 +514,20 @@ fn render_Table(ctx, props) {
     let group_toggle = "on_group_toggle" in props && props.on_group_toggle != ();
     let sticky_groups = prop_or(props, "sticky_group_headers", true);
     let native_data = is_native_collection(props.rows);
+    let query = prop_or(props, "query", "").to_lower();
+    let search_fields = prop_or(props, "search_fields", []);
+    if query != "" && search_fields.len == 0 {
+        throw "Table non-empty query requires search_fields";
+    }
+    for field in search_fields {
+        let found = field == props.row_key;
+        for column in columns { if column.key == field { found = true; } }
+        if !found { throw `Table search field ${field} is not the row key or a declared column`; }
+    }
+    let page = prop_or(props, "page", 1);
+    let page_size = if "page_size" in props { props.page_size } else { () };
+    let array_rows = if native_data { [] }
+        else { table_array_page(props.rows, query, search_fields, page, page_size) };
     let data;
     let sticky_headers = [];
     if native_data {
@@ -453,20 +536,23 @@ fn render_Table(ctx, props) {
             selected_keys: selected, selection_mode: selection_mode,
             striped: striped, row_height: row_height, sort: current_sort,
             group_by: group_by, collapsed_groups: collapsed, group_toggle: group_toggle,
+            query: query, search_fields: search_fields, page: page, page_size: page_size,
         });
     } else if group_by == () {
         data = [];
-        for index in 0..props.rows.len {
-            data.push(table_row_item(props.rows[index], index, columns, props.row_key,
-                props.label, selected, selection_mode, striped, row_height, index));
+        for display_index in 0..array_rows.len {
+            let row = array_rows[display_index];
+            data.push(table_row_item(row.source, row.index, columns, props.row_key,
+                props.label, selected, selection_mode, striped, row_height, display_index));
         }
     } else {
         data = [];
         let group_order = [];
         let buckets = #{};
         let row_keys = [];
-        for index in 0..props.rows.len {
-            let source = props.rows[index];
+        for entry in array_rows {
+            let source = entry.source;
+            let index = entry.index;
             let group = if group_by in source { source[group_by] } else { () };
             if type_of(group) != "string" || group == "" {
                 throw `Table row ${index} group field ${group_by} must be a non-empty string`;
@@ -499,6 +585,16 @@ fn render_Table(ctx, props) {
                 }
             }
         }
+    }
+    if data.len == 0 {
+        let empty = if "empty" in props && props.empty != () { props.empty }
+            else { text(prop_or(props, "empty_text", "No results")) };
+        return box([header, empty.with_style(ctx.component_style("empty", style()
+            .padding(theme_spacing("md")).typography("body_small").text_color(theme_color("text_muted"))))])
+            .with_key(props.key).with_style(ctx.component_style("root", style().flex_col()
+                .border(px(1)).border_color(theme_color("border"))))
+            .accessibility_role("table").accessibility_label(props.label)
+            .accessibility_row_count(1).accessibility_column_count(columns.len);
     }
     let collection = #{
         key: `${props.key}-body`, label: props.label, data: data,

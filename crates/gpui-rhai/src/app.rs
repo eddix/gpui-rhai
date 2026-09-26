@@ -12,8 +12,9 @@ use gpui::{
     AnyElement, AnyWindowHandle, App, AppContext, Bounds, Context, DispatchPhase, Element,
     ElementId, Entity, FocusHandle, Global, GlobalElementId, InspectorElementId,
     InteractiveElement, IntoElement, LayoutId, MouseButton, MouseDownEvent, ParentElement, Pixels,
-    Render, ScrollAnchor, ScrollHandle, SharedString, Styled, Subscription, Task, TitlebarOptions,
-    Window, WindowAppearance, WindowBounds, WindowOptions, deferred, div, px, rgba, size,
+    Render, Role, ScrollAnchor, ScrollHandle, SharedString, StatefulInteractiveElement, Styled,
+    Subscription, Task, TitlebarOptions, Window, WindowAppearance, WindowBounds, WindowOptions,
+    deferred, div, px, rgba, size,
 };
 use thiserror::Error;
 
@@ -590,6 +591,7 @@ pub struct ScriptViewPerformanceSnapshot {
     pub virtual_collections: Vec<crate::VirtualCollectionMetrics>,
     pub retained_nodes: usize,
     pub dirty_components: usize,
+    pub dirty_component_paths: Vec<String>,
     pub pending_virtual_requests: bool,
 }
 
@@ -659,6 +661,77 @@ impl ScriptViewHandle {
         Ok(self.theme()?.snapshot(cx))
     }
 
+    /// Select this view's app-level theme from trusted Host code.
+    ///
+    /// # Errors
+    ///
+    /// Returns after disposal or when the requested theme is unavailable.
+    pub fn select_theme(
+        &self,
+        family: &str,
+        variant: &str,
+        cx: &mut App,
+    ) -> Result<bool, ScriptViewError> {
+        self.require_not_disposed()?;
+        self.0.entity.update(cx, |view, cx| {
+            let changed = view
+                .lifecycle
+                .runtime()
+                .borrow_mut()
+                .select_theme_from_host(family, variant)
+                .map_err(|error| ScriptViewError::Theme(error.to_string()))?;
+            if changed {
+                cx.notify();
+            }
+            Ok(changed)
+        })
+    }
+
+    /// Select this view's app-level locale from trusted Host code.
+    ///
+    /// # Errors
+    ///
+    /// Returns after disposal or when the requested locale is unavailable.
+    pub fn select_locale(&self, locale: &str, cx: &mut App) -> Result<bool, ScriptViewError> {
+        self.require_not_disposed()?;
+        self.0.entity.update(cx, |view, cx| {
+            let changed = view
+                .lifecycle
+                .runtime()
+                .borrow_mut()
+                .select_locale_from_host(locale)
+                .map_err(|error| ScriptViewError::Locale(error.to_string()))?;
+            if changed {
+                cx.notify();
+            }
+            Ok(changed)
+        })
+    }
+
+    /// Replace this view's Host-owned motion preference without resetting state.
+    ///
+    /// # Errors
+    ///
+    /// Returns after disposal.
+    pub fn set_motion_preference(
+        &self,
+        preference: MotionPreference,
+        cx: &mut App,
+    ) -> Result<bool, ScriptViewError> {
+        self.require_not_disposed()?;
+        self.0.entity.update(cx, |view, cx| {
+            let changed = view
+                .lifecycle
+                .runtime()
+                .borrow_mut()
+                .set_motion_preference_from_host(preference);
+            if changed {
+                cx.notify();
+            }
+            Ok(changed)
+        })
+    }
+
     /// Return the latest rendered declarative root.
     ///
     /// # Errors
@@ -724,12 +797,22 @@ impl ScriptViewHandle {
     ) -> Result<ScriptViewPerformanceSnapshot, ScriptViewError> {
         self.require_not_disposed()?;
         Ok(self.0.entity.update(cx, |view, _| {
-            let (virtual_collections, dirty_components, pending_virtual_requests) = {
+            let (
+                virtual_collections,
+                dirty_components,
+                dirty_component_paths,
+                pending_virtual_requests,
+            ) = {
                 let runtime_handle = view.lifecycle.runtime();
                 let runtime = runtime_handle.borrow();
                 (
                     runtime.virtual_requests.inspect(),
                     runtime.dirty_components().len(),
+                    runtime
+                        .dirty_components()
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect(),
                     runtime.has_virtual_requests(),
                 )
             };
@@ -738,6 +821,7 @@ impl ScriptViewHandle {
                 virtual_collections,
                 retained_nodes: view.lifecycle.retained().len(),
                 dirty_components,
+                dirty_component_paths,
                 pending_virtual_requests,
             }
         }))
@@ -980,6 +1064,19 @@ impl ScriptViewHandle {
             view.primitives
                 .accessibility_projections(view.lifecycle.retained(), cx),
         );
+        if let Some(failure) = &view.last_failure {
+            let chart_error = failure.diagnostic.as_ref().is_some_and(|diagnostic| {
+                diagnostic
+                    .source
+                    .as_deref()
+                    .is_some_and(|source| source.starts_with("charts/"))
+                    || diagnostic
+                        .component
+                        .as_deref()
+                        .is_some_and(|component| component.contains("/Chart["))
+            });
+            tree.mark_runtime_error(&failure.message, chart_error);
+        }
         Ok(tree)
     }
 
@@ -3095,6 +3192,7 @@ fn build_error_banner(
     content: AnyElement,
 ) -> AnyElement {
     let selector = format!("gpui-rhai-error-banner:{view_id}");
+    let accessibility_id = selector.clone();
     let owner = format!("window:{window_id}/view:{view_id}/error-banner");
     let error_text = crate::renderer::selectable_text_element(
         owner,
@@ -3108,6 +3206,10 @@ fn build_error_banner(
         .flex_col()
         .child(
             div()
+                .id(ElementId::Name(accessibility_id.into()))
+                .role(Role::Alert)
+                .aria_label("Script view error")
+                .aria_description(error.to_owned())
                 .debug_selector(move || selector.clone())
                 .p_2()
                 .font_family(error_banner_font_family())

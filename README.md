@@ -66,6 +66,10 @@ all-component specimen. It creates, opens, imports-as-copy, validates, previews,
 and saves gpui-rhai `.rhai` themes; see [Theme Studio](docs/theme-studio.md) and
 the [bundled theme catalog](docs/bundled-themes.md).
 
+`gallery` opens the formal acceptance application: searchable source-backed
+Component/Motion/Chart stories plus the connected Operations Workbench. See
+[Gallery and acceptance application](docs/gallery.md).
+
 Run the repository example with:
 
 ```text
@@ -74,18 +78,20 @@ cargo run -p gpui-rhai --example settings_panel
 cargo run -p gpui-rhai --example dashboard_layout
 cargo run -p gpui-rhai --example form_showcase
 cargo run -p gpui-rhai --example data_table
-cargo run -p gpui-rhai --example component_gallery
-cargo run --release -p gpui-rhai --example motion_gallery
+cargo run --release -p gpui-rhai-cli -- gallery --story components/catalog
+cargo run --release -p gpui-rhai-cli -- gallery --story motion/catalog
+cargo run --release -p gpui-rhai-cli -- gallery --story charts/catalog
 cargo run --release -p gpui-rhai --example code_viewer
 cargo run --release -p gpui-rhai --example diff_viewer
-cargo run --release -p gpui-rhai --example table_1000
-cargo run --release -p gpui-rhai --features charts --example chart_gallery
 cargo run -p gpui-rhai-cli -- theme-studio
 cargo run -p gpui-rhai --example extension_host
 cargo run -p gpui-rhai --example host_owned_tree
 cargo run -p gpui-rhai --example multi_window
 cargo run -p gpui-rhai --example embedded_views
 ```
+
+See [the example index](examples/README.md) for copyable tutorials and the
+separately classified internal performance/smoke targets.
 
 Standalone applications explicitly adapt a prepared view into a window-owning
 application:

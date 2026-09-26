@@ -19,6 +19,7 @@ include = [
     "themes/**/*.rhai",
     "locales/**/*.rhai",
     "studio/**/*.rhai",
+    "stories/**/*.rhai",
     "assets/**/*.svg",
     "README.md",
     "LICENSE-*",

@@ -51,6 +51,9 @@ Accessibility and keyboard operation are release requirements.
   selected/expanded/toggled/current state, scalar and numeric values, ranges,
   orientation, required/invalid/disabled/read-only state, placeholders,
   shortcuts, set position and table row/column metadata to AccessKit.
+- Plain retained text maps to GPUI's native `Label` contract with a direct
+  AccessKit value. It is never published as a value-less `TextRun`; native
+  consumers may traverse every text run without an optional-value fallback.
 - Native AX Click/Focus follows GPUI's window dispatch. TextInput, Textarea,
   Slider and Chart register bounded primitive actions; SetValue and numeric
   steps re-enter the same controlled event flow as pointer and keyboard input.

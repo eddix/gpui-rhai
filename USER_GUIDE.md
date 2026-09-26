@@ -328,10 +328,15 @@ vocabulary, and style-part contract as the component foundation:
 - primitives for Box/Text/Image/SVG/Canvas, layout, scrolling, refs, signals,
   layers, and generic overlays.
 
-Run `cargo run -p gpui-rhai --example component_gallery` for the interactive
-catalog with category navigation and live switching across all bundled themes.
+Run `cargo run --release -p gpui-rhai-cli -- gallery --story components/catalog`
+for the authoritative interactive catalog with category navigation, cases,
+responsive viewport presets, Motion preferences, live themes, locales, and the
+exact running Rhai source.
 See [the component catalog](docs/components/catalog.md) for ownership and
 behavior distinctions that similar-looking controls must preserve.
+See [Gallery and acceptance application](docs/gallery.md) for story metadata,
+Host/Rhai ownership, deterministic fixtures, lifecycle behavior, and the
+verification matrix.
 
 Command palettes separate seating, preview, and confirmation. The caller-owned
 `active_value` determines the current highlight when the palette opens.
@@ -910,6 +915,8 @@ Guidelines:
 - Keep large stable row sets in `NativeCollection`; let Rhai declare the Table
   and controlled state while Rust caches sort/group/collapse order and projects
   only visible rows.
+- Use Table `query`/`search_fields` and `page`/`page_size` for controlled
+  Rust-side filtering and paging; reset page one when query or sort changes.
 - Keep large or rapidly replaced source text in `NativeTextDocument`; direct
   strings remain the simple path. CodeViewer and DiffViewer compute from
   immutable typed snapshots on background workers and commit complete matching

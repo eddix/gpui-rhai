@@ -1,9 +1,14 @@
 # Core Runtime v2 implementation plan
 
-Next planned dependency iteration: [gpui-pre upgrade plan](docs/plans/2026-09-25-gpui-pre-upgrade.zh-CN.md).
-This is pending work against the 0.1.5 baseline, including platform adaptation,
-native accessibility, and release validation; it does not change the completed
-Runtime v2 contracts recorded below.
+Next UI/developer-experience iteration: [Acceptance Application, Gallery, and
+examples plan](docs/plans/2026-09-25-gallery-and-ui-quality.zh-CN.md). The
+unified Explore catalog and Operations Workbench are the first priority;
+Omarchy integration and custom UI zoom are explicitly separate future work.
+
+Dependency workstream: [gpui-pre upgrade plan](docs/plans/2026-09-25-gpui-pre-upgrade.zh-CN.md).
+Platform and native accessibility adaptation has a candidate implementation;
+remaining release gates are tracked in the [candidate report](docs/audits/2026-09-25-gpui-pre-upgrade/report.zh-CN.md).
+This work does not replace the Runtime v2 contracts recorded below.
 
 ## 1. Execution policy
 
@@ -450,10 +455,11 @@ shims.
 
 - Register every component and transitive dependency in the CLI, metadata,
   definitions, copied-source update path, and Theme Studio.
-- Add one polished `component_gallery` example that interactively exercises all
-  51 official components, category navigation, all theme hot switches, and
-  important controlled states. Theme Studio remains the exhaustive theme-state
-  contract; the gallery is the user-facing experience demo.
+- Maintain the polished `gpui-rhai gallery --story components/catalog`
+  acceptance surface for all 51 official components, category navigation,
+  theme hot switches, responsive/Motion controls, and important controlled
+  states. Theme Studio reuses the curated design specimen; Gallery is the
+  user-facing experience demo and source authority.
 - Update User Guide, component authoring/API docs, examples, release notes,
   source audit, and component count assertions.
 - Certify pointer, keyboard, focus, accessibility, RTL, reduced motion, resize,
