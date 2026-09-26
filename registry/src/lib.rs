@@ -12,6 +12,11 @@ macro_rules! bundled_components {
             $(($id, $constant),)+
         ];
 
+        /// Every official component module ID in deterministic registry order.
+        pub const BUNDLED_COMPONENT_MODULE_IDS: &[&str] = &[
+            $($id,)+
+        ];
+
         /// Every official component source in deterministic installation order.
         pub const BUNDLED_COMPONENT_SOURCES: &[&str] = &[
             $($constant,)+
@@ -422,6 +427,8 @@ pub const TABS_STORY_SOURCE: &str = include_str!("../stories/components/tabs.rha
 pub const INPUT_STORY_SOURCE: &str = include_str!("../stories/components/input.rhai");
 pub const TABLE_STORY_SOURCE: &str = include_str!("../stories/components/table.rhai");
 pub const CHART_INTERACTION_STORY_SOURCE: &str = include_str!("../stories/charts/interaction.rhai");
+pub const CHART_CATALOG_STORY_SOURCE: &str = include_str!("../stories/charts/catalog.rhai");
+pub const MOTION_CATALOG_STORY_SOURCE: &str = include_str!("../stories/motion/catalog.rhai");
 pub const OPERATIONS_STORY_SOURCE: &str = include_str!("../stories/apps/operations.rhai");
 pub const GALLERY_NAVIGATION_SOURCE: &str = include_str!("../stories/gallery/navigation.rhai");
 pub const GALLERY_SOURCE_VIEW_SOURCE: &str = include_str!("../stories/gallery/source.rhai");
@@ -431,6 +438,34 @@ const BASIC_CASE: &[StoryCase] = &[StoryCase {
     title: "Basic",
     purpose: "Exercise the normal controlled interaction path.",
 }];
+
+const COMPONENT_CATALOG_CASES: &[StoryCase] = &[
+    StoryCase {
+        id: "basic",
+        title: "Foundations",
+        purpose: "Inspect actions, status, application chrome, and public-launch foundations.",
+    },
+    StoryCase {
+        id: "forms",
+        title: "Forms",
+        purpose: "Exercise editing, choice, selection, validation, and IME-ready controls.",
+    },
+    StoryCase {
+        id: "navigation",
+        title: "Navigation & data",
+        purpose: "Exercise Tabs, disclosure, virtual Table, sorting, and pagination.",
+    },
+    StoryCase {
+        id: "documents",
+        title: "Code & diff",
+        purpose: "Render the native CodeViewer and direction-neutral DiffViewer surfaces.",
+    },
+    StoryCase {
+        id: "overlays",
+        title: "Commands & overlays",
+        purpose: "Open menus, dialogs, sheets, command surfaces, tooltips, and toasts.",
+    },
+];
 
 const OPERATIONS_CASES: &[StoryCase] = &[
     StoryCase {
@@ -451,6 +486,28 @@ const OPERATIONS_CASES: &[StoryCase] = &[
 ];
 
 pub const BUNDLED_STORIES: &[StoryDefinition] = &[
+    StoryDefinition {
+        id: "components/catalog",
+        title: "Component Catalog",
+        purpose: "Browse every official component through the shared responsive design specimen.",
+        category: "components",
+        keywords: &[
+            "component",
+            "control",
+            "form",
+            "navigation",
+            "data",
+            "overlay",
+            "document",
+        ],
+        module_ids: BUNDLED_COMPONENT_MODULE_IDS,
+        source_module: "stories/components/catalog",
+        source: STUDIO_SOURCE,
+        cases: COMPONENT_CATALOG_CASES,
+        fixture: Some("component-catalog"),
+        documentation: "docs/components/catalog.md",
+        theme_studio: true,
+    },
     StoryDefinition {
         id: "components/button",
         title: "Button, Badge, and Tag",
@@ -522,6 +579,67 @@ pub const BUNDLED_STORIES: &[StoryDefinition] = &[
         theme_studio: false,
     },
     StoryDefinition {
+        id: "charts/catalog",
+        title: "Chart Catalog",
+        purpose: "Compare every built-in series family and each source-owned specialized adapter.",
+        category: "charts",
+        keywords: &[
+            "chart",
+            "bar",
+            "line",
+            "pie",
+            "map",
+            "cartesian",
+            "polar",
+            "geo",
+        ],
+        module_ids: &[
+            "charts/chart",
+            "charts/bar_chart",
+            "charts/line_chart",
+            "charts/pie_chart",
+            "charts/map_chart",
+        ],
+        source_module: "stories/charts/catalog",
+        source: CHART_CATALOG_STORY_SOURCE,
+        cases: BASIC_CASE,
+        fixture: Some("chart-catalog"),
+        documentation: "docs/charts.md",
+        theme_studio: false,
+    },
+    StoryDefinition {
+        id: "motion/catalog",
+        title: "Motion Catalog",
+        purpose: "Exercise every first-party Motion component and the native timeline controls.",
+        category: "motion",
+        keywords: &[
+            "motion",
+            "timeline",
+            "transition",
+            "spring",
+            "reduced",
+            "animation",
+        ],
+        module_ids: &[
+            "motion/text_reveal",
+            "motion/number_ticker",
+            "motion/marquee",
+            "motion/shimmer",
+            "motion/border_beam",
+            "motion/orbit",
+            "motion/particles",
+            "motion/animated_tabs",
+            "motion/reorder_list",
+            "motion/shared_layout_cards",
+        ],
+        source_module: "stories/motion/catalog",
+        source: MOTION_CATALOG_STORY_SOURCE,
+        cases: BASIC_CASE,
+        fixture: None,
+        documentation: "docs/motion.md",
+        theme_studio: true,
+    },
+    StoryDefinition {
         id: "apps/operations",
         title: "Operations Workbench",
         purpose: "Complete a cross-page host inspection, configuration, and deployment task.",
@@ -583,7 +701,7 @@ mod tests {
         assert_eq!(BUNDLED_CHART_SOURCES_BY_ID.len(), 5);
         assert_eq!(BUNDLED_ASSET_SOURCES.len(), 18);
         assert_eq!(BUNDLED_THEME_SOURCES.len(), 15);
-        assert_eq!(BUNDLED_STORIES.len(), 6);
+        assert_eq!(BUNDLED_STORIES.len(), 9);
         assert!(
             BUNDLED_COMPONENT_SOURCES
                 .iter()
@@ -655,6 +773,26 @@ mod tests {
             MAP_CHART_SOURCE,
         ] {
             assert!(!source.contains("title: #{ schema: #{ type: \"string\" }, required: false, sensitive: false, \"default\""));
+        }
+    }
+
+    #[test]
+    fn every_public_module_has_story_coverage() {
+        let covered_modules = BUNDLED_STORIES
+            .iter()
+            .flat_map(|story| story.module_ids.iter().copied())
+            .collect::<std::collections::BTreeSet<_>>();
+        for (domain, modules) in [
+            ("component", BUNDLED_COMPONENT_SOURCES_BY_ID),
+            ("Motion", BUNDLED_MOTION_SOURCES_BY_ID),
+            ("Chart", BUNDLED_CHART_SOURCES_BY_ID),
+        ] {
+            for (module, _) in modules {
+                assert!(
+                    covered_modules.contains(module),
+                    "public {domain} module {module} has no Gallery story"
+                );
+            }
         }
     }
 }

@@ -4,9 +4,10 @@ use std::rc::Rc;
 use gpui::prelude::*;
 use gpui::{Context, IntoElement, Render, TestAppContext, Window};
 use gpui_rhai::{
-    AutomationCommand, AutomationLocator, ScriptViewHandle, ScriptViewHost, UiNodeKind,
+    AutomationCommand, AutomationLocator, AutomationResult, ScriptViewHandle, ScriptViewHost,
+    UiNodeKind,
 };
-use gpui_rhai_cli::gallery::{GalleryLaunch, prepare};
+use gpui_rhai_cli::gallery::{GalleryLaunch, prepare, stories};
 
 struct GalleryHost {
     host: ScriptViewHost,
@@ -73,6 +74,76 @@ fn dispatch(visual: &mut gpui::VisualTestContext, view: &ScriptViewHandle, id: &
         })
         .unwrap();
     visual.run_until_parked();
+}
+
+#[gpui::test]
+fn every_gallery_story_case_mounts_draws_and_presents_semantics(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    for story in stories() {
+        for case in story.cases {
+            let launch = GalleryLaunch {
+                story: story.id.to_owned(),
+                case: case.id.to_owned(),
+                ..GalleryLaunch::default()
+            };
+            let prepared = prepare(&launch)
+                .unwrap_or_else(|error| panic!("{}/{} prepare: {error}", story.id, case.id));
+            let captured = Rc::new(RefCell::new(None));
+            let captured_for_window = Rc::clone(&captured);
+            let identity = format!("{}-{}", story.id.replace('/', "-"), case.id);
+            let host_identity = format!("gallery-host-{identity}");
+            let view_identity = format!("gallery-view-{identity}");
+            let window = cx.add_window(move |window, cx| {
+                let host = ScriptViewHost::new(host_identity, cx).unwrap();
+                let view = prepared
+                    .mount(
+                        gpui_rhai::ScriptViewConfig::new(view_identity),
+                        host.clone(),
+                        window,
+                        cx,
+                    )
+                    .unwrap();
+                *captured_for_window.borrow_mut() = Some(view.clone());
+                GalleryHost { host, view }
+            });
+            cx.run_until_parked();
+            cx.refresh().unwrap();
+            cx.run_until_parked();
+
+            let view = captured.borrow().as_ref().unwrap().clone();
+            let mut visual = gpui::VisualTestContext::from_window(*window, cx);
+            assert!(
+                visual
+                    .update(|_, cx| view.last_error(cx).unwrap())
+                    .is_none(),
+                "{}/{} recorded an error after draw",
+                story.id,
+                case.id
+            );
+            let result = visual
+                .update(|window, cx| view.automate(AutomationCommand::Snapshot, window, cx))
+                .unwrap_or_else(|error| {
+                    panic!("{}/{} semantic snapshot: {error}", story.id, case.id)
+                });
+            let AutomationResult::Snapshot { snapshot } = result else {
+                panic!("{}/{} returned the wrong automation result", story.id, case.id);
+            };
+            assert!(
+                !snapshot.roots.is_empty(),
+                "{}/{} presented no semantic roots",
+                story.id,
+                case.id
+            );
+            assert!(
+                snapshot.nodes.iter().any(|node| node
+                    .bounds
+                    .is_some_and(|bounds| bounds.width > 0.0 && bounds.height > 0.0)),
+                "{}/{} presented no laid-out semantic node",
+                story.id,
+                case.id
+            );
+        }
+    }
 }
 
 #[gpui::test]

@@ -82,20 +82,13 @@ impl GalleryApp {
                 .map_err(|error| error.to_string())
         })
         .expect("Gallery navigation mounts");
-        let initial_story = BUNDLED_STORIES
-            .iter()
-            .find(|story| story.id == launch.story)
-            .expect("initial story belongs to catalog");
         let source_view = prepare_source_view(
             &launch,
             SourceExtension {
                 document: NativeTextDocument::new(
                     "gallery_source",
                     1,
-                    Arc::<str>::from(
-                        story_source(initial_story, &launch.case)
-                            .expect("initial story source resolves"),
-                    ),
+                    Arc::<str>::from(story_source(&launch).expect("initial story source resolves")),
                 )
                 .expect("Gallery source document is valid"),
             },
@@ -247,7 +240,7 @@ impl GalleryApp {
     }
 
     fn update_source(&mut self, cx: &mut Context<Self>) {
-        let source = story_source(self.current_story(), &self.launch.case)
+        let source = story_source(&self.launch)
             .unwrap_or_else(|error| format!("Unable to resolve story source: {error}"));
         self.source_revision = self.source_revision.saturating_add(1);
         let result = NativeTextDocument::new(
@@ -473,6 +466,10 @@ impl Render for GalleryApp {
                 needle.is_empty()
                     || entry.title.to_lowercase().contains(&needle)
                     || entry.id.contains(&needle)
+                    || entry
+                        .module_ids
+                        .iter()
+                        .any(|module| module.contains(&needle))
                     || entry
                         .keywords
                         .iter()
@@ -716,7 +713,15 @@ impl Render for GalleryApp {
                                         .min_h_0()
                                         .min_w_0()
                                         .flex()
-                                        .child(div().flex_1().min_w_0().min_h_0().child(preview))
+                                        .child(
+                                            div()
+                                                .flex_1()
+                                                .min_w_0()
+                                                .min_h_0()
+                                                .flex()
+                                                .flex_col()
+                                                .child(preview),
+                                        )
                                         .child(
                                             div()
                                                 .w(px(360.0))

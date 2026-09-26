@@ -1,9 +1,10 @@
 use std::collections::BTreeMap;
 
 use gpui_rhai::{
-    AssetData, ChartDataLimits, ChartDataset, EmbeddedScriptSource, EmbeddedScriptView, ModuleId,
-    NativeChartData, NativeCollection, PreparedScriptView, RuntimeEngine, ScriptViewExtension,
-    ThemeTokenOverrides, UiRuntimeState, UiValue, load_theme_source,
+    AssetData, ChartDataLimits, ChartDataset, ChartGeoMap, EmbeddedScriptSource,
+    EmbeddedScriptView, ModuleId, NativeChartData, NativeCollection, PreparedScriptView,
+    RuntimeEngine, ScriptViewExtension, ThemeMode, ThemeTokenOverrides, ThemeVariant,
+    UiRuntimeState, UiValue, load_theme_source,
 };
 use gpui_rhai_registry::{
     AR_LOCALE, BUNDLED_ASSET_SOURCES, BUNDLED_CHART_SOURCES_BY_ID, BUNDLED_COMPONENT_SOURCES_BY_ID,
@@ -12,6 +13,27 @@ use gpui_rhai_registry::{
 };
 
 pub const DEFAULT_STORY: &str = "components/button";
+
+const COMPONENT_CATALOG_COLOR_TOKENS: &[&str] = &[
+    "surface",
+    "surface_raised",
+    "surface_hover",
+    "text_primary",
+    "text_muted",
+    "accent",
+    "accent_hover",
+    "on_accent",
+    "danger",
+    "on_danger",
+    "warning",
+    "on_warning",
+    "success",
+    "on_success",
+    "border",
+    "focus_ring",
+    "selection",
+    "disabled",
+];
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GalleryLaunch {
@@ -76,9 +98,13 @@ pub(crate) fn resolve_story(id: &str, case: &str) -> Result<&'static StoryDefini
     Ok(story)
 }
 
-pub(crate) fn story_source(story: &StoryDefinition, case: &str) -> Result<String, String> {
+fn materialize_story_source(
+    story: &StoryDefinition,
+    launch: &GalleryLaunch,
+    selected: &ThemeVariant,
+) -> Result<String, String> {
     if story.id == "apps/operations" {
-        let page = match case {
+        let page = match launch.case.as_str() {
             "config-diff" => "configurations",
             "theme-overrides" => "settings",
             _ => "dashboard",
@@ -87,9 +113,64 @@ pub(crate) fn story_source(story: &StoryDefinition, case: &str) -> Result<String
             "__OPERATIONS_PAGE__",
             &serde_json::to_string(page).map_err(|error| error.to_string())?,
         ))
+    } else if story.id == "components/catalog" {
+        let json = |value: &str| serde_json::to_string(value).map_err(|error| error.to_string());
+        let category = if launch.case == "basic" {
+            "foundations"
+        } else {
+            launch.case.as_str()
+        };
+        let mode = match selected.mode {
+            ThemeMode::Light => "light",
+            ThemeMode::Dark => "dark",
+        };
+        let mut source = story.source.to_owned();
+        for (placeholder, value) in [
+            ("__PATH__", json("")?),
+            ("__FAMILY__", json(&selected.family)?),
+            ("__VARIANT__", json(&selected.name)?),
+            ("__MODE__", json(mode)?),
+            ("__STATUS__", json("Component Catalog")?),
+            ("__PREVIEW_FAMILY__", json(&selected.family)?),
+            ("__PREVIEW_VARIANT__", json(&selected.name)?),
+            ("__GALLERY_THEME__", json(&launch.theme.replace('-', "_"))?),
+            ("__GALLERY_CATEGORY__", json(category)?),
+        ] {
+            source = source.replace(placeholder, &value);
+        }
+        for token in COMPONENT_CATALOG_COLOR_TOKENS {
+            let value = format!("#{:08x}", selected.tokens.colors[*token].as_rgba_hex());
+            source = source.replace(
+                &format!("__COLOR_{}__", token.to_ascii_uppercase()),
+                &serde_json::to_string(&value).map_err(|error| error.to_string())?,
+            );
+        }
+        Ok(source
+            .replace("__BUILTIN_OPTIONS__", "[]")
+            .replace("__VISUAL_DIALOG__", "false")
+            .replace("__VISUAL_POPOVER__", "false")
+            .replace("__VISUAL_COMMAND__", "false")
+            .replace("__VISUAL_SHEET__", "false")
+            .replace("__VISUAL_ALERT__", "false")
+            .replace("__VISUAL_MENU__", "false")
+            .replace("__VISUAL_TOAST__", "false")
+            .replace(
+                "__VISUAL_LOCALE__",
+                &serde_json::to_string(&launch.locale).map_err(|error| error.to_string())?,
+            )
+            .replace("__GALLERY_ONLY__", "true"))
     } else {
         Ok(story.source.to_owned())
     }
+}
+
+pub(crate) fn story_source(launch: &GalleryLaunch) -> Result<String, String> {
+    let story = resolve_story(&launch.story, &launch.case)?;
+    let (theme_name, primary_theme) = theme_source(&launch.theme)?;
+    let engine = RuntimeEngine::new();
+    let selected = load_theme_source(engine.engine(), theme_name, primary_theme)
+        .map_err(|error| error.to_string())?;
+    materialize_story_source(story, launch, &selected)
 }
 
 fn theme_source(slug: &str) -> Result<(&'static str, &'static str), String> {
@@ -154,6 +235,33 @@ impl ScriptViewExtension for OperationsFixture {
     }
 }
 
+#[derive(Clone, Debug)]
+struct ChartCatalogFixture {
+    stream: NativeChartData,
+}
+
+impl ScriptViewExtension for ChartCatalogFixture {
+    fn configure_engine(&self, engine: &mut RuntimeEngine) -> Result<(), String> {
+        let map = ChartGeoMap::from_geojson(
+            "demo_map",
+            r#"{"type":"FeatureCollection","features":[
+              {"type":"Feature","id":"north","properties":{"name":"north"},"geometry":{"type":"Polygon","coordinates":[[[0,5],[10,5],[10,10],[0,10],[0,5]]]}},
+              {"type":"Feature","id":"south","properties":{"name":"south"},"geometry":{"type":"Polygon","coordinates":[[[0,0],[10,0],[10,5],[0,5],[0,0]]]}}
+            ]}"#,
+        )
+        .map_err(|error| error.to_string())?;
+        engine
+            .register_chart_map(map)
+            .map_err(|error| error.to_string())
+    }
+
+    fn configure_runtime(&self, runtime: &mut UiRuntimeState) -> Result<(), String> {
+        runtime
+            .register_native_chart_data("gallery_stream", self.stream.clone())
+            .map_err(|error| error.to_string())
+    }
+}
+
 fn operations_hosts() -> Result<NativeCollection, String> {
     let rows = [
         ("edge-01", "Tokyo", "1.8.4", "Healthy", "success"),
@@ -204,6 +312,31 @@ fn operations_metrics() -> Result<NativeChartData, String> {
     NativeChartData::new([dataset], ChartDataLimits::default()).map_err(|error| error.to_string())
 }
 
+#[allow(clippy::cast_precision_loss)]
+fn chart_catalog_stream(rows: usize) -> Result<NativeChartData, String> {
+    let values = (0..rows)
+        .map(|index| {
+            let x = index as f64;
+            BTreeMap::from([
+                ("id".to_owned(), UiValue::String(format!("p{index}"))),
+                ("x".to_owned(), UiValue::Float(x)),
+                (
+                    "y".to_owned(),
+                    UiValue::Float((x / 270.0).sin() * 20.0 + (x / 67.0).cos() * 4.0),
+                ),
+            ])
+        })
+        .collect::<Vec<_>>();
+    let dataset = ChartDataset::from_rows(
+        "main",
+        &values,
+        Some("id".to_owned()),
+        ChartDataLimits::default(),
+    )
+    .map_err(|error| error.to_string())?;
+    NativeChartData::new([dataset], ChartDataLimits::default()).map_err(|error| error.to_string())
+}
+
 /// Prepare one exact bundled story without opening a window.
 ///
 /// # Errors
@@ -216,14 +349,18 @@ pub fn prepare(launch: &GalleryLaunch) -> Result<PreparedScriptView, String> {
     let engine = RuntimeEngine::new();
     let selected = load_theme_source(engine.engine(), theme_name, primary_theme)
         .map_err(|error| error.to_string())?;
-    let story_source = story_source(story, &launch.case)?;
-    let source = format!(
-        "{}\nfn init(ctx) {{ ctx.set_theme({}, {}); ctx.set_locale({}); }}\n",
-        story_source,
-        serde_json::to_string(&selected.family).map_err(|error| error.to_string())?,
-        serde_json::to_string(&selected.name).map_err(|error| error.to_string())?,
-        serde_json::to_string(&launch.locale).map_err(|error| error.to_string())?,
-    );
+    let story_source = materialize_story_source(story, launch, &selected)?;
+    let source = if story.fixture == Some("component-catalog") {
+        story_source
+    } else {
+        format!(
+            "{}\nfn init(ctx) {{ ctx.set_theme({}, {}); ctx.set_locale({}); }}\n",
+            story_source,
+            serde_json::to_string(&selected.family).map_err(|error| error.to_string())?,
+            serde_json::to_string(&selected.name).map_err(|error| error.to_string())?,
+            serde_json::to_string(&launch.locale).map_err(|error| error.to_string())?,
+        )
+    };
     let mut view = EmbeddedScriptView::new(
         ModuleId::parse(story.source_module).map_err(|error| error.to_string())?,
         story_scripts(story, source)?,
@@ -244,6 +381,10 @@ pub fn prepare(launch: &GalleryLaunch) -> Result<PreparedScriptView, String> {
     }));
     if story.fixture == Some("operations") {
         view = view.extension(OperationsFixture);
+    } else if story.fixture == Some("chart-catalog") {
+        view = view.extension(ChartCatalogFixture {
+            stream: chart_catalog_stream(4_096)?,
+        });
     }
     if story.id == "apps/operations" && launch.case == "theme-overrides" {
         view = view.theme_token_overrides(ThemeTokenOverrides {
@@ -274,7 +415,9 @@ mod tests {
     #[test]
     fn list_is_deterministic_and_does_not_prepare_a_window() {
         assert_eq!(list_text().lines().count(), BUNDLED_STORIES.len());
-        assert!(list_text().starts_with("components/button\tactions\tbasic\t"));
+        assert!(list_text().starts_with(
+            "components/catalog\tcomponents\tbasic,forms,navigation,documents,overlays\t"
+        ));
     }
 
     #[test]
