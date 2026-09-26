@@ -105,6 +105,11 @@ fn operations_workbench_completes_and_cancels_the_deployment_boundary(cx: &mut T
 
     let view = captured.borrow().as_ref().unwrap().clone();
     let mut visual = gpui::VisualTestContext::from_window(*window, cx);
+    visual.update(|_, cx| {
+        assert!(view.select_theme("Default", "Light", cx).unwrap());
+        assert!(view.select_locale("zh-CN", cx).unwrap());
+    });
+    visual.run_until_parked();
     dispatch(&mut visual, &view, "stage-deploy");
     dispatch(&mut visual, &view, "cancel-deploy");
     let mut texts = Vec::new();

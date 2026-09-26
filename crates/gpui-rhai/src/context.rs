@@ -300,6 +300,51 @@ impl UiRuntimeState {
         Ok(())
     }
 
+    /// Select the app-level theme from trusted Host code without resetting script state.
+    ///
+    /// # Errors
+    ///
+    /// Returns when no theme manager is installed or the selection is unknown.
+    pub fn select_theme_from_host(
+        &mut self,
+        family: &str,
+        variant: &str,
+    ) -> Result<bool, crate::ThemeError> {
+        let theme = self.theme.as_mut().ok_or(crate::ThemeError::NoVariants)?;
+        let previous = theme.generation();
+        theme.set_app(ThemePreference::Fixed {
+            selection: ThemeSelection::new(family, variant),
+        })?;
+        let changed = theme.generation() != previous;
+        if changed {
+            let invalidated = self.environment_dependencies.invalidate_theme_app();
+            self.dirty.extend(invalidated);
+            self.mark_all_windows_dirty();
+        }
+        Ok(changed)
+    }
+
+    /// Select the app-level locale from trusted Host code without resetting script state.
+    ///
+    /// # Errors
+    ///
+    /// Returns when no locale manager is installed or the locale is unknown.
+    pub fn select_locale_from_host(&mut self, locale: &str) -> Result<bool, crate::LocaleError> {
+        let locales = self
+            .locale
+            .as_mut()
+            .ok_or_else(|| crate::LocaleError::UnknownLocale(locale.to_owned()))?;
+        let previous = locales.generation();
+        locales.set_app(locale)?;
+        let changed = locales.generation() != previous;
+        if changed {
+            let invalidated = self.environment_dependencies.invalidate_locale_app();
+            self.dirty.extend(invalidated);
+            self.mark_all_windows_repaint();
+        }
+        Ok(changed)
+    }
+
     /// Atomically replace application-wide formal-component style rules.
     ///
     /// Equal replacements are ignored. A changed sheet invalidates every

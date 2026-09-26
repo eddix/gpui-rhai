@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 
 use gpui_rhai::{
     AssetData, ChartDataLimits, ChartDataset, EmbeddedScriptSource, EmbeddedScriptView, ModuleId,
-    NativeChartData, NativeCollection, PreparedScriptView, RuntimeEngine, ScriptApplication,
-    ScriptViewExtension, UiRuntimeState, UiValue, load_theme_source,
+    NativeChartData, NativeCollection, PreparedScriptView, RuntimeEngine, ScriptViewExtension,
+    ThemeTokenOverrides, UiRuntimeState, UiValue, load_theme_source,
 };
 use gpui_rhai_registry::{
     AR_LOCALE, BUNDLED_ASSET_SOURCES, BUNDLED_CHART_SOURCES_BY_ID, BUNDLED_COMPONENT_SOURCES_BY_ID,
@@ -57,7 +57,7 @@ pub fn list_text() -> String {
         .join("\n")
 }
 
-fn resolve_story(id: &str, case: &str) -> Result<&'static StoryDefinition, String> {
+pub(crate) fn resolve_story(id: &str, case: &str) -> Result<&'static StoryDefinition, String> {
     let story = BUNDLED_STORIES
         .iter()
         .find(|story| story.id == id)
@@ -74,6 +74,22 @@ fn resolve_story(id: &str, case: &str) -> Result<&'static StoryDefinition, Strin
         ));
     }
     Ok(story)
+}
+
+pub(crate) fn story_source(story: &StoryDefinition, case: &str) -> Result<String, String> {
+    if story.id == "apps/operations" {
+        let page = match case {
+            "config-diff" => "configurations",
+            "theme-overrides" => "settings",
+            _ => "dashboard",
+        };
+        Ok(story.source.replace(
+            "__OPERATIONS_PAGE__",
+            &serde_json::to_string(page).map_err(|error| error.to_string())?,
+        ))
+    } else {
+        Ok(story.source.to_owned())
+    }
 }
 
 fn theme_source(slug: &str) -> Result<(&'static str, &'static str), String> {
@@ -200,19 +216,7 @@ pub fn prepare(launch: &GalleryLaunch) -> Result<PreparedScriptView, String> {
     let engine = RuntimeEngine::new();
     let selected = load_theme_source(engine.engine(), theme_name, primary_theme)
         .map_err(|error| error.to_string())?;
-    let story_source = if story.id == "apps/operations" {
-        let page = if launch.case == "config-diff" {
-            "configurations"
-        } else {
-            "dashboard"
-        };
-        story.source.replace(
-            "__OPERATIONS_PAGE__",
-            &serde_json::to_string(page).map_err(|error| error.to_string())?,
-        )
-    } else {
-        story.source.to_owned()
-    };
+    let story_source = story_source(story, &launch.case)?;
     let source = format!(
         "{}\nfn init(ctx) {{ ctx.set_theme({}, {}); ctx.set_locale({}); }}\n",
         story_source,
@@ -241,6 +245,16 @@ pub fn prepare(launch: &GalleryLaunch) -> Result<PreparedScriptView, String> {
     if story.fixture == Some("operations") {
         view = view.extension(OperationsFixture);
     }
+    if story.id == "apps/operations" && launch.case == "theme-overrides" {
+        view = view.theme_token_overrides(ThemeTokenOverrides {
+            radii: BTreeMap::from([
+                ("sm".to_owned(), gpui_rhai::Length::Pixels(4.0)),
+                ("md".to_owned(), gpui_rhai::Length::Pixels(7.0)),
+                ("lg".to_owned(), gpui_rhai::Length::Pixels(10.0)),
+            ]),
+            ..ThemeTokenOverrides::default()
+        });
+    }
     view.prepare().map_err(|error| error.to_string())
 }
 
@@ -250,10 +264,7 @@ pub fn prepare(launch: &GalleryLaunch) -> Result<PreparedScriptView, String> {
 ///
 /// Returns a preparation or platform application error.
 pub fn run(launch: &GalleryLaunch) -> Result<(), String> {
-    ScriptApplication::new(prepare(launch)?)
-        .window_size(1080.0, 760.0)
-        .run()
-        .map_err(|error| error.to_string())
+    super::gallery_app::run(launch.clone())
 }
 
 #[cfg(test)]
