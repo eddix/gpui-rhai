@@ -1,9 +1,12 @@
 import "components/button" as button;
 import "components/badge" as badge;
 import "components/command" as command;
+import "components/command_dialog" as command_dialog;
 import "components/dialog" as dialog;
+import "components/sheet" as sheet;
 import "components/input" as input;
 import "components/table" as table;
+import "components/pagination" as pagination;
 import "components/code_viewer" as code_viewer;
 import "components/diff_viewer" as diff_viewer;
 import "components/progress" as progress;
@@ -20,7 +23,8 @@ define_component(#{
     metadata: #{ id: "stories/operations_workbench", "export": "OperationsWorkbench",
         version: "0.1.6", runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
         dependencies: ["components/button", "components/badge", "components/command",
-            "components/dialog", "components/input", "components/table", "components/code_viewer",
+            "components/command_dialog", "components/dialog", "components/sheet",
+            "components/input", "components/table", "components/pagination", "components/code_viewer",
             "components/diff_viewer", "components/progress", "components/toast", "components/alert",
             "components/empty", "components/skeleton", "components/spinner", "components/title_bar",
             "components/status_bar", "charts/chart"],
@@ -34,9 +38,22 @@ define_component(#{
             "default": #{ type: "string", value: __OPERATIONS_PAGE__ } },
         selected_hosts: #{ schema: #{ type: "array", max_items: 2, items: #{ type: "string" } },
             "default": #{ type: "array", value: [#{ type: "string", value: "edge-01" }] } },
+        host_query: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "" } },
+        host_page: #{ schema: #{ type: "integer", min: 1 },
+            "default": #{ type: "integer", value: 1 } },
+        host_page_size: #{ schema: #{ type: "integer", min: 1 },
+            "default": #{ type: "integer", value: 25 } },
+        host_sort_key: #{ schema: #{ type: "string" },
+            "default": #{ type: "string", value: "host" } },
+        host_sort_direction: #{ schema: #{ type: "string", allowed: ["ascending", "descending"] },
+            "default": #{ type: "string", value: "ascending" } },
+        collapsed_regions: #{ schema: #{ type: "array", max_items: 16, items: #{ type: "string" } },
+            "default": #{ type: "array", value: [] } },
         deploy_target: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "edge-01" } },
         release_channel: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "stable" } },
         confirm_open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: false } },
+        command_open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: false } },
+        sheet_open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: false } },
         deployment_phase: #{ schema: #{ type: "string", allowed: ["idle", "running", "complete", "failed"] },
             "default": #{ type: "string", value: "idle" } },
         deployment_progress: #{ schema: #{ type: "number", min: 0.0, max: 100.0 },
@@ -56,8 +73,39 @@ fn OperationsWorkbench(props) { render_component("stories/operations_workbench",
 
 fn navigate(page, ctx, payload) { ctx.set_state("page", page); }
 fn hosts_selected(ctx, values) {
-    ctx.set_state("selected_hosts", values);
-    if values.len > 0 { ctx.set_state("deploy_target", values[0]); }
+    let accepted = [];
+    for value in values { if accepted.len < 2 { accepted.push(value); } }
+    ctx.set_state("selected_hosts", accepted);
+    if accepted.len > 0 {
+        ctx.set_state("deploy_target", accepted[0]);
+        ctx.set_state("sheet_open", true);
+    }
+}
+fn host_query_changed(ctx, value) {
+    ctx.set_state("host_query", value);
+    ctx.set_state("host_page", 1);
+}
+fn hosts_sorted(ctx, value) {
+    if value != () {
+        ctx.set_state("host_sort_key", value.key);
+        ctx.set_state("host_sort_direction", value.direction);
+        ctx.set_state("host_page", 1);
+    }
+}
+fn host_page_changed(ctx, value) {
+    ctx.set_state("host_page", value.current_page);
+    ctx.set_state("host_page_size", value.page_size);
+}
+fn host_group_toggled(ctx, value) {
+    let collapsed = ctx.get_state("collapsed_regions");
+    if value in collapsed {
+        let next = [];
+        for region in collapsed { if region != value { next.push(region); } }
+        ctx.set_state("collapsed_regions", next);
+    } else {
+        collapsed.push(value);
+        ctx.set_state("collapsed_regions", collapsed);
+    }
 }
 fn channel_changed(ctx, value) { ctx.set_state("release_channel", value); }
 fn open_confirm(ctx, payload) { ctx.set_state("confirm_open", true); }
@@ -105,7 +153,18 @@ fn stop_fixture_stream(ctx, deps) { () }
 fn dismiss_toast(ctx, payload) { ctx.set_state("toast_visible", false); }
 fn command_query_changed(ctx, value) { ctx.set_state("command_query", value); }
 fn command_active_changed(ctx, value) { ctx.set_state("command_active", value); }
-fn command_action(ctx, value) { ctx.set_state("page", value); }
+fn command_open_changed(ctx, value) { ctx.set_state("command_open", value); }
+fn open_command(ctx, payload) { ctx.set_state("command_open", true); }
+fn command_action(ctx, value) {
+    ctx.set_state("page", value);
+    ctx.set_state("command_open", false);
+}
+fn sheet_open_changed(ctx, value) { ctx.set_state("sheet_open", value); }
+fn open_host_sheet(ctx, payload) { ctx.set_state("sheet_open", true); }
+fn compare_from_sheet(ctx, payload) {
+    ctx.set_state("sheet_open", false);
+    ctx.set_state("page", "configurations");
+}
 
 fn nav_button(ctx, page, label) {
     button::Button(#{ text: label, size: "sm",
@@ -189,21 +248,42 @@ fn hosts(ctx) {
     }
     column([page_header("Hosts", if fixture == "large" { "1,000 Rust-owned rows; only the visible window is realized." }
             else { "Search, sort, and select the Rust-owned Host collection." }),
+        row([
+            input::Input(#{ key: "host-search", label: "Search hosts",
+                value: ctx.get_state("host_query"), placeholder: "Host, region, version, or status",
+                autofocus: true, on_change: Fn("host_query_changed") }).test_id("host-search"),
+            button::Button(#{ text: `Inspect ${ctx.get_state("deploy_target")}`,
+                variant: "outline", on_click: Fn("open_host_sheet") }).test_id("open-host-sheet"),
+        ]).with_style(style().gap(theme_spacing("sm")).items_center()),
         table::Table(#{ key: "operations-hosts", label: "Operations hosts", row_key: "id",
         rows: ctx.get_native_collection("operations_hosts"), fill_height: true,
+        query: ctx.get_state("host_query"),
+        search_fields: ["host", "region", "version", "status"],
+        page: ctx.get_state("host_page"), page_size: ctx.get_state("host_page_size"),
         columns: [
             #{ key: "host", title: "Host", width: #{ kind: "flex", value: 1 }, sortable: true,
                 adornments: [#{ text_key: "status", variant_key: "status_variant", dot: true }] },
             #{ key: "region", title: "Region", width: #{ kind: "fixed", value: 140 }, sortable: true },
             #{ key: "version", title: "Version", width: #{ kind: "fixed", value: 100 } },
+            #{ key: "status", title: "Status", width: #{ kind: "fixed", value: 120 }, sortable: true },
         ], selection_mode: "multiple", selected_keys: ctx.get_state("selected_hosts"),
-        on_selection_change: Fn("hosts_selected") })
+        sort: #{ key: ctx.get_state("host_sort_key"), direction: ctx.get_state("host_sort_direction") },
+        group_by: "region", collapsed_groups: ctx.get_state("collapsed_regions"),
+        on_selection_change: Fn("hosts_selected"), on_sort_change: Fn("hosts_sorted"),
+        on_group_toggle: Fn("host_group_toggled") }),
+        pagination::Pagination(#{ key: "host-pages", label: "Host pages",
+            total_items: ctx.get_native_collection("operations_hosts").len,
+            current_page: ctx.get_state("host_page"), page_size: ctx.get_state("host_page_size"),
+            on_change: Fn("host_page_changed") })
     ]).with_style(style().height(relative(1.0)).gap(theme_spacing("md")))
 }
 
 fn configurations(ctx) {
-    let left = "server {\n  host = \"edge-01\"\n  channel = \"stable\"\n  port = 443\n}\n";
-    let right = `server {\n  host = \"edge-02\"\n  channel = \"${ctx.get_state("release_channel")}\"\n  port = 8443\n}\n`;
+    let selected = ctx.get_state("selected_hosts");
+    let left_host = if selected.len > 0 { selected[0] } else { "edge-01" };
+    let right_host = if selected.len > 1 { selected[1] } else { "edge-02" };
+    let left = `server {\n  host = \"${left_host}\"\n  channel = \"stable\"\n  port = 443\n}\n`;
+    let right = `server {\n  host = \"${right_host}\"\n  channel = \"${ctx.get_state("release_channel")}\"\n  port = 8443\n}\n`;
     column([
         page_header("Configurations", "Compare two hosts, then stage a deterministic deployment."),
         input::Input(#{ key: "release-channel", label: "Release channel",
@@ -213,8 +293,8 @@ fn configurations(ctx) {
                 file_name: "server.rhai", language: "rhai", source: right,
                 style: style().height(px(210)) }),
             diff_viewer::DiffViewer(#{ key: "config-diff", mode: "split",
-                left: #{ source: left, label: "edge-01", file_name: "server.rhai", language: "rhai" },
-                right: #{ source: right, label: "edge-02", file_name: "server.rhai", language: "rhai" },
+                left: #{ source: left, label: left_host, file_name: "server.rhai", language: "rhai" },
+                right: #{ source: right, label: right_host, file_name: "server.rhai", language: "rhai" },
                 style: style().height(px(210)) }),
         ]).with_style(style().gap(theme_spacing("sm"))),
         button::Button(#{ text: `Deploy ${ctx.get_state("deploy_target")}`,
@@ -290,7 +370,7 @@ fn render_OperationsWorkbench(ctx, props) {
                 else { `${ctx.get_state("deploy_target")} now runs ${ctx.get_state("release_channel")}` },
             variant: if failed { "danger" } else { "success" }, duration_ms: 60000 }]
     } else { [] };
-    column([
+    let children = [
         title_bar::TitleBar(#{ label: "Operations Workbench", title: "OPERATIONS WORKBENCH",
             subtitle: "Deterministic local fixture", inset_start: 70 }),
         row([
@@ -298,10 +378,8 @@ fn render_OperationsWorkbench(ctx, props) {
                 nav_button(ctx, "dashboard", "Dashboard"), nav_button(ctx, "hosts", "Hosts"),
                 nav_button(ctx, "configurations", "Configurations"), nav_button(ctx, "deployments", "Deployments"),
                 nav_button(ctx, "settings", "Settings"),
-                command::Command(#{ key: "operations-command", label: "Navigate",
-                    query: ctx.get_state("command_query"), active_value: ctx.get_state("command_active"),
-                    items: commands, max_visible: 5, on_query_change: Fn("command_query_changed"),
-                    on_active_change: Fn("command_active_changed"), on_action: Fn("command_action") })
+                button::Button(#{ text: "Command palette", variant: "outline",
+                    on_click: Fn("open_command") }).test_id("open-command")
             ]).with_style(style().width(px(230)).height(relative(1.0)).padding(theme_spacing("sm"))
                 .gap(theme_spacing("xs")).border_end(px(1)).border_color(theme_color("border"))),
             column([page(ctx)]).with_style(style().flex_grow().min_width(px(0)).min_height(px(0))
@@ -310,15 +388,41 @@ fn render_OperationsWorkbench(ctx, props) {
         status_bar::StatusBar(#{ label: "Operations status",
             start: [text(ctx.get_state("page"))], center: [text(ctx.get_state("deployment_phase"))],
             end: [text(ctx.get_state("deploy_target"))] }),
-        dialog::Dialog(#{ key: "deployment-confirm", open: ctx.get_state("confirm_open"),
+    ];
+    if ctx.get_state("confirm_open") {
+        children.push(dialog::Dialog(#{ key: "deployment-confirm", open: true,
             title: "Confirm deployment", content: text(`Deploy ${ctx.get_state("release_channel")} to ${ctx.get_state("deploy_target")}?`),
             actions: [button::Button(#{ text: "Cancel", variant: "outline", on_click: Fn("cancel_deployment") })
                     .test_id("cancel-deploy"),
                 button::Button(#{ text: "Deploy", variant: "primary", on_click: Fn("confirm_deployment") })
                     .test_id("confirm-deploy")],
-            on_open_change: Fn("confirm_open_changed") }),
-        toast::Toast(#{ key: "operations-toast", items: toast_items, on_dismiss: Fn("dismiss_toast") })
-    ]).with_style(style().width(relative(1.0)).height(relative(1.0)).background(theme_color("surface")))
+            on_open_change: Fn("confirm_open_changed") }));
+    }
+    if ctx.get_state("command_open") {
+        children.push(command_dialog::CommandDialog(#{ key: "operations-command", open: true,
+            label: "Navigate", query: ctx.get_state("command_query"),
+            active_value: ctx.get_state("command_active"), items: commands, max_visible: 5,
+            on_query_change: Fn("command_query_changed"),
+            on_active_change: Fn("command_active_changed"), on_action: Fn("command_action"),
+            on_open_change: Fn("command_open_changed") }));
+    }
+    if ctx.get_state("sheet_open") {
+        children.push(sheet::Sheet(#{ key: "host-details", open: true, side: "end",
+            title: "Host details", content: column([
+                text(`Target: ${ctx.get_state("deploy_target")}`),
+                text(`Selected hosts: ${ctx.get_state("selected_hosts").len}`),
+                badge::Badge(#{ text: "Rust NativeCollection", variant: "accent" })
+            ]).with_style(style().gap(theme_spacing("sm"))),
+            actions: [button::Button(#{ text: "Compare configuration", variant: "primary",
+                on_click: Fn("compare_from_sheet") }).test_id("compare-from-sheet")],
+            on_open_change: Fn("sheet_open_changed") }));
+    }
+    if ctx.get_state("toast_visible") {
+        children.push(toast::Toast(#{ key: "operations-toast", items: toast_items,
+            on_dismiss: Fn("dismiss_toast") }));
+    }
+    column(children).with_style(style().width(relative(1.0)).height(relative(1.0))
+        .background(theme_color("surface")))
 }
 
 fn view(ctx) { OperationsWorkbench(#{ key: "operations-workbench" }) }
