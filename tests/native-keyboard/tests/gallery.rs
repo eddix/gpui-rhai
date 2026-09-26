@@ -1,8 +1,9 @@
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::time::{Duration, Instant};
 
 use gpui::prelude::*;
-use gpui::{Context, IntoElement, Render, TestAppContext, Window};
+use gpui::{Context, IntoElement, Render, TestAppContext, Window, WindowHandle};
 use gpui_rhai::{
     AutomationCommand, AutomationLocator, AutomationResult, ScriptViewHandle, ScriptViewHost,
     UiNodeKind,
@@ -76,8 +77,71 @@ fn dispatch(visual: &mut gpui::VisualTestContext, view: &ScriptViewHandle, id: &
     visual.run_until_parked();
 }
 
+fn mount_story(
+    cx: &mut TestAppContext,
+    launch: GalleryLaunch,
+    identity: &str,
+) -> (WindowHandle<GalleryHost>, ScriptViewHandle) {
+    let prepared = prepare(&launch).unwrap();
+    let captured = Rc::new(RefCell::new(None));
+    let captured_for_window = Rc::clone(&captured);
+    let host_identity = format!("{identity}-host");
+    let view_identity = format!("{identity}-view");
+    let window = cx.add_window(move |window, cx| {
+        let host = ScriptViewHost::new(host_identity, cx).unwrap();
+        let view = prepared
+            .mount(
+                gpui_rhai::ScriptViewConfig::new(view_identity),
+                host.clone(),
+                window,
+                cx,
+            )
+            .unwrap();
+        *captured_for_window.borrow_mut() = Some(view.clone());
+        GalleryHost { host, view }
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    cx.run_until_parked();
+    let view = captured.borrow().as_ref().unwrap().clone();
+    (window, view)
+}
+
+fn rendered_texts(
+    visual: &mut gpui::VisualTestContext,
+    view: &ScriptViewHandle,
+) -> Vec<String> {
+    let mut texts = Vec::new();
+    node_texts(
+        &visual.update(|_, cx| view.root(cx).unwrap().unwrap()),
+        &mut texts,
+    );
+    texts
+}
+
+fn wait_for_text(
+    visual: &mut gpui::VisualTestContext,
+    view: &ScriptViewHandle,
+    expected: &str,
+) -> Vec<String> {
+    let deadline = Instant::now() + Duration::from_secs(3);
+    loop {
+        visual.run_until_parked();
+        let texts = rendered_texts(visual, view);
+        if texts.iter().any(|text| text.contains(expected)) {
+            return texts;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for {expected:?}; rendered {texts:?}"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
 #[gpui::test]
 fn every_gallery_story_case_mounts_draws_and_presents_semantics(cx: &mut TestAppContext) {
+    cx.executor().allow_parking();
     cx.update(gpui_rhai::install);
     for story in stories() {
         for case in story.cases {
@@ -148,33 +212,17 @@ fn every_gallery_story_case_mounts_draws_and_presents_semantics(cx: &mut TestApp
 
 #[gpui::test]
 fn operations_workbench_completes_and_cancels_the_deployment_boundary(cx: &mut TestAppContext) {
+    cx.executor().allow_parking();
     cx.update(gpui_rhai::install);
-    let prepared = prepare(&GalleryLaunch {
-        story: "apps/operations".to_owned(),
-        case: "config-diff".to_owned(),
-        ..GalleryLaunch::default()
-    })
-    .unwrap();
-    let captured = Rc::new(RefCell::new(None));
-    let captured_for_window = Rc::clone(&captured);
-    let window = cx.add_window(move |window, cx| {
-        let host = ScriptViewHost::new("acceptance-gallery", cx).unwrap();
-        let view = prepared
-            .mount(
-                gpui_rhai::ScriptViewConfig::new("operations-workbench"),
-                host.clone(),
-                window,
-                cx,
-            )
-            .unwrap();
-        *captured_for_window.borrow_mut() = Some(view.clone());
-        GalleryHost { host, view }
-    });
-    cx.run_until_parked();
-    cx.refresh().unwrap();
-    cx.run_until_parked();
-
-    let view = captured.borrow().as_ref().unwrap().clone();
+    let (window, view) = mount_story(
+        cx,
+        GalleryLaunch {
+            story: "apps/operations".to_owned(),
+            case: "config-diff".to_owned(),
+            ..GalleryLaunch::default()
+        },
+        "operations-normal",
+    );
     let mut visual = gpui::VisualTestContext::from_window(*window, cx);
     visual.update(|_, cx| {
         assert!(view.select_theme("Default", "Light", cx).unwrap());
@@ -183,11 +231,7 @@ fn operations_workbench_completes_and_cancels_the_deployment_boundary(cx: &mut T
     visual.run_until_parked();
     dispatch(&mut visual, &view, "stage-deploy");
     dispatch(&mut visual, &view, "cancel-deploy");
-    let mut texts = Vec::new();
-    node_texts(
-        &visual.update(|_, cx| view.root(cx).unwrap().unwrap()),
-        &mut texts,
-    );
+    let mut texts = rendered_texts(&mut visual, &view);
     assert!(
         !texts
             .iter()
@@ -196,11 +240,7 @@ fn operations_workbench_completes_and_cancels_the_deployment_boundary(cx: &mut T
 
     dispatch(&mut visual, &view, "stage-deploy");
     dispatch(&mut visual, &view, "confirm-deploy");
-    texts.clear();
-    node_texts(
-        &visual.update(|_, cx| view.root(cx).unwrap().unwrap()),
-        &mut texts,
-    );
+    texts = wait_for_text(&mut visual, &view, "Deployment complete");
     assert!(
         texts
             .iter()
@@ -215,5 +255,92 @@ fn operations_workbench_completes_and_cancels_the_deployment_boundary(cx: &mut T
         visual
             .update(|_, cx| view.last_error(cx).unwrap())
             .is_none()
+    );
+}
+
+#[gpui::test]
+fn operations_workbench_failure_keeps_the_previous_configuration(cx: &mut TestAppContext) {
+    cx.executor().allow_parking();
+    cx.update(gpui_rhai::install);
+    let (window, view) = mount_story(
+        cx,
+        GalleryLaunch {
+            story: "apps/operations".to_owned(),
+            case: "failure".to_owned(),
+            ..GalleryLaunch::default()
+        },
+        "operations-failure",
+    );
+    let mut visual = gpui::VisualTestContext::from_window(*window, cx);
+    dispatch(&mut visual, &view, "stage-deploy");
+    dispatch(&mut visual, &view, "confirm-deploy");
+    let texts = wait_for_text(&mut visual, &view, "Deployment failed");
+    assert!(
+        texts
+            .iter()
+            .any(|text| text.contains("previous Host configuration remains active")),
+        "{texts:?}"
+    );
+    assert!(
+        !texts
+            .iter()
+            .any(|text| text.contains("Configuration verified")),
+        "{texts:?}"
+    );
+    assert!(
+        visual
+            .update(|_, cx| view.last_error(cx).unwrap())
+            .is_none()
+    );
+}
+
+#[gpui::test]
+fn operations_fixture_cases_are_observable_and_streaming_is_bounded(cx: &mut TestAppContext) {
+    cx.executor().allow_parking();
+    cx.update(gpui_rhai::install);
+    for (case, expected) in [
+        ("loading", "Loading host health and metrics"),
+        ("empty", "No hosts yet"),
+        ("large", "1,000 Rust-owned rows"),
+    ] {
+        let (window, view) = mount_story(
+            cx,
+            GalleryLaunch {
+                story: "apps/operations".to_owned(),
+                case: case.to_owned(),
+                ..GalleryLaunch::default()
+            },
+            &format!("operations-{case}"),
+        );
+        let mut visual = gpui::VisualTestContext::from_window(*window, cx);
+        let texts = rendered_texts(&mut visual, &view);
+        assert!(
+            texts.iter().any(|text| text.contains(expected)),
+            "{case}: {texts:?}"
+        );
+        assert!(
+            visual
+                .update(|_, cx| view.last_error(cx).unwrap())
+                .is_none(),
+            "{case} recorded an error"
+        );
+    }
+
+    let (window, view) = mount_story(
+        cx,
+        GalleryLaunch {
+            story: "apps/operations".to_owned(),
+            case: "streaming".to_owned(),
+            ..GalleryLaunch::default()
+        },
+        "operations-streaming",
+    );
+    let mut visual = gpui::VisualTestContext::from_window(*window, cx);
+    let texts = wait_for_text(&mut visual, &view, "Streaming revision 4");
+    assert!(
+        texts
+            .iter()
+            .any(|text| text.contains("without Rhai polling")),
+        "{texts:?}"
     );
 }

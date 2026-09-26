@@ -1,10 +1,12 @@
 use std::collections::BTreeMap;
+use std::time::Duration;
 
 use gpui_rhai::{
-    AssetData, ChartDataLimits, ChartDataset, ChartGeoMap, EmbeddedScriptSource,
-    EmbeddedScriptView, ModuleId, NativeChartData, NativeCollection, PreparedScriptView,
-    RuntimeEngine, ScriptViewExtension, ThemeMode, ThemeTokenOverrides, ThemeVariant,
-    UiRuntimeState, UiValue, load_theme_source,
+    AppManifest, AssetData, CapabilityDescriptor, CapabilityId, CapabilityMethod, ChartDataLimits,
+    ChartDataset, ChartGeoMap, EmbeddedScriptSource, EmbeddedScriptView, ModuleId, NativeChartData,
+    NativeCollection, PreparedScriptView, RuntimeEngine, ScriptViewExtension,
+    SubscriptionCapabilityHandler, SubscriptionWork, ThemeMode, ThemeTokenOverrides, ThemeVariant,
+    UiRuntimeState, UiValue, ValueSchema, load_theme_source,
 };
 use gpui_rhai_registry::{
     AR_LOCALE, BUNDLED_ASSET_SOURCES, BUNDLED_CHART_SOURCES_BY_ID, BUNDLED_COMPONENT_SOURCES_BY_ID,
@@ -98,6 +100,13 @@ pub(crate) fn resolve_story(id: &str, case: &str) -> Result<&'static StoryDefini
     Ok(story)
 }
 
+fn operations_fixture_case(case: &str) -> &str {
+    match case {
+        "loading" | "empty" | "failure" | "streaming" | "large" => case,
+        _ => "normal",
+    }
+}
+
 fn materialize_story_source(
     story: &StoryDefinition,
     launch: &GalleryLaunch,
@@ -105,13 +114,19 @@ fn materialize_story_source(
 ) -> Result<String, String> {
     if story.id == "apps/operations" {
         let page = match launch.case.as_str() {
-            "config-diff" => "configurations",
+            "config-diff" | "failure" => "configurations",
             "theme-overrides" => "settings",
+            "large" => "hosts",
             _ => "dashboard",
         };
-        Ok(story.source.replace(
+        let fixture_case = operations_fixture_case(&launch.case);
+        let source = story.source.replace(
             "__OPERATIONS_PAGE__",
             &serde_json::to_string(page).map_err(|error| error.to_string())?,
+        );
+        Ok(source.replace(
+            "__OPERATIONS_CASE__",
+            &serde_json::to_string(fixture_case).map_err(|error| error.to_string())?,
         ))
     } else if story.id == "components/catalog" {
         let json = |value: &str| serde_json::to_string(value).map_err(|error| error.to_string());
@@ -219,19 +234,81 @@ fn asset(bytes: &[u8]) -> AssetData {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-struct OperationsFixture;
+#[derive(Clone, Debug)]
+struct OperationsFixture {
+    fixture_case: String,
+}
 
 impl ScriptViewExtension for OperationsFixture {
     fn configure_runtime(&self, runtime: &mut UiRuntimeState) -> Result<(), String> {
         runtime
             .native_collections
-            .register("operations_hosts", operations_hosts()?)
+            .register("operations_hosts", operations_hosts(&self.fixture_case)?)
             .map_err(|error| error.to_string())?;
+        runtime.native_chart_data.insert(
+            "operations_metrics".to_owned(),
+            operations_metrics(&self.fixture_case)?,
+        );
+        let capability =
+            CapabilityId::parse("gallery.operations").map_err(|error| error.to_string())?;
         runtime
-            .native_chart_data
-            .insert("operations_metrics".to_owned(), operations_metrics()?);
+            .capabilities
+            .register_subscription(
+                CapabilityDescriptor {
+                    id: capability,
+                    version: semver::Version::new(1, 0, 0),
+                    methods: BTreeMap::from([
+                        (
+                            "deploy".to_owned(),
+                            CapabilityMethod {
+                                input: ValueSchema::Bool,
+                                output: ValueSchema::integer(),
+                            },
+                        ),
+                        (
+                            "stream".to_owned(),
+                            CapabilityMethod {
+                                input: ValueSchema::Null,
+                                output: ValueSchema::integer(),
+                            },
+                        ),
+                    ]),
+                },
+                OperationsSubscription,
+            )
+            .map_err(|error| error.to_string())?;
         Ok(())
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct OperationsSubscription;
+
+impl SubscriptionCapabilityHandler for OperationsSubscription {
+    fn subscribe(&mut self, method: &str, input: UiValue) -> Result<SubscriptionWork, String> {
+        let (name, values) = match (method, input) {
+            ("deploy", UiValue::Bool(true)) => {
+                ("gpui-rhai-gallery-deploy-failure", vec![15, 48, -1])
+            }
+            ("deploy", UiValue::Bool(false)) => ("gpui-rhai-gallery-deploy", vec![15, 48, 76, 100]),
+            ("stream", UiValue::Null) => ("gpui-rhai-gallery-stream", vec![1, 2, 3, 4]),
+            ("deploy", _) => return Err("deploy expects a failure boolean".to_owned()),
+            ("stream", _) => return Err("stream expects null input".to_owned()),
+            _ => return Err(format!("unknown operations subscription `{method}`")),
+        };
+        let (sender, receiver) = std::sync::mpsc::channel();
+        std::thread::Builder::new()
+            .name(name.to_owned())
+            .spawn(move || {
+                for value in values {
+                    std::thread::sleep(Duration::from_millis(45));
+                    if sender.send(UiValue::Integer(value)).is_err() {
+                        break;
+                    }
+                }
+            })
+            .map_err(|error| error.to_string())?;
+        Ok(SubscriptionWork::from_receiver(receiver))
     }
 }
 
@@ -262,46 +339,78 @@ impl ScriptViewExtension for ChartCatalogFixture {
     }
 }
 
-fn operations_hosts() -> Result<NativeCollection, String> {
-    let rows = [
-        ("edge-01", "Tokyo", "1.8.4", "Healthy", "success"),
-        ("edge-02", "Berlin", "1.8.3", "Deploying", "accent"),
-        ("edge-03", "Virginia", "1.7.9", "Drift", "warning"),
-    ]
-    .into_iter()
-    .map(|(host, region, version, status, variant)| {
-        BTreeMap::from([
-            ("id".to_owned(), UiValue::String(host.to_owned())),
-            ("host".to_owned(), UiValue::String(host.to_owned())),
-            ("region".to_owned(), UiValue::String(region.to_owned())),
-            ("version".to_owned(), UiValue::String(version.to_owned())),
-            ("status".to_owned(), UiValue::String(status.to_owned())),
-            (
-                "status_variant".to_owned(),
-                UiValue::String(variant.to_owned()),
-            ),
-        ])
-    });
+fn operations_host_row(
+    host: impl Into<String>,
+    region: impl Into<String>,
+    version: impl Into<String>,
+    status: impl Into<String>,
+    variant: impl Into<String>,
+) -> BTreeMap<String, UiValue> {
+    let host = host.into();
+    BTreeMap::from([
+        ("id".to_owned(), UiValue::String(host.clone())),
+        ("host".to_owned(), UiValue::String(host)),
+        ("region".to_owned(), UiValue::String(region.into())),
+        ("version".to_owned(), UiValue::String(version.into())),
+        ("status".to_owned(), UiValue::String(status.into())),
+        ("status_variant".to_owned(), UiValue::String(variant.into())),
+    ])
+}
+
+fn operations_hosts(fixture_case: &str) -> Result<NativeCollection, String> {
+    let rows = if matches!(fixture_case, "loading" | "empty") {
+        Vec::new()
+    } else if fixture_case == "large" {
+        let regions = ["Tokyo", "Berlin", "Virginia", "Singapore"];
+        (1..=1_000)
+            .map(|index| {
+                let drift = index % 97 == 0;
+                operations_host_row(
+                    format!("edge-{index:02}"),
+                    regions[(index - 1) % regions.len()],
+                    if drift { "1.7.9" } else { "1.8.4" },
+                    if drift { "Drift" } else { "Healthy" },
+                    if drift { "warning" } else { "success" },
+                )
+            })
+            .collect()
+    } else {
+        let mut rows = vec![
+            operations_host_row("edge-01", "Tokyo", "1.8.4", "Healthy", "success"),
+            operations_host_row("edge-02", "Berlin", "1.8.3", "Deploying", "accent"),
+            operations_host_row("edge-03", "Virginia", "1.7.9", "Drift", "warning"),
+        ];
+        if fixture_case == "failure" {
+            rows.push(operations_host_row(
+                "edge-04",
+                "Singapore",
+                "unknown",
+                "Unreachable",
+                "danger",
+            ));
+        }
+        rows
+    };
     NativeCollection::new("id", rows).map_err(|error| error.to_string())
 }
 
-fn operations_metrics() -> Result<NativeChartData, String> {
-    let rows = [
-        ("m1", "09:00", 42_i64),
-        ("m2", "09:05", 51_i64),
-        ("m3", "09:10", 38_i64),
-        ("m4", "09:15", 44_i64),
-        ("m5", "09:20", 36_i64),
-    ]
-    .into_iter()
-    .map(|(id, minute, latency)| {
-        BTreeMap::from([
-            ("id".to_owned(), UiValue::String(id.to_owned())),
-            ("minute".to_owned(), UiValue::String(minute.to_owned())),
-            ("latency".to_owned(), UiValue::Integer(latency)),
-        ])
-    })
-    .collect::<Vec<_>>();
+fn operations_metrics(fixture_case: &str) -> Result<NativeChartData, String> {
+    let count = match fixture_case {
+        "streaming" => 24,
+        "large" => 120,
+        _ => 5,
+    };
+    let rows = (0..count)
+        .map(|index| {
+            let minute = format!("{:02}:{:02}", 9 + index / 12, (index % 12) * 5);
+            let latency = 36 + i64::from((index * 7) % 17);
+            BTreeMap::from([
+                ("id".to_owned(), UiValue::String(format!("m{}", index + 1))),
+                ("minute".to_owned(), UiValue::String(minute)),
+                ("latency".to_owned(), UiValue::Integer(latency)),
+            ])
+        })
+        .collect::<Vec<_>>();
     let dataset = ChartDataset::from_rows(
         "main",
         &rows,
@@ -361,26 +470,31 @@ pub fn prepare(launch: &GalleryLaunch) -> Result<PreparedScriptView, String> {
             serde_json::to_string(&launch.locale).map_err(|error| error.to_string())?,
         )
     };
-    let mut view = EmbeddedScriptView::new(
-        ModuleId::parse(story.source_module).map_err(|error| error.to_string())?,
-        story_scripts(story, source)?,
-        primary_theme,
-    )
-    .theme_sources(
-        BUNDLED_THEME_SOURCES
-            .iter()
-            .filter(|(name, _)| *name != theme_name)
-            .map(|(name, source)| ((*name).to_owned(), (*source).to_owned())),
-    )
-    .locale_sources(locale_sources.map(|(name, source)| (name.to_owned(), source.to_owned())))
-    .asset_sources(BUNDLED_ASSET_SOURCES.iter().map(|(path, source)| {
-        (
-            path.strip_suffix(".svg").unwrap_or(path).to_owned(),
-            asset(source.as_bytes()),
-        )
-    }));
+    let entry = ModuleId::parse(story.source_module).map_err(|error| error.to_string())?;
+    let mut view =
+        EmbeddedScriptView::new(entry.clone(), story_scripts(story, source)?, primary_theme)
+            .theme_sources(
+                BUNDLED_THEME_SOURCES
+                    .iter()
+                    .filter(|(name, _)| *name != theme_name)
+                    .map(|(name, source)| ((*name).to_owned(), (*source).to_owned())),
+            )
+            .locale_sources(
+                locale_sources.map(|(name, source)| (name.to_owned(), source.to_owned())),
+            )
+            .asset_sources(BUNDLED_ASSET_SOURCES.iter().map(|(path, source)| {
+                (
+                    path.strip_suffix(".svg").unwrap_or(path).to_owned(),
+                    asset(source.as_bytes()),
+                )
+            }));
     if story.fixture == Some("operations") {
-        view = view.extension(OperationsFixture);
+        let manifest = AppManifest::new(entry)
+            .with_capability("gallery.operations", "*")
+            .map_err(|error| error.to_string())?;
+        view = view.manifest(manifest).extension(OperationsFixture {
+            fixture_case: operations_fixture_case(&launch.case).to_owned(),
+        });
     } else if story.fixture == Some("chart-catalog") {
         view = view.extension(ChartCatalogFixture {
             stream: chart_catalog_stream(4_096)?,
