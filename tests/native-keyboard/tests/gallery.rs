@@ -18,10 +18,15 @@ struct GalleryHost {
 
 impl Render for GalleryHost {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        let content = if self.view.state() == gpui_rhai::ScriptViewState::Active {
+            self.view.flex_item().unwrap()
+        } else {
+            gpui::div().into_any_element()
+        };
         self.host.container(
             gpui::div()
                 .size_full()
-                .child(self.view.flex_item().unwrap()),
+                .child(content),
         )
     }
 }
@@ -347,6 +352,62 @@ fn operations_fixture_cases_are_observable_and_streaming_is_bounded(cx: &mut Tes
             .iter()
             .any(|text| text.contains("without Rhai polling")),
         "{texts:?}"
+    );
+}
+
+#[gpui::test]
+fn streaming_workbench_suspend_cancels_late_delivery_and_resume_restarts(
+    cx: &mut TestAppContext,
+) {
+    cx.update(gpui_rhai::install);
+    let prepared = prepare(&GalleryLaunch {
+        story: "apps/operations".to_owned(),
+        case: "streaming".to_owned(),
+        ..GalleryLaunch::default()
+    })
+    .unwrap();
+    let captured = Rc::new(RefCell::new(None));
+    let captured_for_window = Rc::clone(&captured);
+    let window = cx.add_window(move |window, cx| {
+        let host = ScriptViewHost::new("operations-stream-lifecycle-host", cx).unwrap();
+        let view = prepared
+            .mount(
+                gpui_rhai::ScriptViewConfig::new("operations-stream-lifecycle-view"),
+                host.clone(),
+                window,
+                cx,
+            )
+            .unwrap();
+        view.suspend(window, cx).unwrap();
+        *captured_for_window.borrow_mut() = Some(view.clone());
+        GalleryHost { host, view }
+    });
+    let view = captured.borrow().as_ref().unwrap().clone();
+    assert_eq!(view.state(), gpui_rhai::ScriptViewState::Suspended);
+    cx.executor().allow_parking();
+    std::thread::sleep(Duration::from_millis(260));
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    let mut visual = gpui::VisualTestContext::from_window(*window, cx);
+    assert_eq!(view.state(), gpui_rhai::ScriptViewState::Suspended);
+    let resumed_initial = visual.update(|_, cx| {
+        view.resume(cx).unwrap();
+        let root = view.root(cx).unwrap().unwrap();
+        let mut texts = Vec::new();
+        node_texts(&root, &mut texts);
+        texts
+    });
+    assert!(
+        !resumed_initial
+            .iter()
+            .any(|text| text == "Streaming revision 4"),
+        "late suspended delivery advanced state: {resumed_initial:?}"
+    );
+    let resumed = wait_for_text(&mut visual, &view, "Streaming revision 4");
+    assert!(
+        resumed
+            .iter()
+            .any(|text| text == "Streaming revision 4")
     );
 }
 
