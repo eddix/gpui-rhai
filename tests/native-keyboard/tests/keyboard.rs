@@ -294,6 +294,101 @@ fn host_slot_renders_native_content_without_leaking_events_to_rhai(cx: &mut Test
 }
 
 #[gpui::test]
+fn host_slot_does_not_consume_text_input_before_ime_delivery(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let resident_entry = ModuleId::parse("resident").unwrap();
+    let input_module = ModuleId::parse("components/input").unwrap();
+    let resident = EmbeddedScriptView::new(
+        resident_entry.clone(),
+        EmbeddedScriptSource::new(std::collections::BTreeMap::from([
+            (
+                resident_entry,
+                r#"
+                    import "components/input" as input;
+                    fn state_schema() { #{ fields: #{ value: #{ schema: #{ type: "string" },
+                        "default": #{ type: "string", value: "" } } } } }
+                    fn changed(ctx, value) { ctx.set_state("value", value); }
+                    fn view(ctx) {
+                        column([
+                            input::Input(#{ key: "resident-input", label: "Resident input",
+                                value: ctx.get_state("value"), autofocus: true,
+                                on_change: Fn("changed") }),
+                            text(`resident:${ctx.get_state("value")}`)
+                        ])
+                    }
+                "#
+                .to_owned(),
+            ),
+            (
+                input_module,
+                include_str!("../../../registry/components/input.rhai").to_owned(),
+            ),
+        ])),
+        include_str!("../../../registry/themes/default_dark.rhai"),
+    )
+    .prepare()
+    .unwrap();
+    let shell_entry = ModuleId::parse("shell").unwrap();
+    let captured = Rc::new(RefCell::new(None));
+    let captured_for_window = Rc::clone(&captured);
+    let window = cx.add_window(move |window, cx| {
+        let shell_host = ScriptViewHost::new("ime-shell-host", cx).unwrap();
+        let resident_host = ScriptViewHost::new("ime-resident-host", cx).unwrap();
+        let resident = resident
+            .mount(
+                ScriptViewConfig::new("ime-resident-view"),
+                resident_host,
+                window,
+                cx,
+            )
+            .unwrap();
+        let slots = HostSlotRegistry::new()
+            .with_script_view("content", resident.clone())
+            .unwrap();
+        let shell = EmbeddedScriptView::new(
+            shell_entry.clone(),
+            EmbeddedScriptSource::new(std::collections::BTreeMap::from([(
+                shell_entry,
+                r#"fn view(ctx) {
+                    gpui_rhai::HostSlot(#{ key: "slot", name: "content" })
+                        .with_style(style().width(px(320)).height(px(100)))
+                }"#
+                .to_owned(),
+            )])),
+            include_str!("../../../registry/themes/default_dark.rhai"),
+        )
+        .extension(slots)
+        .prepare()
+        .unwrap()
+        .mount(
+            ScriptViewConfig::new("ime-shell-view"),
+            shell_host.clone(),
+            window,
+            cx,
+        )
+        .unwrap();
+        *captured_for_window.borrow_mut() = Some(resident);
+        SingleEmbeddedHost {
+            host: shell_host,
+            view: shell,
+        }
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    cx.run_until_parked();
+
+    cx.simulate_input(*window, "中文");
+    let resident = captured.borrow().as_ref().unwrap().clone();
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    wait_for_view_text(
+        &mut visual,
+        &resident,
+        "resident:中文",
+        "HostSlot must not mark printable keys handled before IME insertion",
+    );
+}
+
+#[gpui::test]
 fn host_slot_preserves_an_independent_script_view_host(cx: &mut TestAppContext) {
     cx.update(gpui_rhai::install);
     let resident_entry = ModuleId::parse("resident").unwrap();

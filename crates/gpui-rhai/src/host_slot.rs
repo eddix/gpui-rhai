@@ -207,7 +207,6 @@ impl PrimitiveHandler for HostSlotPrimitiveHandler {
             .on_mouse_move(|_, _, cx| cx.stop_propagation())
             .on_scroll_wheel(|_, _, cx| cx.stop_propagation())
             .on_click(|_, _, cx| cx.stop_propagation())
-            .on_key_down(|_, _, cx| cx.stop_propagation())
             .child(child)
             .into_any_element())
     }

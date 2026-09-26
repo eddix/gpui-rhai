@@ -946,6 +946,8 @@ fn tabs_and_table_use_semantic_theme_state_surfaces() {
     assert!(TABS.contains("radius(theme_radius(\"sm\"))"));
     assert!(!TABS.contains("radius(px(5))"));
     assert!(!TABS.contains("radius(px(8))"));
+    assert!(TABS.contains("let root_style = style().gap(theme_spacing(\"xs\"));"));
+    assert!(!TABS.contains("root_style = style().gap(theme_spacing(\"xs\")).margin_end(auto())"));
     assert!(TABLE.contains("theme_color(\"table.selection\")"));
     assert!(TABLE.contains("if item.selected { \"row_selected\" }"));
 }
