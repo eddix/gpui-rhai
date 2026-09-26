@@ -128,7 +128,11 @@ per-datum Rhai render functions are deliberately unsupported.
 ## Interaction and motion
 
 Hover, tooltip, crosshair, wheel zoom, middle-button pan, brush tracking, and
-keyboard active-mark navigation stay native. Arrow keys move focus, Home/End
+keyboard active-mark navigation stay native. Plain wheel input bubbles to an
+ancestor scroll container by default; `spec.interaction.wheel_zoom` accepts
+`"off"`, `"modifier"` (the default, Command/Control + wheel), or `"always"`.
+Explicit touch gestures that started while enabled still commit at their Ended
+phase. Arrow keys move focus, Home/End
 jump, and Enter/Space activate the focused datum. Semantic callbacks are
 bounded commit events rather than raw pointer streams.
 
@@ -182,7 +186,9 @@ Only successful foreground installation advances the presented key. A prepared
 revision or cancelled task is never treated as proof that the requested frame
 is visible; accessibility exposes both data revision and presented frame epoch.
 
-Chart titles consume the theme `title` typography role; axes, legends, values,
+Missing, empty, or whitespace-only chart titles are absent and reserve no title
+band; single-kind adapters never invent a title. Present chart titles consume
+the theme `title` typography role; axes, legends, values,
 and tooltips consume `body_small`. Native labels and SVG/PNG export share the
 resolved family, fallback stack, size, line height, and weight. Plot margins
 grow with the resolved line box instead of assuming a permanent 12px font.

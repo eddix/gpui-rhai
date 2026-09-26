@@ -2339,8 +2339,9 @@ mod tests {
             .apply()
             .unwrap();
         let report = project.check().unwrap();
-        assert_eq!(report.components, 9);
+        assert_eq!(report.components, 10);
         for component in [
+            "badge.rhai",
             "button.rhai",
             "icon.rhai",
             "input.rhai",

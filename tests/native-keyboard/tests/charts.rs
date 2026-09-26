@@ -150,6 +150,23 @@ fn chart_bounds(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> Geom
     })
 }
 
+fn chart_mark_count(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> i64 {
+    visual.update(|_, cx| {
+        let snapshot = view.accessibility_snapshot(cx).unwrap();
+        let node = snapshot
+            .find_by_role_and_name("figure", "Control")
+            .next()
+            .unwrap();
+        let Some(UiValue::Map(values)) = &node.value else {
+            panic!("missing chart projection")
+        };
+        let UiValue::Integer(count) = values["mark_count"] else {
+            panic!("missing presented mark count")
+        };
+        count
+    })
+}
+
 #[gpui::test]
 fn chart_gallery_uses_a_window_bounded_scroll_viewport(cx: &mut TestAppContext) {
     cx.update(gpui_rhai::install);
@@ -184,13 +201,78 @@ fn chart_gallery_uses_a_window_bounded_scroll_viewport(cx: &mut TestAppContext) 
 }
 
 #[gpui::test]
+fn plain_wheel_over_chart_bubbles_to_scroll_container(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let script = r#"
+        import "charts/chart" as chart;
+        fn state_schema(){#{fields:#{n:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}},z:#{schema:#{type:"float"},"default":#{type:"float",value:1.0}}}}}
+        fn zoomed(ctx,p){ctx.set_state("n",p.viewport_revision);ctx.set_state("z",p.zoom);}
+        fn view(ctx){column([
+            box([]).with_style(style().height(px(40)).flex_shrink(false)),
+            chart::Chart(#{key:"c",key_dimension:"id",zoom:ctx.get_state("z"),viewport_revision:ctx.get_state("n"),data:[#{id:"a",x:0,y:0},#{id:"b",x:1,y:1}],spec:#{title:"Control",series:[#{key:"s",kind:"line",encode:#{x:"x",y:"y"}}]},on_zoom_change:Fn("zoomed")}).with_style(style().width(px(420)).height(px(240)).flex_shrink(false)),
+            text(`Status ${ctx.get_state("n")}|${ctx.get_state("z")}`).accessibility_role("status").accessibility_label(`${ctx.get_state("n")}|${ctx.get_state("z")}`),
+            box([]).with_style(style().height(px(500)).flex_shrink(false))
+        ]).with_style(style().width(px(460)).height(px(300)).overflow_y_scroll())}
+    "#;
+    let (window, view) = mount(cx, script, "chart-wheel-bubbles");
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    pump(cx, &mut visual);
+    let before = chart_bounds(&mut visual, &view);
+    visual.simulate_event(ScrollWheelEvent {
+        position: point(
+            px((before.x + before.width / 2.0) as f32),
+            px((before.y + before.height / 2.0) as f32),
+        ),
+        delta: ScrollDelta::Pixels(point(px(0.0), px(-160.0))),
+        ..Default::default()
+    });
+    pump(cx, &mut visual);
+    let after = chart_bounds(&mut visual, &view);
+    assert!(
+        after.y < before.y - 40.0,
+        "before={before:?}, after={after:?}"
+    );
+    assert!(status(&mut visual, &view).starts_with("0|"));
+}
+
+#[gpui::test]
+fn relative_height_chart_presents_when_parent_width_comes_from_stretch(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let script = r#"
+        import "charts/chart" as chart;
+        fn view(ctx) {
+            let rows = [#{ id: "a", k: "A", v: 3 }, #{ id: "b", k: "B", v: 5 }];
+            let spec = #{ title: "Control", series: [#{ key: "s", kind: "bar",
+                encode: #{ x: "k", y: "v" } }] };
+            let graph = chart::Chart(#{ key: "stretch-chart", key_dimension: "id",
+                data: rows, spec: spec })
+                .with_style(style().width(relative(1.0)).height(relative(1.0)));
+            let card = box([text("card")]).with_style(style().flex_basis(relative(0.5)));
+            let chart_box = box([graph]).with_style(
+                style().width(px(180)).height(relative(1.0)).flex_shrink(false));
+            let content = row([card, chart_box]).with_style(
+                style().flex_grow().min_height(px(0)));
+            column([content]).with_style(
+                style().width(relative(1.0)).height(px(300)).flex_col())
+        }
+    "#;
+    let (window, view) = mount(cx, script, "chart-stretch-parent");
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    pump(cx, &mut visual);
+    assert!(chart_mark_count(&mut visual, &view) > 0);
+    let bounds = chart_bounds(&mut visual, &view);
+    assert!((bounds.width - 180.0).abs() < 1.0, "{bounds:?}");
+    assert!((bounds.height - 300.0).abs() < 1.0, "{bounds:?}");
+}
+
+#[gpui::test]
 fn chart_controlled_zoom_rejects_unacknowledged_preview(cx: &mut TestAppContext) {
     cx.update(gpui_rhai::install);
     let script = r#"
  import "charts/chart" as chart;
  fn state_schema(){#{fields:#{n:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}},first:#{schema:#{type:"float"},"default":#{type:"float",value:0.0}},last:#{schema:#{type:"float"},"default":#{type:"float",value:0.0}}}}}
  fn zoomed(ctx,p){let n=ctx.get_state("n");if n==0{ctx.set_state("first",p.zoom);}ctx.set_state("last",p.zoom);ctx.set_state("n",p.viewport_revision);}
- fn view(ctx){column([text("Status").accessibility_role("status").accessibility_label(`${ctx.get_state("n")}|${ctx.get_state("first")}|${ctx.get_state("last")}`),chart::Chart(#{key:"c",key_dimension:"id",zoom:1.0,pan_x:0.0,pan_y:0.0,viewport_revision:ctx.get_state("n"),data:[#{id:"a",x:0,y:1},#{id:"b",x:1,y:2}],spec:#{title:"Control",series:[#{key:"s",kind:"scatter",encode:#{x:"x",y:"y"}}]},on_zoom_change:Fn("zoomed")}).with_style(style().width(px(420)).height(px(300)))])}
+ fn view(ctx){column([text("Status").accessibility_role("status").accessibility_label(`${ctx.get_state("n")}|${ctx.get_state("first")}|${ctx.get_state("last")}`),chart::Chart(#{key:"c",key_dimension:"id",zoom:1.0,pan_x:0.0,pan_y:0.0,viewport_revision:ctx.get_state("n"),data:[#{id:"a",x:0,y:1},#{id:"b",x:1,y:2}],spec:#{title:"Control",interaction:#{wheel_zoom:"always"},series:[#{key:"s",kind:"scatter",encode:#{x:"x",y:"y"}}]},on_zoom_change:Fn("zoomed")}).with_style(style().width(px(420)).height(px(300)))])}
  "#;
     let (window, view) = mount(cx, script, "chart-controlled-zoom");
     let mut visual = VisualTestContext::from_window(*window, cx);
@@ -226,7 +308,7 @@ const CONTROLLED_ZOOM_SOURCE: &str = r#"
  import "charts/chart" as chart;
  fn state_schema(){#{fields:#{n:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}},z:#{schema:#{type:"float"},"default":#{type:"float",value:1.0}}}}}
  fn zoomed(ctx,p){ctx.set_state("n",p.viewport_revision);ctx.set_state("z",p.zoom);}
- fn view(ctx){column([text("Status").accessibility_role("status").accessibility_label(`${ctx.get_state("n")}|${ctx.get_state("z")}`),chart::Chart(#{key:"c",key_dimension:"id",zoom:ctx.get_state("z"),viewport_revision:ctx.get_state("n"),data:[#{id:"a",x:0,y:0},#{id:"b",x:1,y:1}],spec:#{title:"Control",series:[#{key:"s",kind:"scatter",encode:#{x:"x",y:"y"}}]},on_zoom_change:Fn("zoomed")}).with_style(style().width(px(420)).height(px(300)))])}
+ fn view(ctx){column([text("Status").accessibility_role("status").accessibility_label(`${ctx.get_state("n")}|${ctx.get_state("z")}`),chart::Chart(#{key:"c",key_dimension:"id",zoom:ctx.get_state("z"),viewport_revision:ctx.get_state("n"),data:[#{id:"a",x:0,y:0},#{id:"b",x:1,y:1}],spec:#{title:"Control",interaction:#{wheel_zoom:"always"},series:[#{key:"s",kind:"scatter",encode:#{x:"x",y:"y"}}]},on_zoom_change:Fn("zoomed")}).with_style(style().width(px(420)).height(px(300)))])}
 "#;
 
 fn chart_position(
@@ -316,7 +398,7 @@ fn unrelated_host_render_does_not_acknowledge_a_viewport_proposal(cx: &mut TestA
  import "charts/chart" as chart;
  fn state_schema(){#{fields:#{n:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}},last:#{schema:#{type:"float"},"default":#{type:"float",value:1.0}}}}}
  fn zoomed(ctx,p){ctx.set_state("n",ctx.get_state("n")+1);ctx.set_state("last",p.zoom);}
- fn view(ctx){column([text("Status").accessibility_role("status").accessibility_label(`${ctx.get_state("n")}|${ctx.get_state("last")}`),chart::Chart(#{key:"c",key_dimension:"id",zoom:1.0,viewport_revision:0,data:[#{id:"a",x:0,y:0},#{id:"b",x:1,y:1}],spec:#{title:"Control",series:[#{key:"s",kind:"scatter",encode:#{x:"x",y:"y"}}]},on_zoom_change:Fn("zoomed")}).with_style(style().width(px(420)).height(px(300)))])}
+ fn view(ctx){column([text("Status").accessibility_role("status").accessibility_label(`${ctx.get_state("n")}|${ctx.get_state("last")}`),chart::Chart(#{key:"c",key_dimension:"id",zoom:1.0,viewport_revision:0,data:[#{id:"a",x:0,y:0},#{id:"b",x:1,y:1}],spec:#{title:"Control",interaction:#{wheel_zoom:"always"},series:[#{key:"s",kind:"scatter",encode:#{x:"x",y:"y"}}]},on_zoom_change:Fn("zoomed")}).with_style(style().width(px(420)).height(px(300)))])}
  "#;
     let (window, view) = mount(cx, script, "chart-delayed-viewport-ack");
     let mut visual = VisualTestContext::from_window(*window, cx);
@@ -348,7 +430,7 @@ fn acknowledging_an_old_proposal_preserves_the_current_gesture(cx: &mut TestAppC
  fn state_schema(){#{fields:#{count:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}},rev:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}},z:#{schema:#{type:"float"},"default":#{type:"float",value:1.0}},pending_rev:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}},pending_z:#{schema:#{type:"float"},"default":#{type:"float",value:1.0}}}}}
  fn zoomed(ctx,p){ctx.set_state("count",ctx.get_state("count")+1);ctx.set_state("pending_rev",p.viewport_revision);ctx.set_state("pending_z",p.zoom);}
  fn acknowledge(ctx,p){ctx.set_state("rev",ctx.get_state("pending_rev"));ctx.set_state("z",ctx.get_state("pending_z"));}
- fn view(ctx){column([text("Status").accessibility_role("status").accessibility_label(`${ctx.get_state("count")}|${ctx.get_state("pending_z")}`),text("Acknowledge").accessibility_role("button").accessibility_label("Acknowledge").on_click(Fn("acknowledge")).with_style(style().width(px(140)).height(px(32))),chart::Chart(#{key:"c",key_dimension:"id",zoom:ctx.get_state("z"),viewport_revision:ctx.get_state("rev"),data:[#{id:"a",x:0,y:0},#{id:"b",x:1,y:1}],spec:#{title:"Control",series:[#{key:"s",kind:"scatter",encode:#{x:"x",y:"y"}}]},on_zoom_change:Fn("zoomed")}).with_style(style().width(px(420)).height(px(300)))])}"#;
+ fn view(ctx){column([text("Status").accessibility_role("status").accessibility_label(`${ctx.get_state("count")}|${ctx.get_state("pending_z")}`),text("Acknowledge").accessibility_role("button").accessibility_label("Acknowledge").on_click(Fn("acknowledge")).with_style(style().width(px(140)).height(px(32))),chart::Chart(#{key:"c",key_dimension:"id",zoom:ctx.get_state("z"),viewport_revision:ctx.get_state("rev"),data:[#{id:"a",x:0,y:0},#{id:"b",x:1,y:1}],spec:#{title:"Control",interaction:#{wheel_zoom:"always"},series:[#{key:"s",kind:"scatter",encode:#{x:"x",y:"y"}}]},on_zoom_change:Fn("zoomed")}).with_style(style().width(px(420)).height(px(300)))])}"#;
     let (window, view) = mount(cx, script, "chart-overlapping-ack");
     let mut visual = VisualTestContext::from_window(*window, cx);
     pump(cx, &mut visual);
@@ -449,7 +531,7 @@ fn chart_brush_does_not_capture_legend_control(cx: &mut TestAppContext) {
 #[gpui::test]
 fn chart_semantics_expose_active_and_selected_datum(cx: &mut TestAppContext) {
     cx.update(gpui_rhai::install);
-    let script = r#"import "charts/chart" as chart; fn view(ctx){chart::Chart(#{key:"c",key_dimension:"id",selected_keys:["first"],data:[#{id:"first",x:0,y:1},#{id:"second",x:1,y:2}],spec:#{title:"Control",series:[#{key:"s",kind:"scatter",encode:#{x:"x",y:"y",name:"id"}}]}}).with_style(style().width(px(420)).height(px(300)))}"#;
+    let script = r#"import "charts/chart" as chart; fn view(ctx){chart::Chart(#{key:"c",key_dimension:"id",selected_keys:["first"],data:[#{id:"first",x:0,y:1},#{id:"second",x:1,y:2}],spec:#{title:"Control",interaction:#{wheel_zoom:"always"},series:[#{key:"s",kind:"scatter",encode:#{x:"x",y:"y",name:"id"}}]}}).with_style(style().width(px(420)).height(px(300)))}"#;
     let (window, view) = mount(cx, script, "chart-semantics");
     let mut visual = VisualTestContext::from_window(*window, cx);
     pump(cx, &mut visual);
@@ -534,7 +616,7 @@ fn chart_business_key_cannot_become_a_control_role(cx: &mut TestAppContext) {
         let script = r#"import "charts/chart" as chart;
  fn state_schema(){#{fields:#{s:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}},l:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}}}}}
  fn select(ctx,p){ctx.set_state("s",ctx.get_state("s")+1);} fn legend(ctx,p){ctx.set_state("l",ctx.get_state("l")+1);}
- fn view(ctx){column([text("Status").accessibility_role("status").accessibility_label(`${ctx.get_state("s")}|${ctx.get_state("l")}`),chart::Chart(#{key:"c",key_dimension:"id",data:[#{id:"DATUM",x:"A",y:1}],spec:#{title:"Control",legend:#{visible:false},series:[#{key:"s",kind:"bar",encode:#{x:"x",y:"y"}}]},on_select:Fn("select"),on_legend_change:Fn("legend")}).with_style(style().width(px(420)).height(px(300)))])}"#.replace("DATUM", key);
+ fn view(ctx){column([text("Status").accessibility_role("status").accessibility_label(`${ctx.get_state("s")}|${ctx.get_state("l")}`),chart::Chart(#{key:"c",key_dimension:"id",data:[#{id:"DATUM",x:"A",y:1}],spec:#{title:"Control",interaction:#{wheel_zoom:"always"},legend:#{visible:false},series:[#{key:"s",kind:"bar",encode:#{x:"x",y:"y"}}]},on_select:Fn("select"),on_legend_change:Fn("legend")}).with_style(style().width(px(420)).height(px(300)))])}"#.replace("DATUM", key);
         let (window, view) = mount(cx, &script, &format!("chart-key-{key}"));
         let mut visual = VisualTestContext::from_window(*window, cx);
         pump(cx, &mut visual);
@@ -549,12 +631,75 @@ fn chart_business_key_cannot_become_a_control_role(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn invalid_chart_candidate_reaches_view_error_and_keeps_last_good_scene(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let script = r#"
+        import "charts/chart" as chart;
+        fn state_schema(){#{fields:#{kind:#{schema:#{type:"string"},"default":#{type:"string",value:"line"}}}}}
+        fn break_chart(ctx,p){ctx.set_state("kind","piee");}
+        fn view(ctx){column([
+            text("Break chart").accessibility_role("button").accessibility_label("Break chart")
+                .on_click(Fn("break_chart")).with_style(style().width(px(140)).height(px(32))),
+            chart::Chart(#{key:"c",key_dimension:"id",data:[#{id:"a",x:0,y:0},#{id:"b",x:1,y:1}],spec:#{title:"Control",series:[#{key:"s",kind:ctx.get_state("kind"),encode:#{x:"x",y:"y"}}]}})
+                .with_style(style().width(px(420)).height(px(300)))
+        ])}
+    "#;
+    let (window, view) = mount(cx, script, "chart-diagnostic");
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    pump(cx, &mut visual);
+    assert!(
+        visual
+            .update(|_, cx| view.last_error(cx).unwrap())
+            .is_none()
+    );
+    click_named(&mut visual, &view, "button", "Break chart");
+    let error = visual
+        .update(|_, cx| view.last_error(cx).unwrap())
+        .expect("invalid Chart candidate must reach the view error channel");
+    assert!(error.contains("piee"), "{error}");
+    assert!(
+        visual.update(|_, cx| {
+            view.accessibility_snapshot(cx)
+                .unwrap()
+                .find_by_role_and_name("figure", "Control")
+                .next()
+                .is_some()
+        }),
+        "last-good Chart scene must remain committed"
+    );
+}
+
+#[gpui::test]
+fn invalid_inline_chart_data_reaches_view_error(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let script = r#"
+        import "charts/chart" as chart;
+        fn state_schema(){#{fields:#{broken:#{schema:#{type:"bool"},"default":#{type:"bool",value:false}}}}}
+        fn break_data(ctx,p){ctx.set_state("broken",true);}
+        fn view(ctx){column([
+            text("Break data").accessibility_role("button").accessibility_label("Break data")
+                .on_click(Fn("break_data")).with_style(style().width(px(140)).height(px(32))),
+            chart::Chart(#{key:"c",key_dimension:"id",data:if ctx.get_state("broken"){[1]}else{[#{id:"a",x:0,y:0}]},spec:#{title:"Control",series:[#{key:"s",kind:"line",encode:#{x:"x",y:"y"}}]}})
+                .with_style(style().width(px(420)).height(px(300)))
+        ])}
+    "#;
+    let (window, view) = mount(cx, script, "chart-data-diagnostic");
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    pump(cx, &mut visual);
+    click_named(&mut visual, &view, "button", "Break data");
+    let error = visual
+        .update(|_, cx| view.last_error(cx).unwrap())
+        .expect("invalid inline Chart data must reach the view error channel");
+    assert!(error.contains("inline row 0"), "{error}");
+}
+
+#[gpui::test]
 fn chart_gauge_activation_returns_the_source_row_key(cx: &mut TestAppContext) {
     cx.update(gpui_rhai::install);
     let script = r#"import "charts/chart" as chart;
  fn state_schema(){#{fields:#{last:#{schema:#{type:"string"},"default":#{type:"string",value:"none"}}}}}
  fn selected(ctx,p){ctx.set_state("last",p.datum_key);}
- fn view(ctx){column([text("Status").accessibility_role("status").accessibility_label(ctx.get_state("last")),chart::Chart(#{key:"c",key_dimension:"id",data:[#{id:"measurement-1",v:25}],spec:#{title:"Control",regions:[#{key:"main",kind:"polar"}],axes:[#{key:"r",position:"radial",min:0,max:100}],series:[#{key:"g",kind:"gauge",encode:#{value:"v",name:"id"}}]},on_select:Fn("selected")}).with_style(style().width(px(420)).height(px(300)))])}"#;
+ fn view(ctx){column([text("Status").accessibility_role("status").accessibility_label(ctx.get_state("last")),chart::Chart(#{key:"c",key_dimension:"id",data:[#{id:"measurement-1",v:25}],spec:#{title:"Control",interaction:#{wheel_zoom:"always"},regions:[#{key:"main",kind:"polar"}],axes:[#{key:"r",position:"radial",min:0,max:100}],series:[#{key:"g",kind:"gauge",encode:#{value:"v",name:"id"}}]},on_select:Fn("selected")}).with_style(style().width(px(420)).height(px(300)))])}"#;
     let (window, view) = mount(cx, script, "chart-gauge-key");
     let mut visual = VisualTestContext::from_window(*window, cx);
     pump(cx, &mut visual);
@@ -669,7 +814,7 @@ fn mount_streaming_chart(
     counter: Arc<AtomicUsize>,
 ) -> (WindowHandle<Host>, ScriptViewHandle) {
     let entry = ModuleId::parse("main").unwrap();
-    let script = r#"import "charts/chart" as chart;fn view(ctx){chart::Chart(#{key:"c",data:ctx.get_native_chart_data("stream"),spec:#{title:"Control",series:[#{key:"s",kind:"custom",renderer:"stream_count",encode:#{x:"x",y:"y"}}]}}).with_style(style().width(px(420)).height(px(300)))}"#;
+    let script = r#"import "charts/chart" as chart;fn view(ctx){chart::Chart(#{key:"c",data:ctx.get_native_chart_data("stream"),spec:#{title:"Control",interaction:#{wheel_zoom:"always"},series:[#{key:"s",kind:"custom",renderer:"stream_count",encode:#{x:"x",y:"y"}}]}}).with_style(style().width(px(420)).height(px(300)))}"#;
     let prepared = EmbeddedScriptView::new(
         entry.clone(),
         EmbeddedScriptSource::new(BTreeMap::from([
@@ -908,7 +1053,7 @@ fn chart_motion_freezes_across_view_suspension(cx: &mut TestAppContext) {
     let clock = ManualRuntimeClock::new(std::time::Instant::now());
     let data = NativeChartData::new([moving_data(0)], ChartDataLimits::default()).unwrap();
     let positions = Arc::new(std::sync::Mutex::new(Vec::new()));
-    let script = r#"import "charts/chart" as chart;fn state_schema(){#{fields:#{hits:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}}}}}fn clicked(ctx,p){ctx.set_state("hits",ctx.get_state("hits")+1);}fn view(ctx){column([text("Status").accessibility_role("status").accessibility_label(ctx.get_state("hits").to_string()),chart::Chart(#{key:"c",data:ctx.get_native_chart_data("motion_stream"),spec:#{title:"Control",legend:#{visible:false},motion:#{duration:"slow",easing:"standard"},series:[#{key:"s",kind:"custom",renderer:"moving",encode:#{x:"x",y:"y"}}]},on_select:Fn("clicked")}).with_style(style().width(px(420)).height(px(300)))])}"#;
+    let script = r#"import "charts/chart" as chart;fn state_schema(){#{fields:#{hits:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}}}}}fn clicked(ctx,p){ctx.set_state("hits",ctx.get_state("hits")+1);}fn view(ctx){column([text("Status").accessibility_role("status").accessibility_label(ctx.get_state("hits").to_string()),chart::Chart(#{key:"c",data:ctx.get_native_chart_data("motion_stream"),spec:#{title:"Control",interaction:#{wheel_zoom:"always"},legend:#{visible:false},motion:#{duration:"slow",easing:"standard"},series:[#{key:"s",kind:"custom",renderer:"moving",encode:#{x:"x",y:"y"}}]},on_select:Fn("clicked")}).with_style(style().width(px(420)).height(px(300)))])}"#;
     let (window, view) = mount_extended_chart(
         cx,
         "chart-frozen-motion",
@@ -945,7 +1090,7 @@ fn failed_resume_prepare_does_not_consume_chart_motion_time(cx: &mut TestAppCont
     let data = NativeChartData::new([moving_data(0)], ChartDataLimits::default()).unwrap();
     let positions = Arc::new(std::sync::Mutex::new(Vec::new()));
     let fail = Rc::new(std::cell::Cell::new(true));
-    let script = r#"import "charts/chart" as chart;fn state_schema(){#{fields:#{hits:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}}}}}fn clicked(ctx,p){ctx.set_state("hits",ctx.get_state("hits")+1);}fn view(ctx){column([text("Status").accessibility_role("status").accessibility_label(ctx.get_state("hits").to_string()),chart::Chart(#{key:"c",data:ctx.get_native_chart_data("motion_stream"),spec:#{title:"Control",legend:#{visible:false},motion:#{duration:"slow",easing:"standard"},series:[#{key:"s",kind:"custom",renderer:"moving",encode:#{x:"x",y:"y"}}]},on_select:Fn("clicked")}).with_style(style().width(px(420)).height(px(300))),zz_lifecycle::ClockBomb(#{key:"bomb"}).with_key("bomb")])}"#;
+    let script = r#"import "charts/chart" as chart;fn state_schema(){#{fields:#{hits:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}}}}}fn clicked(ctx,p){ctx.set_state("hits",ctx.get_state("hits")+1);}fn view(ctx){column([text("Status").accessibility_role("status").accessibility_label(ctx.get_state("hits").to_string()),chart::Chart(#{key:"c",data:ctx.get_native_chart_data("motion_stream"),spec:#{title:"Control",interaction:#{wheel_zoom:"always"},legend:#{visible:false},motion:#{duration:"slow",easing:"standard"},series:[#{key:"s",kind:"custom",renderer:"moving",encode:#{x:"x",y:"y"}}]},on_select:Fn("clicked")}).with_style(style().width(px(420)).height(px(300))),zz_lifecycle::ClockBomb(#{key:"bomb"}).with_key("bomb")])}"#;
     let (window, view) = mount_extended_chart(
         cx,
         "chart-failed-resume-motion",
@@ -1002,7 +1147,7 @@ fn resume_finishes_prepared_but_unpresented_frame(cx: &mut TestAppContext) {
     cx.update(gpui_rhai::install);
     let data = NativeChartData::new([moving_data(0)], ChartDataLimits::default()).unwrap();
     let positions = Arc::new(std::sync::Mutex::new(Vec::new()));
-    let script = r#"import "charts/chart" as chart;fn view(ctx){chart::Chart(#{key:"c",data:ctx.get_native_chart_data("motion_stream"),spec:#{title:"Control",legend:#{visible:false},series:[#{key:"s",kind:"custom",renderer:"moving",encode:#{x:"x",y:"y"}}]}}).with_style(style().width(px(420)).height(px(300)))}"#;
+    let script = r#"import "charts/chart" as chart;fn view(ctx){chart::Chart(#{key:"c",data:ctx.get_native_chart_data("motion_stream"),spec:#{title:"Control",interaction:#{wheel_zoom:"always"},legend:#{visible:false},series:[#{key:"s",kind:"custom",renderer:"moving",encode:#{x:"x",y:"y"}}]}}).with_style(style().width(px(420)).height(px(300)))}"#;
     let (window, view) = mount_extended_chart(
         cx,
         "chart-pending-frame",
@@ -1038,7 +1183,7 @@ fn failed_script_suspend_restores_committed_chart_activity(cx: &mut TestAppConte
     cx.update(gpui_rhai::install);
     let data = NativeChartData::new([moving_data(0)], ChartDataLimits::default()).unwrap();
     let positions = Arc::new(std::sync::Mutex::new(Vec::new()));
-    let script = r#"import "charts/chart" as chart;fn suspend(ctx){throw "injected script suspend failure";}fn view(ctx){chart::Chart(#{key:"c",data:ctx.get_native_chart_data("motion_stream"),spec:#{title:"Control",legend:#{visible:false},series:[#{key:"s",kind:"custom",renderer:"moving",encode:#{x:"x",y:"y"}}]}}).with_style(style().width(px(420)).height(px(300)))}"#;
+    let script = r#"import "charts/chart" as chart;fn suspend(ctx){throw "injected script suspend failure";}fn view(ctx){chart::Chart(#{key:"c",data:ctx.get_native_chart_data("motion_stream"),spec:#{title:"Control",interaction:#{wheel_zoom:"always"},legend:#{visible:false},series:[#{key:"s",kind:"custom",renderer:"moving",encode:#{x:"x",y:"y"}}]}}).with_style(style().width(px(420)).height(px(300)))}"#;
     let (window, view) = mount_extended_chart(
         cx,
         "chart-failed-script-suspend",
@@ -1113,7 +1258,7 @@ impl ScriptViewExtension for ViewportExtension {
 fn canceling_preview_rebuilds_the_committed_frame(cx: &mut TestAppContext) {
     cx.update(gpui_rhai::install);
     let positions = Arc::new(std::sync::Mutex::new(Vec::new()));
-    let script = r#"import "charts/chart" as chart;fn state_schema(){#{fields:#{hits:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}}}}}fn clicked(ctx,p){ctx.set_state("hits",ctx.get_state("hits")+1);}fn view(ctx){column([text("Status").accessibility_role("status").accessibility_label(ctx.get_state("hits").to_string()),chart::Chart(#{key:"c",key_dimension:"id",zoom:1.0,viewport_revision:0,data:[#{id:"r0",x:2,y:0},#{id:"r1",x:10,y:1}],spec:#{title:"Control",legend:#{visible:false},axes:[#{key:"x",position:"bottom",min:0,max:10}],series:[#{key:"s",kind:"custom",renderer:"viewport_marker",encode:#{x:"x",y:"y"}}]},on_select:Fn("clicked")}).with_style(style().width(px(420)).height(px(300)))])}"#;
+    let script = r#"import "charts/chart" as chart;fn state_schema(){#{fields:#{hits:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}}}}}fn clicked(ctx,p){ctx.set_state("hits",ctx.get_state("hits")+1);}fn view(ctx){column([text("Status").accessibility_role("status").accessibility_label(ctx.get_state("hits").to_string()),chart::Chart(#{key:"c",key_dimension:"id",zoom:1.0,viewport_revision:0,data:[#{id:"r0",x:2,y:0},#{id:"r1",x:10,y:1}],spec:#{title:"Control",interaction:#{wheel_zoom:"always"},legend:#{visible:false},axes:[#{key:"x",position:"bottom",min:0,max:10}],series:[#{key:"s",kind:"custom",renderer:"viewport_marker",encode:#{x:"x",y:"y"}}]},on_select:Fn("clicked")}).with_style(style().width(px(420)).height(px(300)))])}"#;
     let (window, view) = mount_extended_chart(
         cx,
         "chart-cancel-preview",
@@ -1210,7 +1355,7 @@ fn linked_target_gesture_uses_its_effective_axis_window(cx: &mut TestAppContext)
     let script = r#"import "charts/chart" as chart;
 fn state_schema(){#{fields:#{zs:#{schema:#{type:"float"},"default":#{type:"float",value:1.0}},zt:#{schema:#{type:"float"},"default":#{type:"float",value:1.0}},rs:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}},rt:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}}}}}
 fn zs(ctx,p){ctx.set_state("zs",p.zoom);ctx.set_state("rs",p.viewport_revision);}fn zt(ctx,p){ctx.set_state("zt",p.zoom);ctx.set_state("rt",p.viewport_revision);}
-fn one(ctx,k,z,r,cb){chart::Chart(#{key:k,key_dimension:"id",data:[#{id:"r0",x:0,y:0},#{id:"r1",x:100,y:100}],zoom:z,viewport_revision:r,spec:#{title:k,legend:#{visible:false},link_group:"shared",link_domain:"same_values",axes:[#{key:"x",position:"bottom",min:0,max:100},#{key:"y",position:"left",min:0,max:100}],series:[#{key:k,kind:"custom",renderer:"axis_probe",encode:#{x:"x",y:"y"}}]},on_zoom_change:cb}).with_style(style().width(px(280)).height(px(240)))}
+fn one(ctx,k,z,r,cb){chart::Chart(#{key:k,key_dimension:"id",data:[#{id:"r0",x:0,y:0},#{id:"r1",x:100,y:100}],zoom:z,viewport_revision:r,spec:#{title:k,interaction:#{wheel_zoom:"always"},legend:#{visible:false},link_group:"shared",link_domain:"same_values",axes:[#{key:"x",position:"bottom",min:0,max:100},#{key:"y",position:"left",min:0,max:100}],series:[#{key:k,kind:"custom",renderer:"axis_probe",encode:#{x:"x",y:"y"}}]},on_zoom_change:cb}).with_style(style().width(px(280)).height(px(240)))}
 fn view(ctx){row([one(ctx,"source",ctx.get_state("zs"),ctx.get_state("rs"),Fn("zs")),one(ctx,"target",ctx.get_state("zt"),ctx.get_state("rt"),Fn("zt"))])}"#;
     let (window, view) = mount_extended_chart(
         cx,
@@ -1257,7 +1402,7 @@ fn link_projection_identity_includes_the_group(cx: &mut TestAppContext) {
     let script = r#"import "charts/chart" as chart;
 fn state_schema(){#{fields:#{group:#{schema:#{type:"string"},"default":#{type:"string",value:"group_a"}},za:#{schema:#{type:"float"},"default":#{type:"float",value:1.0}},zb:#{schema:#{type:"float"},"default":#{type:"float",value:1.0}},ra:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}},rb:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}}}}}
 fn za(ctx,p){ctx.set_state("za",p.zoom);ctx.set_state("ra",p.viewport_revision);}fn zb(ctx,p){ctx.set_state("zb",p.zoom);ctx.set_state("rb",p.viewport_revision);}fn change_group(ctx,p){ctx.set_state("group","group_b");}
-fn one(ctx,k,g,z,r,cb){chart::Chart(#{key:k,key_dimension:"id",data:[#{id:"r0",x:0,y:0},#{id:"r1",x:100,y:100}],zoom:z,viewport_revision:r,spec:#{title:k,legend:#{visible:false},link_group:g,link_domain:"same_values",axes:[#{key:"x",position:"bottom",min:0,max:100},#{key:"y",position:"left",min:0,max:100}],series:[#{key:k,kind:"custom",renderer:"axis_probe",encode:#{x:"x",y:"y"}}]},on_zoom_change:cb}).with_style(style().width(px(280)).height(px(240)))}
+fn one(ctx,k,g,z,r,cb){chart::Chart(#{key:k,key_dimension:"id",data:[#{id:"r0",x:0,y:0},#{id:"r1",x:100,y:100}],zoom:z,viewport_revision:r,spec:#{title:k,interaction:#{wheel_zoom:"always"},legend:#{visible:false},link_group:g,link_domain:"same_values",axes:[#{key:"x",position:"bottom",min:0,max:100},#{key:"y",position:"left",min:0,max:100}],series:[#{key:k,kind:"custom",renderer:"axis_probe",encode:#{x:"x",y:"y"}}]},on_zoom_change:cb}).with_style(style().width(px(280)).height(px(240)))}
 fn view(ctx){column([text("Switch").accessibility_role("button").accessibility_label("Switch").on_click(Fn("change_group")).with_style(style().width(px(140)).height(px(32))),row([one(ctx,"a","group_a",ctx.get_state("za"),ctx.get_state("ra"),Fn("za")),one(ctx,"b","group_b",ctx.get_state("zb"),ctx.get_state("rb"),Fn("zb")),one(ctx,"target",ctx.get_state("group"),1.0,0,())])])}"#;
     let (window, view) = mount_extended_chart(
         cx,
@@ -1291,7 +1436,7 @@ fn resize_reprojects_without_discarding_active_preview(cx: &mut TestAppContext) 
     let script = r#"import "charts/chart" as chart;
 fn state_schema(){#{fields:#{w:#{schema:#{type:"float"},"default":#{type:"float",value:280.0}},z:#{schema:#{type:"float"},"default":#{type:"float",value:1.0}},rev:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}}}}}
 fn wider(ctx,p){ctx.set_state("w",420.0);}fn zoomed(ctx,p){ctx.set_state("z",p.zoom);ctx.set_state("rev",p.viewport_revision);}
-fn view(ctx){column([text("Resize").accessibility_role("button").accessibility_label("Resize").on_click(Fn("wider")).with_style(style().width(px(140)).height(px(32))),chart::Chart(#{key:"c",key_dimension:"id",data:[#{id:"r0",x:0,y:0},#{id:"r1",x:100,y:100}],zoom:ctx.get_state("z"),viewport_revision:ctx.get_state("rev"),spec:#{title:"c",legend:#{visible:false},axes:[#{key:"x",position:"bottom",min:0,max:100},#{key:"y",position:"left",min:0,max:100}],series:[#{key:"c",kind:"custom",renderer:"axis_probe",encode:#{x:"x",y:"y"}}]},on_zoom_change:Fn("zoomed")}).with_style(style().width(px(ctx.get_state("w"))).height(px(240)))])}"#;
+fn view(ctx){column([text("Resize").accessibility_role("button").accessibility_label("Resize").on_click(Fn("wider")).with_style(style().width(px(140)).height(px(32))),chart::Chart(#{key:"c",key_dimension:"id",data:[#{id:"r0",x:0,y:0},#{id:"r1",x:100,y:100}],zoom:ctx.get_state("z"),viewport_revision:ctx.get_state("rev"),spec:#{title:"c",interaction:#{wheel_zoom:"always"},legend:#{visible:false},axes:[#{key:"x",position:"bottom",min:0,max:100},#{key:"y",position:"left",min:0,max:100}],series:[#{key:"c",kind:"custom",renderer:"axis_probe",encode:#{x:"x",y:"y"}}]},on_zoom_change:Fn("zoomed")}).with_style(style().width(px(ctx.get_state("w"))).height(px(240)))])}"#;
     let (window, view) = mount_extended_chart(
         cx,
         "chart-resize-preview",
@@ -1317,7 +1462,7 @@ fn view(ctx){column([text("Resize").accessibility_role("button").accessibility_l
 fn linked_cartesian_axes_keep_independent_logical_windows(cx: &mut TestAppContext) {
     cx.update(gpui_rhai::install);
     let windows = AxisWindows::default();
-    let script = r#"import "charts/chart" as chart;fn state_schema(){#{fields:#{z:#{schema:#{type:"float"},"default":#{type:"float",value:1.0}},rev:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}}}}}fn zoomed(ctx,p){ctx.set_state("z",p.zoom);ctx.set_state("rev",p.viewport_revision);}fn one(ctx,k){chart::Chart(#{key:k,key_dimension:"id",data:[#{id:"r0",x:0,y:0},#{id:"r1",x:100,y:100}],zoom:if k=="source"{ctx.get_state("z")}else{1.0},viewport_revision:if k=="source"{ctx.get_state("rev")}else{0},spec:#{title:k,legend:#{visible:false},link_group:"xy",link_domain:"same_values",axes:[#{key:"x",position:"bottom",min:0,max:if k=="source"{100}else{200}},#{key:"y",position:"left",min:0,max:100}],series:[#{key:k,kind:"custom",renderer:"axis_probe",encode:#{x:"x",y:"y"}}]},on_zoom_change:if k=="source"{Fn("zoomed")}else{()}}).with_style(style().width(px(280)).height(px(240)))}fn view(ctx){row([one(ctx,"source"),one(ctx,"target")])}"#;
+    let script = r#"import "charts/chart" as chart;fn state_schema(){#{fields:#{z:#{schema:#{type:"float"},"default":#{type:"float",value:1.0}},rev:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}}}}}fn zoomed(ctx,p){ctx.set_state("z",p.zoom);ctx.set_state("rev",p.viewport_revision);}fn one(ctx,k){chart::Chart(#{key:k,key_dimension:"id",data:[#{id:"r0",x:0,y:0},#{id:"r1",x:100,y:100}],zoom:if k=="source"{ctx.get_state("z")}else{1.0},viewport_revision:if k=="source"{ctx.get_state("rev")}else{0},spec:#{title:k,interaction:#{wheel_zoom:"always"},legend:#{visible:false},link_group:"xy",link_domain:"same_values",axes:[#{key:"x",position:"bottom",min:0,max:if k=="source"{100}else{200}},#{key:"y",position:"left",min:0,max:100}],series:[#{key:k,kind:"custom",renderer:"axis_probe",encode:#{x:"x",y:"y"}}]},on_zoom_change:if k=="source"{Fn("zoomed")}else{()}}).with_style(style().width(px(280)).height(px(240)))}fn view(ctx){row([one(ctx,"source"),one(ctx,"target")])}"#;
     let (window, view) = mount_extended_chart(
         cx,
         "chart-linked-axis-windows",
@@ -1410,7 +1555,7 @@ impl ScriptViewExtension for GeoExtension {
 fn geo_link_group_synchronizes_acknowledged_camera(cx: &mut TestAppContext) {
     cx.update(gpui_rhai::install);
     let positions = Arc::new(std::sync::Mutex::new(BTreeMap::new()));
-    let script = r#"import "charts/chart" as chart;fn state_schema(){#{fields:#{z:#{schema:#{type:"float"},"default":#{type:"float",value:1.0}},rev:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}},source_hits:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}},target_hits:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}}}}}fn zoomed(ctx,p){ctx.set_state("z",p.zoom);ctx.set_state("rev",p.viewport_revision);}fn source_clicked(ctx,p){ctx.set_state("source_hits",ctx.get_state("source_hits")+1);}fn target_clicked(ctx,p){ctx.set_state("target_hits",ctx.get_state("target_hits")+1);}fn one(ctx,k){chart::Chart(#{key:k,key_dimension:"id",data:[#{id:"r0",x:0,y:0}],zoom:if k=="source"{ctx.get_state("z")}else{1.0},viewport_revision:if k=="source"{ctx.get_state("rev")}else{0},spec:#{title:k,legend:#{visible:false},link_group:"maps",link_domain:"location",regions:[#{key:"main",kind:"geo_2d",map:"map"}],series:[#{key:k,kind:"custom",renderer:"geo_marker",encode:#{x:"x",y:"y"}}]},on_zoom_change:if k=="source"{Fn("zoomed")}else{()},on_select:if k=="source"{Fn("source_clicked")}else{Fn("target_clicked")}}).with_style(style().width(px(280)).height(px(240)))}fn view(ctx){column([text("Status").accessibility_role("status").accessibility_label(`${ctx.get_state("source_hits")}|${ctx.get_state("target_hits")}|${ctx.get_state("z")}`),row([one(ctx,"source"),one(ctx,"target")])])}"#;
+    let script = r#"import "charts/chart" as chart;fn state_schema(){#{fields:#{z:#{schema:#{type:"float"},"default":#{type:"float",value:1.0}},rev:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}},source_hits:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}},target_hits:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}}}}}fn zoomed(ctx,p){ctx.set_state("z",p.zoom);ctx.set_state("rev",p.viewport_revision);}fn source_clicked(ctx,p){ctx.set_state("source_hits",ctx.get_state("source_hits")+1);}fn target_clicked(ctx,p){ctx.set_state("target_hits",ctx.get_state("target_hits")+1);}fn one(ctx,k){chart::Chart(#{key:k,key_dimension:"id",data:[#{id:"r0",x:0,y:0}],zoom:if k=="source"{ctx.get_state("z")}else{1.0},viewport_revision:if k=="source"{ctx.get_state("rev")}else{0},spec:#{title:k,interaction:#{wheel_zoom:"always"},legend:#{visible:false},link_group:"maps",link_domain:"location",regions:[#{key:"main",kind:"geo_2d",map:"map"}],series:[#{key:k,kind:"custom",renderer:"geo_marker",encode:#{x:"x",y:"y"}}]},on_zoom_change:if k=="source"{Fn("zoomed")}else{()},on_select:if k=="source"{Fn("source_clicked")}else{Fn("target_clicked")}}).with_style(style().width(px(280)).height(px(240)))}fn view(ctx){column([text("Status").accessibility_role("status").accessibility_label(`${ctx.get_state("source_hits")}|${ctx.get_state("target_hits")}|${ctx.get_state("z")}`),row([one(ctx,"source"),one(ctx,"target")])])}"#;
     let (window, view) = mount_extended_chart(
         cx,
         "chart-geo-link",

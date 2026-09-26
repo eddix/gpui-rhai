@@ -648,7 +648,10 @@ impl RuntimeEngine {
         crate::native_collection::register_native_collection_api(&mut engine);
         crate::document::register_document_api(&mut engine);
         #[cfg(feature = "charts")]
-        crate::chart::register_chart_data_api(&mut engine);
+        {
+            crate::chart::register_chart_data_api(&mut engine);
+            register_chart_validation_api(&mut engine);
+        }
         engine.build_type::<crate::Span>();
         register_ui_context_api(&mut engine);
         register_date_api(&mut engine);
@@ -4016,6 +4019,64 @@ fn register_component_event_callbacks(
 
 fn component_render_error(message: impl Into<String>) -> EvalAltResult {
     EvalAltResult::ErrorRuntime(Dynamic::from(message.into()), Position::NONE)
+}
+
+#[cfg(feature = "charts")]
+fn register_chart_validation_api(engine: &mut Engine) {
+    engine.register_fn(
+        "chart_validate",
+        |spec: Map, data: Dynamic, key_dimension: Dynamic| -> Result<(), Box<EvalAltResult>> {
+            let spec = UiValue::from_dynamic(Dynamic::from_map(spec))
+                .map_err(|error| Box::new(component_render_error(error.to_string())))?;
+            crate::ChartSpec::from_ui_value(&spec)
+                .map_err(|error| Box::new(component_render_error(error.to_string())))?;
+            let key_dimension = if key_dimension.is_unit() {
+                None
+            } else if key_dimension.is::<ImmutableString>() {
+                Some(key_dimension.cast::<ImmutableString>().to_string())
+            } else {
+                return Err(Box::new(component_render_error(
+                    "chart key_dimension must be a string or null",
+                )));
+            };
+            if data.is::<crate::NativeChartData>() {
+                return Ok(());
+            }
+            if !data.is::<Array>() {
+                return Err(Box::new(component_render_error(
+                    "chart data must be an array of objects or NativeChartData",
+                )));
+            }
+            let data = UiValue::from_dynamic(Dynamic::from_array(data.cast::<Array>()))
+                .map_err(|error| Box::new(component_render_error(error.to_string())))?;
+            let UiValue::Array(rows) = data else {
+                unreachable!()
+            };
+            if rows.len() > 10_000 {
+                return Err(Box::new(component_render_error(
+                    "inline chart data is limited to 10000 rows; use NativeChartData",
+                )));
+            }
+            let rows = rows
+                .into_iter()
+                .enumerate()
+                .map(|(index, row)| match row {
+                    UiValue::Map(row) => Ok(row),
+                    _ => Err(Box::new(component_render_error(format!(
+                        "chart inline row {index} must be an object"
+                    )))),
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            crate::ChartDataset::from_rows(
+                "main",
+                &rows,
+                key_dimension,
+                crate::ChartDataLimits::default(),
+            )
+            .map_err(|error| Box::new(component_render_error(error.to_string())))?;
+            Ok(())
+        },
+    );
 }
 
 #[cfg(test)]

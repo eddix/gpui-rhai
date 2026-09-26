@@ -874,6 +874,15 @@ struct TableColumn {
     width: UiValue,
     align: String,
     resize_signal_key: Option<String>,
+    adornments: Vec<TableAdornment>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct TableAdornment {
+    text_key: String,
+    variant: String,
+    variant_key: Option<String>,
+    dot: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1027,11 +1036,20 @@ impl TableProjection {
                 let text = row
                     .get(&column.key)
                     .map_or_else(String::new, display_scalar);
+                let adornments = column
+                    .adornments
+                    .iter()
+                    .map(|adornment| adornment.project(row))
+                    .collect::<Result<Vec<_>, _>>()?
+                    .into_iter()
+                    .flatten()
+                    .collect();
                 let mut cell = BTreeMap::from([
                     ("key".to_owned(), UiValue::String(column.key.clone())),
                     ("text".to_owned(), UiValue::String(text)),
                     ("width".to_owned(), column.width.clone()),
                     ("align".to_owned(), UiValue::String(column.align.clone())),
+                    ("adornments".to_owned(), UiValue::Array(adornments)),
                 ]);
                 if let Some(signal_key) = &column.resize_signal_key {
                     cell.insert(
@@ -1039,9 +1057,9 @@ impl TableProjection {
                         UiValue::String(signal_key.clone()),
                     );
                 }
-                UiValue::Map(cell)
+                Ok(UiValue::Map(cell))
             })
-            .collect();
+            .collect::<Result<Vec<_>, NativeCollectionError>>()?;
         let selection = match self.selection_mode {
             SelectionMode::None => UiValue::Null,
             SelectionMode::Single if selected => UiValue::Array(Vec::new()),
@@ -1196,12 +1214,132 @@ impl TableColumn {
             }
             None => None,
         };
+        let adornments = match column.remove("adornments") {
+            Some(UiValue::Array(values)) => values
+                .into_iter()
+                .map(TableAdornment::decode)
+                .collect::<Result<Vec<_>, _>>()?,
+            Some(_) => {
+                return Err(NativeCollectionError::InvalidTableConfig(
+                    "column.adornments must be an array".to_owned(),
+                ));
+            }
+            None => Vec::new(),
+        };
+        for normalized_only in [
+            "title",
+            "sortable",
+            "resize_enabled",
+            "resize_ref_key",
+            "min_width",
+            "max_width",
+        ] {
+            column.remove(normalized_only);
+        }
+        if !column.is_empty() {
+            return Err(NativeCollectionError::InvalidTableConfig(format!(
+                "unknown column fields: {}",
+                column.keys().cloned().collect::<Vec<_>>().join(", ")
+            )));
+        }
         Ok(Self {
             key,
             width,
             align,
             resize_signal_key,
+            adornments,
         })
+    }
+}
+
+impl TableAdornment {
+    fn decode(value: UiValue) -> Result<Self, NativeCollectionError> {
+        let UiValue::Map(mut value) = value else {
+            return Err(NativeCollectionError::InvalidTableConfig(
+                "each column adornment must be a map".to_owned(),
+            ));
+        };
+        let text_key = take_string(&mut value, "text_key")?;
+        let variant = match value.remove("variant") {
+            Some(UiValue::String(value)) => value,
+            Some(_) => {
+                return Err(NativeCollectionError::InvalidTableConfig(
+                    "adornment.variant must be a string".to_owned(),
+                ));
+            }
+            None => "neutral".to_owned(),
+        };
+        validate_badge_variant(&variant)?;
+        let variant_key = match value.remove("variant_key") {
+            Some(UiValue::String(value)) => Some(value),
+            Some(UiValue::Null) | None => None,
+            Some(_) => {
+                return Err(NativeCollectionError::InvalidTableConfig(
+                    "adornment.variant_key must be a string".to_owned(),
+                ));
+            }
+        };
+        let dot = match value.remove("dot") {
+            Some(UiValue::Bool(value)) => value,
+            Some(_) => {
+                return Err(NativeCollectionError::InvalidTableConfig(
+                    "adornment.dot must be a bool".to_owned(),
+                ));
+            }
+            None => false,
+        };
+        if !value.is_empty() {
+            return Err(NativeCollectionError::InvalidTableConfig(format!(
+                "unknown adornment fields: {}",
+                value.keys().cloned().collect::<Vec<_>>().join(", ")
+            )));
+        }
+        Ok(Self {
+            text_key,
+            variant,
+            variant_key,
+            dot,
+        })
+    }
+
+    fn project(
+        &self,
+        row: &BTreeMap<String, UiValue>,
+    ) -> Result<Option<UiValue>, NativeCollectionError> {
+        let text = row
+            .get(&self.text_key)
+            .map_or_else(String::new, display_scalar);
+        if text.is_empty() {
+            return Ok(None);
+        }
+        let variant = self.variant_key.as_ref().map_or_else(
+            || Ok(self.variant.clone()),
+            |key| match row.get(key) {
+                Some(UiValue::String(value)) => Ok(value.clone()),
+                _ => Err(NativeCollectionError::InvalidTableConfig(format!(
+                    "adornment variant field `{key}` must be a string"
+                ))),
+            },
+        )?;
+        validate_badge_variant(&variant)?;
+        Ok(Some(UiValue::Map(BTreeMap::from([
+            ("text".to_owned(), UiValue::String(text)),
+            ("variant".to_owned(), UiValue::String(variant)),
+            ("dot".to_owned(), UiValue::Bool(self.dot)),
+        ]))))
+    }
+}
+
+fn validate_badge_variant(value: &str) -> Result<(), NativeCollectionError> {
+    if matches!(
+        value,
+        "neutral" | "accent" | "success" | "warning" | "danger"
+    ) {
+        Ok(())
+    } else {
+        Err(NativeCollectionError::InvalidTableConfig(format!(
+            "unknown adornment variant `{value}`"
+        )))
     }
 }
 

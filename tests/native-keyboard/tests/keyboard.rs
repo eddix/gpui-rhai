@@ -3951,6 +3951,10 @@ fn grouped_table_headers_stick_through_the_native_virtual_list(cx: &mut TestAppC
                 table,
                 include_str!("../../../registry/components/table.rhai").to_owned(),
             ),
+            (
+                ModuleId::parse("components/badge").unwrap(),
+                include_str!("../../../registry/components/badge.rhai").to_owned(),
+            ),
         ])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
@@ -4144,6 +4148,10 @@ fn table_flex_columns_distribute_remaining_width_by_weight(cx: &mut TestAppConte
                 ModuleId::parse("components/table").unwrap(),
                 include_str!("../../../registry/components/table.rhai").to_owned(),
             ),
+            (
+                ModuleId::parse("components/badge").unwrap(),
+                include_str!("../../../registry/components/badge.rhai").to_owned(),
+            ),
         ])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
@@ -4256,6 +4264,10 @@ fn table_column_resize_previews_natively_and_emits_once_on_commit(cx: &mut TestA
             (
                 ModuleId::parse("components/table").unwrap(),
                 include_str!("../../../registry/components/table.rhai").to_owned(),
+            ),
+            (
+                ModuleId::parse("components/badge").unwrap(),
+                include_str!("../../../registry/components/badge.rhai").to_owned(),
             ),
         ])),
         include_str!("../../../registry/themes/default_dark.rhai"),
@@ -4593,6 +4605,10 @@ fn table_does_not_expand_an_auto_min_width_host_flex_column_across_frames(cx: &m
             (
                 ModuleId::parse("components/table").unwrap(),
                 include_str!("../../../registry/components/table.rhai").to_owned(),
+            ),
+            (
+                ModuleId::parse("components/badge").unwrap(),
+                include_str!("../../../registry/components/badge.rhai").to_owned(),
             ),
         ])),
         include_str!("../../../registry/themes/default_dark.rhai"),

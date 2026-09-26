@@ -42,9 +42,9 @@ pub use spec::{
     ChartAnnotation, ChartAnnotationKind, ChartAnnotationValue, ChartAxisDirection,
     ChartAxisPosition, ChartAxisScale, ChartAxisSpec, ChartBrushMode, ChartChannel,
     ChartCoordinateKind, ChartCoordinateRegion, ChartDiagnostic, ChartDiagnosticSeverity,
-    ChartEncode, ChartFormatSpec, ChartLegendPosition, ChartLegendSpec, ChartMotionSpec,
-    ChartSeriesKind, ChartSeriesSpec, ChartSpec, ChartSpecError, ChartTimeZone, ChartTooltipSpec,
-    ChartTransformSpec,
+    ChartEncode, ChartFormatSpec, ChartInteractionSpec, ChartLegendPosition, ChartLegendSpec,
+    ChartMotionSpec, ChartSeriesKind, ChartSeriesSpec, ChartSpec, ChartSpecError, ChartTimeZone,
+    ChartTooltipSpec, ChartTransformSpec, ChartWheelZoom,
 };
 pub use transform::{
     ChartTransformContext, ChartTransformError, ChartTransformRegistry, HostChartTransform,

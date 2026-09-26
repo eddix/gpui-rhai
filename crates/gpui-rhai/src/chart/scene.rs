@@ -3938,6 +3938,7 @@ mod tests {
             annotations: Vec::new(),
             link_group: None,
             link_domain: None,
+            interaction: crate::ChartInteractionSpec::default(),
         }
     }
 
@@ -4175,6 +4176,7 @@ mod tests {
                 annotations: Vec::new(),
                 link_group: None,
                 link_domain: None,
+                interaction: crate::ChartInteractionSpec::default(),
             };
             let prepared = prepare_chart_data(
                 spec,
