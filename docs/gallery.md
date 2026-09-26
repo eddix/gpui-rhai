@@ -57,6 +57,13 @@ from `BUNDLED_COMPONENT_SOURCES_BY_ID`, `BUNDLED_MOTION_SOURCES_BY_ID`, and
 fails the registry test. An independent native test prepares, mounts, draws,
 and snapshots nonzero semantic geometry for every story/case.
 
+`apps/host-embedding` is the HostSlot acceptance story. The visible outer
+source declares only the opaque slot. Gallery mounts a second resident Rhai
+view under an independent `ScriptViewHost`, supplies it through
+`HostSlotRegistry::with_script_view`, and treats parent plus resident as one
+cache/lifecycle group. The resident form exercises Input/Textarea, theme and
+locale propagation, Reset, and the native Chinese IME regression.
+
 ## Operations Workbench
 
 `apps/operations` is a connected local application rather than a specimen
@@ -64,13 +71,14 @@ grid. Its pages share one formal-component state model:
 
 - Dashboard consumes Rust-owned `NativeChartData`.
 - Hosts consumes a Rust-owned, virtualized `NativeCollection`, including
-  semantic Badge adornments.
+  semantic Badge adornments, Rust-side search/sort/page/group projection,
+  Pagination, and a controlled Host details Sheet.
 - Configurations combines Input, CodeViewer, DiffViewer, and deployment
   staging.
 - Deployments presents bounded Host progress, failure, Progress, Badge, and
   Toast feedback.
 - Settings demonstrates state-preserving theme selection.
-- A source-owned Command surface and navigation reach the same pages.
+- A source-owned CommandDialog and navigation reach the same pages.
 
 The normal task is:
 

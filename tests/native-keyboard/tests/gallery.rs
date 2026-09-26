@@ -516,6 +516,66 @@ fn host_theme_overrides_survive_live_theme_switches(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn host_embedding_story_types_through_the_real_nested_view_boundary(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let launch = GalleryLaunch {
+        story: "apps/host-embedding".to_owned(),
+        ..GalleryLaunch::default()
+    };
+    let captured = Rc::new(RefCell::new(None));
+    let captured_for_window = Rc::clone(&captured);
+    let window = cx.add_window(move |window, cx| {
+        let resident_host = ScriptViewHost::new("gallery-resident-host", cx).unwrap();
+        let resident = gpui_rhai_cli::gallery::host_resident_view(&launch)
+            .unwrap()
+            .prepare()
+            .unwrap()
+            .mount(
+                gpui_rhai::ScriptViewConfig::new("gallery-resident-view"),
+                resident_host,
+                window,
+                cx,
+            )
+            .unwrap();
+        let slots = gpui_rhai::HostSlotRegistry::new()
+            .with_script_view("resident-form", resident.clone())
+            .unwrap();
+        let shell_host = ScriptViewHost::new("gallery-host-shell", cx).unwrap();
+        let shell = gpui_rhai_cli::gallery::view_with_host_slots(&launch, slots)
+            .unwrap()
+            .prepare()
+            .unwrap()
+            .mount(
+                gpui_rhai::ScriptViewConfig::new("gallery-host-shell-view"),
+                shell_host.clone(),
+                window,
+                cx,
+            )
+            .unwrap();
+        *captured_for_window.borrow_mut() = Some((shell.clone(), resident));
+        GalleryHost {
+            host: shell_host,
+            view: shell,
+        }
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    cx.run_until_parked();
+    cx.simulate_input(*window, "中文");
+
+    let (shell, resident) = captured.borrow().as_ref().unwrap().clone();
+    let mut visual = gpui::VisualTestContext::from_window(*window, cx);
+    let texts = wait_for_text(&mut visual, &resident, "resident:中文");
+    assert!(texts.iter().any(|text| text == "resident:中文"));
+    assert!(visual.update(|_, cx| shell.last_error(cx).unwrap()).is_none());
+    assert!(
+        visual
+            .update(|_, cx| resident.last_error(cx).unwrap())
+            .is_none()
+    );
+}
+
+#[gpui::test]
 fn workbench_sheet_and_command_dialog_share_session_navigation(cx: &mut TestAppContext) {
     cx.update(gpui_rhai::install);
     let (window, view) = mount_story(

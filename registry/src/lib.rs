@@ -433,6 +433,8 @@ pub const CHART_INTERACTION_STORY_SOURCE: &str = include_str!("../stories/charts
 pub const CHART_CATALOG_STORY_SOURCE: &str = include_str!("../stories/charts/catalog.rhai");
 pub const MOTION_CATALOG_STORY_SOURCE: &str = include_str!("../stories/motion/catalog.rhai");
 pub const OPERATIONS_STORY_SOURCE: &str = include_str!("../stories/apps/operations.rhai");
+pub const HOST_EMBEDDING_STORY_SOURCE: &str = include_str!("../stories/apps/host_embedding.rhai");
+pub const HOST_RESIDENT_STORY_SOURCE: &str = include_str!("../stories/apps/host_resident.rhai");
 pub const GALLERY_NAVIGATION_SOURCE: &str = include_str!("../stories/gallery/navigation.rhai");
 pub const GALLERY_SOURCE_VIEW_SOURCE: &str = include_str!("../stories/gallery/source.rhai");
 
@@ -725,6 +727,23 @@ pub const BUNDLED_STORIES: &[StoryDefinition] = &[
         theme_studio: false,
     },
     StoryDefinition {
+        id: "apps/host-embedding",
+        title: "HostSlot resident form",
+        purpose: "Embed an independently mounted Rhai form through an opaque Rust Host boundary.",
+        category: "applications",
+        keywords: &["host", "embedding", "slot", "ime", "input", "resident"],
+        module_ids: &["components/input", "components/textarea"],
+        source_module: "stories/apps/host_embedding",
+        source: HOST_EMBEDDING_STORY_SOURCE,
+        cases: BASIC_CASE,
+        fixture: Some("host-embedding"),
+        required_features: NO_FEATURES,
+        platforms: DESKTOP_PLATFORMS,
+        test_requirements: &["prepare", "mount", "draw", "host-slot", "ime"],
+        documentation: "docs/embedding.md#rhai-shells-around-host-owned-content",
+        theme_studio: false,
+    },
+    StoryDefinition {
         id: "apps/operations",
         title: "Operations Workbench",
         purpose: "Complete a cross-page host inspection, configuration, and deployment task.",
@@ -796,7 +815,7 @@ mod tests {
         assert_eq!(BUNDLED_CHART_SOURCES_BY_ID.len(), 5);
         assert_eq!(BUNDLED_ASSET_SOURCES.len(), 18);
         assert_eq!(BUNDLED_THEME_SOURCES.len(), 15);
-        assert_eq!(BUNDLED_STORIES.len(), 9);
+        assert_eq!(BUNDLED_STORIES.len(), 10);
         assert!(
             BUNDLED_COMPONENT_SOURCES
                 .iter()

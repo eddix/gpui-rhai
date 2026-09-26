@@ -143,18 +143,30 @@ column([
 ])
 ```
 
-The slot is a clipped normal layout box. Pointer, wheel, click, and key events
-stop at its native boundary after the Host content handles them; no Rhai event
-or semantic subtree is synthesized for the opaque content. The Host must still
-suspend or dispose a slotted `ScriptViewHandle` explicitly. An unknown slot or
-disposed nested view becomes a normal custom-primitive diagnostic instead of a
-partial script transaction.
+The slot is a clipped normal layout box. Pointer, wheel, and click events stop
+at its native boundary after the Host content handles them; no Rhai pointer
+event or semantic subtree is synthesized for the opaque content. Keyboard
+events follow the focused resident path and are deliberately not marked
+handled at the boundary—doing so would prevent the macOS IME from delivering
+text insertion. The Host must still suspend or dispose a slotted
+`ScriptViewHandle` explicitly. An unknown slot or disposed nested view becomes
+a normal custom-primitive diagnostic instead of a partial script transaction.
 
 `with_script_view` detects whether the resident view's Host frame is already
 active. It reuses a shared Host without nesting the domain, and otherwise wraps
 the resident element in its own `ScriptViewHost::container`. Shell and resident
 may therefore belong to different overlay/focus domains in the same GPUI
 window without transferring lifecycle authority.
+
+Run the source-backed acceptance story with:
+
+```sh
+gpui-rhai gallery --story apps/host-embedding
+```
+
+Gallery mounts the resident form under a distinct Host and treats parent plus
+resident as one cache lifecycle group. The native regression inserts Chinese
+text through the real slot boundary.
 
 ## Host-owned chrome and the active theme
 
