@@ -118,7 +118,7 @@ fn view(ctx) {
                 #{ source_longitude: "source_lon", source_latitude: "source_lat",
                     target_longitude: "target_lon", target_latitude: "target_lat" })),
         ]).with_style(style().gap(theme_spacing("md")).flex_wrap()),
-    ]).with_style(style().width(relative(1.0)).min_height(relative(1.0))
+    ]).with_style(style().width(relative(1.0)).height(relative(1.0)).min_height(px(0))
         .padding(theme_spacing("lg")).gap(theme_spacing("lg")).overflow_y_scroll()
         .background(theme_color("surface")).text_color(theme_color("text_primary")))
         .scrollbars("hidden", "auto")

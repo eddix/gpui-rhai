@@ -446,12 +446,10 @@ fn chart_catalog_stream(rows: usize) -> Result<NativeChartData, String> {
     NativeChartData::new([dataset], ChartDataLimits::default()).map_err(|error| error.to_string())
 }
 
-/// Prepare one exact bundled story without opening a window.
-///
-/// # Errors
-///
-/// Returns a catalog, theme, locale, source, or runtime preparation error.
-pub fn prepare(launch: &GalleryLaunch) -> Result<PreparedScriptView, String> {
+fn build_view(
+    launch: &GalleryLaunch,
+    chart_stream: Option<NativeChartData>,
+) -> Result<EmbeddedScriptView, String> {
     let story = resolve_story(&launch.story, &launch.case)?;
     let (theme_name, primary_theme) = theme_source(&launch.theme)?;
     let locale_sources = locale_sources(&launch.locale)?;
@@ -497,7 +495,10 @@ pub fn prepare(launch: &GalleryLaunch) -> Result<PreparedScriptView, String> {
         });
     } else if story.fixture == Some("chart-catalog") {
         view = view.extension(ChartCatalogFixture {
-            stream: chart_catalog_stream(4_096)?,
+            stream: match chart_stream {
+                Some(stream) => stream,
+                None => chart_catalog_stream(4_096)?,
+            },
         });
     }
     if story.id == "apps/operations" && launch.case == "theme-overrides" {
@@ -510,7 +511,46 @@ pub fn prepare(launch: &GalleryLaunch) -> Result<PreparedScriptView, String> {
             ..ThemeTokenOverrides::default()
         });
     }
-    view.prepare().map_err(|error| error.to_string())
+    Ok(view)
+}
+
+/// Build one exact bundled story without opening a window.
+///
+/// # Errors
+///
+/// Returns a catalog, theme, locale, source, or runtime assembly error.
+pub fn view(launch: &GalleryLaunch) -> Result<EmbeddedScriptView, String> {
+    build_view(launch, None)
+}
+
+/// Build the source-identical Chart catalog with benchmark-owned streaming data.
+///
+/// This is public for the independent performance workspace; applications
+/// should use [`view`] or [`prepare`] instead.
+///
+/// # Errors
+///
+/// Returns a catalog, theme, locale, source, or runtime assembly error.
+#[doc(hidden)]
+pub fn chart_catalog_view_with_stream(
+    stream: NativeChartData,
+) -> Result<EmbeddedScriptView, String> {
+    build_view(
+        &GalleryLaunch {
+            story: "charts/catalog".to_owned(),
+            ..GalleryLaunch::default()
+        },
+        Some(stream),
+    )
+}
+
+/// Prepare one exact bundled story without opening a window.
+///
+/// # Errors
+///
+/// Returns a catalog, theme, locale, source, or runtime preparation error.
+pub fn prepare(launch: &GalleryLaunch) -> Result<PreparedScriptView, String> {
+    view(launch)?.prepare().map_err(|error| error.to_string())
 }
 
 /// Run one exact bundled story in a standalone GPUI window.

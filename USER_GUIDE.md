@@ -328,8 +328,10 @@ vocabulary, and style-part contract as the component foundation:
 - primitives for Box/Text/Image/SVG/Canvas, layout, scrolling, refs, signals,
   layers, and generic overlays.
 
-Run `cargo run -p gpui-rhai --example component_gallery` for the interactive
-catalog with category navigation and live switching across all bundled themes.
+Run `cargo run --release -p gpui-rhai-cli -- gallery --story components/catalog`
+for the authoritative interactive catalog with category navigation, cases,
+responsive viewport presets, Motion preferences, live themes, locales, and the
+exact running Rhai source.
 See [the component catalog](docs/components/catalog.md) for ownership and
 behavior distinctions that similar-looking controls must preserve.
 

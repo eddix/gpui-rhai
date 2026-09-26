@@ -12,8 +12,9 @@ use gpui::{
     AnyElement, AnyWindowHandle, App, AppContext, Bounds, Context, DispatchPhase, Element,
     ElementId, Entity, FocusHandle, Global, GlobalElementId, InspectorElementId,
     InteractiveElement, IntoElement, LayoutId, MouseButton, MouseDownEvent, ParentElement, Pixels,
-    Render, ScrollAnchor, ScrollHandle, SharedString, Styled, Subscription, Task, TitlebarOptions,
-    Window, WindowAppearance, WindowBounds, WindowOptions, deferred, div, px, rgba, size,
+    Render, Role, ScrollAnchor, ScrollHandle, SharedString, StatefulInteractiveElement, Styled,
+    Subscription, Task, TitlebarOptions, Window, WindowAppearance, WindowBounds, WindowOptions,
+    deferred, div, px, rgba, size,
 };
 use thiserror::Error;
 
@@ -1051,6 +1052,19 @@ impl ScriptViewHandle {
             view.primitives
                 .accessibility_projections(view.lifecycle.retained(), cx),
         );
+        if let Some(failure) = &view.last_failure {
+            let chart_error = failure.diagnostic.as_ref().is_some_and(|diagnostic| {
+                diagnostic
+                    .source
+                    .as_deref()
+                    .is_some_and(|source| source.starts_with("charts/"))
+                    || diagnostic
+                        .component
+                        .as_deref()
+                        .is_some_and(|component| component.contains("/Chart["))
+            });
+            tree.mark_runtime_error(&failure.message, chart_error);
+        }
         Ok(tree)
     }
 
@@ -3166,6 +3180,7 @@ fn build_error_banner(
     content: AnyElement,
 ) -> AnyElement {
     let selector = format!("gpui-rhai-error-banner:{view_id}");
+    let accessibility_id = selector.clone();
     let owner = format!("window:{window_id}/view:{view_id}/error-banner");
     let error_text = crate::renderer::selectable_text_element(
         owner,
@@ -3179,6 +3194,10 @@ fn build_error_banner(
         .flex_col()
         .child(
             div()
+                .id(ElementId::Name(accessibility_id.into()))
+                .role(Role::Alert)
+                .aria_label("Script view error")
+                .aria_description(error.to_owned())
                 .debug_selector(move || selector.clone())
                 .p_2()
                 .font_family(error_banner_font_family())

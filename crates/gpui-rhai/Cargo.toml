@@ -44,8 +44,24 @@ regex.workspace = true
 tempfile = "3"
 
 [[example]]
-name = "chart_gallery"
-required-features = ["charts"]
+name = "performance_probe"
+path = "examples/internal/performance/performance_probe.rs"
+
+[[example]]
+name = "table_1000"
+path = "examples/internal/performance/table_1000.rs"
+
+[[example]]
+name = "native_overlay_smoke"
+path = "examples/internal/smoke/native_overlay_smoke.rs"
+
+[[example]]
+name = "native_virtual_list_smoke"
+path = "examples/internal/smoke/native_virtual_list_smoke.rs"
+
+[[example]]
+name = "phase0_probe"
+path = "examples/internal/smoke/phase0_probe.rs"
 
 [lints]
 workspace = true

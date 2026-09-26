@@ -21,20 +21,11 @@ use gpui_rhai::{
     UiNodeKind, UiRuntimeState, UiValue, init_text_area, init_text_input,
     text_input_primitive_descriptor,
 };
+use gpui_rhai_cli::gallery::{GalleryLaunch, prepare as prepare_gallery};
 
 #[allow(dead_code)]
-#[path = "../../../crates/gpui-rhai/examples/table_1000.rs"]
+#[path = "../../../crates/gpui-rhai/examples/internal/performance/table_1000.rs"]
 mod table_1000_example;
-
-// Both gallery examples intentionally embed the release registry snapshot so
-// this independent harness exercises their real preparation paths together.
-#[allow(clippy::duplicate_mod, dead_code)]
-#[path = "../../../crates/gpui-rhai/examples/component_gallery.rs"]
-mod component_gallery_example;
-
-#[allow(clippy::duplicate_mod, dead_code)]
-#[path = "../../../crates/gpui-rhai/examples/motion_gallery.rs"]
-mod motion_gallery_example;
 
 struct ImageSourceProbe {
     source: ImageSource,
@@ -6649,9 +6640,13 @@ fn native_text_document_revision_invalidates_exact_viewer_reader(cx: &mut TestAp
 }
 
 #[gpui::test]
-fn component_gallery_switches_categories_and_live_themes(cx: &mut TestAppContext) {
+fn component_catalog_story_switches_categories_and_live_themes(cx: &mut TestAppContext) {
     cx.update(gpui_rhai::install);
-    let prepared = component_gallery_example::prepared("foundations").unwrap();
+    let prepared = prepare_gallery(&GalleryLaunch {
+        story: "components/catalog".to_owned(),
+        ..GalleryLaunch::default()
+    })
+    .unwrap();
     let captured = Rc::new(RefCell::new(None));
     let captured_for_window = Rc::clone(&captured);
     let window = cx.add_window(move |window, cx| {
@@ -6873,9 +6868,13 @@ fn set_theme_during_typing_keeps_input_focus(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn motion_gallery_mounts_and_renders_a_real_frame(cx: &mut TestAppContext) {
+fn motion_catalog_story_mounts_and_renders_a_real_frame(cx: &mut TestAppContext) {
     cx.update(gpui_rhai::install);
-    let prepared = motion_gallery_example::prepared().expect("prepare the official motion gallery");
+    let prepared = prepare_gallery(&GalleryLaunch {
+        story: "motion/catalog".to_owned(),
+        ..GalleryLaunch::default()
+    })
+    .expect("prepare the official Motion story");
     let captured = Rc::new(RefCell::new(None));
     let captured_for_window = Rc::clone(&captured);
     let window = cx.add_window(move |window, cx| {
