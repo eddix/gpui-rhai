@@ -9,6 +9,7 @@ publish = false
 [dependencies]
 gpui = { package = "gpui-pre", version = "=0.3.6", default-features = false, features = ["font-kit", "test-support"] }
 gpui-rhai = { path = "../../crates/gpui-rhai", features = ["charts"] }
+gpui-rhai-cli = { path = "../../crates/gpui-rhai-cli" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 

@@ -1,8 +1,10 @@
+//! Internal native virtual-collection launch smoke target.
+
 use std::collections::BTreeMap;
 
 use gpui_rhai::{EmbeddedScriptSource, EmbeddedScriptView, ModuleId, ScriptApplication};
 
-const THEME: &str = include_str!("../../../registry/themes/default_dark.rhai");
+const THEME: &str = include_str!("../../../../../registry/themes/default_dark.rhai");
 const MAIN: &str = r#"
 fn row(ctx, payload) { text(payload.item.label).with_key(payload.key) }
 fn view(ctx) {

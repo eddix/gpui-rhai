@@ -1,3 +1,5 @@
+//! Internal raw phase-zero renderer launch probe.
+
 use gpui::{App, AppContext, Bounds, WindowBounds, WindowOptions, px, size};
 use gpui_rhai::{RuntimeEngine, StaticUiView};
 

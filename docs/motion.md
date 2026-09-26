@@ -196,7 +196,7 @@ source and general 3D are intentionally deferred beyond 0.1.3.
 The optional source pack lives under `motion/*`:
 
 ```bash
-cargo run --release -p gpui-rhai --example motion_gallery
+cargo run --release -p gpui-rhai-cli -- gallery --story motion/catalog
 ```
 
 The Gallery is an executable acceptance surface, not a prepare-only catalog:

@@ -1,3 +1,5 @@
+//! Internal retained-tree and virtual-list policy benchmark probe.
+
 use std::time::Instant;
 
 use gpui_rhai::{RetainedUiTree, UiNode, VariableListSpec, VariableListState};

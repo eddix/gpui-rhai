@@ -14,10 +14,7 @@ use gpui_rhai::{
 use serde::Serialize;
 
 #[allow(dead_code)]
-#[path = "../../../crates/gpui-rhai/examples/chart_gallery.rs"]
-mod chart_gallery_example;
-#[allow(dead_code)]
-#[path = "../../../crates/gpui-rhai/examples/table_1000.rs"]
+#[path = "../../../crates/gpui-rhai/examples/internal/performance/table_1000.rs"]
 mod table_1000_example;
 
 struct BenchmarkHost {
@@ -958,10 +955,15 @@ fn chart_end_to_end_baseline(cx: &mut TestAppContext) {
         if cfg!(debug_assertions) { 1 } else { 5 },
     );
     let points = env_usize("GPUI_RHAI_CHART_BENCH_POINTS", 100_000);
-    let stream = chart_gallery_example::stream_data(points);
+    let stream = gpui_rhai::NativeChartData::new(
+        [chart_stream_chunk(0, points)],
+        gpui_rhai::ChartDataLimits::default(),
+    )
+    .unwrap();
     let prepare_started = Instant::now();
     let runtime_clock = gpui_rhai::ManualRuntimeClock::new(Instant::now());
-    let prepared = chart_gallery_example::gallery_view(stream.clone())
+    let prepared = gpui_rhai_cli::gallery::chart_catalog_view_with_stream(stream.clone())
+        .unwrap()
         .runtime_clock(runtime_clock.clock())
         .prepare()
         .unwrap();

@@ -7,7 +7,7 @@ official component receives a private high-level node constructor.
 Run the interactive catalog from this repository:
 
 ```text
-cargo run -p gpui-rhai --example component_gallery
+cargo run --release -p gpui-rhai-cli -- gallery --story components/catalog
 ```
 
 The gallery is a live component workbench, not a static visual catalog. Enabled

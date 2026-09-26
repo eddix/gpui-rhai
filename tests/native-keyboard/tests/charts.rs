@@ -10,10 +10,7 @@ use gpui::{
     VisualTestContext, Window, WindowHandle, point, px,
 };
 use gpui_rhai::*;
-
-#[allow(clippy::duplicate_mod, dead_code)]
-#[path = "../../../crates/gpui-rhai/examples/chart_gallery.rs"]
-mod chart_gallery_example;
+use gpui_rhai_cli::gallery::{GalleryLaunch, prepare as prepare_gallery};
 
 struct Host {
     host: ScriptViewHost,
@@ -168,11 +165,13 @@ fn chart_mark_count(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> 
 }
 
 #[gpui::test]
-fn chart_gallery_uses_a_window_bounded_scroll_viewport(cx: &mut TestAppContext) {
+fn chart_catalog_story_uses_a_window_bounded_scroll_viewport(cx: &mut TestAppContext) {
     cx.update(gpui_rhai::install);
-    let prepared =
-        chart_gallery_example::prepared_with_stream(chart_gallery_example::stream_data(64))
-            .unwrap();
+    let prepared = prepare_gallery(&GalleryLaunch {
+        story: "charts/catalog".to_owned(),
+        ..GalleryLaunch::default()
+    })
+    .unwrap();
     let (window, view) = mount_prepared(cx, prepared, "chart-gallery-scroll");
     let mut visual = VisualTestContext::from_window(*window, cx);
     pump(cx, &mut visual);
@@ -190,11 +189,13 @@ fn chart_gallery_uses_a_window_bounded_scroll_viewport(cx: &mut TestAppContext) 
         })
     };
     let before = figure_y(&mut visual);
-    visual.simulate_event(ScrollWheelEvent {
-        position: point(px(4.0), px(400.0)),
-        delta: ScrollDelta::Pixels(point(px(0.0), px(-700.0))),
-        ..ScrollWheelEvent::default()
-    });
+    for _ in 0..12 {
+        visual.simulate_event(ScrollWheelEvent {
+            position: point(px(4.0), px(400.0)),
+            delta: ScrollDelta::Pixels(point(px(0.0), px(-700.0))),
+            ..ScrollWheelEvent::default()
+        });
+    }
     pump(cx, &mut visual);
     let after = figure_y(&mut visual);
     assert!(after < before - 300.0, "before={before}, after={after}");
@@ -659,13 +660,13 @@ fn invalid_chart_candidate_reaches_view_error_and_keeps_last_good_scene(cx: &mut
     assert!(error.contains("piee"), "{error}");
     assert!(
         visual.update(|_, cx| {
-            view.accessibility_snapshot(cx)
-                .unwrap()
+            let snapshot = view.accessibility_snapshot(cx).unwrap();
+            snapshot
                 .find_by_role_and_name("figure", "Control")
                 .next()
-                .is_some()
+                .is_some_and(|figure| figure.invalid && figure.description.contains("piee"))
         }),
-        "last-good Chart scene must remain committed"
+        "last-good Chart scene must remain committed and expose the candidate error"
     );
 }
 
@@ -691,6 +692,12 @@ fn invalid_inline_chart_data_reaches_view_error(cx: &mut TestAppContext) {
         .update(|_, cx| view.last_error(cx).unwrap())
         .expect("invalid inline Chart data must reach the view error channel");
     assert!(error.contains("inline row 0"), "{error}");
+    assert!(visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .nodes()
+            .any(|node| node.invalid && node.description.contains("inline row 0"))
+    }));
 }
 
 #[gpui::test]

@@ -1,16 +1,18 @@
+//! Internal native overlay lifecycle and focus smoke target.
+
 use std::collections::BTreeMap;
 
 use gpui_rhai::{AssetData, EmbeddedScriptSource, EmbeddedScriptView, ModuleId, ScriptApplication};
 
-const POPOVER: &str = include_str!("../../../registry/components/popover.rhai");
-const DIALOG: &str = include_str!("../../../registry/components/dialog.rhai");
-const INPUT: &str = include_str!("../../../registry/components/input.rhai");
-const COMBOBOX: &str = include_str!("../../../registry/components/combobox.rhai");
-const TOAST: &str = include_str!("../../../registry/components/toast.rhai");
-const TOOLTIP: &str = include_str!("../../../registry/components/tooltip.rhai");
-const THEME: &str = include_str!("../../../registry/themes/default_dark.rhai");
-const TOKYO_NIGHT: &str = include_str!("../../../registry/themes/tokyo_night.rhai");
-const CATPPUCCIN_MOCHA: &str = include_str!("../../../registry/themes/catppuccin_mocha.rhai");
+const POPOVER: &str = include_str!("../../../../../registry/components/popover.rhai");
+const DIALOG: &str = include_str!("../../../../../registry/components/dialog.rhai");
+const INPUT: &str = include_str!("../../../../../registry/components/input.rhai");
+const COMBOBOX: &str = include_str!("../../../../../registry/components/combobox.rhai");
+const TOAST: &str = include_str!("../../../../../registry/components/toast.rhai");
+const TOOLTIP: &str = include_str!("../../../../../registry/components/tooltip.rhai");
+const THEME: &str = include_str!("../../../../../registry/themes/default_dark.rhai");
+const TOKYO_NIGHT: &str = include_str!("../../../../../registry/themes/tokyo_night.rhai");
+const CATPPUCCIN_MOCHA: &str = include_str!("../../../../../registry/themes/catppuccin_mocha.rhai");
 
 const MAIN: &str = r#"
 import "components/popover" as popover;
@@ -208,22 +210,26 @@ fn main() {
     .asset_sources([
         (
             "icons/check".to_owned(),
-            svg(include_bytes!("../../../registry/assets/icons/check.svg")),
+            svg(include_bytes!(
+                "../../../../../registry/assets/icons/check.svg"
+            )),
         ),
         (
             "icons/close".to_owned(),
-            svg(include_bytes!("../../../registry/assets/icons/close.svg")),
+            svg(include_bytes!(
+                "../../../../../registry/assets/icons/close.svg"
+            )),
         ),
         (
             "icons/chevron_down".to_owned(),
             svg(include_bytes!(
-                "../../../registry/assets/icons/chevron_down.svg"
+                "../../../../../registry/assets/icons/chevron_down.svg"
             )),
         ),
         (
             "icons/chevron_up".to_owned(),
             svg(include_bytes!(
-                "../../../registry/assets/icons/chevron_up.svg"
+                "../../../../../registry/assets/icons/chevron_up.svg"
             )),
         ),
     ])

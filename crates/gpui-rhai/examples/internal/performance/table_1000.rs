@@ -1,3 +1,5 @@
+//! Internal end-to-end 1,000-row Table performance baseline.
+
 use std::collections::BTreeMap;
 
 use gpui_rhai::{
@@ -6,10 +8,10 @@ use gpui_rhai::{
 };
 
 const ROW_COUNT: usize = 1_000;
-const TABLE: &str = include_str!("../../../registry/components/table.rhai");
-const BADGE: &str = include_str!("../../../registry/components/badge.rhai");
-const BUTTON: &str = include_str!("../../../registry/components/button.rhai");
-const THEME: &str = include_str!("../../../registry/themes/default_dark.rhai");
+const TABLE: &str = include_str!("../../../../../registry/components/table.rhai");
+const BADGE: &str = include_str!("../../../../../registry/components/badge.rhai");
+const BUTTON: &str = include_str!("../../../../../registry/components/button.rhai");
+const THEME: &str = include_str!("../../../../../registry/themes/default_dark.rhai");
 
 const MAIN: &str = r#"
 import "components/table" as table;
@@ -148,19 +150,19 @@ fn table_assets() -> Vec<(String, AssetData)> {
     [
         (
             "icons/disclosure_down",
-            include_bytes!("../../../registry/assets/icons/disclosure_down.svg").as_slice(),
+            include_bytes!("../../../../../registry/assets/icons/disclosure_down.svg").as_slice(),
         ),
         (
             "icons/chevron_right",
-            include_bytes!("../../../registry/assets/icons/chevron_right.svg").as_slice(),
+            include_bytes!("../../../../../registry/assets/icons/chevron_right.svg").as_slice(),
         ),
         (
             "icons/sort_ascending",
-            include_bytes!("../../../registry/assets/icons/sort_ascending.svg").as_slice(),
+            include_bytes!("../../../../../registry/assets/icons/sort_ascending.svg").as_slice(),
         ),
         (
             "icons/sort_descending",
-            include_bytes!("../../../registry/assets/icons/sort_descending.svg").as_slice(),
+            include_bytes!("../../../../../registry/assets/icons/sort_descending.svg").as_slice(),
         ),
     ]
     .into_iter()
