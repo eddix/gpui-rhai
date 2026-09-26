@@ -700,6 +700,7 @@ impl Render for GalleryApp {
                                             div()
                                                 .pt_2()
                                                 .flex()
+                                                .flex_wrap()
                                                 .items_center()
                                                 .gap_2()
                                                 .children(cases)

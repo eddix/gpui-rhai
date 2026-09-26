@@ -483,6 +483,31 @@ const OPERATIONS_CASES: &[StoryCase] = &[
         title: "Host theme overrides",
         purpose: "Apply nonzero Host radii uniformly and preserve Workbench state across themes.",
     },
+    StoryCase {
+        id: "loading",
+        title: "Loading",
+        purpose: "Present deterministic loading surfaces without starting background work.",
+    },
+    StoryCase {
+        id: "empty",
+        title: "Empty",
+        purpose: "Present actionable empty Dashboard and Hosts states.",
+    },
+    StoryCase {
+        id: "failure",
+        title: "Partial failure",
+        purpose: "Keep healthy data usable while one host and a simulated deployment fail.",
+    },
+    StoryCase {
+        id: "streaming",
+        title: "Streaming update",
+        purpose: "Consume a bounded Rust subscription and expose its latest revision.",
+    },
+    StoryCase {
+        id: "large",
+        title: "Large dataset",
+        purpose: "Exercise a 1,000-row Rust NativeCollection through the virtualized Table.",
+    },
 ];
 
 pub const BUNDLED_STORIES: &[StoryDefinition] = &[
@@ -656,6 +681,10 @@ pub const BUNDLED_STORIES: &[StoryDefinition] = &[
             "components/diff_viewer",
             "components/progress",
             "components/toast",
+            "components/alert",
+            "components/empty",
+            "components/skeleton",
+            "components/spinner",
             "components/title_bar",
             "components/status_bar",
             "charts/chart",
