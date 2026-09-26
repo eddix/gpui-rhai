@@ -7,10 +7,10 @@ use gpui_rhai::gpui::{
     WeakEntity, Window, WindowBounds, WindowOptions, div, px, rgba, size,
 };
 use gpui_rhai::{
-    AssetData, EmbeddedScriptSource, EmbeddedScriptView, EventResponse, ModuleId, MotionPreference,
-    NativeEvent, NativeHandlerDescriptor, NativeHandlerId, NativeTextDocument, RuntimeEngine,
-    ScriptViewConfig, ScriptViewExtension, ScriptViewHandle, ScriptViewHost, ValueSchema, install,
-    load_theme_source,
+    AssetData, EmbeddedScriptSource, EmbeddedScriptView, EventResponse, HostSlotRegistry, ModuleId,
+    MotionPreference, NativeEvent, NativeHandlerDescriptor, NativeHandlerId, NativeTextDocument,
+    RuntimeEngine, ScriptViewConfig, ScriptViewExtension, ScriptViewHandle, ScriptViewHost,
+    ValueSchema, install, load_theme_source,
 };
 use gpui_rhai_registry::{
     AR_LOCALE, BUNDLED_ASSET_SOURCES, BUNDLED_COMPONENT_SOURCES_BY_ID, BUNDLED_STORIES,
@@ -18,9 +18,58 @@ use gpui_rhai_registry::{
     StoryDefinition, ZH_CN_LOCALE,
 };
 
-use super::gallery::{GalleryLaunch, prepare, story_source};
+use super::gallery::{
+    GalleryLaunch, host_resident_view, prepare, story_source, view_with_host_slots,
+};
 
 const RETAINED_STORY_LIMIT: usize = 8;
+
+#[derive(Clone)]
+struct MountedStory {
+    primary: ScriptViewHandle,
+    dependents: Vec<ScriptViewHandle>,
+}
+
+impl MountedStory {
+    fn handles(&self) -> impl Iterator<Item = &ScriptViewHandle> {
+        std::iter::once(&self.primary).chain(&self.dependents)
+    }
+
+    fn resume(&self, window: &mut Window, cx: &mut App) -> Result<(), String> {
+        let mut resumed = Vec::new();
+        for view in self.dependents.iter().chain([&self.primary]) {
+            match view.resume(cx) {
+                Ok(true) => resumed.push(view),
+                Ok(false) => {}
+                Err(error) => {
+                    for resumed in resumed.into_iter().rev() {
+                        let _ = resumed.suspend(window, cx);
+                    }
+                    return Err(error.to_string());
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn suspend(&self, window: &mut Window, cx: &mut App) -> Result<(), String> {
+        let mut failure = None;
+        for view in self.handles() {
+            if let Err(error) = view.suspend(window, cx)
+                && failure.is_none()
+            {
+                failure = Some(error.to_string());
+            }
+        }
+        failure.map_or(Ok(()), Err)
+    }
+
+    fn dispose(&self, cx: &mut App) {
+        for view in self.handles() {
+            let _ = view.dispose(cx);
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ViewportPreset {
@@ -52,13 +101,79 @@ impl ViewportPreset {
     }
 }
 
+fn mount_gallery_story(
+    launch: &GalleryLaunch,
+    generation: u64,
+    host: &ScriptViewHost,
+    window: &mut Window,
+    cx: &mut App,
+) -> Result<MountedStory, String> {
+    if launch.story == "apps/host-embedding" {
+        let resident_host =
+            ScriptViewHost::new(format!("gallery-resident-window-{generation}"), cx)
+                .map_err(|error| error.to_string())?;
+        let resident = host_resident_view(launch)?
+            .prepare()
+            .map_err(|error| error.to_string())?
+            .mount(
+                ScriptViewConfig::new(format!("gallery-resident-{generation}")),
+                resident_host,
+                window,
+                cx,
+            )
+            .map_err(|error| error.to_string())?;
+        let slots = HostSlotRegistry::new()
+            .with_script_view("resident-form", resident.clone())
+            .map_err(|error| error.to_string())?;
+        let parent = view_with_host_slots(launch, slots)
+            .and_then(|view| view.prepare().map_err(|error| error.to_string()))
+            .and_then(|prepared| {
+                prepared
+                    .mount(
+                        ScriptViewConfig::new(GalleryApp::view_id(
+                            &launch.story,
+                            &launch.case,
+                            generation,
+                        )),
+                        host.clone(),
+                        window,
+                        cx,
+                    )
+                    .map_err(|error| error.to_string())
+            });
+        match parent {
+            Ok(primary) => Ok(MountedStory {
+                primary,
+                dependents: vec![resident],
+            }),
+            Err(error) => {
+                let _ = resident.dispose(cx);
+                Err(error)
+            }
+        }
+    } else {
+        let primary = prepare(launch)?
+            .mount(
+                ScriptViewConfig::new(GalleryApp::view_id(&launch.story, &launch.case, generation)),
+                host.clone(),
+                window,
+                cx,
+            )
+            .map_err(|error| error.to_string())?;
+        Ok(MountedStory {
+            primary,
+            dependents: Vec::new(),
+        })
+    }
+}
+
 struct GalleryApp {
     host: ScriptViewHost,
     navigation: ScriptViewHandle,
     source_view: ScriptViewHandle,
     launch: GalleryLaunch,
     current_key: String,
-    views: BTreeMap<String, ScriptViewHandle>,
+    views: BTreeMap<String, MountedStory>,
     visits: Vec<String>,
     error: Option<String>,
     next_generation: u64,
@@ -87,17 +202,7 @@ impl GalleryApp {
         let host =
             ScriptViewHost::new("gallery-window", cx).expect("Gallery host identity is valid");
         let key = Self::key(&launch.story, &launch.case);
-        let view = prepare(&launch)
-            .and_then(|prepared| {
-                prepared
-                    .mount(
-                        ScriptViewConfig::new(Self::view_id(&launch.story, &launch.case, 1)),
-                        host.clone(),
-                        window,
-                        cx,
-                    )
-                    .map_err(|error| error.to_string())
-            })
+        let view = mount_gallery_story(&launch, 1, &host, window, cx)
             .expect("validated initial Gallery story mounts");
         let navigation = prepare_navigation(
             &launch,
@@ -161,10 +266,8 @@ impl GalleryApp {
         if key == self.current_key {
             return;
         }
-        let candidate = if let Some(view) = self.views.get(&key) {
-            view.resume(cx)
-                .map(|_| view.clone())
-                .map_err(|error| error.to_string())
+        let candidate = if let Some(view) = self.views.get(&key).cloned() {
+            view.resume(window, cx).map(|()| view)
         } else {
             let launch = GalleryLaunch {
                 story: story.to_owned(),
@@ -174,16 +277,7 @@ impl GalleryApp {
             };
             let generation = self.next_generation;
             self.next_generation = self.next_generation.saturating_add(1);
-            prepare(&launch).and_then(|prepared| {
-                prepared
-                    .mount(
-                        ScriptViewConfig::new(Self::view_id(story, case, generation)),
-                        self.host.clone(),
-                        window,
-                        cx,
-                    )
-                    .map_err(|error| error.to_string())
-            })
+            mount_gallery_story(&launch, generation, &self.host, window, cx)
         };
         let candidate = match candidate {
             Ok(candidate) => candidate,
@@ -193,17 +287,19 @@ impl GalleryApp {
                 return;
             }
         };
-        if let Err(error) = candidate.set_motion_preference(self.motion_preference, cx) {
-            let _ = candidate.suspend(window, cx);
-            self.error = Some(error.to_string());
-            cx.notify();
-            return;
+        for view in candidate.handles() {
+            if let Err(error) = view.set_motion_preference(self.motion_preference, cx) {
+                let _ = candidate.suspend(window, cx);
+                self.error = Some(error.to_string());
+                cx.notify();
+                return;
+            }
         }
         if let Some(current) = self.views.get(&self.current_key)
             && let Err(error) = current.suspend(window, cx)
         {
             let _ = candidate.suspend(window, cx);
-            self.error = Some(error.to_string());
+            self.error = Some(error);
             cx.notify();
             return;
         }
@@ -222,30 +318,19 @@ impl GalleryApp {
     fn reset(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let generation = self.next_generation;
         self.next_generation = self.next_generation.saturating_add(1);
-        let candidate = prepare(&self.launch).and_then(|prepared| {
-            prepared
-                .mount(
-                    ScriptViewConfig::new(Self::view_id(
-                        &self.launch.story,
-                        &self.launch.case,
-                        generation,
-                    )),
-                    self.host.clone(),
-                    window,
-                    cx,
-                )
-                .map_err(|error| error.to_string())
-        });
+        let candidate = mount_gallery_story(&self.launch, generation, &self.host, window, cx);
         match candidate {
             Ok(candidate) => {
-                if let Err(error) = candidate.set_motion_preference(self.motion_preference, cx) {
-                    let _ = candidate.dispose(cx);
-                    self.error = Some(error.to_string());
-                    cx.notify();
-                    return;
+                for view in candidate.handles() {
+                    if let Err(error) = view.set_motion_preference(self.motion_preference, cx) {
+                        candidate.dispose(cx);
+                        self.error = Some(error.to_string());
+                        cx.notify();
+                        return;
+                    }
                 }
                 if let Some(previous) = self.views.insert(self.current_key.clone(), candidate) {
-                    let _ = previous.dispose(cx);
+                    previous.dispose(cx);
                 }
                 self.error = None;
             }
@@ -255,11 +340,16 @@ impl GalleryApp {
     }
 
     fn select_theme(&mut self, family: &str, variant: &str, slug: &str, cx: &mut Context<Self>) {
-        for view in self
-            .views
-            .values()
-            .chain([&self.navigation, &self.source_view])
-        {
+        for mounted in self.views.values() {
+            for view in mounted.handles() {
+                if let Err(error) = view.select_theme(family, variant, cx) {
+                    self.error = Some(error.to_string());
+                    cx.notify();
+                    return;
+                }
+            }
+        }
+        for view in [&self.navigation, &self.source_view] {
             if let Err(error) = view.select_theme(family, variant, cx) {
                 self.error = Some(error.to_string());
                 cx.notify();
@@ -272,11 +362,16 @@ impl GalleryApp {
     }
 
     fn select_locale(&mut self, locale: &str, cx: &mut Context<Self>) {
-        for view in self
-            .views
-            .values()
-            .chain([&self.navigation, &self.source_view])
-        {
+        for mounted in self.views.values() {
+            for view in mounted.handles() {
+                if let Err(error) = view.select_locale(locale, cx) {
+                    self.error = Some(error.to_string());
+                    cx.notify();
+                    return;
+                }
+            }
+        }
+        for view in [&self.navigation, &self.source_view] {
             if let Err(error) = view.select_locale(locale, cx) {
                 self.error = Some(error.to_string());
                 cx.notify();
@@ -289,11 +384,16 @@ impl GalleryApp {
     }
 
     fn select_motion_preference(&mut self, preference: MotionPreference, cx: &mut Context<Self>) {
-        for view in self
-            .views
-            .values()
-            .chain([&self.navigation, &self.source_view])
-        {
+        for mounted in self.views.values() {
+            for view in mounted.handles() {
+                if let Err(error) = view.set_motion_preference(preference, cx) {
+                    self.error = Some(error.to_string());
+                    cx.notify();
+                    return;
+                }
+            }
+        }
+        for view in [&self.navigation, &self.source_view] {
             if let Err(error) = view.set_motion_preference(preference, cx) {
                 self.error = Some(error.to_string());
                 cx.notify();
@@ -346,13 +446,13 @@ impl GalleryApp {
             }
             self.visits.remove(0);
             if let Some(view) = self.views.remove(&key) {
-                let _ = view.dispose(cx);
+                view.dispose(cx);
             }
         }
     }
 
     fn current_view(&self) -> &ScriptViewHandle {
-        &self.views[&self.current_key]
+        &self.views[&self.current_key].primary
     }
 
     fn current_story(&self) -> &'static StoryDefinition {

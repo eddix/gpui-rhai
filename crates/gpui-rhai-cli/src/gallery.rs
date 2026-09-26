@@ -1,17 +1,18 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
+use gpui_rhai::gpui::prelude::*;
 use gpui_rhai::{
     AppManifest, AssetData, CapabilityDescriptor, CapabilityId, CapabilityMethod, ChartDataLimits,
-    ChartDataset, ChartGeoMap, EmbeddedScriptSource, EmbeddedScriptView, ModuleId, NativeChartData,
-    NativeCollection, PreparedScriptView, RuntimeEngine, ScriptViewExtension,
-    SubscriptionCapabilityHandler, SubscriptionWork, ThemeMode, ThemeTokenOverrides, ThemeVariant,
-    UiRuntimeState, UiValue, ValueSchema, load_theme_source,
+    ChartDataset, ChartGeoMap, EmbeddedScriptSource, EmbeddedScriptView, HostSlotRegistry,
+    ModuleId, NativeChartData, NativeCollection, PreparedScriptView, RuntimeEngine,
+    ScriptViewExtension, SubscriptionCapabilityHandler, SubscriptionWork, ThemeMode,
+    ThemeTokenOverrides, ThemeVariant, UiRuntimeState, UiValue, ValueSchema, load_theme_source,
 };
 use gpui_rhai_registry::{
     AR_LOCALE, BUNDLED_ASSET_SOURCES, BUNDLED_CHART_SOURCES_BY_ID, BUNDLED_COMPONENT_SOURCES_BY_ID,
     BUNDLED_MOTION_SOURCES_BY_ID, BUNDLED_STORIES, BUNDLED_THEME_SOURCES, EN_LOCALE,
-    StoryDefinition, ZH_CN_LOCALE,
+    HOST_RESIDENT_STORY_SOURCE, StoryDefinition, ZH_CN_LOCALE,
 };
 
 pub const DEFAULT_STORY: &str = "components/button";
@@ -449,6 +450,7 @@ fn chart_catalog_stream(rows: usize) -> Result<NativeChartData, String> {
 fn build_view(
     launch: &GalleryLaunch,
     chart_stream: Option<NativeChartData>,
+    host_slots: Option<HostSlotRegistry>,
 ) -> Result<EmbeddedScriptView, String> {
     let story = resolve_story(&launch.story, &launch.case)?;
     let (theme_name, primary_theme) = theme_source(&launch.theme)?;
@@ -500,6 +502,20 @@ fn build_view(
                 None => chart_catalog_stream(4_096)?,
             },
         });
+    } else if story.fixture == Some("host-embedding") {
+        let slots = match host_slots {
+            Some(slots) => slots,
+            None => HostSlotRegistry::new()
+                .with_slot("resident-form", |_, _| {
+                    Ok(gpui_rhai::gpui::div()
+                        .size_full()
+                        .p_4()
+                        .child("Rust Host supplies the resident script view in the Gallery shell")
+                        .into_any_element())
+                })
+                .map_err(|error| error.to_string())?,
+        };
+        view = view.extension(slots);
     }
     if story.id == "apps/operations" && launch.case == "theme-overrides" {
         view = view.theme_token_overrides(ThemeTokenOverrides {
@@ -520,7 +536,57 @@ fn build_view(
 ///
 /// Returns a catalog, theme, locale, source, or runtime assembly error.
 pub fn view(launch: &GalleryLaunch) -> Result<EmbeddedScriptView, String> {
-    build_view(launch, None)
+    build_view(launch, None, None)
+}
+
+#[doc(hidden)]
+pub fn view_with_host_slots(
+    launch: &GalleryLaunch,
+    slots: HostSlotRegistry,
+) -> Result<EmbeddedScriptView, String> {
+    build_view(launch, None, Some(slots))
+}
+
+#[doc(hidden)]
+pub fn host_resident_view(launch: &GalleryLaunch) -> Result<EmbeddedScriptView, String> {
+    let (theme_name, primary_theme) = theme_source(&launch.theme)?;
+    let engine = RuntimeEngine::new();
+    let selected = load_theme_source(engine.engine(), theme_name, primary_theme)
+        .map_err(|error| error.to_string())?;
+    let source = format!(
+        "{}\nfn init(ctx) {{ ctx.set_theme({}, {}); ctx.set_locale({}); }}\n",
+        HOST_RESIDENT_STORY_SOURCE,
+        serde_json::to_string(&selected.family).map_err(|error| error.to_string())?,
+        serde_json::to_string(&selected.name).map_err(|error| error.to_string())?,
+        serde_json::to_string(&launch.locale).map_err(|error| error.to_string())?,
+    );
+    let entry = ModuleId::parse("stories/apps/host_resident").map_err(|error| error.to_string())?;
+    let mut modules = BTreeMap::from([(entry.clone(), source)]);
+    for &(id, source) in BUNDLED_COMPONENT_SOURCES_BY_ID {
+        modules.insert(
+            ModuleId::parse(id).map_err(|error| error.to_string())?,
+            source.to_owned(),
+        );
+    }
+    Ok(
+        EmbeddedScriptView::new(entry, EmbeddedScriptSource::new(modules), primary_theme)
+            .theme_sources(
+                BUNDLED_THEME_SOURCES
+                    .iter()
+                    .filter(|(name, _)| *name != theme_name)
+                    .map(|(name, source)| ((*name).to_owned(), (*source).to_owned())),
+            )
+            .locale_sources(
+                locale_sources(&launch.locale)?
+                    .map(|(name, source)| (name.to_owned(), source.to_owned())),
+            )
+            .asset_sources(BUNDLED_ASSET_SOURCES.iter().map(|(path, source)| {
+                (
+                    path.strip_suffix(".svg").unwrap_or(path).to_owned(),
+                    asset(source.as_bytes()),
+                )
+            })),
+    )
 }
 
 /// Build the source-identical Chart catalog with benchmark-owned streaming data.
@@ -541,6 +607,7 @@ pub fn chart_catalog_view_with_stream(
             ..GalleryLaunch::default()
         },
         Some(stream),
+        None,
     )
 }
 
