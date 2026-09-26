@@ -4,7 +4,7 @@
   "export": "Table",
   "version": "0.1.6",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
-  "dependencies": [],
+  "dependencies": ["components/badge"],
   "capabilities": {},
   "assets": ["icons/disclosure_down.svg", "icons/chevron_right.svg", "icons/sort_ascending.svg", "icons/sort_descending.svg"]
 }
@@ -21,7 +21,7 @@
 define_component(#{
     metadata: #{ id: "components/table", "export": "Table", version: "0.1.6",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
-        dependencies: [], capabilities: #{},
+        dependencies: ["components/badge"], capabilities: #{},
         assets: ["icons/disclosure_down.svg", "icons/chevron_right.svg", "icons/sort_ascending.svg", "icons/sort_descending.svg"] },
     schema: #{
         props: #{
@@ -50,6 +50,19 @@ define_component(#{
                         required: false, sensitive: false },
                     max_width: #{ schema: #{ type: "optional", value: #{ type: "number", exclusive_min: 0.0, max: 16384.0 } },
                         required: false, sensitive: false },
+                    adornments: #{ schema: #{ type: "array", max_items: 4, items: #{
+                        type: "object", allow_unknown: false, fields: #{
+                            text_key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+                            variant: #{ schema: #{ type: "string", allowed: ["neutral", "accent", "success", "warning", "danger"] },
+                                required: false, sensitive: false,
+                                "default": #{ type: "string", value: "neutral" } },
+                            variant_key: #{ schema: #{ type: "optional", value: #{ type: "string" } },
+                                required: false, sensitive: false },
+                            dot: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
+                                "default": #{ type: "bool", value: false } },
+                        },
+                    } }, required: false, sensitive: false,
+                        "default": #{ type: "array", value: [] } },
                 },
             } }, required: true, sensitive: false },
             height: #{ schema: #{ type: "optional", value: #{ type: "number", exclusive_min: 0.0 } }, required: false, sensitive: false },
@@ -113,6 +126,8 @@ define_component(#{
     },
     render: Fn("render_Table")
 });
+
+import "components/badge" as badge;
 
 fn Table(props) { render_component("components/table", props) }
 fn prop_or(props, name, fallback) { if name in props { props[name] } else { fallback } }
@@ -205,6 +220,13 @@ fn render_table_row(resize_signals, total_rows, ctx, payload) {
     for cell in item.cells {
         let content = [text(cell.text).with_key(`${cell.key}-text`)
             .with_style(style().flex_grow().min_width(px(0)).whitespace_nowrap().text_ellipsis())];
+        let cell_label = cell.text;
+        for index in 0..cell.adornments.len {
+            let adornment = cell.adornments[index];
+            content.push(badge::Badge(#{ text: adornment.text, variant: adornment.variant,
+                dot: adornment.dot, size: "sm" }).with_key(`${cell.key}-adornment-${index}`));
+            cell_label += `, ${adornment.text}`;
+        }
         if "resize_signal_key" in cell {
             content.push(intrinsic_column_measure(
                 `${payload.key}-${cell.key}-measure`, cell.text,
@@ -220,7 +242,7 @@ fn render_table_row(resize_signals, total_rows, ctx, payload) {
         if "resize_signal_key" in cell {
             node = node.bind_parent_signal(ctx, "width_override", cell.resize_signal_key);
         }
-        node = node.accessibility_table_cell(cell.text, cell_index);
+        node = node.accessibility_table_cell(cell_label, cell_index);
         cells.push(node);
         cell_index += 1;
     }
@@ -256,9 +278,22 @@ fn table_row_item(source, source_index, columns, row_key, label, selected,
         };
     let cells = [];
     for column in columns {
+        let adornments = [];
+        for spec in prop_or(column, "adornments", []) {
+            let adornment_text = if spec.text_key in source { `${source[spec.text_key]}` } else { "" };
+            if adornment_text != "" {
+                let variant = if "variant_key" in spec && spec.variant_key != () && spec.variant_key in source {
+                    `${source[spec.variant_key]}`
+                } else { prop_or(spec, "variant", "neutral") };
+                if !(variant in ["neutral", "accent", "success", "warning", "danger"]) {
+                    throw `Table row ${source_index} adornment variant ${variant} is invalid`;
+                }
+                adornments.push(#{ text: adornment_text, variant: variant, dot: prop_or(spec, "dot", false) });
+            }
+        }
         let cell = #{
             key: column.key, text: if column.key in source { `${source[column.key]}` } else { "" },
-            width: column.width, align: prop_or(column, "align", "start"),
+            width: column.width, align: prop_or(column, "align", "start"), adornments: adornments,
         };
         if "resize_signal_key" in column {
             cell.resize_signal_key = column.resize_signal_key;
@@ -299,7 +334,7 @@ fn table_column_model(props) {
         let column = #{
             key: source.key, title: source.title, width: source.width,
             align: prop_or(source, "align", "start"), sortable: prop_or(source, "sortable", false),
-            resize_enabled: enabled,
+            resize_enabled: enabled, adornments: prop_or(source, "adornments", []),
         };
         if enabled {
             let min_width = optional_or(source, "min_width", 48.0);

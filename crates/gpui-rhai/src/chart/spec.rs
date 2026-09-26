@@ -455,6 +455,20 @@ pub struct ChartSpec {
     pub annotations: Vec<ChartAnnotation>,
     pub link_group: Option<String>,
     pub link_domain: Option<String>,
+    pub interaction: ChartInteractionSpec,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum ChartWheelZoom {
+    Off,
+    #[default]
+    Modifier,
+    Always,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct ChartInteractionSpec {
+    pub wheel_zoom: ChartWheelZoom,
 }
 
 impl ChartSpec {
@@ -480,6 +494,7 @@ impl ChartSpec {
                 "annotations",
                 "link_group",
                 "link_domain",
+                "interaction",
             ],
             "chart",
         )?;
@@ -509,7 +524,7 @@ impl ChartSpec {
             .map(|(index, value)| parse_series(value, index))
             .collect::<Result<Vec<_>, _>>()?;
         let spec = Self {
-            title: optional_string(root, "title")?,
+            title: optional_nonempty_string(root, "title")?,
             description: optional_string(root, "description")?,
             regions,
             axes,
@@ -538,6 +553,8 @@ impl ChartSpec {
                 .unwrap_or_default(),
             link_group: optional_identifier(root, "link_group")?,
             link_domain: optional_identifier(root, "link_domain")?,
+            interaction: map_optional(root, "interaction")?
+                .map_or_else(|| Ok(ChartInteractionSpec::default()), parse_interaction)?,
         };
         spec.validate()?;
         Ok(spec)
@@ -820,7 +837,7 @@ fn parse_axis(value: &UiValue, index: usize) -> Result<ChartAxisSpec, ChartSpecE
         position,
         min: optional_number(value, "min")?,
         max: optional_number(value, "max")?,
-        title: optional_string(value, "title")?,
+        title: optional_nonempty_string(value, "title")?,
         format: map_optional(value, "format")?
             .map_or_else(|| Ok(ChartFormatSpec::default()), parse_format)?,
         timezone: optional_string(value, "timezone")?
@@ -1061,6 +1078,25 @@ fn parse_motion(value: &BTreeMap<String, UiValue>) -> Result<ChartMotionSpec, Ch
         duration_role: optional_string(value, "duration")?.unwrap_or_else(|| "normal".to_owned()),
         easing_role: optional_string(value, "easing")?.unwrap_or_else(|| "standard".to_owned()),
     })
+}
+
+fn parse_interaction(
+    value: &BTreeMap<String, UiValue>,
+) -> Result<ChartInteractionSpec, ChartSpecError> {
+    reject_unknown(value, &["wheel_zoom"], "chart.interaction")?;
+    let wheel_zoom = optional_string(value, "wheel_zoom")?.unwrap_or_else(|| "modifier".to_owned());
+    let wheel_zoom = match wheel_zoom.as_str() {
+        "off" => ChartWheelZoom::Off,
+        "modifier" => ChartWheelZoom::Modifier,
+        "always" => ChartWheelZoom::Always,
+        _ => {
+            return Err(ChartSpecError::InvalidEnum {
+                path: "chart.interaction.wheel_zoom".to_owned(),
+                value: wheel_zoom,
+            });
+        }
+    };
+    Ok(ChartInteractionSpec { wheel_zoom })
 }
 
 fn parse_format(value: &BTreeMap<String, UiValue>) -> Result<ChartFormatSpec, ChartSpecError> {
@@ -1308,6 +1344,16 @@ fn optional_string(
     }
 }
 
+fn optional_nonempty_string(
+    value: &BTreeMap<String, UiValue>,
+    name: &str,
+) -> Result<Option<String>, ChartSpecError> {
+    Ok(optional_string(value, name)?.and_then(|value| {
+        let value = value.trim();
+        (!value.is_empty()).then(|| value.to_owned())
+    }))
+}
+
 fn optional_identifier(
     value: &BTreeMap<String, UiValue>,
     name: &str,
@@ -1522,6 +1568,27 @@ mod tests {
     use super::*;
 
     #[test]
+    fn blank_titles_are_absent_and_wheel_zoom_defaults_to_modifier() {
+        let values = BTreeMap::from([("title".to_owned(), UiValue::String("  ".to_owned()))]);
+        assert_eq!(optional_nonempty_string(&values, "title").unwrap(), None);
+        assert_eq!(
+            parse_interaction(&BTreeMap::new()).unwrap(),
+            ChartInteractionSpec {
+                wheel_zoom: ChartWheelZoom::Modifier
+            }
+        );
+        assert_eq!(
+            parse_interaction(&BTreeMap::from([(
+                "wheel_zoom".to_owned(),
+                UiValue::String("off".to_owned())
+            )]))
+            .unwrap()
+            .wheel_zoom,
+            ChartWheelZoom::Off
+        );
+    }
+
+    #[test]
     fn mixed_series_and_named_regions_validate_as_one_scene() {
         let spec = ChartSpec {
             title: Some("Operations".to_owned()),
@@ -1586,6 +1653,7 @@ mod tests {
             annotations: Vec::new(),
             link_group: Some("ops".to_owned()),
             link_domain: Some("time".to_owned()),
+            interaction: ChartInteractionSpec::default(),
         };
         spec.validate().unwrap();
     }

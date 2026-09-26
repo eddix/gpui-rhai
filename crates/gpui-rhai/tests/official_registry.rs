@@ -2586,9 +2586,11 @@ fn official_date_picker_consumes_locale_and_strict_iso_values() {
 fn official_table_is_public_data_backed_rhai_composition() {
     let table_id = ModuleId::parse("components/table").unwrap();
     let skeleton_id = ModuleId::parse("components/skeleton").unwrap();
+    let badge_id = ModuleId::parse("components/badge").unwrap();
     let source = EmbeddedScriptSource::new(BTreeMap::from([
         (table_id, TABLE.to_owned()),
         (skeleton_id, SKELETON.to_owned()),
+        (badge_id, BADGE.to_owned()),
     ]));
     let mut engine = RuntimeEngine::new();
     engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
@@ -2604,11 +2606,14 @@ fn official_table_is_public_data_backed_rhai_composition() {
                     table::Table(#{
                         key: "users", label: "Users", row_key: "id", fill_height: true,
                         rows: [
-                            #{ id: "u1", name: "Ada", score: 12.5, joined: "2026-08-30", status: "Active" },
-                            #{ id: "u2", name: "Lin", score: 9, joined: "2026-08-31", status: "Away" }
+                            #{ id: "u1", name: "Ada", score: 12.5, joined: "2026-08-30", status: "Active",
+                                status_label: "Updated +1", status_variant: "success" },
+                            #{ id: "u2", name: "Lin", score: 9, joined: "2026-08-31", status: "Away",
+                                status_label: "Deploying", status_variant: "accent" }
                         ],
                         columns: [
-                            #{ key: "name", title: "Name", width: #{ kind: "fixed", value: 120 }, sortable: true },
+                            #{ key: "name", title: "Name", width: #{ kind: "fixed", value: 120 }, sortable: true,
+                                adornments: [#{ text_key: "status_label", variant_key: "status_variant" }] },
                             #{ key: "score", title: "Score", width: #{ kind: "flex", value: 2 } },
                             #{ key: "joined", title: "Joined", width: #{ kind: "percent", value: 30 } },
                             #{ key: "status", title: "Status", width: #{ kind: "fixed", value: 90 } }
@@ -2671,15 +2676,26 @@ fn official_table_is_public_data_backed_rhai_composition() {
             && cell.style().base.text_ellipsis == Some(true)
     }));
     assert_resizable_table_autofit_measurements(header_cells, cells);
+    assert!(find_label(&cells[0], "Updated +1").is_some());
+    assert_eq!(
+        cells[0].attributes().get("label"),
+        Some(&UiValue::String("Ada, Updated +1".to_owned()))
+    );
 }
 
 #[test]
 #[allow(clippy::too_many_lines)]
 fn official_table_groups_array_rows_with_controlled_collapse() {
-    let source = EmbeddedScriptSource::new(BTreeMap::from([(
-        ModuleId::parse("components/table").unwrap(),
-        TABLE.to_owned(),
-    )]));
+    let source = EmbeddedScriptSource::new(BTreeMap::from([
+        (
+            ModuleId::parse("components/table").unwrap(),
+            TABLE.to_owned(),
+        ),
+        (
+            ModuleId::parse("components/badge").unwrap(),
+            BADGE.to_owned(),
+        ),
+    ]));
     let mut engine = RuntimeEngine::new();
     engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
     let compiled = engine
@@ -2780,11 +2796,18 @@ fn official_table_groups_array_rows_with_controlled_collapse() {
 }
 
 #[test]
+#[allow(clippy::too_many_lines)]
 fn official_table_groups_native_collection_without_materializing_rows_in_rhai() {
-    let source = EmbeddedScriptSource::new(BTreeMap::from([(
-        ModuleId::parse("components/table").unwrap(),
-        TABLE.to_owned(),
-    )]));
+    let source = EmbeddedScriptSource::new(BTreeMap::from([
+        (
+            ModuleId::parse("components/table").unwrap(),
+            TABLE.to_owned(),
+        ),
+        (
+            ModuleId::parse("components/badge").unwrap(),
+            BADGE.to_owned(),
+        ),
+    ]));
     let mut engine = RuntimeEngine::new();
     engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
     let compiled = engine
@@ -2801,7 +2824,8 @@ fn official_table_groups_native_collection_without_materializing_rows_in_rhai() 
                             #{ key: "track", title: "Track",
                                 width: #{ kind: "fixed", value: 120 } },
                             #{ key: "state", title: "State",
-                                width: #{ kind: "flex", value: 2 } }
+                                width: #{ kind: "flex", value: 2 },
+                                adornments: [#{ text_key: "status_label", variant_key: "status_variant", dot: true }] }
                         ]
                     })
                 }
@@ -2815,16 +2839,40 @@ fn official_table_groups_native_collection_without_materializing_rows_in_rhai() 
                 ("id".to_owned(), UiValue::String("a".to_owned())),
                 ("track".to_owned(), UiValue::String("alpha".to_owned())),
                 ("state".to_owned(), UiValue::String("Ready".to_owned())),
+                (
+                    "status_label".to_owned(),
+                    UiValue::String("Healthy".to_owned()),
+                ),
+                (
+                    "status_variant".to_owned(),
+                    UiValue::String("success".to_owned()),
+                ),
             ]),
             BTreeMap::from([
                 ("id".to_owned(), UiValue::String("b".to_owned())),
                 ("track".to_owned(), UiValue::String("beta".to_owned())),
                 ("state".to_owned(), UiValue::String("Drift".to_owned())),
+                (
+                    "status_label".to_owned(),
+                    UiValue::String("Warning".to_owned()),
+                ),
+                (
+                    "status_variant".to_owned(),
+                    UiValue::String("warning".to_owned()),
+                ),
             ]),
             BTreeMap::from([
                 ("id".to_owned(), UiValue::String("c".to_owned())),
                 ("track".to_owned(), UiValue::String("alpha".to_owned())),
                 ("state".to_owned(), UiValue::String("Drift".to_owned())),
+                (
+                    "status_label".to_owned(),
+                    UiValue::String("Deploying".to_owned()),
+                ),
+                (
+                    "status_variant".to_owned(),
+                    UiValue::String("accent".to_owned()),
+                ),
             ]),
         ],
     )
@@ -2875,6 +2923,7 @@ fn official_table_groups_native_collection_without_materializing_rows_in_rhai() 
         &cells[1],
         "gpui_rhai.intrinsic_text_measure"
     ));
+    assert!(find_label(&cells[1], "Healthy").is_some());
 }
 
 #[test]

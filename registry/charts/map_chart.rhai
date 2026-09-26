@@ -26,7 +26,7 @@ define_component(#{
         map: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
         projection: #{ schema: #{ type: "string" }, required: false, sensitive: false, "default": #{ type: "string", value: "equirectangular" } },
         key_dimension: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
-        title: #{ schema: #{ type: "string" }, required: false, sensitive: false, "default": #{ type: "string", value: "Map" } },
+        title: #{ schema: #{ type: "string" }, required: false, sensitive: false },
         series_key: #{ schema: #{ type: "string" }, required: false, sensitive: false, "default": #{ type: "string", value: "series" } },
         series_name: #{ schema: #{ type: "string" }, required: false, sensitive: false, "default": #{ type: "string", value: "Series" } },
         spec: #{ schema: #{ type: "optional", value: #{ type: "ui_value" } }, required: false, sensitive: false },

@@ -420,6 +420,8 @@ pub struct StoryDefinition {
 pub const BUTTON_STORY_SOURCE: &str = include_str!("../stories/components/button.rhai");
 pub const TABS_STORY_SOURCE: &str = include_str!("../stories/components/tabs.rhai");
 pub const INPUT_STORY_SOURCE: &str = include_str!("../stories/components/input.rhai");
+pub const TABLE_STORY_SOURCE: &str = include_str!("../stories/components/table.rhai");
+pub const CHART_INTERACTION_STORY_SOURCE: &str = include_str!("../stories/charts/interaction.rhai");
 
 const BASIC_CASE: &[StoryCase] = &[StoryCase {
     id: "basic",
@@ -470,6 +472,34 @@ pub const BUNDLED_STORIES: &[StoryDefinition] = &[
         documentation: "docs/components/catalog.md#tabs",
         theme_studio: true,
     },
+    StoryDefinition {
+        id: "components/table",
+        title: "Table",
+        purpose: "Exercise controlled sorting, selection, and semantic cell adornments.",
+        category: "data",
+        keywords: &["data", "virtual", "selection", "badge", "table"],
+        module_ids: &["components/table", "components/badge"],
+        source_module: "stories/components/table",
+        source: TABLE_STORY_SOURCE,
+        cases: BASIC_CASE,
+        fixture: None,
+        documentation: "docs/components/catalog.md#navigation-and-data",
+        theme_studio: true,
+    },
+    StoryDefinition {
+        id: "charts/interaction",
+        title: "Chart titles and wheel interaction",
+        purpose: "Compare absent and explicit titles while preserving parent scrolling.",
+        category: "charts",
+        keywords: &["chart", "scroll", "wheel", "zoom", "title"],
+        module_ids: &["charts/chart", "components/scroll_area"],
+        source_module: "stories/charts/interaction",
+        source: CHART_INTERACTION_STORY_SOURCE,
+        cases: BASIC_CASE,
+        fixture: None,
+        documentation: "docs/charts.md",
+        theme_studio: false,
+    },
 ];
 
 pub const BUNDLED_THEME_SOURCES: &[(&str, &str)] = &[
@@ -504,7 +534,7 @@ mod tests {
         assert_eq!(BUNDLED_CHART_SOURCES_BY_ID.len(), 5);
         assert_eq!(BUNDLED_ASSET_SOURCES.len(), 18);
         assert_eq!(BUNDLED_THEME_SOURCES.len(), 15);
-        assert_eq!(BUNDLED_STORIES.len(), 3);
+        assert_eq!(BUNDLED_STORIES.len(), 5);
         assert!(
             BUNDLED_COMPONENT_SOURCES
                 .iter()
@@ -567,6 +597,15 @@ mod tests {
                     story.id
                 );
             }
+        }
+        assert!(!CHART_SOURCE.contains("title: prop_or(props, \"title\", \"\")"));
+        for source in [
+            BAR_CHART_SOURCE,
+            LINE_CHART_SOURCE,
+            PIE_CHART_SOURCE,
+            MAP_CHART_SOURCE,
+        ] {
+            assert!(!source.contains("title: #{ schema: #{ type: \"string\" }, required: false, sensitive: false, \"default\""));
         }
     }
 }
