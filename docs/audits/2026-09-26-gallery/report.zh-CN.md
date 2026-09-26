@@ -67,6 +67,10 @@
 - macOS AX tree 可见 Button、TextField、Tab、Table、Figure、Dialog、Toast、
   Progress、HostSlot resident semantics。Chart invalid case由原生测试进一步验证
   invalid description。
+- 当前实机的 `system_profiler SPDisplaysDataType` 报告 LG HDR 4K 为
+  5120×2880 物理像素、2560×1440 逻辑分辨率、60 Hz。release Gallery 在该
+  2× HiDPI 屏幕完成全屏切换与 resize 观察；这项证据不覆盖 1× DPI 或
+  120 Hz。
 
 CUA 的 macOS AX `click/setValue` 没有把焦点交给 GPUI TextInputClient，因此
 不能用该路径声称完成真实候选窗输入；中文插入目前只有同源 native
@@ -74,14 +78,16 @@ CUA 的 macOS AX `click/setValue` 没有把焦点交给 GPUI TextInputClient，�
 
 ## 尚未完成／仍阻塞
 
-- macOS：真实中文候选窗、VoiceOver 操作、DPI/resize 完整矩阵、runtime
-  shader 冷启动与 120Hz frame-time 仍需维护者实机签字。
+- macOS：真实中文候选窗、VoiceOver 操作、1× DPI、runtime shader 冷启动与
+  120 Hz frame-time 仍需维护者实机签字；当前硬件只有 2× / 60 Hz。
 - Gallery 新 surface 的 checked-in PNG 基线尚未由维护者视觉接受；当前仅有
   release 窗口观察和既有 38 PNG audit。
 - Linux：X11、Wayland、输入、滚动、Overlay 和基础 AT-SPI 真实窗口矩阵
   未执行；portable CI 不能代替。
 - 两套约定 dogfooding 迁移尚未在本记录中取得最终签字。
 - PR #78 仍记录 upstream wrapped-line hit-test fix zed#64672 为发布 blocker。
+  2026-09-26 再次查询 crates.io，`gpui-pre` 与 `gpui-pre-platform` 的已发布
+  完整家族仍停在 0.3.6；虽然上游修复已经合并，尚无包含它的已发布快照。
 
 在这些门槛完成前，PR #79 必须保持 Draft，不得合并、发布 crates.io 或创建
 0.1.7 release。
