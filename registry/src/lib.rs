@@ -422,12 +422,26 @@ pub const TABS_STORY_SOURCE: &str = include_str!("../stories/components/tabs.rha
 pub const INPUT_STORY_SOURCE: &str = include_str!("../stories/components/input.rhai");
 pub const TABLE_STORY_SOURCE: &str = include_str!("../stories/components/table.rhai");
 pub const CHART_INTERACTION_STORY_SOURCE: &str = include_str!("../stories/charts/interaction.rhai");
+pub const OPERATIONS_STORY_SOURCE: &str = include_str!("../stories/apps/operations.rhai");
 
 const BASIC_CASE: &[StoryCase] = &[StoryCase {
     id: "basic",
     title: "Basic",
     purpose: "Exercise the normal controlled interaction path.",
 }];
+
+const OPERATIONS_CASES: &[StoryCase] = &[
+    StoryCase {
+        id: "basic",
+        title: "Dashboard",
+        purpose: "Enter the complete Operations Workbench on its dashboard.",
+    },
+    StoryCase {
+        id: "config-diff",
+        title: "Configuration diff",
+        purpose: "Start at the cross-host configuration comparison and deployment flow.",
+    },
+];
 
 pub const BUNDLED_STORIES: &[StoryDefinition] = &[
     StoryDefinition {
@@ -500,6 +514,34 @@ pub const BUNDLED_STORIES: &[StoryDefinition] = &[
         documentation: "docs/charts.md",
         theme_studio: false,
     },
+    StoryDefinition {
+        id: "apps/operations",
+        title: "Operations Workbench",
+        purpose: "Complete a cross-page host inspection, configuration, and deployment task.",
+        category: "applications",
+        keywords: &["application", "operations", "hosts", "config", "deployment"],
+        module_ids: &[
+            "components/button",
+            "components/badge",
+            "components/command",
+            "components/dialog",
+            "components/input",
+            "components/table",
+            "components/code_viewer",
+            "components/diff_viewer",
+            "components/progress",
+            "components/toast",
+            "components/title_bar",
+            "components/status_bar",
+            "charts/chart",
+        ],
+        source_module: "stories/apps/operations",
+        source: OPERATIONS_STORY_SOURCE,
+        cases: OPERATIONS_CASES,
+        fixture: Some("operations"),
+        documentation: "docs/gallery.md#operations-workbench",
+        theme_studio: false,
+    },
 ];
 
 pub const BUNDLED_THEME_SOURCES: &[(&str, &str)] = &[
@@ -534,7 +576,7 @@ mod tests {
         assert_eq!(BUNDLED_CHART_SOURCES_BY_ID.len(), 5);
         assert_eq!(BUNDLED_ASSET_SOURCES.len(), 18);
         assert_eq!(BUNDLED_THEME_SOURCES.len(), 15);
-        assert_eq!(BUNDLED_STORIES.len(), 5);
+        assert_eq!(BUNDLED_STORIES.len(), 6);
         assert!(
             BUNDLED_COMPONENT_SOURCES
                 .iter()

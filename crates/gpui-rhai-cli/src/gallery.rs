@@ -1,8 +1,9 @@
 use std::collections::BTreeMap;
 
 use gpui_rhai::{
-    AssetData, EmbeddedScriptSource, EmbeddedScriptView, ModuleId, PreparedScriptView,
-    RuntimeEngine, ScriptApplication, load_theme_source,
+    AssetData, ChartDataLimits, ChartDataset, EmbeddedScriptSource, EmbeddedScriptView, ModuleId,
+    NativeChartData, NativeCollection, PreparedScriptView, RuntimeEngine, ScriptApplication,
+    ScriptViewExtension, UiRuntimeState, UiValue, load_theme_source,
 };
 use gpui_rhai_registry::{
     AR_LOCALE, BUNDLED_ASSET_SOURCES, BUNDLED_CHART_SOURCES_BY_ID, BUNDLED_COMPONENT_SOURCES_BY_ID,
@@ -121,6 +122,72 @@ fn asset(bytes: &[u8]) -> AssetData {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+struct OperationsFixture;
+
+impl ScriptViewExtension for OperationsFixture {
+    fn configure_runtime(&self, runtime: &mut UiRuntimeState) -> Result<(), String> {
+        runtime
+            .native_collections
+            .register("operations_hosts", operations_hosts()?)
+            .map_err(|error| error.to_string())?;
+        runtime
+            .native_chart_data
+            .insert("operations_metrics".to_owned(), operations_metrics()?);
+        Ok(())
+    }
+}
+
+fn operations_hosts() -> Result<NativeCollection, String> {
+    let rows = [
+        ("edge-01", "Tokyo", "1.8.4", "Healthy", "success"),
+        ("edge-02", "Berlin", "1.8.3", "Deploying", "accent"),
+        ("edge-03", "Virginia", "1.7.9", "Drift", "warning"),
+    ]
+    .into_iter()
+    .map(|(host, region, version, status, variant)| {
+        BTreeMap::from([
+            ("id".to_owned(), UiValue::String(host.to_owned())),
+            ("host".to_owned(), UiValue::String(host.to_owned())),
+            ("region".to_owned(), UiValue::String(region.to_owned())),
+            ("version".to_owned(), UiValue::String(version.to_owned())),
+            ("status".to_owned(), UiValue::String(status.to_owned())),
+            (
+                "status_variant".to_owned(),
+                UiValue::String(variant.to_owned()),
+            ),
+        ])
+    });
+    NativeCollection::new("id", rows).map_err(|error| error.to_string())
+}
+
+fn operations_metrics() -> Result<NativeChartData, String> {
+    let rows = [
+        ("m1", "09:00", 42_i64),
+        ("m2", "09:05", 51_i64),
+        ("m3", "09:10", 38_i64),
+        ("m4", "09:15", 44_i64),
+        ("m5", "09:20", 36_i64),
+    ]
+    .into_iter()
+    .map(|(id, minute, latency)| {
+        BTreeMap::from([
+            ("id".to_owned(), UiValue::String(id.to_owned())),
+            ("minute".to_owned(), UiValue::String(minute.to_owned())),
+            ("latency".to_owned(), UiValue::Integer(latency)),
+        ])
+    })
+    .collect::<Vec<_>>();
+    let dataset = ChartDataset::from_rows(
+        "main",
+        &rows,
+        Some("id".to_owned()),
+        ChartDataLimits::default(),
+    )
+    .map_err(|error| error.to_string())?;
+    NativeChartData::new([dataset], ChartDataLimits::default()).map_err(|error| error.to_string())
+}
+
 /// Prepare one exact bundled story without opening a window.
 ///
 /// # Errors
@@ -133,14 +200,27 @@ pub fn prepare(launch: &GalleryLaunch) -> Result<PreparedScriptView, String> {
     let engine = RuntimeEngine::new();
     let selected = load_theme_source(engine.engine(), theme_name, primary_theme)
         .map_err(|error| error.to_string())?;
+    let story_source = if story.id == "apps/operations" {
+        let page = if launch.case == "config-diff" {
+            "configurations"
+        } else {
+            "dashboard"
+        };
+        story.source.replace(
+            "__OPERATIONS_PAGE__",
+            &serde_json::to_string(page).map_err(|error| error.to_string())?,
+        )
+    } else {
+        story.source.to_owned()
+    };
     let source = format!(
         "{}\nfn init(ctx) {{ ctx.set_theme({}, {}); ctx.set_locale({}); }}\n",
-        story.source,
+        story_source,
         serde_json::to_string(&selected.family).map_err(|error| error.to_string())?,
         serde_json::to_string(&selected.name).map_err(|error| error.to_string())?,
         serde_json::to_string(&launch.locale).map_err(|error| error.to_string())?,
     );
-    EmbeddedScriptView::new(
+    let mut view = EmbeddedScriptView::new(
         ModuleId::parse(story.source_module).map_err(|error| error.to_string())?,
         story_scripts(story, source)?,
         primary_theme,
@@ -157,9 +237,11 @@ pub fn prepare(launch: &GalleryLaunch) -> Result<PreparedScriptView, String> {
             path.strip_suffix(".svg").unwrap_or(path).to_owned(),
             asset(source.as_bytes()),
         )
-    }))
-    .prepare()
-    .map_err(|error| error.to_string())
+    }));
+    if story.fixture == Some("operations") {
+        view = view.extension(OperationsFixture);
+    }
+    view.prepare().map_err(|error| error.to_string())
 }
 
 /// Run one exact bundled story in a standalone GPUI window.
@@ -185,13 +267,16 @@ mod tests {
     }
 
     #[test]
-    fn every_bundled_story_prepares_in_its_basic_case() {
+    fn every_bundled_story_case_prepares() {
         for story in BUNDLED_STORIES {
-            prepare(&GalleryLaunch {
-                story: story.id.to_owned(),
-                ..GalleryLaunch::default()
-            })
-            .unwrap_or_else(|error| panic!("{}: {error}", story.id));
+            for case in story.cases {
+                prepare(&GalleryLaunch {
+                    story: story.id.to_owned(),
+                    case: case.id.to_owned(),
+                    ..GalleryLaunch::default()
+                })
+                .unwrap_or_else(|error| panic!("{} / {}: {error}", story.id, case.id));
+            }
         }
     }
 
