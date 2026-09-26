@@ -392,6 +392,86 @@ pub const ZH_CN_LOCALE: &str = include_str!("../locales/zh_cn.rhai");
 pub const AR_LOCALE: &str = include_str!("../locales/ar.rhai");
 pub const STUDIO_SOURCE: &str = include_str!("../studio/theme_studio.rhai");
 
+/// One deterministic, source-backed case exposed by the first-party Gallery.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StoryCase {
+    pub id: &'static str,
+    pub title: &'static str,
+    pub purpose: &'static str,
+}
+
+/// Static first-party story metadata shared by Gallery, Theme Studio, and tests.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StoryDefinition {
+    pub id: &'static str,
+    pub title: &'static str,
+    pub purpose: &'static str,
+    pub category: &'static str,
+    pub keywords: &'static [&'static str],
+    pub module_ids: &'static [&'static str],
+    pub source_module: &'static str,
+    pub source: &'static str,
+    pub cases: &'static [StoryCase],
+    pub fixture: Option<&'static str>,
+    pub documentation: &'static str,
+    pub theme_studio: bool,
+}
+
+pub const BUTTON_STORY_SOURCE: &str = include_str!("../stories/components/button.rhai");
+pub const TABS_STORY_SOURCE: &str = include_str!("../stories/components/tabs.rhai");
+pub const INPUT_STORY_SOURCE: &str = include_str!("../stories/components/input.rhai");
+
+const BASIC_CASE: &[StoryCase] = &[StoryCase {
+    id: "basic",
+    title: "Basic",
+    purpose: "Exercise the normal controlled interaction path.",
+}];
+
+pub const BUNDLED_STORIES: &[StoryDefinition] = &[
+    StoryDefinition {
+        id: "components/button",
+        title: "Button, Badge, and Tag",
+        purpose: "Compare action, status, and metadata density with real activation.",
+        category: "actions",
+        keywords: &["action", "badge", "tag", "density", "button"],
+        module_ids: &["components/button", "components/badge", "components/tag"],
+        source_module: "stories/components/button",
+        source: BUTTON_STORY_SOURCE,
+        cases: BASIC_CASE,
+        fixture: None,
+        documentation: "docs/components/catalog.md#actions-choices-and-forms",
+        theme_studio: true,
+    },
+    StoryDefinition {
+        id: "components/input",
+        title: "Input and Textarea",
+        purpose: "Exercise controlled single-line and multiline native editing.",
+        category: "forms",
+        keywords: &["form", "ime", "text", "input", "textarea"],
+        module_ids: &["components/input", "components/textarea"],
+        source_module: "stories/components/input",
+        source: INPUT_STORY_SOURCE,
+        cases: BASIC_CASE,
+        fixture: None,
+        documentation: "docs/components/catalog.md#actions-choices-and-forms",
+        theme_studio: true,
+    },
+    StoryDefinition {
+        id: "components/tabs",
+        title: "Tabs",
+        purpose: "Exercise controlled selection, content layout, and disabled navigation.",
+        category: "navigation",
+        keywords: &["navigation", "selection", "panel", "tabs"],
+        module_ids: &["components/tabs"],
+        source_module: "stories/components/tabs",
+        source: TABS_STORY_SOURCE,
+        cases: BASIC_CASE,
+        fixture: None,
+        documentation: "docs/components/catalog.md#tabs",
+        theme_studio: true,
+    },
+];
+
 pub const BUNDLED_THEME_SOURCES: &[(&str, &str)] = &[
     ("default_dark.rhai", DEFAULT_THEME),
     ("default_light.rhai", DEFAULT_LIGHT_THEME),
@@ -424,6 +504,7 @@ mod tests {
         assert_eq!(BUNDLED_CHART_SOURCES_BY_ID.len(), 5);
         assert_eq!(BUNDLED_ASSET_SOURCES.len(), 18);
         assert_eq!(BUNDLED_THEME_SOURCES.len(), 15);
+        assert_eq!(BUNDLED_STORIES.len(), 3);
         assert!(
             BUNDLED_COMPONENT_SOURCES
                 .iter()
@@ -460,5 +541,32 @@ mod tests {
                 .len(),
             BUNDLED_ASSET_SOURCES.len()
         );
+        let story_ids = BUNDLED_STORIES
+            .iter()
+            .map(|story| story.id)
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(story_ids.len(), BUNDLED_STORIES.len());
+        for story in BUNDLED_STORIES {
+            assert!(!story.source.is_empty(), "{} source is empty", story.id);
+            assert!(!story.cases.is_empty(), "{} has no cases", story.id);
+            assert!(story.source_module.starts_with("stories/"));
+            let case_ids = story
+                .cases
+                .iter()
+                .map(|case| case.id)
+                .collect::<std::collections::BTreeSet<_>>();
+            assert_eq!(case_ids.len(), story.cases.len(), "{} case IDs", story.id);
+            for module in story.module_ids {
+                assert!(
+                    BUNDLED_COMPONENT_SOURCES_BY_ID
+                        .iter()
+                        .chain(BUNDLED_MOTION_SOURCES_BY_ID)
+                        .chain(BUNDLED_CHART_SOURCES_BY_ID)
+                        .any(|(id, _)| id == module),
+                    "{} references unknown module {module}",
+                    story.id
+                );
+            }
+        }
     }
 }
