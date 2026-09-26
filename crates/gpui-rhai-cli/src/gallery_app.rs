@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use gpui_rhai::gpui::prelude::*;
@@ -7,9 +7,10 @@ use gpui_rhai::gpui::{
     WeakEntity, Window, WindowBounds, WindowOptions, div, px, rgba, size,
 };
 use gpui_rhai::{
-    AssetData, EmbeddedScriptSource, EmbeddedScriptView, EventResponse, ModuleId, NativeEvent,
-    NativeHandlerDescriptor, NativeHandlerId, NativeTextDocument, RuntimeEngine, ScriptViewConfig,
-    ScriptViewExtension, ScriptViewHandle, ScriptViewHost, ValueSchema, install, load_theme_source,
+    AssetData, EmbeddedScriptSource, EmbeddedScriptView, EventResponse, ModuleId, MotionPreference,
+    NativeEvent, NativeHandlerDescriptor, NativeHandlerId, NativeTextDocument, RuntimeEngine,
+    ScriptViewConfig, ScriptViewExtension, ScriptViewHandle, ScriptViewHost, ValueSchema, install,
+    load_theme_source,
 };
 use gpui_rhai_registry::{
     AR_LOCALE, BUNDLED_ASSET_SOURCES, BUNDLED_COMPONENT_SOURCES_BY_ID, BUNDLED_STORIES,
@@ -20,6 +21,36 @@ use gpui_rhai_registry::{
 use super::gallery::{GalleryLaunch, prepare, story_source};
 
 const RETAINED_STORY_LIMIT: usize = 8;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ViewportPreset {
+    Auto,
+    Compact,
+    Regular,
+    Wide,
+}
+
+impl ViewportPreset {
+    const ALL: [Self; 4] = [Self::Auto, Self::Compact, Self::Regular, Self::Wide];
+
+    const fn label(self) -> &'static str {
+        match self {
+            Self::Auto => "Auto",
+            Self::Compact => "Compact",
+            Self::Regular => "Regular",
+            Self::Wide => "Wide",
+        }
+    }
+
+    const fn width(self) -> Option<f32> {
+        match self {
+            Self::Auto => None,
+            Self::Compact => Some(520.0),
+            Self::Regular => Some(800.0),
+            Self::Wide => Some(1_120.0),
+        }
+    }
+}
 
 struct GalleryApp {
     host: ScriptViewHost,
@@ -33,6 +64,9 @@ struct GalleryApp {
     next_generation: u64,
     search: String,
     source_revision: u64,
+    category: Option<String>,
+    viewport: ViewportPreset,
+    motion_preference: MotionPreference,
 }
 
 impl GalleryApp {
@@ -116,6 +150,9 @@ impl GalleryApp {
             next_generation: 2,
             search: String::new(),
             source_revision: 1,
+            category: None,
+            viewport: ViewportPreset::Auto,
+            motion_preference: MotionPreference::Normal,
         }
     }
 
@@ -156,6 +193,12 @@ impl GalleryApp {
                 return;
             }
         };
+        if let Err(error) = candidate.set_motion_preference(self.motion_preference, cx) {
+            let _ = candidate.suspend(window, cx);
+            self.error = Some(error.to_string());
+            cx.notify();
+            return;
+        }
         if let Some(current) = self.views.get(&self.current_key)
             && let Err(error) = current.suspend(window, cx)
         {
@@ -195,6 +238,12 @@ impl GalleryApp {
         });
         match candidate {
             Ok(candidate) => {
+                if let Err(error) = candidate.set_motion_preference(self.motion_preference, cx) {
+                    let _ = candidate.dispose(cx);
+                    self.error = Some(error.to_string());
+                    cx.notify();
+                    return;
+                }
                 if let Some(previous) = self.views.insert(self.current_key.clone(), candidate) {
                     let _ = previous.dispose(cx);
                 }
@@ -236,6 +285,33 @@ impl GalleryApp {
         }
         locale.clone_into(&mut self.launch.locale);
         self.error = None;
+        cx.notify();
+    }
+
+    fn select_motion_preference(&mut self, preference: MotionPreference, cx: &mut Context<Self>) {
+        for view in self
+            .views
+            .values()
+            .chain([&self.navigation, &self.source_view])
+        {
+            if let Err(error) = view.set_motion_preference(preference, cx) {
+                self.error = Some(error.to_string());
+                cx.notify();
+                return;
+            }
+        }
+        self.motion_preference = preference;
+        self.error = None;
+        cx.notify();
+    }
+
+    fn select_category(&mut self, category: Option<String>, cx: &mut Context<Self>) {
+        self.category = category;
+        cx.notify();
+    }
+
+    fn select_viewport(&mut self, viewport: ViewportPreset, cx: &mut Context<Self>) {
+        self.viewport = viewport;
         cx.notify();
     }
 
@@ -459,21 +535,33 @@ impl Render for GalleryApp {
             .variant;
         let color = |name: &str| rgba(theme.tokens.colors[name].as_rgba_hex());
         let story = self.current_story();
+        let current_case = story
+            .cases
+            .iter()
+            .find(|case| case.id == self.launch.case)
+            .expect("selected case belongs to the current story");
+        let module_summary = if story.module_ids.len() <= 5 {
+            story.module_ids.join(", ")
+        } else {
+            format!("{} public modules", story.module_ids.len())
+        };
         let needle = self.search.to_lowercase();
+        let selected_category = self.category.as_deref();
         let navigation_items = BUNDLED_STORIES
             .iter()
             .filter(|entry| {
-                needle.is_empty()
-                    || entry.title.to_lowercase().contains(&needle)
-                    || entry.id.contains(&needle)
-                    || entry
-                        .module_ids
-                        .iter()
-                        .any(|module| module.contains(&needle))
-                    || entry
-                        .keywords
-                        .iter()
-                        .any(|keyword| keyword.contains(&needle))
+                selected_category.is_none_or(|category| entry.category == category)
+                    && (needle.is_empty()
+                        || entry.title.to_lowercase().contains(&needle)
+                        || entry.id.contains(&needle)
+                        || entry
+                            .module_ids
+                            .iter()
+                            .any(|module| module.contains(&needle))
+                        || entry
+                            .keywords
+                            .iter()
+                            .any(|keyword| keyword.contains(&needle)))
             })
             .map(|entry| {
                 let id = entry.id.to_owned();
@@ -513,6 +601,58 @@ impl Render for GalleryApp {
                     }))
                     .child(entry.title)
             });
+        let category_names = BUNDLED_STORIES
+            .iter()
+            .map(|story| story.category)
+            .collect::<BTreeSet<_>>();
+        let all_categories = div()
+            .id("gallery-category-all")
+            .role(gpui_rhai::gpui::Role::Button)
+            .aria_label("Show all story categories")
+            .aria_selected(self.category.is_none())
+            .px_2()
+            .py_1()
+            .border_1()
+            .border_color(if self.category.is_none() {
+                color("accent")
+            } else {
+                color("border")
+            })
+            .bg(if self.category.is_none() {
+                color("selection")
+            } else {
+                rgba(0)
+            })
+            .on_click(cx.listener(|this, _, _, cx| this.select_category(None, cx)))
+            .child("All");
+        let category_buttons = category_names.into_iter().map(|category| {
+            let selected = self.category.as_deref() == Some(category);
+            let category_value = category.to_owned();
+            div()
+                .id(gpui_rhai::gpui::ElementId::Name(
+                    format!("gallery-category-{category}").into(),
+                ))
+                .role(gpui_rhai::gpui::Role::Button)
+                .aria_label(format!("Show {category} stories"))
+                .aria_selected(selected)
+                .px_2()
+                .py_1()
+                .border_1()
+                .border_color(if selected {
+                    color("accent")
+                } else {
+                    color("border")
+                })
+                .bg(if selected {
+                    color("selection")
+                } else {
+                    rgba(0)
+                })
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.select_category(Some(category_value.clone()), cx);
+                }))
+                .child(category)
+        });
         let navigation = self
             .navigation
             .element()
@@ -521,6 +661,18 @@ impl Render for GalleryApp {
             .current_view()
             .flex_item()
             .expect("active Gallery story is renderable");
+        let mut preview_surface = div()
+            .h_full()
+            .min_h_0()
+            .min_w_0()
+            .flex()
+            .flex_col()
+            .child(preview);
+        preview_surface = if let Some(width) = self.viewport.width() {
+            preview_surface.w(px(width)).flex_none()
+        } else {
+            preview_surface.w_full().flex_1()
+        };
         let source_view = self
             .source_view
             .flex_item()
@@ -565,6 +717,66 @@ impl Render for GalleryApp {
             .hover(|style| style.bg(color("surface_hover")))
             .on_click(cx.listener(|this, _, window, cx| this.reset(window, cx)))
             .child("Reset story");
+        let viewport_buttons = ViewportPreset::ALL.into_iter().map(|viewport| {
+            let selected = self.viewport == viewport;
+            div()
+                .id(gpui_rhai::gpui::ElementId::Name(
+                    format!("gallery-viewport-{}", viewport.label().to_lowercase()).into(),
+                ))
+                .role(gpui_rhai::gpui::Role::Button)
+                .aria_label(format!("Use {} story viewport", viewport.label()))
+                .aria_selected(selected)
+                .px_2()
+                .py_1()
+                .border_1()
+                .border_color(if selected {
+                    color("accent")
+                } else {
+                    color("border")
+                })
+                .bg(if selected {
+                    color("selection")
+                } else {
+                    rgba(0)
+                })
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.select_viewport(viewport, cx);
+                }))
+                .child(viewport.label())
+        });
+        let motion_buttons = [
+            (MotionPreference::Normal, "Normal"),
+            (MotionPreference::Reduced, "Reduced"),
+            (MotionPreference::None, "None"),
+        ]
+        .into_iter()
+        .map(|(preference, label)| {
+            let selected = self.motion_preference == preference;
+            div()
+                .id(gpui_rhai::gpui::ElementId::Name(
+                    format!("gallery-motion-{}", label.to_lowercase()).into(),
+                ))
+                .role(gpui_rhai::gpui::Role::Button)
+                .aria_label(format!("Use {label} motion preference"))
+                .aria_selected(selected)
+                .px_2()
+                .py_1()
+                .border_1()
+                .border_color(if selected {
+                    color("accent")
+                } else {
+                    color("border")
+                })
+                .bg(if selected {
+                    color("selection")
+                } else {
+                    rgba(0)
+                })
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.select_motion_preference(preference, cx);
+                }))
+                .child(label)
+        });
         let dark = div()
             .id("gallery-theme-dark")
             .role(gpui_rhai::gpui::Role::Button)
@@ -613,6 +825,34 @@ impl Render for GalleryApp {
                 .text_color(color("danger"))
                 .child(error.clone())
         });
+        let fixed_viewport = self.viewport != ViewportPreset::Auto;
+        let preview_pane = div()
+            .id("gallery-preview-viewport")
+            .flex_1()
+            .min_w_0()
+            .min_h_0()
+            .flex()
+            .flex_col()
+            .overflow_x_scroll()
+            .child(preview_surface);
+        let mut source_pane = div()
+            .w(px(360.0))
+            .h_full()
+            .min_h_0()
+            .flex_none()
+            .flex()
+            .flex_col()
+            .border_l_1()
+            .border_color(color("border"))
+            .child(source_view);
+        if fixed_viewport {
+            source_pane = source_pane.w_full().h(px(280.0)).border_l_0().border_t_1();
+        }
+        let mut story_content = div().flex_1().min_h_0().min_w_0().flex();
+        if fixed_viewport {
+            story_content = story_content.flex_col();
+        }
+        story_content = story_content.child(preview_pane).child(source_pane);
         self.host.container(
             div()
                 .size_full()
@@ -666,6 +906,18 @@ impl Render for GalleryApp {
                                 .child(div().flex_none().child(navigation))
                                 .child(
                                     div()
+                                        .flex_none()
+                                        .p_2()
+                                        .flex()
+                                        .flex_wrap()
+                                        .gap_1()
+                                        .border_b_1()
+                                        .border_color(color("border"))
+                                        .child(all_categories)
+                                        .children(category_buttons),
+                                )
+                                .child(
+                                    div()
                                         .id("gallery-story-list")
                                         .flex_1()
                                         .min_h_0()
@@ -697,6 +949,28 @@ impl Render for GalleryApp {
                                                 .child(story.purpose),
                                         )
                                         .child(
+                                            div().pt_1().text_color(color("text_muted")).child(
+                                                format!("Observe: {}", current_case.purpose),
+                                            ),
+                                        )
+                                        .child(
+                                            div()
+                                                .pt_1()
+                                                .flex()
+                                                .flex_wrap()
+                                                .gap_2()
+                                                .text_color(color("text_muted"))
+                                                .child(format!("Modules: {module_summary}"))
+                                                .child(format!("Source: {}", story.source_module))
+                                                .child(match story.fixture {
+                                                    Some(fixture) => {
+                                                        format!("Host fixture: {fixture}")
+                                                    }
+                                                    None => "Host fixture: none".to_owned(),
+                                                })
+                                                .child(format!("Docs: {}", story.documentation)),
+                                        )
+                                        .child(
                                             div()
                                                 .pt_2()
                                                 .flex()
@@ -705,37 +979,22 @@ impl Render for GalleryApp {
                                                 .gap_2()
                                                 .children(cases)
                                                 .child(reset),
-                                        ),
-                                )
-                                .children(error)
-                                .child(
-                                    div()
-                                        .flex_1()
-                                        .min_h_0()
-                                        .min_w_0()
-                                        .flex()
-                                        .child(
-                                            div()
-                                                .flex_1()
-                                                .min_w_0()
-                                                .min_h_0()
-                                                .flex()
-                                                .flex_col()
-                                                .child(preview),
                                         )
                                         .child(
                                             div()
-                                                .w(px(360.0))
-                                                .h_full()
-                                                .min_h_0()
-                                                .flex_none()
+                                                .pt_2()
                                                 .flex()
-                                                .flex_col()
-                                                .border_l_1()
-                                                .border_color(color("border"))
-                                                .child(source_view),
+                                                .flex_wrap()
+                                                .items_center()
+                                                .gap_1()
+                                                .child("Viewport")
+                                                .children(viewport_buttons)
+                                                .child("Motion")
+                                                .children(motion_buttons),
                                         ),
-                                ),
+                                )
+                                .children(error)
+                                .child(story_content),
                         ),
                 ),
         )

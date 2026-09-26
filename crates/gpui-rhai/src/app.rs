@@ -706,6 +706,30 @@ impl ScriptViewHandle {
         })
     }
 
+    /// Replace this view's Host-owned motion preference without resetting state.
+    ///
+    /// # Errors
+    ///
+    /// Returns after disposal.
+    pub fn set_motion_preference(
+        &self,
+        preference: MotionPreference,
+        cx: &mut App,
+    ) -> Result<bool, ScriptViewError> {
+        self.require_not_disposed()?;
+        self.0.entity.update(cx, |view, cx| {
+            let changed = view
+                .lifecycle
+                .runtime()
+                .borrow_mut()
+                .set_motion_preference_from_host(preference);
+            if changed {
+                cx.notify();
+            }
+            Ok(changed)
+        })
+    }
+
     /// Return the latest rendered declarative root.
     ///
     /// # Errors
