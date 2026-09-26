@@ -545,6 +545,11 @@ impl Render for GalleryApp {
         } else {
             format!("{} public modules", story.module_ids.len())
         };
+        let feature_summary = if story.required_features.is_empty() {
+            "default".to_owned()
+        } else {
+            story.required_features.join(", ")
+        };
         let needle = self.search.to_lowercase();
         let selected_category = self.category.as_deref();
         let navigation_items = BUNDLED_STORIES
@@ -962,6 +967,15 @@ impl Render for GalleryApp {
                                                 .text_color(color("text_muted"))
                                                 .child(format!("Modules: {module_summary}"))
                                                 .child(format!("Source: {}", story.source_module))
+                                                .child(format!("Features: {feature_summary}"))
+                                                .child(format!(
+                                                    "Platforms: {}",
+                                                    story.platforms.join(", ")
+                                                ))
+                                                .child(format!(
+                                                    "Tests: {} declared gates",
+                                                    story.test_requirements.len()
+                                                ))
                                                 .child(match story.fixture {
                                                     Some(fixture) => {
                                                         format!("Host fixture: {fixture}")

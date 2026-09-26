@@ -418,6 +418,9 @@ pub struct StoryDefinition {
     pub source: &'static str,
     pub cases: &'static [StoryCase],
     pub fixture: Option<&'static str>,
+    pub required_features: &'static [&'static str],
+    pub platforms: &'static [&'static str],
+    pub test_requirements: &'static [&'static str],
     pub documentation: &'static str,
     pub theme_studio: bool,
 }
@@ -438,6 +441,22 @@ const BASIC_CASE: &[StoryCase] = &[StoryCase {
     title: "Basic",
     purpose: "Exercise the normal controlled interaction path.",
 }];
+
+const NO_FEATURES: &[&str] = &[];
+const CHARTS_FEATURE: &[&str] = &["charts"];
+const DESKTOP_PLATFORMS: &[&str] = &["macos", "linux"];
+const STANDARD_STORY_TESTS: &[&str] = &["prepare", "mount", "draw", "semantics", "interaction"];
+const WORKBENCH_TESTS: &[&str] = &[
+    "prepare",
+    "mount",
+    "draw",
+    "semantics",
+    "normal",
+    "cancel",
+    "failure",
+    "streaming",
+    "large",
+];
 
 const COMPONENT_CATALOG_CASES: &[StoryCase] = &[
     StoryCase {
@@ -464,6 +483,19 @@ const COMPONENT_CATALOG_CASES: &[StoryCase] = &[
         id: "overlays",
         title: "Commands & overlays",
         purpose: "Open menus, dialogs, sheets, command surfaces, tooltips, and toasts.",
+    },
+];
+
+const CHART_INTERACTION_CASES: &[StoryCase] = &[
+    StoryCase {
+        id: "basic",
+        title: "Titles & wheel",
+        purpose: "Compare absent/explicit titles and plain-wheel propagation.",
+    },
+    StoryCase {
+        id: "diagnostics",
+        title: "Invalid diagnostics",
+        purpose: "Break a valid chart and inspect last-good rendering plus invalid semantics.",
     },
 ];
 
@@ -530,6 +562,9 @@ pub const BUNDLED_STORIES: &[StoryDefinition] = &[
         source: STUDIO_SOURCE,
         cases: COMPONENT_CATALOG_CASES,
         fixture: Some("component-catalog"),
+        required_features: NO_FEATURES,
+        platforms: DESKTOP_PLATFORMS,
+        test_requirements: STANDARD_STORY_TESTS,
         documentation: "docs/components/catalog.md",
         theme_studio: true,
     },
@@ -544,6 +579,9 @@ pub const BUNDLED_STORIES: &[StoryDefinition] = &[
         source: BUTTON_STORY_SOURCE,
         cases: BASIC_CASE,
         fixture: None,
+        required_features: NO_FEATURES,
+        platforms: DESKTOP_PLATFORMS,
+        test_requirements: STANDARD_STORY_TESTS,
         documentation: "docs/components/catalog.md#actions-choices-and-forms",
         theme_studio: true,
     },
@@ -558,6 +596,9 @@ pub const BUNDLED_STORIES: &[StoryDefinition] = &[
         source: INPUT_STORY_SOURCE,
         cases: BASIC_CASE,
         fixture: None,
+        required_features: NO_FEATURES,
+        platforms: DESKTOP_PLATFORMS,
+        test_requirements: STANDARD_STORY_TESTS,
         documentation: "docs/components/catalog.md#actions-choices-and-forms",
         theme_studio: true,
     },
@@ -567,11 +608,14 @@ pub const BUNDLED_STORIES: &[StoryDefinition] = &[
         purpose: "Exercise controlled selection, content layout, and disabled navigation.",
         category: "navigation",
         keywords: &["navigation", "selection", "panel", "tabs"],
-        module_ids: &["components/tabs"],
+        module_ids: &["components/tabs", "components/table", "charts/chart"],
         source_module: "stories/components/tabs",
         source: TABS_STORY_SOURCE,
         cases: BASIC_CASE,
         fixture: None,
+        required_features: CHARTS_FEATURE,
+        platforms: DESKTOP_PLATFORMS,
+        test_requirements: STANDARD_STORY_TESTS,
         documentation: "docs/components/catalog.md#tabs",
         theme_studio: true,
     },
@@ -586,6 +630,9 @@ pub const BUNDLED_STORIES: &[StoryDefinition] = &[
         source: TABLE_STORY_SOURCE,
         cases: BASIC_CASE,
         fixture: None,
+        required_features: NO_FEATURES,
+        platforms: DESKTOP_PLATFORMS,
+        test_requirements: STANDARD_STORY_TESTS,
         documentation: "docs/components/catalog.md#navigation-and-data",
         theme_studio: true,
     },
@@ -595,11 +642,18 @@ pub const BUNDLED_STORIES: &[StoryDefinition] = &[
         purpose: "Compare absent and explicit titles while preserving parent scrolling.",
         category: "charts",
         keywords: &["chart", "scroll", "wheel", "zoom", "title"],
-        module_ids: &["charts/chart", "components/scroll_area"],
+        module_ids: &[
+            "charts/chart",
+            "components/scroll_area",
+            "components/button",
+        ],
         source_module: "stories/charts/interaction",
         source: CHART_INTERACTION_STORY_SOURCE,
-        cases: BASIC_CASE,
+        cases: CHART_INTERACTION_CASES,
         fixture: None,
+        required_features: CHARTS_FEATURE,
+        platforms: DESKTOP_PLATFORMS,
+        test_requirements: STANDARD_STORY_TESTS,
         documentation: "docs/charts.md",
         theme_studio: false,
     },
@@ -629,6 +683,9 @@ pub const BUNDLED_STORIES: &[StoryDefinition] = &[
         source: CHART_CATALOG_STORY_SOURCE,
         cases: BASIC_CASE,
         fixture: Some("chart-catalog"),
+        required_features: CHARTS_FEATURE,
+        platforms: DESKTOP_PLATFORMS,
+        test_requirements: STANDARD_STORY_TESTS,
         documentation: "docs/charts.md",
         theme_studio: false,
     },
@@ -661,8 +718,11 @@ pub const BUNDLED_STORIES: &[StoryDefinition] = &[
         source: MOTION_CATALOG_STORY_SOURCE,
         cases: BASIC_CASE,
         fixture: None,
+        required_features: NO_FEATURES,
+        platforms: DESKTOP_PLATFORMS,
+        test_requirements: STANDARD_STORY_TESTS,
         documentation: "docs/motion.md",
-        theme_studio: true,
+        theme_studio: false,
     },
     StoryDefinition {
         id: "apps/operations",
@@ -693,6 +753,9 @@ pub const BUNDLED_STORIES: &[StoryDefinition] = &[
         source: OPERATIONS_STORY_SOURCE,
         cases: OPERATIONS_CASES,
         fixture: Some("operations"),
+        required_features: CHARTS_FEATURE,
+        platforms: DESKTOP_PLATFORMS,
+        test_requirements: WORKBENCH_TESTS,
         documentation: "docs/gallery.md#operations-workbench",
         theme_studio: false,
     },
@@ -775,6 +838,20 @@ mod tests {
         for story in BUNDLED_STORIES {
             assert!(!story.source.is_empty(), "{} source is empty", story.id);
             assert!(!story.cases.is_empty(), "{} has no cases", story.id);
+            assert!(!story.platforms.is_empty(), "{} has no platforms", story.id);
+            assert!(
+                !story.test_requirements.is_empty(),
+                "{} has no test requirements",
+                story.id
+            );
+            assert!(
+                story
+                    .required_features
+                    .iter()
+                    .all(|feature| *feature == "charts"),
+                "{} declares an unknown feature",
+                story.id
+            );
             assert!(story.source_module.starts_with("stories/"));
             let case_ids = story
                 .cases

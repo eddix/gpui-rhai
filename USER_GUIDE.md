@@ -334,6 +334,9 @@ responsive viewport presets, Motion preferences, live themes, locales, and the
 exact running Rhai source.
 See [the component catalog](docs/components/catalog.md) for ownership and
 behavior distinctions that similar-looking controls must preserve.
+See [Gallery and acceptance application](docs/gallery.md) for story metadata,
+Host/Rhai ownership, deterministic fixtures, lifecycle behavior, and the
+verification matrix.
 
 Command palettes separate seating, preview, and confirmation. The caller-owned
 `active_value` determines the current highlight when the palette opens.
