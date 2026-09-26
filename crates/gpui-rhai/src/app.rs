@@ -659,6 +659,53 @@ impl ScriptViewHandle {
         Ok(self.theme()?.snapshot(cx))
     }
 
+    /// Select this view's app-level theme from trusted Host code.
+    ///
+    /// # Errors
+    ///
+    /// Returns after disposal or when the requested theme is unavailable.
+    pub fn select_theme(
+        &self,
+        family: &str,
+        variant: &str,
+        cx: &mut App,
+    ) -> Result<bool, ScriptViewError> {
+        self.require_not_disposed()?;
+        self.0.entity.update(cx, |view, cx| {
+            let changed = view
+                .lifecycle
+                .runtime()
+                .borrow_mut()
+                .select_theme_from_host(family, variant)
+                .map_err(|error| ScriptViewError::Theme(error.to_string()))?;
+            if changed {
+                cx.notify();
+            }
+            Ok(changed)
+        })
+    }
+
+    /// Select this view's app-level locale from trusted Host code.
+    ///
+    /// # Errors
+    ///
+    /// Returns after disposal or when the requested locale is unavailable.
+    pub fn select_locale(&self, locale: &str, cx: &mut App) -> Result<bool, ScriptViewError> {
+        self.require_not_disposed()?;
+        self.0.entity.update(cx, |view, cx| {
+            let changed = view
+                .lifecycle
+                .runtime()
+                .borrow_mut()
+                .select_locale_from_host(locale)
+                .map_err(|error| ScriptViewError::Locale(error.to_string()))?;
+            if changed {
+                cx.notify();
+            }
+            Ok(changed)
+        })
+    }
+
     /// Return the latest rendered declarative root.
     ///
     /// # Errors

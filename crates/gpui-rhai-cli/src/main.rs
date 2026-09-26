@@ -147,7 +147,17 @@ fn run(cli: Cli) -> Result<(), ProjectError> {
 }
 
 fn main() -> ExitCode {
-    let result = if std::env::var("GPUI_RHAI_THEME_STUDIO").is_ok_and(|value| value == "1") {
+    let result = if std::env::var("GPUI_RHAI_GALLERY").is_ok_and(|value| value == "1") {
+        gpui_rhai_cli::gallery::run(&gpui_rhai_cli::gallery::GalleryLaunch {
+            story: std::env::var("GPUI_RHAI_GALLERY_STORY")
+                .unwrap_or_else(|_| gpui_rhai_cli::gallery::DEFAULT_STORY.to_owned()),
+            case: std::env::var("GPUI_RHAI_GALLERY_CASE").unwrap_or_else(|_| "basic".to_owned()),
+            theme: std::env::var("GPUI_RHAI_GALLERY_THEME")
+                .unwrap_or_else(|_| "default-dark".to_owned()),
+            locale: std::env::var("GPUI_RHAI_GALLERY_LOCALE").unwrap_or_else(|_| "en".to_owned()),
+        })
+        .map_err(ProjectError::Gallery)
+    } else if std::env::var("GPUI_RHAI_THEME_STUDIO").is_ok_and(|value| value == "1") {
         std::env::current_dir()
             .map_err(|error| ProjectError::ThemeStudio(error.to_string()))
             .and_then(|root| {

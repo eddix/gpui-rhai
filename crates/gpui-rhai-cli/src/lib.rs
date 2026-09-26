@@ -22,6 +22,7 @@ use thiserror::Error;
 use toml_edit::{Array, DocumentMut, InlineTable, Item, Value};
 
 pub mod gallery;
+mod gallery_app;
 pub mod theme_studio;
 
 use gpui_rhai_registry::{

@@ -423,6 +423,8 @@ pub const INPUT_STORY_SOURCE: &str = include_str!("../stories/components/input.r
 pub const TABLE_STORY_SOURCE: &str = include_str!("../stories/components/table.rhai");
 pub const CHART_INTERACTION_STORY_SOURCE: &str = include_str!("../stories/charts/interaction.rhai");
 pub const OPERATIONS_STORY_SOURCE: &str = include_str!("../stories/apps/operations.rhai");
+pub const GALLERY_NAVIGATION_SOURCE: &str = include_str!("../stories/gallery/navigation.rhai");
+pub const GALLERY_SOURCE_VIEW_SOURCE: &str = include_str!("../stories/gallery/source.rhai");
 
 const BASIC_CASE: &[StoryCase] = &[StoryCase {
     id: "basic",
@@ -440,6 +442,11 @@ const OPERATIONS_CASES: &[StoryCase] = &[
         id: "config-diff",
         title: "Configuration diff",
         purpose: "Start at the cross-host configuration comparison and deployment flow.",
+    },
+    StoryCase {
+        id: "theme-overrides",
+        title: "Host theme overrides",
+        purpose: "Apply nonzero Host radii uniformly and preserve Workbench state across themes.",
     },
 ];
 
