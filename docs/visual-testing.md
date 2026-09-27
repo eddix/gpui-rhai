@@ -83,15 +83,26 @@ bash scripts/build-macos-gallery-app.sh components/catalog forms catppuccin-moch
 bash scripts/build-macos-gallery-app.sh components/catalog overlays tokyo-night en
 ```
 
+The 2026-09-27 checked-in Gallery matrix records all five catalog cases in
+Default Light/Dark, Catppuccin Mocha Arabic RTL, and Tokyo Night Reduced. The
+1181×820 files are content-only captures: macOS window chrome is excluded so
+the active screen-control privacy indicator cannot enter a product baseline.
+
 Capture `charts/catalog` after every built-in series has installed its prepared
 scene, including Default Light/Dark, one community theme, Arabic RTL, normal,
 reduced, and disabled motion, narrow/wide resize, tooltip/crosshair, Cartesian
 brush, linked zoom, annotations, Host GeoJSON, and the 100,000-row native line
 series. Theme and locale controls must update existing Chart entities without
 recompiling Rhai or losing controlled selection/viewport state. The checked-in
-PNG matrix is added only after the first maintainer visual acceptance pass;
-the automated mounted benchmark already guards preparation, layout/paint,
-resize, and streaming completion.
+matrix now covers Default Light/Dark, Catppuccin Mocha Arabic RTL, Reduced,
+None, and the invalid-diagnostics story. Automated mounted tests and the
+benchmark continue to guard interaction, resize, streaming, and the complete
+off-screen series matrix rather than treating snapshots as functional proof.
+
+The same pass records Operations dashboard Light/Dark, configuration diff,
+loading, empty, 1,000-row large data, the partial-failure fixture, its terminal
+48% failure/Toast state, an open CommandDialog, HostSlot composition, and the
+Motion catalog under None policy.
 
 The complex-control expansion adds:
 

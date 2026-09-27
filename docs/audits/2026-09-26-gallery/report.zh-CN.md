@@ -31,11 +31,11 @@
 
 ## 自动验证证据
 
-- workspace/all-targets/all-features：437 核心单元测试、21 Chart contract、
+- workspace/all-targets/all-features：438 核心单元测试、21 Chart contract、
   21 formal-component、50 official-registry，以及全部 20 Cargo examples、CLI
   和 registry tests 通过。
-- core default：407 核心测试、21 formal、50 registry 通过。
-- core charts：434 核心、21 Chart contract、21 formal、50 registry 通过。
+- core default：408 核心测试、21 formal、50 registry 通过。
+- core charts：435 核心、21 Chart contract、21 formal、50 registry 通过。
 - `tests/native-keyboard/tests/gallery.rs`：14 项 source-backed acceptance tests
   （all cases、normal/cancel/failure、Host fixtures、overlays、HostSlot IME、
   theme/locale/viewport、Tabs geometry、Chart invalid semantics、suspend/resume）
@@ -45,8 +45,8 @@
 - 三 crate package 通过；registry package 列表包含全部 13 个 story files。
 - release smoke 通过 20 examples、Theme Studio、Gallery Operations large case
   和 Data Table 4 个状态；Gallery 从空临时 cwd 启动且零文件写入。
-- release artifact audit 通过；38 张既有 macOS PNG 的格式、CRC、尺寸与数量
-  audit 通过。
+- release artifact audit 通过；38 张既有 macOS PNG 与 29 张新 Gallery PNG
+  的格式、CRC、尺寸与数量 audit 通过，共 67 张。
 - release benchmark（Rust 1.95.0，Macmini9,1，macOS 26.6.2，5 warmups /
   30 samples）三组通过。100k `charts/streaming` 每次 revision 真正呈现，
   streaming Rhai operations 为 0。完整数字记录于 `docs/performance.md`。
@@ -78,24 +78,27 @@
   5120×2880 物理像素、2560×1440 逻辑分辨率、60 Hz。release Gallery 在该
   2× HiDPI 屏幕完成全屏切换与 resize 观察；这项证据不覆盖 1× DPI 或
   120 Hz。
+- 视觉捕获为每个状态创建并首次启动独立 release `.app` bundle；29 次冷启动
+  均成功进入真实窗口并绘制完成，覆盖正式启用的 runtime-shader 路径。
 
-CUA 的 macOS AX `click/setValue` 没有把焦点交给 GPUI TextInputClient，因此
-不能用该路径声称完成真实候选窗输入；中文插入目前只有同源 native
-`simulate_input` 证据。
+CUA 的按键注入绕过输入法候选窗，因此不把 `zhongwen` 当作候选提交证据；
+维护者已确认中文输入不是本轮剩余发布问题。HostSlot 的同源 native
+`simulate_input` 与 VoiceOver 开启后的真实 TextInputClient 输入均通过。
 
 ## 尚未完成／仍阻塞
 
-- macOS：VoiceOver 树遍历、Overlay、原生 `Pick` 动作与 HostSlot 输入已通过；
-  真实中文候选窗、1× DPI、runtime shader 冷启动与 120 Hz frame-time 仍需
-  维护者实机签字，当前硬件只有 2× / 60 Hz。
-- Gallery 新 surface 的 checked-in PNG 基线尚未由维护者视觉接受；当前仅有
-  release 窗口观察和既有 38 PNG audit。
+- macOS：VoiceOver、Overlay、原生 `Pick`、HostSlot 输入、2× resize 与
+  runtime-shader 冷启动已通过。1× DPI 与 120 Hz 当前硬件未覆盖，作为平台
+  矩阵缺口记录，不阻塞 0.1.7。
+- Gallery 新 surface 的 29 张 checked-in PNG 已完成逐组 contact-sheet 复核，
+  覆盖 Component、Chart、Motion、HostSlot 与 Operations 代表矩阵。
 - Linux：X11、Wayland、输入、滚动、Overlay 和基础 AT-SPI 真实窗口矩阵
   未执行；portable CI 不能代替。
 - 两套约定 dogfooding 迁移尚未在本记录中取得最终签字。
-- PR #78 仍记录 upstream wrapped-line hit-test fix zed#64672 为发布 blocker。
-  2026-09-26 再次查询 crates.io，`gpui-pre` 与 `gpui-pre-platform` 的已发布
-  完整家族仍停在 0.3.6；虽然上游修复已经合并，尚无包含它的已发布快照。
+- `gpui-pre 0.3.6` 尚未包含 upstream wrapped-line hit-test #64672。该路径在
+  Linux selectable/Code/Diff 文本理论上可达，但需要零宽换行字符与约
+  1e-5 px 命中缝隙；按维护者决策降级为 Linux 已知上游限制，不阻塞整个
+  0.1.7。下一个包含修复的完整 pre 家族发布后立即升级。
 
 在这些门槛完成前，PR #79 必须保持 Draft，不得合并、发布 crates.io 或创建
 0.1.7 release。

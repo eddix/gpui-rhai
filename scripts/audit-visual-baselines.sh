@@ -49,6 +49,37 @@ data_table_cases=(
   default-light.en.ltr
   default-light.en.loading
 )
+gallery_cases=(
+  charts-catalog.catppuccin-mocha.ar.normal
+  charts-catalog.catppuccin-mocha.ar.reduced
+  charts-catalog.default-dark.en.none
+  charts-catalog.default-dark.en.normal
+  charts-catalog.default-light.en.normal
+  charts-interaction.diagnostics.default-dark.en.normal
+  components-catalog.documents.default-dark.en.normal
+  components-catalog.documents.default-light.en.normal
+  components-catalog.forms.catppuccin-mocha.ar.normal
+  components-catalog.forms.default-dark.en.normal
+  components-catalog.forms.default-light.en.normal
+  components-catalog.foundations.default-dark.en.normal
+  components-catalog.foundations.default-light.en.normal
+  components-catalog.navigation.default-dark.en.normal
+  components-catalog.navigation.default-light.en.normal
+  components-catalog.overlays.default-dark.en.normal
+  components-catalog.overlays.default-light.en.normal
+  components-catalog.overlays.tokyo-night.en.reduced
+  host-embedding.default-dark.en.normal
+  motion-catalog.default-dark.en.none
+  operations.command-dialog.default-dark.en.normal
+  operations.config-diff.default-light.en.normal
+  operations.dashboard.default-dark.en.normal
+  operations.dashboard.default-light.en.normal
+  operations.empty.default-dark.en.normal
+  operations.failure-terminal.default-dark.en.normal
+  operations.failure.default-dark.en.normal
+  operations.large.default-dark.en.normal
+  operations.loading.default-light.en.normal
+)
 
 check_case() {
   file="$1"
@@ -124,10 +155,13 @@ done
 for case_name in "${embedded_view_cases[@]}"; do
   check_case "tests/visual/macos/embedded_views/${case_name}.png" 900 452
 done
+for case_name in "${gallery_cases[@]}"; do
+  check_case "tests/visual/macos/gallery/${case_name}.png" 1181 820
+done
 
 actual_count="$(find tests/visual/macos -type f -name '*.png' | wc -l | tr -d ' ')"
-if [[ "${actual_count}" != "38" ]]; then
-  echo "unexpected visual baseline count: ${actual_count} (expected 38)" >&2
+if [[ "${actual_count}" != "67" ]]; then
+  echo "unexpected visual baseline count: ${actual_count} (expected 67)" >&2
   exit 1
 fi
 
