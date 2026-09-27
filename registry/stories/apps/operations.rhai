@@ -64,7 +64,7 @@ define_component(#{
         stream_revision: #{ schema: #{ type: "integer", min: 0 },
             "default": #{ type: "integer", value: 0 } },
         } },
-        events: #{}, slots: #{}, parts: [], effects: ["deployment", "fixture_stream"],
+        events: #{}, slots: #{}, parts: [], effects: ["fixture_stream"],
     },
     render: Fn("render_OperationsWorkbench")
 });
@@ -111,36 +111,6 @@ fn channel_changed(ctx, value) { ctx.set_state("release_channel", value); }
 fn open_confirm(ctx, payload) { ctx.set_state("confirm_open", true); }
 fn confirm_open_changed(ctx, value) { ctx.set_state("confirm_open", value); }
 fn cancel_deployment(ctx, payload) { ctx.set_state("confirm_open", false); }
-fn confirm_deployment(ctx, payload) {
-    ctx.set_state("confirm_open", false);
-    ctx.set_state("deployment_phase", "running");
-    ctx.set_state("deployment_progress", 0.0);
-    ctx.set_state("toast_visible", false);
-    ctx.set_state("page", "deployments");
-}
-fn deployment_update(ctx, value) {
-    if value < 0 {
-        ctx.set_state("deployment_phase", "failed");
-        ctx.set_state("toast_visible", true);
-    } else {
-        ctx.set_state("deployment_progress", value.to_float());
-        if value >= 100 {
-            ctx.set_state("deployment_phase", "complete");
-            ctx.set_state("toast_visible", true);
-        }
-    }
-}
-fn deployment_error(ctx, error) {
-    ctx.set_state("deployment_phase", "failed");
-    ctx.set_state("toast_visible", true);
-}
-fn start_deployment(ctx, deps) {
-    if deps.active {
-        ctx.start_subscription("gallery.operations", "deploy", deps.fail,
-            Fn("deployment_update"), Fn("deployment_error"), #{ delivery: "all" });
-    }
-}
-fn stop_deployment(ctx, deps) { () }
 fn stream_update(ctx, value) { ctx.set_state("stream_revision", value); }
 fn stream_error(ctx, error) { ctx.set_state("stream_revision", 0); }
 fn start_fixture_stream(ctx, deps) {
@@ -290,15 +260,17 @@ fn configurations(ctx) {
     let selected = ctx.get_state("selected_hosts");
     let left_host = if selected.len > 0 { selected[0] } else { "edge-01" };
     let right_host = if selected.len > 1 { selected[1] } else { "edge-02" };
-    let left = ctx.get_native_text_document("operations_config_left");
-    let right = ctx.get_native_text_document("operations_config_right");
+    let target_host = ctx.get_state("deploy_target");
+    let left = ctx.get_native_text_document(`operations_config_${left_host}`);
+    let right = ctx.get_native_text_document(`operations_config_${right_host}`);
+    let target = ctx.get_native_text_document(`operations_config_${target_host}`);
     column([
         page_header("Configurations", "Compare two hosts, then stage a deterministic deployment."),
         input::Input(#{ key: "release-channel", label: "Release channel",
             value: ctx.get_state("release_channel"), on_change: Fn("channel_changed") }),
         row([
             code_viewer::CodeViewer(#{ key: "config-source", label: "Target configuration",
-                file_name: "server.rhai", language: "rhai", source: right,
+                file_name: "server.rhai", language: "rhai", source: target,
                 style: style().height(px(210)) }),
             diff_viewer::DiffViewer(#{ key: "config-diff", mode: "split",
                 left: #{ source: left, label: left_host, file_name: "server.rhai", language: "rhai" },
@@ -359,8 +331,6 @@ fn page(ctx) {
 
 fn render_OperationsWorkbench(ctx, props) {
     let fixture = ctx.get_state("fixture_case");
-    effect("deployment", #{ active: ctx.get_state("deployment_phase") == "running",
-        fail: fixture == "failure" }, Fn("start_deployment"), Fn("stop_deployment"));
     effect("fixture_stream", #{ active: fixture == "streaming" },
         Fn("start_fixture_stream"), Fn("stop_fixture_stream"));
     let commands = [
@@ -398,12 +368,20 @@ fn render_OperationsWorkbench(ctx, props) {
             end: [text(ctx.get_state("deploy_target"))] }),
     ];
     if ctx.get_state("confirm_open") {
+        let target = ctx.get_state("deploy_target");
+        let channel = ctx.get_state("release_channel");
+        let document = ctx.get_native_text_document(`operations_config_${target}`);
+        let commit = button::Button(#{ text: "Deploy", variant: "primary" })
+            .test_id("confirm-deploy")
+            .on_click_value(native_handler("gallery.operations_deploy"), #{
+                target: target, channel: channel, expected_revision: document.revision,
+                fail: fixture == "failure"
+            });
         children.push(dialog::Dialog(#{ key: "deployment-confirm", open: true,
             title: "Confirm deployment", content: text(`Deploy ${ctx.get_state("release_channel")} to ${ctx.get_state("deploy_target")}?`),
             actions: [button::Button(#{ text: "Cancel", variant: "outline", on_click: Fn("cancel_deployment") })
                     .test_id("cancel-deploy"),
-                button::Button(#{ text: "Deploy", variant: "primary", on_click: Fn("confirm_deployment") })
-                    .test_id("confirm-deploy")],
+                commit],
             on_open_change: Fn("confirm_open_changed") }));
     }
     if ctx.get_state("command_open") {

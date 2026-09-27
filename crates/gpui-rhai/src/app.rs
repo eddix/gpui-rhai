@@ -3895,7 +3895,7 @@ impl ScriptHostView {
             .lifecycle
             .retained()
             .nodes()
-            .filter(|node| node.element_ref().is_some())
+            .filter(|node| node.element_ref().is_some() || node.focus_styled())
             .map(crate::RetainedNode::id)
             .collect::<BTreeSet<_>>();
         self.focus_handles.retain(|node, _| active.contains(node));

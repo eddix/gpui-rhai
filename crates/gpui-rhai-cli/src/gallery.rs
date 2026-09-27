@@ -5,8 +5,9 @@ use gpui_rhai::gpui::prelude::*;
 use gpui_rhai::{
     AppManifest, AssetData, CapabilityDescriptor, CapabilityId, CapabilityMethod, ChartDataLimits,
     ChartDataset, ChartGeoMap, EmbeddedScriptSource, EmbeddedScriptView, HostSlotRegistry,
-    ModuleId, NativeChartData, NativeCollection, NativeTextDocument, PreparedScriptView,
-    RuntimeEngine, ScriptViewExtension, SubscriptionCapabilityHandler, SubscriptionWork, ThemeMode,
+    ModuleId, NativeChartData, NativeCollection, NativeEvent, NativeHandlerDescriptor,
+    NativeHandlerId, NativeTextDocument, ObjectField, PreparedScriptView, RuntimeEngine,
+    ScriptViewExtension, SubscriptionCapabilityHandler, SubscriptionWork, ThemeMode,
     ThemeTokenOverrides, ThemeVariant, UiRuntimeState, UiValue, ValueSchema, extract_imports,
     load_theme_source,
 };
@@ -271,7 +272,185 @@ struct OperationsFixture {
     fixture_case: String,
 }
 
+fn operations_host_ids(fixture_case: &str) -> Vec<String> {
+    if fixture_case == "large" {
+        (1..=1_000)
+            .map(|index| format!("edge-{index:02}"))
+            .collect()
+    } else {
+        let mut hosts = vec![
+            "edge-01".to_owned(),
+            "edge-02".to_owned(),
+            "edge-03".to_owned(),
+        ];
+        if fixture_case == "failure" {
+            hosts.push("edge-04".to_owned());
+        }
+        hosts
+    }
+}
+
+fn operations_config_name(host: &str) -> String {
+    format!("operations_config_{host}")
+}
+
+fn operations_config_text(host: &str, channel: &str) -> String {
+    let port = if host == "edge-02" { 8443 } else { 443 };
+    format!("server {{\n  host = \"{host}\"\n  channel = \"{channel}\"\n  port = {port}\n}}\n")
+}
+
+fn operations_payload_field<'a>(
+    payload: &'a BTreeMap<String, UiValue>,
+    name: &str,
+) -> Result<&'a UiValue, String> {
+    payload
+        .get(name)
+        .ok_or_else(|| format!("deployment payload is missing `{name}`"))
+}
+
+fn operations_component(
+    runtime: &UiRuntimeState,
+) -> Result<gpui_rhai::ComponentInstancePath, String> {
+    runtime
+        .component_state
+        .paths()
+        .into_iter()
+        .find(|path| {
+            runtime
+                .component_state
+                .get(path, "deployment_phase")
+                .is_some()
+                && runtime.component_state.get(path, "deploy_target").is_some()
+        })
+        .ok_or_else(|| "Operations Workbench state is not mounted".to_owned())
+}
+
+fn set_operations_state(
+    runtime: &mut UiRuntimeState,
+    component: &gpui_rhai::ComponentInstancePath,
+    field: &str,
+    value: UiValue,
+) -> Result<(), String> {
+    runtime
+        .set_component_state_from_host(component, field, value)
+        .map(|_| ())
+        .map_err(|error| error.to_string())
+}
+
+fn finish_operations_deployment(
+    runtime: &mut UiRuntimeState,
+    component: &gpui_rhai::ComponentInstancePath,
+    succeeded: bool,
+) -> Result<(), String> {
+    set_operations_state(runtime, component, "confirm_open", UiValue::Bool(false))?;
+    set_operations_state(
+        runtime,
+        component,
+        "deployment_phase",
+        UiValue::String(if succeeded { "complete" } else { "failed" }.to_owned()),
+    )?;
+    set_operations_state(
+        runtime,
+        component,
+        "deployment_progress",
+        UiValue::Float(if succeeded { 100.0 } else { 0.0 }),
+    )?;
+    set_operations_state(runtime, component, "toast_visible", UiValue::Bool(true))?;
+    set_operations_state(
+        runtime,
+        component,
+        "page",
+        UiValue::String("deployments".to_owned()),
+    )
+}
+
+fn commit_operations_deployment(
+    runtime: &mut UiRuntimeState,
+    payload: UiValue,
+    fixture_case: &str,
+) -> Result<(), String> {
+    let UiValue::Map(payload) = payload else {
+        return Err("deployment payload must be an object".to_owned());
+    };
+    let UiValue::String(target) = operations_payload_field(&payload, "target")? else {
+        return Err("deployment target must be a string".to_owned());
+    };
+    let UiValue::String(channel) = operations_payload_field(&payload, "channel")? else {
+        return Err("deployment channel must be a string".to_owned());
+    };
+    let UiValue::Integer(expected_revision) =
+        operations_payload_field(&payload, "expected_revision")?
+    else {
+        return Err("deployment expected_revision must be an integer".to_owned());
+    };
+    let UiValue::Bool(requested_failure) = operations_payload_field(&payload, "fail")? else {
+        return Err("deployment fail flag must be a boolean".to_owned());
+    };
+    let component = operations_component(runtime)?;
+    if *requested_failure || fixture_case == "failure" {
+        return finish_operations_deployment(runtime, &component, false);
+    }
+    let expected_revision = u64::try_from(*expected_revision)
+        .map_err(|_| "deployment revision cannot be negative".to_owned())?;
+    let name = operations_config_name(target);
+    let current = runtime
+        .native_documents
+        .get(&name)
+        .map_err(|error| error.to_string())?;
+    if current.revision() != expected_revision {
+        return finish_operations_deployment(runtime, &component, false);
+    }
+    let next = NativeTextDocument::new(
+        &name,
+        current.revision().saturating_add(1),
+        operations_config_text(target, channel),
+    )
+    .map_err(|error| error.to_string())?;
+    runtime
+        .replace_native_text_document_from_host(&name, next)
+        .map_err(|error| error.to_string())?;
+    finish_operations_deployment(runtime, &component, true)
+}
+
 impl ScriptViewExtension for OperationsFixture {
+    fn configure_engine(&self, engine: &mut RuntimeEngine) -> Result<(), String> {
+        let fixture_case = self.fixture_case.clone();
+        engine
+            .register_native_handler(
+                NativeHandlerDescriptor::new(
+                    NativeHandlerId::parse("gallery.operations_deploy")
+                        .map_err(|error| error.to_string())?,
+                    BTreeMap::from([(
+                        "click".to_owned(),
+                        ValueSchema::Object {
+                            fields: BTreeMap::from([
+                                (
+                                    "target".to_owned(),
+                                    ObjectField::required(ValueSchema::string()),
+                                ),
+                                (
+                                    "channel".to_owned(),
+                                    ObjectField::required(ValueSchema::string()),
+                                ),
+                                (
+                                    "expected_revision".to_owned(),
+                                    ObjectField::required(ValueSchema::integer()),
+                                ),
+                                ("fail".to_owned(), ObjectField::required(ValueSchema::Bool)),
+                            ]),
+                            allow_unknown: false,
+                        },
+                    )]),
+                )
+                .map_err(|error| error.to_string())?,
+                move |event: NativeEvent, runtime, _, _| {
+                    commit_operations_deployment(runtime, event.payload, &fixture_case)?;
+                    Ok(gpui_rhai::EventResponse::new().stop())
+                },
+            )
+            .map_err(|error| error.to_string())
+    }
+
     fn configure_runtime(&self, runtime: &mut UiRuntimeState) -> Result<(), String> {
         runtime
             .native_collections
@@ -281,30 +460,22 @@ impl ScriptViewExtension for OperationsFixture {
             .native_collections
             .register("operations_events", operations_events(&self.fixture_case)?)
             .map_err(|error| error.to_string())?;
-        runtime
-            .native_documents
-            .register(
-                "operations_config_left",
-                NativeTextDocument::new(
-                    "operations_config_left",
-                    1,
-                    "server {\n  host = \"edge-01\"\n  channel = \"stable\"\n  port = 443\n}\n",
+        for host in operations_host_ids(&self.fixture_case) {
+            let name = operations_config_name(&host);
+            let channel = if host == "edge-02" {
+                "candidate"
+            } else {
+                "stable"
+            };
+            runtime
+                .native_documents
+                .register(
+                    &name,
+                    NativeTextDocument::new(&name, 1, operations_config_text(&host, channel))
+                        .map_err(|error| error.to_string())?,
                 )
-                .map_err(|error| error.to_string())?,
-            )
-            .map_err(|error| error.to_string())?;
-        runtime
-            .native_documents
-            .register(
-                "operations_config_right",
-                NativeTextDocument::new(
-                    "operations_config_right",
-                    1,
-                    "server {\n  host = \"edge-02\"\n  channel = \"candidate\"\n  port = 8443\n}\n",
-                )
-                .map_err(|error| error.to_string())?,
-            )
-            .map_err(|error| error.to_string())?;
+                .map_err(|error| error.to_string())?;
+        }
         runtime.native_chart_data.insert(
             "operations_metrics".to_owned(),
             operations_metrics(&self.fixture_case)?,
@@ -317,22 +488,13 @@ impl ScriptViewExtension for OperationsFixture {
                 CapabilityDescriptor {
                     id: capability,
                     version: semver::Version::new(1, 0, 0),
-                    methods: BTreeMap::from([
-                        (
-                            "deploy".to_owned(),
-                            CapabilityMethod {
-                                input: ValueSchema::Bool,
-                                output: ValueSchema::integer(),
-                            },
-                        ),
-                        (
-                            "stream".to_owned(),
-                            CapabilityMethod {
-                                input: ValueSchema::Null,
-                                output: ValueSchema::integer(),
-                            },
-                        ),
-                    ]),
+                    methods: BTreeMap::from([(
+                        "stream".to_owned(),
+                        CapabilityMethod {
+                            input: ValueSchema::Null,
+                            output: ValueSchema::integer(),
+                        },
+                    )]),
                 },
                 OperationsSubscription,
             )
@@ -347,12 +509,7 @@ struct OperationsSubscription;
 impl SubscriptionCapabilityHandler for OperationsSubscription {
     fn subscribe(&mut self, method: &str, input: UiValue) -> Result<SubscriptionWork, String> {
         let (name, values) = match (method, input) {
-            ("deploy", UiValue::Bool(true)) => {
-                ("gpui-rhai-gallery-deploy-failure", vec![15, 48, -1])
-            }
-            ("deploy", UiValue::Bool(false)) => ("gpui-rhai-gallery-deploy", vec![15, 48, 76, 100]),
             ("stream", UiValue::Null) => ("gpui-rhai-gallery-stream", vec![1, 2, 3, 4]),
-            ("deploy", _) => return Err("deploy expects a failure boolean".to_owned()),
             ("stream", _) => return Err("stream expects null input".to_owned()),
             _ => return Err(format!("unknown operations subscription `{method}`")),
         };

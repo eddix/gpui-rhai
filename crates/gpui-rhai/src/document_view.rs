@@ -3671,6 +3671,7 @@ fn diff_cell(
                 segment.range.start
             )))
             .overflow_x_scroll()
+            .restrict_scroll_to_axis()
             .track_scroll(horizontal)
             .bg(rgba(background.as_rgba_hex()))
             .child(row.w(px(width)))

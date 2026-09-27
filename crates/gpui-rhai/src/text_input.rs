@@ -771,6 +771,10 @@ pub struct TextInputPrimitiveHandler {
 }
 
 impl PrimitiveHandler for TextInputPrimitiveHandler {
+    fn uses_primary_focus(&self) -> bool {
+        true
+    }
+
     fn accessibility_actions(
         &self,
         _instance: &PrimitiveInstanceId,
@@ -862,10 +866,17 @@ impl PrimitiveHandler for TextInputPrimitiveHandler {
             typography: native_typography(theme, &typography_role, window)?,
         };
         let callbacks = primitive_callbacks(events);
+        let shared_focus = instance.focus_handle().cloned();
         let entity = if let Some(entity) = self.instances.get(&id) {
             entity.clone()
         } else {
-            let entity = cx.new(|cx| TextInputEntity::new(config.clone(), callbacks.clone(), cx));
+            let entity = cx.new(|cx| {
+                let mut input = TextInputEntity::new(config.clone(), callbacks.clone(), cx);
+                if let Some(focus) = shared_focus.clone() {
+                    input.focus = focus.tab_stop(!config.disabled);
+                }
+                input
+            });
             entity.update(cx, |input, cx| {
                 let focus = input.focus.clone();
                 cx.on_focus(&focus, window, |input, window, cx| {
@@ -885,7 +896,7 @@ impl PrimitiveHandler for TextInputPrimitiveHandler {
                     input.focus.focus(window, cx);
                 }
             });
-            self.instances.insert(id, entity.clone());
+            self.instances.insert(id.clone(), entity.clone());
             entity
         };
         entity.update(cx, |input, cx| {

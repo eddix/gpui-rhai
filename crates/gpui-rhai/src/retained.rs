@@ -57,6 +57,7 @@ pub struct RetainedNode {
     handlers: BTreeMap<String, Vec<crate::UiEventBinding>>,
     handler_payloads: BTreeMap<String, crate::UiValue>,
     scrollable: bool,
+    focus_styled: bool,
     canvas_commands: usize,
     canvas_scene: Option<crate::CanvasScene>,
     virtual_data_items: usize,
@@ -128,6 +129,11 @@ impl RetainedNode {
     #[must_use]
     pub const fn scrollable(&self) -> bool {
         self.scrollable
+    }
+
+    #[must_use]
+    pub const fn focus_styled(&self) -> bool {
+        self.focus_styled
     }
 
     #[must_use]
@@ -469,6 +475,7 @@ impl ReconcileTransaction<'_> {
                 handlers: candidate.handlers().clone(),
                 handler_payloads: candidate.handler_payloads().clone(),
                 scrollable: snapshot_scrollable(candidate),
+                focus_styled: candidate.style().focus.is_some(),
                 canvas_commands: match candidate.kind() {
                     crate::UiNodeKind::Canvas { scene } => scene.complexity(),
                     _ => 0,

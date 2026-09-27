@@ -556,6 +556,7 @@ pub struct PrimitiveInstance {
     pub id: Option<PrimitiveInstanceId>,
     pub node: PrimitiveNode,
     resources: Option<PrimitiveResourceScope>,
+    focus_handle: Option<gpui::FocusHandle>,
 }
 
 impl PrimitiveInstance {
@@ -565,6 +566,16 @@ impl PrimitiveInstance {
     #[must_use]
     pub const fn resources(&self) -> Option<&PrimitiveResourceScope> {
         self.resources.as_ref()
+    }
+
+    /// Return the runtime-owned focus identity for this native control.
+    ///
+    /// A focus-owning primitive must use this handle instead of allocating a
+    /// second identity so its declarative wrapper, automation target, and
+    /// native editor all observe the same focus state.
+    #[must_use]
+    pub const fn focus_handle(&self) -> Option<&gpui::FocusHandle> {
+        self.focus_handle.as_ref()
     }
 }
 
@@ -864,6 +875,14 @@ pub trait PrimitiveHandler {
         Vec::new()
     }
 
+    /// Whether this primitive owns one primary native focus target.
+    ///
+    /// The runtime allocates and retains that identity before rendering so the
+    /// declarative wrapper and native control share it from their first frame.
+    fn uses_primary_focus(&self) -> bool {
+        false
+    }
+
     /// Perform one previously advertised accessibility action.
     ///
     /// # Errors
@@ -1132,6 +1151,15 @@ impl PrimitiveRegistry {
             })
     }
 
+    pub(crate) fn uses_primary_focus(&self, primitive: &PrimitiveId) -> bool {
+        self.inner.try_borrow().ok().is_some_and(|inner| {
+            inner
+                .entries
+                .get(primitive)
+                .is_some_and(|entry| entry.handler.uses_primary_focus())
+        })
+    }
+
     pub(crate) fn perform_accessibility_action(
         &self,
         instance: &PrimitiveInstanceId,
@@ -1281,6 +1309,7 @@ impl PrimitiveRegistry {
         &self,
         node: PrimitiveNode,
         retained_id: Option<crate::NodeId>,
+        focus_handle: Option<gpui::FocusHandle>,
         fallback: Option<UiNode>,
         dispatcher: Option<NodeEventDispatcher>,
         theme: PrimitiveTheme,
@@ -1289,6 +1318,7 @@ impl PrimitiveRegistry {
             registry: self.clone(),
             node,
             retained_id,
+            focus_handle,
             fallback,
             dispatcher,
             theme,
@@ -1301,6 +1331,7 @@ impl PrimitiveRegistry {
         &self,
         node: PrimitiveNode,
         retained_id: Option<crate::NodeId>,
+        focus_handle: Option<gpui::FocusHandle>,
         events: &PrimitiveEventEmitter,
         theme: &PrimitiveTheme,
         window: &mut Window,
@@ -1344,6 +1375,7 @@ impl PrimitiveRegistry {
             id: instance_id.clone(),
             node,
             resources: resources.clone(),
+            focus_handle,
         };
         let needs_mount = instance_id.is_some() && previous.is_none();
         if needs_mount
@@ -1497,6 +1529,7 @@ struct RegisteredPrimitiveElement {
     registry: PrimitiveRegistry,
     node: PrimitiveNode,
     retained_id: Option<crate::NodeId>,
+    focus_handle: Option<gpui::FocusHandle>,
     fallback: Option<UiNode>,
     dispatcher: Option<NodeEventDispatcher>,
     theme: PrimitiveTheme,
@@ -1527,6 +1560,7 @@ impl RenderOnce for RegisteredPrimitiveElement {
         match registry.render_instance(
             self.node,
             self.retained_id,
+            self.focus_handle,
             &events,
             &self.theme,
             window,
@@ -2089,6 +2123,7 @@ mod tests {
                 id: Some(instance.clone()),
                 node,
                 resources: Some(resources),
+                focus_handle: None,
             },
         );
         tree.reconcile(UiNode::text("removed")).unwrap();

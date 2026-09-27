@@ -493,11 +493,19 @@ fn apply_scroll_behavior(
     handles: &BTreeMap<NodeId, ScrollHandle>,
     anchors: &BTreeMap<NodeId, gpui::ScrollAnchor>,
 ) -> Stateful<Div> {
-    if matches!(node.style().base.overflow_x, Some(OverflowMode::Scroll)) {
+    let scrolls_x = matches!(node.style().base.overflow_x, Some(OverflowMode::Scroll));
+    let scrolls_y = matches!(node.style().base.overflow_y, Some(OverflowMode::Scroll));
+    if scrolls_x {
         element = element.overflow_x_scroll();
     }
-    if matches!(node.style().base.overflow_y, Some(OverflowMode::Scroll)) {
+    if scrolls_y {
         element = element.overflow_y_scroll();
+    }
+    // GPUI translates an unsupported wheel axis onto the one scrollable axis
+    // by default. Ordinary one-axis UI containers promise a stricter contract;
+    // two-axis canvases retain GPUI's native gesture handling.
+    if scrolls_x ^ scrolls_y {
+        element = element.restrict_scroll_to_axis();
     }
     if let Some(handle) = retained_id.and_then(|node| handles.get(&node)) {
         element = element.track_scroll(handle);
@@ -1884,7 +1892,9 @@ impl GpuiNodeRenderer {
         ) {
             element = element.flex_1().min_h(px(0.0));
         }
-        if let Some(handle) = retained_id.and_then(|node| environment.focus_handles.get(&node)) {
+        let focus_handle =
+            retained_id.and_then(|node| environment.focus_handles.get(&node).cloned());
+        if let Some(handle) = focus_handle.as_ref() {
             element = element.track_focus(handle);
         }
         if let Some(opacity) = signals.opacity.or(animation.opacity) {
@@ -1927,9 +1937,7 @@ impl GpuiNodeRenderer {
                     retained_id,
                     environment.scroll_handles,
                 ),
-                focus_handle: retained_id
-                    .and_then(|node| environment.focus_handles.get(&node))
-                    .cloned(),
+                focus_handle,
                 now: environment.now,
                 motion_preference: environment.motion_preference,
             }
@@ -2131,21 +2139,34 @@ impl GpuiNodeRenderer {
                     .into_any_element()
             }
             UiNodeKind::Custom { primitive } => element
-                .child(environment.primitives.element(
-                    primitive.clone(),
-                    retained_id,
-                    boundary_fallback.cloned(),
-                    environment.dispatcher.cloned(),
-                    crate::PrimitiveTheme::capture_with_environment(
-                        environment.colors,
-                        environment.direction,
-                        environment.locale,
-                        environment.number,
-                        environment.clock.clone(),
-                        environment.motion_preference,
-                        environment.motion_quality,
+                .child(
+                    environment.primitives.element(
+                        primitive.clone(),
+                        retained_id,
+                        environment
+                            .primitives
+                            .uses_primary_focus(&primitive.primitive)
+                            .then(|| {
+                                primitive_focus_owner(
+                                    environment.retained,
+                                    retained_id,
+                                    environment.focus_handles,
+                                )
+                            })
+                            .flatten(),
+                        boundary_fallback.cloned(),
+                        environment.dispatcher.cloned(),
+                        crate::PrimitiveTheme::capture_with_environment(
+                            environment.colors,
+                            environment.direction,
+                            environment.locale,
+                            environment.number,
+                            environment.clock.clone(),
+                            environment.motion_preference,
+                            environment.motion_quality,
+                        ),
                     ),
-                ))
+                )
                 .into_any_element(),
             UiNodeKind::Image { source } => render_image(element, source, environment),
             UiNodeKind::DirectionalImage {
@@ -2202,6 +2223,25 @@ impl GpuiNodeRenderer {
                 .into_any_element(),
         }
     }
+}
+
+fn primitive_focus_owner(
+    retained: Option<&RetainedUiTree>,
+    retained_id: Option<NodeId>,
+    focus_handles: &BTreeMap<NodeId, FocusHandle>,
+) -> Option<FocusHandle> {
+    let retained = retained?;
+    let mut cursor = retained_id;
+    while let Some(node_id) = cursor {
+        let node = retained.node(node_id)?;
+        if node.focus_styled()
+            && let Some(handle) = focus_handles.get(&node_id)
+        {
+            return Some(handle.clone());
+        }
+        cursor = node.parent();
+    }
+    None
 }
 
 pub(crate) fn render_motion_ghost(
@@ -2417,6 +2457,9 @@ fn node_needs_interaction_wrapper(node: &UiNode, needs: u8) -> bool {
         || !is_disabled(node)
             && (needs & 0b0111 != 0
                 || node_has_focus_declaration(node)
+                || node.style().hover.is_some()
+                || node.style().active.is_some()
+                || node.style().focus.is_some()
                 || node_has_raw_pointer_handlers(node)
                 || node_scrollable(node))
 }

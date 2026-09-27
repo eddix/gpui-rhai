@@ -5,8 +5,8 @@ use std::time::{Duration, Instant};
 use gpui::prelude::*;
 use gpui::{Context, IntoElement, Render, TestAppContext, Window, WindowHandle};
 use gpui_rhai::{
-    AutomationCommand, AutomationLocator, AutomationResult, ScriptViewHandle, ScriptViewHost,
-    UiNodeKind,
+    AutomationCommand, AutomationLocator, AutomationResult, PrimitiveValue, ScriptViewHandle,
+    ScriptViewHost, UiNodeKind,
 };
 use gpui_rhai_cli::gallery::{GalleryLaunch, prepare, stories};
 use gpui_rhai_registry::BUNDLED_THEME_SOURCES;
@@ -63,6 +63,46 @@ fn node_texts(node: &gpui_rhai::UiNode, output: &mut Vec<String>) {
         | UiNodeKind::Svg { .. }
         | UiNodeKind::Image { .. }
         | UiNodeKind::DirectionalImage { .. } => {}
+    }
+}
+
+fn node_documents(
+    node: &gpui_rhai::UiNode,
+    output: &mut std::collections::BTreeMap<String, (u64, String)>,
+) {
+    match node.kind() {
+        UiNodeKind::Custom { primitive } => {
+            for (_, value) in primitive.props.iter() {
+                if let PrimitiveValue::Document(document) = value {
+                    output.insert(
+                        document.identity().to_owned(),
+                        (document.revision(), document.text().to_owned()),
+                    );
+                }
+            }
+        }
+        UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => {
+            for child in children {
+                node_documents(child, output);
+            }
+        }
+        UiNodeKind::Overlay {
+            trigger, content, ..
+        } => {
+            node_documents(trigger, output);
+            node_documents(content, output);
+        }
+        UiNodeKind::Layer { content, .. } => node_documents(content, output),
+        UiNodeKind::ErrorBoundary { child, fallback } => {
+            node_documents(child, output);
+            node_documents(fallback, output);
+        }
+        UiNodeKind::VirtualCollection { spec } => {
+            for item in spec.realized.values() {
+                node_documents(item, output);
+            }
+        }
+        _ => {}
     }
 }
 
@@ -230,6 +270,14 @@ fn operations_workbench_completes_and_cancels_the_deployment_boundary(cx: &mut T
         "operations-normal",
     );
     let mut visual = gpui::VisualTestContext::from_window(*window, cx);
+    dispatch(&mut visual, &view, "stage-deploy");
+    dispatch(&mut visual, &view, "cancel-deploy");
+    let mut texts = rendered_texts(&mut visual, &view);
+    assert!(
+        !texts
+            .iter()
+            .any(|text| text.contains("Configuration verified"))
+    );
     visual.update(|_, cx| {
         assert!(view.select_theme("Default", "Light", cx).unwrap());
         assert!(view.select_locale("zh-CN", cx).unwrap());
@@ -239,14 +287,6 @@ fn operations_workbench_completes_and_cancels_the_deployment_boundary(cx: &mut T
         );
     });
     visual.run_until_parked();
-    dispatch(&mut visual, &view, "stage-deploy");
-    dispatch(&mut visual, &view, "cancel-deploy");
-    let mut texts = rendered_texts(&mut visual, &view);
-    assert!(
-        !texts
-            .iter()
-            .any(|text| text.contains("Configuration verified"))
-    );
 
     dispatch(&mut visual, &view, "stage-deploy");
     dispatch(&mut visual, &view, "confirm-deploy");
@@ -266,6 +306,32 @@ fn operations_workbench_completes_and_cancels_the_deployment_boundary(cx: &mut T
             .update(|_, cx| view.last_error(cx).unwrap())
             .is_none()
     );
+    visual
+        .update(|window, cx| {
+            view.automate(
+                AutomationCommand::Dispatch {
+                    locator: AutomationLocator::RoleName {
+                        role: "button".to_owned(),
+                        name: "Configurations".to_owned(),
+                    },
+                    event: "click".to_owned(),
+                    payload: None,
+                },
+                window,
+                cx,
+            )
+        })
+        .unwrap();
+    visual.run_until_parked();
+    let root = visual.update(|_, cx| view.root(cx).unwrap().unwrap());
+    let mut documents = std::collections::BTreeMap::new();
+    node_documents(&root, &mut documents);
+    let target = &documents["operations_config_edge-01"];
+    assert_eq!(target.0, 2);
+    assert!(target.1.contains("stable"), "{target:?}");
+    let untouched = &documents["operations_config_edge-02"];
+    assert_eq!(untouched.0, 1);
+    assert!(untouched.1.contains("candidate"), "{untouched:?}");
 }
 
 #[gpui::test]
@@ -304,9 +370,9 @@ fn workbench_consumes_host_owned_events_and_configuration_documents(cx: &mut Tes
     let invalidated = config_visual
         .update(|_, cx| {
             config.replace_native_text_document(
-                "operations_config_right",
+                "operations_config_edge-02",
                 gpui_rhai::NativeTextDocument::new(
-                    "operations_config_right",
+                    "operations_config_edge-02",
                     2,
                     "server {\n  host = \"edge-02\"\n  channel = \"canary\"\n}\n",
                 )

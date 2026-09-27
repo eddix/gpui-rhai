@@ -3,14 +3,15 @@ use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use gpui::{
-    Context, IntoElement, Modifiers, Render, TestAppContext, VisualTestContext, Window,
-    WindowHandle, point, px,
+    Context, IntoElement, Modifiers, Render, ScrollDelta, ScrollWheelEvent, TestAppContext,
+    VisualTestContext, Window, WindowHandle, point, px, rgba,
 };
 use gpui_rhai::*;
 
 const BUTTON: &str = include_str!("../../../registry/components/button.rhai");
 const BADGE: &str = include_str!("../../../registry/components/badge.rhai");
 const TABS: &str = include_str!("../../../registry/components/tabs.rhai");
+const INPUT: &str = include_str!("../../../registry/components/input.rhai");
 const ANIMATED_TABS: &str = include_str!("../../../registry/motion/animated_tabs.rhai");
 const DEFAULT_DARK: &str = include_str!("../../../registry/themes/default_dark.rhai");
 
@@ -53,6 +54,7 @@ fn mount_with_overrides(
                 BADGE.to_owned(),
             ),
             (ModuleId::parse("components/tabs").unwrap(), TABS.to_owned()),
+            (ModuleId::parse("components/input").unwrap(), INPUT.to_owned()),
             (
                 ModuleId::parse("motion/animated_tabs").unwrap(),
                 ANIMATED_TABS.to_owned(),
@@ -396,4 +398,102 @@ fn view(ctx){animated_tabs::AnimatedTabs(#{key:"visual-tabs",label:"Animated Sec
         .collect::<Vec<_>>();
     assert_eq!(selected.len(), 1);
     assert_eq!(selected[0].name, "Two");
+}
+
+#[gpui::test]
+fn single_axis_script_scroll_does_not_translate_the_other_axis(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let script = r#"
+fn view(ctx) { box([
+    text("Scroll marker").accessibility_label("Scroll marker")
+        .with_style(style().width(px(1000)).height(px(40)))
+]).with_style(style().width(px(200)).height(px(80)).overflow_x_scroll()) }
+"#;
+    let (window, view) = mount(cx, script, "single-axis-scroll");
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    let marker_x = |visual: &mut VisualTestContext| {
+        visual.update(|_, cx| {
+            view.accessibility_snapshot(cx)
+                .unwrap()
+                .find_by_role_and_name("text", "Scroll marker")
+                .next()
+                .unwrap()
+                .geometry
+                .unwrap()
+                .visual
+                .x
+        })
+    };
+    let before = marker_x(&mut visual);
+    let position = point(px(40.), px(30.));
+    visual.simulate_mouse_move(position, None, Modifiers::none());
+    visual.simulate_event(ScrollWheelEvent {
+        position,
+        delta: ScrollDelta::Pixels(point(px(0.), px(-45.))),
+        ..Default::default()
+    });
+    visual.run_until_parked();
+    visual.update(|window, _| window.refresh());
+    visual.run_until_parked();
+    assert_eq!(marker_x(&mut visual), before);
+}
+
+#[gpui::test]
+fn input_wrapper_paints_focus_ring_for_the_native_editor_focus(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let script = r#"
+import "components/input" as input;
+fn state_schema() { #{ fields: #{ value: #{ schema: #{ type: "string" },
+    "default": #{ type: "string", value: "initial" } } } } }
+fn changed(ctx, value) { ctx.set_state("value", value); }
+fn view(ctx) { input::Input(#{key:"field",label:"Audit input",value:ctx.get_state("value"),
+    on_change:Fn("changed")}).with_style(style().width(px(220))) }
+"#;
+    let overrides = ThemeTokenOverrides {
+        colors: BTreeMap::from([
+            ("border".to_owned(), Rgba8::from_rgba_hex(0xff0000ff)),
+            ("focus_ring".to_owned(), Rgba8::from_rgba_hex(0x00ff00ff)),
+        ]),
+        ..Default::default()
+    };
+    let (window, view) = mount_with_overrides(cx, script, "native-input-focus", overrides);
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    let bounds = visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .find_by_role_and_name("text_field", "Audit input")
+            .next()
+            .unwrap()
+            .geometry
+            .unwrap()
+            .visual
+    });
+    visual.simulate_click(
+        point(
+            px((bounds.x + 30.) as f32),
+            px((bounds.y + bounds.height / 2.) as f32),
+        ),
+        Modifiers::none(),
+    );
+    visual.simulate_keystrokes("cmd-a");
+    visual.simulate_input("focused and editable");
+    visual.update(|window, _| window.refresh());
+    visual.run_until_parked();
+    let focus_ring: gpui::Hsla = rgba(0x00ff00ff).into();
+    let green_borders = visual.update(|window, _| {
+        window
+            .painted_quads()
+            .iter()
+            .filter(|quad| quad.border_widths.left.0 > 0.0 && quad.border_color == focus_ring)
+            .count()
+    });
+    assert!(green_borders > 0, "native focus did not reach wrapper style");
+    let tree = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
+    assert_eq!(
+        tree.find_by_role_and_name("text_field", "Audit input")
+            .next()
+            .unwrap()
+            .value,
+        Some(UiValue::String("focused and editable".to_owned()))
+    );
 }

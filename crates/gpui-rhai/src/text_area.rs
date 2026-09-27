@@ -955,6 +955,7 @@ impl Render for TextAreaEntity {
                     .h(viewport_height)
                     .w_full()
                     .overflow_y_scroll()
+                    .restrict_scroll_to_axis()
                     .track_scroll(&self.scroll)
                     .when_some(self.config.scroll_color, |scroll, color| {
                         scroll.bg(rgba(color.as_rgba_hex()))
@@ -976,6 +977,10 @@ pub struct TextAreaPrimitiveHandler {
 }
 
 impl PrimitiveHandler for TextAreaPrimitiveHandler {
+    fn uses_primary_focus(&self) -> bool {
+        true
+    }
+
     fn accessibility_actions(
         &self,
         _instance: &PrimitiveInstanceId,
@@ -1049,12 +1054,17 @@ impl PrimitiveHandler for TextAreaPrimitiveHandler {
         let value = string_prop(&instance.node.props, "value").unwrap_or_default();
         let config = config_from_props(&instance.node.props, theme, window)?;
         let callbacks = primitive_callbacks(events);
+        let shared_focus = instance.focus_handle().cloned();
         let entity = if let Some(entity) = self.instances.get(&id) {
             entity.clone()
         } else {
             let entity = cx.new(|cx| {
-                TextAreaEntity::new(&value, config.clone(), callbacks.clone(), cx)
-                    .expect("validated Textarea props remain valid during entity creation")
+                let mut input = TextAreaEntity::new(&value, config.clone(), callbacks.clone(), cx)
+                    .expect("validated Textarea props remain valid during entity creation");
+                if let Some(focus) = shared_focus.clone() {
+                    input.focus = focus.tab_stop(!config.disabled);
+                }
+                input
             });
             entity.update(cx, |input, cx| {
                 let focus = input.focus.clone();
@@ -1074,7 +1084,7 @@ impl PrimitiveHandler for TextAreaPrimitiveHandler {
                     input.focus.focus(window, cx);
                 }
             });
-            self.instances.insert(id, entity.clone());
+            self.instances.insert(id.clone(), entity.clone());
             entity
         };
         entity.update(cx, |input, cx| {
