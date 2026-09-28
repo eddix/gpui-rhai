@@ -24,6 +24,8 @@ does not imply availability in an already published crate.
 | PanZoom | Change the viewing transform while preserving content coordinates | Map, image viewer, node canvas | Implemented for Canvas over shared affine geometry; Chart keeps its domain viewport |
 | SelectionArea | Maintain object selection by click, modifiers, range, or marquee | File grid, canvas objects, multi-selection surface | Planned for 0.1.8; Table/text selection remain distinct |
 | Rotatable | Change an object's angle around an explicit pivot | Drawing or design tools | Planned for 0.1.8 on declared 2D interaction surfaces |
+| RangeSlider | Select one ordered numeric interval with two thumbs | Filters, time/value windows | Implemented with shared Slider axis/RTL/step math |
+| Tree | Navigate a flattened hierarchical outline | Files, settings, object hierarchy | Planned for 0.1.8 over shared outline projection |
 | Dockable / DockLayout | Arrange panels through docking, grouping, splitting, or floating | IDE/tool workspaces | Deferred higher-level layout system |
 
 ## Choose by the state being changed

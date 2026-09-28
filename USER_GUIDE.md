@@ -322,20 +322,20 @@ intentional one-off. Edit the copied component source when the product needs a
 structural or behavioral fork; do not hide one behind a growing stack of visual
 overrides. See [Component stylesheets](docs/component-styles.md).
 
-The bundled catalog contains 58 official source components. Version 0.1.2
+The bundled catalog contains 59 official source components. Version 0.1.2
 froze the original 51 IDs, exports, controlled-state boundaries, semantic
 events, size vocabulary, and style-part contract as the component foundation;
 0.1.7 adds SplitPane and Resizable; the 0.1.8 development line adds
-Draggable, DragSource, DropZone, Sortable, and Canvas PanZoom without weakening
-that contract:
+Draggable, DragSource, DropZone, Sortable, Canvas PanZoom, and RangeSlider
+without weakening that contract:
 
 - foundations and status: Label, Divider, Icon, Avatar, Badge, Tag, Alert,
   Card, GroupBox, Empty, Kbd, Progress, Spinner, Skeleton, TitleBar, and
   StatusBar;
 - actions and choices: Button, ButtonGroup, Checkbox, Radio, RadioGroup,
   Switch, Toggle, ToggleGroup, and Slider;
-- forms: Input, InputGroup, Textarea, FormField, Combobox, Select, and
-  DatePicker;
+- forms: Input, InputGroup, Textarea, FormField, Combobox, Select, DatePicker,
+  and RangeSlider;
 - navigation, layout, and data: Tabs, Accordion, Collapsible, Menu, Pagination,
   Table, ScrollArea, SplitPane, Resizable, Draggable, DragSource, DropZone, and
   Sortable, and PanZoom;

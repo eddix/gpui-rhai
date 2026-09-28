@@ -1,6 +1,6 @@
 # Official component catalog
 
-gpui-rhai ships 58 editable Rhai source components. They all use the same
+gpui-rhai ships 59 editable Rhai source components. They all use the same
 public atoms and generic runtime mechanisms available to application code; no
 official component receives a private high-level node constructor.
 
@@ -119,6 +119,17 @@ from lying about hit testing and layout.
 
 Source: [pan_zoom.rhai](../../registry/components/pan_zoom.rhai).
 Runnable story: `gpui-rhai gallery --story components/pan-zoom`.
+
+## Range slider
+
+`RangeSlider` owns no accepted values. It presents two independently focusable
+native slider thumbs over one shared axis, previews pointer movement in Rust,
+and emits one controlled `{low,high}` proposal on release or keyboard step.
+Values snap to the declared step, never cross, and respect `minimum_gap`.
+Horizontal arrow semantics reverse in RTL; Home/End remain thumb-specific.
+
+Source: [range_slider.rhai](../../registry/components/range_slider.rhai).
+Runnable story: `gpui-rhai gallery --story components/range-slider`.
 
 The same [specification](interaction-behaviors.md) records the planned
 SelectionArea, Rotatable, and DockLayout
