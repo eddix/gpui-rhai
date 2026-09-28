@@ -3301,7 +3301,8 @@ fn script_node_dispatcher(cx: &Context<ScriptHostView>) -> NodeEventDispatcher {
                 let node = runtime.element_refs.resolve(reference).ok()?;
                 runtime
                     .geometry_for(Some(&view.view_id))
-                    .get(node)
+                    .presented(node)
+                    .ok()
                     .map(|geometry| geometry.layout)
             })
             .ok()

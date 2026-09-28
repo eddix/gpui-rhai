@@ -3194,17 +3194,8 @@ fn canvas_path_point(
     y: f64,
     motion: NodeMotionValues,
 ) -> Point<Pixels> {
-    let radians = transform.rotate_degrees.to_radians();
-    let scaled_x = x * transform.scale;
-    let scaled_y = y * transform.scale;
-    let rotated_x = scaled_x * radians.cos() - scaled_y * radians.sin();
-    let rotated_y = scaled_x * radians.sin() + scaled_y * radians.cos();
-    node_canvas_point(
-        bounds,
-        rotated_x + transform.translate_x,
-        rotated_y + transform.translate_y,
-        motion,
-    )
+    let (transformed_x, transformed_y) = crate::canvas::canvas_transform_point(transform, x, y);
+    node_canvas_point(bounds, transformed_x, transformed_y, motion)
 }
 
 fn node_canvas_point(

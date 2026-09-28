@@ -166,7 +166,9 @@ pub use event::{
     PropagationControl, UiEvent, UiEventBinding, UiEventHandler, WheelEventData,
 };
 pub use font::{FontError, FontSource, validate_font_sources};
-pub use geometry::{ElementGeometry, GeometryBounds, GeometryError, GeometryRegistry};
+pub use geometry::{
+    Affine2D, ElementGeometry, GeometryBounds, GeometryError, GeometryRegistry, PresentedGeometry,
+};
 pub use host_slot::{HostSlotError, HostSlotRegistry};
 pub use inline_svg::{InlineSvg, InlineSvgError};
 pub use lifecycle::{LifecycleError, LifecycleState, ScriptLifecycle};
