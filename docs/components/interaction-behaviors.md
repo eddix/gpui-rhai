@@ -16,10 +16,10 @@ does not imply availability in an already published crate.
 | Capability | Responsibility | Typical use | Current status |
 |---|---|---|---|
 | Draggable | Change one object's position in a declared coordinate space | Floating card, canvas node, movable overlay | Implemented as `components/draggable::Draggable` |
-| DragSource | Begin an in-app typed payload drag without changing accepted object position | Resource tile, command item, transferable card | Planned for 0.1.8; distinct from Draggable |
+| DragSource | Begin an in-app typed payload drag without changing accepted object position | Resource tile, command item, transferable card | Implemented as `components/drag_source::DragSource` |
 | Resizable | Change one object's size or bounds using edges/handles | Floating card, image frame, adjustable content container | Implemented as `components/resizable::Resizable`; independent of SplitPane |
 | SplitPane | Redistribute a shared layout region between panels | Navigation/content, preview/source, horizontal or vertical split | Implemented as `components/split_pane::SplitPane` |
-| DropZone | Accept a typed drag payload and propose a domain operation | Kanban column, object container, in-app resource drop target | Planned for 0.1.8; external OS/file drag-and-drop is separate |
+| DropZone | Accept a typed drag payload and propose a domain operation | Kanban column, object container, in-app resource drop target | Implemented as `components/drop_zone::DropZone` |
 | Sortable | Propose a new order for a keyed collection | List, Tab order, toolbar items | Planned for 0.1.8; Motion ReorderList only animates supplied order |
 | PanZoom | Change the viewing transform while preserving content coordinates | Map, image viewer, node canvas | Planned for 0.1.8 over shared affine geometry; Chart keeps its domain viewport |
 | SelectionArea | Maintain object selection by click, modifiers, range, or marquee | File grid, canvas objects, multi-selection surface | Planned for 0.1.8; Table/text selection remain distinct |
@@ -163,7 +163,7 @@ drag-to-reorder panels, docking, and persistence are not part of this component.
 Source: [split_pane.rhai](../../registry/components/split_pane.rhai).
 Runnable story: `gpui-rhai gallery --story components/split-pane`.
 
-## DragSource and DropZone — planned
+## DragSource and DropZone — implemented
 
 `DragSource` does not imply free positioning. Pair it with a `DropZone` that
 declares accepted payload types and
@@ -181,6 +181,25 @@ Payloads are bounded typed application data, not arbitrary executable callbacks
 or retained GPUI objects. OS file drops and cross-window/platform drag sessions
 need explicit Host integration and permissions; an in-app DropZone must not
 silently grant script filesystem access. Provide a keyboard-equivalent operation.
+
+`DragSource` requires stable `key`, `label`, `source_id`, `payload_type`, bounded
+`payload`, `operation`, and `content`. It supports threshold, disabled state,
+optional `keyboard_target`, and `drag_end({accepted,target_id,operation,cancelled})`.
+`DropZone` requires stable `key`, `label`, `target_id`, accepted
+`payload_types`, accepted `operations`, and content; optional priority resolves
+nested/overlapping targets before the smaller-area tie-break. Its
+`drop({source_id,target_id,payload_type,payload,operation,x,y})` event is the
+single controlled domain proposal.
+
+The coordinator retains no Rhai callback in the pointer-move hot path. It owns
+only the bounded typed payload and frame-local target registrations. Escape,
+pointer loss, source/target unmount, view suspend and Host teardown clear
+transient feedback. Enter/Space on a focused source with `keyboard_target`
+executes the same type/operation acceptance and target callback.
+
+Sources: [drag_source.rhai](../../registry/components/drag_source.rhai) and
+[drop_zone.rhai](../../registry/components/drop_zone.rhai).
+Runnable story: `gpui-rhai gallery --story components/drag-drop`.
 
 ## Sortable — planned
 

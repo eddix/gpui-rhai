@@ -1,6 +1,6 @@
 # Official component catalog
 
-gpui-rhai ships 54 editable Rhai source components. They all use the same
+gpui-rhai ships 56 editable Rhai source components. They all use the same
 public atoms and generic runtime mechanisms available to application code; no
 official component receives a private high-level node constructor.
 
@@ -72,8 +72,26 @@ share the Interaction Runtime used by Resizable and SplitPane.
 Source: [draggable.rhai](../../registry/components/draggable.rhai).
 Runnable story: `gpui-rhai gallery --story components/draggable`.
 
-The same [specification](interaction-behaviors.md) records the planned DropZone,
-Sortable, PanZoom, SelectionArea, Rotatable, and DockLayout
+## DragSource and DropZone
+
+`DragSource` transfers one bounded typed `UiValue` payload without changing the
+source object's position. `DropZone` declares accepted payload types and
+`copy`/`move` operations. Target resolution is native and Host-domain scoped;
+nested targets use explicit priority and then the smallest matching bounds.
+Hover feedback never mutates application data. A successful release invokes
+the target's single `drop(...)` proposal and the source's `drag_end(...)`
+result; cancellation and rejection leave committed ownership unchanged.
+
+An optional `keyboard_target` lets a focused source invoke the same typed target
+contract with Enter/Space. OS/file drops and cross-window transfer remain Host
+integration responsibilities.
+
+Sources: [drag_source.rhai](../../registry/components/drag_source.rhai) and
+[drop_zone.rhai](../../registry/components/drop_zone.rhai).
+Runnable story: `gpui-rhai gallery --story components/drag-drop`.
+
+The same [specification](interaction-behaviors.md) records the planned Sortable,
+PanZoom, SelectionArea, Rotatable, and DockLayout
 capabilities, their composition rules, and acceptance requirements. These
 planned entries are not additional implemented components or callable exports.
 In particular, the existing Motion ReorderList animates an externally supplied
