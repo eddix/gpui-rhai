@@ -1,0 +1,11 @@
+[package]
+name = "gpui-pre-direct-probe"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+gpui = { package = "gpui-pre", version = "=0.3.6", default-features = false, features = ["font-kit"] }
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.6", default-features = false, features = ["font-kit", "runtime_shaders"] }

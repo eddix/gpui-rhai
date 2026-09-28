@@ -1,0 +1,12 @@
+{
+  "zed-main/crates/gpui/src/elements/div.rs": "10f334243fae305666e48d4939ed63495ce01b13534db22a751062a6f76fa59b",
+  "zed-main/crates/gpui/src/window.rs": "f8b04c37c6c18cc78b3ddd80844e5aa225e7ebafa689df5d04d1493fd45e61dc",
+  "crates/gpui-pre-0.3.6/Cargo.toml": "5029599ea3f4444a6d6efa8ec76e0d3fa92085637429fa2f896cd12db20422c3",
+  "crates/gpui-pre-0.3.6/src/elements/div.rs": "10f334243fae305666e48d4939ed63495ce01b13534db22a751062a6f76fa59b",
+  "crates/gpui-pre-0.3.6/src/element.rs": "1eea2303609c4aca23e44e623a9d44eded93ad8b70f86e3e4c7446b3e0238b4c",
+  "crates/gpui-base-0.6.6/src/reduce_motion.rs": "eb277973b7a8e75e56e83a79d184fa2e6484aebef41543f32f5cb821236554fa",
+  "gpui-ce-main/crates/gpui/src/elements/div.rs": "ead07019b362308b2ad01d296e248c16cba55dd5efd34fe9fc70806081e9e8ae",
+  "gpui-ce-main/crates/gpui_wgpu/src/wgpu_context.rs": "3d08d517994e47759f95bbafefde7181d56118f265088d0e2078c7b69a519345",
+  "gpui-ce-main/crates/gpui_wgpu/examples/custom_gpu.rs": "eac110551bd3605c7348a08454e76f76b8f516f3edf6982bb54a3cedd783b5e0",
+  "gpui-ce-main/docs/releasing.md": "eb97af6e97a2781b98d0b2b655ce45c0f1215a64926c73f433483e70acd8a899"
+}

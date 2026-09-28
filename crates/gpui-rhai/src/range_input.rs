@@ -143,7 +143,7 @@ impl RangeInputEntity {
         if self.disabled {
             return;
         }
-        self.focus.focus(window);
+        self.focus.focus(window, cx);
         self.dragging = true;
         self.preview = self.value_at(event.position);
         cx.notify();
@@ -357,6 +357,65 @@ pub struct RangeInputPrimitiveHandler {
 }
 
 impl PrimitiveHandler for RangeInputPrimitiveHandler {
+    fn accessibility_actions(
+        &self,
+        _instance: &PrimitiveInstanceId,
+    ) -> Vec<gpui::AccessibleAction> {
+        vec![
+            gpui::AccessibleAction::Focus,
+            gpui::AccessibleAction::Decrement,
+            gpui::AccessibleAction::Increment,
+            gpui::AccessibleAction::SetValue,
+        ]
+    }
+
+    fn perform_accessibility_action(
+        &mut self,
+        instance: &PrimitiveInstanceId,
+        action: gpui::AccessibleAction,
+        data: Option<&gpui::accesskit::ActionData>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Result<(), String> {
+        let entity = self
+            .instances
+            .get(instance)
+            .cloned()
+            .ok_or_else(|| "range input accessibility target is stale".to_owned())?;
+        if action == gpui::AccessibleAction::Focus {
+            let (disabled, focus) = {
+                let input = entity.read(cx);
+                (input.disabled, input.focus.clone())
+            };
+            if disabled {
+                return Err("disabled range input cannot receive focus".to_owned());
+            }
+            focus.focus(window, cx);
+            return Ok(());
+        }
+        entity.update(cx, |input, cx| {
+            if input.disabled {
+                return Err("disabled range input cannot change value".to_owned());
+            }
+            let requested = match action {
+                gpui::AccessibleAction::Decrement => input.preview - input.step,
+                gpui::AccessibleAction::Increment => input.preview + input.step,
+                gpui::AccessibleAction::SetValue => match data {
+                    Some(gpui::accesskit::ActionData::NumericValue(value)) => *value,
+                    Some(gpui::accesskit::ActionData::Value(value)) => value
+                        .parse::<f64>()
+                        .map_err(|_| "range input SetValue requires numeric data".to_owned())?,
+                    _ => return Err("range input SetValue requires numeric data".to_owned()),
+                },
+                _ => return Err("unsupported range input accessibility action".to_owned()),
+            };
+            input.preview = normalize_value(requested, input.min, input.max, input.step);
+            input.emit_change(input.preview, window, cx);
+            cx.notify();
+            Ok(())
+        })
+    }
+
     fn render(
         &mut self,
         instance: &PrimitiveInstance,

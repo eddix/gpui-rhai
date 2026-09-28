@@ -40,7 +40,11 @@ fn source(path: &str) -> String {
     .unwrap()
 }
 
-fn mount(cx: &mut TestAppContext, script: &str, name: &str) -> (WindowHandle<Host>, ScriptViewHandle) {
+fn mount(
+    cx: &mut TestAppContext,
+    script: &str,
+    name: &str,
+) -> (WindowHandle<Host>, ScriptViewHandle) {
     let entry = ModuleId::parse("main").unwrap();
     let prepared = EmbeddedScriptView::new(
         entry.clone(),
@@ -113,7 +117,8 @@ fn mount_prepared(
 
 fn pump(cx: &mut TestAppContext, visual: &mut VisualTestContext) {
     for _ in 0..8 {
-        cx.background_executor.advance_clock(Duration::from_millis(20));
+        cx.background_executor
+            .advance_clock(Duration::from_millis(20));
         visual.run_until_parked();
         cx.refresh().unwrap();
         visual.run_until_parked();
@@ -148,10 +153,9 @@ fn chart_bounds(visual: &mut VisualTestContext, view: &ScriptViewHandle) -> Geom
 #[gpui::test]
 fn chart_gallery_uses_a_window_bounded_scroll_viewport(cx: &mut TestAppContext) {
     cx.update(gpui_rhai::install);
-    let prepared = chart_gallery_example::prepared_with_stream(
-        chart_gallery_example::stream_data(64),
-    )
-    .unwrap();
+    let prepared =
+        chart_gallery_example::prepared_with_stream(chart_gallery_example::stream_data(64))
+            .unwrap();
     let (window, view) = mount_prepared(cx, prepared, "chart-gallery-scroll");
     let mut visual = VisualTestContext::from_window(*window, cx);
     pump(cx, &mut visual);
@@ -230,18 +234,10 @@ fn chart_position(
     view: &ScriptViewHandle,
 ) -> gpui::Point<gpui::Pixels> {
     let bounds = chart_bounds(visual, view);
-    point(
-        px((bounds.x + 180.0) as f32),
-        px((bounds.y + 160.0) as f32),
-    )
+    point(px((bounds.x + 180.0) as f32), px((bounds.y + 160.0) as f32))
 }
 
-fn click_named(
-    visual: &mut VisualTestContext,
-    view: &ScriptViewHandle,
-    role: &str,
-    name: &str,
-) {
+fn click_named(visual: &mut VisualTestContext, view: &ScriptViewHandle, role: &str, name: &str) {
     let bounds = visual.update(|_, cx| {
         view.accessibility_snapshot(cx)
             .unwrap()
@@ -488,7 +484,10 @@ fn chart_adapter_normalizes_full_spec_series_kind(cx: &mut TestAppContext) {
     let Some(PrimitiveValue::Data(spec)) = primitive.props.get("spec") else {
         panic!("missing spec")
     };
-    assert_eq!(ChartSpec::from_ui_value(spec).unwrap().series[0].kind, ChartSeriesKind::Bar);
+    assert_eq!(
+        ChartSpec::from_ui_value(spec).unwrap().series[0].kind,
+        ChartSeriesKind::Bar
+    );
 }
 
 #[gpui::test]
@@ -1128,10 +1127,7 @@ fn canceling_preview_rebuilds_the_committed_frame(cx: &mut TestAppContext) {
     let committed = positions.lock().unwrap()[0];
     let bounds = chart_bounds(&mut visual, &view);
     visual.simulate_event(ScrollWheelEvent {
-        position: point(
-            px((bounds.x + 180.0) as f32),
-            px((bounds.y + 160.0) as f32),
-        ),
+        position: point(px((bounds.x + 180.0) as f32), px((bounds.y + 160.0) as f32)),
         delta: ScrollDelta::Pixels(point(px(0.0), px(400.0 * std::f32::consts::LN_2))),
         touch_phase: gpui::TouchPhase::Started,
         ..Default::default()
@@ -1194,12 +1190,7 @@ fn wheel_figure(
     delta: f32,
     phase: gpui::TouchPhase,
 ) {
-    let position = figure_coordinate(
-        visual,
-        view,
-        chart,
-        ChartPoint { x: 150.0, y: 140.0 },
-    );
+    let position = figure_coordinate(visual, view, chart, ChartPoint { x: 150.0, y: 140.0 });
     visual.simulate_event(ScrollWheelEvent {
         position,
         delta: ScrollDelta::Pixels(point(px(0.0), px(delta))),
@@ -1231,11 +1222,23 @@ fn view(ctx){row([one(ctx,"source",ctx.get_state("zs"),ctx.get_state("rs"),Fn("z
     );
     let mut visual = VisualTestContext::from_window(*window, cx);
     pump(cx, &mut visual);
-    wheel_figure(&mut visual, &view, "source", -400.0, gpui::TouchPhase::Started);
+    wheel_figure(
+        &mut visual,
+        &view,
+        "source",
+        -400.0,
+        gpui::TouchPhase::Started,
+    );
     wheel_figure(&mut visual, &view, "source", 0.0, gpui::TouchPhase::Ended);
     pump(cx, &mut visual);
     let linked = axis_window(&windows, "target");
-    wheel_figure(&mut visual, &view, "target", -200.0, gpui::TouchPhase::Started);
+    wheel_figure(
+        &mut visual,
+        &view,
+        "target",
+        -200.0,
+        gpui::TouchPhase::Started,
+    );
     pump(cx, &mut visual);
     let preview = axis_window(&windows, "target");
     wheel_figure(&mut visual, &view, "target", 0.0, gpui::TouchPhase::Ended);
@@ -1518,9 +1521,7 @@ fn idle_linked_charts_do_not_repeat_layout(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn linked_selection_keeps_each_chart_source_instead_of_last_writer_wins(
-    cx: &mut TestAppContext,
-) {
+fn linked_selection_keeps_each_chart_source_instead_of_last_writer_wins(cx: &mut TestAppContext) {
     cx.update(gpui_rhai::install);
     let script = r#"import "charts/chart" as chart;
  fn one(k,selected){chart::Chart(#{key:k,key_dimension:"id",selected_keys:[selected],data:[#{id:"a",x:0,y:1},#{id:"b",x:1,y:2},#{id:"c",x:2,y:3}],spec:#{title:k,link_group:"shared",link_domain:"time",series:[#{key:"s",kind:"scatter",encode:#{x:"x",y:"y",name:"id"}}]}}).with_style(style().width(px(280)).height(px(220)))}

@@ -30,6 +30,7 @@ pub struct ScriptLifecycle {
     state: LifecycleState,
     root: Option<Rc<UiNode>>,
     retained: crate::RetainedUiTree,
+    semantics: crate::CommittedSemanticFrame,
     suspended_at: Option<std::time::Instant>,
 }
 
@@ -39,6 +40,7 @@ pub(crate) struct ScriptLifecycleCheckpoint {
     state: LifecycleState,
     root: Option<Rc<UiNode>>,
     retained: crate::RetainedUiTree,
+    semantics: crate::CommittedSemanticFrame,
     suspended_at: Option<std::time::Instant>,
 }
 
@@ -57,6 +59,7 @@ impl ScriptLifecycle {
             state: self.state,
             root: self.root.clone(),
             retained: self.retained.clone(),
+            semantics: self.semantics.clone(),
             suspended_at: self.suspended_at,
         }
     }
@@ -66,6 +69,7 @@ impl ScriptLifecycle {
         self.state = checkpoint.state;
         self.root = checkpoint.root;
         self.retained = checkpoint.retained;
+        self.semantics = checkpoint.semantics;
         self.suspended_at = checkpoint.suspended_at;
     }
 
@@ -104,6 +108,7 @@ impl ScriptLifecycle {
             state: LifecycleState::Created,
             root: None,
             retained: crate::RetainedUiTree::new(),
+            semantics: crate::CommittedSemanticFrame::default(),
             suspended_at: None,
         })
     }
@@ -121,6 +126,11 @@ impl ScriptLifecycle {
     #[must_use]
     pub const fn retained(&self) -> &crate::RetainedUiTree {
         &self.retained
+    }
+
+    #[must_use]
+    pub const fn semantics(&self) -> &crate::CommittedSemanticFrame {
+        &self.semantics
     }
 
     #[must_use]
@@ -219,12 +229,14 @@ impl ScriptLifecycle {
             )?;
             self.retain_geometry_nodes(&retained)?;
             self.validate_signal_bindings(&root)?;
-            Ok((root, retained))
+            let semantics = crate::CommittedSemanticFrame::from_retained(&retained)?;
+            Ok((root, retained, semantics))
         })();
         match result {
-            Ok((root, retained)) => {
+            Ok((root, retained, semantics)) => {
                 self.trace_reconcile("full", retained.last_report());
                 self.retained = retained;
+                self.semantics = semantics;
                 self.state = LifecycleState::Running;
                 self.root = Some(Rc::new(root));
                 self.commit_runtime_transaction()?;
@@ -312,13 +324,14 @@ impl ScriptLifecycle {
             )?;
             self.retain_geometry_nodes(&retained)?;
             self.validate_signal_bindings(&root)?;
-            Ok(())
+            Ok(crate::CommittedSemanticFrame::from_retained(&retained)?)
         })();
         match result {
-            Ok(()) => {
+            Ok(semantics) => {
                 self.trace_reconcile("incremental", retained.last_report());
                 self.root = Some(Rc::new(root));
                 self.retained = retained;
+                self.semantics = semantics;
                 self.state = LifecycleState::Running;
                 self.commit_runtime_transaction()?;
                 Ok(true)
@@ -442,7 +455,7 @@ impl ScriptLifecycle {
                 changed = true;
             }
             if !changed {
-                return Ok(false);
+                return Ok((false, self.semantics.clone()));
             }
             let motion_reconcile_report = retained.reconcile(root.clone())?;
             self.validate_resource_budgets(engine, &retained, &root)?;
@@ -456,14 +469,18 @@ impl ScriptLifecycle {
             )?;
             self.retain_geometry_nodes(&retained)?;
             self.validate_signal_bindings(&root)?;
-            Ok(true)
+            Ok((
+                true,
+                crate::CommittedSemanticFrame::from_retained(&retained)?,
+            ))
         })();
         match result {
-            Ok(changed) => {
+            Ok((changed, semantics)) => {
                 if changed {
                     self.trace_reconcile("virtual", retained.last_report());
                     self.root = Some(Rc::new(root));
                     self.retained = retained;
+                    self.semantics = semantics;
                 }
                 self.commit_runtime_transaction()?;
                 Ok(changed)
@@ -844,7 +861,10 @@ impl ScriptLifecycle {
         }
         let snapshot = self.begin_runtime_transaction()?;
         let engine_checkpoint = engine.execution_checkpoint();
-        let result: Result<(UiNode, crate::RetainedUiTree), LifecycleError> = (|| {
+        let result: Result<
+            (UiNode, crate::RetainedUiTree, crate::CommittedSemanticFrame),
+            LifecycleError,
+        > = (|| {
             self.runtime
                 .try_borrow_mut()
                 .map_err(|_| LifecycleError::Borrowed)?
@@ -872,13 +892,15 @@ impl ScriptLifecycle {
             )?;
             self.retain_geometry_nodes(&retained)?;
             self.validate_signal_bindings(&root)?;
-            Ok((root, retained))
+            let semantics = crate::CommittedSemanticFrame::from_retained(&retained)?;
+            Ok((root, retained, semantics))
         })();
         match result {
-            Ok((root, retained)) => {
+            Ok((root, retained, semantics)) => {
                 self.trace_reconcile("reload", retained.last_report());
                 self.compiled = candidate;
                 self.retained = retained;
+                self.semantics = semantics;
                 self.state = LifecycleState::Running;
                 self.root = Some(Rc::new(root));
                 self.commit_runtime_transaction()?;
@@ -929,7 +951,10 @@ impl ScriptLifecycle {
             .clock
             .now();
         let elapsed = now.saturating_duration_since(suspended_at);
-        let result: Result<(UiNode, crate::RetainedUiTree), LifecycleError> = (|| {
+        let result: Result<
+            (UiNode, crate::RetainedUiTree, crate::CommittedSemanticFrame),
+            LifecycleError,
+        > = (|| {
             self.runtime
                 .try_borrow_mut()
                 .map_err(|_| LifecycleError::Borrowed)?
@@ -971,13 +996,15 @@ impl ScriptLifecycle {
             self.resume_runtime_mechanisms(now, elapsed)?;
             self.retain_geometry_nodes(&retained)?;
             self.validate_signal_bindings(&root)?;
-            Ok((root, retained))
+            let semantics = crate::CommittedSemanticFrame::from_retained(&retained)?;
+            Ok((root, retained, semantics))
         })();
         match result {
-            Ok((root, retained)) => {
+            Ok((root, retained, semantics)) => {
                 self.trace_reconcile("resume_reload", retained.last_report());
                 self.compiled = candidate;
                 self.retained = retained;
+                self.semantics = semantics;
                 self.root = Some(Rc::new(root));
                 self.suspended_at = None;
                 self.state = LifecycleState::Running;
@@ -1664,6 +1691,8 @@ pub enum LifecycleError {
     ElementRef(#[from] crate::ElementRefError),
     #[error(transparent)]
     Budget(#[from] crate::RuntimeBudgetError),
+    #[error(transparent)]
+    Accessibility(#[from] crate::AccessibilityError),
 }
 
 fn topmost_paths(paths: &BTreeSet<ComponentInstancePath>) -> Vec<ComponentInstancePath> {
@@ -2004,7 +2033,7 @@ mod tests {
         );
         let layout_request = |now| crate::geometry::LayoutMotionRequest {
             shared: None,
-            duration: Duration::from_millis(1_000),
+            duration: Duration::from_secs(1),
             easing: crate::MotionEasing::Linear,
             preference: crate::MotionPreference::Normal,
             now,
@@ -2469,7 +2498,7 @@ mod tests {
         );
         assert!(!lifecycle.suspend(&mut engine).unwrap());
 
-        manual.advance(Duration::from_millis(1_000));
+        manual.advance(Duration::from_secs(1));
         {
             let mut runtime = runtime.borrow_mut();
             let now = runtime.clock.now();
@@ -2880,6 +2909,35 @@ mod tests {
             ))
         ));
         assert!(lifecycle.retained().is_empty());
+    }
+
+    #[test]
+    fn invalid_native_semantics_reject_the_candidate_before_commit() {
+        let mut engine = RuntimeEngine::new();
+        let compiled = engine
+            .compile(
+                r#"fn view(ctx) {
+                    text("Mystery").accessibility_role("mystery_widget")
+                }"#,
+            )
+            .unwrap();
+        let mut lifecycle = ScriptLifecycle::new(
+            compiled,
+            Rc::new(RefCell::new(UiRuntimeState::new())),
+            ComponentInstancePath::root("App", "root"),
+            None,
+            BTreeMap::new(),
+            &ComponentStateSchema::default(),
+        )
+        .unwrap();
+        assert!(matches!(
+            lifecycle.start(&mut engine),
+            Err(LifecycleError::Accessibility(
+                crate::AccessibilityError::UnsupportedRole(role)
+            )) if role == "mystery_widget"
+        ));
+        assert!(lifecycle.retained().is_empty());
+        assert!(lifecycle.semantics().nodes().next().is_none());
     }
 
     #[test]

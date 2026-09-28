@@ -15,20 +15,27 @@ permissions:
 jobs:
   portable:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.94.0
+          toolchain: 1.95.0
           components: clippy,rustfmt
       - name: Install native Linux test dependencies
         run: |
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends \
             libxcb1-dev \
+            libfontconfig1-dev \
+            libvulkan1 \
+            libwayland-dev \
+            libx11-xcb-dev \
             libxkbcommon-dev \
-            libxkbcommon-x11-dev
+            libxkbcommon-x11-dev \
+            mesa-vulkan-drivers \
+            weston \
+            xvfb
       - name: Reject gpui-component dependencies
         run: |
           if cargo tree --workspace | grep -q 'gpui-component'; then
@@ -77,6 +84,8 @@ jobs:
           cargo build --release -p gpui-rhai --examples
           cargo build --release -p gpui-rhai --example chart_gallery --features charts
           cargo build --release -p gpui-rhai-cli
+      - name: Linux X11 and Wayland window smoke
+        run: bash scripts/linux-window-smoke.sh
       - name: Audit release artifacts
         run: bash scripts/audit-release-artifacts.sh
       # macOS launch, Metal, screenshot and unlocked-input gates run locally.

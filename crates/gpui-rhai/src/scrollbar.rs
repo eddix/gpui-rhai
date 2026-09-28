@@ -234,8 +234,8 @@ impl Element for ThemedScrollbar {
                 continue;
             }
             let (container, max_offset, scroll_position) = match axis {
-                Axis::Horizontal => (viewport.size.width, max.width, -offset.x),
-                Axis::Vertical => (viewport.size.height, max.height, -offset.y),
+                Axis::Horizontal => (viewport.size.width, max.x, -offset.x),
+                Axis::Vertical => (viewport.size.height, max.y, -offset.y),
             };
             if max_offset <= px(0.0) || container <= px(0.0) {
                 continue;

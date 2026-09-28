@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
 use gpui::{
-    App, AppContext, Application, Bounds, Context, InteractiveElement, IntoElement, ParentElement,
-    Render, StatefulInteractiveElement, Styled, Window, WindowBounds, WindowOptions, div, px, size,
+    App, AppContext, Bounds, Context, InteractiveElement, IntoElement, ParentElement, Render,
+    StatefulInteractiveElement, Styled, Window, WindowBounds, WindowOptions, div, px, size,
 };
 use gpui_rhai::{
     AssetData, EmbeddedScriptSource, EmbeddedScriptView, ModuleId, ScriptViewConfig,
@@ -234,10 +234,10 @@ impl Render for EmbeddedViewsDemo {
 }
 
 fn main() {
-    Application::new().run(|cx: &mut App| {
+    gpui_platform::application().run(|cx: &mut App| {
         install(cx);
         let bounds = Bounds::centered(None, size(px(900.0), px(420.0)), cx);
-        cx.on_window_closed(|cx| {
+        cx.on_window_closed(|cx, _| {
             if cx.windows().is_empty() {
                 cx.quit();
             }

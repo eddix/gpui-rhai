@@ -2,7 +2,7 @@
 {
   "id": "charts/chart",
   "export": "Chart",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": [],
   "capabilities": {}
@@ -17,7 +17,7 @@
 // Example: Chart(#{ key: "sales", data: rows, key_dimension: "id", spec })
 
 define_component(#{
-    metadata: #{ id: "charts/chart", "export": "Chart", version: "0.1.5",
+    metadata: #{ id: "charts/chart", "export": "Chart", version: "0.1.6",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{} },
     schema: #{
         props: #{

@@ -1,0 +1,39 @@
+{
+  "zed": {
+    "sha": "6fae7f351370811131fe0f614a14125f84819415",
+    "date": "2026-09-24T14:20:14Z",
+    "title": "sidebar: Fix window controls shifting when the sidebar is open (#64381)",
+    "url": "https://github.com/zed-industries/zed/commit/6fae7f351370811131fe0f614a14125f84819415"
+  },
+  "ce": {
+    "sha": "c39bf5abfa81e3851367be0830c6caf7360f6af3",
+    "date": "2026-09-23T02:56:36Z",
+    "title": "Merge pull request #275 from cameronpcampbell/ci_fix",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/c39bf5abfa81e3851367be0830c6caf7360f6af3"
+  },
+  "kit": {
+    "sha": "477a8d90bb318cfbf0bbdc0f29517d437ad003e1",
+    "date": "2026-09-24T10:58:35Z",
+    "title": "plot: Glide the tooltip's crosshair and dots in `Tooltip` itself (#3222)",
+    "url": "https://github.com/longbridge/gpui-kit/commit/477a8d90bb318cfbf0bbdc0f29517d437ad003e1"
+  },
+  "kit_release": {
+    "tag": "v0.6.6",
+    "sha": "9765ae2c9a5eccfa13891248a445991e6f6a09d8",
+    "gpui_pre": "0.3.6",
+    "upstream_sha": "bcf6582ce3500df93a8a39366640173e6786cea6",
+    "upstream_date": "2026-09-21T02:25:54Z"
+  },
+  "ce_sync_state": {
+    "last_synced_sha": "b1a7ef0cf66dfbf9d7661170c96d97c7df916c68",
+    "vendor_tip": "ae625934ba7c510bdf18099911e025fc9bee4e57",
+    "last_synced_date": "2026-09-03T01:45:45Z",
+    "upstream_url": "https://github.com/zed-industries/zed.git",
+    "upstream_ref": "main"
+  },
+  "gpui_rhai": {
+    "sha": "120ef2239079ee5e2205c05a9b982768b096a19a",
+    "gpui": "0.2.2",
+    "rhai": "1.26.0"
+  }
+}

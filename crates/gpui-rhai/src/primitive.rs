@@ -520,6 +520,14 @@ pub struct PrimitiveInstanceId {
 }
 
 impl PrimitiveInstanceId {
+    pub(crate) fn new(primitive: PrimitiveId, key: String, node: crate::NodeId) -> Self {
+        Self {
+            primitive,
+            key,
+            node,
+        }
+    }
+
     #[must_use]
     pub const fn primitive(&self) -> &PrimitiveId {
         &self.primitive
@@ -845,6 +853,34 @@ pub trait PrimitiveHandler {
         None
     }
 
+    /// Actions that the native primitive can perform for assistive technology.
+    ///
+    /// The default is intentionally empty: a primitive must not advertise an
+    /// operation merely because its outer Rhai node has a compatible role.
+    fn accessibility_actions(
+        &self,
+        _instance: &PrimitiveInstanceId,
+    ) -> Vec<gpui::AccessibleAction> {
+        Vec::new()
+    }
+
+    /// Perform one previously advertised accessibility action.
+    ///
+    /// # Errors
+    ///
+    /// Returns a bounded diagnostic when the instance is stale, disabled, or
+    /// the platform payload is invalid for the action.
+    fn perform_accessibility_action(
+        &mut self,
+        _instance: &PrimitiveInstanceId,
+        _action: gpui::AccessibleAction,
+        _data: Option<&gpui::accesskit::ActionData>,
+        _window: &mut Window,
+        _cx: &mut App,
+    ) -> Result<(), String> {
+        Err("primitive does not support accessibility actions".to_owned())
+    }
+
     /// Called once before the first render of a keyed lifecycle primitive.
     ///
     /// # Errors
@@ -1079,6 +1115,51 @@ impl PrimitiveRegistry {
                 Some((node.id(), projection))
             })
             .collect()
+    }
+
+    pub(crate) fn accessibility_actions(
+        &self,
+        instance: &PrimitiveInstanceId,
+    ) -> Vec<gpui::AccessibleAction> {
+        let Ok(inner) = self.inner.try_borrow() else {
+            return Vec::new();
+        };
+        inner
+            .entries
+            .get(&instance.primitive)
+            .map_or_else(Vec::new, |entry| {
+                entry.handler.accessibility_actions(instance)
+            })
+    }
+
+    pub(crate) fn perform_accessibility_action(
+        &self,
+        instance: &PrimitiveInstanceId,
+        action: gpui::AccessibleAction,
+        data: Option<&gpui::accesskit::ActionData>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Result<(), PrimitiveError> {
+        let mut inner = self
+            .inner
+            .try_borrow_mut()
+            .map_err(|_| PrimitiveError::Borrowed)?;
+        if !inner.mounted.contains_key(instance) {
+            return Err(PrimitiveError::MissingInstance(instance.clone()));
+        }
+        let entry = inner
+            .entries
+            .get_mut(&instance.primitive)
+            .ok_or_else(|| PrimitiveError::Unknown(instance.primitive.clone()))?;
+        guard_primitive_panic(&instance.primitive, "accessibility action", || {
+            entry
+                .handler
+                .perform_accessibility_action(instance, action, data, window, cx)
+        })?
+        .map_err(|message| PrimitiveError::Handler {
+            primitive: instance.primitive.clone(),
+            message,
+        })
     }
 
     /// Unmount keyed lifecycle instances absent from the successful node tree.
@@ -1657,6 +1738,8 @@ pub enum PrimitiveError {
     MissingKey(PrimitiveId),
     #[error("primitive `{0:?}` requires a retained NodeId renderer")]
     MissingRetainedIdentity(PrimitiveId),
+    #[error("primitive accessibility action targeted stale instance {0:?}")]
+    MissingInstance(PrimitiveInstanceId),
     #[error("primitive event emitter outlived its registry")]
     RegistryReleased,
     #[error("props for primitive `{primitive:?}` are invalid: {source}")]

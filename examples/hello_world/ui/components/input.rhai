@@ -2,7 +2,7 @@
 {
   "id": "components/input",
   "export": "Input",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": [],
   "capabilities": {}
@@ -19,7 +19,7 @@ define_component(#{
     metadata: #{
         id: "components/input",
         "export": "Input",
-        version: "0.1.5",
+        version: "0.1.6",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
         dependencies: [],
         capabilities: #{},
@@ -110,7 +110,7 @@ fn render_Input(ctx, props) {
     let read_only = if "read_only" in props { props.read_only } else { false };
     let error = if "error" in props { props.error } else { false };
     let border = if error { theme_color("danger") } else { theme_color("border") };
-    gpui_rhai::TextInputPrimitive(#{
+    let input = gpui_rhai::TextInputPrimitive(#{
         key: props.key,
         value: props.value,
         placeholder: optional_prop(props, "placeholder"),
@@ -139,6 +139,12 @@ fn render_Input(ctx, props) {
                     .text_color(theme_color("disabled"))
                     .opacity(0.72))
         )))
+        .disabled(disabled)
         .accessibility_role("text_field")
         .accessibility_label(props.label)
+        .accessibility_value(props.value)
+        .accessibility_invalid(error)
+        .accessibility_read_only(read_only);
+    let placeholder = optional_prop(props, "placeholder");
+    if placeholder != () { input.accessibility_placeholder(placeholder) } else { input }
 }

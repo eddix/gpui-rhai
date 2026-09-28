@@ -6,8 +6,8 @@ use std::time::Duration;
 use gpui::{
     Context, FocusHandle, ImageSource, InteractiveElement, IntoElement, Modifiers, MouseButton,
     MouseDownEvent, MouseUpEvent, ParentElement, Render, ScrollDelta, ScrollWheelEvent,
-    StatefulInteractiveElement, Styled, TestAppContext, VisualTestContext, Window, div, point, px,
-    size, img,
+    StatefulInteractiveElement, Styled, TestAppContext, VisualTestContext, Window, div, img, point,
+    px, size,
 };
 use gpui_rhai::{
     ActionId, AssetData, AssetId, AssetRegistry, ComponentInstancePath, EmbeddedScriptSource,
@@ -17,8 +17,8 @@ use gpui_rhai::{
     OverlayKind, OverlayNodeSpec, OverlayPlacement, PrimitiveEventEmitter, PrimitiveHandler,
     PrimitiveInstance, PrimitiveNode, PrimitiveProps, PrimitiveRegistry, PrimitiveTheme,
     PrimitiveValue, RestrictedModuleResolver, Rgba8, RuntimeEngine, ScriptLifecycle,
-    ScriptViewConfig, ScriptViewHandle, ScriptViewHost,
-    TextInputPrimitiveHandler, UiNode, UiNodeKind, UiRuntimeState, UiValue, init_text_area, init_text_input,
+    ScriptViewConfig, ScriptViewHandle, ScriptViewHost, TextInputPrimitiveHandler, UiNode,
+    UiNodeKind, UiRuntimeState, UiValue, init_text_area, init_text_input,
     text_input_primitive_descriptor,
 };
 
@@ -48,16 +48,14 @@ impl Render for ImageSourceProbe {
 
 fn render_image_source(cx: &mut TestAppContext, source: ImageSource) -> Vec<u8> {
     match source {
-        ImageSource::Image(image) => {
-            cx.update(|app| {
-                image
-                    .to_image_data(app.svg_renderer())
-                    .unwrap()
-                    .as_bytes(0)
-                    .unwrap()
-                    .to_vec()
-            })
-        }
+        ImageSource::Image(image) => cx.update(|app| {
+            image
+                .to_image_data(app.svg_renderer())
+                .unwrap()
+                .as_bytes(0)
+                .unwrap()
+                .to_vec()
+        }),
         ImageSource::Render(image) => image.as_bytes(0).unwrap().to_vec(),
         ImageSource::Resource(_) => panic!("test source must be memory-backed"),
         ImageSource::Custom(loader) => {
@@ -122,11 +120,12 @@ fn tinted_svg_image_bytes_match_gpui_bgra_contract(cx: &mut TestAppContext) {
         let handle = registry
             .load_image(&AssetId::parse("app/pixel").unwrap())
             .unwrap();
-        let source = color.map_or_else(
-            || registry.image_source(handle.opaque()),
-            |color| registry.image_source_tinted(handle.opaque(), Some(color)),
-        )
-        .unwrap();
+        let source = color
+            .map_or_else(
+                || registry.image_source(handle.opaque()),
+                |color| registry.image_source_tinted(handle.opaque(), Some(color)),
+            )
+            .unwrap();
         let is_async_variant = matches!(&source, ImageSource::Custom(_));
         let pixels = render_image_source(cx, source);
         if is_async_variant {
@@ -368,7 +367,10 @@ fn host_slot_preserves_an_independent_script_view_host(cx: &mut TestAppContext) 
             .advance_clock(std::time::Duration::from_millis(16));
         visual.run_until_parked();
     }
-    assert_eq!(visual.update(|_, cx| resident.last_error(cx).unwrap()), None);
+    assert_eq!(
+        visual.update(|_, cx| resident.last_error(cx).unwrap()),
+        None
+    );
     assert_eq!(resident.state(), gpui_rhai::ScriptViewState::Active);
     let snapshot = visual.update(|_, cx| resident.accessibility_snapshot(cx).unwrap());
     let node = snapshot
@@ -380,23 +382,74 @@ fn host_slot_preserves_an_independent_script_view_host(cx: &mut TestAppContext) 
 
 fn official_icon_assets() -> Vec<(String, AssetData)> {
     [
-        ("check", include_bytes!("../../../registry/assets/icons/check.svg").as_slice()),
-        ("close", include_bytes!("../../../registry/assets/icons/close.svg").as_slice()),
-        ("chevron_left", include_bytes!("../../../registry/assets/icons/chevron_left.svg").as_slice()),
-        ("chevron_right", include_bytes!("../../../registry/assets/icons/chevron_right.svg").as_slice()),
-        ("chevron_down", include_bytes!("../../../registry/assets/icons/chevron_down.svg").as_slice()),
-        ("chevron_up", include_bytes!("../../../registry/assets/icons/chevron_up.svg").as_slice()),
-        ("calendar", include_bytes!("../../../registry/assets/icons/calendar.svg").as_slice()),
-        ("date_previous", include_bytes!("../../../registry/assets/icons/date_previous.svg").as_slice()),
-        ("date_next", include_bytes!("../../../registry/assets/icons/date_next.svg").as_slice()),
-        ("disclosure_down", include_bytes!("../../../registry/assets/icons/disclosure_down.svg").as_slice()),
-        ("sort_ascending", include_bytes!("../../../registry/assets/icons/sort_ascending.svg").as_slice()),
-        ("sort_descending", include_bytes!("../../../registry/assets/icons/sort_descending.svg").as_slice()),
-        ("minus", include_bytes!("../../../registry/assets/icons/minus.svg").as_slice()),
-        ("plus", include_bytes!("../../../registry/assets/icons/plus.svg").as_slice()),
-        ("search", include_bytes!("../../../registry/assets/icons/search.svg").as_slice()),
-        ("info", include_bytes!("../../../registry/assets/icons/info.svg").as_slice()),
-        ("warning", include_bytes!("../../../registry/assets/icons/warning.svg").as_slice()),
+        (
+            "check",
+            include_bytes!("../../../registry/assets/icons/check.svg").as_slice(),
+        ),
+        (
+            "close",
+            include_bytes!("../../../registry/assets/icons/close.svg").as_slice(),
+        ),
+        (
+            "chevron_left",
+            include_bytes!("../../../registry/assets/icons/chevron_left.svg").as_slice(),
+        ),
+        (
+            "chevron_right",
+            include_bytes!("../../../registry/assets/icons/chevron_right.svg").as_slice(),
+        ),
+        (
+            "chevron_down",
+            include_bytes!("../../../registry/assets/icons/chevron_down.svg").as_slice(),
+        ),
+        (
+            "chevron_up",
+            include_bytes!("../../../registry/assets/icons/chevron_up.svg").as_slice(),
+        ),
+        (
+            "calendar",
+            include_bytes!("../../../registry/assets/icons/calendar.svg").as_slice(),
+        ),
+        (
+            "date_previous",
+            include_bytes!("../../../registry/assets/icons/date_previous.svg").as_slice(),
+        ),
+        (
+            "date_next",
+            include_bytes!("../../../registry/assets/icons/date_next.svg").as_slice(),
+        ),
+        (
+            "disclosure_down",
+            include_bytes!("../../../registry/assets/icons/disclosure_down.svg").as_slice(),
+        ),
+        (
+            "sort_ascending",
+            include_bytes!("../../../registry/assets/icons/sort_ascending.svg").as_slice(),
+        ),
+        (
+            "sort_descending",
+            include_bytes!("../../../registry/assets/icons/sort_descending.svg").as_slice(),
+        ),
+        (
+            "minus",
+            include_bytes!("../../../registry/assets/icons/minus.svg").as_slice(),
+        ),
+        (
+            "plus",
+            include_bytes!("../../../registry/assets/icons/plus.svg").as_slice(),
+        ),
+        (
+            "search",
+            include_bytes!("../../../registry/assets/icons/search.svg").as_slice(),
+        ),
+        (
+            "info",
+            include_bytes!("../../../registry/assets/icons/info.svg").as_slice(),
+        ),
+        (
+            "warning",
+            include_bytes!("../../../registry/assets/icons/warning.svg").as_slice(),
+        ),
     ]
     .into_iter()
     .map(|(name, bytes)| {
@@ -459,9 +512,9 @@ impl Render for KeyboardHost {
             .on_key_down(|event, window, cx| {
                 if event.keystroke.key.as_str() == "tab" {
                     if event.keystroke.modifiers.shift {
-                        window.focus_prev();
+                        window.focus_prev(cx);
                     } else {
-                        window.focus_next();
+                        window.focus_next(cx);
                     }
                     cx.stop_propagation();
                 }
@@ -488,7 +541,7 @@ impl Render for HostCallbackTestHost {
             .on_click(move |_, _, _| *parent_clicks.borrow_mut() += 1)
             .on_key_down(move |event, window, cx| {
                 if event.keystroke.key.as_str() == "tab" {
-                    window.focus_next();
+                    window.focus_next(cx);
                     cx.stop_propagation();
                 } else {
                     bubbled_keys
@@ -559,7 +612,7 @@ fn tab_order_skips_disabled_nodes_and_enter_activates_focus(cx: &mut TestAppCont
     });
     let window = cx.add_window(|window, cx| {
         let host_focus = cx.focus_handle();
-        host_focus.focus(window);
+        host_focus.focus(window, cx);
         KeyboardHost {
             root: Rc::new(RefCell::new(root)),
             tree: gpui_rhai::RetainedUiTree::new(),
@@ -603,7 +656,7 @@ fn host_callbacks_dispatch_without_a_script_runtime(cx: &mut TestAppContext) {
     let bubbled_keys_for_window = Rc::clone(&bubbled_keys);
     let window = cx.add_window(|window, cx| {
         let host_focus = cx.focus_handle();
-        host_focus.focus(window);
+        host_focus.focus(window, cx);
         HostCallbackTestHost {
             root,
             host_focus,
@@ -668,7 +721,7 @@ fn explicit_occlusion_blocks_pointer_hits_to_painted_siblings(cx: &mut TestAppCo
     let root = UiNode::box_node(vec![back, front]).with_style(&gpui_rhai::Style::new().relative());
     let window = cx.add_window(|window, cx| {
         let host_focus = cx.focus_handle();
-        host_focus.focus(window);
+        host_focus.focus(window, cx);
         KeyboardHost {
             root: Rc::new(RefCell::new(root)),
             tree: gpui_rhai::RetainedUiTree::new(),
@@ -741,7 +794,7 @@ fn text_input_primitive_dispatches_host_callbacks(cx: &mut TestAppContext) {
     let dispatcher = NodeEventDispatcher::new(|_, _, _, _, _| EventPropagation::Handled);
     let window = cx.add_window(|window, cx| {
         let host_focus = cx.focus_handle();
-        host_focus.focus(window);
+        host_focus.focus(window, cx);
         KeyboardHost {
             root: Rc::new(RefCell::new(root)),
             tree: gpui_rhai::RetainedUiTree::new(),
@@ -819,7 +872,7 @@ fn custom_primitive_rejects_invalid_payload_before_host_callback(cx: &mut TestAp
     let dispatcher = NodeEventDispatcher::new(|_, _, _, _, _| EventPropagation::Handled);
     let _window = cx.add_window(|window, cx| {
         let host_focus = cx.focus_handle();
-        host_focus.focus(window);
+        host_focus.focus(window, cx);
         KeyboardHost {
             root: Rc::new(RefCell::new(root)),
             tree: gpui_rhai::RetainedUiTree::new(),
@@ -885,7 +938,7 @@ fn nested_overlay_renders_inside_parent_deferred_subtree(cx: &mut TestAppContext
     .with_key("parent-dialog");
     let window = cx.add_window(|window, cx| {
         let host_focus = cx.focus_handle();
-        host_focus.focus(window);
+        host_focus.focus(window, cx);
         KeyboardHost {
             root: Rc::new(RefCell::new(root)),
             tree: gpui_rhai::RetainedUiTree::new(),
@@ -983,9 +1036,7 @@ fn wait_for_view_text(
 }
 
 #[gpui::test]
-fn embedded_view_suspend_resume_retains_state_and_rejects_new_elements(
-    cx: &mut TestAppContext,
-) {
+fn embedded_view_suspend_resume_retains_state_and_rejects_new_elements(cx: &mut TestAppContext) {
     cx.update(gpui_rhai::install);
     let entry = ModuleId::parse("main").unwrap();
     let prepared = EmbeddedScriptView::new(
@@ -1026,7 +1077,11 @@ fn embedded_view_suspend_resume_retains_state_and_rejects_new_elements(
 
     let view = captured.borrow().as_ref().unwrap().clone();
     let mut visual = VisualTestContext::from_window(*window, cx);
-    assert!(visual.update(|window, cx| view.suspend(window, cx)).unwrap());
+    assert!(
+        visual
+            .update(|window, cx| view.suspend(window, cx))
+            .unwrap()
+    );
     assert_eq!(view.state(), gpui_rhai::ScriptViewState::Suspended);
     assert!(matches!(
         view.element(),
@@ -1045,9 +1100,7 @@ fn embedded_view_suspend_resume_retains_state_and_rejects_new_elements(
 }
 
 #[gpui::test]
-fn element_bounds_self_heals_after_first_prepaint_and_resolves_event_keys(
-    cx: &mut TestAppContext,
-) {
+fn element_bounds_self_heals_after_first_prepaint_and_resolves_event_keys(cx: &mut TestAppContext) {
     cx.update(gpui_rhai::install);
     let entry = ModuleId::parse("main").unwrap();
     let prepared = EmbeddedScriptView::new(
@@ -1846,6 +1899,9 @@ fn automation_commands_use_mounted_handlers_actions_and_clock(cx: &mut TestAppCo
 
 #[gpui::test]
 fn async_workers_wake_the_view_without_input_or_manual_poll(cx: &mut TestAppContext) {
+    // This test deliberately coordinates GPUI with real OS worker threads.
+    // gpui-pre's deterministic scheduler requires that boundary to be explicit.
+    cx.executor().allow_parking();
     // This intentionally does not advance either the GPUI timer or the Rhai
     // runtime clock. Worker completion itself must schedule the owning entity.
     use gpui_rhai::{
@@ -1860,7 +1916,9 @@ fn async_workers_wake_the_view_without_input_or_manual_poll(cx: &mut TestAppCont
             let UiValue::String(value) = input else {
                 return Err("load expects a string".to_owned());
             };
-            Ok(TaskWork::new(move || Ok(UiValue::String(value.to_uppercase()))))
+            Ok(TaskWork::new(move || {
+                Ok(UiValue::String(value.to_uppercase()))
+            }))
         }
     }
 
@@ -2092,6 +2150,8 @@ fn async_workers_wake_the_view_without_input_or_manual_poll(cx: &mut TestAppCont
 
 #[gpui::test]
 fn effect_restart_still_delivers_async_task_results(cx: &mut TestAppContext) {
+    // The capability runs on gpui-rhai's real worker pool by contract.
+    cx.executor().allow_parking();
     // Companion to the async delivery guard above: the first effect
     // activation delivers fine, but a *replacement* activation (dependency
     // change -> cleanup + start) must also deliver its task results.
@@ -2254,6 +2314,8 @@ fn effect_restart_still_delivers_async_task_results(cx: &mut TestAppContext) {
 
 #[gpui::test]
 fn effect_start_state_write_restarts_sibling_effect_and_delivers(cx: &mut TestAppContext) {
+    // The capability runs on gpui-rhai's real worker pool by contract.
+    cx.executor().allow_parking();
     // Exact downstream shape (omb detail widget): effect A's start callback
     // writes component state; that state is effect B's dependency, so B
     // restarts; B's replacement activation starts a task. The task result
@@ -2390,6 +2452,8 @@ fn effect_start_state_write_restarts_sibling_effect_and_delivers(cx: &mut TestAp
 
 #[gpui::test]
 fn subscription_callback_state_write_restarts_effect_and_delivers(cx: &mut TestAppContext) {
+    // The subscription and restarted task intentionally use real worker threads.
+    cx.executor().allow_parking();
     // Third companion: the sibling-effect restart is triggered from a
     // *subscription* callback (downstream: a store-watch push), not a click
     // or an effect start. The restarted effect's task must still deliver.
@@ -2628,7 +2692,7 @@ fn native_input_updates_rhai_state_and_clipboard_with_unicode(cx: &mut TestAppCo
     });
     let window = cx.add_window(|window, cx| {
         let host_focus = cx.focus_handle();
-        host_focus.focus(window);
+        host_focus.focus(window, cx);
         KeyboardHost {
             root,
             tree: gpui_rhai::RetainedUiTree::new(),
@@ -2879,7 +2943,7 @@ fn read_only_input_allows_selection_and_copy_but_rejects_edits(cx: &mut TestAppC
     });
     let window = cx.add_window(|window, cx| {
         let host_focus = cx.focus_handle();
-        host_focus.focus(window);
+        host_focus.focus(window, cx);
         KeyboardHost {
             root,
             tree: gpui_rhai::RetainedUiTree::new(),
@@ -3006,7 +3070,7 @@ fn menu_trigger_routes_roving_and_enter_keys_through_current_rhai_state(cx: &mut
     });
     let window = cx.add_window(|window, cx| {
         let host_focus = cx.focus_handle();
-        host_focus.focus(window);
+        host_focus.focus(window, cx);
         KeyboardHost {
             root,
             tree: gpui_rhai::RetainedUiTree::new(),
@@ -4169,7 +4233,9 @@ fn table_column_resize_previews_natively_and_emits_once_on_commit(cx: &mut TestA
     assert!((preview - 240.0).abs() < 1.0, "preview={preview}");
     let preview_texts = palette_texts(&mut visual, &view);
     assert!(
-        preview_texts.iter().any(|text| text.starts_with("resize:0:")),
+        preview_texts
+            .iter()
+            .any(|text| text.starts_with("resize:0:")),
         "pointer-move preview must not invoke Rhai: {preview_texts:?}"
     );
 
@@ -4177,7 +4243,9 @@ fn table_column_resize_previews_natively_and_emits_once_on_commit(cx: &mut TestA
     visual.run_until_parked();
     let committed_texts = palette_texts(&mut visual, &view);
     assert!(
-        committed_texts.iter().any(|text| text == "resize:1:240" || text == "resize:1:240.0"),
+        committed_texts
+            .iter()
+            .any(|text| text == "resize:1:240" || text == "resize:1:240.0"),
         "mouse-up must emit exactly one semantic resize event: {committed_texts:?}"
     );
 
@@ -4273,7 +4341,9 @@ fn table_column_resize_previews_natively_and_emits_once_on_commit(cx: &mut TestA
     visual.run_until_parked();
     let keyboard_texts = palette_texts(&mut visual, &view);
     assert!(
-        keyboard_texts.iter().any(|text| text == "resize:3:56" || text == "resize:3:56.0"),
+        keyboard_texts
+            .iter()
+            .any(|text| text == "resize:3:56" || text == "resize:3:56.0"),
         "focused separators must support logical arrow-key resizing: {keyboard_texts:?}"
     );
 }
@@ -4390,7 +4460,12 @@ fn native_collection_table_autofit_stays_on_the_realized_rust_path(cx: &mut Test
         "Account 0030",
         "retained virtual rows must replay their scoped width signals after auto-fit",
     );
-    assert!(visual.update(|_, cx| view.last_error(cx)).unwrap().is_none());
+    assert!(
+        visual
+            .update(|_, cx| view.last_error(cx))
+            .unwrap()
+            .is_none()
+    );
 }
 
 #[gpui::test]
@@ -4761,9 +4836,11 @@ fn mounted_view_exposes_failed_render_while_retaining_last_good_root(cx: &mut Te
         diagnostic.component_state[0].fields["secret"],
         UiValue::String("<redacted>".to_owned())
     );
-    assert!(!serde_json::to_string(&diagnostic)
-        .unwrap()
-        .contains("diagnostic-secret"));
+    assert!(
+        !serde_json::to_string(&diagnostic)
+            .unwrap()
+            .contains("diagnostic-secret")
+    );
     let root = visual.update(|_, cx| view.root(cx).unwrap().unwrap());
     let mut texts = Vec::new();
     node_texts(&root, &mut texts);
@@ -4807,7 +4884,12 @@ fn mounted_view_exposes_failed_render_while_retaining_last_good_root(cx: &mut Te
             )
         })
         .unwrap();
-    assert!(visual.update(|_, cx| view.last_error(cx)).unwrap().is_none());
+    assert!(
+        visual
+            .update(|_, cx| view.last_error(cx))
+            .unwrap()
+            .is_none()
+    );
     assert!(
         visual
             .update(|_, cx| view.last_diagnostic(cx))
@@ -5178,7 +5260,7 @@ fn modal_dialog_reclaims_focus_stolen_by_an_embedding_host(cx: &mut TestAppConte
 
     let (view, external_focus) = captured.borrow().as_ref().unwrap().clone();
     let mut visual = VisualTestContext::from_window(*window, cx);
-    visual.update(|window, _| external_focus.focus(window));
+    visual.update(|window, cx| external_focus.focus(window, cx));
     // The Host focus request dirties the window. During that frame, the modal
     // invariant sees that focus is outside its panel and reclaims it.
     visual.run_until_parked();
@@ -5785,22 +5867,22 @@ fn command_dialog_filters_from_native_input_and_executes_with_enter(cx: &mut Tes
     visual.run_until_parked();
     let texts_after_input = palette_texts(&mut visual, &view);
     assert!(
-        texts_after_input.contains(&"command:active=open changes=0 last=none actions=0 open=true query=file".to_owned())
-            && texts_after_input.contains(&"New file".to_owned())
+        texts_after_input.contains(
+            &"command:active=open changes=0 last=none actions=0 open=true query=file".to_owned()
+        ) && texts_after_input.contains(&"New file".to_owned())
             && texts_after_input.contains(&"Open file".to_owned())
             && !texts_after_input.contains(&"No commands found".to_owned()),
         "the focused CommandDialog input must filter before submit: {texts_after_input:?}"
     );
-    let initial_open_checked = visual.update(|_, cx| {
+    let initial_open_selected = visual.update(|_, cx| {
         view.accessibility_snapshot(cx)
             .unwrap()
             .find_by_role_and_name("option", "Open file")
             .next()
             .unwrap()
-            .checked
-            .clone()
+            .selected
     });
-    assert_eq!(initial_open_checked, Some(UiValue::Bool(true)));
+    assert_eq!(initial_open_selected, Some(true));
     visual.simulate_keystrokes("down");
     visual.run_until_parked();
     assert!(palette_texts(&mut visual, &view).contains(
@@ -5847,15 +5929,19 @@ fn command_dialog_filters_from_native_input_and_executes_with_enter(cx: &mut Tes
     let texts = palette_texts(&mut visual, &view);
     let error = visual.update(|_, cx| view.last_error(cx));
     assert!(
-        texts.contains(&"command:active=open changes=2 last=open actions=1 open=false query=file".to_owned()),
+        texts.contains(
+            &"command:active=open changes=2 last=open actions=1 open=false query=file".to_owned()
+        ),
         "command dialog did not execute: search={search:?} texts={texts:?} error={error:?}"
     );
     visual.update(|window, cx| {
         let snapshot = view.automation_snapshot(cx).unwrap();
-        assert!(!snapshot
-            .nodes
-            .iter()
-            .any(|node| node.role == "option" && node.name == "Open file"));
+        assert!(
+            !snapshot
+                .nodes
+                .iter()
+                .any(|node| node.role == "option" && node.name == "Open file")
+        );
         let query = view.automate(
             gpui_rhai::AutomationCommand::Query {
                 locator: gpui_rhai::AutomationLocator::RoleName {
@@ -5876,9 +5962,7 @@ fn command_dialog_filters_from_native_input_and_executes_with_enter(cx: &mut Tes
 }
 
 #[gpui::test]
-fn grouped_command_initial_reveal_keeps_its_first_header_natural(
-    cx: &mut TestAppContext,
-) {
+fn grouped_command_initial_reveal_keeps_its_first_header_natural(cx: &mut TestAppContext) {
     struct CommandData(gpui_rhai::NativeCollection);
     impl gpui_rhai::ScriptViewExtension for CommandData {
         fn configure_runtime(&self, runtime: &mut UiRuntimeState) -> Result<(), String> {
@@ -6037,9 +6121,7 @@ fn grouped_command_initial_reveal_keeps_its_first_header_natural(
 }
 
 #[gpui::test]
-fn command_preserves_manual_scroll_and_reveals_controlled_active_item(
-    cx: &mut TestAppContext,
-) {
+fn command_preserves_manual_scroll_and_reveals_controlled_active_item(cx: &mut TestAppContext) {
     cx.update(gpui_rhai::install);
     let entry = ModuleId::parse("main").unwrap();
     let prepared = EmbeddedScriptView::new(
@@ -6207,7 +6289,10 @@ fn command_preserves_manual_scroll_and_reveals_controlled_active_item(
             .next()
             .and_then(|node| node.geometry)
     });
-    assert!(active.is_some(), "active option must participate in the frame");
+    assert!(
+        active.is_some(),
+        "active option must participate in the frame"
+    );
 }
 
 #[gpui::test]
@@ -6281,7 +6366,10 @@ fn code_and_diff_viewers_mount_native_document_surfaces(cx: &mut TestAppContext)
                 .next()
                 .unwrap_or_else(|| panic!("missing native document {label}"));
             let bounds = node.geometry.unwrap().visual;
-            assert!(bounds.width > 100.0 && bounds.height > 100.0, "{label}: {bounds:?}");
+            assert!(
+                bounds.width > 100.0 && bounds.height > 100.0,
+                "{label}: {bounds:?}"
+            );
         }
     });
     let diff_bounds = visual.update(|_, cx| {
@@ -6331,7 +6419,7 @@ fn native_text_document_revision_invalidates_exact_viewer_reader(cx: &mut TestAp
                         1,
                         "let port = 80;\nlet enabled = true;\n",
                     )
-                        .unwrap(),
+                    .unwrap(),
                 )
                 .map_err(|error| error.to_string())
         }
@@ -6429,8 +6517,7 @@ fn native_text_document_revision_invalidates_exact_viewer_reader(cx: &mut TestAp
         .update(|_, cx| {
             view.replace_native_text_document(
                 "source",
-                gpui_rhai::NativeTextDocument::new("source", 2, "let port = 443;\n")
-                    .unwrap(),
+                gpui_rhai::NativeTextDocument::new("source", 2, "let port = 443;\n").unwrap(),
                 cx,
             )
         })
@@ -6479,14 +6566,18 @@ fn component_gallery_switches_categories_and_live_themes(cx: &mut TestAppContext
     assert!(initial.contains(&"ACTIONS".to_owned()));
     dispatch_script_button(&mut visual, &view, "Code & diff");
     let documents = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
-    assert!(documents
-        .find_by_role_and_name("document", "Rhai source")
-        .next()
-        .is_some());
-    assert!(documents
-        .find_by_role_and_name("document", "Server A compared with Server B")
-        .next()
-        .is_some());
+    assert!(
+        documents
+            .find_by_role_and_name("document", "Rhai source")
+            .next()
+            .is_some()
+    );
+    assert!(
+        documents
+            .find_by_role_and_name("document", "Server A compared with Server B")
+            .next()
+            .is_some()
+    );
     dispatch_script_button(&mut visual, &view, "Forms");
     let forms = palette_texts(&mut visual, &view);
     assert!(forms.contains(&"INPUTS".to_owned()));
@@ -6825,7 +6916,10 @@ fn host_none_policy_snaps_layout_motion_in_the_presented_frame(cx: &mut TestAppC
             .geometry
             .unwrap()
     });
-    assert_eq!(later.visual.x, 100.0, "None must not retain a hidden animation");
+    assert_eq!(
+        later.visual.x, 100.0,
+        "None must not retain a hidden animation"
+    );
 }
 
 #[gpui::test]
@@ -6900,10 +6994,7 @@ fn canvas_morph_hit_testing_follows_the_presented_path(cx: &mut TestAppContext) 
             .visual
     });
     visual.simulate_click(
-        point(
-            px((bounds.x + 100.0) as f32),
-            px((bounds.y + 80.0) as f32),
-        ),
+        point(px((bounds.x + 100.0) as f32), px((bounds.y + 80.0) as f32)),
         Modifiers::default(),
     );
     visual.run_until_parked();
@@ -6915,10 +7006,7 @@ fn canvas_morph_hit_testing_follows_the_presented_path(cx: &mut TestAppContext) 
             .is_some()
     }));
     visual.simulate_click(
-        point(
-            px((bounds.x + 100.0) as f32),
-            px((bounds.y + 20.0) as f32),
-        ),
+        point(px((bounds.x + 100.0) as f32), px((bounds.y + 20.0) as f32)),
         Modifiers::default(),
     );
     visual.run_until_parked();

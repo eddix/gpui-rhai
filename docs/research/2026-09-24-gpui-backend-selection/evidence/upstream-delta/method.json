@@ -1,0 +1,24 @@
+{
+  "date": "2026-09-24",
+  "scope": "Separate upstream GPUI changes from gpui-kit/gpui-base additions; evaluate direct gpui-pre consumption and eventual return to official crates.",
+  "decision": "3D engine belongs to Rust Host/extension. Prefer upgrading upstream core directly through gpui-pre as a distribution channel; adopting Base is a separate feature/architecture decision.",
+  "original_gpui": "0.2.2",
+  "original_vcs": "69e2130295c2649963eb639fc70b4f2ee8ea1624 (published metadata dirty=true)",
+  "snapshot": "gpui-pre 0.3.6 / zed bcf6582ce3500df93a8a39366640173e6786cea6",
+  "local_check": {
+    "rust_1_94_0": "dependency compile failed on std::hint::cold_path",
+    "rust_1_96_0_nightly": "cargo check passed after correcting the probe trait import",
+    "nightly_version": "rustc 1.96.0-nightly (02c7f9bec 2026-04-10)",
+    "runtime_execution": false,
+    "requires_nightly_proven": false,
+    "note": "cold_path stabilized in Rust 1.95; no claim that a full production migration or stable-toolchain matrix has passed."
+  },
+  "dependency_tree": {
+    "gpui-kit": false,
+    "gpui-base": false,
+    "gpui-component": false,
+    "gpui-shell": false
+  },
+  "official_release_cadence_statement": "Specific maintainer statement not independently located in this search; user was asked asynchronously for original link. No publishing schedule asserted.",
+  "official_gpui_platform_api_lookup": "crates.io API returned 404 at lookup time. Main-branch README is not evidence that the split family has been published."
+}

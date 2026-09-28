@@ -1,0 +1,27 @@
+{
+  "crate": "gpui",
+  "latest": "0.2.2",
+  "repository": "https://github.com/zed-industries/zed",
+  "versions": [
+    {
+      "num": "0.2.2",
+      "date": "2025-10-22T03:56:29.835700Z",
+      "yanked": false
+    },
+    {
+      "num": "0.2.1",
+      "date": "2025-10-14T04:50:51.658529Z",
+      "yanked": false
+    },
+    {
+      "num": "0.2.1-test3",
+      "date": "2025-10-14T04:07:15.753179Z",
+      "yanked": true
+    },
+    {
+      "num": "0.2.0",
+      "date": "2025-10-09T04:28:33.248962Z",
+      "yanked": false
+    }
+  ]
+}

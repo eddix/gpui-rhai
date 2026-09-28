@@ -504,7 +504,7 @@ impl ScriptOverlayElement {
                 state.previous_focus = window.focused(cx).map(|focus| focus.downgrade());
             }
             if self.spec.modal || self.spec.kind == OverlayKind::Menu {
-                state.panel_focus.focus(window);
+                state.panel_focus.focus(window, cx);
                 if self.spec.initial_focus == OverlayInitialFocus::First {
                     // Initial focus is bound to the closed -> open presentation
                     // cycle, never to render: controlled contents re-render on
@@ -519,14 +519,14 @@ impl ScriptOverlayElement {
                         if !panel.is_focused(window) {
                             return;
                         }
-                        window.focus_next();
+                        window.focus_next(cx);
                         let inside = window
                             .focused(cx)
                             .is_some_and(|focused| panel.contains(&focused, window));
                         if !inside {
                             // No focusable content: fall back to the panel so
                             // focus cannot escape the overlay.
-                            panel.focus(window);
+                            panel.focus(window, cx);
                         }
                     });
                 }
@@ -538,10 +538,10 @@ impl ScriptOverlayElement {
                     .take()
                     .and_then(|focus| focus.upgrade())
                 {
-                    previous.focus(window);
+                    previous.focus(window, cx);
                 }
             } else {
-                state.trigger_focus.focus(window);
+                state.trigger_focus.focus(window, cx);
             }
         }
         if self.spec.open && self.spec.modal && !state.panel_focus.contains_focused(window, cx) {
@@ -551,7 +551,7 @@ impl ScriptOverlayElement {
             // very frame instead of relying on a focus-out listener (whose old
             // path is not observable for every programmatic focus transfer in
             // GPUI 0.2.x).
-            state.panel_focus.focus(window);
+            state.panel_focus.focus(window, cx);
         }
         state.was_open = self.spec.open;
     }
@@ -591,9 +591,9 @@ impl ScriptOverlayElement {
                 let key = event.keystroke.key.as_str();
                 if key == "tab" {
                     if event.keystroke.modifiers.shift {
-                        window.focus_prev();
+                        window.focus_prev(cx);
                     } else {
-                        window.focus_next();
+                        window.focus_next(cx);
                     }
                     cx.stop_propagation();
                     return;
@@ -683,12 +683,12 @@ impl ScriptOverlayElement {
                     }
                 } else if key == "tab" && modal {
                     if event.keystroke.modifiers.shift {
-                        window.focus_prev();
+                        window.focus_prev(cx);
                     } else {
-                        window.focus_next();
+                        window.focus_next(cx);
                     }
                     if !focus.contains_focused(window, cx) {
-                        focus.focus(window);
+                        focus.focus(window, cx);
                     }
                     cx.stop_propagation();
                 }
@@ -780,12 +780,14 @@ fn overlay_focus_shadow(
             offset: point(px(0.0), px(0.0)),
             blur_radius: px(0.0),
             spread_radius: px(4.0),
+            inset: false,
         },
         BoxShadow {
             color: rgba(surface.as_rgba_hex()).into(),
             offset: point(px(0.0), px(0.0)),
             blur_radius: px(0.0),
             spread_radius: px(2.0),
+            inset: false,
         },
     ])
 }

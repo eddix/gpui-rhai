@@ -2,7 +2,7 @@
 {
   "id": "components/icon",
   "export": "Icon",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": [],
   "capabilities": {},
@@ -19,7 +19,7 @@ define_component(#{
     metadata: #{
         id: "components/icon",
         "export": "Icon",
-        version: "0.1.5",
+        version: "0.1.6",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
         dependencies: [],
         capabilities: #{},

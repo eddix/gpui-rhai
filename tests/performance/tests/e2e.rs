@@ -8,8 +8,8 @@ use std::time::{Duration, Instant};
 use gpui::{Context, IntoElement, Render, TestAppContext, VisualTestContext, Window, px, size};
 use gpui_rhai::{
     AutomationCommand, AutomationLocator, ExecutionOperation, ExecutionTiming, ScriptViewConfig,
-    ScriptViewExtension, ScriptViewHandle, ScriptViewHost, ScriptViewPerformanceSnapshot,
-    UiValue, VirtualCollectionId,
+    ScriptViewExtension, ScriptViewHandle, ScriptViewHost, ScriptViewPerformanceSnapshot, UiValue,
+    VirtualCollectionId,
 };
 use serde::Serialize;
 

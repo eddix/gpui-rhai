@@ -1,0 +1,6 @@
+gpui-kit v0.6.1
+├── gpui-base v0.6.1
+├── gpui-kit-assets v0.6.1
+├── gpui-pre v0.3.1
+│   [build-dependencies]
+└── gpui-pre-platform v0.3.1

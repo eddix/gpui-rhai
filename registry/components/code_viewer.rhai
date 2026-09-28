@@ -2,7 +2,7 @@
 {
   "id": "components/code_viewer",
   "export": "CodeViewer",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": [],
   "capabilities": {}
@@ -16,7 +16,7 @@
 // Example: CodeViewer(#{ key: "source", source: rhai_source, label: "Rhai source", language: "rhai" })
 
 define_component(#{
-    metadata: #{ id: "components/code_viewer", "export": "CodeViewer", version: "0.1.5",
+    metadata: #{ id: "components/code_viewer", "export": "CodeViewer", version: "0.1.6",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{} },
     schema: #{
         props: #{

@@ -1,0 +1,458 @@
+[
+  {
+    "sha": "c39bf5abfa81e3851367be0830c6caf7360f6af3",
+    "date": "2026-09-23T02:56:36Z",
+    "title": "Merge pull request #275 from cameronpcampbell/ci_fix",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/c39bf5abfa81e3851367be0830c6caf7360f6af3"
+  },
+  {
+    "sha": "b9741369990c92347515e3ed5562be6e0747a11c",
+    "date": "2026-09-23T02:49:24Z",
+    "title": "Remove stale Taplo CI dependency",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/b9741369990c92347515e3ed5562be6e0747a11c"
+  },
+  {
+    "sha": "1086d4de39f364559bbdd1ac120ccd1a9f7f28fe",
+    "date": "2026-09-22T04:12:22Z",
+    "title": "fuhget taplo",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/1086d4de39f364559bbdd1ac120ccd1a9f7f28fe"
+  },
+  {
+    "sha": "3ebf5de450587f61af876268bc57168705b2c6b2",
+    "date": "2026-09-21T00:51:59Z",
+    "title": "gpui_web: Leave IME-owned keydowns to the browser (#236)",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/3ebf5de450587f61af876268bc57168705b2c6b2"
+  },
+  {
+    "sha": "55e9ffa646b53a722139e2a5c283122a4620b68d",
+    "date": "2026-09-18T16:05:53Z",
+    "title": "add AssetRegistry to directly store pre-loaded assets and wrap AssetSource (#259)",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/55e9ffa646b53a722139e2a5c283122a4620b68d"
+  },
+  {
+    "sha": "69135042fe796c2a83eaabef65a2552600fd0beb",
+    "date": "2026-09-18T15:37:43Z",
+    "title": "add pass-through MouseUpEvent to DropListener::on_drop (#270)",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/69135042fe796c2a83eaabef65a2552600fd0beb"
+  },
+  {
+    "sha": "8e36ac0921443f036bcc41f3f988a8285a734dc0",
+    "date": "2026-09-15T16:03:12Z",
+    "title": "disable transient flag on msaa_texture for wgpu rendering, so linux rendering functions again without throwing validation errors (#258)",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/8e36ac0921443f036bcc41f3f988a8285a734dc0"
+  },
+  {
+    "sha": "bdf83b1912a89784398d75f48c53eb343cb0a852",
+    "date": "2026-09-15T12:50:45Z",
+    "title": "Merge pull request #247 from temportalflux/hit-test",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/bdf83b1912a89784398d75f48c53eb343cb0a852"
+  },
+  {
+    "sha": "e0b8e824f41cdb50c35f01fac720ca8bb1b5dd89",
+    "date": "2026-09-15T12:50:19Z",
+    "title": "Merge pull request #227 from temportalflux/drag-api",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/e0b8e824f41cdb50c35f01fac720ca8bb1b5dd89"
+  },
+  {
+    "sha": "c3ecfda182ae067a24ca7a11fcebb996f7b1a41e",
+    "date": "2026-09-14T23:49:14Z",
+    "title": "Add gradient support to borders and shadows. (#252)",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/c3ecfda182ae067a24ca7a11fcebb996f7b1a41e"
+  },
+  {
+    "sha": "439af5293aedc202b1bd99b96de7ae394f2d5d66",
+    "date": "2026-09-14T22:43:23Z",
+    "title": "elements/div: add aria_disabled, aria_modal, and aria_live passthroughs (#233)",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/439af5293aedc202b1bd99b96de7ae394f2d5d66"
+  },
+  {
+    "sha": "ee92e8ea392078e48ad80cf4cf36210b44d7bcab",
+    "date": "2026-09-14T21:49:19Z",
+    "title": "Merge pull request #254 from cameronpcampbell/customizable_dashed_borders",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/ee92e8ea392078e48ad80cf4cf36210b44d7bcab"
+  },
+  {
+    "sha": "f00608024956d425d9bc34fc5ee1dbd0f0542c0a",
+    "date": "2026-09-14T21:33:57Z",
+    "title": "Merge branch 'main' of https://github.com/cameronpcampbell/gpui-ce into customizable_dashed_borders",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/f00608024956d425d9bc34fc5ee1dbd0f0542c0a"
+  },
+  {
+    "sha": "40325c4b6d91110993d92b2324df10705e9bcc11",
+    "date": "2026-09-14T17:44:12Z",
+    "title": "Add regression coverage for benchmark AppContext forwarding (#229)",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/40325c4b6d91110993d92b2324df10705e9bcc11"
+  },
+  {
+    "sha": "3490e1893b56086613c515da76141006d7751e48",
+    "date": "2026-09-14T16:32:24Z",
+    "title": "Make outer rings hollow. (#249)",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/3490e1893b56086613c515da76141006d7751e48"
+  },
+  {
+    "sha": "278d0e66280812002ebaf7d7c727f4dc61a902b9",
+    "date": "2026-09-14T13:42:06Z",
+    "title": "Merge pull request #255 from cameronpcampbell/relative_struct",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/278d0e66280812002ebaf7d7c727f4dc61a902b9"
+  },
+  {
+    "sha": "57bd32d7c2a9a45492d1387126030859113ff9ca",
+    "date": "2026-09-14T12:54:41Z",
+    "title": "Improve Relative conversion, docs, and formatting",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/57bd32d7c2a9a45492d1387126030859113ff9ca"
+  },
+  {
+    "sha": "e6d5c2ab84ab2c6f7a2c4b11bb8c45718e5b8d7a",
+    "date": "2026-09-13T18:36:39Z",
+    "title": "rework HitTest data tracking to give users access to iterate information about Hitboxes included in the HitTest",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/e6d5c2ab84ab2c6f7a2c4b11bb8c45718e5b8d7a"
+  },
+  {
+    "sha": "261fa75a4976821146470e7c940b21b8b2a9f79e",
+    "date": "2026-09-13T16:51:31Z",
+    "title": "Test dashed borders across shader backends",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/261fa75a4976821146470e7c940b21b8b2a9f79e"
+  },
+  {
+    "sha": "eff9087e983c16c7e37fd6e867a862b78e654d7a",
+    "date": "2026-09-13T09:20:10Z",
+    "title": "Merge branch 'main' of https://github.com/cameronpcampbell/gpui-ce into customizable_dashed_borders",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/eff9087e983c16c7e37fd6e867a862b78e654d7a"
+  },
+  {
+    "sha": "3eaf8e28ea77c6956be6e76f8a201a6606e94d99",
+    "date": "2026-09-13T09:08:51Z",
+    "title": "Add configurable dashed border lengths and gaps",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/3eaf8e28ea77c6956be6e76f8a201a6606e94d99"
+  },
+  {
+    "sha": "18572e875b619913099cb94149cf3b9616c0780e",
+    "date": "2026-09-13T05:28:17Z",
+    "title": "Merge pull request #235 from cameronpcampbell/corner_smoothing",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/18572e875b619913099cb94149cf3b9616c0780e"
+  },
+  {
+    "sha": "654b359d100ae447df7bf68c43c47032375a8817",
+    "date": "2026-09-13T05:20:55Z",
+    "title": "Merge branch 'main' of https://github.com/cameronpcampbell/gpui-ce into corner_smoothing",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/654b359d100ae447df7bf68c43c47032375a8817"
+  },
+  {
+    "sha": "92b27fa39be61eac0e7c90b38ce318ab926099d8",
+    "date": "2026-09-13T05:16:14Z",
+    "title": "Merge pull request #230 from cameronpcampbell/relative_struct",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/92b27fa39be61eac0e7c90b38ce318ab926099d8"
+  },
+  {
+    "sha": "c7e5e6213dac41c638e3883b74c151123e4402ec",
+    "date": "2026-09-13T05:09:10Z",
+    "title": "Merge branch 'main' of https://github.com/cameronpcampbell/gpui-ce into relative_struct",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/c7e5e6213dac41c638e3883b74c151123e4402ec"
+  },
+  {
+    "sha": "674af683562754ff28717a281f119c48aafa2297",
+    "date": "2026-09-13T05:03:44Z",
+    "title": "Merge pull request #231 from cameronpcampbell/style_transitions",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/674af683562754ff28717a281f119c48aafa2297"
+  },
+  {
+    "sha": "05d89e953701a89fedac9b17b3042154bdf74afe",
+    "date": "2026-09-12T02:06:43Z",
+    "title": "Add runtime window visibility (#239)",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/05d89e953701a89fedac9b17b3042154bdf74afe"
+  },
+  {
+    "sha": "15e0ad504f335c9be718d1c273e3455bcf1d040e",
+    "date": "2026-09-11T22:02:02Z",
+    "title": "add whitespace function with argument (#243)",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/15e0ad504f335c9be718d1c273e3455bcf1d040e"
+  },
+  {
+    "sha": "b6db002b6eca88f37592ee425898feb07371733e",
+    "date": "2026-09-11T22:01:37Z",
+    "title": "Add Aria Hidden (#234)",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/b6db002b6eca88f37592ee425898feb07371733e"
+  },
+  {
+    "sha": "544116ec535fece65fc5137193d69adcbf7ed3ce",
+    "date": "2026-09-11T21:58:04Z",
+    "title": "add on_mouse_move_all to allow callers to detect mouse move outside of an elements hitbox (#244)",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/544116ec535fece65fc5137193d69adcbf7ed3ce"
+  },
+  {
+    "sha": "044594120355441cf55630f0b750dcb20052a687",
+    "date": "2026-09-11T21:55:52Z",
+    "title": "Expand Deferred element api (#245)",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/044594120355441cf55630f0b750dcb20052a687"
+  },
+  {
+    "sha": "b8e0bf8e116075ac4ba9d87d26041bcbfdaaface",
+    "date": "2026-09-11T20:25:53Z",
+    "title": "add on_drag_alt and rework DragListener so consumers can opt-in to a more customized drag constructor",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/b8e0bf8e116075ac4ba9d87d26041bcbfdaaface"
+  },
+  {
+    "sha": "a090211a183dc9ff495fc992f9573b238e02fbbf",
+    "date": "2026-09-10T10:23:13Z",
+    "title": "fixed pasteboard test race condition",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/a090211a183dc9ff495fc992f9573b238e02fbbf"
+  },
+  {
+    "sha": "4f34eb8e91b367bf2f519021ec2474cb65eb3050",
+    "date": "2026-09-10T10:06:11Z",
+    "title": "merge",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/4f34eb8e91b367bf2f519021ec2474cb65eb3050"
+  },
+  {
+    "sha": "60e4aee314d5e316bb5d736bb81413168e7b900c",
+    "date": "2026-09-10T10:02:41Z",
+    "title": "Merge branch 'main' of https://github.com/cameronpcampbell/gpui-ce into relative_struct",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/60e4aee314d5e316bb5d736bb81413168e7b900c"
+  },
+  {
+    "sha": "2cdbaf863ff83388a1a8f2684d4a09db64899fc4",
+    "date": "2026-09-10T09:53:14Z",
+    "title": "Share corner smoothing setup while preserving compact paths",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/2cdbaf863ff83388a1a8f2684d4a09db64899fc4"
+  },
+  {
+    "sha": "9af4c5c540dada98e4c968a8046173669c23b46b",
+    "date": "2026-09-10T08:40:27Z",
+    "title": "Merge branch 'main' of https://github.com/cameronpcampbell/gpui-ce into corner_smoothing",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/9af4c5c540dada98e4c968a8046173669c23b46b"
+  },
+  {
+    "sha": "7fb5ea84b9736041b5b715ab70ccfcc0f55d0dde",
+    "date": "2026-09-09T19:16:54Z",
+    "title": "Merge branch 'main' into style_transitions",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/7fb5ea84b9736041b5b715ab70ccfcc0f55d0dde"
+  },
+  {
+    "sha": "f3bc4caf35cd92fb330c1b3ce431f16fafb6e2df",
+    "date": "2026-09-09T19:16:24Z",
+    "title": "Merge branch 'main' into relative_struct",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/f3bc4caf35cd92fb330c1b3ce431f16fafb6e2df"
+  },
+  {
+    "sha": "97cf6913806edda03b9abcf530d6f2a665171e83",
+    "date": "2026-09-09T19:09:04Z",
+    "title": "Add custom GPU rendering API (#237)",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/97cf6913806edda03b9abcf530d6f2a665171e83"
+  },
+  {
+    "sha": "ae0af3e862eb21533776b07d44df304b6f0e9264",
+    "date": "2026-09-09T05:19:30Z",
+    "title": "SUPER deterministic",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/ae0af3e862eb21533776b07d44df304b6f0e9264"
+  },
+  {
+    "sha": "97e8f64f3459aa96c68bed3526ebd35e1630c966",
+    "date": "2026-09-09T04:48:11Z",
+    "title": "deterministic eval",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/97e8f64f3459aa96c68bed3526ebd35e1630c966"
+  },
+  {
+    "sha": "3c909c62b27edad8ccf3e0e7f480b2522ac67455",
+    "date": "2026-09-09T03:54:03Z",
+    "title": "Replace Metal golden hashes with contract tests",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/3c909c62b27edad8ccf3e0e7f480b2522ac67455"
+  },
+  {
+    "sha": "4fffec3abfc496b8118b9a3127116a9dbeae768b",
+    "date": "2026-09-09T03:53:55Z",
+    "title": "Harden Windows grandchild pid handoff in tests",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/4fffec3abfc496b8118b9a3127116a9dbeae768b"
+  },
+  {
+    "sha": "3d701d6c727c26d67b259db2ff2078bb9b1dabfb",
+    "date": "2026-09-09T01:24:13Z",
+    "title": "Merge branch 'corner_smoothing' of https://github.com/cameronpcampbell/gpui-ce into corner_smoothing",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/3d701d6c727c26d67b259db2ff2078bb9b1dabfb"
+  },
+  {
+    "sha": "63ef33a93cae5b36f2298befcd546a91438284f9",
+    "date": "2026-09-09T01:23:08Z",
+    "title": "Restore lean unsmoothed rendering paths",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/63ef33a93cae5b36f2298befcd546a91438284f9"
+  },
+  {
+    "sha": "92260d7021c04c0edc4805e3261d0bc4513226be",
+    "date": "2026-09-09T00:39:49Z",
+    "title": "Broaden normalized corner smoothing shortcut",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/92260d7021c04c0edc4805e3261d0bc4513226be"
+  },
+  {
+    "sha": "77ced2cadfc8e9276c3122da6fde2d3f01264265",
+    "date": "2026-09-09T00:14:21Z",
+    "title": "Avoid duplicate shadow coverage",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/77ced2cadfc8e9276c3122da6fde2d3f01264265"
+  },
+  {
+    "sha": "29af58718b2ba6ee69bfa95cb45a466b613adb3a",
+    "date": "2026-09-09T00:00:22Z",
+    "title": "Merge branch 'gpui-ce:main' into corner_smoothing",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/29af58718b2ba6ee69bfa95cb45a466b613adb3a"
+  },
+  {
+    "sha": "ca5c6ac47b16f6bcb7a320dd335a6ccd29aba79c",
+    "date": "2026-09-08T23:59:11Z",
+    "title": "corner smoothing",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/ca5c6ac47b16f6bcb7a320dd335a6ccd29aba79c"
+  },
+  {
+    "sha": "24c9867844b5374643cd3e4221fd102fac6fe62c",
+    "date": "2026-09-08T22:17:13Z",
+    "title": "wgpu surfaces fix",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/24c9867844b5374643cd3e4221fd102fac6fe62c"
+  },
+  {
+    "sha": "10975611fb01a715fff72433b45c0041b9f5be71",
+    "date": "2026-09-08T21:00:56Z",
+    "title": "cleaned up for CI",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/10975611fb01a715fff72433b45c0041b9f5be71"
+  },
+  {
+    "sha": "3640c3530a30da4bf9edfcebd08af135c9121722",
+    "date": "2026-09-08T20:37:34Z",
+    "title": "Merge branch 'relative_struct' of https://github.com/cameronpcampbell/gpui-ce into relative_struct",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/3640c3530a30da4bf9edfcebd08af135c9121722"
+  },
+  {
+    "sha": "89843e3f4232911c8d370216b5967bef1bd51938",
+    "date": "2026-09-08T20:36:51Z",
+    "title": "taplo fmt",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/89843e3f4232911c8d370216b5967bef1bd51938"
+  },
+  {
+    "sha": "54c9d15df23f5da40788366335340f3e8595ef30",
+    "date": "2026-09-08T20:36:04Z",
+    "title": "Merge branch 'main' of https://github.com/cameronpcampbell/gpui-ce into relative_struct",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/54c9d15df23f5da40788366335340f3e8595ef30"
+  },
+  {
+    "sha": "aa43f9f07c1dc60f5442047971c728826b9438e2",
+    "date": "2026-09-08T20:33:06Z",
+    "title": "Merge branch 'main' into style_transitions",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/aa43f9f07c1dc60f5442047971c728826b9438e2"
+  },
+  {
+    "sha": "950d90c1b590a263a778015bd6f2023b1300f5e6",
+    "date": "2026-09-08T20:30:05Z",
+    "title": "taplo fmt",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/950d90c1b590a263a778015bd6f2023b1300f5e6"
+  },
+  {
+    "sha": "88cf70f8082b4eff575806e16c65bd009d4a2e4c",
+    "date": "2026-09-07T20:08:31Z",
+    "title": "the WGPU/WGSL migration (#215)",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/88cf70f8082b4eff575806e16c65bd009d4a2e4c"
+  },
+  {
+    "sha": "57110460b3f83daa8f4402b3120a80714fdf72bc",
+    "date": "2026-09-07T03:28:30Z",
+    "title": "Simplify style transition prepaint state",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/57110460b3f83daa8f4402b3120a80714fdf72bc"
+  },
+  {
+    "sha": "e71c91876092d13251f7f7e87892ede93eee1dba",
+    "date": "2026-09-07T02:49:56Z",
+    "title": "Respect input modality for retained hover state",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/e71c91876092d13251f7f7e87892ede93eee1dba"
+  },
+  {
+    "sha": "10f38d48954b9c4d572c3d761783a9fb64f4bf41",
+    "date": "2026-09-07T02:26:48Z",
+    "title": "Merge branch 'gpui-ce:main' into relative_struct",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/10f38d48954b9c4d572c3d761783a9fb64f4bf41"
+  },
+  {
+    "sha": "a0212df0c6c00672fe944812ee9809c2ce6146b9",
+    "date": "2026-09-06T21:08:49Z",
+    "title": "added as_f32 field to relative",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/a0212df0c6c00672fe944812ee9809c2ce6146b9"
+  },
+  {
+    "sha": "7b47a2aed4ea22294f5bbdf3b476531f42c676c3",
+    "date": "2026-09-05T08:07:20Z",
+    "title": "ring transitions support",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/7b47a2aed4ea22294f5bbdf3b476531f42c676c3"
+  },
+  {
+    "sha": "d37ae717aaa21cd0cc1efbc29f9b78b62e38dd66",
+    "date": "2026-09-05T08:00:24Z",
+    "title": "Fix auto inset style transitions from rendered position",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/d37ae717aaa21cd0cc1efbc29f9b78b62e38dd66"
+  },
+  {
+    "sha": "d70285aecc1490b6a000b1c4aabc63f2584f0dee",
+    "date": "2026-09-05T07:18:26Z",
+    "title": "Fix transitions from auto inset values",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/d70285aecc1490b6a000b1c4aabc63f2584f0dee"
+  },
+  {
+    "sha": "ea58899865e4521fd6256f9d46b1a6219593021a",
+    "date": "2026-09-05T02:04:57Z",
+    "title": "relative is now its own struct",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/ea58899865e4521fd6256f9d46b1a6219593021a"
+  },
+  {
+    "sha": "0b84630eec5bb37122330ad175c8e94b148eadca",
+    "date": "2026-09-04T05:00:51Z",
+    "title": "ci fixes and cleanup",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/0b84630eec5bb37122330ad175c8e94b148eadca"
+  },
+  {
+    "sha": "2e354dfab2dab2311ed321bda349ce94a7667bd0",
+    "date": "2026-09-03T13:27:15Z",
+    "title": "Sync/zed 20260903 b1a7ef0 (#219)",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/2e354dfab2dab2311ed321bda349ce94a7667bd0"
+  },
+  {
+    "sha": "8ad5685f54addd9a4b3e579d24b573497c3a4e6f",
+    "date": "2026-09-02T18:13:02Z",
+    "title": "Better padding snapping for automatically sized axis. (#217)",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/8ad5685f54addd9a4b3e579d24b573497c3a4e6f"
+  },
+  {
+    "sha": "6955be8631bada5ecf2df8469f1cef1cc950382b",
+    "date": "2026-09-02T16:01:25Z",
+    "title": "FIXES MORE CI",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/6955be8631bada5ecf2df8469f1cef1cc950382b"
+  },
+  {
+    "sha": "c104d4f1db72e2f347640e8440849051d1e18b4f",
+    "date": "2026-09-02T15:14:49Z",
+    "title": "ring apis (#216)",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/c104d4f1db72e2f347640e8440849051d1e18b4f"
+  },
+  {
+    "sha": "95685a6a02810a9b7e9fef2cfdd22e7a14e40bd5",
+    "date": "2026-09-02T15:14:26Z",
+    "title": "Input improvements (#218)",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/95685a6a02810a9b7e9fef2cfdd22e7a14e40bd5"
+  },
+  {
+    "sha": "cca8353be2d0880feb281da6d3bfe4c80ea063f9",
+    "date": "2026-09-02T14:25:08Z",
+    "title": "component update",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/cca8353be2d0880feb281da6d3bfe4c80ea063f9"
+  },
+  {
+    "sha": "4112d0a749a533ab3193643a7cb8a51ff37cb609",
+    "date": "2026-09-02T14:24:49Z",
+    "title": "workflow fixes",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/4112d0a749a533ab3193643a7cb8a51ff37cb609"
+  },
+  {
+    "sha": "74b3a785c168416a044076001f81cf4cc94682c4",
+    "date": "2026-09-01T22:32:29Z",
+    "title": "Enable surfaces on Windows when using the wgpu renderer (#121)",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/74b3a785c168416a044076001f81cf4cc94682c4"
+  },
+  {
+    "sha": "92a11e945c6d0cc6ec345f58299690174d2bccf0",
+    "date": "2026-09-01T22:27:11Z",
+    "title": "Added icon support on Wayland (#133)",
+    "url": "https://github.com/gpui-ce/gpui-ce/commit/92a11e945c6d0cc6ec345f58299690174d2bccf0"
+  }
+]

@@ -2,7 +2,7 @@
 {
   "id": "components/command",
   "export": "Command",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": ["components/input", "components/kbd"],
   "capabilities": {}
@@ -20,7 +20,7 @@ import "components/input" as input;
 import "components/kbd" as kbd;
 
 define_component(#{
-    metadata: #{ id: "components/command", "export": "Command", version: "0.1.5",
+    metadata: #{ id: "components/command", "export": "Command", version: "0.1.6",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
         dependencies: ["components/input", "components/kbd"], capabilities: #{} },
     schema: #{
@@ -157,7 +157,7 @@ fn submit_action(value, ctx, query) {
     if value != "" { ctx.emit("action", value); }
 }
 
-fn render_command_row(content, ctx, payload) {
+fn render_command_row(content, total_rows, ctx, payload) {
     let item = payload.item;
     if item.kind == "group" {
         return text(item.label).with_key(payload.key)
@@ -166,7 +166,8 @@ fn render_command_row(content, ctx, payload) {
                 .padding_top(theme_spacing("xs")).items_center()
                 .typography("caption").font_weight(400).opacity(0.72)
                 .text_color(theme_color("text_muted"))))
-            .accessibility_role("heading").accessibility_label(item.label);
+            .accessibility_role("heading").accessibility_label(item.label)
+            .accessibility_level(2);
     }
     let label = if item.value in content { content[item.value] } else { text(item.label) };
     let children = [label.with_style(ctx.component_style("label", style().flex_grow()))];
@@ -185,8 +186,8 @@ fn render_command_row(content, ctx, payload) {
             .hover(style().background(theme_color("surface_hover")))
             .disabled(style().opacity(0.66))))
         .tab_stop(false).disabled(item.disabled)
-        .accessibility_role("option").accessibility_label(item.label)
-        .accessibility_checked(item.active);
+        .accessibility_option(item.label, item.active, payload.index + 1, total_rows);
+    if item.shortcut != "" { node = node.accessibility_key_shortcuts(item.shortcut); }
     if item.disabled { node } else {
         node.on_hover_value(Fn("active_hover").curry(item.active), item.value)
             .on_click_value(Fn("action_value"), item.value)
@@ -287,7 +288,8 @@ fn render_Command(ctx, props) {
             collection.reveal_key = if is_native_collection(data) { active } else { `item:${active}` };
         }
         virtual_collection(collection,
-            Fn("render_command_row").curry(model.content)).with_style(ctx.component_style("list", style()))
+            Fn("render_command_row").curry(model.content).curry(data.len))
+            .with_style(ctx.component_style("list", style()))
     };
     let root = column([search, body]).with_key(props.key)
         .with_style(ctx.component_style("root", style()

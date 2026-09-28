@@ -1724,13 +1724,13 @@ impl MotionRuntime {
                     MotionSource::Transition(spec) => (
                         "transition",
                         Some(spec.duration_ms),
-                        spec.iterations.is_none() || spec.iterations.is_some_and(|count| count > 1),
+                        spec.iterations.is_none_or(|count| count > 1),
                     ),
                     MotionSource::Spring(_) => ("spring", None, false),
                     MotionSource::Keyframes(spec) => (
                         "keyframes",
                         Some(spec.duration_ms),
-                        spec.iterations.is_none() || spec.iterations.is_some_and(|count| count > 1),
+                        spec.iterations.is_none_or(|count| count > 1),
                     ),
                     MotionSource::Inertia(_) => ("inertia", None, false),
                 };
@@ -4843,8 +4843,8 @@ mod tests {
             assert!((velocity - expected_velocity).abs() < 1.0e-9);
         }
         let before_cap = sample_inertia_at(&spec, Duration::from_millis(9_999)).0;
-        let at_cap = sample_inertia_at(&spec, Duration::from_millis(10_000)).0;
-        let after_cap = sample_inertia_at(&spec, Duration::from_millis(11_000)).0;
+        let at_cap = sample_inertia_at(&spec, Duration::from_secs(10)).0;
+        let after_cap = sample_inertia_at(&spec, Duration::from_secs(11)).0;
         assert!((at_cap - before_cap).abs() < 0.1);
         assert!((after_cap - at_cap).abs() < f64::EPSILON);
     }

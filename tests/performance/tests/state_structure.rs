@@ -24,10 +24,7 @@ fn five_thousand_component_mounts_and_large_store_rollback_remain_structural() {
             .map(|index| {
                 UiValue::Map(BTreeMap::from([
                     ("id".to_owned(), UiValue::Integer(index)),
-                    (
-                        "label".to_owned(),
-                        UiValue::String(format!("row-{index}")),
-                    ),
+                    ("label".to_owned(), UiValue::String(format!("row-{index}"))),
                 ]))
             })
             .collect(),

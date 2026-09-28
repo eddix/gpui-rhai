@@ -1,0 +1,274 @@
+{
+  "kit-066-ci-jobs": [
+    {
+      "name": "Checks",
+      "conclusion": "success",
+      "url": "https://github.com/longbridge/gpui-kit/actions/runs/35604997533/job/106349800406",
+      "failed_steps": []
+    },
+    {
+      "name": "Lint",
+      "conclusion": "success",
+      "url": "https://github.com/longbridge/gpui-kit/actions/runs/35604997533/job/106349800583",
+      "failed_steps": []
+    },
+    {
+      "name": "GPUI Shell Core",
+      "conclusion": "success",
+      "url": "https://github.com/longbridge/gpui-kit/actions/runs/35604997533/job/106349800612",
+      "failed_steps": []
+    },
+    {
+      "name": "GPUI Shell Standard Runtime (aarch64-apple-darwin)",
+      "conclusion": "success",
+      "url": "https://github.com/longbridge/gpui-kit/actions/runs/35604997533/job/106349800681",
+      "failed_steps": []
+    },
+    {
+      "name": "Recipes",
+      "conclusion": "failure",
+      "url": "https://github.com/longbridge/gpui-kit/actions/runs/35604997533/job/106349800721",
+      "failed_steps": [
+        "Verify executable application recipes"
+      ]
+    },
+    {
+      "name": "GPUI Component Shell",
+      "conclusion": "success",
+      "url": "https://github.com/longbridge/gpui-kit/actions/runs/35604997533/job/106349800733",
+      "failed_steps": []
+    },
+    {
+      "name": "Test (x86_64-linux-gnu, ubuntu-latest)",
+      "conclusion": "success",
+      "url": "https://github.com/longbridge/gpui-kit/actions/runs/35604997533/job/106349800776",
+      "failed_steps": []
+    },
+    {
+      "name": "GPUI Shell Standard Runtime (x86_64-linux-gnu)",
+      "conclusion": "success",
+      "url": "https://github.com/longbridge/gpui-kit/actions/runs/35604997533/job/106349800807",
+      "failed_steps": []
+    },
+    {
+      "name": "Test (x86_64-windows-msvc, windows-latest)",
+      "conclusion": "success",
+      "url": "https://github.com/longbridge/gpui-kit/actions/runs/35604997533/job/106349800823",
+      "failed_steps": []
+    },
+    {
+      "name": "Test (aarch64-apple-darwin, macos-latest)",
+      "conclusion": "success",
+      "url": "https://github.com/longbridge/gpui-kit/actions/runs/35604997533/job/106349800899",
+      "failed_steps": []
+    },
+    {
+      "name": "GPUI Shell Standard Runtime (x86_64-windows-msvc)",
+      "conclusion": "success",
+      "url": "https://github.com/longbridge/gpui-kit/actions/runs/35604997533/job/106349800901",
+      "failed_steps": []
+    }
+  ],
+  "kit-066-release-jobs": [
+    {
+      "name": "Publish Crate",
+      "conclusion": "success",
+      "url": "https://github.com/longbridge/gpui-kit/actions/runs/35604997568/job/106349799981",
+      "failed_steps": []
+    }
+  ],
+  "ce-head-ci-jobs": [
+    {
+      "name": "clippy",
+      "conclusion": "success",
+      "url": "https://github.com/gpui-ce/gpui-ce/actions/runs/35812364465/job/107026501240",
+      "failed_steps": []
+    },
+    {
+      "name": "typos",
+      "conclusion": "success",
+      "url": "https://github.com/gpui-ce/gpui-ce/actions/runs/35812364465/job/107026501351",
+      "failed_steps": []
+    },
+    {
+      "name": "machete",
+      "conclusion": "success",
+      "url": "https://github.com/gpui-ce/gpui-ce/actions/runs/35812364465/job/107026501435",
+      "failed_steps": []
+    },
+    {
+      "name": "orchestrate",
+      "conclusion": "success",
+      "url": "https://github.com/gpui-ce/gpui-ce/actions/runs/35812364465/job/107026501440",
+      "failed_steps": []
+    },
+    {
+      "name": "lockfile",
+      "conclusion": "success",
+      "url": "https://github.com/gpui-ce/gpui-ce/actions/runs/35812364465/job/107026501475",
+      "failed_steps": []
+    },
+    {
+      "name": "fmt",
+      "conclusion": "success",
+      "url": "https://github.com/gpui-ce/gpui-ce/actions/runs/35812364465/job/107026501486",
+      "failed_steps": []
+    },
+    {
+      "name": "msrv",
+      "conclusion": "skipped",
+      "url": "https://github.com/gpui-ce/gpui-ce/actions/runs/35812364465/job/107026502009",
+      "failed_steps": []
+    },
+    {
+      "name": "semver",
+      "conclusion": "skipped",
+      "url": "https://github.com/gpui-ce/gpui-ce/actions/runs/35812364465/job/107026502011",
+      "failed_steps": []
+    },
+    {
+      "name": "beta-test",
+      "conclusion": "skipped",
+      "url": "https://github.com/gpui-ce/gpui-ce/actions/runs/35812364465/job/107026502163",
+      "failed_steps": []
+    },
+    {
+      "name": "check-wasm",
+      "conclusion": "skipped",
+      "url": "https://github.com/gpui-ce/gpui-ce/actions/runs/35812364465/job/107026502250",
+      "failed_steps": []
+    },
+    {
+      "name": "test-windows",
+      "conclusion": "skipped",
+      "url": "https://github.com/gpui-ce/gpui-ce/actions/runs/35812364465/job/107026526442",
+      "failed_steps": []
+    },
+    {
+      "name": "check-examples",
+      "conclusion": "skipped",
+      "url": "https://github.com/gpui-ce/gpui-ce/actions/runs/35812364465/job/107026526550",
+      "failed_steps": []
+    },
+    {
+      "name": "test-linux",
+      "conclusion": "skipped",
+      "url": "https://github.com/gpui-ce/gpui-ce/actions/runs/35812364465/job/107026526770",
+      "failed_steps": []
+    },
+    {
+      "name": "test-mac",
+      "conclusion": "skipped",
+      "url": "https://github.com/gpui-ce/gpui-ce/actions/runs/35812364465/job/107026526845",
+      "failed_steps": []
+    },
+    {
+      "name": "tests-pass",
+      "conclusion": "success",
+      "url": "https://github.com/gpui-ce/gpui-ce/actions/runs/35812364465/job/107026774540",
+      "failed_steps": []
+    }
+  ],
+  "ce-code-ci-jobs": [
+    {
+      "name": "orchestrate",
+      "conclusion": "success",
+      "url": "https://github.com/gpui-ce/gpui-ce/actions/runs/35549033714/job/106180225572",
+      "failed_steps": []
+    },
+    {
+      "name": "machete",
+      "conclusion": "success",
+      "url": "https://github.com/gpui-ce/gpui-ce/actions/runs/35549033714/job/106180225577",
+      "failed_steps": []
+    },
+    {
+      "name": "typos",
+      "conclusion": "success",
+      "url": "https://github.com/gpui-ce/gpui-ce/actions/runs/35549033714/job/106180225584",
+      "failed_steps": []
+    },
+    {
+      "name": "clippy",
+      "conclusion": "success",
+      "url": "https://github.com/gpui-ce/gpui-ce/actions/runs/35549033714/job/106180225614",
+      "failed_steps": []
+    },
+    {
+      "name": "taplo",
+      "conclusion": "failure",
+      "url": "https://github.com/gpui-ce/gpui-ce/actions/runs/35549033714/job/106180225632",
+      "failed_steps": [
+        "Run taplo fmt --check"
+      ]
+    },
+    {
+      "name": "lockfile",
+      "conclusion": "success",
+      "url": "https://github.com/gpui-ce/gpui-ce/actions/runs/35549033714/job/106180225682",
+      "failed_steps": []
+    },
+    {
+      "name": "fmt",
+      "conclusion": "success",
+      "url": "https://github.com/gpui-ce/gpui-ce/actions/runs/35549033714/job/106180225835",
+      "failed_steps": []
+    },
+    {
+      "name": "msrv",
+      "conclusion": "skipped",
+      "url": "https://github.com/gpui-ce/gpui-ce/actions/runs/35549033714/job/106180226148",
+      "failed_steps": []
+    },
+    {
+      "name": "semver",
+      "conclusion": "skipped",
+      "url": "https://github.com/gpui-ce/gpui-ce/actions/runs/35549033714/job/106180226155",
+      "failed_steps": []
+    },
+    {
+      "name": "beta-test",
+      "conclusion": "skipped",
+      "url": "https://github.com/gpui-ce/gpui-ce/actions/runs/35549033714/job/106180226168",
+      "failed_steps": []
+    },
+    {
+      "name": "check-wasm",
+      "conclusion": "skipped",
+      "url": "https://github.com/gpui-ce/gpui-ce/actions/runs/35549033714/job/106180226180",
+      "failed_steps": []
+    },
+    {
+      "name": "test-mac",
+      "conclusion": "success",
+      "url": "https://github.com/gpui-ce/gpui-ce/actions/runs/35549033714/job/106180242809",
+      "failed_steps": []
+    },
+    {
+      "name": "test-windows",
+      "conclusion": "success",
+      "url": "https://github.com/gpui-ce/gpui-ce/actions/runs/35549033714/job/106180242843",
+      "failed_steps": []
+    },
+    {
+      "name": "test-linux",
+      "conclusion": "success",
+      "url": "https://github.com/gpui-ce/gpui-ce/actions/runs/35549033714/job/106180243199",
+      "failed_steps": []
+    },
+    {
+      "name": "check-examples",
+      "conclusion": "skipped",
+      "url": "https://github.com/gpui-ce/gpui-ce/actions/runs/35549033714/job/106180243803",
+      "failed_steps": []
+    },
+    {
+      "name": "tests-pass",
+      "conclusion": "failure",
+      "url": "https://github.com/gpui-ce/gpui-ce/actions/runs/35549033714/job/106180986864",
+      "failed_steps": [
+        "Run set +e"
+      ]
+    }
+  ]
+}

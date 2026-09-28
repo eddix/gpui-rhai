@@ -1,5 +1,10 @@
 # Core Runtime v2 implementation plan
 
+Version 0.1.6 completes the direct gpui-pre 0.3.7 core/platform migration and
+native accessibility projection without changing Runtime API 2. Its historical
+implementation plan is retained by Git; current contracts live in the release,
+embedding, accessibility, and architecture documentation.
+
 ## 1. Execution policy
 
 This plan implements the final Core Runtime v2 described by `INTENT.md`.

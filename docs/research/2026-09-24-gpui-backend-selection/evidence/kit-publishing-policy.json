@@ -1,0 +1,7 @@
+{
+  "source": "https://github.com/longbridge/gpui-kit/blob/477a8d90bb318cfbf0bbdc0f29517d437ad003e1/CONTRIBUTING.md",
+  "source_sha256": "03b062492b4ef0f689dd5b393c8a52e487a9d6747c8c7e61357add4e06ad4b9c",
+  "policy": "Weekly upstream snapshots report GPUI Kit build/test results and publish either way. GPUI Kit itself selects exact gpui-pre version pins and adapts at pin upgrades. gpui-pre is not a separately developed behavioral fork.",
+  "owners_endpoint": "https://crates.io/api/v1/crates/gpui-pre/owners",
+  "observed_owner": "huacnlee"
+}

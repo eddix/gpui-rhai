@@ -2,7 +2,7 @@
 {
   "id": "components/tabs",
   "export": "Tabs",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": [],
   "capabilities": {}
@@ -16,7 +16,7 @@
 
 define_component(#{
     metadata: #{
-        id: "components/tabs", "export": "Tabs", version: "0.1.5",
+        id: "components/tabs", "export": "Tabs", version: "0.1.6",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{},
     },
     schema: #{
@@ -137,7 +137,7 @@ fn render_Tabs(ctx, props) {
             .disabled(tab_disabled(tab))
             .accessibility_role("tab")
             .accessibility_label(tab.label)
-            .accessibility_checked(selected);
+            .accessibility_selected(selected);
         if !tab_disabled(tab) && callback != () {
             header = header.on_click_value(callback, tab.value);
         }

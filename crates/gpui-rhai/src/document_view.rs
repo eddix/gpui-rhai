@@ -688,7 +688,7 @@ impl CodeViewerEntity {
 
     fn open_find(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.search.open = true;
-        self.search_input.focus_handle(cx).focus(window);
+        self.search_input.focus_handle(cx).focus(window, cx);
         cx.notify();
     }
 
@@ -707,7 +707,7 @@ impl CodeViewerEntity {
     fn close_find(&mut self, _: &CloseFind, window: &mut Window, cx: &mut Context<Self>) {
         if self.search.open {
             self.search.open = false;
-            self.focus.focus(window);
+            self.focus.focus(window, cx);
             cx.notify();
         }
     }
@@ -939,7 +939,7 @@ impl CodeViewerEntity {
                     .collect::<Vec<_>>()
             },
         )
-        .track_scroll(self.scroll.clone())
+        .track_scroll(&self.scroll)
         .with_width_from_item(width_index)
         .when(matches!(self.config.wrap, DocumentWrap::None), |list| {
             list.with_horizontal_sizing_behavior(ListHorizontalSizingBehavior::Unconstrained)
@@ -1348,7 +1348,7 @@ impl Element for InteractiveDocumentText {
                 {
                     return;
                 }
-                focus.focus(window);
+                focus.focus(window, cx);
                 let display = clamp(layout.index_for_position(event.position));
                 let local = display_source_offset(&offset_map, display).min(range.len());
                 let global = range.start + local;
@@ -2498,7 +2498,7 @@ impl DiffViewerEntity {
 
     fn find(&mut self, _: &Find, window: &mut Window, cx: &mut Context<Self>) {
         self.search.open = true;
-        self.search_input.focus_handle(cx).focus(window);
+        self.search_input.focus_handle(cx).focus(window, cx);
         cx.notify();
     }
 
@@ -2513,7 +2513,7 @@ impl DiffViewerEntity {
     fn close_find(&mut self, _: &CloseFind, window: &mut Window, cx: &mut Context<Self>) {
         if self.search.open {
             self.search.open = false;
-            self.focus.focus(window);
+            self.focus.focus(window, cx);
             cx.notify();
         }
     }
@@ -2918,7 +2918,7 @@ impl DiffViewerEntity {
                     .collect::<Vec<_>>()
             },
         )
-        .track_scroll(self.scroll.clone())
+        .track_scroll(&self.scroll)
         .when(
             matches!(self.config.wrap, DocumentWrap::None)
                 && self.config.mode == DiffViewMode::Unified,

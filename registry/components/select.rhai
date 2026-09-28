@@ -2,7 +2,7 @@
 {
   "id": "components/select",
   "export": "Select",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": ["components/combobox"],
   "capabilities": {},
@@ -18,7 +18,7 @@
 import "components/combobox" as combobox;
 
 define_component(#{
-    metadata: #{ id: "components/select", "export": "Select", version: "0.1.5",
+    metadata: #{ id: "components/select", "export": "Select", version: "0.1.6",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
         dependencies: ["components/combobox"], capabilities: #{}, assets: [] },
     schema: #{

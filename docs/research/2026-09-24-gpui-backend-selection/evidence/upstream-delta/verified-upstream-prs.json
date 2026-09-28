@@ -1,0 +1,66 @@
+[
+  {
+    "number": 39832,
+    "title": "Publish gpui in CI",
+    "merged": false,
+    "merged_at": null,
+    "merge_commit_sha": null,
+    "html_url": "https://github.com/zed-industries/zed/pull/39832"
+  },
+  {
+    "number": 50665,
+    "title": "Fix GPUI crash when using cached view with Input",
+    "merged": true,
+    "merged_at": "2026-05-14T15:35:33Z",
+    "merge_commit_sha": "a221a86d490e6ade04ca3480c4aeb76dda190a6f",
+    "html_url": "https://github.com/zed-industries/zed/pull/50665"
+  },
+  {
+    "number": 56771,
+    "title": "gpui_macos: Initialize fallback fonts with primary font weight and style",
+    "merged": true,
+    "merged_at": "2026-06-11T17:01:47Z",
+    "merge_commit_sha": "61ad9ebfcd27ff89e3c9b087f6d54999d08c56b6",
+    "html_url": "https://github.com/zed-industries/zed/pull/56771"
+  },
+  {
+    "number": 63077,
+    "title": "gpui: Support embedding the macOS event loop",
+    "merged": false,
+    "merged_at": null,
+    "merge_commit_sha": null,
+    "html_url": "https://github.com/zed-industries/zed/pull/63077"
+  },
+  {
+    "number": 63719,
+    "title": "gpui: Add scale-factor simulation to `TestWindow`",
+    "merged": true,
+    "merged_at": "2026-09-07T14:37:11Z",
+    "merge_commit_sha": "b95b188b59454bc2b01f08a54ab0182c4a55f141",
+    "html_url": "https://github.com/zed-industries/zed/pull/63719"
+  },
+  {
+    "number": 64143,
+    "title": "gpui_macos: Release the accessibility adapter when a window is dropped",
+    "merged": true,
+    "merged_at": "2026-09-20T08:33:02Z",
+    "merge_commit_sha": "0eda7703f6c88aa08a25c1d2105ff1ca46f775d4",
+    "html_url": "https://github.com/zed-industries/zed/pull/64143"
+  },
+  {
+    "number": 64672,
+    "title": "gpui: Fix panic when hit testing past a wrapped line's width",
+    "merged": true,
+    "merged_at": "2026-09-23T18:03:23Z",
+    "merge_commit_sha": "e71963a599c64c213aca1c607e7418503a1e787d",
+    "html_url": "https://github.com/zed-industries/zed/pull/64672"
+  },
+  {
+    "number": 63498,
+    "title": "gpui: Support dynamic font installation",
+    "merged": true,
+    "merged_at": "2026-09-14T21:22:31Z",
+    "merge_commit_sha": "9e6e14160c192f682c4d35f4e8d420cc0577ad5f",
+    "html_url": "https://github.com/zed-industries/zed/pull/63498"
+  }
+]

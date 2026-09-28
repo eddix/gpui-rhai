@@ -1094,18 +1094,17 @@ impl UiNode {
             }
             UiNodeKind::Custom { primitive } => {
                 for (_, value) in primitive.props.iter_mut() {
-                    match value {
+                    let replaced = match value {
                         crate::PrimitiveValue::Node(node) => {
-                            if node.replace_component_subtree(component, replacement.clone()) {
-                                return true;
-                            }
+                            node.replace_component_subtree(component, replacement.clone())
                         }
                         crate::PrimitiveValue::Nodes(nodes) => {
-                            if replace_in_nodes(nodes.iter_mut(), component, &replacement) {
-                                return true;
-                            }
+                            replace_in_nodes(nodes.iter_mut(), component, &replacement)
                         }
-                        _ => {}
+                        _ => false,
+                    };
+                    if replaced {
+                        return true;
                     }
                 }
                 false
@@ -2253,6 +2252,13 @@ fn register_accessibility_state_methods(builder: &mut TypeBuilder<UiNode>) {
             },
         )
         .with_fn(
+            "accessibility_selected",
+            |node: &mut UiNode, selected: bool| {
+                node.clone()
+                    .with_attribute("selected", UiValue::Bool(selected))
+            },
+        )
+        .with_fn(
             "accessibility_expanded",
             |node: &mut UiNode, expanded: bool| {
                 node.clone()
@@ -2275,6 +2281,11 @@ fn register_accessibility_state_methods(builder: &mut TypeBuilder<UiNode>) {
                     .with_attribute("orientation", UiValue::String(orientation.to_string())))
             },
         );
+    register_accessibility_value_methods(builder);
+    register_accessibility_collection_methods(builder);
+}
+
+fn register_accessibility_value_methods(builder: &mut TypeBuilder<UiNode>) {
     register_accessibility_range_methods(builder);
     builder
         .with_fn(
@@ -2282,6 +2293,20 @@ fn register_accessibility_state_methods(builder: &mut TypeBuilder<UiNode>) {
             |node: &mut UiNode, value: Dynamic| -> Result<UiNode, Box<EvalAltResult>> {
                 let value = dynamic_ui_value(value)?;
                 Ok(node.clone().with_attribute("value", value))
+            },
+        )
+        .with_fn(
+            "accessibility_placeholder",
+            |node: &mut UiNode, placeholder: ImmutableString| {
+                node.clone()
+                    .with_attribute("placeholder", UiValue::String(placeholder.to_string()))
+            },
+        )
+        .with_fn(
+            "accessibility_key_shortcuts",
+            |node: &mut UiNode, shortcuts: ImmutableString| {
+                node.clone()
+                    .with_attribute("key_shortcuts", UiValue::String(shortcuts.to_string()))
             },
         )
         .with_fn(
@@ -2308,7 +2333,123 @@ fn register_accessibility_state_methods(builder: &mut TypeBuilder<UiNode>) {
                 node.clone()
                     .with_attribute("invalid", UiValue::Bool(invalid))
             },
+        )
+        .with_fn(
+            "accessibility_read_only",
+            |node: &mut UiNode, read_only: bool| {
+                node.clone()
+                    .with_attribute("read_only", UiValue::Bool(read_only))
+            },
         );
+}
+
+fn register_accessibility_collection_methods(builder: &mut TypeBuilder<UiNode>) {
+    builder
+        .with_fn(
+            "accessibility_option",
+            |node: &mut UiNode,
+             label: ImmutableString,
+             selected: bool,
+             position: INT,
+             size: INT|
+             -> Result<UiNode, Box<EvalAltResult>> {
+                let position = accessibility_positive_index(position, "option position")?;
+                let size = accessibility_positive_index(size, "option set size")?;
+                Ok(node
+                    .clone()
+                    .with_attribute("role", UiValue::String("option".to_owned()))
+                    .with_attribute("label", UiValue::String(label.to_string()))
+                    .with_attribute("selected", UiValue::Bool(selected))
+                    .with_attribute("position_in_set", UiValue::Integer(position))
+                    .with_attribute("size_of_set", UiValue::Integer(size)))
+            },
+        )
+        .with_fn(
+            "accessibility_table_cell",
+            |node: &mut UiNode,
+             label: ImmutableString,
+             column: INT|
+             -> Result<UiNode, Box<EvalAltResult>> {
+                let column = accessibility_positive_index(column, "table column index")?;
+                Ok(node
+                    .clone()
+                    .with_attribute("role", UiValue::String("gridcell".to_owned()))
+                    .with_attribute("label", UiValue::String(label.to_string()))
+                    .with_attribute("column_index", UiValue::Integer(column)))
+            },
+        )
+        .with_fn(
+            "accessibility_column_header",
+            |node: &mut UiNode,
+             label: ImmutableString,
+             column: INT|
+             -> Result<UiNode, Box<EvalAltResult>> {
+                let column = accessibility_positive_index(column, "table column index")?;
+                Ok(node
+                    .clone()
+                    .with_attribute("role", UiValue::String("columnheader".to_owned()))
+                    .with_attribute("label", UiValue::String(label.to_string()))
+                    .with_attribute("column_index", UiValue::Integer(column)))
+            },
+        )
+        .with_fn(
+            "accessibility_table_row",
+            |node: &mut UiNode,
+             label: ImmutableString,
+             selected: bool,
+             row: INT,
+             position: INT,
+             size: INT|
+             -> Result<UiNode, Box<EvalAltResult>> {
+                let row = accessibility_positive_index(row, "table row index")?;
+                let position = accessibility_positive_index(position, "row position")?;
+                let size = accessibility_positive_index(size, "row set size")?;
+                Ok(node
+                    .clone()
+                    .with_attribute("role", UiValue::String("row".to_owned()))
+                    .with_attribute("label", UiValue::String(label.to_string()))
+                    .with_attribute("selected", UiValue::Bool(selected))
+                    .with_attribute("row_index", UiValue::Integer(row))
+                    .with_attribute("position_in_set", UiValue::Integer(position))
+                    .with_attribute("size_of_set", UiValue::Integer(size)))
+            },
+        );
+    for (method, attribute) in [
+        ("accessibility_level", "level"),
+        ("accessibility_position_in_set", "position_in_set"),
+        ("accessibility_size_of_set", "size_of_set"),
+        ("accessibility_row_index", "row_index"),
+        ("accessibility_column_index", "column_index"),
+        ("accessibility_row_count", "row_count"),
+        ("accessibility_column_count", "column_count"),
+    ] {
+        let attribute = attribute.to_owned();
+        builder.with_fn(
+            method,
+            move |node: &mut UiNode, value: INT| -> Result<UiNode, Box<EvalAltResult>> {
+                if value < 1 {
+                    return Err(Box::new(EvalAltResult::ErrorRuntime(
+                        format!("{attribute} must be at least 1").into(),
+                        Position::NONE,
+                    )));
+                }
+                Ok(node
+                    .clone()
+                    .with_attribute(attribute.clone(), UiValue::Integer(value)))
+            },
+        );
+    }
+}
+
+fn accessibility_positive_index(value: INT, name: &str) -> Result<INT, Box<EvalAltResult>> {
+    if value < 1 {
+        Err(Box::new(EvalAltResult::ErrorRuntime(
+            format!("accessibility {name} must be at least 1").into(),
+            Position::NONE,
+        )))
+    } else {
+        Ok(value)
+    }
 }
 
 fn register_accessibility_range_methods(builder: &mut TypeBuilder<UiNode>) {
