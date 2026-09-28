@@ -24,6 +24,7 @@ import "components/switch" as switch_component;
 import "components/table" as table;
 import "components/split_pane" as split_pane;
 import "components/resizable" as resizable;
+import "components/draggable" as draggable;
 import "components/tabs" as tabs;
 import "components/tag" as tag;
 import "components/textarea" as textarea;
@@ -151,6 +152,12 @@ fn state_schema() {
             x: #{ type: "float", value: 14.0 }, y: #{ type: "float", value: 12.0 },
             width: #{ type: "float", value: 190.0 }, height: #{ type: "float", value: 72.0 }
         } } },
+        specimen_draggable_position: #{ schema: #{ type: "object", allow_unknown: false, fields: #{
+            x: #{ schema: #{ type: "number" }, required: true, sensitive: false },
+            y: #{ schema: #{ type: "number" }, required: true, sensitive: false },
+        } }, "default": #{ type: "map", value: #{
+            x: #{ type: "float", value: 14.0 }, y: #{ type: "float", value: 12.0 }
+        } } },
         specimen_page: #{ schema: #{ type: "integer", min: 1, max: 128 },
             "default": #{ type: "integer", value: 3 } },
         specimen_page_size: #{ schema: #{ type: "integer", allowed: [10, 25, 50] },
@@ -225,6 +232,10 @@ fn set_specimen_split_size(ctx, value) { ctx.set_state("specimen_split_size", va
 fn set_specimen_resizable(ctx, value) {
     ctx.set_state("specimen_resizable_rect", #{ x:value.x, y:value.y, width:value.width, height:value.height });
     record_action("Rectangle resized", ctx, ());
+}
+fn set_specimen_draggable(ctx, value) {
+    ctx.set_state("specimen_draggable_position", value);
+    record_action("Card moved", ctx, ());
 }
 fn set_specimen_table_selection(ctx, value) { ctx.set_state("specimen_table_selected", value); record_action("Table selection changed", ctx, ()); }
 fn set_specimen_table_sort(ctx, value) {
@@ -610,6 +621,16 @@ fn specimen_data(ctx) {
             on_resize: Fn("set_specimen_resizable")
         }).with_style(style().width(relative(1.0)).height(px(112))
             .border(px(1)).border_color(theme_color("border"))),
+        draggable::Draggable(#{ key: "specimen-draggable", label: "Move specimen card",
+            position: ctx.get_state("specimen_draggable_position"), contain: true,
+            handle: text("DRAG HANDLE").with_style(style().height(px(26)).padding_x(theme_spacing("sm"))
+                .items_center().typography("caption").font_weight(700).background(theme_color("surface_hover"))),
+            content: text("Movable surface").with_style(style().width(px(170)).height(px(40))
+                .padding(theme_spacing("sm")).background(theme_color("surface_raised"))
+                .border(px(1)).border_color(theme_color("border"))),
+            on_move: Fn("set_specimen_draggable")
+        }).with_style(style().width(relative(1.0)).height(px(108))
+            .border(px(1)).border_color(theme_color("border"))),
         table::Table(#{ key: "specimen-table", label: "Users", row_key: "id",
             rows: rows, columns: columns, height: 126, striped: true, resizable_columns: true,
             selection_mode: "multiple", selected_keys: ctx.get_state("specimen_table_selected"),
@@ -845,13 +866,13 @@ fn gallery_title_bar(ctx) {
     ]).with_style(style().min_width(px(0)).gap(px(6)).items_center().overflow_hidden());
     let config = #{ label: "GPUI Rhai Component Gallery", title: breadcrumb,
         inset_start: 70, end: [themes] };
-    if !compact { config.subtitle = "53 source-owned components · native GPUI behavior · live themes"; }
+    if !compact { config.subtitle = "54 source-owned components · native GPUI behavior · live themes"; }
     title_bar::TitleBar(config)
 }
 
 fn gallery_status_bar(ctx) {
     status_bar::StatusBar(#{ label: "Component Gallery status",
-        start: [text(`53 components · ${ctx.get_state("interaction_count")} interactions`)],
+        start: [text(`54 components · ${ctx.get_state("interaction_count")} interactions`)],
         center: [text(ctx.get_state("interaction_status"))],
         end: [text(ctx.get_state("gallery_category")), text(ctx.viewport_class())] })
 }
