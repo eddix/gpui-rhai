@@ -22,7 +22,7 @@ does not imply availability in an already published crate.
 | DropZone | Accept a typed drag payload and propose a domain operation | Kanban column, object container, in-app resource drop target | Implemented as `components/drop_zone::DropZone` |
 | Sortable | Propose a new order for a keyed collection | List, Tab order, toolbar items | Implemented for bounded source-owned items; virtual adapter remains a 0.1.8 completion item |
 | PanZoom | Change the viewing transform while preserving content coordinates | Map, image viewer, node canvas | Implemented for Canvas over shared affine geometry; Chart keeps its domain viewport |
-| SelectionArea | Maintain object selection by click, modifiers, range, or marquee | File grid, canvas objects, multi-selection surface | Planned for 0.1.8; Table/text selection remain distinct |
+| SelectionArea | Maintain object selection by click, modifiers, range, or marquee | File grid, canvas objects, multi-selection surface | Implemented for bounded Canvas object rectangles |
 | Rotatable | Change an object's angle around an explicit pivot | Drawing or design tools | Implemented for Canvas with atomic pivot compensation |
 | RangeSlider | Select one ordered numeric interval with two thumbs | Filters, time/value windows | Implemented with shared Slider axis/RTL/step math |
 | Tree | Navigate a flattened hierarchical outline | Files, settings, object hierarchy | Planned for 0.1.8 over shared outline projection |
@@ -267,7 +267,7 @@ does not claim support for arbitrary GPUI subtrees, native editors, or Chart
 domain cameras. Source: [pan_zoom.rhai](../../registry/components/pan_zoom.rhai).
 Runnable story: `gpui-rhai gallery --story components/pan-zoom`.
 
-## SelectionArea — planned
+## SelectionArea — Canvas implementation
 
 The caller owns selected object keys, with a distinct active/cursor key and range
 anchor where needed. Define single, additive/toggle, range, and marquee selection
@@ -282,6 +282,16 @@ Object selection is distinct from text selection, focus, and dragging an already
 selected object. Table, Command, and text viewers keep their existing controlled
 selection models. A new selection surface must not consume native editing keys
 or pointer gestures merely because it is an ancestor.
+
+`components/selection_area::SelectionArea` accepts up to 10,000 stable keyed
+Canvas rectangles and controlled selected/active/anchor keys. Click, platform
+toggle, Shift range, arrows/Home/End/Space, and intersect/enclose marquee all
+emit the same bounded proposal. Pointer movement updates only one native
+marquee rectangle. Canvas-local conversion uses the shared inverse affine
+transform, including PanZoom scale and Rotatable rotation.
+
+Source: [selection_area.rhai](../../registry/components/selection_area.rhai).
+Runnable story: `gpui-rhai gallery --story components/selection-area`.
 
 ## Rotatable — Canvas implementation
 

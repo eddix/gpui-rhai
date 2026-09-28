@@ -1,6 +1,6 @@
 # Official component catalog
 
-gpui-rhai ships 60 editable Rhai source components. They all use the same
+gpui-rhai ships 61 editable Rhai source components. They all use the same
 public atoms and generic runtime mechanisms available to application code; no
 official component receives a private high-level node constructor.
 
@@ -141,6 +141,18 @@ applies to both pointer and keyboard input.
 
 Source: [rotatable.rhai](../../registry/components/rotatable.rhai).
 Runnable story: `gpui-rhai gallery --story components/rotatable`.
+
+## Selection area
+
+`SelectionArea` controls stable Canvas object keys through click, platform
+toggle, Shift range, keyboard navigation, and an intersect/enclose marquee.
+Targets stay as bounded durable rectangles; only marquee preview runs on the
+pointer hot path. Canvas-local coordinate conversion uses the same inverse
+affine transform as paint and hit testing, so PanZoom/rotation do not create a
+second selection coordinate model.
+
+Source: [selection_area.rhai](../../registry/components/selection_area.rhai).
+Runnable story: `gpui-rhai gallery --story components/selection-area`.
 
 The same [specification](interaction-behaviors.md) records the planned
 SelectionArea, Rotatable, and DockLayout
