@@ -10,9 +10,9 @@ use gpui::{
 };
 
 use crate::{
-    ComponentStateSchema, EventSchema, ObjectField, PrimitiveDescriptor, PrimitiveEventEmitter,
+    ComponentStateSchema, EventSchema, ObjectField, PrimitiveContext, PrimitiveDescriptor,
     PrimitiveHandler, PrimitiveId, PrimitiveInstance, PrimitiveInstanceId, PrimitiveProps,
-    PrimitiveTheme, PrimitiveValue, Style, TextDirection, UiValue, ValueSchema,
+    PrimitiveTheme, Style, TextDirection, UiValue, ValueSchema,
 };
 
 #[derive(Clone)]
@@ -46,7 +46,7 @@ struct RangeInputEntity {
     disabled: bool,
     dragging: bool,
     bounds: Option<Bounds<Pixels>>,
-    events: PrimitiveEventEmitter,
+    events: PrimitiveContext,
     track_style: Style,
     fill_style: Style,
     thumb_style: Style,
@@ -54,11 +54,7 @@ struct RangeInputEntity {
 }
 
 impl RangeInputEntity {
-    fn new(
-        config: RangeInputConfig,
-        events: PrimitiveEventEmitter,
-        cx: &mut Context<Self>,
-    ) -> Self {
+    fn new(config: RangeInputConfig, events: PrimitiveContext, cx: &mut Context<Self>) -> Self {
         let value = normalize_value(config.value, config.min, config.max, config.step);
         Self {
             focus: cx.focus_handle(),
@@ -82,7 +78,7 @@ impl RangeInputEntity {
     fn update_props(
         &mut self,
         config: RangeInputConfig,
-        events: PrimitiveEventEmitter,
+        events: PrimitiveContext,
         cx: &mut Context<Self>,
     ) {
         self.min = config.min;
@@ -197,10 +193,8 @@ impl RangeInputEntity {
     }
 
     fn emit_change(&self, value: f64, window: &mut Window, cx: &mut Context<Self>) {
-        let events = self.events.clone();
-        window.defer(cx, move |window, cx| {
-            let _ = events.emit("change", UiValue::Float(value), window, cx);
-        });
+        self.events
+            .propose("change", UiValue::Float(value), window, cx);
     }
 }
 
@@ -419,7 +413,7 @@ impl PrimitiveHandler for RangeInputPrimitiveHandler {
     fn render(
         &mut self,
         instance: &PrimitiveInstance,
-        events: &PrimitiveEventEmitter,
+        events: &PrimitiveContext,
         theme: &PrimitiveTheme,
         _: &mut Window,
         cx: &mut App,
@@ -452,10 +446,12 @@ fn parse_config(
     props: &PrimitiveProps,
     theme: &PrimitiveTheme,
 ) -> Result<RangeInputConfig, String> {
-    let value = number_prop(props, "value").ok_or_else(|| "range value is required".to_owned())?;
-    let min = number_prop(props, "min").unwrap_or(0.0);
-    let max = number_prop(props, "max").unwrap_or(100.0);
-    let step = number_prop(props, "step").unwrap_or(1.0);
+    let value = props
+        .number("value")
+        .ok_or_else(|| "range value is required".to_owned())?;
+    let min = props.number("min").unwrap_or(0.0);
+    let max = props.number("max").unwrap_or(100.0);
+    let step = props.number("step").unwrap_or(1.0);
     if !value.is_finite() || !min.is_finite() || !max.is_finite() || !step.is_finite() {
         return Err("range values must be finite".to_owned());
     }
@@ -465,7 +461,7 @@ fn parse_config(
     if step <= 0.0 || step > max - min {
         return Err("range step must be positive and no larger than max - min".to_owned());
     }
-    let orientation = match string_prop(props, "orientation").as_deref() {
+    let orientation = match props.string("orientation") {
         None | Some("horizontal") => RangeOrientation::Horizontal,
         Some("vertical") => RangeOrientation::Vertical,
         Some(other) => return Err(format!("unknown range orientation `{other}`")),
@@ -476,10 +472,10 @@ fn parse_config(
         max,
         step,
         orientation,
-        disabled: bool_prop(props, "disabled").unwrap_or(false),
-        track_style: style_prop(props, "track_style"),
-        fill_style: style_prop(props, "fill_style"),
-        thumb_style: style_prop(props, "thumb_style"),
+        disabled: props.boolean("disabled").unwrap_or(false),
+        track_style: props.style("track_style").cloned().unwrap_or_default(),
+        fill_style: props.style("fill_style").cloned().unwrap_or_default(),
+        thumb_style: props.style("thumb_style").cloned().unwrap_or_default(),
         theme: theme.clone(),
     })
 }
@@ -499,35 +495,6 @@ fn horizontal_thumb_ratio(ratio: f64, direction: TextDirection) -> f64 {
 
 fn fraction_f32(value: f64) -> f32 {
     value.to_string().parse().unwrap_or(0.0)
-}
-
-fn number_prop(props: &PrimitiveProps, name: &str) -> Option<f64> {
-    match props.get(name) {
-        Some(PrimitiveValue::Data(UiValue::Float(value))) => Some(*value),
-        Some(PrimitiveValue::Data(UiValue::Integer(value))) => value.to_string().parse().ok(),
-        _ => None,
-    }
-}
-
-fn string_prop(props: &PrimitiveProps, name: &str) -> Option<String> {
-    match props.get(name) {
-        Some(PrimitiveValue::Data(UiValue::String(value))) => Some(value.clone()),
-        _ => None,
-    }
-}
-
-fn bool_prop(props: &PrimitiveProps, name: &str) -> Option<bool> {
-    match props.get(name) {
-        Some(PrimitiveValue::Data(UiValue::Bool(value))) => Some(*value),
-        _ => None,
-    }
-}
-
-fn style_prop(props: &PrimitiveProps, name: &str) -> Style {
-    match props.get(name) {
-        Some(PrimitiveValue::Style(style)) => (**style).clone(),
-        _ => Style::new(),
-    }
 }
 
 /// Build the compile-time generic range-input primitive schema.

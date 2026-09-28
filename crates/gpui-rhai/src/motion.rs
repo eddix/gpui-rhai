@@ -3888,8 +3888,9 @@ fn take_callback(
     })?;
     let mut callback = ScriptCallback::try_from_fn_ptr(function, ScriptGeneration::default())
         .map_err(script_boxed_error)?;
-    callback
-        .bind_native_context_if_unset(crate::invocation::ScriptInvocationContext::capture(call));
+    callback.bind_native_context_if_unset(
+        crate::invocation::ScriptInvocationContext::capture_retained(call),
+    );
     Ok(Some(callback))
 }
 

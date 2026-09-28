@@ -27,8 +27,8 @@ use super::{
     layout_chart_scene_with_axis_windows, prepare_chart_data,
 };
 use crate::{
-    ComponentStateSchema, EffectPrimitiveDescriptor, EventSchema, ObjectField, PrimitiveDescriptor,
-    PrimitiveEventEmitter, PrimitiveHandler, PrimitiveId, PrimitiveInstance, PrimitiveInstanceId,
+    ComponentStateSchema, EffectPrimitiveDescriptor, EventSchema, ObjectField, PrimitiveContext,
+    PrimitiveDescriptor, PrimitiveHandler, PrimitiveId, PrimitiveInstance, PrimitiveInstanceId,
     PrimitivePlatform, PrimitiveProps, PrimitiveTheme, PrimitiveValue, UiValue, ValueSchema,
 };
 
@@ -89,7 +89,7 @@ impl ChartSourceCache {
     fn matches(&self, props: &PrimitiveProps) -> bool {
         props.get("spec") == Some(&self.spec_prop)
             && props.get("data") == Some(&self.data_prop)
-            && data_string_prop(props, "key_dimension") == self.key_dimension
+            && props.string("key_dimension") == self.key_dimension.as_deref()
     }
 }
 
@@ -365,7 +365,7 @@ impl ChartLinkRegistry {
 struct ChartEntity {
     focus: FocusHandle,
     config: ChartConfig,
-    events: PrimitiveEventEmitter,
+    events: PrimitiveContext,
     transforms: ChartTransformRegistry,
     geo: ChartGeoRegistry,
     custom_series: ChartSeriesRegistry,
@@ -414,7 +414,7 @@ struct ChartEntity {
 impl ChartEntity {
     fn new(
         config: ChartConfig,
-        events: PrimitiveEventEmitter,
+        events: PrimitiveContext,
         transforms: ChartTransformRegistry,
         geo: ChartGeoRegistry,
         custom_series: ChartSeriesRegistry,
@@ -584,7 +584,7 @@ impl ChartEntity {
     fn update_config(
         &mut self,
         config: ChartConfig,
-        events: PrimitiveEventEmitter,
+        events: PrimitiveContext,
         linked_selected: BTreeSet<String>,
         linked_projection: Option<ChartLinkedProjection>,
         cx: &mut Context<Self>,
@@ -2141,7 +2141,7 @@ impl PrimitiveHandler for ChartPrimitiveHandler {
     fn render(
         &mut self,
         instance: &PrimitiveInstance,
-        events: &PrimitiveEventEmitter,
+        events: &PrimitiveContext,
         theme: &PrimitiveTheme,
         _: &mut Window,
         cx: &mut App,
@@ -2253,13 +2253,16 @@ fn chart_config_from_source(
         spec,
         data: source.data.clone(),
         selected: string_set_prop(props, "selected_keys"),
-        zoom: number_prop(props, "zoom").unwrap_or(1.0),
+        zoom: props.number("zoom").unwrap_or(1.0),
         pan: ChartPoint {
-            x: number_prop(props, "pan_x").unwrap_or(0.0),
-            y: number_prop(props, "pan_y").unwrap_or(0.0),
+            x: props.number("pan_x").unwrap_or(0.0),
+            y: props.number("pan_y").unwrap_or(0.0),
         },
         viewport: viewport_prop(props)?,
-        viewport_revision: integer_prop(props, "viewport_revision").unwrap_or(0),
+        viewport_revision: props
+            .integer("viewport_revision")
+            .and_then(|value| u64::try_from(value).ok())
+            .unwrap_or(0),
         theme: theme.clone(),
     })
 }
@@ -2275,7 +2278,7 @@ fn parse_chart_source(props: &PrimitiveProps) -> Result<ChartSourceCache, String
         }
         _ => return Err("chart spec must be durable data".to_owned()),
     };
-    let key_dimension = data_string_prop(props, "key_dimension");
+    let key_dimension = props.string("key_dimension").map(ToOwned::to_owned);
     let data_prop = props
         .get("data")
         .cloned()
@@ -2668,28 +2671,6 @@ fn linked_viewport_value(viewport: &ChartLinkedViewport) -> UiValue {
             ("pan_y".to_owned(), UiValue::Float(normalized_pan.y)),
         ])),
         ChartLinkedViewport::Unsupported => UiValue::Null,
-    }
-}
-
-fn data_string_prop(props: &PrimitiveProps, name: &str) -> Option<String> {
-    match props.get(name) {
-        Some(PrimitiveValue::Data(UiValue::String(value))) => Some(value.clone()),
-        _ => None,
-    }
-}
-
-fn number_prop(props: &PrimitiveProps, name: &str) -> Option<f64> {
-    match props.get(name) {
-        Some(PrimitiveValue::Data(UiValue::Float(value))) => Some(*value),
-        Some(PrimitiveValue::Data(UiValue::Integer(value))) => value.to_string().parse().ok(),
-        _ => None,
-    }
-}
-
-fn integer_prop(props: &PrimitiveProps, name: &str) -> Option<u64> {
-    match props.get(name) {
-        Some(PrimitiveValue::Data(UiValue::Integer(value))) => u64::try_from(*value).ok(),
-        _ => None,
     }
 }
 

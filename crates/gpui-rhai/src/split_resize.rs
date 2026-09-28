@@ -12,9 +12,9 @@ use gpui::{
 };
 
 use crate::{
-    ComponentStateSchema, EventSchema, ObjectField, PrimitiveDescriptor, PrimitiveEventEmitter,
-    PrimitiveHandler, PrimitiveId, PrimitiveInstance, PrimitiveProps, PrimitiveTheme,
-    PrimitiveValue, Rgba8, SignalKind, SignalValue, TextDirection, UiValue, ValueSchema,
+    ComponentStateSchema, EventSchema, ObjectField, PrimitiveContext, PrimitiveDescriptor,
+    PrimitiveHandler, PrimitiveId, PrimitiveInstance, PrimitiveProps, PrimitiveTheme, Rgba8,
+    SignalKind, SignalValue, TextDirection, UiValue, ValueSchema,
 };
 
 const MAX_PANEL_SIZE: f64 = 16_384.0;
@@ -83,7 +83,7 @@ struct SplitResizePrepaint {
 
 struct SplitResizeHandle {
     config: SplitResizeConfig,
-    events: PrimitiveEventEmitter,
+    events: PrimitiveContext,
 }
 
 impl IntoElement for SplitResizeHandle {
@@ -241,7 +241,7 @@ fn register_pointer_listeners(
     prepaint: &SplitResizePrepaint,
     handle_bounds: Bounds<Pixels>,
     config: SplitResizeConfig,
-    events: PrimitiveEventEmitter,
+    events: PrimitiveContext,
     window: &mut Window,
 ) {
     let view = window.current_view();
@@ -360,10 +360,7 @@ fn register_pointer_listeners(
                 &up_config,
             );
             let ratio = (size / snapshot.group_size).clamp(0.0, 1.0);
-            let deferred = up_events.clone();
-            window.defer(cx, move |window, cx| {
-                let _ = deferred.emit("resize", UiValue::Float(ratio), window, cx);
-            });
+            up_events.propose("resize", UiValue::Float(ratio), window, cx);
         }
         cx.stop_propagation();
         cx.notify(view);
@@ -372,7 +369,7 @@ fn register_pointer_listeners(
 
 fn cancel_drag(
     state: &SplitResizeState,
-    events: &PrimitiveEventEmitter,
+    events: &PrimitiveContext,
     signal: &crate::NativeSignal,
     window: &mut Window,
     cx: &mut App,
@@ -388,7 +385,7 @@ fn cancel_drag(
 }
 
 fn clear_preview(
-    events: &PrimitiveEventEmitter,
+    events: &PrimitiveContext,
     signal: &crate::NativeSignal,
     window: &mut Window,
     cx: &mut App,
@@ -397,7 +394,7 @@ fn clear_preview(
 }
 
 fn write_preview(
-    events: &PrimitiveEventEmitter,
+    events: &PrimitiveContext,
     signal: &crate::NativeSignal,
     value: Option<f64>,
     window: &mut Window,
@@ -481,7 +478,7 @@ impl PrimitiveHandler for SplitResizePrimitiveHandler {
     fn render(
         &mut self,
         instance: &PrimitiveInstance,
-        events: &PrimitiveEventEmitter,
+        events: &PrimitiveContext,
         theme: &PrimitiveTheme,
         _: &mut Window,
         _: &mut App,
@@ -498,17 +495,18 @@ fn parse_config(
     props: &PrimitiveProps,
     theme: &PrimitiveTheme,
 ) -> Result<SplitResizeConfig, String> {
-    let orientation = match string_prop(props, "orientation").as_deref() {
+    let orientation = match props.string("orientation") {
         Some("horizontal") => SplitOrientation::Horizontal,
         Some("vertical") => SplitOrientation::Vertical,
         _ => return Err("split resize orientation must be horizontal or vertical".to_owned()),
     };
-    let source_ratio = number_prop(props, "source_ratio")
+    let source_ratio = props
+        .number("source_ratio")
         .ok_or_else(|| "split resize requires source_ratio".to_owned())?;
-    let min_start = number_prop(props, "min_start").unwrap_or(0.0);
-    let min_end = number_prop(props, "min_end").unwrap_or(0.0);
-    let max_start = number_prop(props, "max_start").unwrap_or(MAX_PANEL_SIZE);
-    let disabled = bool_prop(props, "disabled").unwrap_or(false);
+    let min_start = props.number("min_start").unwrap_or(0.0);
+    let min_end = props.number("min_end").unwrap_or(0.0);
+    let max_start = props.number("max_start").unwrap_or(MAX_PANEL_SIZE);
+    let disabled = props.boolean("disabled").unwrap_or(false);
     if !source_ratio.is_finite()
         || !(0.0..=1.0).contains(&source_ratio)
         || !min_start.is_finite()
@@ -521,15 +519,21 @@ fn parse_config(
     {
         return Err("split resize bounds and ratio are invalid".to_owned());
     }
-    let signal =
-        signal_prop(props, "signal").ok_or_else(|| "split resize requires signal".to_owned())?;
+    let signal = props
+        .signal("signal")
+        .cloned()
+        .ok_or_else(|| "split resize requires signal".to_owned())?;
     if signal.id().kind() != SignalKind::OptionalFloat {
         return Err("split resize signal must be optional_float".to_owned());
     }
-    let group_ref =
-        ref_prop(props, "group_ref").ok_or_else(|| "split resize requires group_ref".to_owned())?;
-    let start_ref =
-        ref_prop(props, "start_ref").ok_or_else(|| "split resize requires start_ref".to_owned())?;
+    let group_ref = props
+        .element_ref("group_ref")
+        .cloned()
+        .ok_or_else(|| "split resize requires group_ref".to_owned())?;
+    let start_ref = props
+        .element_ref("start_ref")
+        .cloned()
+        .ok_or_else(|| "split resize requires start_ref".to_owned())?;
     Ok(SplitResizeConfig {
         id: format!(
             "gpui-rhai-split-resize:{}:{}",
@@ -553,42 +557,6 @@ fn parse_config(
             .color("accent")
             .unwrap_or(Rgba8::from_rgba_hex(0x3b82_f6ff)),
     })
-}
-
-fn number_prop(props: &PrimitiveProps, name: &str) -> Option<f64> {
-    match props.get(name) {
-        Some(PrimitiveValue::Data(UiValue::Float(value))) => Some(*value),
-        Some(PrimitiveValue::Data(UiValue::Integer(value))) => value.to_string().parse().ok(),
-        _ => None,
-    }
-}
-
-fn string_prop(props: &PrimitiveProps, name: &str) -> Option<String> {
-    match props.get(name) {
-        Some(PrimitiveValue::Data(UiValue::String(value))) => Some(value.clone()),
-        _ => None,
-    }
-}
-
-fn bool_prop(props: &PrimitiveProps, name: &str) -> Option<bool> {
-    match props.get(name) {
-        Some(PrimitiveValue::Data(UiValue::Bool(value))) => Some(*value),
-        _ => None,
-    }
-}
-
-fn signal_prop(props: &PrimitiveProps, name: &str) -> Option<crate::NativeSignal> {
-    match props.get(name) {
-        Some(PrimitiveValue::Signal(signal)) => Some(signal.clone()),
-        _ => None,
-    }
-}
-
-fn ref_prop(props: &PrimitiveProps, name: &str) -> Option<crate::ElementRef> {
-    match props.get(name) {
-        Some(PrimitiveValue::Ref(reference)) => Some(reference.clone()),
-        _ => None,
-    }
 }
 
 fn panel_bound_schema() -> ValueSchema {

@@ -445,6 +445,85 @@ impl PrimitiveProps {
         self.0.get(name)
     }
 
+    #[must_use]
+    pub fn data(&self, name: &str) -> Option<&UiValue> {
+        match self.get(name) {
+            Some(PrimitiveValue::Data(value)) => Some(value),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn number(&self, name: &str) -> Option<f64> {
+        match self.data(name) {
+            Some(UiValue::Float(value)) => Some(*value),
+            Some(UiValue::Integer(value)) => value.to_string().parse().ok(),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn integer(&self, name: &str) -> Option<i64> {
+        match self.data(name) {
+            Some(UiValue::Integer(value)) => Some(*value),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn usize(&self, name: &str) -> Option<usize> {
+        self.integer(name)
+            .and_then(|value| usize::try_from(value).ok())
+    }
+
+    #[must_use]
+    pub fn string(&self, name: &str) -> Option<&str> {
+        match self.data(name) {
+            Some(UiValue::String(value)) => Some(value),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn boolean(&self, name: &str) -> Option<bool> {
+        match self.data(name) {
+            Some(UiValue::Bool(value)) => Some(*value),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn style(&self, name: &str) -> Option<&Style> {
+        match self.get(name) {
+            Some(PrimitiveValue::Style(style)) => Some(style),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn signal(&self, name: &str) -> Option<&crate::NativeSignal> {
+        match self.get(name) {
+            Some(PrimitiveValue::Signal(signal)) => Some(signal),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn element_ref(&self, name: &str) -> Option<&crate::ElementRef> {
+        match self.get(name) {
+            Some(PrimitiveValue::Ref(reference)) => Some(reference),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn document(&self, name: &str) -> Option<&crate::NativeTextDocument> {
+        match self.get(name) {
+            Some(PrimitiveValue::Document(document)) => Some(document),
+            _ => None,
+        }
+    }
+
     pub fn insert(
         &mut self,
         name: impl Into<String>,
@@ -760,14 +839,14 @@ pub enum PrimitiveResourceError {
 }
 
 #[derive(Clone)]
-pub struct PrimitiveEventEmitter {
+pub struct PrimitiveContext {
     registry: Weak<RefCell<PrimitiveRegistryInner>>,
     primitive: PrimitiveId,
     callbacks: BTreeMap<String, UiEventHandler>,
     dispatcher: Option<NodeEventDispatcher>,
 }
 
-impl PrimitiveEventEmitter {
+impl PrimitiveContext {
     /// Normalize and dispatch a declared native primitive event.
     ///
     /// # Errors
@@ -815,6 +894,25 @@ impl PrimitiveEventEmitter {
         Ok(())
     }
 
+    /// Queue one low-frequency semantic proposal after the active native input
+    /// callback returns.
+    ///
+    /// Hot preview remains in native signals; Rhai or Host code observes only
+    /// the final schema-checked proposal.
+    pub fn propose(
+        &self,
+        event: impl Into<String>,
+        payload: UiValue,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        let context = self.clone();
+        let event = event.into();
+        window.defer(cx, move |window, cx| {
+            let _ = context.emit(&event, payload, window, cx);
+        });
+    }
+
     /// Write one primitive-owned native signal without invoking Rhai.
     ///
     /// # Errors
@@ -831,6 +929,27 @@ impl PrimitiveEventEmitter {
             || Err(crate::SignalError::Stale(signal.id().clone())),
             |dispatcher| dispatcher.write_signal(signal.clone(), value, cx),
         )
+    }
+
+    /// Atomically apply one related native-preview patch and request at most
+    /// one repaint.
+    ///
+    /// # Errors
+    ///
+    /// Returns without changing any signal when a member is stale, duplicated,
+    /// non-finite, or type-incompatible.
+    pub fn write_signals(
+        &self,
+        updates: impl IntoIterator<Item = (crate::NativeSignal, crate::SignalValue)>,
+        cx: &mut App,
+    ) -> Result<bool, crate::SignalError> {
+        let updates = updates.into_iter().collect::<Vec<_>>();
+        let Some(dispatcher) = self.dispatcher.as_ref() else {
+            return updates.first().map_or(Ok(false), |(signal, _)| {
+                Err(crate::SignalError::Stale(signal.id().clone()))
+            });
+        };
+        dispatcher.write_signals(updates, cx)
     }
 
     /// Read the last committed layout bounds for a primitive-owned element ref.
@@ -943,7 +1062,7 @@ pub trait PrimitiveHandler {
     fn render(
         &mut self,
         instance: &PrimitiveInstance,
-        events: &PrimitiveEventEmitter,
+        events: &PrimitiveContext,
         theme: &PrimitiveTheme,
         window: &mut Window,
         cx: &mut App,
@@ -1331,7 +1450,7 @@ impl PrimitiveRegistry {
         &self,
         node: PrimitiveNode,
         identity: PrimitiveRenderIdentity,
-        events: &PrimitiveEventEmitter,
+        events: &PrimitiveContext,
         theme: &PrimitiveTheme,
         window: &mut Window,
         cx: &mut App,
@@ -1557,7 +1676,7 @@ impl RenderOnce for RegisteredPrimitiveElement {
                 })
             })
             .collect();
-        let events = PrimitiveEventEmitter {
+        let events = PrimitiveContext {
             registry: Rc::downgrade(&registry.inner),
             primitive: self.node.primitive.clone(),
             callbacks,
@@ -1892,7 +2011,7 @@ mod tests {
         fn render(
             &mut self,
             _: &PrimitiveInstance,
-            _: &PrimitiveEventEmitter,
+            _: &PrimitiveContext,
             _: &PrimitiveTheme,
             _: &mut Window,
             _: &mut App,
@@ -2089,7 +2208,7 @@ mod tests {
             fn render(
                 &mut self,
                 _: &PrimitiveInstance,
-                _: &PrimitiveEventEmitter,
+                _: &PrimitiveContext,
                 _: &PrimitiveTheme,
                 _: &mut Window,
                 _: &mut App,
@@ -2175,10 +2294,10 @@ mod tests {
     }
 
     #[test]
-    fn primitive_event_emitter_holds_only_a_weak_registry_reference() {
+    fn primitive_context_holds_only_a_weak_registry_reference() {
         let registry = PrimitiveRegistry::new();
         let weak = Rc::downgrade(&registry.inner);
-        let emitter = PrimitiveEventEmitter {
+        let emitter = PrimitiveContext {
             registry: Rc::downgrade(&registry.inner),
             primitive: PrimitiveId::parse("my_app.editor").unwrap(),
             callbacks: BTreeMap::new(),

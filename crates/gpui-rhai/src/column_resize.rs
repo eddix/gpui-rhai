@@ -12,10 +12,10 @@ use gpui::{
 };
 
 use crate::{
-    ComponentStateSchema, EventSchema, Length, ObjectField, PrimitiveDescriptor,
-    PrimitiveEventEmitter, PrimitiveHandler, PrimitiveId, PrimitiveInstance, PrimitiveInstanceId,
-    PrimitiveProps, PrimitiveTheme, PrimitiveValue, Rgba8, SignalId, SignalKind, SignalValue,
-    TextDirection, UiValue, ValueSchema,
+    ComponentStateSchema, EventSchema, Length, ObjectField, PrimitiveContext, PrimitiveDescriptor,
+    PrimitiveHandler, PrimitiveId, PrimitiveInstance, PrimitiveInstanceId, PrimitiveProps,
+    PrimitiveTheme, PrimitiveValue, Rgba8, SignalId, SignalKind, SignalValue, TextDirection,
+    UiValue, ValueSchema,
 };
 
 const DEFAULT_MIN_WIDTH: f64 = 48.0;
@@ -110,7 +110,7 @@ struct ResizePrepaint {
 
 struct ColumnResizeHandle {
     config: ResizeConfig,
-    events: PrimitiveEventEmitter,
+    events: PrimitiveContext,
     measurements: ColumnMeasurementRegistry,
 }
 
@@ -224,7 +224,7 @@ impl Element for ColumnResizeHandle {
 fn register_pointer_listeners(
     prepaint: &ResizePrepaint,
     config: ResizeConfig,
-    events: PrimitiveEventEmitter,
+    events: PrimitiveContext,
     measurements: ColumnMeasurementRegistry,
     window: &mut Window,
 ) {
@@ -242,7 +242,7 @@ fn register_pointer_listeners(
 fn register_pointer_down(
     prepaint: &ResizePrepaint,
     config: ResizeConfig,
-    events: PrimitiveEventEmitter,
+    events: PrimitiveContext,
     measurements: ColumnMeasurementRegistry,
     window: &mut Window,
 ) {
@@ -271,11 +271,8 @@ fn register_pointer_down(
             let width = clamp_width(measured, config.min, config.max);
             let _ =
                 events.write_signal(&config.signal, SignalValue::OptionalFloat(Some(width)), cx);
-            let deferred_events = events.clone();
             let payload = resize_payload(&config.column_key, width);
-            window.defer(cx, move |window, cx| {
-                let _ = deferred_events.emit("resize", payload, window, cx);
-            });
+            events.propose("resize", payload, window, cx);
             cx.stop_propagation();
             cx.notify(view);
             return;
@@ -296,7 +293,7 @@ fn register_pointer_down(
 fn register_pointer_move(
     prepaint: &ResizePrepaint,
     config: ResizeConfig,
-    events: PrimitiveEventEmitter,
+    events: PrimitiveContext,
     window: &mut Window,
 ) {
     let view = window.current_view();
@@ -331,7 +328,7 @@ fn register_pointer_move(
 fn register_pointer_up(
     prepaint: &ResizePrepaint,
     config: ResizeConfig,
-    events: PrimitiveEventEmitter,
+    events: PrimitiveContext,
     window: &mut Window,
 ) {
     let view = window.current_view();
@@ -369,11 +366,8 @@ fn register_pointer_up(
         let delta = horizontal_delta(start_position, event.position, config.direction);
         let width = clamp_width(start_width + delta, config.min, config.max);
         let _ = events.write_signal(&config.signal, SignalValue::OptionalFloat(Some(width)), cx);
-        let deferred_events = events.clone();
         let payload = resize_payload(&config.column_key, width);
-        window.defer(cx, move |window, cx| {
-            let _ = deferred_events.emit("resize", payload, window, cx);
-        });
+        events.propose("resize", payload, window, cx);
         cx.stop_propagation();
         cx.notify(view);
     });
@@ -526,7 +520,7 @@ impl PrimitiveHandler for IntrinsicTextMeasurePrimitiveHandler {
     fn render(
         &mut self,
         instance: &PrimitiveInstance,
-        _: &PrimitiveEventEmitter,
+        _: &PrimitiveContext,
         theme: &PrimitiveTheme,
         _: &mut Window,
         _: &mut App,
@@ -560,9 +554,12 @@ fn parse_measure_config(
     props: &PrimitiveProps,
     theme: &PrimitiveTheme,
 ) -> Result<IntrinsicMeasureConfig, String> {
-    let text = string_prop(props, "text")
+    let text = props
+        .string("text")
+        .map(ToOwned::to_owned)
         .ok_or_else(|| "intrinsic text measurement requires text".to_owned())?;
-    let group = signal_prop(props, "group")
+    let group = props
+        .signal("group")
         .ok_or_else(|| "intrinsic text measurement requires group".to_owned())?;
     if group.id().kind() != SignalKind::OptionalFloat {
         return Err("intrinsic text measurement group must be an optional-float signal".to_owned());
@@ -577,7 +574,7 @@ fn parse_measure_config(
     if !matches!(horizontal_padding, Length::Pixels(_) | Length::Rems(_)) {
         return Err("intrinsic text measurement padding must resolve to pixels or rems".to_owned());
     }
-    let extra_width = number_prop(props, "extra_width").unwrap_or(0.0);
+    let extra_width = props.number("extra_width").unwrap_or(0.0);
     if !extra_width.is_finite() || !(0.0..=MAX_COLUMN_WIDTH).contains(&extra_width) {
         return Err(
             "intrinsic text measurement extra width must be between 0 and 16384".to_owned(),
@@ -606,7 +603,7 @@ impl PrimitiveHandler for ColumnResizePrimitiveHandler {
     fn render(
         &mut self,
         instance: &PrimitiveInstance,
-        events: &PrimitiveEventEmitter,
+        events: &PrimitiveContext,
         theme: &PrimitiveTheme,
         _: &mut Window,
         _: &mut App,
@@ -622,14 +619,19 @@ impl PrimitiveHandler for ColumnResizePrimitiveHandler {
 }
 
 fn parse_config(props: &PrimitiveProps, theme: &PrimitiveTheme) -> Result<ResizeConfig, String> {
-    let column_key = string_prop(props, "column_key")
+    let column_key = props
+        .string("column_key")
+        .map(ToOwned::to_owned)
         .ok_or_else(|| "column resize handle requires column_key".to_owned())?;
-    let source_kind = string_prop(props, "source_kind")
+    let source_kind = props
+        .string("source_kind")
+        .map(ToOwned::to_owned)
         .ok_or_else(|| "column resize handle requires source_kind".to_owned())?;
-    let source_value = number_prop(props, "source_value")
+    let source_value = props
+        .number("source_value")
         .ok_or_else(|| "column resize handle requires source_value".to_owned())?;
-    let min = number_prop(props, "min_width").unwrap_or(DEFAULT_MIN_WIDTH);
-    let max = number_prop(props, "max_width").unwrap_or(MAX_COLUMN_WIDTH);
+    let min = props.number("min_width").unwrap_or(DEFAULT_MIN_WIDTH);
+    let max = props.number("max_width").unwrap_or(MAX_COLUMN_WIDTH);
     if !source_value.is_finite()
         || !min.is_finite()
         || !max.is_finite()
@@ -639,9 +641,13 @@ fn parse_config(props: &PrimitiveProps, theme: &PrimitiveTheme) -> Result<Resize
     {
         return Err("column resize widths must be finite and satisfy 0 < min <= max".to_owned());
     }
-    let signal = signal_prop(props, "signal")
+    let signal = props
+        .signal("signal")
+        .cloned()
         .ok_or_else(|| "column resize handle requires signal".to_owned())?;
-    let reference = ref_prop(props, "column_ref")
+    let reference = props
+        .element_ref("column_ref")
+        .cloned()
         .ok_or_else(|| "column resize handle requires column_ref".to_owned())?;
     Ok(ResizeConfig {
         id: format!(
@@ -669,35 +675,6 @@ fn parse_config(props: &PrimitiveProps, theme: &PrimitiveTheme) -> Result<Resize
             .color("accent")
             .unwrap_or(Rgba8::from_rgba_hex(0x3b82_f6ff)),
     })
-}
-
-fn number_prop(props: &PrimitiveProps, name: &str) -> Option<f64> {
-    match props.get(name) {
-        Some(PrimitiveValue::Data(UiValue::Float(value))) => Some(*value),
-        Some(PrimitiveValue::Data(UiValue::Integer(value))) => value.to_string().parse().ok(),
-        _ => None,
-    }
-}
-
-fn string_prop(props: &PrimitiveProps, name: &str) -> Option<String> {
-    match props.get(name) {
-        Some(PrimitiveValue::Data(UiValue::String(value))) => Some(value.clone()),
-        _ => None,
-    }
-}
-
-fn signal_prop(props: &PrimitiveProps, name: &str) -> Option<crate::NativeSignal> {
-    match props.get(name) {
-        Some(PrimitiveValue::Signal(signal)) => Some(signal.clone()),
-        _ => None,
-    }
-}
-
-fn ref_prop(props: &PrimitiveProps, name: &str) -> Option<crate::ElementRef> {
-    match props.get(name) {
-        Some(PrimitiveValue::Ref(reference)) => Some(reference.clone()),
-        _ => None,
-    }
 }
 
 const fn resize_bound_schema() -> ValueSchema {

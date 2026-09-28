@@ -2211,8 +2211,9 @@ fn retained_script_callback(
                 Position::NONE,
             ))
         })?;
-    callback
-        .bind_native_context_if_unset(crate::invocation::ScriptInvocationContext::capture(call));
+    callback.bind_native_context_if_unset(
+        crate::invocation::ScriptInvocationContext::capture_retained(call),
+    );
     Ok(callback)
 }
 

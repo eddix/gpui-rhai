@@ -4222,11 +4222,9 @@ fn register_window_context_methods(builder: &mut TypeBuilder<UiContext>) {
 }
 
 fn context_at_call(context: &UiContext, call: &NativeCallContext<'_>) -> UiContext {
-    context
-        .clone()
-        .with_native_context(Some(crate::invocation::ScriptInvocationContext::capture(
-            call,
-        )))
+    context.clone().with_native_context(Some(
+        crate::invocation::ScriptInvocationContext::capture_retained(call),
+    ))
 }
 
 pub(crate) fn register_ui_context_api(engine: &mut Engine) {

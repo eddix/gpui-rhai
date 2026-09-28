@@ -13,7 +13,7 @@ use gpui::{
 };
 
 use crate::{
-    ComponentStateSchema, EventSchema, ObjectField, PrimitiveDescriptor, PrimitiveEventEmitter,
+    ComponentStateSchema, EventSchema, ObjectField, PrimitiveContext, PrimitiveDescriptor,
     PrimitiveHandler, PrimitiveId, PrimitiveInstance, PrimitiveProps, PrimitiveTheme,
     PrimitiveValue, Rgba8, SignalKind, SignalValue, UiValue, ValueSchema,
 };
@@ -186,7 +186,7 @@ struct ResizablePrepaint {
 
 struct ResizableHandleElement {
     config: ResizableConfig,
-    events: PrimitiveEventEmitter,
+    events: PrimitiveContext,
 }
 
 impl IntoElement for ResizableHandleElement {
@@ -329,7 +329,7 @@ fn paint_handle(
 fn register_pointer_listeners(
     prepaint: &ResizablePrepaint,
     config: ResizableConfig,
-    events: PrimitiveEventEmitter,
+    events: PrimitiveContext,
     window: &mut Window,
 ) {
     let view = window.current_view();
@@ -453,11 +453,8 @@ fn register_pointer_listeners(
                 up_config.constraints,
                 (snapshot.boundary_width, snapshot.boundary_height),
             );
-            let deferred = up_events.clone();
             let payload = resize_payload(rect, up_config.handle);
-            window.defer(cx, move |window, cx| {
-                let _ = deferred.emit("resize", payload, window, cx);
-            });
+            up_events.propose("resize", payload, window, cx);
         }
         cx.stop_propagation();
         cx.notify(view);
@@ -466,7 +463,7 @@ fn register_pointer_listeners(
 
 fn cancel_drag(
     state: &ResizableState,
-    events: &PrimitiveEventEmitter,
+    events: &PrimitiveContext,
     config: &ResizableConfig,
     window: &mut Window,
     cx: &mut App,
@@ -482,7 +479,7 @@ fn cancel_drag(
 }
 
 fn clear_preview(
-    events: &PrimitiveEventEmitter,
+    events: &PrimitiveContext,
     config: &ResizableConfig,
     window: &mut Window,
     cx: &mut App,
@@ -493,7 +490,7 @@ fn clear_preview(
 }
 
 fn write_preview(
-    events: &PrimitiveEventEmitter,
+    events: &PrimitiveContext,
     config: &ResizableConfig,
     rect: Option<ResizeRect>,
     cx: &mut App,
@@ -502,12 +499,19 @@ fn write_preview(
     let y = rect.map(|rect| rect.y - config.source.y);
     let width = rect.map(|rect| rect.width);
     let height = rect.map(|rect| rect.height);
-    let _ = events.write_signal(&config.x_signal, SignalValue::OptionalFloat(x), cx);
-    let _ = events.write_signal(&config.y_signal, SignalValue::OptionalFloat(y), cx);
-    let _ = events.write_signal(&config.width_signal, SignalValue::OptionalFloat(width), cx);
-    let _ = events.write_signal(
-        &config.height_signal,
-        SignalValue::OptionalFloat(height),
+    let _ = events.write_signals(
+        [
+            (config.x_signal.clone(), SignalValue::OptionalFloat(x)),
+            (config.y_signal.clone(), SignalValue::OptionalFloat(y)),
+            (
+                config.width_signal.clone(),
+                SignalValue::OptionalFloat(width),
+            ),
+            (
+                config.height_signal.clone(),
+                SignalValue::OptionalFloat(height),
+            ),
+        ],
         cx,
     );
 }
@@ -706,7 +710,7 @@ impl PrimitiveHandler for ResizablePrimitiveHandler {
     fn render(
         &mut self,
         instance: &PrimitiveInstance,
-        events: &PrimitiveEventEmitter,
+        events: &PrimitiveContext,
         theme: &PrimitiveTheme,
         _: &mut Window,
         _: &mut App,
@@ -753,7 +757,7 @@ impl PrimitiveHandler for ResizablePrimitiveHandler {
                     key_config.constraints,
                     (boundary.width, boundary.height),
                 );
-                let _ = key_events.emit(
+                key_events.propose(
                     "resize",
                     resize_payload(rect, key_config.handle),
                     window,
@@ -774,8 +778,8 @@ fn parse_config(
     focus: Option<FocusHandle>,
     theme: &PrimitiveTheme,
 ) -> Result<ResizableConfig, String> {
-    let handle = string_prop(props, "handle")
-        .as_deref()
+    let handle = props
+        .string("handle")
         .and_then(ResizeHandle::parse)
         .ok_or_else(|| "resizable handle must be n, s, e, w, ne, nw, se, or sw".to_owned())?;
     let source = ResizeRect {
@@ -785,19 +789,19 @@ fn parse_config(
         height: required_number(props, "height")?,
     };
     let constraints = ResizeConstraints {
-        min_width: number_prop(props, "min_width").unwrap_or(24.0),
-        min_height: number_prop(props, "min_height").unwrap_or(24.0),
-        max_width: number_prop(props, "max_width").unwrap_or(MAX_RESIZE_DIMENSION),
-        max_height: number_prop(props, "max_height").unwrap_or(MAX_RESIZE_DIMENSION),
+        min_width: props.number("min_width").unwrap_or(24.0),
+        min_height: props.number("min_height").unwrap_or(24.0),
+        max_width: props.number("max_width").unwrap_or(MAX_RESIZE_DIMENSION),
+        max_height: props.number("max_height").unwrap_or(MAX_RESIZE_DIMENSION),
         aspect_ratio: optional_number_prop(props, "aspect_ratio")?,
-        contain: bool_prop(props, "contain").unwrap_or(true),
+        contain: props.boolean("contain").unwrap_or(true),
     };
     validate_geometry(source, constraints)?;
     let x_signal = required_optional_float_signal(props, "x_signal")?;
     let y_signal = required_optional_float_signal(props, "y_signal")?;
     let width_signal = required_optional_float_signal(props, "width_signal")?;
     let height_signal = required_optional_float_signal(props, "height_signal")?;
-    let keyboard_step = number_prop(props, "keyboard_step").unwrap_or(8.0);
+    let keyboard_step = props.number("keyboard_step").unwrap_or(8.0);
     if !keyboard_step.is_finite() || !(0.0..=512.0).contains(&keyboard_step) || keyboard_step == 0.0
     {
         return Err("resizable keyboard_step must be finite and in (0, 512]".to_owned());
@@ -811,14 +815,16 @@ fn parse_config(
         handle,
         source,
         constraints,
-        boundary_ref: ref_prop(props, "boundary_ref")
+        boundary_ref: props
+            .element_ref("boundary_ref")
+            .cloned()
             .ok_or_else(|| "resizable requires boundary_ref".to_owned())?,
         x_signal,
         y_signal,
         width_signal,
         height_signal,
         keyboard_step,
-        disabled: bool_prop(props, "disabled").unwrap_or(false),
+        disabled: props.boolean("disabled").unwrap_or(false),
         idle_color: theme
             .color("border")
             .unwrap_or(Rgba8::from_rgba_hex(0x5555_55ff)),
@@ -859,37 +865,18 @@ fn validate_geometry(source: ResizeRect, constraints: ResizeConstraints) -> Resu
 }
 
 fn required_number(props: &PrimitiveProps, name: &str) -> Result<f64, String> {
-    number_prop(props, name).ok_or_else(|| format!("resizable requires numeric {name}"))
-}
-
-fn number_prop(props: &PrimitiveProps, name: &str) -> Option<f64> {
-    match props.get(name) {
-        Some(PrimitiveValue::Data(UiValue::Float(value))) => Some(*value),
-        Some(PrimitiveValue::Data(UiValue::Integer(value))) => value.to_string().parse().ok(),
-        _ => None,
-    }
+    props
+        .number(name)
+        .ok_or_else(|| format!("resizable requires numeric {name}"))
 }
 
 fn optional_number_prop(props: &PrimitiveProps, name: &str) -> Result<Option<f64>, String> {
     match props.get(name) {
         None | Some(PrimitiveValue::Data(UiValue::Null)) => Ok(None),
-        Some(_) => number_prop(props, name)
+        Some(_) => props
+            .number(name)
             .map(Some)
             .ok_or_else(|| format!("resizable {name} must be an optional number")),
-    }
-}
-
-fn string_prop(props: &PrimitiveProps, name: &str) -> Option<String> {
-    match props.get(name) {
-        Some(PrimitiveValue::Data(UiValue::String(value))) => Some(value.clone()),
-        _ => None,
-    }
-}
-
-fn bool_prop(props: &PrimitiveProps, name: &str) -> Option<bool> {
-    match props.get(name) {
-        Some(PrimitiveValue::Data(UiValue::Bool(value))) => Some(*value),
-        _ => None,
     }
 }
 
@@ -897,21 +884,14 @@ fn required_optional_float_signal(
     props: &PrimitiveProps,
     name: &str,
 ) -> Result<crate::NativeSignal, String> {
-    let signal = match props.get(name) {
-        Some(PrimitiveValue::Signal(signal)) => signal.clone(),
-        _ => return Err(format!("resizable requires signal {name}")),
-    };
+    let signal = props
+        .signal(name)
+        .cloned()
+        .ok_or_else(|| format!("resizable requires signal {name}"))?;
     if signal.id().kind() != SignalKind::OptionalFloat {
         return Err(format!("resizable {name} must be optional_float"));
     }
     Ok(signal)
-}
-
-fn ref_prop(props: &PrimitiveProps, name: &str) -> Option<crate::ElementRef> {
-    match props.get(name) {
-        Some(PrimitiveValue::Ref(reference)) => Some(reference.clone()),
-        _ => None,
-    }
 }
 
 fn rect_schema() -> ValueSchema {

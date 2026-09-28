@@ -1212,7 +1212,7 @@ For a node event, read `ctx.event_target_bounds()` or `NativeEvent::target`
 inside that callback. Do not cache `ctx.element_bounds(ref)` in state on every
 resize merely to service a later click. Custom primitive emissions currently
 have no renderer-owned event target. A primitive may accept a validated
-`ElementRef` prop and use `PrimitiveEventEmitter::element_bounds` for
+`ElementRef` prop and use `PrimitiveContext::element_bounds` for
 last-committed layout geometry; event consumers still receive only the
 primitive's declared payload.
 

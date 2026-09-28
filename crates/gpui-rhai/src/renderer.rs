@@ -42,8 +42,10 @@ type NativeDispatchFn = dyn Fn(
     &mut Window,
     &mut App,
 ) -> EventResponse;
-type SignalWriteFn =
-    dyn Fn(crate::NativeSignal, crate::SignalValue, &mut App) -> Result<bool, crate::SignalError>;
+type SignalWriteFn = dyn Fn(
+    Vec<(crate::NativeSignal, crate::SignalValue)>,
+    &mut App,
+) -> Result<bool, crate::SignalError>;
 type ElementBoundsFn = dyn Fn(&crate::ElementRef, &App) -> Option<crate::GeometryBounds>;
 
 #[derive(Clone)]
@@ -74,8 +76,10 @@ impl NodeEventDispatcher {
                 dispatch(callback, payload, target, window, app).into()
             }),
             native: Rc::new(|_, _, _, _, _, _| EventResponse::new().stop()),
-            signal_write: Rc::new(|signal, _, _| {
-                Err(crate::SignalError::Stale(signal.id().clone()))
+            signal_write: Rc::new(|updates, _| {
+                updates.first().map_or(Ok(false), |(signal, _)| {
+                    Err(crate::SignalError::Stale(signal.id().clone()))
+                })
             }),
             element_bounds: Rc::new(|_, _| None),
         }
@@ -106,8 +110,7 @@ impl NodeEventDispatcher {
     pub(crate) fn with_signal_write(
         mut self,
         write: impl Fn(
-            crate::NativeSignal,
-            crate::SignalValue,
+            Vec<(crate::NativeSignal, crate::SignalValue)>,
             &mut App,
         ) -> Result<bool, crate::SignalError>
         + 'static,
@@ -153,7 +156,18 @@ impl NodeEventDispatcher {
         value: crate::SignalValue,
         app: &mut App,
     ) -> Result<bool, crate::SignalError> {
-        (self.signal_write)(signal, value, app)
+        self.write_signals(vec![(signal, value)], app)
+    }
+
+    pub(crate) fn write_signals(
+        &self,
+        updates: Vec<(crate::NativeSignal, crate::SignalValue)>,
+        app: &mut App,
+    ) -> Result<bool, crate::SignalError> {
+        if updates.is_empty() {
+            return Ok(false);
+        }
+        (self.signal_write)(updates, app)
     }
 
     pub(crate) fn element_bounds(

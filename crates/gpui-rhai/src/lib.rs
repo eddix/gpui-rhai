@@ -199,8 +199,8 @@ pub use overlay::{
     OverlayPlacement, OverlaySpec, PlacementResult, TooltipScheduler, TooltipTransition,
 };
 pub use primitive::{
-    EffectPrimitiveDescriptor, PrimitiveAccessibilityProjection, PrimitiveDescriptor,
-    PrimitiveError, PrimitiveEventEmitter, PrimitiveHandler, PrimitiveId, PrimitiveInstance,
+    EffectPrimitiveDescriptor, PrimitiveAccessibilityProjection, PrimitiveContext,
+    PrimitiveDescriptor, PrimitiveError, PrimitiveHandler, PrimitiveId, PrimitiveInstance,
     PrimitiveInstanceId, PrimitiveNode, PrimitivePlatform, PrimitiveProps, PrimitiveRegistry,
     PrimitiveResourceError, PrimitiveResourceHandle, PrimitiveResourceScope, PrimitiveTheme,
     PrimitiveValue,

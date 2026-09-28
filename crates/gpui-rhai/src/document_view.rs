@@ -25,7 +25,7 @@ use crate::text_input::{
 use crate::{
     DiffDisplayRow, DiffRowKind, DiffViewMode, DiffWhitespace, DocumentDescriptor,
     DocumentRuntimeConfig, DocumentSource, DocumentWrap, EventSchema, ObjectField, PreparedDiff,
-    PreparedDocument, PrimitiveDescriptor, PrimitiveEventEmitter, PrimitiveHandler, PrimitiveId,
+    PreparedDocument, PrimitiveContext, PrimitiveDescriptor, PrimitiveHandler, PrimitiveId,
     PrimitiveInstance, PrimitiveInstanceId, PrimitiveProps, PrimitiveTheme, PrimitiveValue, Style,
     SyntaxRegistry, UiValue, ValueSchema, prepare_diff_with_limits, prepare_document_with_limits,
 };
@@ -376,7 +376,7 @@ struct SearchState {
 
 struct CodeViewerEntity {
     config: CodeViewerConfig,
-    events: PrimitiveEventEmitter,
+    events: PrimitiveContext,
     theme: PrimitiveTheme,
     syntaxes: SyntaxRegistry,
     document_runtime: DocumentRuntimeConfig,
@@ -403,7 +403,7 @@ struct CodeViewerEntity {
 impl CodeViewerEntity {
     fn new(
         config: CodeViewerConfig,
-        events: PrimitiveEventEmitter,
+        events: PrimitiveContext,
         theme: PrimitiveTheme,
         syntaxes: SyntaxRegistry,
         document_runtime: DocumentRuntimeConfig,
@@ -475,7 +475,7 @@ impl CodeViewerEntity {
     fn update(
         &mut self,
         config: CodeViewerConfig,
-        events: PrimitiveEventEmitter,
+        events: PrimitiveContext,
         theme: &PrimitiveTheme,
         search_typography: NativeTypography,
         cx: &mut Context<Self>,
@@ -1105,7 +1105,7 @@ fn code_line_element(
     selection: &DocumentSelection,
     matches: &[Range<usize>],
     current_match: Option<usize>,
-    events: &PrimitiveEventEmitter,
+    events: &PrimitiveContext,
     focus: &FocusHandle,
     disabled: bool,
 ) -> AnyElement {
@@ -1269,7 +1269,7 @@ struct InteractiveDocumentText {
     side: DocumentSide,
     selection: DocumentSelection,
     focus: FocusHandle,
-    events: PrimitiveEventEmitter,
+    events: PrimitiveContext,
     disabled: bool,
 }
 
@@ -1444,7 +1444,7 @@ impl PrimitiveHandler for CodeViewerPrimitiveHandler {
     fn render(
         &mut self,
         instance: &PrimitiveInstance,
-        events: &PrimitiveEventEmitter,
+        events: &PrimitiveContext,
         theme: &PrimitiveTheme,
         window: &mut Window,
         cx: &mut App,
@@ -1505,28 +1505,28 @@ fn parse_code_config(
 ) -> Result<CodeViewerConfig, String> {
     let descriptor = DocumentDescriptor {
         source: document_source_prop(props, "source")?,
-        label: string_prop(props, "label").unwrap_or_else(|| "Code".to_owned()),
+        label: props.string("label").unwrap_or("Code").to_owned(),
         file_name: optional_string_prop(props, "file_name"),
         language: optional_string_prop(props, "language"),
     };
-    let wrap = match string_prop(props, "wrap").as_deref() {
+    let wrap = match props.string("wrap") {
         None | Some("none") => DocumentWrap::None,
         Some("viewport") => DocumentWrap::Viewport,
-        Some("column") => DocumentWrap::Column(integer_prop(props, "wrap_column").unwrap_or(100)),
+        Some("column") => DocumentWrap::Column(props.usize("wrap_column").unwrap_or(100)),
         Some(other) => return Err(format!("unknown CodeViewer wrap mode `{other}`")),
     };
     Ok(CodeViewerConfig {
         descriptor,
-        show_line_numbers: bool_prop(props, "show_line_numbers").unwrap_or(true),
+        show_line_numbers: props.boolean("show_line_numbers").unwrap_or(true),
         wrap,
-        tab_size: integer_prop(props, "tab_size").unwrap_or(4),
+        tab_size: props.usize("tab_size").unwrap_or(4),
         monospace_family,
-        gutter_style: style_prop(props, "gutter_style"),
-        line_style: style_prop(props, "line_style"),
-        text_style: style_prop(props, "text_style"),
-        loading_style: style_prop(props, "loading_style"),
-        error_style: style_prop(props, "error_style"),
-        search_style: style_prop(props, "search_style"),
+        gutter_style: props.style("gutter_style").cloned().unwrap_or_default(),
+        line_style: props.style("line_style").cloned().unwrap_or_default(),
+        text_style: props.style("text_style").cloned().unwrap_or_default(),
+        loading_style: props.style("loading_style").cloned().unwrap_or_default(),
+        error_style: props.style("error_style").cloned().unwrap_or_default(),
+        search_style: props.style("search_style").cloned().unwrap_or_default(),
     })
 }
 
@@ -1540,36 +1540,11 @@ fn document_source_prop(props: &PrimitiveProps, name: &str) -> Result<DocumentSo
     }
 }
 
-fn string_prop(props: &PrimitiveProps, name: &str) -> Option<String> {
-    match props.get(name) {
-        Some(PrimitiveValue::Data(UiValue::String(value))) => Some(value.clone()),
-        _ => None,
-    }
-}
-
 fn optional_string_prop(props: &PrimitiveProps, name: &str) -> Option<String> {
-    string_prop(props, name).filter(|value| !value.is_empty())
-}
-
-fn bool_prop(props: &PrimitiveProps, name: &str) -> Option<bool> {
-    match props.get(name) {
-        Some(PrimitiveValue::Data(UiValue::Bool(value))) => Some(*value),
-        _ => None,
-    }
-}
-
-fn integer_prop(props: &PrimitiveProps, name: &str) -> Option<usize> {
-    match props.get(name) {
-        Some(PrimitiveValue::Data(UiValue::Integer(value))) => usize::try_from(*value).ok(),
-        _ => None,
-    }
-}
-
-fn style_prop(props: &PrimitiveProps, name: &str) -> Style {
-    match props.get(name) {
-        Some(PrimitiveValue::Style(style)) => (**style).clone(),
-        _ => Style::new(),
-    }
+    props
+        .string(name)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
 }
 
 fn theme_color(theme: &PrimitiveTheme, token: &str, fallback: u32) -> crate::Rgba8 {
@@ -2035,7 +2010,7 @@ struct DiffSearchState {
 
 struct DiffViewerEntity {
     config: DiffViewerConfig,
-    events: PrimitiveEventEmitter,
+    events: PrimitiveContext,
     theme: PrimitiveTheme,
     syntaxes: SyntaxRegistry,
     document_runtime: DocumentRuntimeConfig,
@@ -2067,7 +2042,7 @@ struct DiffViewerEntity {
 impl DiffViewerEntity {
     fn new(
         config: DiffViewerConfig,
-        events: PrimitiveEventEmitter,
+        events: PrimitiveContext,
         theme: PrimitiveTheme,
         syntaxes: SyntaxRegistry,
         document_runtime: DocumentRuntimeConfig,
@@ -2142,7 +2117,7 @@ impl DiffViewerEntity {
     fn update(
         &mut self,
         config: DiffViewerConfig,
-        events: PrimitiveEventEmitter,
+        events: PrimitiveContext,
         theme: &PrimitiveTheme,
         search_typography: NativeTypography,
         cx: &mut Context<Self>,
@@ -3290,7 +3265,7 @@ fn diff_line_element(
     selection: &DocumentSelection,
     matches: &[DiffSearchMatch],
     current_match: Option<usize>,
-    events: &PrimitiveEventEmitter,
+    events: &PrimitiveContext,
     focus: &FocusHandle,
     weak: &gpui::WeakEntity<DiffViewerEntity>,
     left_horizontal: &ScrollHandle,
@@ -3451,7 +3426,7 @@ fn diff_cell(
     selection: &DocumentSelection,
     matches: &[DiffSearchMatch],
     current_match: Option<usize>,
-    events: &PrimitiveEventEmitter,
+    events: &PrimitiveContext,
     focus: &FocusHandle,
     horizontal: Option<&ScrollHandle>,
     disabled: bool,
@@ -3705,7 +3680,7 @@ impl PrimitiveHandler for DiffViewerPrimitiveHandler {
     fn render(
         &mut self,
         instance: &PrimitiveInstance,
-        events: &PrimitiveEventEmitter,
+        events: &PrimitiveContext,
         theme: &PrimitiveTheme,
         window: &mut Window,
         cx: &mut App,
@@ -3764,18 +3739,20 @@ fn parse_diff_config(
     let descriptor = |prefix: &str| -> Result<DocumentDescriptor, String> {
         Ok(DocumentDescriptor {
             source: document_source_prop(props, &format!("{prefix}_source"))?,
-            label: string_prop(props, &format!("{prefix}_label"))
-                .unwrap_or_else(|| prefix.to_owned()),
+            label: props
+                .string(&format!("{prefix}_label"))
+                .unwrap_or(prefix)
+                .to_owned(),
             file_name: optional_string_prop(props, &format!("{prefix}_file_name")),
             language: optional_string_prop(props, &format!("{prefix}_language")),
         })
     };
-    let mode = match string_prop(props, "mode").as_deref() {
+    let mode = match props.string("mode") {
         None | Some("unified") => DiffViewMode::Unified,
         Some("split") => DiffViewMode::Split,
         Some(other) => return Err(format!("unknown DiffViewer mode `{other}`")),
     };
-    let whitespace = match string_prop(props, "whitespace").as_deref() {
+    let whitespace = match props.string("whitespace") {
         None | Some("exact") => DiffWhitespace::Exact,
         Some("ignore_changes") => DiffWhitespace::IgnoreChanges,
         Some("ignore_all") => DiffWhitespace::IgnoreAll,
@@ -3788,10 +3765,10 @@ fn parse_diff_config(
         ),
         _ => Some(3),
     };
-    let wrap = match string_prop(props, "wrap").as_deref() {
+    let wrap = match props.string("wrap") {
         None | Some("none") => DocumentWrap::None,
         Some("viewport") => DocumentWrap::Viewport,
-        Some("column") => DocumentWrap::Column(integer_prop(props, "wrap_column").unwrap_or(100)),
+        Some("column") => DocumentWrap::Column(props.usize("wrap_column").unwrap_or(100)),
         Some(other) => return Err(format!("unknown DiffViewer wrap mode `{other}`")),
     };
     Ok(DiffViewerConfig {
@@ -3800,19 +3777,19 @@ fn parse_diff_config(
         mode,
         whitespace,
         context_lines,
-        show_line_numbers: bool_prop(props, "show_line_numbers").unwrap_or(true),
+        show_line_numbers: props.boolean("show_line_numbers").unwrap_or(true),
         wrap,
-        tab_size: integer_prop(props, "tab_size").unwrap_or(4),
+        tab_size: props.usize("tab_size").unwrap_or(4),
         monospace_family,
-        header_style: style_prop(props, "header_style"),
-        gutter_style: style_prop(props, "gutter_style"),
-        line_style: style_prop(props, "line_style"),
-        text_style: style_prop(props, "text_style"),
-        fold_style: style_prop(props, "fold_style"),
-        loading_style: style_prop(props, "loading_style"),
-        error_style: style_prop(props, "error_style"),
-        search_style: style_prop(props, "search_style"),
-        status_style: style_prop(props, "status_style"),
+        header_style: props.style("header_style").cloned().unwrap_or_default(),
+        gutter_style: props.style("gutter_style").cloned().unwrap_or_default(),
+        line_style: props.style("line_style").cloned().unwrap_or_default(),
+        text_style: props.style("text_style").cloned().unwrap_or_default(),
+        fold_style: props.style("fold_style").cloned().unwrap_or_default(),
+        loading_style: props.style("loading_style").cloned().unwrap_or_default(),
+        error_style: props.style("error_style").cloned().unwrap_or_default(),
+        search_style: props.style("search_style").cloned().unwrap_or_default(),
+        status_style: props.style("status_style").cloned().unwrap_or_default(),
     })
 }
 

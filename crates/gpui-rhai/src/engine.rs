@@ -2401,7 +2401,7 @@ fn execute_component_render(
     )? {
         return Ok(node);
     }
-    let native_context = crate::invocation::ScriptInvocationContext::capture(call);
+    let native_context = crate::invocation::ScriptInvocationContext::capture_retained(call);
     let caller_binding = caller_component_binding(call, &caller_context);
     bind_component_callback_props(
         &mut invocation.props,
@@ -2482,12 +2482,9 @@ fn caller_component_binding(
         component: caller_context.component_path().clone(),
         incarnation: caller_context.component_incarnation(),
         events: caller_context.event_schemas().clone(),
-        context: Some(
-            caller_context
-                .native_context()
-                .cloned()
-                .unwrap_or_else(|| crate::invocation::ScriptInvocationContext::capture_entry(call)),
-        ),
+        context: Some(caller_context.native_context().cloned().unwrap_or_else(|| {
+            crate::invocation::ScriptInvocationContext::capture_entry_retained(call)
+        })),
     }
 }
 
@@ -2885,7 +2882,8 @@ fn register_effect_api(engine: &mut Engine, active: &ActiveComponentRenderState)
                     .map_err(|error| Box::new(component_render_error(error.to_string())))?;
                 let dependencies = UiValue::from_dynamic(dependencies)
                     .map_err(|error| Box::new(component_render_error(error.to_string())))?;
-                let native_context = crate::invocation::ScriptInvocationContext::capture(&call);
+                let native_context =
+                    crate::invocation::ScriptInvocationContext::capture_retained(&call);
                 let mut start = ScriptCallback::try_from_fn_ptr(start, generation)
                     .map_err(|error| Box::new(component_render_error(error.to_string())))?;
                 start.bind_component_scope_if_unset(
@@ -2964,7 +2962,8 @@ fn register_timer_api(engine: &mut Engine, active: &ActiveComponentRenderState) 
                     .map_err(|error| Box::new(component_render_error(error.to_string())))?;
                 let payload = UiValue::from_dynamic(payload)
                     .map_err(|error| Box::new(component_render_error(error.to_string())))?;
-                let native_context = crate::invocation::ScriptInvocationContext::capture(&call);
+                let native_context =
+                    crate::invocation::ScriptInvocationContext::capture_retained(&call);
                 let mut callback = ScriptCallback::try_from_fn_ptr(callback, generation)
                     .map_err(|error| Box::new(component_render_error(error.to_string())))?;
                 callback.bind_component_scope_if_unset(
@@ -3287,7 +3286,8 @@ fn register_virtual_collection_api(engine: &mut Engine, active: &ActiveComponent
                         BTreeMap::new(),
                     )
                     .with_generation(generation);
-                let native_context = crate::invocation::ScriptInvocationContext::capture(&call);
+                let native_context =
+                    crate::invocation::ScriptInvocationContext::capture_retained(&call);
                 let realized = realize_seeded_virtual_collection(
                     &call,
                     &renderer,

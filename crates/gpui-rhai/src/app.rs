@@ -3244,21 +3244,24 @@ fn script_node_dispatcher(cx: &Context<ScriptHostView>) -> NodeEventDispatcher {
             })
             .unwrap_or_else(|_| crate::EventResponse::new().stop())
     })
-    .with_signal_write(move |signal, value, app| {
-        let stale = crate::SignalError::Stale(signal.id().clone());
+    .with_signal_write(move |updates, app| {
+        let stale = updates
+            .first()
+            .map(|(signal, _)| crate::SignalError::Stale(signal.id().clone()));
         signal_entity
             .update(app, |view, cx| {
-                let changed = view.lifecycle.runtime().borrow_mut().signals.write_from(
-                    &signal,
-                    value,
-                    crate::SignalWriter::Primitive,
-                )?;
+                let changed = view
+                    .lifecycle
+                    .runtime()
+                    .borrow_mut()
+                    .signals
+                    .write_batch_from(&updates, crate::SignalWriter::Primitive)?;
                 if changed {
                     cx.notify();
                 }
                 Ok(changed)
             })
-            .unwrap_or(Err(stale))
+            .unwrap_or_else(|_| Err(stale.expect("non-empty signal patches have a first member")))
     })
     .with_element_bounds(move |reference, app| {
         geometry_entity

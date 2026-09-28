@@ -67,7 +67,7 @@ impl PrimitiveHandler for HookPrimitive {
     fn render(
         &mut self,
         _: &PrimitiveInstance,
-        _: &PrimitiveEventEmitter,
+        _: &PrimitiveContext,
         _: &PrimitiveTheme,
         _: &mut Window,
         _: &mut gpui::App,

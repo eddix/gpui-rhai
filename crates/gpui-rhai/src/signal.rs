@@ -407,23 +407,52 @@ impl SignalRegistry {
         value: SignalValue,
         writer: SignalWriter,
     ) -> Result<bool, SignalError> {
-        value.validate()?;
-        if signal.id.kind != value.kind() {
-            return Err(SignalError::TypeMismatch {
-                expected: signal.id.kind,
-                actual: value.kind(),
-            });
+        self.write_batch_from(&[(signal.clone(), value)], writer)
+    }
+
+    /// Atomically validate and write one related native-preview patch.
+    ///
+    /// No signal changes when any member is stale, duplicated, non-finite, or
+    /// type-incompatible. Callers can therefore publish one coherent geometry
+    /// or transform without exposing intermediate field combinations.
+    pub(crate) fn write_batch_from(
+        &mut self,
+        updates: &[(NativeSignal, SignalValue)],
+        writer: SignalWriter,
+    ) -> Result<bool, SignalError> {
+        let mut ids = std::collections::BTreeSet::new();
+        let mut changed = false;
+        for (signal, value) in updates {
+            value.validate()?;
+            if !ids.insert(signal.id().clone()) {
+                return Err(SignalError::DuplicateBatch(signal.id().clone()));
+            }
+            if signal.id.kind != value.kind() {
+                return Err(SignalError::TypeMismatch {
+                    expected: signal.id.kind,
+                    actual: value.kind(),
+                });
+            }
+            let record = self
+                .active
+                .get(signal.id())
+                .ok_or_else(|| SignalError::Stale(signal.id().clone()))?;
+            changed |= record.value != *value;
         }
-        let record = self
-            .active
-            .get_mut(signal.id())
-            .ok_or_else(|| SignalError::Stale(signal.id().clone()))?;
-        if record.value == value {
+        if !changed {
             return Ok(false);
         }
-        record.value = value;
-        record.revision = record.revision.saturating_add(1);
-        record.last_writer = writer;
+        for (signal, value) in updates {
+            let record = self
+                .active
+                .get_mut(signal.id())
+                .expect("batch members remain mounted during one foreground write");
+            if record.value != *value {
+                record.value = value.clone();
+                record.revision = record.revision.saturating_add(1);
+                record.last_writer = writer;
+            }
+        }
         Ok(true)
     }
 
@@ -486,6 +515,8 @@ pub enum SignalError {
     },
     #[error("native signal `{0:?}` is stale or unmounted")]
     Stale(SignalId),
+    #[error("native signal `{0:?}` occurs more than once in one atomic patch")]
+    DuplicateBatch(SignalId),
     #[error("component `{component}` has no mounted native signal `{key}`")]
     UnknownKey {
         component: ComponentInstancePath,
@@ -554,6 +585,96 @@ mod tests {
             Err(SignalError::NonFiniteFloat)
         );
         assert_eq!(registry.read(&signal).unwrap(), SignalValue::Float(0.0));
+    }
+
+    #[test]
+    fn related_signal_patch_validates_every_member_before_mutating() {
+        let component = ComponentInstancePath::root("Resizable", "card");
+        let x = NativeSignal::new(
+            SignalId::new(component.clone(), "x", SignalKind::OptionalFloat).unwrap(),
+        );
+        let y = NativeSignal::new(
+            SignalId::new(component.clone(), "y", SignalKind::OptionalFloat).unwrap(),
+        );
+        let stale = NativeSignal::new(
+            SignalId::new(component.clone(), "stale", SignalKind::OptionalFloat).unwrap(),
+        );
+        let mut registry = SignalRegistry::new();
+        registry.reconcile(
+            &component,
+            BTreeMap::from([
+                (
+                    x.id().clone(),
+                    SignalDescriptor::new(SignalValue::OptionalFloat(None)),
+                ),
+                (
+                    y.id().clone(),
+                    SignalDescriptor::new(SignalValue::OptionalFloat(None)),
+                ),
+            ]),
+        );
+
+        assert!(matches!(
+            registry.write_batch_from(
+                &[
+                    (x.clone(), SignalValue::OptionalFloat(Some(10.0))),
+                    (stale, SignalValue::OptionalFloat(Some(20.0))),
+                ],
+                SignalWriter::Primitive,
+            ),
+            Err(SignalError::Stale(_))
+        ));
+        assert_eq!(registry.read(&x).unwrap(), SignalValue::OptionalFloat(None));
+
+        assert!(matches!(
+            registry.write_batch_from(
+                &[
+                    (x.clone(), SignalValue::OptionalFloat(Some(10.0))),
+                    (y.clone(), SignalValue::Integer(20)),
+                ],
+                SignalWriter::Primitive,
+            ),
+            Err(SignalError::TypeMismatch { .. })
+        ));
+        assert_eq!(registry.read(&x).unwrap(), SignalValue::OptionalFloat(None));
+        assert_eq!(registry.read(&y).unwrap(), SignalValue::OptionalFloat(None));
+
+        assert!(
+            registry
+                .write_batch_from(
+                    &[
+                        (x.clone(), SignalValue::OptionalFloat(Some(10.0))),
+                        (y.clone(), SignalValue::OptionalFloat(Some(20.0))),
+                    ],
+                    SignalWriter::Primitive,
+                )
+                .unwrap()
+        );
+        assert_eq!(
+            registry.read(&x).unwrap(),
+            SignalValue::OptionalFloat(Some(10.0))
+        );
+        assert_eq!(
+            registry.read(&y).unwrap(),
+            SignalValue::OptionalFloat(Some(20.0))
+        );
+        assert_eq!(registry.revision(&x).unwrap(), 1);
+        assert_eq!(registry.revision(&y).unwrap(), 1);
+
+        assert_eq!(
+            registry.write_batch_from(
+                &[
+                    (x.clone(), SignalValue::OptionalFloat(Some(30.0))),
+                    (x.clone(), SignalValue::OptionalFloat(Some(40.0))),
+                ],
+                SignalWriter::Primitive,
+            ),
+            Err(SignalError::DuplicateBatch(x.id().clone()))
+        );
+        assert_eq!(
+            registry.read(&x).unwrap(),
+            SignalValue::OptionalFloat(Some(10.0))
+        );
     }
 
     #[test]

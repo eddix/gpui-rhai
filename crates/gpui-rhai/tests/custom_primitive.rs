@@ -2,9 +2,9 @@ use std::collections::BTreeMap;
 
 use gpui::{AnyElement, App, IntoElement, Window, div};
 use gpui_rhai::{
-    ComponentStateSchema, ObjectField, PrimitiveDescriptor, PrimitiveEventEmitter,
-    PrimitiveHandler, PrimitiveId, PrimitiveInstance, PrimitiveValue, RuntimeEngine, UiNodeKind,
-    UiValue, ValueSchema,
+    ComponentStateSchema, ObjectField, PrimitiveContext, PrimitiveDescriptor, PrimitiveHandler,
+    PrimitiveId, PrimitiveInstance, PrimitiveValue, RuntimeEngine, UiNodeKind, UiValue,
+    ValueSchema,
 };
 
 struct DownstreamEditor;
@@ -13,7 +13,7 @@ impl PrimitiveHandler for DownstreamEditor {
     fn render(
         &mut self,
         _: &PrimitiveInstance,
-        _: &PrimitiveEventEmitter,
+        _: &PrimitiveContext,
         _: &gpui_rhai::PrimitiveTheme,
         _: &mut Window,
         _: &mut App,
