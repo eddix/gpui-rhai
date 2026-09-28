@@ -1330,8 +1330,7 @@ impl PrimitiveRegistry {
     fn render_instance(
         &self,
         node: PrimitiveNode,
-        retained_id: Option<crate::NodeId>,
-        focus_handle: Option<gpui::FocusHandle>,
+        identity: PrimitiveRenderIdentity,
         events: &PrimitiveEventEmitter,
         theme: &PrimitiveTheme,
         window: &mut Window,
@@ -1342,7 +1341,7 @@ impl PrimitiveRegistry {
             .try_borrow_mut()
             .map_err(|_| PrimitiveError::Borrowed)?;
         let retained_instance = primitive_is_retained(&inner, &node.primitive)?;
-        if retained_instance && retained_id.is_none() {
+        if retained_instance && identity.retained_id.is_none() {
             return Err(PrimitiveError::MissingRetainedIdentity(node.primitive));
         }
         let instance_id = retained_instance.then(|| PrimitiveInstanceId {
@@ -1351,7 +1350,9 @@ impl PrimitiveRegistry {
                 .key
                 .clone()
                 .expect("retained primitive descriptors require a key"),
-            node: retained_id.expect("retained primitive renderer supplies NodeId"),
+            node: identity
+                .retained_id
+                .expect("retained primitive renderer supplies NodeId"),
         });
         let previous = instance_id
             .as_ref()
@@ -1375,7 +1376,7 @@ impl PrimitiveRegistry {
             id: instance_id.clone(),
             node,
             resources: resources.clone(),
-            focus_handle,
+            focus_handle: identity.focus_handle,
         };
         let needs_mount = instance_id.is_some() && previous.is_none();
         if needs_mount
@@ -1535,6 +1536,11 @@ struct RegisteredPrimitiveElement {
     theme: PrimitiveTheme,
 }
 
+struct PrimitiveRenderIdentity {
+    retained_id: Option<crate::NodeId>,
+    focus_handle: Option<gpui::FocusHandle>,
+}
+
 impl RenderOnce for RegisteredPrimitiveElement {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let registry = self.registry;
@@ -1559,8 +1565,10 @@ impl RenderOnce for RegisteredPrimitiveElement {
         };
         match registry.render_instance(
             self.node,
-            self.retained_id,
-            self.focus_handle,
+            PrimitiveRenderIdentity {
+                retained_id: self.retained_id,
+                focus_handle: self.focus_handle,
+            },
             &events,
             &self.theme,
             window,

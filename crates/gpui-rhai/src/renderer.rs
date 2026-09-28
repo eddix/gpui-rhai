@@ -1895,7 +1895,17 @@ impl GpuiNodeRenderer {
         let focus_handle =
             retained_id.and_then(|node| environment.focus_handles.get(&node).cloned());
         if let Some(handle) = focus_handle.as_ref() {
-            element = element.track_focus(handle);
+            if matches!(node.kind(), UiNodeKind::Custom { primitive }
+                if environment.primitives.uses_primary_focus(&primitive.primitive))
+            {
+                // The wrapper observes the native control's identity for
+                // focus paint, but only the native control belongs in the tab
+                // sequence. The primitive refreshes the shared handle's real
+                // tab-stop policy when it renders below this wrapper.
+                element = element.track_focus(&handle.clone().tab_stop(false));
+            } else {
+                element = element.track_focus(handle);
+            }
         }
         if let Some(opacity) = signals.opacity.or(animation.opacity) {
             element = element.opacity(f64_to_f32(opacity.clamp(0.0, 1.0)));
@@ -2037,7 +2047,11 @@ impl GpuiNodeRenderer {
             environment,
         );
         let element = apply_hit_test(element, hit_test);
-        let element = apply_tab_behavior(element, node);
+        let element = apply_tab_behavior(
+            element,
+            node,
+            click.is_some() || !key_handlers.is_empty(),
+        );
         let element = apply_environment_scroll(element, node, retained_id, environment);
         let element = apply_motion_trigger_handlers(
             element,
@@ -2727,7 +2741,7 @@ fn apply_hit_test(element: Stateful<Div>, hit_test: Option<HitTestBehavior>) -> 
 fn node_has_focus_declaration(node: &UiNode) -> bool {
     node.attributes().contains_key("tab_index")
         || node.attributes().get("tab_group") == Some(&UiValue::Bool(true))
-        || node.attributes().get("tab_stop") == Some(&UiValue::Bool(true))
+        || node.attributes().contains_key("tab_stop")
 }
 
 fn apply_environment_scroll<C: ColorResolver>(
@@ -2787,10 +2801,18 @@ fn node_tab_index(node: &UiNode) -> isize {
     }
 }
 
-fn apply_tab_behavior(mut element: Stateful<Div>, node: &UiNode) -> Stateful<Div> {
+fn apply_tab_behavior(
+    mut element: Stateful<Div>,
+    node: &UiNode,
+    implicit_tab_stop: bool,
+) -> Stateful<Div> {
     element = element
         .tab_index(node_tab_index(node))
-        .tab_stop(node_tab_stop(node));
+        .tab_stop(if node_has_focus_declaration(node) {
+            node_tab_stop(node)
+        } else {
+            implicit_tab_stop
+        });
     if node.attributes().get("tab_group") == Some(&UiValue::Bool(true)) {
         element = element.tab_group();
     }
@@ -3519,6 +3541,7 @@ struct NodeSignalValues {
     width: Option<f64>,
     width_override: Option<f64>,
     height: Option<f64>,
+    height_override: Option<f64>,
     background: Option<ColorValue>,
     text_color: Option<ColorValue>,
     border_color: Option<ColorValue>,
@@ -3549,6 +3572,9 @@ fn node_signals(registry: &crate::SignalRegistry, node: &UiNode) -> NodeSignalVa
             (crate::SignalProperty::Height, crate::SignalValue::Float(value)) => {
                 values.height = Some(value);
             }
+            (crate::SignalProperty::HeightOverride, crate::SignalValue::OptionalFloat(value)) => {
+                values.height_override = value;
+            }
             (crate::SignalProperty::Background, crate::SignalValue::Color(value)) => {
                 values.background = Some(value);
             }
@@ -3577,6 +3603,13 @@ fn apply_signal_style(style: &mut StyleProperties, values: &NodeSignalValues) {
     }
     if let Some(height) = values.height {
         style.height = Some(Length::Pixels(height.max(0.0)).into());
+    }
+    if let Some(height) = values.height_override {
+        style.height = Some(Length::Pixels(height.max(0.0)).into());
+        style.flex_basis = None;
+        style.flex_grow = Some(false);
+        style.flex_grow_weight = None;
+        style.flex_shrink = Some(false);
     }
     if let Some(background) = &values.background {
         style.background = Some(background.clone());
@@ -5507,6 +5540,7 @@ mod tests {
             .with_attribute("tab_group", UiValue::Bool(true));
         assert_eq!(node_tab_index(&node), 7);
         assert!(!node_tab_stop(&node));
+        assert!(node_has_focus_declaration(&node));
         let _element = GpuiNodeRenderer::render(&node);
     }
 

@@ -3194,7 +3194,9 @@ fn collect_non_timeline_owners(
             crate::SignalProperty::Width | crate::SignalProperty::WidthOverride => {
                 Some(MotionProperty::Width)
             }
-            crate::SignalProperty::Height => Some(MotionProperty::Height),
+            crate::SignalProperty::Height | crate::SignalProperty::HeightOverride => {
+                Some(MotionProperty::Height)
+            }
             crate::SignalProperty::Background
             | crate::SignalProperty::TextColor
             | crate::SignalProperty::BorderColor => None,

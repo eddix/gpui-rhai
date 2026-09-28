@@ -451,7 +451,7 @@ shims.
 - Register every component and transitive dependency in the CLI, metadata,
   definitions, copied-source update path, and Theme Studio.
 - Maintain the polished `gpui-rhai gallery --story components/catalog`
-  acceptance surface for all 51 official components, category navigation,
+  acceptance surface for all 52 official components, category navigation,
   theme hot switches, responsive/Motion controls, and important controlled
   states. Theme Studio reuses the curated design specimen; Gallery is the
   user-facing experience demo and source authority.

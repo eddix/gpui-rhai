@@ -3,7 +3,8 @@ use std::sync::Arc;
 
 use gpui_rhai::gpui::prelude::*;
 use gpui_rhai::gpui::{
-    App, AppContext, Bounds, Context, IntoElement, Render, StatefulInteractiveElement, Styled,
+    App, AppContext, Bounds, Context, CursorStyle, IntoElement, KeyDownEvent, MouseButton,
+    MouseDownEvent, MouseMoveEvent, MouseUpEvent, Render, StatefulInteractiveElement, Styled,
     WeakEntity, Window, WindowBounds, WindowOptions, div, px, rgba, size,
 };
 use gpui_rhai::{
@@ -13,9 +14,9 @@ use gpui_rhai::{
     ValueSchema, install,
 };
 use gpui_rhai_registry::{
-    AR_LOCALE, BUNDLED_ASSET_SOURCES, BUNDLED_COMPONENT_SOURCES_BY_ID, BUNDLED_STORIES,
-    BUNDLED_THEME_SOURCES, EN_LOCALE, GALLERY_NAVIGATION_SOURCE, GALLERY_SOURCE_VIEW_SOURCE,
-    StoryDefinition, ZH_CN_LOCALE,
+    AR_LOCALE, BUNDLED_ASSET_SOURCES, BUNDLED_COMPONENT_MODULE_IDS,
+    BUNDLED_COMPONENT_SOURCES_BY_ID, BUNDLED_STORIES, BUNDLED_THEME_SOURCES, EN_LOCALE,
+    GALLERY_NAVIGATION_SOURCE, GALLERY_SOURCE_VIEW_SOURCE, StoryDefinition, ZH_CN_LOCALE,
 };
 
 use super::gallery::{
@@ -102,6 +103,68 @@ impl ViewportPreset {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum GalleryPane {
+    Navigation,
+    Source,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct GalleryPaneLayout {
+    navigation_visible: bool,
+    source_visible: bool,
+    navigation_width: f32,
+    source_width: f32,
+    resizing: Option<GalleryPane>,
+}
+
+impl Default for GalleryPaneLayout {
+    fn default() -> Self {
+        Self {
+            navigation_visible: true,
+            source_visible: true,
+            navigation_width: 230.0,
+            source_width: 360.0,
+            resizing: None,
+        }
+    }
+}
+
+fn catalog_case_for_module(module: &str) -> &'static str {
+    match module {
+        "components/input"
+        | "components/input_group"
+        | "components/textarea"
+        | "components/form_field"
+        | "components/combobox"
+        | "components/select"
+        | "components/date_picker"
+        | "components/checkbox"
+        | "components/radio"
+        | "components/radio_group"
+        | "components/switch" => "forms",
+        "components/tabs"
+        | "components/accordion"
+        | "components/collapsible"
+        | "components/menu"
+        | "components/pagination"
+        | "components/table"
+        | "components/scroll_area"
+        | "components/split_pane" => "navigation",
+        "components/code_viewer" | "components/diff_viewer" => "documents",
+        "components/command"
+        | "components/command_dialog"
+        | "components/context_menu"
+        | "components/popover"
+        | "components/dialog"
+        | "components/alert_dialog"
+        | "components/sheet"
+        | "components/tooltip"
+        | "components/toast" => "overlays",
+        _ => "foundations",
+    }
+}
+
 fn mount_gallery_story(
     launch: &GalleryLaunch,
     generation: u64,
@@ -168,7 +231,7 @@ fn mount_gallery_story(
     }
 }
 
-struct GalleryApp {
+pub struct GalleryApp {
     host: ScriptViewHost,
     navigation: ScriptViewHandle,
     source_view: ScriptViewHandle,
@@ -183,6 +246,7 @@ struct GalleryApp {
     category: Option<String>,
     viewport: ViewportPreset,
     motion_preference: MotionPreference,
+    panes: GalleryPaneLayout,
 }
 
 impl GalleryApp {
@@ -198,7 +262,7 @@ impl GalleryApp {
         )
     }
 
-    fn new(launch: GalleryLaunch, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(launch: GalleryLaunch, window: &mut Window, cx: &mut Context<Self>) -> Self {
         install(cx);
         let host =
             ScriptViewHost::new("gallery-window", cx).expect("Gallery host identity is valid");
@@ -259,6 +323,7 @@ impl GalleryApp {
             category: None,
             viewport: ViewportPreset::Auto,
             motion_preference: MotionPreference::Normal,
+            panes: GalleryPaneLayout::default(),
         }
     }
 
@@ -416,6 +481,135 @@ impl GalleryApp {
         cx.notify();
     }
 
+    fn toggle_source(&mut self, cx: &mut Context<Self>) {
+        self.panes.source_visible = !self.panes.source_visible;
+        cx.notify();
+    }
+
+    fn toggle_navigation(&mut self, cx: &mut Context<Self>) {
+        self.panes.navigation_visible = !self.panes.navigation_visible;
+        cx.notify();
+    }
+
+    fn start_source_resize(
+        &mut self,
+        event: &MouseDownEvent,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if event.button == MouseButton::Left {
+            self.panes.resizing = Some(GalleryPane::Source);
+            cx.stop_propagation();
+            cx.notify();
+        }
+    }
+
+    fn move_source_resize(
+        &mut self,
+        event: &MouseMoveEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.panes.resizing != Some(GalleryPane::Source) {
+            return;
+        }
+        if !event.dragging() {
+            self.panes.resizing = None;
+            cx.notify();
+            return;
+        }
+        let available = f32::from(window.viewport_size().width);
+        self.panes.source_width = (available - f32::from(event.position.x)).clamp(240.0, 720.0);
+        cx.stop_propagation();
+        cx.notify();
+    }
+
+    fn finish_source_resize(
+        &mut self,
+        event: &MouseUpEvent,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if event.button == MouseButton::Left && self.panes.resizing == Some(GalleryPane::Source) {
+            self.panes.resizing = None;
+            cx.stop_propagation();
+            cx.notify();
+        }
+    }
+
+    fn key_source_resize(&mut self, event: &KeyDownEvent, _: &mut Window, cx: &mut Context<Self>) {
+        let delta = match event.keystroke.key.as_str() {
+            "left" => 16.0,
+            "right" => -16.0,
+            _ => return,
+        };
+        self.panes.source_width = (self.panes.source_width + delta).clamp(240.0, 720.0);
+        cx.stop_propagation();
+        cx.notify();
+    }
+
+    fn start_navigation_resize(
+        &mut self,
+        event: &MouseDownEvent,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if event.button == MouseButton::Left {
+            self.panes.resizing = Some(GalleryPane::Navigation);
+            cx.stop_propagation();
+            cx.notify();
+        }
+    }
+
+    fn move_navigation_resize(
+        &mut self,
+        event: &MouseMoveEvent,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.panes.resizing != Some(GalleryPane::Navigation) {
+            return;
+        }
+        if !event.dragging() {
+            self.panes.resizing = None;
+            cx.notify();
+            return;
+        }
+        self.panes.navigation_width = f32::from(event.position.x).clamp(180.0, 420.0);
+        cx.stop_propagation();
+        cx.notify();
+    }
+
+    fn finish_navigation_resize(
+        &mut self,
+        event: &MouseUpEvent,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if event.button == MouseButton::Left && self.panes.resizing == Some(GalleryPane::Navigation)
+        {
+            self.panes.resizing = None;
+            cx.stop_propagation();
+            cx.notify();
+        }
+    }
+
+    fn key_navigation_resize(
+        &mut self,
+        event: &KeyDownEvent,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let delta = match event.keystroke.key.as_str() {
+            "left" => -16.0,
+            "right" => 16.0,
+            _ => return,
+        };
+        self.panes.navigation_width = (self.panes.navigation_width + delta).clamp(180.0, 420.0);
+        cx.stop_propagation();
+        cx.notify();
+    }
+
     fn update_source(&mut self, cx: &mut Context<Self>) {
         let source = story_source(&self.launch)
             .unwrap_or_else(|error| format!("Unable to resolve story source: {error}"));
@@ -461,6 +655,30 @@ impl GalleryApp {
             .iter()
             .find(|story| story.id == self.launch.story)
             .expect("selected story belongs to catalog")
+    }
+
+    #[cfg(feature = "test-support")]
+    #[must_use]
+    pub fn selected_story(&self) -> &str {
+        &self.launch.story
+    }
+
+    #[cfg(feature = "test-support")]
+    #[must_use]
+    pub const fn pane_widths(&self) -> (f32, f32) {
+        (self.panes.navigation_width, self.panes.source_width)
+    }
+
+    #[cfg(feature = "test-support")]
+    #[must_use]
+    pub fn selected_environment(&self) -> (&str, &str) {
+        (&self.launch.theme, &self.launch.locale)
+    }
+
+    #[cfg(feature = "test-support")]
+    #[must_use]
+    pub fn search_query(&self) -> &str {
+        &self.search
     }
 }
 
@@ -646,7 +864,7 @@ impl Render for GalleryApp {
         };
         let needle = self.search.to_lowercase();
         let selected_category = self.category.as_deref();
-        let navigation_items = BUNDLED_STORIES
+        let mut navigation_items = BUNDLED_STORIES
             .iter()
             .filter(|entry| {
                 selected_category.is_none_or(|category| entry.category == category)
@@ -701,7 +919,47 @@ impl Render for GalleryApp {
                         this.select(&id, &case, window, cx);
                     }))
                     .child(entry.title)
-            });
+            })
+            .collect::<Vec<_>>();
+        if !needle.is_empty() {
+            for module in BUNDLED_COMPONENT_MODULE_IDS
+                .iter()
+                .copied()
+                .filter(|module| module.contains(&needle))
+            {
+                let case = catalog_case_for_module(module).to_owned();
+                let selected = story.id == "components/catalog" && self.launch.case == case;
+                navigation_items.push(
+                    div()
+                        .id(gpui_rhai::gpui::ElementId::Name(
+                            format!("component-anchor-{}", module.replace('/', "-")).into(),
+                        ))
+                        .role(gpui_rhai::gpui::Role::Button)
+                        .aria_label(format!("Open {module}"))
+                        .aria_selected(selected)
+                        .tab_index(0)
+                        .focus_visible(|style| style.border_color(color("focus_ring")))
+                        .w_full()
+                        .h(px(28.0))
+                        .px_2()
+                        .flex()
+                        .items_center()
+                        .border_1()
+                        .border_color(if selected { color("accent") } else { rgba(0) })
+                        .bg(if selected {
+                            color("selection")
+                        } else {
+                            rgba(0)
+                        })
+                        .text_color(color("text_primary"))
+                        .hover(|style| style.bg(color("surface_hover")))
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            this.select("components/catalog", &case, window, cx);
+                        }))
+                        .child(module),
+                );
+            }
+        }
         let category_names = BUNDLED_STORIES
             .iter()
             .map(|story| story.category)
@@ -826,6 +1084,50 @@ impl Render for GalleryApp {
             .hover(|style| style.bg(color("surface_hover")))
             .on_click(cx.listener(|this, _, window, cx| this.reset(window, cx)))
             .child("Reset story");
+        let source_toggle = div()
+            .id("gallery-toggle-source")
+            .role(gpui_rhai::gpui::Role::Button)
+            .aria_label(if self.panes.source_visible {
+                "Hide story source"
+            } else {
+                "Show story source"
+            })
+            .aria_expanded(self.panes.source_visible)
+            .tab_index(0)
+            .focus_visible(|style| style.border_color(color("focus_ring")))
+            .px_2()
+            .py_1()
+            .border_1()
+            .border_color(color("border"))
+            .hover(|style| style.bg(color("surface_hover")))
+            .on_click(cx.listener(|this, _, _, cx| this.toggle_source(cx)))
+            .child(if self.panes.source_visible {
+                "Hide source"
+            } else {
+                "Show source"
+            });
+        let navigation_toggle = div()
+            .id("gallery-toggle-navigation")
+            .role(gpui_rhai::gpui::Role::Button)
+            .aria_label(if self.panes.navigation_visible {
+                "Hide Gallery navigation"
+            } else {
+                "Show Gallery navigation"
+            })
+            .aria_expanded(self.panes.navigation_visible)
+            .tab_index(0)
+            .focus_visible(|style| style.border_color(color("focus_ring")))
+            .px_2()
+            .py_1()
+            .border_1()
+            .border_color(color("border"))
+            .hover(|style| style.bg(color("surface_hover")))
+            .on_click(cx.listener(|this, _, _, cx| this.toggle_navigation(cx)))
+            .child(if self.panes.navigation_visible {
+                "Hide navigation"
+            } else {
+                "Show navigation"
+            });
         let viewport_buttons = ViewportPreset::ALL.into_iter().map(|viewport| {
             let selected = self.viewport == viewport;
             div()
@@ -936,6 +1238,90 @@ impl Render for GalleryApp {
                 }))
                 .child(locale)
         });
+        let explore_selected = story.id != "apps/operations";
+        let explore_mode = div()
+            .id("gallery-mode-explore")
+            .role(gpui_rhai::gpui::Role::Button)
+            .aria_label("Open Explore mode")
+            .aria_selected(explore_selected)
+            .tab_index(0)
+            .focus_visible(|style| style.border_color(color("focus_ring")))
+            .px_2()
+            .py_1()
+            .border_1()
+            .border_color(if explore_selected {
+                color("accent")
+            } else {
+                color("border")
+            })
+            .bg(if explore_selected {
+                color("selection")
+            } else {
+                rgba(0)
+            })
+            .on_click(cx.listener(|this, _, window, cx| {
+                this.select("components/button", "basic", window, cx);
+            }))
+            .child("Explore");
+        let operations_selected = story.id == "apps/operations";
+        let operations_mode = div()
+            .id("gallery-mode-operations")
+            .role(gpui_rhai::gpui::Role::Button)
+            .aria_label("Open Operations Workbench mode")
+            .aria_selected(operations_selected)
+            .tab_index(0)
+            .focus_visible(|style| style.border_color(color("focus_ring")))
+            .px_2()
+            .py_1()
+            .border_1()
+            .border_color(if operations_selected {
+                color("accent")
+            } else {
+                color("border")
+            })
+            .bg(if operations_selected {
+                color("selection")
+            } else {
+                rgba(0)
+            })
+            .on_click(cx.listener(|this, _, window, cx| {
+                this.select("apps/operations", "basic", window, cx);
+            }))
+            .child("Operations");
+        let header = div()
+            .h(px(58.0))
+            .flex_none()
+            .px_4()
+            .flex()
+            .items_center()
+            .justify_between()
+            .border_b_1()
+            .border_color(color("border"))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .child(
+                        div().flex().flex_col().child("GPUI RHAI / GALLERY").child(
+                            div()
+                                .text_color(color("text_muted"))
+                                .child("Explore · Operations Workbench"),
+                        ),
+                    )
+                    .child(explore_mode)
+                    .child(operations_mode),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_1()
+                    .child(format!("{} / {}", theme.family, theme.name))
+                    .child(dark)
+                    .child(light)
+                    .children(locale_buttons),
+            );
         let error = self.error.as_ref().map(|error| {
             div()
                 .p_2()
@@ -955,8 +1341,21 @@ impl Render for GalleryApp {
             .overflow_x_scroll()
             .restrict_scroll_to_axis()
             .child(preview_surface);
+        if story.id == "apps/operations" {
+            return self.host.container(
+                div()
+                    .size_full()
+                    .flex()
+                    .flex_col()
+                    .bg(color("surface"))
+                    .text_color(color("text_primary"))
+                    .child(header)
+                    .children(error)
+                    .child(preview_pane),
+            );
+        }
         let mut source_pane = div()
-            .w(px(360.0))
+            .w(px(self.panes.source_width))
             .h_full()
             .min_h_0()
             .flex_none()
@@ -968,11 +1367,191 @@ impl Render for GalleryApp {
         if fixed_viewport {
             source_pane = source_pane.w_full().h(px(280.0)).border_l_0().border_t_1();
         }
-        let mut story_content = div().flex_1().min_h_0().min_w_0().flex();
+        let source_resize_handle = div()
+            .id("gallery-source-resize")
+            .w(px(8.0))
+            .h_full()
+            .flex_none()
+            .cursor(CursorStyle::ResizeColumn)
+            .role(gpui_rhai::gpui::Role::Splitter)
+            .aria_label("Resize story source")
+            .aria_orientation(gpui_rhai::gpui::Orientation::Vertical)
+            .tab_index(0)
+            .border_l_1()
+            .border_color(if self.panes.resizing == Some(GalleryPane::Source) {
+                color("accent")
+            } else {
+                color("border")
+            })
+            .hover(|style| style.border_color(color("accent")))
+            .focus_visible(|style| style.border_color(color("focus_ring")))
+            .on_mouse_down(MouseButton::Left, cx.listener(Self::start_source_resize))
+            .on_key_down(cx.listener(Self::key_source_resize));
+        let mut story_content = div()
+            .id("gallery-story-split")
+            .flex_1()
+            .min_h_0()
+            .min_w_0()
+            .flex()
+            .on_mouse_move(cx.listener(Self::move_source_resize))
+            .on_mouse_up(MouseButton::Left, cx.listener(Self::finish_source_resize))
+            .on_mouse_up_out(MouseButton::Left, cx.listener(Self::finish_source_resize));
         if fixed_viewport {
             story_content = story_content.flex_col();
         }
-        story_content = story_content.child(preview_pane).child(source_pane);
+        story_content = story_content.child(preview_pane);
+        if self.panes.source_visible {
+            if !fixed_viewport {
+                story_content = story_content.child(source_resize_handle);
+            }
+            story_content = story_content.child(source_pane);
+        }
+        let navigation_pane = div()
+            .id("gallery-navigation")
+            .w(px(self.panes.navigation_width))
+            .flex_none()
+            .min_h_0()
+            .flex()
+            .flex_col()
+            .border_r_1()
+            .border_color(color("border"))
+            .child(div().flex_none().child(navigation))
+            .child(
+                div()
+                    .flex_none()
+                    .p_2()
+                    .flex()
+                    .flex_wrap()
+                    .gap_1()
+                    .border_b_1()
+                    .border_color(color("border"))
+                    .child(all_categories)
+                    .children(category_buttons),
+            )
+            .child(
+                div()
+                    .id("gallery-story-list")
+                    .flex_1()
+                    .min_h_0()
+                    .p_2()
+                    .flex()
+                    .flex_col()
+                    .gap_1()
+                    .overflow_y_scroll()
+                    .restrict_scroll_to_axis()
+                    .children(navigation_items),
+            );
+        let navigation_resize_handle = div()
+            .id("gallery-navigation-resize")
+            .w(px(8.0))
+            .h_full()
+            .flex_none()
+            .cursor(CursorStyle::ResizeColumn)
+            .role(gpui_rhai::gpui::Role::Splitter)
+            .aria_label("Resize Gallery navigation")
+            .aria_orientation(gpui_rhai::gpui::Orientation::Vertical)
+            .tab_index(0)
+            .border_l_1()
+            .border_color(if self.panes.resizing == Some(GalleryPane::Navigation) {
+                color("accent")
+            } else {
+                color("border")
+            })
+            .hover(|style| style.border_color(color("accent")))
+            .focus_visible(|style| style.border_color(color("focus_ring")))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(Self::start_navigation_resize),
+            )
+            .on_key_down(cx.listener(Self::key_navigation_resize));
+        let main_pane = div()
+            .flex_1()
+            .min_w_0()
+            .min_h_0()
+            .flex()
+            .flex_col()
+            .child(
+                div()
+                    .px_4()
+                    .py_3()
+                    .border_b_1()
+                    .border_color(color("border"))
+                    .child(story.title)
+                    .child(div().text_color(color("text_muted")).child(story.purpose))
+                    .child(
+                        div()
+                            .pt_1()
+                            .text_color(color("text_muted"))
+                            .child(format!("Observe: {}", current_case.purpose)),
+                    )
+                    .child(
+                        div()
+                            .pt_1()
+                            .flex()
+                            .flex_wrap()
+                            .gap_2()
+                            .text_color(color("text_muted"))
+                            .child(format!("Modules: {module_summary}"))
+                            .child(format!("Source: {}", story.source_module))
+                            .child(format!("Features: {feature_summary}"))
+                            .child(format!("Platforms: {}", story.platforms.join(", ")))
+                            .child(format!(
+                                "Tests: {} declared gates",
+                                story.test_requirements.len()
+                            ))
+                            .child(match story.fixture {
+                                Some(fixture) => format!("Host fixture: {fixture}"),
+                                None => "Host fixture: none".to_owned(),
+                            })
+                            .child(format!("Docs: {}", story.documentation)),
+                    )
+                    .child(
+                        div()
+                            .pt_2()
+                            .flex()
+                            .flex_wrap()
+                            .items_center()
+                            .gap_2()
+                            .children(cases)
+                            .child(reset)
+                            .child(navigation_toggle)
+                            .child(source_toggle),
+                    )
+                    .child(
+                        div()
+                            .pt_2()
+                            .flex()
+                            .flex_wrap()
+                            .items_center()
+                            .gap_1()
+                            .child("Viewport")
+                            .children(viewport_buttons)
+                            .child("Motion")
+                            .children(motion_buttons),
+                    ),
+            )
+            .children(error)
+            .child(story_content);
+        let mut explore_body = div()
+            .id("gallery-explore-split")
+            .flex_1()
+            .min_h_0()
+            .flex()
+            .on_mouse_move(cx.listener(Self::move_navigation_resize))
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(Self::finish_navigation_resize),
+            )
+            .on_mouse_up_out(
+                MouseButton::Left,
+                cx.listener(Self::finish_navigation_resize),
+            );
+        if self.panes.navigation_visible {
+            explore_body = explore_body
+                .child(navigation_pane)
+                .child(navigation_resize_handle);
+        }
+        explore_body = explore_body.child(main_pane);
         self.host.container(
             div()
                 .size_full()
@@ -980,153 +1559,8 @@ impl Render for GalleryApp {
                 .flex_col()
                 .bg(color("surface"))
                 .text_color(color("text_primary"))
-                .child(
-                    div()
-                        .h(px(58.0))
-                        .flex_none()
-                        .px_4()
-                        .flex()
-                        .items_center()
-                        .justify_between()
-                        .border_b_1()
-                        .border_color(color("border"))
-                        .child(
-                            div().flex().flex_col().child("GPUI RHAI / GALLERY").child(
-                                div()
-                                    .text_color(color("text_muted"))
-                                    .child("Explore · Operations Workbench · live source stories"),
-                            ),
-                        )
-                        .child(
-                            div()
-                                .flex()
-                                .items_center()
-                                .gap_1()
-                                .child(format!("{} / {}", theme.family, theme.name))
-                                .child(dark)
-                                .child(light)
-                                .children(locale_buttons),
-                        ),
-                )
-                .child(
-                    div()
-                        .flex_1()
-                        .min_h_0()
-                        .flex()
-                        .child(
-                            div()
-                                .id("gallery-navigation")
-                                .w(px(230.0))
-                                .flex_none()
-                                .min_h_0()
-                                .flex()
-                                .flex_col()
-                                .border_r_1()
-                                .border_color(color("border"))
-                                .child(div().flex_none().child(navigation))
-                                .child(
-                                    div()
-                                        .flex_none()
-                                        .p_2()
-                                        .flex()
-                                        .flex_wrap()
-                                        .gap_1()
-                                        .border_b_1()
-                                        .border_color(color("border"))
-                                        .child(all_categories)
-                                        .children(category_buttons),
-                                )
-                                .child(
-                                    div()
-                                        .id("gallery-story-list")
-                                        .flex_1()
-                                        .min_h_0()
-                                        .p_2()
-                                        .flex()
-                                        .flex_col()
-                                        .gap_1()
-                                        .overflow_y_scroll()
-                                        .restrict_scroll_to_axis()
-                                        .children(navigation_items),
-                                ),
-                        )
-                        .child(
-                            div()
-                                .flex_1()
-                                .min_w_0()
-                                .min_h_0()
-                                .flex()
-                                .flex_col()
-                                .child(
-                                    div()
-                                        .px_4()
-                                        .py_3()
-                                        .border_b_1()
-                                        .border_color(color("border"))
-                                        .child(story.title)
-                                        .child(
-                                            div()
-                                                .text_color(color("text_muted"))
-                                                .child(story.purpose),
-                                        )
-                                        .child(
-                                            div().pt_1().text_color(color("text_muted")).child(
-                                                format!("Observe: {}", current_case.purpose),
-                                            ),
-                                        )
-                                        .child(
-                                            div()
-                                                .pt_1()
-                                                .flex()
-                                                .flex_wrap()
-                                                .gap_2()
-                                                .text_color(color("text_muted"))
-                                                .child(format!("Modules: {module_summary}"))
-                                                .child(format!("Source: {}", story.source_module))
-                                                .child(format!("Features: {feature_summary}"))
-                                                .child(format!(
-                                                    "Platforms: {}",
-                                                    story.platforms.join(", ")
-                                                ))
-                                                .child(format!(
-                                                    "Tests: {} declared gates",
-                                                    story.test_requirements.len()
-                                                ))
-                                                .child(match story.fixture {
-                                                    Some(fixture) => {
-                                                        format!("Host fixture: {fixture}")
-                                                    }
-                                                    None => "Host fixture: none".to_owned(),
-                                                })
-                                                .child(format!("Docs: {}", story.documentation)),
-                                        )
-                                        .child(
-                                            div()
-                                                .pt_2()
-                                                .flex()
-                                                .flex_wrap()
-                                                .items_center()
-                                                .gap_2()
-                                                .children(cases)
-                                                .child(reset),
-                                        )
-                                        .child(
-                                            div()
-                                                .pt_2()
-                                                .flex()
-                                                .flex_wrap()
-                                                .items_center()
-                                                .gap_1()
-                                                .child("Viewport")
-                                                .children(viewport_buttons)
-                                                .child("Motion")
-                                                .children(motion_buttons),
-                                        ),
-                                )
-                                .children(error)
-                                .child(story_content),
-                        ),
-                ),
+                .child(header)
+                .child(explore_body),
         )
     }
 }

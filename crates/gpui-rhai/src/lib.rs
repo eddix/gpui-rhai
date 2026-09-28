@@ -40,6 +40,7 @@ pub mod scrollbar;
 pub mod signal;
 mod slot_runtime;
 pub mod source;
+pub mod split_resize;
 pub mod state;
 pub mod store;
 pub mod style;
@@ -227,6 +228,7 @@ pub use signal::{
     SignalSnapshot, SignalValue, SignalWriter,
 };
 pub use source::{ModuleId, ModuleIdError, RestrictedModuleResolver};
+pub use split_resize::{SplitResizePrimitiveHandler, split_resize_primitive_descriptor};
 pub use state::{
     ComponentInstancePath, ComponentStateSchema, RenderStateTransaction, StateError, StateField,
     StateInstanceSnapshot, StateReconcileReport, StateStore, StateValueSnapshot,

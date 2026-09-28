@@ -9,6 +9,7 @@ use gpui_rhai::{
     ScriptViewHost, UiNodeKind,
 };
 use gpui_rhai_cli::gallery::{GalleryLaunch, prepare, stories};
+use gpui_rhai_cli::gallery_app::GalleryApp;
 use gpui_rhai_registry::BUNDLED_THEME_SOURCES;
 
 struct GalleryHost {
@@ -120,6 +121,18 @@ fn dispatch(visual: &mut gpui::VisualTestContext, view: &ScriptViewHandle, id: &
             )
         })
         .unwrap();
+    visual.run_until_parked();
+}
+
+fn press_native_key(visual: &mut gpui::VisualTestContext, key: &str) {
+    visual.simulate_event(gpui::KeyDownEvent {
+        keystroke: gpui::Keystroke::parse(key).unwrap(),
+        is_held: false,
+        prefer_character_input: false,
+    });
+    visual.simulate_event(gpui::KeyUpEvent {
+        keystroke: gpui::Keystroke::parse(key).unwrap(),
+    });
     visual.run_until_parked();
 }
 
@@ -475,6 +488,104 @@ fn operations_fixture_cases_are_observable_and_streaming_is_bounded(cx: &mut Tes
             .any(|text| text.contains("without Rhai polling")),
         "{texts:?}"
     );
+}
+
+#[gpui::test]
+fn full_gallery_shell_supports_keyboard_modes_and_resizable_panes(cx: &mut TestAppContext) {
+    cx.executor().allow_parking();
+    let window = cx.add_window(|window, cx| GalleryApp::new(GalleryLaunch::default(), window, cx));
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    let root = window.root(cx).unwrap();
+    let mut visual = gpui::VisualTestContext::from_window(*window, cx);
+    visual.simulate_resize(gpui::size(gpui::px(1180.0), gpui::px(820.0)));
+    visual.run_until_parked();
+
+    visual.update(|window, cx| {
+        window.focus_next(cx);
+        window.focus_next(cx);
+    });
+    press_native_key(&mut visual, "enter");
+    assert_eq!(
+        visual.update(|_, cx| root.read(cx).selected_story().to_owned()),
+        "apps/operations"
+    );
+
+    visual.update(|window, cx| window.focus_prev(cx));
+    press_native_key(&mut visual, "enter");
+    assert_eq!(
+        visual.update(|_, cx| root.read(cx).selected_story().to_owned()),
+        "components/button"
+    );
+
+    visual.update(|window, cx| {
+        window.focus_next(cx);
+        window.focus_next(cx);
+        window.focus_next(cx);
+    });
+    press_native_key(&mut visual, "enter");
+    assert_eq!(
+        visual.update(|_, cx| root.read(cx).selected_environment().0.to_owned()),
+        "default-light"
+    );
+    visual.update(|window, cx| {
+        window.focus_next(cx);
+        window.focus_next(cx);
+    });
+    press_native_key(&mut visual, "enter");
+    assert_eq!(
+        visual.update(|_, cx| root.read(cx).selected_environment().1.to_owned()),
+        "zh-CN"
+    );
+    visual.update(|window, cx| {
+        window.focus_next(cx);
+        window.focus_next(cx);
+    });
+    visual.simulate_input("split_pane");
+    visual.run_until_parked();
+    assert_eq!(
+        visual.update(|_, cx| root.read(cx).search_query().to_owned()),
+        "split_pane"
+    );
+
+    let before = visual.update(|_, cx| root.read(cx).pane_widths());
+    let navigation = gpui::point(gpui::px(before.0 + 4.0), gpui::px(300.0));
+    let navigation_end = gpui::point(gpui::px(320.0), navigation.y);
+    visual.simulate_mouse_down(
+        navigation,
+        gpui::MouseButton::Left,
+        gpui::Modifiers::default(),
+    );
+    visual.simulate_mouse_move(
+        navigation_end,
+        gpui::MouseButton::Left,
+        gpui::Modifiers::default(),
+    );
+    visual.simulate_mouse_up(
+        navigation_end,
+        gpui::MouseButton::Left,
+        gpui::Modifiers::default(),
+    );
+    visual.run_until_parked();
+    let resized_navigation = visual.update(|_, cx| root.read(cx).pane_widths());
+    assert!(resized_navigation.0 > before.0, "{resized_navigation:?}");
+
+    let source = gpui::point(gpui::px(816.0), gpui::px(600.0));
+    let source_end = gpui::point(gpui::px(716.0), source.y);
+    visual.simulate_mouse_down(source, gpui::MouseButton::Left, gpui::Modifiers::default());
+    visual.simulate_mouse_move(
+        source_end,
+        gpui::MouseButton::Left,
+        gpui::Modifiers::default(),
+    );
+    visual.simulate_mouse_up(
+        source_end,
+        gpui::MouseButton::Left,
+        gpui::Modifiers::default(),
+    );
+    visual.run_until_parked();
+    let resized_source = visual.update(|_, cx| root.read(cx).pane_widths());
+    assert!(resized_source.1 > before.1, "{resized_source:?}");
 }
 
 #[gpui::test]

@@ -32,6 +32,7 @@ use crate::node::{
 };
 use crate::primitive::{PrimitiveDescriptor, PrimitiveError, PrimitiveHandler, PrimitiveRegistry};
 use crate::range_input::{RangeInputPrimitiveHandler, range_input_primitive_descriptor};
+use crate::split_resize::{SplitResizePrimitiveHandler, split_resize_primitive_descriptor};
 use crate::style::register_style_api;
 use crate::text_area::{
     TextAreaPrimitiveHandler, register_text_area_api, text_area_primitive_descriptor,
@@ -734,6 +735,11 @@ impl RuntimeEngine {
             IntrinsicTextMeasurePrimitiveHandler::new(column_measurements),
         )
         .expect("built-in intrinsic text measurement primitive descriptor is valid");
+        self.register_primitive(
+            split_resize_primitive_descriptor(),
+            SplitResizePrimitiveHandler,
+        )
+        .expect("built-in split resize primitive descriptor is valid");
         self.register_primitive(
             text_input_primitive_descriptor(),
             TextInputPrimitiveHandler::default(),

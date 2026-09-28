@@ -22,6 +22,10 @@ use thiserror::Error;
 use toml_edit::{Array, DocumentMut, InlineTable, Item, Value};
 
 pub mod gallery;
+#[cfg(feature = "test-support")]
+#[doc(hidden)]
+pub mod gallery_app;
+#[cfg(not(feature = "test-support"))]
 mod gallery_app;
 pub mod theme_studio;
 
@@ -2386,7 +2390,7 @@ mod tests {
         let project = Project::new(directory.path());
         project.plan_init().unwrap().apply().unwrap();
         let registry = BundledRegistry::load().unwrap();
-        assert_eq!(registry.entries.len(), 66);
+        assert_eq!(registry.entries.len(), 67);
         let requested = registry
             .entries
             .keys()

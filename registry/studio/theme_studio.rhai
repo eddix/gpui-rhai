@@ -22,6 +22,7 @@ import "components/select" as select;
 import "components/skeleton" as skeleton;
 import "components/switch" as switch_component;
 import "components/table" as table;
+import "components/split_pane" as split_pane;
 import "components/tabs" as tabs;
 import "components/tag" as tag;
 import "components/textarea" as textarea;
@@ -138,6 +139,8 @@ fn state_schema() {
             "default": #{ type: "string", value: "ascending" } },
         specimen_collapsed_groups: #{ schema: #{ type: "array", max_items: 3, items: #{ type: "string" } },
             "default": #{ type: "array", value: [] } },
+        specimen_split_size: #{ schema: #{ type: "number", min: 0.0, max: 1.0 },
+            "default": #{ type: "float", value: 0.42 } },
         specimen_page: #{ schema: #{ type: "integer", min: 1, max: 128 },
             "default": #{ type: "integer", value: 3 } },
         specimen_page_size: #{ schema: #{ type: "integer", allowed: [10, 25, 50] },
@@ -208,6 +211,7 @@ fn set_specimen_tab_equal(ctx, value) { ctx.set_state("specimen_tab_equal", valu
 fn set_specimen_tab_content(ctx, value) { ctx.set_state("specimen_tab_content", value); record_value("Content tab", ctx, value); }
 fn set_specimen_accordion(ctx, value) { ctx.set_state("specimen_accordion", value); record_action("Accordion changed", ctx, ()); }
 fn set_specimen_collapsible(ctx, value) { ctx.set_state("specimen_collapsible", value); record_value("Release details", ctx, value); }
+fn set_specimen_split_size(ctx, value) { ctx.set_state("specimen_split_size", value); record_action("Split resized", ctx, ()); }
 fn set_specimen_table_selection(ctx, value) { ctx.set_state("specimen_table_selected", value); record_action("Table selection changed", ctx, ()); }
 fn set_specimen_table_sort(ctx, value) {
     if value == () {
@@ -578,6 +582,12 @@ fn specimen_data(ctx) {
     };
     column([
         specimen_title("DATA", "Real virtualized rows and pagination."),
+        split_pane::SplitPane(#{ key: "specimen-split", label: "Resize data navigator",
+            size: ctx.get_state("specimen_split_size"), min_start: 100.0, min_end: 140.0,
+            start: text("Navigator").with_style(style().padding(px(10)).border(px(1)).border_color(theme_color("border"))),
+            end: text("Preview").with_style(style().padding(px(10)).border(px(1)).border_color(theme_color("border"))),
+            on_resize: Fn("set_specimen_split_size")
+        }).with_style(style().width(relative(1.0)).height(px(72))),
         table::Table(#{ key: "specimen-table", label: "Users", row_key: "id",
             rows: rows, columns: columns, height: 126, striped: true, resizable_columns: true,
             selection_mode: "multiple", selected_keys: ctx.get_state("specimen_table_selected"),
@@ -813,13 +823,13 @@ fn gallery_title_bar(ctx) {
     ]).with_style(style().min_width(px(0)).gap(px(6)).items_center().overflow_hidden());
     let config = #{ label: "GPUI Rhai Component Gallery", title: breadcrumb,
         inset_start: 70, end: [themes] };
-    if !compact { config.subtitle = "51 source-owned components · native GPUI behavior · live themes"; }
+    if !compact { config.subtitle = "52 source-owned components · native GPUI behavior · live themes"; }
     title_bar::TitleBar(config)
 }
 
 fn gallery_status_bar(ctx) {
     status_bar::StatusBar(#{ label: "Component Gallery status",
-        start: [text(`51 components · ${ctx.get_state("interaction_count")} interactions`)],
+        start: [text(`52 components · ${ctx.get_state("interaction_count")} interactions`)],
         center: [text(ctx.get_state("interaction_status"))],
         end: [text(ctx.get_state("gallery_category")), text(ctx.viewport_class())] })
 }

@@ -3,8 +3,8 @@ use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use gpui::{
-    Context, IntoElement, Modifiers, Render, ScrollDelta, ScrollWheelEvent, TestAppContext,
-    VisualTestContext, Window, WindowHandle, point, px, rgba,
+    Context, IntoElement, Modifiers, MouseButton, Render, ScrollDelta, ScrollWheelEvent,
+    TestAppContext, VisualTestContext, Window, WindowHandle, point, px, rgba,
 };
 use gpui_rhai::*;
 
@@ -12,6 +12,7 @@ const BUTTON: &str = include_str!("../../../registry/components/button.rhai");
 const BADGE: &str = include_str!("../../../registry/components/badge.rhai");
 const TABS: &str = include_str!("../../../registry/components/tabs.rhai");
 const INPUT: &str = include_str!("../../../registry/components/input.rhai");
+const SPLIT_PANE: &str = include_str!("../../../registry/components/split_pane.rhai");
 const ANIMATED_TABS: &str = include_str!("../../../registry/motion/animated_tabs.rhai");
 const DEFAULT_DARK: &str = include_str!("../../../registry/themes/default_dark.rhai");
 
@@ -55,6 +56,10 @@ fn mount_with_overrides(
             ),
             (ModuleId::parse("components/tabs").unwrap(), TABS.to_owned()),
             (ModuleId::parse("components/input").unwrap(), INPUT.to_owned()),
+            (
+                ModuleId::parse("components/split_pane").unwrap(),
+                SPLIT_PANE.to_owned(),
+            ),
             (
                 ModuleId::parse("motion/animated_tabs").unwrap(),
                 ANIMATED_TABS.to_owned(),
@@ -496,4 +501,113 @@ fn view(ctx) { input::Input(#{key:"field",label:"Audit input",value:ctx.get_stat
             .value,
         Some(UiValue::String("focused and editable".to_owned()))
     );
+}
+
+#[gpui::test]
+fn split_pane_keyboard_step_commits_one_controlled_ratio(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let script = r#"
+import "components/split_pane" as split_pane;
+fn state_schema(){#{fields:#{size:#{schema:#{type:"number",min:0.0,max:1.0},
+    "default":#{type:"float",value:0.5}}}}}
+fn resized(ctx,value){ctx.set_state("size",value);}
+fn view(ctx){column([
+    text(ctx.get_state("size").to_string()).accessibility_role("status"),
+    split_pane::SplitPane(#{key:"layout",label:"Resize panels",size:ctx.get_state("size"),
+        min_start:80.0,min_end:80.0,start:text("Start"),end:text("End"),on_resize:Fn("resized")})
+        .with_style(style().width(px(420)).height(px(180)))
+])}
+"#;
+    let (window, view) = mount(cx, script, "split-pane-keyboard");
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    let before = visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .nodes()
+            .find(|node| node.role == "status")
+            .unwrap()
+            .name
+            .clone()
+    });
+    visual
+        .update(|window, cx| {
+            view.automate(
+                AutomationCommand::Dispatch {
+                    locator: AutomationLocator::RoleName {
+                        role: "separator".to_owned(),
+                        name: "Resize panels".to_owned(),
+                    },
+                    event: "key:right".to_owned(),
+                    payload: None,
+                },
+                window,
+                cx,
+            )
+        })
+        .unwrap();
+    visual.run_until_parked();
+    let after = visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .nodes()
+            .find(|node| node.role == "status")
+            .unwrap()
+            .name
+            .clone()
+    });
+    assert_ne!(after, before);
+    assert!(after.parse::<f64>().unwrap() > 0.5, "{after}");
+}
+
+#[gpui::test]
+fn split_pane_drag_previews_natively_and_commits_only_on_release(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let script = r#"
+import "components/split_pane" as split_pane;
+fn state_schema(){#{fields:#{size:#{schema:#{type:"number",min:0.0,max:1.0},
+    "default":#{type:"float",value:0.5}}}}}
+fn resized(ctx,value){ctx.set_state("size",value);}
+fn view(ctx){column([
+    text(ctx.get_state("size").to_string()).accessibility_role("status"),
+    split_pane::SplitPane(#{key:"layout",label:"Resize panels",size:ctx.get_state("size"),
+        min_start:80.0,min_end:80.0,start:text("Start"),end:text("End"),on_resize:Fn("resized")})
+        .with_style(style().width(px(420)).height(px(180)))
+])}
+"#;
+    let (window, view) = mount(cx, script, "split-pane-pointer");
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    let bounds = visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .find_by_role_and_name("separator", "Resize panels")
+            .next()
+            .unwrap()
+            .geometry
+            .unwrap()
+            .visual
+    });
+    let status = |visual: &mut VisualTestContext| {
+        visual.update(|_, cx| {
+            view.accessibility_snapshot(cx)
+                .unwrap()
+                .nodes()
+                .find(|node| node.role == "status")
+                .unwrap()
+                .name
+                .clone()
+        })
+    };
+    let start = point(
+        px((bounds.x + bounds.width / 2.0) as f32),
+        px((bounds.y + bounds.height / 2.0) as f32),
+    );
+    let end = point(start.x + px(72.0), start.y);
+    visual.simulate_mouse_down(start, MouseButton::Left, Modifiers::default());
+    visual.simulate_mouse_move(end, MouseButton::Left, Modifiers::default());
+    visual.run_until_parked();
+    assert_eq!(status(&mut visual), "0.5", "pointer move reran Rhai state");
+    visual.simulate_mouse_up(end, MouseButton::Left, Modifiers::default());
+    visual.run_until_parked();
+    let committed = status(&mut visual).parse::<f64>().unwrap();
+    assert!(committed > 0.5, "committed ratio={committed}");
 }

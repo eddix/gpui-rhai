@@ -309,9 +309,10 @@ intentional one-off. Edit the copied component source when the product needs a
 structural or behavioral fork; do not hide one behind a growing stack of visual
 overrides. See [Component stylesheets](docs/component-styles.md).
 
-The bundled catalog contains 51 official source components. Version 0.1.2
-freezes their IDs, exports, controlled-state boundaries, semantic events, size
-vocabulary, and style-part contract as the component foundation:
+The bundled catalog contains 52 official source components. Version 0.1.2
+froze the original 51 IDs, exports, controlled-state boundaries, semantic
+events, size vocabulary, and style-part contract as the component foundation;
+0.1.7 adds the composable SplitPane without weakening that contract:
 
 - foundations and status: Label, Divider, Icon, Avatar, Badge, Tag, Alert,
   Card, GroupBox, Empty, Kbd, Progress, Spinner, Skeleton, TitleBar, and
@@ -320,8 +321,8 @@ vocabulary, and style-part contract as the component foundation:
   Switch, Toggle, ToggleGroup, and Slider;
 - forms: Input, InputGroup, Textarea, FormField, Combobox, Select, and
   DatePicker;
-- navigation and data: Tabs, Accordion, Collapsible, Menu, Pagination, Table,
-  and ScrollArea;
+- navigation, layout, and data: Tabs, Accordion, Collapsible, Menu, Pagination,
+  Table, ScrollArea, and SplitPane;
 - commands and overlays: Command, CommandDialog, ContextMenu, Popover, Dialog,
   AlertDialog, Sheet, Tooltip, and Toast;
 - read-only documents: CodeViewer and DiffViewer;
@@ -337,6 +338,13 @@ behavior distinctions that similar-looking controls must preserve.
 See [Gallery and acceptance application](docs/gallery.md) for story metadata,
 Host/Rhai ownership, deterministic fixtures, lifecycle behavior, and the
 verification matrix.
+
+`SplitPane` is a controlled two-panel composition. Its `size` is the start
+panel ratio; pointer movement writes only a native optional-float signal and
+`on_resize` fires once on release. Arrow keys on the semantic separator commit
+the same ratio contract. `start_collapsed`/`end_collapsed` are controlled, and
+nested SplitPane instances cover multi-panel layouts without introducing a
+docking or persistence framework.
 
 Command palettes separate seating, preview, and confirmation. The caller-owned
 `active_value` determines the current highlight when the palette opens.

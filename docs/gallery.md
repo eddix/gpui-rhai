@@ -22,10 +22,14 @@ machine, or execute commands.
 
 ## Explore
 
-Explore combines a searchable, registry-driven story list with the actual
+Explore is one top-level Gallery mode. It combines a searchable,
+registry-driven story list with the actual
 running preview and a read-only CodeViewer for the same bundled Rhai source.
 Search matches titles, stable IDs, keywords, and public module IDs. Category
-filtering never changes the selected story.
+filtering never changes the selected story. A matching public component module
+also receives a direct `components/<id>` navigation row that opens the
+catalog case containing its live specimen; the collection story is not used as
+a bare coverage-only declaration.
 
 Every story exposes:
 
@@ -45,7 +49,10 @@ Viewport controls select Auto, Compact (520 logical pixels), Regular (800), or
 Wide (1,120). Fixed presets constrain the actual mounted story surface, so
 `ctx.viewport_class()` and responsive dependencies follow normal Runtime
 behavior. Fixed previews place the exact source pane below the preview; Auto
-uses a side-by-side layout.
+uses a side-by-side layout. Navigation and source are independently
+collapsible. Their splitters support pointer drag, visible keyboard focus,
+arrow adjustment, and native splitter semantics. The public Rhai `SplitPane`
+uses the same controlled preview/commit contract for application layouts.
 
 Motion controls select `MotionPreference::Normal`, `Reduced`, or `None` through
 the public Host motion policy. The policy applies to cached views and to later
@@ -66,8 +73,9 @@ locale propagation, Reset, and the native Chinese IME regression.
 
 ## Operations Workbench
 
-`apps/operations` is a connected local application rather than a specimen
-grid. Its pages share one formal-component state model:
+`apps/operations` is a connected local application and the second top-level
+Gallery mode, not a specimen embedded inside Explore metadata/source chrome.
+Its pages share one formal-component state model:
 
 - Dashboard consumes Rust-owned `NativeChartData` and a recent-events
   `NativeCollection`.
@@ -88,10 +96,12 @@ The normal task is:
 3. edit the release channel;
 4. stage a deployment;
 5. cancel without changing the model, or confirm;
-6. observe Rust subscription progress and the committed result.
+6. observe the committed result and return to Configurations to verify the
+   exact target revision/content.
 
-Rust owns the window, lifecycle, fixtures, native collections/chart data, and
-the versioned `gallery.operations` subscription capability. Rhai owns page
+Rust owns the window, lifecycle, fixtures, native collections/chart data, the
+typed deployment transaction, and the versioned `gallery.operations`
+streaming capability. Rhai owns page
 composition, navigation, business state, confirmation, and result rendering.
 The Workbench is itself a normal formal Rhai component: its capability and
 effects are declared in metadata, so suspend, reset, unmount, and generation
@@ -110,9 +120,11 @@ Cases are intentionally deterministic:
 | `streaming` | Dashboard | Four bounded Rust subscription revisions, no Rhai polling |
 | `large` | Hosts | 1,000 Rust-owned rows with virtual realization |
 
-Deployment progress is sent as `15 → 48 → 76 → 100`; the failure fixture sends
-`15 → 48 → failed`. The default story creates neither the 1,000-row collection
-nor a continuing stream.
+Deployment confirmation calls a schema-checked Rust native handler with target,
+channel, expected revision, and failure intent. Success publishes exactly one
+new immutable target document revision; cancel, failure, and revision conflict
+preserve every committed snapshot. The default story creates neither the
+1,000-row collection nor a continuing stream.
 
 ## State and lifecycle
 

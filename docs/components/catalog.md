@@ -1,6 +1,6 @@
 # Official component catalog
 
-gpui-rhai ships 51 editable Rhai source components. They all use the same
+gpui-rhai ships 52 editable Rhai source components. They all use the same
 public atoms and generic runtime mechanisms available to application code; no
 official component receives a private high-level node constructor.
 
@@ -22,11 +22,24 @@ The [registry visual system](../registry-design-system.md) is the maintained
 source for component dimensions, color roles, state appearance, and known
 visual gaps. This catalog records component semantics and public contracts.
 
-Version 0.1.2 freezes this 51-component foundation: component IDs and exports,
+Version 0.1.2 freezes the original 51-component foundation: component IDs and exports,
 controlled-state ownership, semantic event payloads, the `xs`/`sm`/`md`/`lg`
 size vocabulary, and declared style parts are the maintained base contract.
 Future catalog additions must compose the same public atoms and generic runtime
 mechanisms; they do not justify parallel private primitives.
+
+## Split Pane
+
+`SplitPane` is the source-owned, nestable Resizable primitive for application
+layouts. It accepts stable start/end keys, horizontal or vertical orientation,
+a controlled start-panel ratio, pixel min/max constraints, controlled collapse
+flags, and an accessible separator. Pointer movement stays in the native signal
+lane; one `resize(number)` proposal is emitted on release. Rejecting the
+proposal restores the controlled ratio. Keyboard arrows use the same proposal
+path, and RTL pointer deltas follow the active theme direction.
+
+It is intentionally not a Dock system: panel reordering, cross-window drops,
+and persistence remain application concerns.
 
 Every interactive field, choice, menu, navigation region, overlay surface, and
 progress indicator has an explicit textual accessible name. Input placeholders

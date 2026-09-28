@@ -124,6 +124,10 @@ State priority is `active > focus > hover/cursor > selected > idle`, with
 disabled suppressing interaction. Borders are reserved in the idle geometry so
 focus never moves neighboring content. Rhai pseudo styles support background,
 border, text, and opacity; adding a state in source must produce native paint.
+For an invalid editor, semantic `invalid` remains true while focused; the
+focus-ring color temporarily owns the reserved border so keyboard location is
+unambiguous, and the danger border returns on blur. Neither state changes
+border width or layout.
 For Tabs, the selection thumb persists while focus is drawn independently;
 hover never replaces the selected surface or creates a second thumb. Disabled
 suppresses input without erasing which content page remains selected.
