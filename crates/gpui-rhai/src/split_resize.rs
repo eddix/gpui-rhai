@@ -7,8 +7,7 @@ use std::rc::Rc;
 use gpui::{
     AnyElement, App, Bounds, CursorStyle, DispatchPhase, Element, ElementId, GlobalElementId,
     Hitbox, HitboxBehavior, InspectorElementId, IntoElement, LayoutId, MouseButton, MouseDownEvent,
-    MouseMoveEvent, MouseUpEvent, Pixels, Point, Style, Window, fill, point, px, relative, rgba,
-    size,
+    Pixels, Point, Style, Window, fill, point, px, relative, rgba, size,
 };
 
 use crate::{
@@ -49,13 +48,6 @@ struct SplitResizeState(Rc<RefCell<SplitResizeStateInner>>);
 struct SplitResizeStateInner {
     source_ratio: f64,
     signal: crate::SignalId,
-    hovered: bool,
-    dragging: bool,
-    moved: bool,
-    start_position: Point<Pixels>,
-    start_size: f64,
-    group_size: f64,
-    handle_size: f64,
     constraint_preview: Option<f64>,
 }
 
@@ -64,13 +56,6 @@ impl SplitResizeState {
         Self(Rc::new(RefCell::new(SplitResizeStateInner {
             source_ratio: config.source_ratio,
             signal: config.signal.id().clone(),
-            hovered: false,
-            dragging: false,
-            moved: false,
-            start_position: point(px(0.0), px(0.0)),
-            start_size: 0.0,
-            group_size: 0.0,
-            handle_size: 0.0,
             constraint_preview: None,
         })))
     }
@@ -78,7 +63,6 @@ impl SplitResizeState {
 
 struct SplitResizePrepaint {
     hitbox: Hitbox,
-    state: SplitResizeState,
 }
 
 struct SplitResizeHandle {
@@ -139,19 +123,22 @@ impl Element for SplitResizeHandle {
             .use_state(cx, |_, _| SplitResizeState::new(&self.config))
             .read(cx)
             .clone();
-        let (reset, dragging) = {
+        let reset = {
             let mut inner = state.0.borrow_mut();
             let changed = (inner.source_ratio - self.config.source_ratio).abs() > f64::EPSILON
                 || inner.signal != *self.config.signal.id();
             if changed {
                 inner.source_ratio = self.config.source_ratio;
                 inner.signal = self.config.signal.id().clone();
-                inner.dragging = false;
-                inner.moved = false;
                 inner.constraint_preview = None;
             }
-            (changed, inner.dragging)
+            changed
         };
+        let owner = self.events.interaction_owner(&self.config.id);
+        if reset {
+            self.events.cancel_interaction(&owner, window, cx);
+        }
+        let dragging = self.events.interaction_is_active(&owner);
         if !dragging {
             let constrained = self
                 .events
@@ -178,7 +165,6 @@ impl Element for SplitResizeHandle {
         }
         SplitResizePrepaint {
             hitbox: window.insert_hitbox(bounds, HitboxBehavior::BlockMouseExceptScroll),
-            state,
         }
     }
 
@@ -192,7 +178,9 @@ impl Element for SplitResizeHandle {
         window: &mut Window,
         _: &mut App,
     ) {
-        let dragged = prepaint.state.0.borrow().dragging;
+        let owner = self.events.interaction_owner(&self.config.id);
+        self.events.present_interaction(owner.clone());
+        let dragged = self.events.interaction_is_active(&owner);
         let hovered = !self.config.disabled && prepaint.hitbox.is_hovered(window);
         let color = if dragged || hovered {
             self.config.active_color
@@ -226,13 +214,7 @@ impl Element for SplitResizeHandle {
                 &prepaint.hitbox,
             );
         }
-        register_pointer_listeners(
-            prepaint,
-            bounds,
-            self.config.clone(),
-            self.events.clone(),
-            window,
-        );
+        register_pointer_listeners(prepaint, bounds, &self.config, &self.events, window);
     }
 }
 
@@ -240,13 +222,12 @@ impl Element for SplitResizeHandle {
 fn register_pointer_listeners(
     prepaint: &SplitResizePrepaint,
     handle_bounds: Bounds<Pixels>,
-    config: SplitResizeConfig,
-    events: PrimitiveContext,
+    config: &SplitResizeConfig,
+    events: &PrimitiveContext,
     window: &mut Window,
 ) {
     let view = window.current_view();
     let hitbox = prepaint.hitbox.clone();
-    let down_state = prepaint.state.clone();
     let down_config = config.clone();
     let down_events = events.clone();
     window.on_mouse_event(move |event: &MouseDownEvent, phase, window, cx| {
@@ -263,125 +244,79 @@ fn register_pointer_listeners(
         let Some(start) = down_events.element_bounds(&down_config.start_ref, cx) else {
             return;
         };
-        let mut inner = down_state.0.borrow_mut();
-        inner.dragging = true;
-        inner.moved = false;
-        inner.constraint_preview = None;
-        inner.start_position = event.position;
-        inner.start_size = axis_size(start, down_config.orientation);
-        inner.group_size = axis_size(group, down_config.orientation);
-        inner.handle_size = match down_config.orientation {
+        let start_size = axis_size(start, down_config.orientation);
+        let group_size = axis_size(group, down_config.orientation);
+        let handle_size = match down_config.orientation {
             SplitOrientation::Horizontal => f64::from(handle_bounds.size.width),
             SplitOrientation::Vertical => f64::from(handle_bounds.size.height),
         };
-        cx.stop_propagation();
-        cx.notify(view);
-    });
-
-    let move_state = prepaint.state.clone();
-    let move_hitbox = prepaint.hitbox.clone();
-    let move_config = config.clone();
-    let move_events = events.clone();
-    window.on_mouse_event(move |event: &MouseMoveEvent, _, window, cx| {
-        let snapshot = move_state.0.borrow().clone();
-        if !snapshot.dragging {
-            let hovered = move_hitbox.is_hovered(window);
-            let mut inner = move_state.0.borrow_mut();
-            if inner.hovered != hovered {
-                inner.hovered = hovered;
-                cx.notify(view);
-            }
-            return;
-        }
-        if !event.dragging() {
-            cancel_drag(
-                &move_state,
-                &move_events,
-                &move_config.signal,
-                window,
-                cx,
+        let update_config = down_config.clone();
+        let update_events = down_events.clone();
+        let update =
+            move |gesture: crate::interaction::GestureUpdate, window: &mut Window, cx: &mut App| {
+                if !gesture.moved() {
+                    return crate::interaction::InteractionFlow::Continue;
+                }
+                let delta = axis_delta(
+                    gesture.start(),
+                    gesture.current(),
+                    update_config.orientation,
+                    update_config.direction,
+                );
+                let size =
+                    clamp_start_size(start_size + delta, group_size, handle_size, &update_config);
+                write_preview(
+                    &update_events,
+                    &update_config.signal,
+                    Some(size),
+                    window,
+                    cx,
+                );
+                crate::interaction::InteractionFlow::Continue
+            };
+        let finish_config = down_config.clone();
+        let finish_events = down_events.clone();
+        let finish =
+            move |gesture: crate::interaction::GestureUpdate, window: &mut Window, cx: &mut App| {
+                clear_preview(&finish_events, &finish_config.signal, window, cx);
+                if !gesture.moved() || group_size <= 0.0 {
+                    return;
+                }
+                let delta = axis_delta(
+                    gesture.start(),
+                    gesture.current(),
+                    finish_config.orientation,
+                    finish_config.direction,
+                );
+                let size =
+                    clamp_start_size(start_size + delta, group_size, handle_size, &finish_config);
+                finish_events.propose(
+                    "resize",
+                    UiValue::Float((size / group_size).clamp(0.0, 1.0)),
+                    window,
+                    cx,
+                );
+            };
+        let cancel_signal = down_config.signal.clone();
+        let cancel_events = down_events.clone();
+        let cancel = move |window: &mut Window, cx: &mut App| {
+            clear_preview(&cancel_events, &cancel_signal, window, cx);
+        };
+        let owner = down_events.interaction_owner(&down_config.id);
+        down_events.begin_interaction(
+            crate::interaction::NativeGesture::new(
+                owner,
+                event.position,
                 view,
-            );
-            return;
-        }
-        let delta = axis_delta(
-            snapshot.start_position,
-            event.position,
-            move_config.orientation,
-            move_config.direction,
-        );
-        if delta.abs() < f64::EPSILON {
-            return;
-        }
-        move_state.0.borrow_mut().moved = true;
-        let size = clamp_start_size(
-            snapshot.start_size + delta,
-            snapshot.group_size,
-            snapshot.handle_size,
-            &move_config,
-        );
-        let _ = move_events.write_signal(
-            &move_config.signal,
-            SignalValue::OptionalFloat(Some(size)),
+                update,
+                finish,
+                cancel,
+            ),
+            window,
             cx,
         );
         cx.stop_propagation();
-        cx.notify(view);
     });
-
-    let up_state = prepaint.state.clone();
-    let up_config = config;
-    let up_events = events;
-    window.on_mouse_event(move |event: &MouseUpEvent, phase, window, cx| {
-        if phase != DispatchPhase::Bubble || event.button != MouseButton::Left {
-            return;
-        }
-        let snapshot = up_state.0.borrow().clone();
-        if !snapshot.dragging {
-            return;
-        }
-        {
-            let mut inner = up_state.0.borrow_mut();
-            inner.dragging = false;
-            inner.moved = false;
-        }
-        let _ = up_events.write_signal(&up_config.signal, SignalValue::OptionalFloat(None), cx);
-        if snapshot.moved && snapshot.group_size > 0.0 {
-            let delta = axis_delta(
-                snapshot.start_position,
-                event.position,
-                up_config.orientation,
-                up_config.direction,
-            );
-            let size = clamp_start_size(
-                snapshot.start_size + delta,
-                snapshot.group_size,
-                snapshot.handle_size,
-                &up_config,
-            );
-            let ratio = (size / snapshot.group_size).clamp(0.0, 1.0);
-            up_events.propose("resize", UiValue::Float(ratio), window, cx);
-        }
-        cx.stop_propagation();
-        cx.notify(view);
-    });
-}
-
-fn cancel_drag(
-    state: &SplitResizeState,
-    events: &PrimitiveContext,
-    signal: &crate::NativeSignal,
-    window: &mut Window,
-    cx: &mut App,
-    view: gpui::EntityId,
-) {
-    {
-        let mut inner = state.0.borrow_mut();
-        inner.dragging = false;
-        inner.moved = false;
-    }
-    clear_preview(events, signal, window, cx);
-    cx.notify(view);
 }
 
 fn clear_preview(

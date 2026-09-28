@@ -7,9 +7,8 @@ use std::rc::Rc;
 use gpui::{
     AnyElement, App, Bounds, CursorStyle, DispatchPhase, Element, ElementId, FocusHandle,
     GlobalElementId, Hitbox, HitboxBehavior, InspectorElementId, InteractiveElement, IntoElement,
-    KeyDownEvent, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
-    ParentElement, Pixels, Point, Style, Styled, Window, div, fill, point, px, relative, rgba,
-    size,
+    KeyDownEvent, LayoutId, MouseButton, MouseDownEvent, ParentElement, Pixels, Style, Styled,
+    Window, div, fill, point, px, relative, rgba, size,
 };
 
 use crate::{
@@ -147,12 +146,6 @@ struct ResizableState(Rc<RefCell<ResizableStateInner>>);
 struct ResizableStateInner {
     source: ResizeRect,
     signals: [crate::SignalId; 4],
-    hovered: bool,
-    dragging: bool,
-    moved: bool,
-    start_position: Point<Pixels>,
-    boundary_width: f64,
-    boundary_height: f64,
 }
 
 impl ResizableState {
@@ -160,12 +153,6 @@ impl ResizableState {
         Self(Rc::new(RefCell::new(ResizableStateInner {
             source: config.source,
             signals: signal_ids(config),
-            hovered: false,
-            dragging: false,
-            moved: false,
-            start_position: point(px(0.0), px(0.0)),
-            boundary_width: 0.0,
-            boundary_height: 0.0,
         })))
     }
 }
@@ -181,7 +168,6 @@ fn signal_ids(config: &ResizableConfig) -> [crate::SignalId; 4] {
 
 struct ResizablePrepaint {
     hitbox: Hitbox,
-    state: ResizableState,
 }
 
 struct ResizableHandleElement {
@@ -249,17 +235,15 @@ impl Element for ResizableHandleElement {
             if changed {
                 inner.source = self.config.source;
                 inner.signals = signals;
-                inner.dragging = false;
-                inner.moved = false;
             }
             changed
         };
-        if reset {
+        let owner = self.events.interaction_owner(&self.config.id);
+        if reset && !self.events.cancel_interaction(&owner, window, cx) {
             clear_preview(&self.events, &self.config, window, cx);
         }
         ResizablePrepaint {
             hitbox: window.insert_hitbox(bounds, HitboxBehavior::BlockMouseExceptScroll),
-            state,
         }
     }
 
@@ -273,7 +257,9 @@ impl Element for ResizableHandleElement {
         window: &mut Window,
         _: &mut App,
     ) {
-        let dragging = prepaint.state.0.borrow().dragging;
+        let owner = self.events.interaction_owner(&self.config.id);
+        self.events.present_interaction(owner.clone());
+        let dragging = self.events.interaction_is_active(&owner);
         let hovered = !self.config.disabled && prepaint.hitbox.is_hovered(window);
         let color = if dragging || hovered {
             self.config.active_color
@@ -284,7 +270,7 @@ impl Element for ResizableHandleElement {
         if !self.config.disabled {
             window.set_cursor_style(self.config.handle.cursor(), &prepaint.hitbox);
         }
-        register_pointer_listeners(prepaint, self.config.clone(), self.events.clone(), window);
+        register_pointer_listeners(prepaint, &self.config, &self.events, window);
     }
 }
 
@@ -328,13 +314,12 @@ fn paint_handle(
 #[allow(clippy::too_many_lines)]
 fn register_pointer_listeners(
     prepaint: &ResizablePrepaint,
-    config: ResizableConfig,
-    events: PrimitiveContext,
+    config: &ResizableConfig,
+    events: &PrimitiveContext,
     window: &mut Window,
 ) {
     let view = window.current_view();
     let hitbox = prepaint.hitbox.clone();
-    let down_state = prepaint.state.clone();
     let down_config = config.clone();
     let down_events = events.clone();
     window.on_mouse_event(move |event: &MouseDownEvent, phase, window, cx| {
@@ -356,126 +341,87 @@ fn register_pointer_listeners(
         if let Some(focus) = down_config.focus.as_ref() {
             focus.focus(window, cx);
         }
-        let mut inner = down_state.0.borrow_mut();
-        inner.dragging = true;
-        inner.moved = false;
-        inner.start_position = event.position;
-        inner.boundary_width = boundary.width;
-        inner.boundary_height = boundary.height;
-        cx.stop_propagation();
-        cx.notify(view);
-    });
-
-    let move_state = prepaint.state.clone();
-    let move_hitbox = prepaint.hitbox.clone();
-    let move_config = config.clone();
-    let move_events = events.clone();
-    window.on_mouse_event(move |event: &MouseMoveEvent, _, window, cx| {
-        let snapshot = move_state.0.borrow().clone();
-        if !snapshot.dragging {
-            let hovered = move_hitbox.is_hovered(window);
-            let mut inner = move_state.0.borrow_mut();
-            if inner.hovered != hovered {
-                inner.hovered = hovered;
-                cx.notify(view);
-            }
-            return;
-        }
-        if !event.dragging() {
-            cancel_drag(&move_state, &move_events, &move_config, window, cx, view);
-            return;
-        }
-        let Some(boundary) = move_events.element_bounds(&move_config.boundary_ref, cx) else {
-            cancel_drag(&move_state, &move_events, &move_config, window, cx, view);
-            return;
+        let boundary_size = (boundary.width, boundary.height);
+        let update_config = down_config.clone();
+        let update_events = down_events.clone();
+        let update =
+            move |gesture: crate::interaction::GestureUpdate, _: &mut Window, cx: &mut App| {
+                let Some(boundary) = update_events.element_bounds(&update_config.boundary_ref, cx)
+                else {
+                    return crate::interaction::InteractionFlow::Cancel;
+                };
+                if (boundary.width - boundary_size.0).abs() > 0.5
+                    || (boundary.height - boundary_size.1).abs() > 0.5
+                {
+                    return crate::interaction::InteractionFlow::Cancel;
+                }
+                if gesture.moved() {
+                    let (dx, dy) = gesture.delta();
+                    let rect = resize_rect(
+                        update_config.source,
+                        update_config.handle,
+                        dx,
+                        dy,
+                        update_config.constraints,
+                        boundary_size,
+                    );
+                    write_preview(&update_events, &update_config, Some(rect), cx);
+                }
+                crate::interaction::InteractionFlow::Continue
+            };
+        let finish_config = down_config.clone();
+        let finish_events = down_events.clone();
+        let finish =
+            move |gesture: crate::interaction::GestureUpdate, window: &mut Window, cx: &mut App| {
+                clear_preview(&finish_events, &finish_config, window, cx);
+                if !gesture.moved() {
+                    return;
+                }
+                let boundary_unchanged = finish_events
+                    .element_bounds(&finish_config.boundary_ref, cx)
+                    .is_some_and(|boundary| {
+                        (boundary.width - boundary_size.0).abs() <= 0.5
+                            && (boundary.height - boundary_size.1).abs() <= 0.5
+                    });
+                if !boundary_unchanged {
+                    return;
+                }
+                let (dx, dy) = gesture.delta();
+                let rect = resize_rect(
+                    finish_config.source,
+                    finish_config.handle,
+                    dx,
+                    dy,
+                    finish_config.constraints,
+                    boundary_size,
+                );
+                finish_events.propose(
+                    "resize",
+                    resize_payload(rect, finish_config.handle),
+                    window,
+                    cx,
+                );
+            };
+        let cancel_config = down_config.clone();
+        let cancel_events = down_events.clone();
+        let cancel = move |window: &mut Window, cx: &mut App| {
+            clear_preview(&cancel_events, &cancel_config, window, cx);
         };
-        if (boundary.width - snapshot.boundary_width).abs() > 0.5
-            || (boundary.height - snapshot.boundary_height).abs() > 0.5
-        {
-            cancel_drag(&move_state, &move_events, &move_config, window, cx, view);
-            return;
-        }
-        let dx = f64::from(event.position.x - snapshot.start_position.x);
-        let dy = f64::from(event.position.y - snapshot.start_position.y);
-        if dx.abs() < f64::EPSILON && dy.abs() < f64::EPSILON {
-            return;
-        }
-        move_state.0.borrow_mut().moved = true;
-        let rect = resize_rect(
-            move_config.source,
-            move_config.handle,
-            dx,
-            dy,
-            move_config.constraints,
-            (snapshot.boundary_width, snapshot.boundary_height),
+        let owner = down_events.interaction_owner(&down_config.id);
+        down_events.begin_interaction(
+            crate::interaction::NativeGesture::new(
+                owner,
+                event.position,
+                view,
+                update,
+                finish,
+                cancel,
+            ),
+            window,
+            cx,
         );
-        write_preview(&move_events, &move_config, Some(rect), cx);
         cx.stop_propagation();
-        cx.notify(view);
     });
-
-    let up_state = prepaint.state.clone();
-    let up_config = config;
-    let up_events = events;
-    window.on_mouse_event(move |event: &MouseUpEvent, phase, window, cx| {
-        if phase != DispatchPhase::Bubble || event.button != MouseButton::Left {
-            return;
-        }
-        let snapshot = up_state.0.borrow().clone();
-        if !snapshot.dragging {
-            return;
-        }
-        {
-            let mut inner = up_state.0.borrow_mut();
-            inner.dragging = false;
-            inner.moved = false;
-        }
-        clear_preview(&up_events, &up_config, window, cx);
-        if snapshot.moved {
-            let boundary_unchanged = up_events
-                .element_bounds(&up_config.boundary_ref, cx)
-                .is_some_and(|boundary| {
-                    (boundary.width - snapshot.boundary_width).abs() <= 0.5
-                        && (boundary.height - snapshot.boundary_height).abs() <= 0.5
-                });
-            if !boundary_unchanged {
-                cx.stop_propagation();
-                cx.notify(view);
-                return;
-            }
-            let dx = f64::from(event.position.x - snapshot.start_position.x);
-            let dy = f64::from(event.position.y - snapshot.start_position.y);
-            let rect = resize_rect(
-                up_config.source,
-                up_config.handle,
-                dx,
-                dy,
-                up_config.constraints,
-                (snapshot.boundary_width, snapshot.boundary_height),
-            );
-            let payload = resize_payload(rect, up_config.handle);
-            up_events.propose("resize", payload, window, cx);
-        }
-        cx.stop_propagation();
-        cx.notify(view);
-    });
-}
-
-fn cancel_drag(
-    state: &ResizableState,
-    events: &PrimitiveContext,
-    config: &ResizableConfig,
-    window: &mut Window,
-    cx: &mut App,
-    view: gpui::EntityId,
-) {
-    {
-        let mut inner = state.0.borrow_mut();
-        inner.dragging = false;
-        inner.moved = false;
-    }
-    clear_preview(events, config, window, cx);
-    cx.notify(view);
 }
 
 fn clear_preview(

@@ -7,8 +7,7 @@ use std::rc::Rc;
 use gpui::{
     AnyElement, App, Bounds, CursorStyle, DispatchPhase, Element, ElementId, GlobalElementId,
     Hitbox, HitboxBehavior, InspectorElementId, IntoElement, LayoutId, MouseButton, MouseDownEvent,
-    MouseMoveEvent, MouseUpEvent, Pixels, Point, SharedString, Style, Window, fill, point, px,
-    relative, rgba, size,
+    Pixels, Point, SharedString, Style, Window, fill, point, px, relative, rgba, size,
 };
 
 use crate::{
@@ -82,11 +81,6 @@ struct ResizeState(Rc<RefCell<ResizeStateInner>>);
 struct ResizeStateInner {
     source: SourceWidth,
     signal: crate::SignalId,
-    hovered: bool,
-    dragging: bool,
-    moved: bool,
-    start_position: Point<Pixels>,
-    start_width: f64,
 }
 
 impl ResizeState {
@@ -94,18 +88,12 @@ impl ResizeState {
         Self(Rc::new(RefCell::new(ResizeStateInner {
             source: config.source.clone(),
             signal: config.signal.id().clone(),
-            hovered: false,
-            dragging: false,
-            moved: false,
-            start_position: point(px(0.0), px(0.0)),
-            start_width: 0.0,
         })))
     }
 }
 
 struct ResizePrepaint {
     hitbox: Hitbox,
-    state: ResizeState,
 }
 
 struct ColumnResizeHandle {
@@ -168,12 +156,11 @@ impl Element for ColumnResizeHandle {
             if changed {
                 inner.source = self.config.source.clone();
                 inner.signal = self.config.signal.id().clone();
-                inner.dragging = false;
-                inner.moved = false;
             }
             changed
         };
-        if reset {
+        let owner = self.events.interaction_owner(&self.config.id);
+        if reset && !self.events.cancel_interaction(&owner, window, cx) {
             let events = self.events.clone();
             let signal = self.config.signal.clone();
             window.defer(cx, move |_, cx| {
@@ -181,7 +168,7 @@ impl Element for ColumnResizeHandle {
             });
         }
         let hitbox = window.insert_hitbox(bounds, HitboxBehavior::BlockMouseExceptScroll);
-        ResizePrepaint { hitbox, state }
+        ResizePrepaint { hitbox }
     }
 
     fn paint(
@@ -194,7 +181,9 @@ impl Element for ColumnResizeHandle {
         window: &mut Window,
         _: &mut App,
     ) {
-        let dragged = prepaint.state.0.borrow().dragging;
+        let owner = self.events.interaction_owner(&self.config.id);
+        self.events.present_interaction(owner.clone());
+        let dragged = self.events.interaction_is_active(&owner);
         let hovered = prepaint.hitbox.is_hovered(window);
         let color = if dragged || hovered {
             self.config.active_color
@@ -211,7 +200,7 @@ impl Element for ColumnResizeHandle {
         );
         window.paint_quad(fill(line, rgba(color.as_rgba_hex())));
         window.set_cursor_style(CursorStyle::ResizeColumn, &prepaint.hitbox);
-        register_pointer_listeners(
+        register_pointer_down(
             prepaint,
             self.config.clone(),
             self.events.clone(),
@@ -219,24 +208,6 @@ impl Element for ColumnResizeHandle {
             window,
         );
     }
-}
-
-fn register_pointer_listeners(
-    prepaint: &ResizePrepaint,
-    config: ResizeConfig,
-    events: PrimitiveContext,
-    measurements: ColumnMeasurementRegistry,
-    window: &mut Window,
-) {
-    register_pointer_down(
-        prepaint,
-        config.clone(),
-        events.clone(),
-        measurements,
-        window,
-    );
-    register_pointer_move(prepaint, config.clone(), events.clone(), window);
-    register_pointer_up(prepaint, config, events, window);
 }
 
 fn register_pointer_down(
@@ -248,7 +219,6 @@ fn register_pointer_down(
 ) {
     let view = window.current_view();
     let hitbox = prepaint.hitbox.clone();
-    let down_state = prepaint.state.clone();
     window.on_mouse_event(move |event: &MouseDownEvent, phase, window, cx| {
         if phase != DispatchPhase::Bubble
             || event.button != MouseButton::Left
@@ -260,11 +230,8 @@ fn register_pointer_down(
             return;
         };
         if event.click_count >= 2 {
-            {
-                let mut inner = down_state.0.borrow_mut();
-                inner.dragging = false;
-                inner.moved = false;
-            }
+            let owner = events.interaction_owner(&config.id);
+            events.cancel_interaction(&owner, window, cx);
             let measured = measurements
                 .maximum(config.signal.id())
                 .unwrap_or(bounds.width);
@@ -278,98 +245,65 @@ fn register_pointer_down(
             return;
         }
         let width = clamp_width(bounds.width, config.min, config.max);
-        {
-            let mut inner = down_state.0.borrow_mut();
-            inner.dragging = true;
-            inner.moved = false;
-            inner.start_position = event.position;
-            inner.start_width = width;
-        }
-        cx.stop_propagation();
-        cx.notify(view);
-    });
-}
-
-fn register_pointer_move(
-    prepaint: &ResizePrepaint,
-    config: ResizeConfig,
-    events: PrimitiveContext,
-    window: &mut Window,
-) {
-    let view = window.current_view();
-    let move_state = prepaint.state.clone();
-    let move_hitbox = prepaint.hitbox.clone();
-    window.on_mouse_event(move |event: &MouseMoveEvent, _, window, cx| {
-        let (dragging, start_position, start_width) = {
-            let inner = move_state.0.borrow();
-            (inner.dragging, inner.start_position, inner.start_width)
-        };
-        if !dragging || !event.dragging() {
-            let hovered = move_hitbox.is_hovered(window);
-            let mut inner = move_state.0.borrow_mut();
-            if inner.hovered != hovered {
-                inner.hovered = hovered;
-                cx.notify(view);
+        let update_config = config.clone();
+        let update_events = events.clone();
+        let update = move |gesture: crate::interaction::GestureUpdate,
+                           _: &mut Window,
+                           cx: &mut App| {
+            if gesture.moved() {
+                let delta =
+                    horizontal_delta(gesture.start(), gesture.current(), update_config.direction);
+                let value = clamp_width(width + delta, update_config.min, update_config.max);
+                let _ = update_events.write_signal(
+                    &update_config.signal,
+                    SignalValue::OptionalFloat(Some(value)),
+                    cx,
+                );
             }
-            return;
-        }
-        let delta = horizontal_delta(start_position, event.position, config.direction);
-        if delta.abs() < f64::EPSILON {
-            return;
-        }
-        move_state.0.borrow_mut().moved = true;
-        let width = clamp_width(start_width + delta, config.min, config.max);
-        let _ = events.write_signal(&config.signal, SignalValue::OptionalFloat(Some(width)), cx);
-        cx.stop_propagation();
-        cx.notify(view);
-    });
-}
-
-fn register_pointer_up(
-    prepaint: &ResizePrepaint,
-    config: ResizeConfig,
-    events: PrimitiveContext,
-    window: &mut Window,
-) {
-    let view = window.current_view();
-    let up_state = prepaint.state.clone();
-    let up_hitbox = prepaint.hitbox.clone();
-    window.on_mouse_event(move |event: &MouseUpEvent, phase, window, cx| {
-        if phase != DispatchPhase::Bubble || event.button != MouseButton::Left {
-            return;
-        }
-        let (dragging, moved, start_position, start_width) = {
-            let inner = up_state.0.borrow();
-            (
-                inner.dragging,
-                inner.moved,
-                inner.start_position,
-                inner.start_width,
-            )
+            crate::interaction::InteractionFlow::Continue
         };
-        if !dragging {
-            if event.click_count >= 2 && up_hitbox.is_hovered(window) {
-                cx.stop_propagation();
-            }
-            return;
-        }
-        {
-            let mut inner = up_state.0.borrow_mut();
-            inner.dragging = false;
-            inner.moved = false;
-        }
-        if !moved {
-            cx.stop_propagation();
-            cx.notify(view);
-            return;
-        }
-        let delta = horizontal_delta(start_position, event.position, config.direction);
-        let width = clamp_width(start_width + delta, config.min, config.max);
-        let _ = events.write_signal(&config.signal, SignalValue::OptionalFloat(Some(width)), cx);
-        let payload = resize_payload(&config.column_key, width);
-        events.propose("resize", payload, window, cx);
+        let finish_config = config.clone();
+        let finish_events = events.clone();
+        let finish =
+            move |gesture: crate::interaction::GestureUpdate, window: &mut Window, cx: &mut App| {
+                if !gesture.moved() {
+                    return;
+                }
+                let delta =
+                    horizontal_delta(gesture.start(), gesture.current(), finish_config.direction);
+                let value = clamp_width(width + delta, finish_config.min, finish_config.max);
+                let _ = finish_events.write_signal(
+                    &finish_config.signal,
+                    SignalValue::OptionalFloat(Some(value)),
+                    cx,
+                );
+                finish_events.propose(
+                    "resize",
+                    resize_payload(&finish_config.column_key, value),
+                    window,
+                    cx,
+                );
+            };
+        let cancel_signal = config.signal.clone();
+        let cancel_events = events.clone();
+        let cancel = move |_: &mut Window, cx: &mut App| {
+            let _ =
+                cancel_events.write_signal(&cancel_signal, SignalValue::OptionalFloat(None), cx);
+        };
+        let owner = events.interaction_owner(&config.id);
+        events.begin_interaction(
+            crate::interaction::NativeGesture::new(
+                owner,
+                event.position,
+                view,
+                update,
+                finish,
+                cancel,
+            ),
+            window,
+            cx,
+        );
         cx.stop_propagation();
-        cx.notify(view);
     });
 }
 

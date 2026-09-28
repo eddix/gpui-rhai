@@ -844,6 +844,8 @@ pub struct PrimitiveContext {
     primitive: PrimitiveId,
     callbacks: BTreeMap<String, UiEventHandler>,
     dispatcher: Option<NodeEventDispatcher>,
+    interactions: crate::interaction::WindowInteractionCoordinator,
+    view_id: String,
 }
 
 impl PrimitiveContext {
@@ -950,6 +952,42 @@ impl PrimitiveContext {
             });
         };
         dispatcher.write_signals(updates, cx)
+    }
+
+    pub(crate) fn interaction_owner(&self, key: &str) -> crate::interaction::InteractionOwner {
+        crate::interaction::InteractionOwner::new(
+            self.view_id.clone(),
+            format!("{}:{key}", self.primitive.as_str()),
+        )
+    }
+
+    pub(crate) fn begin_interaction(
+        &self,
+        gesture: crate::interaction::NativeGesture,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        self.interactions.begin(gesture, window, cx);
+    }
+
+    pub(crate) fn interaction_is_active(
+        &self,
+        owner: &crate::interaction::InteractionOwner,
+    ) -> bool {
+        self.interactions.is_active(owner)
+    }
+
+    pub(crate) fn present_interaction(&self, owner: crate::interaction::InteractionOwner) {
+        self.interactions.present(owner);
+    }
+
+    pub(crate) fn cancel_interaction(
+        &self,
+        owner: &crate::interaction::InteractionOwner,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> bool {
+        self.interactions.cancel_owner(owner, window, cx)
     }
 
     /// Read the last committed layout bounds for a primitive-owned element ref.
@@ -1430,7 +1468,7 @@ impl PrimitiveRegistry {
         retained_id: Option<crate::NodeId>,
         focus_handle: Option<gpui::FocusHandle>,
         fallback: Option<UiNode>,
-        dispatcher: Option<NodeEventDispatcher>,
+        runtime: PrimitiveWindowContext,
         theme: PrimitiveTheme,
     ) -> AnyElement {
         RegisteredPrimitiveElement {
@@ -1439,7 +1477,7 @@ impl PrimitiveRegistry {
             retained_id,
             focus_handle,
             fallback,
-            dispatcher,
+            runtime,
             theme,
         }
         .into_any_element()
@@ -1651,8 +1689,29 @@ struct RegisteredPrimitiveElement {
     retained_id: Option<crate::NodeId>,
     focus_handle: Option<gpui::FocusHandle>,
     fallback: Option<UiNode>,
-    dispatcher: Option<NodeEventDispatcher>,
+    runtime: PrimitiveWindowContext,
     theme: PrimitiveTheme,
+}
+
+#[derive(Clone)]
+pub(crate) struct PrimitiveWindowContext {
+    dispatcher: Option<NodeEventDispatcher>,
+    interactions: crate::interaction::WindowInteractionCoordinator,
+    view_id: String,
+}
+
+impl PrimitiveWindowContext {
+    pub(crate) fn new(
+        dispatcher: Option<NodeEventDispatcher>,
+        interactions: crate::interaction::WindowInteractionCoordinator,
+        view_id: impl Into<String>,
+    ) -> Self {
+        Self {
+            dispatcher,
+            interactions,
+            view_id: view_id.into(),
+        }
+    }
 }
 
 struct PrimitiveRenderIdentity {
@@ -1680,7 +1739,9 @@ impl RenderOnce for RegisteredPrimitiveElement {
             registry: Rc::downgrade(&registry.inner),
             primitive: self.node.primitive.clone(),
             callbacks,
-            dispatcher: self.dispatcher,
+            dispatcher: self.runtime.dispatcher,
+            interactions: self.runtime.interactions,
+            view_id: self.runtime.view_id,
         };
         match registry.render_instance(
             self.node,
@@ -2302,6 +2363,8 @@ mod tests {
             primitive: PrimitiveId::parse("my_app.editor").unwrap(),
             callbacks: BTreeMap::new(),
             dispatcher: None,
+            interactions: crate::interaction::WindowInteractionCoordinator::default(),
+            view_id: "test".to_owned(),
         };
         assert_eq!(Rc::strong_count(&registry.inner), 1);
         drop(registry);

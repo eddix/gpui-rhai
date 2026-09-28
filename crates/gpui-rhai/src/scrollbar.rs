@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 use gpui::{
     App, Axis, Background, Bounds, ContentMask, CursorStyle, DispatchPhase, Edges, Element,
     ElementId, GlobalElementId, Hitbox, HitboxBehavior, InspectorElementId, IntoElement, LayoutId,
-    MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad, Pixels, Point, Position, Rgba,
+    MouseButton, MouseDownEvent, MouseMoveEvent, PaintQuad, Pixels, Point, Position, Rgba,
     ScrollHandle, ScrollWheelEvent, Style, Window, fill, point, px, relative, rgba, size,
 };
 
@@ -101,8 +101,6 @@ impl ScrollbarSpec {
 #[derive(Clone, Copy, Default)]
 struct ScrollbarStateInner {
     hovered: bool,
-    dragged: Option<Axis>,
-    drag_position: Point<Pixels>,
     last_offset: Point<Pixels>,
     last_activity: Option<Instant>,
     idle_timer_scheduled: bool,
@@ -121,10 +119,13 @@ struct AxisPrepaint {
     max_offset: Pixels,
     thumb_length: Pixels,
     visible: bool,
+    dragged: bool,
 }
 
 pub(crate) struct ThemedScrollbar {
     id: ElementId,
+    interaction_owner: crate::interaction::InteractionOwner,
+    interactions: crate::interaction::WindowInteractionCoordinator,
     handle: ScrollHandle,
     spec: ScrollbarSpec,
     direction: TextDirection,
@@ -136,15 +137,18 @@ pub(crate) struct ThemedScrollbar {
 impl ThemedScrollbar {
     pub(crate) fn new(
         id: String,
+        interaction_owner: crate::interaction::InteractionOwner,
+        interactions: crate::interaction::WindowInteractionCoordinator,
         handle: ScrollHandle,
         spec: ScrollbarSpec,
         direction: TextDirection,
-        track: Rgba8,
-        thumb: Rgba8,
-        thumb_hover: Rgba8,
+        colors: (Rgba8, Rgba8, Rgba8),
     ) -> Self {
+        let (track, thumb, thumb_hover) = colors;
         Self {
             id: ElementId::Name(id.into()),
+            interaction_owner,
+            interactions,
             handle,
             spec,
             direction,
@@ -246,7 +250,10 @@ impl Element for ThemedScrollbar {
             let thumb_start = (scroll_position / max_offset * travel).clamp(px(0.0), travel);
             let track = axis_track(viewport, axis, self.direction);
             let thumb_hitbox = axis_thumb(track, axis, thumb_start, thumb_length, TRACK_WIDTH);
-            let active_width = if state.0.get().dragged == Some(axis) {
+            let owner = axis_interaction_owner(&self.interaction_owner, axis);
+            self.interactions.present(owner.clone());
+            let dragged = self.interactions.is_active(&owner);
+            let active_width = if dragged {
                 THUMB_ACTIVE_WIDTH
             } else {
                 THUMB_WIDTH
@@ -259,7 +266,7 @@ impl Element for ThemedScrollbar {
             let inner = state.0.get();
             let visible = visibility == ScrollbarVisibility::Always
                 || inner.hovered
-                || inner.dragged.is_some()
+                || dragged
                 || inner
                     .last_activity
                     .is_some_and(|last| now.saturating_duration_since(last) < AUTO_IDLE);
@@ -272,6 +279,7 @@ impl Element for ThemedScrollbar {
                 max_offset,
                 thumb_length,
                 visible,
+                dragged,
             });
         }
         ScrollbarPrepaint {
@@ -300,7 +308,7 @@ impl Element for ThemedScrollbar {
             if !axis.visible {
                 continue;
             }
-            let hovered = state.0.get().hovered || state.0.get().dragged == Some(axis.axis);
+            let hovered = state.0.get().hovered || axis.dragged;
             let thumb = if hovered {
                 self.thumb_hover
             } else {
@@ -318,7 +326,15 @@ impl Element for ThemedScrollbar {
                     border_style: gpui::BorderStyle::default(),
                 });
             });
-            register_axis_listeners(axis, &self.handle, state.clone(), view, window);
+            register_axis_listeners(
+                axis,
+                &self.handle,
+                &state,
+                view,
+                &self.interaction_owner,
+                &self.interactions,
+                window,
+            );
         }
         let _ = cx;
     }
@@ -436,24 +452,85 @@ fn register_wheel_listener(
 fn register_axis_listeners(
     axis: &AxisPrepaint,
     handle: &ScrollHandle,
-    state: ScrollbarState,
+    state: &ScrollbarState,
     view: gpui::EntityId,
+    interaction_owner: &crate::interaction::InteractionOwner,
+    interactions: &crate::interaction::WindowInteractionCoordinator,
     window: &mut Window,
 ) {
     let axis = axis.clone();
     let handle = handle.clone();
     let down_handle = handle.clone();
     let down_state = state.clone();
-    window.on_mouse_event(move |event: &MouseDownEvent, phase, _, cx| {
-        if phase != DispatchPhase::Bubble || !axis.track.contains(&event.position) {
+    let owner = axis_interaction_owner(interaction_owner, axis.axis);
+    let coordinator = interactions.clone();
+    window.on_mouse_event(move |event: &MouseDownEvent, phase, window, cx| {
+        if phase != DispatchPhase::Bubble
+            || event.button != MouseButton::Left
+            || !axis.track.contains(&event.position)
+        {
             return;
         }
         cx.stop_propagation();
         let mut inner = down_state.0.get();
         inner.last_activity = Some(Instant::now());
         if axis.thumb_hitbox.contains(&event.position) {
-            inner.dragged = Some(axis.axis);
-            inner.drag_position = event.position - axis.thumb_hitbox.origin;
+            let drag_position = event.position - axis.thumb_hitbox.origin;
+            let update_axis = axis.clone();
+            let update_handle = down_handle.clone();
+            let update_state = down_state.clone();
+            let update =
+                move |gesture: crate::interaction::GestureUpdate, _: &mut Window, _: &mut App| {
+                    let position = match update_axis.axis {
+                        Axis::Horizontal => {
+                            gesture.current().x - drag_position.x - update_axis.track.origin.x
+                        }
+                        Axis::Vertical => {
+                            gesture.current().y - drag_position.y - update_axis.track.origin.y
+                        }
+                    };
+                    let travel = match update_axis.axis {
+                        Axis::Horizontal => update_axis.track.size.width - update_axis.thumb_length,
+                        Axis::Vertical => update_axis.track.size.height - update_axis.thumb_length,
+                    };
+                    let percentage = (position / travel.max(px(1.0))).clamp(0.0, 1.0);
+                    let offset = update_handle.offset();
+                    match update_axis.axis {
+                        Axis::Horizontal => update_handle
+                            .set_offset(point(-update_axis.max_offset * percentage, offset.y)),
+                        Axis::Vertical => update_handle
+                            .set_offset(point(offset.x, -update_axis.max_offset * percentage)),
+                    }
+                    let mut inner = update_state.0.get();
+                    inner.last_activity = Some(Instant::now());
+                    update_state.0.set(inner);
+                    crate::interaction::InteractionFlow::Continue
+                };
+            let finish_state = down_state.clone();
+            let finish =
+                move |_: crate::interaction::GestureUpdate, _: &mut Window, _: &mut App| {
+                    let mut inner = finish_state.0.get();
+                    inner.last_activity = Some(Instant::now());
+                    finish_state.0.set(inner);
+                };
+            let cancel_state = down_state.clone();
+            let cancel = move |_: &mut Window, _: &mut App| {
+                let mut inner = cancel_state.0.get();
+                inner.last_activity = Some(Instant::now());
+                cancel_state.0.set(inner);
+            };
+            coordinator.begin(
+                crate::interaction::NativeGesture::new(
+                    owner.clone(),
+                    event.position,
+                    view,
+                    update,
+                    finish,
+                    cancel,
+                ),
+                window,
+                cx,
+            );
         } else {
             let position = match axis.axis {
                 Axis::Horizontal => event.position.x - axis.track.origin.x,
@@ -478,49 +555,16 @@ fn register_axis_listeners(
         down_state.0.set(inner);
         cx.notify(view);
     });
+}
 
-    let move_handle = handle.clone();
-    let move_state = state.clone();
-    window.on_mouse_event(move |event: &MouseMoveEvent, _, _, cx| {
-        let inner = move_state.0.get();
-        if inner.dragged != Some(axis.axis) || !event.dragging() {
-            return;
-        }
-        cx.stop_propagation();
-        let position = match axis.axis {
-            Axis::Horizontal => event.position.x - inner.drag_position.x - axis.track.origin.x,
-            Axis::Vertical => event.position.y - inner.drag_position.y - axis.track.origin.y,
-        };
-        let travel = match axis.axis {
-            Axis::Horizontal => axis.track.size.width - axis.thumb_length,
-            Axis::Vertical => axis.track.size.height - axis.thumb_length,
-        };
-        let percentage = (position / travel.max(px(1.0))).clamp(0.0, 1.0);
-        let offset = move_handle.offset();
-        match axis.axis {
-            Axis::Horizontal => {
-                move_handle.set_offset(point(-axis.max_offset * percentage, offset.y));
-            }
-            Axis::Vertical => {
-                move_handle.set_offset(point(offset.x, -axis.max_offset * percentage));
-            }
-        }
-        let mut inner = move_state.0.get();
-        inner.last_activity = Some(Instant::now());
-        move_state.0.set(inner);
-        cx.notify(view);
-    });
-
-    let up_state = state;
-    window.on_mouse_event(move |_: &MouseUpEvent, phase, _, cx| {
-        if phase == DispatchPhase::Bubble && up_state.0.get().dragged == Some(axis.axis) {
-            let mut inner = up_state.0.get();
-            inner.dragged = None;
-            inner.last_activity = Some(Instant::now());
-            up_state.0.set(inner);
-            cx.notify(view);
-        }
-    });
+fn axis_interaction_owner(
+    owner: &crate::interaction::InteractionOwner,
+    axis: Axis,
+) -> crate::interaction::InteractionOwner {
+    owner.child(match axis {
+        Axis::Horizontal => "horizontal",
+        Axis::Vertical => "vertical",
+    })
 }
 
 #[cfg(test)]

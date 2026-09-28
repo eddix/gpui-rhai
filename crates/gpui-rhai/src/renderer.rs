@@ -1310,6 +1310,7 @@ struct RenderEnvironment<'a, C> {
     dispatcher: Option<&'a NodeEventDispatcher>,
     assets: Option<&'a AssetRegistry>,
     overlays: &'a WindowOverlayCoordinator,
+    interactions: &'a crate::interaction::WindowInteractionCoordinator,
     motions: &'a BTreeMap<MotionKey, f64>,
     signals: &'a crate::SignalRegistry,
     geometry: &'a crate::GeometryRegistry,
@@ -1352,6 +1353,7 @@ pub(crate) struct WindowRenderResources<'a> {
     pub assets: &'a AssetRegistry,
     pub dispatcher: &'a NodeEventDispatcher,
     pub overlays: &'a WindowOverlayCoordinator,
+    pub interactions: &'a crate::interaction::WindowInteractionCoordinator,
     pub motions: &'a BTreeMap<MotionKey, f64>,
     pub signals: &'a crate::SignalRegistry,
     pub geometry: &'a crate::GeometryRegistry,
@@ -1406,6 +1408,7 @@ impl GpuiNodeRenderer {
         primitives: &PrimitiveRegistry,
     ) -> AnyElement {
         let overlays = WindowOverlayCoordinator::default();
+        let interactions = crate::interaction::WindowInteractionCoordinator::default();
         let motions = BTreeMap::new();
         let signals = crate::SignalRegistry::new();
         let geometry = crate::GeometryRegistry::new();
@@ -1426,6 +1429,7 @@ impl GpuiNodeRenderer {
             dispatcher: None,
             assets: None,
             overlays: &overlays,
+            interactions: &interactions,
             motions: &motions,
             signals: &signals,
             geometry: &geometry,
@@ -1480,6 +1484,7 @@ impl GpuiNodeRenderer {
         primitives: &PrimitiveRegistry,
     ) -> AnyElement {
         let overlays = WindowOverlayCoordinator::default();
+        let interactions = crate::interaction::WindowInteractionCoordinator::default();
         let motions = BTreeMap::new();
         let signals = crate::SignalRegistry::new();
         let geometry = crate::GeometryRegistry::new();
@@ -1500,6 +1505,7 @@ impl GpuiNodeRenderer {
             dispatcher: None,
             assets: None,
             overlays: &overlays,
+            interactions: &interactions,
             motions: &motions,
             signals: &signals,
             geometry: &geometry,
@@ -1547,6 +1553,7 @@ impl GpuiNodeRenderer {
             }
         };
         let overlays = WindowOverlayCoordinator::default();
+        let interactions = crate::interaction::WindowInteractionCoordinator::default();
         let motions = BTreeMap::new();
         let signals = crate::SignalRegistry::new();
         let geometry = crate::GeometryRegistry::new();
@@ -1567,6 +1574,7 @@ impl GpuiNodeRenderer {
             dispatcher: Some(dispatcher),
             assets: None,
             overlays: &overlays,
+            interactions: &interactions,
             motions: &motions,
             signals: &signals,
             geometry: &geometry,
@@ -1606,6 +1614,7 @@ impl GpuiNodeRenderer {
         dispatcher: &NodeEventDispatcher,
     ) -> AnyElement {
         let overlays = WindowOverlayCoordinator::default();
+        let interactions = crate::interaction::WindowInteractionCoordinator::default();
         let motions = BTreeMap::new();
         let signals = crate::SignalRegistry::new();
         let geometry = crate::GeometryRegistry::new();
@@ -1626,6 +1635,7 @@ impl GpuiNodeRenderer {
             dispatcher: Some(dispatcher),
             assets: None,
             overlays: &overlays,
+            interactions: &interactions,
             motions: &motions,
             signals: &signals,
             geometry: &geometry,
@@ -1659,6 +1669,7 @@ impl GpuiNodeRenderer {
         dispatcher: &NodeEventDispatcher,
     ) -> AnyElement {
         let overlays = WindowOverlayCoordinator::default();
+        let interactions = crate::interaction::WindowInteractionCoordinator::default();
         let motions = BTreeMap::new();
         let signals = crate::SignalRegistry::new();
         let geometry = crate::GeometryRegistry::new();
@@ -1676,6 +1687,7 @@ impl GpuiNodeRenderer {
             assets,
             dispatcher,
             overlays: &overlays,
+            interactions: &interactions,
             motions: &motions,
             signals: &signals,
             geometry: &geometry,
@@ -1733,6 +1745,7 @@ impl GpuiNodeRenderer {
             dispatcher: Some(resources.dispatcher),
             assets: Some(resources.assets),
             overlays: resources.overlays,
+            interactions: resources.interactions,
             motions: resources.motions,
             signals: resources.signals,
             geometry: resources.geometry,
@@ -1790,6 +1803,7 @@ impl GpuiNodeRenderer {
             dispatcher: Some(resources.dispatcher),
             assets: Some(resources.assets),
             overlays: resources.overlays,
+            interactions: resources.interactions,
             motions: resources.motions,
             signals: resources.signals,
             geometry: resources.geometry,
@@ -1833,6 +1847,7 @@ impl GpuiNodeRenderer {
             dispatcher: Some(resources.dispatcher),
             assets: Some(resources.assets),
             overlays: resources.overlays,
+            interactions: resources.interactions,
             motions: resources.motions,
             signals: resources.signals,
             geometry: resources.geometry,
@@ -2169,7 +2184,11 @@ impl GpuiNodeRenderer {
                             })
                             .flatten(),
                         boundary_fallback.cloned(),
-                        environment.dispatcher.cloned(),
+                        crate::primitive::PrimitiveWindowContext::new(
+                            environment.dispatcher.cloned(),
+                            environment.interactions.clone(),
+                            environment.view_id,
+                        ),
                         crate::PrimitiveTheme::capture_with_environment(
                             environment.colors,
                             environment.direction,
@@ -2378,12 +2397,16 @@ where
     };
     element.child(crate::scrollbar::ThemedScrollbar::new(
         format!("{path}/scrollbars"),
+        crate::interaction::InteractionOwner::new(environment.view_id, format!("scrollbar:{path}")),
+        environment.interactions.clone(),
         handle.clone(),
         spec,
         environment.direction,
-        part_color("scrollbar_track", "surface_raised", 0x0027_272aff),
-        part_color("scrollbar_thumb", "text_muted", 0x0071_717aff),
-        part_color("scrollbar_thumb_hover", "accent", 0x003b_82f6ff),
+        (
+            part_color("scrollbar_track", "surface_raised", 0x0027_272aff),
+            part_color("scrollbar_thumb", "text_muted", 0x0071_717aff),
+            part_color("scrollbar_thumb_hover", "accent", 0x003b_82f6ff),
+        ),
     ))
 }
 
@@ -3465,6 +3488,7 @@ fn native_virtual_collection_element<C: ColorResolver>(
             .cloned()
             .unwrap_or_else(|| NodeEventDispatcher::new(|_, _, _, _, _| EventPropagation::Handled)),
         overlays: environment.overlays.clone(),
+        interactions: environment.interactions.clone(),
         motions: environment.motions.clone(),
         motion_preference: environment.motion_preference,
         motion_quality: environment.motion_quality,

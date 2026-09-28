@@ -113,6 +113,7 @@ pub struct ScriptViewHost {
 struct ScriptViewHostState {
     window_id: String,
     overlays: WindowOverlayCoordinator,
+    interactions: crate::interaction::WindowInteractionCoordinator,
     fallback_focus: FocusHandle,
     views: BTreeMap<String, FocusHandle>,
     pending_focus_recovery: Vec<FocusHandle>,
@@ -144,6 +145,7 @@ impl ScriptViewHost {
             inner: Rc::new(RefCell::new(ScriptViewHostState {
                 window_id,
                 overlays: WindowOverlayCoordinator::default(),
+                interactions: crate::interaction::WindowInteractionCoordinator::default(),
                 fallback_focus: cx.focus_handle(),
                 views: BTreeMap::new(),
                 pending_focus_recovery: Vec::new(),
@@ -236,17 +238,23 @@ impl ScriptViewHost {
 
     #[must_use]
     pub fn container(&self, child: impl IntoElement) -> AnyElement {
-        let (fallback, overlays) = {
+        let (fallback, overlays, interactions) = {
             let state = self.inner.borrow();
-            (state.fallback_focus.clone(), state.overlays.clone())
+            (
+                state.fallback_focus.clone(),
+                state.overlays.clone(),
+                state.interactions.clone(),
+            )
         };
         let escape_overlays = overlays.clone();
+        let escape_interactions = interactions;
         let child = div()
             .size_full()
             .track_focus(&fallback)
             .on_key_down(move |event, window, cx| {
                 if event.keystroke.key.as_str() == "escape"
-                    && escape_overlays.dismiss_escape(window, cx)
+                    && (escape_interactions.cancel(window, cx)
+                        || escape_overlays.dismiss_escape(window, cx))
                 {
                     cx.stop_propagation();
                 }
@@ -286,18 +294,31 @@ impl ScriptViewHost {
             state.pending_focus_recovery.push(focus);
         }
         state.overlays.remove_view(view_id);
+        state.interactions.discard_view(view_id);
     }
 
     fn quiesce_view(&self, view_id: &str, focus: &FocusHandle, window: &mut Window, cx: &mut App) {
-        let fallback = self.inner.borrow().fallback_focus.clone();
+        let (fallback, overlays, interactions) = {
+            let state = self.inner.borrow();
+            (
+                state.fallback_focus.clone(),
+                state.overlays.clone(),
+                state.interactions.clone(),
+            )
+        };
         if focus.contains_focused(window, cx) {
             fallback.focus(window, cx);
         }
-        self.inner.borrow().overlays.remove_view(view_id);
+        overlays.remove_view(view_id);
+        interactions.cancel_view(view_id, window, cx);
     }
 
     fn overlays(&self) -> WindowOverlayCoordinator {
         self.inner.borrow().overlays.clone()
+    }
+
+    fn interactions(&self) -> crate::interaction::WindowInteractionCoordinator {
+        self.inner.borrow().interactions.clone()
     }
 
     fn window_policy(&self) -> WindowCommandPolicy {
@@ -368,6 +389,7 @@ impl Element for ScriptViewHostFrame {
             )
         };
         overlays.begin_host_frame(viewport);
+        self.host.interactions().begin_frame();
         if pending
             .iter()
             .any(|focus| focus.contains_focused(window, cx))
@@ -404,8 +426,16 @@ impl Element for ScriptViewHostFrame {
     ) {
         child.paint(window, cx);
         self.host.inner.borrow_mut().frame_active = false;
-        let overlays = self.host.overlays();
-        let container_bounds = self.host.inner.borrow().container_bounds;
+        let (overlays, interactions, container_bounds) = {
+            let state = self.host.inner.borrow();
+            (
+                state.overlays.clone(),
+                state.interactions.clone(),
+                state.container_bounds,
+            )
+        };
+        interactions.finish_frame(window, cx);
+        interactions.install(window);
         window.on_mouse_event(move |event: &MouseDownEvent, phase, window, cx| {
             if phase == DispatchPhase::Capture
                 && container_bounds.is_some_and(|bounds| bounds.contains(&event.position))
@@ -3389,6 +3419,7 @@ impl Render for ScriptHostView {
         let snapshot = self.render_snapshot(appearance);
         self.publish_theme_after_render(&snapshot.theme, cx);
         let a11y_active = window.is_a11y_active();
+        let interactions = self.host.interactions();
         let mut semantics = self.lifecycle.semantics().clone();
         if a11y_active {
             semantics.apply_primitive_projections(
@@ -3404,6 +3435,7 @@ impl Render for ScriptHostView {
             assets: &snapshot.assets,
             dispatcher: &dispatcher,
             overlays: &self.overlays,
+            interactions: &interactions,
             motions: &snapshot.motions,
             signals: &snapshot.signals,
             geometry: &snapshot.geometry,

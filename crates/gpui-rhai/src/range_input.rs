@@ -5,8 +5,8 @@ use std::collections::BTreeMap;
 use gpui::{
     AnyElement, App, AppContext, Bounds, Context, CursorStyle, Element, ElementId, Entity,
     FocusHandle, GlobalElementId, InspectorElementId, InteractiveElement, IntoElement,
-    KeyDownEvent, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
-    ParentElement, Pixels, Point, Render, Styled, Window, div, px, relative,
+    KeyDownEvent, LayoutId, MouseButton, MouseDownEvent, ParentElement, Pixels, Point, Render,
+    Styled, Window, div, px, relative,
 };
 
 use crate::{
@@ -47,6 +47,7 @@ struct RangeInputEntity {
     dragging: bool,
     bounds: Option<Bounds<Pixels>>,
     events: PrimitiveContext,
+    interaction_key: String,
     track_style: Style,
     fill_style: Style,
     thumb_style: Style,
@@ -54,7 +55,12 @@ struct RangeInputEntity {
 }
 
 impl RangeInputEntity {
-    fn new(config: RangeInputConfig, events: PrimitiveContext, cx: &mut Context<Self>) -> Self {
+    fn new(
+        config: RangeInputConfig,
+        events: PrimitiveContext,
+        interaction_key: String,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let value = normalize_value(config.value, config.min, config.max, config.step);
         Self {
             focus: cx.focus_handle(),
@@ -68,6 +74,7 @@ impl RangeInputEntity {
             dragging: false,
             bounds: None,
             events,
+            interaction_key,
             track_style: config.track_style,
             fill_style: config.fill_style,
             thumb_style: config.thumb_style,
@@ -142,24 +149,58 @@ impl RangeInputEntity {
         self.focus.focus(window, cx);
         self.dragging = true;
         self.preview = self.value_at(event.position);
-        cx.notify();
-    }
-
-    fn mouse_move(&mut self, event: &MouseMoveEvent, _: &mut Window, cx: &mut Context<Self>) {
-        if self.dragging && !self.disabled {
-            self.preview = self.value_at(event.position);
-            cx.notify();
-        }
-    }
-
-    fn mouse_up(&mut self, event: &MouseUpEvent, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.dragging || self.disabled {
-            return;
-        }
-        self.preview = self.value_at(event.position);
-        self.dragging = false;
-        self.emit_change(self.preview, window, cx);
-        cx.notify();
+        let entity = cx.weak_entity();
+        let update_entity = entity.clone();
+        let update =
+            move |gesture: crate::interaction::GestureUpdate, _: &mut Window, cx: &mut App| {
+                update_entity
+                    .update(cx, |input, cx| {
+                        if input.disabled {
+                            return;
+                        }
+                        input.preview = input.value_at(gesture.current());
+                        cx.notify();
+                    })
+                    .map_or(crate::interaction::InteractionFlow::Cancel, |()| {
+                        crate::interaction::InteractionFlow::Continue
+                    })
+            };
+        let finish_entity = entity.clone();
+        let finish =
+            move |gesture: crate::interaction::GestureUpdate, window: &mut Window, cx: &mut App| {
+                let _ = finish_entity.update(cx, |input, cx| {
+                    if input.disabled {
+                        input.dragging = false;
+                        input.preview = input.controlled;
+                        cx.notify();
+                        return;
+                    }
+                    input.preview = input.value_at(gesture.current());
+                    input.dragging = false;
+                    input.emit_change(input.preview, window, cx);
+                    cx.notify();
+                });
+            };
+        let cancel = move |_: &mut Window, cx: &mut App| {
+            let _ = entity.update(cx, |input, cx| {
+                input.dragging = false;
+                input.preview = input.controlled;
+                cx.notify();
+            });
+        };
+        let owner = self.events.interaction_owner(&self.interaction_key);
+        self.events.begin_interaction(
+            crate::interaction::NativeGesture::new(
+                owner,
+                event.position,
+                cx.entity_id(),
+                update,
+                finish,
+                cancel,
+            ),
+            window,
+            cx,
+        );
     }
 
     fn key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
@@ -199,7 +240,12 @@ impl RangeInputEntity {
 }
 
 impl Render for RangeInputEntity {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let owner = self.events.interaction_owner(&self.interaction_key);
+        self.events.present_interaction(owner.clone());
+        if self.disabled {
+            self.events.cancel_interaction(&owner, window, cx);
+        }
         let ratio = self.ratio();
         let direction = self.theme.direction();
         let mut fill = crate::renderer::apply_style_override(
@@ -266,9 +312,6 @@ impl Render for RangeInputEntity {
             })
             .on_key_down(cx.listener(Self::key_down))
             .on_mouse_down(MouseButton::Left, cx.listener(Self::mouse_down))
-            .on_mouse_move(cx.listener(Self::mouse_move))
-            .on_mouse_up(MouseButton::Left, cx.listener(Self::mouse_up))
-            .on_mouse_up_out(MouseButton::Left, cx.listener(Self::mouse_up))
             .child(track)
             .child(RangeBoundsRecorder { input: cx.entity() })
             .opacity(if self.disabled { 0.62 } else { 1.0 })
@@ -427,7 +470,9 @@ impl PrimitiveHandler for RangeInputPrimitiveHandler {
             entity.clone()
         } else {
             let events = events.clone();
-            let entity = cx.new(|cx| RangeInputEntity::new(config.clone(), events, cx));
+            let interaction_key = format!("{}:{}", id.key(), id.node());
+            let entity =
+                cx.new(|cx| RangeInputEntity::new(config.clone(), events, interaction_key, cx));
             self.instances.insert(id, entity.clone());
             entity
         };

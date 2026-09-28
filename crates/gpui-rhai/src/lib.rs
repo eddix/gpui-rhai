@@ -19,6 +19,7 @@ pub mod font;
 pub mod geometry;
 pub mod host_slot;
 pub mod inline_svg;
+mod interaction;
 mod invocation;
 pub mod lifecycle;
 pub mod locale;
