@@ -31,6 +31,7 @@ import "components/sortable" as sortable;
 import "components/pan_zoom" as pan_zoom;
 import "components/rotatable" as rotatable;
 import "components/selection_area" as selection_area;
+import "components/tree" as tree;
 import "components/tabs" as tabs;
 import "components/tag" as tag;
 import "components/textarea" as textarea;
@@ -184,6 +185,12 @@ fn state_schema() {
             "default": #{ type: "null" } },
         specimen_selection_anchor: #{ schema: #{ type: "optional", value: #{ type: "string" } },
             "default": #{ type: "null" } },
+        specimen_tree_expanded: #{ schema: #{ type: "array", max_items: 8, items: #{ type: "string" } },
+            "default": #{ type: "array", value: [#{ type: "string", value: "root" }] } },
+        specimen_tree_selected: #{ schema: #{ type: "array", max_items: 8, items: #{ type: "string" } },
+            "default": #{ type: "array", value: [] } },
+        specimen_tree_active: #{ schema: #{ type: "optional", value: #{ type: "string" } },
+            "default": #{ type: "string", value: "root" } },
         specimen_page: #{ schema: #{ type: "integer", min: 1, max: 128 },
             "default": #{ type: "integer", value: 3 } },
         specimen_page_size: #{ schema: #{ type: "integer", allowed: [10, 25, 50] },
@@ -295,6 +302,9 @@ fn set_specimen_selection(ctx, value) {
     ctx.set_state("specimen_selection_anchor", value.anchor_key);
     record_action("Canvas selection changed", ctx, ());
 }
+fn set_specimen_tree_expanded(ctx,value){ctx.set_state("specimen_tree_expanded",value);record_action("Tree expanded",ctx,());}
+fn set_specimen_tree_selected(ctx,value){ctx.set_state("specimen_tree_selected",value);record_action("Tree selected",ctx,());}
+fn set_specimen_tree_active(ctx,value){ctx.set_state("specimen_tree_active",value);}
 fn set_specimen_table_selection(ctx, value) { ctx.set_state("specimen_table_selected", value); record_action("Table selection changed", ctx, ()); }
 fn set_specimen_table_sort(ctx, value) {
     if value == () {
@@ -645,7 +655,13 @@ fn specimen_navigation(ctx) {
             ], on_change: Fn("set_specimen_accordion") }),
         collapsible::Collapsible(#{ key: "specimen-collapsible", open: ctx.get_state("specimen_collapsible"),
             trigger: text("Release details"), content: text("Source-owned component content"),
-            content_height: 36, on_open_change: Fn("set_specimen_collapsible") })
+            content_height: 36, on_open_change: Fn("set_specimen_collapsible") }),
+        tree::Tree(#{key:"specimen-tree",label:"Theme files",items:[
+            #{key:"root",parent:(),label:"themes"},#{key:"dark",parent:"root",label:"dark.rhai"},
+            #{key:"light",parent:"root",label:"light.rhai"}],expanded:ctx.get_state("specimen_tree_expanded"),
+            selected_keys:ctx.get_state("specimen_tree_selected"),active_key:ctx.get_state("specimen_tree_active"),height:112.0,
+            on_expanded_change:Fn("set_specimen_tree_expanded"),on_selection_change:Fn("set_specimen_tree_selected"),
+            on_active_change:Fn("set_specimen_tree_active")})
     ]).with_style(style().gap(px(7)))
 }
 
@@ -979,13 +995,13 @@ fn gallery_title_bar(ctx) {
     ]).with_style(style().min_width(px(0)).gap(px(6)).items_center().overflow_hidden());
     let config = #{ label: "GPUI Rhai Component Gallery", title: breadcrumb,
         inset_start: 70, end: [themes] };
-    if !compact { config.subtitle = "61 source-owned components · native GPUI behavior · live themes"; }
+    if !compact { config.subtitle = "62 source-owned components · native GPUI behavior · live themes"; }
     title_bar::TitleBar(config)
 }
 
 fn gallery_status_bar(ctx) {
     status_bar::StatusBar(#{ label: "Component Gallery status",
-        start: [text(`61 components · ${ctx.get_state("interaction_count")} interactions`)],
+        start: [text(`62 components · ${ctx.get_state("interaction_count")} interactions`)],
         center: [text(ctx.get_state("interaction_status"))],
         end: [text(ctx.get_state("gallery_category")), text(ctx.viewport_class())] })
 }

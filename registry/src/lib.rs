@@ -124,6 +124,7 @@ bundled_components!(
         "components/selection_area",
         "../components/selection_area.rhai"
     ),
+    (TREE_SOURCE, "components/tree", "../components/tree.rhai"),
     (
         PAGINATION_SOURCE,
         "components/pagination",
@@ -489,6 +490,7 @@ pub const RANGE_SLIDER_STORY_SOURCE: &str = include_str!("../stories/components/
 pub const ROTATABLE_STORY_SOURCE: &str = include_str!("../stories/components/rotatable.rhai");
 pub const SELECTION_AREA_STORY_SOURCE: &str =
     include_str!("../stories/components/selection_area.rhai");
+pub const TREE_STORY_SOURCE: &str = include_str!("../stories/components/tree.rhai");
 pub const CHART_INTERACTION_STORY_SOURCE: &str = include_str!("../stories/charts/interaction.rhai");
 pub const CHART_CATALOG_STORY_SOURCE: &str = include_str!("../stories/charts/catalog.rhai");
 pub const CHART_STREAMING_STORY_SOURCE: &str = include_str!("../stories/charts/streaming.rhai");
@@ -863,6 +865,23 @@ pub const BUNDLED_STORIES: &[StoryDefinition] = &[
         theme_studio: true,
     },
     StoryDefinition {
+        id: "components/tree",
+        title: "Tree",
+        purpose: "Navigate and select a virtualized stable-key hierarchical outline.",
+        category: "navigation",
+        keywords: &["tree", "outline", "hierarchy", "virtual", "keyboard"],
+        module_ids: &["components/tree"],
+        source_module: "stories/components/tree",
+        source: TREE_STORY_SOURCE,
+        cases: BASIC_CASE,
+        fixture: None,
+        required_features: NO_FEATURES,
+        platforms: DESKTOP_PLATFORMS,
+        test_requirements: STANDARD_STORY_TESTS,
+        documentation: "docs/components/catalog.md#tree",
+        theme_studio: true,
+    },
+    StoryDefinition {
         id: "charts/interaction",
         title: "Chart titles and wheel interaction",
         purpose: "Compare absent and explicit titles while preserving parent scrolling.",
@@ -1048,15 +1067,15 @@ mod tests {
 
     #[test]
     fn release_snapshot_has_the_expected_catalog_size() {
-        assert_eq!(BUNDLED_COMPONENT_SOURCES.len(), 61);
-        assert_eq!(BUNDLED_COMPONENT_SOURCES_BY_ID.len(), 61);
+        assert_eq!(BUNDLED_COMPONENT_SOURCES.len(), 62);
+        assert_eq!(BUNDLED_COMPONENT_SOURCES_BY_ID.len(), 62);
         assert_eq!(BUNDLED_MOTION_SOURCES.len(), 10);
         assert_eq!(BUNDLED_MOTION_SOURCES_BY_ID.len(), 10);
         assert_eq!(BUNDLED_CHART_SOURCES.len(), 5);
         assert_eq!(BUNDLED_CHART_SOURCES_BY_ID.len(), 5);
         assert_eq!(BUNDLED_ASSET_SOURCES.len(), 18);
         assert_eq!(BUNDLED_THEME_SOURCES.len(), 15);
-        assert_eq!(BUNDLED_STORIES.len(), 20);
+        assert_eq!(BUNDLED_STORIES.len(), 21);
         assert!(
             BUNDLED_COMPONENT_SOURCES
                 .iter()

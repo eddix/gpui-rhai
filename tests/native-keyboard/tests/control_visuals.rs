@@ -23,6 +23,7 @@ const PAN_ZOOM: &str = include_str!("../../../registry/components/pan_zoom.rhai"
 const RANGE_SLIDER: &str = include_str!("../../../registry/components/range_slider.rhai");
 const ROTATABLE: &str = include_str!("../../../registry/components/rotatable.rhai");
 const SELECTION_AREA: &str = include_str!("../../../registry/components/selection_area.rhai");
+const TREE: &str = include_str!("../../../registry/components/tree.rhai");
 const ANIMATED_TABS: &str = include_str!("../../../registry/motion/animated_tabs.rhai");
 const DEFAULT_DARK: &str = include_str!("../../../registry/themes/default_dark.rhai");
 
@@ -113,6 +114,7 @@ fn mount_with_overrides(
                 ModuleId::parse("components/selection_area").unwrap(),
                 SELECTION_AREA.to_owned(),
             ),
+            (ModuleId::parse("components/tree").unwrap(), TREE.to_owned()),
             (
                 ModuleId::parse("motion/animated_tabs").unwrap(),
                 ANIMATED_TABS.to_owned(),
@@ -120,6 +122,22 @@ fn mount_with_overrides(
         ])),
         DEFAULT_DARK,
     )
+    .asset_sources([
+        (
+            "icons/chevron_down".to_owned(),
+            AssetData {
+                mime_type: "image/svg+xml".to_owned(),
+                bytes: include_bytes!("../../../registry/assets/icons/chevron_down.svg").to_vec(),
+            },
+        ),
+        (
+            "icons/chevron_right".to_owned(),
+            AssetData {
+                mime_type: "image/svg+xml".to_owned(),
+                bytes: include_bytes!("../../../registry/assets/icons/chevron_right.svg").to_vec(),
+            },
+        ),
+    ])
     .theme_token_overrides(overrides)
     .motion_preference(MotionPreference::None)
     .prepare()
@@ -1370,6 +1388,76 @@ fn view(ctx){let targets=[#{key:"a",x:20.0,y:20.0,width:50.0,height:40.0},
     visual.simulate_keystrokes("tab right");
     visual.run_until_parked();
     assert!(status(&mut visual).ends_with(",4"));
+}
+
+#[gpui::test]
+fn tree_uses_one_controlled_outline_for_expand_navigation_and_selection(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let script = r#"
+import "components/tree" as tree;
+fn state_schema(){#{fields:#{
+    expanded:#{schema:#{type:"array",max_items:8,items:#{type:"string"}},"default":#{type:"array",value:[]}},
+    selected:#{schema:#{type:"array",max_items:8,items:#{type:"string"}},"default":#{type:"array",value:[]}},
+    active:#{schema:#{type:"optional",value:#{type:"string"}},"default":#{type:"string",value:"root"}}
+}}}
+fn set_expanded(ctx,value){ctx.set_state("expanded",value);}fn set_selected(ctx,value){ctx.set_state("selected",value);}
+fn set_active(ctx,value){ctx.set_state("active",value);}
+fn values_text(values){let result="";for index in 0..values.len{if index>0{result+="|";}result+=values[index];}result}
+fn view(ctx){let items=[#{key:"root",parent:(),label:"Root"},#{key:"a",parent:"root",label:"Alpha"},
+    #{key:"b",parent:"root",label:"Bravo"},#{key:"tail",parent:(),label:"Tail",disabled:true}];
+    column([text(`${values_text(ctx.get_state("expanded"))};${values_text(ctx.get_state("selected"))};${ctx.get_state("active")}`)
+        .accessibility_role("status"),tree::Tree(#{key:"tree",label:"Files",items:items,
+        expanded:ctx.get_state("expanded"),selected_keys:ctx.get_state("selected"),active_key:ctx.get_state("active"),
+        selection_mode:"multiple",height:180.0,on_expanded_change:Fn("set_expanded"),
+        on_selection_change:Fn("set_selected"),on_active_change:Fn("set_active")})
+    ]).with_style(style().padding(px(12)).gap(px(8)))}
+"#;
+    let (window, view) = mount(cx, script, "tree");
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    let status = |visual: &mut VisualTestContext| {
+        visual.update(|_, cx| {
+            view.accessibility_snapshot(cx)
+                .unwrap()
+                .nodes()
+                .find(|node| node.role == "status")
+                .unwrap()
+                .name
+                .clone()
+        })
+    };
+    let disclosure = visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .find_by_role_and_name("button", "Expand Root")
+            .next()
+            .unwrap()
+            .geometry
+            .unwrap()
+            .visual
+    });
+    let point = point(
+        px((disclosure.x + disclosure.width / 2.0) as f32),
+        px((disclosure.y + disclosure.height / 2.0) as f32),
+    );
+    visual.simulate_mouse_down(point, MouseButton::Left, Modifiers::default());
+    visual.simulate_mouse_up(point, MouseButton::Left, Modifiers::default());
+    visual.run_until_parked();
+    assert!(status(&mut visual).starts_with("root;"));
+    let items = visual.update(|_, cx| {
+        let snapshot = view.accessibility_snapshot(cx).unwrap();
+        let mut items = snapshot
+            .nodes()
+            .filter(|node| node.role == "treeitem")
+            .map(|node| (node.geometry.unwrap().visual.y, node.name.clone()))
+            .collect::<Vec<_>>();
+        items.sort_by(|left, right| left.0.total_cmp(&right.0));
+        items.into_iter().map(|(_, name)| name).collect::<Vec<_>>()
+    });
+    assert_eq!(items, vec!["Root", "Alpha", "Bravo", "Tail"]);
+
+    visual.simulate_keystrokes("tab down enter");
+    visual.run_until_parked();
+    assert_eq!(status(&mut visual), "root;a;a");
 }
 
 #[gpui::test]
