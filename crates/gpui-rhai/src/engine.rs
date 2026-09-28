@@ -23,6 +23,7 @@ use crate::column_resize::{
 use crate::component::{ComponentExportCollector, ComponentExportError, ComponentRegistry};
 use crate::context::{UiContext, register_ui_context_api};
 use crate::date::register_date_api;
+use crate::draggable::{DraggablePrimitiveHandler, draggable_primitive_descriptor};
 use crate::motion::register_motion_api;
 use crate::node::{
     asset_image_node, box_node, canvas_node, column_node, directional_asset_image_node,
@@ -743,6 +744,8 @@ impl RuntimeEngine {
         .expect("built-in split resize primitive descriptor is valid");
         self.register_primitive(resizable_primitive_descriptor(), ResizablePrimitiveHandler)
             .expect("built-in resizable primitive descriptor is valid");
+        self.register_primitive(draggable_primitive_descriptor(), DraggablePrimitiveHandler)
+            .expect("built-in draggable primitive descriptor is valid");
         self.register_primitive(
             text_input_primitive_descriptor(),
             TextInputPrimitiveHandler::default(),

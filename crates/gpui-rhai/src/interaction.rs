@@ -85,6 +85,7 @@ struct GestureSession {
     current: Point<Pixels>,
     phase: GesturePhase,
     moved: bool,
+    threshold_squared: f64,
 }
 
 impl GestureSession {
@@ -95,6 +96,7 @@ impl GestureSession {
             current: start,
             phase: GesturePhase::Armed,
             moved: false,
+            threshold_squared: 0.0,
         }
     }
 
@@ -104,7 +106,7 @@ impl GestureSession {
         if self.phase == GesturePhase::Armed {
             let dx = f64::from(position.x - self.start.x);
             let dy = f64::from(position.y - self.start.y);
-            if dx.abs() > f64::EPSILON || dy.abs() > f64::EPSILON {
+            if dx.mul_add(dx, dy * dy) > self.threshold_squared {
                 self.phase = GesturePhase::Active;
                 self.moved = true;
             }
@@ -176,6 +178,11 @@ impl NativeGesture {
 
     pub(crate) fn with_button(mut self, button: MouseButton) -> Self {
         self.button = button;
+        self
+    }
+
+    pub(crate) fn with_threshold(mut self, threshold: f64) -> Self {
+        self.session.threshold_squared = threshold.max(0.0).powi(2);
         self
     }
 }

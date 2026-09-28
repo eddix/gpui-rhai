@@ -14,6 +14,7 @@ const TABS: &str = include_str!("../../../registry/components/tabs.rhai");
 const INPUT: &str = include_str!("../../../registry/components/input.rhai");
 const SPLIT_PANE: &str = include_str!("../../../registry/components/split_pane.rhai");
 const RESIZABLE: &str = include_str!("../../../registry/components/resizable.rhai");
+const DRAGGABLE: &str = include_str!("../../../registry/components/draggable.rhai");
 const ANIMATED_TABS: &str = include_str!("../../../registry/motion/animated_tabs.rhai");
 const DEFAULT_DARK: &str = include_str!("../../../registry/themes/default_dark.rhai");
 
@@ -64,6 +65,10 @@ fn mount_with_overrides(
             (
                 ModuleId::parse("components/resizable").unwrap(),
                 RESIZABLE.to_owned(),
+            ),
+            (
+                ModuleId::parse("components/draggable").unwrap(),
+                DRAGGABLE.to_owned(),
             ),
             (
                 ModuleId::parse("motion/animated_tabs").unwrap(),
@@ -641,6 +646,92 @@ fn view(ctx){{let rect=ctx.get_state("rect");column([
 ])}}
 "#
     )
+}
+
+#[gpui::test]
+fn draggable_previews_natively_and_commits_once_from_the_declared_handle(
+    cx: &mut TestAppContext,
+) {
+    cx.update(gpui_rhai::install);
+    let script = r#"
+import "components/draggable" as draggable;
+fn state_schema(){
+    #{ fields: #{
+        position: #{
+            schema: #{ type:"object", allow_unknown:false, fields: #{
+                x: #{ schema:#{type:"number"}, required:true, sensitive:false },
+                y: #{ schema:#{type:"number"}, required:true, sensitive:false }
+            } },
+            "default": #{ type:"map", value: #{
+                x: #{type:"float",value:40.0}, y: #{type:"float",value:50.0}
+            } }
+        }
+    } }
+}
+fn moved(ctx,value){ctx.set_state("position",value);}
+fn view(ctx){
+    let position=ctx.get_state("position");
+    column([
+        text(`${position.x},${position.y}`).accessibility_role("status"),
+        draggable::Draggable(#{key:"card",label:"Move card",position:position,
+            handle:text("Drag handle").with_style(style().height(px(36)).background(theme_color("surface_hover"))),
+            content:text("Body").with_style(style().width(px(180)).height(px(64)).background(theme_color("surface_raised"))),
+            on_move:Fn("moved")
+        }).with_style(style().width(px(420)).height(px(280)))
+    ])
+}
+"#;
+    let (window, view) = mount(cx, script, "draggable-pointer");
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    let snapshot = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
+    let handle = snapshot
+        .nodes()
+        .find(|node| node.name == "Drag handle")
+        .and_then(|node| node.geometry)
+        .unwrap()
+        .visual;
+    let surface = snapshot
+        .find_by_role_and_name("group", "Move card")
+        .next()
+        .unwrap()
+        .geometry
+        .unwrap()
+        .visual;
+    let start = point(
+        px((handle.x + handle.width / 2.0) as f32),
+        px((handle.y + handle.height / 2.0) as f32),
+    );
+    let end = point(start.x + px(48.0), start.y + px(32.0));
+    visual.simulate_mouse_down(start, MouseButton::Left, Modifiers::default());
+    visual.simulate_mouse_move(end, MouseButton::Left, Modifiers::default());
+    visual.run_until_parked();
+    let preview = visual.update(|_, cx| {
+        let tree = view.accessibility_snapshot(cx).unwrap();
+        assert_eq!(
+            tree.nodes().find(|node| node.role == "status").unwrap().name,
+            "40.0,50.0"
+        );
+        tree.find_by_role_and_name("group", "Move card")
+            .next()
+            .unwrap()
+            .geometry
+            .unwrap()
+            .visual
+    });
+    assert!((preview.x - surface.x - 48.0).abs() < 0.01, "{preview:?}");
+    assert!((preview.y - surface.y - 32.0).abs() < 0.01, "{preview:?}");
+    visual.simulate_mouse_up(end, MouseButton::Left, Modifiers::default());
+    visual.run_until_parked();
+    let status = visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .nodes()
+            .find(|node| node.role == "status")
+            .unwrap()
+            .name
+            .clone()
+    });
+    assert_eq!(status, "88.0,82.0");
 }
 
 #[gpui::test]

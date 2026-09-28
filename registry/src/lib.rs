@@ -85,6 +85,11 @@ bundled_components!(
         "../components/resizable.rhai"
     ),
     (
+        DRAGGABLE_SOURCE,
+        "components/draggable",
+        "../components/draggable.rhai"
+    ),
+    (
         PAGINATION_SOURCE,
         "components/pagination",
         "../components/pagination.rhai"
@@ -441,6 +446,7 @@ pub const INPUT_STORY_SOURCE: &str = include_str!("../stories/components/input.r
 pub const TABLE_STORY_SOURCE: &str = include_str!("../stories/components/table.rhai");
 pub const SPLIT_PANE_STORY_SOURCE: &str = include_str!("../stories/components/split_pane.rhai");
 pub const RESIZABLE_STORY_SOURCE: &str = include_str!("../stories/components/resizable.rhai");
+pub const DRAGGABLE_STORY_SOURCE: &str = include_str!("../stories/components/draggable.rhai");
 pub const CHART_INTERACTION_STORY_SOURCE: &str = include_str!("../stories/charts/interaction.rhai");
 pub const CHART_CATALOG_STORY_SOURCE: &str = include_str!("../stories/charts/catalog.rhai");
 pub const CHART_STREAMING_STORY_SOURCE: &str = include_str!("../stories/charts/streaming.rhai");
@@ -696,6 +702,23 @@ pub const BUNDLED_STORIES: &[StoryDefinition] = &[
         theme_studio: true,
     },
     StoryDefinition {
+        id: "components/draggable",
+        title: "Draggable",
+        purpose: "Move a controlled card through native preview, pointer commit, and keyboard steps.",
+        category: "layout",
+        keywords: &["layout", "drag", "position", "direct manipulation"],
+        module_ids: &["components/draggable", "components/button"],
+        source_module: "stories/components/draggable",
+        source: DRAGGABLE_STORY_SOURCE,
+        cases: BASIC_CASE,
+        fixture: None,
+        required_features: NO_FEATURES,
+        platforms: DESKTOP_PLATFORMS,
+        test_requirements: STANDARD_STORY_TESTS,
+        documentation: "docs/components/interaction-behaviors.md#draggable--planned",
+        theme_studio: true,
+    },
+    StoryDefinition {
         id: "charts/interaction",
         title: "Chart titles and wheel interaction",
         purpose: "Compare absent and explicit titles while preserving parent scrolling.",
@@ -881,15 +904,15 @@ mod tests {
 
     #[test]
     fn release_snapshot_has_the_expected_catalog_size() {
-        assert_eq!(BUNDLED_COMPONENT_SOURCES.len(), 53);
-        assert_eq!(BUNDLED_COMPONENT_SOURCES_BY_ID.len(), 53);
+        assert_eq!(BUNDLED_COMPONENT_SOURCES.len(), 54);
+        assert_eq!(BUNDLED_COMPONENT_SOURCES_BY_ID.len(), 54);
         assert_eq!(BUNDLED_MOTION_SOURCES.len(), 10);
         assert_eq!(BUNDLED_MOTION_SOURCES_BY_ID.len(), 10);
         assert_eq!(BUNDLED_CHART_SOURCES.len(), 5);
         assert_eq!(BUNDLED_CHART_SOURCES_BY_ID.len(), 5);
         assert_eq!(BUNDLED_ASSET_SOURCES.len(), 18);
         assert_eq!(BUNDLED_THEME_SOURCES.len(), 15);
-        assert_eq!(BUNDLED_STORIES.len(), 13);
+        assert_eq!(BUNDLED_STORIES.len(), 14);
         assert!(
             BUNDLED_COMPONENT_SOURCES
                 .iter()
