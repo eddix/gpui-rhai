@@ -24,8 +24,8 @@ interaction hot path，再实施 ADR 0022；不以新增组件数量代替底层
   hit-test 已共用变换公式；完整 clip/scroll ancestry 和所有 Motion 呈现域迁移仍待完成。
 - F04、F05 已完成：signal patch validate-all/apply-all，`PrimitiveContext`、typed
   props 与统一 deferred proposal 已落地。
-- F06 部分完成：Table 与 Command/Fuzzy 已共用 stable structural grouping；Tree 的
-  outline projection 尚待公开组件工作包落地。
+- F06 已完成：Table 与 Command/Fuzzy 共用 stable structural grouping；Tree 使用
+  同一 collection foundation 中的 Rust outline projection 与 VirtualCollection。
 - #80 已按 retained/delayed 边界修复，并覆盖 200 跳调用链与真实同步递归对照。
 
 对应提交为 `4c693eb1`、`78bfbac3`、`c84f7382`、`c5ef2e5b`。

@@ -25,7 +25,7 @@ does not imply availability in an already published crate.
 | SelectionArea | Maintain object selection by click, modifiers, range, or marquee | File grid, canvas objects, multi-selection surface | Implemented for bounded Canvas object rectangles |
 | Rotatable | Change an object's angle around an explicit pivot | Drawing or design tools | Implemented for Canvas with atomic pivot compensation |
 | RangeSlider | Select one ordered numeric interval with two thumbs | Filters, time/value windows | Implemented with shared Slider axis/RTL/step math |
-| Tree | Navigate a flattened hierarchical outline | Files, settings, object hierarchy | Planned for 0.1.8 over shared outline projection |
+| Tree | Navigate a flattened hierarchical outline | Files, settings, object hierarchy | Implemented over shared Rust outline projection and virtual_collection |
 | Dockable / DockLayout | Arrange panels through docking, grouping, splitting, or floating | IDE/tool workspaces | Deferred higher-level layout system |
 
 ## Choose by the state being changed

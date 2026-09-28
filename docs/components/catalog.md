@@ -1,6 +1,6 @@
 # Official component catalog
 
-gpui-rhai ships 61 editable Rhai source components. They all use the same
+gpui-rhai ships 62 editable Rhai source components. They all use the same
 public atoms and generic runtime mechanisms available to application code; no
 official component receives a private high-level node constructor.
 
@@ -153,6 +153,17 @@ second selection coordinate model.
 
 Source: [selection_area.rhai](../../registry/components/selection_area.rhai).
 Runnable story: `gpui-rhai gallery --story components/selection-area`.
+
+## Tree
+
+`Tree` is a controlled virtualized outline. A Rust projection validates stable
+keys, parents, cycles and depth, then flattens only expanded branches while
+preserving source sibling order. The ordinary public `virtual_collection`
+owns realization and reveal; Tree alone owns active, expanded, disabled and
+selection navigation state.
+
+Source: [tree.rhai](../../registry/components/tree.rhai).
+Runnable story: `gpui-rhai gallery --story components/tree`.
 
 The same [specification](interaction-behaviors.md) records the planned
 SelectionArea, Rotatable, and DockLayout
