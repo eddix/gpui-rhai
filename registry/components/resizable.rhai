@@ -2,7 +2,7 @@
 {
   "id": "components/resizable",
   "export": "Resizable",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": [],
   "capabilities": {}
@@ -18,7 +18,7 @@
 //     on_resize:Fn("resized") })
 
 define_component(#{
-    metadata: #{ id: "components/resizable", "export": "Resizable", version: "0.1.6",
+    metadata: #{ id: "components/resizable", "export": "Resizable", version: "0.1.7",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{} },
     schema: #{
         props: #{

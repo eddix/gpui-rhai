@@ -41,7 +41,7 @@ exact family version:
 
 ```toml
 [dependencies]
-gpui-rhai = "0.1.6"
+gpui-rhai = "0.1.7"
 gpui = { package = "gpui-pre", version = "=0.3.7", default-features = false, features = ["font-kit"] }
 gpui_platform = { package = "gpui-pre-platform", version = "=0.3.7", default-features = false, features = ["font-kit", "runtime_shaders", "wayland", "x11"] }
 ```

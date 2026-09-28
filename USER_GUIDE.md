@@ -52,7 +52,7 @@ See [Architecture](docs/architecture.md) for the complete runtime design.
 Install the versioned CLI from crates.io:
 
 ```text
-cargo install gpui-rhai-cli --version 0.1.6 --locked
+cargo install gpui-rhai-cli --version 0.1.7 --locked
 ```
 
 Then, from a Cargo application root:
@@ -99,6 +99,19 @@ present it writes `gpui-rhai-host-snippet.rs` for deliberate integration.
 ```toml
 gpui-rhai = { version = "0.1", features = ["dev-reload"] }
 ```
+
+### Upgrading an existing application to 0.1.7
+
+Keep `gpui-rhai`, `gpui-rhai-registry` and `gpui-rhai-cli` on 0.1.7 together.
+Run `gpui-rhai update`, review the Table, Tabs, Chart, SplitPane and Resizable
+source changes, then run `gpui-rhai check`. Replace the removed legacy Gallery
+examples with `gpui-rhai gallery`; the source-backed Explore catalog and
+Operations Workbench are the maintained acceptance application. Runtime API
+remains 2.
+
+Rust Hosts may change a mounted view theme, locale or Motion preference through
+`ScriptViewHandle` without reconstructing the view. Hosts upgrading from 0.1.5
+or earlier must also complete the 0.1.6 GPUI package-identity migration below.
 
 ### Upgrading an existing application to 0.1.6
 

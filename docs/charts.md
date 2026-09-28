@@ -8,7 +8,7 @@ this is not an ECharts option-schema compatibility layer.
 
 ```toml
 [dependencies]
-gpui-rhai = { version = "0.1.6", features = ["charts"] }
+gpui-rhai = { version = "0.1.7", features = ["charts"] }
 ```
 
 `gpui-rhai add chart` installs `ui/charts/chart.rhai` and enables the Cargo

@@ -21,13 +21,13 @@ typography. See the [release and upgrade index](docs/releases/README.md). The au
 contract is in [INTENT.md](INTENT.md), and the dependency-ordered implementation
 plan is in [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md).
 
-The 0.1.6 development line upgrades the Rust backend to the exact gpui-pre
+Version 0.1.6 upgrades the Rust backend to the exact gpui-pre
 core/platform family, raises MSRV to Rust 1.95, and projects the retained
 semantic frame into native AccessKit. Runtime API 2 and existing Rhai sources
 remain compatible; Rust Hosts must align their GPUI package identity. See
 [Accessibility](docs/accessibility.md) and [Embedding](docs/embedding.md).
 
-The 0.1.7 development line adds the formal Gallery/Operations acceptance
+Version 0.1.7 adds the formal Gallery/Operations acceptance
 application plus independent `SplitPane` and `Resizable` source components,
 both with controlled native drag preview and keyboard-accessible handles.
 

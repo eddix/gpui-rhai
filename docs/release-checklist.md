@@ -76,3 +76,9 @@ downloaded Metal Toolchain. Application dogfooding after publication feeds the
 next patch/feature line and is not a publication gate. A
 published family without upstream #64672 or equivalent behavior is not
 releasable.
+Version 0.1.7 retains Runtime API 2. Verify every bundled Gallery story/case,
+the complete shell and Operations Workbench workflows, theme/locale/Motion hot
+switching, HostSlot IME, subscription cleanup, Table search/page projection,
+Chart wheel/diagnostic behavior, SplitPane and Resizable pointer/keyboard
+parity, the 100k streaming benchmark at zero Rhai operations, checked-in visual
+baselines, and launch from an empty working directory.

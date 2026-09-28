@@ -2,7 +2,7 @@
 {
   "id": "components/tabs",
   "export": "Tabs",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": [],
   "capabilities": {}
@@ -16,7 +16,7 @@
 
 define_component(#{
     metadata: #{
-        id: "components/tabs", "export": "Tabs", version: "0.1.6",
+        id: "components/tabs", "export": "Tabs", version: "0.1.7",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{},
     },
     schema: #{
