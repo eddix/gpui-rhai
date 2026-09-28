@@ -1894,19 +1894,8 @@ impl GpuiNodeRenderer {
         }
         let focus_handle =
             retained_id.and_then(|node| environment.focus_handles.get(&node).cloned());
-        if let Some(handle) = focus_handle.as_ref() {
-            if matches!(node.kind(), UiNodeKind::Custom { primitive }
-                if environment.primitives.uses_primary_focus(&primitive.primitive))
-            {
-                // The wrapper observes the native control's identity for
-                // focus paint, but only the native control belongs in the tab
-                // sequence. The primitive refreshes the shared handle's real
-                // tab-stop policy when it renders below this wrapper.
-                element = element.track_focus(&handle.clone().tab_stop(false));
-            } else {
-                element = element.track_focus(handle);
-            }
-        }
+        element =
+            apply_node_focus_tracking(element, node, focus_handle.as_ref(), environment.primitives);
         if let Some(opacity) = signals.opacity.or(animation.opacity) {
             element = element.opacity(f64_to_f32(opacity.clamp(0.0, 1.0)));
         }
@@ -2047,11 +2036,8 @@ impl GpuiNodeRenderer {
             environment,
         );
         let element = apply_hit_test(element, hit_test);
-        let element = apply_tab_behavior(
-            element,
-            node,
-            click.is_some() || !key_handlers.is_empty(),
-        );
+        let element =
+            apply_tab_behavior(element, node, click.is_some() || !key_handlers.is_empty());
         let element = apply_environment_scroll(element, node, retained_id, environment);
         let element = apply_motion_trigger_handlers(
             element,
@@ -2236,6 +2222,27 @@ impl GpuiNodeRenderer {
                 ))
                 .into_any_element(),
         }
+    }
+}
+
+fn apply_node_focus_tracking(
+    element: Div,
+    node: &UiNode,
+    handle: Option<&FocusHandle>,
+    primitives: &PrimitiveRegistry,
+) -> Div {
+    let Some(handle) = handle else {
+        return element;
+    };
+    if matches!(node.kind(), UiNodeKind::Custom { primitive }
+        if primitives.uses_primary_focus(&primitive.primitive))
+    {
+        // The wrapper observes the native control's identity for focus paint,
+        // but only the native control belongs in the tab sequence. The
+        // primitive refreshes the shared handle's real tab-stop policy below.
+        element.track_focus(&handle.clone().tab_stop(false))
+    } else {
+        element.track_focus(handle)
     }
 }
 
@@ -2806,13 +2813,14 @@ fn apply_tab_behavior(
     node: &UiNode,
     implicit_tab_stop: bool,
 ) -> Stateful<Div> {
-    element = element
-        .tab_index(node_tab_index(node))
-        .tab_stop(if node_has_focus_declaration(node) {
-            node_tab_stop(node)
-        } else {
-            implicit_tab_stop
-        });
+    element =
+        element
+            .tab_index(node_tab_index(node))
+            .tab_stop(if node_has_focus_declaration(node) {
+                node_tab_stop(node)
+            } else {
+                implicit_tab_stop
+            });
     if node.attributes().get("tab_group") == Some(&UiValue::Bool(true)) {
         element = element.tab_group();
     }
