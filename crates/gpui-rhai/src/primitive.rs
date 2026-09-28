@@ -990,6 +990,64 @@ impl PrimitiveContext {
         self.interactions.cancel_owner(owner, window, cx)
     }
 
+    pub(crate) fn register_drop_target(&self, target: crate::interaction::DropTargetRegistration) {
+        self.interactions.register_drop_target(target);
+    }
+
+    pub(crate) fn drop_target_state(
+        &self,
+        owner: &crate::interaction::InteractionOwner,
+    ) -> crate::interaction::DropTargetState {
+        self.interactions.drop_target_state(owner)
+    }
+
+    pub(crate) fn start_app_drag(
+        &self,
+        spec: crate::interaction::ApplicationDragSpec,
+        position: gpui::Point<gpui::Pixels>,
+        cx: &mut App,
+    ) {
+        self.interactions.start_app_drag(spec, position, cx);
+    }
+
+    pub(crate) fn update_app_drag(&self, position: gpui::Point<gpui::Pixels>, cx: &mut App) {
+        self.interactions.update_app_drag(position, cx);
+    }
+
+    pub(crate) fn finish_app_drag(
+        &self,
+        position: gpui::Point<gpui::Pixels>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Option<crate::interaction::ApplicationDropResult> {
+        self.interactions.finish_app_drag(position, window, cx)
+    }
+
+    pub(crate) fn perform_keyboard_drop(
+        &self,
+        spec: &crate::interaction::ApplicationDragSpec,
+        target_id: &str,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> crate::interaction::ApplicationDropResult {
+        self.interactions
+            .perform_keyboard_drop(spec, target_id, window, cx)
+    }
+
+    pub(crate) fn cancel_app_drag(
+        &self,
+        cx: &mut App,
+    ) -> Option<crate::interaction::ApplicationDropResult> {
+        self.interactions.cancel_app_drag(cx)
+    }
+
+    pub(crate) fn app_drag_source_active(
+        &self,
+        owner: &crate::interaction::InteractionOwner,
+    ) -> bool {
+        self.interactions.app_drag_source_active(owner)
+    }
+
     /// Read the last committed layout bounds for a primitive-owned element ref.
     #[must_use]
     pub fn element_bounds(

@@ -1,12 +1,15 @@
 //! Shared foreground ownership and lifecycle for native pointer gestures.
 
 use std::cell::RefCell;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
 use gpui::{
     App, DispatchPhase, EntityId, MouseButton, MouseMoveEvent, MouseUpEvent, Pixels, Point, Window,
+    point, px,
 };
+
+use crate::{GeometryBounds, UiValue};
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) struct InteractionOwner {
@@ -196,6 +199,142 @@ impl NativeGesture {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) enum DragOperation {
+    Copy,
+    Move,
+}
+
+impl DragOperation {
+    pub(crate) fn parse(value: &str) -> Option<Self> {
+        match value {
+            "copy" => Some(Self::Copy),
+            "move" => Some(Self::Move),
+            _ => None,
+        }
+    }
+
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::Copy => "copy",
+            Self::Move => "move",
+        }
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct ApplicationDragSpec {
+    source: InteractionOwner,
+    source_id: String,
+    payload_type: String,
+    payload: UiValue,
+    operation: DragOperation,
+    notify: EntityId,
+}
+
+impl ApplicationDragSpec {
+    pub(crate) fn new(
+        source: InteractionOwner,
+        source_id: String,
+        payload_type: String,
+        payload: UiValue,
+        operation: DragOperation,
+        notify: EntityId,
+    ) -> Self {
+        Self {
+            source,
+            source_id,
+            payload_type,
+            payload,
+            operation,
+            notify,
+        }
+    }
+
+    pub(crate) fn source_id(&self) -> &str {
+        &self.source_id
+    }
+
+    pub(crate) fn payload_type(&self) -> &str {
+        &self.payload_type
+    }
+
+    pub(crate) fn payload(&self) -> &UiValue {
+        &self.payload
+    }
+
+    pub(crate) const fn operation(&self) -> DragOperation {
+        self.operation
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ApplicationDropResult {
+    pub accepted: bool,
+    pub target_id: Option<String>,
+    pub operation: DragOperation,
+}
+
+type DropCommitHandler = dyn Fn(&ApplicationDragSpec, Point<Pixels>, &mut Window, &mut App);
+
+#[derive(Clone)]
+pub(crate) struct DropTargetRegistration {
+    owner: InteractionOwner,
+    target_id: String,
+    bounds: GeometryBounds,
+    payload_types: BTreeSet<String>,
+    operations: BTreeSet<DragOperation>,
+    priority: i64,
+    notify: EntityId,
+    commit: Rc<DropCommitHandler>,
+}
+
+impl DropTargetRegistration {
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn new(
+        owner: InteractionOwner,
+        target_id: String,
+        bounds: GeometryBounds,
+        payload_types: BTreeSet<String>,
+        operations: BTreeSet<DragOperation>,
+        priority: i64,
+        notify: EntityId,
+        commit: impl Fn(&ApplicationDragSpec, Point<Pixels>, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        Self {
+            owner,
+            target_id,
+            bounds,
+            payload_types,
+            operations,
+            priority,
+            notify,
+            commit: Rc::new(commit),
+        }
+    }
+
+    fn accepts(&self, drag: &ApplicationDragSpec) -> bool {
+        self.payload_types.contains(&drag.payload_type)
+            && self.operations.contains(&drag.operation)
+            && self.owner != drag.source
+    }
+}
+
+#[derive(Clone)]
+struct ActiveApplicationDrag {
+    spec: ApplicationDragSpec,
+    position: Point<Pixels>,
+    target: Option<InteractionOwner>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum DropTargetState {
+    Idle,
+    Eligible,
+    Active,
+    Invalid,
+}
+
 #[derive(Clone, Default)]
 pub(crate) struct WindowInteractionCoordinator(Rc<RefCell<InteractionState>>);
 
@@ -205,6 +344,8 @@ struct InteractionState {
     presented: BTreeSet<InteractionOwner>,
     captured_move: Option<Rc<CapturedMoveHandler>>,
     captured_up: Option<Rc<CapturedUpHandler>>,
+    drag: Option<ActiveApplicationDrag>,
+    drop_targets: BTreeMap<InteractionOwner, DropTargetRegistration>,
 }
 
 impl WindowInteractionCoordinator {
@@ -213,6 +354,7 @@ impl WindowInteractionCoordinator {
         state.presented.clear();
         state.captured_move = None;
         state.captured_up = None;
+        state.drop_targets.clear();
     }
 
     pub(crate) fn set_pointer_routes(
@@ -240,6 +382,193 @@ impl WindowInteractionCoordinator {
         };
         if let Some(active) = stale {
             window.defer(cx, move |window, cx| cancel_active(active, window, cx));
+        }
+        let position = self.0.borrow().drag.as_ref().map(|drag| drag.position);
+        if let Some(position) = position {
+            self.update_app_drag(position, cx);
+        }
+    }
+
+    pub(crate) fn register_drop_target(&self, target: DropTargetRegistration) {
+        self.0
+            .borrow_mut()
+            .drop_targets
+            .insert(target.owner.clone(), target);
+    }
+
+    pub(crate) fn start_app_drag(
+        &self,
+        spec: ApplicationDragSpec,
+        position: Point<Pixels>,
+        cx: &mut App,
+    ) {
+        self.clear_app_drag(cx);
+        let notify = spec.notify;
+        self.0.borrow_mut().drag = Some(ActiveApplicationDrag {
+            spec,
+            position,
+            target: None,
+        });
+        cx.notify(notify);
+        self.update_app_drag(position, cx);
+    }
+
+    pub(crate) fn update_app_drag(&self, position: Point<Pixels>, cx: &mut App) {
+        let (old_target, new_target, notifications) = {
+            let mut state = self.0.borrow_mut();
+            let Some(drag) = state.drag.as_ref() else {
+                return;
+            };
+            let next = resolve_drop_target(drag, &state.drop_targets, position);
+            let old = drag.target.clone();
+            let mut notifications = BTreeSet::new();
+            if old != next {
+                if let Some(owner) = old.as_ref().and_then(|owner| state.drop_targets.get(owner)) {
+                    notifications.insert(owner.notify);
+                }
+                if let Some(owner) = next
+                    .as_ref()
+                    .and_then(|owner| state.drop_targets.get(owner))
+                {
+                    notifications.insert(owner.notify);
+                }
+            }
+            notifications.insert(drag.spec.notify);
+            let drag = state.drag.as_mut().expect("active drag was checked");
+            drag.position = position;
+            drag.target.clone_from(&next);
+            (old, next, notifications)
+        };
+        if old_target != new_target {
+            for notify in notifications {
+                cx.notify(notify);
+            }
+        }
+    }
+
+    pub(crate) fn finish_app_drag(
+        &self,
+        position: Point<Pixels>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Option<ApplicationDropResult> {
+        self.update_app_drag(position, cx);
+        let (drag, target) = {
+            let mut state = self.0.borrow_mut();
+            let drag = state.drag.take()?;
+            let target = drag
+                .target
+                .as_ref()
+                .and_then(|owner| state.drop_targets.get(owner))
+                .cloned();
+            (drag, target)
+        };
+        cx.notify(drag.spec.notify);
+        if let Some(target) = target {
+            cx.notify(target.notify);
+            (target.commit)(&drag.spec, position, window, cx);
+            Some(ApplicationDropResult {
+                accepted: true,
+                target_id: Some(target.target_id),
+                operation: drag.spec.operation,
+            })
+        } else {
+            Some(ApplicationDropResult {
+                accepted: false,
+                target_id: None,
+                operation: drag.spec.operation,
+            })
+        }
+    }
+
+    pub(crate) fn perform_keyboard_drop(
+        &self,
+        spec: &ApplicationDragSpec,
+        target_id: &str,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> ApplicationDropResult {
+        let target = {
+            let state = self.0.borrow();
+            state
+                .drop_targets
+                .values()
+                .filter(|target| target.target_id == target_id && target.accepts(spec))
+                .max_by(|left, right| compare_drop_targets(left, right))
+                .cloned()
+        };
+        cx.notify(spec.notify);
+        if let Some(target) = target {
+            let position = point(
+                px(f64_to_f32(target.bounds.x + target.bounds.width / 2.0)),
+                px(f64_to_f32(target.bounds.y + target.bounds.height / 2.0)),
+            );
+            cx.notify(target.notify);
+            (target.commit)(spec, position, window, cx);
+            ApplicationDropResult {
+                accepted: true,
+                target_id: Some(target.target_id),
+                operation: spec.operation,
+            }
+        } else {
+            ApplicationDropResult {
+                accepted: false,
+                target_id: None,
+                operation: spec.operation,
+            }
+        }
+    }
+
+    pub(crate) fn cancel_app_drag(&self, cx: &mut App) -> Option<ApplicationDropResult> {
+        let drag = self.clear_app_drag(cx)?;
+        Some(ApplicationDropResult {
+            accepted: false,
+            target_id: None,
+            operation: drag.spec.operation,
+        })
+    }
+
+    fn clear_app_drag(&self, cx: &mut App) -> Option<ActiveApplicationDrag> {
+        let (drag, target_notify) = {
+            let mut state = self.0.borrow_mut();
+            let drag = state.drag.take()?;
+            let target_notify = drag
+                .target
+                .as_ref()
+                .and_then(|owner| state.drop_targets.get(owner))
+                .map(|target| target.notify);
+            (drag, target_notify)
+        };
+        cx.notify(drag.spec.notify);
+        if let Some(notify) = target_notify {
+            cx.notify(notify);
+        }
+        Some(drag)
+    }
+
+    pub(crate) fn app_drag_source_active(&self, owner: &InteractionOwner) -> bool {
+        self.0
+            .borrow()
+            .drag
+            .as_ref()
+            .is_some_and(|drag| drag.spec.source == *owner)
+    }
+
+    pub(crate) fn drop_target_state(&self, owner: &InteractionOwner) -> DropTargetState {
+        let state = self.0.borrow();
+        let Some(drag) = state.drag.as_ref() else {
+            return DropTargetState::Idle;
+        };
+        let Some(target) = state.drop_targets.get(owner) else {
+            return DropTargetState::Idle;
+        };
+        if !target.accepts(&drag.spec) {
+            return DropTargetState::Invalid;
+        }
+        if drag.target.as_ref() == Some(owner) {
+            DropTargetState::Active
+        } else {
+            DropTargetState::Eligible
         }
     }
 
@@ -293,6 +622,15 @@ impl WindowInteractionCoordinator {
             .is_some_and(|active| active.owner.belongs_to(view));
         if owned {
             self.0.borrow_mut().active = None;
+        }
+        let drag_owned = self
+            .0
+            .borrow()
+            .drag
+            .as_ref()
+            .is_some_and(|drag| drag.spec.source.belongs_to(view));
+        if drag_owned {
+            self.0.borrow_mut().drag = None;
         }
     }
 
@@ -368,6 +706,49 @@ fn cancel_active(mut active: NativeGesture, window: &mut Window, cx: &mut App) {
     active.session.cancel();
     (active.cancel)(window, cx);
     cx.notify(active.notify);
+}
+
+fn resolve_drop_target(
+    drag: &ActiveApplicationDrag,
+    targets: &BTreeMap<InteractionOwner, DropTargetRegistration>,
+    position: Point<Pixels>,
+) -> Option<InteractionOwner> {
+    let x = f64::from(position.x);
+    let y = f64::from(position.y);
+    targets
+        .values()
+        .filter(|target| {
+            target.accepts(&drag.spec)
+                && x >= target.bounds.x
+                && x <= target.bounds.x + target.bounds.width
+                && y >= target.bounds.y
+                && y <= target.bounds.y + target.bounds.height
+        })
+        .max_by(|left, right| compare_drop_targets(left, right))
+        .map(|target| target.owner.clone())
+}
+
+fn compare_drop_targets(
+    left: &DropTargetRegistration,
+    right: &DropTargetRegistration,
+) -> std::cmp::Ordering {
+    left.priority.cmp(&right.priority).then_with(|| {
+        let left_area = left.bounds.width * left.bounds.height;
+        let right_area = right.bounds.width * right.bounds.height;
+        right_area
+            .partial_cmp(&left_area)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    })
+}
+
+fn f64_to_f32(value: f64) -> f32 {
+    value.to_string().parse().unwrap_or_else(|_| {
+        if value.is_sign_negative() {
+            f32::MIN
+        } else {
+            f32::MAX
+        }
+    })
 }
 
 #[cfg(test)]

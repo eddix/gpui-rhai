@@ -10,6 +10,7 @@ pub mod devtools;
 pub mod diagnostic;
 pub mod document;
 pub mod document_view;
+pub mod drag_drop;
 pub mod draggable;
 pub mod effect;
 pub mod element_ref;
@@ -154,6 +155,10 @@ pub use document::{
 pub use document_view::{
     CodeViewerPrimitiveHandler, DiffSide, DiffViewerPrimitiveHandler, RevealDocumentLine,
     code_viewer_primitive_descriptor, diff_viewer_primitive_descriptor, init_document_view,
+};
+pub use drag_drop::{
+    DragSourcePrimitiveHandler, DropZonePrimitiveHandler, drag_source_primitive_descriptor,
+    drop_zone_primitive_descriptor,
 };
 pub use draggable::{DraggablePrimitiveHandler, draggable_primitive_descriptor};
 pub use effect::{EffectDescriptor, EffectError, EffectId, EffectRegistry};
