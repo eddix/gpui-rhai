@@ -1121,6 +1121,8 @@ fn view(ctx){let value=ctx.get_state("transform");column([
     visual.run_until_parked();
     let explicit = status(&mut visual);
     assert!(explicit.ends_with(",4"), "status={explicit}");
+    let explicit_x = explicit.split(',').next().unwrap().parse::<f64>().unwrap();
+    assert!(explicit_x.abs() > 1.0, "explicit gesture lost pan: {explicit}");
 
     visual.simulate_keystrokes("tab right");
     visual.run_until_parked();

@@ -72,7 +72,11 @@ fn render_PanZoom(ctx, props) {
     let scale_y_signal = signal("pan-zoom-scale-y", props.transform.scale * 1.0);
     let wheel_generation_signal = signal("pan-zoom-wheel-generation", 0);
     let wheel_active_signal = signal("pan-zoom-wheel-active", false);
-    let native = #{ key:`${props.key}-interaction`, x:props.transform.x, y:props.transform.y,
+    let wheel_pending_signal = signal("pan-zoom-wheel-pending", false);
+    let source_token = `${props.transform.x}|${props.transform.y}|${props.transform.scale}|${props.min_scale}|${props.max_scale}|${props.axes}|${props.wheel_zoom}|${props.pan_button}|${props.disabled}`;
+    let source_token_signal = signal("pan-zoom-source-token", source_token);
+    let native = #{ key:`${props.key}-interaction`, source_token:source_token,
+        x:props.transform.x, y:props.transform.y,
         scale:props.transform.scale, min_scale:props.min_scale, max_scale:props.max_scale,
         axes:props.axes, wheel_zoom:props.wheel_zoom, pan_button:props.pan_button,
         threshold:props.threshold, keyboard_pan_step:props.keyboard_pan_step,
@@ -80,6 +84,7 @@ fn render_PanZoom(ctx, props) {
         viewport_ref:viewport_ref, x_signal:x_signal, y_signal:y_signal,
         scale_x_signal:scale_x_signal, scale_y_signal:scale_y_signal,
         wheel_generation_signal:wheel_generation_signal, wheel_active_signal:wheel_active_signal,
+        wheel_pending_signal:wheel_pending_signal, source_token_signal:source_token_signal,
         on_transform_change:if "on_transform_change" in props && props.on_transform_change != () {
             Fn("pan_zoom_commit")
         } else { () }

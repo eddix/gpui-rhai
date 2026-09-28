@@ -42,6 +42,7 @@ enum WheelZoom {
 #[derive(Clone)]
 struct PanZoomConfig {
     id: String,
+    source_token: String,
     source: ViewTransform,
     minimum_scale: f64,
     maximum_scale: f64,
@@ -59,6 +60,8 @@ struct PanZoomConfig {
     scale_y_signal: crate::NativeSignal,
     wheel_generation_signal: crate::NativeSignal,
     wheel_active_signal: crate::NativeSignal,
+    wheel_pending_signal: crate::NativeSignal,
+    source_token_signal: crate::NativeSignal,
     focus: Option<FocusHandle>,
 }
 
@@ -92,21 +95,24 @@ impl PanZoomEntity {
         cx: &mut Context<Self>,
     ) {
         config.focus = Some(self.focus.clone());
-        let source_changed = self.config.source != config.source
-            || self.config.disabled != config.disabled
-            || self.config.x_signal.id() != config.x_signal.id()
-            || self.config.y_signal.id() != config.y_signal.id()
-            || self.config.scale_x_signal.id() != config.scale_x_signal.id()
-            || self.config.scale_y_signal.id() != config.scale_y_signal.id()
-            || self.config.wheel_generation_signal.id() != config.wheel_generation_signal.id()
-            || self.config.wheel_active_signal.id() != config.wheel_active_signal.id();
         self.context = context;
-        if source_changed {
+        let contract_changed = read_string_signal(&self.context, &config.source_token_signal, cx)
+            .as_deref()
+            != Some(config.source_token.as_str());
+        if contract_changed {
             let owner = self.context.interaction_owner(&self.config.id);
             self.context.cancel_interaction(&owner, window, cx);
             invalidate_wheel(&self.context, &config, cx);
             self.preview = config.source;
             write_transform(&self.context, &config, config.source, cx);
+            write_string_signal(
+                &self.context,
+                &config.source_token_signal,
+                &config.source_token,
+                cx,
+            );
+        } else {
+            self.preview = read_transform(&self.context, &config, cx).unwrap_or(config.source);
         }
         self.config = config;
     }
@@ -246,6 +252,7 @@ impl PanZoomEntity {
         if !transform_changed(self.preview, next) {
             return;
         }
+        write_bool_signal(&self.context, &self.config.wheel_pending_signal, true, cx);
         self.set_preview(next, cx);
         cx.stop_propagation();
         if explicit || matches!(event.touch_phase, gpui::TouchPhase::Started) {
@@ -269,6 +276,7 @@ impl PanZoomEntity {
                     == Some(generation)
                     && let Some(transform) = read_transform(&context, &config, cx)
                 {
+                    write_bool_signal(&context, &config.wheel_pending_signal, false, cx);
                     write_transform(&context, &config, config.source, cx);
                     if transform_changed(config.source, transform) {
                         context.propose("transform_change", transform_value(transform), window, cx);
@@ -421,12 +429,22 @@ fn parse_config(
     let wheel_generation_signal =
         typed_signal(props, "wheel_generation_signal", SignalKind::Integer)?;
     let wheel_active_signal = typed_signal(props, "wheel_active_signal", SignalKind::Bool)?;
+    let wheel_pending_signal = typed_signal(props, "wheel_pending_signal", SignalKind::Bool)?;
+    let source_token_signal = typed_signal(props, "source_token_signal", SignalKind::String)?;
+    let source_token = props
+        .string("source_token")
+        .filter(|value| {
+            !value.is_empty() && value.len() <= 512 && !value.chars().any(char::is_control)
+        })
+        .ok_or_else(|| "pan zoom source_token must be 1-512 non-control characters".to_owned())?
+        .to_owned();
     Ok(PanZoomConfig {
         id: format!(
             "gpui-rhai-pan-zoom:{}:{}",
             x_signal.id().component(),
             x_signal.id().key()
         ),
+        source_token,
         source,
         minimum_scale,
         maximum_scale,
@@ -447,6 +465,8 @@ fn parse_config(
         scale_y_signal: scale_signals.1,
         wheel_generation_signal,
         wheel_active_signal,
+        wheel_pending_signal,
+        source_token_signal,
         focus,
     })
 }
@@ -560,6 +580,17 @@ fn read_bool_signal(
     }
 }
 
+fn read_string_signal(
+    context: &PrimitiveContext,
+    signal: &crate::NativeSignal,
+    cx: &App,
+) -> Option<String> {
+    match context.read_signal(signal, cx).ok()? {
+        SignalValue::String(value) => Some(value),
+        _ => None,
+    }
+}
+
 fn write_bool_signal(
     context: &PrimitiveContext,
     signal: &crate::NativeSignal,
@@ -567,6 +598,15 @@ fn write_bool_signal(
     cx: &mut App,
 ) {
     let _ = context.write_signal(signal, SignalValue::Bool(value), cx);
+}
+
+fn write_string_signal(
+    context: &PrimitiveContext,
+    signal: &crate::NativeSignal,
+    value: &str,
+    cx: &mut App,
+) {
+    let _ = context.write_signal(signal, SignalValue::String(value.to_owned()), cx);
 }
 
 fn next_wheel_generation(context: &PrimitiveContext, config: &PanZoomConfig, cx: &mut App) -> i64 {
@@ -584,6 +624,7 @@ fn next_wheel_generation(context: &PrimitiveContext, config: &PanZoomConfig, cx:
 fn invalidate_wheel(context: &PrimitiveContext, config: &PanZoomConfig, cx: &mut App) {
     let _ = next_wheel_generation(context, config, cx);
     write_bool_signal(context, &config.wheel_active_signal, false, cx);
+    write_bool_signal(context, &config.wheel_pending_signal, false, cx);
 }
 
 fn pan_transform(start: ViewTransform, delta: (f64, f64), axes: PanAxes) -> ViewTransform {
@@ -723,6 +764,8 @@ fn pan_zoom_signal_props() -> BTreeMap<String, ObjectField> {
         "scale_y_signal",
         "wheel_generation_signal",
         "wheel_active_signal",
+        "wheel_pending_signal",
+        "source_token_signal",
     ]
     .into_iter()
     .map(|name| (name.to_owned(), ObjectField::required(ValueSchema::Signal)))
@@ -737,6 +780,10 @@ fn pan_zoom_signal_props() -> BTreeMap<String, ObjectField> {
 #[must_use]
 pub fn pan_zoom_primitive_descriptor() -> PrimitiveDescriptor {
     let mut props = BTreeMap::from([
+        (
+            "source_token".to_owned(),
+            ObjectField::required(ValueSchema::string()),
+        ),
         ("x".to_owned(), ObjectField::required(ValueSchema::number())),
         ("y".to_owned(), ObjectField::required(ValueSchema::number())),
         (
