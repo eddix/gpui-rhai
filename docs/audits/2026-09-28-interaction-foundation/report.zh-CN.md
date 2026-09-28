@@ -10,6 +10,26 @@ interaction hot path，再实施 ADR 0022；不以新增组件数量代替底层
 预览和生命周期继续分叉，因此 **0.1.8 必须先完成共享 Interaction Runtime，
 再实现公开组件**。
 
+## 实施追踪（2026-09-28）
+
+本报告保留基线事实；以下记录 #81 中完成的底层整改，避免把“已有共享类型”误报成
+完整架构收敛：
+
+- F01 已完成现有原生 hot lane 的第一阶段迁移：Resizable、SplitPane、Table
+  column resize、Slider、Scrollbar、Chart pan/brush 共用 Host-domain gesture
+  coordinator 和 GestureSession；move/up/cancel 不再按 handle 重复安装。
+- F02 部分完成：原生 gesture 已统一；声明式 `PointerCaptureRegistry` 仍有自己的
+  frame router，后续需并入同一 coordinator 后才可关闭。
+- F03 部分完成：新增有限、可逆的 `Affine2D` / `PresentedGeometry`，Canvas paint 与
+  hit-test 已共用变换公式；完整 clip/scroll ancestry 和所有 Motion 呈现域迁移仍待完成。
+- F04、F05 已完成：signal patch validate-all/apply-all，`PrimitiveContext`、typed
+  props 与统一 deferred proposal 已落地。
+- F06 部分完成：Table 与 Command/Fuzzy 已共用 stable structural grouping；Tree 的
+  outline projection 尚待公开组件工作包落地。
+- #80 已按 retained/delayed 边界修复，并覆盖 200 跳调用链与真实同步递归对照。
+
+对应提交为 `4c693eb1`、`78bfbac3`、`c84f7382`、`c5ef2e5b`。
+
 审计集中于会被新组件复用的路径，而非按文件行数进行无目标重写。覆盖
 `renderer/event/geometry/signal/primitive`，Resizable、SplitPane、Table 列宽、
 Slider、Scrollbar、Chart、Canvas、VirtualCollection/NativeCollection，以及 Rhai
@@ -123,4 +143,3 @@ event/effect callback 长链，以及真实同步递归仍被限制。
    Rotatable、RangeSlider、Tree；最后更新 Gallery、Studio、文档和 release matrix。
 
 每个工作包是内部依赖顺序，不是对外发布的中间态。0.1.8 只在完整矩阵通过后发布。
-
