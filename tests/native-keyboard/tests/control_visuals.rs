@@ -17,6 +17,8 @@ const RESIZABLE: &str = include_str!("../../../registry/components/resizable.rha
 const DRAGGABLE: &str = include_str!("../../../registry/components/draggable.rhai");
 const DRAG_SOURCE: &str = include_str!("../../../registry/components/drag_source.rhai");
 const DROP_ZONE: &str = include_str!("../../../registry/components/drop_zone.rhai");
+const SORTABLE: &str = include_str!("../../../registry/components/sortable.rhai");
+const SCROLL_AREA: &str = include_str!("../../../registry/components/scroll_area.rhai");
 const ANIMATED_TABS: &str = include_str!("../../../registry/motion/animated_tabs.rhai");
 const DEFAULT_DARK: &str = include_str!("../../../registry/themes/default_dark.rhai");
 
@@ -82,6 +84,14 @@ fn mount_with_overrides(
             (
                 ModuleId::parse("components/drop_zone").unwrap(),
                 DROP_ZONE.to_owned(),
+            ),
+            (
+                ModuleId::parse("components/sortable").unwrap(),
+                SORTABLE.to_owned(),
+            ),
+            (
+                ModuleId::parse("components/scroll_area").unwrap(),
+                SCROLL_AREA.to_owned(),
             ),
             (
                 ModuleId::parse("motion/animated_tabs").unwrap(),
@@ -838,6 +848,172 @@ fn view(ctx){column([text(ctx.get_state("status")).accessibility_role("status"),
     visual.simulate_mouse_up(target_point, MouseButton::Left, Modifiers::default());
     visual.run_until_parked();
     assert_eq!(status(&mut visual), "drop:a:item-1");
+}
+
+#[gpui::test]
+fn sortable_proposes_stable_anchors_for_pointer_and_keyboard(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let script = r#"
+import "components/sortable" as sortable;
+fn state_schema(){#{fields:#{
+    order:#{schema:#{type:"array",max_items:8,items:#{type:"string"}},"default":#{type:"array",value:[
+        #{type:"string",value:"alpha"},#{type:"string",value:"bravo"},
+        #{type:"string",value:"charlie"},#{type:"string",value:"delta"}]}},
+    status:#{schema:#{type:"string"},"default":#{type:"string",value:"ready"}}
+}}}
+fn index_of(values,key){for index in 0..values.len{if values[index]==key{return index;}}-1}
+fn reordered(ctx,value){let order=ctx.get_state("order");let source=index_of(order,value.source_key);
+    let moved=order.remove(source);let anchor=index_of(order,value.anchor_key);
+    order.insert(if value.placement=="after"{anchor+1}else{anchor},moved);
+    ctx.set_state("order",order);ctx.set_state("status",`${value.source_key}:${value.placement}:${value.anchor_key}`);}
+fn view(ctx){let items=[];for key in ctx.get_state("order"){
+    items.push(#{key:key,label:key,content:text(key).with_style(style().height(px(48)).padding(px(8)).items_center())});}
+    column([text(ctx.get_state("status")).accessibility_role("status"),
+        sortable::Sortable(#{key:"queue",label:"Queue",items:items,direction:"vertical",on_reorder:Fn("reordered")})
+    ]).with_style(style().width(px(280)).padding(px(12)).gap(px(8)))}
+"#;
+    let (window, view) = mount(cx, script, "sortable");
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    let status = |visual: &mut VisualTestContext| {
+        visual.update(|_, cx| {
+            view.accessibility_snapshot(cx)
+                .unwrap()
+                .nodes()
+                .find(|node| node.role == "status")
+                .unwrap()
+                .name
+                .clone()
+        })
+    };
+    let snapshot = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
+    let source = snapshot
+        .find_by_role_and_name("button", "Reorder alpha")
+        .next()
+        .unwrap()
+        .geometry
+        .unwrap()
+        .visual;
+    let target = snapshot
+        .find_by_role_and_name("listitem", "charlie")
+        .next()
+        .unwrap()
+        .geometry
+        .unwrap()
+        .visual;
+    let source_point = point(
+        px((source.x + source.width / 2.0) as f32),
+        px((source.y + source.height / 2.0) as f32),
+    );
+    let target_after = point(
+        px((target.x + target.width / 2.0) as f32),
+        px((target.y + target.height * 0.75) as f32),
+    );
+    visual.simulate_mouse_down(source_point, MouseButton::Left, Modifiers::default());
+    visual.simulate_mouse_move(target_after, MouseButton::Left, Modifiers::default());
+    visual.simulate_mouse_up(target_after, MouseButton::Left, Modifiers::default());
+    visual.run_until_parked();
+    assert_eq!(status(&mut visual), "alpha:after:charlie");
+
+    let source = visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .find_by_role_and_name("button", "Reorder alpha")
+            .next()
+            .unwrap()
+            .geometry
+            .unwrap()
+            .visual
+    });
+    let source_point = point(
+        px((source.x + source.width / 2.0) as f32),
+        px((source.y + source.height / 2.0) as f32),
+    );
+    visual.simulate_mouse_down(source_point, MouseButton::Left, Modifiers::default());
+    visual.simulate_mouse_up(source_point, MouseButton::Left, Modifiers::default());
+    visual.run_until_parked();
+    visual.simulate_keystrokes("alt-up");
+    visual.run_until_parked();
+    assert_eq!(status(&mut visual), "alpha:before:charlie");
+}
+
+#[gpui::test]
+fn sortable_drag_auto_scrolls_the_active_drop_container(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let script = r#"
+import "components/sortable" as sortable;
+import "components/scroll_area" as scroll_area;
+fn view(ctx){let items=[];for index in 0..12{let key=`item-${index}`;
+    items.push(#{key:key,label:key,content:text(key).with_style(style().height(px(42)).padding(px(8)).items_center())});}
+    let list=sortable::Sortable(#{key:"scroll-order",label:"Scroll order",items:items,direction:"vertical"});
+    scroll_area::ScrollArea(#{key:"scroll",label:"Sortable viewport",height:px(180),axis:"vertical",content:list})
+        .with_style(style().width(px(300)).margin(px(12)))}
+"#;
+    let (window, view) = mount(cx, script, "sortable-scroll");
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    let snapshot = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
+    let source = snapshot
+        .find_by_role_and_name("button", "Reorder item-0")
+        .next()
+        .unwrap()
+        .geometry
+        .unwrap()
+        .visual;
+    let viewport = snapshot
+        .find_by_role_and_name("region", "Sortable viewport")
+        .next()
+        .unwrap()
+        .geometry
+        .unwrap()
+        .visual;
+    let before = snapshot
+        .find_by_role_and_name("listitem", "item-11")
+        .next()
+        .unwrap()
+        .geometry
+        .unwrap()
+        .visual
+        .y;
+    let source_point = point(
+        px((source.x + source.width / 2.0) as f32),
+        px((source.y + source.height / 2.0) as f32),
+    );
+    let bottom = viewport.y + viewport.height - 5.0;
+    visual.simulate_mouse_down(source_point, MouseButton::Left, Modifiers::default());
+    for step in 0..10 {
+        visual.simulate_mouse_move(
+            point(
+                px((viewport.x + viewport.width / 2.0 + f64::from(step % 2)) as f32),
+                px(bottom as f32),
+            ),
+            MouseButton::Left,
+            Modifiers::default(),
+        );
+        visual.run_until_parked();
+    }
+    let after = visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .find_by_role_and_name("listitem", "item-11")
+            .next()
+            .unwrap()
+            .geometry
+            .unwrap()
+            .visual
+            .y
+    });
+    visual.simulate_mouse_up(
+        point(
+            px((viewport.x + viewport.width / 2.0) as f32),
+            px(bottom as f32),
+        ),
+        MouseButton::Left,
+        Modifiers::default(),
+    );
+    visual.run_until_parked();
+    assert!(
+        after < before - 24.0,
+        "expected auto-scroll: {before} -> {after}"
+    );
 }
 
 #[gpui::test]

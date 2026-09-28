@@ -27,6 +27,7 @@ import "components/resizable" as resizable;
 import "components/draggable" as draggable;
 import "components/drag_source" as drag_source;
 import "components/drop_zone" as drop_zone;
+import "components/sortable" as sortable;
 import "components/tabs" as tabs;
 import "components/tag" as tag;
 import "components/textarea" as textarea;
@@ -160,6 +161,9 @@ fn state_schema() {
         } }, "default": #{ type: "map", value: #{
             x: #{ type: "float", value: 14.0 }, y: #{ type: "float", value: 12.0 }
         } } },
+        specimen_sort_order: #{ schema: #{ type: "array", max_items: 3, items: #{ type: "string" } },
+            "default": #{ type: "array", value: [#{ type: "string", value: "build" },
+                #{ type: "string", value: "test" }, #{ type: "string", value: "ship" }] } },
         specimen_page: #{ schema: #{ type: "integer", min: 1, max: 128 },
             "default": #{ type: "integer", value: 3 } },
         specimen_page_size: #{ schema: #{ type: "integer", allowed: [10, 25, 50] },
@@ -238,6 +242,21 @@ fn set_specimen_resizable(ctx, value) {
 fn set_specimen_draggable(ctx, value) {
     ctx.set_state("specimen_draggable_position", value);
     record_action("Card moved", ctx, ());
+}
+fn specimen_index(values, key) {
+    for index in 0..values.len { if values[index] == key { return index; } }
+    -1
+}
+fn set_specimen_sortable(ctx, value) {
+    let order = ctx.get_state("specimen_sort_order");
+    let source = specimen_index(order, value.source_key);
+    if source < 0 { return; }
+    let moved = order.remove(source);
+    let anchor = specimen_index(order, value.anchor_key);
+    if anchor < 0 { return; }
+    order.insert(if value.placement == "after" { anchor + 1 } else { anchor }, moved);
+    ctx.set_state("specimen_sort_order", order);
+    record_action("Order changed", ctx, ());
 }
 fn set_specimen_table_selection(ctx, value) { ctx.set_state("specimen_table_selected", value); record_action("Table selection changed", ctx, ()); }
 fn set_specimen_table_sort(ctx, value) {
@@ -607,6 +626,11 @@ fn specimen_data(ctx) {
     let current_sort = if direction == "none" { () } else {
         #{ key: ctx.get_state("specimen_table_sort_key"), direction: direction }
     };
+    let sortable_items = [];
+    for key in ctx.get_state("specimen_sort_order") {
+        sortable_items.push(#{ key:key, label:key,
+            content:text(key.to_upper()).with_style(style().padding(theme_spacing("sm"))) });
+    }
     column([
         specimen_title("DATA", "Real virtualized rows and pagination."),
         split_pane::SplitPane(#{ key: "specimen-split", label: "Resize data navigator",
@@ -650,6 +674,8 @@ fn specimen_data(ctx) {
                 on_drop:Fn("record_action").curry("Drop committed")
             }).with_style(style().width(relative(0.5)))
         ]).with_style(style().gap(theme_spacing("sm"))),
+        sortable::Sortable(#{ key:"specimen-sortable", label:"Release order",
+            items:sortable_items, direction:"horizontal", on_reorder:Fn("set_specimen_sortable") }),
         table::Table(#{ key: "specimen-table", label: "Users", row_key: "id",
             rows: rows, columns: columns, height: 126, striped: true, resizable_columns: true,
             selection_mode: "multiple", selected_keys: ctx.get_state("specimen_table_selected"),
@@ -885,13 +911,13 @@ fn gallery_title_bar(ctx) {
     ]).with_style(style().min_width(px(0)).gap(px(6)).items_center().overflow_hidden());
     let config = #{ label: "GPUI Rhai Component Gallery", title: breadcrumb,
         inset_start: 70, end: [themes] };
-    if !compact { config.subtitle = "56 source-owned components · native GPUI behavior · live themes"; }
+    if !compact { config.subtitle = "57 source-owned components · native GPUI behavior · live themes"; }
     title_bar::TitleBar(config)
 }
 
 fn gallery_status_bar(ctx) {
     status_bar::StatusBar(#{ label: "Component Gallery status",
-        start: [text(`56 components · ${ctx.get_state("interaction_count")} interactions`)],
+        start: [text(`57 components · ${ctx.get_state("interaction_count")} interactions`)],
         center: [text(ctx.get_state("interaction_status"))],
         end: [text(ctx.get_state("gallery_category")), text(ctx.viewport_class())] })
 }
