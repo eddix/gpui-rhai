@@ -429,10 +429,13 @@ impl WindowInteractionCoordinator {
     pub(crate) fn finish_frame(&self, window: &mut Window, cx: &mut App) {
         let stale = {
             let mut state = self.0.borrow_mut();
-            let should_cancel = state
-                .active
-                .as_ref()
-                .is_some_and(|active| !state.presented.contains(&active.owner));
+            let should_cancel = state.active.as_ref().is_some_and(|active| {
+                !state.presented.contains(&active.owner)
+                    && state
+                        .drag
+                        .as_ref()
+                        .is_none_or(|drag| drag.spec.source != active.owner)
+            });
             should_cancel.then(|| state.active.take()).flatten()
         };
         if let Some(active) = stale {
@@ -617,6 +620,14 @@ impl WindowInteractionCoordinator {
             .drag
             .as_ref()
             .is_some_and(|drag| drag.spec.source == *owner)
+    }
+
+    pub(crate) fn app_drag_source_id(&self) -> Option<String> {
+        self.0
+            .borrow()
+            .drag
+            .as_ref()
+            .map(|drag| drag.spec.source_id.clone())
     }
 
     pub(crate) fn drop_target_state(&self, owner: &InteractionOwner) -> DropTargetState {

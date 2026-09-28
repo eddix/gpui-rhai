@@ -67,7 +67,7 @@ struct SortableConfig {
     direction: SortDirection,
     threshold: f64,
     disabled: bool,
-    item_ref: crate::ElementRef,
+    item_ref: Option<crate::ElementRef>,
     focus: Option<FocusHandle>,
     accent: Rgba8,
 }
@@ -177,8 +177,10 @@ impl Element for SortableElement {
             self.context.cancel_interaction(&source, window, cx);
         }
         let item_bounds = self
-            .context
-            .element_bounds(&self.config.item_ref, cx)
+            .config
+            .item_ref
+            .as_ref()
+            .and_then(|reference| self.context.element_bounds(reference, cx))
             .map_or(bounds, geometry_bounds);
         SortablePrepaint {
             hitbox: window.insert_hitbox(bounds, HitboxBehavior::Normal),
@@ -600,10 +602,7 @@ fn parse_config(
         direction,
         threshold,
         disabled: props.boolean("disabled").unwrap_or(false),
-        item_ref: props
-            .element_ref("item_ref")
-            .cloned()
-            .ok_or_else(|| "sortable item_ref is required".to_owned())?,
+        item_ref: props.element_ref("item_ref").cloned(),
         focus,
         accent: theme
             .color("accent")
@@ -711,7 +710,7 @@ pub fn sortable_primitive_descriptor() -> PrimitiveDescriptor {
             ),
             (
                 "item_ref".to_owned(),
-                ObjectField::required(ValueSchema::Ref),
+                ObjectField::optional(ValueSchema::optional(ValueSchema::Ref)),
             ),
             (
                 "on_reorder".to_owned(),

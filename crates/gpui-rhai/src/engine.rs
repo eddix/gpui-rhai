@@ -1518,8 +1518,9 @@ impl RuntimeEngine {
                             "virtual collection item {index} disappeared"
                         ))
                     })?;
-                let (key, payload) =
+                let (key, mut payload) =
                     collection_payload(&item, index).map_err(RuntimeError::Evaluate)?;
+                add_collection_neighbors(&recipe.data, index, &mut payload);
                 let invocation = &recipe.renderer_context;
                 self.align_execution_session_to(invocation.operation_base());
                 let started = self.begin_timing();
@@ -3425,7 +3426,8 @@ fn realize_initial_collection(
                     "virtual collection item {index} disappeared"
                 )))
             })?;
-        let (item_key, payload) = collection_payload(&item, index)?;
+        let (item_key, mut payload) = collection_payload(&item, index)?;
+        add_collection_neighbors(data, index, &mut payload);
         let node = renderer
             .call_within_context::<UiNode>(call, (context.clone(), payload))?
             .with_key(item_key);
@@ -3793,6 +3795,21 @@ fn collection_payload(item: &UiValue, index: usize) -> Result<(String, Map), Box
             ("item".into(), item.clone().into_dynamic()),
         ]),
     ))
+}
+
+fn add_collection_neighbors(data: &crate::VirtualCollectionData, index: usize, payload: &mut Map) {
+    let key = |index: Option<usize>| {
+        index
+            .and_then(|index| data.key(index))
+            .map_or(Dynamic::UNIT, |key| Dynamic::from(key.to_owned()))
+    };
+    payload.insert("previous_key".into(), key(index.checked_sub(1)));
+    payload.insert(
+        "next_key".into(),
+        key(index.checked_add(1).filter(|index| *index < data.len())),
+    );
+    payload.insert("first_key".into(), key((!data.is_empty()).then_some(0)));
+    payload.insert("last_key".into(), key(data.len().checked_sub(1)));
 }
 
 fn nonnegative_usize(value: f64) -> usize {
