@@ -45,6 +45,7 @@ enum GesturePhase {
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct GestureUpdate {
     start: Point<Pixels>,
+    #[cfg(feature = "charts")]
     previous: Point<Pixels>,
     current: Point<Pixels>,
     moved: bool,
@@ -66,6 +67,7 @@ impl GestureUpdate {
         )
     }
 
+    #[cfg(feature = "charts")]
     pub(crate) fn step(self) -> (f64, f64) {
         (
             f64::from(self.current.x - self.previous.x),
@@ -81,6 +83,7 @@ impl GestureUpdate {
 #[derive(Clone, Debug)]
 struct GestureSession {
     start: Point<Pixels>,
+    #[cfg(feature = "charts")]
     previous: Point<Pixels>,
     current: Point<Pixels>,
     phase: GesturePhase,
@@ -92,6 +95,7 @@ impl GestureSession {
     fn new(start: Point<Pixels>) -> Self {
         Self {
             start,
+            #[cfg(feature = "charts")]
             previous: start,
             current: start,
             phase: GesturePhase::Armed,
@@ -101,7 +105,10 @@ impl GestureSession {
     }
 
     fn update(&mut self, position: Point<Pixels>) -> GestureUpdate {
-        self.previous = self.current;
+        #[cfg(feature = "charts")]
+        {
+            self.previous = self.current;
+        }
         self.current = position;
         if self.phase == GesturePhase::Armed {
             let dx = f64::from(position.x - self.start.x);
@@ -127,6 +134,7 @@ impl GestureSession {
     fn snapshot(&self) -> GestureUpdate {
         GestureUpdate {
             start: self.start,
+            #[cfg(feature = "charts")]
             previous: self.previous,
             current: self.current,
             moved: self.moved,
@@ -176,6 +184,7 @@ impl NativeGesture {
         }
     }
 
+    #[cfg(feature = "charts")]
     pub(crate) fn with_button(mut self, button: MouseButton) -> Self {
         self.button = button;
         self
