@@ -10,6 +10,13 @@
 */
 // Controlled in-window positioning. Native pointer movement updates only
 // optional translation signals; release proposes one final {x,y} value.
+// Props: key, label, position, content, handle, axes, contain, threshold,
+// snap_x, snap_y, keyboard_step, disabled, on_move.
+// Events: move({x,y}) proposes one complete controlled position.
+// State: only native pointer preview; application position remains controlled.
+// Parts: root, surface, handle, content, interaction.
+// Example: Draggable(#{ key:"card", label:"Move card", position:#{x:0,y:0},
+//     handle:text("Move"), content:text("Body"), on_move:Fn("moved") })
 
 define_component(#{
     metadata: #{ id: "components/draggable", "export": "Draggable", version: "0.1.8",
