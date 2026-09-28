@@ -23,7 +23,7 @@ does not imply availability in an already published crate.
 | Sortable | Propose a new order for a keyed collection | List, Tab order, toolbar items | Implemented for bounded source-owned items; virtual adapter remains a 0.1.8 completion item |
 | PanZoom | Change the viewing transform while preserving content coordinates | Map, image viewer, node canvas | Implemented for Canvas over shared affine geometry; Chart keeps its domain viewport |
 | SelectionArea | Maintain object selection by click, modifiers, range, or marquee | File grid, canvas objects, multi-selection surface | Planned for 0.1.8; Table/text selection remain distinct |
-| Rotatable | Change an object's angle around an explicit pivot | Drawing or design tools | Planned for 0.1.8 on declared 2D interaction surfaces |
+| Rotatable | Change an object's angle around an explicit pivot | Drawing or design tools | Implemented for Canvas with atomic pivot compensation |
 | RangeSlider | Select one ordered numeric interval with two thumbs | Filters, time/value windows | Implemented with shared Slider axis/RTL/step math |
 | Tree | Navigate a flattened hierarchical outline | Files, settings, object hierarchy | Planned for 0.1.8 over shared outline projection |
 | Dockable / DockLayout | Arrange panels through docking, grouping, splitting, or floating | IDE/tool workspaces | Deferred higher-level layout system |
@@ -283,7 +283,7 @@ selected object. Table, Command, and text viewers keep their existing controlled
 selection models. A new selection surface must not consume native editing keys
 or pointer gestures merely because it is an ancestor.
 
-## Rotatable — planned 0.1.8 behavior
+## Rotatable — Canvas implementation
 
 The caller owns an angle and explicit pivot. Define units, angle wrapping,
 optional snapping, and how rotation composes with movement and resizing.
@@ -294,6 +294,16 @@ not establish support for arbitrary native input widgets or GPUI subtrees.
 Provide keyboard increments, cancellation, and a non-drag way to inspect or set
 the angle. This is a later editor-oriented capability, not a prerequisite for
 ordinary Gallery layouts.
+
+`components/rotatable::Rotatable` now implements that contract for Canvas. The
+caller supplies the local pivot and controlled angle; optional snap is shared
+by pointer and keyboard input. The native preview writes angle and pivot
+translation as one atomic signal patch, so Canvas painting and hit testing use
+the same affine result. A separate optional handle keeps rotation composable
+with PanZoom or SelectionArea instead of claiming the whole viewport.
+
+Source: [rotatable.rhai](../../registry/components/rotatable.rhai).
+Runnable story: `gpui-rhai gallery --story components/rotatable`.
 
 ## Dockable / DockLayout — deferred composition
 

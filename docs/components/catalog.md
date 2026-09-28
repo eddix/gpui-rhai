@@ -1,6 +1,6 @@
 # Official component catalog
 
-gpui-rhai ships 59 editable Rhai source components. They all use the same
+gpui-rhai ships 60 editable Rhai source components. They all use the same
 public atoms and generic runtime mechanisms available to application code; no
 official component receives a private high-level node constructor.
 
@@ -130,6 +130,17 @@ Horizontal arrow semantics reverse in RTL; Home/End remain thumb-specific.
 
 Source: [range_slider.rhai](../../registry/components/range_slider.rhai).
 Runnable story: `gpui-rhai gallery --story components/range-slider`.
+
+## Rotatable
+
+`Rotatable` controls a Canvas angle in degrees around an explicit local pivot.
+The native interaction keeps the pivot fixed by atomically updating rotation
+and its required translation compensation. Pointer preview stays in Rust;
+release and keyboard steps emit one normalized `[0,360)` angle. Optional snap
+applies to both pointer and keyboard input.
+
+Source: [rotatable.rhai](../../registry/components/rotatable.rhai).
+Runnable story: `gpui-rhai gallery --story components/rotatable`.
 
 The same [specification](interaction-behaviors.md) records the planned
 SelectionArea, Rotatable, and DockLayout
