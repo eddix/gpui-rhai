@@ -43,6 +43,7 @@ pub mod script_source;
 pub mod scrollbar;
 pub mod signal;
 mod slot_runtime;
+pub mod sortable;
 pub mod source;
 pub mod split_resize;
 pub mod state;
@@ -240,6 +241,7 @@ pub use signal::{
     NativeSignal, SignalError, SignalId, SignalKind, SignalProperty, SignalRegistry,
     SignalSnapshot, SignalValue, SignalWriter,
 };
+pub use sortable::{SortablePrimitiveHandler, sortable_primitive_descriptor};
 pub use source::{ModuleId, ModuleIdError, RestrictedModuleResolver};
 pub use split_resize::{SplitResizePrimitiveHandler, split_resize_primitive_descriptor};
 pub use state::{

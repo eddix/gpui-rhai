@@ -2186,6 +2186,11 @@ impl GpuiNodeRenderer {
                         crate::primitive::PrimitiveWindowContext::new(
                             environment.dispatcher.cloned(),
                             environment.interactions.clone(),
+                            scroll_handles_for_node(
+                                environment.retained,
+                                retained_id,
+                                environment.scroll_handles,
+                            ),
                             environment.view_id,
                         ),
                         crate::PrimitiveTheme::capture_with_environment(

@@ -845,6 +845,7 @@ pub struct PrimitiveContext {
     callbacks: BTreeMap<String, UiEventHandler>,
     dispatcher: Option<NodeEventDispatcher>,
     interactions: crate::interaction::WindowInteractionCoordinator,
+    scroll_handles: Vec<gpui::ScrollHandle>,
     view_id: String,
 }
 
@@ -1001,26 +1002,25 @@ impl PrimitiveContext {
         self.interactions.drop_target_state(owner)
     }
 
-    pub(crate) fn start_app_drag(
+    pub(crate) fn begin_application_drag(
         &self,
         spec: crate::interaction::ApplicationDragSpec,
         position: gpui::Point<gpui::Pixels>,
-        cx: &mut App,
-    ) {
-        self.interactions.start_app_drag(spec, position, cx);
-    }
-
-    pub(crate) fn update_app_drag(&self, position: gpui::Point<gpui::Pixels>, cx: &mut App) {
-        self.interactions.update_app_drag(position, cx);
-    }
-
-    pub(crate) fn finish_app_drag(
-        &self,
-        position: gpui::Point<gpui::Pixels>,
+        threshold: f64,
+        on_end: impl Fn(crate::interaction::ApplicationDropResult, bool, &mut Window, &mut App)
+        + 'static,
         window: &mut Window,
         cx: &mut App,
-    ) -> Option<crate::interaction::ApplicationDropResult> {
-        self.interactions.finish_app_drag(position, window, cx)
+    ) {
+        let gesture = crate::interaction::application_drag_gesture(
+            self.interactions.clone(),
+            position,
+            spec.notify(),
+            spec,
+            threshold,
+            on_end,
+        );
+        self.interactions.begin(gesture, window, cx);
     }
 
     pub(crate) fn perform_keyboard_drop(
@@ -1034,18 +1034,15 @@ impl PrimitiveContext {
             .perform_keyboard_drop(spec, target_id, window, cx)
     }
 
-    pub(crate) fn cancel_app_drag(
-        &self,
-        cx: &mut App,
-    ) -> Option<crate::interaction::ApplicationDropResult> {
-        self.interactions.cancel_app_drag(cx)
-    }
-
     pub(crate) fn app_drag_source_active(
         &self,
         owner: &crate::interaction::InteractionOwner,
     ) -> bool {
         self.interactions.app_drag_source_active(owner)
+    }
+
+    pub(crate) fn ancestor_scroll_handles(&self) -> Vec<gpui::ScrollHandle> {
+        self.scroll_handles.clone()
     }
 
     /// Read the last committed layout bounds for a primitive-owned element ref.
@@ -1755,6 +1752,7 @@ struct RegisteredPrimitiveElement {
 pub(crate) struct PrimitiveWindowContext {
     dispatcher: Option<NodeEventDispatcher>,
     interactions: crate::interaction::WindowInteractionCoordinator,
+    scroll_handles: Vec<gpui::ScrollHandle>,
     view_id: String,
 }
 
@@ -1762,11 +1760,13 @@ impl PrimitiveWindowContext {
     pub(crate) fn new(
         dispatcher: Option<NodeEventDispatcher>,
         interactions: crate::interaction::WindowInteractionCoordinator,
+        scroll_handles: Vec<gpui::ScrollHandle>,
         view_id: impl Into<String>,
     ) -> Self {
         Self {
             dispatcher,
             interactions,
+            scroll_handles,
             view_id: view_id.into(),
         }
     }
@@ -1799,6 +1799,7 @@ impl RenderOnce for RegisteredPrimitiveElement {
             callbacks,
             dispatcher: self.runtime.dispatcher,
             interactions: self.runtime.interactions,
+            scroll_handles: self.runtime.scroll_handles,
             view_id: self.runtime.view_id,
         };
         match registry.render_instance(
@@ -2422,6 +2423,7 @@ mod tests {
             callbacks: BTreeMap::new(),
             dispatcher: None,
             interactions: crate::interaction::WindowInteractionCoordinator::default(),
+            scroll_handles: Vec::new(),
             view_id: "test".to_owned(),
         };
         assert_eq!(Rc::strong_count(&registry.inner), 1);

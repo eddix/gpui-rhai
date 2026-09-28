@@ -5,8 +5,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
 use gpui::{
-    App, DispatchPhase, EntityId, MouseButton, MouseMoveEvent, MouseUpEvent, Pixels, Point, Window,
-    point, px,
+    App, DispatchPhase, EntityId, MouseButton, MouseMoveEvent, MouseUpEvent, Pixels, Point,
+    ScrollHandle, Window, point, px,
 };
 
 use crate::{GeometryBounds, UiValue};
@@ -266,6 +266,10 @@ impl ApplicationDragSpec {
     pub(crate) const fn operation(&self) -> DragOperation {
         self.operation
     }
+
+    pub(crate) const fn notify(&self) -> EntityId {
+        self.notify
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -273,6 +277,55 @@ pub(crate) struct ApplicationDropResult {
     pub accepted: bool,
     pub target_id: Option<String>,
     pub operation: DragOperation,
+}
+
+type ApplicationDragEndHandler = dyn Fn(ApplicationDropResult, bool, &mut Window, &mut App);
+
+pub(crate) fn application_drag_gesture(
+    coordinator: WindowInteractionCoordinator,
+    start: Point<Pixels>,
+    notify: EntityId,
+    spec: ApplicationDragSpec,
+    threshold: f64,
+    on_end: impl Fn(ApplicationDropResult, bool, &mut Window, &mut App) + 'static,
+) -> NativeGesture {
+    let owner = spec.source.clone();
+    let started = Rc::new(std::cell::Cell::new(false));
+    let update_started = Rc::clone(&started);
+    let update_coordinator = coordinator.clone();
+    let update_spec = spec;
+    let update = move |gesture: GestureUpdate, _: &mut Window, cx: &mut App| {
+        if gesture.moved() && !update_started.replace(true) {
+            update_coordinator.start_app_drag(update_spec.clone(), gesture.current(), cx);
+        }
+        if update_started.get() {
+            update_coordinator.update_app_drag(gesture.current(), cx);
+        }
+        InteractionFlow::Continue
+    };
+    let on_end: Rc<ApplicationDragEndHandler> = Rc::new(on_end);
+    let finish_started = Rc::clone(&started);
+    let finish_coordinator = coordinator.clone();
+    let finish_handler = Rc::clone(&on_end);
+    let finish = move |gesture: GestureUpdate, window: &mut Window, cx: &mut App| {
+        if !finish_started.get() {
+            return;
+        }
+        if let Some(result) = finish_coordinator.finish_app_drag(gesture.current(), window, cx) {
+            finish_handler(result, false, window, cx);
+        }
+    };
+    let cancel_started = Rc::clone(&started);
+    let cancel_coordinator = coordinator;
+    let cancel = move |window: &mut Window, cx: &mut App| {
+        if !cancel_started.get() {
+            return;
+        }
+        if let Some(result) = cancel_coordinator.cancel_app_drag(cx) {
+            on_end(result, true, window, cx);
+        }
+    };
+    NativeGesture::new(owner, start, notify, update, finish, cancel).with_threshold(threshold)
 }
 
 type DropCommitHandler = dyn Fn(&ApplicationDragSpec, Point<Pixels>, &mut Window, &mut App);
@@ -285,6 +338,7 @@ pub(crate) struct DropTargetRegistration {
     payload_types: BTreeSet<String>,
     operations: BTreeSet<DragOperation>,
     priority: i64,
+    scroll_handles: Vec<ScrollHandle>,
     notify: EntityId,
     commit: Rc<DropCommitHandler>,
 }
@@ -298,6 +352,7 @@ impl DropTargetRegistration {
         payload_types: BTreeSet<String>,
         operations: BTreeSet<DragOperation>,
         priority: i64,
+        scroll_handles: Vec<ScrollHandle>,
         notify: EntityId,
         commit: impl Fn(&ApplicationDragSpec, Point<Pixels>, &mut Window, &mut App) + 'static,
     ) -> Self {
@@ -308,6 +363,7 @@ impl DropTargetRegistration {
             payload_types,
             operations,
             priority,
+            scroll_handles,
             notify,
             commit: Rc::new(commit),
         }
@@ -414,7 +470,7 @@ impl WindowInteractionCoordinator {
     }
 
     pub(crate) fn update_app_drag(&self, position: Point<Pixels>, cx: &mut App) {
-        let (old_target, new_target, notifications) = {
+        let (old_target, new_target, target, mut notifications) = {
             let mut state = self.0.borrow_mut();
             let Some(drag) = state.drag.as_ref() else {
                 return;
@@ -437,9 +493,19 @@ impl WindowInteractionCoordinator {
             let drag = state.drag.as_mut().expect("active drag was checked");
             drag.position = position;
             drag.target.clone_from(&next);
-            (old, next, notifications)
+            let target = next
+                .as_ref()
+                .and_then(|owner| state.drop_targets.get(owner))
+                .cloned();
+            (old, next, target, notifications)
         };
-        if old_target != new_target {
+        let scrolled = target
+            .as_ref()
+            .is_some_and(|target| auto_scroll_drop_target(target, position));
+        if scrolled && let Some(target) = target {
+            notifications.insert(target.notify);
+        }
+        if old_target != new_target || scrolled {
             for notify in notifications {
                 cx.notify(notify);
             }
@@ -738,6 +804,44 @@ fn compare_drop_targets(
         right_area
             .partial_cmp(&left_area)
             .unwrap_or(std::cmp::Ordering::Equal)
+    })
+}
+
+fn auto_scroll_drop_target(target: &DropTargetRegistration, position: Point<Pixels>) -> bool {
+    target.scroll_handles.iter().any(|handle| {
+        let bounds = handle.bounds();
+        if !bounds.contains(&position) {
+            return false;
+        }
+        let current = handle.offset();
+        let maximum = handle.max_offset();
+        let margin_x = (bounds.size.width / 4.0).min(px(28.0));
+        let margin_y = (bounds.size.height / 4.0).min(px(28.0));
+        let step = px(12.0);
+        let delta_x = if position.x < bounds.left() + margin_x {
+            step
+        } else if position.x > bounds.right() - margin_x {
+            -step
+        } else {
+            px(0.0)
+        };
+        let delta_y = if position.y < bounds.top() + margin_y {
+            step
+        } else if position.y > bounds.bottom() - margin_y {
+            -step
+        } else {
+            px(0.0)
+        };
+        let next = point(
+            (current.x + delta_x).clamp(-maximum.x, px(0.0)),
+            (current.y + delta_y).clamp(-maximum.y, px(0.0)),
+        );
+        if next == current {
+            false
+        } else {
+            handle.set_offset(next);
+            true
+        }
     })
 }
 

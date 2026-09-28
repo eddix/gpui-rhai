@@ -1,6 +1,6 @@
 //! Host-domain typed application drag/drop primitives.
 
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
@@ -179,52 +179,14 @@ fn register_source_pointer(
         }
         let owner = context.interaction_owner(&config.id);
         let spec = drag_spec(&config, owner.clone(), view);
-        let started = Rc::new(Cell::new(false));
-        let update_started = Rc::clone(&started);
-        let update_context = context.clone();
-        let update_spec = spec.clone();
-        let update =
-            move |gesture: crate::interaction::GestureUpdate, _: &mut Window, cx: &mut App| {
-                if gesture.moved() && !update_started.replace(true) {
-                    update_context.start_app_drag(update_spec.clone(), gesture.current(), cx);
-                }
-                if update_started.get() {
-                    update_context.update_app_drag(gesture.current(), cx);
-                }
-                crate::interaction::InteractionFlow::Continue
-            };
-        let finish_started = Rc::clone(&started);
         let finish_context = context.clone();
-        let finish = move |gesture: crate::interaction::GestureUpdate,
-                           window: &mut Window,
-                           cx: &mut App| {
-            if !finish_started.get() {
-                return;
-            }
-            if let Some(result) = finish_context.finish_app_drag(gesture.current(), window, cx) {
-                finish_context.propose("drag_end", drag_end_value(&result, false), window, cx);
-            }
-        };
-        let cancel_started = Rc::clone(&started);
-        let cancel_context = context.clone();
-        let cancel = move |window: &mut Window, cx: &mut App| {
-            if !cancel_started.get() {
-                return;
-            }
-            if let Some(result) = cancel_context.cancel_app_drag(cx) {
-                cancel_context.propose("drag_end", drag_end_value(&result, true), window, cx);
-            }
-        };
-        context.begin_interaction(
-            crate::interaction::NativeGesture::new(
-                owner,
-                event.position,
-                view,
-                update,
-                finish,
-                cancel,
-            )
-            .with_threshold(config.threshold),
+        context.begin_application_drag(
+            spec,
+            event.position,
+            config.threshold,
+            move |result, cancelled, window, cx| {
+                finish_context.propose("drag_end", drag_end_value(&result, cancelled), window, cx);
+            },
             window,
             cx,
         );
@@ -353,6 +315,7 @@ impl Element for DropZoneElement {
                 self.config.payload_types.clone(),
                 self.config.operations.clone(),
                 self.config.priority,
+                self.context.ancestor_scroll_handles(),
                 window.current_view(),
                 move |drag, position, window, cx| {
                     target_context.propose(

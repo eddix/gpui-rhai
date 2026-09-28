@@ -38,6 +38,7 @@ use crate::node::{
 use crate::primitive::{PrimitiveDescriptor, PrimitiveError, PrimitiveHandler, PrimitiveRegistry};
 use crate::range_input::{RangeInputPrimitiveHandler, range_input_primitive_descriptor};
 use crate::resizable::{ResizablePrimitiveHandler, resizable_primitive_descriptor};
+use crate::sortable::{SortablePrimitiveHandler, sortable_primitive_descriptor};
 use crate::split_resize::{SplitResizePrimitiveHandler, split_resize_primitive_descriptor};
 use crate::style::register_style_api;
 use crate::text_area::{
@@ -757,6 +758,11 @@ impl RuntimeEngine {
         .expect("built-in drag source primitive descriptor is valid");
         self.register_primitive(drop_zone_primitive_descriptor(), DropZonePrimitiveHandler)
             .expect("built-in drop zone primitive descriptor is valid");
+        self.register_primitive(
+            sortable_primitive_descriptor(),
+            SortablePrimitiveHandler::default(),
+        )
+        .expect("built-in sortable primitive descriptor is valid");
         self.register_primitive(
             text_input_primitive_descriptor(),
             TextInputPrimitiveHandler::default(),
