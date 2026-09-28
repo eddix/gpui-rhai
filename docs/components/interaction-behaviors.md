@@ -20,7 +20,7 @@ does not imply availability in an already published crate.
 | Resizable | Change one object's size or bounds using edges/handles | Floating card, image frame, adjustable content container | Implemented as `components/resizable::Resizable`; independent of SplitPane |
 | SplitPane | Redistribute a shared layout region between panels | Navigation/content, preview/source, horizontal or vertical split | Implemented as `components/split_pane::SplitPane` |
 | DropZone | Accept a typed drag payload and propose a domain operation | Kanban column, object container, in-app resource drop target | Implemented as `components/drop_zone::DropZone` |
-| Sortable | Propose a new order for a keyed collection | List, Tab order, toolbar items | Planned for 0.1.8; Motion ReorderList only animates supplied order |
+| Sortable | Propose a new order for a keyed collection | List, Tab order, toolbar items | Implemented for bounded source-owned items; virtual adapter remains a 0.1.8 completion item |
 | PanZoom | Change the viewing transform while preserving content coordinates | Map, image viewer, node canvas | Planned for 0.1.8 over shared affine geometry; Chart keeps its domain viewport |
 | SelectionArea | Maintain object selection by click, modifiers, range, or marquee | File grid, canvas objects, multi-selection surface | Planned for 0.1.8; Table/text selection remain distinct |
 | Rotatable | Change an object's angle around an explicit pivot | Drawing or design tools | Planned for 0.1.8 on declared 2D interaction surfaces |
@@ -201,7 +201,7 @@ Sources: [drag_source.rhai](../../registry/components/drag_source.rhai) and
 [drop_zone.rhai](../../registry/components/drop_zone.rhai).
 Runnable story: `gpui-rhai gallery --story components/drag-drop`.
 
-## Sortable — planned
+## Sortable — bounded implementation complete
 
 The caller owns the ordered stable keys. The interaction chooses an insertion
 position and previews the resulting order, then proposes a move/order on commit.
@@ -218,6 +218,22 @@ accepts ordered keyed labels, animates their layout changes, and emits no events
 It does **not** currently provide dragging, insertion targets, or reorder events.
 Reuse its animation capability where appropriate, without confusing animation
 with the interaction and controlled-order model.
+
+The current `components/sortable::Sortable` accepts at most 512 source-owned
+items with unique stable keys. Each item has an independent focusable grip so
+interactive content is not covered by a drag overlay. Pointer release emits one
+`reorder({source_key,anchor_key,placement,x,y})`; self and adjacent no-op moves
+emit nothing. Option/Alt + Arrow, Home, and End use the same registered
+before/after targets. Target registrations carry their own scroll ancestry, so
+edge movement scrolls the destination container rather than the source lane.
+
+Source: [sortable.rhai](../../registry/components/sortable.rhai).
+Runnable story: `gpui-rhai gallery --story components/sortable`.
+
+The bounded component is not presented as the promised virtualized mode. That
+remaining adapter must pin the active key and a bounded set of neighboring
+anchors over `virtual_collection` without materializing all rows before 0.1.8
+is considered complete.
 
 ## PanZoom — planned
 

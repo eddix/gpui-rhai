@@ -1,6 +1,6 @@
 # Official component catalog
 
-gpui-rhai ships 56 editable Rhai source components. They all use the same
+gpui-rhai ships 57 editable Rhai source components. They all use the same
 public atoms and generic runtime mechanisms available to application code; no
 official component receives a private high-level node constructor.
 
@@ -90,8 +90,21 @@ Sources: [drag_source.rhai](../../registry/components/drag_source.rhai) and
 [drop_zone.rhai](../../registry/components/drop_zone.rhai).
 Runnable story: `gpui-rhai gallery --story components/drag-drop`.
 
-The same [specification](interaction-behaviors.md) records the planned Sortable,
-PanZoom, SelectionArea, Rotatable, and DockLayout
+## Sortable
+
+`Sortable` renders a bounded controlled collection of stable keyed items. Its
+native grip interaction resolves before/after insertion anchors in Rust and
+emits one `reorder({source_key,anchor_key,placement,x,y})` proposal on release.
+It never mutates the caller's canonical order during preview, suppresses self
+and adjacent no-op moves, and scrolls the active target's nearest eligible
+scroll ancestor at an edge. Focus a grip and use Option/Alt + Arrow, Home, or
+End for the same identity-based target contract.
+
+Source: [sortable.rhai](../../registry/components/sortable.rhai).
+Runnable story: `gpui-rhai gallery --story components/sortable`.
+
+The same [specification](interaction-behaviors.md) records the planned PanZoom,
+SelectionArea, Rotatable, and DockLayout
 capabilities, their composition rules, and acceptance requirements. These
 planned entries are not additional implemented components or callable exports.
 In particular, the existing Motion ReorderList animates an externally supplied
