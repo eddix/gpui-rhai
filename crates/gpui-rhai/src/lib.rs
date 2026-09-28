@@ -33,6 +33,7 @@ mod overlay_element;
 pub mod pan_zoom;
 pub mod primitive;
 pub mod range_input;
+pub mod range_slider;
 pub mod reload;
 pub mod renderer;
 pub mod resizable;
@@ -220,6 +221,7 @@ pub use primitive::{
     PrimitiveValue,
 };
 pub use range_input::{RangeInputPrimitiveHandler, range_input_primitive_descriptor};
+pub use range_slider::{RangeSliderPrimitiveHandler, range_slider_primitive_descriptor};
 pub use reload::{LiveScript, ReloadOutcome};
 pub use renderer::{
     ColorResolver, GpuiNodeRenderer, LiteralColorResolver, NodeEventDispatcher, StaticUiView,

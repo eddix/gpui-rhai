@@ -30,7 +30,7 @@ struct RangeInputConfig {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum RangeOrientation {
+pub(crate) enum RangeOrientation {
     Horizontal,
     Vertical,
 }
@@ -117,25 +117,11 @@ impl RangeInputEntity {
         let Some(bounds) = self.bounds else {
             return self.preview;
         };
-        let ratio = match self.orientation {
-            RangeOrientation::Horizontal => {
-                let width = f64::from(bounds.size.width).max(f64::EPSILON);
-                let ratio =
-                    ((f64::from(position.x) - f64::from(bounds.origin.x)) / width).clamp(0.0, 1.0);
-                if self.theme.direction() == TextDirection::RightToLeft {
-                    1.0 - ratio
-                } else {
-                    ratio
-                }
-            }
-            RangeOrientation::Vertical => {
-                let height = f64::from(bounds.size.height).max(f64::EPSILON);
-                1.0 - ((f64::from(position.y) - f64::from(bounds.origin.y)) / height)
-                    .clamp(0.0, 1.0)
-            }
-        };
-        normalize_value(
-            self.min + ratio * (self.max - self.min),
+        range_value_at(
+            bounds,
+            position,
+            self.orientation,
+            self.theme.direction(),
             self.min,
             self.max,
             self.step,
@@ -525,12 +511,12 @@ fn parse_config(
     })
 }
 
-fn normalize_value(value: f64, min: f64, max: f64, step: f64) -> f64 {
+pub(crate) fn normalize_value(value: f64, min: f64, max: f64, step: f64) -> f64 {
     let snapped = min + ((value.clamp(min, max) - min) / step).round() * step;
     snapped.clamp(min, max)
 }
 
-fn horizontal_thumb_ratio(ratio: f64, direction: TextDirection) -> f64 {
+pub(crate) fn horizontal_thumb_ratio(ratio: f64, direction: TextDirection) -> f64 {
     if direction == TextDirection::RightToLeft {
         1.0 - ratio
     } else {
@@ -538,8 +524,36 @@ fn horizontal_thumb_ratio(ratio: f64, direction: TextDirection) -> f64 {
     }
 }
 
-fn fraction_f32(value: f64) -> f32 {
+pub(crate) fn fraction_f32(value: f64) -> f32 {
     value.to_string().parse().unwrap_or(0.0)
+}
+
+pub(crate) fn range_value_at(
+    bounds: Bounds<Pixels>,
+    position: Point<Pixels>,
+    orientation: RangeOrientation,
+    direction: TextDirection,
+    min: f64,
+    max: f64,
+    step: f64,
+) -> f64 {
+    let ratio = match orientation {
+        RangeOrientation::Horizontal => {
+            let width = f64::from(bounds.size.width).max(f64::EPSILON);
+            let ratio =
+                ((f64::from(position.x) - f64::from(bounds.origin.x)) / width).clamp(0.0, 1.0);
+            if direction == TextDirection::RightToLeft {
+                1.0 - ratio
+            } else {
+                ratio
+            }
+        }
+        RangeOrientation::Vertical => {
+            let height = f64::from(bounds.size.height).max(f64::EPSILON);
+            1.0 - ((f64::from(position.y) - f64::from(bounds.origin.y)) / height).clamp(0.0, 1.0)
+        }
+    };
+    normalize_value(min + ratio * (max - min), min, max, step)
 }
 
 /// Build the compile-time generic range-input primitive schema.
