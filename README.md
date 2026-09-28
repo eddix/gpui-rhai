@@ -28,8 +28,8 @@ remain compatible; Rust Hosts must align their GPUI package identity. See
 [Accessibility](docs/accessibility.md) and [Embedding](docs/embedding.md).
 
 The 0.1.7 development line adds the formal Gallery/Operations acceptance
-application and the 52nd source component, `SplitPane`, with controlled native
-drag preview and keyboard-accessible splitters.
+application plus independent `SplitPane` and `Resizable` source components,
+both with controlled native drag preview and keyboard-accessible handles.
 
 The implemented complex-control line is specified under
 [docs/components](docs/components/) for DatePicker, Select, Table, Pagination,

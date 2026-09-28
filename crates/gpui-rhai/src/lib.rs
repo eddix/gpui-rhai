@@ -31,6 +31,7 @@ pub mod primitive;
 pub mod range_input;
 pub mod reload;
 pub mod renderer;
+pub mod resizable;
 pub mod responsive;
 pub mod retained;
 pub mod schema;
@@ -210,6 +211,7 @@ pub use renderer::{
     ColorResolver, GpuiNodeRenderer, LiteralColorResolver, NodeEventDispatcher, StaticUiView,
     StaticUiViewError,
 };
+pub use resizable::{ResizablePrimitiveHandler, resizable_primitive_descriptor};
 pub use responsive::{ResponsiveError, ResponsiveRuntime, ViewportBreakpoints, ViewportClass};
 pub use retained::{
     NodeId, ReconcileError, ReconcileMetrics, ReconcileReport, RetainedChildLink, RetainedNode,

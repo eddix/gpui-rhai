@@ -19,7 +19,9 @@ pub enum SignalKind {
 pub enum SignalProperty {
     Opacity,
     TranslateX,
+    TranslateXOverride,
     TranslateY,
+    TranslateYOverride,
     Width,
     WidthOverride,
     Height,
@@ -40,7 +42,9 @@ impl SignalProperty {
         match value {
             "opacity" => Ok(Self::Opacity),
             "translate_x" => Ok(Self::TranslateX),
+            "translate_x_override" => Ok(Self::TranslateXOverride),
             "translate_y" => Ok(Self::TranslateY),
+            "translate_y_override" => Ok(Self::TranslateYOverride),
             "width" => Ok(Self::Width),
             "width_override" => Ok(Self::WidthOverride),
             "height" => Ok(Self::Height),
@@ -58,7 +62,10 @@ impl SignalProperty {
             Self::Opacity | Self::TranslateX | Self::TranslateY | Self::Width | Self::Height => {
                 SignalKind::Float
             }
-            Self::WidthOverride | Self::HeightOverride => SignalKind::OptionalFloat,
+            Self::TranslateXOverride
+            | Self::TranslateYOverride
+            | Self::WidthOverride
+            | Self::HeightOverride => SignalKind::OptionalFloat,
             Self::Background | Self::TextColor | Self::BorderColor => SignalKind::Color,
         }
     }

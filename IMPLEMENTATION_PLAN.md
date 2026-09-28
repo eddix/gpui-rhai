@@ -451,7 +451,7 @@ shims.
 - Register every component and transitive dependency in the CLI, metadata,
   definitions, copied-source update path, and Theme Studio.
 - Maintain the polished `gpui-rhai gallery --story components/catalog`
-  acceptance surface for all 52 official components, category navigation,
+  acceptance surface for all 53 official components, category navigation,
   theme hot switches, responsive/Motion controls, and important controlled
   states. Theme Studio reuses the curated design specimen; Gallery is the
   user-facing experience demo and source authority.
@@ -487,8 +487,9 @@ rustdoc, package, release build, and checked-in visual baseline audits pass.
 - Require explicit accessible names for interactive fields, choices,
   navigation, overlays, menus, and progress; placeholders remain visual hints,
   never implicit names. Decorative Icon instances use presentation semantics.
-- Keep Breadcrumb, persistent Sidebar, Tree, Resizable composition, editor, and
-  terminal work outside this release. Future source components may extend the
+- Keep Breadcrumb, persistent Sidebar, Tree, editor, and terminal work outside
+  this release. Resizable later landed as an independent 0.1.7 rectangle
+  composition rather than expanding SplitPane. Future source components may extend the
   catalog without weakening or duplicating the frozen primitives.
 - Treat the generic motion/property-source system as the principal `0.1.3`
   product workstream. Component-specific animation shortcuts are not part of

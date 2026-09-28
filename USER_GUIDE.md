@@ -309,10 +309,10 @@ intentional one-off. Edit the copied component source when the product needs a
 structural or behavioral fork; do not hide one behind a growing stack of visual
 overrides. See [Component stylesheets](docs/component-styles.md).
 
-The bundled catalog contains 52 official source components. Version 0.1.2
+The bundled catalog contains 53 official source components. Version 0.1.2
 froze the original 51 IDs, exports, controlled-state boundaries, semantic
 events, size vocabulary, and style-part contract as the component foundation;
-0.1.7 adds the composable SplitPane without weakening that contract:
+0.1.7 adds the independent SplitPane and Resizable compositions without weakening that contract:
 
 - foundations and status: Label, Divider, Icon, Avatar, Badge, Tag, Alert,
   Card, GroupBox, Empty, Kbd, Progress, Spinner, Skeleton, TitleBar, and
@@ -322,7 +322,7 @@ events, size vocabulary, and style-part contract as the component foundation;
 - forms: Input, InputGroup, Textarea, FormField, Combobox, Select, and
   DatePicker;
 - navigation, layout, and data: Tabs, Accordion, Collapsible, Menu, Pagination,
-  Table, ScrollArea, and SplitPane;
+  Table, ScrollArea, SplitPane, and Resizable;
 - commands and overlays: Command, CommandDialog, ContextMenu, Popover, Dialog,
   AlertDialog, Sheet, Tooltip, and Toast;
 - read-only documents: CodeViewer and DiffViewer;
@@ -345,6 +345,13 @@ panel ratio; pointer movement writes only a native optional-float signal and
 the same ratio contract. `start_collapsed`/`end_collapsed` are controlled, and
 nested SplitPane instances cover multi-panel layouts without introducing a
 docking or persistence framework.
+
+`Resizable` controls one positioned rectangle inside its own local boundary.
+Its `rect` contains `x`, `y`, `width`, and `height`; physical edge/corner
+handles propose one complete replacement rectangle. Native signals preview
+position and dimensions without Rhai pointer-move callbacks. Left/top handles
+move the origin while preserving the opposite edge. SplitPane never adopts
+these free-rectangle semantics.
 
 Command palettes separate seating, preview, and confirmation. The caller-owned
 `active_value` determines the current highlight when the palette opens.

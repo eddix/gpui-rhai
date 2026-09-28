@@ -151,7 +151,8 @@ fn catalog_case_for_module(module: &str) -> &'static str {
         | "components/pagination"
         | "components/table"
         | "components/scroll_area"
-        | "components/split_pane" => "navigation",
+        | "components/split_pane"
+        | "components/resizable" => "navigation",
         "components/code_viewer" | "components/diff_viewer" => "documents",
         "components/command"
         | "components/command_dialog"

@@ -3568,8 +3568,20 @@ fn node_signals(registry: &crate::SignalRegistry, node: &UiNode) -> NodeSignalVa
             (crate::SignalProperty::TranslateX, crate::SignalValue::Float(value)) => {
                 values.translate_x = Some(value);
             }
+            (
+                crate::SignalProperty::TranslateXOverride,
+                crate::SignalValue::OptionalFloat(value),
+            ) => {
+                values.translate_x = value;
+            }
             (crate::SignalProperty::TranslateY, crate::SignalValue::Float(value)) => {
                 values.translate_y = Some(value);
+            }
+            (
+                crate::SignalProperty::TranslateYOverride,
+                crate::SignalValue::OptionalFloat(value),
+            ) => {
+                values.translate_y = value;
             }
             (crate::SignalProperty::Width, crate::SignalValue::Float(value)) => {
                 values.width = Some(value);

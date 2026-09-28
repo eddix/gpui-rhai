@@ -70,6 +70,7 @@ gallery_cases=(
   components-catalog.overlays.tokyo-night.en.reduced
   host-embedding.default-dark.en.normal
   motion-catalog.default-dark.en.none
+  resizable.default-dark.en.normal
   split-pane.default-dark.en.normal
   operations.command-dialog.default-dark.en.normal
   operations.config-diff.default-light.en.normal
@@ -161,8 +162,8 @@ for case_name in "${gallery_cases[@]}"; do
 done
 
 actual_count="$(find tests/visual/macos -type f -name '*.png' | wc -l | tr -d ' ')"
-if [[ "${actual_count}" != "68" ]]; then
-  echo "unexpected visual baseline count: ${actual_count} (expected 68)" >&2
+if [[ "${actual_count}" != "69" ]]; then
+  echo "unexpected visual baseline count: ${actual_count} (expected 69)" >&2
   exit 1
 fi
 

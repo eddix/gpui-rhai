@@ -44,7 +44,7 @@ focus-ring token, and an `audit-canary` deployment changes only
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`: pass.
 - Full release smoke: pass, including Gallery large-data launch from an empty
   temporary directory.
-- Release artifact audit and the 68-PNG structural baseline audit: pass.
+- Release artifact audit and the 69-PNG structural baseline audit: pass.
 - `gpui-rhai` and `gpui-rhai-registry` package assembly: pass. CLI package
   assembly remains sequenced after publishing its exact `gpui-rhai 0.1.6`
   dependency to crates.io.
@@ -55,7 +55,8 @@ The release `.app` was inspected on an unlocked macOS session. Explore and
 Workbench mode switching, real Input focus/editing, `audit-canary` commit and
 cross-page verification, both Gallery pane drags, and the public SplitPane were
 exercised through native UI. All 29 affected Gallery images were re-recorded at
-the maintained 1181×820 content crop, and a 30th SplitPane baseline was added.
+the maintained 1181×820 content crop; SplitPane and Resizable baselines bring
+the current Gallery set to 31 images.
 Representative Dark, Light, RTL/community, CommandDialog, failure terminal,
 full Workbench, and SplitPane frames were visually reviewed. No remaining
 platform gate is recorded for this review.

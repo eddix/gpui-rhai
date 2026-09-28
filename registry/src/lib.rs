@@ -80,6 +80,11 @@ bundled_components!(
         "../components/split_pane.rhai"
     ),
     (
+        RESIZABLE_SOURCE,
+        "components/resizable",
+        "../components/resizable.rhai"
+    ),
+    (
         PAGINATION_SOURCE,
         "components/pagination",
         "../components/pagination.rhai"
@@ -435,6 +440,7 @@ pub const TABS_STORY_SOURCE: &str = include_str!("../stories/components/tabs.rha
 pub const INPUT_STORY_SOURCE: &str = include_str!("../stories/components/input.rhai");
 pub const TABLE_STORY_SOURCE: &str = include_str!("../stories/components/table.rhai");
 pub const SPLIT_PANE_STORY_SOURCE: &str = include_str!("../stories/components/split_pane.rhai");
+pub const RESIZABLE_STORY_SOURCE: &str = include_str!("../stories/components/resizable.rhai");
 pub const CHART_INTERACTION_STORY_SOURCE: &str = include_str!("../stories/charts/interaction.rhai");
 pub const CHART_CATALOG_STORY_SOURCE: &str = include_str!("../stories/charts/catalog.rhai");
 pub const CHART_STREAMING_STORY_SOURCE: &str = include_str!("../stories/charts/streaming.rhai");
@@ -673,6 +679,23 @@ pub const BUNDLED_STORIES: &[StoryDefinition] = &[
         theme_studio: true,
     },
     StoryDefinition {
+        id: "components/resizable",
+        title: "Resizable",
+        purpose: "Resize and reposition one controlled rectangle from physical edges and corners.",
+        category: "layout",
+        keywords: &["layout", "resize", "edge", "corner", "rectangle"],
+        module_ids: &["components/resizable", "components/button"],
+        source_module: "stories/components/resizable",
+        source: RESIZABLE_STORY_SOURCE,
+        cases: BASIC_CASE,
+        fixture: None,
+        required_features: NO_FEATURES,
+        platforms: DESKTOP_PLATFORMS,
+        test_requirements: STANDARD_STORY_TESTS,
+        documentation: "docs/components/catalog.md#resizable",
+        theme_studio: true,
+    },
+    StoryDefinition {
         id: "charts/interaction",
         title: "Chart titles and wheel interaction",
         purpose: "Compare absent and explicit titles while preserving parent scrolling.",
@@ -858,15 +881,15 @@ mod tests {
 
     #[test]
     fn release_snapshot_has_the_expected_catalog_size() {
-        assert_eq!(BUNDLED_COMPONENT_SOURCES.len(), 52);
-        assert_eq!(BUNDLED_COMPONENT_SOURCES_BY_ID.len(), 52);
+        assert_eq!(BUNDLED_COMPONENT_SOURCES.len(), 53);
+        assert_eq!(BUNDLED_COMPONENT_SOURCES_BY_ID.len(), 53);
         assert_eq!(BUNDLED_MOTION_SOURCES.len(), 10);
         assert_eq!(BUNDLED_MOTION_SOURCES_BY_ID.len(), 10);
         assert_eq!(BUNDLED_CHART_SOURCES.len(), 5);
         assert_eq!(BUNDLED_CHART_SOURCES_BY_ID.len(), 5);
         assert_eq!(BUNDLED_ASSET_SOURCES.len(), 18);
         assert_eq!(BUNDLED_THEME_SOURCES.len(), 15);
-        assert_eq!(BUNDLED_STORIES.len(), 12);
+        assert_eq!(BUNDLED_STORIES.len(), 13);
         assert!(
             BUNDLED_COMPONENT_SOURCES
                 .iter()

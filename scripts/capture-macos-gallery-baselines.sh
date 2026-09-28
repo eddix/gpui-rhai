@@ -113,6 +113,7 @@ components-catalog.overlays.default-light.en.normal|components/catalog|overlays|
 components-catalog.overlays.tokyo-night.en.reduced|components/catalog|overlays|tokyo-night|en|reduced
 host-embedding.default-dark.en.normal|apps/host-embedding|basic|default-dark|en|normal
 motion-catalog.default-dark.en.none|motion/catalog|basic|default-dark|en|none
+resizable.default-dark.en.normal|components/resizable|basic|default-dark|en|normal
 split-pane.default-dark.en.normal|components/split-pane|basic|default-dark|en|normal
 operations.command-dialog.default-dark.en.normal|apps/operations|command-dialog|default-dark|en|normal
 operations.config-diff.default-light.en.normal|apps/operations|config-diff|default-light|en|normal

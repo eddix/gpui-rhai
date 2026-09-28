@@ -1,6 +1,6 @@
 # Official component catalog
 
-gpui-rhai ships 52 editable Rhai source components. They all use the same
+gpui-rhai ships 53 editable Rhai source components. They all use the same
 public atoms and generic runtime mechanisms available to application code; no
 official component receives a private high-level node constructor.
 
@@ -30,16 +30,42 @@ mechanisms; they do not justify parallel private primitives.
 
 ## Split Pane
 
-`SplitPane` is the source-owned, nestable Resizable primitive for application
-layouts. It accepts stable start/end keys, horizontal or vertical orientation,
+`SplitPane` is a source-owned, nestable two-panel layout component. It
+redistributes space inside a shared region; it is not a generic Resizable
+wrapper for floating cards or arbitrary elements. It accepts stable start/end
+keys, horizontal or vertical orientation,
 a controlled start-panel ratio, pixel min/max constraints, controlled collapse
 flags, and an accessible separator. Pointer movement stays in the native signal
 lane; one `resize(number)` proposal is emitted on release. Rejecting the
 proposal restores the controlled ratio. Keyboard arrows use the same proposal
 path, and RTL pointer deltas follow the active theme direction.
 
-It is intentionally not a Dock system: panel reordering, cross-window drops,
-and persistence remain application concerns.
+See the [interaction behavior specification](interaction-behaviors.md#splitpane--implemented)
+for its current props and boundary with Resizable. Panel reordering,
+cross-window drops, and persistence are outside SplitPane's contract.
+
+## Resizable
+
+`Resizable` controls one absolutely positioned rectangle inside the component's
+local boundary. It is independent of SplitPane: resizing a west or north edge
+updates `x` or `y` while preserving the opposite edge; no sibling receives the
+remaining space. The caller owns the accepted `{x,y,width,height}` rectangle.
+
+The component supports any unique subset of `n/s/e/w/ne/nw/se/sw`, min/max
+dimensions, optional boundary containment, optional aspect ratio, a keyboard
+step, disabled state, and one `resize({x,y,width,height,handle})` proposal.
+Pointer moves update four optional-float native signals; Rhai runs only for the
+final proposal. Style parts are `root`, `surface`, `content`, and `handle`.
+
+Source: [resizable.rhai](../../registry/components/resizable.rhai).
+Runnable story: `gpui-rhai gallery --story components/resizable`.
+
+The same [specification](interaction-behaviors.md) records the planned Draggable,
+DropZone, Sortable, PanZoom, SelectionArea, Rotatable, and DockLayout
+capabilities, their composition rules, and acceptance requirements. These
+planned entries are not additional implemented components or callable exports.
+In particular, the existing Motion ReorderList animates an externally supplied
+order; it does not yet implement interactive sorting.
 
 Every interactive field, choice, menu, navigation region, overlay surface, and
 progress indicator has an explicit textual accessible name. Input placeholders

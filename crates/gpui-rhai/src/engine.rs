@@ -32,6 +32,7 @@ use crate::node::{
 };
 use crate::primitive::{PrimitiveDescriptor, PrimitiveError, PrimitiveHandler, PrimitiveRegistry};
 use crate::range_input::{RangeInputPrimitiveHandler, range_input_primitive_descriptor};
+use crate::resizable::{ResizablePrimitiveHandler, resizable_primitive_descriptor};
 use crate::split_resize::{SplitResizePrimitiveHandler, split_resize_primitive_descriptor};
 use crate::style::register_style_api;
 use crate::text_area::{
@@ -740,6 +741,8 @@ impl RuntimeEngine {
             SplitResizePrimitiveHandler,
         )
         .expect("built-in split resize primitive descriptor is valid");
+        self.register_primitive(resizable_primitive_descriptor(), ResizablePrimitiveHandler)
+            .expect("built-in resizable primitive descriptor is valid");
         self.register_primitive(
             text_input_primitive_descriptor(),
             TextInputPrimitiveHandler::default(),

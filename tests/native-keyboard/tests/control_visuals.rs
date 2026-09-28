@@ -13,6 +13,7 @@ const BADGE: &str = include_str!("../../../registry/components/badge.rhai");
 const TABS: &str = include_str!("../../../registry/components/tabs.rhai");
 const INPUT: &str = include_str!("../../../registry/components/input.rhai");
 const SPLIT_PANE: &str = include_str!("../../../registry/components/split_pane.rhai");
+const RESIZABLE: &str = include_str!("../../../registry/components/resizable.rhai");
 const ANIMATED_TABS: &str = include_str!("../../../registry/motion/animated_tabs.rhai");
 const DEFAULT_DARK: &str = include_str!("../../../registry/themes/default_dark.rhai");
 
@@ -59,6 +60,10 @@ fn mount_with_overrides(
             (
                 ModuleId::parse("components/split_pane").unwrap(),
                 SPLIT_PANE.to_owned(),
+            ),
+            (
+                ModuleId::parse("components/resizable").unwrap(),
+                RESIZABLE.to_owned(),
             ),
             (
                 ModuleId::parse("motion/animated_tabs").unwrap(),
@@ -610,4 +615,164 @@ fn view(ctx){column([
     visual.run_until_parked();
     let committed = status(&mut visual).parse::<f64>().unwrap();
     assert!(committed > 0.5, "committed ratio={committed}");
+}
+
+fn resizable_script(handles: &str) -> String {
+    format!(
+        r#"
+import "components/resizable" as resizable;
+fn state_schema(){{#{{fields:#{{
+    rect:#{{schema:#{{type:"object",allow_unknown:false,fields:#{{
+        x:#{{schema:#{{type:"number"}},required:true,sensitive:false}},
+        y:#{{schema:#{{type:"number"}},required:true,sensitive:false}},
+        width:#{{schema:#{{type:"number",exclusive_min:0.0}},required:true,sensitive:false}},
+        height:#{{schema:#{{type:"number",exclusive_min:0.0}},required:true,sensitive:false}}
+    }}}},"default":#{{type:"map",value:#{{x:#{{type:"float",value:100.0}},y:#{{type:"float",value:80.0}},
+        width:#{{type:"float",value:200.0}},height:#{{type:"float",value:120.0}}}}}}}},
+    handle:#{{schema:#{{type:"string"}},"default":#{{type:"string",value:"none"}}}}
+}}}}}}
+fn resized(ctx,value){{ctx.set_state("rect",#{{x:value.x,y:value.y,width:value.width,height:value.height}});ctx.set_state("handle",value.handle);}}
+fn view(ctx){{let rect=ctx.get_state("rect");column([
+    text(`${{rect.x}},${{rect.y}},${{rect.width}},${{rect.height}},${{ctx.get_state("handle")}}`).accessibility_role("status"),
+    resizable::Resizable(#{{key:"card",label:"Demo",rect:rect,handles:{handles},
+        min_width:80.0,min_height:60.0,max_width:360.0,max_height:260.0,
+        content:text("Card"),on_resize:Fn("resized")}})
+        .with_style(style().width(px(500)).height(px(400)))
+])}}
+"#
+    )
+}
+
+#[gpui::test]
+fn resizable_drag_previews_natively_and_commits_opposite_corner_geometry(
+    cx: &mut TestAppContext,
+) {
+    cx.update(gpui_rhai::install);
+    let script = resizable_script(r#"["nw"]"#);
+    let (window, view) = mount(cx, &script, "resizable-pointer");
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    let bounds = visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .find_by_role_and_name("separator", "Demo: nw resize handle")
+            .next()
+            .unwrap()
+            .geometry
+            .unwrap()
+            .visual
+    });
+    let status = |visual: &mut VisualTestContext| {
+        visual.update(|_, cx| {
+            view.accessibility_snapshot(cx)
+                .unwrap()
+                .nodes()
+                .find(|node| node.role == "status")
+                .unwrap()
+                .name
+                .clone()
+        })
+    };
+    let start = point(
+        px((bounds.x + bounds.width / 2.0) as f32),
+        px((bounds.y + bounds.height / 2.0) as f32),
+    );
+    let end = point(start.x - px(30.0), start.y - px(20.0));
+    visual.simulate_mouse_down(start, MouseButton::Left, Modifiers::default());
+    visual.simulate_mouse_move(end, MouseButton::Left, Modifiers::default());
+    visual.run_until_parked();
+    assert_eq!(
+        status(&mut visual),
+        "100.0,80.0,200.0,120.0,none",
+        "pointer preview must not rerun Rhai"
+    );
+    let preview = visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .find_by_role_and_name("separator", "Demo: nw resize handle")
+            .next()
+            .unwrap()
+            .geometry
+            .unwrap()
+            .visual
+    });
+    assert!((preview.x - (bounds.x - 30.0)).abs() < 0.01, "{preview:?}");
+    assert!((preview.y - (bounds.y - 20.0)).abs() < 0.01, "{preview:?}");
+    visual.simulate_mouse_up(end, MouseButton::Left, Modifiers::default());
+    visual.run_until_parked();
+    assert_eq!(status(&mut visual), "70.0,60.0,230.0,140.0,nw");
+}
+
+#[gpui::test]
+fn resizable_keyboard_handle_uses_the_same_controlled_proposal(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let script = resizable_script(r#"["e"]"#);
+    let (window, view) = mount(cx, &script, "resizable-keyboard");
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    visual.update(|window, cx| window.focus_next(cx));
+    visual.simulate_event(gpui::KeyDownEvent {
+        keystroke: gpui::Keystroke::parse("right").unwrap(),
+        is_held: false,
+        prefer_character_input: false,
+    });
+    visual.simulate_event(gpui::KeyUpEvent {
+        keystroke: gpui::Keystroke::parse("right").unwrap(),
+    });
+    visual.run_until_parked();
+    let status = visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .nodes()
+            .find(|node| node.role == "status")
+            .unwrap()
+            .name
+            .clone()
+    });
+    assert_eq!(status, "100.0,80.0,208.0,120.0,e");
+}
+
+#[gpui::test]
+fn resizable_rejected_proposal_restores_the_controlled_rectangle(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let script = resizable_script(r#"["se"]"#).replace(
+        r#"ctx.set_state("rect",#{x:value.x,y:value.y,width:value.width,height:value.height});"#,
+        "",
+    );
+    let (window, view) = mount(cx, &script, "resizable-rejection");
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    let before = visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .find_by_role_and_name("separator", "Demo: se resize handle")
+            .next()
+            .unwrap()
+            .geometry
+            .unwrap()
+            .visual
+    });
+    let start = point(
+        px((before.x + before.width / 2.0) as f32),
+        px((before.y + before.height / 2.0) as f32),
+    );
+    let end = point(start.x + px(40.0), start.y + px(30.0));
+    visual.simulate_mouse_down(start, MouseButton::Left, Modifiers::default());
+    visual.simulate_mouse_move(end, MouseButton::Left, Modifiers::default());
+    visual.simulate_mouse_up(end, MouseButton::Left, Modifiers::default());
+    visual.run_until_parked();
+    let tree = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
+    let after = tree
+        .find_by_role_and_name("separator", "Demo: se resize handle")
+        .next()
+        .unwrap()
+        .geometry
+        .unwrap()
+        .visual;
+    assert!((after.x - before.x).abs() < 0.01, "{before:?} -> {after:?}");
+    assert!((after.y - before.y).abs() < 0.01, "{before:?} -> {after:?}");
+    assert_eq!(
+        tree.nodes()
+            .find(|node| node.role == "status")
+            .unwrap()
+            .name,
+        "100.0,80.0,200.0,120.0,se"
+    );
 }
