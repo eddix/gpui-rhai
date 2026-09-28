@@ -21,7 +21,7 @@ does not imply availability in an already published crate.
 | SplitPane | Redistribute a shared layout region between panels | Navigation/content, preview/source, horizontal or vertical split | Implemented as `components/split_pane::SplitPane` |
 | DropZone | Accept a typed drag payload and propose a domain operation | Kanban column, object container, in-app resource drop target | Implemented as `components/drop_zone::DropZone` |
 | Sortable | Propose a new order for a keyed collection | List, Tab order, toolbar items | Implemented for bounded source-owned items; virtual adapter remains a 0.1.8 completion item |
-| PanZoom | Change the viewing transform while preserving content coordinates | Map, image viewer, node canvas | Planned for 0.1.8 over shared affine geometry; Chart keeps its domain viewport |
+| PanZoom | Change the viewing transform while preserving content coordinates | Map, image viewer, node canvas | Implemented for Canvas over shared affine geometry; Chart keeps its domain viewport |
 | SelectionArea | Maintain object selection by click, modifiers, range, or marquee | File grid, canvas objects, multi-selection surface | Planned for 0.1.8; Table/text selection remain distinct |
 | Rotatable | Change an object's angle around an explicit pivot | Drawing or design tools | Planned for 0.1.8 on declared 2D interaction surfaces |
 | Dockable / DockLayout | Arrange panels through docking, grouping, splitting, or floating | IDE/tool workspaces | Deferred higher-level layout system |
@@ -235,7 +235,7 @@ remaining adapter must pin the active key and a bounded set of neighboring
 anchors over `virtual_collection` without materializing all rows before 0.1.8
 is considered complete.
 
-## PanZoom — planned
+## PanZoom — Canvas implementation
 
 The caller owns a viewport transform with defined pan coordinates, scale limits,
 and reset/fit semantics. Zoom anchored at a pointer or viewport point preserves
@@ -251,6 +251,19 @@ Chart viewport interactions remain governed by [charts.md](../charts.md),
 including coordinate-specific semantics and linked logical windows. A future
 generic PanZoom must integrate with those contracts rather than introducing a
 second authoritative Chart camera.
+
+`components/pan_zoom::PanZoom` accepts a controlled `{x,y,scale}` transform and
+one Canvas node. Drag panning uses the shared Host gesture coordinator. Wheel
+zoom keeps the content coordinate below the pointer stationary, coalesces
+precise phase-less events, respects explicit touch phases, and emits one final
+proposal. Ordinary wheel input bubbles under the default `modifier` policy.
+Arrow keys pan; `+`/`-` zoom around the viewport center; `0` resets.
+
+The transform hot lane is one four-signal atomic patch. Canvas paint and
+hit-testing use the same `Affine2D`-backed scale/rotation snapshot; the component
+does not claim support for arbitrary GPUI subtrees, native editors, or Chart
+domain cameras. Source: [pan_zoom.rhai](../../registry/components/pan_zoom.rhai).
+Runnable story: `gpui-rhai gallery --story components/pan-zoom`.
 
 ## SelectionArea — planned
 

@@ -1,6 +1,6 @@
 # Official component catalog
 
-gpui-rhai ships 57 editable Rhai source components. They all use the same
+gpui-rhai ships 58 editable Rhai source components. They all use the same
 public atoms and generic runtime mechanisms available to application code; no
 official component receives a private high-level node constructor.
 
@@ -103,7 +103,24 @@ End for the same identity-based target contract.
 Source: [sortable.rhai](../../registry/components/sortable.rhai).
 Runnable story: `gpui-rhai gallery --story components/sortable`.
 
-The same [specification](interaction-behaviors.md) records the planned PanZoom,
+## PanZoom
+
+`PanZoom` controls a Canvas viewport with `{x,y,scale}`. Pointer pan, anchored
+wheel zoom, arrows, `+`/`-`, and reset all produce the same bounded controlled
+transform proposal. Four related native signals update translation and scale
+atomically; Canvas painting, hit testing, and committed geometry consume the
+same affine scale/rotation facts. Ordinary wheel input bubbles by default;
+Command/Control + wheel opts into zoom unless the caller explicitly selects
+`always`.
+
+The 0.1.8 surface deliberately supports Canvas content, not arbitrary GPUI
+subtrees or native input controls. That boundary prevents a visual-only scale
+from lying about hit testing and layout.
+
+Source: [pan_zoom.rhai](../../registry/components/pan_zoom.rhai).
+Runnable story: `gpui-rhai gallery --story components/pan-zoom`.
+
+The same [specification](interaction-behaviors.md) records the planned
 SelectionArea, Rotatable, and DockLayout
 capabilities, their composition rules, and acceptance requirements. These
 planned entries are not additional implemented components or callable exports.
