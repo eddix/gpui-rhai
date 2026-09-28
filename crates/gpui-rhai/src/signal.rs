@@ -22,6 +22,12 @@ pub enum SignalProperty {
     TranslateXOverride,
     TranslateY,
     TranslateYOverride,
+    Rotate,
+    RotateOverride,
+    ScaleX,
+    ScaleXOverride,
+    ScaleY,
+    ScaleYOverride,
     Width,
     WidthOverride,
     Height,
@@ -45,6 +51,12 @@ impl SignalProperty {
             "translate_x_override" => Ok(Self::TranslateXOverride),
             "translate_y" => Ok(Self::TranslateY),
             "translate_y_override" => Ok(Self::TranslateYOverride),
+            "rotate" => Ok(Self::Rotate),
+            "rotate_override" => Ok(Self::RotateOverride),
+            "scale_x" => Ok(Self::ScaleX),
+            "scale_x_override" => Ok(Self::ScaleXOverride),
+            "scale_y" => Ok(Self::ScaleY),
+            "scale_y_override" => Ok(Self::ScaleYOverride),
             "width" => Ok(Self::Width),
             "width_override" => Ok(Self::WidthOverride),
             "height" => Ok(Self::Height),
@@ -59,11 +71,19 @@ impl SignalProperty {
     #[must_use]
     pub const fn signal_kind(self) -> SignalKind {
         match self {
-            Self::Opacity | Self::TranslateX | Self::TranslateY | Self::Width | Self::Height => {
-                SignalKind::Float
-            }
+            Self::Opacity
+            | Self::TranslateX
+            | Self::TranslateY
+            | Self::Rotate
+            | Self::ScaleX
+            | Self::ScaleY
+            | Self::Width
+            | Self::Height => SignalKind::Float,
             Self::TranslateXOverride
             | Self::TranslateYOverride
+            | Self::RotateOverride
+            | Self::ScaleXOverride
+            | Self::ScaleYOverride
             | Self::WidthOverride
             | Self::HeightOverride => SignalKind::OptionalFloat,
             Self::Background | Self::TextColor | Self::BorderColor => SignalKind::Color,

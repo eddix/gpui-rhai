@@ -35,6 +35,7 @@ use crate::node::{
     generic_image_node, image_node, layer_node, lazy_error_boundary_node, motion_group_node,
     overlay_node, rich_text_node, row_node, span_value, stack_node, svg_node, text_node,
 };
+use crate::pan_zoom::{PanZoomPrimitiveHandler, pan_zoom_primitive_descriptor};
 use crate::primitive::{PrimitiveDescriptor, PrimitiveError, PrimitiveHandler, PrimitiveRegistry};
 use crate::range_input::{RangeInputPrimitiveHandler, range_input_primitive_descriptor};
 use crate::resizable::{ResizablePrimitiveHandler, resizable_primitive_descriptor};
@@ -763,6 +764,11 @@ impl RuntimeEngine {
             SortablePrimitiveHandler::default(),
         )
         .expect("built-in sortable primitive descriptor is valid");
+        self.register_primitive(
+            pan_zoom_primitive_descriptor(),
+            PanZoomPrimitiveHandler::default(),
+        )
+        .expect("built-in pan zoom primitive descriptor is valid");
         self.register_primitive(
             text_input_primitive_descriptor(),
             TextInputPrimitiveHandler::default(),

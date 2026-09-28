@@ -3259,6 +3259,7 @@ fn script_node_dispatcher(cx: &Context<ScriptHostView>) -> NodeEventDispatcher {
     let script_entity = cx.entity().downgrade();
     let native_entity = script_entity.clone();
     let signal_entity = script_entity.clone();
+    let signal_read_entity = script_entity.clone();
     let geometry_entity = script_entity.clone();
     NodeEventDispatcher::new(move |callback, payload, target, window, app| {
         script_entity
@@ -3292,6 +3293,13 @@ fn script_node_dispatcher(cx: &Context<ScriptHostView>) -> NodeEventDispatcher {
                 Ok(changed)
             })
             .unwrap_or_else(|_| Err(stale.expect("non-empty signal patches have a first member")))
+    })
+    .with_signal_read(move |signal, app| {
+        signal_read_entity
+            .read_with(app, |view, _| {
+                view.lifecycle.runtime().borrow().signals.read(signal)
+            })
+            .unwrap_or_else(|_| Err(crate::SignalError::Stale(signal.id().clone())))
     })
     .with_element_bounds(move |reference, app| {
         geometry_entity

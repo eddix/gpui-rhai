@@ -934,6 +934,17 @@ impl PrimitiveContext {
         )
     }
 
+    pub(crate) fn read_signal(
+        &self,
+        signal: &crate::NativeSignal,
+        cx: &App,
+    ) -> Result<crate::SignalValue, crate::SignalError> {
+        self.dispatcher.as_ref().map_or_else(
+            || Err(crate::SignalError::Stale(signal.id().clone())),
+            |dispatcher| dispatcher.read_signal(signal, cx),
+        )
+    }
+
     /// Atomically apply one related native-preview patch and request at most
     /// one repaint.
     ///

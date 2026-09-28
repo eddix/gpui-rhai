@@ -187,7 +187,6 @@ impl NativeGesture {
         }
     }
 
-    #[cfg(feature = "charts")]
     pub(crate) fn with_button(mut self, button: MouseButton) -> Self {
         self.button = button;
         self

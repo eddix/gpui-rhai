@@ -30,6 +30,7 @@ pub mod native_handler;
 pub mod node;
 pub mod overlay;
 mod overlay_element;
+pub mod pan_zoom;
 pub mod primitive;
 pub mod range_input;
 pub mod reload;
@@ -210,6 +211,7 @@ pub use overlay::{
     DismissReport, FocusToken, OverlayBounds, OverlayError, OverlayId, OverlayKind, OverlayManager,
     OverlayPlacement, OverlaySpec, PlacementResult, TooltipScheduler, TooltipTransition,
 };
+pub use pan_zoom::{PanZoomPrimitiveHandler, pan_zoom_primitive_descriptor};
 pub use primitive::{
     EffectPrimitiveDescriptor, PrimitiveAccessibilityProjection, PrimitiveContext,
     PrimitiveDescriptor, PrimitiveError, PrimitiveHandler, PrimitiveId, PrimitiveInstance,

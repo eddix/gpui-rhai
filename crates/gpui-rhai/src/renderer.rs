@@ -46,6 +46,8 @@ type SignalWriteFn = dyn Fn(
     Vec<(crate::NativeSignal, crate::SignalValue)>,
     &mut App,
 ) -> Result<bool, crate::SignalError>;
+type SignalReadFn =
+    dyn Fn(&crate::NativeSignal, &App) -> Result<crate::SignalValue, crate::SignalError>;
 type ElementBoundsFn = dyn Fn(&crate::ElementRef, &App) -> Option<crate::GeometryBounds>;
 
 #[derive(Clone)]
@@ -53,6 +55,7 @@ pub struct NodeEventDispatcher {
     script: Rc<DispatchFn>,
     native: Rc<NativeDispatchFn>,
     signal_write: Rc<SignalWriteFn>,
+    signal_read: Rc<SignalReadFn>,
     element_bounds: Rc<ElementBoundsFn>,
 }
 
@@ -81,6 +84,7 @@ impl NodeEventDispatcher {
                     Err(crate::SignalError::Stale(signal.id().clone()))
                 })
             }),
+            signal_read: Rc::new(|signal, _| Err(crate::SignalError::Stale(signal.id().clone()))),
             element_bounds: Rc::new(|_, _| None),
         }
     }
@@ -116,6 +120,15 @@ impl NodeEventDispatcher {
         + 'static,
     ) -> Self {
         self.signal_write = Rc::new(write);
+        self
+    }
+
+    pub(crate) fn with_signal_read(
+        mut self,
+        read: impl Fn(&crate::NativeSignal, &App) -> Result<crate::SignalValue, crate::SignalError>
+        + 'static,
+    ) -> Self {
+        self.signal_read = Rc::new(read);
         self
     }
 
@@ -168,6 +181,14 @@ impl NodeEventDispatcher {
             return Ok(false);
         }
         (self.signal_write)(updates, app)
+    }
+
+    pub(crate) fn read_signal(
+        &self,
+        signal: &crate::NativeSignal,
+        app: &App,
+    ) -> Result<crate::SignalValue, crate::SignalError> {
+        (self.signal_read)(signal, app)
     }
 
     pub(crate) fn element_bounds(
@@ -1896,13 +1917,16 @@ impl GpuiNodeRenderer {
                     animation.set(binding.property(), value);
                 }
             }
-            if matches!(node.kind(), UiNodeKind::Canvas { .. }) {
+        }
+        let signals = node_signals(environment.signals, node);
+        if matches!(node.kind(), UiNodeKind::Canvas { .. }) {
+            animation = apply_canvas_signal_transform(animation, &signals);
+            if let Some(retained_id) = retained_id {
                 environment
                     .geometry
                     .update_canvas_transform(retained_id, animation.canvas_transform());
             }
         }
-        let signals = node_signals(environment.signals, node);
         let mut resolved_style = node.style().resolve(&local_interaction);
         apply_motion_dimensions(&mut resolved_style, animation);
         apply_signal_style(&mut resolved_style, &signals);
@@ -3579,6 +3603,9 @@ struct NodeSignalValues {
     opacity: Option<f64>,
     translate_x: Option<f64>,
     translate_y: Option<f64>,
+    rotate: Option<f64>,
+    scale_x: Option<f64>,
+    scale_y: Option<f64>,
     width: Option<f64>,
     width_override: Option<f64>,
     height: Option<f64>,
@@ -3616,6 +3643,24 @@ fn node_signals(registry: &crate::SignalRegistry, node: &UiNode) -> NodeSignalVa
             ) => {
                 values.translate_y = value;
             }
+            (crate::SignalProperty::Rotate, crate::SignalValue::Float(value)) => {
+                values.rotate = Some(value);
+            }
+            (crate::SignalProperty::RotateOverride, crate::SignalValue::OptionalFloat(value)) => {
+                values.rotate = value;
+            }
+            (crate::SignalProperty::ScaleX, crate::SignalValue::Float(value)) => {
+                values.scale_x = Some(value);
+            }
+            (crate::SignalProperty::ScaleXOverride, crate::SignalValue::OptionalFloat(value)) => {
+                values.scale_x = value;
+            }
+            (crate::SignalProperty::ScaleY, crate::SignalValue::Float(value)) => {
+                values.scale_y = Some(value);
+            }
+            (crate::SignalProperty::ScaleYOverride, crate::SignalValue::OptionalFloat(value)) => {
+                values.scale_y = value;
+            }
             (crate::SignalProperty::Width, crate::SignalValue::Float(value)) => {
                 values.width = Some(value);
             }
@@ -3641,6 +3686,16 @@ fn node_signals(registry: &crate::SignalRegistry, node: &UiNode) -> NodeSignalVa
         }
     }
     values
+}
+
+fn apply_canvas_signal_transform(
+    mut motion: NodeMotionValues,
+    signals: &NodeSignalValues,
+) -> NodeMotionValues {
+    motion.rotate = signals.rotate.or(motion.rotate);
+    motion.scale_x = signals.scale_x.or(motion.scale_x);
+    motion.scale_y = signals.scale_y.or(motion.scale_y);
+    motion
 }
 
 fn apply_signal_style(style: &mut StyleProperties, values: &NodeSignalValues) {
@@ -5408,6 +5463,87 @@ mod tests {
         let mut style = StyleProperties::default();
         apply_signal_style(&mut style, &values);
         assert_eq!(style.width, Some(Length::Pixels(144.0).into()));
+    }
+
+    #[test]
+    fn canvas_signal_transform_is_shared_by_paint_and_hit_testing() {
+        let component = crate::ComponentInstancePath::root("PanZoom", "viewport");
+        let scale_ids = (
+            crate::SignalId::new(component.clone(), "scale-x", crate::SignalKind::Float).unwrap(),
+            crate::SignalId::new(component.clone(), "scale-y", crate::SignalKind::Float).unwrap(),
+        );
+        let rotate_id =
+            crate::SignalId::new(component.clone(), "rotate", crate::SignalKind::Float).unwrap();
+        let scale_x = crate::NativeSignal::new(scale_ids.0.clone());
+        let scale_y = crate::NativeSignal::new(scale_ids.1.clone());
+        let rotate = crate::NativeSignal::new(rotate_id.clone());
+        let scene = crate::CanvasScene::new(vec![crate::CanvasCommand::Rect {
+            key: "target".to_owned(),
+            x: 20.0,
+            y: 25.0,
+            width: 20.0,
+            height: 20.0,
+            fill: ColorValue::Token("accent".to_owned()),
+        }])
+        .unwrap();
+        let node = UiNode::canvas(scene.clone())
+            .with_signal_binding(crate::SignalProperty::ScaleX, scale_x)
+            .unwrap()
+            .with_signal_binding(crate::SignalProperty::ScaleY, scale_y)
+            .unwrap()
+            .with_signal_binding(crate::SignalProperty::Rotate, rotate)
+            .unwrap();
+        let mut registry = crate::SignalRegistry::new();
+        registry.reconcile(
+            &component,
+            BTreeMap::from([
+                (
+                    scale_ids.0,
+                    crate::signal::SignalDescriptor::new(crate::SignalValue::Float(1.6)),
+                ),
+                (
+                    scale_ids.1,
+                    crate::signal::SignalDescriptor::new(crate::SignalValue::Float(0.8)),
+                ),
+                (
+                    rotate_id,
+                    crate::signal::SignalDescriptor::new(crate::SignalValue::Float(19.0)),
+                ),
+            ]),
+        );
+        let motion = apply_canvas_signal_transform(
+            NodeMotionValues::default(),
+            &node_signals(&registry, &node),
+        );
+        let mut tree = RetainedUiTree::new();
+        tree.reconcile(node).unwrap();
+        let retained = tree.root_id().unwrap();
+        let geometry = crate::GeometryRegistry::new();
+        let bounds = crate::GeometryBounds::new(100.0, 50.0, 120.0, 90.0).unwrap();
+        geometry.update(
+            retained,
+            crate::ElementGeometry {
+                layout: bounds,
+                visual: bounds,
+                clip: None,
+            },
+        );
+        geometry.update_canvas_transform(retained, motion.canvas_transform());
+        let paint_bounds = Bounds::new(point(px(100.0), px(50.0)), gpui::size(px(120.0), px(90.0)));
+        let painted = node_canvas_point(paint_bounds, 30.0, 35.0, motion);
+        let context = PointerPayloadContext::retained(retained, geometry, Some(scene), Vec::new());
+        let payload = context.enrich(pointer_payload(
+            painted,
+            Some(MouseButton::Left),
+            vec![MouseButton::Left],
+            Modifiers::default(),
+            1,
+            false,
+        ));
+        let UiValue::Map(payload) = payload else {
+            unreachable!()
+        };
+        assert_eq!(payload["canvas_key"], UiValue::String("target".to_owned()));
     }
 
     #[test]
