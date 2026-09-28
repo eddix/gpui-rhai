@@ -5,6 +5,40 @@ All notable runtime, CLI, and registry changes are documented here. Version
 component schema, manifest, locale, and generated-source changes follow
 semantic versioning from this release.
 
+## 0.1.8 - 2026-09-29
+
+- Adds one Host-domain Interaction Runtime for gesture ownership, pointer
+  capture, cancellation, typed application drag sessions, drop-target priority,
+  atomic native preview patches, edge auto-scroll and lifecycle cleanup.
+  Resizable, SplitPane, Table column resize, Slider, Scrollbar and Chart now
+  share that foundation instead of maintaining parallel move/up state machines.
+- Adds editable source components Draggable, DragSource, DropZone, Sortable,
+  PanZoom, SelectionArea, Rotatable, RangeSlider and Tree. Pointer hot paths
+  remain in Rust; Rhai receives one bounded controlled proposal per completed
+  interaction. Every component has a Gallery story and native pointer/keyboard
+  acceptance coverage.
+- Adds finite reversible `Affine2D`/presented geometry shared by Canvas paint,
+  hit testing, PanZoom, explicit-pivot rotation and Canvas-local selection.
+  Scale/rotation native signals and Motion use one property-ownership and
+  transform path.
+- Sortable supports rich bounded items plus vertical Array/NativeCollection
+  virtualization. Virtual renderer payloads expose stable neighboring keys;
+  active drags pin one key and bounded halo while target edge auto-scroll moves
+  realization. Reorder proposals never depend on stale numeric indices.
+- Tree validates and flattens stable-key outlines in Rust, then reuses the
+  public variable-height `virtual_collection`; keyboard activity, expansion,
+  selection and disabled policy remain controlled by Tree rather than the list
+  renderer.
+- Fixes retained/delayed callback call-depth accumulation (#80) without raising
+  Rhai recursion limits. Adds typed primitive prop access, `PrimitiveContext`,
+  deferred semantic proposals, atomic signal batches, shared stable grouping,
+  and Canvas-local inverse coordinate reads.
+- Adds `workbench/interaction-lab`, a connected acceptance application that
+  composes the complete direct-manipulation stack and executes a real
+  cross-component DragSource → DropZone workflow. Runtime API remains **2**;
+  DockLayout, OS/cross-window drag, arbitrary GPUI subtree scaling, 3D and
+  platform certification beyond the existing matrix remain out of scope.
+
 ## 0.1.7 - 2026-09-28
 
 - Adds the formal `gpui-rhai gallery` acceptance application: registry-driven

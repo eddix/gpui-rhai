@@ -31,6 +31,11 @@ Version 0.1.7 adds the formal Gallery/Operations acceptance
 application plus independent `SplitPane` and `Resizable` source components,
 both with controlled native drag preview and keyboard-accessible handles.
 
+Version 0.1.8 adds the unified Interaction Runtime and nine direct-manipulation
+components: Draggable, DragSource, DropZone, Sortable, PanZoom, SelectionArea,
+Rotatable, RangeSlider, and Tree. Run the complete acceptance scene with
+`gpui-rhai gallery --story workbench/interaction-lab`.
+
 The implemented complex-control line is specified under
 [docs/components](docs/components/) for DatePicker, Select, Table, Pagination,
 Textarea, CodeViewer, and DiffViewer.
