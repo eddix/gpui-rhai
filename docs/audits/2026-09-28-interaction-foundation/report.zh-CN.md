@@ -18,8 +18,8 @@ interaction hot path，再实施 ADR 0022；不以新增组件数量代替底层
 - F01 已完成现有原生 hot lane 的第一阶段迁移：Resizable、SplitPane、Table
   column resize、Slider、Scrollbar、Chart pan/brush 共用 Host-domain gesture
   coordinator 和 GestureSession；move/up/cancel 不再按 handle 重复安装。
-- F02 部分完成：原生 gesture 已统一；声明式 `PointerCaptureRegistry` 仍有自己的
-  frame router，后续需并入同一 coordinator 后才可关闭。
+- F02 已完成：声明式 `PointerCaptureRegistry` 与原生 gesture 都向 Host coordinator
+  注册 frame route，窗口只安装一组 move/up 监听。
 - F03 部分完成：新增有限、可逆的 `Affine2D` / `PresentedGeometry`，Canvas paint 与
   hit-test 已共用变换公式；完整 clip/scroll ancestry 和所有 Motion 呈现域迁移仍待完成。
 - F04、F05 已完成：signal patch validate-all/apply-all，`PrimitiveContext`、typed
