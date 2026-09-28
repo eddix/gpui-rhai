@@ -5,6 +5,12 @@ native accessibility projection without changing Runtime API 2. Its historical
 implementation plan is retained by Git; current contracts live in the release,
 embedding, accessibility, and architecture documentation.
 
+Version 0.1.7 completes the source-backed Gallery, Operations Workbench,
+acceptance-story and example-classification workstream. Its historical plan is
+retained by Git; maintained contracts live in the Gallery, component,
+verification and release documentation. Omarchy integration and custom UI zoom
+remain separate future work.
+
 ## 1. Execution policy
 
 This plan implements the final Core Runtime v2 described by `INTENT.md`.
