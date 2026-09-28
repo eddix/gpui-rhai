@@ -39,6 +39,7 @@ pub mod renderer;
 pub mod resizable;
 pub mod responsive;
 pub mod retained;
+pub mod rotatable;
 pub mod schema;
 mod script_lint;
 pub mod script_source;
@@ -233,6 +234,7 @@ pub use retained::{
     NodeId, ReconcileError, ReconcileMetrics, ReconcileReport, RetainedChildLink, RetainedNode,
     RetainedUiTree,
 };
+pub use rotatable::{RotatablePrimitiveHandler, rotatable_primitive_descriptor};
 pub use schema::{
     ObjectField, SchemaDefinitionError, SchemaIssue, SchemaValidationError, ValueSchema,
 };
