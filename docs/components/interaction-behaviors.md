@@ -20,7 +20,7 @@ does not imply availability in an already published crate.
 | Resizable | Change one object's size or bounds using edges/handles | Floating card, image frame, adjustable content container | Implemented as `components/resizable::Resizable`; independent of SplitPane |
 | SplitPane | Redistribute a shared layout region between panels | Navigation/content, preview/source, horizontal or vertical split | Implemented as `components/split_pane::SplitPane` |
 | DropZone | Accept a typed drag payload and propose a domain operation | Kanban column, object container, in-app resource drop target | Implemented as `components/drop_zone::DropZone` |
-| Sortable | Propose a new order for a keyed collection | List, Tab order, toolbar items | Implemented for bounded source-owned items; virtual adapter remains a 0.1.8 completion item |
+| Sortable | Propose a new order for a keyed collection | List, Tab order, toolbar items | Implemented for bounded rich items and vertical virtual data |
 | PanZoom | Change the viewing transform while preserving content coordinates | Map, image viewer, node canvas | Implemented for Canvas over shared affine geometry; Chart keeps its domain viewport |
 | SelectionArea | Maintain object selection by click, modifiers, range, or marquee | File grid, canvas objects, multi-selection surface | Implemented for bounded Canvas object rectangles |
 | Rotatable | Change an object's angle around an explicit pivot | Drawing or design tools | Implemented for Canvas with atomic pivot compensation |
@@ -203,7 +203,7 @@ Sources: [drag_source.rhai](../../registry/components/drag_source.rhai) and
 [drop_zone.rhai](../../registry/components/drop_zone.rhai).
 Runnable story: `gpui-rhai gallery --story components/drag-drop`.
 
-## Sortable — bounded implementation complete
+## Sortable — implemented
 
 The caller owns the ordered stable keys. The interaction chooses an insertion
 position and previews the resulting order, then proposes a move/order on commit.
@@ -221,7 +221,7 @@ It does **not** currently provide dragging, insertion targets, or reorder events
 Reuse its animation capability where appropriate, without confusing animation
 with the interaction and controlled-order model.
 
-The current `components/sortable::Sortable` accepts at most 512 source-owned
+`components/sortable::Sortable` accepts at most 512 source-owned
 items with unique stable keys. Each item has an independent focusable grip so
 interactive content is not covered by a drag overlay. Pointer release emits one
 `reorder({source_key,anchor_key,placement,x,y})`; self and adjacent no-op moves
@@ -232,10 +232,12 @@ edge movement scrolls the destination container rather than the source lane.
 Source: [sortable.rhai](../../registry/components/sortable.rhai).
 Runnable story: `gpui-rhai gallery --story components/sortable`.
 
-The bounded component is not presented as the promised virtualized mode. That
-remaining adapter must pin the active key and a bounded set of neighboring
-anchors over `virtual_collection` without materializing all rows before 0.1.8
-is considered complete.
+The vertical virtual mode accepts keyed maps or `NativeCollection`, renders
+labels only for the realized window, and receives stable previous/next/first/
+last keys from the generic collection payload. The Host coordinator exposes
+only the active drag key to the virtual policy, which pins that item plus its
+bounded halo while the viewport realizes new insertion anchors. No numeric
+index crosses the reorder proposal boundary.
 
 ## PanZoom — Canvas implementation
 
@@ -314,6 +316,15 @@ with PanZoom or SelectionArea instead of claiming the whole viewport.
 
 Source: [rotatable.rhai](../../registry/components/rotatable.rhai).
 Runnable story: `gpui-rhai gallery --story components/rotatable`.
+
+## Integrated acceptance scene
+
+`gpui-rhai gallery --story workbench/interaction-lab` mounts SplitPane,
+Resizable, Draggable, typed drag/drop, virtual Sortable, Canvas PanZoom,
+Rotatable, SelectionArea, RangeSlider and Tree in one stateful workbench. The
+scene uses controlled application state throughout; its native acceptance test
+also completes a cross-component DragSource → DropZone operation rather than
+only checking that the widgets paint.
 
 ## Dockable / DockLayout — deferred composition
 

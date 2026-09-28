@@ -100,6 +100,12 @@ and adjacent no-op moves, and scrolls the active target's nearest eligible
 scroll ancestor at an edge. Focus a grip and use Option/Alt + Arrow, Home, or
 End for the same identity-based target contract.
 
+Its vertical virtual mode accepts ordinary keyed data or `NativeCollection`.
+The generic virtual renderer supplies stable neighboring keys without Rhai
+materializing offscreen nodes. While dragging, the shared Interaction Runtime
+pins the active source key and its bounded realization halo even after it
+scrolls out of view.
+
 Source: [sortable.rhai](../../registry/components/sortable.rhai).
 Runnable story: `gpui-rhai gallery --story components/sortable`.
 

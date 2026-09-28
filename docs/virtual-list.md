@@ -39,6 +39,17 @@ virtual_collection(#{
 }, Fn("render_message"))
 ```
 
+Every realized renderer payload also contains `previous_key`, `next_key`,
+`first_key`, and `last_key` as stable strings or null. These are presentation
+neighbors, not numeric reorder authority. Sortable uses them to emit
+identity-based insertion anchors for Array and `NativeCollection` data without
+materializing offscreen rows in Rhai.
+
+During an in-Host application drag, the virtual policy pins a matching active
+source key plus its bounded overdraw halo. The source may leave the painted
+viewport while its retained identity and gesture stay alive; target rows still
+realize normally as edge auto-scroll advances the destination viewport.
+
 ## Controlled reveal targets
 
 Top-aligned selection and navigation components can pass `reveal_key`, using

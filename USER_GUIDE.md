@@ -337,7 +337,7 @@ RangeSlider, and Tree without weakening that contract:
 - forms: Input, InputGroup, Textarea, FormField, Combobox, Select, DatePicker,
   and RangeSlider;
 - navigation, layout, and data: Tabs, Accordion, Collapsible, Menu, Pagination,
-  Table, ScrollArea, SplitPane, Resizable, Draggable, DragSource, DropZone, and
+  Table, ScrollArea, SplitPane, Resizable, Draggable, DragSource, DropZone,
   Sortable, PanZoom, Rotatable, SelectionArea, and Tree;
 - commands and overlays: Command, CommandDialog, ContextMenu, Popover, Dialog,
   AlertDialog, Sheet, Tooltip, and Toast;
@@ -349,6 +349,8 @@ Run `cargo run --release -p gpui-rhai-cli -- gallery --story components/catalog`
 for the authoritative interactive catalog with category navigation, cases,
 responsive viewport presets, Motion preferences, live themes, locales, and the
 exact running Rhai source.
+Run `cargo run --release -p gpui-rhai-cli -- gallery --story workbench/interaction-lab`
+for the integrated 0.1.8 direct-manipulation acceptance application.
 See [the component catalog](docs/components/catalog.md) for ownership and
 behavior distinctions that similar-looking controls must preserve.
 See [Gallery and acceptance application](docs/gallery.md) for story metadata,
