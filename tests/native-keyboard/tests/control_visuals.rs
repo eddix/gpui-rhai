@@ -19,6 +19,7 @@ const DRAG_SOURCE: &str = include_str!("../../../registry/components/drag_source
 const DROP_ZONE: &str = include_str!("../../../registry/components/drop_zone.rhai");
 const SORTABLE: &str = include_str!("../../../registry/components/sortable.rhai");
 const SCROLL_AREA: &str = include_str!("../../../registry/components/scroll_area.rhai");
+const PAN_ZOOM: &str = include_str!("../../../registry/components/pan_zoom.rhai");
 const ANIMATED_TABS: &str = include_str!("../../../registry/motion/animated_tabs.rhai");
 const DEFAULT_DARK: &str = include_str!("../../../registry/themes/default_dark.rhai");
 
@@ -92,6 +93,10 @@ fn mount_with_overrides(
             (
                 ModuleId::parse("components/scroll_area").unwrap(),
                 SCROLL_AREA.to_owned(),
+            ),
+            (
+                ModuleId::parse("components/pan_zoom").unwrap(),
+                PAN_ZOOM.to_owned(),
             ),
             (
                 ModuleId::parse("motion/animated_tabs").unwrap(),
@@ -1014,6 +1019,113 @@ fn view(ctx){let items=[];for index in 0..12{let key=`item-${index}`;
         after < before - 24.0,
         "expected auto-scroll: {before} -> {after}"
     );
+}
+
+#[gpui::test]
+fn pan_zoom_previews_pan_and_commits_pointer_anchored_zoom(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let script = r#"
+import "components/pan_zoom" as pan_zoom;
+fn state_schema(){#{fields:#{
+    transform:#{schema:#{type:"object",allow_unknown:false,fields:#{
+        x:#{schema:#{type:"number"},required:true,sensitive:false},
+        y:#{schema:#{type:"number"},required:true,sensitive:false},
+        scale:#{schema:#{type:"number",exclusive_min:0.0},required:true,sensitive:false}
+    }},"default":#{type:"map",value:#{
+        x:#{type:"float",value:0.0},y:#{type:"float",value:0.0},scale:#{type:"float",value:1.0}
+    }}},
+    commits:#{schema:#{type:"integer",min:0},"default":#{type:"integer",value:0}}
+}}}
+fn changed(ctx,value){ctx.set_state("transform",value);ctx.set_state("commits",ctx.get_state("commits")+1);}
+fn view(ctx){let value=ctx.get_state("transform");column([
+    text(`${value.x},${value.y},${value.scale},${ctx.get_state("commits")}`).accessibility_role("status"),
+    pan_zoom::PanZoom(#{key:"viewport",label:"Canvas viewport",transform:value,min_scale:0.5,max_scale:4.0,
+        wheel_zoom:"always",content:canvas(canvas_scene([
+            canvas_rect("target",80.0,50.0,40.0,30.0,theme_color("accent"))
+        ])).with_key("canvas"),on_transform_change:Fn("changed")})
+        .with_style(style().width(px(300)).height(px(180)))
+]).with_style(style().padding(px(12)).gap(px(8)))}
+"#;
+    let (window, view) = mount(cx, script, "pan-zoom");
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    let status = |visual: &mut VisualTestContext| {
+        visual.update(|_, cx| {
+            view.accessibility_snapshot(cx)
+                .unwrap()
+                .nodes()
+                .find(|node| node.role == "status")
+                .unwrap()
+                .name
+                .clone()
+        })
+    };
+    let viewport = visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .find_by_role_and_name("region", "Canvas viewport")
+            .next()
+            .unwrap()
+            .geometry
+            .unwrap()
+            .visual
+    });
+    let start = point(
+        px((viewport.x + viewport.width / 2.0) as f32),
+        px((viewport.y + viewport.height / 2.0) as f32),
+    );
+    let end = point(start.x + px(40.0), start.y + px(20.0));
+    visual.simulate_mouse_down(start, MouseButton::Left, Modifiers::default());
+    visual.simulate_mouse_move(end, MouseButton::Left, Modifiers::default());
+    visual.simulate_mouse_up(end, MouseButton::Left, Modifiers::default());
+    visual.run_until_parked();
+    assert_eq!(status(&mut visual), "40.0,20.0,1.0,1");
+
+    visual.simulate_event(ScrollWheelEvent {
+        position: start,
+        delta: ScrollDelta::Lines(point(0.0, -4.0)),
+        ..Default::default()
+    });
+    visual.run_until_parked();
+    let zoomed = status(&mut visual);
+    let scale = zoomed.split(',').nth(2).unwrap().parse::<f64>().unwrap();
+    assert!(scale > 1.0, "status={zoomed}");
+    assert!(zoomed.ends_with(",2"), "status={zoomed}");
+
+    for _ in 0..3 {
+        visual.simulate_event(ScrollWheelEvent {
+            position: start,
+            delta: ScrollDelta::Pixels(point(px(0.0), px(-12.0))),
+            ..Default::default()
+        });
+    }
+    cx.background_executor
+        .advance_clock(std::time::Duration::from_millis(100));
+    visual.run_until_parked();
+    cx.refresh().unwrap();
+    visual.run_until_parked();
+    let precise = status(&mut visual);
+    assert!(precise.ends_with(",3"), "status={precise}");
+
+    for (phase, delta) in [
+        (gpui::TouchPhase::Started, -10.0),
+        (gpui::TouchPhase::Moved, -10.0),
+        (gpui::TouchPhase::Ended, 0.0),
+    ] {
+        visual.simulate_event(ScrollWheelEvent {
+            position: start,
+            delta: ScrollDelta::Pixels(point(px(0.0), px(delta))),
+            touch_phase: phase,
+            ..Default::default()
+        });
+    }
+    visual.run_until_parked();
+    let explicit = status(&mut visual);
+    assert!(explicit.ends_with(",4"), "status={explicit}");
+
+    visual.simulate_keystrokes("tab right");
+    visual.run_until_parked();
+    let keyboard = status(&mut visual);
+    assert!(keyboard.ends_with(",5"), "status={keyboard}");
 }
 
 #[gpui::test]

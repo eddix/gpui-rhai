@@ -28,6 +28,7 @@ import "components/draggable" as draggable;
 import "components/drag_source" as drag_source;
 import "components/drop_zone" as drop_zone;
 import "components/sortable" as sortable;
+import "components/pan_zoom" as pan_zoom;
 import "components/tabs" as tabs;
 import "components/tag" as tag;
 import "components/textarea" as textarea;
@@ -164,6 +165,14 @@ fn state_schema() {
         specimen_sort_order: #{ schema: #{ type: "array", max_items: 3, items: #{ type: "string" } },
             "default": #{ type: "array", value: [#{ type: "string", value: "build" },
                 #{ type: "string", value: "test" }, #{ type: "string", value: "ship" }] } },
+        specimen_pan_zoom: #{ schema: #{ type: "object", allow_unknown: false, fields: #{
+            x: #{ schema: #{ type: "number" }, required: true, sensitive: false },
+            y: #{ schema: #{ type: "number" }, required: true, sensitive: false },
+            scale: #{ schema: #{ type: "number", exclusive_min: 0.0 }, required: true, sensitive: false },
+        } }, "default": #{ type: "map", value: #{
+            x: #{ type: "float", value: 0.0 }, y: #{ type: "float", value: 0.0 },
+            scale: #{ type: "float", value: 1.0 }
+        } } },
         specimen_page: #{ schema: #{ type: "integer", min: 1, max: 128 },
             "default": #{ type: "integer", value: 3 } },
         specimen_page_size: #{ schema: #{ type: "integer", allowed: [10, 25, 50] },
@@ -257,6 +266,10 @@ fn set_specimen_sortable(ctx, value) {
     order.insert(if value.placement == "after" { anchor + 1 } else { anchor }, moved);
     ctx.set_state("specimen_sort_order", order);
     record_action("Order changed", ctx, ());
+}
+fn set_specimen_pan_zoom(ctx, value) {
+    ctx.set_state("specimen_pan_zoom", value);
+    record_action("Canvas transformed", ctx, ());
 }
 fn set_specimen_table_selection(ctx, value) { ctx.set_state("specimen_table_selected", value); record_action("Table selection changed", ctx, ()); }
 fn set_specimen_table_sort(ctx, value) {
@@ -676,6 +689,14 @@ fn specimen_data(ctx) {
         ]).with_style(style().gap(theme_spacing("sm"))),
         sortable::Sortable(#{ key:"specimen-sortable", label:"Release order",
             items:sortable_items, direction:"horizontal", on_reorder:Fn("set_specimen_sortable") }),
+        pan_zoom::PanZoom(#{ key:"specimen-pan-zoom", label:"Canvas viewport",
+            transform:ctx.get_state("specimen_pan_zoom"), min_scale:0.5, max_scale:3.0,
+            content:canvas(canvas_scene([
+                canvas_circle("center",90.0,55.0,18.0,theme_color("accent")),
+                canvas_rect("node",24.0,22.0,34.0,24.0,theme_color("success"))
+            ])).with_key("specimen-pan-zoom-canvas"),
+            on_transform_change:Fn("set_specimen_pan_zoom")
+        }).with_style(style().width(relative(1.0)).height(px(110))),
         table::Table(#{ key: "specimen-table", label: "Users", row_key: "id",
             rows: rows, columns: columns, height: 126, striped: true, resizable_columns: true,
             selection_mode: "multiple", selected_keys: ctx.get_state("specimen_table_selected"),
@@ -911,13 +932,13 @@ fn gallery_title_bar(ctx) {
     ]).with_style(style().min_width(px(0)).gap(px(6)).items_center().overflow_hidden());
     let config = #{ label: "GPUI Rhai Component Gallery", title: breadcrumb,
         inset_start: 70, end: [themes] };
-    if !compact { config.subtitle = "57 source-owned components · native GPUI behavior · live themes"; }
+    if !compact { config.subtitle = "58 source-owned components · native GPUI behavior · live themes"; }
     title_bar::TitleBar(config)
 }
 
 fn gallery_status_bar(ctx) {
     status_bar::StatusBar(#{ label: "Component Gallery status",
-        start: [text(`57 components · ${ctx.get_state("interaction_count")} interactions`)],
+        start: [text(`58 components · ${ctx.get_state("interaction_count")} interactions`)],
         center: [text(ctx.get_state("interaction_status"))],
         end: [text(ctx.get_state("gallery_category")), text(ctx.viewport_class())] })
 }

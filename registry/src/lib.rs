@@ -105,6 +105,11 @@ bundled_components!(
         "../components/sortable.rhai"
     ),
     (
+        PAN_ZOOM_SOURCE,
+        "components/pan_zoom",
+        "../components/pan_zoom.rhai"
+    ),
+    (
         PAGINATION_SOURCE,
         "components/pagination",
         "../components/pagination.rhai"
@@ -464,6 +469,7 @@ pub const RESIZABLE_STORY_SOURCE: &str = include_str!("../stories/components/res
 pub const DRAGGABLE_STORY_SOURCE: &str = include_str!("../stories/components/draggable.rhai");
 pub const DRAG_DROP_STORY_SOURCE: &str = include_str!("../stories/components/drag_drop.rhai");
 pub const SORTABLE_STORY_SOURCE: &str = include_str!("../stories/components/sortable.rhai");
+pub const PAN_ZOOM_STORY_SOURCE: &str = include_str!("../stories/components/pan_zoom.rhai");
 pub const CHART_INTERACTION_STORY_SOURCE: &str = include_str!("../stories/charts/interaction.rhai");
 pub const CHART_CATALOG_STORY_SOURCE: &str = include_str!("../stories/charts/catalog.rhai");
 pub const CHART_STREAMING_STORY_SOURCE: &str = include_str!("../stories/charts/streaming.rhai");
@@ -770,6 +776,23 @@ pub const BUNDLED_STORIES: &[StoryDefinition] = &[
         theme_studio: true,
     },
     StoryDefinition {
+        id: "components/pan-zoom",
+        title: "PanZoom",
+        purpose: "Pan and pointer-anchor zoom one controlled Canvas viewport through native signals.",
+        category: "layout",
+        keywords: &["pan", "zoom", "canvas", "wheel", "transform"],
+        module_ids: &["components/pan_zoom"],
+        source_module: "stories/components/pan_zoom",
+        source: PAN_ZOOM_STORY_SOURCE,
+        cases: BASIC_CASE,
+        fixture: None,
+        required_features: NO_FEATURES,
+        platforms: DESKTOP_PLATFORMS,
+        test_requirements: STANDARD_STORY_TESTS,
+        documentation: "docs/components/interaction-behaviors.md#panzoom--canvas-implementation",
+        theme_studio: true,
+    },
+    StoryDefinition {
         id: "charts/interaction",
         title: "Chart titles and wheel interaction",
         purpose: "Compare absent and explicit titles while preserving parent scrolling.",
@@ -955,15 +978,15 @@ mod tests {
 
     #[test]
     fn release_snapshot_has_the_expected_catalog_size() {
-        assert_eq!(BUNDLED_COMPONENT_SOURCES.len(), 57);
-        assert_eq!(BUNDLED_COMPONENT_SOURCES_BY_ID.len(), 57);
+        assert_eq!(BUNDLED_COMPONENT_SOURCES.len(), 58);
+        assert_eq!(BUNDLED_COMPONENT_SOURCES_BY_ID.len(), 58);
         assert_eq!(BUNDLED_MOTION_SOURCES.len(), 10);
         assert_eq!(BUNDLED_MOTION_SOURCES_BY_ID.len(), 10);
         assert_eq!(BUNDLED_CHART_SOURCES.len(), 5);
         assert_eq!(BUNDLED_CHART_SOURCES_BY_ID.len(), 5);
         assert_eq!(BUNDLED_ASSET_SOURCES.len(), 18);
         assert_eq!(BUNDLED_THEME_SOURCES.len(), 15);
-        assert_eq!(BUNDLED_STORIES.len(), 16);
+        assert_eq!(BUNDLED_STORIES.len(), 17);
         assert!(
             BUNDLED_COMPONENT_SOURCES
                 .iter()
