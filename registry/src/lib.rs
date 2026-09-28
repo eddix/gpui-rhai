@@ -110,6 +110,11 @@ bundled_components!(
         "../components/pan_zoom.rhai"
     ),
     (
+        RANGE_SLIDER_SOURCE,
+        "components/range_slider",
+        "../components/range_slider.rhai"
+    ),
+    (
         PAGINATION_SOURCE,
         "components/pagination",
         "../components/pagination.rhai"
@@ -470,6 +475,7 @@ pub const DRAGGABLE_STORY_SOURCE: &str = include_str!("../stories/components/dra
 pub const DRAG_DROP_STORY_SOURCE: &str = include_str!("../stories/components/drag_drop.rhai");
 pub const SORTABLE_STORY_SOURCE: &str = include_str!("../stories/components/sortable.rhai");
 pub const PAN_ZOOM_STORY_SOURCE: &str = include_str!("../stories/components/pan_zoom.rhai");
+pub const RANGE_SLIDER_STORY_SOURCE: &str = include_str!("../stories/components/range_slider.rhai");
 pub const CHART_INTERACTION_STORY_SOURCE: &str = include_str!("../stories/charts/interaction.rhai");
 pub const CHART_CATALOG_STORY_SOURCE: &str = include_str!("../stories/charts/catalog.rhai");
 pub const CHART_STREAMING_STORY_SOURCE: &str = include_str!("../stories/charts/streaming.rhai");
@@ -793,6 +799,23 @@ pub const BUNDLED_STORIES: &[StoryDefinition] = &[
         theme_studio: true,
     },
     StoryDefinition {
+        id: "components/range-slider",
+        title: "RangeSlider",
+        purpose: "Select one controlled ordered interval with two independent native thumbs.",
+        category: "forms",
+        keywords: &["range", "slider", "interval", "thumb", "keyboard"],
+        module_ids: &["components/range_slider"],
+        source_module: "stories/components/range_slider",
+        source: RANGE_SLIDER_STORY_SOURCE,
+        cases: BASIC_CASE,
+        fixture: None,
+        required_features: NO_FEATURES,
+        platforms: DESKTOP_PLATFORMS,
+        test_requirements: STANDARD_STORY_TESTS,
+        documentation: "docs/components/catalog.md#range-slider",
+        theme_studio: true,
+    },
+    StoryDefinition {
         id: "charts/interaction",
         title: "Chart titles and wheel interaction",
         purpose: "Compare absent and explicit titles while preserving parent scrolling.",
@@ -978,15 +1001,15 @@ mod tests {
 
     #[test]
     fn release_snapshot_has_the_expected_catalog_size() {
-        assert_eq!(BUNDLED_COMPONENT_SOURCES.len(), 58);
-        assert_eq!(BUNDLED_COMPONENT_SOURCES_BY_ID.len(), 58);
+        assert_eq!(BUNDLED_COMPONENT_SOURCES.len(), 59);
+        assert_eq!(BUNDLED_COMPONENT_SOURCES_BY_ID.len(), 59);
         assert_eq!(BUNDLED_MOTION_SOURCES.len(), 10);
         assert_eq!(BUNDLED_MOTION_SOURCES_BY_ID.len(), 10);
         assert_eq!(BUNDLED_CHART_SOURCES.len(), 5);
         assert_eq!(BUNDLED_CHART_SOURCES_BY_ID.len(), 5);
         assert_eq!(BUNDLED_ASSET_SOURCES.len(), 18);
         assert_eq!(BUNDLED_THEME_SOURCES.len(), 15);
-        assert_eq!(BUNDLED_STORIES.len(), 17);
+        assert_eq!(BUNDLED_STORIES.len(), 18);
         assert!(
             BUNDLED_COMPONENT_SOURCES
                 .iter()

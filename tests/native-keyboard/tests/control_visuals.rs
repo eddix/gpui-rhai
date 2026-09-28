@@ -20,6 +20,7 @@ const DROP_ZONE: &str = include_str!("../../../registry/components/drop_zone.rha
 const SORTABLE: &str = include_str!("../../../registry/components/sortable.rhai");
 const SCROLL_AREA: &str = include_str!("../../../registry/components/scroll_area.rhai");
 const PAN_ZOOM: &str = include_str!("../../../registry/components/pan_zoom.rhai");
+const RANGE_SLIDER: &str = include_str!("../../../registry/components/range_slider.rhai");
 const ANIMATED_TABS: &str = include_str!("../../../registry/motion/animated_tabs.rhai");
 const DEFAULT_DARK: &str = include_str!("../../../registry/themes/default_dark.rhai");
 
@@ -97,6 +98,10 @@ fn mount_with_overrides(
             (
                 ModuleId::parse("components/pan_zoom").unwrap(),
                 PAN_ZOOM.to_owned(),
+            ),
+            (
+                ModuleId::parse("components/range_slider").unwrap(),
+                RANGE_SLIDER.to_owned(),
             ),
             (
                 ModuleId::parse("motion/animated_tabs").unwrap(),
@@ -1122,12 +1127,91 @@ fn view(ctx){let value=ctx.get_state("transform");column([
     let explicit = status(&mut visual);
     assert!(explicit.ends_with(",4"), "status={explicit}");
     let explicit_x = explicit.split(',').next().unwrap().parse::<f64>().unwrap();
-    assert!(explicit_x.abs() > 1.0, "explicit gesture lost pan: {explicit}");
+    assert!(
+        explicit_x.abs() > 1.0,
+        "explicit gesture lost pan: {explicit}"
+    );
 
     visual.simulate_keystrokes("tab right");
     visual.run_until_parked();
     let keyboard = status(&mut visual);
     assert!(keyboard.ends_with(",5"), "status={keyboard}");
+}
+
+#[gpui::test]
+fn range_slider_has_two_keyboard_thumbs_and_one_pointer_commit(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let script = r#"
+import "components/range_slider" as range_slider;
+fn state_schema(){#{fields:#{range:#{schema:#{type:"object",allow_unknown:false,fields:#{
+    low:#{schema:#{type:"number"},required:true,sensitive:false},
+    high:#{schema:#{type:"number"},required:true,sensitive:false}}},
+    "default":#{type:"map",value:#{low:#{type:"float",value:20.0},high:#{type:"float",value:80.0}}}},
+    commits:#{schema:#{type:"integer",min:0},"default":#{type:"integer",value:0}}}}}
+fn changed(ctx,value){ctx.set_state("range",value);ctx.set_state("commits",ctx.get_state("commits")+1);}
+fn view(ctx){let value=ctx.get_state("range");column([
+    text(`${value.low},${value.high},${ctx.get_state("commits")}`).accessibility_role("status"),
+    range_slider::RangeSlider(#{key:"range",label:"Accepted interval",low_label:"Low bound",
+        high_label:"High bound",values:value,min:0.0,max:100.0,step:5.0,minimum_gap:10.0,
+        on_change:Fn("changed")})
+]).with_style(style().padding(px(12)).gap(px(8)))}
+"#;
+    let (window, view) = mount(cx, script, "range-slider");
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    let status = |visual: &mut VisualTestContext| {
+        visual.update(|_, cx| {
+            view.accessibility_snapshot(cx)
+                .unwrap()
+                .nodes()
+                .find(|node| node.role == "status")
+                .unwrap()
+                .name
+                .clone()
+        })
+    };
+    let snapshot = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
+    let control = snapshot
+        .find_by_role_and_name("group", "Accepted interval")
+        .next()
+        .unwrap()
+        .geometry
+        .unwrap()
+        .visual;
+    let start = point(
+        px((control.x + control.width * 0.2) as f32),
+        px((control.y + control.height * 0.7) as f32),
+    );
+    let target = point(
+        px((control.x + control.width * 0.5) as f32),
+        px((control.y + control.height * 0.7) as f32),
+    );
+    visual.simulate_mouse_down(start, MouseButton::Left, Modifiers::default());
+    visual.simulate_mouse_move(target, MouseButton::Left, Modifiers::default());
+    visual.simulate_mouse_up(target, MouseButton::Left, Modifiers::default());
+    visual.run_until_parked();
+    assert!(status(&mut visual).ends_with(",1"));
+
+    let control = visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .find_by_role_and_name("group", "Accepted interval")
+            .next()
+            .unwrap()
+            .geometry
+            .unwrap()
+            .visual
+    });
+    let high_point = point(
+        px((control.x + control.width * 0.8) as f32),
+        px((control.y + control.height * 0.7) as f32),
+    );
+    visual.simulate_mouse_down(high_point, MouseButton::Left, Modifiers::default());
+    visual.simulate_mouse_up(high_point, MouseButton::Left, Modifiers::default());
+    visual.run_until_parked();
+    visual.simulate_keystrokes("left");
+    visual.run_until_parked();
+    let keyboard = status(&mut visual);
+    assert!(keyboard.ends_with(",2"), "status={keyboard}");
 }
 
 #[gpui::test]

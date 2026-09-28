@@ -48,6 +48,7 @@ import "components/input_group" as input_group;
 import "components/kbd" as kbd;
 import "components/sheet" as sheet;
 import "components/slider" as slider;
+import "components/range_slider" as range_slider;
 import "components/spinner" as spinner;
 import "components/toggle" as toggle;
 import "components/toggle_group" as toggle_group;
@@ -186,6 +187,12 @@ fn state_schema() {
             "default": #{ type: "array", value: [#{ type: "string", value: "bold" }] } },
         p0_slider: #{ schema: #{ type: "number", min: 0.0, max: 100.0 },
             "default": #{ type: "float", value: 42.0 } },
+        specimen_range: #{ schema: #{ type: "object", allow_unknown: false, fields: #{
+            low: #{ schema: #{ type: "number" }, required: true, sensitive: false },
+            high: #{ schema: #{ type: "number" }, required: true, sensitive: false },
+        } }, "default": #{ type: "map", value: #{
+            low: #{ type: "float", value: 20.0 }, high: #{ type: "float", value: 80.0 }
+        } } },
         p0_query: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "" } },
         p0_command_active: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "new" } },
         p0_command_open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: __VISUAL_COMMAND__ } },
@@ -305,6 +312,7 @@ fn confirm_p0_alert(ctx, payload) { ctx.set_state("p0_alert_open", false); recor
 fn cancel_p0_alert(ctx, payload) { ctx.set_state("p0_alert_open", false); record_action("Alert cancelled", ctx, payload); }
 fn set_p0_toggles(ctx, value) { ctx.set_state("p0_toggle_values", value); record_action("Formatting changed", ctx, ()); }
 fn set_p0_slider(ctx, value) { ctx.set_state("p0_slider", value); record_value("Volume", ctx, value); }
+fn set_specimen_range(ctx, value) { ctx.set_state("specimen_range", value); record_action("Range changed", ctx, ()); }
 fn set_p0_query(ctx, value) { ctx.set_state("p0_query", value); }
 fn set_p0_command_active(ctx, value) { ctx.set_state("p0_command_active", value); }
 fn set_p0_command_open(ctx, value) { ctx.set_state("p0_command_open", value); }
@@ -790,7 +798,10 @@ fn specimen_p0(ctx) {
                 items: [#{ value: "bold", label: "Bold" }, #{ value: "italic", label: "Italic" }],
                 on_change: Fn("set_p0_toggles") }),
             slider::Slider(#{ key: "p0-slider", label: "Volume", value: ctx.get_state("p0_slider"),
-                min: 0.0, max: 100.0, step: 1.0, on_change: Fn("set_p0_slider") })
+                min: 0.0, max: 100.0, step: 1.0, on_change: Fn("set_p0_slider") }),
+            range_slider::RangeSlider(#{ key:"p0-range", label:"Deployment window",
+                values:ctx.get_state("specimen_range"), min:0.0, max:100.0, step:5.0,
+                minimum_gap:10.0, on_change:Fn("set_specimen_range") })
         ]).with_style(style().gap(px(10)).items_center().flex_wrap()),
         row([
             card::Card(#{ header: text("Card"), content: text("Composable content surface"), elevated: true }),
@@ -932,13 +943,13 @@ fn gallery_title_bar(ctx) {
     ]).with_style(style().min_width(px(0)).gap(px(6)).items_center().overflow_hidden());
     let config = #{ label: "GPUI Rhai Component Gallery", title: breadcrumb,
         inset_start: 70, end: [themes] };
-    if !compact { config.subtitle = "58 source-owned components · native GPUI behavior · live themes"; }
+    if !compact { config.subtitle = "59 source-owned components · native GPUI behavior · live themes"; }
     title_bar::TitleBar(config)
 }
 
 fn gallery_status_bar(ctx) {
     status_bar::StatusBar(#{ label: "Component Gallery status",
-        start: [text(`58 components · ${ctx.get_state("interaction_count")} interactions`)],
+        start: [text(`59 components · ${ctx.get_state("interaction_count")} interactions`)],
         center: [text(ctx.get_state("interaction_status"))],
         end: [text(ctx.get_state("gallery_category")), text(ctx.viewport_class())] })
 }
