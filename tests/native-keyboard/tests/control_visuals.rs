@@ -22,6 +22,7 @@ const SCROLL_AREA: &str = include_str!("../../../registry/components/scroll_area
 const PAN_ZOOM: &str = include_str!("../../../registry/components/pan_zoom.rhai");
 const RANGE_SLIDER: &str = include_str!("../../../registry/components/range_slider.rhai");
 const ROTATABLE: &str = include_str!("../../../registry/components/rotatable.rhai");
+const SELECTION_AREA: &str = include_str!("../../../registry/components/selection_area.rhai");
 const ANIMATED_TABS: &str = include_str!("../../../registry/motion/animated_tabs.rhai");
 const DEFAULT_DARK: &str = include_str!("../../../registry/themes/default_dark.rhai");
 
@@ -107,6 +108,10 @@ fn mount_with_overrides(
             (
                 ModuleId::parse("components/rotatable").unwrap(),
                 ROTATABLE.to_owned(),
+            ),
+            (
+                ModuleId::parse("components/selection_area").unwrap(),
+                SELECTION_AREA.to_owned(),
             ),
             (
                 ModuleId::parse("motion/animated_tabs").unwrap(),
@@ -1277,6 +1282,94 @@ fn view(ctx){column([
     visual.run_until_parked();
     let keyboard = status(&mut visual);
     assert!(keyboard.ends_with(",2"), "status={keyboard}");
+}
+
+#[gpui::test]
+fn selection_area_shares_click_range_marquee_and_keyboard_state(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let script = r#"
+import "components/selection_area" as selection_area;
+fn state_schema(){#{fields:#{
+    selected:#{schema:#{type:"array",max_items:8,items:#{type:"string"}},"default":#{type:"array",value:[]}},
+    active:#{schema:#{type:"optional",value:#{type:"string"}},"default":#{type:"null"}},
+    anchor:#{schema:#{type:"optional",value:#{type:"string"}},"default":#{type:"null"}},
+    commits:#{schema:#{type:"integer",min:0},"default":#{type:"integer",value:0}}
+}}}
+fn changed(ctx,value){ctx.set_state("selected",value.selected_keys);ctx.set_state("active",value.active_key);
+    ctx.set_state("anchor",value.anchor_key);ctx.set_state("commits",ctx.get_state("commits")+1);}
+fn selected_text(values){let result="";for index in 0..values.len{if index>0{result+= "|";}result+=values[index];}result}
+fn view(ctx){let targets=[#{key:"a",x:20.0,y:20.0,width:50.0,height:40.0},
+    #{key:"b",x:100.0,y:20.0,width:50.0,height:40.0},#{key:"c",x:180.0,y:20.0,width:50.0,height:40.0}];
+    column([text(`${selected_text(ctx.get_state("selected"))},${ctx.get_state("commits")}`).accessibility_role("status"),
+        selection_area::SelectionArea(#{key:"area",label:"Node selection",targets:targets,
+            selected_keys:ctx.get_state("selected"),active_key:ctx.get_state("active"),anchor_key:ctx.get_state("anchor"),
+            content:canvas(canvas_scene([canvas_rect("a",20.0,20.0,50.0,40.0,theme_color("accent")),
+                canvas_rect("b",100.0,20.0,50.0,40.0,theme_color("warning")),
+                canvas_rect("c",180.0,20.0,50.0,40.0,theme_color("success"))])).with_key("canvas"),
+            on_selection_change:Fn("changed")}).with_style(style().width(px(260)).height(px(100)))
+    ]).with_style(style().padding(px(12)).gap(px(8)))}
+"#;
+    let (window, view) = mount(cx, script, "selection-area");
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    let status = |visual: &mut VisualTestContext| {
+        visual.update(|_, cx| {
+            view.accessibility_snapshot(cx)
+                .unwrap()
+                .nodes()
+                .find(|node| node.role == "status")
+                .unwrap()
+                .name
+                .clone()
+        })
+    };
+    let area = visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .find_by_role_and_name("grid", "Node selection")
+            .next()
+            .unwrap()
+            .geometry
+            .unwrap()
+            .visual
+    });
+    let local = |x: f64, y: f64| point(px((area.x + x) as f32), px((area.y + y) as f32));
+    let a = local(45.0, 40.0);
+    visual.simulate_mouse_down(a, MouseButton::Left, Modifiers::default());
+    visual.simulate_mouse_up(a, MouseButton::Left, Modifiers::default());
+    visual.run_until_parked();
+    assert_eq!(status(&mut visual), "a,1");
+
+    let c = local(205.0, 40.0);
+    visual.simulate_mouse_down(
+        c,
+        MouseButton::Left,
+        Modifiers {
+            shift: true,
+            ..Default::default()
+        },
+    );
+    visual.simulate_mouse_up(
+        c,
+        MouseButton::Left,
+        Modifiers {
+            shift: true,
+            ..Default::default()
+        },
+    );
+    visual.run_until_parked();
+    assert_eq!(status(&mut visual), "a|b|c,2");
+
+    let start = local(88.0, 8.0);
+    let end = local(162.0, 72.0);
+    visual.simulate_mouse_down(start, MouseButton::Left, Modifiers::default());
+    visual.simulate_mouse_move(end, MouseButton::Left, Modifiers::default());
+    visual.simulate_mouse_up(end, MouseButton::Left, Modifiers::default());
+    visual.run_until_parked();
+    assert_eq!(status(&mut visual), "b,3");
+
+    visual.simulate_keystrokes("tab right");
+    visual.run_until_parked();
+    assert!(status(&mut visual).ends_with(",4"));
 }
 
 #[gpui::test]

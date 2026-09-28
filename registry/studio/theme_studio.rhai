@@ -30,6 +30,7 @@ import "components/drop_zone" as drop_zone;
 import "components/sortable" as sortable;
 import "components/pan_zoom" as pan_zoom;
 import "components/rotatable" as rotatable;
+import "components/selection_area" as selection_area;
 import "components/tabs" as tabs;
 import "components/tag" as tag;
 import "components/textarea" as textarea;
@@ -177,6 +178,12 @@ fn state_schema() {
         } } },
         specimen_rotation: #{ schema: #{ type: "number" },
             "default": #{ type: "float", value: 0.0 } },
+        specimen_selection: #{ schema: #{ type: "array", max_items: 4, items: #{ type: "string" } },
+            "default": #{ type: "array", value: [] } },
+        specimen_selection_active: #{ schema: #{ type: "optional", value: #{ type: "string" } },
+            "default": #{ type: "null" } },
+        specimen_selection_anchor: #{ schema: #{ type: "optional", value: #{ type: "string" } },
+            "default": #{ type: "null" } },
         specimen_page: #{ schema: #{ type: "integer", min: 1, max: 128 },
             "default": #{ type: "integer", value: 3 } },
         specimen_page_size: #{ schema: #{ type: "integer", allowed: [10, 25, 50] },
@@ -282,6 +289,12 @@ fn set_specimen_pan_zoom(ctx, value) {
     record_action("Canvas transformed", ctx, ());
 }
 fn set_specimen_rotation(ctx, value) { ctx.set_state("specimen_rotation", value); record_action("Canvas rotated", ctx, ()); }
+fn set_specimen_selection(ctx, value) {
+    ctx.set_state("specimen_selection", value.selected_keys);
+    ctx.set_state("specimen_selection_active", value.active_key);
+    ctx.set_state("specimen_selection_anchor", value.anchor_key);
+    record_action("Canvas selection changed", ctx, ());
+}
 fn set_specimen_table_selection(ctx, value) { ctx.set_state("specimen_table_selected", value); record_action("Table selection changed", ctx, ()); }
 fn set_specimen_table_sort(ctx, value) {
     if value == () {
@@ -717,6 +730,17 @@ fn specimen_data(ctx) {
             ])).with_key("specimen-rotation-canvas"),
             handle:text("↻"),on_rotate:Fn("set_specimen_rotation")
         }).with_style(style().width(relative(1.0)).height(px(100))),
+        selection_area::SelectionArea(#{key:"specimen-selection",label:"Select canvas nodes",
+            targets:[#{key:"one",x:18.0,y:18.0,width:46.0,height:30.0},
+                #{key:"two",x:92.0,y:48.0,width:52.0,height:34.0}],
+            selected_keys:ctx.get_state("specimen_selection"),
+            active_key:ctx.get_state("specimen_selection_active"),
+            anchor_key:ctx.get_state("specimen_selection_anchor"),
+            content:canvas(canvas_scene([
+                canvas_rect("one",18.0,18.0,46.0,30.0,theme_color("accent")),
+                canvas_rect("two",92.0,48.0,52.0,34.0,theme_color("surface_hover"))
+            ])).with_key("specimen-selection-canvas"),on_selection_change:Fn("set_specimen_selection")
+        }).with_style(style().width(relative(1.0)).height(px(100))),
         table::Table(#{ key: "specimen-table", label: "Users", row_key: "id",
             rows: rows, columns: columns, height: 126, striped: true, resizable_columns: true,
             selection_mode: "multiple", selected_keys: ctx.get_state("specimen_table_selected"),
@@ -955,13 +979,13 @@ fn gallery_title_bar(ctx) {
     ]).with_style(style().min_width(px(0)).gap(px(6)).items_center().overflow_hidden());
     let config = #{ label: "GPUI Rhai Component Gallery", title: breadcrumb,
         inset_start: 70, end: [themes] };
-    if !compact { config.subtitle = "60 source-owned components · native GPUI behavior · live themes"; }
+    if !compact { config.subtitle = "61 source-owned components · native GPUI behavior · live themes"; }
     title_bar::TitleBar(config)
 }
 
 fn gallery_status_bar(ctx) {
     status_bar::StatusBar(#{ label: "Component Gallery status",
-        start: [text(`60 components · ${ctx.get_state("interaction_count")} interactions`)],
+        start: [text(`61 components · ${ctx.get_state("interaction_count")} interactions`)],
         center: [text(ctx.get_state("interaction_status"))],
         end: [text(ctx.get_state("gallery_category")), text(ctx.viewport_class())] })
 }
