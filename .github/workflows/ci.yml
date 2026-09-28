@@ -35,7 +35,6 @@ jobs:
             libxkbcommon-x11-dev \
             mesa-vulkan-drivers \
             weston \
-            xauth \
             xvfb
       - name: Reject gpui-component dependencies
         run: |
