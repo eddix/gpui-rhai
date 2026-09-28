@@ -41,9 +41,11 @@ fn item_card(key, index) {
 fn view(ctx) {
     let order = ctx.get_state("order");
     let items = [];
+    let virtual_items = [];
     for index in 0..order.len {
         let key = order[index];
         items.push(#{ key:key, label:`${key} deployment`, content:item_card(key,index) });
+        virtual_items.push(#{key:key,label:`${key} virtual row`});
     }
     let list = sortable::Sortable(#{ key:"deployment-order", label:"Deployment order",
         items:items, direction:"vertical", on_reorder:Fn("reordered") });
@@ -53,7 +55,9 @@ fn view(ctx) {
             .with_style(style().typography("body_small").text_color(theme_color("text_muted"))),
         text(ctx.get_state("status")).accessibility_role("status"),
         scroll_area::ScrollArea(#{ key:"sortable-scroll", label:"Sortable deployment stages",
-            height:px(280), axis:"vertical", content:list })
+            height:px(220), axis:"vertical", content:list }),
+        sortable::Sortable(#{key:"virtual-order",label:"Virtual deployment order",
+            virtual_data:virtual_items,direction:"vertical",height:180.0,on_reorder:Fn("reordered")})
     ]).with_style(style().width(relative(1.0)).height(relative(1.0))
         .padding(theme_spacing("md")).gap(theme_spacing("sm")))
 }

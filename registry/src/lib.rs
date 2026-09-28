@@ -491,6 +491,8 @@ pub const ROTATABLE_STORY_SOURCE: &str = include_str!("../stories/components/rot
 pub const SELECTION_AREA_STORY_SOURCE: &str =
     include_str!("../stories/components/selection_area.rhai");
 pub const TREE_STORY_SOURCE: &str = include_str!("../stories/components/tree.rhai");
+pub const INTERACTION_LAB_STORY_SOURCE: &str =
+    include_str!("../stories/workbench/interaction_lab.rhai");
 pub const CHART_INTERACTION_STORY_SOURCE: &str = include_str!("../stories/charts/interaction.rhai");
 pub const CHART_CATALOG_STORY_SOURCE: &str = include_str!("../stories/charts/catalog.rhai");
 pub const CHART_STREAMING_STORY_SOURCE: &str = include_str!("../stories/charts/streaming.rhai");
@@ -882,6 +884,43 @@ pub const BUNDLED_STORIES: &[StoryDefinition] = &[
         theme_studio: true,
     },
     StoryDefinition {
+        id: "workbench/interaction-lab",
+        title: "Interaction Workbench",
+        purpose: "Exercise the complete 0.1.8 direct-manipulation stack in one stateful application scene.",
+        category: "acceptance",
+        keywords: &[
+            "interaction",
+            "acceptance",
+            "canvas",
+            "drag",
+            "tree",
+            "sortable",
+        ],
+        module_ids: &[
+            "components/split_pane",
+            "components/resizable",
+            "components/draggable",
+            "components/drag_source",
+            "components/drop_zone",
+            "components/sortable",
+            "components/pan_zoom",
+            "components/rotatable",
+            "components/selection_area",
+            "components/range_slider",
+            "components/tree",
+            "components/scroll_area",
+        ],
+        source_module: "stories/workbench/interaction_lab",
+        source: INTERACTION_LAB_STORY_SOURCE,
+        cases: BASIC_CASE,
+        fixture: None,
+        required_features: NO_FEATURES,
+        platforms: DESKTOP_PLATFORMS,
+        test_requirements: STANDARD_STORY_TESTS,
+        documentation: "docs/components/interaction-behaviors.md#integrated-acceptance-scene",
+        theme_studio: false,
+    },
+    StoryDefinition {
         id: "charts/interaction",
         title: "Chart titles and wheel interaction",
         purpose: "Compare absent and explicit titles while preserving parent scrolling.",
@@ -1075,7 +1114,7 @@ mod tests {
         assert_eq!(BUNDLED_CHART_SOURCES_BY_ID.len(), 5);
         assert_eq!(BUNDLED_ASSET_SOURCES.len(), 18);
         assert_eq!(BUNDLED_THEME_SOURCES.len(), 15);
-        assert_eq!(BUNDLED_STORIES.len(), 21);
+        assert_eq!(BUNDLED_STORIES.len(), 22);
         assert!(
             BUNDLED_COMPONENT_SOURCES
                 .iter()

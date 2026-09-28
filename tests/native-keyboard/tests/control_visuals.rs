@@ -24,6 +24,8 @@ const RANGE_SLIDER: &str = include_str!("../../../registry/components/range_slid
 const ROTATABLE: &str = include_str!("../../../registry/components/rotatable.rhai");
 const SELECTION_AREA: &str = include_str!("../../../registry/components/selection_area.rhai");
 const TREE: &str = include_str!("../../../registry/components/tree.rhai");
+const INTERACTION_LAB: &str =
+    include_str!("../../../registry/stories/workbench/interaction_lab.rhai");
 const ANIMATED_TABS: &str = include_str!("../../../registry/motion/animated_tabs.rhai");
 const DEFAULT_DARK: &str = include_str!("../../../registry/themes/default_dark.rhai");
 
@@ -1055,6 +1057,67 @@ fn view(ctx){let items=[];for index in 0..12{let key=`item-${index}`;
 }
 
 #[gpui::test]
+fn virtual_sortable_pins_the_dragged_key_while_realization_moves(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let script = r#"
+import "components/sortable" as sortable;
+fn state_schema(){#{fields:#{status:#{schema:#{type:"string"},"default":#{type:"string",value:"ready"}}}}}
+fn reordered(ctx,value){ctx.set_state("status",`${value.source_key}:${value.placement}:${value.anchor_key}`);}
+fn view(ctx){let data=[];for index in 0..100{data.push(#{key:`item-${index}`,label:`Item ${index}`});}
+    column([text(ctx.get_state("status")).accessibility_role("status"),
+        sortable::Sortable(#{key:"virtual-order",label:"Virtual order",virtual_data:data,
+            direction:"vertical",height:180.0,estimated_row_height:40.0,on_reorder:Fn("reordered")})
+    ]).with_style(style().width(px(300)).padding(px(12)).gap(px(8)))}
+"#;
+    let (window, view) = mount(cx, script, "virtual-sortable");
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    let snapshot = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
+    let source = snapshot
+        .find_by_role_and_name("button", "Reorder Item 0")
+        .next()
+        .unwrap()
+        .geometry
+        .unwrap()
+        .visual;
+    let list = snapshot
+        .find_by_role_and_name("list", "Virtual order")
+        .next()
+        .unwrap()
+        .geometry
+        .unwrap()
+        .visual;
+    let source_point = point(
+        px((source.x + source.width / 2.0) as f32),
+        px((source.y + source.height / 2.0) as f32),
+    );
+    let bottom = point(
+        px((list.x + list.width / 2.0) as f32),
+        px((list.y + list.height - 5.0) as f32),
+    );
+    visual.simulate_mouse_down(source_point, MouseButton::Left, Modifiers::default());
+    for step in 0..30 {
+        visual.simulate_mouse_move(
+            point(bottom.x + px((step % 2) as f32), bottom.y),
+            MouseButton::Left,
+            Modifiers::default(),
+        );
+        visual.run_until_parked();
+    }
+    visual.simulate_mouse_up(bottom, MouseButton::Left, Modifiers::default());
+    visual.run_until_parked();
+    let status = visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .nodes()
+            .find(|node| node.role == "status")
+            .unwrap()
+            .name
+            .clone()
+    });
+    assert!(status.starts_with("item-0:"), "status={status}");
+}
+
+#[gpui::test]
 fn pan_zoom_previews_pan_and_commits_pointer_anchored_zoom(cx: &mut TestAppContext) {
     cx.update(gpui_rhai::install);
     let script = r#"
@@ -1458,6 +1521,74 @@ fn view(ctx){let items=[#{key:"root",parent:(),label:"Root"},#{key:"a",parent:"r
     visual.simulate_keystrokes("tab down enter");
     visual.run_until_parked();
     assert_eq!(status(&mut visual), "root;a;a");
+}
+
+#[gpui::test]
+fn interaction_workbench_mounts_and_closes_a_cross_component_drag_loop(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let (window, view) = mount(cx, INTERACTION_LAB, "interaction-lab");
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    let snapshot = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
+    assert!(
+        snapshot
+            .find_by_role_and_name("tree", "Workbench files")
+            .next()
+            .is_some()
+    );
+    assert!(
+        snapshot
+            .find_by_role_and_name("grid", "Canvas nodes")
+            .next()
+            .is_some()
+    );
+    assert!(
+        snapshot
+            .find_by_role_and_name("region", "Pan zoom map")
+            .next()
+            .is_some()
+    );
+    assert!(
+        snapshot
+            .find_by_role_and_name("list", "Pipeline order")
+            .next()
+            .is_some()
+    );
+    let source = snapshot
+        .find_by_role_and_name("button", "Move artifact")
+        .next()
+        .unwrap()
+        .geometry
+        .unwrap()
+        .visual;
+    let archive = snapshot
+        .find_by_role_and_name("group", "Archive")
+        .next()
+        .unwrap()
+        .geometry
+        .unwrap()
+        .visual;
+    let source_point = point(
+        px((source.x + source.width / 2.0) as f32),
+        px((source.y + source.height / 2.0) as f32),
+    );
+    let target_point = point(
+        px((archive.x + archive.width / 2.0) as f32),
+        px((archive.y + archive.height / 2.0) as f32),
+    );
+    visual.simulate_mouse_down(source_point, MouseButton::Left, Modifiers::default());
+    visual.simulate_mouse_move(target_point, MouseButton::Left, Modifiers::default());
+    visual.simulate_mouse_up(target_point, MouseButton::Left, Modifiers::default());
+    visual.run_until_parked();
+    let status = visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .nodes()
+            .find(|node| node.role == "status")
+            .unwrap()
+            .name
+            .clone()
+    });
+    assert_eq!(status, "Artifact moved to archive");
 }
 
 #[gpui::test]

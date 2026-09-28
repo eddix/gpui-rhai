@@ -23,7 +23,7 @@ define_component(#{
     schema: #{ props: #{
         key: #{ schema:#{type:"string"}, required:true, sensitive:false },
         label: #{ schema:#{type:"string"}, required:true, sensitive:false },
-        items: #{ schema:#{type:"array",max_items:512,items:#{
+        items: #{ schema:#{type:"optional",value:#{type:"array",max_items:512,items:#{
             type:"object",allow_unknown:false,fields:#{
                 key:#{schema:#{type:"string"},required:true,sensitive:false},
                 label:#{schema:#{type:"string"},required:true,sensitive:false},
@@ -31,7 +31,17 @@ define_component(#{
                 disabled:#{schema:#{type:"bool"},required:false,sensitive:false,
                     "default":#{type:"bool",value:false}},
             }
-        }}, required:true, sensitive:false },
+        }}}, required:false, sensitive:false },
+        virtual_data: #{ schema:#{type:"optional",value:#{type:"one_of",variants:[
+            #{type:"array",max_items:10000,items:#{type:"map",values:#{type:"ui_value"}}},
+            #{type:"collection"}
+        ]}}, required:false, sensitive:false },
+        label_key: #{schema:#{type:"string"},required:false,sensitive:false,
+            "default":#{type:"string",value:"label"}},
+        estimated_row_height: #{schema:#{type:"number",exclusive_min:0.0},required:false,sensitive:false,
+            "default":#{type:"float",value:40.0}},
+        height: #{schema:#{type:"optional",value:#{type:"number",exclusive_min:0.0}},required:false,sensitive:false},
+        fill_height: #{schema:#{type:"bool"},required:false,sensitive:false,"default":#{type:"bool",value:false}},
         direction: #{ schema:#{type:"string",allowed:["vertical","horizontal","grid"]},
             required:false,sensitive:false,"default":#{type:"string",value:"vertical"} },
         grid_columns: #{ schema:#{type:"integer",min:1,max:64},required:false,sensitive:false,
@@ -56,7 +66,65 @@ fn Sortable(props) { render_component("components/sortable", props) }
 fn sortable_commit(ctx, value) { ctx.emit("reorder", value); }
 fn sortable_disabled(item) { "disabled" in item && item.disabled }
 
+fn sortable_item_node(ctx,list_id,item,previous_key,next_key,first_key,last_key,direction,threshold,all_disabled){
+    let disabled=all_disabled||sortable_disabled(item);let ref_key=`${list_id}-item-${item.key}`;
+    let item_ref=element_ref(ref_key);let native=#{key:`${list_id}-${item.key}-sort`,list_id:list_id,
+        item_key:item.key,previous_key:previous_key,next_key:next_key,first_key:first_key,last_key:last_key,
+        direction:direction,threshold:threshold,disabled:disabled,item_ref:item_ref,on_reorder:Fn("sortable_commit")};
+    let interaction=gpui_rhai::SortableItemPrimitive(native).with_key(`${list_id}-${item.key}-interaction`)
+        .with_style(style().absolute().left(px(0)).right(px(0)).top(px(0)).bottom(px(0)))
+        .disabled(disabled).tab_stop(!disabled).accessibility_role("button").accessibility_label(`Reorder ${item.label}`);
+    let handle_style=style().relative().width(px(28)).min_height(px(28)).flex_shrink(false)
+        .items_center().justify_center().cursor_move().focus(style().background(theme_color("selection")));
+    let handle=box([text("≡").with_style(ctx.component_style("handle_icon",style().typography("body")
+        .text_color(theme_color("text_muted")))),interaction]).with_key(`${list_id}-${item.key}-handle`)
+        .with_style(ctx.component_style("handle",handle_style)).disabled(disabled);
+    let item_style=style().min_width(px(0)).items_center().border(px(1)).border_color(theme_color("border"))
+        .background(theme_color("surface"));let resolved=ctx.component_style("item",item_style);
+    if disabled{resolved=ctx.component_style("item_disabled",resolved.opacity(0.64));}
+    row([handle,item.content.with_key(`${list_id}-${item.key}-content`)
+        .with_style(ctx.component_style("content",style().min_width(px(0)).flex_grow()))])
+        .with_key(ref_key).with_ref(item_ref).with_style(resolved)
+        .accessibility_role("listitem").accessibility_label(item.label)
+}
+
+fn sortable_virtual_row(list_id,label_key,direction,threshold,disabled,ctx,payload){
+    let label=payload.item[label_key];
+    let item_disabled=disabled||(if "disabled" in payload.item{payload.item.disabled}else{false});
+    let native=#{key:`${list_id}-${payload.key}-sort`,list_id:list_id,item_key:payload.key,
+        previous_key:payload.previous_key,next_key:payload.next_key,first_key:payload.first_key,
+        last_key:payload.last_key,direction:direction,threshold:threshold,disabled:item_disabled,
+        on_reorder:Fn("sortable_commit")};
+    let interaction=gpui_rhai::SortableItemPrimitive(native).with_key(`${list_id}-${payload.key}-interaction`)
+        .with_style(style().absolute().left(px(0)).right(px(0)).top(px(0)).bottom(px(0)))
+        .disabled(item_disabled).tab_stop(!item_disabled).accessibility_role("button")
+        .accessibility_label(`Reorder ${label}`);
+    let resolved=ctx.component_style("item",style().relative().height(px(40)).min_width(px(0))
+        .items_center().padding_end(theme_spacing("sm")).border(px(1)).border_color(theme_color("border"))
+        .background(theme_color("surface")));
+    if item_disabled{resolved=ctx.component_style("item_disabled",resolved.opacity(0.64));}
+    row([text("≡").with_style(ctx.component_style("handle_icon",style().width(px(28)).text_center()
+        .text_color(theme_color("text_muted")))),text(label).with_style(ctx.component_style("content",style().flex_grow())),
+        interaction]).with_key(`${list_id}-item-${payload.key}`).with_style(resolved)
+        .accessibility_role("listitem").accessibility_label(label)
+}
+
 fn render_Sortable(ctx, props) {
+    let has_items="items" in props&&props.items!=();let has_virtual="virtual_data" in props&&props.virtual_data!=();
+    if has_items==has_virtual{throw "Sortable requires exactly one of items or virtual_data";}
+    if has_virtual{
+        if props.direction!="vertical"{throw "virtual Sortable currently requires vertical direction";}
+        if ("height" in props&&props.height!=())==props.fill_height{
+            throw "virtual Sortable requires exactly one of height or fill_height";
+        }
+        let config=#{key:`${props.key}-virtual`,label:props.label,data:props.virtual_data,
+            estimated_height:props.estimated_row_height};
+        if "height" in props&&props.height!=(){config.height=props.height;}else{config.fill_height=true;}
+        return virtual_collection(config,Fn("sortable_virtual_row").curry(props.key,props.label_key,
+            props.direction,props.threshold,props.disabled)).with_key(props.key)
+            .with_style(ctx.component_style("root",style().gap(theme_spacing("xs"))))
+            .accessibility_role("list").accessibility_label(props.label);
+    }
     let count = props.items.len;
     let nodes = [];
     let seen = #{};
@@ -67,46 +135,10 @@ fn render_Sortable(ctx, props) {
             let item = props.items[index];
             if item.key in seen { throw `Sortable item key '${item.key}' is duplicated`; }
             seen[item.key] = true;
-            let disabled = props.disabled || sortable_disabled(item);
             let previous_key = if index > 0 { props.items[index - 1].key } else { () };
             let next_key = if index + 1 < count { props.items[index + 1].key } else { () };
-            let ref_key = `${props.key}-item-${item.key}`;
-            let item_ref = element_ref(ref_key);
-            let native = #{ key:`${props.key}-${item.key}-sort`, list_id:props.key,
-                item_key:item.key, previous_key:previous_key, next_key:next_key,
-                first_key:first_key, last_key:last_key, direction:props.direction,
-                threshold:props.threshold, disabled:disabled, item_ref:item_ref,
-                on_reorder:if "on_reorder" in props && props.on_reorder != () {
-                    Fn("sortable_commit")
-                } else { () }
-            };
-            let interaction = gpui_rhai::SortableItemPrimitive(native)
-                .with_key(`${props.key}-${item.key}-interaction`)
-                .with_style(style().absolute().left(px(0)).right(px(0)).top(px(0)).bottom(px(0)))
-                .disabled(disabled).tab_stop(!disabled)
-                .accessibility_role("button")
-                .accessibility_label(`Reorder ${item.label}`);
-            let handle_style = style().relative().width(px(28)).min_height(px(28))
-                .flex_shrink(false).items_center().justify_center().cursor_move();
-            handle_style = handle_style.focus(style().background(theme_color("selection")));
-            let handle = box([
-                text("≡").with_style(ctx.component_style("handle_icon", style()
-                    .typography("body").text_color(theme_color("text_muted")))),
-                interaction
-            ]).with_key(`${props.key}-${item.key}-handle`)
-                .with_style(ctx.component_style("handle", handle_style))
-                .disabled(disabled);
-            let item_style = style().min_width(px(0)).items_center()
-                .border(px(1)).border_color(theme_color("border"))
-                .background(theme_color("surface"));
-            let resolved = ctx.component_style("item", item_style);
-            if disabled { resolved = ctx.component_style("item_disabled", resolved.opacity(0.64)); }
-            nodes.push(row([
-                handle,
-                item.content.with_key(`${props.key}-${item.key}-content`)
-                    .with_style(ctx.component_style("content", style().min_width(px(0)).flex_grow()))
-            ]).with_key(ref_key).with_ref(item_ref).with_style(resolved)
-                .accessibility_role("listitem").accessibility_label(item.label));
+            nodes.push(sortable_item_node(ctx,props.key,item,previous_key,next_key,first_key,last_key,
+                props.direction,props.threshold,props.disabled));
         }
     }
     let gap = if "gap" in props && props.gap != () { props.gap } else { theme_spacing("xs") };
