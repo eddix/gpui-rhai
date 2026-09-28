@@ -671,6 +671,7 @@ impl RuntimeEngine {
         register_motion_api(&mut engine);
         register_text_area_api(&mut engine);
         register_canvas_api(&mut engine);
+        crate::collection_projection::register_collection_projection_api(&mut engine);
         let evaluation_generation = Rc::new(Cell::new(ScriptGeneration::default()));
         let component_exports = ComponentExportCollector::new();
         let (component_render, component_renderers) = register_component_runtime_apis(
