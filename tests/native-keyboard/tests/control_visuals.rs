@@ -21,6 +21,7 @@ const SORTABLE: &str = include_str!("../../../registry/components/sortable.rhai"
 const SCROLL_AREA: &str = include_str!("../../../registry/components/scroll_area.rhai");
 const PAN_ZOOM: &str = include_str!("../../../registry/components/pan_zoom.rhai");
 const RANGE_SLIDER: &str = include_str!("../../../registry/components/range_slider.rhai");
+const ROTATABLE: &str = include_str!("../../../registry/components/rotatable.rhai");
 const ANIMATED_TABS: &str = include_str!("../../../registry/motion/animated_tabs.rhai");
 const DEFAULT_DARK: &str = include_str!("../../../registry/themes/default_dark.rhai");
 
@@ -102,6 +103,10 @@ fn mount_with_overrides(
             (
                 ModuleId::parse("components/range_slider").unwrap(),
                 RANGE_SLIDER.to_owned(),
+            ),
+            (
+                ModuleId::parse("components/rotatable").unwrap(),
+                ROTATABLE.to_owned(),
             ),
             (
                 ModuleId::parse("motion/animated_tabs").unwrap(),
@@ -1209,6 +1214,66 @@ fn view(ctx){let value=ctx.get_state("range");column([
     visual.simulate_mouse_up(high_point, MouseButton::Left, Modifiers::default());
     visual.run_until_parked();
     visual.simulate_keystrokes("left");
+    visual.run_until_parked();
+    let keyboard = status(&mut visual);
+    assert!(keyboard.ends_with(",2"), "status={keyboard}");
+}
+
+#[gpui::test]
+fn rotatable_keeps_an_explicit_pivot_and_commits_pointer_and_keyboard(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let script = r#"
+import "components/rotatable" as rotatable;
+fn state_schema(){#{fields:#{
+    angle:#{schema:#{type:"number"},"default":#{type:"float",value:0.0}},
+    commits:#{schema:#{type:"integer",min:0},"default":#{type:"integer",value:0}}
+}}}
+fn changed(ctx,value){ctx.set_state("angle",value);ctx.set_state("commits",ctx.get_state("commits")+1);}
+fn view(ctx){column([
+    text(`${ctx.get_state("angle")},${ctx.get_state("commits")}`).accessibility_role("status"),
+    rotatable::Rotatable(#{key:"arm",label:"Rotate arm",angle:ctx.get_state("angle"),
+        pivot:#{x:100.0,y:100.0},snap:15.0,handle:text("R"),
+        content:canvas(canvas_scene([canvas_rect("arm",100.0,90.0,80.0,20.0,theme_color("accent"))]))
+            .with_key("arm-canvas"),on_rotate:Fn("changed")})
+        .with_style(style().width(px(300)).height(px(220)))
+]).with_style(style().padding(px(12)).gap(px(8)))}
+"#;
+    let (window, view) = mount(cx, script, "rotatable");
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    let status = |visual: &mut VisualTestContext| {
+        visual.update(|_, cx| {
+            view.accessibility_snapshot(cx)
+                .unwrap()
+                .nodes()
+                .find(|node| node.role == "status")
+                .unwrap()
+                .name
+                .clone()
+        })
+    };
+    let handle = visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .find_by_role_and_name("slider", "Rotate arm")
+            .next()
+            .unwrap()
+            .geometry
+            .unwrap()
+            .visual
+    });
+    let start = point(
+        px((handle.x + handle.width / 2.0) as f32),
+        px((handle.y + handle.height / 2.0) as f32),
+    );
+    let target = point(start.x - px(80.0), start.y + px(120.0));
+    visual.simulate_mouse_down(start, MouseButton::Left, Modifiers::default());
+    visual.simulate_mouse_move(target, MouseButton::Left, Modifiers::default());
+    visual.simulate_mouse_up(target, MouseButton::Left, Modifiers::default());
+    visual.run_until_parked();
+    let pointer = status(&mut visual);
+    assert!(pointer.ends_with(",1"), "status={pointer}");
+
+    visual.simulate_keystrokes("tab right");
     visual.run_until_parked();
     let keyboard = status(&mut visual);
     assert!(keyboard.ends_with(",2"), "status={keyboard}");
