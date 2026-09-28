@@ -746,7 +746,7 @@ impl Project {
 }
 
 fn validate_gpui_dependency_family(path: &Path) -> Result<(), ProjectError> {
-    const GPUI_PRE_VERSION: &str = "=0.3.6";
+    const GPUI_PRE_VERSION: &str = "=0.3.7";
     let source = read(path)?;
     let manifest: toml::Value = toml::from_str(&source)?;
     let mut tables = Vec::new();
@@ -2057,14 +2057,14 @@ mod tests {
 
         fs::write(
             &cargo,
-            "[package]\nname = \"fixture\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\ngpui = { package = \"gpui-pre\", version = \"=0.3.6\", default-features = false }\ngpui_platform = { package = \"gpui-pre-platform\", version = \"=0.3.6\", default-features = false }\n",
+            "[package]\nname = \"fixture\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\ngpui = { package = \"gpui-pre\", version = \"=0.3.7\", default-features = false }\ngpui_platform = { package = \"gpui-pre-platform\", version = \"=0.3.7\", default-features = false }\n",
         )
         .unwrap();
         validate_gpui_dependency_family(&cargo).unwrap();
 
         fs::write(
             &cargo,
-            "[workspace]\nmembers = []\n\n[workspace.dependencies]\ngpui = { package = \"gpui-pre\", version = \"=0.3.6\", default-features = false }\ngpui_platform = { package = \"gpui-pre-platform\", version = \"=0.3.6\", default-features = false }\n\n[package]\nname = \"fixture\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\ngpui.workspace = true\ngpui_platform.workspace = true\n",
+            "[workspace]\nmembers = []\n\n[workspace.dependencies]\ngpui = { package = \"gpui-pre\", version = \"=0.3.7\", default-features = false }\ngpui_platform = { package = \"gpui-pre-platform\", version = \"=0.3.7\", default-features = false }\n\n[package]\nname = \"fixture\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\ngpui.workspace = true\ngpui_platform.workspace = true\n",
         )
         .unwrap();
         validate_gpui_dependency_family(&cargo).unwrap();

@@ -49,7 +49,6 @@ Complex component contracts:
 ## Develop the framework
 
 - [Architecture](architecture.md)
-- [gpui-pre 升级实施计划（待实施）](plans/2026-09-25-gpui-pre-upgrade.zh-CN.md)
 - [Performance budgets and baselines](performance.md)
 - [Development inspector](devtools.md)
 - [macOS visual and interaction test matrix](visual-testing.md)
@@ -59,7 +58,8 @@ Complex component contracts:
 - [Release notes and upgrade index](releases/README.md)
 - [0.1.0](releases/0.1.0.md), [0.1.1](releases/0.1.1.md),
   [0.1.2](releases/0.1.2.md), [0.1.3](releases/0.1.3.md),
-  [0.1.4](releases/0.1.4.md), and [0.1.5](releases/0.1.5.md)
+  [0.1.4](releases/0.1.4.md), [0.1.5](releases/0.1.5.md), and
+  [0.1.6](releases/0.1.6.md)
 - [Core Runtime v2 evidence ledger](core-runtime-v2-audit.md)
 
 Architecture decisions and their test evidence are recorded under

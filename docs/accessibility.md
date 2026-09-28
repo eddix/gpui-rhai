@@ -51,6 +51,9 @@ Accessibility and keyboard operation are release requirements.
   selected/expanded/toggled/current state, scalar and numeric values, ranges,
   orientation, required/invalid/disabled/read-only state, placeholders,
   shortcuts, set position and table row/column metadata to AccessKit.
+- Plain retained text maps to GPUI's native `Label` contract with a direct
+  AccessKit value. It is never published as a value-less `TextRun`; native
+  consumers may traverse every text run without an optional-value fallback.
 - Native AX Click/Focus follows GPUI's window dispatch. TextInput, Textarea,
   Slider and Chart register bounded primitive actions; SetValue and numeric
   steps re-enter the same controlled event flow as pointer and keyboard input.
@@ -107,16 +110,16 @@ datum as an AX node.
 
 ## Current upstream and platform boundaries
 
-The 0.1.6 implementation candidate uses the exact `gpui-pre 0.3.6` family.
+Version 0.1.6 uses the exact `gpui-pre 0.3.7` family, traced to Zed commit
+`1a28cff4b409169bac058bca40dfbfeb7621d19b`.
 This snapshot exposes public AccessKit roles, properties, synthetic children and
 actions, so the former GPUI 0.2.2 native-semantic limitation no longer applies.
 It remains a community-published snapshot of a traceable Zed commit, not a Zed
 release.
 
-The snapshot still lacks upstream text hit-test fix #64672. It is suitable for
-implementation and validation but remains blocked from release until a complete
-published family contains that fix or equivalent behavior is proved unreachable
-on every supported text path.
+This published snapshot contains upstream text hit-test fix #64672. Wrapped-line
+hit testing now treats a missing glyph hit as the end of the row rather than
+panicking on zero-width wrap-boundary glyphs.
 
 GPUI's application-level reduced-motion flag is synchronized only from the
 existing Host-owned policy; this release does not add a second OS preference

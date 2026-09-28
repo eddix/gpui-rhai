@@ -1,9 +1,9 @@
 # Core Runtime v2 implementation plan
 
-Next planned dependency iteration: [gpui-pre upgrade plan](docs/plans/2026-09-25-gpui-pre-upgrade.zh-CN.md).
-This is pending work against the 0.1.5 baseline, including platform adaptation,
-native accessibility, and release validation; it does not change the completed
-Runtime v2 contracts recorded below.
+Version 0.1.6 completes the direct gpui-pre 0.3.7 core/platform migration and
+native accessibility projection without changing Runtime API 2. Its historical
+implementation plan is retained by Git; current contracts live in the release,
+embedding, accessibility, and architecture documentation.
 
 ## 1. Execution policy
 

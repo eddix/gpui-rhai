@@ -106,7 +106,7 @@ Keep `gpui-rhai`, `gpui-rhai-registry` and `gpui-rhai-cli` on 0.1.6 together.
 Run `gpui-rhai update`, inspect its three-way source merges, then run
 `gpui-rhai check`. Runtime API remains 2 and existing Rhai sources remain
 compatible. Rust Hosts that directly use GPUI must replace official
-`gpui 0.2.2` with the exact `gpui-pre 0.3.6` core/platform family, or use
+`gpui 0.2.2` with the exact `gpui-pre 0.3.7` core/platform family, or use
 `gpui_rhai::gpui` and `gpui_rhai::gpui_platform` re-exports. The declared MSRV
 is Rust 1.95. See [Embedding](docs/embedding.md) for the exact manifest and
 entrypoint migration.

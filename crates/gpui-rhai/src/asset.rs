@@ -1193,7 +1193,7 @@ fn raster_image_format(format: ImageFormat) -> Option<image::ImageFormat> {
 }
 
 pub(crate) fn svg_image(bytes: &[u8], color: Option<Rgba8>) -> Result<Arc<Image>, AssetError> {
-    // gpui-pre 0.3.6 has a correct premultiplied-RGBA to BGRA SVG renderer.
+    // The gpui-pre 0.3.7 family has a correct premultiplied-RGBA to BGRA SVG renderer.
     // gpui-rhai intentionally keeps this complete-document adapter because it
     // also owns external currentColor substitution, bounded variant caching,
     // system-font fallback and off-foreground preparation. Encoding the

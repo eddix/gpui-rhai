@@ -5,10 +5,10 @@ All notable runtime, CLI, and registry changes are documented here. Version
 component schema, manifest, locale, and generated-source changes follow
 semantic versioning from this release.
 
-## 0.1.6 - Unreleased
+## 0.1.6 - 2026-09-28
 
 - The Rust backend moves from official `gpui 0.2.2` to the exact
-  `gpui-pre 0.3.6` core/platform family and raises MSRV to Rust 1.95. Rust
+  `gpui-pre 0.3.7` core/platform family and raises MSRV to Rust 1.95. Rust
   Hosts must use the same package identity; `gpui-rhai::gpui` and
   `gpui-rhai::gpui_platform` are the canonical re-exports. Rhai Runtime API 2
   and existing script/component contracts remain unchanged.
@@ -18,6 +18,8 @@ semantic versioning from this release.
 - Native Click/Focus follows GPUI dispatch. Input, Textarea, Slider and Chart
   expose bounded AX operations that re-enter existing controlled callbacks;
   disabled, read-only and stale targets reject actions.
+- Native plain text uses a valued AccessKit `Label`; VoiceOver does not receive
+  value-less `TextRun` wrappers that can abort traversal.
 - `gpui-rhai check` diagnoses old or mixed GPUI package families without
   rewriting application manifests. Standalone apps use
   `gpui_platform::application()` internally, while embedded and Host-owned
@@ -26,8 +28,9 @@ semantic versioning from this release.
   specimen. Enabled fields, choices, navigation, data controls, commands and
   overlays keep controlled example state, while its status bar reports the
   latest action and cumulative interaction count.
-- Release remains blocked on a published GPUI family containing upstream text
-  hit-test fix #64672 and on the documented macOS/Linux/dogfooding gates.
+- The final GPUI family contains upstream wrapped-line hit-test fix #64672.
+  macOS native accessibility/input and Linux X11/Wayland window smoke remain
+  release gates; application dogfooding feeds the 0.1.8 follow-up line.
 
 ## 0.1.5 - 2026-09-24
 
