@@ -31,6 +31,7 @@ security, testing, and troubleshooting.
 - [Native text documents and read-only viewers](document-viewers.md)
 - [Accessibility status](accessibility.md)
 - [Official component catalog](components/catalog.md)
+- [Direct manipulation and layout behaviors — implemented and planned](components/interaction-behaviors.md)
 
 Complex component contracts:
 
@@ -45,6 +46,8 @@ Complex component contracts:
 - [Command and CommandDialog](components/catalog.md#command-and-commanddialog)
 - [CodeViewer](components/code-viewer.md) and [DiffViewer](components/diff-viewer.md)
 - [Slider and ScrollArea](components/catalog.md#native-interaction-foundations)
+- [SplitPane](components/interaction-behaviors.md#splitpane--implemented) and
+  [Resizable](components/interaction-behaviors.md#resizable--implemented)
 
 ## Develop the framework
 
