@@ -15,7 +15,7 @@ does not imply availability in an already published crate.
 
 | Capability | Responsibility | Typical use | Current status |
 |---|---|---|---|
-| Draggable | Change one object's position in a declared coordinate space | Floating card, canvas node, movable overlay | Planned for 0.1.8 over the shared Interaction Runtime |
+| Draggable | Change one object's position in a declared coordinate space | Floating card, canvas node, movable overlay | Implemented as `components/draggable::Draggable` |
 | DragSource | Begin an in-app typed payload drag without changing accepted object position | Resource tile, command item, transferable card | Planned for 0.1.8; distinct from Draggable |
 | Resizable | Change one object's size or bounds using edges/handles | Floating card, image frame, adjustable content container | Implemented as `components/resizable::Resizable`; independent of SplitPane |
 | SplitPane | Redistribute a shared layout region between panels | Navigation/content, preview/source, horizontal or vertical split | Implemented as `components/split_pane::SplitPane` |
@@ -44,7 +44,7 @@ does not implement free-floating resizing. Independent operating-system window
 movement/resizing belongs to the Rust Host and native Window APIs, not to these
 in-window behaviors.
 
-## Draggable — planned
+## Draggable — implemented
 
 The caller owns the accepted position. The behavior defines its coordinate
 space, movable axes, optional boundary constraints, and a drag handle or eligible
@@ -60,6 +60,28 @@ Dragging a panel by its title region must not steal input from buttons, text
 selection, native editors, or scrollbars inside it. Define cancellation and a
 keyboard alternative for moving the object. Free positioning alone neither
 transfers data to another container nor changes collection order.
+
+| Props / event | Current meaning |
+|---|---|
+| `key`, `label` | Stable controlled identity and accessible interaction label |
+| `position` | Required controlled `{x,y}` in local logical pixels |
+| `content` | Required positioned object content |
+| `handle` | Optional dedicated handle node; absent means the whole object is eligible |
+| `axes` | `both`, `horizontal`, or `vertical` |
+| `contain` | Clamp the object to the local boundary; true by default |
+| `threshold` | Movement before drag activation; default 4 logical pixels |
+| `snap_x`, `snap_y` | Optional positive per-axis snap steps |
+| `keyboard_step` | Arrow-key step; Shift multiplies by four |
+| `disabled` | Suppress pointer and keyboard manipulation |
+| `on_move` / `move({x,y})` | One final controlled-position proposal |
+
+The native primitive preserves the initial grab offset because preview derives
+from total pointer delta, not the pointer's absolute origin. It cancels when the
+boundary changes during a gesture and restores the controlled position on
+Escape, pointer loss, disable, unmount or Host rejection.
+
+Source: [draggable.rhai](../../registry/components/draggable.rhai).
+Runnable story: `gpui-rhai gallery --story components/draggable`.
 
 ## Resizable — implemented
 

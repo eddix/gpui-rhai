@@ -1,6 +1,6 @@
 # Official component catalog
 
-gpui-rhai ships 53 editable Rhai source components. They all use the same
+gpui-rhai ships 54 editable Rhai source components. They all use the same
 public atoms and generic runtime mechanisms available to application code; no
 official component receives a private high-level node constructor.
 
@@ -60,8 +60,20 @@ final proposal. Style parts are `root`, `surface`, `content`, and `handle`.
 Source: [resizable.rhai](../../registry/components/resizable.rhai).
 Runnable story: `gpui-rhai gallery --story components/resizable`.
 
-The same [specification](interaction-behaviors.md) records the planned Draggable,
-DropZone, Sortable, PanZoom, SelectionArea, Rotatable, and DockLayout
+## Draggable
+
+`Draggable` controls one `{x,y}` position inside its local boundary. The caller
+provides content and may provide a distinct handle node; the component owns the
+internal element references. Pointer movement updates two optional-float native
+signals and release emits one `move({x,y})` proposal. Axis restriction,
+containment, per-axis snapping, drag threshold, keyboard step and disabled state
+share the Interaction Runtime used by Resizable and SplitPane.
+
+Source: [draggable.rhai](../../registry/components/draggable.rhai).
+Runnable story: `gpui-rhai gallery --story components/draggable`.
+
+The same [specification](interaction-behaviors.md) records the planned DropZone,
+Sortable, PanZoom, SelectionArea, Rotatable, and DockLayout
 capabilities, their composition rules, and acceptance requirements. These
 planned entries are not additional implemented components or callable exports.
 In particular, the existing Motion ReorderList animates an externally supplied
