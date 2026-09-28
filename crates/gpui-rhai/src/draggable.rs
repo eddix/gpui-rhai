@@ -243,7 +243,9 @@ fn register_pointer_down(
                 if gesture.moved() {
                     let next =
                         drag_position(&finish_config, gesture.delta(), boundary_size, object_size);
-                    finish_context.propose("move", position_value(next), window, cx);
+                    if position_changed(&finish_config, next) {
+                        finish_context.propose("move", position_value(next), window, cx);
+                    }
                 }
             };
         let cancel_config = config.clone();
@@ -334,6 +336,11 @@ fn position_value(position: (f64, f64)) -> UiValue {
     ]))
 }
 
+fn position_changed(config: &DragConfig, position: (f64, f64)) -> bool {
+    (position.0 - config.source_x).abs() > f64::EPSILON
+        || (position.1 - config.source_y).abs() > f64::EPSILON
+}
+
 #[derive(Default)]
 pub struct DraggablePrimitiveHandler;
 
@@ -387,7 +394,9 @@ impl PrimitiveHandler for DraggablePrimitiveHandler {
                     (boundary.width, boundary.height),
                     (object.width, object.height),
                 );
-                key_context.propose("move", position_value(next), window, cx);
+                if position_changed(&key_config, next) {
+                    key_context.propose("move", position_value(next), window, cx);
+                }
                 cx.stop_propagation();
             })
             .child(DragHandleElement {
