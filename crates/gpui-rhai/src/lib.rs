@@ -70,6 +70,7 @@ pub mod budget;
 pub mod canvas;
 pub mod capability;
 pub mod clock;
+mod collection_projection;
 pub mod motion;
 
 pub use gpui;
