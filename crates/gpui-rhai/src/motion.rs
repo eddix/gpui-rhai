@@ -3189,12 +3189,18 @@ fn collect_non_timeline_owners(
     for (property, _) in node.signal_bindings() {
         let property = match property {
             crate::SignalProperty::Opacity => Some(MotionProperty::Opacity),
-            crate::SignalProperty::TranslateX => Some(MotionProperty::TranslateX),
-            crate::SignalProperty::TranslateY => Some(MotionProperty::TranslateY),
+            crate::SignalProperty::TranslateX | crate::SignalProperty::TranslateXOverride => {
+                Some(MotionProperty::TranslateX)
+            }
+            crate::SignalProperty::TranslateY | crate::SignalProperty::TranslateYOverride => {
+                Some(MotionProperty::TranslateY)
+            }
             crate::SignalProperty::Width | crate::SignalProperty::WidthOverride => {
                 Some(MotionProperty::Width)
             }
-            crate::SignalProperty::Height => Some(MotionProperty::Height),
+            crate::SignalProperty::Height | crate::SignalProperty::HeightOverride => {
+                Some(MotionProperty::Height)
+            }
             crate::SignalProperty::Background
             | crate::SignalProperty::TextColor
             | crate::SignalProperty::BorderColor => None,

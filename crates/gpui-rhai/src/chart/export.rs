@@ -455,6 +455,7 @@ mod tests {
             annotations: Vec::new(),
             link_group: None,
             link_domain: None,
+            interaction: crate::ChartInteractionSpec::default(),
         };
         prepare_chart_data(
             spec,

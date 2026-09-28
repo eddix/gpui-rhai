@@ -1,13 +1,3 @@
-use std::collections::BTreeMap;
-
-use gpui_rhai::{EmbeddedScriptSource, EmbeddedScriptView, ModuleId, ScriptApplication};
-
-#[allow(dead_code)]
-#[path = "../../../registry/src/lib.rs"]
-mod registry_snapshot;
-use registry_snapshot::{BUNDLED_MOTION_SOURCES_BY_ID, DEFAULT_THEME, EN_LOCALE, TABS_SOURCE};
-
-const MAIN: &str = r#"
 import "motion/text_reveal" as text_reveal;
 import "motion/number_ticker" as number_ticker;
 import "motion/marquee" as marquee;
@@ -55,7 +45,7 @@ fn restart_demo(ctx, payload) {
 }
 fn control(key, label, handler) {
     text(label).with_key(key).test_id(key).accessibility_role("button").on_click(handler)
-        .with_style(style().padding_x(px(10)).padding_y(px(6))
+        .with_style(style().padding_x(theme_spacing("sm")).padding_y(theme_spacing("xs"))
             .border(px(1)).border_color(theme_color("border")))
 }
 
@@ -74,8 +64,8 @@ fn view(ctx) {
             #{ intent: "feedback" })),
     ]), #{ autoplay: false, on_complete: Fn("timeline_complete") });
     column([
-        text("MOTION GALLERY").with_style(theme_typography("heading")),
-        text("Runtime API 2 · native sampling · reduced-motion aware")
+        text("MOTION").with_style(theme_typography("heading")),
+        text("Native frame sampling, retained identity, and motion-preference policy.")
             .with_style(theme_typography("body_small").text_color(theme_color("text_muted"))),
         row([
             text_reveal::TextReveal(#{ key: "reveal", text: "Motion belongs to the runtime." }),
@@ -83,15 +73,16 @@ fn view(ctx) {
         ]).with_style(style().gap(theme_spacing("lg")).items_center()),
         marquee::Marquee(#{
             key: "marquee", distance: 420,
-            content: text(" RHАI FLEXIBILITY  ·  RUST HOT PATHS  ·  GPUI GPU PAINT ")
+            content: text(" RHAI FLEXIBILITY  ·  RUST HOT PATHS  ·  GPUI GPU PAINT ")
                 .with_style(theme_typography("subtitle")),
-        }).with_style(style().width(px(560)).height(px(34))),
+        }).with_style(style().width(relative(1.0)).height(px(34))),
         row([
             shimmer::Shimmer(#{ key: "shimmer", width: 220, height: 72 }),
             border_beam::BorderBeam(#{ key: "beam", width: 220, height: 72 }),
             orbit::Orbit(#{ key: "orbit", size: 96 }),
-        ]).with_style(style().gap(theme_spacing("lg")).items_center()),
-        particles::Particles(#{ key: "particles", width: 720, height: 240, count: 96 }),
+        ]).with_style(style().gap(theme_spacing("lg")).items_center().flex_wrap()),
+        particles::Particles(#{ key: "particles", width: 720, height: 240, count: 96 })
+            .with_style(style().width(relative(1.0))),
         row([
             text(`Timeline: ${ctx.get_state("timeline_status")}`).with_key("timeline-probe")
                 .timeline(demo_timeline).with_style(theme_typography("body")),
@@ -99,7 +90,7 @@ fn view(ctx) {
             control("pause", "Pause", Fn("pause_demo")),
             control("seek", "Seek", Fn("seek_demo")),
             control("restart", "Restart", Fn("restart_demo")),
-        ]).with_style(style().gap(px(8)).items_center()),
+        ]).with_style(style().gap(theme_spacing("sm")).items_center().flex_wrap()),
         animated_tabs::AnimatedTabs(#{ key: "tabs", value: ctx.get_state("active_tab"), label: "Runtime",
             tabs: [
                 #{ value: "motion", label: "Motion", content: text("Native frame sampling") },
@@ -109,54 +100,16 @@ fn view(ctx) {
         row([
             control("reorder", "Reverse order", Fn("toggle_order")),
             reorder_list::ReorderList(#{ key: "order", items: order }),
-        ]).with_style(style().gap(px(12)).items_center()),
+        ]).with_style(style().gap(theme_spacing("md")).items_center()),
         row([
             control("select-card", "Move selected card", Fn("toggle_card")),
             shared_layout_cards::SharedLayoutCards(#{ key: "cards",
                 selected: ctx.get_state("selected_card"), cards: [
-            #{ key: "alpha", title: "Alpha" }, #{ key: "beta", title: "Beta" }
-            ] }),
-        ]).with_style(style().gap(px(12)).items_center()),
-    ]).with_style(style().width(relative(1.0)).height(relative(1.0)).padding(px(28)).gap(px(24))
+                    #{ key: "alpha", title: "Alpha" }, #{ key: "beta", title: "Beta" }
+                ] }),
+        ]).with_style(style().gap(theme_spacing("md")).items_center()),
+    ]).with_style(style().width(relative(1.0)).min_height(relative(1.0))
+        .padding(theme_spacing("lg")).gap(theme_spacing("lg")).overflow_y_scroll()
         .background(theme_color("surface")).text_color(theme_color("text_primary")))
-}
-"#;
-
-fn source() -> EmbeddedScriptSource {
-    let mut modules = BTreeMap::from([(ModuleId::parse("main").unwrap(), MAIN.to_owned())]);
-    modules.extend(BUNDLED_MOTION_SOURCES_BY_ID.iter().map(|(id, source)| {
-        (
-            ModuleId::parse(*id).expect("static motion module id"),
-            (*source).to_owned(),
-        )
-    }));
-    modules.insert(
-        ModuleId::parse("components/tabs").unwrap(),
-        TABS_SOURCE.to_owned(),
-    );
-    EmbeddedScriptSource::new(modules)
-}
-
-pub(crate) fn prepared() -> Result<gpui_rhai::PreparedScriptView, gpui_rhai::ScriptViewError> {
-    EmbeddedScriptView::new(ModuleId::parse("main").unwrap(), source(), DEFAULT_THEME)
-        .locale_sources([("en.rhai".to_owned(), EN_LOCALE.to_owned())])
-        .prepare()
-}
-
-fn main() {
-    ScriptApplication::new(prepared().expect("motion gallery prepares"))
-        .window_size(980.0, 760.0)
-        .run()
-        .expect("motion gallery runs");
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn complete_motion_pack_prepares_together() {
-        prepared().unwrap();
-        assert_eq!(BUNDLED_MOTION_SOURCES_BY_ID.len(), 10);
-    }
+        .scrollbars("hidden", "auto")
 }

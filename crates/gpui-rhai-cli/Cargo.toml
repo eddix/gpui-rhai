@@ -12,6 +12,9 @@ documentation = "https://docs.rs/gpui-rhai-cli"
 keywords = ["gpui", "rhai", "cli", "components", "themes"]
 categories = ["gui", "development-tools"]
 
+[features]
+test-support = []
+
 [[bin]]
 name = "gpui-rhai"
 path = "src/main.rs"
@@ -19,7 +22,7 @@ doc = false
 
 [dependencies]
 clap.workspace = true
-gpui-rhai = { version = "0.1.6", path = "../gpui-rhai", features = ["charts"] }
+gpui-rhai = { version = "0.1.7", path = "../gpui-rhai", features = ["charts"] }
 gpui-rhai-registry.workspace = true
 semver.workspace = true
 serde.workspace = true

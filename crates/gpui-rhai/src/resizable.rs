@@ -1,0 +1,1140 @@
+//! Native hot-lane edge and corner handles for the public `Resizable` component.
+
+use std::cell::RefCell;
+use std::collections::BTreeMap;
+use std::rc::Rc;
+
+use gpui::{
+    AnyElement, App, Bounds, CursorStyle, DispatchPhase, Element, ElementId, FocusHandle,
+    GlobalElementId, Hitbox, HitboxBehavior, InspectorElementId, InteractiveElement, IntoElement,
+    KeyDownEvent, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
+    ParentElement, Pixels, Point, Style, Styled, Window, div, fill, point, px, relative, rgba,
+    size,
+};
+
+use crate::{
+    ComponentStateSchema, EventSchema, ObjectField, PrimitiveDescriptor, PrimitiveEventEmitter,
+    PrimitiveHandler, PrimitiveId, PrimitiveInstance, PrimitiveProps, PrimitiveTheme,
+    PrimitiveValue, Rgba8, SignalKind, SignalValue, UiValue, ValueSchema,
+};
+
+const MAX_RESIZE_DIMENSION: f64 = 16_384.0;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct ResizeRect {
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+}
+
+impl ResizeRect {
+    fn right(self) -> f64 {
+        self.x + self.width
+    }
+
+    fn bottom(self) -> f64 {
+        self.y + self.height
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ResizeHandle {
+    North,
+    South,
+    East,
+    West,
+    NorthEast,
+    NorthWest,
+    SouthEast,
+    SouthWest,
+}
+
+impl ResizeHandle {
+    fn parse(value: &str) -> Option<Self> {
+        match value {
+            "n" => Some(Self::North),
+            "s" => Some(Self::South),
+            "e" => Some(Self::East),
+            "w" => Some(Self::West),
+            "ne" => Some(Self::NorthEast),
+            "nw" => Some(Self::NorthWest),
+            "se" => Some(Self::SouthEast),
+            "sw" => Some(Self::SouthWest),
+            _ => None,
+        }
+    }
+
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::North => "n",
+            Self::South => "s",
+            Self::East => "e",
+            Self::West => "w",
+            Self::NorthEast => "ne",
+            Self::NorthWest => "nw",
+            Self::SouthEast => "se",
+            Self::SouthWest => "sw",
+        }
+    }
+
+    const fn moves_west(self) -> bool {
+        matches!(self, Self::West | Self::NorthWest | Self::SouthWest)
+    }
+
+    const fn moves_east(self) -> bool {
+        matches!(self, Self::East | Self::NorthEast | Self::SouthEast)
+    }
+
+    const fn moves_north(self) -> bool {
+        matches!(self, Self::North | Self::NorthEast | Self::NorthWest)
+    }
+
+    const fn moves_south(self) -> bool {
+        matches!(self, Self::South | Self::SouthEast | Self::SouthWest)
+    }
+
+    const fn moves_horizontal(self) -> bool {
+        self.moves_west() || self.moves_east()
+    }
+
+    const fn moves_vertical(self) -> bool {
+        self.moves_north() || self.moves_south()
+    }
+
+    const fn cursor(self) -> CursorStyle {
+        match self {
+            Self::North | Self::South => CursorStyle::ResizeUpDown,
+            Self::East | Self::West => CursorStyle::ResizeLeftRight,
+            Self::NorthEast | Self::SouthWest => CursorStyle::ResizeUpRightDownLeft,
+            Self::NorthWest | Self::SouthEast => CursorStyle::ResizeUpLeftDownRight,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ResizeConstraints {
+    min_width: f64,
+    min_height: f64,
+    max_width: f64,
+    max_height: f64,
+    aspect_ratio: Option<f64>,
+    contain: bool,
+}
+
+#[derive(Clone)]
+struct ResizableConfig {
+    id: String,
+    handle: ResizeHandle,
+    source: ResizeRect,
+    constraints: ResizeConstraints,
+    boundary_ref: crate::ElementRef,
+    x_signal: crate::NativeSignal,
+    y_signal: crate::NativeSignal,
+    width_signal: crate::NativeSignal,
+    height_signal: crate::NativeSignal,
+    keyboard_step: f64,
+    disabled: bool,
+    idle_color: Rgba8,
+    active_color: Rgba8,
+    focus: Option<FocusHandle>,
+}
+
+#[derive(Clone)]
+struct ResizableState(Rc<RefCell<ResizableStateInner>>);
+
+#[derive(Clone)]
+struct ResizableStateInner {
+    source: ResizeRect,
+    signals: [crate::SignalId; 4],
+    hovered: bool,
+    dragging: bool,
+    moved: bool,
+    start_position: Point<Pixels>,
+    boundary_width: f64,
+    boundary_height: f64,
+}
+
+impl ResizableState {
+    fn new(config: &ResizableConfig) -> Self {
+        Self(Rc::new(RefCell::new(ResizableStateInner {
+            source: config.source,
+            signals: signal_ids(config),
+            hovered: false,
+            dragging: false,
+            moved: false,
+            start_position: point(px(0.0), px(0.0)),
+            boundary_width: 0.0,
+            boundary_height: 0.0,
+        })))
+    }
+}
+
+fn signal_ids(config: &ResizableConfig) -> [crate::SignalId; 4] {
+    [
+        config.x_signal.id().clone(),
+        config.y_signal.id().clone(),
+        config.width_signal.id().clone(),
+        config.height_signal.id().clone(),
+    ]
+}
+
+struct ResizablePrepaint {
+    hitbox: Hitbox,
+    state: ResizableState,
+}
+
+struct ResizableHandleElement {
+    config: ResizableConfig,
+    events: PrimitiveEventEmitter,
+}
+
+impl IntoElement for ResizableHandleElement {
+    type Element = Self;
+
+    fn into_element(self) -> Self::Element {
+        self
+    }
+}
+
+impl Element for ResizableHandleElement {
+    type RequestLayoutState = ();
+    type PrepaintState = ResizablePrepaint;
+
+    fn id(&self) -> Option<ElementId> {
+        Some(ElementId::Name(self.config.id.clone().into()))
+    }
+
+    fn source_location(&self) -> Option<&'static core::panic::Location<'static>> {
+        None
+    }
+
+    fn request_layout(
+        &mut self,
+        _: Option<&GlobalElementId>,
+        _: Option<&InspectorElementId>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> (LayoutId, Self::RequestLayoutState) {
+        (
+            window.request_layout(
+                Style {
+                    size: size(relative(1.0).into(), relative(1.0).into()),
+                    ..Style::default()
+                },
+                None,
+                cx,
+            ),
+            (),
+        )
+    }
+
+    fn prepaint(
+        &mut self,
+        _: Option<&GlobalElementId>,
+        _: Option<&InspectorElementId>,
+        bounds: Bounds<Pixels>,
+        (): &mut Self::RequestLayoutState,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Self::PrepaintState {
+        let state = window
+            .use_state(cx, |_, _| ResizableState::new(&self.config))
+            .read(cx)
+            .clone();
+        let reset = {
+            let mut inner = state.0.borrow_mut();
+            let signals = signal_ids(&self.config);
+            let changed = inner.source != self.config.source || inner.signals != signals;
+            if changed {
+                inner.source = self.config.source;
+                inner.signals = signals;
+                inner.dragging = false;
+                inner.moved = false;
+            }
+            changed
+        };
+        if reset {
+            clear_preview(&self.events, &self.config, window, cx);
+        }
+        ResizablePrepaint {
+            hitbox: window.insert_hitbox(bounds, HitboxBehavior::BlockMouseExceptScroll),
+            state,
+        }
+    }
+
+    fn paint(
+        &mut self,
+        _: Option<&GlobalElementId>,
+        _: Option<&InspectorElementId>,
+        bounds: Bounds<Pixels>,
+        (): &mut Self::RequestLayoutState,
+        prepaint: &mut Self::PrepaintState,
+        window: &mut Window,
+        _: &mut App,
+    ) {
+        let dragging = prepaint.state.0.borrow().dragging;
+        let hovered = !self.config.disabled && prepaint.hitbox.is_hovered(window);
+        let color = if dragging || hovered {
+            self.config.active_color
+        } else {
+            self.config.idle_color
+        };
+        paint_handle(bounds, self.config.handle, color, dragging, window);
+        if !self.config.disabled {
+            window.set_cursor_style(self.config.handle.cursor(), &prepaint.hitbox);
+        }
+        register_pointer_listeners(prepaint, self.config.clone(), self.events.clone(), window);
+    }
+}
+
+fn paint_handle(
+    bounds: Bounds<Pixels>,
+    handle: ResizeHandle,
+    color: Rgba8,
+    dragging: bool,
+    window: &mut Window,
+) {
+    let thickness = if dragging { px(2.0) } else { px(1.0) };
+    let visual = if handle.moves_horizontal() && handle.moves_vertical() {
+        let side = if dragging { px(7.0) } else { px(5.0) };
+        Bounds::new(
+            point(
+                bounds.origin.x + (bounds.size.width - side) / 2.0,
+                bounds.origin.y + (bounds.size.height - side) / 2.0,
+            ),
+            size(side, side),
+        )
+    } else if handle.moves_horizontal() {
+        Bounds::new(
+            point(
+                bounds.origin.x + (bounds.size.width - thickness) / 2.0,
+                bounds.origin.y + px(4.0),
+            ),
+            size(thickness, (bounds.size.height - px(8.0)).max(px(1.0))),
+        )
+    } else {
+        Bounds::new(
+            point(
+                bounds.origin.x + px(4.0),
+                bounds.origin.y + (bounds.size.height - thickness) / 2.0,
+            ),
+            size((bounds.size.width - px(8.0)).max(px(1.0)), thickness),
+        )
+    };
+    window.paint_quad(fill(visual, rgba(color.as_rgba_hex())));
+}
+
+#[allow(clippy::too_many_lines)]
+fn register_pointer_listeners(
+    prepaint: &ResizablePrepaint,
+    config: ResizableConfig,
+    events: PrimitiveEventEmitter,
+    window: &mut Window,
+) {
+    let view = window.current_view();
+    let hitbox = prepaint.hitbox.clone();
+    let down_state = prepaint.state.clone();
+    let down_config = config.clone();
+    let down_events = events.clone();
+    window.on_mouse_event(move |event: &MouseDownEvent, phase, window, cx| {
+        if phase != DispatchPhase::Bubble
+            || event.button != MouseButton::Left
+            || down_config.disabled
+            || !hitbox.is_hovered(window)
+        {
+            return;
+        }
+        let Some(boundary) = down_events.element_bounds(&down_config.boundary_ref, cx) else {
+            return;
+        };
+        if down_config.constraints.contain
+            && !rect_within_boundary(down_config.source, (boundary.width, boundary.height))
+        {
+            return;
+        }
+        if let Some(focus) = down_config.focus.as_ref() {
+            focus.focus(window, cx);
+        }
+        let mut inner = down_state.0.borrow_mut();
+        inner.dragging = true;
+        inner.moved = false;
+        inner.start_position = event.position;
+        inner.boundary_width = boundary.width;
+        inner.boundary_height = boundary.height;
+        cx.stop_propagation();
+        cx.notify(view);
+    });
+
+    let move_state = prepaint.state.clone();
+    let move_hitbox = prepaint.hitbox.clone();
+    let move_config = config.clone();
+    let move_events = events.clone();
+    window.on_mouse_event(move |event: &MouseMoveEvent, _, window, cx| {
+        let snapshot = move_state.0.borrow().clone();
+        if !snapshot.dragging {
+            let hovered = move_hitbox.is_hovered(window);
+            let mut inner = move_state.0.borrow_mut();
+            if inner.hovered != hovered {
+                inner.hovered = hovered;
+                cx.notify(view);
+            }
+            return;
+        }
+        if !event.dragging() {
+            cancel_drag(&move_state, &move_events, &move_config, window, cx, view);
+            return;
+        }
+        let Some(boundary) = move_events.element_bounds(&move_config.boundary_ref, cx) else {
+            cancel_drag(&move_state, &move_events, &move_config, window, cx, view);
+            return;
+        };
+        if (boundary.width - snapshot.boundary_width).abs() > 0.5
+            || (boundary.height - snapshot.boundary_height).abs() > 0.5
+        {
+            cancel_drag(&move_state, &move_events, &move_config, window, cx, view);
+            return;
+        }
+        let dx = f64::from(event.position.x - snapshot.start_position.x);
+        let dy = f64::from(event.position.y - snapshot.start_position.y);
+        if dx.abs() < f64::EPSILON && dy.abs() < f64::EPSILON {
+            return;
+        }
+        move_state.0.borrow_mut().moved = true;
+        let rect = resize_rect(
+            move_config.source,
+            move_config.handle,
+            dx,
+            dy,
+            move_config.constraints,
+            (snapshot.boundary_width, snapshot.boundary_height),
+        );
+        write_preview(&move_events, &move_config, Some(rect), cx);
+        cx.stop_propagation();
+        cx.notify(view);
+    });
+
+    let up_state = prepaint.state.clone();
+    let up_config = config;
+    let up_events = events;
+    window.on_mouse_event(move |event: &MouseUpEvent, phase, window, cx| {
+        if phase != DispatchPhase::Bubble || event.button != MouseButton::Left {
+            return;
+        }
+        let snapshot = up_state.0.borrow().clone();
+        if !snapshot.dragging {
+            return;
+        }
+        {
+            let mut inner = up_state.0.borrow_mut();
+            inner.dragging = false;
+            inner.moved = false;
+        }
+        clear_preview(&up_events, &up_config, window, cx);
+        if snapshot.moved {
+            let boundary_unchanged = up_events
+                .element_bounds(&up_config.boundary_ref, cx)
+                .is_some_and(|boundary| {
+                    (boundary.width - snapshot.boundary_width).abs() <= 0.5
+                        && (boundary.height - snapshot.boundary_height).abs() <= 0.5
+                });
+            if !boundary_unchanged {
+                cx.stop_propagation();
+                cx.notify(view);
+                return;
+            }
+            let dx = f64::from(event.position.x - snapshot.start_position.x);
+            let dy = f64::from(event.position.y - snapshot.start_position.y);
+            let rect = resize_rect(
+                up_config.source,
+                up_config.handle,
+                dx,
+                dy,
+                up_config.constraints,
+                (snapshot.boundary_width, snapshot.boundary_height),
+            );
+            let deferred = up_events.clone();
+            let payload = resize_payload(rect, up_config.handle);
+            window.defer(cx, move |window, cx| {
+                let _ = deferred.emit("resize", payload, window, cx);
+            });
+        }
+        cx.stop_propagation();
+        cx.notify(view);
+    });
+}
+
+fn cancel_drag(
+    state: &ResizableState,
+    events: &PrimitiveEventEmitter,
+    config: &ResizableConfig,
+    window: &mut Window,
+    cx: &mut App,
+    view: gpui::EntityId,
+) {
+    {
+        let mut inner = state.0.borrow_mut();
+        inner.dragging = false;
+        inner.moved = false;
+    }
+    clear_preview(events, config, window, cx);
+    cx.notify(view);
+}
+
+fn clear_preview(
+    events: &PrimitiveEventEmitter,
+    config: &ResizableConfig,
+    window: &mut Window,
+    cx: &mut App,
+) {
+    let events = events.clone();
+    let config = config.clone();
+    window.defer(cx, move |_, cx| write_preview(&events, &config, None, cx));
+}
+
+fn write_preview(
+    events: &PrimitiveEventEmitter,
+    config: &ResizableConfig,
+    rect: Option<ResizeRect>,
+    cx: &mut App,
+) {
+    let x = rect.map(|rect| rect.x - config.source.x);
+    let y = rect.map(|rect| rect.y - config.source.y);
+    let width = rect.map(|rect| rect.width);
+    let height = rect.map(|rect| rect.height);
+    let _ = events.write_signal(&config.x_signal, SignalValue::OptionalFloat(x), cx);
+    let _ = events.write_signal(&config.y_signal, SignalValue::OptionalFloat(y), cx);
+    let _ = events.write_signal(&config.width_signal, SignalValue::OptionalFloat(width), cx);
+    let _ = events.write_signal(
+        &config.height_signal,
+        SignalValue::OptionalFloat(height),
+        cx,
+    );
+}
+
+fn keyboard_delta(handle: ResizeHandle, key: &str, step: f64) -> Option<(f64, f64)> {
+    match key {
+        "left" if handle.moves_horizontal() => Some((-step, 0.0)),
+        "right" if handle.moves_horizontal() => Some((step, 0.0)),
+        "up" if handle.moves_vertical() => Some((0.0, -step)),
+        "down" if handle.moves_vertical() => Some((0.0, step)),
+        _ => None,
+    }
+}
+
+fn resize_rect(
+    source: ResizeRect,
+    handle: ResizeHandle,
+    dx: f64,
+    dy: f64,
+    constraints: ResizeConstraints,
+    boundary: (f64, f64),
+) -> ResizeRect {
+    if let Some(aspect_ratio) = constraints.aspect_ratio {
+        resize_rect_aspect(source, handle, dx, dy, constraints, boundary, aspect_ratio)
+    } else {
+        resize_rect_free(source, handle, dx, dy, constraints, boundary)
+    }
+}
+
+fn resize_rect_free(
+    source: ResizeRect,
+    handle: ResizeHandle,
+    dx: f64,
+    dy: f64,
+    constraints: ResizeConstraints,
+    boundary: (f64, f64),
+) -> ResizeRect {
+    let mut rect = source;
+    if handle.moves_west() {
+        let maximum = horizontal_max(source, handle, constraints, boundary.0);
+        rect.width = clamp_dimension(source.width - dx, constraints.min_width, maximum);
+        rect.x = source.right() - rect.width;
+    } else if handle.moves_east() {
+        let maximum = horizontal_max(source, handle, constraints, boundary.0);
+        rect.width = clamp_dimension(source.width + dx, constraints.min_width, maximum);
+    }
+    if handle.moves_north() {
+        let maximum = vertical_max(source, handle, constraints, boundary.1);
+        rect.height = clamp_dimension(source.height - dy, constraints.min_height, maximum);
+        rect.y = source.bottom() - rect.height;
+    } else if handle.moves_south() {
+        let maximum = vertical_max(source, handle, constraints, boundary.1);
+        rect.height = clamp_dimension(source.height + dy, constraints.min_height, maximum);
+    }
+    rect
+}
+
+fn resize_rect_aspect(
+    source: ResizeRect,
+    handle: ResizeHandle,
+    dx: f64,
+    dy: f64,
+    constraints: ResizeConstraints,
+    boundary: (f64, f64),
+    aspect_ratio: f64,
+) -> ResizeRect {
+    let raw_width = if handle.moves_west() {
+        source.width - dx
+    } else if handle.moves_east() {
+        source.width + dx
+    } else {
+        source.width
+    };
+    let raw_height = if handle.moves_north() {
+        source.height - dy
+    } else if handle.moves_south() {
+        source.height + dy
+    } else {
+        source.height
+    };
+    let desired_width = if handle.moves_horizontal() && handle.moves_vertical() {
+        let from_width_error = (raw_width / aspect_ratio - raw_height).abs();
+        let from_height_error = (raw_height * aspect_ratio - raw_width).abs();
+        if from_width_error <= from_height_error {
+            raw_width
+        } else {
+            raw_height * aspect_ratio
+        }
+    } else if handle.moves_horizontal() {
+        raw_width
+    } else {
+        raw_height * aspect_ratio
+    };
+    let max_width = horizontal_max(source, handle, constraints, boundary.0)
+        .min(vertical_max(source, handle, constraints, boundary.1) * aspect_ratio);
+    let min_width = constraints
+        .min_width
+        .max(constraints.min_height * aspect_ratio)
+        .min(max_width);
+    let width = desired_width.clamp(min_width, max_width);
+    let height = width / aspect_ratio;
+    let x = if handle.moves_west() {
+        source.right() - width
+    } else if handle.moves_east() {
+        source.x
+    } else {
+        source.x + (source.width - width) / 2.0
+    };
+    let y = if handle.moves_north() {
+        source.bottom() - height
+    } else if handle.moves_south() {
+        source.y
+    } else {
+        source.y + (source.height - height) / 2.0
+    };
+    ResizeRect {
+        x,
+        y,
+        width,
+        height,
+    }
+}
+
+fn horizontal_max(
+    source: ResizeRect,
+    handle: ResizeHandle,
+    constraints: ResizeConstraints,
+    boundary_width: f64,
+) -> f64 {
+    if !constraints.contain {
+        return constraints.max_width;
+    }
+    let boundary_max = if handle.moves_west() {
+        source.right().max(0.0)
+    } else if handle.moves_east() {
+        (boundary_width - source.x).max(0.0)
+    } else {
+        let center = source.x + source.width / 2.0;
+        (2.0 * center.min((boundary_width - center).max(0.0))).max(0.0)
+    };
+    constraints.max_width.min(boundary_max)
+}
+
+fn vertical_max(
+    source: ResizeRect,
+    handle: ResizeHandle,
+    constraints: ResizeConstraints,
+    boundary_height: f64,
+) -> f64 {
+    if !constraints.contain {
+        return constraints.max_height;
+    }
+    let boundary_max = if handle.moves_north() {
+        source.bottom().max(0.0)
+    } else if handle.moves_south() {
+        (boundary_height - source.y).max(0.0)
+    } else {
+        let center = source.y + source.height / 2.0;
+        (2.0 * center.min((boundary_height - center).max(0.0))).max(0.0)
+    };
+    constraints.max_height.min(boundary_max)
+}
+
+fn clamp_dimension(value: f64, minimum: f64, maximum: f64) -> f64 {
+    value.clamp(minimum.min(maximum), maximum)
+}
+
+fn rect_within_boundary(rect: ResizeRect, boundary: (f64, f64)) -> bool {
+    rect.x >= 0.0
+        && rect.y >= 0.0
+        && rect.right() <= boundary.0 + 0.5
+        && rect.bottom() <= boundary.1 + 0.5
+}
+
+fn resize_payload(rect: ResizeRect, handle: ResizeHandle) -> UiValue {
+    UiValue::Map(BTreeMap::from([
+        ("x".to_owned(), UiValue::Float(rect.x)),
+        ("y".to_owned(), UiValue::Float(rect.y)),
+        ("width".to_owned(), UiValue::Float(rect.width)),
+        ("height".to_owned(), UiValue::Float(rect.height)),
+        (
+            "handle".to_owned(),
+            UiValue::String(handle.as_str().to_owned()),
+        ),
+    ]))
+}
+
+#[derive(Default)]
+pub struct ResizablePrimitiveHandler;
+
+impl PrimitiveHandler for ResizablePrimitiveHandler {
+    fn uses_primary_focus(&self) -> bool {
+        true
+    }
+
+    fn render(
+        &mut self,
+        instance: &PrimitiveInstance,
+        events: &PrimitiveEventEmitter,
+        theme: &PrimitiveTheme,
+        _: &mut Window,
+        _: &mut App,
+    ) -> Result<AnyElement, String> {
+        let config = parse_config(
+            &instance.node.props,
+            instance.focus_handle().cloned(),
+            theme,
+        )?;
+        let key_config = config.clone();
+        let key_events = events.clone();
+        let mut root = div().size_full();
+        if let Some(focus) = config.focus.as_ref() {
+            root = root.track_focus(&focus.clone().tab_stop(!config.disabled));
+        }
+        Ok(root
+            .on_key_down(move |event: &KeyDownEvent, window, cx| {
+                if key_config.disabled {
+                    return;
+                }
+                let step = if event.keystroke.modifiers.shift {
+                    key_config.keyboard_step * 4.0
+                } else {
+                    key_config.keyboard_step
+                };
+                let Some((dx, dy)) =
+                    keyboard_delta(key_config.handle, event.keystroke.key.as_str(), step)
+                else {
+                    return;
+                };
+                let Some(boundary) = key_events.element_bounds(&key_config.boundary_ref, cx) else {
+                    return;
+                };
+                if key_config.constraints.contain
+                    && !rect_within_boundary(key_config.source, (boundary.width, boundary.height))
+                {
+                    return;
+                }
+                let rect = resize_rect(
+                    key_config.source,
+                    key_config.handle,
+                    dx,
+                    dy,
+                    key_config.constraints,
+                    (boundary.width, boundary.height),
+                );
+                let _ = key_events.emit(
+                    "resize",
+                    resize_payload(rect, key_config.handle),
+                    window,
+                    cx,
+                );
+                cx.stop_propagation();
+            })
+            .child(ResizableHandleElement {
+                config,
+                events: events.clone(),
+            })
+            .into_any_element())
+    }
+}
+
+fn parse_config(
+    props: &PrimitiveProps,
+    focus: Option<FocusHandle>,
+    theme: &PrimitiveTheme,
+) -> Result<ResizableConfig, String> {
+    let handle = string_prop(props, "handle")
+        .as_deref()
+        .and_then(ResizeHandle::parse)
+        .ok_or_else(|| "resizable handle must be n, s, e, w, ne, nw, se, or sw".to_owned())?;
+    let source = ResizeRect {
+        x: required_number(props, "x")?,
+        y: required_number(props, "y")?,
+        width: required_number(props, "width")?,
+        height: required_number(props, "height")?,
+    };
+    let constraints = ResizeConstraints {
+        min_width: number_prop(props, "min_width").unwrap_or(24.0),
+        min_height: number_prop(props, "min_height").unwrap_or(24.0),
+        max_width: number_prop(props, "max_width").unwrap_or(MAX_RESIZE_DIMENSION),
+        max_height: number_prop(props, "max_height").unwrap_or(MAX_RESIZE_DIMENSION),
+        aspect_ratio: optional_number_prop(props, "aspect_ratio")?,
+        contain: bool_prop(props, "contain").unwrap_or(true),
+    };
+    validate_geometry(source, constraints)?;
+    let x_signal = required_optional_float_signal(props, "x_signal")?;
+    let y_signal = required_optional_float_signal(props, "y_signal")?;
+    let width_signal = required_optional_float_signal(props, "width_signal")?;
+    let height_signal = required_optional_float_signal(props, "height_signal")?;
+    let keyboard_step = number_prop(props, "keyboard_step").unwrap_or(8.0);
+    if !keyboard_step.is_finite() || !(0.0..=512.0).contains(&keyboard_step) || keyboard_step == 0.0
+    {
+        return Err("resizable keyboard_step must be finite and in (0, 512]".to_owned());
+    }
+    Ok(ResizableConfig {
+        id: format!(
+            "gpui-rhai-resizable:{}:{}:{handle:?}",
+            width_signal.id().component(),
+            width_signal.id().key()
+        ),
+        handle,
+        source,
+        constraints,
+        boundary_ref: ref_prop(props, "boundary_ref")
+            .ok_or_else(|| "resizable requires boundary_ref".to_owned())?,
+        x_signal,
+        y_signal,
+        width_signal,
+        height_signal,
+        keyboard_step,
+        disabled: bool_prop(props, "disabled").unwrap_or(false),
+        idle_color: theme
+            .color("border")
+            .unwrap_or(Rgba8::from_rgba_hex(0x5555_55ff)),
+        active_color: theme
+            .color("accent")
+            .unwrap_or(Rgba8::from_rgba_hex(0x3b82_f6ff)),
+        focus,
+    })
+}
+
+fn validate_geometry(source: ResizeRect, constraints: ResizeConstraints) -> Result<(), String> {
+    let values = [
+        source.x,
+        source.y,
+        source.width,
+        source.height,
+        constraints.min_width,
+        constraints.min_height,
+        constraints.max_width,
+        constraints.max_height,
+    ];
+    if values.iter().any(|value| !value.is_finite())
+        || source.width <= 0.0
+        || source.height <= 0.0
+        || constraints.min_width <= 0.0
+        || constraints.min_height <= 0.0
+        || constraints.max_width < constraints.min_width
+        || constraints.max_height < constraints.min_height
+        || constraints.max_width > MAX_RESIZE_DIMENSION
+        || constraints.max_height > MAX_RESIZE_DIMENSION
+        || constraints
+            .aspect_ratio
+            .is_some_and(|ratio| !ratio.is_finite() || ratio <= 0.0)
+    {
+        return Err("resizable rectangle and constraints are invalid".to_owned());
+    }
+    Ok(())
+}
+
+fn required_number(props: &PrimitiveProps, name: &str) -> Result<f64, String> {
+    number_prop(props, name).ok_or_else(|| format!("resizable requires numeric {name}"))
+}
+
+fn number_prop(props: &PrimitiveProps, name: &str) -> Option<f64> {
+    match props.get(name) {
+        Some(PrimitiveValue::Data(UiValue::Float(value))) => Some(*value),
+        Some(PrimitiveValue::Data(UiValue::Integer(value))) => value.to_string().parse().ok(),
+        _ => None,
+    }
+}
+
+fn optional_number_prop(props: &PrimitiveProps, name: &str) -> Result<Option<f64>, String> {
+    match props.get(name) {
+        None | Some(PrimitiveValue::Data(UiValue::Null)) => Ok(None),
+        Some(_) => number_prop(props, name)
+            .map(Some)
+            .ok_or_else(|| format!("resizable {name} must be an optional number")),
+    }
+}
+
+fn string_prop(props: &PrimitiveProps, name: &str) -> Option<String> {
+    match props.get(name) {
+        Some(PrimitiveValue::Data(UiValue::String(value))) => Some(value.clone()),
+        _ => None,
+    }
+}
+
+fn bool_prop(props: &PrimitiveProps, name: &str) -> Option<bool> {
+    match props.get(name) {
+        Some(PrimitiveValue::Data(UiValue::Bool(value))) => Some(*value),
+        _ => None,
+    }
+}
+
+fn required_optional_float_signal(
+    props: &PrimitiveProps,
+    name: &str,
+) -> Result<crate::NativeSignal, String> {
+    let signal = match props.get(name) {
+        Some(PrimitiveValue::Signal(signal)) => signal.clone(),
+        _ => return Err(format!("resizable requires signal {name}")),
+    };
+    if signal.id().kind() != SignalKind::OptionalFloat {
+        return Err(format!("resizable {name} must be optional_float"));
+    }
+    Ok(signal)
+}
+
+fn ref_prop(props: &PrimitiveProps, name: &str) -> Option<crate::ElementRef> {
+    match props.get(name) {
+        Some(PrimitiveValue::Ref(reference)) => Some(reference.clone()),
+        _ => None,
+    }
+}
+
+fn rect_schema() -> ValueSchema {
+    ValueSchema::object(BTreeMap::from([
+        ("x".to_owned(), ObjectField::required(ValueSchema::number())),
+        ("y".to_owned(), ObjectField::required(ValueSchema::number())),
+        (
+            "width".to_owned(),
+            ObjectField::required(ValueSchema::positive_number()),
+        ),
+        (
+            "height".to_owned(),
+            ObjectField::required(ValueSchema::positive_number()),
+        ),
+        (
+            "handle".to_owned(),
+            ObjectField::required(ValueSchema::String {
+                allowed: vec![
+                    "n".to_owned(),
+                    "s".to_owned(),
+                    "e".to_owned(),
+                    "w".to_owned(),
+                    "ne".to_owned(),
+                    "nw".to_owned(),
+                    "se".to_owned(),
+                    "sw".to_owned(),
+                ],
+            }),
+        ),
+    ]))
+}
+
+fn bounded_dimension_schema() -> ValueSchema {
+    ValueSchema::Number {
+        min: None,
+        max: Some(MAX_RESIZE_DIMENSION),
+        exclusive_min: Some(0.0),
+        exclusive_max: None,
+    }
+}
+
+/// Build the native `Resizable` edge/corner primitive schema.
+///
+/// # Panics
+///
+/// Panics only if the static built-in primitive ID becomes invalid.
+#[must_use]
+pub fn resizable_primitive_descriptor() -> PrimitiveDescriptor {
+    let optional_number = || ObjectField::optional(ValueSchema::optional(ValueSchema::number()));
+    PrimitiveDescriptor {
+        id: PrimitiveId::parse("gpui_rhai.resizable_handle").expect("static primitive ID"),
+        export: "ResizableHandlePrimitive".to_owned(),
+        props: BTreeMap::from([
+            (
+                "handle".to_owned(),
+                ObjectField::required(ValueSchema::String {
+                    allowed: vec![
+                        "n".to_owned(),
+                        "s".to_owned(),
+                        "e".to_owned(),
+                        "w".to_owned(),
+                        "ne".to_owned(),
+                        "nw".to_owned(),
+                        "se".to_owned(),
+                        "sw".to_owned(),
+                    ],
+                }),
+            ),
+            ("x".to_owned(), ObjectField::required(ValueSchema::number())),
+            ("y".to_owned(), ObjectField::required(ValueSchema::number())),
+            (
+                "width".to_owned(),
+                ObjectField::required(ValueSchema::positive_number()),
+            ),
+            (
+                "height".to_owned(),
+                ObjectField::required(ValueSchema::positive_number()),
+            ),
+            (
+                "min_width".to_owned(),
+                ObjectField::optional(bounded_dimension_schema()),
+            ),
+            (
+                "min_height".to_owned(),
+                ObjectField::optional(bounded_dimension_schema()),
+            ),
+            (
+                "max_width".to_owned(),
+                ObjectField::optional(bounded_dimension_schema()),
+            ),
+            (
+                "max_height".to_owned(),
+                ObjectField::optional(bounded_dimension_schema()),
+            ),
+            ("aspect_ratio".to_owned(), optional_number()),
+            (
+                "contain".to_owned(),
+                ObjectField::optional(ValueSchema::Bool).with_default(UiValue::Bool(true)),
+            ),
+            (
+                "keyboard_step".to_owned(),
+                ObjectField::optional(ValueSchema::Number {
+                    min: None,
+                    max: Some(512.0),
+                    exclusive_min: Some(0.0),
+                    exclusive_max: None,
+                }),
+            ),
+            (
+                "disabled".to_owned(),
+                ObjectField::optional(ValueSchema::Bool).with_default(UiValue::Bool(false)),
+            ),
+            (
+                "boundary_ref".to_owned(),
+                ObjectField::required(ValueSchema::Ref),
+            ),
+            (
+                "x_signal".to_owned(),
+                ObjectField::required(ValueSchema::Signal),
+            ),
+            (
+                "y_signal".to_owned(),
+                ObjectField::required(ValueSchema::Signal),
+            ),
+            (
+                "width_signal".to_owned(),
+                ObjectField::required(ValueSchema::Signal),
+            ),
+            (
+                "height_signal".to_owned(),
+                ObjectField::required(ValueSchema::Signal),
+            ),
+            (
+                "on_resize".to_owned(),
+                ObjectField::optional(ValueSchema::optional(ValueSchema::Callback)),
+            ),
+        ]),
+        events: BTreeMap::from([(
+            "resize".to_owned(),
+            EventSchema {
+                payload: rect_schema(),
+            },
+        )]),
+        state: ComponentStateSchema::default(),
+        lifecycle: false,
+        effect: None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn constraints(aspect_ratio: Option<f64>) -> ResizeConstraints {
+        ResizeConstraints {
+            min_width: 40.0,
+            min_height: 30.0,
+            max_width: 500.0,
+            max_height: 400.0,
+            aspect_ratio,
+            contain: true,
+        }
+    }
+
+    #[test]
+    fn west_and_north_handles_keep_the_opposite_corner_fixed() {
+        let source = ResizeRect {
+            x: 100.0,
+            y: 80.0,
+            width: 200.0,
+            height: 120.0,
+        };
+        let resized = resize_rect(
+            source,
+            ResizeHandle::NorthWest,
+            -30.0,
+            -20.0,
+            constraints(None),
+            (600.0, 500.0),
+        );
+        assert!((resized.x - 70.0).abs() < f64::EPSILON);
+        assert!((resized.y - 60.0).abs() < f64::EPSILON);
+        assert!((resized.right() - source.right()).abs() < f64::EPSILON);
+        assert!((resized.bottom() - source.bottom()).abs() < f64::EPSILON);
+        let east_boundary = resize_rect(
+            source,
+            ResizeHandle::East,
+            500.0,
+            0.0,
+            constraints(None),
+            (350.0, 500.0),
+        );
+        assert!((east_boundary.width - 250.0).abs() < f64::EPSILON);
+        let west_boundary = resize_rect(
+            source,
+            ResizeHandle::West,
+            -500.0,
+            0.0,
+            constraints(None),
+            (600.0, 500.0),
+        );
+        assert!((west_boundary.x - 0.0).abs() < f64::EPSILON);
+        assert!((west_boundary.width - 300.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn containment_and_aspect_ratio_clamp_one_atomic_rect() {
+        let source = ResizeRect {
+            x: 120.0,
+            y: 90.0,
+            width: 160.0,
+            height: 90.0,
+        };
+        let resized = resize_rect(
+            source,
+            ResizeHandle::SouthEast,
+            500.0,
+            500.0,
+            constraints(Some(16.0 / 9.0)),
+            (420.0, 300.0),
+        );
+        assert!(resized.right() <= 420.0 + f64::EPSILON);
+        assert!(resized.bottom() <= 300.0 + f64::EPSILON);
+        assert!((resized.width / resized.height - 16.0 / 9.0).abs() < 1e-9);
+    }
+}

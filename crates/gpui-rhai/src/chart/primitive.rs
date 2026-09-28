@@ -23,7 +23,7 @@ use super::{
     ChartDataLimits, ChartDataSnapshot, ChartDataset, ChartFormatterRegistry, ChartGeoRegistry,
     ChartMark, ChartMarkGeometry, ChartMarkRole, ChartPoint, ChartPreparedData, ChartRect,
     ChartSeriesRegistry, ChartSpec, ChartTheme, ChartTransformRegistry, ChartViewport,
-    NativeChartData, PreparedChartScene, apply_chart_selection, chart_region_rect,
+    ChartWheelZoom, NativeChartData, PreparedChartScene, apply_chart_selection, chart_region_rect,
     layout_chart_scene_with_axis_windows, prepare_chart_data,
 };
 use crate::{
@@ -1377,6 +1377,19 @@ impl ChartEntity {
     }
 
     fn wheel(&mut self, event: &ScrollWheelEvent, window: &mut Window, cx: &mut Context<Self>) {
+        let explicit_gesture_ending = matches!(event.touch_phase, gpui::TouchPhase::Ended)
+            && self.wheel_gesture == ChartWheelGesture::Explicit
+            && self.viewport_preview_dirty;
+        let wheel_zoom_enabled = match self.config.spec.interaction.wheel_zoom {
+            ChartWheelZoom::Off => false,
+            ChartWheelZoom::Modifier => {
+                event.modifiers.control || event.modifiers.platform || explicit_gesture_ending
+            }
+            ChartWheelZoom::Always => true,
+        };
+        if !wheel_zoom_enabled {
+            return;
+        }
         let delta = event.delta.pixel_delta(px(16.0));
         if matches!(event.touch_phase, gpui::TouchPhase::Ended) {
             self.wheel_gesture = ChartWheelGesture::PhaseLess;

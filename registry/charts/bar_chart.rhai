@@ -2,7 +2,7 @@
 {
   "id": "charts/bar_chart",
   "export": "BarChart",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": ["charts/chart"],
   "capabilities": {}
@@ -17,14 +17,14 @@
 import "charts/chart" as chart;
 
 define_component(#{
-    metadata: #{ id: "charts/bar_chart", "export": "BarChart", version: "0.1.6",
+    metadata: #{ id: "charts/bar_chart", "export": "BarChart", version: "0.1.7",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: ["charts/chart"], capabilities: #{} },
     schema: #{ props: #{
         key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
         data: #{ schema: #{ type: "one_of", variants: [#{ type: "array", items: #{ type: "ui_value" }, max_items: 10000 }, #{ type: "chart_data" }] }, required: true, sensitive: false },
         encode: #{ schema: #{ type: "optional", value: #{ type: "ui_value" } }, required: false, sensitive: false },
         key_dimension: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
-        title: #{ schema: #{ type: "string" }, required: false, sensitive: false, "default": #{ type: "string", value: "Bar" } },
+        title: #{ schema: #{ type: "string" }, required: false, sensitive: false },
         series_key: #{ schema: #{ type: "string" }, required: false, sensitive: false, "default": #{ type: "string", value: "series" } },
         series_name: #{ schema: #{ type: "string" }, required: false, sensitive: false, "default": #{ type: "string", value: "Series" } },
         spec: #{ schema: #{ type: "optional", value: #{ type: "ui_value" } }, required: false, sensitive: false },

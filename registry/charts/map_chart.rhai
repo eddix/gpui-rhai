@@ -2,7 +2,7 @@
 {
   "id": "charts/map_chart",
   "export": "MapChart",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": ["charts/chart"],
   "capabilities": {}
@@ -17,7 +17,7 @@
 import "charts/chart" as chart;
 
 define_component(#{
-    metadata: #{ id: "charts/map_chart", "export": "MapChart", version: "0.1.6",
+    metadata: #{ id: "charts/map_chart", "export": "MapChart", version: "0.1.7",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: ["charts/chart"], capabilities: #{} },
     schema: #{ props: #{
         key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
@@ -26,7 +26,7 @@ define_component(#{
         map: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
         projection: #{ schema: #{ type: "string" }, required: false, sensitive: false, "default": #{ type: "string", value: "equirectangular" } },
         key_dimension: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
-        title: #{ schema: #{ type: "string" }, required: false, sensitive: false, "default": #{ type: "string", value: "Map" } },
+        title: #{ schema: #{ type: "string" }, required: false, sensitive: false },
         series_key: #{ schema: #{ type: "string" }, required: false, sensitive: false, "default": #{ type: "string", value: "series" } },
         series_name: #{ schema: #{ type: "string" }, required: false, sensitive: false, "default": #{ type: "string", value: "Series" } },
         spec: #{ schema: #{ type: "optional", value: #{ type: "ui_value" } }, required: false, sensitive: false },

@@ -300,6 +300,68 @@ impl UiRuntimeState {
         Ok(())
     }
 
+    /// Select the app-level theme from trusted Host code without resetting script state.
+    ///
+    /// # Errors
+    ///
+    /// Returns when no theme manager is installed or the selection is unknown.
+    pub fn select_theme_from_host(
+        &mut self,
+        family: &str,
+        variant: &str,
+    ) -> Result<bool, crate::ThemeError> {
+        let theme = self.theme.as_mut().ok_or(crate::ThemeError::NoVariants)?;
+        let previous = theme.generation();
+        theme.set_app(ThemePreference::Fixed {
+            selection: ThemeSelection::new(family, variant),
+        })?;
+        let changed = theme.generation() != previous;
+        if changed {
+            let invalidated = self.environment_dependencies.invalidate_theme_app();
+            self.dirty.extend(invalidated);
+            self.mark_all_windows_dirty();
+        }
+        Ok(changed)
+    }
+
+    /// Select the app-level locale from trusted Host code without resetting script state.
+    ///
+    /// # Errors
+    ///
+    /// Returns when no locale manager is installed or the locale is unknown.
+    pub fn select_locale_from_host(&mut self, locale: &str) -> Result<bool, crate::LocaleError> {
+        let locales = self
+            .locale
+            .as_mut()
+            .ok_or_else(|| crate::LocaleError::UnknownLocale(locale.to_owned()))?;
+        let previous = locales.generation();
+        locales.set_app(locale)?;
+        let changed = locales.generation() != previous;
+        if changed {
+            let invalidated = self.environment_dependencies.invalidate_locale_app();
+            self.dirty.extend(invalidated);
+            self.mark_all_windows_repaint();
+        }
+        Ok(changed)
+    }
+
+    /// Replace the Host-owned motion preference without resetting script state.
+    ///
+    /// Returns whether the effective preference changed. Reduced and disabled
+    /// motion settle active work through the same central runtime policy used
+    /// during initial view construction.
+    pub fn set_motion_preference_from_host(&mut self, preference: crate::MotionPreference) -> bool {
+        let previous = self.motions.preference();
+        self.motions.set_preference(preference);
+        let changed = self.motions.preference() != previous;
+        if changed {
+            let now = self.clock.now();
+            self.motion_values = self.motions.snapshot(now);
+            self.mark_all_windows_dirty();
+        }
+        changed
+    }
+
     /// Atomically replace application-wide formal-component style rules.
     ///
     /// Equal replacements are ignored. A changed sheet invalidates every
@@ -5109,5 +5171,25 @@ mod tests {
                     && (*x - 12.0).abs() < f64::EPSILON
                     && (*y - 24.0).abs() < f64::EPSILON
         ));
+    }
+
+    #[test]
+    fn host_motion_preference_changes_without_replacing_runtime_state() {
+        let mut runtime = UiRuntimeState::new();
+        runtime.motions = crate::MotionRuntime::new(crate::MotionPreference::Normal);
+        runtime.responsive.update_window("main", 480.0).unwrap();
+
+        assert!(!runtime.set_motion_preference_from_host(crate::MotionPreference::Normal));
+        assert!(runtime.set_motion_preference_from_host(crate::MotionPreference::Reduced));
+        assert_eq!(
+            runtime.motions.preference(),
+            crate::MotionPreference::Reduced
+        );
+        assert_eq!(
+            runtime.responsive.class("main"),
+            crate::ViewportClass::Compact
+        );
+        assert!(runtime.set_motion_preference_from_host(crate::MotionPreference::None));
+        assert_eq!(runtime.motions.preference(), crate::MotionPreference::None);
     }
 }

@@ -21,20 +21,11 @@ use gpui_rhai::{
     UiNodeKind, UiRuntimeState, UiValue, init_text_area, init_text_input,
     text_input_primitive_descriptor,
 };
+use gpui_rhai_cli::gallery::{GalleryLaunch, prepare as prepare_gallery};
 
 #[allow(dead_code)]
-#[path = "../../../crates/gpui-rhai/examples/table_1000.rs"]
+#[path = "../../../crates/gpui-rhai/examples/internal/performance/table_1000.rs"]
 mod table_1000_example;
-
-// Both gallery examples intentionally embed the release registry snapshot so
-// this independent harness exercises their real preparation paths together.
-#[allow(clippy::duplicate_mod, dead_code)]
-#[path = "../../../crates/gpui-rhai/examples/component_gallery.rs"]
-mod component_gallery_example;
-
-#[allow(clippy::duplicate_mod, dead_code)]
-#[path = "../../../crates/gpui-rhai/examples/motion_gallery.rs"]
-mod motion_gallery_example;
 
 struct ImageSourceProbe {
     source: ImageSource,
@@ -291,6 +282,101 @@ fn host_slot_renders_native_content_without_leaking_events_to_rhai(cx: &mut Test
     let mut texts = Vec::new();
     node_texts(&root, &mut texts);
     assert!(texts.contains(&"script:0".to_owned()), "{texts:?}");
+}
+
+#[gpui::test]
+fn host_slot_does_not_consume_text_input_before_ime_delivery(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let resident_entry = ModuleId::parse("resident").unwrap();
+    let input_module = ModuleId::parse("components/input").unwrap();
+    let resident = EmbeddedScriptView::new(
+        resident_entry.clone(),
+        EmbeddedScriptSource::new(std::collections::BTreeMap::from([
+            (
+                resident_entry,
+                r#"
+                    import "components/input" as input;
+                    fn state_schema() { #{ fields: #{ value: #{ schema: #{ type: "string" },
+                        "default": #{ type: "string", value: "" } } } } }
+                    fn changed(ctx, value) { ctx.set_state("value", value); }
+                    fn view(ctx) {
+                        column([
+                            input::Input(#{ key: "resident-input", label: "Resident input",
+                                value: ctx.get_state("value"), autofocus: true,
+                                on_change: Fn("changed") }),
+                            text(`resident:${ctx.get_state("value")}`)
+                        ])
+                    }
+                "#
+                .to_owned(),
+            ),
+            (
+                input_module,
+                include_str!("../../../registry/components/input.rhai").to_owned(),
+            ),
+        ])),
+        include_str!("../../../registry/themes/default_dark.rhai"),
+    )
+    .prepare()
+    .unwrap();
+    let shell_entry = ModuleId::parse("shell").unwrap();
+    let captured = Rc::new(RefCell::new(None));
+    let captured_for_window = Rc::clone(&captured);
+    let window = cx.add_window(move |window, cx| {
+        let shell_host = ScriptViewHost::new("ime-shell-host", cx).unwrap();
+        let resident_host = ScriptViewHost::new("ime-resident-host", cx).unwrap();
+        let resident = resident
+            .mount(
+                ScriptViewConfig::new("ime-resident-view"),
+                resident_host,
+                window,
+                cx,
+            )
+            .unwrap();
+        let slots = HostSlotRegistry::new()
+            .with_script_view("content", resident.clone())
+            .unwrap();
+        let shell = EmbeddedScriptView::new(
+            shell_entry.clone(),
+            EmbeddedScriptSource::new(std::collections::BTreeMap::from([(
+                shell_entry,
+                r#"fn view(ctx) {
+                    gpui_rhai::HostSlot(#{ key: "slot", name: "content" })
+                        .with_style(style().width(px(320)).height(px(100)))
+                }"#
+                .to_owned(),
+            )])),
+            include_str!("../../../registry/themes/default_dark.rhai"),
+        )
+        .extension(slots)
+        .prepare()
+        .unwrap()
+        .mount(
+            ScriptViewConfig::new("ime-shell-view"),
+            shell_host.clone(),
+            window,
+            cx,
+        )
+        .unwrap();
+        *captured_for_window.borrow_mut() = Some(resident);
+        SingleEmbeddedHost {
+            host: shell_host,
+            view: shell,
+        }
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    cx.run_until_parked();
+
+    cx.simulate_input(*window, "中文");
+    let resident = captured.borrow().as_ref().unwrap().clone();
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    wait_for_view_text(
+        &mut visual,
+        &resident,
+        "resident:中文",
+        "HostSlot must not mark printable keys handled before IME insertion",
+    );
 }
 
 #[gpui::test]
@@ -3856,6 +3942,10 @@ fn grouped_table_headers_stick_through_the_native_virtual_list(cx: &mut TestAppC
                 table,
                 include_str!("../../../registry/components/table.rhai").to_owned(),
             ),
+            (
+                ModuleId::parse("components/badge").unwrap(),
+                include_str!("../../../registry/components/badge.rhai").to_owned(),
+            ),
         ])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
@@ -4049,6 +4139,10 @@ fn table_flex_columns_distribute_remaining_width_by_weight(cx: &mut TestAppConte
                 ModuleId::parse("components/table").unwrap(),
                 include_str!("../../../registry/components/table.rhai").to_owned(),
             ),
+            (
+                ModuleId::parse("components/badge").unwrap(),
+                include_str!("../../../registry/components/badge.rhai").to_owned(),
+            ),
         ])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
@@ -4161,6 +4255,10 @@ fn table_column_resize_previews_natively_and_emits_once_on_commit(cx: &mut TestA
             (
                 ModuleId::parse("components/table").unwrap(),
                 include_str!("../../../registry/components/table.rhai").to_owned(),
+            ),
+            (
+                ModuleId::parse("components/badge").unwrap(),
+                include_str!("../../../registry/components/badge.rhai").to_owned(),
             ),
         ])),
         include_str!("../../../registry/themes/default_dark.rhai"),
@@ -4498,6 +4596,10 @@ fn table_does_not_expand_an_auto_min_width_host_flex_column_across_frames(cx: &m
             (
                 ModuleId::parse("components/table").unwrap(),
                 include_str!("../../../registry/components/table.rhai").to_owned(),
+            ),
+            (
+                ModuleId::parse("components/badge").unwrap(),
+                include_str!("../../../registry/components/badge.rhai").to_owned(),
             ),
         ])),
         include_str!("../../../registry/themes/default_dark.rhai"),
@@ -6538,9 +6640,13 @@ fn native_text_document_revision_invalidates_exact_viewer_reader(cx: &mut TestAp
 }
 
 #[gpui::test]
-fn component_gallery_switches_categories_and_live_themes(cx: &mut TestAppContext) {
+fn component_catalog_story_switches_categories_and_live_themes(cx: &mut TestAppContext) {
     cx.update(gpui_rhai::install);
-    let prepared = component_gallery_example::prepared("foundations").unwrap();
+    let prepared = prepare_gallery(&GalleryLaunch {
+        story: "components/catalog".to_owned(),
+        ..GalleryLaunch::default()
+    })
+    .unwrap();
     let captured = Rc::new(RefCell::new(None));
     let captured_for_window = Rc::clone(&captured);
     let window = cx.add_window(move |window, cx| {
@@ -6762,9 +6868,13 @@ fn set_theme_during_typing_keeps_input_focus(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn motion_gallery_mounts_and_renders_a_real_frame(cx: &mut TestAppContext) {
+fn motion_catalog_story_mounts_and_renders_a_real_frame(cx: &mut TestAppContext) {
     cx.update(gpui_rhai::install);
-    let prepared = motion_gallery_example::prepared().expect("prepare the official motion gallery");
+    let prepared = prepare_gallery(&GalleryLaunch {
+        story: "motion/catalog".to_owned(),
+        ..GalleryLaunch::default()
+    })
+    .expect("prepare the official Motion story");
     let captured = Rc::new(RefCell::new(None));
     let captured_for_window = Rc::clone(&captured);
     let window = cx.add_window(move |window, cx| {

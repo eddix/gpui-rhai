@@ -21,11 +21,15 @@ typography. See the [release and upgrade index](docs/releases/README.md). The au
 contract is in [INTENT.md](INTENT.md), and the dependency-ordered implementation
 plan is in [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md).
 
-The 0.1.6 development line upgrades the Rust backend to the exact gpui-pre
+Version 0.1.6 upgrades the Rust backend to the exact gpui-pre
 core/platform family, raises MSRV to Rust 1.95, and projects the retained
 semantic frame into native AccessKit. Runtime API 2 and existing Rhai sources
 remain compatible; Rust Hosts must align their GPUI package identity. See
 [Accessibility](docs/accessibility.md) and [Embedding](docs/embedding.md).
+
+Version 0.1.7 adds the formal Gallery/Operations acceptance
+application plus independent `SplitPane` and `Resizable` source components,
+both with controlled native drag preview and keyboard-accessible handles.
 
 The implemented complex-control line is specified under
 [docs/components](docs/components/) for DatePicker, Select, Table, Pagination,
@@ -66,6 +70,10 @@ all-component specimen. It creates, opens, imports-as-copy, validates, previews,
 and saves gpui-rhai `.rhai` themes; see [Theme Studio](docs/theme-studio.md) and
 the [bundled theme catalog](docs/bundled-themes.md).
 
+`gallery` opens the formal acceptance application: searchable source-backed
+Component/Motion/Chart stories plus the connected Operations Workbench. See
+[Gallery and acceptance application](docs/gallery.md).
+
 Run the repository example with:
 
 ```text
@@ -74,18 +82,20 @@ cargo run -p gpui-rhai --example settings_panel
 cargo run -p gpui-rhai --example dashboard_layout
 cargo run -p gpui-rhai --example form_showcase
 cargo run -p gpui-rhai --example data_table
-cargo run -p gpui-rhai --example component_gallery
-cargo run --release -p gpui-rhai --example motion_gallery
+cargo run --release -p gpui-rhai-cli -- gallery --story components/catalog
+cargo run --release -p gpui-rhai-cli -- gallery --story motion/catalog
+cargo run --release -p gpui-rhai-cli -- gallery --story charts/catalog
 cargo run --release -p gpui-rhai --example code_viewer
 cargo run --release -p gpui-rhai --example diff_viewer
-cargo run --release -p gpui-rhai --example table_1000
-cargo run --release -p gpui-rhai --features charts --example chart_gallery
 cargo run -p gpui-rhai-cli -- theme-studio
 cargo run -p gpui-rhai --example extension_host
 cargo run -p gpui-rhai --example host_owned_tree
 cargo run -p gpui-rhai --example multi_window
 cargo run -p gpui-rhai --example embedded_views
 ```
+
+See [the example index](examples/README.md) for copyable tutorials and the
+separately classified internal performance/smoke targets.
 
 Standalone applications explicitly adapt a prepared view into a window-owning
 application:

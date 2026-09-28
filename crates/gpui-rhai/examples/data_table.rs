@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use gpui_rhai::{AssetData, EmbeddedScriptSource, EmbeddedScriptView, ModuleId, ScriptApplication};
 
 const TABLE: &str = include_str!("../../../registry/components/table.rhai");
+const BADGE: &str = include_str!("../../../registry/components/badge.rhai");
 const PAGINATION: &str = include_str!("../../../registry/components/pagination.rhai");
 const SKELETON: &str = include_str!("../../../registry/components/skeleton.rhai");
 const BUTTON: &str = include_str!("../../../registry/components/button.rhai");
@@ -238,6 +239,7 @@ fn data_table_view(theme: &str, locale: &str, visual_state: &str) -> EmbeddedScr
     let scripts = EmbeddedScriptSource::new(BTreeMap::from([
         module("main", &main_source),
         module("components/table", TABLE),
+        module("components/badge", BADGE),
         module("components/pagination", PAGINATION),
         module("components/skeleton", SKELETON),
         module("components/button", BUTTON),

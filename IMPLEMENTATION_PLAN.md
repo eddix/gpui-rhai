@@ -5,6 +5,12 @@ native accessibility projection without changing Runtime API 2. Its historical
 implementation plan is retained by Git; current contracts live in the release,
 embedding, accessibility, and architecture documentation.
 
+Version 0.1.7 completes the source-backed Gallery, Operations Workbench,
+acceptance-story and example-classification workstream. Its historical plan is
+retained by Git; maintained contracts live in the Gallery, component,
+verification and release documentation. Omarchy integration and custom UI zoom
+remain separate future work.
+
 ## 1. Execution policy
 
 This plan implements the final Core Runtime v2 described by `INTENT.md`.
@@ -450,10 +456,11 @@ shims.
 
 - Register every component and transitive dependency in the CLI, metadata,
   definitions, copied-source update path, and Theme Studio.
-- Add one polished `component_gallery` example that interactively exercises all
-  51 official components, category navigation, all theme hot switches, and
-  important controlled states. Theme Studio remains the exhaustive theme-state
-  contract; the gallery is the user-facing experience demo.
+- Maintain the polished `gpui-rhai gallery --story components/catalog`
+  acceptance surface for all 53 official components, category navigation,
+  theme hot switches, responsive/Motion controls, and important controlled
+  states. Theme Studio reuses the curated design specimen; Gallery is the
+  user-facing experience demo and source authority.
 - Update User Guide, component authoring/API docs, examples, release notes,
   source audit, and component count assertions.
 - Certify pointer, keyboard, focus, accessibility, RTL, reduced motion, resize,
@@ -486,8 +493,9 @@ rustdoc, package, release build, and checked-in visual baseline audits pass.
 - Require explicit accessible names for interactive fields, choices,
   navigation, overlays, menus, and progress; placeholders remain visual hints,
   never implicit names. Decorative Icon instances use presentation semantics.
-- Keep Breadcrumb, persistent Sidebar, Tree, Resizable composition, editor, and
-  terminal work outside this release. Future source components may extend the
+- Keep Breadcrumb, persistent Sidebar, Tree, editor, and terminal work outside
+  this release. Resizable later landed as an independent 0.1.7 rectangle
+  composition rather than expanding SplitPane. Future source components may extend the
   catalog without weakening or duplicating the frozen primitives.
 - Treat the generic motion/property-source system as the principal `0.1.3`
   product workstream. Component-specific animation shortcuts are not part of

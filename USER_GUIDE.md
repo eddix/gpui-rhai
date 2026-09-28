@@ -52,7 +52,7 @@ See [Architecture](docs/architecture.md) for the complete runtime design.
 Install the versioned CLI from crates.io:
 
 ```text
-cargo install gpui-rhai-cli --version 0.1.6 --locked
+cargo install gpui-rhai-cli --version 0.1.7 --locked
 ```
 
 Then, from a Cargo application root:
@@ -99,6 +99,19 @@ present it writes `gpui-rhai-host-snippet.rs` for deliberate integration.
 ```toml
 gpui-rhai = { version = "0.1", features = ["dev-reload"] }
 ```
+
+### Upgrading an existing application to 0.1.7
+
+Keep `gpui-rhai`, `gpui-rhai-registry` and `gpui-rhai-cli` on 0.1.7 together.
+Run `gpui-rhai update`, review the Table, Tabs, Chart, SplitPane and Resizable
+source changes, then run `gpui-rhai check`. Replace the removed legacy Gallery
+examples with `gpui-rhai gallery`; the source-backed Explore catalog and
+Operations Workbench are the maintained acceptance application. Runtime API
+remains 2.
+
+Rust Hosts may change a mounted view theme, locale or Motion preference through
+`ScriptViewHandle` without reconstructing the view. Hosts upgrading from 0.1.5
+or earlier must also complete the 0.1.6 GPUI package-identity migration below.
 
 ### Upgrading an existing application to 0.1.6
 
@@ -309,9 +322,10 @@ intentional one-off. Edit the copied component source when the product needs a
 structural or behavioral fork; do not hide one behind a growing stack of visual
 overrides. See [Component stylesheets](docs/component-styles.md).
 
-The bundled catalog contains 51 official source components. Version 0.1.2
-freezes their IDs, exports, controlled-state boundaries, semantic events, size
-vocabulary, and style-part contract as the component foundation:
+The bundled catalog contains 53 official source components. Version 0.1.2
+froze the original 51 IDs, exports, controlled-state boundaries, semantic
+events, size vocabulary, and style-part contract as the component foundation;
+0.1.7 adds the independent SplitPane and Resizable compositions without weakening that contract:
 
 - foundations and status: Label, Divider, Icon, Avatar, Badge, Tag, Alert,
   Card, GroupBox, Empty, Kbd, Progress, Spinner, Skeleton, TitleBar, and
@@ -320,18 +334,37 @@ vocabulary, and style-part contract as the component foundation:
   Switch, Toggle, ToggleGroup, and Slider;
 - forms: Input, InputGroup, Textarea, FormField, Combobox, Select, and
   DatePicker;
-- navigation and data: Tabs, Accordion, Collapsible, Menu, Pagination, Table,
-  and ScrollArea;
+- navigation, layout, and data: Tabs, Accordion, Collapsible, Menu, Pagination,
+  Table, ScrollArea, SplitPane, and Resizable;
 - commands and overlays: Command, CommandDialog, ContextMenu, Popover, Dialog,
   AlertDialog, Sheet, Tooltip, and Toast;
 - read-only documents: CodeViewer and DiffViewer;
 - primitives for Box/Text/Image/SVG/Canvas, layout, scrolling, refs, signals,
   layers, and generic overlays.
 
-Run `cargo run -p gpui-rhai --example component_gallery` for the interactive
-catalog with category navigation and live switching across all bundled themes.
+Run `cargo run --release -p gpui-rhai-cli -- gallery --story components/catalog`
+for the authoritative interactive catalog with category navigation, cases,
+responsive viewport presets, Motion preferences, live themes, locales, and the
+exact running Rhai source.
 See [the component catalog](docs/components/catalog.md) for ownership and
 behavior distinctions that similar-looking controls must preserve.
+See [Gallery and acceptance application](docs/gallery.md) for story metadata,
+Host/Rhai ownership, deterministic fixtures, lifecycle behavior, and the
+verification matrix.
+
+`SplitPane` is a controlled two-panel composition. Its `size` is the start
+panel ratio; pointer movement writes only a native optional-float signal and
+`on_resize` fires once on release. Arrow keys on the semantic separator commit
+the same ratio contract. `start_collapsed`/`end_collapsed` are controlled, and
+nested SplitPane instances cover multi-panel layouts without introducing a
+docking or persistence framework.
+
+`Resizable` controls one positioned rectangle inside its own local boundary.
+Its `rect` contains `x`, `y`, `width`, and `height`; physical edge/corner
+handles propose one complete replacement rectangle. Native signals preview
+position and dimensions without Rhai pointer-move callbacks. Left/top handles
+move the origin while preserving the opposite edge. SplitPane never adopts
+these free-rectangle semantics.
 
 Command palettes separate seating, preview, and confirmation. The caller-owned
 `active_value` determines the current highlight when the palette opens.
@@ -910,6 +943,8 @@ Guidelines:
 - Keep large stable row sets in `NativeCollection`; let Rhai declare the Table
   and controlled state while Rust caches sort/group/collapse order and projects
   only visible rows.
+- Use Table `query`/`search_fields` and `page`/`page_size` for controlled
+  Rust-side filtering and paging; reset page one when query or sort changes.
 - Keep large or rapidly replaced source text in `NativeTextDocument`; direct
   strings remain the simple path. CodeViewer and DiffViewer compute from
   immutable typed snapshots on background workers and commit complete matching

@@ -2,7 +2,7 @@
 {
   "id": "charts/chart",
   "export": "Chart",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
   "dependencies": [],
   "capabilities": {}
@@ -17,7 +17,7 @@
 // Example: Chart(#{ key: "sales", data: rows, key_dimension: "id", spec })
 
 define_component(#{
-    metadata: #{ id: "charts/chart", "export": "Chart", version: "0.1.6",
+    metadata: #{ id: "charts/chart", "export": "Chart", version: "0.1.7",
         runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{} },
     schema: #{
         props: #{
@@ -123,7 +123,6 @@ fn specialized_chart(props, kind, coordinate_kind) {
             #{ key: "main", kind: coordinate_kind }
         };
         chart_props.spec = #{
-            title: prop_or(props, "title", ""),
             regions: [coordinate],
             series: [#{
                 key: prop_or(props, "series_key", "series"),
@@ -134,6 +133,7 @@ fn specialized_chart(props, kind, coordinate_kind) {
                 encode: props.encode,
             }],
         };
+        if "title" in props && props.title.trim() != "" { chart_props.spec.title = props.title; }
     } else {
         chart_props.spec = props.spec;
         for index in 0..chart_props.spec.series.len {
@@ -165,6 +165,7 @@ fn emit_legend(ctx, payload) { ctx.emit("legend_change", payload); }
 fn emit_annotation(ctx, payload) { ctx.emit("annotation_activate", payload); }
 
 fn render_Chart(ctx, props) {
+    chart_validate(props.spec, props.data, prop_or(props, "key_dimension", ()));
     let root = ctx.component_style("root", style()
         .width(relative(1.0)).height(relative(1.0)).min_width(px(0)).min_height(px(0))
         .background(theme_color("surface")).border(px(1)).border_color(theme_color("border")));

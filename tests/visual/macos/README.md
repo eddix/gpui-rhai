@@ -8,9 +8,10 @@ evidence tied to an explicit environment, not portable pixel-perfect promises.
 - Original capture: 2026-08-28
 - Complex-control refresh: 2026-08-30
 - Registry design-system refresh: 2026-09-01
+- Gallery/Acceptance Application capture: 2026-09-27
 - macOS: 26.6.2 (25G83)
-- GPUI: 0.2.2
-- Rust: 1.94.1
+- Original product captures: GPUI 0.2.2 / Rust 1.94.1
+- Gallery captures: gpui-pre 0.3.6 / Rust 1.95.0
 - Capture service: Codex Computer Use, one screenshot pixel per logical point
 - Settings viewport/capture: 640 × 520 points / 640 × 552 pixels
 - Dashboard viewport/capture: 760 × 560 points / 760 × 592 pixels
@@ -18,6 +19,9 @@ evidence tied to an explicit environment, not portable pixel-perfect promises.
 - Data Table viewport/capture: 980 × 720 points / 980 × 752 pixels
 - Theme Studio planned viewport/capture: 1280 × 820 points / 1280 × 852 pixels
 - Embedded Views viewport/capture: 900 × 420 points / 900 × 452 pixels
+- Gallery content viewport/capture: 1181 × 820 points / 1181 × 820 pixels
+  (the macOS title bar is excluded so the screen-control privacy indicator is
+  not mistaken for product UI)
 
 ## Recorded cases
 
@@ -53,9 +57,13 @@ Theme Studio replaced the old Component Gallery on 2026-09-01. An unlocked
 manual pass on 2026-09-05 verified its independent editor/specimen scrolling
 and the shared specimen across the Gallery's 15-theme, category, compact,
 regular, RTL, reduced-motion, Sheet, CommandDialog, and AlertDialog matrix.
-Checked-in Studio/Gallery PNG expansion remains pending; obsolete Gallery PNGs
-were not relabeled as Studio evidence. The 38 recorded PNGs remain
-product-context and shared-Host evidence.
+The 2026-09-27 Acceptance Application pass adds 29 checked-in, content-only
+Gallery PNGs. They cover every Component Catalog case in Default Light/Dark,
+Catppuccin Mocha Arabic RTL, Tokyo Night reduced motion, Chart normal/reduced/
+none plus diagnostics, Motion none, HostSlot, and Operations dashboard/config/
+loading/empty/large/failure/CommandDialog states. Obsolete Gallery PNGs were
+not relabeled as Theme Studio evidence. The original 38 captures remain
+product-context and shared-Host evidence, for 67 baselines in total.
 
 `embedded_views/default-dark.shared-host.png` records three independent Rhai
 views inside one host-owned GPUI layout. It proves compact responsive sizing for

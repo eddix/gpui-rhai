@@ -31,6 +31,7 @@ security, testing, and troubleshooting.
 - [Native text documents and read-only viewers](document-viewers.md)
 - [Accessibility status](accessibility.md)
 - [Official component catalog](components/catalog.md)
+- [Direct manipulation and layout behaviors — implemented and planned](components/interaction-behaviors.md)
 
 Complex component contracts:
 
@@ -45,6 +46,8 @@ Complex component contracts:
 - [Command and CommandDialog](components/catalog.md#command-and-commanddialog)
 - [CodeViewer](components/code-viewer.md) and [DiffViewer](components/diff-viewer.md)
 - [Slider and ScrollArea](components/catalog.md#native-interaction-foundations)
+- [SplitPane](components/interaction-behaviors.md#splitpane--implemented) and
+  [Resizable](components/interaction-behaviors.md#resizable--implemented)
 
 ## Develop the framework
 
@@ -58,8 +61,8 @@ Complex component contracts:
 - [Release notes and upgrade index](releases/README.md)
 - [0.1.0](releases/0.1.0.md), [0.1.1](releases/0.1.1.md),
   [0.1.2](releases/0.1.2.md), [0.1.3](releases/0.1.3.md),
-  [0.1.4](releases/0.1.4.md), [0.1.5](releases/0.1.5.md), and
-  [0.1.6](releases/0.1.6.md)
+  [0.1.4](releases/0.1.4.md), [0.1.5](releases/0.1.5.md),
+  [0.1.6](releases/0.1.6.md), and [0.1.7](releases/0.1.7.md)
 - [Core Runtime v2 evidence ledger](core-runtime-v2-audit.md)
 
 Architecture decisions and their test evidence are recorded under

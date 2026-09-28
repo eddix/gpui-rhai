@@ -1,13 +1,13 @@
 # Official component catalog
 
-gpui-rhai ships 51 editable Rhai source components. They all use the same
+gpui-rhai ships 53 editable Rhai source components. They all use the same
 public atoms and generic runtime mechanisms available to application code; no
 official component receives a private high-level node constructor.
 
 Run the interactive catalog from this repository:
 
 ```text
-cargo run -p gpui-rhai --example component_gallery
+cargo run --release -p gpui-rhai-cli -- gallery --story components/catalog
 ```
 
 The gallery is a live component workbench, not a static visual catalog. Enabled
@@ -22,11 +22,50 @@ The [registry visual system](../registry-design-system.md) is the maintained
 source for component dimensions, color roles, state appearance, and known
 visual gaps. This catalog records component semantics and public contracts.
 
-Version 0.1.2 freezes this 51-component foundation: component IDs and exports,
+Version 0.1.2 freezes the original 51-component foundation: component IDs and exports,
 controlled-state ownership, semantic event payloads, the `xs`/`sm`/`md`/`lg`
 size vocabulary, and declared style parts are the maintained base contract.
 Future catalog additions must compose the same public atoms and generic runtime
 mechanisms; they do not justify parallel private primitives.
+
+## Split Pane
+
+`SplitPane` is a source-owned, nestable two-panel layout component. It
+redistributes space inside a shared region; it is not a generic Resizable
+wrapper for floating cards or arbitrary elements. It accepts stable start/end
+keys, horizontal or vertical orientation,
+a controlled start-panel ratio, pixel min/max constraints, controlled collapse
+flags, and an accessible separator. Pointer movement stays in the native signal
+lane; one `resize(number)` proposal is emitted on release. Rejecting the
+proposal restores the controlled ratio. Keyboard arrows use the same proposal
+path, and RTL pointer deltas follow the active theme direction.
+
+See the [interaction behavior specification](interaction-behaviors.md#splitpane--implemented)
+for its current props and boundary with Resizable. Panel reordering,
+cross-window drops, and persistence are outside SplitPane's contract.
+
+## Resizable
+
+`Resizable` controls one absolutely positioned rectangle inside the component's
+local boundary. It is independent of SplitPane: resizing a west or north edge
+updates `x` or `y` while preserving the opposite edge; no sibling receives the
+remaining space. The caller owns the accepted `{x,y,width,height}` rectangle.
+
+The component supports any unique subset of `n/s/e/w/ne/nw/se/sw`, min/max
+dimensions, optional boundary containment, optional aspect ratio, a keyboard
+step, disabled state, and one `resize({x,y,width,height,handle})` proposal.
+Pointer moves update four optional-float native signals; Rhai runs only for the
+final proposal. Style parts are `root`, `surface`, `content`, and `handle`.
+
+Source: [resizable.rhai](../../registry/components/resizable.rhai).
+Runnable story: `gpui-rhai gallery --story components/resizable`.
+
+The same [specification](interaction-behaviors.md) records the planned Draggable,
+DropZone, Sortable, PanZoom, SelectionArea, Rotatable, and DockLayout
+capabilities, their composition rules, and acceptance requirements. These
+planned entries are not additional implemented components or callable exports.
+In particular, the existing Motion ReorderList animates an externally supplied
+order; it does not yet implement interactive sorting.
 
 Every interactive field, choice, menu, navigation region, overlay surface, and
 progress indicator has an explicit textual accessible name. Input placeholders
@@ -93,6 +132,17 @@ keyboard steps emit one schema-checked `change(number)` request.
 trackpad scrolling; the generic runtime owns themed overlay tracks/thumbs,
 dragging, RTL edge placement, and per-axis `auto`, `always`, or `hidden`
 visibility. The normal element-ref scroll commands remain available.
+
+Table columns may declare up to four structured `adornments`. Each adornment
+reads `text_key` from the row and renders a compact Badge after the cell text;
+`variant` is fixed or `variant_key` reads one of `neutral`, `accent`, `success`,
+`warning`, or `danger` from the row, and `dot` enables the semantic status dot.
+The same declaration works for Array and `NativeCollection` rows. Native data
+projects only the realized rows and never invokes a per-cell Rhai renderer, so
+status/count pills do not discard Table virtualization or keyboard behavior.
+Table also accepts controlled `query`/`search_fields` and one-based
+`page`/`page_size`; NativeCollection performs sort, filter, page, and group
+ordering in Rust before virtual projection.
 
 ## Navigation and data
 

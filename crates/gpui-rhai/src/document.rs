@@ -461,6 +461,21 @@ impl NativeTextDocumentRegistry {
         Ok(())
     }
 
+    /// Read one current Host-owned snapshot without subscribing a component.
+    ///
+    /// This is intended for trusted Host transactions that need optimistic
+    /// revision checks before publishing a replacement.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DocumentError::UnknownDocument`] when `name` is not registered.
+    pub fn get(&self, name: &str) -> Result<NativeTextDocument, DocumentError> {
+        self.documents
+            .get(name)
+            .cloned()
+            .ok_or_else(|| DocumentError::UnknownDocument(name.to_owned()))
+    }
+
     /// Replace one document revision and return exact subscribed components.
     ///
     /// # Errors

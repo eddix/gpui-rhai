@@ -12,8 +12,6 @@ done
 
 embedded_examples=(
   dashboard_layout
-  chart_gallery
-  component_gallery
   data_table
   embedded_hello_world
   embedded_views
@@ -21,7 +19,6 @@ embedded_examples=(
   form_showcase
   host_owned_tree
   multi_window
-  motion_gallery
   settings_panel
   table_1000
 )
@@ -49,3 +46,21 @@ for example in "${embedded_examples[@]}"; do
   fi
   echo "release artifact passed: ${example}"
 done
+
+cli_binary="target/release/gpui-rhai"
+if [[ ! -x "${cli_binary}" ]]; then
+  echo "missing release binary: ${cli_binary}"
+  exit 1
+fi
+if strings "${cli_binary}" \
+  | grep -F "${PWD}" \
+  | grep -Fv "${PWD}/target/release/build/gpui-" \
+  | grep -q .; then
+  echo "absolute workspace path leaked into ${cli_binary}"
+  exit 1
+fi
+if strings "${cli_binary}" | grep -Eq 'cmd-alt-i|gpui_rhai_devtools|ToggleInspector'; then
+  echo "development inspector leaked into ${cli_binary}"
+  exit 1
+fi
+echo "release artifact passed: gpui-rhai CLI and Gallery"

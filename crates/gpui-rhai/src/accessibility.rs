@@ -185,6 +185,22 @@ impl AccessibilityTree {
         self.nodes.values()
     }
 
+    pub(crate) fn mark_runtime_error(&mut self, message: &str, mark_figures: bool) {
+        let roots = self.roots.iter().copied().collect::<BTreeSet<_>>();
+        for node in self
+            .nodes
+            .values_mut()
+            .filter(|node| roots.contains(&node.id) || (mark_figures && node.role == "figure"))
+        {
+            node.invalid = true;
+            node.description = if node.description.is_empty() {
+                message.to_owned()
+            } else {
+                format!("{} Runtime error: {message}", node.description)
+            };
+        }
+    }
+
     #[must_use]
     pub fn find_by_semantic_id(&self, id: &str) -> Option<&AccessibilityNode> {
         self.semantic_ids

@@ -21,6 +21,12 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use toml_edit::{Array, DocumentMut, InlineTable, Item, Value};
 
+pub mod gallery;
+#[cfg(feature = "test-support")]
+#[doc(hidden)]
+pub mod gallery_app;
+#[cfg(not(feature = "test-support"))]
+mod gallery_app;
 pub mod theme_studio;
 
 use gpui_rhai_registry::{
@@ -1956,6 +1962,8 @@ pub enum ProjectError {
     JsonSerialize(#[from] serde_json::Error),
     #[error("Theme Studio failed: {0}")]
     ThemeStudio(String),
+    #[error("Gallery failed: {0}")]
+    Gallery(String),
 }
 
 #[cfg(test)]
@@ -2336,8 +2344,9 @@ mod tests {
             .apply()
             .unwrap();
         let report = project.check().unwrap();
-        assert_eq!(report.components, 9);
+        assert_eq!(report.components, 10);
         for component in [
+            "badge.rhai",
             "button.rhai",
             "icon.rhai",
             "input.rhai",
@@ -2381,7 +2390,7 @@ mod tests {
         let project = Project::new(directory.path());
         project.plan_init().unwrap().apply().unwrap();
         let registry = BundledRegistry::load().unwrap();
-        assert_eq!(registry.entries.len(), 66);
+        assert_eq!(registry.entries.len(), 68);
         let requested = registry
             .entries
             .keys()

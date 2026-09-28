@@ -70,29 +70,39 @@ manual pass verified its independent editor/specimen scrolling and the shared
 specimen; checked-in Studio PNG expansion remains separate baseline work.
 Capture `embedded_views` once with the small view's Combobox open and duplicate
 local Toast IDs visible in the shared Host queue.
-Capture `component_gallery` in every category under Default Light/Dark, one
-community theme, reduced motion, and Arabic RTL. Its theme selector must switch
+Capture `components/catalog` in every case under Default Light/Dark, one
+community theme, reduced motion, and Arabic RTL. Gallery controls must switch
 all visible components without recompiling or resetting controlled state.
 The 2026-09-05 manual pass covered every category, all 15 themes, 560-point
 compact and 900-point regular windows, Arabic RTL, reduced motion, Sheet,
 CommandDialog, and AlertDialog. Reproduce deterministic launch states with:
 
 ```sh
-bash scripts/build-macos-test-app.sh component_gallery default-light en forms
-bash scripts/build-macos-test-app.sh component_gallery catppuccin-mocha ar forms
-bash scripts/build-macos-test-app.sh component_gallery tokyo-night en sheet
-bash scripts/build-macos-test-app.sh component_gallery default-dark en compact reduced
+bash scripts/build-macos-gallery-app.sh components/catalog forms default-light en
+bash scripts/build-macos-gallery-app.sh components/catalog forms catppuccin-mocha ar
+bash scripts/build-macos-gallery-app.sh components/catalog overlays tokyo-night en
 ```
 
-Capture `chart_gallery` after every built-in series has installed its prepared
+The 2026-09-27 checked-in Gallery matrix records all five catalog cases in
+Default Light/Dark, Catppuccin Mocha Arabic RTL, and Tokyo Night Reduced. The
+1181×820 files are content-only captures: macOS window chrome is excluded so
+the active screen-control privacy indicator cannot enter a product baseline.
+
+Capture `charts/catalog` after every built-in series has installed its prepared
 scene, including Default Light/Dark, one community theme, Arabic RTL, normal,
 reduced, and disabled motion, narrow/wide resize, tooltip/crosshair, Cartesian
 brush, linked zoom, annotations, Host GeoJSON, and the 100,000-row native line
 series. Theme and locale controls must update existing Chart entities without
 recompiling Rhai or losing controlled selection/viewport state. The checked-in
-PNG matrix is added only after the first maintainer visual acceptance pass;
-the automated mounted benchmark already guards preparation, layout/paint,
-resize, and streaming completion.
+matrix now covers Default Light/Dark, Catppuccin Mocha Arabic RTL, Reduced,
+None, and the invalid-diagnostics story. Automated mounted tests and the
+benchmark continue to guard interaction, resize, streaming, and the complete
+off-screen series matrix rather than treating snapshots as functional proof.
+
+The same pass records Operations dashboard Light/Dark, configuration diff,
+loading, empty, 1,000-row large data, the partial-failure fixture, its terminal
+48% failure/Toast state, an open CommandDialog, HostSlot composition, and the
+Motion catalog under None policy.
 
 The complex-control expansion adds:
 
@@ -210,9 +220,14 @@ bash scripts/build-macos-test-app.sh dashboard_layout tokyo-night en default red
 bash scripts/build-macos-theme-studio-app.sh
 bash scripts/build-macos-test-app.sh data_table default-dark en selected
 bash scripts/build-macos-test-app.sh form_showcase default-light zh-CN date-picker
+bash scripts/build-macos-gallery-app.sh components/split-pane basic default-dark en normal
+bash scripts/capture-macos-gallery-baselines.sh
 ```
 
 The command prints the unique temporary bundle path. It never replaces an
 existing application or baseline. The optional theme, locale, state, and motion
 arguments are consumed only by examples that opt into deterministic
 visual-test startup; normal runs preserve their documented defaults.
+The Gallery capture manifest uses deterministic story cases and motion policy,
+waits for background document preparation, excludes the native titlebar, and
+normalizes Retina captures to the maintained 1181×820 content baseline.

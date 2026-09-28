@@ -124,9 +124,37 @@ State priority is `active > focus > hover/cursor > selected > idle`, with
 disabled suppressing interaction. Borders are reserved in the idle geometry so
 focus never moves neighboring content. Rhai pseudo styles support background,
 border, text, and opacity; adding a state in source must produce native paint.
+For an invalid editor, semantic `invalid` remains true while focused; the
+focus-ring color temporarily owns the reserved border so keyboard location is
+unambiguous, and the danger border returns on blur. Neither state changes
+border width or layout.
 For Tabs, the selection thumb persists while focus is drawn independently;
 hover never replaces the selected surface or creates a second thumb. Disabled
 suppresses input without erasing which content page remains selected.
+
+## Direct manipulation surfaces
+
+The [interaction behavior specification](components/interaction-behaviors.md)
+distinguishes implemented split layout and rectangle resizing from planned
+movement, drag/drop, sorting, viewport, and object-selection behaviors. The following
+visual requirements apply as those behaviors are implemented:
+
+- Handles and dividers consume existing spacing, radius, border, accent, and
+  focus roles. Visual thickness and the usable hit region may differ; document
+  structural minimum targets and avoid covering adjacent controls.
+- Idle, hovered, keyboard-focused, dragging, valid-target, and rejected-target
+  states must be distinguishable. Preserve persistent selection while showing
+  an interaction target; rejection needs a meaningful cue beyond color alone.
+- Use the appropriate move/resize cursor without changing layout on hover or
+  focus. Keyboard manipulation receives the same constraints and visible result.
+- Previews, insertion markers, and selection rectangles are transient themed
+  surfaces. They must not steal input, create duplicate accessibility nodes, or
+  leave stale decorations after cancellation or teardown.
+- Direct pointer-following manipulation remains immediate. Optional settling or
+  reordering animation follows MotionPreference and must not obscure accepted
+  state or prevent cancellation.
+- A planned behavior does not justify a new fixed palette, screenshot-derived
+  radius, unthemed spacing scale, or a generic shadow around every movable card.
 
 ## Component rules
 
