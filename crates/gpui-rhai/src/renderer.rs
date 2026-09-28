@@ -49,6 +49,7 @@ type SignalWriteFn = dyn Fn(
 type SignalReadFn =
     dyn Fn(&crate::NativeSignal, &App) -> Result<crate::SignalValue, crate::SignalError>;
 type ElementBoundsFn = dyn Fn(&crate::ElementRef, &App) -> Option<crate::GeometryBounds>;
+type CanvasLocalPointFn = dyn Fn(&crate::ElementRef, (f64, f64), &App) -> Option<(f64, f64)>;
 
 #[derive(Clone)]
 pub struct NodeEventDispatcher {
@@ -57,6 +58,7 @@ pub struct NodeEventDispatcher {
     signal_write: Rc<SignalWriteFn>,
     signal_read: Rc<SignalReadFn>,
     element_bounds: Rc<ElementBoundsFn>,
+    canvas_local_point: Rc<CanvasLocalPointFn>,
 }
 
 impl NodeEventDispatcher {
@@ -86,6 +88,7 @@ impl NodeEventDispatcher {
             }),
             signal_read: Rc::new(|signal, _| Err(crate::SignalError::Stale(signal.id().clone()))),
             element_bounds: Rc::new(|_, _| None),
+            canvas_local_point: Rc::new(|_, _, _| None),
         }
     }
 
@@ -137,6 +140,14 @@ impl NodeEventDispatcher {
         read: impl Fn(&crate::ElementRef, &App) -> Option<crate::GeometryBounds> + 'static,
     ) -> Self {
         self.element_bounds = Rc::new(read);
+        self
+    }
+
+    pub(crate) fn with_canvas_local_point(
+        mut self,
+        read: impl Fn(&crate::ElementRef, (f64, f64), &App) -> Option<(f64, f64)> + 'static,
+    ) -> Self {
+        self.canvas_local_point = Rc::new(read);
         self
     }
 
@@ -197,6 +208,15 @@ impl NodeEventDispatcher {
         app: &App,
     ) -> Option<crate::GeometryBounds> {
         (self.element_bounds)(reference, app)
+    }
+
+    pub(crate) fn canvas_local_point(
+        &self,
+        reference: &crate::ElementRef,
+        point: (f64, f64),
+        app: &App,
+    ) -> Option<(f64, f64)> {
+        (self.canvas_local_point)(reference, point, app)
     }
 }
 

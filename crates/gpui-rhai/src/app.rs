@@ -3261,6 +3261,7 @@ fn script_node_dispatcher(cx: &Context<ScriptHostView>) -> NodeEventDispatcher {
     let signal_entity = script_entity.clone();
     let signal_read_entity = script_entity.clone();
     let geometry_entity = script_entity.clone();
+    let canvas_geometry_entity = script_entity.clone();
     NodeEventDispatcher::new(move |callback, payload, target, window, app| {
         script_entity
             .update(app, |view, cx| {
@@ -3312,6 +3313,28 @@ fn script_node_dispatcher(cx: &Context<ScriptHostView>) -> NodeEventDispatcher {
                     .presented(node)
                     .ok()
                     .map(|geometry| geometry.layout)
+            })
+            .ok()
+            .flatten()
+    })
+    .with_canvas_local_point(move |reference, point, app| {
+        canvas_geometry_entity
+            .read_with(app, |view, _| {
+                let runtime = view.lifecycle.runtime();
+                let runtime = runtime.borrow();
+                let node = runtime.element_refs.resolve(reference).ok()?;
+                let geometry = runtime.geometry_for(Some(&view.view_id));
+                let bounds = geometry.get(node)?;
+                let local = (point.0 - bounds.visual.x, point.1 - bounds.visual.y);
+                Some(
+                    crate::canvas::canvas_motion_affine(
+                        bounds.layout.width,
+                        bounds.layout.height,
+                        geometry.canvas_transform(node),
+                    )
+                    .inverse()?
+                    .map_point(local),
+                )
             })
             .ok()
             .flatten()

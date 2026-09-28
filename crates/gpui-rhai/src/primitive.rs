@@ -1067,6 +1067,17 @@ impl PrimitiveContext {
             .as_ref()
             .and_then(|dispatcher| dispatcher.element_bounds(reference, cx))
     }
+
+    pub(crate) fn canvas_local_point(
+        &self,
+        reference: &crate::ElementRef,
+        point: gpui::Point<gpui::Pixels>,
+        cx: &App,
+    ) -> Option<(f64, f64)> {
+        self.dispatcher.as_ref().and_then(|dispatcher| {
+            dispatcher.canvas_local_point(reference, (f64::from(point.x), f64::from(point.y)), cx)
+        })
+    }
 }
 
 pub trait PrimitiveHandler {

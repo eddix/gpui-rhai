@@ -44,6 +44,7 @@ pub mod schema;
 mod script_lint;
 pub mod script_source;
 pub mod scrollbar;
+pub mod selection_area;
 pub mod signal;
 mod slot_runtime;
 pub mod sortable;
@@ -243,6 +244,7 @@ pub use script_source::{
     EmbeddedScriptSource, FileScriptSource, ScriptAsset, ScriptSource, ScriptSourceError,
 };
 pub use scrollbar::{ScrollbarSpec, ScrollbarVisibility};
+pub use selection_area::{SelectionAreaPrimitiveHandler, selection_area_primitive_descriptor};
 pub use signal::{
     NativeSignal, SignalError, SignalId, SignalKind, SignalProperty, SignalRegistry,
     SignalSnapshot, SignalValue, SignalWriter,

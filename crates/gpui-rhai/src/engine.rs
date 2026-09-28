@@ -41,6 +41,7 @@ use crate::range_input::{RangeInputPrimitiveHandler, range_input_primitive_descr
 use crate::range_slider::{RangeSliderPrimitiveHandler, range_slider_primitive_descriptor};
 use crate::resizable::{ResizablePrimitiveHandler, resizable_primitive_descriptor};
 use crate::rotatable::{RotatablePrimitiveHandler, rotatable_primitive_descriptor};
+use crate::selection_area::{SelectionAreaPrimitiveHandler, selection_area_primitive_descriptor};
 use crate::sortable::{SortablePrimitiveHandler, sortable_primitive_descriptor};
 use crate::split_resize::{SplitResizePrimitiveHandler, split_resize_primitive_descriptor};
 use crate::style::register_style_api;
@@ -778,6 +779,11 @@ impl RuntimeEngine {
         .expect("built-in range slider primitive descriptor is valid");
         self.register_primitive(rotatable_primitive_descriptor(), RotatablePrimitiveHandler)
             .expect("built-in rotatable primitive descriptor is valid");
+        self.register_primitive(
+            selection_area_primitive_descriptor(),
+            SelectionAreaPrimitiveHandler::default(),
+        )
+        .expect("built-in selection area primitive descriptor is valid");
         self.register_primitive(
             text_input_primitive_descriptor(),
             TextInputPrimitiveHandler::default(),
