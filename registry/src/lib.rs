@@ -520,6 +520,11 @@ const OPERATIONS_CASES: &[StoryCase] = &[
         purpose: "Start at the cross-host configuration comparison and deployment flow.",
     },
     StoryCase {
+        id: "command-dialog",
+        title: "Command dialog",
+        purpose: "Open the keyboard navigation surface in a deterministic initial frame.",
+    },
+    StoryCase {
         id: "theme-overrides",
         title: "Host theme overrides",
         purpose: "Apply nonzero Host radii uniformly and preserve Workbench state across themes.",
@@ -538,6 +543,11 @@ const OPERATIONS_CASES: &[StoryCase] = &[
         id: "failure",
         title: "Partial failure",
         purpose: "Keep healthy data usable while one host and a simulated deployment fail.",
+    },
+    StoryCase {
+        id: "failure-terminal",
+        title: "Failure terminal",
+        purpose: "Present the committed failure result without replaying an interaction script.",
     },
     StoryCase {
         id: "streaming",

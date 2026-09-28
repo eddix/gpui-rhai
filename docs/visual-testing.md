@@ -220,9 +220,14 @@ bash scripts/build-macos-test-app.sh dashboard_layout tokyo-night en default red
 bash scripts/build-macos-theme-studio-app.sh
 bash scripts/build-macos-test-app.sh data_table default-dark en selected
 bash scripts/build-macos-test-app.sh form_showcase default-light zh-CN date-picker
+bash scripts/build-macos-gallery-app.sh components/split-pane basic default-dark en normal
+bash scripts/capture-macos-gallery-baselines.sh
 ```
 
 The command prints the unique temporary bundle path. It never replaces an
 existing application or baseline. The optional theme, locale, state, and motion
 arguments are consumed only by examples that opt into deterministic
 visual-test startup; normal runs preserve their documented defaults.
+The Gallery capture manifest uses deterministic story cases and motion policy,
+waits for background document preparation, excludes the native titlebar, and
+normalizes Retina captures to the maintained 1181×820 content baseline.

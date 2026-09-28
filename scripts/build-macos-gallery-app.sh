@@ -1,8 +1,8 @@
 #!/bin/bash
 set -eu
 
-if [[ $# -gt 4 ]]; then
-  echo "usage: $0 [story-id] [case-id] [theme] [locale]" >&2
+if [[ $# -gt 5 ]]; then
+  echo "usage: $0 [story-id] [case-id] [theme] [locale] [motion]" >&2
   exit 2
 fi
 
@@ -10,11 +10,12 @@ story="${1:-}"
 case_id="${2:-basic}"
 theme="${3:-default-dark}"
 locale="${4:-en}"
+motion="${5:-normal}"
 if [[ -n "${story}" && ! "${story}" =~ ^[a-zA-Z0-9_/-]+$ ]]; then
   echo "invalid story ID: ${story}" >&2
   exit 2
 fi
-for value in "${case_id}" "${theme}" "${locale}"; do
+for value in "${case_id}" "${theme}" "${locale}" "${motion}"; do
   if [[ ! "${value}" =~ ^[a-zA-Z0-9_-]+$ ]]; then
     echo "invalid Gallery argument: ${value}" >&2
     exit 2
@@ -47,6 +48,13 @@ identifier_suffix="${bundle_root##*.}"
   "${bundle}/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Add :LSEnvironment:GPUI_RHAI_GALLERY_LOCALE string ${locale}" \
   "${bundle}/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Add :LSEnvironment:GPUI_RHAI_GALLERY_MOTION string ${motion}" \
+  "${bundle}/Contents/Info.plist"
+if [[ -n "${GPUI_RHAI_GALLERY_AUTO_QUIT_MS:-}" ]]; then
+  /usr/libexec/PlistBuddy -c \
+    "Add :LSEnvironment:GPUI_RHAI_GALLERY_AUTO_QUIT_MS string ${GPUI_RHAI_GALLERY_AUTO_QUIT_MS}" \
+    "${bundle}/Contents/Info.plist"
+fi
 if [[ -n "${story}" ]]; then
   /usr/libexec/PlistBuddy -c "Add :LSEnvironment:GPUI_RHAI_GALLERY_STORY string ${story}" \
     "${bundle}/Contents/Info.plist"

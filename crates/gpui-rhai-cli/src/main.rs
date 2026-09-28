@@ -60,6 +60,9 @@ enum Command {
         /// Select en, zh-CN, or ar.
         #[arg(long, default_value = "en")]
         locale: String,
+        /// Select normal, reduced, or none motion.
+        #[arg(long, default_value = "normal")]
+        motion: String,
     },
 }
 
@@ -126,18 +129,22 @@ fn run(cli: Cli) -> Result<(), ProjectError> {
             case,
             theme,
             locale,
+            motion,
         } => {
             if list {
                 println!("{}", gpui_rhai_cli::gallery::list_text());
             } else if cli.dry_run {
                 println!("would open Gallery");
             } else {
+                let motion = gpui_rhai_cli::gallery::parse_motion_preference(&motion)
+                    .map_err(ProjectError::Gallery)?;
                 gpui_rhai_cli::gallery::run(&gpui_rhai_cli::gallery::GalleryLaunch {
                     story: story
                         .unwrap_or_else(|| gpui_rhai_cli::gallery::DEFAULT_STORY.to_owned()),
                     case,
                     theme,
                     locale,
+                    motion,
                 })
                 .map_err(ProjectError::Gallery)?;
             }
@@ -155,6 +162,10 @@ fn main() -> ExitCode {
             theme: std::env::var("GPUI_RHAI_GALLERY_THEME")
                 .unwrap_or_else(|_| "default-dark".to_owned()),
             locale: std::env::var("GPUI_RHAI_GALLERY_LOCALE").unwrap_or_else(|_| "en".to_owned()),
+            motion: gpui_rhai_cli::gallery::parse_motion_preference(
+                &std::env::var("GPUI_RHAI_GALLERY_MOTION").unwrap_or_else(|_| "normal".to_owned()),
+            )
+            .unwrap_or(gpui_rhai::MotionPreference::Normal),
         })
         .map_err(ProjectError::Gallery)
     } else if std::env::var("GPUI_RHAI_THEME_STUDIO").is_ok_and(|value| value == "1") {

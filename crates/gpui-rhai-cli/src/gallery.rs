@@ -46,6 +46,7 @@ pub struct GalleryLaunch {
     pub case: String,
     pub theme: String,
     pub locale: String,
+    pub motion: gpui_rhai::MotionPreference,
 }
 
 impl Default for GalleryLaunch {
@@ -55,7 +56,24 @@ impl Default for GalleryLaunch {
             case: "basic".to_owned(),
             theme: "default-dark".to_owned(),
             locale: "en".to_owned(),
+            motion: gpui_rhai::MotionPreference::Normal,
         }
+    }
+}
+
+/// Parse a Gallery motion preference from its stable CLI spelling.
+///
+/// # Errors
+///
+/// Returns an explicit diagnostic for values other than normal, reduced, or none.
+pub fn parse_motion_preference(value: &str) -> Result<gpui_rhai::MotionPreference, String> {
+    match value {
+        "normal" => Ok(gpui_rhai::MotionPreference::Normal),
+        "reduced" => Ok(gpui_rhai::MotionPreference::Reduced),
+        "none" => Ok(gpui_rhai::MotionPreference::None),
+        _ => Err(format!(
+            "unknown Gallery motion preference `{value}`; expected normal, reduced, or none"
+        )),
     }
 }
 
@@ -105,6 +123,7 @@ pub(crate) fn resolve_story(id: &str, case: &str) -> Result<&'static StoryDefini
 
 fn operations_fixture_case(case: &str) -> &str {
     match case {
+        "failure-terminal" => "failure",
         "loading" | "empty" | "failure" | "streaming" | "large" => case,
         _ => "normal",
     }
@@ -118,6 +137,7 @@ fn materialize_story_source(
     if story.id == "apps/operations" {
         let page = match launch.case.as_str() {
             "config-diff" | "failure" => "configurations",
+            "failure-terminal" => "deployments",
             "theme-overrides" => "settings",
             "large" => "hosts",
             _ => "dashboard",
@@ -127,10 +147,30 @@ fn materialize_story_source(
             "__OPERATIONS_PAGE__",
             &serde_json::to_string(page).map_err(|error| error.to_string())?,
         );
-        Ok(source.replace(
+        let source = source.replace(
             "__OPERATIONS_CASE__",
             &serde_json::to_string(fixture_case).map_err(|error| error.to_string())?,
-        ))
+        );
+        let command_open = launch.case == "command-dialog";
+        let failure_terminal = launch.case == "failure-terminal";
+        Ok(source
+            .replace("__OPERATIONS_COMMAND_OPEN__", &command_open.to_string())
+            .replace(
+                "__OPERATIONS_DEPLOYMENT_PHASE__",
+                if failure_terminal {
+                    "\"failed\""
+                } else {
+                    "\"idle\""
+                },
+            )
+            .replace(
+                "__OPERATIONS_DEPLOYMENT_PROGRESS__",
+                if failure_terminal { "48.0" } else { "0.0" },
+            )
+            .replace(
+                "__OPERATIONS_TOAST_VISIBLE__",
+                &failure_terminal.to_string(),
+            ))
     } else if story.id == "components/catalog" {
         let json = |value: &str| serde_json::to_string(value).map_err(|error| error.to_string());
         let category = if launch.case == "basic" {
@@ -962,5 +1002,10 @@ mod tests {
             panic!("missing locale must fail")
         };
         assert!(error.contains("unknown Gallery locale"));
+        assert_eq!(
+            parse_motion_preference("reduced").unwrap(),
+            gpui_rhai::MotionPreference::Reduced
+        );
+        assert!(parse_motion_preference("missing").is_err());
     }
 }

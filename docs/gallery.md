@@ -10,6 +10,7 @@ gpui-rhai gallery --list
 gpui-rhai gallery --story components/tabs
 gpui-rhai gallery --story apps/operations --case config-diff
 gpui-rhai gallery --theme default-dark --locale zh-CN
+gpui-rhai gallery --story motion/catalog --motion none
 ```
 
 When running from the repository, substitute
@@ -113,10 +114,12 @@ Cases are intentionally deterministic:
 | --- | --- | --- |
 | `basic` | Dashboard | Normal three-host session |
 | `config-diff` | Configurations | Complete cancel/confirm workflow |
+| `command-dialog` | Dashboard + CommandDialog | Deterministic keyboard-navigation baseline |
 | `theme-overrides` | Settings | Host radii override across theme changes |
 | `loading` | Dashboard | Loading UI without unbounded background work |
 | `empty` | Dashboard | Actionable empty application state |
 | `failure` | Configurations | One unreachable host and failed deployment; old configuration remains active |
+| `failure-terminal` | Deployments | Deterministic failed terminal state and Toast |
 | `streaming` | Dashboard | Four bounded Rust subscription revisions, no Rhai polling |
 | `large` | Hosts | 1,000 Rust-owned rows with virtual realization |
 

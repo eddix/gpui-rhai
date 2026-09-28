@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
+use std::time::Duration;
 
 use gpui_rhai::gpui::prelude::*;
 use gpui_rhai::gpui::{
@@ -269,6 +270,11 @@ impl GalleryApp {
         let key = Self::key(&launch.story, &launch.case);
         let view = mount_gallery_story(&launch, 1, &host, window, cx)
             .expect("validated initial Gallery story mounts");
+        for handle in view.handles() {
+            handle
+                .set_motion_preference(launch.motion, cx)
+                .expect("validated initial Gallery motion policy applies");
+        }
         let navigation = prepare_navigation(
             &launch,
             NavigationExtension {
@@ -308,6 +314,12 @@ impl GalleryApp {
                 .map_err(|error| error.to_string())
         })
         .expect("Gallery source view mounts");
+        for handle in [&navigation, &source_view] {
+            handle
+                .set_motion_preference(launch.motion, cx)
+                .expect("validated Gallery shell motion policy applies");
+        }
+        let motion_preference = launch.motion;
         Self {
             host,
             navigation,
@@ -322,7 +334,7 @@ impl GalleryApp {
             source_revision: 1,
             category: None,
             viewport: ViewportPreset::Auto,
-            motion_preference: MotionPreference::Normal,
+            motion_preference,
             panes: GalleryPaneLayout::default(),
         }
     }
@@ -340,6 +352,7 @@ impl GalleryApp {
                 case: case.to_owned(),
                 theme: self.launch.theme.clone(),
                 locale: self.launch.locale.clone(),
+                motion: self.motion_preference,
             };
             let generation = self.next_generation;
             self.next_generation = self.next_generation.saturating_add(1);
@@ -1586,6 +1599,19 @@ pub fn run(launch: GalleryLaunch) -> Result<(), String> {
         ) {
             *error.borrow_mut() = Some(open_error.to_string());
             cx.quit();
+        }
+        if let Some(milliseconds) = std::env::var("GPUI_RHAI_GALLERY_AUTO_QUIT_MS")
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+        {
+            let timer = cx
+                .background_executor()
+                .timer(Duration::from_millis(milliseconds));
+            cx.spawn(async move |cx| {
+                timer.await;
+                cx.update(|app| app.quit());
+            })
+            .detach();
         }
         cx.activate(true);
     });
