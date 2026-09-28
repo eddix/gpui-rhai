@@ -15,14 +15,15 @@ does not imply availability in an already published crate.
 
 | Capability | Responsibility | Typical use | Current status |
 |---|---|---|---|
-| Draggable | Change one object's position in a declared coordinate space | Floating card, canvas node, movable overlay | Planned reusable behavior; raw pointer/capture mechanisms already exist |
+| Draggable | Change one object's position in a declared coordinate space | Floating card, canvas node, movable overlay | Planned for 0.1.8 over the shared Interaction Runtime |
+| DragSource | Begin an in-app typed payload drag without changing accepted object position | Resource tile, command item, transferable card | Planned for 0.1.8; distinct from Draggable |
 | Resizable | Change one object's size or bounds using edges/handles | Floating card, image frame, adjustable content container | Implemented as `components/resizable::Resizable`; independent of SplitPane |
 | SplitPane | Redistribute a shared layout region between panels | Navigation/content, preview/source, horizontal or vertical split | Implemented as `components/split_pane::SplitPane` |
-| Droppable / DropZone | Accept a typed drag payload and propose a domain operation | Kanban column, object container, in-app resource drop target | Planned; external OS/file drag-and-drop is a separate Host integration |
-| Sortable / Reorderable | Propose a new order for a keyed collection | List, Tab order, toolbar items | Planned interactive behavior; Motion ReorderList only animates supplied order |
-| Pannable / Zoomable / PanZoom | Change the viewing transform while preserving content coordinates | Map, image viewer, node canvas | Planned generic surface; Chart already has domain-specific viewport interactions |
-| Selectable / SelectionArea | Maintain object selection by click, modifiers, range, or marquee | File grid, canvas objects, multi-selection surface | Planned generic surface; Table and text viewers retain their existing selection contracts |
-| Rotatable | Change an object's angle around an explicit pivot | Drawing or design tools | Planned, specialized surface; not a promise of arbitrary GPUI subtree transforms |
+| DropZone | Accept a typed drag payload and propose a domain operation | Kanban column, object container, in-app resource drop target | Planned for 0.1.8; external OS/file drag-and-drop is separate |
+| Sortable | Propose a new order for a keyed collection | List, Tab order, toolbar items | Planned for 0.1.8; Motion ReorderList only animates supplied order |
+| PanZoom | Change the viewing transform while preserving content coordinates | Map, image viewer, node canvas | Planned for 0.1.8 over shared affine geometry; Chart keeps its domain viewport |
+| SelectionArea | Maintain object selection by click, modifiers, range, or marquee | File grid, canvas objects, multi-selection surface | Planned for 0.1.8; Table/text selection remain distinct |
+| Rotatable | Change an object's angle around an explicit pivot | Drawing or design tools | Planned for 0.1.8 on declared 2D interaction surfaces |
 | Dockable / DockLayout | Arrange panels through docking, grouping, splitting, or floating | IDE/tool workspaces | Deferred higher-level layout system |
 
 ## Choose by the state being changed
@@ -140,9 +141,10 @@ drag-to-reorder panels, docking, and persistence are not part of this component.
 Source: [split_pane.rhai](../../registry/components/split_pane.rhai).
 Runnable story: `gpui-rhai gallery --story components/split-pane`.
 
-## Droppable / DropZone — planned
+## DragSource and DropZone — planned
 
-Pair a drag source with a target that declares accepted payload types and
+`DragSource` does not imply free positioning. Pair it with a `DropZone` that
+declares accepted payload types and
 operations. Separate source identity, payload, current target, eligibility,
 preview, and committed result. Hovering a target is not a data mutation.
 
@@ -158,7 +160,7 @@ or retained GPUI objects. OS file drops and cross-window/platform drag sessions
 need explicit Host integration and permissions; an in-app DropZone must not
 silently grant script filesystem access. Provide a keyboard-equivalent operation.
 
-## Sortable / Reorderable — planned
+## Sortable — planned
 
 The caller owns the ordered stable keys. The interaction chooses an insertion
 position and previews the resulting order, then proposes a move/order on commit.
@@ -176,7 +178,7 @@ It does **not** currently provide dragging, insertion targets, or reorder events
 Reuse its animation capability where appropriate, without confusing animation
 with the interaction and controlled-order model.
 
-## Pannable / Zoomable / PanZoom — planned
+## PanZoom — planned
 
 The caller owns a viewport transform with defined pan coordinates, scale limits,
 and reset/fit semantics. Zoom anchored at a pointer or viewport point preserves
@@ -193,7 +195,7 @@ including coordinate-specific semantics and linked logical windows. A future
 generic PanZoom must integrate with those contracts rather than introducing a
 second authoritative Chart camera.
 
-## Selectable / SelectionArea — planned
+## SelectionArea — planned
 
 The caller owns selected object keys, with a distinct active/cursor key and range
 anchor where needed. Define single, additive/toggle, range, and marquee selection
@@ -209,7 +211,7 @@ selected object. Table, Command, and text viewers keep their existing controlled
 selection models. A new selection surface must not consume native editing keys
 or pointer gestures merely because it is an ancestor.
 
-## Rotatable — planned specialized behavior
+## Rotatable — planned 0.1.8 behavior
 
 The caller owns an angle and explicit pivot. Define units, angle wrapping,
 optional snapping, and how rotation composes with movement and resizing.
@@ -266,11 +268,11 @@ sizes, theme overrides, lifecycle interruption, and data changes mid-gesture.
 Assert final geometry/order/selection and resource cleanup, not only a callback
 count or a nonempty screenshot.
 
-Resizable and SplitPane now have distinct floating-card and shared-layout
-acceptance scenes. Prioritize reusable Draggable next, then add typed drag/drop
-and Sortable with keyed/virtualized data. Plan generic
-PanZoom and object selection around a real canvas/viewer use case. Rotatable and
-DockLayout remain later specialized work.
+Resizable and SplitPane have distinct floating-card and shared-layout scenes.
+For 0.1.8, first migrate them and existing native controls to the shared
+Interaction Runtime, then add Draggable, DragSource/DropZone, Sortable, PanZoom,
+SelectionArea and Rotatable. RangeSlider and Tree join the same release through
+the shared axis and collection foundations. DockLayout remains later work.
 
 When a planned entry lands, replace its status with the exact public schema,
 supported surfaces and limitations, story, and test references. Keep component
