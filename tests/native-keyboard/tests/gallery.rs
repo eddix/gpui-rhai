@@ -24,11 +24,7 @@ impl Render for GalleryHost {
         } else {
             gpui::div().into_any_element()
         };
-        self.host.container(
-            gpui::div()
-                .size_full()
-                .child(content),
-        )
+        self.host.container(gpui::div().size_full().child(content))
     }
 }
 
@@ -166,10 +162,7 @@ fn mount_story(
     (window, view)
 }
 
-fn rendered_texts(
-    visual: &mut gpui::VisualTestContext,
-    view: &ScriptViewHandle,
-) -> Vec<String> {
+fn rendered_texts(visual: &mut gpui::VisualTestContext, view: &ScriptViewHandle) -> Vec<String> {
     let mut texts = Vec::new();
     node_texts(
         &visual.update(|_, cx| view.root(cx).unwrap().unwrap()),
@@ -249,7 +242,10 @@ fn every_gallery_story_case_mounts_draws_and_presents_semantics(cx: &mut TestApp
                     panic!("{}/{} semantic snapshot: {error}", story.id, case.id)
                 });
             let AutomationResult::Snapshot { snapshot } = result else {
-                panic!("{}/{} returned the wrong automation result", story.id, case.id);
+                panic!(
+                    "{}/{} returned the wrong automation result",
+                    story.id, case.id
+                );
             };
             assert!(
                 !snapshot.roots.is_empty(),
@@ -358,8 +354,7 @@ fn workbench_consumes_host_owned_events_and_configuration_documents(cx: &mut Tes
         },
         "operations-host-events",
     );
-    let mut dashboard_visual =
-        gpui::VisualTestContext::from_window(*dashboard_window, cx);
+    let mut dashboard_visual = gpui::VisualTestContext::from_window(*dashboard_window, cx);
     assert!(dashboard_visual.update(|_, cx| {
         dashboard
             .accessibility_snapshot(cx)
@@ -589,9 +584,7 @@ fn full_gallery_shell_supports_keyboard_modes_and_resizable_panes(cx: &mut TestA
 }
 
 #[gpui::test]
-fn streaming_workbench_suspend_cancels_late_delivery_and_resume_restarts(
-    cx: &mut TestAppContext,
-) {
+fn streaming_workbench_suspend_cancels_late_delivery_and_resume_restarts(cx: &mut TestAppContext) {
     cx.update(gpui_rhai::install);
     let prepared = prepare(&GalleryLaunch {
         story: "apps/operations".to_owned(),
@@ -637,11 +630,7 @@ fn streaming_workbench_suspend_cancels_late_delivery_and_resume_restarts(
         "late suspended delivery advanced state: {resumed_initial:?}"
     );
     let resumed = wait_for_text(&mut visual, &view, "Streaming revision 4");
-    assert!(
-        resumed
-            .iter()
-            .any(|text| text == "Streaming revision 4")
-    );
+    assert!(resumed.iter().any(|text| text == "Streaming revision 4"));
 }
 
 #[gpui::test]
@@ -912,7 +901,11 @@ fn host_embedding_story_types_through_the_real_nested_view_boundary(cx: &mut Tes
     let mut visual = gpui::VisualTestContext::from_window(*window, cx);
     let texts = wait_for_text(&mut visual, &resident, "resident:中文");
     assert!(texts.iter().any(|text| text == "resident:中文"));
-    assert!(visual.update(|_, cx| shell.last_error(cx).unwrap()).is_none());
+    assert!(
+        visual
+            .update(|_, cx| shell.last_error(cx).unwrap())
+            .is_none()
+    );
     assert!(
         visual
             .update(|_, cx| resident.last_error(cx).unwrap())

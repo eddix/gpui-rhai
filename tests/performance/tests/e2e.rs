@@ -293,10 +293,7 @@ fn settle(
         std::thread::yield_now();
         let next = take_snapshot(visual, view);
         let signature = virtual_signature(&next);
-        if !next.pending_virtual_requests
-            && next.dirty_components == 0
-            && signature == previous
-        {
+        if !next.pending_virtual_requests && next.dirty_components == 0 && signature == previous {
             stable_observations = stable_observations.saturating_add(1);
         } else {
             stable_observations = 0;

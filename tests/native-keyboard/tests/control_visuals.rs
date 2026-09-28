@@ -57,7 +57,10 @@ fn mount_with_overrides(
                 BADGE.to_owned(),
             ),
             (ModuleId::parse("components/tabs").unwrap(), TABS.to_owned()),
-            (ModuleId::parse("components/input").unwrap(), INPUT.to_owned()),
+            (
+                ModuleId::parse("components/input").unwrap(),
+                INPUT.to_owned(),
+            ),
             (
                 ModuleId::parse("components/split_pane").unwrap(),
                 SPLIT_PANE.to_owned(),
@@ -502,7 +505,10 @@ fn view(ctx) { input::Input(#{key:"field",label:"Audit input",value:ctx.get_stat
             .filter(|quad| quad.border_widths.left.0 > 0.0 && quad.border_color == focus_ring)
             .count()
     });
-    assert!(green_borders > 0, "native focus did not reach wrapper style");
+    assert!(
+        green_borders > 0,
+        "native focus did not reach wrapper style"
+    );
     let tree = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
     assert_eq!(
         tree.find_by_role_and_name("text_field", "Audit input")
@@ -649,9 +655,7 @@ fn view(ctx){{let rect=ctx.get_state("rect");column([
 }
 
 #[gpui::test]
-fn draggable_previews_natively_and_commits_once_from_the_declared_handle(
-    cx: &mut TestAppContext,
-) {
+fn draggable_previews_natively_and_commits_once_from_the_declared_handle(cx: &mut TestAppContext) {
     cx.update(gpui_rhai::install);
     let script = r#"
 import "components/draggable" as draggable;
@@ -708,7 +712,10 @@ fn view(ctx){
     let preview = visual.update(|_, cx| {
         let tree = view.accessibility_snapshot(cx).unwrap();
         assert_eq!(
-            tree.nodes().find(|node| node.role == "status").unwrap().name,
+            tree.nodes()
+                .find(|node| node.role == "status")
+                .unwrap()
+                .name,
             "40.0,50.0"
         );
         tree.find_by_role_and_name("group", "Move card")
@@ -735,9 +742,7 @@ fn view(ctx){
 }
 
 #[gpui::test]
-fn resizable_drag_previews_natively_and_commits_opposite_corner_geometry(
-    cx: &mut TestAppContext,
-) {
+fn resizable_drag_previews_natively_and_commits_opposite_corner_geometry(cx: &mut TestAppContext) {
     cx.update(gpui_rhai::install);
     let script = resizable_script(r#"["nw"]"#);
     let (window, view) = mount(cx, &script, "resizable-pointer");
