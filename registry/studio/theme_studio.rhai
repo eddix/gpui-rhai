@@ -25,6 +25,8 @@ import "components/table" as table;
 import "components/split_pane" as split_pane;
 import "components/resizable" as resizable;
 import "components/draggable" as draggable;
+import "components/drag_source" as drag_source;
+import "components/drop_zone" as drop_zone;
 import "components/tabs" as tabs;
 import "components/tag" as tag;
 import "components/textarea" as textarea;
@@ -631,6 +633,23 @@ fn specimen_data(ctx) {
             on_move: Fn("set_specimen_draggable")
         }).with_style(style().width(relative(1.0)).height(px(108))
             .border(px(1)).border_color(theme_color("border"))),
+        row([
+            drag_source::DragSource(#{ key:"specimen-drag-source", label:"Move artifact",
+                source_id:"studio-artifact", payload_type:"artifact", payload:#{id:"studio-artifact"},
+                operation:"move", keyboard_target:"studio-drop-zone",
+                content:text("DRAG ARTIFACT").with_style(style().height(px(48)).padding(theme_spacing("sm"))
+                    .items_center().background(theme_color("surface_raised"))
+                    .border(px(1)).border_color(theme_color("border"))),
+                on_drag_end:Fn("record_action").curry("Drag finished")
+            }).with_style(style().width(relative(0.5))),
+            drop_zone::DropZone(#{ key:"specimen-drop-zone", label:"Artifact drop zone",
+                target_id:"studio-drop-zone", payload_types:["artifact"], operations:["move"],
+                content:text("DROP ZONE").with_style(style().height(px(48)).padding(theme_spacing("sm"))
+                    .items_center().background(theme_color("surface"))
+                    .border(px(1)).border_color(theme_color("border"))),
+                on_drop:Fn("record_action").curry("Drop committed")
+            }).with_style(style().width(relative(0.5)))
+        ]).with_style(style().gap(theme_spacing("sm"))),
         table::Table(#{ key: "specimen-table", label: "Users", row_key: "id",
             rows: rows, columns: columns, height: 126, striped: true, resizable_columns: true,
             selection_mode: "multiple", selected_keys: ctx.get_state("specimen_table_selected"),
@@ -866,13 +885,13 @@ fn gallery_title_bar(ctx) {
     ]).with_style(style().min_width(px(0)).gap(px(6)).items_center().overflow_hidden());
     let config = #{ label: "GPUI Rhai Component Gallery", title: breadcrumb,
         inset_start: 70, end: [themes] };
-    if !compact { config.subtitle = "54 source-owned components · native GPUI behavior · live themes"; }
+    if !compact { config.subtitle = "56 source-owned components · native GPUI behavior · live themes"; }
     title_bar::TitleBar(config)
 }
 
 fn gallery_status_bar(ctx) {
     status_bar::StatusBar(#{ label: "Component Gallery status",
-        start: [text(`54 components · ${ctx.get_state("interaction_count")} interactions`)],
+        start: [text(`56 components · ${ctx.get_state("interaction_count")} interactions`)],
         center: [text(ctx.get_state("interaction_status"))],
         end: [text(ctx.get_state("gallery_category")), text(ctx.viewport_class())] })
 }

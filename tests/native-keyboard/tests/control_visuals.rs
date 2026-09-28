@@ -15,6 +15,8 @@ const INPUT: &str = include_str!("../../../registry/components/input.rhai");
 const SPLIT_PANE: &str = include_str!("../../../registry/components/split_pane.rhai");
 const RESIZABLE: &str = include_str!("../../../registry/components/resizable.rhai");
 const DRAGGABLE: &str = include_str!("../../../registry/components/draggable.rhai");
+const DRAG_SOURCE: &str = include_str!("../../../registry/components/drag_source.rhai");
+const DROP_ZONE: &str = include_str!("../../../registry/components/drop_zone.rhai");
 const ANIMATED_TABS: &str = include_str!("../../../registry/motion/animated_tabs.rhai");
 const DEFAULT_DARK: &str = include_str!("../../../registry/themes/default_dark.rhai");
 
@@ -72,6 +74,14 @@ fn mount_with_overrides(
             (
                 ModuleId::parse("components/draggable").unwrap(),
                 DRAGGABLE.to_owned(),
+            ),
+            (
+                ModuleId::parse("components/drag_source").unwrap(),
+                DRAG_SOURCE.to_owned(),
+            ),
+            (
+                ModuleId::parse("components/drop_zone").unwrap(),
+                DROP_ZONE.to_owned(),
             ),
             (
                 ModuleId::parse("motion/animated_tabs").unwrap(),
@@ -739,6 +749,95 @@ fn view(ctx){
             .clone()
     });
     assert_eq!(status, "88.0,82.0");
+}
+
+#[gpui::test]
+fn typed_drag_drop_commits_one_target_and_keyboard_uses_the_same_contract(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let script = r#"
+import "components/drag_source" as drag_source;
+import "components/drop_zone" as drop_zone;
+fn state_schema(){#{fields:#{
+    owner:#{schema:#{type:"string",allowed:["a","b"]},"default":#{type:"string",value:"a"}},
+    status:#{schema:#{type:"string"},"default":#{type:"string",value:"ready"}}
+}}}
+fn dropped(ctx,value){ctx.set_state("owner",value.target_id);ctx.set_state("status",`drop:${value.target_id}:${value.payload.id}`);}
+fn ended(ctx,value){if value.cancelled{ctx.set_state("status","cancelled");}
+    else if !value.accepted{ctx.set_state("status","keyboard rejected");}}
+fn card(ctx){let other=if ctx.get_state("owner")=="a"{"b"}else{"a"};
+    drag_source::DragSource(#{key:"card",label:"Move item",source_id:"item-1",payload_type:"item",
+        payload:#{id:"item-1"},operation:"move",keyboard_target:other,
+        content:text("ITEM ONE").with_style(style().width(px(120)).height(px(44))
+            .items_center().padding_x(px(8)).background(theme_color("surface_raised"))),on_drag_end:Fn("ended")})}
+fn lane(ctx,id){let children=[text(`TARGET ${id}`)];if ctx.get_state("owner")==id{children.push(card(ctx));}
+    drop_zone::DropZone(#{key:`zone-${id}`,label:`Target ${id}`,target_id:id,payload_types:["item"],operations:["move"],
+        content:column(children).with_style(style().width(relative(1.0)).height(relative(1.0)).padding(px(12)).gap(px(8))),
+        on_drop:Fn("dropped")}).with_style(style().width(px(190)).height(px(150)).border(px(1)).border_color(theme_color("border")))}
+fn view(ctx){column([text(ctx.get_state("status")).accessibility_role("status"),
+    row([lane(ctx,"a"),lane(ctx,"b")]).with_style(style().gap(px(20)))])}
+"#;
+    let (window, view) = mount(cx, script, "typed-drag-drop");
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    let status = |visual: &mut VisualTestContext| {
+        visual.update(|_, cx| {
+            view.accessibility_snapshot(cx)
+                .unwrap()
+                .nodes()
+                .find(|node| node.role == "status")
+                .unwrap()
+                .name
+                .clone()
+        })
+    };
+    let source = visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .find_by_role_and_name("button", "Move item")
+            .next()
+            .unwrap()
+            .geometry
+            .unwrap()
+            .visual
+    });
+    let source_point = point(
+        px((source.x + source.width / 2.0) as f32),
+        px((source.y + source.height / 2.0) as f32),
+    );
+    visual.simulate_mouse_down(source_point, MouseButton::Left, Modifiers::default());
+    visual.simulate_mouse_up(source_point, MouseButton::Left, Modifiers::default());
+    visual.run_until_parked();
+    visual.simulate_keystrokes("enter");
+    visual.run_until_parked();
+    assert_eq!(status(&mut visual), "drop:b:item-1");
+
+    let snapshot = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
+    let source = snapshot
+        .find_by_role_and_name("button", "Move item")
+        .next()
+        .unwrap()
+        .geometry
+        .unwrap()
+        .visual;
+    let target = snapshot
+        .find_by_role_and_name("group", "Target a")
+        .next()
+        .unwrap()
+        .geometry
+        .unwrap()
+        .visual;
+    let source_point = point(
+        px((source.x + source.width / 2.0) as f32),
+        px((source.y + source.height / 2.0) as f32),
+    );
+    let target_point = point(
+        px((target.x + target.width / 2.0) as f32),
+        px((target.y + target.height / 2.0) as f32),
+    );
+    visual.simulate_mouse_down(source_point, MouseButton::Left, Modifiers::default());
+    visual.simulate_mouse_move(target_point, MouseButton::Left, Modifiers::default());
+    visual.simulate_mouse_up(target_point, MouseButton::Left, Modifiers::default());
+    visual.run_until_parked();
+    assert_eq!(status(&mut visual), "drop:a:item-1");
 }
 
 #[gpui::test]
