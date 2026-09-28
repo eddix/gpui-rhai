@@ -141,6 +141,8 @@ pub(crate) enum InteractionFlow {
 type UpdateHandler = dyn Fn(GestureUpdate, &mut Window, &mut App) -> InteractionFlow;
 type FinishHandler = dyn Fn(GestureUpdate, &mut Window, &mut App);
 type CancelHandler = dyn Fn(&mut Window, &mut App);
+type CapturedMoveHandler = dyn Fn(&MouseMoveEvent, &mut Window, &mut App) -> bool;
+type CapturedUpHandler = dyn Fn(&MouseUpEvent, &mut Window, &mut App) -> bool;
 
 pub(crate) struct NativeGesture {
     owner: InteractionOwner,
@@ -185,11 +187,26 @@ pub(crate) struct WindowInteractionCoordinator(Rc<RefCell<InteractionState>>);
 struct InteractionState {
     active: Option<NativeGesture>,
     presented: BTreeSet<InteractionOwner>,
+    captured_move: Option<Rc<CapturedMoveHandler>>,
+    captured_up: Option<Rc<CapturedUpHandler>>,
 }
 
 impl WindowInteractionCoordinator {
     pub(crate) fn begin_frame(&self) {
-        self.0.borrow_mut().presented.clear();
+        let mut state = self.0.borrow_mut();
+        state.presented.clear();
+        state.captured_move = None;
+        state.captured_up = None;
+    }
+
+    pub(crate) fn set_pointer_routes(
+        &self,
+        move_handler: impl Fn(&MouseMoveEvent, &mut Window, &mut App) -> bool + 'static,
+        up_handler: impl Fn(&MouseUpEvent, &mut Window, &mut App) -> bool + 'static,
+    ) {
+        let mut state = self.0.borrow_mut();
+        state.captured_move = Some(Rc::new(move_handler));
+        state.captured_up = Some(Rc::new(up_handler));
     }
 
     pub(crate) fn present(&self, owner: InteractionOwner) {
@@ -274,29 +291,32 @@ impl WindowInteractionCoordinator {
     pub(crate) fn install(&self, window: &mut Window) {
         let move_coordinator = self.clone();
         window.on_mouse_event(move |event: &MouseMoveEvent, phase, window, cx| {
-            if phase != DispatchPhase::Capture || move_coordinator.0.borrow().active.is_none() {
+            if phase != DispatchPhase::Capture {
                 return;
             }
-            if !event.dragging() {
-                move_coordinator.cancel(window, cx);
+            let native = {
+                let mut state = move_coordinator.0.borrow_mut();
+                state.active.as_mut().map(|active| {
+                    (
+                        active.session.update(event.position),
+                        Rc::clone(&active.update),
+                        active.notify,
+                    )
+                })
+            };
+            if let Some((update, handler, notify)) = native {
+                if !event.dragging() || handler(update, window, cx) == InteractionFlow::Cancel {
+                    move_coordinator.cancel(window, cx);
+                } else {
+                    cx.notify(notify);
+                }
                 cx.stop_propagation();
                 return;
             }
-            let (update, handler, notify) = {
-                let mut state = move_coordinator.0.borrow_mut();
-                let active = state.active.as_mut().expect("active gesture was checked");
-                (
-                    active.session.update(event.position),
-                    Rc::clone(&active.update),
-                    active.notify,
-                )
-            };
-            if handler(update, window, cx) == InteractionFlow::Cancel {
-                move_coordinator.cancel(window, cx);
-            } else {
-                cx.notify(notify);
+            let route = move_coordinator.0.borrow().captured_move.clone();
+            if route.is_some_and(|route| route(event, window, cx)) {
+                cx.stop_propagation();
             }
-            cx.stop_propagation();
         });
 
         let up_coordinator = self.clone();
@@ -311,6 +331,10 @@ impl WindowInteractionCoordinator {
                 .as_ref()
                 .is_some_and(|active| active.button == event.button);
             if !matches_active {
+                let route = up_coordinator.0.borrow().captured_up.clone();
+                if route.is_some_and(|route| route(event, window, cx)) {
+                    cx.stop_propagation();
+                }
                 return;
             }
             let Some(mut active) = up_coordinator.0.borrow_mut().active.take() else {

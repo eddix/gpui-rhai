@@ -6,13 +6,13 @@ use std::time::Instant;
 
 use gpui::{
     AlignSelf as GpuiAlignSelf, AnyElement, App, Background, Bounds, BoxShadow, ClickEvent,
-    ContentMask, Context, CursorStyle, DispatchPhase, Div, Element, ElementId, FocusHandle,
-    FontFallbacks, FontFeatures, FontStyle, FontWeight, GlobalElementId, HighlightStyle, Img,
-    InspectorElementId, InteractiveElement, IntoElement, LayoutId, Modifiers, MouseButton,
-    MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point, Render,
-    ScrollHandle, ScrollWheelEvent, SharedString, Stateful, StatefulInteractiveElement, Styled,
-    StyledText, TextAlign, Window, auto, div, img, linear_color_stop, linear_gradient, point, px,
-    relative, rems, rgba,
+    ContentMask, Context, CursorStyle, Div, Element, ElementId, FocusHandle, FontFallbacks,
+    FontFeatures, FontStyle, FontWeight, GlobalElementId, HighlightStyle, Img, InspectorElementId,
+    InteractiveElement, IntoElement, LayoutId, Modifiers, MouseButton, MouseDownEvent,
+    MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point, Render, ScrollHandle,
+    ScrollWheelEvent, SharedString, Stateful, StatefulInteractiveElement, Styled, StyledText,
+    TextAlign, Window, auto, div, img, linear_color_stop, linear_gradient, point, px, relative,
+    rems, rgba,
 };
 
 use crate::overlay_element::{ScriptLayerElement, ScriptOverlayElement, WindowOverlayCoordinator};
@@ -967,9 +967,11 @@ pub(crate) fn pointer_capture_router_element(
     captures: &crate::PointerCaptureRegistry,
     geometry: &crate::GeometryRegistry,
     scroll_handles: &BTreeMap<NodeId, ScrollHandle>,
+    interactions: crate::interaction::WindowInteractionCoordinator,
 ) -> AnyElement {
     PointerCaptureRouterElement {
         child: Some(child),
+        interactions,
         routes: Some(PointerCaptureRoutes {
             move_handlers: retained_handlers(tree, "pointer_move"),
             up_handlers: retained_handlers(tree, "pointer_up"),
@@ -1003,7 +1005,7 @@ struct PointerCaptureRoutes {
 }
 
 impl PointerCaptureRoutes {
-    fn install(self, window: &mut Window) {
+    fn register(self, interactions: &crate::interaction::WindowInteractionCoordinator) {
         let Self {
             move_handlers,
             up_handlers,
@@ -1016,70 +1018,67 @@ impl PointerCaptureRoutes {
         let move_captures = captures.clone();
         let up_captures = captures;
         let move_payload_contexts = payload_contexts.clone();
-        window.on_mouse_event(move |event: &MouseMoveEvent, phase, window, app| {
-            if phase != DispatchPhase::Capture {
-                return;
-            }
-            let Some(node) = move_captures.captured(0) else {
-                return;
-            };
-            let Some(bindings) = move_handlers.get(&node) else {
-                return;
-            };
-            let payload = move_payload_contexts.get(&node).map_or_else(
-                || mouse_move_payload_with_capture(event, true),
-                |context| context.enrich(mouse_move_payload_with_capture(event, true)),
-            );
-            let target = move_payload_contexts
-                .get(&node)
-                .and_then(PointerPayloadContext::target_bounds);
-            let response = dispatch_ui_handler_phases(
-                bindings,
-                "pointer_move",
-                &[crate::EventPhase::Target, crate::EventPhase::Bubble],
-                &payload,
-                EventRoute::new(target, Some(&move_dispatcher)),
-                window,
-                app,
-            );
-            apply_pointer_response(response, Some(node), 0, &move_captures, window, app);
-            app.stop_propagation();
-        });
-        window.on_mouse_event(move |event: &MouseUpEvent, phase, window, app| {
-            if phase != DispatchPhase::Capture {
-                return;
-            }
-            let Some(node) = up_captures.captured(0) else {
-                return;
-            };
-            if let Some(bindings) = up_handlers.get(&node) {
-                let payload = payload_contexts.get(&node).map_or_else(
-                    || mouse_up_payload_with_capture(event, true),
-                    |context| context.enrich(mouse_up_payload_with_capture(event, true)),
+        interactions.set_pointer_routes(
+            move |event: &MouseMoveEvent, window, app| {
+                let Some(node) = move_captures.captured(0) else {
+                    return false;
+                };
+                let Some(bindings) = move_handlers.get(&node) else {
+                    return false;
+                };
+                let payload = move_payload_contexts.get(&node).map_or_else(
+                    || mouse_move_payload_with_capture(event, true),
+                    |context| context.enrich(mouse_move_payload_with_capture(event, true)),
                 );
-                let target = payload_contexts
+                let target = move_payload_contexts
                     .get(&node)
                     .and_then(PointerPayloadContext::target_bounds);
                 let response = dispatch_ui_handler_phases(
                     bindings,
-                    "pointer_up",
+                    "pointer_move",
                     &[crate::EventPhase::Target, crate::EventPhase::Bubble],
                     &payload,
-                    EventRoute::new(target, Some(&up_dispatcher)),
+                    EventRoute::new(target, Some(&move_dispatcher)),
                     window,
                     app,
                 );
-                apply_pointer_response(response, Some(node), 0, &up_captures, window, app);
-            }
-            up_captures.release(0);
-            app.stop_propagation();
-        });
+                apply_pointer_response(response, Some(node), 0, &move_captures, window, app);
+                true
+            },
+            move |event: &MouseUpEvent, window, app| {
+                let Some(node) = up_captures.captured(0) else {
+                    return false;
+                };
+                if let Some(bindings) = up_handlers.get(&node) {
+                    let payload = payload_contexts.get(&node).map_or_else(
+                        || mouse_up_payload_with_capture(event, true),
+                        |context| context.enrich(mouse_up_payload_with_capture(event, true)),
+                    );
+                    let target = payload_contexts
+                        .get(&node)
+                        .and_then(PointerPayloadContext::target_bounds);
+                    let response = dispatch_ui_handler_phases(
+                        bindings,
+                        "pointer_up",
+                        &[crate::EventPhase::Target, crate::EventPhase::Bubble],
+                        &payload,
+                        EventRoute::new(target, Some(&up_dispatcher)),
+                        window,
+                        app,
+                    );
+                    apply_pointer_response(response, Some(node), 0, &up_captures, window, app);
+                }
+                up_captures.release(0);
+                true
+            },
+        );
     }
 }
 
 struct PointerCaptureRouterElement {
     child: Option<AnyElement>,
     routes: Option<PointerCaptureRoutes>,
+    interactions: crate::interaction::WindowInteractionCoordinator,
 }
 
 impl Element for PointerCaptureRouterElement {
@@ -1131,7 +1130,7 @@ impl Element for PointerCaptureRouterElement {
         self.routes
             .take()
             .expect("pointer router paints once")
-            .install(window);
+            .register(&self.interactions);
         child.paint(window, cx);
     }
 }

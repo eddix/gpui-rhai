@@ -3540,6 +3540,7 @@ impl Render for ScriptHostView {
             &snapshot.pointer_capture,
             &snapshot.geometry,
             &self.scroll_handles,
+            interactions.clone(),
         )
     }
 }
