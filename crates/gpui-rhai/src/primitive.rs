@@ -842,6 +842,7 @@ pub enum PrimitiveResourceError {
 pub struct PrimitiveContext {
     registry: Weak<RefCell<PrimitiveRegistryInner>>,
     primitive: PrimitiveId,
+    event_schemas: BTreeMap<String, EventSchema>,
     callbacks: BTreeMap<String, UiEventHandler>,
     dispatcher: Option<NodeEventDispatcher>,
     interactions: crate::interaction::WindowInteractionCoordinator,
@@ -850,7 +851,54 @@ pub struct PrimitiveContext {
     instance: Option<PrimitiveInstanceId>,
 }
 
+/// A schema-checked semantic proposal produced by a native primitive policy.
+///
+/// The runtime executes this value at the owning `ScriptView` boundary so
+/// synchronous automation can observe the real callback result.
+pub struct PrimitiveSemanticProposal {
+    pub(crate) event: String,
+    pub(crate) payload: UiValue,
+    pub(crate) handler: Option<UiEventHandler>,
+}
+
 impl PrimitiveContext {
+    pub(crate) fn observes(&self, event: &str) -> bool {
+        self.callbacks.contains_key(event)
+    }
+
+    /// Prepare a semantic proposal without dispatching it yet.
+    ///
+    /// # Errors
+    ///
+    /// Returns declaration, schema, or released-registry errors.
+    pub fn prepare_proposal(
+        &self,
+        event: impl Into<String>,
+        payload: UiValue,
+    ) -> Result<PrimitiveSemanticProposal, PrimitiveError> {
+        let event = event.into();
+        let schema =
+            self.event_schemas
+                .get(&event)
+                .ok_or_else(|| PrimitiveError::UnknownEvent {
+                    primitive: self.primitive.clone(),
+                    event: event.clone(),
+                })?;
+        schema
+            .payload
+            .validate_ui_value(&payload)
+            .map_err(|source| PrimitiveError::InvalidEvent {
+                primitive: self.primitive.clone(),
+                event: event.clone(),
+                source,
+            })?;
+        Ok(PrimitiveSemanticProposal {
+            handler: self.callbacks.get(&event).cloned(),
+            event,
+            payload,
+        })
+    }
+
     /// Normalize and dispatch a declared native primitive event.
     ///
     /// # Errors
@@ -1151,10 +1199,8 @@ pub trait PrimitiveHandler {
         &mut self,
         _instance: &PrimitiveInstanceId,
         _key: &str,
-        _window: &mut Window,
-        _cx: &mut App,
-    ) -> Result<bool, String> {
-        Ok(false)
+    ) -> Result<Option<PrimitiveSemanticProposal>, String> {
+        Ok(None)
     }
 
     /// Called once before the first render of a keyed lifecycle primitive.
@@ -1451,9 +1497,7 @@ impl PrimitiveRegistry {
         &self,
         instance: &PrimitiveInstanceId,
         key: &str,
-        window: &mut Window,
-        cx: &mut App,
-    ) -> Result<bool, PrimitiveError> {
+    ) -> Result<Option<PrimitiveSemanticProposal>, PrimitiveError> {
         let mut inner = self
             .inner
             .try_borrow_mut()
@@ -1466,7 +1510,7 @@ impl PrimitiveRegistry {
             .get_mut(&instance.primitive)
             .ok_or_else(|| PrimitiveError::Unknown(instance.primitive.clone()))?;
         guard_primitive_panic(&instance.primitive, "key semantic", || {
-            entry.handler.perform_key(instance, key, window, cx)
+            entry.handler.perform_key(instance, key)
         })?
         .map_err(|message| PrimitiveError::Handler {
             primitive: instance.primitive.clone(),
@@ -1872,6 +1916,13 @@ impl RenderOnce for RegisteredPrimitiveElement {
         let events = PrimitiveContext {
             registry: Rc::downgrade(&registry.inner),
             primitive: self.node.primitive.clone(),
+            event_schemas: registry
+                .inner
+                .borrow()
+                .entries
+                .get(&self.node.primitive)
+                .map(|entry| entry.descriptor.events.clone())
+                .unwrap_or_default(),
             callbacks,
             dispatcher: self.runtime.dispatcher,
             interactions: self.runtime.interactions,
@@ -2497,6 +2548,7 @@ mod tests {
         let emitter = PrimitiveContext {
             registry: Rc::downgrade(&registry.inner),
             primitive: PrimitiveId::parse("my_app.editor").unwrap(),
+            event_schemas: BTreeMap::new(),
             callbacks: BTreeMap::new(),
             dispatcher: None,
             interactions: crate::interaction::WindowInteractionCoordinator::default(),

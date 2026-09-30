@@ -45,7 +45,9 @@ fn rotatable_commit(ctx,value){ctx.emit("rotate",value);}
 
 fn render_Rotatable(ctx,props){
     let viewport_key=`${props.key}-viewport`;
+    let content_key=`${props.key}-content`;
     let viewport_ref=element_ref(viewport_key);
+    let content_ref=element_ref(content_key);
     let angle_signal=signal("rotation-angle",props.angle*1.0);
     let x_signal=signal("rotation-x",0.0);
     let y_signal=signal("rotation-y",0.0);
@@ -54,7 +56,8 @@ fn render_Rotatable(ctx,props){
     let native=#{key:`${props.key}-rotation`,source_token:token,angle:props.angle,
         pivot_x:props.pivot.x,pivot_y:props.pivot.y,
         keyboard_step:props.keyboard_step,threshold:props.threshold,disabled:props.disabled,
-        viewport_ref:viewport_ref,angle_signal:angle_signal,x_signal:x_signal,y_signal:y_signal,
+        content_ref:content_ref,
+        angle_signal:angle_signal,x_signal:x_signal,y_signal:y_signal,
         source_token_signal:token_signal,
         on_rotate:if "on_rotate" in props&&props.on_rotate!=(){Fn("rotatable_commit")}else{()}};
     if "snap" in props&&props.snap!=(){native.snap=props.snap;}
@@ -65,9 +68,11 @@ fn render_Rotatable(ctx,props){
         .disabled(props.disabled).tab_stop(!props.disabled)
         .accessibility_role("slider").accessibility_label(props.label)
         .accessibility_value(props.angle).accessibility_value_min(0.0).accessibility_value_max(360.0);
-    let content=props.content.with_key(`${props.key}-content`)
-        .with_style(ctx.component_style("content",style().width(relative(1.0)).height(relative(1.0))))
+    let content_style=ctx.component_style("content",style().width(relative(1.0)).height(relative(1.0)));
+    let content_node=props.content.with_style(content_style)
         .bind_signal("rotate",angle_signal).bind_signal("translate_x",x_signal).bind_signal("translate_y",y_signal);
+    let content=box([content_node]).with_key(content_key).with_ref(content_ref)
+        .with_style(style().width(relative(1.0)).height(relative(1.0)));
     let children=[content];
     if "handle" in props&&props.handle!=(){
         children.push(box([props.handle,interaction]).with_key(`${props.key}-handle`)

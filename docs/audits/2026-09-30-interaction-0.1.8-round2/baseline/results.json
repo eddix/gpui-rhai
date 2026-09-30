@@ -1,0 +1,33 @@
+{
+  "head": "d77b4b49a667da618fe9b9583d331d8c325cf180",
+  "results": [
+    {
+      "name": "runtime-core",
+      "exit": 0,
+      "seconds": 6.4316281247884035,
+      "source": "docs/audits/2026-09-30-interaction-0.1.8/runtime-core/probes.rs",
+      "source_sha256": "e291c6cbf0ea2fa07dd8632fb62ad2915b4d6728c1d315a049cc6d83d2bbd9a1"
+    },
+    {
+      "name": "drag-sort",
+      "exit": 0,
+      "seconds": 1.61265220772475,
+      "source": "docs/audits/2026-09-30-interaction-0.1.8/drag-sort/probe/src/lib.rs",
+      "source_sha256": "04a3ea63185d0c2c837060ab187e270d96daf62752362c34aefb7e611740dd62"
+    },
+    {
+      "name": "resize-controls",
+      "exit": 0,
+      "seconds": 2.8477623341605067,
+      "source": "docs/audits/2026-09-30-interaction-0.1.8/resize-controls/probe.rs",
+      "source_sha256": "c8fe6f4a3f33dbe2dc04680ca217b5d877c71d91ab18a0abf9a372d4a4b65a48"
+    },
+    {
+      "name": "transforms-selection",
+      "exit": 0,
+      "seconds": 1.42031425004825,
+      "source": "docs/audits/2026-09-30-interaction-0.1.8/transforms-selection/src/lib.rs",
+      "source_sha256": "d27d605f69ce05b001e0cd17a69f2aec04fa6716843c7344ef71d5da3b6f930c"
+    }
+  ]
+}

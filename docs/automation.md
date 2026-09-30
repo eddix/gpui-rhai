@@ -41,7 +41,10 @@ For native focus-owning primitives, a retained `key:*` dispatch may enter the
 primitive's native key semantic when no declarative handler exists. This is not
 a second implementation of component math: Resizable Automation, AccessKit and
 real keyboard input call the same Rust policy and produce the same controlled
-proposal. The dispatch report counts that native semantic as one invocation.
+proposal. Automation executes that proposal synchronously at the ScriptView
+boundary, so a business callback failure makes the command fail just as it does
+for a declarative handler. The dispatch report counts a successful native
+semantic as one invocation.
 
 `Dispatch` may route a retained raw event name such as `pointer_down`, but it
 does not synthesize a native pointer payload or down/move/up device sequence.

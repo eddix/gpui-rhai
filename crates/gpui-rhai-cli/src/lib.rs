@@ -447,7 +447,8 @@ impl Project {
         let components = validate_component_exports(&modules, &headers)?;
         app.validate_components(&components)?;
         let host_validation_required = !app.capabilities.is_empty();
-        validate_entry(&self.root, &modules, &components, !host_validation_required)?;
+        let initial_view_validated =
+            validate_entry(&self.root, &modules, &components, !host_validation_required)?;
         let styles_path = self.root.join("ui/styles.rhai");
         if styles_path.exists() {
             load_component_styles(
@@ -479,6 +480,7 @@ impl Project {
             components: manifest.components.len(),
             entry: app.entry,
             host_validation_required,
+            initial_view_validated,
         })
     }
 
@@ -1015,7 +1017,7 @@ fn validate_entry(
     modules: &BTreeMap<ModuleId, String>,
     components: &ComponentRegistry,
     run_hostless_lifecycle: bool,
-) -> Result<(), ProjectError> {
+) -> Result<bool, ProjectError> {
     let entry_path = root.join("ui/main.rhai");
     let entry = read(&entry_path)?;
     let source = EmbeddedScriptSource::new(modules.clone());
@@ -1035,6 +1037,7 @@ fn validate_entry(
     if !compiled.has_function("view", 1) {
         return Err(ProjectError::MissingView);
     }
+    let has_init = compiled.has_function("init", 1);
     let schema = runtime.root_state_schema(&compiled)?;
     let primary_source = read(&root.join("ui/theme.rhai"))?;
     let primary = load_theme_source(runtime.engine(), "ui/theme.rhai", &primary_source)
@@ -1088,10 +1091,13 @@ fn validate_entry(
     )?;
     if run_hostless_lifecycle {
         lifecycle.start(&mut runtime)?;
-    } else {
+        Ok(true)
+    } else if !has_init {
         lifecycle.validate_initial_view_without_init(&mut runtime)?;
+        Ok(true)
+    } else {
+        Ok(false)
     }
-    Ok(())
 }
 
 fn load_check_locales(root: &Path) -> Result<Option<LocaleManager>, ProjectError> {
@@ -1833,12 +1839,18 @@ pub struct CheckReport {
     pub components: usize,
     pub entry: ModuleId,
     pub host_validation_required: bool,
+    pub initial_view_validated: bool,
 }
 
 impl CheckReport {
     #[must_use]
     pub fn summary(&self) -> String {
-        if self.host_validation_required {
+        if self.host_validation_required && !self.initial_view_validated {
+            format!(
+                "Static check passed: entry `{}`, {} installed component(s). Host capability lifecycle and its dependent initial view were not executed.",
+                self.entry, self.components
+            )
+        } else if self.host_validation_required {
             format!(
                 "Static check passed: entry `{}`, {} installed component(s). Host capability lifecycle validation was not executed.",
                 self.entry, self.components
@@ -2170,7 +2182,23 @@ mod tests {
         .unwrap();
         let report = project.check().unwrap();
         assert!(report.host_validation_required);
-        assert!(report.summary().contains("was not executed"));
+        assert!(!report.initial_view_validated);
+        assert!(report.summary().contains("not executed"));
+
+        fs::write(
+            directory.path().join("ui/main.rhai"),
+            r#"
+            fn state_schema() { #{ fields: #{ ready: #{ schema: #{ type: "bool" },
+                "default": #{ type: "bool", value: false } } } } }
+            fn init(ctx) { ctx.set_state("ready", true); }
+            fn view(ctx) {
+                if !ctx.get_state("ready") { throw "init state is required"; }
+                text("ready")
+            }
+            "#,
+        )
+        .unwrap();
+        assert!(!project.check().unwrap().initial_view_validated);
 
         fs::write(
             directory.path().join("ui/main.rhai"),

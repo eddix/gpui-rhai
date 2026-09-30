@@ -102,15 +102,6 @@ fn tree_row(expanded,selected,active,mode,disabled,ctx,payload){
 }
 fn eligible_rows(rows){let result=[];for row in rows{if !row.disabled{result.push(row);}}result}
 fn row_index(rows,key){for index in 0..rows.len{if rows[index].key==key{return index;}}()}
-fn eligible_parent(rows,eligible,key){
-    let cursor=key;
-    while cursor!=(){
-        for row in eligible{if row.key==cursor{return cursor;}}
-        let next=();for row in rows{if row.key==cursor{next=row.parent;}}
-        cursor=next;
-    }
-    ()
-}
 fn render_Tree(ctx,props){
     if ("height" in props&&props.height!=())==props.fill_height{throw "Tree requires exactly one of height or fill_height";}
     let rows=outline_projection(props.items,props.expanded);let eligible=eligible_rows(rows);
@@ -122,7 +113,7 @@ fn render_Tree(ctx,props){
     let next=if eligible.len==0{()}else{eligible[if current+1<eligible.len{current+1}else{eligible.len-1}].key};
     let first=if eligible.len==0{()}else{eligible[0].key};let last=if eligible.len==0{()}else{eligible[eligible.len-1].key};
     let active_row=if eligible.len==0{()}else{eligible[current]};
-    let parent=if active_row==(){()}else{eligible_parent(rows,eligible,active_row.parent)};
+    let parent=if active_row==(){()}else{active_row.eligible_parent};
     let left=if active_row==(){#{kind:"none"}}else if active_row.has_children&&active_row.expanded{
         #{kind:"toggle",key:active_row.key}}else if parent!=(){#{kind:"active",key:parent}}else{#{kind:"none"}};
     let right=if active_row==(){#{kind:"none"}}else if active_row.has_children&&!active_row.expanded{

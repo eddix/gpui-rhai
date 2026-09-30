@@ -222,10 +222,14 @@ calls, and computed registration are rejected before evaluation. Put mutable UI
 state in `UiContext` and start work through lifecycle/event APIs.
 
 Rhai compilation validates syntax, not every dynamic overload. The
-`gpui-rhai check` command also lints known calls and executes the real initial
-lifecycle, but event branches still need tests with representative runtime
-value types. Rhai maps are key-sorted maps, not insertion-ordered records, and
-scripts do not define Rust-like struct or class types.
+`gpui-rhai check` also lints known calls. It executes the real initial lifecycle
+when no Host capability context is required. If a declared capability is used
+by `init`, the CLI performs static validation but deliberately skips that init
+and any initial View that may depend on its state; the summary says which level
+ran. Use an application-owned fixture with real handlers for that remaining
+validation. Event branches still need representative runtime value types. Rhai
+maps are key-sorted maps, not insertion-ordered records, and scripts do not
+define Rust-like struct or class types.
 
 ## 4. State and controlled components
 
@@ -948,6 +952,11 @@ Guidelines:
 - Keep large stable row sets in `NativeCollection`; let Rhai declare the Table
   and controlled state while Rust caches sort/group/collapse order and projects
   only visible rows.
+- Register names known at mount through the extension. For names discovered
+  later, call `ScriptViewHandle::register_native_collection`; a component that
+  previously handled the missing-name error is tracked and invalidated exactly
+  when registration succeeds. Use `replace_native_collection` only for an
+  already registered name.
 - Use Table `query`/`search_fields` and `page`/`page_size` for controlled
   Rust-side filtering and paging; reset page one when query or sort changes.
 - Keep large or rapidly replaced source text in `NativeTextDocument`; direct

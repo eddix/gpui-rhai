@@ -1197,10 +1197,10 @@ fn error_payload(message: &str) -> UiValue {
 }
 
 fn validate_async_payload(output: &ValueSchema, value: &UiValue) -> Result<(), UiValue> {
+    validate_rhai_delivery(value).map_err(delivery_limit_payload)?;
     output
         .validate_ui_value(value)
-        .map_err(|error| error_payload(&error.to_string()))?;
-    validate_rhai_delivery(value).map_err(delivery_limit_payload)
+        .map_err(|error| error_payload(&error.to_string()))
 }
 
 fn delivery_limit_payload(error: DeliveryLimit) -> UiValue {

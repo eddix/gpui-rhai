@@ -1626,6 +1626,7 @@ fn validate_name(name: &str, label: &'static str) -> Result<(), NativeCollection
 pub struct NativeCollectionRegistry {
     collections: BTreeMap<String, NativeCollection>,
     readers: BTreeMap<String, BTreeSet<ComponentInstancePath>>,
+    missing_readers: BTreeMap<String, BTreeSet<ComponentInstancePath>>,
 }
 
 impl NativeCollectionRegistry {
@@ -1644,13 +1645,21 @@ impl NativeCollectionRegistry {
         name: impl Into<String>,
         collection: NativeCollection,
     ) -> Result<(), NativeCollectionError> {
-        let name = name.into();
+        self.register_with_invalidated(name.into(), collection)?;
+        Ok(())
+    }
+
+    pub(crate) fn register_with_invalidated(
+        &mut self,
+        name: String,
+        collection: NativeCollection,
+    ) -> Result<BTreeSet<ComponentInstancePath>, NativeCollectionError> {
         validate_name(&name, "collection name")?;
         if self.collections.contains_key(&name) {
             return Err(NativeCollectionError::DuplicateCollection(name));
         }
-        self.collections.insert(name, collection);
-        Ok(())
+        self.collections.insert(name.clone(), collection);
+        Ok(self.missing_readers.remove(&name).unwrap_or_default())
     }
 
     /// Replace an existing collection and return its exact subscribed readers.
@@ -1679,11 +1688,19 @@ impl NativeCollectionRegistry {
         reader: &ComponentInstancePath,
         name: &str,
     ) -> Result<NativeCollection, NativeCollectionError> {
-        let collection = self
-            .collections
-            .get(name)
-            .cloned()
-            .ok_or_else(|| NativeCollectionError::UnknownCollection(name.to_owned()))?;
+        let Some(collection) = self.collections.get(name).cloned() else {
+            self.missing_readers
+                .entry(name.to_owned())
+                .or_default()
+                .insert(reader.clone());
+            return Err(NativeCollectionError::UnknownCollection(name.to_owned()));
+        };
+        if let Some(readers) = self.missing_readers.get_mut(name) {
+            readers.remove(reader);
+            if readers.is_empty() {
+                self.missing_readers.remove(name);
+            }
+        }
         self.readers
             .entry(name.to_owned())
             .or_default()
@@ -1696,6 +1713,11 @@ impl NativeCollectionRegistry {
             readers.remove(reader);
         }
         self.readers.retain(|_, readers| !readers.is_empty());
+        for readers in self.missing_readers.values_mut() {
+            readers.remove(reader);
+        }
+        self.missing_readers
+            .retain(|_, readers| !readers.is_empty());
     }
 
     pub(crate) fn retain_reader_scope(
@@ -1709,6 +1731,13 @@ impl NativeCollectionRegistry {
             });
         }
         self.readers.retain(|_, readers| !readers.is_empty());
+        for readers in self.missing_readers.values_mut() {
+            readers.retain(|reader| {
+                !reader.is_within(root) || reader == root || active.contains(reader)
+            });
+        }
+        self.missing_readers
+            .retain(|_, readers| !readers.is_empty());
     }
 
     pub(crate) fn remove_reader_scope(&mut self, root: &ComponentInstancePath) {
@@ -1716,6 +1745,11 @@ impl NativeCollectionRegistry {
             readers.retain(|reader| !reader.is_within(root));
         }
         self.readers.retain(|_, readers| !readers.is_empty());
+        for readers in self.missing_readers.values_mut() {
+            readers.retain(|reader| !reader.is_within(root));
+        }
+        self.missing_readers
+            .retain(|_, readers| !readers.is_empty());
     }
 }
 
@@ -2054,6 +2088,19 @@ mod tests {
         assert_eq!(
             registry.replace("accounts", changed).unwrap(),
             [reader].into()
+        );
+    }
+
+    #[test]
+    fn registering_a_missing_name_invalidates_its_exact_readers() {
+        let mut registry = NativeCollectionRegistry::new();
+        let reader = ComponentInstancePath::root("View", "late-child");
+        assert!(registry.read_tracked(&reader, "late").is_err());
+        assert_eq!(
+            registry
+                .register_with_invalidated("late".to_owned(), rows())
+                .unwrap(),
+            BTreeSet::from([reader])
         );
     }
 

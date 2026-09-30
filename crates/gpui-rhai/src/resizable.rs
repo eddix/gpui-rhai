@@ -661,30 +661,19 @@ pub struct ResizablePrimitiveHandler {
     controls: BTreeMap<PrimitiveInstanceId, (ResizableConfig, PrimitiveContext)>,
 }
 
-fn perform_keyboard_resize(
-    config: &ResizableConfig,
-    events: &PrimitiveContext,
-    key: &str,
-    shift: bool,
-    window: &mut Window,
-    cx: &mut App,
-) -> bool {
+fn keyboard_resize_payload(config: &ResizableConfig, key: &str, shift: bool) -> Option<UiValue> {
     if config.disabled {
-        return false;
+        return None;
     }
     let step = if shift {
         config.keyboard_step * 4.0
     } else {
         config.keyboard_step
     };
-    let Some((dx, dy)) = keyboard_delta(config.handle, key, step) else {
-        return false;
-    };
-    let Some(boundary) = config.boundary_size.get() else {
-        return false;
-    };
+    let (dx, dy) = keyboard_delta(config.handle, key, step)?;
+    let boundary = config.boundary_size.get()?;
     if config.constraints.contain && !rect_within_boundary(config.source, boundary) {
-        return false;
+        return None;
     }
     let rect = resize_rect(
         config.source,
@@ -694,8 +683,7 @@ fn perform_keyboard_resize(
         config.constraints,
         boundary,
     );
-    events.propose("resize", resize_payload(rect, config.handle), window, cx);
-    true
+    Some(resize_payload(rect, config.handle))
 }
 
 impl PrimitiveHandler for ResizablePrimitiveHandler {
@@ -729,14 +717,12 @@ impl PrimitiveHandler for ResizablePrimitiveHandler {
         }
         Ok(root
             .on_key_down(move |event: &KeyDownEvent, window, cx| {
-                if perform_keyboard_resize(
+                if let Some(payload) = keyboard_resize_payload(
                     &key_config,
-                    &key_events,
                     event.keystroke.key.as_str(),
                     event.keystroke.modifiers.shift,
-                    window,
-                    cx,
                 ) {
+                    key_events.propose("resize", payload, window, cx);
                     cx.stop_propagation();
                 }
             })
@@ -751,15 +737,17 @@ impl PrimitiveHandler for ResizablePrimitiveHandler {
         &mut self,
         instance: &PrimitiveInstanceId,
         key: &str,
-        window: &mut Window,
-        cx: &mut App,
-    ) -> Result<bool, String> {
+    ) -> Result<Option<crate::primitive::PrimitiveSemanticProposal>, String> {
         let Some((config, events)) = self.controls.get(instance).cloned() else {
-            return Ok(false);
+            return Ok(None);
         };
-        Ok(perform_keyboard_resize(
-            &config, &events, key, false, window, cx,
-        ))
+        let Some(payload) = keyboard_resize_payload(&config, key, false) else {
+            return Ok(None);
+        };
+        events
+            .prepare_proposal("resize", payload)
+            .map(Some)
+            .map_err(|error| error.to_string())
     }
 
     fn unmount(&mut self, instance: &PrimitiveInstanceId) {

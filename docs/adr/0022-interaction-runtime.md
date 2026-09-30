@@ -42,6 +42,11 @@ generation and lost pointer ownership all cancel through the same path. Drop
 sessions may cross views only inside the same Host interaction domain. OS file
 drops and cross-window drag remain explicit Host/platform integrations.
 
+Primitive suspend/resume/compensation runs inside the owning ScriptHostView
+update. During that lifecycle lease, signal reads and writes use the runtime
+state directly instead of re-reading or updating the same GPUI Entity. This
+single phase boundary covers idle controls as well as active cancellation.
+
 ### One gesture state machine
 
 The internal `GestureSession` owns the common pointer lifecycle:
@@ -51,6 +56,10 @@ non-terminal state. It records the start/current/previous pointer sample,
 threshold and structured owner. A successful script rerender invalidates an
 older active native gesture before another pointer sample can commit it; native
 controls additionally compare the source/constraint contract they captured.
+The invalidation mark is produced by the common successful render-commit path,
+including node, native, timer, task and subscription entry points. Internal
+virtual realization is presentation work and does not invalidate a business
+gesture by itself.
 
 Behaviors supply pure policy rather than another event loop:
 
@@ -79,6 +88,12 @@ whose proposal can be rejected without changing the source (for example Table
 column width) clear the native override after proposal dispatch. A stale
 gesture therefore cannot overwrite a newer Host value, and a rejected proposal
 cannot remain painted as though it was accepted.
+
+Pointer, keyboard and autofit variants of one control share proposal cleanup.
+Native Automation policies return a schema-checked `PrimitiveSemanticProposal`
+to the ScriptView boundary; Automation executes it synchronously and reports
+the real callback success or failure rather than merely confirming that work
+was queued.
 
 ### Explicit coordinate and transform model
 
@@ -121,11 +136,16 @@ Position movement and data transfer remain different public concepts:
 Sortable edge auto-scroll uses existing scroll handles. Every list has a
 component-scoped collection identity distinct from its public local key.
 Virtualized sorting carries the source projection index in the native drag
-session, so only the owning collection pins the active key; unrelated lists
-are not scanned. Drop preview never mutates the canonical collection.
+session plus a bounded source snapshot. The owning virtual collection renews a
+logical source lease while the same member remains valid, even when its row is
+offscreen; actual drop targets still require presented hitboxes. Variable-list
+`ListState` and ordinary `ScrollHandle` both implement the same native edge
+auto-scroll boundary. Unrelated lists are not scanned. Drop preview never
+mutates the canonical collection.
 
 Tree uses a shared flattened-outline projection with stable key, parent, depth,
-expanded/loading/disabled/navigation metadata. It reuses virtual collection,
+expanded/loading/disabled/navigation metadata, including its nearest enabled
+ancestor. It reuses virtual collection,
 reveal and selection mechanisms rather than adding another list renderer.
 Table, Command and Combobox may reuse common flat grouping/order helpers, but
 their product-specific projections remain distinct.
@@ -143,7 +163,8 @@ retain the real recursion guard; this closes issue #80 without raising the
 global call-level limit.
 
 Task and subscription payloads are recursively checked against the same
-string/array/map limits configured on the Rhai Engine before a callback starts.
+string/array/map limits configured on the Rhai Engine before schema traversal
+or callback execution starts.
 An undeliverable success becomes one bounded error delivery; arbitrary callback
 failures are never retried after user or Host side effects may have occurred.
 

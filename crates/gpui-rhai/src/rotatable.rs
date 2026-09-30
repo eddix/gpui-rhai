@@ -32,7 +32,7 @@ struct RotatableConfig {
     keyboard_step: f64,
     threshold: f64,
     disabled: bool,
-    viewport_ref: crate::ElementRef,
+    content_ref: crate::ElementRef,
     angle_signal: crate::NativeSignal,
     x_signal: crate::NativeSignal,
     y_signal: crate::NativeSignal,
@@ -98,12 +98,7 @@ impl Element for RotationElement {
         window: &mut Window,
         cx: &mut App,
     ) -> RotationPrepaint {
-        if let Ok(viewport) = crate::GeometryBounds::new(
-            f64::from(bounds.origin.x),
-            f64::from(bounds.origin.y),
-            f64::from(bounds.size.width),
-            f64::from(bounds.size.height),
-        ) {
+        if let Some(viewport) = self.context.element_bounds(&self.config.content_ref, cx) {
             sync_controlled_source(&self.context, &self.config, viewport, cx);
         }
         RotationPrepaint {
@@ -137,7 +132,7 @@ impl Element for RotationElement {
             {
                 return;
             }
-            let Some(viewport) = context.element_bounds(&config.viewport_ref, cx) else {
+            let Some(viewport) = context.element_bounds(&config.content_ref, cx) else {
                 return;
             };
             if let Some(focus) = config.focus.as_ref() {
@@ -222,7 +217,7 @@ impl PrimitiveHandler for RotatablePrimitiveHandler {
         cx: &mut App,
     ) -> Result<AnyElement, String> {
         let config = parse_config(&instance.node.props, instance.focus_handle().cloned())?;
-        if let Some(viewport) = context.element_bounds(&config.viewport_ref, cx) {
+        if let Some(viewport) = context.element_bounds(&config.content_ref, cx) {
             sync_controlled_source(context, &config, viewport, cx);
         }
         let key_config = config.clone();
@@ -305,10 +300,10 @@ fn parse_config(
         keyboard_step,
         threshold,
         disabled: props.boolean("disabled").unwrap_or(false),
-        viewport_ref: props
-            .element_ref("viewport_ref")
+        content_ref: props
+            .element_ref("content_ref")
             .cloned()
-            .ok_or_else(|| "rotatable viewport_ref is required".to_owned())?,
+            .ok_or_else(|| "rotatable content_ref is required".to_owned())?,
         angle_signal,
         x_signal,
         y_signal,
@@ -429,9 +424,13 @@ fn sync_controlled_source(
     viewport: crate::GeometryBounds,
     cx: &mut App,
 ) {
+    let presentation_token = format!(
+        "{}|{}|{}",
+        config.source_token, viewport.width, viewport.height
+    );
     let token_matches = matches!(
         context.read_signal(&config.source_token_signal, cx),
-        Ok(SignalValue::String(value)) if value == config.source_token
+        Ok(SignalValue::String(value)) if value == presentation_token
     );
     if token_matches {
         return;
@@ -439,7 +438,7 @@ fn sync_controlled_source(
     write_preview(context, config, viewport, config.angle, cx);
     let _ = context.write_signal(
         &config.source_token_signal,
-        SignalValue::String(config.source_token.clone()),
+        SignalValue::String(presentation_token),
         cx,
     );
 }
@@ -497,7 +496,7 @@ pub fn rotatable_primitive_descriptor() -> PrimitiveDescriptor {
             ObjectField::optional(ValueSchema::Bool).with_default(UiValue::Bool(false)),
         ),
         (
-            "viewport_ref".to_owned(),
+            "content_ref".to_owned(),
             ObjectField::required(ValueSchema::Ref),
         ),
         (

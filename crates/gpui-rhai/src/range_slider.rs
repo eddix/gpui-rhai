@@ -627,23 +627,49 @@ fn normalize_pair_values(
     step: f64,
     minimum_gap: f64,
 ) -> RangePair {
-    let mut low = normalize_value(values.low, min, max, step);
-    let mut high = normalize_value(values.high, min, max, step);
-    if high - low < minimum_gap {
-        high =
-            normalize_constrained_value(low + minimum_gap, min, low + minimum_gap, max, max, step);
-        if high - low < minimum_gap {
-            low = normalize_constrained_value(
-                high - minimum_gap,
-                min,
-                min,
-                high - minimum_gap,
-                max,
-                step,
-            );
-        }
+    let low = normalize_value(values.low, min, max, step);
+    let high = normalize_value(values.high, min, max, step);
+    if high - low >= minimum_gap {
+        return RangePair { low, high };
     }
-    RangePair { low, high }
+    let raise_high = first_step_at_or_above(low + minimum_gap, min, max, step)
+        .map(|high| RangePair { low, high });
+    let lower_low = last_step_at_or_below(high - minimum_gap, min, max, step)
+        .map(|low| RangePair { low, high });
+    [raise_high, lower_low]
+        .into_iter()
+        .flatten()
+        .min_by(|left, right| {
+            pair_distance(*left, values)
+                .partial_cmp(&pair_distance(*right, values))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .unwrap_or(RangePair {
+            low: min,
+            high: max,
+        })
+}
+
+fn first_step_at_or_above(value: f64, origin: f64, max: f64, step: f64) -> Option<f64> {
+    let stepped = origin + ((value - origin) / step).ceil() * step;
+    if stepped <= max {
+        Some(stepped.max(origin))
+    } else {
+        (max >= value).then_some(max)
+    }
+}
+
+fn last_step_at_or_below(value: f64, min: f64, max: f64, step: f64) -> Option<f64> {
+    let stepped = min + ((value - min) / step).floor() * step;
+    if stepped >= min {
+        Some(stepped.min(max))
+    } else {
+        (min <= value).then_some(min)
+    }
+}
+
+fn pair_distance(pair: RangePair, source: RangePair) -> f64 {
+    (pair.low - source.low).abs() + (pair.high - source.high).abs()
 }
 
 fn normalize_constrained_value(
@@ -788,5 +814,60 @@ mod tests {
                 high: 85.0,
             }
         );
+    }
+
+    #[test]
+    fn pair_normalization_solves_legal_endpoint_constraints_jointly() {
+        assert_eq!(
+            normalize_pair_values(
+                RangePair {
+                    low: 95.0,
+                    high: 100.0,
+                },
+                0.0,
+                100.0,
+                10.0,
+                5.0,
+            ),
+            RangePair {
+                low: 90.0,
+                high: 100.0,
+            }
+        );
+    }
+
+    #[test]
+    fn normalized_pairs_are_bounded_gapped_and_idempotent() {
+        for minimum in [0.0_f64, 3.0] {
+            for maximum in [97.0, 100.0] {
+                for step in [3.0, 10.0] {
+                    for gap in [0.0, 5.0, 17.0] {
+                        if gap > maximum - minimum {
+                            continue;
+                        }
+                        for low in [minimum, maximum - gap, maximum] {
+                            for high in [minimum, minimum + gap, maximum] {
+                                let source = RangePair {
+                                    low: low.min(high),
+                                    high: low.max(high),
+                                };
+                                if source.high - source.low < gap {
+                                    continue;
+                                }
+                                let normalized =
+                                    normalize_pair_values(source, minimum, maximum, step, gap);
+                                assert!(normalized.low >= minimum);
+                                assert!(normalized.high <= maximum);
+                                assert!(normalized.high - normalized.low + 1e-9 >= gap);
+                                assert_eq!(
+                                    normalize_pair_values(normalized, minimum, maximum, step, gap,),
+                                    normalized
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }

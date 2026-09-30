@@ -91,7 +91,8 @@ fn sortable_item_node(ctx,list_id,collection_id,item,previous_key,next_key,first
 fn sortable_virtual_row(list_id,collection_id,label_key,direction,threshold,disabled,ctx,payload){
     let label=payload.item[label_key];
     let item_disabled=disabled||(if "disabled" in payload.item{payload.item.disabled}else{false});
-    let native=#{key:`${list_id}-${payload.key}-sort`,list_id:list_id,collection_id:collection_id,item_key:payload.key,source_index:payload.index,
+    let native=#{key:`${list_id}-${payload.key}-sort`,list_id:list_id,collection_id:collection_id,
+        item_key:payload.key,source_index:payload.index,source_item:payload.item,
         previous_key:payload.previous_key,next_key:payload.next_key,first_key:payload.first_key,
         last_key:payload.last_key,direction:direction,threshold:threshold,disabled:item_disabled,
         on_reorder:Fn("sortable_commit")};

@@ -106,6 +106,11 @@ impl Element for VirtualListEntityElement {
         if let Some((source, index)) = self.runtime.interactions.app_drag_pin(&collection)
             && index < self.content.data.len()
             && self.content.data.key(index) == Some(source.as_str())
+            && let Ok(Some(item)) = self.content.data.item(index)
+            && self
+                .runtime
+                .interactions
+                .retain_virtual_drag_source(&collection, index, &item)
         {
             required.insert(index);
         }
@@ -285,7 +290,12 @@ fn estimated_target_is_initially_visible(
 }
 
 impl Render for VirtualListView {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.runtime.interactions.register_virtual_scroll(
+            format!("{}:{}", self.content.id.component, self.content.id.key),
+            self.scroll.clone(),
+            cx.entity_id(),
+        );
         let viewport = self.scroll.viewport_bounds();
         let scroll_top = self.scroll.logical_scroll_top();
         let measured_visible = measured_visible_range(&self.scroll, &self.content, viewport);

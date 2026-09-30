@@ -246,12 +246,14 @@ impl UiRuntimeState {
     /// Returns an invalid-name or duplicate-collection error.
     pub fn register_native_collection_from_host(
         &mut self,
-        root: &ComponentInstancePath,
+        _root: &ComponentInstancePath,
         name: &str,
         collection: crate::NativeCollection,
     ) -> Result<(), crate::NativeCollectionError> {
-        self.native_collections.register(name, collection)?;
-        self.dirty.insert(root.clone());
+        let invalidated = self
+            .native_collections
+            .register_with_invalidated(name.to_owned(), collection)?;
+        self.dirty.extend(invalidated);
         Ok(())
     }
 
@@ -5212,6 +5214,12 @@ mod tests {
     fn host_can_register_a_new_native_collection_after_mount() {
         let mut runtime = UiRuntimeState::new();
         let root = ComponentInstancePath::root("View", "live");
+        assert!(
+            runtime
+                .native_collections
+                .read_tracked(&root, "live_rows")
+                .is_err()
+        );
         let collection = crate::NativeCollection::new(
             "id",
             [BTreeMap::from([(
