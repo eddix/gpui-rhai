@@ -5,8 +5,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
 use gpui::{
-    App, DispatchPhase, EntityId, Hitbox, MouseButton, MouseMoveEvent, MouseUpEvent, Pixels, Point,
-    ScrollHandle, Window, point, px,
+    App, DispatchPhase, EntityId, Hitbox, ListState, MouseButton, MouseMoveEvent, MouseUpEvent,
+    Pixels, Point, ScrollHandle, Window, point, px,
 };
 
 use crate::{GeometryBounds, UiValue};
@@ -239,6 +239,7 @@ pub(crate) struct ApplicationDragSpec {
     notify: EntityId,
     collection: Option<String>,
     source_index: Option<usize>,
+    source_snapshot: Option<UiValue>,
 }
 
 impl ApplicationDragSpec {
@@ -259,6 +260,7 @@ impl ApplicationDragSpec {
             notify,
             collection: None,
             source_index: None,
+            source_snapshot: None,
         }
     }
 
@@ -266,9 +268,11 @@ impl ApplicationDragSpec {
         mut self,
         collection: String,
         source_index: Option<usize>,
+        source_snapshot: Option<UiValue>,
     ) -> Self {
         self.collection = Some(collection);
         self.source_index = source_index;
+        self.source_snapshot = source_snapshot;
         self
     }
 
@@ -424,21 +428,31 @@ pub(crate) struct WindowInteractionCoordinator(Rc<RefCell<InteractionState>>);
 struct InteractionState {
     active: Option<NativeGesture>,
     presented: BTreeSet<InteractionOwner>,
+    logical_sources: BTreeSet<InteractionOwner>,
     captured_move: BTreeMap<String, Rc<CapturedMoveHandler>>,
     captured_up: BTreeMap<String, Rc<CapturedUpHandler>>,
     drag: Option<ActiveApplicationDrag>,
     drop_targets: BTreeMap<InteractionOwner, DropTargetRegistration>,
     next_drop_order: u64,
+    virtual_scrolls: BTreeMap<String, VirtualScrollTarget>,
+}
+
+#[derive(Clone)]
+struct VirtualScrollTarget {
+    state: ListState,
+    notify: EntityId,
 }
 
 impl WindowInteractionCoordinator {
     pub(crate) fn begin_frame(&self) {
         let mut state = self.0.borrow_mut();
         state.presented.clear();
+        state.logical_sources.clear();
         state.captured_move.clear();
         state.captured_up.clear();
         state.drop_targets.clear();
         state.next_drop_order = 0;
+        state.virtual_scrolls.clear();
     }
 
     pub(crate) fn set_pointer_routes(
@@ -462,10 +476,10 @@ impl WindowInteractionCoordinator {
     pub(crate) fn finish_frame(&self, window: &mut Window, cx: &mut App) {
         let stale = {
             let mut state = self.0.borrow_mut();
-            let should_cancel = state
-                .active
-                .as_ref()
-                .is_some_and(|active| !state.presented.contains(&active.owner));
+            let should_cancel = state.active.as_ref().is_some_and(|active| {
+                !state.presented.contains(&active.owner)
+                    && !state.logical_sources.contains(&active.owner)
+            });
             should_cancel.then(|| state.active.take()).flatten()
         };
         if let Some(active) = stale {
@@ -484,11 +498,23 @@ impl WindowInteractionCoordinator {
         state.drop_targets.insert(target.owner.clone(), target);
     }
 
+    pub(crate) fn register_virtual_scroll(
+        &self,
+        collection: String,
+        state: ListState,
+        notify: EntityId,
+    ) {
+        self.0
+            .borrow_mut()
+            .virtual_scrolls
+            .insert(collection, VirtualScrollTarget { state, notify });
+    }
+
     pub(crate) fn start_app_drag(
         &self,
         spec: ApplicationDragSpec,
         position: Point<Pixels>,
-        window: &Window,
+        window: &mut Window,
         cx: &mut App,
     ) {
         self.clear_app_drag(cx);
@@ -502,8 +528,13 @@ impl WindowInteractionCoordinator {
         self.update_app_drag(position, window, cx);
     }
 
-    pub(crate) fn update_app_drag(&self, position: Point<Pixels>, window: &Window, cx: &mut App) {
-        let (old_target, new_target, target, mut notifications) = {
+    pub(crate) fn update_app_drag(
+        &self,
+        position: Point<Pixels>,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        let (old_target, new_target, target, virtual_scroll, mut notifications) = {
             let mut state = self.0.borrow_mut();
             let Some(drag) = state.drag.as_ref() else {
                 return;
@@ -523,14 +554,20 @@ impl WindowInteractionCoordinator {
                 }
             }
             notifications.insert(drag.spec.notify);
-            let drag = state.drag.as_mut().expect("active drag was checked");
-            drag.position = position;
-            drag.target.clone_from(&next);
             let target = next
                 .as_ref()
                 .and_then(|owner| state.drop_targets.get(owner))
                 .cloned();
-            (old, next, target, notifications)
+            let virtual_scroll = drag
+                .spec
+                .collection
+                .as_ref()
+                .and_then(|collection| state.virtual_scrolls.get(collection))
+                .cloned();
+            let drag = state.drag.as_mut().expect("active drag was checked");
+            drag.position = position;
+            drag.target.clone_from(&next);
+            (old, next, target, virtual_scroll, notifications)
         };
         let scrolled = target
             .as_ref()
@@ -538,7 +575,14 @@ impl WindowInteractionCoordinator {
         if scrolled && let Some(target) = target {
             notifications.insert(target.notify);
         }
-        if old_target != new_target || scrolled {
+        let virtual_scrolled = virtual_scroll
+            .as_ref()
+            .is_some_and(|target| auto_scroll_virtual_target(target, position));
+        if virtual_scrolled && let Some(target) = virtual_scroll {
+            notifications.insert(target.notify);
+            window.refresh();
+        }
+        if old_target != new_target || scrolled || virtual_scrolled {
             for notify in notifications {
                 cx.notify(notify);
             }
@@ -663,6 +707,27 @@ impl WindowInteractionCoordinator {
                 })
                 .flatten()
         })
+    }
+
+    pub(crate) fn retain_virtual_drag_source(
+        &self,
+        collection: &str,
+        index: usize,
+        value: &UiValue,
+    ) -> bool {
+        let mut state = self.0.borrow_mut();
+        let Some(drag) = state.drag.as_ref() else {
+            return false;
+        };
+        if drag.spec.collection.as_deref() != Some(collection)
+            || drag.spec.source_index != Some(index)
+            || drag.spec.source_snapshot.as_ref() != Some(value)
+        {
+            return false;
+        }
+        let owner = drag.spec.source.clone();
+        state.logical_sources.insert(owner);
+        true
     }
 
     pub(crate) fn drop_target_state(&self, owner: &InteractionOwner) -> DropTargetState {
@@ -913,6 +978,28 @@ fn auto_scroll_drop_target(target: &DropTargetRegistration, position: Point<Pixe
             true
         }
     })
+}
+
+fn auto_scroll_virtual_target(target: &VirtualScrollTarget, position: Point<Pixels>) -> bool {
+    let bounds = target.state.viewport_bounds();
+    if !bounds.contains(&position) {
+        return false;
+    }
+    let margin = (bounds.size.height / 4.0).min(px(28.0));
+    let distance = if position.y < bounds.top() + margin {
+        px(-12.0)
+    } else if position.y > bounds.bottom() - margin {
+        px(12.0)
+    } else {
+        px(0.0)
+    };
+    if distance == px(0.0) {
+        return false;
+    }
+    let before = target.state.logical_scroll_top();
+    target.state.scroll_by(distance);
+    let after = target.state.logical_scroll_top();
+    after.item_ix != before.item_ix || after.offset_in_item != before.offset_in_item
 }
 
 fn f64_to_f32(value: f64) -> f32 {

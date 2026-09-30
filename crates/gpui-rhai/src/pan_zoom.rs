@@ -349,12 +349,21 @@ impl PrimitiveHandler for PanZoomPrimitiveHandler {
         entity.update(cx, |pan_zoom, cx| {
             pan_zoom.update_config(config, context.clone(), window, cx);
         });
+        let keyboard_entity = entity.clone();
         let mut root = div().size_full().child(entity);
         if let Some(focus) = keyboard_focus {
             root = root.track_focus(&focus.tab_stop(!keyboard_config.disabled));
         }
         Ok(root
             .on_key_down(move |event: &KeyDownEvent, window, cx: &mut App| {
+                if event.keystroke.key == "escape" {
+                    keyboard_entity.update(cx, |pan_zoom, cx| {
+                        invalidate_wheel(&pan_zoom.context, &pan_zoom.config, cx);
+                        pan_zoom.restore_source(cx);
+                    });
+                    cx.stop_propagation();
+                    return;
+                }
                 if let Some(next) =
                     keyboard_transform(&keyboard_config, &keyboard_context, event, cx)
                 {

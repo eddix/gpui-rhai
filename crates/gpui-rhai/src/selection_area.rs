@@ -177,9 +177,15 @@ impl SelectionAreaEntity {
             "end" => eligible.len() - 1,
             "space" => {
                 let key = eligible[current];
-                let mut selected = self.config.selected.clone();
-                if !selected.insert(key.to_owned()) {
+                let mut selected = if self.config.multiple {
+                    self.config.selected.clone()
+                } else {
+                    BTreeSet::new()
+                };
+                if self.config.multiple && !selected.insert(key.to_owned()) {
                     selected.remove(key);
+                } else {
+                    selected.insert(key.to_owned());
                 }
                 self.emit(
                     selection_proposal(selected, Some(key.to_owned()), self.config.anchor.clone()),
@@ -505,6 +511,15 @@ fn rect_corners(bounds: GeometryBounds) -> [(f64, f64); 4] {
 }
 
 fn point_in_polygon(point: (f64, f64), polygon: &[(f64, f64)]) -> bool {
+    let twice_area = (0..polygon.len())
+        .map(|index| {
+            let next = (index + 1) % polygon.len();
+            polygon[index].0 * polygon[next].1 - polygon[next].0 * polygon[index].1
+        })
+        .sum::<f64>();
+    if twice_area.abs() <= 1e-9 {
+        return false;
+    }
     let mut sign = 0.0_f64;
     for index in 0..polygon.len() {
         let a = polygon[index];
@@ -852,5 +867,15 @@ mod tests {
         let crossing = GeometryBounds::new(15.0, 15.0, 20.0, 20.0).unwrap();
         assert!(polygon_intersects_rect(&marquee, crossing));
         assert!(!rect_inside_polygon(crossing, &marquee));
+    }
+
+    #[test]
+    fn degenerate_marquee_does_not_contain_far_collinear_points() {
+        let line = vec![(5.0, 10.0), (50.0, 10.0), (50.0, 10.0), (5.0, 10.0)];
+        assert!(!point_in_polygon((100.0, 10.0), &line));
+        assert!(!polygon_intersects_rect(
+            &line,
+            GeometryBounds::new(95.0, 5.0, 10.0, 10.0).unwrap()
+        ));
     }
 }

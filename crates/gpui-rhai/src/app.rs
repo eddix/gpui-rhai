@@ -2531,7 +2531,8 @@ impl PreparedScriptView {
                 text_selection: crate::renderer::TextSelectionRegistry::default(),
                 last_motion_sample: None,
                 state: entity_view_state,
-                direct_signal_writes: Rc::new(Cell::new(false)),
+                direct_signal_access: Rc::new(Cell::new(false)),
+                pending_interaction_cancel: false,
                 activity_wake: entity_activity_wake,
                 _runtime_tasks: runtime_tasks,
                 #[cfg(feature = "dev-reload")]
@@ -2846,7 +2847,8 @@ fn open_secondary_window(
                 text_selection: crate::renderer::TextSelectionRegistry::default(),
                 last_motion_sample: None,
                 state: entity_view_state,
-                direct_signal_writes: Rc::new(Cell::new(false)),
+                direct_signal_access: Rc::new(Cell::new(false)),
+                pending_interaction_cancel: false,
                 activity_wake: entity_activity_wake,
                 _runtime_tasks: runtime_tasks,
                 #[cfg(feature = "dev-reload")]
@@ -2940,6 +2942,7 @@ struct HostRuntimeTasks {
     _frame_poll: Task<()>,
     _task_delivery: Task<()>,
     _subscription_delivery: Task<()>,
+    _virtual_delivery: Task<()>,
 }
 
 fn spawn_host_runtime_tasks(
@@ -2948,15 +2951,20 @@ fn spawn_host_runtime_tasks(
     state: Rc<Cell<ScriptViewState>>,
     activity_wake: crate::async_runtime::AsyncWake,
 ) -> HostRuntimeTasks {
-    let (task_wake, subscription_wake) = {
+    let (task_wake, subscription_wake, virtual_wake) = {
         let runtime = lifecycle.runtime();
         let runtime = runtime.borrow();
-        (runtime.tasks.wake(), runtime.subscriptions.wake())
+        (
+            runtime.tasks.wake(),
+            runtime.subscriptions.wake(),
+            runtime.virtual_requests.wake(),
+        )
     };
     HostRuntimeTasks {
         _frame_poll: spawn_host_frame_poll(cx, state, activity_wake),
         _task_delivery: spawn_host_delivery_pump(cx, task_wake),
         _subscription_delivery: spawn_host_delivery_pump(cx, subscription_wake),
+        _virtual_delivery: spawn_host_delivery_pump(cx, virtual_wake),
     }
 }
 
@@ -3130,7 +3138,8 @@ struct ScriptHostView {
     text_selection: crate::renderer::TextSelectionRegistry,
     last_motion_sample: Option<Instant>,
     state: Rc<Cell<ScriptViewState>>,
-    direct_signal_writes: Rc<Cell<bool>>,
+    direct_signal_access: Rc<Cell<bool>>,
+    pending_interaction_cancel: bool,
     activity_wake: crate::async_runtime::AsyncWake,
     _runtime_tasks: HostRuntimeTasks,
     #[cfg(feature = "dev-reload")]
@@ -3151,11 +3160,14 @@ struct ScriptHostView {
     pending_reload_paths: BTreeSet<PathBuf>,
 }
 
-struct DirectSignalWriteGuard<'a>(&'a Cell<bool>);
+struct DirectSignalAccessGuard {
+    flag: Rc<Cell<bool>>,
+    previous: bool,
+}
 
-impl Drop for DirectSignalWriteGuard<'_> {
+impl Drop for DirectSignalAccessGuard {
     fn drop(&mut self) {
-        self.0.set(false);
+        self.flag.set(self.previous);
     }
 }
 
@@ -3299,12 +3311,14 @@ fn build_error_banner(
 fn script_node_dispatcher(
     cx: &Context<ScriptHostView>,
     runtime: Rc<RefCell<UiRuntimeState>>,
-    direct_signal_writes: Rc<Cell<bool>>,
+    direct_signal_access: Rc<Cell<bool>>,
 ) -> NodeEventDispatcher {
     let script_entity = cx.entity().downgrade();
     let native_entity = script_entity.clone();
     let signal_entity = script_entity.clone();
     let signal_read_entity = script_entity.clone();
+    let signal_read_runtime = Rc::clone(&runtime);
+    let signal_read_direct = Rc::clone(&direct_signal_access);
     let geometry_entity = script_entity.clone();
     let canvas_geometry_entity = script_entity.clone();
     NodeEventDispatcher::new(move |callback, payload, target, window, app| {
@@ -3326,7 +3340,7 @@ fn script_node_dispatcher(
             .first()
             .map(|(signal, _)| crate::SignalError::Stale(signal.id().clone()));
         let direct_runtime = Rc::clone(&runtime);
-        if direct_signal_writes.get() {
+        if direct_signal_access.get() {
             return direct_runtime
                 .try_borrow_mut()
                 .map_err(|_| stale.expect("non-empty signal patches have a first member"))?
@@ -3349,6 +3363,9 @@ fn script_node_dispatcher(
             .unwrap_or_else(|_| Err(stale.expect("non-empty signal patches have a first member")))
     })
     .with_signal_read(move |signal, app| {
+        if signal_read_direct.get() {
+            return signal_read_runtime.borrow().signals.read(signal);
+        }
         signal_read_entity
             .read_with(app, |view, _| {
                 view.lifecycle.runtime().borrow().signals.read(signal)
@@ -3496,13 +3513,14 @@ impl Render for ScriptHostView {
         if self.state.get() != ScriptViewState::Active {
             return div().into_any_element();
         }
+        self.consume_pending_interaction_cancel(window, cx);
         self.prepare_host_render(window, cx);
         let motion_root = format!("window:{}/view:{}/root", self.window_id, self.view_id);
         let (motion_active, committed_motion_events) = self.sample_motion_frame(&motion_root);
         let dispatcher = script_node_dispatcher(
             cx,
             self.lifecycle.runtime(),
-            Rc::clone(&self.direct_signal_writes),
+            Rc::clone(&self.direct_signal_access),
         );
         let appearance = system_appearance(window.appearance());
         let snapshot = self.render_snapshot(appearance);
@@ -3923,14 +3941,34 @@ impl ScriptHostView {
             && let Some((primitive, keyed)) = native_target
         {
             let instance = crate::PrimitiveInstanceId::new(primitive, keyed, target);
-            if self
+            if let Some(proposal) = self
                 .primitives
-                .perform_key(&instance, key, window, cx)
+                .perform_key(&instance, key)
                 .map_err(|error| crate::AutomationError::Command(error.to_string()))?
             {
                 visited.push(target);
                 invoked = 1;
-                response = response.stop();
+                let current = match proposal.handler {
+                    Some(crate::UiEventHandler::Script(callback)) => {
+                        self.handle_node_event(&callback, proposal.payload, None, window, cx)
+                    }
+                    Some(crate::UiEventHandler::Host(callback)) => {
+                        callback.invoke(proposal.payload, window, cx)
+                    }
+                    Some(crate::UiEventHandler::Native(handler)) => self.handle_native_event(
+                        &handler,
+                        proposal.event,
+                        proposal.payload,
+                        None,
+                        window,
+                        cx,
+                    ),
+                    None => crate::EventResponse::new().stop(),
+                };
+                if let Some(error) = self.failure_message() {
+                    return Err(crate::AutomationError::Command(error).into());
+                }
+                response.merge(current.stop());
             }
         }
         Ok(crate::AutomationResult::Dispatch {
@@ -4380,6 +4418,7 @@ impl ScriptHostView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Result<bool, ScriptViewError> {
+        let _signal_access = self.direct_signal_access_guard();
         if let Err(error) = self.primitives.suspend_mounted(cx) {
             let rollback = self.restore_native_active(cx).err();
             let message = native_lifecycle_error("suspend", &error, rollback.as_ref());
@@ -4423,18 +4462,34 @@ impl ScriptHostView {
     }
 
     fn quiesce_host_view(&self, window: &mut Window, cx: &mut App) {
-        self.direct_signal_writes.set(true);
-        let _reset = DirectSignalWriteGuard(&self.direct_signal_writes);
+        let _signal_access = self.direct_signal_access_guard();
         self.host
             .quiesce_view(&self.view_id, &self.host_focus, window, cx);
     }
 
     fn cancel_view_interaction(&self, window: &mut Window, cx: &mut App) -> bool {
-        self.direct_signal_writes.set(true);
-        let _reset = DirectSignalWriteGuard(&self.direct_signal_writes);
+        let _signal_access = self.direct_signal_access_guard();
         self.host
             .interactions()
             .cancel_view(&self.view_id, window, cx)
+    }
+
+    fn mark_interaction_contract_changed(&mut self, changed: bool) {
+        self.pending_interaction_cancel |= changed;
+    }
+
+    fn consume_pending_interaction_cancel(&mut self, window: &mut Window, cx: &mut App) {
+        if std::mem::take(&mut self.pending_interaction_cancel) {
+            self.cancel_view_interaction(window, cx);
+        }
+    }
+
+    fn direct_signal_access_guard(&self) -> DirectSignalAccessGuard {
+        let previous = self.direct_signal_access.replace(true);
+        DirectSignalAccessGuard {
+            flag: Rc::clone(&self.direct_signal_access),
+            previous,
+        }
     }
 
     #[allow(clippy::too_many_lines)]
@@ -4442,6 +4497,7 @@ impl ScriptHostView {
         if self.state.get() == ScriptViewState::Active {
             return Ok(false);
         }
+        let _signal_access = self.direct_signal_access_guard();
         #[cfg(feature = "dev-reload")]
         let pending_reload_error = self.apply_pending_reload_on_resume();
         #[cfg(not(feature = "dev-reload"))]
@@ -4749,9 +4805,8 @@ impl ScriptHostView {
         }
         self.process_window_commands(cx);
         self.process_element_commands(window, cx);
-        if rendered {
-            self.cancel_view_interaction(window, cx);
-        }
+        self.mark_interaction_contract_changed(rendered);
+        self.consume_pending_interaction_cancel(window, cx);
         self.collect_timings();
         cx.notify();
         if succeeded {
@@ -4796,14 +4851,16 @@ impl ScriptHostView {
             };
             view.invoke_pending_effects()?;
             let result = view.lifecycle.render_dirty(&mut view.engine);
-            result.map_err(|error| view.lifecycle_failure(&error, None))?;
-            Ok(response)
+            let rendered = result.map_err(|error| view.lifecycle_failure(&error, None))?;
+            Ok((response, rendered))
         });
         match result {
-            Ok(response) => {
+            Ok((response, rendered)) => {
                 self.clear_failure();
                 self.process_window_commands(cx);
                 self.process_element_commands(window, cx);
+                self.mark_interaction_contract_changed(rendered);
+                self.consume_pending_interaction_cancel(window, cx);
                 self.collect_timings();
                 cx.notify();
                 response
@@ -4942,25 +4999,32 @@ impl ScriptHostView {
             return;
         }
 
-        let (delivery_changed, delivery_error) = self.deliver_async_batch(deliveries);
+        let (delivery_changed, delivery_contract_changed, delivery_error) =
+            self.deliver_async_batch(deliveries);
         let result = if dirty || pending_dispatch || virtual_requests {
             self.run_script_transaction(|view| {
                 let mut changed = view.invoke_pending_effects()?;
                 let result = view.lifecycle.realize_virtual_requests(&mut view.engine);
                 changed |= result.map_err(|error| view.lifecycle_failure(&error, None))?;
                 let result = view.lifecycle.render_dirty(&mut view.engine);
-                changed |= result.map_err(|error| view.lifecycle_failure(&error, None))?;
-                Ok(changed || delivery_changed)
+                let contract_changed =
+                    result.map_err(|error| view.lifecycle_failure(&error, None))?;
+                changed |= contract_changed;
+                Ok((
+                    changed || delivery_changed,
+                    contract_changed || delivery_contract_changed,
+                ))
             })
         } else {
-            Ok(delivery_changed)
+            Ok((delivery_changed, delivery_contract_changed))
         };
         let result = match (result, delivery_error) {
             (Ok(_), Some(error)) => Err(error),
             (result, _) => result,
         };
         let notify = match result {
-            Ok(changed) => {
+            Ok((changed, contract_changed)) => {
+                self.mark_interaction_contract_changed(contract_changed);
                 if has_script_work {
                     self.clear_failure();
                 }
@@ -4981,8 +5045,9 @@ impl ScriptHostView {
     fn deliver_async_batch(
         &mut self,
         deliveries: Vec<crate::AsyncDelivery>,
-    ) -> (bool, Option<ScriptFailure>) {
+    ) -> (bool, bool, Option<ScriptFailure>) {
         let mut changed = false;
+        let mut contract_changed = false;
         let mut first_error = None;
         for delivery in deliveries {
             let scope = format!("{:?}", delivery.scope);
@@ -4998,11 +5063,15 @@ impl ScriptHostView {
                     result.map_err(|error| view.lifecycle_failure(&error, component.as_ref()))?;
                 delivery_changed |= view.invoke_pending_effects()?;
                 let result = view.lifecycle.render_dirty(&mut view.engine);
-                delivery_changed |= result.map_err(|error| view.lifecycle_failure(&error, None))?;
-                Ok(delivery_changed)
+                let rendered = result.map_err(|error| view.lifecycle_failure(&error, None))?;
+                delivery_changed |= rendered;
+                Ok((delivery_changed, rendered))
             });
             match result {
-                Ok(delivery_changed) => changed |= delivery_changed,
+                Ok((delivery_changed, rendered)) => {
+                    changed |= delivery_changed;
+                    contract_changed |= rendered;
+                }
                 Err(error) => {
                     self.lifecycle.runtime().borrow_mut().traces.push(
                         crate::RuntimeTraceKind::Task,
@@ -5015,7 +5084,7 @@ impl ScriptHostView {
                 }
             }
         }
-        (changed, first_error)
+        (changed, contract_changed, first_error)
     }
 
     fn sync_program(&mut self) {

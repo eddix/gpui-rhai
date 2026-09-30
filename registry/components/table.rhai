@@ -194,6 +194,7 @@ fn column_resize_key(ctx, payload) {
     ctx.set_signal(payload.signal_key, width);
     ctx.emit("column_resize", #{ key: payload.column_key,
         width: #{ kind: "fixed", value: width } });
+    if payload.controlled { ctx.set_signal(payload.signal_key, ()); }
 }
 
 fn render_table_row(resize_signals, total_rows, ctx, payload) {
@@ -396,7 +397,8 @@ fn table_resize_handle(ctx, table_key, column, index, signal, header_ref, emit_r
         .focus(style().background(theme_color("selection")));
     let key_payload = #{ column_key: column.key,
         signal_key: column.resize_signal_key, ref_key: column.resize_ref_key,
-        min_width: column.min_width, max_width: column.max_width, delta: -8.0 };
+        min_width: column.min_width, max_width: column.max_width, delta: -8.0,
+        controlled: emit_resize };
     let resize_props = #{ key: `${table_key}-column-resize-${index}`,
         column_key: column.key, source_kind: column.width.kind,
         source_value: column.width.value, min_width: column.min_width,

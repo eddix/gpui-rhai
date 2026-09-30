@@ -40,6 +40,7 @@ pub struct VirtualCollectionNodeSpec {
 pub struct VirtualRequestRegistry {
     requests: Rc<RefCell<BTreeMap<VirtualCollectionId, BTreeSet<usize>>>>,
     metrics: Rc<RefCell<BTreeMap<VirtualCollectionId, VirtualCollectionMetrics>>>,
+    wake: crate::async_runtime::AsyncWake,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -115,6 +116,7 @@ impl VirtualRequestRegistry {
                     ..metrics.requested_range.end.max(new_range.end)
             };
         }
+        self.wake.notify();
     }
 
     /// Replace one collection's pending request with a complete atomic target.
@@ -138,6 +140,7 @@ impl VirtualRequestRegistry {
             .or_insert_with(|| VirtualCollectionMetrics::new(id));
         metrics.requested_count = requested_count;
         metrics.requested_range = requested_range;
+        self.wake.notify();
     }
 
     pub(crate) fn clear_target(&self, id: &VirtualCollectionId) {
@@ -168,6 +171,10 @@ impl VirtualRequestRegistry {
             metrics.requested_range = 0..0;
         }
         requests
+    }
+
+    pub(crate) fn wake(&self) -> crate::async_runtime::AsyncWake {
+        self.wake.clone()
     }
 
     pub(crate) fn snapshot(&self) -> VirtualRequestSnapshot {

@@ -107,6 +107,25 @@ fn outline_projection(items: &[UiValue], expanded: &[String]) -> Result<Vec<UiVa
         }
     }
     validate_outline_graph(&sources, &by_key)?;
+    let enabled_parents = sources
+        .iter()
+        .map(|source| {
+            let mut cursor = source.parent.as_deref();
+            let parent = loop {
+                let Some(key) = cursor else {
+                    break None;
+                };
+                let candidate = by_key
+                    .get(key)
+                    .expect("validated outline parent remains present");
+                if !candidate.disabled {
+                    break Some(key.to_owned());
+                }
+                cursor = candidate.parent.as_deref();
+            };
+            (source.key.clone(), parent)
+        })
+        .collect::<BTreeMap<_, _>>();
     let expanded = expanded
         .iter()
         .cloned()
@@ -116,7 +135,15 @@ fn outline_projection(items: &[UiValue], expanded: &[String]) -> Result<Vec<UiVa
     }
     let mut rows = Vec::new();
     for root in children.get(&None).into_iter().flatten() {
-        flatten_outline(root, 0, &by_key, &children, &expanded, &mut rows)?;
+        flatten_outline(
+            root,
+            0,
+            &by_key,
+            &children,
+            &enabled_parents,
+            &expanded,
+            &mut rows,
+        )?;
     }
     Ok(rows)
 }
@@ -165,6 +192,7 @@ fn flatten_outline(
     depth: usize,
     sources: &BTreeMap<String, OutlineSource>,
     children: &BTreeMap<Option<String>, Vec<String>>,
+    enabled_parents: &BTreeMap<String, Option<String>>,
     expanded: &std::collections::BTreeSet<String>,
     rows: &mut Vec<UiValue>,
 ) -> Result<(), String> {
@@ -187,6 +215,13 @@ fn flatten_outline(
                 .map_or(UiValue::Null, |parent| UiValue::String(parent.clone())),
         ),
         (
+            "eligible_parent".to_owned(),
+            enabled_parents
+                .get(key)
+                .and_then(Clone::clone)
+                .map_or(UiValue::Null, UiValue::String),
+        ),
+        (
             "depth".to_owned(),
             UiValue::Integer(i64::try_from(depth).unwrap_or(i64::MAX)),
         ),
@@ -200,7 +235,15 @@ fn flatten_outline(
     ])));
     if has_children && expanded.contains(key) {
         for child in descendants.into_iter().flatten() {
-            flatten_outline(child, depth + 1, sources, children, expanded, rows)?;
+            flatten_outline(
+                child,
+                depth + 1,
+                sources,
+                children,
+                enabled_parents,
+                expanded,
+                rows,
+            )?;
         }
     }
     Ok(())

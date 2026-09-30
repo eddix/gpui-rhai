@@ -93,3 +93,10 @@ outlines, recursive async delivery limits, and CLI capability/static-check
 separation. Verify post-mount NativeCollection registration while active and
 suspended. #83, #89 and #91 remain explicitly deferred design work rather than
 implicit 0.1.8 promises.
+Also run `docs/audits/2026-09-30-interaction-0.1.8-round2`: idle PanZoom
+suspend/resume, timer-driven gesture invalidation, every Table resize entry,
+endpoint RangeSlider feasibility, Rotatable handle/resize geometry, virtual
+offscreen source leases and ListState edge scrolling, degenerate/single
+selection, wheel Escape, complex disabled Tree ancestry, early async rejection,
+Host-init-dependent CLI validation, missing NativeCollection readers, and
+synchronous native Automation failure reporting.

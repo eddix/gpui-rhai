@@ -219,8 +219,8 @@ pub use primitive::{
     EffectPrimitiveDescriptor, PrimitiveAccessibilityProjection, PrimitiveContext,
     PrimitiveDescriptor, PrimitiveError, PrimitiveHandler, PrimitiveId, PrimitiveInstance,
     PrimitiveInstanceId, PrimitiveNode, PrimitivePlatform, PrimitiveProps, PrimitiveRegistry,
-    PrimitiveResourceError, PrimitiveResourceHandle, PrimitiveResourceScope, PrimitiveTheme,
-    PrimitiveValue,
+    PrimitiveResourceError, PrimitiveResourceHandle, PrimitiveResourceScope,
+    PrimitiveSemanticProposal, PrimitiveTheme, PrimitiveValue,
 };
 pub use range_input::{RangeInputPrimitiveHandler, range_input_primitive_descriptor};
 pub use range_slider::{RangeSliderPrimitiveHandler, range_slider_primitive_descriptor};

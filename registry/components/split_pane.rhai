@@ -67,16 +67,19 @@ fn split_commit(ctx, value) { ctx.emit("resize", value); }
 
 fn split_key(ctx, payload) {
     let group = ctx.element_bounds(payload.group_ref);
-    if group == () { return; }
+    let start = ctx.element_bounds(payload.start_ref);
+    let handle = ctx.element_bounds(payload.handle_ref);
+    if group == () || start == () || handle == () { return; }
     let group_size = if payload.orientation == "horizontal" { group.layout.width } else { group.layout.height };
-    let start_size = payload.source_ratio * group_size;
+    let start_size = if payload.orientation == "horizontal" { start.layout.width } else { start.layout.height };
+    let handle_size = if payload.orientation == "horizontal" { handle.layout.width } else { handle.layout.height };
     if group_size <= 0.0 { return; }
     // The renderer maps horizontal keys to logical start/end in RTL, so the
     // same signed delta remains spatially correct without requiring a locale.
     let delta = payload.delta;
-    let maximum = if payload.max_start < group_size - payload.min_end {
+    let maximum = if payload.max_start < group_size - handle_size - payload.min_end {
         payload.max_start
-    } else { group_size - payload.min_end };
+    } else { group_size - handle_size - payload.min_end };
     let minimum = if payload.min_start < maximum { payload.min_start } else { maximum };
     let next = if start_size + delta < minimum { minimum }
         else if start_size + delta > maximum { maximum }
@@ -94,6 +97,8 @@ fn render_SplitPane(ctx, props) {
     let start_ref_key = `${props.key}-${props.start_key}`;
     let root_ref = element_ref(root_ref_key);
     let start_ref = element_ref(start_ref_key);
+    let handle_ref_key = `${props.key}-handle-ref`;
+    let handle_ref = element_ref(handle_ref_key);
     let root_style = style().width(relative(1.0)).height(relative(1.0)).min_width(px(0)).min_height(px(0));
     if props.start_collapsed {
         return box([box([props.end]).with_key(props.end_key).with_style(ctx.component_style("end",
@@ -130,10 +135,11 @@ fn render_SplitPane(ctx, props) {
         signal: preview, group_ref: root_ref, start_ref: start_ref };
     if "on_resize" in props && props.on_resize != () { resize_props.on_resize = Fn("split_commit"); }
     let key_payload = #{ orientation: orientation, group_ref: root_ref_key,
-        start_ref: start_ref_key, min_start: props.min_start, min_end: props.min_end,
-        max_start: props.max_start, source_ratio: props.size, delta: -props.keyboard_step };
+        start_ref: start_ref_key, handle_ref: handle_ref_key,
+        min_start: props.min_start, min_end: props.min_end,
+        max_start: props.max_start, delta: -props.keyboard_step };
     let handle = gpui_rhai::SplitResizePrimitive(resize_props)
-        .with_key(`${props.key}-separator`)
+        .with_key(`${props.key}-separator`).with_ref(handle_ref)
         .with_style(ctx.component_style("handle", handle_style))
         .disabled(props.disabled)
         .tab_stop(!props.disabled)

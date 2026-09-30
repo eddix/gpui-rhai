@@ -61,6 +61,7 @@ struct SortableConfig {
     collection: String,
     item_key: String,
     source_index: Option<usize>,
+    source_snapshot: Option<UiValue>,
     previous_key: Option<String>,
     next_key: Option<String>,
     first_key: String,
@@ -73,11 +74,12 @@ struct SortableConfig {
     accent: Rgba8,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 struct SortableFingerprint {
     collection: String,
     item_key: String,
     source_index: Option<usize>,
+    source_snapshot: Option<UiValue>,
     previous_key: Option<String>,
     next_key: Option<String>,
     direction: SortDirection,
@@ -98,6 +100,7 @@ fn sortable_fingerprint(config: &SortableConfig) -> SortableFingerprint {
         collection: config.collection.clone(),
         item_key: config.item_key.clone(),
         source_index: config.source_index,
+        source_snapshot: config.source_snapshot.clone(),
         previous_key: config.previous_key.clone(),
         next_key: config.next_key.clone(),
         direction: config.direction,
@@ -284,7 +287,11 @@ fn drag_spec(
         crate::interaction::DragOperation::Move,
         notify,
     )
-    .with_collection(config.collection.clone(), config.source_index)
+    .with_collection(
+        config.collection.clone(),
+        config.source_index,
+        config.source_snapshot.clone(),
+    )
 }
 
 fn target_half(
@@ -617,6 +624,7 @@ fn parse_config(
         collection,
         item_key,
         source_index: props.usize("source_index"),
+        source_snapshot: props.data("source_item").cloned(),
         previous_key: optional_string(props, "previous_key")?,
         next_key: optional_string(props, "next_key")?,
         first_key,
@@ -717,6 +725,10 @@ pub fn sortable_primitive_descriptor() -> PrimitiveDescriptor {
                     min: Some(0),
                     max: None,
                 })),
+            ),
+            (
+                "source_item".to_owned(),
+                ObjectField::optional(ValueSchema::optional(ValueSchema::UiValue)),
             ),
             (
                 "previous_key".to_owned(),

@@ -50,6 +50,12 @@ semantic versioning from this release.
   async error payloads. Adds post-mount Host `NativeCollection` registration
   and separates CLI static/View validation from unavailable Host capability
   lifecycle execution.
+- Completes the cross-entry consistency pass: native lifecycle signal access,
+  node/native/async render invalidation, Table pointer/keyboard/autofit cleanup,
+  synchronous native Automation results, virtual source leases plus ListState
+  edge scrolling, content-sized rotation pivots, joint RangeSlider solving,
+  Rust-indexed Tree ancestors, missing-collection dependencies, and early
+  async quota rejection now share their domain boundaries.
 - Adds `workbench/interaction-lab`, a connected acceptance application that
   composes the complete direct-manipulation stack and executes a real
   cross-component DragSource → DropZone workflow. Runtime API remains **2**;
