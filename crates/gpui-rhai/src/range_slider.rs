@@ -681,6 +681,9 @@ fn normalize_constrained_value(
     step: f64,
 ) -> f64 {
     let snapped = normalize_value(value, origin, global_max, step);
+    if snapped >= feasible_min && snapped <= feasible_max {
+        return snapped;
+    }
     let first = origin + ((feasible_min - origin) / step).ceil() * step;
     let last = origin + ((feasible_max - origin) / step).floor() * step;
     if first <= last {

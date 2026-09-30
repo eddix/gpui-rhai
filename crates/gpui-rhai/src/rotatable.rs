@@ -106,6 +106,7 @@ impl Element for RotationElement {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     fn paint(
         &mut self,
         _: Option<&GlobalElementId>,
@@ -147,9 +148,18 @@ impl Element for RotationElement {
                                _: &mut Window,
                                cx: &mut App| {
                 if gesture.moved() {
-                    let pointer = pointer_angle(gesture.current(), viewport, update_config.pivot);
+                    let Some(current_viewport) =
+                        update_context.element_bounds(&update_config.content_ref, cx)
+                    else {
+                        return crate::interaction::InteractionFlow::Cancel;
+                    };
+                    if current_viewport != viewport {
+                        return crate::interaction::InteractionFlow::Cancel;
+                    }
+                    let pointer =
+                        pointer_angle(gesture.current(), current_viewport, update_config.pivot);
                     let next = rotated_angle(&update_config, source_angle, pointer - pointer_start);
-                    write_preview(&update_context, &update_config, viewport, next, cx);
+                    write_preview(&update_context, &update_config, current_viewport, next, cx);
                 }
                 crate::interaction::InteractionFlow::Continue
             };
@@ -158,12 +168,28 @@ impl Element for RotationElement {
             let finish = move |gesture: crate::interaction::GestureUpdate,
                                window: &mut Window,
                                cx: &mut App| {
-                let pointer = pointer_angle(gesture.current(), viewport, finish_config.pivot);
+                let Some(current_viewport) =
+                    finish_context.element_bounds(&finish_config.content_ref, cx)
+                else {
+                    return;
+                };
+                if current_viewport != viewport {
+                    write_preview(
+                        &finish_context,
+                        &finish_config,
+                        current_viewport,
+                        finish_config.angle,
+                        cx,
+                    );
+                    return;
+                }
+                let pointer =
+                    pointer_angle(gesture.current(), current_viewport, finish_config.pivot);
                 let next = rotated_angle(&finish_config, source_angle, pointer - pointer_start);
                 write_preview(
                     &finish_context,
                     &finish_config,
-                    viewport,
+                    current_viewport,
                     finish_config.angle,
                     cx,
                 );
@@ -174,13 +200,17 @@ impl Element for RotationElement {
             let cancel_context = context.clone();
             let cancel_config = config.clone();
             let cancel = move |_: &mut Window, cx: &mut App| {
-                write_preview(
-                    &cancel_context,
-                    &cancel_config,
-                    viewport,
-                    cancel_config.angle,
-                    cx,
-                );
+                if let Some(current_viewport) =
+                    cancel_context.element_bounds(&cancel_config.content_ref, cx)
+                {
+                    write_preview(
+                        &cancel_context,
+                        &cancel_config,
+                        current_viewport,
+                        cancel_config.angle,
+                        cx,
+                    );
+                }
             };
             context.begin_interaction(
                 crate::interaction::NativeGesture::new(

@@ -293,6 +293,7 @@ impl Render for VirtualListView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.runtime.interactions.register_virtual_scroll(
             format!("{}:{}", self.content.id.component, self.content.id.key),
+            self.runtime.view_id.clone(),
             self.scroll.clone(),
             cx.entity_id(),
         );

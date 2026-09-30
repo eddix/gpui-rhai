@@ -956,7 +956,12 @@ Guidelines:
   later, call `ScriptViewHandle::register_native_collection`; a component that
   previously handled the missing-name error is tracked and invalidated exactly
   when registration succeeds. Use `replace_native_collection` only for an
-  already registered name.
+  already registered name. Missing-name dependencies are render-only and
+  bounded; do not probe unbounded dynamic names from event callbacks.
+- Escape cancellation belongs to the Host interaction domain, so active
+  pointer/wheel/drag work remains cancellable when a virtual source goes
+  offscreen or keyboard focus moves. With no active interaction, Escape remains
+  available to dialogs, overlays and Host shortcuts.
 - Use Table `query`/`search_fields` and `page`/`page_size` for controlled
   Rust-side filtering and paging; reset page one when query or sort changes.
 - Keep large or rapidly replaced source text in `NativeTextDocument`; direct

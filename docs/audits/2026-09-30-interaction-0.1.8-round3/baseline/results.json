@@ -1,0 +1,75 @@
+{
+  "head": "815bb82b8103c88ef6ba50620128780c9d64b216",
+  "results": [
+    {
+      "name": "r1-core",
+      "exit": 0,
+      "seconds": 17.88356625009328,
+      "source": "docs/audits/2026-09-30-interaction-0.1.8/runtime-core/probes.rs",
+      "source_sha256": "e291c6cbf0ea2fa07dd8632fb62ad2915b4d6728c1d315a049cc6d83d2bbd9a1"
+    },
+    {
+      "name": "r1-drag",
+      "exit": 0,
+      "seconds": 13.24528979184106,
+      "source": "docs/audits/2026-09-30-interaction-0.1.8/drag-sort/probe/src/lib.rs",
+      "source_sha256": "04a3ea63185d0c2c837060ab187e270d96daf62752362c34aefb7e611740dd62"
+    },
+    {
+      "name": "r1-resize",
+      "exit": 0,
+      "seconds": 8.037259417120367,
+      "source": "docs/audits/2026-09-30-interaction-0.1.8/resize-controls/probe.rs",
+      "source_sha256": "c8fe6f4a3f33dbe2dc04680ca217b5d877c71d91ab18a0abf9a372d4a4b65a48"
+    },
+    {
+      "name": "r1-transforms",
+      "exit": 0,
+      "seconds": 5.727084499783814,
+      "source": "docs/audits/2026-09-30-interaction-0.1.8/transforms-selection/src/lib.rs",
+      "source_sha256": "d27d605f69ce05b001e0cd17a69f2aec04fa6716843c7344ef71d5da3b6f930c"
+    },
+    {
+      "name": "r2-core",
+      "exit": 0,
+      "seconds": 7.056580749806017,
+      "source": "docs/audits/2026-09-30-interaction-0.1.8-round2/runtime-core/probes.rs",
+      "source_sha256": "503b58aeef315e6d34218719af67eeea275dbb1563a4284eae69bd0f13ba3631"
+    },
+    {
+      "name": "r2-drag",
+      "exit": 0,
+      "seconds": 5.744538624770939,
+      "source": "docs/audits/2026-09-30-interaction-0.1.8-round2/drag-sort/probe/src/lib.rs",
+      "source_sha256": "023a13bf2eeecc103fe22f4796e7431b2003b4b721b6a5bdaad7bd0e67b6a074"
+    },
+    {
+      "name": "r2-resize",
+      "exit": 0,
+      "seconds": 10.243260458111763,
+      "source": "docs/audits/2026-09-30-interaction-0.1.8-round2/resize-controls/probe.rs",
+      "source_sha256": "a1eb24ef0d54e48088fbc4573340f24eaa5fd19501b09ab3297524b284a173e2"
+    },
+    {
+      "name": "r2-transforms",
+      "exit": 0,
+      "seconds": 5.9143500830978155,
+      "source": "docs/audits/2026-09-30-interaction-0.1.8-round2/transforms-selection/src/lib.rs",
+      "source_sha256": "5d3d902597c3fe66ad8382fc91d90903315ca1ea93abd0d26b1e1ed2db414f1f"
+    },
+    {
+      "name": "r2-tooling",
+      "exit": 0,
+      "seconds": 6.859684207942337,
+      "source": "docs/audits/2026-09-30-interaction-0.1.8-round2/tooling/probes.rs",
+      "source_sha256": "08b5628ce17f49324a01edec4b1ab913a703becec3e3bc5d81db0622df4afc69"
+    },
+    {
+      "name": "r2-async",
+      "exit": 0,
+      "seconds": 6.828022875357419,
+      "source": "docs/audits/2026-09-30-interaction-0.1.8-round2/rhai-async/probes.rs",
+      "source_sha256": "2beb465cb3c48434bbe9cb5f78916ae797a5095db822d01690e364bb7c52f620"
+    }
+  ]
+}

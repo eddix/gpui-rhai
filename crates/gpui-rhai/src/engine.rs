@@ -2530,9 +2530,9 @@ fn caller_component_binding(
     caller_context: &UiContext,
 ) -> ComponentCallbackBinding {
     ComponentCallbackBinding {
-        component: caller_context.component_path().clone(),
-        incarnation: caller_context.component_incarnation(),
-        events: caller_context.event_schemas().clone(),
+        component: caller_context.callback_component_path().clone(),
+        incarnation: caller_context.callback_component_incarnation(),
+        events: caller_context.callback_event_schemas().clone(),
         context: Some(caller_context.native_context().cloned().unwrap_or_else(|| {
             crate::invocation::ScriptInvocationContext::capture_entry_retained(call)
         })),
@@ -3332,7 +3332,7 @@ fn register_virtual_collection_api(engine: &mut Engine, active: &ActiveComponent
                     key: decoded.key.clone(),
                 };
                 let collection_context = context
-                    .for_component(
+                    .for_structural_scope(
                         component.child("VirtualCollection", decoded.key.clone()),
                         BTreeMap::new(),
                     )
@@ -5154,6 +5154,79 @@ mod tests {
             spec.realized[&31].kind(),
             crate::UiNodeKind::Text { text } if text == "Rich 31"
         ));
+    }
+
+    #[test]
+    fn virtual_row_formal_component_preserves_the_real_callback_owner() {
+        let mut engine = RuntimeEngine::new();
+        let compiled = engine
+            .compile_named(
+                "virtual-callback-owner",
+                r#"
+                    define_component(#{
+                        metadata: #{ id: "test/action", "export": "Action", version: "0.1.8",
+                            runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
+                            dependencies: [], capabilities: #{} },
+                        schema: #{ props: #{
+                                key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+                                on_action: #{ schema: #{ type: "callback" }, required: true, sensitive: false },
+                            }, state: #{ fields: #{} }, events: #{}, slots: #{}, parts: [] },
+                        render: Fn("render_Action")
+                    });
+                    fn Action(props) { render_component("test/action", props) }
+                    fn render_Action(ctx, props) { text("Action").on_click(props.on_action) }
+                    fn increment(ctx, payload) { ctx.set_state("count", ctx.get_state("count") + 1); }
+                    fn render_item(ctx, payload) {
+                        Action(#{ key: payload.key, on_action: Fn("increment") })
+                    }
+                    fn view(ctx) {
+                        virtual_collection(#{
+                            key: "rows", label: "Rows", data: [#{ key: "row-0" }],
+                            estimated_height: 24, height: 24, overdraw_pixels: 0,
+                            alignment: "top", follow_tail: false,
+                        }, Fn("render_item"))
+                    }
+                "#,
+            )
+            .unwrap();
+        let runtime = Rc::new(RefCell::new(crate::UiRuntimeState::new()));
+        let root_path = ComponentInstancePath::root("App", "virtual-callback");
+        let schema = ComponentStateSchema::new(BTreeMap::from([(
+            "count".to_owned(),
+            crate::StateField::new(
+                crate::ValueSchema::Integer {
+                    min: None,
+                    max: None,
+                },
+                UiValue::Integer(0),
+            ),
+        )]))
+        .unwrap();
+        let mut lifecycle = crate::ScriptLifecycle::new(
+            compiled,
+            Rc::clone(&runtime),
+            root_path.clone(),
+            None,
+            BTreeMap::new(),
+            &schema,
+        )
+        .unwrap();
+        lifecycle.start(&mut engine).unwrap();
+        let crate::UiNodeKind::VirtualCollection { spec } = lifecycle.root().unwrap().kind() else {
+            unreachable!()
+        };
+        let crate::UiEventHandler::Script(callback) =
+            spec.realized[&0].handlers()["click"][0].handler()
+        else {
+            panic!("formal row component must retain its callback");
+        };
+        let _ = lifecycle
+            .invoke_callback_transactional(&engine, callback, UiValue::Null)
+            .unwrap();
+        assert_eq!(
+            runtime.borrow().component_state.get(&root_path, "count"),
+            Some(&UiValue::Integer(1))
+        );
     }
 
     #[test]

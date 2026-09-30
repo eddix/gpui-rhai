@@ -106,26 +106,23 @@ fn outline_projection(items: &[UiValue], expanded: &[String]) -> Result<Vec<UiVa
             ));
         }
     }
-    validate_outline_graph(&sources, &by_key)?;
-    let enabled_parents = sources
-        .iter()
-        .map(|source| {
-            let mut cursor = source.parent.as_deref();
-            let parent = loop {
-                let Some(key) = cursor else {
-                    break None;
-                };
-                let candidate = by_key
-                    .get(key)
-                    .expect("validated outline parent remains present");
-                if !candidate.disabled {
-                    break Some(key.to_owned());
-                }
-                cursor = candidate.parent.as_deref();
-            };
-            (source.key.clone(), parent)
-        })
-        .collect::<BTreeMap<_, _>>();
+    let depths = validate_outline_graph(&sources, &by_key)?;
+    let mut parent_first = sources.iter().collect::<Vec<_>>();
+    parent_first.sort_by_key(|source| depths.get(&source.key).copied().unwrap_or_default());
+    let mut enabled_parents = BTreeMap::<String, Option<String>>::new();
+    for source in parent_first {
+        let parent = source.parent.as_ref().and_then(|parent| {
+            let candidate = by_key
+                .get(parent)
+                .expect("validated outline parent remains present");
+            if candidate.disabled {
+                enabled_parents.get(parent).cloned().flatten()
+            } else {
+                Some(parent.clone())
+            }
+        });
+        enabled_parents.insert(source.key.clone(), parent);
+    }
     let expanded = expanded
         .iter()
         .cloned()
@@ -151,7 +148,7 @@ fn outline_projection(items: &[UiValue], expanded: &[String]) -> Result<Vec<UiVa
 fn validate_outline_graph(
     sources: &[OutlineSource],
     by_key: &BTreeMap<String, OutlineSource>,
-) -> Result<(), String> {
+) -> Result<BTreeMap<String, usize>, String> {
     let mut depths = BTreeMap::<String, usize>::new();
     for source in sources {
         if depths.contains_key(&source.key) {
@@ -183,7 +180,7 @@ fn validate_outline_graph(
             parent_depth = Some(depth);
         }
     }
-    Ok(())
+    Ok(depths)
 }
 
 #[allow(clippy::too_many_arguments)]

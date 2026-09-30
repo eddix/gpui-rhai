@@ -260,6 +260,20 @@ impl PanZoomEntity {
         }
         write_bool_signal(&self.context, &self.config.wheel_pending_signal, true, cx);
         self.set_preview(next, cx);
+        let cancel_entity = cx.entity();
+        let owner = self.context.interaction_owner(&self.config.id);
+        self.context.register_interaction_cancellation(
+            owner,
+            cx.entity_id(),
+            move |_, cx| {
+                cancel_entity.update(cx, |entity, cx| {
+                    invalidate_wheel(&entity.context, &entity.config, cx);
+                    entity.restore_source(cx);
+                });
+            },
+            window,
+            cx,
+        );
         cx.stop_propagation();
         if explicit || matches!(event.touch_phase, gpui::TouchPhase::Started) {
             return;
@@ -349,21 +363,12 @@ impl PrimitiveHandler for PanZoomPrimitiveHandler {
         entity.update(cx, |pan_zoom, cx| {
             pan_zoom.update_config(config, context.clone(), window, cx);
         });
-        let keyboard_entity = entity.clone();
         let mut root = div().size_full().child(entity);
         if let Some(focus) = keyboard_focus {
             root = root.track_focus(&focus.tab_stop(!keyboard_config.disabled));
         }
         Ok(root
             .on_key_down(move |event: &KeyDownEvent, window, cx: &mut App| {
-                if event.keystroke.key == "escape" {
-                    keyboard_entity.update(cx, |pan_zoom, cx| {
-                        invalidate_wheel(&pan_zoom.context, &pan_zoom.config, cx);
-                        pan_zoom.restore_source(cx);
-                    });
-                    cx.stop_propagation();
-                    return;
-                }
                 if let Some(next) =
                     keyboard_transform(&keyboard_config, &keyboard_context, event, cx)
                 {
@@ -638,6 +643,7 @@ fn next_wheel_generation(context: &PrimitiveContext, config: &PanZoomConfig, cx:
 }
 
 fn invalidate_wheel(context: &PrimitiveContext, config: &PanZoomConfig, cx: &mut App) {
+    context.clear_interaction_cancellation(&context.interaction_owner(&config.id));
     let _ = next_wheel_generation(context, config, cx);
     write_bool_signal(context, &config.wheel_active_signal, false, cx);
     write_bool_signal(context, &config.wheel_pending_signal, false, cx);

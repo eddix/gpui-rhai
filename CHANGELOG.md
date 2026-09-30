@@ -56,6 +56,11 @@ semantic versioning from this release.
   edge scrolling, content-sized rotation pivots, joint RangeSlider solving,
   Rust-indexed Tree ancestors, missing-collection dependencies, and early
   async quota rejection now share their domain boundaries.
+- Finishes the third adversarial consistency pass: canonical retained primitive
+  identity, Host/window-owned cancellation, destination-owned virtual scrolling,
+  real virtual-row callback provenance, effect activation leases, per-delivery
+  commit invalidation, current Canvas geometry, bounded negative dependencies,
+  parent-first Tree ancestry and fail-fast online schema diagnostics.
 - Adds `workbench/interaction-lab`, a connected acceptance application that
   composes the complete direct-manipulation stack and executes a real
   cross-component DragSource → DropZone workflow. Runtime API remains **2**;

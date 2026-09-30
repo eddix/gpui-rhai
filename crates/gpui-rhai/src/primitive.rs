@@ -1056,6 +1056,25 @@ impl PrimitiveContext {
         self.interactions.cancel_owner(owner, window, cx)
     }
 
+    pub(crate) fn register_interaction_cancellation(
+        &self,
+        owner: crate::interaction::InteractionOwner,
+        notify: gpui::EntityId,
+        cancel: impl Fn(&mut Window, &mut App) + 'static,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        self.interactions
+            .register_auxiliary(owner, notify, cancel, window, cx);
+    }
+
+    pub(crate) fn clear_interaction_cancellation(
+        &self,
+        owner: &crate::interaction::InteractionOwner,
+    ) {
+        self.interactions.clear_auxiliary(owner);
+    }
+
     pub(crate) fn register_drop_target(&self, target: crate::interaction::DropTargetRegistration) {
         self.interactions.register_drop_target(target);
     }
@@ -1636,7 +1655,7 @@ impl PrimitiveRegistry {
     pub(crate) fn element(
         &self,
         node: PrimitiveNode,
-        retained_id: Option<crate::NodeId>,
+        retained: Option<(crate::NodeId, String)>,
         focus_handle: Option<gpui::FocusHandle>,
         fallback: Option<UiNode>,
         runtime: PrimitiveWindowContext,
@@ -1645,7 +1664,7 @@ impl PrimitiveRegistry {
         RegisteredPrimitiveElement {
             registry: self.clone(),
             node,
-            retained_id,
+            retained,
             focus_handle,
             fallback,
             runtime,
@@ -1674,10 +1693,10 @@ impl PrimitiveRegistry {
         }
         let instance_id = retained_instance.then(|| PrimitiveInstanceId {
             primitive: node.primitive.clone(),
-            key: node
-                .key
+            key: identity
+                .retained_key
                 .clone()
-                .expect("retained primitive descriptors require a key"),
+                .expect("retained primitive descriptors require a retained key"),
             node: identity
                 .retained_id
                 .expect("retained primitive renderer supplies NodeId"),
@@ -1861,7 +1880,7 @@ fn guard_primitive_panic<T>(
 struct RegisteredPrimitiveElement {
     registry: PrimitiveRegistry,
     node: PrimitiveNode,
-    retained_id: Option<crate::NodeId>,
+    retained: Option<(crate::NodeId, String)>,
     focus_handle: Option<gpui::FocusHandle>,
     fallback: Option<UiNode>,
     runtime: PrimitiveWindowContext,
@@ -1894,6 +1913,7 @@ impl PrimitiveWindowContext {
 
 struct PrimitiveRenderIdentity {
     retained_id: Option<crate::NodeId>,
+    retained_key: Option<String>,
     focus_handle: Option<gpui::FocusHandle>,
 }
 
@@ -1933,7 +1953,8 @@ impl RenderOnce for RegisteredPrimitiveElement {
         match registry.render_instance(
             self.node,
             PrimitiveRenderIdentity {
-                retained_id: self.retained_id,
+                retained_id: self.retained.as_ref().map(|(node, _)| *node),
+                retained_key: self.retained.map(|(_, key)| key),
                 focus_handle: self.focus_handle,
             },
             &events,
@@ -2539,6 +2560,24 @@ mod tests {
         tree.reconcile(UiNode::box_node(vec![branch("right"), branch("left")]))
             .unwrap();
         assert_eq!(collect_primitive_instances(&tree), before);
+    }
+
+    #[test]
+    fn primitive_identity_uses_the_presented_retained_key() {
+        let primitive = PrimitiveId::parse("my_app.editor").unwrap();
+        let node = UiNode::custom(PrimitiveNode {
+            primitive,
+            key: Some("constructor-key".to_owned()),
+            props: PrimitiveProps::new(),
+        })
+        .with_key("presented-key");
+        let mut tree = crate::RetainedUiTree::new();
+        tree.reconcile(node).unwrap();
+        let instance = collect_primitive_instances(&tree)
+            .into_iter()
+            .next()
+            .unwrap();
+        assert_eq!(instance.key(), "presented-key");
     }
 
     #[test]

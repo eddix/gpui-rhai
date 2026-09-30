@@ -121,6 +121,8 @@ struct ScriptViewHostState {
     window_policy: WindowCommandPolicy,
     frame_active: bool,
     container_bounds: Option<Bounds<Pixels>>,
+    #[allow(dead_code)]
+    escape_interceptor: Option<Subscription>,
 }
 
 impl ScriptViewHost {
@@ -141,20 +143,34 @@ impl ScriptViewHost {
         install(cx);
         let window_id = window_id.into();
         validate_view_id(&window_id)?;
-        Ok(Self {
-            inner: Rc::new(RefCell::new(ScriptViewHostState {
-                window_id,
-                overlays: WindowOverlayCoordinator::default(),
-                interactions: crate::interaction::WindowInteractionCoordinator::default(),
-                fallback_focus: cx.focus_handle(),
-                views: BTreeMap::new(),
-                pending_focus_recovery: Vec::new(),
-                overlay_viewport: None,
-                window_policy,
-                frame_active: false,
-                container_bounds: None,
-            })),
-        })
+        let inner = Rc::new(RefCell::new(ScriptViewHostState {
+            window_id,
+            overlays: WindowOverlayCoordinator::default(),
+            interactions: crate::interaction::WindowInteractionCoordinator::default(),
+            fallback_focus: cx.focus_handle(),
+            views: BTreeMap::new(),
+            pending_focus_recovery: Vec::new(),
+            overlay_viewport: None,
+            window_policy,
+            frame_active: false,
+            container_bounds: None,
+            escape_interceptor: None,
+        }));
+        let weak = Rc::downgrade(&inner);
+        let interceptor = cx.intercept_keystrokes(move |event, window, cx| {
+            if event.keystroke.key.as_str() != "escape" {
+                return;
+            }
+            let Some(state) = weak.upgrade() else {
+                return;
+            };
+            let interactions = state.borrow().interactions.clone();
+            if interactions.cancel_window(window, cx) {
+                cx.stop_propagation();
+            }
+        });
+        inner.borrow_mut().escape_interceptor = Some(interceptor);
+        Ok(Self { inner })
     }
 
     #[must_use]
@@ -238,23 +254,17 @@ impl ScriptViewHost {
 
     #[must_use]
     pub fn container(&self, child: impl IntoElement) -> AnyElement {
-        let (fallback, overlays, interactions) = {
+        let (fallback, overlays) = {
             let state = self.inner.borrow();
-            (
-                state.fallback_focus.clone(),
-                state.overlays.clone(),
-                state.interactions.clone(),
-            )
+            (state.fallback_focus.clone(), state.overlays.clone())
         };
         let escape_overlays = overlays.clone();
-        let escape_interactions = interactions;
         let child = div()
             .size_full()
             .track_focus(&fallback)
             .on_key_down(move |event, window, cx| {
                 if event.keystroke.key.as_str() == "escape"
-                    && (escape_interactions.cancel(window, cx)
-                        || escape_overlays.dismiss_escape(window, cx))
+                    && escape_overlays.dismiss_escape(window, cx)
                 {
                     cx.stop_propagation();
                 }
@@ -2535,6 +2545,7 @@ impl PreparedScriptView {
                 pending_interaction_cancel: false,
                 activity_wake: entity_activity_wake,
                 _runtime_tasks: runtime_tasks,
+                window_activation: None,
                 #[cfg(feature = "dev-reload")]
                 module_cache: self.module_cache,
                 #[cfg(feature = "dev-reload")]
@@ -2553,6 +2564,7 @@ impl PreparedScriptView {
                 pending_reload_paths: BTreeSet::new(),
             }
         });
+        install_window_interaction_cancellation(&entity, window, cx);
         attach_script_view_focus(&host, &config.view_id, &entity, cx);
         Ok(mounted_script_view_handle(
             entity,
@@ -2851,6 +2863,7 @@ fn open_secondary_window(
                 pending_interaction_cancel: false,
                 activity_wake: entity_activity_wake,
                 _runtime_tasks: runtime_tasks,
+                window_activation: None,
                 #[cfg(feature = "dev-reload")]
                 module_cache: ModuleCompileCache::new(),
                 #[cfg(feature = "dev-reload")]
@@ -2869,6 +2882,7 @@ fn open_secondary_window(
                 pending_reload_paths: BTreeSet::new(),
             }
         });
+        install_window_interaction_cancellation(&entity, window, cx);
         view_host.attach_view_focus(&view_window_id, entity.read(cx).host_focus.clone());
         let view = ScriptViewHandle(Rc::new(ScriptViewHandleInner {
             entity: entity.clone(),
@@ -3142,6 +3156,8 @@ struct ScriptHostView {
     pending_interaction_cancel: bool,
     activity_wake: crate::async_runtime::AsyncWake,
     _runtime_tasks: HostRuntimeTasks,
+    #[allow(dead_code)]
+    window_activation: Option<Subscription>,
     #[cfg(feature = "dev-reload")]
     module_cache: ModuleCompileCache,
     #[cfg(feature = "dev-reload")]
@@ -3158,6 +3174,21 @@ struct ScriptHostView {
     _reload_task: Option<Task<()>>,
     #[cfg(feature = "dev-reload")]
     pending_reload_paths: BTreeSet<PathBuf>,
+}
+
+fn install_window_interaction_cancellation(
+    entity: &Entity<ScriptHostView>,
+    window: &mut Window,
+    cx: &mut App,
+) {
+    let subscription = entity.update(cx, |_, entity_cx| {
+        entity_cx.observe_window_activation(window, |view, window, cx| {
+            if !window.is_window_active() && view.cancel_view_interaction(window, cx) {
+                cx.notify();
+            }
+        })
+    });
+    entity.update(cx, |view, _| view.window_activation = Some(subscription));
 }
 
 struct DirectSignalAccessGuard {
@@ -5001,6 +5032,7 @@ impl ScriptHostView {
 
         let (delivery_changed, delivery_contract_changed, delivery_error) =
             self.deliver_async_batch(deliveries);
+        self.mark_interaction_contract_changed(delivery_contract_changed);
         let result = if dirty || pending_dispatch || virtual_requests {
             self.run_script_transaction(|view| {
                 let mut changed = view.invoke_pending_effects()?;

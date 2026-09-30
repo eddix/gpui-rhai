@@ -1,0 +1,19 @@
+   Compiling gpui-rhai-native-keyboard-tests v0.0.0 (/var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T/gpui-rhai-r3-async-quy92qme)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.39s
+     Running tests/audit_r3_rhai_async.rs (tests/native-keyboard/target/debug/deps/audit_r3_rhai_async-c5bf0f8a4dc185a7)
+
+running 4 tests
+test drained_old_effect_delivery_survives_activation_cleanup_characterization ... OLD_SCOPE Effect { component: ComponentInstancePath([ComponentInstanceSegment { component: "App", key: "root" }, ComponentInstanceSegment { component: "StreamProbe", key: "stream" }]), key: "watch", activation: 1 }
+AFTER_CLEANUP old_closed=Some(ScopeDisposed) cleanup_calls=1 callback_result=Ok(()) phase=Some(String("old-query-result"))
+ok
+test independent_uivalue_and_rhai_domains_are_both_enforced ... DOMAIN durable_key_bytes rejected_before_callback=true
+DOMAIN non_finite rejected_before_callback=true
+ok
+test quota_precedes_schema_and_oversize_early_rejection_is_real ... EARLY items=10001 elapsed_ms=0.088 kind=async_delivery_limit
+EARLY items=900000 elapsed_ms=2.819 kind=async_delivery_limit
+ok
+test rhai_admissible_map_still_generates_full_schema_diagnostics ... SCHEMA admitted_map_entries=100000 issues=100000 intermediate_bytes=4199998 final_bytes=1027 drain_ms=162.864
+ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.63s
+

@@ -1,0 +1,29 @@
+{
+  "head": "815bb82b8103c88ef6ba50620128780c9d64b216",
+  "results": [
+    {
+      "case": "initialize",
+      "exit": 0,
+      "stdout": "24 file change(s):\n- update Cargo.toml\n- create gpui-rhai-host-snippet.rs\n- create ui/main.rhai\n- create ui/theme.rhai\n- create ui/styles.rhai\n- create ui/themes/default_light.rhai\n- create ui/themes/tokyo_night.rhai\n- create ui/themes/tokyo_storm.rhai\n- create ui/themes/catppuccin_latte.rhai\n- create ui/themes/catppuccin_mocha.rhai\n- create ui/themes/ethereal.rhai\n- create ui/themes/everforest.rhai\n- create ui/themes/gruvbox.rhai\n- create ui/themes/hackerman.rhai\n- create ui/themes/nord.rhai\n- create ui/themes/retro_82.rhai\n- create ui/themes/hermarchy.rhai\n- create ui/themes/futurism.rhai\n- create ui/themes/aetheria.rhai\n- create ui/locales/en.rhai\n- create ui/locales/zh_cn.rhai\n- create ui/locales/ar.rhai\n- create ui/app.toml\n- create .gpui-rhai/manifest.toml\n",
+      "stderr": ""
+    },
+    {
+      "case": "old_issue90_control",
+      "exit": 0,
+      "stdout": "Static check passed: entry `main`, 0 installed component(s). Host capability lifecycle and its dependent initial view were not executed.\n",
+      "stderr": ""
+    },
+    {
+      "case": "valid_init_dependency_without_capability",
+      "exit": 0,
+      "stdout": "Check passed: entry `main`, 0 installed component(s), including hostless lifecycle validation.\n",
+      "stderr": ""
+    },
+    {
+      "case": "same_valid_script_with_declared_capability",
+      "exit": 0,
+      "stdout": "Static check passed: entry `main`, 0 installed component(s). Host capability lifecycle and its dependent initial view were not executed.\n",
+      "stderr": ""
+    }
+  ]
+}

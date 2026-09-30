@@ -1,0 +1,20 @@
+[
+  {
+    "number": 91,
+    "title": "Capability handlers: expose the invocation origin (user input vs timer / task / subscription / effect)",
+    "updatedAt": "2026-09-30T03:54:43Z",
+    "url": "https://github.com/eddix/gpui-rhai/issues/91"
+  },
+  {
+    "number": 89,
+    "title": "Table: expose a right-click (context request) on rows/cells so callers can attach a menu",
+    "updatedAt": "2026-09-29T15:09:08Z",
+    "url": "https://github.com/eddix/gpui-rhai/issues/89"
+  },
+  {
+    "number": 83,
+    "title": "SplitPane: allow a custom handle node (grip) — paint order, hit area and state need native support",
+    "updatedAt": "2026-09-29T06:51:01Z",
+    "url": "https://github.com/eddix/gpui-rhai/issues/83"
+  }
+]

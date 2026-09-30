@@ -1302,7 +1302,7 @@ fn view(ctx){let value=ctx.get_state("range");column([
     visual.simulate_keystrokes("left");
     visual.run_until_parked();
     let keyboard = status(&mut visual);
-    assert!(keyboard.ends_with(",2"), "status={keyboard}");
+    assert_eq!(keyboard, "50.0,75.0,3", "status={keyboard}");
 }
 
 #[gpui::test]

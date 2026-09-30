@@ -47,6 +47,11 @@ update. During that lifecycle lease, signal reads and writes use the runtime
 state directly instead of re-reading or updating the same GPUI Entity. This
 single phase boundary covers idle controls as well as active cancellation.
 
+A retained primitive has one canonical instance identity: primitive type,
+presented retained key and retained `NodeId`. Constructor-local keys remain
+configuration data; mount, render, focus, accessibility, Automation and
+unmount never reconstruct identity from a different key surface.
+
 ### One gesture state machine
 
 The internal `GestureSession` owns the common pointer lifecycle:
@@ -89,6 +94,10 @@ column width) clear the native override after proposal dispatch. A stale
 gesture therefore cannot overwrite a newer Host value, and a rejected proposal
 cannot remain painted as though it was accepted.
 
+An uncontrolled Table column keeps its accepted native width separately from
+the current gesture rollback point. Cancellation restores the value at gesture
+start rather than erasing an earlier accepted resize.
+
 Pointer, keyboard and autofit variants of one control share proposal cleanup.
 Native Automation policies return a schema-checked `PrimitiveSemanticProposal`
 to the ScriptView boundary; Automation executes it synchronously and reports
@@ -110,6 +119,10 @@ Canvas paint/hit testing, Motion affine samples, PanZoom, Rotatable,
 SelectionArea and drag/drop target resolution consume this model. Chart domain
 scales remain separate and explicitly convert at their boundary. UI scale,
 content zoom, DPI, RTL and logical axes are never treated as aliases.
+Rotatable reads the actual styled Canvas node, and a geometry revision change
+during a gesture cancels against current geometry. Degenerate marquee input is
+decided in window logical pixels; content-space predicates use relative numeric
+tolerance rather than a fixed area in arbitrary Canvas units.
 
 ### Typed primitive boundary
 
@@ -140,8 +153,15 @@ session plus a bounded source snapshot. The owning virtual collection renews a
 logical source lease while the same member remains valid, even when its row is
 offscreen; actual drop targets still require presented hitboxes. Variable-list
 `ListState` and ordinary `ScrollHandle` both implement the same native edge
-auto-scroll boundary. Unrelated lists are not scanned. Drop preview never
-mutates the canonical collection.
+auto-scroll boundary. Auto-scroll belongs to the accepting destination and its
+scroll ancestry, not to the source collection. Unrelated lists are not scanned.
+Drop preview never mutates the canonical collection.
+
+Escape is intercepted at the Host/window interaction domain while a session is
+active. It cancels the actual pointer, application-drag or wheel owner even if
+its source row is offscreen or another control has keyboard focus; with no
+active owner, Escape continues to overlays and application shortcuts. Window
+deactivation uses the same cancellation boundary.
 
 Tree uses a shared flattened-outline projection with stable key, parent, depth,
 expanded/loading/disabled/navigation metadata, including its nearest enabled
@@ -162,9 +182,19 @@ dispatch starts from a fresh call-depth baseline while synchronous nested calls
 retain the real recursion guard; this closes issue #80 without raising the
 global call-level limit.
 
+Virtual collection scopes are structural namespaces only. They may own item
+identity, but callback props retain the real formal/root component owner and
+incarnation. Effect deliveries additionally carry an activation lease checked
+immediately before invocation, so a message drained before cleanup cannot run
+after that activation is replaced.
+
 Task and subscription payloads are recursively checked against the same
 string/array/map limits configured on the Rhai Engine before schema traversal
 or callback execution starts.
+Online delivery schema validation stops at the first bounded diagnostic;
+offline tooling may still collect complete issue lists. Each successful item
+in an async batch records its committed interaction-contract invalidation even
+when a later independent item fails.
 An undeliverable success becomes one bounded error delivery; arbitrary callback
 failures are never retried after user or Host side effects may have occurred.
 

@@ -2220,7 +2220,7 @@ impl GpuiNodeRenderer {
                 .child(
                     environment.primitives.element(
                         primitive.clone(),
-                        retained_id,
+                        retained_id.zip(node.key().map(|key| key.as_str().to_owned())),
                         environment
                             .primitives
                             .uses_primary_focus(&primitive.primitive)

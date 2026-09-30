@@ -98,6 +98,12 @@ components that previously read that collection. Rhai does not
 receive an unbounded `set_native_collection` API; scripts continue to select
 among Host-owned handles.
 
+Only render-phase missing reads create a negative dependency. Event callbacks
+receive the same explicit unknown-name error without retaining a future render
+edge. Names are validated before recording, and negative dependencies have
+per-component, runtime-pair and total-name-byte limits; crossing a limit is a
+controlled error and leaves the previous dependency set intact.
+
 Only components that called `ctx.get_native_collection("accounts")` are marked
 dirty. Runtime transactions snapshot the cheap collection handles and reader
 edges; they never clone all rows. Several mounted views may subscribe to the

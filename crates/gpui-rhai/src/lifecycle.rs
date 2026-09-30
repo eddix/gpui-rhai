@@ -783,6 +783,15 @@ impl ScriptLifecycle {
         delivery: AsyncDelivery,
     ) -> Result<Dynamic, LifecycleError> {
         self.validate_callback_owner(&delivery.callback)?;
+        if !self
+            .runtime
+            .try_borrow()
+            .map_err(|_| LifecycleError::Borrowed)?
+            .effects
+            .contains_scope(&delivery.scope)
+        {
+            return Ok(Dynamic::UNIT);
+        }
         let component = delivery
             .callback
             .component()

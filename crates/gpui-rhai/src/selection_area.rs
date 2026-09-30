@@ -6,7 +6,7 @@ use gpui::{
     AnyElement, App, AppContext, Bounds, Context, Element, ElementId, Entity, FocusHandle,
     GlobalElementId, InspectorElementId, InteractiveElement, IntoElement, KeyDownEvent, LayoutId,
     Modifiers, MouseButton, MouseDownEvent, ParentElement, Pixels, Point, Render, Style, Styled,
-    Window, div, point, rgba, size,
+    Window, div, point, px, rgba, size,
 };
 
 use crate::{
@@ -104,12 +104,14 @@ impl SelectionAreaEntity {
             move |gesture: crate::interaction::GestureUpdate, window: &mut Window, cx: &mut App| {
                 finish_entity.update(cx, |selection, cx| {
                     let proposal = if gesture.moved() {
+                        let marquee = pixel_bounds(start_window, gesture.current());
                         marquee_proposal(
                             &selection.config,
                             &window_quad(start_window, gesture.current())
                                 .into_iter()
                                 .filter_map(|point| selection.local_point(point, cx))
                                 .collect::<Vec<_>>(),
+                            marquee.size.width > px(0.0) && marquee.size.height > px(0.0),
                             modifiers,
                         )
                     } else {
@@ -446,9 +448,10 @@ fn range_proposal(config: &SelectionConfig, key: &str) -> SelectionProposal {
 fn marquee_proposal(
     config: &SelectionConfig,
     polygon: &[(f64, f64)],
+    has_window_area: bool,
     modifiers: Modifiers,
 ) -> Option<SelectionProposal> {
-    if polygon.len() != 4 {
+    if polygon.len() != 4 || !has_window_area {
         return None;
     }
     let mut hits = config
@@ -517,7 +520,14 @@ fn point_in_polygon(point: (f64, f64), polygon: &[(f64, f64)]) -> bool {
             polygon[index].0 * polygon[next].1 - polygon[next].0 * polygon[index].1
         })
         .sum::<f64>();
-    if twice_area.abs() <= 1e-9 {
+    let coordinate_scale = polygon
+        .iter()
+        .flat_map(|(x, y)| [x.abs(), y.abs()])
+        .fold(0.0_f64, f64::max)
+        .max(f64::MIN_POSITIVE);
+    let point_count = f64::from(u32::try_from(polygon.len()).unwrap_or(u32::MAX));
+    let area_epsilon = f64::EPSILON * coordinate_scale * coordinate_scale * point_count * 16.0;
+    if twice_area.abs() <= area_epsilon {
         return false;
     }
     let mut sign = 0.0_f64;
