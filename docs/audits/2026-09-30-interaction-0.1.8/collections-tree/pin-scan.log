@@ -1,0 +1,8 @@
+    Blocking waiting for file lock on artifact directory
+   Compiling audit-018-collections-tree v0.0.0 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/docs/audits/2026-09-30-interaction-0.1.8/collections-tree/probe)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 7.13s
+     Running `target/debug/pin_scan`
+absent drag source: rows=1000, key_calls_per_frame=1000, median=3.084µs, p95=3.125µs
+absent drag source: rows=10000, key_calls_per_frame=10000, median=30.25µs, p95=42.042µs
+absent drag source: rows=100000, key_calls_per_frame=100000, median=318.875µs, p95=338.667µs
+absent drag source: rows=1000000, key_calls_per_frame=1000000, median=3.203917ms, p95=3.544ms

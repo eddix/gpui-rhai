@@ -5,7 +5,7 @@ use gpui::{AnyElement, App, IntoElement, ParentElement, Styled, Window, div, px,
 use gpui_rhai::{
     AppManifest, AsyncCapabilityHandler, CapabilityDescriptor, CapabilityHandler, CapabilityId,
     CapabilityMethod, ComponentStateSchema, EmbeddedScriptSource, EmbeddedScriptView,
-    HostSlotRegistry, ModuleId, ObjectField, PrimitiveDescriptor, PrimitiveEventEmitter,
+    HostSlotRegistry, ModuleId, ObjectField, PrimitiveContext, PrimitiveDescriptor,
     PrimitiveHandler, PrimitiveId, PrimitiveInstance, PrimitiveValue, RuntimeEngine,
     ScriptApplication, ScriptViewExtension, SubscriptionCapabilityHandler, SubscriptionWork,
     TaskWork, UiRuntimeState, UiValue, ValueSchema,
@@ -127,7 +127,7 @@ impl PrimitiveHandler for StatusCard {
     fn render(
         &mut self,
         instance: &PrimitiveInstance,
-        _: &PrimitiveEventEmitter,
+        _: &PrimitiveContext,
         theme: &gpui_rhai::PrimitiveTheme,
         _: &mut Window,
         _: &mut App,

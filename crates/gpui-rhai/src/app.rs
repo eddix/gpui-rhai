@@ -113,6 +113,7 @@ pub struct ScriptViewHost {
 struct ScriptViewHostState {
     window_id: String,
     overlays: WindowOverlayCoordinator,
+    interactions: crate::interaction::WindowInteractionCoordinator,
     fallback_focus: FocusHandle,
     views: BTreeMap<String, FocusHandle>,
     pending_focus_recovery: Vec<FocusHandle>,
@@ -144,6 +145,7 @@ impl ScriptViewHost {
             inner: Rc::new(RefCell::new(ScriptViewHostState {
                 window_id,
                 overlays: WindowOverlayCoordinator::default(),
+                interactions: crate::interaction::WindowInteractionCoordinator::default(),
                 fallback_focus: cx.focus_handle(),
                 views: BTreeMap::new(),
                 pending_focus_recovery: Vec::new(),
@@ -236,17 +238,23 @@ impl ScriptViewHost {
 
     #[must_use]
     pub fn container(&self, child: impl IntoElement) -> AnyElement {
-        let (fallback, overlays) = {
+        let (fallback, overlays, interactions) = {
             let state = self.inner.borrow();
-            (state.fallback_focus.clone(), state.overlays.clone())
+            (
+                state.fallback_focus.clone(),
+                state.overlays.clone(),
+                state.interactions.clone(),
+            )
         };
         let escape_overlays = overlays.clone();
+        let escape_interactions = interactions;
         let child = div()
             .size_full()
             .track_focus(&fallback)
             .on_key_down(move |event, window, cx| {
                 if event.keystroke.key.as_str() == "escape"
-                    && escape_overlays.dismiss_escape(window, cx)
+                    && (escape_interactions.cancel(window, cx)
+                        || escape_overlays.dismiss_escape(window, cx))
                 {
                     cx.stop_propagation();
                 }
@@ -286,18 +294,31 @@ impl ScriptViewHost {
             state.pending_focus_recovery.push(focus);
         }
         state.overlays.remove_view(view_id);
+        state.interactions.discard_view(view_id);
     }
 
     fn quiesce_view(&self, view_id: &str, focus: &FocusHandle, window: &mut Window, cx: &mut App) {
-        let fallback = self.inner.borrow().fallback_focus.clone();
+        let (fallback, overlays, interactions) = {
+            let state = self.inner.borrow();
+            (
+                state.fallback_focus.clone(),
+                state.overlays.clone(),
+                state.interactions.clone(),
+            )
+        };
         if focus.contains_focused(window, cx) {
             fallback.focus(window, cx);
         }
-        self.inner.borrow().overlays.remove_view(view_id);
+        overlays.remove_view(view_id);
+        interactions.cancel_view(view_id, window, cx);
     }
 
     fn overlays(&self) -> WindowOverlayCoordinator {
         self.inner.borrow().overlays.clone()
+    }
+
+    fn interactions(&self) -> crate::interaction::WindowInteractionCoordinator {
+        self.inner.borrow().interactions.clone()
     }
 
     fn window_policy(&self) -> WindowCommandPolicy {
@@ -368,6 +389,7 @@ impl Element for ScriptViewHostFrame {
             )
         };
         overlays.begin_host_frame(viewport);
+        self.host.interactions().begin_frame();
         if pending
             .iter()
             .any(|focus| focus.contains_focused(window, cx))
@@ -404,8 +426,16 @@ impl Element for ScriptViewHostFrame {
     ) {
         child.paint(window, cx);
         self.host.inner.borrow_mut().frame_active = false;
-        let overlays = self.host.overlays();
-        let container_bounds = self.host.inner.borrow().container_bounds;
+        let (overlays, interactions, container_bounds) = {
+            let state = self.host.inner.borrow();
+            (
+                state.overlays.clone(),
+                state.interactions.clone(),
+                state.container_bounds,
+            )
+        };
+        interactions.finish_frame(window, cx);
+        interactions.install(window);
         window.on_mouse_event(move |event: &MouseDownEvent, phase, window, cx| {
             if phase == DispatchPhase::Capture
                 && container_bounds.is_some_and(|bounds| bounds.contains(&event.position))
@@ -902,6 +932,35 @@ impl ScriptViewHandle {
                 cx.notify();
             }
             Ok::<_, ScriptViewError>(changed)
+        })
+    }
+
+    /// Register a new Rust-owned collection on an already mounted view.
+    ///
+    /// The name must not already exist. Registration marks the view root dirty;
+    /// an active view rerenders on the next foreground cycle, while a suspended
+    /// view consumes the collection when it resumes.
+    ///
+    /// # Errors
+    ///
+    /// Returns after disposal or for an unsafe/duplicate collection name.
+    pub fn register_native_collection(
+        &self,
+        name: &str,
+        collection: crate::NativeCollection,
+        cx: &mut App,
+    ) -> Result<(), ScriptViewError> {
+        self.require_not_disposed()?;
+        self.0.entity.update(cx, |view, cx| {
+            let root = view.lifecycle.root_path().clone();
+            view.lifecycle
+                .runtime()
+                .borrow_mut()
+                .register_native_collection_from_host(&root, name, collection)?;
+            if view.state.get() == ScriptViewState::Active {
+                cx.notify();
+            }
+            Ok::<_, ScriptViewError>(())
         })
     }
 
@@ -2391,6 +2450,7 @@ impl PreparedScriptView {
         )
     }
 
+    #[allow(clippy::too_many_lines)]
     fn mount_with_registry(
         mut self,
         config: ScriptViewConfig,
@@ -2471,6 +2531,7 @@ impl PreparedScriptView {
                 text_selection: crate::renderer::TextSelectionRegistry::default(),
                 last_motion_sample: None,
                 state: entity_view_state,
+                direct_signal_writes: Rc::new(Cell::new(false)),
                 activity_wake: entity_activity_wake,
                 _runtime_tasks: runtime_tasks,
                 #[cfg(feature = "dev-reload")]
@@ -2785,6 +2846,7 @@ fn open_secondary_window(
                 text_selection: crate::renderer::TextSelectionRegistry::default(),
                 last_motion_sample: None,
                 state: entity_view_state,
+                direct_signal_writes: Rc::new(Cell::new(false)),
                 activity_wake: entity_activity_wake,
                 _runtime_tasks: runtime_tasks,
                 #[cfg(feature = "dev-reload")]
@@ -3068,6 +3130,7 @@ struct ScriptHostView {
     text_selection: crate::renderer::TextSelectionRegistry,
     last_motion_sample: Option<Instant>,
     state: Rc<Cell<ScriptViewState>>,
+    direct_signal_writes: Rc<Cell<bool>>,
     activity_wake: crate::async_runtime::AsyncWake,
     _runtime_tasks: HostRuntimeTasks,
     #[cfg(feature = "dev-reload")]
@@ -3086,6 +3149,14 @@ struct ScriptHostView {
     _reload_task: Option<Task<()>>,
     #[cfg(feature = "dev-reload")]
     pending_reload_paths: BTreeSet<PathBuf>,
+}
+
+struct DirectSignalWriteGuard<'a>(&'a Cell<bool>);
+
+impl Drop for DirectSignalWriteGuard<'_> {
+    fn drop(&mut self) {
+        self.0.set(false);
+    }
 }
 
 fn nearest_scroll_ancestor(
@@ -3225,11 +3296,17 @@ fn build_error_banner(
         .into_any_element()
 }
 
-fn script_node_dispatcher(cx: &Context<ScriptHostView>) -> NodeEventDispatcher {
+fn script_node_dispatcher(
+    cx: &Context<ScriptHostView>,
+    runtime: Rc<RefCell<UiRuntimeState>>,
+    direct_signal_writes: Rc<Cell<bool>>,
+) -> NodeEventDispatcher {
     let script_entity = cx.entity().downgrade();
     let native_entity = script_entity.clone();
     let signal_entity = script_entity.clone();
+    let signal_read_entity = script_entity.clone();
     let geometry_entity = script_entity.clone();
+    let canvas_geometry_entity = script_entity.clone();
     NodeEventDispatcher::new(move |callback, payload, target, window, app| {
         script_entity
             .update(app, |view, cx| {
@@ -3244,21 +3321,39 @@ fn script_node_dispatcher(cx: &Context<ScriptHostView>) -> NodeEventDispatcher {
             })
             .unwrap_or_else(|_| crate::EventResponse::new().stop())
     })
-    .with_signal_write(move |signal, value, app| {
-        let stale = crate::SignalError::Stale(signal.id().clone());
+    .with_signal_write(move |updates, app| {
+        let stale = updates
+            .first()
+            .map(|(signal, _)| crate::SignalError::Stale(signal.id().clone()));
+        let direct_runtime = Rc::clone(&runtime);
+        if direct_signal_writes.get() {
+            return direct_runtime
+                .try_borrow_mut()
+                .map_err(|_| stale.expect("non-empty signal patches have a first member"))?
+                .signals
+                .write_batch_from(&updates, crate::SignalWriter::Primitive);
+        }
         signal_entity
             .update(app, |view, cx| {
-                let changed = view.lifecycle.runtime().borrow_mut().signals.write_from(
-                    &signal,
-                    value,
-                    crate::SignalWriter::Primitive,
-                )?;
-                if changed {
+                let changed = view
+                    .lifecycle
+                    .runtime()
+                    .borrow_mut()
+                    .signals
+                    .write_batch_from(&updates, crate::SignalWriter::Primitive)?;
+                if changed && view.state.get() == ScriptViewState::Active {
                     cx.notify();
                 }
                 Ok(changed)
             })
-            .unwrap_or(Err(stale))
+            .unwrap_or_else(|_| Err(stale.expect("non-empty signal patches have a first member")))
+    })
+    .with_signal_read(move |signal, app| {
+        signal_read_entity
+            .read_with(app, |view, _| {
+                view.lifecycle.runtime().borrow().signals.read(signal)
+            })
+            .unwrap_or_else(|_| Err(crate::SignalError::Stale(signal.id().clone())))
     })
     .with_element_bounds(move |reference, app| {
         geometry_entity
@@ -3268,8 +3363,31 @@ fn script_node_dispatcher(cx: &Context<ScriptHostView>) -> NodeEventDispatcher {
                 let node = runtime.element_refs.resolve(reference).ok()?;
                 runtime
                     .geometry_for(Some(&view.view_id))
-                    .get(node)
+                    .presented(node)
+                    .ok()
                     .map(|geometry| geometry.layout)
+            })
+            .ok()
+            .flatten()
+    })
+    .with_canvas_local_point(move |reference, point, app| {
+        canvas_geometry_entity
+            .read_with(app, |view, _| {
+                let runtime = view.lifecycle.runtime();
+                let runtime = runtime.borrow();
+                let node = runtime.element_refs.resolve(reference).ok()?;
+                let geometry = runtime.geometry_for(Some(&view.view_id));
+                let bounds = geometry.get(node)?;
+                let local = (point.0 - bounds.visual.x, point.1 - bounds.visual.y);
+                Some(
+                    crate::canvas::canvas_motion_affine(
+                        bounds.layout.width,
+                        bounds.layout.height,
+                        geometry.canvas_transform(node),
+                    )
+                    .inverse()?
+                    .map_point(local),
+                )
             })
             .ok()
             .flatten()
@@ -3381,11 +3499,16 @@ impl Render for ScriptHostView {
         self.prepare_host_render(window, cx);
         let motion_root = format!("window:{}/view:{}/root", self.window_id, self.view_id);
         let (motion_active, committed_motion_events) = self.sample_motion_frame(&motion_root);
-        let dispatcher = script_node_dispatcher(cx);
+        let dispatcher = script_node_dispatcher(
+            cx,
+            self.lifecycle.runtime(),
+            Rc::clone(&self.direct_signal_writes),
+        );
         let appearance = system_appearance(window.appearance());
         let snapshot = self.render_snapshot(appearance);
         self.publish_theme_after_render(&snapshot.theme, cx);
         let a11y_active = window.is_a11y_active();
+        let interactions = self.host.interactions();
         let mut semantics = self.lifecycle.semantics().clone();
         if a11y_active {
             semantics.apply_primitive_projections(
@@ -3401,6 +3524,7 @@ impl Render for ScriptHostView {
             assets: &snapshot.assets,
             dispatcher: &dispatcher,
             overlays: &self.overlays,
+            interactions: &interactions,
             motions: &snapshot.motions,
             signals: &snapshot.signals,
             geometry: &snapshot.geometry,
@@ -3499,11 +3623,13 @@ impl Render for ScriptHostView {
         }
         crate::renderer::pointer_capture_router_element(
             root.into_any_element(),
+            &self.view_id,
             self.lifecycle.retained(),
             &dispatcher,
             &snapshot.pointer_capture,
             &snapshot.geometry,
             &self.scroll_handles,
+            interactions.clone(),
         )
     }
 }
@@ -3700,6 +3826,7 @@ impl ScriptHostView {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     fn automation_dispatch(
         &mut self,
         locator: &crate::AutomationLocator,
@@ -3730,6 +3857,10 @@ impl ScriptHostView {
         let payload = payload
             .or_else(|| target_node.handler_payload(event).cloned())
             .unwrap_or(UiValue::Null);
+        let native_target = target_node
+            .primitive()
+            .zip(target_node.key())
+            .map(|(primitive, key)| (primitive.clone(), key.to_owned()));
         let steps = crate::automation::dispatch_plan(self.lifecycle.retained(), target, event)?;
         let mut response = crate::EventResponse::new();
         let mut invoked = 0usize;
@@ -3785,6 +3916,21 @@ impl ScriptHostView {
                     }
                     crate::PointerCaptureDirective::None => {}
                 }
+            }
+        }
+        if invoked == 0
+            && let Some(key) = event.strip_prefix("key:")
+            && let Some((primitive, keyed)) = native_target
+        {
+            let instance = crate::PrimitiveInstanceId::new(primitive, keyed, target);
+            if self
+                .primitives
+                .perform_key(&instance, key, window, cx)
+                .map_err(|error| crate::AutomationError::Command(error.to_string()))?
+            {
+                visited.push(target);
+                invoked = 1;
+                response = response.stop();
             }
         }
         Ok(crate::AutomationResult::Dispatch {
@@ -4238,8 +4384,7 @@ impl ScriptHostView {
             let rollback = self.restore_native_active(cx).err();
             let message = native_lifecycle_error("suspend", &error, rollback.as_ref());
             if rollback.is_some() {
-                self.host
-                    .quiesce_view(&self.view_id, &self.host_focus, window, cx);
+                self.quiesce_host_view(window, cx);
                 let message = self.fault_native_lifecycle(message, cx);
                 return Err(ScriptViewError::Suspend(message));
             }
@@ -4256,8 +4401,7 @@ impl ScriptHostView {
                     |rollback| format!("{error}; native rollback failed: {rollback}"),
                 );
                 if rollback_failed {
-                    self.host
-                        .quiesce_view(&self.view_id, &self.host_focus, window, cx);
+                    self.quiesce_host_view(window, cx);
                     let message = self.fault_native_lifecycle(message, cx);
                     return Err(ScriptViewError::Suspend(message));
                 }
@@ -4272,12 +4416,25 @@ impl ScriptHostView {
             }
             return Ok(false);
         }
-        self.host
-            .quiesce_view(&self.view_id, &self.host_focus, window, cx);
+        self.quiesce_host_view(window, cx);
         self.state.set(ScriptViewState::Suspended);
         self.clear_failure();
-        cx.notify();
         Ok(true)
+    }
+
+    fn quiesce_host_view(&self, window: &mut Window, cx: &mut App) {
+        self.direct_signal_writes.set(true);
+        let _reset = DirectSignalWriteGuard(&self.direct_signal_writes);
+        self.host
+            .quiesce_view(&self.view_id, &self.host_focus, window, cx);
+    }
+
+    fn cancel_view_interaction(&self, window: &mut Window, cx: &mut App) -> bool {
+        self.direct_signal_writes.set(true);
+        let _reset = DirectSignalWriteGuard(&self.direct_signal_writes);
+        self.host
+            .interactions()
+            .cancel_view(&self.view_id, window, cx)
     }
 
     #[allow(clippy::too_many_lines)]
@@ -4575,13 +4732,16 @@ impl ScriptHostView {
                 result.map_err(|error| view.lifecycle_failure(&error, callback.component()))?;
             view.invoke_pending_effects()?;
             let result = view.lifecycle.render_dirty(&mut view.engine);
-            result.map_err(|error| view.lifecycle_failure(&error, None))?;
-            Ok(value)
+            let rendered = result.map_err(|error| view.lifecycle_failure(&error, None))?;
+            Ok((value, rendered))
         });
         let response = callback_result.as_ref().map_or_else(
             |_| crate::EventResponse::new().stop(),
-            event_response_from_dynamic,
+            |(value, _)| event_response_from_dynamic(value),
         );
+        let rendered = callback_result
+            .as_ref()
+            .is_ok_and(|(_, rendered)| *rendered);
         let succeeded = callback_result.is_ok();
         match callback_result {
             Ok(_) => self.clear_failure(),
@@ -4589,6 +4749,9 @@ impl ScriptHostView {
         }
         self.process_window_commands(cx);
         self.process_element_commands(window, cx);
+        if rendered {
+            self.cancel_view_interaction(window, cx);
+        }
         self.collect_timings();
         cx.notify();
         if succeeded {

@@ -5,14 +5,14 @@ use std::collections::BTreeMap;
 use gpui::{
     AnyElement, App, AppContext, Bounds, Context, CursorStyle, Element, ElementId, Entity,
     FocusHandle, GlobalElementId, InspectorElementId, InteractiveElement, IntoElement,
-    KeyDownEvent, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
-    ParentElement, Pixels, Point, Render, Styled, Window, div, px, relative,
+    KeyDownEvent, LayoutId, MouseButton, MouseDownEvent, ParentElement, Pixels, Point, Render,
+    Styled, Window, div, px, relative,
 };
 
 use crate::{
-    ComponentStateSchema, EventSchema, ObjectField, PrimitiveDescriptor, PrimitiveEventEmitter,
+    ComponentStateSchema, EventSchema, ObjectField, PrimitiveContext, PrimitiveDescriptor,
     PrimitiveHandler, PrimitiveId, PrimitiveInstance, PrimitiveInstanceId, PrimitiveProps,
-    PrimitiveTheme, PrimitiveValue, Style, TextDirection, UiValue, ValueSchema,
+    PrimitiveTheme, Style, TextDirection, UiValue, ValueSchema,
 };
 
 #[derive(Clone)]
@@ -30,7 +30,7 @@ struct RangeInputConfig {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum RangeOrientation {
+pub(crate) enum RangeOrientation {
     Horizontal,
     Vertical,
 }
@@ -46,7 +46,8 @@ struct RangeInputEntity {
     disabled: bool,
     dragging: bool,
     bounds: Option<Bounds<Pixels>>,
-    events: PrimitiveEventEmitter,
+    events: PrimitiveContext,
+    interaction_key: String,
     track_style: Style,
     fill_style: Style,
     thumb_style: Style,
@@ -56,7 +57,8 @@ struct RangeInputEntity {
 impl RangeInputEntity {
     fn new(
         config: RangeInputConfig,
-        events: PrimitiveEventEmitter,
+        events: PrimitiveContext,
+        interaction_key: String,
         cx: &mut Context<Self>,
     ) -> Self {
         let value = normalize_value(config.value, config.min, config.max, config.step);
@@ -72,6 +74,7 @@ impl RangeInputEntity {
             dragging: false,
             bounds: None,
             events,
+            interaction_key,
             track_style: config.track_style,
             fill_style: config.fill_style,
             thumb_style: config.thumb_style,
@@ -82,7 +85,7 @@ impl RangeInputEntity {
     fn update_props(
         &mut self,
         config: RangeInputConfig,
-        events: PrimitiveEventEmitter,
+        events: PrimitiveContext,
         cx: &mut Context<Self>,
     ) {
         self.min = config.min;
@@ -114,25 +117,11 @@ impl RangeInputEntity {
         let Some(bounds) = self.bounds else {
             return self.preview;
         };
-        let ratio = match self.orientation {
-            RangeOrientation::Horizontal => {
-                let width = f64::from(bounds.size.width).max(f64::EPSILON);
-                let ratio =
-                    ((f64::from(position.x) - f64::from(bounds.origin.x)) / width).clamp(0.0, 1.0);
-                if self.theme.direction() == TextDirection::RightToLeft {
-                    1.0 - ratio
-                } else {
-                    ratio
-                }
-            }
-            RangeOrientation::Vertical => {
-                let height = f64::from(bounds.size.height).max(f64::EPSILON);
-                1.0 - ((f64::from(position.y) - f64::from(bounds.origin.y)) / height)
-                    .clamp(0.0, 1.0)
-            }
-        };
-        normalize_value(
-            self.min + ratio * (self.max - self.min),
+        range_value_at(
+            bounds,
+            position,
+            self.orientation,
+            self.theme.direction(),
             self.min,
             self.max,
             self.step,
@@ -146,24 +135,58 @@ impl RangeInputEntity {
         self.focus.focus(window, cx);
         self.dragging = true;
         self.preview = self.value_at(event.position);
-        cx.notify();
-    }
-
-    fn mouse_move(&mut self, event: &MouseMoveEvent, _: &mut Window, cx: &mut Context<Self>) {
-        if self.dragging && !self.disabled {
-            self.preview = self.value_at(event.position);
-            cx.notify();
-        }
-    }
-
-    fn mouse_up(&mut self, event: &MouseUpEvent, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.dragging || self.disabled {
-            return;
-        }
-        self.preview = self.value_at(event.position);
-        self.dragging = false;
-        self.emit_change(self.preview, window, cx);
-        cx.notify();
+        let entity = cx.weak_entity();
+        let update_entity = entity.clone();
+        let update =
+            move |gesture: crate::interaction::GestureUpdate, _: &mut Window, cx: &mut App| {
+                update_entity
+                    .update(cx, |input, cx| {
+                        if input.disabled {
+                            return;
+                        }
+                        input.preview = input.value_at(gesture.current());
+                        cx.notify();
+                    })
+                    .map_or(crate::interaction::InteractionFlow::Cancel, |()| {
+                        crate::interaction::InteractionFlow::Continue
+                    })
+            };
+        let finish_entity = entity.clone();
+        let finish =
+            move |gesture: crate::interaction::GestureUpdate, window: &mut Window, cx: &mut App| {
+                let _ = finish_entity.update(cx, |input, cx| {
+                    if input.disabled {
+                        input.dragging = false;
+                        input.preview = input.controlled;
+                        cx.notify();
+                        return;
+                    }
+                    input.preview = input.value_at(gesture.current());
+                    input.dragging = false;
+                    input.emit_change(input.preview, window, cx);
+                    cx.notify();
+                });
+            };
+        let cancel = move |_: &mut Window, cx: &mut App| {
+            let _ = entity.update(cx, |input, cx| {
+                input.dragging = false;
+                input.preview = input.controlled;
+                cx.notify();
+            });
+        };
+        let owner = self.events.interaction_owner(&self.interaction_key);
+        self.events.begin_interaction(
+            crate::interaction::NativeGesture::new(
+                owner,
+                event.position,
+                cx.entity_id(),
+                update,
+                finish,
+                cancel,
+            ),
+            window,
+            cx,
+        );
     }
 
     fn key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
@@ -197,15 +220,18 @@ impl RangeInputEntity {
     }
 
     fn emit_change(&self, value: f64, window: &mut Window, cx: &mut Context<Self>) {
-        let events = self.events.clone();
-        window.defer(cx, move |window, cx| {
-            let _ = events.emit("change", UiValue::Float(value), window, cx);
-        });
+        self.events
+            .propose("change", UiValue::Float(value), window, cx);
     }
 }
 
 impl Render for RangeInputEntity {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let owner = self.events.interaction_owner(&self.interaction_key);
+        self.events.present_interaction(owner.clone());
+        if self.disabled {
+            self.events.cancel_interaction(&owner, window, cx);
+        }
         let ratio = self.ratio();
         let direction = self.theme.direction();
         let mut fill = crate::renderer::apply_style_override(
@@ -272,9 +298,6 @@ impl Render for RangeInputEntity {
             })
             .on_key_down(cx.listener(Self::key_down))
             .on_mouse_down(MouseButton::Left, cx.listener(Self::mouse_down))
-            .on_mouse_move(cx.listener(Self::mouse_move))
-            .on_mouse_up(MouseButton::Left, cx.listener(Self::mouse_up))
-            .on_mouse_up_out(MouseButton::Left, cx.listener(Self::mouse_up))
             .child(track)
             .child(RangeBoundsRecorder { input: cx.entity() })
             .opacity(if self.disabled { 0.62 } else { 1.0 })
@@ -419,7 +442,7 @@ impl PrimitiveHandler for RangeInputPrimitiveHandler {
     fn render(
         &mut self,
         instance: &PrimitiveInstance,
-        events: &PrimitiveEventEmitter,
+        events: &PrimitiveContext,
         theme: &PrimitiveTheme,
         _: &mut Window,
         cx: &mut App,
@@ -433,7 +456,9 @@ impl PrimitiveHandler for RangeInputPrimitiveHandler {
             entity.clone()
         } else {
             let events = events.clone();
-            let entity = cx.new(|cx| RangeInputEntity::new(config.clone(), events, cx));
+            let interaction_key = format!("{}:{}", id.key(), id.node());
+            let entity =
+                cx.new(|cx| RangeInputEntity::new(config.clone(), events, interaction_key, cx));
             self.instances.insert(id, entity.clone());
             entity
         };
@@ -452,10 +477,12 @@ fn parse_config(
     props: &PrimitiveProps,
     theme: &PrimitiveTheme,
 ) -> Result<RangeInputConfig, String> {
-    let value = number_prop(props, "value").ok_or_else(|| "range value is required".to_owned())?;
-    let min = number_prop(props, "min").unwrap_or(0.0);
-    let max = number_prop(props, "max").unwrap_or(100.0);
-    let step = number_prop(props, "step").unwrap_or(1.0);
+    let value = props
+        .number("value")
+        .ok_or_else(|| "range value is required".to_owned())?;
+    let min = props.number("min").unwrap_or(0.0);
+    let max = props.number("max").unwrap_or(100.0);
+    let step = props.number("step").unwrap_or(1.0);
     if !value.is_finite() || !min.is_finite() || !max.is_finite() || !step.is_finite() {
         return Err("range values must be finite".to_owned());
     }
@@ -465,7 +492,7 @@ fn parse_config(
     if step <= 0.0 || step > max - min {
         return Err("range step must be positive and no larger than max - min".to_owned());
     }
-    let orientation = match string_prop(props, "orientation").as_deref() {
+    let orientation = match props.string("orientation") {
         None | Some("horizontal") => RangeOrientation::Horizontal,
         Some("vertical") => RangeOrientation::Vertical,
         Some(other) => return Err(format!("unknown range orientation `{other}`")),
@@ -476,20 +503,20 @@ fn parse_config(
         max,
         step,
         orientation,
-        disabled: bool_prop(props, "disabled").unwrap_or(false),
-        track_style: style_prop(props, "track_style"),
-        fill_style: style_prop(props, "fill_style"),
-        thumb_style: style_prop(props, "thumb_style"),
+        disabled: props.boolean("disabled").unwrap_or(false),
+        track_style: props.style("track_style").cloned().unwrap_or_default(),
+        fill_style: props.style("fill_style").cloned().unwrap_or_default(),
+        thumb_style: props.style("thumb_style").cloned().unwrap_or_default(),
         theme: theme.clone(),
     })
 }
 
-fn normalize_value(value: f64, min: f64, max: f64, step: f64) -> f64 {
+pub(crate) fn normalize_value(value: f64, min: f64, max: f64, step: f64) -> f64 {
     let snapped = min + ((value.clamp(min, max) - min) / step).round() * step;
     snapped.clamp(min, max)
 }
 
-fn horizontal_thumb_ratio(ratio: f64, direction: TextDirection) -> f64 {
+pub(crate) fn horizontal_thumb_ratio(ratio: f64, direction: TextDirection) -> f64 {
     if direction == TextDirection::RightToLeft {
         1.0 - ratio
     } else {
@@ -497,37 +524,36 @@ fn horizontal_thumb_ratio(ratio: f64, direction: TextDirection) -> f64 {
     }
 }
 
-fn fraction_f32(value: f64) -> f32 {
+pub(crate) fn fraction_f32(value: f64) -> f32 {
     value.to_string().parse().unwrap_or(0.0)
 }
 
-fn number_prop(props: &PrimitiveProps, name: &str) -> Option<f64> {
-    match props.get(name) {
-        Some(PrimitiveValue::Data(UiValue::Float(value))) => Some(*value),
-        Some(PrimitiveValue::Data(UiValue::Integer(value))) => value.to_string().parse().ok(),
-        _ => None,
-    }
-}
-
-fn string_prop(props: &PrimitiveProps, name: &str) -> Option<String> {
-    match props.get(name) {
-        Some(PrimitiveValue::Data(UiValue::String(value))) => Some(value.clone()),
-        _ => None,
-    }
-}
-
-fn bool_prop(props: &PrimitiveProps, name: &str) -> Option<bool> {
-    match props.get(name) {
-        Some(PrimitiveValue::Data(UiValue::Bool(value))) => Some(*value),
-        _ => None,
-    }
-}
-
-fn style_prop(props: &PrimitiveProps, name: &str) -> Style {
-    match props.get(name) {
-        Some(PrimitiveValue::Style(style)) => (**style).clone(),
-        _ => Style::new(),
-    }
+pub(crate) fn range_value_at(
+    bounds: Bounds<Pixels>,
+    position: Point<Pixels>,
+    orientation: RangeOrientation,
+    direction: TextDirection,
+    min: f64,
+    max: f64,
+    step: f64,
+) -> f64 {
+    let ratio = match orientation {
+        RangeOrientation::Horizontal => {
+            let width = f64::from(bounds.size.width).max(f64::EPSILON);
+            let ratio =
+                ((f64::from(position.x) - f64::from(bounds.origin.x)) / width).clamp(0.0, 1.0);
+            if direction == TextDirection::RightToLeft {
+                1.0 - ratio
+            } else {
+                ratio
+            }
+        }
+        RangeOrientation::Vertical => {
+            let height = f64::from(bounds.size.height).max(f64::EPSILON);
+            1.0 - ((f64::from(position.y) - f64::from(bounds.origin.y)) / height).clamp(0.0, 1.0)
+        }
+    };
+    normalize_value(min + ratio * (max - min), min, max, step)
 }
 
 /// Build the compile-time generic range-input primitive schema.

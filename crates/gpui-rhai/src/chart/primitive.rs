@@ -14,8 +14,8 @@ use gpui::{
     AnyElement, App, AppContext, Bounds, ContentMask, Context, Element, ElementId, Entity,
     FocusHandle, FontFallbacks, FontWeight, GlobalElementId, InspectorElementId,
     InteractiveElement, IntoElement, KeyDownEvent, LayoutId, MouseButton, MouseDownEvent,
-    MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point, Render, ScrollWheelEvent, Styled,
-    Task, WeakEntity, Window, canvas, div, fill, point, px, rgba, size,
+    MouseMoveEvent, ParentElement, Pixels, Point, Render, ScrollWheelEvent, Styled, Task,
+    WeakEntity, Window, canvas, div, fill, point, px, rgba, size,
 };
 
 use super::{
@@ -27,8 +27,8 @@ use super::{
     layout_chart_scene_with_axis_windows, prepare_chart_data,
 };
 use crate::{
-    ComponentStateSchema, EffectPrimitiveDescriptor, EventSchema, ObjectField, PrimitiveDescriptor,
-    PrimitiveEventEmitter, PrimitiveHandler, PrimitiveId, PrimitiveInstance, PrimitiveInstanceId,
+    ComponentStateSchema, EffectPrimitiveDescriptor, EventSchema, ObjectField, PrimitiveContext,
+    PrimitiveDescriptor, PrimitiveHandler, PrimitiveId, PrimitiveInstance, PrimitiveInstanceId,
     PrimitivePlatform, PrimitiveProps, PrimitiveTheme, PrimitiveValue, UiValue, ValueSchema,
 };
 
@@ -89,7 +89,7 @@ impl ChartSourceCache {
     fn matches(&self, props: &PrimitiveProps) -> bool {
         props.get("spec") == Some(&self.spec_prop)
             && props.get("data") == Some(&self.data_prop)
-            && data_string_prop(props, "key_dimension") == self.key_dimension
+            && props.string("key_dimension") == self.key_dimension.as_deref()
     }
 }
 
@@ -365,7 +365,8 @@ impl ChartLinkRegistry {
 struct ChartEntity {
     focus: FocusHandle,
     config: ChartConfig,
-    events: PrimitiveEventEmitter,
+    events: PrimitiveContext,
+    interaction_key: String,
     transforms: ChartTransformRegistry,
     geo: ChartGeoRegistry,
     custom_series: ChartSeriesRegistry,
@@ -383,7 +384,6 @@ struct ChartEntity {
     zoom: f64,
     pan: ChartPoint,
     dragging_pan: bool,
-    pan_origin: Option<Point<Pixels>>,
     brush: Option<(ChartPoint, ChartPoint)>,
     job: u64,
     data_source_epoch: u64,
@@ -414,7 +414,8 @@ struct ChartEntity {
 impl ChartEntity {
     fn new(
         config: ChartConfig,
-        events: PrimitiveEventEmitter,
+        events: PrimitiveContext,
+        interaction_key: String,
         transforms: ChartTransformRegistry,
         geo: ChartGeoRegistry,
         custom_series: ChartSeriesRegistry,
@@ -435,6 +436,7 @@ impl ChartEntity {
             focus: cx.focus_handle(),
             config,
             events,
+            interaction_key,
             transforms,
             geo,
             custom_series,
@@ -452,7 +454,6 @@ impl ChartEntity {
             zoom,
             pan,
             dragging_pan: false,
-            pan_origin: None,
             brush: None,
             job: 0,
             data_source_epoch,
@@ -530,7 +531,6 @@ impl ChartEntity {
         self.wheel_commit_task = None;
         self.wheel_gesture = ChartWheelGesture::PhaseLess;
         self.dragging_pan = false;
-        self.pan_origin = None;
         self.brush = None;
         self.hovered = None;
         self.viewport_preview_dirty = false;
@@ -584,7 +584,7 @@ impl ChartEntity {
     fn update_config(
         &mut self,
         config: ChartConfig,
-        events: PrimitiveEventEmitter,
+        events: PrimitiveContext,
         linked_selected: BTreeSet<String>,
         linked_projection: Option<ChartLinkedProjection>,
         cx: &mut Context<Self>,
@@ -1274,32 +1274,6 @@ impl ChartEntity {
     }
 
     fn mouse_move(&mut self, event: &MouseMoveEvent, window: &mut Window, cx: &mut Context<Self>) {
-        if self.dragging_pan {
-            if let Some(origin) = self.pan_origin {
-                let changed = self.pan_effective_viewport(ChartPoint {
-                    x: f64::from(event.position.x - origin.x),
-                    y: f64::from(event.position.y - origin.y),
-                });
-                if !changed {
-                    return;
-                }
-                self.viewport_input_generation = self.viewport_input_generation.saturating_add(1);
-                self.viewport_preview_dirty = true;
-                self.pan_origin = Some(event.position);
-                self.invalidate_frame();
-                self.rebuild_scene_with_motion(cx, false);
-            }
-            return;
-        }
-        if event.dragging()
-            && !matches!(self.config.spec.brush, ChartBrushMode::None)
-            && let Some(point) = self.local_point(event.position)
-            && let Some((start, _)) = self.brush
-        {
-            self.brush = Some((start, point));
-            cx.notify();
-            return;
-        }
         let hovered_mark = self.hit_mark_at(event.position);
         let hovered = hovered_mark.as_ref().map(|mark| mark.key.clone());
         if hovered != self.hovered {
@@ -1316,13 +1290,138 @@ impl ChartEntity {
         }
     }
 
+    fn begin_pan(&mut self, position: Point<Pixels>, window: &mut Window, cx: &mut Context<Self>) {
+        self.dragging_pan = true;
+        let entity = cx.weak_entity();
+        let update_entity = entity.clone();
+        let update =
+            move |gesture: crate::interaction::GestureUpdate, _: &mut Window, cx: &mut App| {
+                let result = update_entity.update(cx, |chart, cx| {
+                    if chart.activity != ChartActivity::Active {
+                        return false;
+                    }
+                    let (x, y) = gesture.step();
+                    if chart.pan_effective_viewport(ChartPoint { x, y }) {
+                        chart.viewport_input_generation =
+                            chart.viewport_input_generation.saturating_add(1);
+                        chart.viewport_preview_dirty = true;
+                        chart.invalidate_frame();
+                        chart.rebuild_scene_with_motion(cx, false);
+                    }
+                    true
+                });
+                if matches!(result, Ok(true)) {
+                    crate::interaction::InteractionFlow::Continue
+                } else {
+                    crate::interaction::InteractionFlow::Cancel
+                }
+            };
+        let finish_entity = entity.clone();
+        let finish =
+            move |_: crate::interaction::GestureUpdate, window: &mut Window, cx: &mut App| {
+                let _ = finish_entity.update(cx, |chart, cx| {
+                    chart.dragging_pan = false;
+                    if chart.activity == ChartActivity::Active {
+                        chart.emit_viewport_change(window, cx);
+                    }
+                    cx.notify();
+                });
+            };
+        let cancel = move |_: &mut Window, cx: &mut App| {
+            let _ = entity.update(cx, |chart, cx| {
+                chart.dragging_pan = false;
+                chart.viewport_preview_dirty = false;
+                chart.restore_committed_viewport();
+                chart.invalidate_frame();
+                chart.rebuild_scene_with_motion(cx, false);
+                cx.notify();
+            });
+        };
+        let owner = self
+            .events
+            .interaction_owner(&format!("{}:pan", self.interaction_key));
+        self.events.begin_interaction(
+            crate::interaction::NativeGesture::new(
+                owner,
+                position,
+                cx.entity_id(),
+                update,
+                finish,
+                cancel,
+            )
+            .with_button(MouseButton::Middle),
+            window,
+            cx,
+        );
+    }
+
+    fn begin_brush(
+        &mut self,
+        start: ChartPoint,
+        position: Point<Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.brush = Some((start, start));
+        let entity = cx.weak_entity();
+        let update_entity = entity.clone();
+        let update =
+            move |gesture: crate::interaction::GestureUpdate, _: &mut Window, cx: &mut App| {
+                let result = update_entity.update(cx, |chart, cx| {
+                    if chart.activity != ChartActivity::Active {
+                        return false;
+                    }
+                    if let Some(end) = chart.local_point(gesture.current()) {
+                        chart.brush = Some((start, end));
+                        cx.notify();
+                    }
+                    true
+                });
+                if matches!(result, Ok(true)) {
+                    crate::interaction::InteractionFlow::Continue
+                } else {
+                    crate::interaction::InteractionFlow::Cancel
+                }
+            };
+        let finish_entity = entity.clone();
+        let finish =
+            move |_: crate::interaction::GestureUpdate, window: &mut Window, cx: &mut App| {
+                let _ = finish_entity.update(cx, |chart, cx| {
+                    if let Some((start, end)) = chart.brush.take()
+                        && chart.activity == ChartActivity::Active
+                    {
+                        chart.emit_brush(start, end, window, cx);
+                    }
+                    cx.notify();
+                });
+            };
+        let cancel = move |_: &mut Window, cx: &mut App| {
+            let _ = entity.update(cx, |chart, cx| {
+                chart.brush = None;
+                cx.notify();
+            });
+        };
+        let owner = self
+            .events
+            .interaction_owner(&format!("{}:brush", self.interaction_key));
+        self.events.begin_interaction(
+            crate::interaction::NativeGesture::new(
+                owner,
+                position,
+                cx.entity_id(),
+                update,
+                finish,
+                cancel,
+            ),
+            window,
+            cx,
+        );
+    }
+
     fn mouse_down(&mut self, event: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         self.focus.focus(window, cx);
         match event.button {
-            MouseButton::Middle => {
-                self.dragging_pan = true;
-                self.pan_origin = Some(event.position);
-            }
+            MouseButton::Middle => self.begin_pan(event.position, window, cx),
             MouseButton::Left => {
                 if let Some(mark) = self.hit_mark_at(event.position)
                     && matches!(mark.role, ChartMarkRole::Legend | ChartMarkRole::Annotation)
@@ -1350,7 +1449,7 @@ impl ChartEntity {
                     } else {
                         point
                     };
-                    self.brush = Some((point, point));
+                    self.begin_brush(point, event.position, window, cx);
                 } else if let Some(mark) = self.hit_mark_at(event.position)
                     && mark.role == ChartMarkRole::Data
                 {
@@ -1358,20 +1457,6 @@ impl ChartEntity {
                 }
             }
             MouseButton::Right | MouseButton::Navigate(_) => {}
-        }
-        cx.notify();
-    }
-
-    fn mouse_up(&mut self, event: &MouseUpEvent, window: &mut Window, cx: &mut Context<Self>) {
-        if event.button == MouseButton::Middle {
-            self.dragging_pan = false;
-            self.pan_origin = None;
-            self.emit_viewport_change(window, cx);
-        }
-        if event.button == MouseButton::Left
-            && let Some((start, end)) = self.brush.take()
-        {
-            self.emit_brush(start, end, window, cx);
         }
         cx.notify();
     }
@@ -1721,6 +1806,14 @@ impl ChartEntity {
 
 impl Render for ChartEntity {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.events.present_interaction(
+            self.events
+                .interaction_owner(&format!("{}:pan", self.interaction_key)),
+        );
+        self.events.present_interaction(
+            self.events
+                .interaction_owner(&format!("{}:brush", self.interaction_key)),
+        );
         let scene = self.displayed_scene(window);
         let hovered = self.hovered.clone();
         let focused = self.focused.clone();
@@ -1759,10 +1852,6 @@ impl Render for ChartEntity {
             .on_mouse_down(MouseButton::Left, cx.listener(Self::mouse_down))
             .on_mouse_down(MouseButton::Middle, cx.listener(Self::mouse_down))
             .on_mouse_move(cx.listener(Self::mouse_move))
-            .on_mouse_up(MouseButton::Left, cx.listener(Self::mouse_up))
-            .on_mouse_up(MouseButton::Middle, cx.listener(Self::mouse_up))
-            .on_mouse_up_out(MouseButton::Left, cx.listener(Self::mouse_up))
-            .on_mouse_up_out(MouseButton::Middle, cx.listener(Self::mouse_up))
             .on_scroll_wheel(cx.listener(Self::wheel))
             .child(chart_canvas);
         if let Some(scene) = &scene {
@@ -2141,7 +2230,7 @@ impl PrimitiveHandler for ChartPrimitiveHandler {
     fn render(
         &mut self,
         instance: &PrimitiveInstance,
-        events: &PrimitiveEventEmitter,
+        events: &PrimitiveContext,
         theme: &PrimitiveTheme,
         _: &mut Window,
         cx: &mut App,
@@ -2173,6 +2262,7 @@ impl PrimitiveHandler for ChartPrimitiveHandler {
                 ChartEntity::new(
                     config.clone(),
                     events.clone(),
+                    format!("{}:{}", id.key(), id.node()),
                     self.transforms.clone(),
                     self.geo.clone(),
                     self.custom_series.clone(),
@@ -2253,13 +2343,16 @@ fn chart_config_from_source(
         spec,
         data: source.data.clone(),
         selected: string_set_prop(props, "selected_keys"),
-        zoom: number_prop(props, "zoom").unwrap_or(1.0),
+        zoom: props.number("zoom").unwrap_or(1.0),
         pan: ChartPoint {
-            x: number_prop(props, "pan_x").unwrap_or(0.0),
-            y: number_prop(props, "pan_y").unwrap_or(0.0),
+            x: props.number("pan_x").unwrap_or(0.0),
+            y: props.number("pan_y").unwrap_or(0.0),
         },
         viewport: viewport_prop(props)?,
-        viewport_revision: integer_prop(props, "viewport_revision").unwrap_or(0),
+        viewport_revision: props
+            .integer("viewport_revision")
+            .and_then(|value| u64::try_from(value).ok())
+            .unwrap_or(0),
         theme: theme.clone(),
     })
 }
@@ -2275,7 +2368,7 @@ fn parse_chart_source(props: &PrimitiveProps) -> Result<ChartSourceCache, String
         }
         _ => return Err("chart spec must be durable data".to_owned()),
     };
-    let key_dimension = data_string_prop(props, "key_dimension");
+    let key_dimension = props.string("key_dimension").map(ToOwned::to_owned);
     let data_prop = props
         .get("data")
         .cloned()
@@ -2668,28 +2761,6 @@ fn linked_viewport_value(viewport: &ChartLinkedViewport) -> UiValue {
             ("pan_y".to_owned(), UiValue::Float(normalized_pan.y)),
         ])),
         ChartLinkedViewport::Unsupported => UiValue::Null,
-    }
-}
-
-fn data_string_prop(props: &PrimitiveProps, name: &str) -> Option<String> {
-    match props.get(name) {
-        Some(PrimitiveValue::Data(UiValue::String(value))) => Some(value.clone()),
-        _ => None,
-    }
-}
-
-fn number_prop(props: &PrimitiveProps, name: &str) -> Option<f64> {
-    match props.get(name) {
-        Some(PrimitiveValue::Data(UiValue::Float(value))) => Some(*value),
-        Some(PrimitiveValue::Data(UiValue::Integer(value))) => value.to_string().parse().ok(),
-        _ => None,
-    }
-}
-
-fn integer_prop(props: &PrimitiveProps, name: &str) -> Option<u64> {
-    match props.get(name) {
-        Some(PrimitiveValue::Data(UiValue::Integer(value))) => u64::try_from(*value).ok(),
-        _ => None,
     }
 }
 

@@ -1,18 +1,18 @@
 use std::cell::RefCell;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 use std::sync::{Arc, OnceLock};
 use std::time::Instant;
 
 use gpui::{
     AlignSelf as GpuiAlignSelf, AnyElement, App, Background, Bounds, BoxShadow, ClickEvent,
-    ContentMask, Context, CursorStyle, DispatchPhase, Div, Element, ElementId, FocusHandle,
-    FontFallbacks, FontFeatures, FontStyle, FontWeight, GlobalElementId, HighlightStyle, Img,
-    InspectorElementId, InteractiveElement, IntoElement, LayoutId, Modifiers, MouseButton,
-    MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point, Render,
-    ScrollHandle, ScrollWheelEvent, SharedString, Stateful, StatefulInteractiveElement, Styled,
-    StyledText, TextAlign, Window, auto, div, img, linear_color_stop, linear_gradient, point, px,
-    relative, rems, rgba,
+    ContentMask, Context, CursorStyle, Div, Element, ElementId, FocusHandle, FontFallbacks,
+    FontFeatures, FontStyle, FontWeight, GlobalElementId, HighlightStyle, Img, InspectorElementId,
+    InteractiveElement, IntoElement, LayoutId, Modifiers, MouseButton, MouseDownEvent,
+    MouseMoveEvent, MouseUpEvent, ParentElement, Pixels, Point, Render, ScrollHandle,
+    ScrollWheelEvent, SharedString, Stateful, StatefulInteractiveElement, Styled, StyledText,
+    TextAlign, Window, auto, div, img, linear_color_stop, linear_gradient, point, px, relative,
+    rems, rgba,
 };
 
 use crate::overlay_element::{ScriptLayerElement, ScriptOverlayElement, WindowOverlayCoordinator};
@@ -42,16 +42,23 @@ type NativeDispatchFn = dyn Fn(
     &mut Window,
     &mut App,
 ) -> EventResponse;
-type SignalWriteFn =
-    dyn Fn(crate::NativeSignal, crate::SignalValue, &mut App) -> Result<bool, crate::SignalError>;
+type SignalWriteFn = dyn Fn(
+    Vec<(crate::NativeSignal, crate::SignalValue)>,
+    &mut App,
+) -> Result<bool, crate::SignalError>;
+type SignalReadFn =
+    dyn Fn(&crate::NativeSignal, &App) -> Result<crate::SignalValue, crate::SignalError>;
 type ElementBoundsFn = dyn Fn(&crate::ElementRef, &App) -> Option<crate::GeometryBounds>;
+type CanvasLocalPointFn = dyn Fn(&crate::ElementRef, (f64, f64), &App) -> Option<(f64, f64)>;
 
 #[derive(Clone)]
 pub struct NodeEventDispatcher {
     script: Rc<DispatchFn>,
     native: Rc<NativeDispatchFn>,
     signal_write: Rc<SignalWriteFn>,
+    signal_read: Rc<SignalReadFn>,
     element_bounds: Rc<ElementBoundsFn>,
+    canvas_local_point: Rc<CanvasLocalPointFn>,
 }
 
 impl NodeEventDispatcher {
@@ -74,10 +81,14 @@ impl NodeEventDispatcher {
                 dispatch(callback, payload, target, window, app).into()
             }),
             native: Rc::new(|_, _, _, _, _, _| EventResponse::new().stop()),
-            signal_write: Rc::new(|signal, _, _| {
-                Err(crate::SignalError::Stale(signal.id().clone()))
+            signal_write: Rc::new(|updates, _| {
+                updates.first().map_or(Ok(false), |(signal, _)| {
+                    Err(crate::SignalError::Stale(signal.id().clone()))
+                })
             }),
+            signal_read: Rc::new(|signal, _| Err(crate::SignalError::Stale(signal.id().clone()))),
             element_bounds: Rc::new(|_, _| None),
+            canvas_local_point: Rc::new(|_, _, _| None),
         }
     }
 
@@ -106,8 +117,7 @@ impl NodeEventDispatcher {
     pub(crate) fn with_signal_write(
         mut self,
         write: impl Fn(
-            crate::NativeSignal,
-            crate::SignalValue,
+            Vec<(crate::NativeSignal, crate::SignalValue)>,
             &mut App,
         ) -> Result<bool, crate::SignalError>
         + 'static,
@@ -116,11 +126,28 @@ impl NodeEventDispatcher {
         self
     }
 
+    pub(crate) fn with_signal_read(
+        mut self,
+        read: impl Fn(&crate::NativeSignal, &App) -> Result<crate::SignalValue, crate::SignalError>
+        + 'static,
+    ) -> Self {
+        self.signal_read = Rc::new(read);
+        self
+    }
+
     pub(crate) fn with_element_bounds(
         mut self,
         read: impl Fn(&crate::ElementRef, &App) -> Option<crate::GeometryBounds> + 'static,
     ) -> Self {
         self.element_bounds = Rc::new(read);
+        self
+    }
+
+    pub(crate) fn with_canvas_local_point(
+        mut self,
+        read: impl Fn(&crate::ElementRef, (f64, f64), &App) -> Option<(f64, f64)> + 'static,
+    ) -> Self {
+        self.canvas_local_point = Rc::new(read);
         self
     }
 
@@ -153,7 +180,26 @@ impl NodeEventDispatcher {
         value: crate::SignalValue,
         app: &mut App,
     ) -> Result<bool, crate::SignalError> {
-        (self.signal_write)(signal, value, app)
+        self.write_signals(vec![(signal, value)], app)
+    }
+
+    pub(crate) fn write_signals(
+        &self,
+        updates: Vec<(crate::NativeSignal, crate::SignalValue)>,
+        app: &mut App,
+    ) -> Result<bool, crate::SignalError> {
+        if updates.is_empty() {
+            return Ok(false);
+        }
+        (self.signal_write)(updates, app)
+    }
+
+    pub(crate) fn read_signal(
+        &self,
+        signal: &crate::NativeSignal,
+        app: &App,
+    ) -> Result<crate::SignalValue, crate::SignalError> {
+        (self.signal_read)(signal, app)
     }
 
     pub(crate) fn element_bounds(
@@ -162,6 +208,15 @@ impl NodeEventDispatcher {
         app: &App,
     ) -> Option<crate::GeometryBounds> {
         (self.element_bounds)(reference, app)
+    }
+
+    pub(crate) fn canvas_local_point(
+        &self,
+        reference: &crate::ElementRef,
+        point: (f64, f64),
+        app: &App,
+    ) -> Option<(f64, f64)> {
+        (self.canvas_local_point)(reference, point, app)
     }
 }
 
@@ -946,17 +1001,22 @@ fn event_timestamp_ms() -> f64 {
     START.get_or_init(Instant::now).elapsed().as_secs_f64() * 1_000.0
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn pointer_capture_router_element(
     child: AnyElement,
+    view_id: &str,
     tree: &RetainedUiTree,
     dispatcher: &NodeEventDispatcher,
     captures: &crate::PointerCaptureRegistry,
     geometry: &crate::GeometryRegistry,
     scroll_handles: &BTreeMap<NodeId, ScrollHandle>,
+    interactions: crate::interaction::WindowInteractionCoordinator,
 ) -> AnyElement {
     PointerCaptureRouterElement {
         child: Some(child),
+        interactions,
         routes: Some(PointerCaptureRoutes {
+            view_id: view_id.to_owned(),
             move_handlers: retained_handlers(tree, "pointer_move"),
             up_handlers: retained_handlers(tree, "pointer_up"),
             dispatcher: dispatcher.clone(),
@@ -981,6 +1041,7 @@ pub(crate) fn pointer_capture_router_element(
 }
 
 struct PointerCaptureRoutes {
+    view_id: String,
     move_handlers: BTreeMap<NodeId, Vec<crate::UiEventBinding>>,
     up_handlers: BTreeMap<NodeId, Vec<crate::UiEventBinding>>,
     dispatcher: NodeEventDispatcher,
@@ -989,8 +1050,9 @@ struct PointerCaptureRoutes {
 }
 
 impl PointerCaptureRoutes {
-    fn install(self, window: &mut Window) {
+    fn register(self, interactions: &crate::interaction::WindowInteractionCoordinator) {
         let Self {
+            view_id,
             move_handlers,
             up_handlers,
             dispatcher,
@@ -1002,70 +1064,68 @@ impl PointerCaptureRoutes {
         let move_captures = captures.clone();
         let up_captures = captures;
         let move_payload_contexts = payload_contexts.clone();
-        window.on_mouse_event(move |event: &MouseMoveEvent, phase, window, app| {
-            if phase != DispatchPhase::Capture {
-                return;
-            }
-            let Some(node) = move_captures.captured(0) else {
-                return;
-            };
-            let Some(bindings) = move_handlers.get(&node) else {
-                return;
-            };
-            let payload = move_payload_contexts.get(&node).map_or_else(
-                || mouse_move_payload_with_capture(event, true),
-                |context| context.enrich(mouse_move_payload_with_capture(event, true)),
-            );
-            let target = move_payload_contexts
-                .get(&node)
-                .and_then(PointerPayloadContext::target_bounds);
-            let response = dispatch_ui_handler_phases(
-                bindings,
-                "pointer_move",
-                &[crate::EventPhase::Target, crate::EventPhase::Bubble],
-                &payload,
-                EventRoute::new(target, Some(&move_dispatcher)),
-                window,
-                app,
-            );
-            apply_pointer_response(response, Some(node), 0, &move_captures, window, app);
-            app.stop_propagation();
-        });
-        window.on_mouse_event(move |event: &MouseUpEvent, phase, window, app| {
-            if phase != DispatchPhase::Capture {
-                return;
-            }
-            let Some(node) = up_captures.captured(0) else {
-                return;
-            };
-            if let Some(bindings) = up_handlers.get(&node) {
-                let payload = payload_contexts.get(&node).map_or_else(
-                    || mouse_up_payload_with_capture(event, true),
-                    |context| context.enrich(mouse_up_payload_with_capture(event, true)),
+        interactions.set_pointer_routes(
+            view_id,
+            move |event: &MouseMoveEvent, window, app| {
+                let Some(node) = move_captures.captured(0) else {
+                    return false;
+                };
+                let Some(bindings) = move_handlers.get(&node) else {
+                    return false;
+                };
+                let payload = move_payload_contexts.get(&node).map_or_else(
+                    || mouse_move_payload_with_capture(event, true),
+                    |context| context.enrich(mouse_move_payload_with_capture(event, true)),
                 );
-                let target = payload_contexts
+                let target = move_payload_contexts
                     .get(&node)
                     .and_then(PointerPayloadContext::target_bounds);
                 let response = dispatch_ui_handler_phases(
                     bindings,
-                    "pointer_up",
+                    "pointer_move",
                     &[crate::EventPhase::Target, crate::EventPhase::Bubble],
                     &payload,
-                    EventRoute::new(target, Some(&up_dispatcher)),
+                    EventRoute::new(target, Some(&move_dispatcher)),
                     window,
                     app,
                 );
-                apply_pointer_response(response, Some(node), 0, &up_captures, window, app);
-            }
-            up_captures.release(0);
-            app.stop_propagation();
-        });
+                apply_pointer_response(response, Some(node), 0, &move_captures, window, app);
+                true
+            },
+            move |event: &MouseUpEvent, window, app| {
+                let Some(node) = up_captures.captured(0) else {
+                    return false;
+                };
+                if let Some(bindings) = up_handlers.get(&node) {
+                    let payload = payload_contexts.get(&node).map_or_else(
+                        || mouse_up_payload_with_capture(event, true),
+                        |context| context.enrich(mouse_up_payload_with_capture(event, true)),
+                    );
+                    let target = payload_contexts
+                        .get(&node)
+                        .and_then(PointerPayloadContext::target_bounds);
+                    let response = dispatch_ui_handler_phases(
+                        bindings,
+                        "pointer_up",
+                        &[crate::EventPhase::Target, crate::EventPhase::Bubble],
+                        &payload,
+                        EventRoute::new(target, Some(&up_dispatcher)),
+                        window,
+                        app,
+                    );
+                    apply_pointer_response(response, Some(node), 0, &up_captures, window, app);
+                }
+                up_captures.release(0);
+                true
+            },
+        );
     }
 }
 
 struct PointerCaptureRouterElement {
     child: Option<AnyElement>,
     routes: Option<PointerCaptureRoutes>,
+    interactions: crate::interaction::WindowInteractionCoordinator,
 }
 
 impl Element for PointerCaptureRouterElement {
@@ -1117,7 +1177,7 @@ impl Element for PointerCaptureRouterElement {
         self.routes
             .take()
             .expect("pointer router paints once")
-            .install(window);
+            .register(&self.interactions);
         child.paint(window, cx);
     }
 }
@@ -1296,6 +1356,7 @@ struct RenderEnvironment<'a, C> {
     dispatcher: Option<&'a NodeEventDispatcher>,
     assets: Option<&'a AssetRegistry>,
     overlays: &'a WindowOverlayCoordinator,
+    interactions: &'a crate::interaction::WindowInteractionCoordinator,
     motions: &'a BTreeMap<MotionKey, f64>,
     signals: &'a crate::SignalRegistry,
     geometry: &'a crate::GeometryRegistry,
@@ -1338,6 +1399,7 @@ pub(crate) struct WindowRenderResources<'a> {
     pub assets: &'a AssetRegistry,
     pub dispatcher: &'a NodeEventDispatcher,
     pub overlays: &'a WindowOverlayCoordinator,
+    pub interactions: &'a crate::interaction::WindowInteractionCoordinator,
     pub motions: &'a BTreeMap<MotionKey, f64>,
     pub signals: &'a crate::SignalRegistry,
     pub geometry: &'a crate::GeometryRegistry,
@@ -1392,6 +1454,7 @@ impl GpuiNodeRenderer {
         primitives: &PrimitiveRegistry,
     ) -> AnyElement {
         let overlays = WindowOverlayCoordinator::default();
+        let interactions = crate::interaction::WindowInteractionCoordinator::default();
         let motions = BTreeMap::new();
         let signals = crate::SignalRegistry::new();
         let geometry = crate::GeometryRegistry::new();
@@ -1412,6 +1475,7 @@ impl GpuiNodeRenderer {
             dispatcher: None,
             assets: None,
             overlays: &overlays,
+            interactions: &interactions,
             motions: &motions,
             signals: &signals,
             geometry: &geometry,
@@ -1466,6 +1530,7 @@ impl GpuiNodeRenderer {
         primitives: &PrimitiveRegistry,
     ) -> AnyElement {
         let overlays = WindowOverlayCoordinator::default();
+        let interactions = crate::interaction::WindowInteractionCoordinator::default();
         let motions = BTreeMap::new();
         let signals = crate::SignalRegistry::new();
         let geometry = crate::GeometryRegistry::new();
@@ -1486,6 +1551,7 @@ impl GpuiNodeRenderer {
             dispatcher: None,
             assets: None,
             overlays: &overlays,
+            interactions: &interactions,
             motions: &motions,
             signals: &signals,
             geometry: &geometry,
@@ -1533,6 +1599,7 @@ impl GpuiNodeRenderer {
             }
         };
         let overlays = WindowOverlayCoordinator::default();
+        let interactions = crate::interaction::WindowInteractionCoordinator::default();
         let motions = BTreeMap::new();
         let signals = crate::SignalRegistry::new();
         let geometry = crate::GeometryRegistry::new();
@@ -1553,6 +1620,7 @@ impl GpuiNodeRenderer {
             dispatcher: Some(dispatcher),
             assets: None,
             overlays: &overlays,
+            interactions: &interactions,
             motions: &motions,
             signals: &signals,
             geometry: &geometry,
@@ -1592,6 +1660,7 @@ impl GpuiNodeRenderer {
         dispatcher: &NodeEventDispatcher,
     ) -> AnyElement {
         let overlays = WindowOverlayCoordinator::default();
+        let interactions = crate::interaction::WindowInteractionCoordinator::default();
         let motions = BTreeMap::new();
         let signals = crate::SignalRegistry::new();
         let geometry = crate::GeometryRegistry::new();
@@ -1612,6 +1681,7 @@ impl GpuiNodeRenderer {
             dispatcher: Some(dispatcher),
             assets: None,
             overlays: &overlays,
+            interactions: &interactions,
             motions: &motions,
             signals: &signals,
             geometry: &geometry,
@@ -1645,6 +1715,7 @@ impl GpuiNodeRenderer {
         dispatcher: &NodeEventDispatcher,
     ) -> AnyElement {
         let overlays = WindowOverlayCoordinator::default();
+        let interactions = crate::interaction::WindowInteractionCoordinator::default();
         let motions = BTreeMap::new();
         let signals = crate::SignalRegistry::new();
         let geometry = crate::GeometryRegistry::new();
@@ -1662,6 +1733,7 @@ impl GpuiNodeRenderer {
             assets,
             dispatcher,
             overlays: &overlays,
+            interactions: &interactions,
             motions: &motions,
             signals: &signals,
             geometry: &geometry,
@@ -1719,6 +1791,7 @@ impl GpuiNodeRenderer {
             dispatcher: Some(resources.dispatcher),
             assets: Some(resources.assets),
             overlays: resources.overlays,
+            interactions: resources.interactions,
             motions: resources.motions,
             signals: resources.signals,
             geometry: resources.geometry,
@@ -1776,6 +1849,7 @@ impl GpuiNodeRenderer {
             dispatcher: Some(resources.dispatcher),
             assets: Some(resources.assets),
             overlays: resources.overlays,
+            interactions: resources.interactions,
             motions: resources.motions,
             signals: resources.signals,
             geometry: resources.geometry,
@@ -1819,6 +1893,7 @@ impl GpuiNodeRenderer {
             dispatcher: Some(resources.dispatcher),
             assets: Some(resources.assets),
             overlays: resources.overlays,
+            interactions: resources.interactions,
             motions: resources.motions,
             signals: resources.signals,
             geometry: resources.geometry,
@@ -1868,13 +1943,16 @@ impl GpuiNodeRenderer {
                     animation.set(binding.property(), value);
                 }
             }
-            if matches!(node.kind(), UiNodeKind::Canvas { .. }) {
+        }
+        let signals = node_signals(environment.signals, node);
+        if matches!(node.kind(), UiNodeKind::Canvas { .. }) {
+            animation = apply_canvas_signal_transform(animation, &signals);
+            if let Some(retained_id) = retained_id {
                 environment
                     .geometry
                     .update_canvas_transform(retained_id, animation.canvas_transform());
             }
         }
-        let signals = node_signals(environment.signals, node);
         let mut resolved_style = node.style().resolve(&local_interaction);
         apply_motion_dimensions(&mut resolved_style, animation);
         apply_signal_style(&mut resolved_style, &signals);
@@ -2155,7 +2233,16 @@ impl GpuiNodeRenderer {
                             })
                             .flatten(),
                         boundary_fallback.cloned(),
-                        environment.dispatcher.cloned(),
+                        crate::primitive::PrimitiveWindowContext::new(
+                            environment.dispatcher.cloned(),
+                            environment.interactions.clone(),
+                            scroll_handles_for_node(
+                                environment.retained,
+                                retained_id,
+                                environment.scroll_handles,
+                            ),
+                            environment.view_id,
+                        ),
                         crate::PrimitiveTheme::capture_with_environment(
                             environment.colors,
                             environment.direction,
@@ -2251,8 +2338,12 @@ fn primitive_focus_owner(
     retained_id: Option<NodeId>,
     focus_handles: &BTreeMap<NodeId, FocusHandle>,
 ) -> Option<FocusHandle> {
+    let retained_id = retained_id?;
+    if let Some(handle) = focus_handles.get(&retained_id) {
+        return Some(handle.clone());
+    }
     let retained = retained?;
-    let mut cursor = retained_id;
+    let mut cursor = Some(retained_id);
     while let Some(node_id) = cursor {
         let node = retained.node(node_id)?;
         if node.focus_styled()
@@ -2364,12 +2455,16 @@ where
     };
     element.child(crate::scrollbar::ThemedScrollbar::new(
         format!("{path}/scrollbars"),
+        crate::interaction::InteractionOwner::new(environment.view_id, format!("scrollbar:{path}")),
+        environment.interactions.clone(),
         handle.clone(),
         spec,
         environment.direction,
-        part_color("scrollbar_track", "surface_raised", 0x0027_272aff),
-        part_color("scrollbar_thumb", "text_muted", 0x0071_717aff),
-        part_color("scrollbar_thumb_hover", "accent", 0x003b_82f6ff),
+        (
+            part_color("scrollbar_track", "surface_raised", 0x0027_272aff),
+            part_color("scrollbar_thumb", "text_muted", 0x0071_717aff),
+            part_color("scrollbar_thumb_hover", "accent", 0x003b_82f6ff),
+        ),
     ))
 }
 
@@ -3157,17 +3252,8 @@ fn canvas_path_point(
     y: f64,
     motion: NodeMotionValues,
 ) -> Point<Pixels> {
-    let radians = transform.rotate_degrees.to_radians();
-    let scaled_x = x * transform.scale;
-    let scaled_y = y * transform.scale;
-    let rotated_x = scaled_x * radians.cos() - scaled_y * radians.sin();
-    let rotated_y = scaled_x * radians.sin() + scaled_y * radians.cos();
-    node_canvas_point(
-        bounds,
-        rotated_x + transform.translate_x,
-        rotated_y + transform.translate_y,
-        motion,
-    )
+    let (transformed_x, transformed_y) = crate::canvas::canvas_transform_point(transform, x, y);
+    node_canvas_point(bounds, transformed_x, transformed_y, motion)
 }
 
 fn node_canvas_point(
@@ -3440,6 +3526,22 @@ fn native_virtual_collection_element<C: ColorResolver>(
     let retained_links = environment.retained.map_or_else(BTreeMap::new, |tree| {
         retained_link_subtrees(tree, retained_roots.values().copied())
     });
+    let mut focus_handles = environment.focus_handles.clone();
+    if let Some(tree) = environment.retained {
+        let nodes = retained_links
+            .iter()
+            .flat_map(|(parent, children)| {
+                std::iter::once(*parent).chain(children.iter().map(crate::RetainedChildLink::node))
+            })
+            .collect::<BTreeSet<_>>();
+        for node in nodes {
+            if let Some(focus) =
+                primitive_focus_owner(Some(tree), Some(node), environment.focus_handles)
+            {
+                focus_handles.insert(node, focus);
+            }
+        }
+    }
     let runtime = NodeSlotRuntime {
         now: environment.now,
         clock: environment.clock.clone(),
@@ -3451,13 +3553,14 @@ fn native_virtual_collection_element<C: ColorResolver>(
             .cloned()
             .unwrap_or_else(|| NodeEventDispatcher::new(|_, _, _, _, _| EventPropagation::Handled)),
         overlays: environment.overlays.clone(),
+        interactions: environment.interactions.clone(),
         motions: environment.motions.clone(),
         motion_preference: environment.motion_preference,
         motion_quality: environment.motion_quality,
         signals: environment.signals.clone(),
         geometry: environment.geometry.clone(),
         pointer_capture: environment.pointer_capture.clone(),
-        focus_handles: environment.focus_handles.clone(),
+        focus_handles,
         scroll_handles: environment.scroll_handles.clone(),
         scroll_anchors: environment.scroll_anchors.clone(),
         virtual_requests: environment.virtual_requests.clone(),
@@ -3546,6 +3649,9 @@ struct NodeSignalValues {
     opacity: Option<f64>,
     translate_x: Option<f64>,
     translate_y: Option<f64>,
+    rotate: Option<f64>,
+    scale_x: Option<f64>,
+    scale_y: Option<f64>,
     width: Option<f64>,
     width_override: Option<f64>,
     height: Option<f64>,
@@ -3583,6 +3689,24 @@ fn node_signals(registry: &crate::SignalRegistry, node: &UiNode) -> NodeSignalVa
             ) => {
                 values.translate_y = value;
             }
+            (crate::SignalProperty::Rotate, crate::SignalValue::Float(value)) => {
+                values.rotate = Some(value);
+            }
+            (crate::SignalProperty::RotateOverride, crate::SignalValue::OptionalFloat(value)) => {
+                values.rotate = value;
+            }
+            (crate::SignalProperty::ScaleX, crate::SignalValue::Float(value)) => {
+                values.scale_x = Some(value);
+            }
+            (crate::SignalProperty::ScaleXOverride, crate::SignalValue::OptionalFloat(value)) => {
+                values.scale_x = value;
+            }
+            (crate::SignalProperty::ScaleY, crate::SignalValue::Float(value)) => {
+                values.scale_y = Some(value);
+            }
+            (crate::SignalProperty::ScaleYOverride, crate::SignalValue::OptionalFloat(value)) => {
+                values.scale_y = value;
+            }
             (crate::SignalProperty::Width, crate::SignalValue::Float(value)) => {
                 values.width = Some(value);
             }
@@ -3608,6 +3732,16 @@ fn node_signals(registry: &crate::SignalRegistry, node: &UiNode) -> NodeSignalVa
         }
     }
     values
+}
+
+fn apply_canvas_signal_transform(
+    mut motion: NodeMotionValues,
+    signals: &NodeSignalValues,
+) -> NodeMotionValues {
+    motion.rotate = signals.rotate.or(motion.rotate);
+    motion.scale_x = signals.scale_x.or(motion.scale_x);
+    motion.scale_y = signals.scale_y.or(motion.scale_y);
+    motion
 }
 
 fn apply_signal_style(style: &mut StyleProperties, values: &NodeSignalValues) {
@@ -5375,6 +5509,87 @@ mod tests {
         let mut style = StyleProperties::default();
         apply_signal_style(&mut style, &values);
         assert_eq!(style.width, Some(Length::Pixels(144.0).into()));
+    }
+
+    #[test]
+    fn canvas_signal_transform_is_shared_by_paint_and_hit_testing() {
+        let component = crate::ComponentInstancePath::root("PanZoom", "viewport");
+        let scale_ids = (
+            crate::SignalId::new(component.clone(), "scale-x", crate::SignalKind::Float).unwrap(),
+            crate::SignalId::new(component.clone(), "scale-y", crate::SignalKind::Float).unwrap(),
+        );
+        let rotate_id =
+            crate::SignalId::new(component.clone(), "rotate", crate::SignalKind::Float).unwrap();
+        let scale_x = crate::NativeSignal::new(scale_ids.0.clone());
+        let scale_y = crate::NativeSignal::new(scale_ids.1.clone());
+        let rotate = crate::NativeSignal::new(rotate_id.clone());
+        let scene = crate::CanvasScene::new(vec![crate::CanvasCommand::Rect {
+            key: "target".to_owned(),
+            x: 20.0,
+            y: 25.0,
+            width: 20.0,
+            height: 20.0,
+            fill: ColorValue::Token("accent".to_owned()),
+        }])
+        .unwrap();
+        let node = UiNode::canvas(scene.clone())
+            .with_signal_binding(crate::SignalProperty::ScaleX, scale_x)
+            .unwrap()
+            .with_signal_binding(crate::SignalProperty::ScaleY, scale_y)
+            .unwrap()
+            .with_signal_binding(crate::SignalProperty::Rotate, rotate)
+            .unwrap();
+        let mut registry = crate::SignalRegistry::new();
+        registry.reconcile(
+            &component,
+            BTreeMap::from([
+                (
+                    scale_ids.0,
+                    crate::signal::SignalDescriptor::new(crate::SignalValue::Float(1.6)),
+                ),
+                (
+                    scale_ids.1,
+                    crate::signal::SignalDescriptor::new(crate::SignalValue::Float(0.8)),
+                ),
+                (
+                    rotate_id,
+                    crate::signal::SignalDescriptor::new(crate::SignalValue::Float(19.0)),
+                ),
+            ]),
+        );
+        let motion = apply_canvas_signal_transform(
+            NodeMotionValues::default(),
+            &node_signals(&registry, &node),
+        );
+        let mut tree = RetainedUiTree::new();
+        tree.reconcile(node).unwrap();
+        let retained = tree.root_id().unwrap();
+        let geometry = crate::GeometryRegistry::new();
+        let bounds = crate::GeometryBounds::new(100.0, 50.0, 120.0, 90.0).unwrap();
+        geometry.update(
+            retained,
+            crate::ElementGeometry {
+                layout: bounds,
+                visual: bounds,
+                clip: None,
+            },
+        );
+        geometry.update_canvas_transform(retained, motion.canvas_transform());
+        let paint_bounds = Bounds::new(point(px(100.0), px(50.0)), gpui::size(px(120.0), px(90.0)));
+        let painted = node_canvas_point(paint_bounds, 30.0, 35.0, motion);
+        let context = PointerPayloadContext::retained(retained, geometry, Some(scene), Vec::new());
+        let payload = context.enrich(pointer_payload(
+            painted,
+            Some(MouseButton::Left),
+            vec![MouseButton::Left],
+            Modifiers::default(),
+            1,
+            false,
+        ));
+        let UiValue::Map(payload) = payload else {
+            unreachable!()
+        };
+        assert_eq!(payload["canvas_key"], UiValue::String("target".to_owned()));
     }
 
     #[test]

@@ -1,0 +1,55 @@
+   Compiling audit-transforms-selection v0.0.0 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/docs/audits/2026-09-30-interaction-0.1.8/transforms-selection)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.61s
+     Running unittests src/lib.rs (target/debug/deps/audit_transforms_selection-4d7b5f5afcfb0486)
+
+running 6 tests
+
+thread 'audit_finite_panzoom_scale_does_not_panic' (56276943) panicked at /Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai/src/canvas.rs:584:10:
+validated canvas bounds produce a finite affine origin: InvalidTransform
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+initial rotated canvas visual=GeometryBounds { x: 1.0, y: 1.0, width: 298.0, height: 218.0 }
+
+thread 'audit_initial_rotation_pivot' (56276944) panicked at src/lib.rs:146:5:
+pivot translation not applied: GeometryBounds { x: 1.0, y: 1.0, width: 298.0, height: 218.0 }
+test audit_initial_rotation_pivot ... FAILED
+test audit_finite_panzoom_scale_does_not_panic ... FAILED
+rotated marquee selected=[]
+
+thread 'audit_rotated_canvas_marquee' (56276945) panicked at src/lib.rs:162:5:
+assertion failed: actual.contains("a")
+immediately after Cancelled scale=Float(1.1051709180756477) (expected Float(1.0))
+test audit_rotated_canvas_marquee ... FAILED
+selection=["a"]
+multiple=false selected=["a", "b"]
+
+thread 'audit_single_mode_marquee' (56276946) panicked at src/lib.rs:131:5:
+assertion failed: !actual.contains(',')
+selection=["a"]
+
+thread 'audit_blank_click_should_clear' (56276941) panicked at src/lib.rs:117:5:
+assertion `left == right` failed
+  left: "[\"a\"]"
+ right: "[]"
+cancelled wheel commits=1
+
+thread 'audit_cancelled_modifier_wheel_must_not_commit' (56276942) panicked at src/lib.rs:219:5:
+assertion `left == right` failed
+  left: "1"
+ right: "0"
+test audit_single_mode_marquee ... FAILED
+test audit_blank_click_should_clear ... FAILED
+test audit_cancelled_modifier_wheel_must_not_commit ... FAILED
+
+failures:
+
+failures:
+    audit_blank_click_should_clear
+    audit_cancelled_modifier_wheel_must_not_commit
+    audit_finite_panzoom_scale_does_not_panic
+    audit_initial_rotation_pivot
+    audit_rotated_canvas_marquee
+    audit_single_mode_marquee
+
+test result: FAILED. 0 passed; 6 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.85s
+
+error: test failed, to rerun pass `--lib`

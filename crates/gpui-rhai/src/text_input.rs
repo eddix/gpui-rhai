@@ -16,9 +16,9 @@ use gpui::{
 pub use crate::text_edit::TextBuffer;
 
 use crate::{
-    ComponentStateSchema, EventSchema, ObjectField, PrimitiveDescriptor, PrimitiveEventEmitter,
-    PrimitiveHandler, PrimitiveId, PrimitiveInstance, PrimitiveInstanceId, PrimitiveProps,
-    PrimitiveValue, Rgba8, UiValue, ValueSchema,
+    ComponentStateSchema, EventSchema, ObjectField, PrimitiveContext, PrimitiveDescriptor,
+    PrimitiveHandler, PrimitiveId, PrimitiveInstance, PrimitiveInstanceId, Rgba8, UiValue,
+    ValueSchema,
 };
 
 actions!(
@@ -833,7 +833,7 @@ impl PrimitiveHandler for TextInputPrimitiveHandler {
     fn render(
         &mut self,
         instance: &PrimitiveInstance,
-        events: &PrimitiveEventEmitter,
+        events: &PrimitiveContext,
         theme: &crate::PrimitiveTheme,
         window: &mut Window,
         cx: &mut App,
@@ -842,13 +842,27 @@ impl PrimitiveHandler for TextInputPrimitiveHandler {
             .id
             .clone()
             .ok_or_else(|| "TextInputPrimitive requires a stable key".to_owned())?;
-        let value = string_prop(&instance.node.props, "value").unwrap_or_default();
-        let placeholder = string_prop(&instance.node.props, "placeholder").unwrap_or_default();
-        let disabled = bool_prop(&instance.node.props, "disabled").unwrap_or(false);
-        let read_only = bool_prop(&instance.node.props, "read_only").unwrap_or(false);
-        let autofocus = bool_prop(&instance.node.props, "autofocus").unwrap_or(false);
-        let typography_role =
-            string_prop(&instance.node.props, "typography").unwrap_or_else(|| "body".to_owned());
+        let value = instance
+            .node
+            .props
+            .string("value")
+            .unwrap_or_default()
+            .to_owned();
+        let placeholder = instance
+            .node
+            .props
+            .string("placeholder")
+            .unwrap_or_default()
+            .to_owned();
+        let disabled = instance.node.props.boolean("disabled").unwrap_or(false);
+        let read_only = instance.node.props.boolean("read_only").unwrap_or(false);
+        let autofocus = instance.node.props.boolean("autofocus").unwrap_or(false);
+        let typography_role = instance
+            .node
+            .props
+            .string("typography")
+            .unwrap_or("body")
+            .to_owned();
         let selection_color = theme
             .color("selection")
             .unwrap_or_else(|| Rgba8::from_rgba_hex(0x292e_42ff));
@@ -910,7 +924,7 @@ impl PrimitiveHandler for TextInputPrimitiveHandler {
     }
 }
 
-fn primitive_callbacks(events: &PrimitiveEventEmitter) -> TextInputCallbacks {
+fn primitive_callbacks(events: &PrimitiveContext) -> TextInputCallbacks {
     let change_events = events.clone();
     let submit_events = events.clone();
     let focus_events = events.clone();
@@ -929,20 +943,6 @@ fn primitive_callbacks(events: &PrimitiveEventEmitter) -> TextInputCallbacks {
             let _ = blur_events.emit("blur", UiValue::Null, window, cx);
         })),
         tab: None,
-    }
-}
-
-fn string_prop(props: &PrimitiveProps, name: &str) -> Option<String> {
-    match props.get(name) {
-        Some(PrimitiveValue::Data(UiValue::String(value))) => Some(value.clone()),
-        _ => None,
-    }
-}
-
-fn bool_prop(props: &PrimitiveProps, name: &str) -> Option<bool> {
-    match props.get(name) {
-        Some(PrimitiveValue::Data(UiValue::Bool(value))) => Some(*value),
-        _ => None,
     }
 }
 

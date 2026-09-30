@@ -623,8 +623,7 @@ impl FuzzyProjection {
         &self,
         source: &NativeCollectionSource,
     ) -> Result<Vec<NativeCollectionEntry>, NativeCollectionError> {
-        let mut group_order = Vec::new();
-        let mut groups = BTreeMap::<String, Vec<(usize, i64)>>::new();
+        let mut grouped = Vec::new();
         for (index, row) in source.rows.iter().enumerate() {
             let label = Self::row_string(row, index, &self.label_field, true)?;
             let keywords = self.row_keywords(row, index)?;
@@ -633,10 +632,7 @@ impl FuzzyProjection {
                 continue;
             }
             let group = Self::row_string(row, index, &self.group_field, false)?;
-            if !groups.contains_key(&group) {
-                group_order.push(group.clone());
-            }
-            groups.entry(group).or_default().push((index, score));
+            grouped.push((group, (index, score)));
         }
         let source_keys = source
             .keys
@@ -645,8 +641,7 @@ impl FuzzyProjection {
             .collect::<BTreeSet<_>>();
         let mut header_keys = BTreeSet::new();
         let mut entries = Vec::new();
-        for group in group_order {
-            let mut rows = groups.remove(&group).unwrap_or_default();
+        for (group, mut rows) in crate::collection_projection::stable_groups(grouped) {
             rows.sort_by(|(left_index, left_score), (right_index, right_score)| {
                 right_score
                     .cmp(left_score)
@@ -1028,8 +1023,7 @@ impl TableProjection {
                 .map(NativeCollectionEntry::Row)
                 .collect());
         };
-        let mut order = Vec::new();
-        let mut groups = BTreeMap::<String, Vec<usize>>::new();
+        let mut grouped = Vec::with_capacity(rows.len());
         for source_index in rows {
             let row = source
                 .rows
@@ -1044,10 +1038,7 @@ impl TableProjection {
                     });
                 }
             };
-            if !groups.contains_key(&value) {
-                order.push(value.clone());
-            }
-            groups.entry(value).or_default().push(*source_index);
+            grouped.push((value, *source_index));
         }
         let source_keys = source
             .keys
@@ -1055,9 +1046,9 @@ impl TableProjection {
             .map(String::as_str)
             .collect::<BTreeSet<_>>();
         let mut header_keys = BTreeSet::new();
-        let mut entries = Vec::with_capacity(rows.len().saturating_add(order.len()));
-        for value in order {
-            let rows = groups.remove(&value).unwrap_or_default();
+        let groups = crate::collection_projection::stable_groups(grouped);
+        let mut entries = Vec::with_capacity(rows.len().saturating_add(groups.len()));
+        for (value, rows) in groups {
             let key = unique_group_key(&value, &source_keys, &mut header_keys);
             let collapsed = self.collapsed_groups.contains(&value);
             entries.push(NativeCollectionEntry::Group(GroupEntry {

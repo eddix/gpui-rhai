@@ -16,7 +16,7 @@ use rhai::{Engine, FuncRegistration, INT, ImmutableString};
 use crate::text_edit::TextBuffer;
 use crate::text_input::{NativeTypography, TextInputCallbacks, native_typography};
 use crate::{
-    ComponentStateSchema, EventSchema, ObjectField, PrimitiveDescriptor, PrimitiveEventEmitter,
+    ComponentStateSchema, EventSchema, ObjectField, PrimitiveContext, PrimitiveDescriptor,
     PrimitiveHandler, PrimitiveId, PrimitiveInstance, PrimitiveInstanceId, PrimitiveProps,
     PrimitiveValue, Rgba8, UiValue, ValueSchema,
 };
@@ -1039,7 +1039,7 @@ impl PrimitiveHandler for TextAreaPrimitiveHandler {
     fn render(
         &mut self,
         instance: &PrimitiveInstance,
-        events: &PrimitiveEventEmitter,
+        events: &PrimitiveContext,
         theme: &crate::PrimitiveTheme,
         window: &mut Window,
         cx: &mut App,
@@ -1051,7 +1051,12 @@ impl PrimitiveHandler for TextAreaPrimitiveHandler {
         if id.key().trim().is_empty() {
             return Err("TextareaPrimitive key cannot be empty".to_owned());
         }
-        let value = string_prop(&instance.node.props, "value").unwrap_or_default();
+        let value = instance
+            .node
+            .props
+            .string("value")
+            .unwrap_or_default()
+            .to_owned();
         let config = config_from_props(&instance.node.props, theme, window)?;
         let callbacks = primitive_callbacks(events);
         let shared_focus = instance.focus_handle().cloned();
@@ -1124,19 +1129,15 @@ fn config_from_props(
         .color("accent")
         .unwrap_or_else(|| Rgba8::from_rgba_hex(0x3b82_f6ff));
     Ok(TextAreaConfig {
-        placeholder: string_prop(props, "placeholder").unwrap_or_default().into(),
-        disabled: bool_prop(props, "disabled").unwrap_or(false),
-        read_only: bool_prop(props, "read_only").unwrap_or(false),
+        placeholder: props.string("placeholder").unwrap_or_default().into(),
+        disabled: props.boolean("disabled").unwrap_or(false),
+        read_only: props.boolean("read_only").unwrap_or(false),
         min_rows: usize_prop(props, "min_rows")?.unwrap_or(3),
         max_rows: usize_prop(props, "max_rows")?.unwrap_or(8),
         rows: usize_prop(props, "rows")?,
         max_length: usize_prop(props, "max_length")?,
-        typography: native_typography(
-            theme,
-            &string_prop(props, "typography").unwrap_or_else(|| "body".to_owned()),
-            window,
-        )?,
-        autofocus: bool_prop(props, "autofocus").unwrap_or(false),
+        typography: native_typography(theme, props.string("typography").unwrap_or("body"), window)?,
+        autofocus: props.boolean("autofocus").unwrap_or(false),
         placeholder_color: part_color(props, "placeholder_style", theme, false)
             .or_else(|| theme.color("text_muted"))
             .unwrap_or_else(|| Rgba8::from_rgba_hex(0xa1a1_aaff)),
@@ -1175,7 +1176,7 @@ fn with_alpha(color: Rgba8, alpha: u8) -> Rgba8 {
     Rgba8::from_rgba_hex((color.as_rgba_hex() & 0xffff_ff00) | u32::from(alpha))
 }
 
-fn primitive_callbacks(events: &PrimitiveEventEmitter) -> TextInputCallbacks {
+fn primitive_callbacks(events: &PrimitiveContext) -> TextInputCallbacks {
     let change_events = events.clone();
     let focus_events = events.clone();
     let blur_events = events.clone();
@@ -1191,20 +1192,6 @@ fn primitive_callbacks(events: &PrimitiveEventEmitter) -> TextInputCallbacks {
             let _ = blur_events.emit("blur", UiValue::Null, window, cx);
         })),
         tab: None,
-    }
-}
-
-fn string_prop(props: &PrimitiveProps, name: &str) -> Option<String> {
-    match props.get(name) {
-        Some(PrimitiveValue::Data(UiValue::String(value))) => Some(value.clone()),
-        _ => None,
-    }
-}
-
-fn bool_prop(props: &PrimitiveProps, name: &str) -> Option<bool> {
-    match props.get(name) {
-        Some(PrimitiveValue::Data(UiValue::Bool(value))) => Some(*value),
-        _ => None,
     }
 }
 

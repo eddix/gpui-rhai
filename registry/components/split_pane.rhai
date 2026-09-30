@@ -96,12 +96,12 @@ fn render_SplitPane(ctx, props) {
     let start_ref = element_ref(start_ref_key);
     let root_style = style().width(relative(1.0)).height(relative(1.0)).min_width(px(0)).min_height(px(0));
     if props.start_collapsed {
-        return box([props.end.with_key(props.end_key).with_style(ctx.component_style("end",
+        return box([box([props.end]).with_key(props.end_key).with_style(ctx.component_style("end",
             style().width(relative(1.0)).height(relative(1.0)).min_width(px(0)).min_height(px(0))))])
             .with_key(root_ref_key).with_style(ctx.component_style("root", root_style)).with_ref(root_ref);
     }
     if props.end_collapsed {
-        return box([props.start.with_key(props.start_key).with_style(ctx.component_style("start",
+        return box([box([props.start]).with_key(props.start_key).with_style(ctx.component_style("start",
             style().width(relative(1.0)).height(relative(1.0)).min_width(px(0)).min_height(px(0))))])
             .with_key(root_ref_key).with_style(ctx.component_style("root", root_style)).with_ref(root_ref);
     }
@@ -120,7 +120,7 @@ fn render_SplitPane(ctx, props) {
         end_style = end_style.width(relative(1.0));
         handle_style = handle_style.height(px(8)).width(relative(1.0)).cursor_resize_y();
     }
-    let start = props.start.with_key(start_ref_key)
+    let start = box([props.start]).with_key(start_ref_key)
         .with_style(ctx.component_style("start", start_style))
         .with_ref(start_ref)
         .bind_signal(if horizontal { "width_override" } else { "height_override" }, preview);
@@ -149,7 +149,7 @@ fn render_SplitPane(ctx, props) {
         key_payload.delta = props.keyboard_step;
         handle = handle.on_key_value("down", Fn("split_key"), key_payload);
     }
-    let end = props.end.with_key(props.end_key)
+    let end = box([props.end]).with_key(props.end_key)
         .with_style(ctx.component_style("end", end_style));
     let children = [start, handle, end];
     if horizontal {

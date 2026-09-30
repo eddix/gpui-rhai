@@ -37,6 +37,12 @@ Propagation control and execution outcome are separate. A normal `stop()` is a
 successful dispatch; a callback, rerender, stale-owner, or async failure makes
 `automate` return an error even when a handler was reached.
 
+For native focus-owning primitives, a retained `key:*` dispatch may enter the
+primitive's native key semantic when no declarative handler exists. This is not
+a second implementation of component math: Resizable Automation, AccessKit and
+real keyboard input call the same Rust policy and produce the same controlled
+proposal. The dispatch report counts that native semantic as one invocation.
+
 `Dispatch` may route a retained raw event name such as `pointer_down`, but it
 does not synthesize a native pointer payload or down/move/up device sequence.
 Pass an explicit payload when testing a callback's data policy, or read

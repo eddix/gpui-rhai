@@ -1,0 +1,124 @@
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.38s
+     Running probe.rs (tests/native-keyboard/target/debug/deps/probe-ca8b1007a25784fa)
+
+running 1 test
+
+thread 'active_draggable_suspend_is_safe' (56279383) panicked at /Users/eddix/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.7/src/app/entity_map.rs:164:36:
+cannot update gpui_rhai::app::ScriptHostView while it is already being updated
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+             at /rustc/59807616e1fa2540724bfbac14d7976d7e4a3860/library/std/src/panicking.rs:689:5
+   1: core::panicking::panic_fmt
+             at /rustc/59807616e1fa2540724bfbac14d7976d7e4a3860/library/core/src/panicking.rs:80:14
+   2: gpui::app::entity_map::double_lease_panic
+             at /Users/eddix/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.7/src/app/entity_map.rs:232:5
+   3: gpui::app::entity_map::EntityMap::lease_erased::{{closure}}
+             at /Users/eddix/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.7/src/app/entity_map.rs:164:36
+   4: core::option::Option<T>::unwrap_or_else
+             at /Users/eddix/.rustup/toolchains/1.95.0-aarch64-apple-darwin/lib/rustlib/src/rust/library/core/src/option.rs:1067:21
+   5: gpui::app::entity_map::EntityMap::lease_erased
+             at /Users/eddix/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.7/src/app/entity_map.rs:164:18
+   6: gpui::app::App::update_entity_erased::{{closure}}
+             at /Users/eddix/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.7/src/app.rs:2950:41
+   7: gpui::app::App::update
+             at /Users/eddix/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.7/src/app.rs:1163:22
+   8: gpui::app::App::update_entity_erased
+             at /Users/eddix/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.7/src/app.rs:2949:14
+   9: <gpui::app::App as gpui::AppContext>::update_entity
+             at /Users/eddix/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.7/src/app.rs:3013:14
+  10: gpui::app::entity_map::WeakEntity<T>::update
+             at /Users/eddix/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.7/src/app/entity_map.rs:808:15
+  11: gpui_rhai::app::script_node_dispatcher::{{closure}}
+             at /Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai/src/app.rs:3284:14
+  12: gpui_rhai::renderer::NodeEventDispatcher::write_signals
+             at /Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai/src/renderer.rs:194:9
+  13: gpui_rhai::primitive::PrimitiveContext::write_signals
+             at /Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai/src/primitive.rs:966:20
+  14: gpui_rhai::draggable::write_preview
+             at /Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai/src/draggable.rs:313:21
+  15: gpui_rhai::draggable::clear_preview
+             at /Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai/src/draggable.rs:329:5
+  16: gpui_rhai::draggable::register_pointer_down::{{closure}}::{{closure}}
+             at /Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai/src/draggable.rs:254:13
+  17: gpui_rhai::interaction::cancel_active
+             at /Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai/src/interaction.rs:783:5
+  18: gpui_rhai::interaction::WindowInteractionCoordinator::cancel
+             at /Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai/src/interaction.rs:717:9
+  19: gpui_rhai::interaction::WindowInteractionCoordinator::cancel_view
+             at /Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai/src/interaction.rs:686:18
+  20: gpui_rhai::app::ScriptViewHost::quiesce_view
+             at /Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai/src/app.rs:313:22
+  21: gpui_rhai::app::ScriptHostView::suspend_view
+             at /Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai/src/app.rs:4344:14
+  22: gpui_rhai::app::ScriptViewHandle::suspend::{{closure}}
+             at /Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai/src/app.rs:1021:41
+  23: <gpui::app::App as gpui::AppContext>::update_entity::{{closure}}
+             at /Users/eddix/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.7/src/app.rs:3014:25
+  24: gpui::app::App::update_entity_erased::{{closure}}
+             at /Users/eddix/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.7/src/app.rs:2951:13
+  25: gpui::app::App::update
+             at /Users/eddix/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.7/src/app.rs:1163:22
+  26: gpui::app::App::update_entity_erased
+             at /Users/eddix/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.7/src/app.rs:2949:14
+  27: <gpui::app::App as gpui::AppContext>::update_entity
+             at /Users/eddix/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.7/src/app.rs:3013:14
+  28: gpui::app::entity_map::Entity<T>::update
+             at /Users/eddix/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.7/src/app/entity_map.rs:502:12
+  29: gpui_rhai::app::ScriptViewHandle::suspend
+             at /Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai/src/app.rs:1021:14
+  30: probe::active_draggable_suspend_is_safe::__active_draggable_suspend_is_safe::{{closure}}
+             at ./probe.rs:288:47
+  31: gpui::app::test_context::VisualTestContext::update::{{closure}}
+             at /Users/eddix/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.7/src/app/test_context.rs:839:57
+  32: gpui::app::App::update_window_id::{{closure}}
+             at /Users/eddix/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.7/src/app.rs:1996:31
+  33: gpui::app::App::update_window_erased::{{closure}}
+             at /Users/eddix/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.7/src/app.rs:2896:13
+  34: gpui::app::App::update
+             at /Users/eddix/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.7/src/app.rs:1163:22
+  35: gpui::app::App::update_window_erased
+             at /Users/eddix/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.7/src/app.rs:2887:14
+  36: gpui::app::App::update_window_id
+             at /Users/eddix/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.7/src/app.rs:1994:14
+  37: <gpui::app::App as gpui::AppContext>::update_window
+             at /Users/eddix/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.7/src/app.rs:3043:14
+  38: <gpui::app::test_context::TestAppContext as gpui::AppContext>::update_window
+             at /Users/eddix/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.7/src/app/test_context.rs:85:14
+  39: gpui::app::test_context::VisualTestContext::update
+             at /Users/eddix/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.7/src/app/test_context.rs:839:14
+  40: probe::active_draggable_suspend_is_safe::__active_draggable_suspend_is_safe
+             at ./probe.rs:288:23
+  41: probe::active_draggable_suspend_is_safe::{{closure}}
+             at ./probe.rs:270:1
+  42: gpui::test::run_test::{{closure}}
+             at /Users/eddix/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.7/src/test.rs:113:17
+  43: std::panicking::catch_unwind::do_call
+             at /Users/eddix/.rustup/toolchains/1.95.0-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/panicking.rs:581:40
+  44: ___rust_try
+  45: std::panicking::catch_unwind
+             at /Users/eddix/.rustup/toolchains/1.95.0-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/panicking.rs:544:19
+  46: std::panic::catch_unwind
+             at /Users/eddix/.rustup/toolchains/1.95.0-aarch64-apple-darwin/lib/rustlib/src/rust/library/std/src/panic.rs:359:14
+  47: gpui::test::run_test
+             at /Users/eddix/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.7/src/test.rs:110:26
+  48: probe::active_draggable_suspend_is_safe
+             at ./probe.rs:270:1
+  49: probe::active_draggable_suspend_is_safe::{{closure}}
+             at ./probe.rs:270:14
+  50: core::ops::function::FnOnce::call_once
+             at /Users/eddix/.rustup/toolchains/1.95.0-aarch64-apple-darwin/lib/rustlib/src/rust/library/core/src/ops/function.rs:250:5
+  51: <fn() -> core::result::Result<(), alloc::string::String> as core::ops::function::FnOnce<()>>::call_once
+             at /rustc/59807616e1fa2540724bfbac14d7976d7e4a3860/library/core/src/ops/function.rs:250:5
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+test active_draggable_suspend_is_safe ... FAILED
+
+failures:
+
+failures:
+    active_draggable_suspend_is_safe
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 9 filtered out; finished in 1.39s
+
+error: test failed, to rerun pass `--test probe`

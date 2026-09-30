@@ -178,6 +178,25 @@ impl ScriptLifecycle {
         }
     }
 
+    /// Validate the initial `view(ctx)` without executing `init(ctx)`.
+    ///
+    /// This entry point is for static tooling that has no Host capability
+    /// implementations. It validates the rendered tree but deliberately does
+    /// not claim that Host-dependent initialization succeeded.
+    ///
+    /// # Errors
+    ///
+    /// Returns the same render, reconciliation, and resource errors as
+    /// [`Self::render`].
+    pub fn validate_initial_view_without_init(
+        &mut self,
+        engine: &mut RuntimeEngine,
+    ) -> Result<&UiNode, LifecycleError> {
+        self.require_state(LifecycleState::Created)?;
+        self.state = LifecycleState::Initialized;
+        self.render(engine)
+    }
+
     /// Evaluate required `view(ctx)` and activate its generation on success.
     ///
     /// # Errors

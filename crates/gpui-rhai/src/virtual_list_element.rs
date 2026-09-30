@@ -101,7 +101,14 @@ impl Element for VirtualListEntityElement {
         cx: &mut App,
     ) {
         frame.element.prepaint(window, cx);
-        let required = frame.view.read(cx).frame_indices.borrow().clone();
+        let mut required = frame.view.read(cx).frame_indices.borrow().clone();
+        let collection = format!("{}:{}", self.content.id.component, self.content.id.key);
+        if let Some((source, index)) = self.runtime.interactions.app_drag_pin(&collection)
+            && index < self.content.data.len()
+            && self.content.data.key(index) == Some(source.as_str())
+        {
+            required.insert(index);
+        }
         let realized = self
             .content
             .realized

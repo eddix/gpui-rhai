@@ -1249,14 +1249,28 @@ impl UiNode {
         id: &crate::VirtualCollectionId,
         items: BTreeMap<usize, UiNode>,
     ) -> bool {
+        self.replace_virtual_collection_items_in(id, &mut Some(items))
+    }
+
+    /// Move the realized items into the matching collection. Nodes passed on
+    /// the way down receive nothing: cloning the whole realized map for every
+    /// visited child made each scroll step cost (nodes before the collection)
+    /// x (realized items).
+    fn replace_virtual_collection_items_in(
+        &mut self,
+        id: &crate::VirtualCollectionId,
+        items: &mut Option<BTreeMap<usize, UiNode>>,
+    ) -> bool {
         match &mut self.kind {
             UiNodeKind::VirtualCollection { spec } if &spec.id == id => {
-                spec.realized = items;
+                if let Some(items) = items.take() {
+                    spec.realized = items;
+                }
                 true
             }
             UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => children
                 .iter_mut()
-                .any(|child| child.replace_virtual_collection_items(id, items.clone())),
+                .any(|child| child.replace_virtual_collection_items_in(id, items)),
             UiNodeKind::Overlay {
                 trigger, content, ..
             }
@@ -1264,11 +1278,11 @@ impl UiNode {
                 child: trigger,
                 fallback: content,
             } => {
-                trigger.replace_virtual_collection_items(id, items.clone())
-                    || content.replace_virtual_collection_items(id, items)
+                trigger.replace_virtual_collection_items_in(id, items)
+                    || content.replace_virtual_collection_items_in(id, items)
             }
             UiNodeKind::Layer { content, .. } => {
-                content.replace_virtual_collection_items(id, items)
+                content.replace_virtual_collection_items_in(id, items)
             }
             _ => false,
         }
@@ -2211,8 +2225,9 @@ fn retained_script_callback(
                 Position::NONE,
             ))
         })?;
-    callback
-        .bind_native_context_if_unset(crate::invocation::ScriptInvocationContext::capture(call));
+    callback.bind_native_context_if_unset(
+        crate::invocation::ScriptInvocationContext::capture_retained(call),
+    );
     Ok(callback)
 }
 
@@ -3301,5 +3316,86 @@ mod tests {
             Some(&UiValue::String("outer-group".to_owned()))
         );
         assert!(matches!(children[0].kind(), UiNodeKind::Text { text } if text == "updated"));
+    }
+
+    fn find_realized<'a>(
+        node: &'a UiNode,
+        id: &crate::VirtualCollectionId,
+    ) -> Option<&'a BTreeMap<usize, UiNode>> {
+        match node.kind() {
+            UiNodeKind::VirtualCollection { spec } if &spec.id == id => Some(&spec.realized),
+            UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => {
+                children.iter().find_map(|child| find_realized(child, id))
+            }
+            UiNodeKind::ErrorBoundary { child, fallback } => {
+                find_realized(child, id).or_else(|| find_realized(fallback, id))
+            }
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn realized_items_move_into_nested_collections_without_copies() {
+        // The realized map must reach the matching collection as the same
+        // allocation that was passed in, however deep the collection sits and
+        // whatever siblings precede it. A copy per visited node is what made a
+        // scroll step cost (nodes before the collection) x (realized items).
+        let id = crate::VirtualCollectionId {
+            component: crate::ComponentInstancePath::root("Table", "readers"),
+            key: "rows".to_owned(),
+        };
+        let collection = || {
+            UiNode::virtual_collection(crate::VirtualCollectionNodeSpec {
+                id: id.clone(),
+                label: "Rows".to_owned(),
+                data: Vec::<UiValue>::new().into(),
+                realized: BTreeMap::new(),
+                estimated_height: 30.0,
+                height: Some(600.0),
+                overdraw_pixels: 120.0,
+                bottom_align: false,
+                follow_tail: false,
+                reveal_key: None,
+                sticky_headers: std::sync::Arc::new(std::collections::BTreeSet::new()),
+                inherited_motion_group: None,
+            })
+        };
+        let siblings = || {
+            (0..8)
+                .map(|index| UiNode::text(format!("sibling {index}")))
+                .collect::<Vec<_>>()
+        };
+        let nested = |inner: UiNode| {
+            let mut children = siblings();
+            children.push(UiNode::box_node(vec![UiNode::fragment(vec![inner])]));
+            UiNode::column(children)
+        };
+        let layouts = vec![
+            nested(collection()),
+            nested(UiNode::error_boundary(UiNode::text("child"), collection())),
+            UiNode::row(vec![
+                nested(UiNode::text("no collection here")),
+                nested(collection()),
+            ]),
+        ];
+        for (index, mut root) in layouts.into_iter().enumerate() {
+            let item = UiNode::text("row")
+                .with_attribute("probe", UiValue::String(format!("row payload {index}")));
+            // Address of the attribute as stored in the built item node.
+            let Some(UiValue::String(payload)) = item.attributes().get("probe") else {
+                panic!("layout {index}: probe attribute missing before replacement");
+            };
+            let payload_ptr = payload.as_ptr();
+            assert!(root.replace_virtual_collection_items(&id, BTreeMap::from([(7, item)])));
+            let realized = find_realized(&root, &id).expect("collection keeps the realized items");
+            let Some(UiValue::String(landed)) = realized[&7].attributes().get("probe") else {
+                panic!("layout {index}: realized item lost its probe attribute");
+            };
+            assert_eq!(
+                landed.as_ptr(),
+                payload_ptr,
+                "layout {index}: realized items were copied"
+            );
+        }
     }
 }

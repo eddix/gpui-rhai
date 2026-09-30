@@ -52,6 +52,8 @@ Complex component contracts:
 ## Develop the framework
 
 - [Architecture](architecture.md)
+- [Interaction Runtime architecture decision](adr/0022-interaction-runtime.md)
+- [0.1.8 interaction-foundation audit](audits/2026-09-28-interaction-foundation/report.zh-CN.md)
 - [Performance budgets and baselines](performance.md)
 - [Development inspector](devtools.md)
 - [macOS visual and interaction test matrix](visual-testing.md)

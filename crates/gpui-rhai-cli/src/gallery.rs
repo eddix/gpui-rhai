@@ -920,6 +920,11 @@ pub fn prepare(launch: &GalleryLaunch) -> Result<PreparedScriptView, String> {
 ///
 /// Returns a preparation or platform application error.
 pub fn run(launch: &GalleryLaunch) -> Result<(), String> {
+    // Platform application callbacks cannot unwind safely. Validate every
+    // user-controlled launch selector and compile the exact story before
+    // entering GPUI, so CLI mistakes return a normal non-zero error instead
+    // of reaching GalleryApp::new and aborting inside did_finish_launching.
+    let _ = prepare(launch)?;
     super::gallery_app::run(launch.clone())
 }
 
@@ -1007,5 +1012,22 @@ mod tests {
             gpui_rhai::MotionPreference::Reduced
         );
         assert!(parse_motion_preference("missing").is_err());
+    }
+
+    #[test]
+    fn invalid_run_is_rejected_before_platform_startup() {
+        let error = run(&GalleryLaunch {
+            story: "missing/story".to_owned(),
+            ..GalleryLaunch::default()
+        })
+        .unwrap_err();
+        assert!(error.contains("unknown Gallery story `missing/story`"));
+
+        let error = run(&GalleryLaunch {
+            case: "missing-case".to_owned(),
+            ..GalleryLaunch::default()
+        })
+        .unwrap_err();
+        assert!(error.contains("unknown case `missing-case`"));
     }
 }

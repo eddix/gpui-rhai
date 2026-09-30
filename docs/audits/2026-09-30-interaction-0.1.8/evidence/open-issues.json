@@ -1,0 +1,154 @@
+[
+  {
+    "body": "## Context\n\noh-my-byted exposes host capabilities to third-party widgets. Some of them should only run in response to the user, e.g. `omb.open` (switch the user to another tool) — similar to how browsers gate `window.open` / clipboard writes behind user activation.\n\nToday a `CapabilityHandler` only sees `(method, input)`:\n\n```rust\nfn call(&mut self, method: &str, input: UiValue) -> Result<UiValue, String>;\n```\n\nso the host cannot tell whether a call comes from a pointer/key handler, a `timeout`, a `start_task` completion, a subscription push, or an effect. We tried inferring it by time (\"was there any window input in the last 1.5 s?\"). That is a heuristic with real problems:\n\n- **False positives**: any click anywhere unlocks every view's timers for the window.\n- **No attribution**: it can't tell which view the user interacted with.\n- **Coupled to the host's element tree**: our first version listened with a root `capture_any_mouse_down`, which never fires for clicks inside `occlude()`d overlays because element listeners require `hitbox.is_hovered` (`div.rs`). Users saw \"clicking a row does nothing, but press ↓ first and then it works\". Switching to `window.on_mouse_event` from a zero-size canvas fixes that, but it's still a guess.\n- **Tests have to fake input**, because `AutomationCommand::Dispatch` calls handlers directly.\n\nWe are dropping the gate on our side for now (rate limit + call log instead). This issue is about giving hosts the precise signal so gating can be done properly later.\n\n## Ask\n\nPass the invocation origin to capability handlers, e.g.\n\n```rust\npub enum InvocationOrigin {\n    UserInput { event: &'static str },   // pointer / key / click dispatched from a platform input event\n    Automation,                          // AutomationCommand::Dispatch\n    Timer, TaskCompletion, Subscription, Effect, Render,\n}\n\npub trait CapabilityHandler {\n    fn call(&mut self, method: &str, input: UiValue) -> Result<UiValue, String>;\n    /// Default forwards to `call`, so existing handlers keep compiling.\n    fn call_with(&mut self, origin: &InvocationOrigin, method: &str, input: UiValue)\n        -> Result<UiValue, String> { self.call(method, input) }\n}\n```\n\nThe runtime already knows which path it is on when it invokes a script callback; synchronous helper calls inside the same dispatch keep the same origin. A handler that starts a task and calls the capability in the task callback gets `TaskCompletion` (that is the point).\n\n**Performance**: this should be an enum set on the dispatch path (a field on the existing invocation / context struct, or a stack slot restored on return) and read only by handlers that ask for it — no allocation, no locking, nothing per frame. If it can't be done without measurable cost on the event / render path, we're fine without it.\n\nAlso useful (optional): let the host see which view the event was dispatched to, so activation can be attributed per view.\n",
+    "createdAt": "2026-09-30T03:54:43Z",
+    "labels": [],
+    "number": 91,
+    "title": "Capability handlers: expose the invocation origin (user input vs timer / task / subscription / effect)",
+    "updatedAt": "2026-09-30T03:54:43Z",
+    "url": "https://github.com/eddix/gpui-rhai/issues/91"
+  },
+  {
+    "body": "## 最小独立复现\n\n任意一个 `init()` 里调用「已在 `ui/app.toml` 声明」的能力的应用：\n\n```bash\ngpui-rhai --root /tmp/repro init\n```\n\n`ui/app.toml`:\n\n```toml\nentry = \"main\"\nruntime_api = 2\n\n[capabilities]\n\"app.demo\" = \"*\"\n```\n\n`ui/main.rhai`:\n\n```rhai\nfn init(ctx) {\n    let result = ctx.call_capability(\"app.demo\", \"ping\", ());\n}\n\nfn view(ctx) {\n    column([text(\"hello\")]).with_style(style().padding(px(16)))\n}\n```\n\n```bash\ngpui-rhai --root /tmp/repro check\n```\n\n## 实际行为\n\n```\ngpui-rhai: failed to evaluate Rhai UI source: Runtime error:\ncapability `CapabilityId(\"app.demo\")` was not declared by the application manifest\n```\n\n## 期望行为\n\n`check` 应通过（或以其他方式校验能力声明），因为该应用完全合法：\n\n- 能力契约明确允许同步能力在 `init` 中调用（docs/capabilities.md：\"Synchronous methods may run only in `init`, `dispose`, or an event callback\"）；\n- `ui/app.toml` 已声明 `\"app.demo\" = \"*\"`；\n- 真实挂载路径工作正常：`PreparedScriptView::mount` 会在生命周期启动前执行 `manifest.activate(...)`（crates/gpui-rhai/src/app.rs 两处调用点），同一应用实际运行无此错误。\n\n## 根因分析\n\n`gpui-rhai-cli` 的 `check` 在 `validate_entry`（crates/gpui-rhai-cli/src/lib.rs）中手工搭了一个求值环境：`UiRuntimeState::new()` + `ScriptLifecycle::new(...)`，随后 `lifecycle.start(...)` 会执行 `init`——但全程**没有**把 `ui/app.toml` 里声明的能力激活进 capability registry（`check` 读 app.toml 只校验了 `entry` 与 `runtime_api` 字段）。于是任何在 `init` 或首帧渲染中调用能力的应用都被 `check` 误拒。\n\n这意味着：使用 capability 的应用（docs/capabilities.md 的主推集成方式）全部无法通过 `gpui-rhai check`。\n\n可能的修法方向（供参考）：`validate_entry` 在启动生命周期前，基于 app.toml 的声明做激活；难点在于 check 环境没有真实 handler——可以考虑「声明即放行调用但返回 schema 合法的占位值」，或将该阶段的求值限制为不执行 init 的静态校验。具体语义由你们定。\n\n## 环境\n\n- gpui-rhai 本地 checkout：`0b9b887c`（chore(release): prepare 0.1.8，工作区干净）\n- macOS（Apple Silicon）\n\n## 来源与严重度\n\n- 发现场景：Cadenza（真实应用迁移试验田）M1，其 `init()` 需要调 `cadenza.library` 的 `card_status` 加载首屏数据。\n- 严重度：**可绕行**（应用真实运行正常，只是 `check` 无法使用；目前跳过 `check`）。",
+    "createdAt": "2026-09-29T15:28:59Z",
+    "labels": [
+      {
+        "id": "LA_kwDOUGviHM8AAAACykxlBw",
+        "name": "bug",
+        "description": "Something isn't working",
+        "color": "d73a4a"
+      },
+      {
+        "id": "LA_kwDOUGviHM8AAAAC5h8DzA",
+        "name": "cadenza",
+        "description": "Dogfooding reports from the Cadenza migration (real-app proving ground)",
+        "color": "1d76db"
+      }
+    ],
+    "number": 90,
+    "title": "gpui-rhai check rejects valid apps whose init() calls a manifest-declared capability",
+    "updatedAt": "2026-09-29T15:28:59Z",
+    "url": "https://github.com/eddix/gpui-rhai/issues/90"
+  },
+  {
+    "body": "## Context\n\noh-my-byted lets widgets mark values as openable resources (e.g. a PSM in a \"who reads this config\" table) and shows an \"Open with…\" menu on right click. For ordinary nodes, wrapping them in `ContextMenu` works well: `components/menu.rhai` listens to `pointer_down` on the trigger and opens on `event.button == \"right\"` (`context_request`, 0.1.7).\n\n## Problem\n\nTable builds its row and cell nodes internally (`components/table.rhai`, row renderer). The only pointer hook on a row is `on_click_value(Fn(\"row_action\"))` -> `row_click(key)`; the public events are `sort_change` / `selection_change` / `row_click` / `group_toggle` / `column_resize`. Cells only carry text + adornments, so a caller can't place a `ContextMenu` trigger inside a cell either. Same for Array- and NativeCollection-backed tables.\n\n## Ask\n\nAn optional `on_row_context_request` callback. When set, rows get a `pointer_down` handler that, for `button == \"right\"`, emits:\n\n```rhai\n#{ key: <row key>, column: <column key under the pointer>,\n   window: #{ x, y } }   // same shape ContextMenu's pointer_open uses for its anchor\n```\n\nLeft click and keyboard behaviour unchanged. How the caller then shows a menu anchored at that point (a `Menu` with an explicit `anchor`, or a controlled `context_menu` prop on Table itself) is your call.\n\nNice to have: the context-menu key / Shift+F10 on the focused row emitting the same event with the row bounds as anchor.\n",
+    "createdAt": "2026-09-29T15:09:08Z",
+    "labels": [],
+    "number": 89,
+    "title": "Table: expose a right-click (context request) on rows/cells so callers can attach a menu",
+    "updatedAt": "2026-09-29T15:09:08Z",
+    "url": "https://github.com/eddix/gpui-rhai/issues/89"
+  },
+  {
+    "body": "## Context\n\noh-my-byted hosts script widgets from third-party packages. Per `docs/architecture.md`, Rhai Arrays are for small Table inputs and large inputs should use `NativeCollection`. We hit exactly that boundary: a 1652-row Table scrolled at < 20 fps.\n\nMeasured on 0.1.7 (a5876a9), release build, headless `ScriptLifecycle`. One scroll step = shift the requested window by 3 rows and `realize_virtual_requests` 28 rows; median of 40 steps:\n\n| rows | Array: mount | Array: scroll step | NativeCollection: mount | NativeCollection: scroll step |\n|---|---|---|---|---|\n| 100 | 20 ms | 2.1 ms | 3.2 ms | 1.7 ms |\n| 1,652 | 149 ms | 8.3 ms | 3.0 ms | 2.1 ms |\n| 3,000 | 401 ms | 13.5 ms | — | — |\n| 5,000 | fails: `ErrorDataTooLarge(\"Size of array/BLOB\")` | — | 3.2 ms | 2.0 ms |\n| 20,000 | — | — | 3.1 ms | 1.9 ms |\n\nSo NativeCollection is clearly the right path. The problem is getting data into it from a generic host.\n\n## Problem\n\n- A collection name must be `register`ed on `UiRuntimeState.native_collections` **before mount** (`ScriptViewExtension::configure_runtime`).\n- After mount, the host can only `ScriptViewHandle::replace_native_collection` a name that already exists (`UnknownCollection` otherwise).\n- Scripts can only read (`ctx.get_native_collection`).\n\nA host whose widgets decide at runtime what they show therefore needs an out-of-band declaration. oh-my-byted now parses a custom `\"omb\": { \"collections\": [...] }` block from each widget's gpui-rhai header, pre-registers empty `<instance>/<name>` collections at mount, and swaps rows in through a host capability and `replace_native_collection` after the script transaction. It works, but every widget author has to declare names up front, and names can't be created on the fly (for example, one collection per opened item).\n\n## Ask (either would let us drop the declaration)\n\n1. A host-side `ScriptViewHandle::register_native_collection(name, collection, cx)`, or let `replace_native_collection` create a missing name.\n2. A script-side way to hand an Array to the runtime as a Rust-owned collection, e.g. `ctx.set_native_collection(name, rows, key_field)`, with Rust-owned rows, projection, sort and filter from then on (the one-time Array → collection conversion is fine).\n\nMinor, related: past about 3,000 rows an Array-backed Table fails at mount with `ErrorDataTooLarge(\"Size of array/BLOB\")` from `max_array_size(10_000)` (row items include cell arrays). A message that points to NativeCollection, plus the numbers above in the Table docs, would save the next person the investigation.\n",
+    "createdAt": "2026-09-29T11:21:02Z",
+    "labels": [
+      {
+        "id": "LA_kwDOUGviHM8AAAACykxlFA",
+        "name": "enhancement",
+        "description": "New feature or request",
+        "color": "a2eeef"
+      }
+    ],
+    "number": 87,
+    "title": "NativeCollection: allow registering on a live view (or creating one from script), so hosts don't need per-widget pre-declaration",
+    "updatedAt": "2026-09-29T11:21:02Z",
+    "url": "https://github.com/eddix/gpui-rhai/issues/87"
+  },
+  {
+    "body": "## Symptom\n\nWhen a capability task succeeds with a result larger than the engine's string limit (`engine.set_max_string_size(1_048_576)`, `engine.rs:2261`), the result is still delivered to the **success** callback, and the engine rejects it before any script code runs:\n\n```\nfailed to evaluate Rhai UI source: Length of string too large (line 8, position 9)\n```\n\nThe error callback is never invoked. The delivery transaction rolls back, so the view stays in whatever state it set before `start_task` (typically \"loading\") and shows a view-level failure. The script has no way to handle this: `try/catch` inside the callback can't help because the callback never starts.\n\nThe reported position points at the `ctx.start_task(...)` call site rather than the success callback, which sends debugging in the wrong direction.\n\nReal case: oh-my-byted's `omb.exec` running `recas-cli task list -s 200`, which prints 1.75 MB of JSON.\n\n## Repro (`codex/interaction-runtime-0.1.8` @ 0b9b887)\n\nA minimal integration test built on the same harness as `formal_component.rs`. An async capability returns `\"x\".repeat(n)`; the app sets its status to `loading` and starts the task; the success and error callbacks set `loaded N` and `failed`.\n\n| n | delivery | status afterwards |\n|---|---|---|\n| 1,000,000 | Ok | `loaded 1000000` |\n| 1,100,000 | `Err(Length of string too large (line 8, position 9))` | `loading` (error callback not run) |\n\n<details><summary>tests/oversize_repro.rs</summary>\n\n```rust\n//! Repro: an async task result larger than the engine's 1 MiB string limit.\nuse std::cell::RefCell;\nuse std::collections::BTreeMap;\nuse std::rc::Rc;\nuse std::time::{Duration, Instant};\n\nuse gpui_rhai::{\n    AsyncCapabilityHandler, CapabilityDescriptor, CapabilityId, CapabilityMethod,\n    ComponentInstancePath, EmbeddedScriptSource, RestrictedModuleResolver, RuntimeEngine,\n    ScriptLifecycle, TaskWork, UiNodeKind, UiRuntimeState, UiValue, ValueSchema,\n};\nuse semver::{Version, VersionReq};\n\nconst APP: &str = r#\"\nfn state_schema() { #{ fields: #{ status: #{ schema: #{ type: \"string\" },\n    \"default\": #{ type: \"string\", value: \"idle\" } } } } }\nfn loaded(ctx, out) { ctx.set_state(\"status\", `loaded ${out.len()}`); }\nfn failed(ctx, error) { ctx.set_state(\"status\", \"failed\"); }\nfn kick(ctx, payload) {\n    ctx.set_state(\"status\", \"loading\");\n    ctx.start_task(\"app.big\", \"get\", \"\", Fn(\"loaded\"), Fn(\"failed\"));\n}\nfn view(ctx) { text(ctx.get_state(\"status\")).on_click(Fn(\"kick\")) }\n\"#;\n\nstruct Big(usize);\nimpl AsyncCapabilityHandler for Big {\n    fn start(&mut self, _: &str, _: UiValue) -> Result<TaskWork, String> {\n        let n = self.0;\n        Ok(TaskWork::new(move || Ok(UiValue::String(\"x\".repeat(n)))))\n    }\n}\n\nfn run(size: usize) {\n    let mut engine = RuntimeEngine::new();\n    engine.set_module_resolver(\n        RestrictedModuleResolver::from_source(&EmbeddedScriptSource::new(BTreeMap::new())).unwrap(),\n    );\n    let compiled = engine.compile_self_contained_named(\"ui/app.rhai\", APP).unwrap();\n    let mut state = UiRuntimeState::new();\n    let cap = CapabilityId::parse(\"app.big\").unwrap();\n    state.capabilities.register_async(\n        CapabilityDescriptor {\n            id: cap.clone(),\n            version: Version::new(1, 0, 0),\n            methods: BTreeMap::from([(\"get\".to_owned(), CapabilityMethod {\n                input: ValueSchema::string(),\n                output: ValueSchema::string(),\n            })]),\n        },\n        Big(size),\n    ).unwrap();\n    state.capabilities.activate(&BTreeMap::from([(cap, VersionReq::STAR)])).unwrap();\n    let runtime = Rc::new(RefCell::new(state));\n    let root_path = ComponentInstancePath::root(\"App\", \"root\");\n    let schema = engine.root_state_schema(&compiled).unwrap();\n    let mut lifecycle = ScriptLifecycle::new(\n        compiled, Rc::clone(&runtime), root_path.clone(), Some(\"main\".to_owned()),\n        BTreeMap::new(), &schema,\n    ).unwrap();\n    lifecycle.start(&mut engine).unwrap();\n    let click = lifecycle.root().unwrap().handler(\"click\").unwrap().as_script().unwrap().clone();\n    lifecycle.invoke_callback_transactional(&engine, &click, UiValue::Null).unwrap();\n    let generation = lifecycle.generation();\n    let deadline = Instant::now() + Duration::from_secs(10);\n    let deliveries = loop {\n        let d = runtime.borrow_mut().tasks.drain(generation);\n        if !d.is_empty() || Instant::now() > deadline { break d; }\n        std::thread::sleep(Duration::from_millis(20));\n    };\n    println!(\"size={size} deliveries={}\", deliveries.len());\n    for delivery in deliveries {\n        let r = lifecycle.invoke_async_delivery_transactional(&engine, delivery);\n        match &r {\n            Ok(_) => println!(\"size={size} delivery=Ok\"),\n            Err(e) => println!(\"size={size} delivery=Err({e})\"),\n        }\n    }\n    let _ = lifecycle.render_dirty(&mut engine);\n    let status = runtime.borrow().component_state.get(&root_path, \"status\").cloned();\n    let text = match lifecycle.root().map(|n| n.kind().clone()) {\n        Some(UiNodeKind::Text { text }) => text.to_string(),\n        other => format!(\"{other:?}\"),\n    };\n    println!(\"size={size} status={status:?} rendered={text:?}\");\n}\n\n#[test]\nfn oversize_task_result() {\n    run(1_000_000);\n    run(1_100_000);\n}\n```\n\n</details>\n\n## Cause\n\n`task_delivery` (`async_runtime.rs:493`) validates the result only against the method's output schema. The engine's size limit is not part of that check, so an oversized value is routed to the success callback.\n\n## Ask\n\nRoute results the script cannot receive to the **error** callback with a clear payload (e.g. `result is 1.1 MB, over the 1 MiB script string limit`), the same way schema-validation failures already are. Checking the limit in `task_delivery`, or making it part of output validation, would do it. Subscription messages probably have the same path (not tested).\n\nSuggested target: 0.1.9.\n",
+    "createdAt": "2026-09-29T06:58:45Z",
+    "labels": [
+      {
+        "id": "LA_kwDOUGviHM8AAAACykxlBw",
+        "name": "bug",
+        "description": "Something isn't working",
+        "color": "d73a4a"
+      }
+    ],
+    "number": 86,
+    "title": "Async task result over the 1 MiB string limit never reaches either callback — the view fails and stays in its loading state",
+    "updatedAt": "2026-09-29T06:58:45Z",
+    "url": "https://github.com/eddix/gpui-rhai/issues/86"
+  },
+  {
+    "body": "## Symptom\n\nHosts can test SplitPane keyboard resizing through automation: SplitPane attaches script handlers with `on_key_value(\"left\" / \"right\" / \"up\" / \"down\", ...)`, so `AutomationCommand::Dispatch` of a key event on the separator works. oh-my-byted's GUI selftest drives a SplitPane step this way.\n\nResizable has no equivalent path. Its keyboard resizing is a GPUI `div().on_key_down` closure inside `ResizableHandlePrimitive` (`resizable.rs:676` on `codex/interaction-runtime-0.1.8`), while `automation_dispatch` (`app.rs:3771`) only walks handlers registered on retained nodes (`dispatch_plan` → Script / Host / Native `UiEventHandler`). Pointer gestures are not dispatchable either, so there is no automation path to resize a Resizable at all. oh-my-byted's floating-window resize is currently covered only by hand.\n\nThis comes from reading the code; I have not run a Dispatch against a Resizable handle to see what it returns.\n\n## Ask\n\nRoute Resizable keyboard steps through the same retained-handler path SplitPane uses (`on_key_value`, or a `UiEventHandler::Native`), or let automation deliver a real key event to the focused element. Either would make Resizable testable headlessly.\n\nSuggested target: 0.1.9.\n",
+    "createdAt": "2026-09-29T06:51:05Z",
+    "labels": [
+      {
+        "id": "LA_kwDOUGviHM8AAAACykxlBw",
+        "name": "bug",
+        "description": "Something isn't working",
+        "color": "d73a4a"
+      }
+    ],
+    "number": 85,
+    "title": "Resizable keyboard resizing can't be driven by AutomationCommand::Dispatch (native on_key_down), unlike SplitPane",
+    "updatedAt": "2026-09-29T06:51:05Z",
+    "url": "https://github.com/eddix/gpui-rhai/issues/85"
+  },
+  {
+    "body": "## Symptom\n\nPassing a formal component instance directly as SplitPane `start` / `end` breaks that component's own element ref. In oh-my-byted (0.1.7) a panel cell component declares `element_ref(\"cell_root\")` on its root and reads it when the user floats the cell. Once the cell is passed straight into SplitPane, that fails with:\n\n```\ncomponent /View[...]/Cell[cell-clock] has no mounted element ref `cell_root`\n```\n\n## Cause\n\n`registry/components/split_pane.rhai` (unchanged on `codex/interaction-runtime-0.1.8`) decorates the caller's node in place:\n\n```rhai\nlet start = props.start.with_key(start_ref_key)                     // :123\n    .with_style(ctx.component_style(\"start\", start_style))\n    .with_ref(start_ref)                                             // :125\n    .bind_signal(if horizontal { \"width_override\" } else { \"height_override\" }, preview);\n...\nlet end = props.end.with_key(props.end_key)                         // :152\n```\n\nThe collapsed paths (:99, :104) do the same with key and style. A node carries one ref, so the component's root ref is replaced, and its key is rewritten as well.\n\n`Draggable` follows the same pattern for `handle` (`props.handle.with_key(..).with_ref(handle_ref)`); not reproduced there. `Resizable` already wraps `content` in its own `box([...])`.\n\n## Workaround\n\nWrap each pane before passing it: `start: box([node])`.\n\n## Ask\n\nHave SplitPane (and Draggable's `handle`) wrap the caller's node internally, so the component's key / style / ref / signal land on its own wrapper. Callers cannot tell from the outside that their node will be taken over. Alternatively, document it in the component header.\n\nSuggested target: 0.1.9.\n",
+    "createdAt": "2026-09-29T06:51:03Z",
+    "labels": [
+      {
+        "id": "LA_kwDOUGviHM8AAAACykxlBw",
+        "name": "bug",
+        "description": "Something isn't working",
+        "color": "d73a4a"
+      }
+    ],
+    "number": 84,
+    "title": "SplitPane overwrites key/style/ref on the caller's start/end nodes, breaking formal components passed as panes",
+    "updatedAt": "2026-09-29T06:51:03Z",
+    "url": "https://github.com/eddix/gpui-rhai/issues/84"
+  },
+  {
+    "body": "## Motivation\n\nSeparators are not always a bare line. A common pattern is a 1px line with a centered grip, e.g. shadcn's `ResizableHandle withHandle` (a rounded pill with a 2×3 dot pattern). Today the SplitPane handle *is* `SplitResizePrimitive`, which paints a fixed line itself (`split_resize.rs:195-204` on `codex/interaction-runtime-0.1.8`), so there is nowhere to put such a node. `Resizable` is the same (`resizable.rs:298-308`: edge lines and a 5×5 corner square), and `part_styles.handle` applies one style to every handle.\n\n## Why \"just put a node inside the handle\" is not enough\n\nA grip is usually wider than the handle (8px by default) and overhangs both panes.\n\n1. **Layout is fine.** `absolute()` plus signed `offset_px` insets work, and overflow is visible by default.\n2. **Paint order.** GPUI has no z-index or stacking context; a later sibling paints over an earlier one (gpui 0.2.2 `scene.rs:77-81`). With `[start, handle, end]` (`split_pane.rhai:154`), `end` paints over the grip's overhang wherever it has a background. (shadcn needs `z-10` on the web for the same reason.) Scripts cannot reach `gpui::deferred`.\n3. **Hit area.** The primitive's hitbox is its own bounds (`split_resize.rs:167`), so pressing the overhang does not start a drag, and `end`'s hitboxes come later and win `hit_test`.\n4. **State.** A grip usually changes look on hover / drag / focus / disabled. That state lives in the primitive and pointer moves don't re-render Rhai; node styles have `hover` / `active` / `focus` for the node itself but no group-hover.\n\n## Proposal\n\nMirror `Draggable`'s `handle` + `handle_ref` split, where the native primitive owns the gesture and the script node is visual plus an eligible hit region (`draggable.rs:192-196`):\n\n- `handle: optional node` on SplitPane (and a per-handle equivalent on Resizable). Decoration only: keyboard steps, the `separator` role and the tab stop stay on the primitive.\n- Paint it above both panes: either the primitive defers the node, or the component renders it as the last child of root, absolutely positioned at the separator and following the native drag preview (that needs a binding that maps the `start-size` preview to a position, not only a size override).\n- Pressing anywhere on the node, including the overhang, starts the drag and shows the resize cursor.\n- Expose idle / hover / drag / focus / disabled as a native signal the node can bind styles to (precedent: react-resizable-panels' `data-resize-handle-state`), so pointer moves never re-render Rhai.\n- Keep the native line as the default when no node is given, with a way to turn it off when the node draws its own line.\n\nMinor, same area: the line's 4px end inset (`px(4.0)` / `px(8.0)` literals) is not configurable. oh-my-byted works around it by stretching the handle along the line, `height(auto()).margin_y(offset_px(-4))`, which makes the line span the full edge with pane geometry unchanged. So a `line_inset` option is nice-to-have, not blocking.\n\nSuggested target: 0.1.9.\n\nContext: oh-my-byted panel grids, where the host turns a grid config into nested SplitPanes.\n",
+    "createdAt": "2026-09-29T06:51:01Z",
+    "labels": [
+      {
+        "id": "LA_kwDOUGviHM8AAAACykxlFA",
+        "name": "enhancement",
+        "description": "New feature or request",
+        "color": "a2eeef"
+      }
+    ],
+    "number": 83,
+    "title": "SplitPane: allow a custom handle node (grip) — paint order, hit area and state need native support",
+    "updatedAt": "2026-09-29T06:51:01Z",
+    "url": "https://github.com/eddix/gpui-rhai/issues/83"
+  },
+  {
+    "body": "## Objective\n\nConsolidate the existing gesture, native-preview, geometry, capture, lifecycle and collection mechanisms before adding more interaction components. ADR 0022 is the authoritative architecture; PR #81 is the implementation branch.\n\n## Foundation\n\n- [ ] characterize existing Resizable, SplitPane, Table resize, Slider, ScrollArea and Chart behavior\n- [ ] replace repeated primitive prop readers with one typed PrimitiveContext boundary\n- [ ] add atomic PreviewPatch / batched native signal writes\n- [ ] add Host-domain GestureSession ownership and one move/up/cancel router\n- [ ] add shared Affine2D and presented forward/inverse geometry\n- [ ] add stable flat-order/outline projection for virtualized sorting and Tree\n- [ ] migrate every existing interaction before shipping new components\n\n## Public components\n\n- [ ] Draggable\n- [ ] DragSource\n- [ ] DropZone\n- [ ] Sortable\n- [ ] PanZoom\n- [ ] SelectionArea\n- [ ] Rotatable\n- [ ] RangeSlider\n- [ ] Tree\n\n## Bugs and verification\n\n- [ ] fix #80 without weakening synchronous recursion limits\n- [ ] Gallery integrated interaction scene and individual stories\n- [ ] pointer/keyboard/accessibility/RTL/theme/lifecycle/virtualization matrix\n- [ ] release benchmark proves pointer hot paths do not execute Rhai\n\n## Explicit exclusions\n\nDockLayout, OS/file drag, cross-window drag, 3D and compatibility aliases are outside 0.1.8.",
+    "createdAt": "2026-09-28T06:36:34Z",
+    "labels": [
+      {
+        "id": "LA_kwDOUGviHM8AAAACykxlFA",
+        "name": "enhancement",
+        "description": "New feature or request",
+        "color": "a2eeef"
+      }
+    ],
+    "number": 82,
+    "title": "0.1.8: unify the Interaction Runtime before adding direct-manipulation components",
+    "updatedAt": "2026-09-28T17:00:35Z",
+    "url": "https://github.com/eddix/gpui-rhai/issues/82"
+  },
+  {
+    "body": "## Symptom\n\nA widget that starts the next async task from inside the previous task's completion callback (a plain \"work queue\" / pagination pattern) fails with\n\n```\nStack overflow (line N, position M)\n```\n\nafter a small, fixed number of hops, even though each callback itself is shallow. The failing operation is the completion callback (`execution.operation.callback`), and the view's `last_error` / diagnostic carries it.\n\nMinimal repro (any async capability that completes quickly; here oh-my-byted's `omb.exec` running `true`):\n\n```rhai\nfn start_chain(ctx, deps) { hop(ctx); }\nfn cleanup_chain(ctx, deps) { () }\nfn hop(ctx) {\n    ctx.start_task(\"omb.exec\", \"run\", #{ program: \"true\", args: [], timeout_ms: 5000 },\n        Fn(\"hopped\"), Fn(\"failed\"));\n}\nfn hopped(ctx, out) {\n    let n = ctx.get_state(\"hops\") + 1;\n    ctx.set_state(\"hops\", n);\n    if n < 200 { hop(ctx); }\n}\nfn failed(ctx, error) { () }\n\nfn render_Widget(ctx, props) {\n    effect(\"chain\", (), Fn(\"start_chain\"), Fn(\"cleanup_chain\"));\n    text(`hops=${ctx.get_state(\"hops\")}`)\n}\n```\n\nObserved with gpui-rhai 0.1.5: the chain stops at `hops=13` with `Stack overflow (line 32, ...)` (the `ctx.start_task` line inside `hop`). Each hop adds roughly `hopped -> hop -> start_task` levels on top of the previous one, and `configure_engine_limits` sets `max_call_levels(64)`.\n\nReal-world trigger: resolving ~40 upstream task names with a \"finish one, start the next\" worker pool died after ~37 completions.\n\n## Root cause (from reading 0.1.5)\n\n`ScriptInvocationContext::capture` (`src/invocation.rs`) stores `context.store_data()`, i.e. a `NativeCallContextStore` whose `global: GlobalRuntimeState` includes `level` — the call depth at the moment the callback was registered. When the host later dispatches the retained callback via `call_within_context`, Rhai resumes at that stored level. A callback that registers the next callback captures a deeper level again, so depth accumulates across hops that are not actually nested at runtime.\n\nThe operation counter already has the equivalent problem handled (`operation_base`, and the progress adapter's `align`); the call level does not.\n\n## Suggested fix\n\nWhen capturing a context for a *retained / delayed* invocation (task and subscription callbacks, event handlers), reset the stored depth, e.g.\n\n```rust\nlet mut data = context.store_data();\ndata.global.level = 0; // delayed dispatch starts a fresh stack\n```\n\n(or record a `level_base` and subtract it, mirroring `operation_base`). Synchronous nested calls keep their real depth, so the recursion guard still works where it matters.\n\n## Downstream workaround\n\noh-my-byted widgets queue the work in state and start each batch from an `effect` (effects are dispatched from the render cycle, so depth starts fresh); callbacks only bump a batch counter when a whole batch finishes.\n",
+    "createdAt": "2026-09-28T03:54:48Z",
+    "labels": [
+      {
+        "id": "LA_kwDOUGviHM8AAAACykxlBw",
+        "name": "bug",
+        "description": "Something isn't working",
+        "color": "d73a4a"
+      }
+    ],
+    "number": 80,
+    "title": "Retained callbacks inherit the capture-time call level, so chaining `start_task` from a task callback hits `Stack overflow` after ~13 hops",
+    "updatedAt": "2026-09-28T17:00:33Z",
+    "url": "https://github.com/eddix/gpui-rhai/issues/80"
+  }
+]

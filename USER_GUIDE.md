@@ -322,20 +322,23 @@ intentional one-off. Edit the copied component source when the product needs a
 structural or behavioral fork; do not hide one behind a growing stack of visual
 overrides. See [Component stylesheets](docs/component-styles.md).
 
-The bundled catalog contains 53 official source components. Version 0.1.2
+The bundled catalog contains 62 official source components. Version 0.1.2
 froze the original 51 IDs, exports, controlled-state boundaries, semantic
 events, size vocabulary, and style-part contract as the component foundation;
-0.1.7 adds the independent SplitPane and Resizable compositions without weakening that contract:
+0.1.7 adds SplitPane and Resizable; the 0.1.8 development line adds
+Draggable, DragSource, DropZone, Sortable, Canvas PanZoom/Rotatable/SelectionArea,
+RangeSlider, and Tree without weakening that contract:
 
 - foundations and status: Label, Divider, Icon, Avatar, Badge, Tag, Alert,
   Card, GroupBox, Empty, Kbd, Progress, Spinner, Skeleton, TitleBar, and
   StatusBar;
 - actions and choices: Button, ButtonGroup, Checkbox, Radio, RadioGroup,
   Switch, Toggle, ToggleGroup, and Slider;
-- forms: Input, InputGroup, Textarea, FormField, Combobox, Select, and
-  DatePicker;
+- forms: Input, InputGroup, Textarea, FormField, Combobox, Select, DatePicker,
+  and RangeSlider;
 - navigation, layout, and data: Tabs, Accordion, Collapsible, Menu, Pagination,
-  Table, ScrollArea, SplitPane, and Resizable;
+  Table, ScrollArea, SplitPane, Resizable, Draggable, DragSource, DropZone,
+  Sortable, PanZoom, Rotatable, SelectionArea, and Tree;
 - commands and overlays: Command, CommandDialog, ContextMenu, Popover, Dialog,
   AlertDialog, Sheet, Tooltip, and Toast;
 - read-only documents: CodeViewer and DiffViewer;
@@ -346,6 +349,8 @@ Run `cargo run --release -p gpui-rhai-cli -- gallery --story components/catalog`
 for the authoritative interactive catalog with category navigation, cases,
 responsive viewport presets, Motion preferences, live themes, locales, and the
 exact running Rhai source.
+Run `cargo run --release -p gpui-rhai-cli -- gallery --story workbench/interaction-lab`
+for the integrated 0.1.8 direct-manipulation acceptance application.
 See [the component catalog](docs/components/catalog.md) for ownership and
 behavior distinctions that similar-looking controls must preserve.
 See [Gallery and acceptance application](docs/gallery.md) for story metadata,
@@ -1212,7 +1217,7 @@ For a node event, read `ctx.event_target_bounds()` or `NativeEvent::target`
 inside that callback. Do not cache `ctx.element_bounds(ref)` in state on every
 resize merely to service a later click. Custom primitive emissions currently
 have no renderer-owned event target. A primitive may accept a validated
-`ElementRef` prop and use `PrimitiveEventEmitter::element_bounds` for
+`ElementRef` prop and use `PrimitiveContext::element_bounds` for
 last-committed layout geometry; event consumers still receive only the
 primitive's declared payload.
 

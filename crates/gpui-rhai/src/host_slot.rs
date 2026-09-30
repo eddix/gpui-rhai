@@ -9,9 +9,9 @@ use gpui::{
 use thiserror::Error;
 
 use crate::{
-    ComponentStateSchema, ObjectField, PrimitiveDescriptor, PrimitiveEventEmitter,
-    PrimitiveHandler, PrimitiveId, PrimitiveInstance, PrimitiveTheme, PrimitiveValue,
-    RuntimeEngine, ScriptViewExtension, ScriptViewHandle, UiValue, ValueSchema,
+    ComponentStateSchema, ObjectField, PrimitiveContext, PrimitiveDescriptor, PrimitiveHandler,
+    PrimitiveId, PrimitiveInstance, PrimitiveTheme, PrimitiveValue, RuntimeEngine,
+    ScriptViewExtension, ScriptViewHandle, UiValue, ValueSchema,
 };
 
 type HostSlotFactory = Rc<dyn Fn(&mut Window, &mut App) -> Result<AnyElement, String>>;
@@ -173,7 +173,7 @@ impl PrimitiveHandler for HostSlotPrimitiveHandler {
     fn render(
         &mut self,
         instance: &PrimitiveInstance,
-        _: &PrimitiveEventEmitter,
+        _: &PrimitiveContext,
         _: &PrimitiveTheme,
         window: &mut Window,
         cx: &mut App,

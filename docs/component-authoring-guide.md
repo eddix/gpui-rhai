@@ -374,7 +374,7 @@ declared payload schema. Native and Script handlers share transaction and
 response semantics. Events emitted by a custom primitive currently have no
 renderer-owned target. A primitive can accept a validated `ElementRef` prop and
 query its last committed layout bounds through
-`PrimitiveEventEmitter::element_bounds`; consumer-facing coordinates still
+`PrimitiveContext::element_bounds`; consumer-facing coordinates still
 belong in the declared event payload when the event contract requires them.
 
 Formal components may declare `element_ref("name")` during render and attach it

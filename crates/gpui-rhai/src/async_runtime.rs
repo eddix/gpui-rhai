@@ -492,21 +492,21 @@ impl TaskRegistry {
 
 fn task_delivery(entry: TaskEntry, result: Result<UiValue, String>) -> AsyncDelivery {
     match result {
-        Ok(value) => match entry.output.validate_ui_value(&value) {
+        Ok(value) => match validate_async_payload(&entry.output, &value) {
             Ok(()) => AsyncDelivery {
                 callback: entry.callbacks.success,
                 payload: value,
                 scope: entry.scope,
             },
-            Err(error) => AsyncDelivery {
+            Err(payload) => AsyncDelivery {
                 callback: entry.callbacks.error,
-                payload: error_payload(error.to_string()),
+                payload,
                 scope: entry.scope,
             },
         },
         Err(error) => AsyncDelivery {
             callback: entry.callbacks.error,
-            payload: error_payload(error),
+            payload: error_payload(&error),
             scope: entry.scope,
         },
     }
@@ -1168,31 +1168,157 @@ fn subscription_delivery(
     result: Result<UiValue, String>,
 ) -> AsyncDelivery {
     match result {
-        Ok(value) => match entry.output.validate_ui_value(&value) {
+        Ok(value) => match validate_async_payload(&entry.output, &value) {
             Ok(()) => AsyncDelivery {
                 callback: entry.callbacks.success.clone(),
                 payload: value,
                 scope: entry.scope.clone(),
             },
-            Err(error) => AsyncDelivery {
+            Err(payload) => AsyncDelivery {
                 callback: entry.callbacks.error.clone(),
-                payload: error_payload(error.to_string()),
+                payload,
                 scope: entry.scope.clone(),
             },
         },
         Err(error) => AsyncDelivery {
             callback: entry.callbacks.error.clone(),
-            payload: error_payload(error),
+            payload: error_payload(&error),
             scope: entry.scope.clone(),
         },
     }
 }
 
-fn error_payload(message: String) -> UiValue {
+fn error_payload(message: &str) -> UiValue {
+    let message = bounded_utf8(message, 1_024);
     UiValue::Map(BTreeMap::from([
         ("kind".to_owned(), UiValue::String("async_error".to_owned())),
         ("message".to_owned(), UiValue::String(message)),
     ]))
+}
+
+fn validate_async_payload(output: &ValueSchema, value: &UiValue) -> Result<(), UiValue> {
+    output
+        .validate_ui_value(value)
+        .map_err(|error| error_payload(&error.to_string()))?;
+    validate_rhai_delivery(value).map_err(delivery_limit_payload)
+}
+
+fn delivery_limit_payload(error: DeliveryLimit) -> UiValue {
+    UiValue::Map(BTreeMap::from([
+        (
+            "kind".to_owned(),
+            UiValue::String("async_delivery_limit".to_owned()),
+        ),
+        (
+            "resource".to_owned(),
+            UiValue::String(error.resource.to_owned()),
+        ),
+        (
+            "actual".to_owned(),
+            UiValue::Integer(i64::try_from(error.actual).unwrap_or(i64::MAX)),
+        ),
+        (
+            "limit".to_owned(),
+            UiValue::Integer(i64::try_from(error.limit).unwrap_or(i64::MAX)),
+        ),
+        ("message".to_owned(), UiValue::String(error.message())),
+    ]))
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct DeliveryLimit {
+    resource: &'static str,
+    actual: usize,
+    limit: usize,
+}
+
+impl DeliveryLimit {
+    fn message(self) -> String {
+        format!(
+            "async result exceeds Rhai {} limit: {} > {}",
+            self.resource, self.actual, self.limit
+        )
+    }
+}
+
+#[derive(Default)]
+struct DeliveryUsage {
+    strings: usize,
+    arrays: usize,
+    maps: usize,
+}
+
+fn validate_rhai_delivery(value: &UiValue) -> Result<(), DeliveryLimit> {
+    fn visit(
+        value: &UiValue,
+        depth: usize,
+        usage: &mut DeliveryUsage,
+    ) -> Result<(), DeliveryLimit> {
+        if depth > crate::engine::RHAI_MAX_DATA_DEPTH {
+            return Err(DeliveryLimit {
+                resource: "data_depth",
+                actual: depth,
+                limit: crate::engine::RHAI_MAX_DATA_DEPTH,
+            });
+        }
+        match value {
+            UiValue::String(value) => {
+                usage.strings = usage.strings.saturating_add(value.len());
+            }
+            UiValue::Array(values) => {
+                usage.arrays = usage.arrays.saturating_add(values.len());
+                for value in values {
+                    visit(value, depth.saturating_add(1), usage)?;
+                }
+            }
+            UiValue::Map(values) => {
+                usage.maps = usage.maps.saturating_add(values.len());
+                for value in values.values() {
+                    visit(value, depth.saturating_add(1), usage)?;
+                }
+            }
+            UiValue::Null
+            | UiValue::Bool(_)
+            | UiValue::Integer(_)
+            | UiValue::Float(_)
+            | UiValue::Handle(_) => {}
+        }
+        for (resource, actual, limit) in [
+            (
+                "string_bytes",
+                usage.strings,
+                crate::engine::RHAI_MAX_STRING_SIZE,
+            ),
+            (
+                "array_items",
+                usage.arrays,
+                crate::engine::RHAI_MAX_ARRAY_SIZE,
+            ),
+            ("map_entries", usage.maps, crate::engine::RHAI_MAX_MAP_SIZE),
+        ] {
+            if actual > limit {
+                return Err(DeliveryLimit {
+                    resource,
+                    actual,
+                    limit,
+                });
+            }
+        }
+        Ok(())
+    }
+
+    visit(value, 0, &mut DeliveryUsage::default())
+}
+
+fn bounded_utf8(value: &str, maximum: usize) -> String {
+    if value.len() <= maximum {
+        return value.to_owned();
+    }
+    let mut end = maximum;
+    while !value.is_char_boundary(end) {
+        end = end.saturating_sub(1);
+    }
+    format!("{}…", &value[..end])
 }
 
 #[derive(Debug, Error)]
@@ -1223,6 +1349,45 @@ pub enum AsyncRuntimeError {
 mod tests {
     use super::*;
     use crate::RuntimeEngine;
+
+    #[test]
+    fn rhai_delivery_preflight_matches_recursive_engine_limits() {
+        assert!(
+            validate_rhai_delivery(&UiValue::String(
+                "x".repeat(crate::engine::RHAI_MAX_STRING_SIZE)
+            ))
+            .is_ok()
+        );
+        let oversized = UiValue::Array(vec![
+            UiValue::String("x".repeat(600_000)),
+            UiValue::String("y".repeat(600_000)),
+        ]);
+        assert_eq!(
+            validate_rhai_delivery(&oversized).unwrap_err().resource,
+            "string_bytes"
+        );
+        let oversized = UiValue::Array(
+            (0..=crate::engine::RHAI_MAX_ARRAY_SIZE)
+                .map(|_| UiValue::Null)
+                .collect(),
+        );
+        assert_eq!(
+            validate_rhai_delivery(&oversized).unwrap_err().resource,
+            "array_items"
+        );
+    }
+
+    #[test]
+    fn async_error_payload_is_always_bounded_utf8() {
+        let UiValue::Map(payload) = error_payload(&"界".repeat(100_000)) else {
+            panic!("error payload must be an object");
+        };
+        let Some(UiValue::String(message)) = payload.get("message") else {
+            panic!("error payload must contain a message");
+        };
+        assert!(message.len() <= 1_028);
+        assert!(validate_rhai_delivery(&UiValue::Map(payload)).is_ok());
+    }
 
     fn callbacks() -> (ScriptCallback, ScriptCallback, ScriptGeneration) {
         let mut runtime = RuntimeEngine::new();

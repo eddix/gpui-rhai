@@ -3,6 +3,11 @@
 GPUI Rhai keeps a hard boundary between script-owned declarations and
 platform-owned rendering mechanisms.
 
+Two-dimensional direct manipulation, application drag/drop, affine presented
+geometry and controlled native preview share the Interaction Runtime defined by
+[ADR 0022](adr/0022-interaction-runtime.md). Components provide policy and
+semantic proposals rather than private pointer loops.
+
 ## Runtime layers
 
 1. Rhai source produces `UiNode`, `Style`, semantic events, and typed values.

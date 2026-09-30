@@ -3195,6 +3195,15 @@ fn collect_non_timeline_owners(
             crate::SignalProperty::TranslateY | crate::SignalProperty::TranslateYOverride => {
                 Some(MotionProperty::TranslateY)
             }
+            crate::SignalProperty::Rotate | crate::SignalProperty::RotateOverride => {
+                Some(MotionProperty::Rotate)
+            }
+            crate::SignalProperty::ScaleX | crate::SignalProperty::ScaleXOverride => {
+                Some(MotionProperty::ScaleX)
+            }
+            crate::SignalProperty::ScaleY | crate::SignalProperty::ScaleYOverride => {
+                Some(MotionProperty::ScaleY)
+            }
             crate::SignalProperty::Width | crate::SignalProperty::WidthOverride => {
                 Some(MotionProperty::Width)
             }
@@ -3888,8 +3897,9 @@ fn take_callback(
     })?;
     let mut callback = ScriptCallback::try_from_fn_ptr(function, ScriptGeneration::default())
         .map_err(script_boxed_error)?;
-    callback
-        .bind_native_context_if_unset(crate::invocation::ScriptInvocationContext::capture(call));
+    callback.bind_native_context_if_unset(
+        crate::invocation::ScriptInvocationContext::capture_retained(call),
+    );
     Ok(Some(callback))
 }
 

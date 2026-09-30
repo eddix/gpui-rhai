@@ -89,7 +89,7 @@ registry or resource scope itself in a cleanup closure. Native changes made by
 `update` cannot be cloned by the runtime: stage them until success or make
 `update(previous, next)` idempotent so a failed outer render can safely retry.
 
-Emit only declared events through `PrimitiveEventEmitter`; the runtime validates
+Emit only declared events through `PrimitiveContext`; the runtime validates
 payloads and dispatches the generation-bound callback. The emitter keeps only a
 weak reference back to the registry, so an Entity whose callbacks retain the
 emitter cannot form `Registry -> Entity -> Registry` ownership cycles. Use GPUI
@@ -99,9 +99,9 @@ type versions.
 `ValueSchema::Signal` and `ValueSchema::Ref` props remain typed native handles
 as `PrimitiveValue::Signal` and `PrimitiveValue::Ref`; they are not flattened
 into durable `UiValue`. A foreground primitive may write a passed signal with
-`PrimitiveEventEmitter::write_signal`, which requests a GPUI repaint without
+`PrimitiveContext::write_signal`, which requests a GPUI repaint without
 executing Rhai. It may query the last committed layout rectangle of a passed
-ref with `PrimitiveEventEmitter::element_bounds`. Both operations fail closed
+ref with `PrimitiveContext::element_bounds`. Both operations fail closed
 when the owning component or view has unmounted.
 
 Primitive emissions do not currently receive renderer-owned target geometry:

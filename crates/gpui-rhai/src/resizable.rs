@@ -1,21 +1,20 @@
 //! Native hot-lane edge and corner handles for the public `Resizable` component.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use gpui::{
     AnyElement, App, Bounds, CursorStyle, DispatchPhase, Element, ElementId, FocusHandle,
     GlobalElementId, Hitbox, HitboxBehavior, InspectorElementId, InteractiveElement, IntoElement,
-    KeyDownEvent, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
-    ParentElement, Pixels, Point, Style, Styled, Window, div, fill, point, px, relative, rgba,
-    size,
+    KeyDownEvent, LayoutId, MouseButton, MouseDownEvent, ParentElement, Pixels, Style, Styled,
+    Window, div, fill, point, px, relative, rgba, size,
 };
 
 use crate::{
-    ComponentStateSchema, EventSchema, ObjectField, PrimitiveDescriptor, PrimitiveEventEmitter,
-    PrimitiveHandler, PrimitiveId, PrimitiveInstance, PrimitiveProps, PrimitiveTheme,
-    PrimitiveValue, Rgba8, SignalKind, SignalValue, UiValue, ValueSchema,
+    ComponentStateSchema, EventSchema, ObjectField, PrimitiveContext, PrimitiveDescriptor,
+    PrimitiveHandler, PrimitiveId, PrimitiveInstance, PrimitiveInstanceId, PrimitiveProps,
+    PrimitiveTheme, PrimitiveValue, Rgba8, SignalKind, SignalValue, UiValue, ValueSchema,
 };
 
 const MAX_RESIZE_DIMENSION: f64 = 16_384.0;
@@ -112,7 +111,7 @@ impl ResizeHandle {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 struct ResizeConstraints {
     min_width: f64,
     min_height: f64,
@@ -129,6 +128,7 @@ struct ResizableConfig {
     source: ResizeRect,
     constraints: ResizeConstraints,
     boundary_ref: crate::ElementRef,
+    boundary_size: Rc<Cell<Option<(f64, f64)>>>,
     x_signal: crate::NativeSignal,
     y_signal: crate::NativeSignal,
     width_signal: crate::NativeSignal,
@@ -146,26 +146,16 @@ struct ResizableState(Rc<RefCell<ResizableStateInner>>);
 #[derive(Clone)]
 struct ResizableStateInner {
     source: ResizeRect,
+    constraints: ResizeConstraints,
     signals: [crate::SignalId; 4],
-    hovered: bool,
-    dragging: bool,
-    moved: bool,
-    start_position: Point<Pixels>,
-    boundary_width: f64,
-    boundary_height: f64,
 }
 
 impl ResizableState {
     fn new(config: &ResizableConfig) -> Self {
         Self(Rc::new(RefCell::new(ResizableStateInner {
             source: config.source,
+            constraints: config.constraints,
             signals: signal_ids(config),
-            hovered: false,
-            dragging: false,
-            moved: false,
-            start_position: point(px(0.0), px(0.0)),
-            boundary_width: 0.0,
-            boundary_height: 0.0,
         })))
     }
 }
@@ -181,12 +171,11 @@ fn signal_ids(config: &ResizableConfig) -> [crate::SignalId; 4] {
 
 struct ResizablePrepaint {
     hitbox: Hitbox,
-    state: ResizableState,
 }
 
 struct ResizableHandleElement {
     config: ResizableConfig,
-    events: PrimitiveEventEmitter,
+    events: PrimitiveContext,
 }
 
 impl IntoElement for ResizableHandleElement {
@@ -245,21 +234,27 @@ impl Element for ResizableHandleElement {
         let reset = {
             let mut inner = state.0.borrow_mut();
             let signals = signal_ids(&self.config);
-            let changed = inner.source != self.config.source || inner.signals != signals;
+            let changed = inner.source != self.config.source
+                || inner.constraints != self.config.constraints
+                || inner.signals != signals;
             if changed {
                 inner.source = self.config.source;
+                inner.constraints = self.config.constraints;
                 inner.signals = signals;
-                inner.dragging = false;
-                inner.moved = false;
             }
             changed
         };
-        if reset {
+        let owner = self.events.interaction_owner(&self.config.id);
+        self.config.boundary_size.set(
+            self.events
+                .element_bounds(&self.config.boundary_ref, cx)
+                .map(|bounds| (bounds.width, bounds.height)),
+        );
+        if reset && !self.events.cancel_interaction(&owner, window, cx) {
             clear_preview(&self.events, &self.config, window, cx);
         }
         ResizablePrepaint {
             hitbox: window.insert_hitbox(bounds, HitboxBehavior::BlockMouseExceptScroll),
-            state,
         }
     }
 
@@ -273,7 +268,9 @@ impl Element for ResizableHandleElement {
         window: &mut Window,
         _: &mut App,
     ) {
-        let dragging = prepaint.state.0.borrow().dragging;
+        let owner = self.events.interaction_owner(&self.config.id);
+        self.events.present_interaction(owner.clone());
+        let dragging = self.events.interaction_is_active(&owner);
         let hovered = !self.config.disabled && prepaint.hitbox.is_hovered(window);
         let color = if dragging || hovered {
             self.config.active_color
@@ -284,7 +281,7 @@ impl Element for ResizableHandleElement {
         if !self.config.disabled {
             window.set_cursor_style(self.config.handle.cursor(), &prepaint.hitbox);
         }
-        register_pointer_listeners(prepaint, self.config.clone(), self.events.clone(), window);
+        register_pointer_listeners(prepaint, &self.config, &self.events, window);
     }
 }
 
@@ -328,13 +325,12 @@ fn paint_handle(
 #[allow(clippy::too_many_lines)]
 fn register_pointer_listeners(
     prepaint: &ResizablePrepaint,
-    config: ResizableConfig,
-    events: PrimitiveEventEmitter,
+    config: &ResizableConfig,
+    events: &PrimitiveContext,
     window: &mut Window,
 ) {
     let view = window.current_view();
     let hitbox = prepaint.hitbox.clone();
-    let down_state = prepaint.state.clone();
     let down_config = config.clone();
     let down_events = events.clone();
     window.on_mouse_event(move |event: &MouseDownEvent, phase, window, cx| {
@@ -356,133 +352,91 @@ fn register_pointer_listeners(
         if let Some(focus) = down_config.focus.as_ref() {
             focus.focus(window, cx);
         }
-        let mut inner = down_state.0.borrow_mut();
-        inner.dragging = true;
-        inner.moved = false;
-        inner.start_position = event.position;
-        inner.boundary_width = boundary.width;
-        inner.boundary_height = boundary.height;
-        cx.stop_propagation();
-        cx.notify(view);
-    });
-
-    let move_state = prepaint.state.clone();
-    let move_hitbox = prepaint.hitbox.clone();
-    let move_config = config.clone();
-    let move_events = events.clone();
-    window.on_mouse_event(move |event: &MouseMoveEvent, _, window, cx| {
-        let snapshot = move_state.0.borrow().clone();
-        if !snapshot.dragging {
-            let hovered = move_hitbox.is_hovered(window);
-            let mut inner = move_state.0.borrow_mut();
-            if inner.hovered != hovered {
-                inner.hovered = hovered;
-                cx.notify(view);
-            }
-            return;
-        }
-        if !event.dragging() {
-            cancel_drag(&move_state, &move_events, &move_config, window, cx, view);
-            return;
-        }
-        let Some(boundary) = move_events.element_bounds(&move_config.boundary_ref, cx) else {
-            cancel_drag(&move_state, &move_events, &move_config, window, cx, view);
-            return;
+        let boundary_size = (boundary.width, boundary.height);
+        let update_config = down_config.clone();
+        let update_events = down_events.clone();
+        let update =
+            move |gesture: crate::interaction::GestureUpdate, _: &mut Window, cx: &mut App| {
+                let Some(boundary) = update_events.element_bounds(&update_config.boundary_ref, cx)
+                else {
+                    return crate::interaction::InteractionFlow::Cancel;
+                };
+                if (boundary.width - boundary_size.0).abs() > 0.5
+                    || (boundary.height - boundary_size.1).abs() > 0.5
+                {
+                    return crate::interaction::InteractionFlow::Cancel;
+                }
+                if gesture.moved() {
+                    let (dx, dy) = gesture.delta();
+                    let rect = resize_rect(
+                        update_config.source,
+                        update_config.handle,
+                        dx,
+                        dy,
+                        update_config.constraints,
+                        boundary_size,
+                    );
+                    write_preview(&update_events, &update_config, Some(rect), cx);
+                }
+                crate::interaction::InteractionFlow::Continue
+            };
+        let finish_config = down_config.clone();
+        let finish_events = down_events.clone();
+        let finish =
+            move |gesture: crate::interaction::GestureUpdate, window: &mut Window, cx: &mut App| {
+                clear_preview(&finish_events, &finish_config, window, cx);
+                if !gesture.moved() {
+                    return;
+                }
+                let boundary_unchanged = finish_events
+                    .element_bounds(&finish_config.boundary_ref, cx)
+                    .is_some_and(|boundary| {
+                        (boundary.width - boundary_size.0).abs() <= 0.5
+                            && (boundary.height - boundary_size.1).abs() <= 0.5
+                    });
+                if !boundary_unchanged {
+                    return;
+                }
+                let (dx, dy) = gesture.delta();
+                let rect = resize_rect(
+                    finish_config.source,
+                    finish_config.handle,
+                    dx,
+                    dy,
+                    finish_config.constraints,
+                    boundary_size,
+                );
+                finish_events.propose(
+                    "resize",
+                    resize_payload(rect, finish_config.handle),
+                    window,
+                    cx,
+                );
+            };
+        let cancel_config = down_config.clone();
+        let cancel_events = down_events.clone();
+        let cancel = move |window: &mut Window, cx: &mut App| {
+            clear_preview(&cancel_events, &cancel_config, window, cx);
         };
-        if (boundary.width - snapshot.boundary_width).abs() > 0.5
-            || (boundary.height - snapshot.boundary_height).abs() > 0.5
-        {
-            cancel_drag(&move_state, &move_events, &move_config, window, cx, view);
-            return;
-        }
-        let dx = f64::from(event.position.x - snapshot.start_position.x);
-        let dy = f64::from(event.position.y - snapshot.start_position.y);
-        if dx.abs() < f64::EPSILON && dy.abs() < f64::EPSILON {
-            return;
-        }
-        move_state.0.borrow_mut().moved = true;
-        let rect = resize_rect(
-            move_config.source,
-            move_config.handle,
-            dx,
-            dy,
-            move_config.constraints,
-            (snapshot.boundary_width, snapshot.boundary_height),
+        let owner = down_events.interaction_owner(&down_config.id);
+        down_events.begin_interaction(
+            crate::interaction::NativeGesture::new(
+                owner,
+                event.position,
+                view,
+                update,
+                finish,
+                cancel,
+            ),
+            window,
+            cx,
         );
-        write_preview(&move_events, &move_config, Some(rect), cx);
         cx.stop_propagation();
-        cx.notify(view);
     });
-
-    let up_state = prepaint.state.clone();
-    let up_config = config;
-    let up_events = events;
-    window.on_mouse_event(move |event: &MouseUpEvent, phase, window, cx| {
-        if phase != DispatchPhase::Bubble || event.button != MouseButton::Left {
-            return;
-        }
-        let snapshot = up_state.0.borrow().clone();
-        if !snapshot.dragging {
-            return;
-        }
-        {
-            let mut inner = up_state.0.borrow_mut();
-            inner.dragging = false;
-            inner.moved = false;
-        }
-        clear_preview(&up_events, &up_config, window, cx);
-        if snapshot.moved {
-            let boundary_unchanged = up_events
-                .element_bounds(&up_config.boundary_ref, cx)
-                .is_some_and(|boundary| {
-                    (boundary.width - snapshot.boundary_width).abs() <= 0.5
-                        && (boundary.height - snapshot.boundary_height).abs() <= 0.5
-                });
-            if !boundary_unchanged {
-                cx.stop_propagation();
-                cx.notify(view);
-                return;
-            }
-            let dx = f64::from(event.position.x - snapshot.start_position.x);
-            let dy = f64::from(event.position.y - snapshot.start_position.y);
-            let rect = resize_rect(
-                up_config.source,
-                up_config.handle,
-                dx,
-                dy,
-                up_config.constraints,
-                (snapshot.boundary_width, snapshot.boundary_height),
-            );
-            let deferred = up_events.clone();
-            let payload = resize_payload(rect, up_config.handle);
-            window.defer(cx, move |window, cx| {
-                let _ = deferred.emit("resize", payload, window, cx);
-            });
-        }
-        cx.stop_propagation();
-        cx.notify(view);
-    });
-}
-
-fn cancel_drag(
-    state: &ResizableState,
-    events: &PrimitiveEventEmitter,
-    config: &ResizableConfig,
-    window: &mut Window,
-    cx: &mut App,
-    view: gpui::EntityId,
-) {
-    {
-        let mut inner = state.0.borrow_mut();
-        inner.dragging = false;
-        inner.moved = false;
-    }
-    clear_preview(events, config, window, cx);
-    cx.notify(view);
 }
 
 fn clear_preview(
-    events: &PrimitiveEventEmitter,
+    events: &PrimitiveContext,
     config: &ResizableConfig,
     window: &mut Window,
     cx: &mut App,
@@ -493,7 +447,7 @@ fn clear_preview(
 }
 
 fn write_preview(
-    events: &PrimitiveEventEmitter,
+    events: &PrimitiveContext,
     config: &ResizableConfig,
     rect: Option<ResizeRect>,
     cx: &mut App,
@@ -502,12 +456,19 @@ fn write_preview(
     let y = rect.map(|rect| rect.y - config.source.y);
     let width = rect.map(|rect| rect.width);
     let height = rect.map(|rect| rect.height);
-    let _ = events.write_signal(&config.x_signal, SignalValue::OptionalFloat(x), cx);
-    let _ = events.write_signal(&config.y_signal, SignalValue::OptionalFloat(y), cx);
-    let _ = events.write_signal(&config.width_signal, SignalValue::OptionalFloat(width), cx);
-    let _ = events.write_signal(
-        &config.height_signal,
-        SignalValue::OptionalFloat(height),
+    let _ = events.write_signals(
+        [
+            (config.x_signal.clone(), SignalValue::OptionalFloat(x)),
+            (config.y_signal.clone(), SignalValue::OptionalFloat(y)),
+            (
+                config.width_signal.clone(),
+                SignalValue::OptionalFloat(width),
+            ),
+            (
+                config.height_signal.clone(),
+                SignalValue::OptionalFloat(height),
+            ),
+        ],
         cx,
     );
 }
@@ -589,9 +550,9 @@ fn resize_rect_aspect(
         source.height
     };
     let desired_width = if handle.moves_horizontal() && handle.moves_vertical() {
-        let from_width_error = (raw_width / aspect_ratio - raw_height).abs();
-        let from_height_error = (raw_height * aspect_ratio - raw_width).abs();
-        if from_width_error <= from_height_error {
+        let horizontal_intent = (raw_width - source.width).abs();
+        let vertical_intent = (raw_height * aspect_ratio - source.width).abs();
+        if horizontal_intent >= vertical_intent {
             raw_width
         } else {
             raw_height * aspect_ratio
@@ -696,7 +657,46 @@ fn resize_payload(rect: ResizeRect, handle: ResizeHandle) -> UiValue {
 }
 
 #[derive(Default)]
-pub struct ResizablePrimitiveHandler;
+pub struct ResizablePrimitiveHandler {
+    controls: BTreeMap<PrimitiveInstanceId, (ResizableConfig, PrimitiveContext)>,
+}
+
+fn perform_keyboard_resize(
+    config: &ResizableConfig,
+    events: &PrimitiveContext,
+    key: &str,
+    shift: bool,
+    window: &mut Window,
+    cx: &mut App,
+) -> bool {
+    if config.disabled {
+        return false;
+    }
+    let step = if shift {
+        config.keyboard_step * 4.0
+    } else {
+        config.keyboard_step
+    };
+    let Some((dx, dy)) = keyboard_delta(config.handle, key, step) else {
+        return false;
+    };
+    let Some(boundary) = config.boundary_size.get() else {
+        return false;
+    };
+    if config.constraints.contain && !rect_within_boundary(config.source, boundary) {
+        return false;
+    }
+    let rect = resize_rect(
+        config.source,
+        config.handle,
+        dx,
+        dy,
+        config.constraints,
+        boundary,
+    );
+    events.propose("resize", resize_payload(rect, config.handle), window, cx);
+    true
+}
 
 impl PrimitiveHandler for ResizablePrimitiveHandler {
     fn uses_primary_focus(&self) -> bool {
@@ -706,11 +706,15 @@ impl PrimitiveHandler for ResizablePrimitiveHandler {
     fn render(
         &mut self,
         instance: &PrimitiveInstance,
-        events: &PrimitiveEventEmitter,
+        events: &PrimitiveContext,
         theme: &PrimitiveTheme,
         _: &mut Window,
         _: &mut App,
     ) -> Result<AnyElement, String> {
+        let id = instance
+            .id
+            .clone()
+            .ok_or_else(|| "ResizableHandlePrimitive requires a stable key".to_owned())?;
         let config = parse_config(
             &instance.node.props,
             instance.focus_handle().cloned(),
@@ -718,54 +722,48 @@ impl PrimitiveHandler for ResizablePrimitiveHandler {
         )?;
         let key_config = config.clone();
         let key_events = events.clone();
+        self.controls.insert(id, (config.clone(), events.clone()));
         let mut root = div().size_full();
         if let Some(focus) = config.focus.as_ref() {
             root = root.track_focus(&focus.clone().tab_stop(!config.disabled));
         }
         Ok(root
             .on_key_down(move |event: &KeyDownEvent, window, cx| {
-                if key_config.disabled {
-                    return;
-                }
-                let step = if event.keystroke.modifiers.shift {
-                    key_config.keyboard_step * 4.0
-                } else {
-                    key_config.keyboard_step
-                };
-                let Some((dx, dy)) =
-                    keyboard_delta(key_config.handle, event.keystroke.key.as_str(), step)
-                else {
-                    return;
-                };
-                let Some(boundary) = key_events.element_bounds(&key_config.boundary_ref, cx) else {
-                    return;
-                };
-                if key_config.constraints.contain
-                    && !rect_within_boundary(key_config.source, (boundary.width, boundary.height))
-                {
-                    return;
-                }
-                let rect = resize_rect(
-                    key_config.source,
-                    key_config.handle,
-                    dx,
-                    dy,
-                    key_config.constraints,
-                    (boundary.width, boundary.height),
-                );
-                let _ = key_events.emit(
-                    "resize",
-                    resize_payload(rect, key_config.handle),
+                if perform_keyboard_resize(
+                    &key_config,
+                    &key_events,
+                    event.keystroke.key.as_str(),
+                    event.keystroke.modifiers.shift,
                     window,
                     cx,
-                );
-                cx.stop_propagation();
+                ) {
+                    cx.stop_propagation();
+                }
             })
             .child(ResizableHandleElement {
                 config,
                 events: events.clone(),
             })
             .into_any_element())
+    }
+
+    fn perform_key(
+        &mut self,
+        instance: &PrimitiveInstanceId,
+        key: &str,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Result<bool, String> {
+        let Some((config, events)) = self.controls.get(instance).cloned() else {
+            return Ok(false);
+        };
+        Ok(perform_keyboard_resize(
+            &config, &events, key, false, window, cx,
+        ))
+    }
+
+    fn unmount(&mut self, instance: &PrimitiveInstanceId) {
+        self.controls.remove(instance);
     }
 }
 
@@ -774,8 +772,8 @@ fn parse_config(
     focus: Option<FocusHandle>,
     theme: &PrimitiveTheme,
 ) -> Result<ResizableConfig, String> {
-    let handle = string_prop(props, "handle")
-        .as_deref()
+    let handle = props
+        .string("handle")
         .and_then(ResizeHandle::parse)
         .ok_or_else(|| "resizable handle must be n, s, e, w, ne, nw, se, or sw".to_owned())?;
     let source = ResizeRect {
@@ -785,19 +783,19 @@ fn parse_config(
         height: required_number(props, "height")?,
     };
     let constraints = ResizeConstraints {
-        min_width: number_prop(props, "min_width").unwrap_or(24.0),
-        min_height: number_prop(props, "min_height").unwrap_or(24.0),
-        max_width: number_prop(props, "max_width").unwrap_or(MAX_RESIZE_DIMENSION),
-        max_height: number_prop(props, "max_height").unwrap_or(MAX_RESIZE_DIMENSION),
+        min_width: props.number("min_width").unwrap_or(24.0),
+        min_height: props.number("min_height").unwrap_or(24.0),
+        max_width: props.number("max_width").unwrap_or(MAX_RESIZE_DIMENSION),
+        max_height: props.number("max_height").unwrap_or(MAX_RESIZE_DIMENSION),
         aspect_ratio: optional_number_prop(props, "aspect_ratio")?,
-        contain: bool_prop(props, "contain").unwrap_or(true),
+        contain: props.boolean("contain").unwrap_or(true),
     };
     validate_geometry(source, constraints)?;
     let x_signal = required_optional_float_signal(props, "x_signal")?;
     let y_signal = required_optional_float_signal(props, "y_signal")?;
     let width_signal = required_optional_float_signal(props, "width_signal")?;
     let height_signal = required_optional_float_signal(props, "height_signal")?;
-    let keyboard_step = number_prop(props, "keyboard_step").unwrap_or(8.0);
+    let keyboard_step = props.number("keyboard_step").unwrap_or(8.0);
     if !keyboard_step.is_finite() || !(0.0..=512.0).contains(&keyboard_step) || keyboard_step == 0.0
     {
         return Err("resizable keyboard_step must be finite and in (0, 512]".to_owned());
@@ -811,14 +809,17 @@ fn parse_config(
         handle,
         source,
         constraints,
-        boundary_ref: ref_prop(props, "boundary_ref")
+        boundary_ref: props
+            .element_ref("boundary_ref")
+            .cloned()
             .ok_or_else(|| "resizable requires boundary_ref".to_owned())?,
+        boundary_size: Rc::new(Cell::new(None)),
         x_signal,
         y_signal,
         width_signal,
         height_signal,
         keyboard_step,
-        disabled: bool_prop(props, "disabled").unwrap_or(false),
+        disabled: props.boolean("disabled").unwrap_or(false),
         idle_color: theme
             .color("border")
             .unwrap_or(Rgba8::from_rgba_hex(0x5555_55ff)),
@@ -859,37 +860,18 @@ fn validate_geometry(source: ResizeRect, constraints: ResizeConstraints) -> Resu
 }
 
 fn required_number(props: &PrimitiveProps, name: &str) -> Result<f64, String> {
-    number_prop(props, name).ok_or_else(|| format!("resizable requires numeric {name}"))
-}
-
-fn number_prop(props: &PrimitiveProps, name: &str) -> Option<f64> {
-    match props.get(name) {
-        Some(PrimitiveValue::Data(UiValue::Float(value))) => Some(*value),
-        Some(PrimitiveValue::Data(UiValue::Integer(value))) => value.to_string().parse().ok(),
-        _ => None,
-    }
+    props
+        .number(name)
+        .ok_or_else(|| format!("resizable requires numeric {name}"))
 }
 
 fn optional_number_prop(props: &PrimitiveProps, name: &str) -> Result<Option<f64>, String> {
     match props.get(name) {
         None | Some(PrimitiveValue::Data(UiValue::Null)) => Ok(None),
-        Some(_) => number_prop(props, name)
+        Some(_) => props
+            .number(name)
             .map(Some)
             .ok_or_else(|| format!("resizable {name} must be an optional number")),
-    }
-}
-
-fn string_prop(props: &PrimitiveProps, name: &str) -> Option<String> {
-    match props.get(name) {
-        Some(PrimitiveValue::Data(UiValue::String(value))) => Some(value.clone()),
-        _ => None,
-    }
-}
-
-fn bool_prop(props: &PrimitiveProps, name: &str) -> Option<bool> {
-    match props.get(name) {
-        Some(PrimitiveValue::Data(UiValue::Bool(value))) => Some(*value),
-        _ => None,
     }
 }
 
@@ -897,21 +879,14 @@ fn required_optional_float_signal(
     props: &PrimitiveProps,
     name: &str,
 ) -> Result<crate::NativeSignal, String> {
-    let signal = match props.get(name) {
-        Some(PrimitiveValue::Signal(signal)) => signal.clone(),
-        _ => return Err(format!("resizable requires signal {name}")),
-    };
+    let signal = props
+        .signal(name)
+        .cloned()
+        .ok_or_else(|| format!("resizable requires signal {name}"))?;
     if signal.id().kind() != SignalKind::OptionalFloat {
         return Err(format!("resizable {name} must be optional_float"));
     }
     Ok(signal)
-}
-
-fn ref_prop(props: &PrimitiveProps, name: &str) -> Option<crate::ElementRef> {
-    match props.get(name) {
-        Some(PrimitiveValue::Ref(reference)) => Some(reference.clone()),
-        _ => None,
-    }
 }
 
 fn rect_schema() -> ValueSchema {
@@ -1056,7 +1031,7 @@ pub fn resizable_primitive_descriptor() -> PrimitiveDescriptor {
             },
         )]),
         state: ComponentStateSchema::default(),
-        lifecycle: false,
+        lifecycle: true,
         effect: None,
     }
 }

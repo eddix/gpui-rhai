@@ -566,19 +566,21 @@ pub(crate) fn canvas_motion_point(
     y: f64,
     motion: crate::geometry::CanvasMotionTransform,
 ) -> (f64, f64) {
-    let center_x = width / 2.0;
-    let center_y = height / 2.0;
-    let rotate = motion.rotate.to_radians();
-    let skew_x = motion.skew_x.to_radians().tan();
-    let skew_y = motion.skew_y.to_radians().tan();
-    let scaled_x = (x - center_x) * motion.scale_x;
-    let scaled_y = (y - center_y) * motion.scale_y;
-    let local_x = scaled_x + skew_x * scaled_y;
-    let local_y = scaled_y + skew_y * scaled_x;
-    (
-        local_x * rotate.cos() - local_y * rotate.sin() + center_x,
-        local_x * rotate.sin() + local_y * rotate.cos() + center_y,
-    )
+    canvas_motion_affine(width, height, motion).map_point((x, y))
+}
+
+pub(crate) fn canvas_motion_affine(
+    width: f64,
+    height: f64,
+    motion: crate::geometry::CanvasMotionTransform,
+) -> crate::Affine2D {
+    crate::Affine2D::scale(motion.scale_x, motion.scale_y)
+        .and_then(|transform| {
+            transform.then(crate::Affine2D::skew_degrees(motion.skew_x, motion.skew_y)?)
+        })
+        .and_then(|transform| transform.then(crate::Affine2D::rotation_degrees(motion.rotate)?))
+        .and_then(|transform| transform.around((width / 2.0, height / 2.0)))
+        .unwrap_or(crate::Affine2D::IDENTITY)
 }
 
 pub(crate) fn trimmed_canvas_paths(
@@ -685,14 +687,19 @@ pub(crate) fn flatten_path(
     paths
 }
 
-fn canvas_transform_point(transform: CanvasTransform, x: f64, y: f64) -> (f64, f64) {
-    let radians = transform.rotate_degrees.to_radians();
-    let scaled_x = x * transform.scale;
-    let scaled_y = y * transform.scale;
-    (
-        scaled_x * radians.cos() - scaled_y * radians.sin() + transform.translate_x,
-        scaled_x * radians.sin() + scaled_y * radians.cos() + transform.translate_y,
-    )
+pub(crate) fn canvas_transform_point(transform: CanvasTransform, x: f64, y: f64) -> (f64, f64) {
+    crate::Affine2D::scale(transform.scale, transform.scale)
+        .and_then(|affine| {
+            affine.then(crate::Affine2D::rotation_degrees(transform.rotate_degrees)?)
+        })
+        .and_then(|affine| {
+            affine.then(crate::Affine2D::translation(
+                transform.translate_x,
+                transform.translate_y,
+            )?)
+        })
+        .expect("validated canvas path transform remains finite")
+        .map_point((x, y))
 }
 
 fn append_quadratic(

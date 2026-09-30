@@ -467,6 +467,8 @@ pub(crate) fn native_role(role: &str) -> Result<Option<gpui::Role>, Accessibilit
         "text_field" => Some(Role::TextInput),
         "toolbar" => Some(Role::Toolbar),
         "tooltip" => Some(Role::Tooltip),
+        "tree" => Some(Role::Tree),
+        "treeitem" => Some(Role::TreeItem),
         other => return Err(AccessibilityError::UnsupportedRole(other.to_owned())),
     };
     Ok(role)

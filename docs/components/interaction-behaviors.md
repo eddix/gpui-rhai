@@ -15,14 +15,17 @@ does not imply availability in an already published crate.
 
 | Capability | Responsibility | Typical use | Current status |
 |---|---|---|---|
-| Draggable | Change one object's position in a declared coordinate space | Floating card, canvas node, movable overlay | Planned reusable behavior; raw pointer/capture mechanisms already exist |
+| Draggable | Change one object's position in a declared coordinate space | Floating card, canvas node, movable overlay | Implemented as `components/draggable::Draggable` |
+| DragSource | Begin an in-app typed payload drag without changing accepted object position | Resource tile, command item, transferable card | Implemented as `components/drag_source::DragSource` |
 | Resizable | Change one object's size or bounds using edges/handles | Floating card, image frame, adjustable content container | Implemented as `components/resizable::Resizable`; independent of SplitPane |
 | SplitPane | Redistribute a shared layout region between panels | Navigation/content, preview/source, horizontal or vertical split | Implemented as `components/split_pane::SplitPane` |
-| Droppable / DropZone | Accept a typed drag payload and propose a domain operation | Kanban column, object container, in-app resource drop target | Planned; external OS/file drag-and-drop is a separate Host integration |
-| Sortable / Reorderable | Propose a new order for a keyed collection | List, Tab order, toolbar items | Planned interactive behavior; Motion ReorderList only animates supplied order |
-| Pannable / Zoomable / PanZoom | Change the viewing transform while preserving content coordinates | Map, image viewer, node canvas | Planned generic surface; Chart already has domain-specific viewport interactions |
-| Selectable / SelectionArea | Maintain object selection by click, modifiers, range, or marquee | File grid, canvas objects, multi-selection surface | Planned generic surface; Table and text viewers retain their existing selection contracts |
-| Rotatable | Change an object's angle around an explicit pivot | Drawing or design tools | Planned, specialized surface; not a promise of arbitrary GPUI subtree transforms |
+| DropZone | Accept a typed drag payload and propose a domain operation | Kanban column, object container, in-app resource drop target | Implemented as `components/drop_zone::DropZone` |
+| Sortable | Propose a new order for a keyed collection | List, Tab order, toolbar items | Implemented for bounded rich items and vertical virtual data |
+| PanZoom | Change the viewing transform while preserving content coordinates | Map, image viewer, node canvas | Implemented for Canvas over shared affine geometry; Chart keeps its domain viewport |
+| SelectionArea | Maintain object selection by click, modifiers, range, or marquee | File grid, canvas objects, multi-selection surface | Implemented for bounded Canvas object rectangles |
+| Rotatable | Change an object's angle around an explicit pivot | Drawing or design tools | Implemented for Canvas with atomic pivot compensation |
+| RangeSlider | Select one ordered numeric interval with two thumbs | Filters, time/value windows | Implemented with shared Slider axis/RTL/step math |
+| Tree | Navigate a flattened hierarchical outline | Files, settings, object hierarchy | Implemented over shared Rust outline projection and virtual_collection |
 | Dockable / DockLayout | Arrange panels through docking, grouping, splitting, or floating | IDE/tool workspaces | Deferred higher-level layout system |
 
 ## Choose by the state being changed
@@ -43,7 +46,7 @@ does not implement free-floating resizing. Independent operating-system window
 movement/resizing belongs to the Rust Host and native Window APIs, not to these
 in-window behaviors.
 
-## Draggable — planned
+## Draggable — implemented
 
 The caller owns the accepted position. The behavior defines its coordinate
 space, movable axes, optional boundary constraints, and a drag handle or eligible
@@ -59,6 +62,28 @@ Dragging a panel by its title region must not steal input from buttons, text
 selection, native editors, or scrollbars inside it. Define cancellation and a
 keyboard alternative for moving the object. Free positioning alone neither
 transfers data to another container nor changes collection order.
+
+| Props / event | Current meaning |
+|---|---|
+| `key`, `label` | Stable controlled identity and accessible interaction label |
+| `position` | Required controlled `{x,y}` in local logical pixels |
+| `content` | Required positioned object content |
+| `handle` | Optional dedicated handle node; absent means the whole object is eligible |
+| `axes` | `both`, `horizontal`, or `vertical` |
+| `contain` | Clamp the object to the local boundary; true by default |
+| `threshold` | Movement before drag activation; default 4 logical pixels |
+| `snap_x`, `snap_y` | Optional positive per-axis snap steps |
+| `keyboard_step` | Arrow-key step; Shift multiplies by four |
+| `disabled` | Suppress pointer and keyboard manipulation |
+| `on_move` / `move({x,y})` | One final controlled-position proposal |
+
+The native primitive preserves the initial grab offset because preview derives
+from total pointer delta, not the pointer's absolute origin. It cancels when the
+boundary changes during a gesture and restores the controlled position on
+Escape, pointer loss, disable, unmount or Host rejection.
+
+Source: [draggable.rhai](../../registry/components/draggable.rhai).
+Runnable story: `gpui-rhai gallery --story components/draggable`.
 
 ## Resizable — implemented
 
@@ -140,9 +165,10 @@ drag-to-reorder panels, docking, and persistence are not part of this component.
 Source: [split_pane.rhai](../../registry/components/split_pane.rhai).
 Runnable story: `gpui-rhai gallery --story components/split-pane`.
 
-## Droppable / DropZone — planned
+## DragSource and DropZone — implemented
 
-Pair a drag source with a target that declares accepted payload types and
+`DragSource` does not imply free positioning. Pair it with a `DropZone` that
+declares accepted payload types and
 operations. Separate source identity, payload, current target, eligibility,
 preview, and committed result. Hovering a target is not a data mutation.
 
@@ -158,7 +184,26 @@ or retained GPUI objects. OS file drops and cross-window/platform drag sessions
 need explicit Host integration and permissions; an in-app DropZone must not
 silently grant script filesystem access. Provide a keyboard-equivalent operation.
 
-## Sortable / Reorderable — planned
+`DragSource` requires stable `key`, `label`, `source_id`, `payload_type`, bounded
+`payload`, `operation`, and `content`. It supports threshold, disabled state,
+optional `keyboard_target`, and `drag_end({accepted,target_id,operation,cancelled})`.
+`DropZone` requires stable `key`, `label`, `target_id`, accepted
+`payload_types`, accepted `operations`, and content; optional priority resolves
+nested/overlapping targets before the smaller-area tie-break. Its
+`drop({source_id,target_id,payload_type,payload,operation,x,y})` event is the
+single controlled domain proposal.
+
+The coordinator retains no Rhai callback in the pointer-move hot path. It owns
+only the bounded typed payload and frame-local target registrations. Escape,
+pointer loss, source/target unmount, view suspend and Host teardown clear
+transient feedback. Enter/Space on a focused source with `keyboard_target`
+executes the same type/operation acceptance and target callback.
+
+Sources: [drag_source.rhai](../../registry/components/drag_source.rhai) and
+[drop_zone.rhai](../../registry/components/drop_zone.rhai).
+Runnable story: `gpui-rhai gallery --story components/drag-drop`.
+
+## Sortable — implemented
 
 The caller owns the ordered stable keys. The interaction chooses an insertion
 position and previews the resulting order, then proposes a move/order on commit.
@@ -176,7 +221,25 @@ It does **not** currently provide dragging, insertion targets, or reorder events
 Reuse its animation capability where appropriate, without confusing animation
 with the interaction and controlled-order model.
 
-## Pannable / Zoomable / PanZoom — planned
+`components/sortable::Sortable` accepts at most 512 source-owned
+items with unique stable keys. Each item has an independent focusable grip so
+interactive content is not covered by a drag overlay. Pointer release emits one
+`reorder({source_key,anchor_key,placement,x,y})`; self and adjacent no-op moves
+emit nothing. Option/Alt + Arrow, Home, and End use the same registered
+before/after targets. Target registrations carry their own scroll ancestry, so
+edge movement scrolls the destination container rather than the source lane.
+
+Source: [sortable.rhai](../../registry/components/sortable.rhai).
+Runnable story: `gpui-rhai gallery --story components/sortable`.
+
+The vertical virtual mode accepts keyed maps or `NativeCollection`, renders
+labels only for the realized window, and receives stable previous/next/first/
+last keys from the generic collection payload. The Host coordinator exposes
+only the active drag key to the virtual policy, which pins that item plus its
+bounded halo while the viewport realizes new insertion anchors. No numeric
+index crosses the reorder proposal boundary.
+
+## PanZoom — Canvas implementation
 
 The caller owns a viewport transform with defined pan coordinates, scale limits,
 and reset/fit semantics. Zoom anchored at a pointer or viewport point preserves
@@ -193,7 +256,20 @@ including coordinate-specific semantics and linked logical windows. A future
 generic PanZoom must integrate with those contracts rather than introducing a
 second authoritative Chart camera.
 
-## Selectable / SelectionArea — planned
+`components/pan_zoom::PanZoom` accepts a controlled `{x,y,scale}` transform and
+one Canvas node. Drag panning uses the shared Host gesture coordinator. Wheel
+zoom keeps the content coordinate below the pointer stationary, coalesces
+precise phase-less events, respects explicit touch phases, and emits one final
+proposal. Ordinary wheel input bubbles under the default `modifier` policy.
+Arrow keys pan; `+`/`-` zoom around the viewport center; `0` resets.
+
+The transform hot lane is one four-signal atomic patch. Canvas paint and
+hit-testing use the same `Affine2D`-backed scale/rotation snapshot; the component
+does not claim support for arbitrary GPUI subtrees, native editors, or Chart
+domain cameras. Source: [pan_zoom.rhai](../../registry/components/pan_zoom.rhai).
+Runnable story: `gpui-rhai gallery --story components/pan-zoom`.
+
+## SelectionArea — Canvas implementation
 
 The caller owns selected object keys, with a distinct active/cursor key and range
 anchor where needed. Define single, additive/toggle, range, and marquee selection
@@ -209,7 +285,17 @@ selected object. Table, Command, and text viewers keep their existing controlled
 selection models. A new selection surface must not consume native editing keys
 or pointer gestures merely because it is an ancestor.
 
-## Rotatable — planned specialized behavior
+`components/selection_area::SelectionArea` accepts up to 10,000 stable keyed
+Canvas rectangles and controlled selected/active/anchor keys. Click, platform
+toggle, Shift range, arrows/Home/End/Space, and intersect/enclose marquee all
+emit the same bounded proposal. Pointer movement updates only one native
+marquee rectangle. Canvas-local conversion uses the shared inverse affine
+transform, including PanZoom scale and Rotatable rotation.
+
+Source: [selection_area.rhai](../../registry/components/selection_area.rhai).
+Runnable story: `gpui-rhai gallery --story components/selection-area`.
+
+## Rotatable — Canvas implementation
 
 The caller owns an angle and explicit pivot. Define units, angle wrapping,
 optional snapping, and how rotation composes with movement and resizing.
@@ -220,6 +306,25 @@ not establish support for arbitrary native input widgets or GPUI subtrees.
 Provide keyboard increments, cancellation, and a non-drag way to inspect or set
 the angle. This is a later editor-oriented capability, not a prerequisite for
 ordinary Gallery layouts.
+
+`components/rotatable::Rotatable` now implements that contract for Canvas. The
+caller supplies the local pivot and controlled angle; optional snap is shared
+by pointer and keyboard input. The native preview writes angle and pivot
+translation as one atomic signal patch, so Canvas painting and hit testing use
+the same affine result. A separate optional handle keeps rotation composable
+with PanZoom or SelectionArea instead of claiming the whole viewport.
+
+Source: [rotatable.rhai](../../registry/components/rotatable.rhai).
+Runnable story: `gpui-rhai gallery --story components/rotatable`.
+
+## Integrated acceptance scene
+
+`gpui-rhai gallery --story workbench/interaction-lab` mounts SplitPane,
+Resizable, Draggable, typed drag/drop, virtual Sortable, Canvas PanZoom,
+Rotatable, SelectionArea, RangeSlider and Tree in one stateful workbench. The
+scene uses controlled application state throughout; its native acceptance test
+also completes a cross-component DragSource → DropZone operation rather than
+only checking that the widgets paint.
 
 ## Dockable / DockLayout — deferred composition
 
@@ -266,11 +371,11 @@ sizes, theme overrides, lifecycle interruption, and data changes mid-gesture.
 Assert final geometry/order/selection and resource cleanup, not only a callback
 count or a nonempty screenshot.
 
-Resizable and SplitPane now have distinct floating-card and shared-layout
-acceptance scenes. Prioritize reusable Draggable next, then add typed drag/drop
-and Sortable with keyed/virtualized data. Plan generic
-PanZoom and object selection around a real canvas/viewer use case. Rotatable and
-DockLayout remain later specialized work.
+Resizable and SplitPane have distinct floating-card and shared-layout scenes.
+For 0.1.8, first migrate them and existing native controls to the shared
+Interaction Runtime, then add Draggable, DragSource/DropZone, Sortable, PanZoom,
+SelectionArea and Rotatable. RangeSlider and Tree join the same release through
+the shared axis and collection foundations. DockLayout remains later work.
 
 When a planned entry lands, replace its status with the exact public schema,
 supported surfaces and limitations, story, and test references. Keep component

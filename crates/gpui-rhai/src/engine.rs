@@ -23,6 +23,11 @@ use crate::column_resize::{
 use crate::component::{ComponentExportCollector, ComponentExportError, ComponentRegistry};
 use crate::context::{UiContext, register_ui_context_api};
 use crate::date::register_date_api;
+use crate::drag_drop::{
+    DragSourcePrimitiveHandler, DropZonePrimitiveHandler, drag_source_primitive_descriptor,
+    drop_zone_primitive_descriptor,
+};
+use crate::draggable::{DraggablePrimitiveHandler, draggable_primitive_descriptor};
 use crate::motion::register_motion_api;
 use crate::node::{
     asset_image_node, box_node, canvas_node, column_node, directional_asset_image_node,
@@ -30,9 +35,14 @@ use crate::node::{
     generic_image_node, image_node, layer_node, lazy_error_boundary_node, motion_group_node,
     overlay_node, rich_text_node, row_node, span_value, stack_node, svg_node, text_node,
 };
+use crate::pan_zoom::{PanZoomPrimitiveHandler, pan_zoom_primitive_descriptor};
 use crate::primitive::{PrimitiveDescriptor, PrimitiveError, PrimitiveHandler, PrimitiveRegistry};
 use crate::range_input::{RangeInputPrimitiveHandler, range_input_primitive_descriptor};
+use crate::range_slider::{RangeSliderPrimitiveHandler, range_slider_primitive_descriptor};
 use crate::resizable::{ResizablePrimitiveHandler, resizable_primitive_descriptor};
+use crate::rotatable::{RotatablePrimitiveHandler, rotatable_primitive_descriptor};
+use crate::selection_area::{SelectionAreaPrimitiveHandler, selection_area_primitive_descriptor};
+use crate::sortable::{SortablePrimitiveHandler, sortable_primitive_descriptor};
 use crate::split_resize::{SplitResizePrimitiveHandler, split_resize_primitive_descriptor};
 use crate::style::register_style_api;
 use crate::text_area::{
@@ -661,6 +671,7 @@ impl RuntimeEngine {
         register_motion_api(&mut engine);
         register_text_area_api(&mut engine);
         register_canvas_api(&mut engine);
+        crate::collection_projection::register_collection_projection_api(&mut engine);
         let evaluation_generation = Rc::new(Cell::new(ScriptGeneration::default()));
         let component_exports = ComponentExportCollector::new();
         let (component_render, component_renderers) = register_component_runtime_apis(
@@ -741,8 +752,42 @@ impl RuntimeEngine {
             SplitResizePrimitiveHandler,
         )
         .expect("built-in split resize primitive descriptor is valid");
-        self.register_primitive(resizable_primitive_descriptor(), ResizablePrimitiveHandler)
-            .expect("built-in resizable primitive descriptor is valid");
+        self.register_primitive(
+            resizable_primitive_descriptor(),
+            ResizablePrimitiveHandler::default(),
+        )
+        .expect("built-in resizable primitive descriptor is valid");
+        self.register_primitive(draggable_primitive_descriptor(), DraggablePrimitiveHandler)
+            .expect("built-in draggable primitive descriptor is valid");
+        self.register_primitive(
+            drag_source_primitive_descriptor(),
+            DragSourcePrimitiveHandler::default(),
+        )
+        .expect("built-in drag source primitive descriptor is valid");
+        self.register_primitive(drop_zone_primitive_descriptor(), DropZonePrimitiveHandler)
+            .expect("built-in drop zone primitive descriptor is valid");
+        self.register_primitive(
+            sortable_primitive_descriptor(),
+            SortablePrimitiveHandler::default(),
+        )
+        .expect("built-in sortable primitive descriptor is valid");
+        self.register_primitive(
+            pan_zoom_primitive_descriptor(),
+            PanZoomPrimitiveHandler::default(),
+        )
+        .expect("built-in pan zoom primitive descriptor is valid");
+        self.register_primitive(
+            range_slider_primitive_descriptor(),
+            RangeSliderPrimitiveHandler::default(),
+        )
+        .expect("built-in range slider primitive descriptor is valid");
+        self.register_primitive(rotatable_primitive_descriptor(), RotatablePrimitiveHandler)
+            .expect("built-in rotatable primitive descriptor is valid");
+        self.register_primitive(
+            selection_area_primitive_descriptor(),
+            SelectionAreaPrimitiveHandler::default(),
+        )
+        .expect("built-in selection area primitive descriptor is valid");
         self.register_primitive(
             text_input_primitive_descriptor(),
             TextInputPrimitiveHandler::default(),
@@ -1476,8 +1521,9 @@ impl RuntimeEngine {
                             "virtual collection item {index} disappeared"
                         ))
                     })?;
-                let (key, payload) =
+                let (key, mut payload) =
                     collection_payload(&item, index).map_err(RuntimeError::Evaluate)?;
+                add_collection_neighbors(&recipe.data, index, &mut payload);
                 let invocation = &recipe.renderer_context;
                 self.align_execution_session_to(invocation.operation_base());
                 let started = self.begin_timing();
@@ -2206,6 +2252,11 @@ fn register_native_handler_api(engine: &mut Engine, registry: &crate::NativeHand
         );
 }
 
+pub(crate) const RHAI_MAX_ARRAY_SIZE: usize = 10_000;
+pub(crate) const RHAI_MAX_MAP_SIZE: usize = 100_000;
+pub(crate) const RHAI_MAX_STRING_SIZE: usize = 1_048_576;
+pub(crate) const RHAI_MAX_DATA_DEPTH: usize = 64;
+
 fn configure_engine_limits(engine: &mut Engine) {
     engine.set_max_call_levels(64);
     engine.set_max_expr_depths(64, 32);
@@ -2213,9 +2264,9 @@ fn configure_engine_limits(engine: &mut Engine) {
     // contexts. The runtime's progress adapter enforces one cumulative budget
     // across nested evaluators and starts delayed callbacks with fresh quota.
     engine.set_max_operations(0);
-    engine.set_max_array_size(10_000);
-    engine.set_max_map_size(100_000);
-    engine.set_max_string_size(1_048_576);
+    engine.set_max_array_size(RHAI_MAX_ARRAY_SIZE);
+    engine.set_max_map_size(RHAI_MAX_MAP_SIZE);
+    engine.set_max_string_size(RHAI_MAX_STRING_SIZE);
 }
 
 fn register_define_component_api(
@@ -2401,7 +2452,7 @@ fn execute_component_render(
     )? {
         return Ok(node);
     }
-    let native_context = crate::invocation::ScriptInvocationContext::capture(call);
+    let native_context = crate::invocation::ScriptInvocationContext::capture_retained(call);
     let caller_binding = caller_component_binding(call, &caller_context);
     bind_component_callback_props(
         &mut invocation.props,
@@ -2482,12 +2533,9 @@ fn caller_component_binding(
         component: caller_context.component_path().clone(),
         incarnation: caller_context.component_incarnation(),
         events: caller_context.event_schemas().clone(),
-        context: Some(
-            caller_context
-                .native_context()
-                .cloned()
-                .unwrap_or_else(|| crate::invocation::ScriptInvocationContext::capture_entry(call)),
-        ),
+        context: Some(caller_context.native_context().cloned().unwrap_or_else(|| {
+            crate::invocation::ScriptInvocationContext::capture_entry_retained(call)
+        })),
     }
 }
 
@@ -2885,7 +2933,8 @@ fn register_effect_api(engine: &mut Engine, active: &ActiveComponentRenderState)
                     .map_err(|error| Box::new(component_render_error(error.to_string())))?;
                 let dependencies = UiValue::from_dynamic(dependencies)
                     .map_err(|error| Box::new(component_render_error(error.to_string())))?;
-                let native_context = crate::invocation::ScriptInvocationContext::capture(&call);
+                let native_context =
+                    crate::invocation::ScriptInvocationContext::capture_retained(&call);
                 let mut start = ScriptCallback::try_from_fn_ptr(start, generation)
                     .map_err(|error| Box::new(component_render_error(error.to_string())))?;
                 start.bind_component_scope_if_unset(
@@ -2964,7 +3013,8 @@ fn register_timer_api(engine: &mut Engine, active: &ActiveComponentRenderState) 
                     .map_err(|error| Box::new(component_render_error(error.to_string())))?;
                 let payload = UiValue::from_dynamic(payload)
                     .map_err(|error| Box::new(component_render_error(error.to_string())))?;
-                let native_context = crate::invocation::ScriptInvocationContext::capture(&call);
+                let native_context =
+                    crate::invocation::ScriptInvocationContext::capture_retained(&call);
                 let mut callback = ScriptCallback::try_from_fn_ptr(callback, generation)
                     .map_err(|error| Box::new(component_render_error(error.to_string())))?;
                 callback.bind_component_scope_if_unset(
@@ -3287,7 +3337,8 @@ fn register_virtual_collection_api(engine: &mut Engine, active: &ActiveComponent
                         BTreeMap::new(),
                     )
                     .with_generation(generation);
-                let native_context = crate::invocation::ScriptInvocationContext::capture(&call);
+                let native_context =
+                    crate::invocation::ScriptInvocationContext::capture_retained(&call);
                 let realized = realize_seeded_virtual_collection(
                     &call,
                     &renderer,
@@ -3383,7 +3434,8 @@ fn realize_initial_collection(
                     "virtual collection item {index} disappeared"
                 )))
             })?;
-        let (item_key, payload) = collection_payload(&item, index)?;
+        let (item_key, mut payload) = collection_payload(&item, index)?;
+        add_collection_neighbors(data, index, &mut payload);
         let node = renderer
             .call_within_context::<UiNode>(call, (context.clone(), payload))?
             .with_key(item_key);
@@ -3751,6 +3803,21 @@ fn collection_payload(item: &UiValue, index: usize) -> Result<(String, Map), Box
             ("item".into(), item.clone().into_dynamic()),
         ]),
     ))
+}
+
+fn add_collection_neighbors(data: &crate::VirtualCollectionData, index: usize, payload: &mut Map) {
+    let key = |index: Option<usize>| {
+        index
+            .and_then(|index| data.key(index))
+            .map_or(Dynamic::UNIT, |key| Dynamic::from(key.to_owned()))
+    };
+    payload.insert("previous_key".into(), key(index.checked_sub(1)));
+    payload.insert(
+        "next_key".into(),
+        key(index.checked_add(1).filter(|index| *index < data.len())),
+    );
+    payload.insert("first_key".into(), key((!data.is_empty()).then_some(0)));
+    payload.insert("last_key".into(), key(data.len().checked_sub(1)));
 }
 
 fn nonnegative_usize(value: f64) -> usize {

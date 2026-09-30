@@ -85,6 +85,47 @@ bundled_components!(
         "../components/resizable.rhai"
     ),
     (
+        DRAGGABLE_SOURCE,
+        "components/draggable",
+        "../components/draggable.rhai"
+    ),
+    (
+        DRAG_SOURCE_SOURCE,
+        "components/drag_source",
+        "../components/drag_source.rhai"
+    ),
+    (
+        DROP_ZONE_SOURCE,
+        "components/drop_zone",
+        "../components/drop_zone.rhai"
+    ),
+    (
+        SORTABLE_SOURCE,
+        "components/sortable",
+        "../components/sortable.rhai"
+    ),
+    (
+        PAN_ZOOM_SOURCE,
+        "components/pan_zoom",
+        "../components/pan_zoom.rhai"
+    ),
+    (
+        RANGE_SLIDER_SOURCE,
+        "components/range_slider",
+        "../components/range_slider.rhai"
+    ),
+    (
+        ROTATABLE_SOURCE,
+        "components/rotatable",
+        "../components/rotatable.rhai"
+    ),
+    (
+        SELECTION_AREA_SOURCE,
+        "components/selection_area",
+        "../components/selection_area.rhai"
+    ),
+    (TREE_SOURCE, "components/tree", "../components/tree.rhai"),
+    (
         PAGINATION_SOURCE,
         "components/pagination",
         "../components/pagination.rhai"
@@ -441,6 +482,17 @@ pub const INPUT_STORY_SOURCE: &str = include_str!("../stories/components/input.r
 pub const TABLE_STORY_SOURCE: &str = include_str!("../stories/components/table.rhai");
 pub const SPLIT_PANE_STORY_SOURCE: &str = include_str!("../stories/components/split_pane.rhai");
 pub const RESIZABLE_STORY_SOURCE: &str = include_str!("../stories/components/resizable.rhai");
+pub const DRAGGABLE_STORY_SOURCE: &str = include_str!("../stories/components/draggable.rhai");
+pub const DRAG_DROP_STORY_SOURCE: &str = include_str!("../stories/components/drag_drop.rhai");
+pub const SORTABLE_STORY_SOURCE: &str = include_str!("../stories/components/sortable.rhai");
+pub const PAN_ZOOM_STORY_SOURCE: &str = include_str!("../stories/components/pan_zoom.rhai");
+pub const RANGE_SLIDER_STORY_SOURCE: &str = include_str!("../stories/components/range_slider.rhai");
+pub const ROTATABLE_STORY_SOURCE: &str = include_str!("../stories/components/rotatable.rhai");
+pub const SELECTION_AREA_STORY_SOURCE: &str =
+    include_str!("../stories/components/selection_area.rhai");
+pub const TREE_STORY_SOURCE: &str = include_str!("../stories/components/tree.rhai");
+pub const INTERACTION_LAB_STORY_SOURCE: &str =
+    include_str!("../stories/workbench/interaction_lab.rhai");
 pub const CHART_INTERACTION_STORY_SOURCE: &str = include_str!("../stories/charts/interaction.rhai");
 pub const CHART_CATALOG_STORY_SOURCE: &str = include_str!("../stories/charts/catalog.rhai");
 pub const CHART_STREAMING_STORY_SOURCE: &str = include_str!("../stories/charts/streaming.rhai");
@@ -696,6 +748,179 @@ pub const BUNDLED_STORIES: &[StoryDefinition] = &[
         theme_studio: true,
     },
     StoryDefinition {
+        id: "components/draggable",
+        title: "Draggable",
+        purpose: "Move a controlled card through native preview, pointer commit, and keyboard steps.",
+        category: "layout",
+        keywords: &["layout", "drag", "position", "direct manipulation"],
+        module_ids: &["components/draggable", "components/button"],
+        source_module: "stories/components/draggable",
+        source: DRAGGABLE_STORY_SOURCE,
+        cases: BASIC_CASE,
+        fixture: None,
+        required_features: NO_FEATURES,
+        platforms: DESKTOP_PLATFORMS,
+        test_requirements: STANDARD_STORY_TESTS,
+        documentation: "docs/components/interaction-behaviors.md#draggable--planned",
+        theme_studio: true,
+    },
+    StoryDefinition {
+        id: "components/drag-drop",
+        title: "Drag source and drop zone",
+        purpose: "Transfer one bounded typed payload between controlled application containers.",
+        category: "layout",
+        keywords: &["drag", "drop", "payload", "copy", "move", "keyboard"],
+        module_ids: &["components/drag_source", "components/drop_zone"],
+        source_module: "stories/components/drag_drop",
+        source: DRAG_DROP_STORY_SOURCE,
+        cases: BASIC_CASE,
+        fixture: None,
+        required_features: NO_FEATURES,
+        platforms: DESKTOP_PLATFORMS,
+        test_requirements: STANDARD_STORY_TESTS,
+        documentation: "docs/components/interaction-behaviors.md#dragsource-and-dropzone--implemented",
+        theme_studio: true,
+    },
+    StoryDefinition {
+        id: "components/sortable",
+        title: "Sortable",
+        purpose: "Propose identity-safe order changes without mutating the controlled collection during preview.",
+        category: "layout",
+        keywords: &["sort", "reorder", "drag", "keyboard", "scroll"],
+        module_ids: &["components/sortable", "components/scroll_area"],
+        source_module: "stories/components/sortable",
+        source: SORTABLE_STORY_SOURCE,
+        cases: BASIC_CASE,
+        fixture: None,
+        required_features: NO_FEATURES,
+        platforms: DESKTOP_PLATFORMS,
+        test_requirements: STANDARD_STORY_TESTS,
+        documentation: "docs/components/interaction-behaviors.md#sortable--bounded-implementation-complete",
+        theme_studio: true,
+    },
+    StoryDefinition {
+        id: "components/pan-zoom",
+        title: "PanZoom",
+        purpose: "Pan and pointer-anchor zoom one controlled Canvas viewport through native signals.",
+        category: "layout",
+        keywords: &["pan", "zoom", "canvas", "wheel", "transform"],
+        module_ids: &["components/pan_zoom"],
+        source_module: "stories/components/pan_zoom",
+        source: PAN_ZOOM_STORY_SOURCE,
+        cases: BASIC_CASE,
+        fixture: None,
+        required_features: NO_FEATURES,
+        platforms: DESKTOP_PLATFORMS,
+        test_requirements: STANDARD_STORY_TESTS,
+        documentation: "docs/components/interaction-behaviors.md#panzoom--canvas-implementation",
+        theme_studio: true,
+    },
+    StoryDefinition {
+        id: "components/range-slider",
+        title: "RangeSlider",
+        purpose: "Select one controlled ordered interval with two independent native thumbs.",
+        category: "forms",
+        keywords: &["range", "slider", "interval", "thumb", "keyboard"],
+        module_ids: &["components/range_slider"],
+        source_module: "stories/components/range_slider",
+        source: RANGE_SLIDER_STORY_SOURCE,
+        cases: BASIC_CASE,
+        fixture: None,
+        required_features: NO_FEATURES,
+        platforms: DESKTOP_PLATFORMS,
+        test_requirements: STANDARD_STORY_TESTS,
+        documentation: "docs/components/catalog.md#range-slider",
+        theme_studio: true,
+    },
+    StoryDefinition {
+        id: "components/rotatable",
+        title: "Rotatable",
+        purpose: "Rotate one controlled Canvas around an explicit local pivot.",
+        category: "layout",
+        keywords: &["rotate", "canvas", "pivot", "snap", "keyboard"],
+        module_ids: &["components/rotatable"],
+        source_module: "stories/components/rotatable",
+        source: ROTATABLE_STORY_SOURCE,
+        cases: BASIC_CASE,
+        fixture: None,
+        required_features: NO_FEATURES,
+        platforms: DESKTOP_PLATFORMS,
+        test_requirements: STANDARD_STORY_TESTS,
+        documentation: "docs/components/interaction-behaviors.md#rotatable--canvas-implementation",
+        theme_studio: true,
+    },
+    StoryDefinition {
+        id: "components/selection-area",
+        title: "SelectionArea",
+        purpose: "Select keyed Canvas objects by click, modifiers, keyboard range, or native marquee.",
+        category: "layout",
+        keywords: &["selection", "marquee", "canvas", "range", "keyboard"],
+        module_ids: &["components/selection_area"],
+        source_module: "stories/components/selection_area",
+        source: SELECTION_AREA_STORY_SOURCE,
+        cases: BASIC_CASE,
+        fixture: None,
+        required_features: NO_FEATURES,
+        platforms: DESKTOP_PLATFORMS,
+        test_requirements: STANDARD_STORY_TESTS,
+        documentation: "docs/components/interaction-behaviors.md#selectionarea--canvas-implementation",
+        theme_studio: true,
+    },
+    StoryDefinition {
+        id: "components/tree",
+        title: "Tree",
+        purpose: "Navigate and select a virtualized stable-key hierarchical outline.",
+        category: "navigation",
+        keywords: &["tree", "outline", "hierarchy", "virtual", "keyboard"],
+        module_ids: &["components/tree"],
+        source_module: "stories/components/tree",
+        source: TREE_STORY_SOURCE,
+        cases: BASIC_CASE,
+        fixture: None,
+        required_features: NO_FEATURES,
+        platforms: DESKTOP_PLATFORMS,
+        test_requirements: STANDARD_STORY_TESTS,
+        documentation: "docs/components/catalog.md#tree",
+        theme_studio: true,
+    },
+    StoryDefinition {
+        id: "workbench/interaction-lab",
+        title: "Interaction Workbench",
+        purpose: "Exercise the complete 0.1.8 direct-manipulation stack in one stateful application scene.",
+        category: "acceptance",
+        keywords: &[
+            "interaction",
+            "acceptance",
+            "canvas",
+            "drag",
+            "tree",
+            "sortable",
+        ],
+        module_ids: &[
+            "components/split_pane",
+            "components/resizable",
+            "components/draggable",
+            "components/drag_source",
+            "components/drop_zone",
+            "components/sortable",
+            "components/pan_zoom",
+            "components/rotatable",
+            "components/selection_area",
+            "components/range_slider",
+            "components/tree",
+            "components/scroll_area",
+        ],
+        source_module: "stories/workbench/interaction_lab",
+        source: INTERACTION_LAB_STORY_SOURCE,
+        cases: BASIC_CASE,
+        fixture: None,
+        required_features: NO_FEATURES,
+        platforms: DESKTOP_PLATFORMS,
+        test_requirements: STANDARD_STORY_TESTS,
+        documentation: "docs/components/interaction-behaviors.md#integrated-acceptance-scene",
+        theme_studio: false,
+    },
+    StoryDefinition {
         id: "charts/interaction",
         title: "Chart titles and wheel interaction",
         purpose: "Compare absent and explicit titles while preserving parent scrolling.",
@@ -881,15 +1106,15 @@ mod tests {
 
     #[test]
     fn release_snapshot_has_the_expected_catalog_size() {
-        assert_eq!(BUNDLED_COMPONENT_SOURCES.len(), 53);
-        assert_eq!(BUNDLED_COMPONENT_SOURCES_BY_ID.len(), 53);
+        assert_eq!(BUNDLED_COMPONENT_SOURCES.len(), 62);
+        assert_eq!(BUNDLED_COMPONENT_SOURCES_BY_ID.len(), 62);
         assert_eq!(BUNDLED_MOTION_SOURCES.len(), 10);
         assert_eq!(BUNDLED_MOTION_SOURCES_BY_ID.len(), 10);
         assert_eq!(BUNDLED_CHART_SOURCES.len(), 5);
         assert_eq!(BUNDLED_CHART_SOURCES_BY_ID.len(), 5);
         assert_eq!(BUNDLED_ASSET_SOURCES.len(), 18);
         assert_eq!(BUNDLED_THEME_SOURCES.len(), 15);
-        assert_eq!(BUNDLED_STORIES.len(), 13);
+        assert_eq!(BUNDLED_STORIES.len(), 22);
         assert!(
             BUNDLED_COMPONENT_SOURCES
                 .iter()

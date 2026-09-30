@@ -1,6 +1,6 @@
 # Official component catalog
 
-gpui-rhai ships 53 editable Rhai source components. They all use the same
+gpui-rhai ships 62 editable Rhai source components. They all use the same
 public atoms and generic runtime mechanisms available to application code; no
 official component receives a private high-level node constructor.
 
@@ -60,8 +60,119 @@ final proposal. Style parts are `root`, `surface`, `content`, and `handle`.
 Source: [resizable.rhai](../../registry/components/resizable.rhai).
 Runnable story: `gpui-rhai gallery --story components/resizable`.
 
-The same [specification](interaction-behaviors.md) records the planned Draggable,
-DropZone, Sortable, PanZoom, SelectionArea, Rotatable, and DockLayout
+## Draggable
+
+`Draggable` controls one `{x,y}` position inside its local boundary. The caller
+provides content and may provide a distinct handle node; the component owns the
+internal element references. Pointer movement updates two optional-float native
+signals and release emits one `move({x,y})` proposal. Axis restriction,
+containment, per-axis snapping, drag threshold, keyboard step and disabled state
+share the Interaction Runtime used by Resizable and SplitPane.
+
+Source: [draggable.rhai](../../registry/components/draggable.rhai).
+Runnable story: `gpui-rhai gallery --story components/draggable`.
+
+## DragSource and DropZone
+
+`DragSource` transfers one bounded typed `UiValue` payload without changing the
+source object's position. `DropZone` declares accepted payload types and
+`copy`/`move` operations. Target resolution is native and Host-domain scoped;
+nested targets use explicit priority and then the smallest matching bounds.
+Hover feedback never mutates application data. A successful release invokes
+the target's single `drop(...)` proposal and the source's `drag_end(...)`
+result; cancellation and rejection leave committed ownership unchanged.
+
+An optional `keyboard_target` lets a focused source invoke the same typed target
+contract with Enter/Space. OS/file drops and cross-window transfer remain Host
+integration responsibilities.
+
+Sources: [drag_source.rhai](../../registry/components/drag_source.rhai) and
+[drop_zone.rhai](../../registry/components/drop_zone.rhai).
+Runnable story: `gpui-rhai gallery --story components/drag-drop`.
+
+## Sortable
+
+`Sortable` renders a bounded controlled collection of stable keyed items. Its
+native grip interaction resolves before/after insertion anchors in Rust and
+emits one `reorder({source_key,anchor_key,placement,x,y})` proposal on release.
+It never mutates the caller's canonical order during preview, suppresses self
+and adjacent no-op moves, and scrolls the active target's nearest eligible
+scroll ancestor at an edge. Focus a grip and use Option/Alt + Arrow, Home, or
+End for the same identity-based target contract.
+
+Its vertical virtual mode accepts ordinary keyed data or `NativeCollection`.
+The generic virtual renderer supplies stable neighboring keys without Rhai
+materializing offscreen nodes. While dragging, the shared Interaction Runtime
+pins the active source key and its bounded realization halo even after it
+scrolls out of view.
+
+Source: [sortable.rhai](../../registry/components/sortable.rhai).
+Runnable story: `gpui-rhai gallery --story components/sortable`.
+
+## PanZoom
+
+`PanZoom` controls a Canvas viewport with `{x,y,scale}`. Pointer pan, anchored
+wheel zoom, arrows, `+`/`-`, and reset all produce the same bounded controlled
+transform proposal. Four related native signals update translation and scale
+atomically; Canvas painting, hit testing, and committed geometry consume the
+same affine scale/rotation facts. Ordinary wheel input bubbles by default;
+Command/Control + wheel opts into zoom unless the caller explicitly selects
+`always`.
+
+The 0.1.8 surface deliberately supports Canvas content, not arbitrary GPUI
+subtrees or native input controls. That boundary prevents a visual-only scale
+from lying about hit testing and layout.
+
+Source: [pan_zoom.rhai](../../registry/components/pan_zoom.rhai).
+Runnable story: `gpui-rhai gallery --story components/pan-zoom`.
+
+## Range slider
+
+`RangeSlider` owns no accepted values. It presents two independently focusable
+native slider thumbs over one shared axis, previews pointer movement in Rust,
+and emits one controlled `{low,high}` proposal on release or keyboard step.
+Values snap to the declared step, never cross, and respect `minimum_gap`.
+Horizontal arrow semantics reverse in RTL; Home/End remain thumb-specific.
+
+Source: [range_slider.rhai](../../registry/components/range_slider.rhai).
+Runnable story: `gpui-rhai gallery --story components/range-slider`.
+
+## Rotatable
+
+`Rotatable` controls a Canvas angle in degrees around an explicit local pivot.
+The native interaction keeps the pivot fixed by atomically updating rotation
+and its required translation compensation. Pointer preview stays in Rust;
+release and keyboard steps emit one normalized `[0,360)` angle. Optional snap
+applies to both pointer and keyboard input.
+
+Source: [rotatable.rhai](../../registry/components/rotatable.rhai).
+Runnable story: `gpui-rhai gallery --story components/rotatable`.
+
+## Selection area
+
+`SelectionArea` controls stable Canvas object keys through click, platform
+toggle, Shift range, keyboard navigation, and an intersect/enclose marquee.
+Targets stay as bounded durable rectangles; only marquee preview runs on the
+pointer hot path. Canvas-local coordinate conversion uses the same inverse
+affine transform as paint and hit testing, so PanZoom/rotation do not create a
+second selection coordinate model.
+
+Source: [selection_area.rhai](../../registry/components/selection_area.rhai).
+Runnable story: `gpui-rhai gallery --story components/selection-area`.
+
+## Tree
+
+`Tree` is a controlled virtualized outline. A Rust projection validates stable
+keys, parents, cycles and depth, then flattens only expanded branches while
+preserving source sibling order. The ordinary public `virtual_collection`
+owns realization and reveal; Tree alone owns active, expanded, disabled and
+selection navigation state.
+
+Source: [tree.rhai](../../registry/components/tree.rhai).
+Runnable story: `gpui-rhai gallery --story components/tree`.
+
+The same [specification](interaction-behaviors.md) records the planned
+SelectionArea, Rotatable, and DockLayout
 capabilities, their composition rules, and acceptance requirements. These
 planned entries are not additional implemented components or callable exports.
 In particular, the existing Motion ReorderList animates an externally supplied

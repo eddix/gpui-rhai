@@ -1,0 +1,109 @@
+{
+  "body": "## Objective\n\nConsolidate the existing gesture, native-preview, geometry, capture, lifecycle and collection mechanisms before adding more interaction components. ADR 0022 is the authoritative architecture; PR #81 is the implementation branch.\n\n## Foundation\n\n- [ ] characterize existing Resizable, SplitPane, Table resize, Slider, ScrollArea and Chart behavior\n- [ ] replace repeated primitive prop readers with one typed PrimitiveContext boundary\n- [ ] add atomic PreviewPatch / batched native signal writes\n- [ ] add Host-domain GestureSession ownership and one move/up/cancel router\n- [ ] add shared Affine2D and presented forward/inverse geometry\n- [ ] add stable flat-order/outline projection for virtualized sorting and Tree\n- [ ] migrate every existing interaction before shipping new components\n\n## Public components\n\n- [ ] Draggable\n- [ ] DragSource\n- [ ] DropZone\n- [ ] Sortable\n- [ ] PanZoom\n- [ ] SelectionArea\n- [ ] Rotatable\n- [ ] RangeSlider\n- [ ] Tree\n\n## Bugs and verification\n\n- [ ] fix #80 without weakening synchronous recursion limits\n- [ ] Gallery integrated interaction scene and individual stories\n- [ ] pointer/keyboard/accessibility/RTL/theme/lifecycle/virtualization matrix\n- [ ] release benchmark proves pointer hot paths do not execute Rhai\n\n## Explicit exclusions\n\nDockLayout, OS/file drag, cross-window drag, 3D and compatibility aliases are outside 0.1.8.",
+  "comments": [
+    {
+      "id": "IC_kwDOUGviHM8AAAABXZ3BvA",
+      "author": {
+        "login": "eddix"
+      },
+      "authorAssociation": "OWNER",
+      "body": "底层收敛进展（尚未开始堆叠公开组件空壳）：\n\n- `4c693eb1`：`PrimitiveContext`、typed props、原子 signal patch、统一 deferred proposal，并修复 #80 retained call depth。\n- `78bfbac3`：Host-domain gesture coordinator；Resizable、SplitPane、Table column resize、Slider、Scrollbar、Chart pan/brush 已迁移到同一 move/up/cancel/ownership 路径，支持 Escape、suspend/unmount/stale target 取消。\n- `c84f7382`：有限且可逆的 `Affine2D` / `PresentedGeometry`；Canvas paint 与 hit-test 共用变换事实。\n- `c5ef2e5b`：Table 与 Command/Fuzzy 共用 stable structural grouping。\n\n验证：严格 Clippy 通过；445+ core tests 通过；原生矩阵 30 chart + 12 visual interaction + 15 gallery + 62 input/keyboard + 3 lifecycle 全通过。下一工作包开始实现 0.1.8 公开组件。",
+      "createdAt": "2026-09-28T07:41:16Z",
+      "includesCreatedEdit": false,
+      "isMinimized": false,
+      "minimizedReason": "",
+      "reactionGroups": [],
+      "url": "https://github.com/eddix/gpui-rhai/issues/82#issuecomment-5865587132",
+      "viewerDidAuthor": true
+    },
+    {
+      "id": "IC_kwDOUGviHM8AAAABXciB4g",
+      "author": {
+        "login": "eddix"
+      },
+      "authorAssociation": "OWNER",
+      "body": "新增进展：`0ec7c137` 已将声明式 pointer capture 与原生 gesture 的 move/up 统一到同一个 Host coordinator，F02 可以关闭；`a6496df8` 新增首个基于该底座的公开 `Draggable`，包含独立 handle、轴限制、contain、snap、threshold、键盘操作、原生 preview 和单次 controlled proposal。Gallery story、契约文档与实机 pointer 测试已加入。",
+      "createdAt": "2026-09-28T10:48:10Z",
+      "includesCreatedEdit": false,
+      "isMinimized": false,
+      "minimizedReason": "",
+      "reactionGroups": [],
+      "url": "https://github.com/eddix/gpui-rhai/issues/82#issuecomment-5868388834",
+      "viewerDidAuthor": true
+    },
+    {
+      "id": "IC_kwDOUGviHM8AAAABXfN8fQ",
+      "author": {
+        "login": "eddix"
+      },
+      "authorAssociation": "OWNER",
+      "body": "0.1.8 公开交互组件继续推进：\n\n- `a2f1a0cf` / `21302c9f`：Host-domain typed application drag runtime，以及 `DragSource` / `DropZone`，支持类型/operation 过滤、嵌套目标优先级、原生反馈、单次 controlled proposal 与键盘等价路径。\n- `e1e9840b` / `f0157a46`：共享 application-drag gesture 和目标滚动祖先；新增 keyed `Sortable`，以 source key + insertion anchor + before/after 提案，不在 preview 修改 canonical order；支持相邻/self no-op 抑制、disabled source、Option/Alt 键盘移动和目标容器 edge auto-scroll。\n- Gallery、Theme Studio、User Guide 与原生 pointer/keyboard/scroll 回归已加入。\n\n当前验证：451 workspace、31 CLI、126 native tests、严格 Clippy 全通过。普通 bounded Sortable 已完成；virtual_collection 的 active-key pin/neighbor anchors 仍列为 0.1.8 完成项，未把 bounded 实现冒充成虚拟化完成。下一工作包进入 PanZoom / SelectionArea 等共享二维交互。",
+      "createdAt": "2026-09-28T13:48:31Z",
+      "includesCreatedEdit": false,
+      "isMinimized": false,
+      "minimizedReason": "",
+      "reactionGroups": [],
+      "url": "https://github.com/eddix/gpui-rhai/issues/82#issuecomment-5871205501",
+      "viewerDidAuthor": true
+    },
+    {
+      "id": "IC_kwDOUGviHM8AAAABXgLaFQ",
+      "author": {
+        "login": "eddix"
+      },
+      "authorAssociation": "OWNER",
+      "body": "PanZoom 工作包已推送：\n\n- `4453b23d`：Canvas 原生 scale/rotate signal 与 Motion 共用 affine paint/hit-test/geometry 路径；PrimitiveContext 增加只读 signal snapshot；PanZoom preview 与 wheel debounce generation 均在原生 signals 中，不依赖会 remount 的 GPUI Entity。\n- `d341708d`：新增 controlled `PanZoom`、Gallery story、Theme Studio specimen 和原生测试。支持 pointer pan、pointer-anchored wheel zoom、精确滚轮 80ms 合并、显式 Started/Moved/Ended、普通 wheel 默认冒泡、箭头/+/−/0 键盘操作和 suspend/late-task 失效。\n- `6294b401`：明确 0.1.8 支持边界是 Canvas；不对任意 GPUI subtree 或 Chart domain camera 作虚假承诺。\n\n验证：453 workspace、31 CLI、127 native tests、严格 Clippy 及 performance workspace compile 全通过。",
+      "createdAt": "2026-09-28T14:38:23Z",
+      "includesCreatedEdit": false,
+      "isMinimized": false,
+      "minimizedReason": "",
+      "reactionGroups": [],
+      "url": "https://github.com/eddix/gpui-rhai/issues/82#issuecomment-5872212501",
+      "viewerDidAuthor": true
+    },
+    {
+      "id": "IC_kwDOUGviHM8AAAABXgQWgQ",
+      "author": {
+        "login": "eddix"
+      },
+      "authorAssociation": "OWNER",
+      "body": "PanZoom 扩展回归又发现并修复了一个 controlled-ack/remount 边界：`2ef3e54d` 增加 controlled contract token 与 native pending/generation signals。现在已接受的 transform 会成为下一手势的真实基线，精确滚轮预览、显式手势和外部受控更新不会因为 primitive Entity remount 回退到旧值；回归明确断言下一手势保留既有 pan。",
+      "createdAt": "2026-09-28T14:42:57Z",
+      "includesCreatedEdit": false,
+      "isMinimized": false,
+      "minimizedReason": "",
+      "reactionGroups": [],
+      "url": "https://github.com/eddix/gpui-rhai/issues/82#issuecomment-5872293505",
+      "viewerDidAuthor": true
+    },
+    {
+      "id": "IC_kwDOUGviHM8AAAABXik-Aw",
+      "author": {
+        "login": "eddix"
+      },
+      "authorAssociation": "OWNER",
+      "body": "0.1.8 整体目标完成，PR #81 已转 Ready。\n\n最终范围：统一 Host Interaction Runtime；Draggable、DragSource、DropZone、Sortable（含 virtual Array/NativeCollection pin/anchors）、Canvas PanZoom、SelectionArea、Rotatable、RangeSlider、Tree；#80；综合 `workbench/interaction-lab`；版本、CHANGELOG 与升级文档。\n\n最终验证：457 workspace tests、31 CLI tests、133 native tests、performance structure tests、严格 all/default Clippy、rustdoc -D warnings、三 crate package、69 visual baselines、完整 macOS release smoke、Linux X11/Wayland smoke，以及 5 warmups/30 samples release benchmark。100k Chart streaming 仍为每次 revision 0 Rhai operations。\n\n远端 portable CI 全部通过。合并后由 PR 的 Closes 语句关闭本 issue。",
+      "createdAt": "2026-09-28T17:00:35Z",
+      "includesCreatedEdit": false,
+      "isMinimized": false,
+      "minimizedReason": "",
+      "reactionGroups": [],
+      "url": "https://github.com/eddix/gpui-rhai/issues/82#issuecomment-5874728451",
+      "viewerDidAuthor": true
+    }
+  ],
+  "createdAt": "2026-09-28T06:36:34Z",
+  "labels": [
+    {
+      "id": "LA_kwDOUGviHM8AAAACykxlFA",
+      "name": "enhancement",
+      "description": "New feature or request",
+      "color": "a2eeef"
+    }
+  ],
+  "number": 82,
+  "state": "OPEN",
+  "title": "0.1.8: unify the Interaction Runtime before adding direct-manipulation components",
+  "updatedAt": "2026-09-28T17:00:35Z",
+  "url": "https://github.com/eddix/gpui-rhai/issues/82"
+}

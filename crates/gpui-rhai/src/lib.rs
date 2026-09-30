@@ -10,6 +10,8 @@ pub mod devtools;
 pub mod diagnostic;
 pub mod document;
 pub mod document_view;
+pub mod drag_drop;
+pub mod draggable;
 pub mod effect;
 pub mod element_ref;
 pub mod engine;
@@ -19,6 +21,7 @@ pub mod font;
 pub mod geometry;
 pub mod host_slot;
 pub mod inline_svg;
+mod interaction;
 mod invocation;
 pub mod lifecycle;
 pub mod locale;
@@ -27,19 +30,24 @@ pub mod native_handler;
 pub mod node;
 pub mod overlay;
 mod overlay_element;
+pub mod pan_zoom;
 pub mod primitive;
 pub mod range_input;
+pub mod range_slider;
 pub mod reload;
 pub mod renderer;
 pub mod resizable;
 pub mod responsive;
 pub mod retained;
+pub mod rotatable;
 pub mod schema;
 mod script_lint;
 pub mod script_source;
 pub mod scrollbar;
+pub mod selection_area;
 pub mod signal;
 mod slot_runtime;
+pub mod sortable;
 pub mod source;
 pub mod split_resize;
 pub mod state;
@@ -69,6 +77,7 @@ pub mod budget;
 pub mod canvas;
 pub mod capability;
 pub mod clock;
+mod collection_projection;
 pub mod motion;
 
 pub use gpui;
@@ -152,6 +161,11 @@ pub use document_view::{
     CodeViewerPrimitiveHandler, DiffSide, DiffViewerPrimitiveHandler, RevealDocumentLine,
     code_viewer_primitive_descriptor, diff_viewer_primitive_descriptor, init_document_view,
 };
+pub use drag_drop::{
+    DragSourcePrimitiveHandler, DropZonePrimitiveHandler, drag_source_primitive_descriptor,
+    drop_zone_primitive_descriptor,
+};
+pub use draggable::{DraggablePrimitiveHandler, draggable_primitive_descriptor};
 pub use effect::{EffectDescriptor, EffectError, EffectId, EffectRegistry};
 pub use element_ref::{ElementRef, ElementRefError, ElementRefId, ElementRefRegistry};
 pub use engine::{
@@ -165,7 +179,9 @@ pub use event::{
     PropagationControl, UiEvent, UiEventBinding, UiEventHandler, WheelEventData,
 };
 pub use font::{FontError, FontSource, validate_font_sources};
-pub use geometry::{ElementGeometry, GeometryBounds, GeometryError, GeometryRegistry};
+pub use geometry::{
+    Affine2D, ElementGeometry, GeometryBounds, GeometryError, GeometryRegistry, PresentedGeometry,
+};
 pub use host_slot::{HostSlotError, HostSlotRegistry};
 pub use inline_svg::{InlineSvg, InlineSvgError};
 pub use lifecycle::{LifecycleError, LifecycleState, ScriptLifecycle};
@@ -198,14 +214,16 @@ pub use overlay::{
     DismissReport, FocusToken, OverlayBounds, OverlayError, OverlayId, OverlayKind, OverlayManager,
     OverlayPlacement, OverlaySpec, PlacementResult, TooltipScheduler, TooltipTransition,
 };
+pub use pan_zoom::{PanZoomPrimitiveHandler, pan_zoom_primitive_descriptor};
 pub use primitive::{
-    EffectPrimitiveDescriptor, PrimitiveAccessibilityProjection, PrimitiveDescriptor,
-    PrimitiveError, PrimitiveEventEmitter, PrimitiveHandler, PrimitiveId, PrimitiveInstance,
+    EffectPrimitiveDescriptor, PrimitiveAccessibilityProjection, PrimitiveContext,
+    PrimitiveDescriptor, PrimitiveError, PrimitiveHandler, PrimitiveId, PrimitiveInstance,
     PrimitiveInstanceId, PrimitiveNode, PrimitivePlatform, PrimitiveProps, PrimitiveRegistry,
     PrimitiveResourceError, PrimitiveResourceHandle, PrimitiveResourceScope, PrimitiveTheme,
     PrimitiveValue,
 };
 pub use range_input::{RangeInputPrimitiveHandler, range_input_primitive_descriptor};
+pub use range_slider::{RangeSliderPrimitiveHandler, range_slider_primitive_descriptor};
 pub use reload::{LiveScript, ReloadOutcome};
 pub use renderer::{
     ColorResolver, GpuiNodeRenderer, LiteralColorResolver, NodeEventDispatcher, StaticUiView,
@@ -217,6 +235,7 @@ pub use retained::{
     NodeId, ReconcileError, ReconcileMetrics, ReconcileReport, RetainedChildLink, RetainedNode,
     RetainedUiTree,
 };
+pub use rotatable::{RotatablePrimitiveHandler, rotatable_primitive_descriptor};
 pub use schema::{
     ObjectField, SchemaDefinitionError, SchemaIssue, SchemaValidationError, ValueSchema,
 };
@@ -225,10 +244,12 @@ pub use script_source::{
     EmbeddedScriptSource, FileScriptSource, ScriptAsset, ScriptSource, ScriptSourceError,
 };
 pub use scrollbar::{ScrollbarSpec, ScrollbarVisibility};
+pub use selection_area::{SelectionAreaPrimitiveHandler, selection_area_primitive_descriptor};
 pub use signal::{
     NativeSignal, SignalError, SignalId, SignalKind, SignalProperty, SignalRegistry,
     SignalSnapshot, SignalValue, SignalWriter,
 };
+pub use sortable::{SortablePrimitiveHandler, sortable_primitive_descriptor};
 pub use source::{ModuleId, ModuleIdError, RestrictedModuleResolver};
 pub use split_resize::{SplitResizePrimitiveHandler, split_resize_primitive_descriptor};
 pub use state::{

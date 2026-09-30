@@ -51,6 +51,263 @@ impl GeometryBounds {
     }
 }
 
+/// Finite two-dimensional affine transform using column-vector coordinates.
+///
+/// Points map as `x' = m11*x + m21*y + tx` and
+/// `y' = m12*x + m22*y + ty`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Affine2D {
+    m11: f64,
+    m12: f64,
+    m21: f64,
+    m22: f64,
+    tx: f64,
+    ty: f64,
+}
+
+impl Default for Affine2D {
+    fn default() -> Self {
+        Self::IDENTITY
+    }
+}
+
+impl Affine2D {
+    pub const IDENTITY: Self = Self {
+        m11: 1.0,
+        m12: 0.0,
+        m21: 0.0,
+        m22: 1.0,
+        tx: 0.0,
+        ty: 0.0,
+    };
+
+    /// Construct one validated affine matrix.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GeometryError::InvalidTransform`] for non-finite members.
+    pub fn new(
+        m11: f64,
+        m12: f64,
+        m21: f64,
+        m22: f64,
+        tx: f64,
+        ty: f64,
+    ) -> Result<Self, GeometryError> {
+        let transform = Self {
+            m11,
+            m12,
+            m21,
+            m22,
+            tx,
+            ty,
+        };
+        if transform.is_finite() {
+            Ok(transform)
+        } else {
+            Err(GeometryError::InvalidTransform)
+        }
+    }
+
+    /// Construct a translation.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GeometryError::InvalidTransform`] for non-finite offsets.
+    pub fn translation(x: f64, y: f64) -> Result<Self, GeometryError> {
+        Self::new(1.0, 0.0, 0.0, 1.0, x, y)
+    }
+
+    /// Construct an axis-aligned scale.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GeometryError::InvalidTransform`] for non-finite scales.
+    pub fn scale(x: f64, y: f64) -> Result<Self, GeometryError> {
+        Self::new(x, 0.0, 0.0, y, 0.0, 0.0)
+    }
+
+    /// Construct a rotation in degrees.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GeometryError::InvalidTransform`] for a non-finite angle.
+    pub fn rotation_degrees(degrees: f64) -> Result<Self, GeometryError> {
+        if !degrees.is_finite() {
+            return Err(GeometryError::InvalidTransform);
+        }
+        let radians = degrees.to_radians();
+        let (sin, cos) = radians.sin_cos();
+        Self::new(cos, sin, -sin, cos, 0.0, 0.0)
+    }
+
+    /// Construct independent X/Y skews in degrees.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GeometryError::InvalidTransform`] for invalid angles.
+    pub fn skew_degrees(x: f64, y: f64) -> Result<Self, GeometryError> {
+        if !x.is_finite() || !y.is_finite() {
+            return Err(GeometryError::InvalidTransform);
+        }
+        Self::new(
+            1.0,
+            y.to_radians().tan(),
+            x.to_radians().tan(),
+            1.0,
+            0.0,
+            0.0,
+        )
+    }
+
+    /// Apply `self`, then `next`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GeometryError::InvalidTransform`] if composition overflows.
+    pub fn then(self, next: Self) -> Result<Self, GeometryError> {
+        Self::new(
+            next.m11.mul_add(self.m11, next.m21 * self.m12),
+            next.m12.mul_add(self.m11, next.m22 * self.m12),
+            next.m11.mul_add(self.m21, next.m21 * self.m22),
+            next.m12.mul_add(self.m21, next.m22 * self.m22),
+            next.m11
+                .mul_add(self.tx, next.m21.mul_add(self.ty, next.tx)),
+            next.m12
+                .mul_add(self.tx, next.m22.mul_add(self.ty, next.ty)),
+        )
+    }
+
+    /// Rebase this transform around an origin.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GeometryError::InvalidTransform`] for invalid coordinates.
+    pub fn around(self, origin: (f64, f64)) -> Result<Self, GeometryError> {
+        Self::translation(-origin.0, -origin.1)?
+            .then(self)?
+            .then(Self::translation(origin.0, origin.1)?)
+    }
+
+    #[must_use]
+    pub fn components(self) -> (f64, f64, f64, f64, f64, f64) {
+        (self.m11, self.m12, self.m21, self.m22, self.tx, self.ty)
+    }
+
+    #[must_use]
+    pub fn map_point(self, point: (f64, f64)) -> (f64, f64) {
+        (
+            self.m11
+                .mul_add(point.0, self.m21.mul_add(point.1, self.tx)),
+            self.m12
+                .mul_add(point.0, self.m22.mul_add(point.1, self.ty)),
+        )
+    }
+
+    #[must_use]
+    pub fn inverse(self) -> Option<Self> {
+        let determinant = self.m11.mul_add(self.m22, -(self.m12 * self.m21));
+        if !determinant.is_finite() || determinant.abs() <= f64::EPSILON {
+            return None;
+        }
+        let inverse = 1.0 / determinant;
+        let m11 = self.m22 * inverse;
+        let m12 = -self.m12 * inverse;
+        let m21 = -self.m21 * inverse;
+        let m22 = self.m11 * inverse;
+        Self::new(
+            m11,
+            m12,
+            m21,
+            m22,
+            -(m11.mul_add(self.tx, m21 * self.ty)),
+            -(m12.mul_add(self.tx, m22 * self.ty)),
+        )
+        .ok()
+    }
+
+    #[must_use]
+    pub fn transform_bounds(self, bounds: GeometryBounds) -> GeometryBounds {
+        let points = [
+            self.map_point((bounds.x, bounds.y)),
+            self.map_point((bounds.x + bounds.width, bounds.y)),
+            self.map_point((bounds.x, bounds.y + bounds.height)),
+            self.map_point((bounds.x + bounds.width, bounds.y + bounds.height)),
+        ];
+        let (min_x, max_x) = points
+            .iter()
+            .map(|point| point.0)
+            .fold((f64::INFINITY, f64::NEG_INFINITY), |(min, max), value| {
+                (min.min(value), max.max(value))
+            });
+        let (min_y, max_y) = points
+            .iter()
+            .map(|point| point.1)
+            .fold((f64::INFINITY, f64::NEG_INFINITY), |(min, max), value| {
+                (min.min(value), max.max(value))
+            });
+        GeometryBounds {
+            x: min_x,
+            y: min_y,
+            width: max_x - min_x,
+            height: max_y - min_y,
+        }
+    }
+
+    #[must_use]
+    pub fn is_finite(self) -> bool {
+        [self.m11, self.m12, self.m21, self.m22, self.tx, self.ty]
+            .into_iter()
+            .all(f64::is_finite)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PresentedGeometry {
+    pub local: GeometryBounds,
+    pub layout: GeometryBounds,
+    pub visual: GeometryBounds,
+    pub local_to_window: Affine2D,
+    pub window_to_local: Option<Affine2D>,
+    pub clip: Option<GeometryBounds>,
+}
+
+impl PresentedGeometry {
+    /// Build bidirectional presented coordinates from committed element facts.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GeometryError::InvalidTransform`] if derived scale or
+    /// translation overflows.
+    pub fn from_element(geometry: ElementGeometry) -> Result<Self, GeometryError> {
+        let scale_x = if geometry.layout.width.abs() <= f64::EPSILON {
+            1.0
+        } else {
+            geometry.visual.width / geometry.layout.width
+        };
+        let scale_y = if geometry.layout.height.abs() <= f64::EPSILON {
+            1.0
+        } else {
+            geometry.visual.height / geometry.layout.height
+        };
+        let local_to_window = Affine2D::scale(scale_x, scale_y)?
+            .then(Affine2D::translation(geometry.visual.x, geometry.visual.y)?)?;
+        Ok(Self {
+            local: GeometryBounds {
+                x: 0.0,
+                y: 0.0,
+                width: geometry.layout.width,
+                height: geometry.layout.height,
+            },
+            layout: geometry.layout,
+            visual: geometry.visual,
+            local_to_window,
+            window_to_local: local_to_window.inverse(),
+            clip: geometry.clip,
+        })
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct ElementGeometry {
     pub layout: GeometryBounds,
@@ -450,6 +707,12 @@ impl GeometryRegistry {
         self.inner.borrow().committed.get(&node).copied()
     }
 
+    pub(crate) fn presented(&self, node: NodeId) -> Result<PresentedGeometry, GeometryError> {
+        self.get(node)
+            .ok_or(GeometryError::Unavailable(node))
+            .and_then(PresentedGeometry::from_element)
+    }
+
     pub(crate) fn begin_frame(&self) {
         let mut current = self.inner.borrow_mut();
         let state = Rc::make_mut(&mut current);
@@ -558,6 +821,8 @@ pub enum GeometryError {
         width: f64,
         height: f64,
     },
+    #[error("affine transform members must be finite")]
+    InvalidTransform,
     #[error("geometry for retained node {0} is not committed")]
     Unavailable(NodeId),
 }
@@ -565,6 +830,45 @@ pub enum GeometryError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn affine_composition_inverse_and_bounds_share_one_coordinate_fact() {
+        let transform = Affine2D::scale(2.0, 3.0)
+            .unwrap()
+            .then(Affine2D::rotation_degrees(90.0).unwrap())
+            .unwrap()
+            .then(Affine2D::translation(10.0, 20.0).unwrap())
+            .unwrap();
+        let mapped = transform.map_point((1.0, 2.0));
+        assert!((mapped.0 - 4.0).abs() < 0.000_001);
+        assert!((mapped.1 - 22.0).abs() < 0.000_001);
+        let restored = transform.inverse().unwrap().map_point(mapped);
+        assert!((restored.0 - 1.0).abs() < 0.000_001);
+        assert!((restored.1 - 2.0).abs() < 0.000_001);
+
+        let rotated = Affine2D::rotation_degrees(90.0)
+            .unwrap()
+            .transform_bounds(GeometryBounds::new(0.0, 0.0, 10.0, 5.0).unwrap());
+        assert!((rotated.x + 5.0).abs() < 0.000_001);
+        assert!(rotated.y.abs() < 0.000_001);
+        assert!((rotated.width - 5.0).abs() < 0.000_001);
+        assert!((rotated.height - 10.0).abs() < 0.000_001);
+    }
+
+    #[test]
+    fn presented_geometry_maps_local_and_window_coordinates_both_ways() {
+        let presented = PresentedGeometry::from_element(ElementGeometry {
+            layout: GeometryBounds::new(10.0, 20.0, 100.0, 50.0).unwrap(),
+            visual: GeometryBounds::new(30.0, 40.0, 200.0, 25.0).unwrap(),
+            clip: Some(GeometryBounds::new(0.0, 0.0, 300.0, 200.0).unwrap()),
+        })
+        .unwrap();
+        let window = presented.local_to_window.map_point((25.0, 10.0));
+        assert_eq!(window, (80.0, 45.0));
+        let local = presented.window_to_local.unwrap().map_point(window);
+        assert!((local.0 - 25.0).abs() < 0.000_001);
+        assert!((local.1 - 10.0).abs() < 0.000_001);
+    }
 
     #[test]
     fn changed_geometry_invalidates_exact_readers_and_snapshot_restores() {

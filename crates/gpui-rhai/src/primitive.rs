@@ -445,6 +445,85 @@ impl PrimitiveProps {
         self.0.get(name)
     }
 
+    #[must_use]
+    pub fn data(&self, name: &str) -> Option<&UiValue> {
+        match self.get(name) {
+            Some(PrimitiveValue::Data(value)) => Some(value),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn number(&self, name: &str) -> Option<f64> {
+        match self.data(name) {
+            Some(UiValue::Float(value)) => Some(*value),
+            Some(UiValue::Integer(value)) => value.to_string().parse().ok(),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn integer(&self, name: &str) -> Option<i64> {
+        match self.data(name) {
+            Some(UiValue::Integer(value)) => Some(*value),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn usize(&self, name: &str) -> Option<usize> {
+        self.integer(name)
+            .and_then(|value| usize::try_from(value).ok())
+    }
+
+    #[must_use]
+    pub fn string(&self, name: &str) -> Option<&str> {
+        match self.data(name) {
+            Some(UiValue::String(value)) => Some(value),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn boolean(&self, name: &str) -> Option<bool> {
+        match self.data(name) {
+            Some(UiValue::Bool(value)) => Some(*value),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn style(&self, name: &str) -> Option<&Style> {
+        match self.get(name) {
+            Some(PrimitiveValue::Style(style)) => Some(style),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn signal(&self, name: &str) -> Option<&crate::NativeSignal> {
+        match self.get(name) {
+            Some(PrimitiveValue::Signal(signal)) => Some(signal),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn element_ref(&self, name: &str) -> Option<&crate::ElementRef> {
+        match self.get(name) {
+            Some(PrimitiveValue::Ref(reference)) => Some(reference),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn document(&self, name: &str) -> Option<&crate::NativeTextDocument> {
+        match self.get(name) {
+            Some(PrimitiveValue::Document(document)) => Some(document),
+            _ => None,
+        }
+    }
+
     pub fn insert(
         &mut self,
         name: impl Into<String>,
@@ -760,14 +839,18 @@ pub enum PrimitiveResourceError {
 }
 
 #[derive(Clone)]
-pub struct PrimitiveEventEmitter {
+pub struct PrimitiveContext {
     registry: Weak<RefCell<PrimitiveRegistryInner>>,
     primitive: PrimitiveId,
     callbacks: BTreeMap<String, UiEventHandler>,
     dispatcher: Option<NodeEventDispatcher>,
+    interactions: crate::interaction::WindowInteractionCoordinator,
+    scroll_handles: Vec<gpui::ScrollHandle>,
+    view_id: String,
+    instance: Option<PrimitiveInstanceId>,
 }
 
-impl PrimitiveEventEmitter {
+impl PrimitiveContext {
     /// Normalize and dispatch a declared native primitive event.
     ///
     /// # Errors
@@ -815,6 +898,25 @@ impl PrimitiveEventEmitter {
         Ok(())
     }
 
+    /// Queue one low-frequency semantic proposal after the active native input
+    /// callback returns.
+    ///
+    /// Hot preview remains in native signals; Rhai or Host code observes only
+    /// the final schema-checked proposal.
+    pub fn propose(
+        &self,
+        event: impl Into<String>,
+        payload: UiValue,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        let context = self.clone();
+        let event = event.into();
+        window.defer(cx, move |window, cx| {
+            let _ = context.emit(&event, payload, window, cx);
+        });
+    }
+
     /// Write one primitive-owned native signal without invoking Rhai.
     ///
     /// # Errors
@@ -833,6 +935,133 @@ impl PrimitiveEventEmitter {
         )
     }
 
+    pub(crate) fn read_signal(
+        &self,
+        signal: &crate::NativeSignal,
+        cx: &App,
+    ) -> Result<crate::SignalValue, crate::SignalError> {
+        self.dispatcher.as_ref().map_or_else(
+            || Err(crate::SignalError::Stale(signal.id().clone())),
+            |dispatcher| dispatcher.read_signal(signal, cx),
+        )
+    }
+
+    /// Atomically apply one related native-preview patch and request at most
+    /// one repaint.
+    ///
+    /// # Errors
+    ///
+    /// Returns without changing any signal when a member is stale, duplicated,
+    /// non-finite, or type-incompatible.
+    pub fn write_signals(
+        &self,
+        updates: impl IntoIterator<Item = (crate::NativeSignal, crate::SignalValue)>,
+        cx: &mut App,
+    ) -> Result<bool, crate::SignalError> {
+        let updates = updates.into_iter().collect::<Vec<_>>();
+        let Some(dispatcher) = self.dispatcher.as_ref() else {
+            return updates.first().map_or(Ok(false), |(signal, _)| {
+                Err(crate::SignalError::Stale(signal.id().clone()))
+            });
+        };
+        dispatcher.write_signals(updates, cx)
+    }
+
+    pub(crate) fn interaction_owner(&self, key: &str) -> crate::interaction::InteractionOwner {
+        let owner = crate::interaction::InteractionOwner::new(
+            self.view_id.clone(),
+            format!("{}:{key}", self.primitive.as_str()),
+        );
+        if let Some(instance) = self.instance.as_ref() {
+            owner.with_retained(instance.node())
+        } else {
+            owner
+        }
+    }
+
+    pub(crate) fn begin_interaction(
+        &self,
+        gesture: crate::interaction::NativeGesture,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        self.interactions.begin(gesture, window, cx);
+    }
+
+    pub(crate) fn interaction_is_active(
+        &self,
+        owner: &crate::interaction::InteractionOwner,
+    ) -> bool {
+        self.interactions.is_active(owner)
+    }
+
+    pub(crate) fn present_interaction(&self, owner: crate::interaction::InteractionOwner) {
+        self.interactions.present(owner);
+    }
+
+    pub(crate) fn cancel_interaction(
+        &self,
+        owner: &crate::interaction::InteractionOwner,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> bool {
+        self.interactions.cancel_owner(owner, window, cx)
+    }
+
+    pub(crate) fn register_drop_target(&self, target: crate::interaction::DropTargetRegistration) {
+        self.interactions.register_drop_target(target);
+    }
+
+    pub(crate) fn drop_target_state(
+        &self,
+        owner: &crate::interaction::InteractionOwner,
+    ) -> crate::interaction::DropTargetState {
+        self.interactions.drop_target_state(owner)
+    }
+
+    pub(crate) fn begin_application_drag(
+        &self,
+        spec: crate::interaction::ApplicationDragSpec,
+        position: gpui::Point<gpui::Pixels>,
+        threshold: f64,
+        on_end: impl Fn(crate::interaction::ApplicationDropResult, bool, &mut Window, &mut App)
+        + 'static,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        let gesture = crate::interaction::application_drag_gesture(
+            self.interactions.clone(),
+            position,
+            spec.notify(),
+            spec,
+            threshold,
+            on_end,
+        );
+        self.interactions.begin(gesture, window, cx);
+    }
+
+    pub(crate) fn perform_keyboard_drop(
+        &self,
+        spec: &crate::interaction::ApplicationDragSpec,
+        target_id: &str,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> crate::interaction::ApplicationDropResult {
+        self.interactions
+            .perform_keyboard_drop(spec, target_id, window, cx)
+    }
+
+    pub(crate) fn app_drag_source_active(
+        &self,
+        owner: &crate::interaction::InteractionOwner,
+    ) -> bool {
+        self.interactions.app_drag_source_active(owner)
+    }
+
+    pub(crate) fn ancestor_scroll_handles(&self) -> Vec<gpui::ScrollHandle> {
+        self.scroll_handles.clone()
+    }
+
     /// Read the last committed layout bounds for a primitive-owned element ref.
     #[must_use]
     pub fn element_bounds(
@@ -843,6 +1072,17 @@ impl PrimitiveEventEmitter {
         self.dispatcher
             .as_ref()
             .and_then(|dispatcher| dispatcher.element_bounds(reference, cx))
+    }
+
+    pub(crate) fn canvas_local_point(
+        &self,
+        reference: &crate::ElementRef,
+        point: gpui::Point<gpui::Pixels>,
+        cx: &App,
+    ) -> Option<(f64, f64)> {
+        self.dispatcher.as_ref().and_then(|dispatcher| {
+            dispatcher.canvas_local_point(reference, (f64::from(point.x), f64::from(point.y)), cx)
+        })
     }
 }
 
@@ -900,6 +1140,23 @@ pub trait PrimitiveHandler {
         Err("primitive does not support accessibility actions".to_owned())
     }
 
+    /// Perform a native key semantic for automation using the same policy as
+    /// the real focused control.
+    ///
+    /// # Errors
+    ///
+    /// Returns a bounded primitive diagnostic when the native semantic cannot
+    /// be evaluated.
+    fn perform_key(
+        &mut self,
+        _instance: &PrimitiveInstanceId,
+        _key: &str,
+        _window: &mut Window,
+        _cx: &mut App,
+    ) -> Result<bool, String> {
+        Ok(false)
+    }
+
     /// Called once before the first render of a keyed lifecycle primitive.
     ///
     /// # Errors
@@ -943,7 +1200,7 @@ pub trait PrimitiveHandler {
     fn render(
         &mut self,
         instance: &PrimitiveInstance,
-        events: &PrimitiveEventEmitter,
+        events: &PrimitiveContext,
         theme: &PrimitiveTheme,
         window: &mut Window,
         cx: &mut App,
@@ -1190,6 +1447,33 @@ impl PrimitiveRegistry {
         })
     }
 
+    pub(crate) fn perform_key(
+        &self,
+        instance: &PrimitiveInstanceId,
+        key: &str,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Result<bool, PrimitiveError> {
+        let mut inner = self
+            .inner
+            .try_borrow_mut()
+            .map_err(|_| PrimitiveError::Borrowed)?;
+        if !inner.mounted.contains_key(instance) {
+            return Err(PrimitiveError::MissingInstance(instance.clone()));
+        }
+        let entry = inner
+            .entries
+            .get_mut(&instance.primitive)
+            .ok_or_else(|| PrimitiveError::Unknown(instance.primitive.clone()))?;
+        guard_primitive_panic(&instance.primitive, "key semantic", || {
+            entry.handler.perform_key(instance, key, window, cx)
+        })?
+        .map_err(|message| PrimitiveError::Handler {
+            primitive: instance.primitive.clone(),
+            message,
+        })
+    }
+
     /// Unmount keyed lifecycle instances absent from the successful node tree.
     ///
     /// # Errors
@@ -1311,7 +1595,7 @@ impl PrimitiveRegistry {
         retained_id: Option<crate::NodeId>,
         focus_handle: Option<gpui::FocusHandle>,
         fallback: Option<UiNode>,
-        dispatcher: Option<NodeEventDispatcher>,
+        runtime: PrimitiveWindowContext,
         theme: PrimitiveTheme,
     ) -> AnyElement {
         RegisteredPrimitiveElement {
@@ -1320,7 +1604,7 @@ impl PrimitiveRegistry {
             retained_id,
             focus_handle,
             fallback,
-            dispatcher,
+            runtime,
             theme,
         }
         .into_any_element()
@@ -1331,7 +1615,7 @@ impl PrimitiveRegistry {
         &self,
         node: PrimitiveNode,
         identity: PrimitiveRenderIdentity,
-        events: &PrimitiveEventEmitter,
+        events: &PrimitiveContext,
         theme: &PrimitiveTheme,
         window: &mut Window,
         cx: &mut App,
@@ -1435,8 +1719,12 @@ impl PrimitiveRegistry {
                     message,
                 })?;
             }
+            let mut scoped_events = events.clone();
+            scoped_events.instance.clone_from(&instance_id);
             guard_primitive_panic(&instance.node.primitive, "render", || {
-                entry.handler.render(&instance, events, theme, window, cx)
+                entry
+                    .handler
+                    .render(&instance, &scoped_events, theme, window, cx)
             })?
             .map_err(|message| PrimitiveError::Handler {
                 primitive: instance.node.primitive.clone(),
@@ -1532,8 +1820,32 @@ struct RegisteredPrimitiveElement {
     retained_id: Option<crate::NodeId>,
     focus_handle: Option<gpui::FocusHandle>,
     fallback: Option<UiNode>,
-    dispatcher: Option<NodeEventDispatcher>,
+    runtime: PrimitiveWindowContext,
     theme: PrimitiveTheme,
+}
+
+#[derive(Clone)]
+pub(crate) struct PrimitiveWindowContext {
+    dispatcher: Option<NodeEventDispatcher>,
+    interactions: crate::interaction::WindowInteractionCoordinator,
+    scroll_handles: Vec<gpui::ScrollHandle>,
+    view_id: String,
+}
+
+impl PrimitiveWindowContext {
+    pub(crate) fn new(
+        dispatcher: Option<NodeEventDispatcher>,
+        interactions: crate::interaction::WindowInteractionCoordinator,
+        scroll_handles: Vec<gpui::ScrollHandle>,
+        view_id: impl Into<String>,
+    ) -> Self {
+        Self {
+            dispatcher,
+            interactions,
+            scroll_handles,
+            view_id: view_id.into(),
+        }
+    }
 }
 
 struct PrimitiveRenderIdentity {
@@ -1557,11 +1869,15 @@ impl RenderOnce for RegisteredPrimitiveElement {
                 })
             })
             .collect();
-        let events = PrimitiveEventEmitter {
+        let events = PrimitiveContext {
             registry: Rc::downgrade(&registry.inner),
             primitive: self.node.primitive.clone(),
             callbacks,
-            dispatcher: self.dispatcher,
+            dispatcher: self.runtime.dispatcher,
+            interactions: self.runtime.interactions,
+            scroll_handles: self.runtime.scroll_handles,
+            view_id: self.runtime.view_id,
+            instance: None,
         };
         match registry.render_instance(
             self.node,
@@ -1892,7 +2208,7 @@ mod tests {
         fn render(
             &mut self,
             _: &PrimitiveInstance,
-            _: &PrimitiveEventEmitter,
+            _: &PrimitiveContext,
             _: &PrimitiveTheme,
             _: &mut Window,
             _: &mut App,
@@ -2089,7 +2405,7 @@ mod tests {
             fn render(
                 &mut self,
                 _: &PrimitiveInstance,
-                _: &PrimitiveEventEmitter,
+                _: &PrimitiveContext,
                 _: &PrimitiveTheme,
                 _: &mut Window,
                 _: &mut App,
@@ -2175,14 +2491,18 @@ mod tests {
     }
 
     #[test]
-    fn primitive_event_emitter_holds_only_a_weak_registry_reference() {
+    fn primitive_context_holds_only_a_weak_registry_reference() {
         let registry = PrimitiveRegistry::new();
         let weak = Rc::downgrade(&registry.inner);
-        let emitter = PrimitiveEventEmitter {
+        let emitter = PrimitiveContext {
             registry: Rc::downgrade(&registry.inner),
             primitive: PrimitiveId::parse("my_app.editor").unwrap(),
             callbacks: BTreeMap::new(),
             dispatcher: None,
+            interactions: crate::interaction::WindowInteractionCoordinator::default(),
+            scroll_handles: Vec::new(),
+            view_id: "test".to_owned(),
+            instance: None,
         };
         assert_eq!(Rc::strong_count(&registry.inner), 1);
         drop(registry);

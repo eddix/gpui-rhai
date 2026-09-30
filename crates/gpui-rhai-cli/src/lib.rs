@@ -434,8 +434,6 @@ impl Project {
             modules.insert(id, source);
         }
 
-        let components = validate_component_exports(&modules, &headers)?;
-        validate_entry(&self.root, &modules, &components)?;
         let app: AppManifest = toml::from_str(&read(&self.root.join("ui/app.toml"))?)?;
         if app.entry.as_str() != "main" {
             return Err(ProjectError::ManifestEntry(app.entry));
@@ -446,7 +444,10 @@ impl Project {
                 actual: RUNTIME_API_VERSION,
             });
         }
+        let components = validate_component_exports(&modules, &headers)?;
         app.validate_components(&components)?;
+        let host_validation_required = !app.capabilities.is_empty();
+        validate_entry(&self.root, &modules, &components, !host_validation_required)?;
         let styles_path = self.root.join("ui/styles.rhai");
         if styles_path.exists() {
             load_component_styles(
@@ -477,6 +478,7 @@ impl Project {
         Ok(CheckReport {
             components: manifest.components.len(),
             entry: app.entry,
+            host_validation_required,
         })
     }
 
@@ -1012,6 +1014,7 @@ fn validate_entry(
     root: &Path,
     modules: &BTreeMap<ModuleId, String>,
     components: &ComponentRegistry,
+    run_hostless_lifecycle: bool,
 ) -> Result<(), ProjectError> {
     let entry_path = root.join("ui/main.rhai");
     let entry = read(&entry_path)?;
@@ -1083,7 +1086,11 @@ fn validate_entry(
         BTreeMap::new(),
         &schema,
     )?;
-    lifecycle.start(&mut runtime)?;
+    if run_hostless_lifecycle {
+        lifecycle.start(&mut runtime)?;
+    } else {
+        lifecycle.validate_initial_view_without_init(&mut runtime)?;
+    }
     Ok(())
 }
 
@@ -1825,15 +1832,23 @@ struct InstalledComponent {
 pub struct CheckReport {
     pub components: usize,
     pub entry: ModuleId,
+    pub host_validation_required: bool,
 }
 
 impl CheckReport {
     #[must_use]
     pub fn summary(&self) -> String {
-        format!(
-            "Check passed: entry `{}`, {} installed component(s).",
-            self.entry, self.components
-        )
+        if self.host_validation_required {
+            format!(
+                "Static check passed: entry `{}`, {} installed component(s). Host capability lifecycle validation was not executed.",
+                self.entry, self.components
+            )
+        } else {
+            format!(
+                "Check passed: entry `{}`, {} installed component(s), including hostless lifecycle validation.",
+                self.entry, self.components
+            )
+        }
     }
 }
 
@@ -2136,6 +2151,39 @@ mod tests {
     }
 
     #[test]
+    fn check_separates_declared_host_capabilities_from_static_view_validation() {
+        let directory = fixture();
+        let project = Project::new(directory.path());
+        project.plan_init().unwrap().apply().unwrap();
+        fs::write(
+            directory.path().join("ui/app.toml"),
+            "entry = \"main\"\nruntime_api = 2\n\n[capabilities]\n\"app.demo\" = \"*\"\n",
+        )
+        .unwrap();
+        fs::write(
+            directory.path().join("ui/main.rhai"),
+            r#"
+            fn init(ctx) { let value = ctx.call_capability("app.demo", "ping", ()); }
+            fn view(ctx) { column([text("hello")]) }
+            "#,
+        )
+        .unwrap();
+        let report = project.check().unwrap();
+        assert!(report.host_validation_required);
+        assert!(report.summary().contains("was not executed"));
+
+        fs::write(
+            directory.path().join("ui/main.rhai"),
+            "fn view(ctx) { throw \"invalid initial view\"; }\n",
+        )
+        .unwrap();
+        assert!(matches!(
+            project.check(),
+            Err(ProjectError::Lifecycle(_) | ProjectError::Runtime(_))
+        ));
+    }
+
+    #[test]
     fn check_accepts_nested_templates_and_imports_after_them() {
         let directory = fixture();
         let project = Project::new(directory.path());
@@ -2390,7 +2438,7 @@ mod tests {
         let project = Project::new(directory.path());
         project.plan_init().unwrap().apply().unwrap();
         let registry = BundledRegistry::load().unwrap();
-        assert_eq!(registry.entries.len(), 68);
+        assert_eq!(registry.entries.len(), 77);
         let requested = registry
             .entries
             .keys()

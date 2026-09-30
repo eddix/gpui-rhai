@@ -24,6 +24,14 @@ import "components/switch" as switch_component;
 import "components/table" as table;
 import "components/split_pane" as split_pane;
 import "components/resizable" as resizable;
+import "components/draggable" as draggable;
+import "components/drag_source" as drag_source;
+import "components/drop_zone" as drop_zone;
+import "components/sortable" as sortable;
+import "components/pan_zoom" as pan_zoom;
+import "components/rotatable" as rotatable;
+import "components/selection_area" as selection_area;
+import "components/tree" as tree;
 import "components/tabs" as tabs;
 import "components/tag" as tag;
 import "components/textarea" as textarea;
@@ -43,6 +51,7 @@ import "components/input_group" as input_group;
 import "components/kbd" as kbd;
 import "components/sheet" as sheet;
 import "components/slider" as slider;
+import "components/range_slider" as range_slider;
 import "components/spinner" as spinner;
 import "components/toggle" as toggle;
 import "components/toggle_group" as toggle_group;
@@ -151,6 +160,37 @@ fn state_schema() {
             x: #{ type: "float", value: 14.0 }, y: #{ type: "float", value: 12.0 },
             width: #{ type: "float", value: 190.0 }, height: #{ type: "float", value: 72.0 }
         } } },
+        specimen_draggable_position: #{ schema: #{ type: "object", allow_unknown: false, fields: #{
+            x: #{ schema: #{ type: "number" }, required: true, sensitive: false },
+            y: #{ schema: #{ type: "number" }, required: true, sensitive: false },
+        } }, "default": #{ type: "map", value: #{
+            x: #{ type: "float", value: 14.0 }, y: #{ type: "float", value: 12.0 }
+        } } },
+        specimen_sort_order: #{ schema: #{ type: "array", max_items: 3, items: #{ type: "string" } },
+            "default": #{ type: "array", value: [#{ type: "string", value: "build" },
+                #{ type: "string", value: "test" }, #{ type: "string", value: "ship" }] } },
+        specimen_pan_zoom: #{ schema: #{ type: "object", allow_unknown: false, fields: #{
+            x: #{ schema: #{ type: "number" }, required: true, sensitive: false },
+            y: #{ schema: #{ type: "number" }, required: true, sensitive: false },
+            scale: #{ schema: #{ type: "number", exclusive_min: 0.0 }, required: true, sensitive: false },
+        } }, "default": #{ type: "map", value: #{
+            x: #{ type: "float", value: 0.0 }, y: #{ type: "float", value: 0.0 },
+            scale: #{ type: "float", value: 1.0 }
+        } } },
+        specimen_rotation: #{ schema: #{ type: "number" },
+            "default": #{ type: "float", value: 0.0 } },
+        specimen_selection: #{ schema: #{ type: "array", max_items: 4, items: #{ type: "string" } },
+            "default": #{ type: "array", value: [] } },
+        specimen_selection_active: #{ schema: #{ type: "optional", value: #{ type: "string" } },
+            "default": #{ type: "null" } },
+        specimen_selection_anchor: #{ schema: #{ type: "optional", value: #{ type: "string" } },
+            "default": #{ type: "null" } },
+        specimen_tree_expanded: #{ schema: #{ type: "array", max_items: 8, items: #{ type: "string" } },
+            "default": #{ type: "array", value: [#{ type: "string", value: "root" }] } },
+        specimen_tree_selected: #{ schema: #{ type: "array", max_items: 8, items: #{ type: "string" } },
+            "default": #{ type: "array", value: [] } },
+        specimen_tree_active: #{ schema: #{ type: "optional", value: #{ type: "string" } },
+            "default": #{ type: "string", value: "root" } },
         specimen_page: #{ schema: #{ type: "integer", min: 1, max: 128 },
             "default": #{ type: "integer", value: 3 } },
         specimen_page_size: #{ schema: #{ type: "integer", allowed: [10, 25, 50] },
@@ -164,6 +204,12 @@ fn state_schema() {
             "default": #{ type: "array", value: [#{ type: "string", value: "bold" }] } },
         p0_slider: #{ schema: #{ type: "number", min: 0.0, max: 100.0 },
             "default": #{ type: "float", value: 42.0 } },
+        specimen_range: #{ schema: #{ type: "object", allow_unknown: false, fields: #{
+            low: #{ schema: #{ type: "number" }, required: true, sensitive: false },
+            high: #{ schema: #{ type: "number" }, required: true, sensitive: false },
+        } }, "default": #{ type: "map", value: #{
+            low: #{ type: "float", value: 20.0 }, high: #{ type: "float", value: 80.0 }
+        } } },
         p0_query: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "" } },
         p0_command_active: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "new" } },
         p0_command_open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: __VISUAL_COMMAND__ } },
@@ -226,6 +272,39 @@ fn set_specimen_resizable(ctx, value) {
     ctx.set_state("specimen_resizable_rect", #{ x:value.x, y:value.y, width:value.width, height:value.height });
     record_action("Rectangle resized", ctx, ());
 }
+fn set_specimen_draggable(ctx, value) {
+    ctx.set_state("specimen_draggable_position", value);
+    record_action("Card moved", ctx, ());
+}
+fn specimen_index(values, key) {
+    for index in 0..values.len { if values[index] == key { return index; } }
+    -1
+}
+fn set_specimen_sortable(ctx, value) {
+    let order = ctx.get_state("specimen_sort_order");
+    let source = specimen_index(order, value.source_key);
+    if source < 0 { return; }
+    let moved = order.remove(source);
+    let anchor = specimen_index(order, value.anchor_key);
+    if anchor < 0 { return; }
+    order.insert(if value.placement == "after" { anchor + 1 } else { anchor }, moved);
+    ctx.set_state("specimen_sort_order", order);
+    record_action("Order changed", ctx, ());
+}
+fn set_specimen_pan_zoom(ctx, value) {
+    ctx.set_state("specimen_pan_zoom", value);
+    record_action("Canvas transformed", ctx, ());
+}
+fn set_specimen_rotation(ctx, value) { ctx.set_state("specimen_rotation", value); record_action("Canvas rotated", ctx, ()); }
+fn set_specimen_selection(ctx, value) {
+    ctx.set_state("specimen_selection", value.selected_keys);
+    ctx.set_state("specimen_selection_active", value.active_key);
+    ctx.set_state("specimen_selection_anchor", value.anchor_key);
+    record_action("Canvas selection changed", ctx, ());
+}
+fn set_specimen_tree_expanded(ctx,value){ctx.set_state("specimen_tree_expanded",value);record_action("Tree expanded",ctx,());}
+fn set_specimen_tree_selected(ctx,value){ctx.set_state("specimen_tree_selected",value);record_action("Tree selected",ctx,());}
+fn set_specimen_tree_active(ctx,value){ctx.set_state("specimen_tree_active",value);}
 fn set_specimen_table_selection(ctx, value) { ctx.set_state("specimen_table_selected", value); record_action("Table selection changed", ctx, ()); }
 fn set_specimen_table_sort(ctx, value) {
     if value == () {
@@ -260,6 +339,7 @@ fn confirm_p0_alert(ctx, payload) { ctx.set_state("p0_alert_open", false); recor
 fn cancel_p0_alert(ctx, payload) { ctx.set_state("p0_alert_open", false); record_action("Alert cancelled", ctx, payload); }
 fn set_p0_toggles(ctx, value) { ctx.set_state("p0_toggle_values", value); record_action("Formatting changed", ctx, ()); }
 fn set_p0_slider(ctx, value) { ctx.set_state("p0_slider", value); record_value("Volume", ctx, value); }
+fn set_specimen_range(ctx, value) { ctx.set_state("specimen_range", value); record_action("Range changed", ctx, ()); }
 fn set_p0_query(ctx, value) { ctx.set_state("p0_query", value); }
 fn set_p0_command_active(ctx, value) { ctx.set_state("p0_command_active", value); }
 fn set_p0_command_open(ctx, value) { ctx.set_state("p0_command_open", value); }
@@ -575,7 +655,13 @@ fn specimen_navigation(ctx) {
             ], on_change: Fn("set_specimen_accordion") }),
         collapsible::Collapsible(#{ key: "specimen-collapsible", open: ctx.get_state("specimen_collapsible"),
             trigger: text("Release details"), content: text("Source-owned component content"),
-            content_height: 36, on_open_change: Fn("set_specimen_collapsible") })
+            content_height: 36, on_open_change: Fn("set_specimen_collapsible") }),
+        tree::Tree(#{key:"specimen-tree",label:"Theme files",items:[
+            #{key:"root",parent:(),label:"themes"},#{key:"dark",parent:"root",label:"dark.rhai"},
+            #{key:"light",parent:"root",label:"light.rhai"}],expanded:ctx.get_state("specimen_tree_expanded"),
+            selected_keys:ctx.get_state("specimen_tree_selected"),active_key:ctx.get_state("specimen_tree_active"),height:112.0,
+            on_expanded_change:Fn("set_specimen_tree_expanded"),on_selection_change:Fn("set_specimen_tree_selected"),
+            on_active_change:Fn("set_specimen_tree_active")})
     ]).with_style(style().gap(px(7)))
 }
 
@@ -594,6 +680,11 @@ fn specimen_data(ctx) {
     let current_sort = if direction == "none" { () } else {
         #{ key: ctx.get_state("specimen_table_sort_key"), direction: direction }
     };
+    let sortable_items = [];
+    for key in ctx.get_state("specimen_sort_order") {
+        sortable_items.push(#{ key:key, label:key,
+            content:text(key.to_upper()).with_style(style().padding(theme_spacing("sm"))) });
+    }
     column([
         specimen_title("DATA", "Real virtualized rows and pagination."),
         split_pane::SplitPane(#{ key: "specimen-split", label: "Resize data navigator",
@@ -610,6 +701,62 @@ fn specimen_data(ctx) {
             on_resize: Fn("set_specimen_resizable")
         }).with_style(style().width(relative(1.0)).height(px(112))
             .border(px(1)).border_color(theme_color("border"))),
+        draggable::Draggable(#{ key: "specimen-draggable", label: "Move specimen card",
+            position: ctx.get_state("specimen_draggable_position"), contain: true,
+            handle: text("DRAG HANDLE").with_style(style().height(px(26)).padding_x(theme_spacing("sm"))
+                .items_center().typography("caption").font_weight(700).background(theme_color("surface_hover"))),
+            content: text("Movable surface").with_style(style().width(px(170)).height(px(40))
+                .padding(theme_spacing("sm")).background(theme_color("surface_raised"))
+                .border(px(1)).border_color(theme_color("border"))),
+            on_move: Fn("set_specimen_draggable")
+        }).with_style(style().width(relative(1.0)).height(px(108))
+            .border(px(1)).border_color(theme_color("border"))),
+        row([
+            drag_source::DragSource(#{ key:"specimen-drag-source", label:"Move artifact",
+                source_id:"studio-artifact", payload_type:"artifact", payload:#{id:"studio-artifact"},
+                operation:"move", keyboard_target:"studio-drop-zone",
+                content:text("DRAG ARTIFACT").with_style(style().height(px(48)).padding(theme_spacing("sm"))
+                    .items_center().background(theme_color("surface_raised"))
+                    .border(px(1)).border_color(theme_color("border"))),
+                on_drag_end:Fn("record_action").curry("Drag finished")
+            }).with_style(style().width(relative(0.5))),
+            drop_zone::DropZone(#{ key:"specimen-drop-zone", label:"Artifact drop zone",
+                target_id:"studio-drop-zone", payload_types:["artifact"], operations:["move"],
+                content:text("DROP ZONE").with_style(style().height(px(48)).padding(theme_spacing("sm"))
+                    .items_center().background(theme_color("surface"))
+                    .border(px(1)).border_color(theme_color("border"))),
+                on_drop:Fn("record_action").curry("Drop committed")
+            }).with_style(style().width(relative(0.5)))
+        ]).with_style(style().gap(theme_spacing("sm"))),
+        sortable::Sortable(#{ key:"specimen-sortable", label:"Release order",
+            items:sortable_items, direction:"horizontal", on_reorder:Fn("set_specimen_sortable") }),
+        pan_zoom::PanZoom(#{ key:"specimen-pan-zoom", label:"Canvas viewport",
+            transform:ctx.get_state("specimen_pan_zoom"), min_scale:0.5, max_scale:3.0,
+            content:canvas(canvas_scene([
+                canvas_circle("center",90.0,55.0,18.0,theme_color("accent")),
+                canvas_rect("node",24.0,22.0,34.0,24.0,theme_color("success"))
+            ])).with_key("specimen-pan-zoom-canvas"),
+            on_transform_change:Fn("set_specimen_pan_zoom")
+        }).with_style(style().width(relative(1.0)).height(px(110))),
+        rotatable::Rotatable(#{key:"specimen-rotatable",label:"Rotate canvas",
+            angle:ctx.get_state("specimen_rotation"),pivot:#{x:80.0,y:50.0},snap:15.0,
+            content:canvas(canvas_scene([
+                canvas_rect("arm",80.0,42.0,56.0,16.0,theme_color("accent")),
+                canvas_circle("pivot",80.0,50.0,5.0,theme_color("warning"))
+            ])).with_key("specimen-rotation-canvas"),
+            handle:text("↻"),on_rotate:Fn("set_specimen_rotation")
+        }).with_style(style().width(relative(1.0)).height(px(100))),
+        selection_area::SelectionArea(#{key:"specimen-selection",label:"Select canvas nodes",
+            targets:[#{key:"one",x:18.0,y:18.0,width:46.0,height:30.0},
+                #{key:"two",x:92.0,y:48.0,width:52.0,height:34.0}],
+            selected_keys:ctx.get_state("specimen_selection"),
+            active_key:ctx.get_state("specimen_selection_active"),
+            anchor_key:ctx.get_state("specimen_selection_anchor"),
+            content:canvas(canvas_scene([
+                canvas_rect("one",18.0,18.0,46.0,30.0,theme_color("accent")),
+                canvas_rect("two",92.0,48.0,52.0,34.0,theme_color("surface_hover"))
+            ])).with_key("specimen-selection-canvas"),on_selection_change:Fn("set_specimen_selection")
+        }).with_style(style().width(relative(1.0)).height(px(100))),
         table::Table(#{ key: "specimen-table", label: "Users", row_key: "id",
             rows: rows, columns: columns, height: 126, striped: true, resizable_columns: true,
             selection_mode: "multiple", selected_keys: ctx.get_state("specimen_table_selected"),
@@ -703,7 +850,10 @@ fn specimen_p0(ctx) {
                 items: [#{ value: "bold", label: "Bold" }, #{ value: "italic", label: "Italic" }],
                 on_change: Fn("set_p0_toggles") }),
             slider::Slider(#{ key: "p0-slider", label: "Volume", value: ctx.get_state("p0_slider"),
-                min: 0.0, max: 100.0, step: 1.0, on_change: Fn("set_p0_slider") })
+                min: 0.0, max: 100.0, step: 1.0, on_change: Fn("set_p0_slider") }),
+            range_slider::RangeSlider(#{ key:"p0-range", label:"Deployment window",
+                values:ctx.get_state("specimen_range"), min:0.0, max:100.0, step:5.0,
+                minimum_gap:10.0, on_change:Fn("set_specimen_range") })
         ]).with_style(style().gap(px(10)).items_center().flex_wrap()),
         row([
             card::Card(#{ header: text("Card"), content: text("Composable content surface"), elevated: true }),
@@ -845,13 +995,13 @@ fn gallery_title_bar(ctx) {
     ]).with_style(style().min_width(px(0)).gap(px(6)).items_center().overflow_hidden());
     let config = #{ label: "GPUI Rhai Component Gallery", title: breadcrumb,
         inset_start: 70, end: [themes] };
-    if !compact { config.subtitle = "53 source-owned components · native GPUI behavior · live themes"; }
+    if !compact { config.subtitle = "62 source-owned components · native GPUI behavior · live themes"; }
     title_bar::TitleBar(config)
 }
 
 fn gallery_status_bar(ctx) {
     status_bar::StatusBar(#{ label: "Component Gallery status",
-        start: [text(`53 components · ${ctx.get_state("interaction_count")} interactions`)],
+        start: [text(`62 components · ${ctx.get_state("interaction_count")} interactions`)],
         center: [text(ctx.get_state("interaction_status"))],
         end: [text(ctx.get_state("gallery_category")), text(ctx.viewport_class())] })
 }

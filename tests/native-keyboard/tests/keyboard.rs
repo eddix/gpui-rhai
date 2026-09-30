@@ -14,7 +14,7 @@ use gpui_rhai::{
     EmbeddedScriptView, EventPropagation, ExecutionOperation, GpuiNodeRenderer, HostCallback,
     HostSlotRegistry, InMemoryAssetProvider, InteractionState, KeyBindingSpec,
     LiteralColorResolver, ModuleId, NodeEventDispatcher, OverlayDismissPolicy, OverlayId,
-    OverlayKind, OverlayNodeSpec, OverlayPlacement, PrimitiveEventEmitter, PrimitiveHandler,
+    OverlayKind, OverlayNodeSpec, OverlayPlacement, PrimitiveContext, PrimitiveHandler,
     PrimitiveInstance, PrimitiveNode, PrimitiveProps, PrimitiveRegistry, PrimitiveTheme,
     PrimitiveValue, RestrictedModuleResolver, Rgba8, RuntimeEngine, ScriptLifecycle,
     ScriptViewConfig, ScriptViewHandle, ScriptViewHost, TextInputPrimitiveHandler, UiNode,
@@ -914,7 +914,7 @@ fn custom_primitive_rejects_invalid_payload_before_host_callback(cx: &mut TestAp
         fn render(
             &mut self,
             _: &PrimitiveInstance,
-            events: &PrimitiveEventEmitter,
+            events: &PrimitiveContext,
             _: &PrimitiveTheme,
             window: &mut Window,
             app: &mut gpui::App,

@@ -82,3 +82,14 @@ switching, HostSlot IME, subscription cleanup, Table search/page projection,
 Chart wheel/diagnostic behavior, SplitPane and Resizable pointer/keyboard
 parity, the 100k streaming benchmark at zero Rhai operations, checked-in visual
 baselines, and launch from an empty working directory.
+Version 0.1.8 retains Runtime API 2. In addition to the ordinary gates, run the
+interaction adversarial matrix in
+`docs/audits/2026-09-30-interaction-0.1.8`: same-Host multi-View capture,
+unmount during drag, clipped/overlapped targets, same-local-key Sortables,
+virtual keyboard Home/End, source/constraint replacement during gestures,
+suspend cancellation, caller-ref composition, rejected Table resize, extreme
+affines, rotated marquee, null/collapsed/disabled Tree state, deep collapsed
+outlines, recursive async delivery limits, and CLI capability/static-check
+separation. Verify post-mount NativeCollection registration while active and
+suspended. #83, #89 and #91 remain explicitly deferred design work rather than
+implicit 0.1.8 promises.
