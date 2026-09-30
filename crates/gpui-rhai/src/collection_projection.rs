@@ -105,15 +105,8 @@ fn outline_projection(items: &[UiValue], expanded: &[String]) -> Result<Vec<UiVa
                 source.key
             ));
         }
-        let mut ancestry = std::collections::BTreeSet::new();
-        let mut cursor = Some(source.key.as_str());
-        while let Some(key) = cursor {
-            if !ancestry.insert(key) {
-                return Err(format!("outline contains a cycle at `{key}`"));
-            }
-            cursor = by_key.get(key).and_then(|item| item.parent.as_deref());
-        }
     }
+    validate_outline_graph(&sources, &by_key)?;
     let expanded = expanded
         .iter()
         .cloned()
@@ -122,21 +115,48 @@ fn outline_projection(items: &[UiValue], expanded: &[String]) -> Result<Vec<UiVa
         return Err(format!("expanded outline key `{key}` is unknown"));
     }
     let mut rows = Vec::new();
-    let mut visiting = std::collections::BTreeSet::new();
-    let mut visited = std::collections::BTreeSet::new();
     for root in children.get(&None).into_iter().flatten() {
-        flatten_outline(
-            root,
-            0,
-            &by_key,
-            &children,
-            &expanded,
-            &mut visiting,
-            &mut visited,
-            &mut rows,
-        )?;
+        flatten_outline(root, 0, &by_key, &children, &expanded, &mut rows)?;
     }
     Ok(rows)
+}
+
+fn validate_outline_graph(
+    sources: &[OutlineSource],
+    by_key: &BTreeMap<String, OutlineSource>,
+) -> Result<(), String> {
+    let mut depths = BTreeMap::<String, usize>::new();
+    for source in sources {
+        if depths.contains_key(&source.key) {
+            continue;
+        }
+        let mut chain = Vec::<String>::new();
+        let mut pending = std::collections::BTreeSet::<String>::new();
+        let mut cursor = Some(source.key.as_str());
+        let base_depth = loop {
+            let Some(key) = cursor else {
+                break None;
+            };
+            if let Some(depth) = depths.get(key) {
+                break Some(*depth);
+            }
+            if !pending.insert(key.to_owned()) {
+                return Err(format!("outline contains a cycle at `{key}`"));
+            }
+            chain.push(key.to_owned());
+            cursor = by_key.get(key).and_then(|item| item.parent.as_deref());
+        };
+        let mut parent_depth = base_depth;
+        for key in chain.into_iter().rev() {
+            let depth = parent_depth.map_or(0, |depth| depth.saturating_add(1));
+            if depth > 256 {
+                return Err(format!("outline cycle or depth limit at `{key}`"));
+            }
+            depths.insert(key, depth);
+            parent_depth = Some(depth);
+        }
+    }
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -146,11 +166,9 @@ fn flatten_outline(
     sources: &BTreeMap<String, OutlineSource>,
     children: &BTreeMap<Option<String>, Vec<String>>,
     expanded: &std::collections::BTreeSet<String>,
-    visiting: &mut std::collections::BTreeSet<String>,
-    visited: &mut std::collections::BTreeSet<String>,
     rows: &mut Vec<UiValue>,
 ) -> Result<(), String> {
-    if depth > 256 || !visiting.insert(key.to_owned()) {
+    if depth > 256 {
         return Err(format!("outline cycle or depth limit at `{key}`"));
     }
     let source = sources
@@ -180,22 +198,11 @@ fn flatten_outline(
         ("disabled".to_owned(), UiValue::Bool(source.disabled)),
         ("loading".to_owned(), UiValue::Bool(source.loading)),
     ])));
-    visited.insert(key.to_owned());
     if has_children && expanded.contains(key) {
         for child in descendants.into_iter().flatten() {
-            flatten_outline(
-                child,
-                depth + 1,
-                sources,
-                children,
-                expanded,
-                visiting,
-                visited,
-                rows,
-            )?;
+            flatten_outline(child, depth + 1, sources, children, expanded, rows)?;
         }
     }
-    visiting.remove(key);
     Ok(())
 }
 
@@ -271,5 +278,40 @@ mod tests {
         .unwrap();
         assert_eq!(rows.len(), 3);
         assert!(outline_projection(&[item("a", Some("b")), item("b", Some("a"))], &[]).is_err());
+    }
+
+    #[test]
+    fn collapsed_outline_still_enforces_global_depth_limit() {
+        let items = (0..300)
+            .map(|index| {
+                UiValue::Map(BTreeMap::from([
+                    ("key".to_owned(), UiValue::String(format!("node-{index}"))),
+                    (
+                        "parent".to_owned(),
+                        if index == 0 {
+                            UiValue::Null
+                        } else {
+                            UiValue::String(format!("node-{}", index - 1))
+                        },
+                    ),
+                    ("label".to_owned(), UiValue::String(format!("Node {index}"))),
+                ]))
+            })
+            .collect::<Vec<_>>();
+        assert!(outline_projection(&items, &[]).is_err());
+    }
+
+    #[test]
+    fn ten_thousand_outline_roots_project_without_quadratic_ancestry_walks() {
+        let items = (0..10_000)
+            .map(|index| {
+                UiValue::Map(BTreeMap::from([
+                    ("key".to_owned(), UiValue::String(format!("node-{index}"))),
+                    ("parent".to_owned(), UiValue::Null),
+                    ("label".to_owned(), UiValue::String(format!("Node {index}"))),
+                ]))
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(outline_projection(&items, &[]).unwrap().len(), 10_000);
     }
 }

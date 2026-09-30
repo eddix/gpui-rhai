@@ -1,0 +1,52 @@
+   Compiling audit-018-drag-sort v0.0.0 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/docs/audits/2026-09-30-interaction-0.1.8/drag-sort/probe)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.90s
+     Running unittests src/lib.rs (tests/native-keyboard/target/debug/deps/audit_018_drag_sort-94f5d44db2c83572)
+
+running 5 tests
+clipped target at Point { x: 290px, y: 150px }, clip y=0..80
+bounded source focused=true
+overlap result=drop:zz-back
+
+thread 'overlapping_targets_follow_paint_order_not_target_name' (56280637) panicked at src/lib.rs:126:5:
+assertion `left == right` failed: painted foreground target must beat hidden sibling by default
+  left: "drop:zz-back"
+ right: "drop:aa-front"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test overlapping_targets_follow_paint_order_not_target_name ... FAILED
+clipped target result = drop:hidden
+
+thread 'clipped_drop_target_still_receives_drop' (56280635) panicked at src/lib.rs:97:5:
+assertion `left == right` failed: off-clip target must not accept pointer drop
+  left: "drop:hidden"
+ right: "ready"
+test clipped_drop_target_still_receives_drop ... FAILED
+test bounded_sortable_keyboard_control ... ok
+independent list result=left-a:after:right-b
+
+thread 'independent_sortables_with_same_local_key_reject_foreign_source' (56280636) panicked at src/lib.rs:214:5:
+assertion `left == right` failed: component-local keys must not create cross-list drop channels
+  left: "left-a:after:right-b"
+ right: "ready"
+test independent_sortables_with_same_local_key_reject_foreign_source ... FAILED
+virtual source position=Point { x: 150px, y: 58px }; focused=None
+virtual Alt+Down result=ready
+virtual Alt+End result=ready
+virtual pointer control=item-0:after:item-2
+
+thread 'virtual_sortable_end_works_without_realizing_last_row' (56280638) panicked at src/lib.rs:160:5:
+assertion `left == right` failed: virtual keyboard move must not depend on destination realization
+  left: "ready"
+ right: "item-0:after:item-99"
+test virtual_sortable_end_works_without_realizing_last_row ... FAILED
+
+failures:
+
+failures:
+    clipped_drop_target_still_receives_drop
+    independent_sortables_with_same_local_key_reject_foreign_source
+    overlapping_targets_follow_paint_order_not_target_name
+    virtual_sortable_end_works_without_realizing_last_row
+
+test result: FAILED. 1 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.94s
+
+error: test failed, to rerun pass `--lib`

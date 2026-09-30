@@ -96,8 +96,16 @@ impl Element for RotationElement {
         bounds: Bounds<Pixels>,
         (): &mut (),
         window: &mut Window,
-        _: &mut App,
+        cx: &mut App,
     ) -> RotationPrepaint {
+        if let Ok(viewport) = crate::GeometryBounds::new(
+            f64::from(bounds.origin.x),
+            f64::from(bounds.origin.y),
+            f64::from(bounds.size.width),
+            f64::from(bounds.size.height),
+        ) {
+            sync_controlled_source(&self.context, &self.config, viewport, cx);
+        }
         RotationPrepaint {
             hitbox: window.insert_hitbox(bounds, HitboxBehavior::Normal),
         }

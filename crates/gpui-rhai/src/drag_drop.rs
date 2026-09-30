@@ -223,6 +223,7 @@ struct DropZoneConfig {
 
 struct ZonePrepaint {
     bounds: Bounds<Pixels>,
+    hitbox: Hitbox,
 }
 
 struct DropZoneElement {
@@ -279,8 +280,8 @@ impl Element for DropZoneElement {
         window: &mut Window,
         _: &mut App,
     ) -> ZonePrepaint {
-        let _ = window.insert_hitbox(bounds, HitboxBehavior::Normal);
-        ZonePrepaint { bounds }
+        let hitbox = window.insert_hitbox(bounds, HitboxBehavior::Normal);
+        ZonePrepaint { bounds, hitbox }
     }
 
     fn paint(
@@ -315,6 +316,7 @@ impl Element for DropZoneElement {
                 self.config.payload_types.clone(),
                 self.config.operations.clone(),
                 self.config.priority,
+                prepaint.hitbox.clone(),
                 self.context.ancestor_scroll_handles(),
                 window.current_view(),
                 move |drag, position, window, cx| {

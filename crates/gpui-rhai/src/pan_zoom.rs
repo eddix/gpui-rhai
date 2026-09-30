@@ -17,6 +17,7 @@ use crate::{
 
 const WHEEL_COMMIT_DELAY: Duration = Duration::from_millis(80);
 const MAX_TRANSLATION: f64 = 1_000_000.0;
+const MAX_RENDER_SCALE: f64 = 1_000_000.0;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct ViewTransform {
@@ -199,19 +200,24 @@ impl PanZoomEntity {
     fn wheel(&mut self, event: &ScrollWheelEvent, window: &mut Window, cx: &mut Context<Self>) {
         let explicit =
             read_bool_signal(&self.context, &self.config.wheel_active_signal, cx).unwrap_or(false);
+        if self.suspended || self.config.disabled {
+            return;
+        }
+        if matches!(event.touch_phase, gpui::TouchPhase::Cancelled) {
+            if explicit {
+                invalidate_wheel(&self.context, &self.config, cx);
+                self.restore_source(cx);
+                cx.stop_propagation();
+            }
+            return;
+        }
         let ending = matches!(event.touch_phase, gpui::TouchPhase::Ended) && explicit;
         let enabled = match self.config.wheel_zoom {
             WheelZoom::Off => false,
             WheelZoom::Modifier => event.modifiers.control || event.modifiers.platform || ending,
             WheelZoom::Always => true,
         };
-        if self.suspended || self.config.disabled || !enabled {
-            return;
-        }
-        if matches!(event.touch_phase, gpui::TouchPhase::Cancelled) {
-            invalidate_wheel(&self.context, &self.config, cx);
-            self.restore_source(cx);
-            cx.stop_propagation();
+        if !enabled {
             return;
         }
         if ending {
@@ -394,6 +400,7 @@ fn parse_config(
     if source.x.abs() > MAX_TRANSLATION
         || source.y.abs() > MAX_TRANSLATION
         || minimum_scale <= 0.0
+        || maximum_scale > MAX_RENDER_SCALE
         || maximum_scale < minimum_scale
         || source.scale < minimum_scale
         || source.scale > maximum_scale

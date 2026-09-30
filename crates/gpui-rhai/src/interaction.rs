@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
 use gpui::{
-    App, DispatchPhase, EntityId, MouseButton, MouseMoveEvent, MouseUpEvent, Pixels, Point,
+    App, DispatchPhase, EntityId, Hitbox, MouseButton, MouseMoveEvent, MouseUpEvent, Pixels, Point,
     ScrollHandle, Window, point, px,
 };
 
@@ -14,6 +14,7 @@ use crate::{GeometryBounds, UiValue};
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) struct InteractionOwner {
     view: String,
+    retained: Option<crate::NodeId>,
     key: String,
 }
 
@@ -21,8 +22,14 @@ impl InteractionOwner {
     pub(crate) fn new(view: impl Into<String>, key: impl Into<String>) -> Self {
         Self {
             view: view.into(),
+            retained: None,
             key: key.into(),
         }
+    }
+
+    pub(crate) fn with_retained(mut self, retained: crate::NodeId) -> Self {
+        self.retained = Some(retained);
+        self
     }
 
     fn belongs_to(&self, view: &str) -> bool {
@@ -32,6 +39,7 @@ impl InteractionOwner {
     pub(crate) fn child(&self, key: impl AsRef<str>) -> Self {
         Self {
             view: self.view.clone(),
+            retained: self.retained,
             key: format!("{}:{}", self.key, key.as_ref()),
         }
     }
@@ -229,6 +237,8 @@ pub(crate) struct ApplicationDragSpec {
     payload: UiValue,
     operation: DragOperation,
     notify: EntityId,
+    collection: Option<String>,
+    source_index: Option<usize>,
 }
 
 impl ApplicationDragSpec {
@@ -247,7 +257,19 @@ impl ApplicationDragSpec {
             payload,
             operation,
             notify,
+            collection: None,
+            source_index: None,
         }
+    }
+
+    pub(crate) fn with_collection(
+        mut self,
+        collection: String,
+        source_index: Option<usize>,
+    ) -> Self {
+        self.collection = Some(collection);
+        self.source_index = source_index;
+        self
     }
 
     pub(crate) fn source_id(&self) -> &str {
@@ -293,12 +315,12 @@ pub(crate) fn application_drag_gesture(
     let update_started = Rc::clone(&started);
     let update_coordinator = coordinator.clone();
     let update_spec = spec;
-    let update = move |gesture: GestureUpdate, _: &mut Window, cx: &mut App| {
+    let update = move |gesture: GestureUpdate, window: &mut Window, cx: &mut App| {
         if gesture.moved() && !update_started.replace(true) {
-            update_coordinator.start_app_drag(update_spec.clone(), gesture.current(), cx);
+            update_coordinator.start_app_drag(update_spec.clone(), gesture.current(), window, cx);
         }
         if update_started.get() {
-            update_coordinator.update_app_drag(gesture.current(), cx);
+            update_coordinator.update_app_drag(gesture.current(), window, cx);
         }
         InteractionFlow::Continue
     };
@@ -337,6 +359,8 @@ pub(crate) struct DropTargetRegistration {
     payload_types: BTreeSet<String>,
     operations: BTreeSet<DragOperation>,
     priority: i64,
+    hitbox: Hitbox,
+    paint_order: u64,
     scroll_handles: Vec<ScrollHandle>,
     notify: EntityId,
     commit: Rc<DropCommitHandler>,
@@ -351,6 +375,7 @@ impl DropTargetRegistration {
         payload_types: BTreeSet<String>,
         operations: BTreeSet<DragOperation>,
         priority: i64,
+        hitbox: Hitbox,
         scroll_handles: Vec<ScrollHandle>,
         notify: EntityId,
         commit: impl Fn(&ApplicationDragSpec, Point<Pixels>, &mut Window, &mut App) + 'static,
@@ -362,6 +387,8 @@ impl DropTargetRegistration {
             payload_types,
             operations,
             priority,
+            hitbox,
+            paint_order: 0,
             scroll_handles,
             notify,
             commit: Rc::new(commit),
@@ -397,29 +424,35 @@ pub(crate) struct WindowInteractionCoordinator(Rc<RefCell<InteractionState>>);
 struct InteractionState {
     active: Option<NativeGesture>,
     presented: BTreeSet<InteractionOwner>,
-    captured_move: Option<Rc<CapturedMoveHandler>>,
-    captured_up: Option<Rc<CapturedUpHandler>>,
+    captured_move: BTreeMap<String, Rc<CapturedMoveHandler>>,
+    captured_up: BTreeMap<String, Rc<CapturedUpHandler>>,
     drag: Option<ActiveApplicationDrag>,
     drop_targets: BTreeMap<InteractionOwner, DropTargetRegistration>,
+    next_drop_order: u64,
 }
 
 impl WindowInteractionCoordinator {
     pub(crate) fn begin_frame(&self) {
         let mut state = self.0.borrow_mut();
         state.presented.clear();
-        state.captured_move = None;
-        state.captured_up = None;
+        state.captured_move.clear();
+        state.captured_up.clear();
         state.drop_targets.clear();
+        state.next_drop_order = 0;
     }
 
     pub(crate) fn set_pointer_routes(
         &self,
+        view: impl Into<String>,
         move_handler: impl Fn(&MouseMoveEvent, &mut Window, &mut App) -> bool + 'static,
         up_handler: impl Fn(&MouseUpEvent, &mut Window, &mut App) -> bool + 'static,
     ) {
         let mut state = self.0.borrow_mut();
-        state.captured_move = Some(Rc::new(move_handler));
-        state.captured_up = Some(Rc::new(up_handler));
+        let view = view.into();
+        state
+            .captured_move
+            .insert(view.clone(), Rc::new(move_handler));
+        state.captured_up.insert(view, Rc::new(up_handler));
     }
 
     pub(crate) fn present(&self, owner: InteractionOwner) {
@@ -429,13 +462,10 @@ impl WindowInteractionCoordinator {
     pub(crate) fn finish_frame(&self, window: &mut Window, cx: &mut App) {
         let stale = {
             let mut state = self.0.borrow_mut();
-            let should_cancel = state.active.as_ref().is_some_and(|active| {
-                !state.presented.contains(&active.owner)
-                    && state
-                        .drag
-                        .as_ref()
-                        .is_none_or(|drag| drag.spec.source != active.owner)
-            });
+            let should_cancel = state
+                .active
+                .as_ref()
+                .is_some_and(|active| !state.presented.contains(&active.owner));
             should_cancel.then(|| state.active.take()).flatten()
         };
         if let Some(active) = stale {
@@ -443,21 +473,22 @@ impl WindowInteractionCoordinator {
         }
         let position = self.0.borrow().drag.as_ref().map(|drag| drag.position);
         if let Some(position) = position {
-            self.update_app_drag(position, cx);
+            self.update_app_drag(position, window, cx);
         }
     }
 
-    pub(crate) fn register_drop_target(&self, target: DropTargetRegistration) {
-        self.0
-            .borrow_mut()
-            .drop_targets
-            .insert(target.owner.clone(), target);
+    pub(crate) fn register_drop_target(&self, mut target: DropTargetRegistration) {
+        let mut state = self.0.borrow_mut();
+        target.paint_order = state.next_drop_order;
+        state.next_drop_order = state.next_drop_order.saturating_add(1);
+        state.drop_targets.insert(target.owner.clone(), target);
     }
 
     pub(crate) fn start_app_drag(
         &self,
         spec: ApplicationDragSpec,
         position: Point<Pixels>,
+        window: &Window,
         cx: &mut App,
     ) {
         self.clear_app_drag(cx);
@@ -468,16 +499,16 @@ impl WindowInteractionCoordinator {
             target: None,
         });
         cx.notify(notify);
-        self.update_app_drag(position, cx);
+        self.update_app_drag(position, window, cx);
     }
 
-    pub(crate) fn update_app_drag(&self, position: Point<Pixels>, cx: &mut App) {
+    pub(crate) fn update_app_drag(&self, position: Point<Pixels>, window: &Window, cx: &mut App) {
         let (old_target, new_target, target, mut notifications) = {
             let mut state = self.0.borrow_mut();
             let Some(drag) = state.drag.as_ref() else {
                 return;
             };
-            let next = resolve_drop_target(drag, &state.drop_targets, position);
+            let next = resolve_drop_target(drag, &state.drop_targets, position, window);
             let old = drag.target.clone();
             let mut notifications = BTreeSet::new();
             if old != next {
@@ -520,7 +551,7 @@ impl WindowInteractionCoordinator {
         window: &mut Window,
         cx: &mut App,
     ) -> Option<ApplicationDropResult> {
-        self.update_app_drag(position, cx);
+        self.update_app_drag(position, window, cx);
         let (drag, target) = {
             let mut state = self.0.borrow_mut();
             let drag = state.drag.take()?;
@@ -622,12 +653,16 @@ impl WindowInteractionCoordinator {
             .is_some_and(|drag| drag.spec.source == *owner)
     }
 
-    pub(crate) fn app_drag_source_id(&self) -> Option<String> {
-        self.0
-            .borrow()
-            .drag
-            .as_ref()
-            .map(|drag| drag.spec.source_id.clone())
+    pub(crate) fn app_drag_pin(&self, collection: &str) -> Option<(String, usize)> {
+        self.0.borrow().drag.as_ref().and_then(|drag| {
+            (drag.spec.collection.as_deref() == Some(collection))
+                .then(|| {
+                    drag.spec
+                        .source_index
+                        .map(|index| (drag.spec.source_id.clone(), index))
+                })
+                .flatten()
+        })
     }
 
     pub(crate) fn drop_target_state(&self, owner: &InteractionOwner) -> DropTargetState {
@@ -676,17 +711,26 @@ impl WindowInteractionCoordinator {
     }
 
     pub(crate) fn cancel_view(&self, view: &str, window: &mut Window, cx: &mut App) -> bool {
-        let owned = self
-            .0
-            .borrow()
-            .active
-            .as_ref()
-            .is_some_and(|active| active.owner.belongs_to(view));
-        if owned {
-            self.cancel(window, cx)
-        } else {
-            false
-        }
+        let active = {
+            let mut state = self.0.borrow_mut();
+            if state
+                .active
+                .as_ref()
+                .is_some_and(|active| active.owner.belongs_to(view))
+            {
+                state.active.take()
+            } else {
+                None
+            }
+        };
+        let Some(mut active) = active else {
+            return false;
+        };
+        // The dispatcher owns a direct runtime signal fallback for this
+        // lifecycle phase, so cleanup is complete before suspension commits.
+        active.session.cancel();
+        (active.cancel)(window, cx);
+        true
     }
 
     pub(crate) fn discard_view(&self, view: &str) {
@@ -708,6 +752,12 @@ impl WindowInteractionCoordinator {
         if drag_owned {
             self.0.borrow_mut().drag = None;
         }
+        let mut state = self.0.borrow_mut();
+        state.captured_move.remove(view);
+        state.captured_up.remove(view);
+        state
+            .drop_targets
+            .retain(|owner, _| !owner.belongs_to(view));
     }
 
     pub(crate) fn cancel(&self, window: &mut Window, cx: &mut App) -> bool {
@@ -743,8 +793,14 @@ impl WindowInteractionCoordinator {
                 cx.stop_propagation();
                 return;
             }
-            let route = move_coordinator.0.borrow().captured_move.clone();
-            if route.is_some_and(|route| route(event, window, cx)) {
+            let routes = move_coordinator
+                .0
+                .borrow()
+                .captured_move
+                .values()
+                .cloned()
+                .collect::<Vec<_>>();
+            if routes.into_iter().any(|route| route(event, window, cx)) {
                 cx.stop_propagation();
             }
         });
@@ -761,8 +817,14 @@ impl WindowInteractionCoordinator {
                 .as_ref()
                 .is_some_and(|active| active.button == event.button);
             if !matches_active {
-                let route = up_coordinator.0.borrow().captured_up.clone();
-                if route.is_some_and(|route| route(event, window, cx)) {
+                let routes = up_coordinator
+                    .0
+                    .borrow()
+                    .captured_up
+                    .values()
+                    .cloned()
+                    .collect::<Vec<_>>();
+                if routes.into_iter().any(|route| route(event, window, cx)) {
                     cx.stop_propagation();
                 }
                 return;
@@ -788,17 +850,12 @@ fn resolve_drop_target(
     drag: &ActiveApplicationDrag,
     targets: &BTreeMap<InteractionOwner, DropTargetRegistration>,
     position: Point<Pixels>,
+    window: &Window,
 ) -> Option<InteractionOwner> {
-    let x = f64::from(position.x);
-    let y = f64::from(position.y);
     targets
         .values()
         .filter(|target| {
-            target.accepts(&drag.spec)
-                && x >= target.bounds.x
-                && x <= target.bounds.x + target.bounds.width
-                && y >= target.bounds.y
-                && y <= target.bounds.y + target.bounds.height
+            target.accepts(&drag.spec) && target.hitbox.is_hovered_at(position, window)
         })
         .max_by(|left, right| compare_drop_targets(left, right))
         .map(|target| target.owner.clone())
@@ -808,13 +865,16 @@ fn compare_drop_targets(
     left: &DropTargetRegistration,
     right: &DropTargetRegistration,
 ) -> std::cmp::Ordering {
-    left.priority.cmp(&right.priority).then_with(|| {
-        let left_area = left.bounds.width * left.bounds.height;
-        let right_area = right.bounds.width * right.bounds.height;
-        right_area
-            .partial_cmp(&left_area)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    })
+    left.priority
+        .cmp(&right.priority)
+        .then_with(|| {
+            let left_area = left.bounds.width * left.bounds.height;
+            let right_area = right.bounds.width * right.bounds.height;
+            right_area
+                .partial_cmp(&left_area)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .then_with(|| left.paint_order.cmp(&right.paint_order))
 }
 
 fn auto_scroll_drop_target(target: &DropTargetRegistration, position: Point<Pixels>) -> bool {

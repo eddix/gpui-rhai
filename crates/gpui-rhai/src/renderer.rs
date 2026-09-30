@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 use std::sync::{Arc, OnceLock};
 use std::time::Instant;
@@ -1001,8 +1001,10 @@ fn event_timestamp_ms() -> f64 {
     START.get_or_init(Instant::now).elapsed().as_secs_f64() * 1_000.0
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn pointer_capture_router_element(
     child: AnyElement,
+    view_id: &str,
     tree: &RetainedUiTree,
     dispatcher: &NodeEventDispatcher,
     captures: &crate::PointerCaptureRegistry,
@@ -1014,6 +1016,7 @@ pub(crate) fn pointer_capture_router_element(
         child: Some(child),
         interactions,
         routes: Some(PointerCaptureRoutes {
+            view_id: view_id.to_owned(),
             move_handlers: retained_handlers(tree, "pointer_move"),
             up_handlers: retained_handlers(tree, "pointer_up"),
             dispatcher: dispatcher.clone(),
@@ -1038,6 +1041,7 @@ pub(crate) fn pointer_capture_router_element(
 }
 
 struct PointerCaptureRoutes {
+    view_id: String,
     move_handlers: BTreeMap<NodeId, Vec<crate::UiEventBinding>>,
     up_handlers: BTreeMap<NodeId, Vec<crate::UiEventBinding>>,
     dispatcher: NodeEventDispatcher,
@@ -1048,6 +1052,7 @@ struct PointerCaptureRoutes {
 impl PointerCaptureRoutes {
     fn register(self, interactions: &crate::interaction::WindowInteractionCoordinator) {
         let Self {
+            view_id,
             move_handlers,
             up_handlers,
             dispatcher,
@@ -1060,6 +1065,7 @@ impl PointerCaptureRoutes {
         let up_captures = captures;
         let move_payload_contexts = payload_contexts.clone();
         interactions.set_pointer_routes(
+            view_id,
             move |event: &MouseMoveEvent, window, app| {
                 let Some(node) = move_captures.captured(0) else {
                     return false;
@@ -2332,8 +2338,12 @@ fn primitive_focus_owner(
     retained_id: Option<NodeId>,
     focus_handles: &BTreeMap<NodeId, FocusHandle>,
 ) -> Option<FocusHandle> {
+    let retained_id = retained_id?;
+    if let Some(handle) = focus_handles.get(&retained_id) {
+        return Some(handle.clone());
+    }
     let retained = retained?;
-    let mut cursor = retained_id;
+    let mut cursor = Some(retained_id);
     while let Some(node_id) = cursor {
         let node = retained.node(node_id)?;
         if node.focus_styled()
@@ -3516,6 +3526,22 @@ fn native_virtual_collection_element<C: ColorResolver>(
     let retained_links = environment.retained.map_or_else(BTreeMap::new, |tree| {
         retained_link_subtrees(tree, retained_roots.values().copied())
     });
+    let mut focus_handles = environment.focus_handles.clone();
+    if let Some(tree) = environment.retained {
+        let nodes = retained_links
+            .iter()
+            .flat_map(|(parent, children)| {
+                std::iter::once(*parent).chain(children.iter().map(crate::RetainedChildLink::node))
+            })
+            .collect::<BTreeSet<_>>();
+        for node in nodes {
+            if let Some(focus) =
+                primitive_focus_owner(Some(tree), Some(node), environment.focus_handles)
+            {
+                focus_handles.insert(node, focus);
+            }
+        }
+    }
     let runtime = NodeSlotRuntime {
         now: environment.now,
         clock: environment.clock.clone(),
@@ -3534,7 +3560,7 @@ fn native_virtual_collection_element<C: ColorResolver>(
         signals: environment.signals.clone(),
         geometry: environment.geometry.clone(),
         pointer_capture: environment.pointer_capture.clone(),
-        focus_handles: environment.focus_handles.clone(),
+        focus_handles,
         scroll_handles: environment.scroll_handles.clone(),
         scroll_anchors: environment.scroll_anchors.clone(),
         virtual_requests: environment.virtual_requests.clone(),

@@ -103,11 +103,15 @@ impl SelectionAreaEntity {
         let finish =
             move |gesture: crate::interaction::GestureUpdate, window: &mut Window, cx: &mut App| {
                 finish_entity.update(cx, |selection, cx| {
-                    let local_end = selection
-                        .local_point(gesture.current(), cx)
-                        .unwrap_or(local_start);
                     let proposal = if gesture.moved() {
-                        marquee_proposal(&selection.config, local_start, local_end, modifiers)
+                        marquee_proposal(
+                            &selection.config,
+                            &window_quad(start_window, gesture.current())
+                                .into_iter()
+                                .filter_map(|point| selection.local_point(point, cx))
+                                .collect::<Vec<_>>(),
+                            modifiers,
+                        )
                     } else {
                         click_proposal(&selection.config, local_start, modifiers)
                     };
@@ -378,8 +382,8 @@ fn click_proposal(
         .rev()
         .find(|target| !target.disabled && contains(target.bounds, point));
     let Some(hit) = hit else {
-        return (config.selected.is_empty())
-            .then(|| selection_proposal(BTreeSet::new(), None, config.anchor.clone()));
+        return (!config.selected.is_empty() || config.active.is_some())
+            .then(|| selection_proposal(BTreeSet::new(), None, None));
     };
     if modifiers.shift && config.multiple {
         return Some(range_proposal(config, &hit.key));
@@ -435,21 +439,33 @@ fn range_proposal(config: &SelectionConfig, key: &str) -> SelectionProposal {
 
 fn marquee_proposal(
     config: &SelectionConfig,
-    start: (f64, f64),
-    end: (f64, f64),
+    polygon: &[(f64, f64)],
     modifiers: Modifiers,
 ) -> Option<SelectionProposal> {
-    let bounds = logical_bounds(start, end)?;
-    let hits = config
+    if polygon.len() != 4 {
+        return None;
+    }
+    let mut hits = config
         .targets
         .iter()
         .filter(|target| !target.disabled)
         .filter(|target| match config.marquee {
-            MarqueePolicy::Intersect => intersects(bounds, target.bounds),
-            MarqueePolicy::Enclose => encloses(bounds, target.bounds),
+            MarqueePolicy::Intersect => polygon_intersects_rect(polygon, target.bounds),
+            MarqueePolicy::Enclose => rect_inside_polygon(target.bounds, polygon),
         })
         .map(|target| target.key.clone())
         .collect::<BTreeSet<_>>();
+    if !config.multiple
+        && hits.len() > 1
+        && let Some(key) = config
+            .targets
+            .iter()
+            .rev()
+            .find(|target| hits.contains(&target.key))
+            .map(|target| target.key.clone())
+    {
+        hits = BTreeSet::from([key]);
+    }
     let additive = config.multiple && (modifiers.shift || modifiers.platform || modifiers.control);
     let selected = if additive {
         config.selected.union(&hits).cloned().collect()
@@ -466,14 +482,94 @@ fn marquee_proposal(
     (proposal.selected != config.selected || proposal.active != config.active).then_some(proposal)
 }
 
-fn logical_bounds(start: (f64, f64), end: (f64, f64)) -> Option<GeometryBounds> {
-    GeometryBounds::new(
-        start.0.min(end.0),
-        start.1.min(end.1),
-        (start.0 - end.0).abs(),
-        (start.1 - end.1).abs(),
-    )
-    .ok()
+fn window_quad(start: Point<Pixels>, end: Point<Pixels>) -> [Point<Pixels>; 4] {
+    let left = start.x.min(end.x);
+    let right = start.x.max(end.x);
+    let top = start.y.min(end.y);
+    let bottom = start.y.max(end.y);
+    [
+        point(left, top),
+        point(right, top),
+        point(right, bottom),
+        point(left, bottom),
+    ]
+}
+
+fn rect_corners(bounds: GeometryBounds) -> [(f64, f64); 4] {
+    [
+        (bounds.x, bounds.y),
+        (bounds.x + bounds.width, bounds.y),
+        (bounds.x + bounds.width, bounds.y + bounds.height),
+        (bounds.x, bounds.y + bounds.height),
+    ]
+}
+
+fn point_in_polygon(point: (f64, f64), polygon: &[(f64, f64)]) -> bool {
+    let mut sign = 0.0_f64;
+    for index in 0..polygon.len() {
+        let a = polygon[index];
+        let b = polygon[(index + 1) % polygon.len()];
+        let cross = (b.0 - a.0).mul_add(point.1 - a.1, -(b.1 - a.1) * (point.0 - a.0));
+        if cross.abs() <= 1e-9 {
+            continue;
+        }
+        if sign == 0.0 {
+            sign = cross.signum();
+        } else if sign * cross < 0.0 {
+            return false;
+        }
+    }
+    true
+}
+
+fn segments_intersect(a: (f64, f64), b: (f64, f64), c: (f64, f64), d: (f64, f64)) -> bool {
+    fn orientation(a: (f64, f64), b: (f64, f64), c: (f64, f64)) -> f64 {
+        (b.0 - a.0).mul_add(c.1 - a.1, -(b.1 - a.1) * (c.0 - a.0))
+    }
+    let (o1, o2, o3, o4) = (
+        orientation(a, b, c),
+        orientation(a, b, d),
+        orientation(c, d, a),
+        orientation(c, d, b),
+    );
+    let epsilon = 1e-9;
+    let on_segment = |a: (f64, f64), b: (f64, f64), point: (f64, f64)| {
+        point.0 >= a.0.min(b.0) - epsilon
+            && point.0 <= a.0.max(b.0) + epsilon
+            && point.1 >= a.1.min(b.1) - epsilon
+            && point.1 <= a.1.max(b.1) + epsilon
+    };
+    (o1.abs() <= epsilon && on_segment(a, b, c))
+        || (o2.abs() <= epsilon && on_segment(a, b, d))
+        || (o3.abs() <= epsilon && on_segment(c, d, a))
+        || (o4.abs() <= epsilon && on_segment(c, d, b))
+        || ((o1 > epsilon && o2 < -epsilon || o1 < -epsilon && o2 > epsilon)
+            && (o3 > epsilon && o4 < -epsilon || o3 < -epsilon && o4 > epsilon))
+}
+
+fn rect_inside_polygon(bounds: GeometryBounds, polygon: &[(f64, f64)]) -> bool {
+    rect_corners(bounds)
+        .into_iter()
+        .all(|corner| point_in_polygon(corner, polygon))
+}
+
+fn polygon_intersects_rect(polygon: &[(f64, f64)], bounds: GeometryBounds) -> bool {
+    let corners = rect_corners(bounds);
+    corners
+        .iter()
+        .copied()
+        .any(|corner| point_in_polygon(corner, polygon))
+        || polygon.iter().copied().any(|point| contains(bounds, point))
+        || (0..polygon.len()).any(|polygon_edge| {
+            (0..corners.len()).any(|rect_edge| {
+                segments_intersect(
+                    polygon[polygon_edge],
+                    polygon[(polygon_edge + 1) % polygon.len()],
+                    corners[rect_edge],
+                    corners[(rect_edge + 1) % corners.len()],
+                )
+            })
+        })
 }
 
 fn pixel_bounds(start: Point<Pixels>, end: Point<Pixels>) -> Bounds<Pixels> {
@@ -488,20 +584,6 @@ fn contains(bounds: GeometryBounds, point: (f64, f64)) -> bool {
         && point.0 <= bounds.x + bounds.width
         && point.1 >= bounds.y
         && point.1 <= bounds.y + bounds.height
-}
-
-fn intersects(left: GeometryBounds, right: GeometryBounds) -> bool {
-    left.x <= right.x + right.width
-        && left.x + left.width >= right.x
-        && left.y <= right.y + right.height
-        && left.y + left.height >= right.y
-}
-
-fn encloses(outer: GeometryBounds, inner: GeometryBounds) -> bool {
-    inner.x >= outer.x
-        && inner.y >= outer.y
-        && inner.x + inner.width <= outer.x + outer.width
-        && inner.y + inner.height <= outer.y + outer.height
 }
 
 fn parse_config(
@@ -766,9 +848,9 @@ mod tests {
 
     #[test]
     fn marquee_policies_distinguish_intersection_and_enclosure() {
-        let marquee = GeometryBounds::new(0.0, 0.0, 20.0, 20.0).unwrap();
+        let marquee = vec![(0.0, 0.0), (20.0, 0.0), (20.0, 20.0), (0.0, 20.0)];
         let crossing = GeometryBounds::new(15.0, 15.0, 20.0, 20.0).unwrap();
-        assert!(intersects(marquee, crossing));
-        assert!(!encloses(marquee, crossing));
+        assert!(polygon_intersects_rect(&marquee, crossing));
+        assert!(!rect_inside_polygon(crossing, &marquee));
     }
 }

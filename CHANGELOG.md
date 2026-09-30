@@ -5,7 +5,7 @@ All notable runtime, CLI, and registry changes are documented here. Version
 component schema, manifest, locale, and generated-source changes follow
 semantic versioning from this release.
 
-## 0.1.8 - 2026-09-29
+## 0.1.8 - 2026-09-30
 
 - Adds one Host-domain Interaction Runtime for gesture ownership, pointer
   capture, cancellation, typed application drag sessions, drop-target priority,
@@ -33,6 +33,23 @@ semantic versioning from this release.
   Rhai recursion limits. Adds typed primitive prop access, `PrimitiveContext`,
   deferred semantic proposals, atomic signal batches, shared stable grouping,
   and Canvas-local inverse coordinate reads.
+- Hardens the Interaction Runtime after adversarial combination testing:
+  per-View pointer-capture routing, retained mount identity, GPUI-native
+  clip/occlusion/paint-order drop resolution, stale-source cancellation,
+  component-scoped Sortable channels, virtual keyboard focus/Home/End, and
+  constant-time virtual drag pin routing.
+- Makes controlled replacement authoritative during active gestures, restores
+  rejected Table width previews, keeps RangeSlider gaps on the global step
+  grid, preserves caller node identity in SplitPane/Draggable slots, and routes
+  Resizable Automation through the same native key policy as real input.
+- Validates Tree structure/depth in near-linear time independent of expansion;
+  fixes null/hidden/disabled active and reveal behavior. Rotatable initializes
+  non-center pivots, SelectionArea uses exact affine polygons, and invalid
+  Canvas transform compositions safely reject instead of panicking.
+- Preflights recursive Rhai delivery limits for tasks/subscriptions and bounds
+  async error payloads. Adds post-mount Host `NativeCollection` registration
+  and separates CLI static/View validation from unavailable Host capability
+  lifecycle execution.
 - Adds `workbench/interaction-lab`, a connected acceptance application that
   composes the complete direct-manipulation stack and executes a real
   cross-component DragSource → DropZone workflow. Runtime API remains **2**;

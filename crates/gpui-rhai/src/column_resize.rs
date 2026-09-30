@@ -264,26 +264,33 @@ fn register_pointer_down(
         };
         let finish_config = config.clone();
         let finish_events = events.clone();
-        let finish =
-            move |gesture: crate::interaction::GestureUpdate, window: &mut Window, cx: &mut App| {
-                if !gesture.moved() {
-                    return;
-                }
-                let delta =
-                    horizontal_delta(gesture.start(), gesture.current(), finish_config.direction);
-                let value = clamp_width(width + delta, finish_config.min, finish_config.max);
-                let _ = finish_events.write_signal(
-                    &finish_config.signal,
-                    SignalValue::OptionalFloat(Some(value)),
-                    cx,
-                );
-                finish_events.propose(
-                    "resize",
-                    resize_payload(&finish_config.column_key, value),
-                    window,
-                    cx,
-                );
-            };
+        let finish = move |gesture: crate::interaction::GestureUpdate,
+                           window: &mut Window,
+                           cx: &mut App| {
+            if !gesture.moved() {
+                return;
+            }
+            let delta =
+                horizontal_delta(gesture.start(), gesture.current(), finish_config.direction);
+            let value = clamp_width(width + delta, finish_config.min, finish_config.max);
+            let _ = finish_events.write_signal(
+                &finish_config.signal,
+                SignalValue::OptionalFloat(Some(value)),
+                cx,
+            );
+            finish_events.propose(
+                "resize",
+                resize_payload(&finish_config.column_key, value),
+                window,
+                cx,
+            );
+            let clear_events = finish_events.clone();
+            let clear_signal = finish_config.signal.clone();
+            window.defer(cx, move |_, cx| {
+                let _ =
+                    clear_events.write_signal(&clear_signal, SignalValue::OptionalFloat(None), cx);
+            });
+        };
         let cancel_signal = config.signal.clone();
         let cancel_events = events.clone();
         let cancel = move |_: &mut Window, cx: &mut App| {

@@ -579,9 +579,8 @@ pub(crate) fn canvas_motion_affine(
             transform.then(crate::Affine2D::skew_degrees(motion.skew_x, motion.skew_y)?)
         })
         .and_then(|transform| transform.then(crate::Affine2D::rotation_degrees(motion.rotate)?))
-        .expect("validated canvas motion produces a finite affine transform")
-        .around((width / 2.0, height / 2.0))
-        .expect("validated canvas bounds produce a finite affine origin")
+        .and_then(|transform| transform.around((width / 2.0, height / 2.0)))
+        .unwrap_or(crate::Affine2D::IDENTITY)
 }
 
 pub(crate) fn trimmed_canvas_paths(

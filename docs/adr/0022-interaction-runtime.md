@@ -32,7 +32,8 @@ window listeners per handle.
 Views register frame-local targets with stable ownership:
 
 - Host/window domain and view ID;
-- component path, mount incarnation and retained/native node identity;
+- retained/native node identity, whose allocation changes across a logical
+  unmount/remount even when the local component key is reused;
 - pointer ID, interaction kind and target priority;
 - presented geometry and supported operations.
 
@@ -43,11 +44,13 @@ drops and cross-window drag remain explicit Host/platform integrations.
 
 ### One gesture state machine
 
-The internal `GestureSession` owns the common lifecycle:
+The internal `GestureSession` owns the common pointer lifecycle:
 
-`idle -> armed -> active -> awaiting-control/finished`, with cancellation from
-every non-terminal state. It records the start/current/previous pointer sample,
-grab offset, modifiers, coordinate space, threshold, owner and source revision.
+`idle -> armed -> active -> finished`, with cancellation from every
+non-terminal state. It records the start/current/previous pointer sample,
+threshold and structured owner. A successful script rerender invalidates an
+older active native gesture before another pointer sample can commit it; native
+controls additionally compare the source/constraint contract they captured.
 
 Behaviors supply pure policy rather than another event loop:
 
@@ -69,10 +72,13 @@ writes. A patch validates every signal/value first, then changes all values and
 requests at most one repaint. A four-field rectangle therefore cannot expose an
 intermediate x/y/width/height combination or perform four Entity updates.
 
-Controlled components retain the preview until the next source revision accepts,
-clamps or rejects the proposal. The shared acknowledgement state distinguishes
-the committed source, current gesture generation and pending proposal. A late
-Host update cannot clear a newer gesture.
+Controlled components keep preview state separate from the source value and
+emit one deferred semantic proposal. A source/constraint rerender cancels the
+captured gesture generation and restores the new controlled source. Components
+whose proposal can be rejected without changing the source (for example Table
+column width) clear the native override after proposal dispatch. A stale
+gesture therefore cannot overwrite a newer Host value, and a rejected proposal
+cannot remain painted as though it was accepted.
 
 ### Explicit coordinate and transform model
 
@@ -112,9 +118,11 @@ Position movement and data transfer remain different public concepts:
 - `Sortable` proposes keyed order changes using source and insertion-anchor
   identity, never stale numeric indices.
 
-Sortable edge auto-scroll uses existing scroll handles. Virtualized sorting
-pins only the active key and bounded neighboring insertion targets. Drop
-preview never mutates the canonical collection.
+Sortable edge auto-scroll uses existing scroll handles. Every list has a
+component-scoped collection identity distinct from its public local key.
+Virtualized sorting carries the source projection index in the native drag
+session, so only the owning collection pins the active key; unrelated lists
+are not scanned. Drop preview never mutates the canonical collection.
 
 Tree uses a shared flattened-outline projection with stable key, parent, depth,
 expanded/loading/disabled/navigation metadata. It reuses virtual collection,
@@ -133,6 +141,11 @@ Stored Rhai callbacks remain behind `ScriptInvocationContext`. Delayed/retained
 dispatch starts from a fresh call-depth baseline while synchronous nested calls
 retain the real recursion guard; this closes issue #80 without raising the
 global call-level limit.
+
+Task and subscription payloads are recursively checked against the same
+string/array/map limits configured on the Rhai Engine before a callback starts.
+An undeliverable success becomes one bounded error delivery; arbitrary callback
+failures are never retried after user or Host side effects may have occurred.
 
 ## Public 0.1.8 surface
 
@@ -162,4 +175,3 @@ targets, scrolling, virtualization, RTL, transforms, suspend/resume, unmount,
 window close, stale generations and bounded work. The Gallery contains one real
 integrated scene that composes move, resize, rotate, pan/zoom, selection,
 drag/drop and sorting rather than isolated callback demonstrations.
-

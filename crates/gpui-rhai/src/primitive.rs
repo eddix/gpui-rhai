@@ -847,6 +847,7 @@ pub struct PrimitiveContext {
     interactions: crate::interaction::WindowInteractionCoordinator,
     scroll_handles: Vec<gpui::ScrollHandle>,
     view_id: String,
+    instance: Option<PrimitiveInstanceId>,
 }
 
 impl PrimitiveContext {
@@ -967,10 +968,15 @@ impl PrimitiveContext {
     }
 
     pub(crate) fn interaction_owner(&self, key: &str) -> crate::interaction::InteractionOwner {
-        crate::interaction::InteractionOwner::new(
+        let owner = crate::interaction::InteractionOwner::new(
             self.view_id.clone(),
             format!("{}:{key}", self.primitive.as_str()),
-        )
+        );
+        if let Some(instance) = self.instance.as_ref() {
+            owner.with_retained(instance.node())
+        } else {
+            owner
+        }
     }
 
     pub(crate) fn begin_interaction(
@@ -1132,6 +1138,23 @@ pub trait PrimitiveHandler {
         _cx: &mut App,
     ) -> Result<(), String> {
         Err("primitive does not support accessibility actions".to_owned())
+    }
+
+    /// Perform a native key semantic for automation using the same policy as
+    /// the real focused control.
+    ///
+    /// # Errors
+    ///
+    /// Returns a bounded primitive diagnostic when the native semantic cannot
+    /// be evaluated.
+    fn perform_key(
+        &mut self,
+        _instance: &PrimitiveInstanceId,
+        _key: &str,
+        _window: &mut Window,
+        _cx: &mut App,
+    ) -> Result<bool, String> {
+        Ok(false)
     }
 
     /// Called once before the first render of a keyed lifecycle primitive.
@@ -1424,6 +1447,33 @@ impl PrimitiveRegistry {
         })
     }
 
+    pub(crate) fn perform_key(
+        &self,
+        instance: &PrimitiveInstanceId,
+        key: &str,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Result<bool, PrimitiveError> {
+        let mut inner = self
+            .inner
+            .try_borrow_mut()
+            .map_err(|_| PrimitiveError::Borrowed)?;
+        if !inner.mounted.contains_key(instance) {
+            return Err(PrimitiveError::MissingInstance(instance.clone()));
+        }
+        let entry = inner
+            .entries
+            .get_mut(&instance.primitive)
+            .ok_or_else(|| PrimitiveError::Unknown(instance.primitive.clone()))?;
+        guard_primitive_panic(&instance.primitive, "key semantic", || {
+            entry.handler.perform_key(instance, key, window, cx)
+        })?
+        .map_err(|message| PrimitiveError::Handler {
+            primitive: instance.primitive.clone(),
+            message,
+        })
+    }
+
     /// Unmount keyed lifecycle instances absent from the successful node tree.
     ///
     /// # Errors
@@ -1669,8 +1719,12 @@ impl PrimitiveRegistry {
                     message,
                 })?;
             }
+            let mut scoped_events = events.clone();
+            scoped_events.instance.clone_from(&instance_id);
             guard_primitive_panic(&instance.node.primitive, "render", || {
-                entry.handler.render(&instance, events, theme, window, cx)
+                entry
+                    .handler
+                    .render(&instance, &scoped_events, theme, window, cx)
             })?
             .map_err(|message| PrimitiveError::Handler {
                 primitive: instance.node.primitive.clone(),
@@ -1823,6 +1877,7 @@ impl RenderOnce for RegisteredPrimitiveElement {
             interactions: self.runtime.interactions,
             scroll_handles: self.runtime.scroll_handles,
             view_id: self.runtime.view_id,
+            instance: None,
         };
         match registry.render_instance(
             self.node,
@@ -2447,6 +2502,7 @@ mod tests {
             interactions: crate::interaction::WindowInteractionCoordinator::default(),
             scroll_handles: Vec::new(),
             view_id: "test".to_owned(),
+            instance: None,
         };
         assert_eq!(Rc::strong_count(&registry.inner), 1);
         drop(registry);

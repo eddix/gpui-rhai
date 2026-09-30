@@ -66,9 +66,9 @@ fn Sortable(props) { render_component("components/sortable", props) }
 fn sortable_commit(ctx, value) { ctx.emit("reorder", value); }
 fn sortable_disabled(item) { "disabled" in item && item.disabled }
 
-fn sortable_item_node(ctx,list_id,item,previous_key,next_key,first_key,last_key,direction,threshold,all_disabled){
+fn sortable_item_node(ctx,list_id,collection_id,item,previous_key,next_key,first_key,last_key,direction,threshold,all_disabled){
     let disabled=all_disabled||sortable_disabled(item);let ref_key=`${list_id}-item-${item.key}`;
-    let item_ref=element_ref(ref_key);let native=#{key:`${list_id}-${item.key}-sort`,list_id:list_id,
+    let item_ref=element_ref(ref_key);let native=#{key:`${list_id}-${item.key}-sort`,list_id:list_id,collection_id:collection_id,
         item_key:item.key,previous_key:previous_key,next_key:next_key,first_key:first_key,last_key:last_key,
         direction:direction,threshold:threshold,disabled:disabled,item_ref:item_ref,on_reorder:Fn("sortable_commit")};
     let interaction=gpui_rhai::SortableItemPrimitive(native).with_key(`${list_id}-${item.key}-interaction`)
@@ -88,10 +88,10 @@ fn sortable_item_node(ctx,list_id,item,previous_key,next_key,first_key,last_key,
         .accessibility_role("listitem").accessibility_label(item.label)
 }
 
-fn sortable_virtual_row(list_id,label_key,direction,threshold,disabled,ctx,payload){
+fn sortable_virtual_row(list_id,collection_id,label_key,direction,threshold,disabled,ctx,payload){
     let label=payload.item[label_key];
     let item_disabled=disabled||(if "disabled" in payload.item{payload.item.disabled}else{false});
-    let native=#{key:`${list_id}-${payload.key}-sort`,list_id:list_id,item_key:payload.key,
+    let native=#{key:`${list_id}-${payload.key}-sort`,list_id:list_id,collection_id:collection_id,item_key:payload.key,source_index:payload.index,
         previous_key:payload.previous_key,next_key:payload.next_key,first_key:payload.first_key,
         last_key:payload.last_key,direction:direction,threshold:threshold,disabled:item_disabled,
         on_reorder:Fn("sortable_commit")};
@@ -101,7 +101,7 @@ fn sortable_virtual_row(list_id,label_key,direction,threshold,disabled,ctx,paylo
         .accessibility_label(`Reorder ${label}`);
     let resolved=ctx.component_style("item",style().relative().height(px(40)).min_width(px(0))
         .items_center().padding_end(theme_spacing("sm")).border(px(1)).border_color(theme_color("border"))
-        .background(theme_color("surface")));
+        .background(theme_color("surface")).focus(style().background(theme_color("selection"))));
     if item_disabled{resolved=ctx.component_style("item_disabled",resolved.opacity(0.64));}
     row([text("≡").with_style(ctx.component_style("handle_icon",style().width(px(28)).text_center()
         .text_color(theme_color("text_muted")))),text(label).with_style(ctx.component_style("content",style().flex_grow())),
@@ -110,6 +110,8 @@ fn sortable_virtual_row(list_id,label_key,direction,threshold,disabled,ctx,paylo
 }
 
 fn render_Sortable(ctx, props) {
+    let list_ref=element_ref(`${props.key}-virtual`);
+    let collection_id=list_ref.scope;
     let has_items="items" in props&&props.items!=();let has_virtual="virtual_data" in props&&props.virtual_data!=();
     if has_items==has_virtual{throw "Sortable requires exactly one of items or virtual_data";}
     if has_virtual{
@@ -120,8 +122,8 @@ fn render_Sortable(ctx, props) {
         let config=#{key:`${props.key}-virtual`,label:props.label,data:props.virtual_data,
             estimated_height:props.estimated_row_height};
         if "height" in props&&props.height!=(){config.height=props.height;}else{config.fill_height=true;}
-        return virtual_collection(config,Fn("sortable_virtual_row").curry(props.key,props.label_key,
-            props.direction,props.threshold,props.disabled)).with_key(props.key)
+        return virtual_collection(config,Fn("sortable_virtual_row").curry(props.key,collection_id,props.label_key,
+            props.direction,props.threshold,props.disabled)).with_key(props.key).with_ref(list_ref)
             .with_style(ctx.component_style("root",style().gap(theme_spacing("xs"))))
             .accessibility_role("list").accessibility_label(props.label);
     }
@@ -137,7 +139,7 @@ fn render_Sortable(ctx, props) {
             seen[item.key] = true;
             let previous_key = if index > 0 { props.items[index - 1].key } else { () };
             let next_key = if index + 1 < count { props.items[index + 1].key } else { () };
-            nodes.push(sortable_item_node(ctx,props.key,item,previous_key,next_key,first_key,last_key,
+            nodes.push(sortable_item_node(ctx,props.key,collection_id,item,previous_key,next_key,first_key,last_key,
                 props.direction,props.threshold,props.disabled));
         }
     }
@@ -150,6 +152,6 @@ fn render_Sortable(ctx, props) {
     } else {
         column(nodes).with_style(root_style)
     };
-    root.with_key(props.key).with_style(ctx.component_style("root", style()))
+    root.with_key(props.key).with_ref(list_ref).with_style(ctx.component_style("root", style()))
         .accessibility_role("list").accessibility_label(props.label)
 }

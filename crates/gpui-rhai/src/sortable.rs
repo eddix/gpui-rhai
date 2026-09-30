@@ -58,8 +58,9 @@ impl Placement {
 #[derive(Clone)]
 struct SortableConfig {
     id: String,
-    list_id: String,
+    collection: String,
     item_key: String,
+    source_index: Option<usize>,
     previous_key: Option<String>,
     next_key: Option<String>,
     first_key: String,
@@ -74,8 +75,9 @@ struct SortableConfig {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct SortableFingerprint {
-    list_id: String,
+    collection: String,
     item_key: String,
+    source_index: Option<usize>,
     previous_key: Option<String>,
     next_key: Option<String>,
     direction: SortDirection,
@@ -93,8 +95,9 @@ impl SortableState {
 
 fn sortable_fingerprint(config: &SortableConfig) -> SortableFingerprint {
     SortableFingerprint {
-        list_id: config.list_id.clone(),
+        collection: config.collection.clone(),
         item_key: config.item_key.clone(),
+        source_index: config.source_index,
         previous_key: config.previous_key.clone(),
         next_key: config.next_key.clone(),
         direction: config.direction,
@@ -104,6 +107,8 @@ fn sortable_fingerprint(config: &SortableConfig) -> SortableFingerprint {
 
 struct SortablePrepaint {
     hitbox: Hitbox,
+    before_hitbox: Hitbox,
+    after_hitbox: Hitbox,
     item_bounds: Bounds<Pixels>,
 }
 
@@ -184,6 +189,14 @@ impl Element for SortableElement {
             .map_or(bounds, geometry_bounds);
         SortablePrepaint {
             hitbox: window.insert_hitbox(bounds, HitboxBehavior::Normal),
+            before_hitbox: window.insert_hitbox(
+                target_half(item_bounds, self.config.direction, Placement::Before),
+                HitboxBehavior::Normal,
+            ),
+            after_hitbox: window.insert_hitbox(
+                target_half(item_bounds, self.config.direction, Placement::After),
+                HitboxBehavior::Normal,
+            ),
             item_bounds,
         }
     }
@@ -205,6 +218,7 @@ impl Element for SortableElement {
             &self.config,
             prepaint.item_bounds,
             Placement::Before,
+            prepaint.before_hitbox.clone(),
             window,
         );
         register_target(
@@ -212,6 +226,7 @@ impl Element for SortableElement {
             &self.config,
             prepaint.item_bounds,
             Placement::After,
+            prepaint.after_hitbox.clone(),
             window,
         );
         paint_sortable_feedback(&self.context, &self.config, prepaint.item_bounds, window);
@@ -246,11 +261,11 @@ fn target_owner(
 }
 
 fn payload_type(config: &SortableConfig) -> String {
-    format!("gpui-rhai/sortable/{}", config.list_id)
+    format!("gpui-rhai/sortable/{}", config.collection)
 }
 
-fn target_id(list_id: &str, anchor: &str, placement: Placement) -> String {
-    format!("{list_id}:{}:{anchor}", placement.as_str())
+fn target_id(config: &SortableConfig, anchor: &str, placement: Placement) -> String {
+    format!("{}:{}:{}", config.collection, placement.as_str(), anchor)
 }
 
 fn drag_spec(
@@ -269,6 +284,7 @@ fn drag_spec(
         crate::interaction::DragOperation::Move,
         notify,
     )
+    .with_collection(config.collection.clone(), config.source_index)
 }
 
 fn target_half(
@@ -312,6 +328,7 @@ fn register_target(
     config: &SortableConfig,
     bounds: Bounds<Pixels>,
     placement: Placement,
+    hitbox: Hitbox,
     window: &mut Window,
 ) {
     let half = target_half(bounds, config.direction, placement);
@@ -329,11 +346,12 @@ fn register_target(
     let next = config.next_key.clone();
     context.register_drop_target(crate::interaction::DropTargetRegistration::new(
         target_owner(context, config, placement),
-        target_id(&config.list_id, &config.item_key, placement),
+        target_id(config, &config.item_key, placement),
         bounds,
         BTreeSet::from([payload_type(config)]),
         BTreeSet::from([crate::interaction::DragOperation::Move]),
         100,
+        hitbox,
         context.ancestor_scroll_handles(),
         window.current_view(),
         move |drag, position, window, cx| {
@@ -487,31 +505,33 @@ impl SortableEntity {
                 .config
                 .previous_key
                 .as_ref()
-                .map(|anchor| target_id(&self.config.list_id, anchor, Placement::Before)),
+                .map(|anchor| (anchor, Placement::Before)),
             "down" | "right" => self
                 .config
                 .next_key
                 .as_ref()
-                .map(|anchor| target_id(&self.config.list_id, anchor, Placement::After)),
-            "home" => Some(target_id(
-                &self.config.list_id,
-                &self.config.first_key,
-                Placement::Before,
-            )),
-            "end" => Some(target_id(
-                &self.config.list_id,
-                &self.config.last_key,
-                Placement::After,
-            )),
+                .map(|anchor| (anchor, Placement::After)),
+            "home" => Some((&self.config.first_key, Placement::Before)),
+            "end" => Some((&self.config.last_key, Placement::After)),
             _ => return,
         };
-        let Some(target) = target else {
+        let Some((anchor, placement)) = target else {
             cx.stop_propagation();
             return;
         };
-        let spec = drag_spec(&self.context, &self.config, cx.entity_id());
-        self.context
-            .perform_keyboard_drop(&spec, &target, window, cx);
+        if anchor != &self.config.item_key {
+            self.context.propose(
+                "reorder",
+                reorder_value(
+                    &self.config.item_key,
+                    anchor,
+                    placement,
+                    point(px(0.0), px(0.0)),
+                ),
+                window,
+                cx,
+            );
+        }
         cx.stop_propagation();
     }
 }
@@ -580,6 +600,7 @@ fn parse_config(
     theme: &PrimitiveTheme,
 ) -> Result<SortableConfig, String> {
     let list_id = required_safe_string(props, "list_id")?;
+    let collection = required_collection_id(props)?;
     let item_key = required_safe_string(props, "item_key")?;
     let first_key = required_safe_string(props, "first_key")?;
     let last_key = required_safe_string(props, "last_key")?;
@@ -593,8 +614,9 @@ fn parse_config(
     }
     Ok(SortableConfig {
         id: format!("gpui-rhai-sortable:{list_id}:{item_key}"),
-        list_id,
+        collection,
         item_key,
+        source_index: props.usize("source_index"),
         previous_key: optional_string(props, "previous_key")?,
         next_key: optional_string(props, "next_key")?,
         first_key,
@@ -616,6 +638,17 @@ fn required_safe_string(props: &PrimitiveProps, name: &str) -> Result<String, St
         .ok_or_else(|| format!("{name} is required"))?;
     if value.is_empty() || value.len() > 128 || value.chars().any(char::is_control) {
         Err(format!("{name} must be 1-128 non-control characters"))
+    } else {
+        Ok(value.to_owned())
+    }
+}
+
+fn required_collection_id(props: &PrimitiveProps) -> Result<String, String> {
+    let value = props
+        .string("collection_id")
+        .ok_or_else(|| "collection_id is required".to_owned())?;
+    if value.is_empty() || value.len() > 1_024 || value.chars().any(char::is_control) {
+        Err("collection_id must be 1-1024 non-control characters".to_owned())
     } else {
         Ok(value.to_owned())
     }
@@ -671,8 +704,19 @@ pub fn sortable_primitive_descriptor() -> PrimitiveDescriptor {
                 ObjectField::required(ValueSchema::string()),
             ),
             (
+                "collection_id".to_owned(),
+                ObjectField::required(ValueSchema::string()),
+            ),
+            (
                 "item_key".to_owned(),
                 ObjectField::required(ValueSchema::string()),
+            ),
+            (
+                "source_index".to_owned(),
+                ObjectField::optional(ValueSchema::optional(ValueSchema::Integer {
+                    min: Some(0),
+                    max: None,
+                })),
             ),
             (
                 "previous_key".to_owned(),

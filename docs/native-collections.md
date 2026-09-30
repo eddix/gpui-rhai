@@ -83,6 +83,20 @@ foreground thread:
 view.replace_native_collection("accounts", next_accounts, cx)?;
 ```
 
+When a collection name is not known until after mount, register it explicitly:
+
+```rust
+view.register_native_collection("audit_results", audit_results, cx)?;
+```
+
+Registration and replacement intentionally remain different operations.
+`register_native_collection` rejects duplicate/unsafe names and invalidates the
+view root; a suspended view consumes the new collection on resume without a
+spurious paint. `replace_native_collection` rejects unknown names and
+invalidates only components that previously read that collection. Rhai does not
+receive an unbounded `set_native_collection` API; scripts continue to select
+among Host-owned handles.
+
 Only components that called `ctx.get_native_collection("accounts")` are marked
 dirty. Runtime transactions snapshot the cheap collection handles and reader
 edges; they never clone all rows. Several mounted views may subscribe to the

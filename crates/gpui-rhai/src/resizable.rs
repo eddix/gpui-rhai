@@ -1,6 +1,6 @@
 //! Native hot-lane edge and corner handles for the public `Resizable` component.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
@@ -13,8 +13,8 @@ use gpui::{
 
 use crate::{
     ComponentStateSchema, EventSchema, ObjectField, PrimitiveContext, PrimitiveDescriptor,
-    PrimitiveHandler, PrimitiveId, PrimitiveInstance, PrimitiveProps, PrimitiveTheme,
-    PrimitiveValue, Rgba8, SignalKind, SignalValue, UiValue, ValueSchema,
+    PrimitiveHandler, PrimitiveId, PrimitiveInstance, PrimitiveInstanceId, PrimitiveProps,
+    PrimitiveTheme, PrimitiveValue, Rgba8, SignalKind, SignalValue, UiValue, ValueSchema,
 };
 
 const MAX_RESIZE_DIMENSION: f64 = 16_384.0;
@@ -111,7 +111,7 @@ impl ResizeHandle {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 struct ResizeConstraints {
     min_width: f64,
     min_height: f64,
@@ -128,6 +128,7 @@ struct ResizableConfig {
     source: ResizeRect,
     constraints: ResizeConstraints,
     boundary_ref: crate::ElementRef,
+    boundary_size: Rc<Cell<Option<(f64, f64)>>>,
     x_signal: crate::NativeSignal,
     y_signal: crate::NativeSignal,
     width_signal: crate::NativeSignal,
@@ -145,6 +146,7 @@ struct ResizableState(Rc<RefCell<ResizableStateInner>>);
 #[derive(Clone)]
 struct ResizableStateInner {
     source: ResizeRect,
+    constraints: ResizeConstraints,
     signals: [crate::SignalId; 4],
 }
 
@@ -152,6 +154,7 @@ impl ResizableState {
     fn new(config: &ResizableConfig) -> Self {
         Self(Rc::new(RefCell::new(ResizableStateInner {
             source: config.source,
+            constraints: config.constraints,
             signals: signal_ids(config),
         })))
     }
@@ -231,14 +234,22 @@ impl Element for ResizableHandleElement {
         let reset = {
             let mut inner = state.0.borrow_mut();
             let signals = signal_ids(&self.config);
-            let changed = inner.source != self.config.source || inner.signals != signals;
+            let changed = inner.source != self.config.source
+                || inner.constraints != self.config.constraints
+                || inner.signals != signals;
             if changed {
                 inner.source = self.config.source;
+                inner.constraints = self.config.constraints;
                 inner.signals = signals;
             }
             changed
         };
         let owner = self.events.interaction_owner(&self.config.id);
+        self.config.boundary_size.set(
+            self.events
+                .element_bounds(&self.config.boundary_ref, cx)
+                .map(|bounds| (bounds.width, bounds.height)),
+        );
         if reset && !self.events.cancel_interaction(&owner, window, cx) {
             clear_preview(&self.events, &self.config, window, cx);
         }
@@ -539,9 +550,9 @@ fn resize_rect_aspect(
         source.height
     };
     let desired_width = if handle.moves_horizontal() && handle.moves_vertical() {
-        let from_width_error = (raw_width / aspect_ratio - raw_height).abs();
-        let from_height_error = (raw_height * aspect_ratio - raw_width).abs();
-        if from_width_error <= from_height_error {
+        let horizontal_intent = (raw_width - source.width).abs();
+        let vertical_intent = (raw_height * aspect_ratio - source.width).abs();
+        if horizontal_intent >= vertical_intent {
             raw_width
         } else {
             raw_height * aspect_ratio
@@ -646,7 +657,46 @@ fn resize_payload(rect: ResizeRect, handle: ResizeHandle) -> UiValue {
 }
 
 #[derive(Default)]
-pub struct ResizablePrimitiveHandler;
+pub struct ResizablePrimitiveHandler {
+    controls: BTreeMap<PrimitiveInstanceId, (ResizableConfig, PrimitiveContext)>,
+}
+
+fn perform_keyboard_resize(
+    config: &ResizableConfig,
+    events: &PrimitiveContext,
+    key: &str,
+    shift: bool,
+    window: &mut Window,
+    cx: &mut App,
+) -> bool {
+    if config.disabled {
+        return false;
+    }
+    let step = if shift {
+        config.keyboard_step * 4.0
+    } else {
+        config.keyboard_step
+    };
+    let Some((dx, dy)) = keyboard_delta(config.handle, key, step) else {
+        return false;
+    };
+    let Some(boundary) = config.boundary_size.get() else {
+        return false;
+    };
+    if config.constraints.contain && !rect_within_boundary(config.source, boundary) {
+        return false;
+    }
+    let rect = resize_rect(
+        config.source,
+        config.handle,
+        dx,
+        dy,
+        config.constraints,
+        boundary,
+    );
+    events.propose("resize", resize_payload(rect, config.handle), window, cx);
+    true
+}
 
 impl PrimitiveHandler for ResizablePrimitiveHandler {
     fn uses_primary_focus(&self) -> bool {
@@ -661,6 +711,10 @@ impl PrimitiveHandler for ResizablePrimitiveHandler {
         _: &mut Window,
         _: &mut App,
     ) -> Result<AnyElement, String> {
+        let id = instance
+            .id
+            .clone()
+            .ok_or_else(|| "ResizableHandlePrimitive requires a stable key".to_owned())?;
         let config = parse_config(
             &instance.node.props,
             instance.focus_handle().cloned(),
@@ -668,54 +722,48 @@ impl PrimitiveHandler for ResizablePrimitiveHandler {
         )?;
         let key_config = config.clone();
         let key_events = events.clone();
+        self.controls.insert(id, (config.clone(), events.clone()));
         let mut root = div().size_full();
         if let Some(focus) = config.focus.as_ref() {
             root = root.track_focus(&focus.clone().tab_stop(!config.disabled));
         }
         Ok(root
             .on_key_down(move |event: &KeyDownEvent, window, cx| {
-                if key_config.disabled {
-                    return;
-                }
-                let step = if event.keystroke.modifiers.shift {
-                    key_config.keyboard_step * 4.0
-                } else {
-                    key_config.keyboard_step
-                };
-                let Some((dx, dy)) =
-                    keyboard_delta(key_config.handle, event.keystroke.key.as_str(), step)
-                else {
-                    return;
-                };
-                let Some(boundary) = key_events.element_bounds(&key_config.boundary_ref, cx) else {
-                    return;
-                };
-                if key_config.constraints.contain
-                    && !rect_within_boundary(key_config.source, (boundary.width, boundary.height))
-                {
-                    return;
-                }
-                let rect = resize_rect(
-                    key_config.source,
-                    key_config.handle,
-                    dx,
-                    dy,
-                    key_config.constraints,
-                    (boundary.width, boundary.height),
-                );
-                key_events.propose(
-                    "resize",
-                    resize_payload(rect, key_config.handle),
+                if perform_keyboard_resize(
+                    &key_config,
+                    &key_events,
+                    event.keystroke.key.as_str(),
+                    event.keystroke.modifiers.shift,
                     window,
                     cx,
-                );
-                cx.stop_propagation();
+                ) {
+                    cx.stop_propagation();
+                }
             })
             .child(ResizableHandleElement {
                 config,
                 events: events.clone(),
             })
             .into_any_element())
+    }
+
+    fn perform_key(
+        &mut self,
+        instance: &PrimitiveInstanceId,
+        key: &str,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Result<bool, String> {
+        let Some((config, events)) = self.controls.get(instance).cloned() else {
+            return Ok(false);
+        };
+        Ok(perform_keyboard_resize(
+            &config, &events, key, false, window, cx,
+        ))
+    }
+
+    fn unmount(&mut self, instance: &PrimitiveInstanceId) {
+        self.controls.remove(instance);
     }
 }
 
@@ -765,6 +813,7 @@ fn parse_config(
             .element_ref("boundary_ref")
             .cloned()
             .ok_or_else(|| "resizable requires boundary_ref".to_owned())?,
+        boundary_size: Rc::new(Cell::new(None)),
         x_signal,
         y_signal,
         width_signal,
@@ -982,7 +1031,7 @@ pub fn resizable_primitive_descriptor() -> PrimitiveDescriptor {
             },
         )]),
         state: ComponentStateSchema::default(),
-        lifecycle: false,
+        lifecycle: true,
         effect: None,
     }
 }

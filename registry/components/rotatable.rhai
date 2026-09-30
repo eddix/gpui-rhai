@@ -50,7 +50,7 @@ fn render_Rotatable(ctx,props){
     let x_signal=signal("rotation-x",0.0);
     let y_signal=signal("rotation-y",0.0);
     let token=`${props.angle}|${props.pivot.x}|${props.pivot.y}|${if "snap" in props{props.snap}else{()}}|${props.disabled}`;
-    let token_signal=signal("rotation-source-token",token);
+    let token_signal=signal("rotation-source-token","");
     let native=#{key:`${props.key}-rotation`,source_token:token,angle:props.angle,
         pivot_x:props.pivot.x,pivot_y:props.pivot.y,
         keyboard_step:props.keyboard_step,threshold:props.threshold,disabled:props.disabled,

@@ -1,0 +1,33 @@
+   Compiling gpui-rhai-native-keyboard-tests v0.0.0 (/var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T/gpui-runtime-core-audit-ns8to1bq)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.00s
+     Running tests/runtime_core_audit.rs (tests/native-keyboard/target/debug/deps/runtime_core_audit-09a6edfde3d4cab8)
+
+running 4 tests
+single-view move: ["captured-move"]
+drop from live source: ["Hide source", "dropped:deleted-resource"]
+test capture_single_view_control ... ok
+two-view move: ["down"]
+two-view up: ["down"]
+
+thread 'capture_first_view_survives_second_view_paint' (56276622) panicked at tests/runtime_core_audit.rs:92:5:
+assertion `left == right` failed: capture must route to the owning first view
+  left: ["down"]
+ right: ["captured-move"]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test application_drag_live_source_control ... ok
+drop after source unmount: ["source removed", "Hide source", "dropped:deleted-resource"]
+
+thread 'application_drag_must_cancel_when_source_unmounts' (56276621) panicked at tests/runtime_core_audit.rs:149:5:
+unmounted drag source must not submit stale payload to a surviving target
+test application_drag_must_cancel_when_source_unmounts ... FAILED
+test capture_first_view_survives_second_view_paint ... FAILED
+
+failures:
+
+failures:
+    application_drag_must_cancel_when_source_unmounts
+    capture_first_view_survives_second_view_paint
+
+test result: FAILED. 2 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.87s
+
+error: test failed, to rerun pass `--test runtime_core_audit`

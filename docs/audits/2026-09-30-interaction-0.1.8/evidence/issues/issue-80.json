@@ -1,0 +1,49 @@
+{
+  "body": "## Symptom\n\nA widget that starts the next async task from inside the previous task's completion callback (a plain \"work queue\" / pagination pattern) fails with\n\n```\nStack overflow (line N, position M)\n```\n\nafter a small, fixed number of hops, even though each callback itself is shallow. The failing operation is the completion callback (`execution.operation.callback`), and the view's `last_error` / diagnostic carries it.\n\nMinimal repro (any async capability that completes quickly; here oh-my-byted's `omb.exec` running `true`):\n\n```rhai\nfn start_chain(ctx, deps) { hop(ctx); }\nfn cleanup_chain(ctx, deps) { () }\nfn hop(ctx) {\n    ctx.start_task(\"omb.exec\", \"run\", #{ program: \"true\", args: [], timeout_ms: 5000 },\n        Fn(\"hopped\"), Fn(\"failed\"));\n}\nfn hopped(ctx, out) {\n    let n = ctx.get_state(\"hops\") + 1;\n    ctx.set_state(\"hops\", n);\n    if n < 200 { hop(ctx); }\n}\nfn failed(ctx, error) { () }\n\nfn render_Widget(ctx, props) {\n    effect(\"chain\", (), Fn(\"start_chain\"), Fn(\"cleanup_chain\"));\n    text(`hops=${ctx.get_state(\"hops\")}`)\n}\n```\n\nObserved with gpui-rhai 0.1.5: the chain stops at `hops=13` with `Stack overflow (line 32, ...)` (the `ctx.start_task` line inside `hop`). Each hop adds roughly `hopped -> hop -> start_task` levels on top of the previous one, and `configure_engine_limits` sets `max_call_levels(64)`.\n\nReal-world trigger: resolving ~40 upstream task names with a \"finish one, start the next\" worker pool died after ~37 completions.\n\n## Root cause (from reading 0.1.5)\n\n`ScriptInvocationContext::capture` (`src/invocation.rs`) stores `context.store_data()`, i.e. a `NativeCallContextStore` whose `global: GlobalRuntimeState` includes `level` — the call depth at the moment the callback was registered. When the host later dispatches the retained callback via `call_within_context`, Rhai resumes at that stored level. A callback that registers the next callback captures a deeper level again, so depth accumulates across hops that are not actually nested at runtime.\n\nThe operation counter already has the equivalent problem handled (`operation_base`, and the progress adapter's `align`); the call level does not.\n\n## Suggested fix\n\nWhen capturing a context for a *retained / delayed* invocation (task and subscription callbacks, event handlers), reset the stored depth, e.g.\n\n```rust\nlet mut data = context.store_data();\ndata.global.level = 0; // delayed dispatch starts a fresh stack\n```\n\n(or record a `level_base` and subtract it, mirroring `operation_base`). Synchronous nested calls keep their real depth, so the recursion guard still works where it matters.\n\n## Downstream workaround\n\noh-my-byted widgets queue the work in state and start each batch from an `effect` (effects are dispatched from the render cycle, so depth starts fresh); callbacks only bump a batch counter when a whole batch finishes.\n",
+  "comments": [
+    {
+      "id": "IC_kwDOUGviHM8AAAABXZ3AEw",
+      "author": {
+        "login": "eddix"
+      },
+      "authorAssociation": "OWNER",
+      "body": "已在 #81 的 `4c693eb1` 修复根因：仅 retained/delayed invocation 将 Rhai `global.level` 归零，同步嵌套仍保留真实递归深度和现有 `max_call_levels`。新增回归覆盖 200 次连续 retained callback 链，并确认真实同步递归仍报 stack overflow。后续会随 0.1.8 PR 一起合入；在 PR 合并前先保持 issue open。",
+      "createdAt": "2026-09-28T07:41:14Z",
+      "includesCreatedEdit": false,
+      "isMinimized": false,
+      "minimizedReason": "",
+      "reactionGroups": [],
+      "url": "https://github.com/eddix/gpui-rhai/issues/80#issuecomment-5865586707",
+      "viewerDidAuthor": true
+    },
+    {
+      "id": "IC_kwDOUGviHM8AAAABXik7pA",
+      "author": {
+        "login": "eddix"
+      },
+      "authorAssociation": "OWNER",
+      "body": "0.1.8 release candidate 已完成并通过最终矩阵。#80 的 retained/delayed call-depth 修复仍保持原设计：延迟调用从 fresh baseline 开始，同步递归继续受 max_call_levels 限制；200 跳 retained callback 与同步递归对照均通过。PR #81 已转 Ready，合并后由 PR 的 Closes 语句关闭本 issue。",
+      "createdAt": "2026-09-28T17:00:33Z",
+      "includesCreatedEdit": false,
+      "isMinimized": false,
+      "minimizedReason": "",
+      "reactionGroups": [],
+      "url": "https://github.com/eddix/gpui-rhai/issues/80#issuecomment-5874727844",
+      "viewerDidAuthor": true
+    }
+  ],
+  "createdAt": "2026-09-28T03:54:48Z",
+  "labels": [
+    {
+      "id": "LA_kwDOUGviHM8AAAACykxlBw",
+      "name": "bug",
+      "description": "Something isn't working",
+      "color": "d73a4a"
+    }
+  ],
+  "number": 80,
+  "state": "OPEN",
+  "title": "Retained callbacks inherit the capture-time call level, so chaining `start_task` from a task callback hits `Stack overflow` after ~13 hops",
+  "updatedAt": "2026-09-28T17:00:33Z",
+  "url": "https://github.com/eddix/gpui-rhai/issues/80"
+}

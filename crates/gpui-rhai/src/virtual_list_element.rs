@@ -102,9 +102,10 @@ impl Element for VirtualListEntityElement {
     ) {
         frame.element.prepaint(window, cx);
         let mut required = frame.view.read(cx).frame_indices.borrow().clone();
-        if let Some(source) = self.runtime.interactions.app_drag_source_id()
-            && let Some(index) = (0..self.content.data.len())
-                .find(|index| self.content.data.key(*index) == Some(source.as_str()))
+        let collection = format!("{}:{}", self.content.id.component, self.content.id.key);
+        if let Some((source, index)) = self.runtime.interactions.app_drag_pin(&collection)
+            && index < self.content.data.len()
+            && self.content.data.key(index) == Some(source.as_str())
         {
             required.insert(index);
         }

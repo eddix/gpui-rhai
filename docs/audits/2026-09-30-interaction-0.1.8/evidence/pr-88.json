@@ -1,0 +1,24 @@
+{
+  "baseRefName": "codex/interaction-runtime-0.1.8",
+  "body": "## Summary\n\n`UiNode::replace_virtual_collection_items` searched for the target collection by passing `items.clone()` to every child it visited. Each virtual realization therefore deep-copied the whole realized item map once per node that precedes the collection, then dropped all the copies. A scroll step cost (nodes before the collection) × (realized items).\n\nThis PR moves the map out of an `Option` only at the matching collection; nodes on the way receive nothing.\n\n## Evidence\n\n- **Real app** (oh-my-byted, 1,650-row NativeCollection-backed Table in a widget with a toolbar, tabs and header before it), `sample` of the main thread over 20 s of continuous scrolling:\n  - `realize_virtual_requests`: 51.5%, of which `replace_virtual_collection_items`: 31%\n  - `BTreeMap::clone`: 41%, `UiNode::clone`: 35%, the matching drops: about 28%\n  - the table scrolled at about 40 fps before this change and 60+ fps after it (user-observed with the app's fps badge).\n- **Headless** (0.1.7, release, `ScriptLifecycle`, NativeCollection Table nested after 80 sibling nodes; one step = shift the window by 3 rows and realize 28; median of 40 steps):\n\n  | rows | before | after |\n  |---|---|---|\n  | 1,652 | 7.60 ms | 1.46 ms |\n  | 20,000 | 7.60 ms | 1.18 ms |\n\n## Regression test\n\n`node::tests::realized_items_move_into_nested_collections_without_copies` builds three nested layouts: siblings before the collection, the collection inside an `ErrorBoundary`, and a preceding subtree without a collection. It asserts that the realized item arrives as the same allocation that was passed in, using the heap address of a `String` attribute. Without the fix it fails with `layout 0: realized items were copied`. It is deterministic, has no timing, and uses no `unsafe`.\n\n## Checks run locally (on this branch)\n\n- `cargo fmt --all -- --check`\n- `cargo clippy --workspace --all-targets --all-features -- -D warnings`\n- `cargo test --workspace --all-targets --all-features`: 593 passed, 0 failed\n- `cargo test -p gpui-rhai --lib --locked`: 428 passed, 0 failed\n- `cargo test --manifest-path tests/performance/Cargo.toml --locked`: 2 passed, 0 failed\n- `cargo doc -p gpui-rhai --all-features --no-deps`\n\nNot run locally:\n- `tests/native-keyboard`: needs an idle desktop session.\n- The visual baseline audit: needs screen recording permission on this machine.\n- `cargo package`.\n\n## Not included\n\nWe also tried two follow-ups against the remaining one-frame blank rows when flinging:\n- waking the host pump from `request_target` instead of waiting for the 16 ms frame poll;\n- a configurable Table `overdraw_pixels`, set to 600 px.\n\nIn the real app the blanks remained and the frame rate got worse. Presumably each realization is still a whole-view transaction (root clone, full reconcile, semantic frame rebuild), so running it more often and realizing more rows costs more than it saves; this was not profiled. Both were dropped. A real fix for the blanks probably needs incremental realization first.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n",
+  "headRefName": "fix/virtual-items-no-copy",
+  "headRefOid": "5ec2758e197b5ec6e7fdb868650c6847860a8071",
+  "isDraft": false,
+  "mergeable": "MERGEABLE",
+  "number": 88,
+  "state": "OPEN",
+  "statusCheckRollup": [
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-09-29T14:00:59Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/eddix/gpui-rhai/actions/runs/36575554889/job/109430129144",
+      "name": "portable",
+      "startedAt": "2026-09-29T13:30:13Z",
+      "status": "COMPLETED",
+      "workflowName": "CI"
+    }
+  ],
+  "title": "fix(collection): move realized items instead of copying them per node",
+  "url": "https://github.com/eddix/gpui-rhai/pull/88"
+}

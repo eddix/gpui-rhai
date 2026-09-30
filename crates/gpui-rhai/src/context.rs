@@ -238,6 +238,23 @@ impl UiRuntimeState {
         Ok(changed)
     }
 
+    /// Register one new Host-owned collection after mount and invalidate the
+    /// owning view so its next render can resolve the new name.
+    ///
+    /// # Errors
+    ///
+    /// Returns an invalid-name or duplicate-collection error.
+    pub fn register_native_collection_from_host(
+        &mut self,
+        root: &ComponentInstancePath,
+        name: &str,
+        collection: crate::NativeCollection,
+    ) -> Result<(), crate::NativeCollectionError> {
+        self.native_collections.register(name, collection)?;
+        self.dirty.insert(root.clone());
+        Ok(())
+    }
+
     /// Replace one Host-owned text revision and invalidate exact readers.
     ///
     /// # Errors
@@ -5189,5 +5206,32 @@ mod tests {
         );
         assert!(runtime.set_motion_preference_from_host(crate::MotionPreference::None));
         assert_eq!(runtime.motions.preference(), crate::MotionPreference::None);
+    }
+
+    #[test]
+    fn host_can_register_a_new_native_collection_after_mount() {
+        let mut runtime = UiRuntimeState::new();
+        let root = ComponentInstancePath::root("View", "live");
+        let collection = crate::NativeCollection::new(
+            "id",
+            [BTreeMap::from([(
+                "id".to_owned(),
+                UiValue::String("row-1".to_owned()),
+            )])],
+        )
+        .unwrap();
+        runtime
+            .register_native_collection_from_host(&root, "live_rows", collection)
+            .unwrap();
+        assert!(runtime.has_window_dirty(&root));
+        assert!(matches!(
+            runtime.register_native_collection_from_host(
+                &root,
+                "live_rows",
+                crate::NativeCollection::new("id", std::iter::empty::<BTreeMap<String, UiValue>>())
+                    .unwrap(),
+            ),
+            Err(crate::NativeCollectionError::DuplicateCollection(_))
+        ));
     }
 }

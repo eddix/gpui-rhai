@@ -1,0 +1,24 @@
+{
+  "body": "## 最小独立复现\n\n任意一个 `init()` 里调用「已在 `ui/app.toml` 声明」的能力的应用：\n\n```bash\ngpui-rhai --root /tmp/repro init\n```\n\n`ui/app.toml`:\n\n```toml\nentry = \"main\"\nruntime_api = 2\n\n[capabilities]\n\"app.demo\" = \"*\"\n```\n\n`ui/main.rhai`:\n\n```rhai\nfn init(ctx) {\n    let result = ctx.call_capability(\"app.demo\", \"ping\", ());\n}\n\nfn view(ctx) {\n    column([text(\"hello\")]).with_style(style().padding(px(16)))\n}\n```\n\n```bash\ngpui-rhai --root /tmp/repro check\n```\n\n## 实际行为\n\n```\ngpui-rhai: failed to evaluate Rhai UI source: Runtime error:\ncapability `CapabilityId(\"app.demo\")` was not declared by the application manifest\n```\n\n## 期望行为\n\n`check` 应通过（或以其他方式校验能力声明），因为该应用完全合法：\n\n- 能力契约明确允许同步能力在 `init` 中调用（docs/capabilities.md：\"Synchronous methods may run only in `init`, `dispose`, or an event callback\"）；\n- `ui/app.toml` 已声明 `\"app.demo\" = \"*\"`；\n- 真实挂载路径工作正常：`PreparedScriptView::mount` 会在生命周期启动前执行 `manifest.activate(...)`（crates/gpui-rhai/src/app.rs 两处调用点），同一应用实际运行无此错误。\n\n## 根因分析\n\n`gpui-rhai-cli` 的 `check` 在 `validate_entry`（crates/gpui-rhai-cli/src/lib.rs）中手工搭了一个求值环境：`UiRuntimeState::new()` + `ScriptLifecycle::new(...)`，随后 `lifecycle.start(...)` 会执行 `init`——但全程**没有**把 `ui/app.toml` 里声明的能力激活进 capability registry（`check` 读 app.toml 只校验了 `entry` 与 `runtime_api` 字段）。于是任何在 `init` 或首帧渲染中调用能力的应用都被 `check` 误拒。\n\n这意味着：使用 capability 的应用（docs/capabilities.md 的主推集成方式）全部无法通过 `gpui-rhai check`。\n\n可能的修法方向（供参考）：`validate_entry` 在启动生命周期前，基于 app.toml 的声明做激活；难点在于 check 环境没有真实 handler——可以考虑「声明即放行调用但返回 schema 合法的占位值」，或将该阶段的求值限制为不执行 init 的静态校验。具体语义由你们定。\n\n## 环境\n\n- gpui-rhai 本地 checkout：`0b9b887c`（chore(release): prepare 0.1.8，工作区干净）\n- macOS（Apple Silicon）\n\n## 来源与严重度\n\n- 发现场景：Cadenza（真实应用迁移试验田）M1，其 `init()` 需要调 `cadenza.library` 的 `card_status` 加载首屏数据。\n- 严重度：**可绕行**（应用真实运行正常，只是 `check` 无法使用；目前跳过 `check`）。",
+  "comments": [],
+  "createdAt": "2026-09-29T15:28:59Z",
+  "labels": [
+    {
+      "id": "LA_kwDOUGviHM8AAAACykxlBw",
+      "name": "bug",
+      "description": "Something isn't working",
+      "color": "d73a4a"
+    },
+    {
+      "id": "LA_kwDOUGviHM8AAAAC5h8DzA",
+      "name": "cadenza",
+      "description": "Dogfooding reports from the Cadenza migration (real-app proving ground)",
+      "color": "1d76db"
+    }
+  ],
+  "number": 90,
+  "state": "OPEN",
+  "title": "gpui-rhai check rejects valid apps whose init() calls a manifest-declared capability",
+  "updatedAt": "2026-09-29T15:28:59Z",
+  "url": "https://github.com/eddix/gpui-rhai/issues/90"
+}

@@ -89,10 +89,10 @@ fn render_Draggable(ctx, props) {
         .accessibility_role("group").accessibility_label(props.label);
     let children = [];
     if "handle" in props && props.handle != () {
-        children.push(props.handle.with_key(`${props.key}-handle`).with_ref(handle_ref)
+        children.push(box([props.handle]).with_key(`${props.key}-handle`).with_ref(handle_ref)
             .with_style(ctx.component_style("handle", style())));
     }
-    children.push(props.content.with_key(`${props.key}-content`)
+    children.push(box([props.content]).with_key(`${props.key}-content`)
         .with_style(ctx.component_style("content", style())));
     children.push(interaction);
     let surface = column(children).with_key(object_key).with_ref(object_ref)

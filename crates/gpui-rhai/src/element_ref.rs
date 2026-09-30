@@ -68,6 +68,13 @@ impl CustomType for ElementRef {
             .with_name("ElementRef")
             .with_get("key", |reference: &mut Self| {
                 ImmutableString::from(reference.id.key.as_str())
+            })
+            .with_get("scope", |reference: &mut Self| {
+                ImmutableString::from(format!(
+                    "{}:{}",
+                    reference.id.component(),
+                    reference.id.key()
+                ))
             });
     }
 }

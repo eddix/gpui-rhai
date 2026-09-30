@@ -1,0 +1,33 @@
+   Compiling audit-018-collections-tree v0.0.0 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/docs/audits/2026-09-30-interaction-0.1.8/collections-tree/probe)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 4.28s
+     Running `target/debug/audit-018-collections-tree`
+tree no active ERROR: failed to evaluate Rhai UI source: Runtime error: virtual collection `reveal_key` must be a string @ 'components/tree' (line 123, position 14)
+in call to function 'render_Tree' (from 'components/tree') @ 'components/tree' (line 54, position 16)
+in call to function 'Tree' (from 'components/tree') (line 3, position 28)
+tree empty ERROR: failed to evaluate Rhai UI source: Runtime error: virtual collection `reveal_key` must be a string @ 'components/tree' (line 123, position 14)
+in call to function 'render_Tree' (from 'components/tree') @ 'components/tree' (line 54, position 16)
+in call to function 'Tree' (from 'components/tree') (line 3, position 28)
+tree collapsed active child ERROR: failed to evaluate Rhai UI source: Runtime error: virtual collection reveal key `child` is not present in its data @ 'components/tree' (line 123, position 14)
+in call to function 'render_Tree' (from 'components/tree') @ 'components/tree' (line 54, position 16)
+in call to function 'Tree' (from 'components/tree') (line 3, position 28)
+tree disabled parent mounted
+ key up: Some(String("child"))
+ key down: Some(String("next"))
+ key left: Some(Map({"key": String("parent"), "kind": String("active")}))
+ key right: Some(Map({"kind": String("none")}))
+ key home: Some(String("child"))
+ key end: Some(String("next"))
+ key enter: Some(Map({"key": String("child"), "kind": String("select"), "label": String("Child")}))
+ handlers: ["key:down", "key:end", "key:enter", "key:home", "key:left", "key:right", "key:up"]
+tree after accepting disabled parent mounted
+ key up: Some(String("child"))
+ key down: Some(String("next"))
+ key left: Some(Map({"key": String("parent"), "kind": String("active")}))
+ key right: Some(Map({"kind": String("none")}))
+ key home: Some(String("child"))
+ key end: Some(String("next"))
+ key enter: Some(Map({"key": String("child"), "kind": String("select"), "label": String("Child")}))
+ handlers: ["key:down", "key:end", "key:enter", "key:home", "key:left", "key:right", "key:up"]
+tree deleted expanded ERROR: failed to evaluate Rhai UI source: Runtime error: expanded outline key `deleted` is unknown @ 'components/tree' (line 107, position 14)
+in call to function 'render_Tree' (from 'components/tree') @ 'components/tree' (line 54, position 16)
+in call to function 'Tree' (from 'components/tree') (line 3, position 28)

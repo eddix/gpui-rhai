@@ -752,8 +752,11 @@ impl RuntimeEngine {
             SplitResizePrimitiveHandler,
         )
         .expect("built-in split resize primitive descriptor is valid");
-        self.register_primitive(resizable_primitive_descriptor(), ResizablePrimitiveHandler)
-            .expect("built-in resizable primitive descriptor is valid");
+        self.register_primitive(
+            resizable_primitive_descriptor(),
+            ResizablePrimitiveHandler::default(),
+        )
+        .expect("built-in resizable primitive descriptor is valid");
         self.register_primitive(draggable_primitive_descriptor(), DraggablePrimitiveHandler)
             .expect("built-in draggable primitive descriptor is valid");
         self.register_primitive(
@@ -2249,6 +2252,11 @@ fn register_native_handler_api(engine: &mut Engine, registry: &crate::NativeHand
         );
 }
 
+pub(crate) const RHAI_MAX_ARRAY_SIZE: usize = 10_000;
+pub(crate) const RHAI_MAX_MAP_SIZE: usize = 100_000;
+pub(crate) const RHAI_MAX_STRING_SIZE: usize = 1_048_576;
+pub(crate) const RHAI_MAX_DATA_DEPTH: usize = 64;
+
 fn configure_engine_limits(engine: &mut Engine) {
     engine.set_max_call_levels(64);
     engine.set_max_expr_depths(64, 32);
@@ -2256,9 +2264,9 @@ fn configure_engine_limits(engine: &mut Engine) {
     // contexts. The runtime's progress adapter enforces one cumulative budget
     // across nested evaluators and starts delayed callbacks with fresh quota.
     engine.set_max_operations(0);
-    engine.set_max_array_size(10_000);
-    engine.set_max_map_size(100_000);
-    engine.set_max_string_size(1_048_576);
+    engine.set_max_array_size(RHAI_MAX_ARRAY_SIZE);
+    engine.set_max_map_size(RHAI_MAX_MAP_SIZE);
+    engine.set_max_string_size(RHAI_MAX_STRING_SIZE);
 }
 
 fn register_define_component_api(

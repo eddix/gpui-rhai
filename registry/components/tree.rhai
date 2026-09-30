@@ -101,24 +101,36 @@ fn tree_row(expanded,selected,active,mode,disabled,ctx,payload){
     node
 }
 fn eligible_rows(rows){let result=[];for row in rows{if !row.disabled{result.push(row);}}result}
-fn row_index(rows,key){for index in 0..rows.len{if rows[index].key==key{return index;}}0}
+fn row_index(rows,key){for index in 0..rows.len{if rows[index].key==key{return index;}}()}
+fn eligible_parent(rows,eligible,key){
+    let cursor=key;
+    while cursor!=(){
+        for row in eligible{if row.key==cursor{return cursor;}}
+        let next=();for row in rows{if row.key==cursor{next=row.parent;}}
+        cursor=next;
+    }
+    ()
+}
 fn render_Tree(ctx,props){
     if ("height" in props&&props.height!=())==props.fill_height{throw "Tree requires exactly one of height or fill_height";}
     let rows=outline_projection(props.items,props.expanded);let eligible=eligible_rows(rows);
-    let active=if "active_key" in props{props.active_key}else{()};
-    let current=if active==()||eligible.len==0{0}else{row_index(eligible,active)};
+    let source_active=if "active_key" in props{props.active_key}else{()};
+    let active_index=if source_active==(){()}else{row_index(eligible,source_active)};
+    let active=if active_index==(){()}else{source_active};
+    let current=if active_index==(){0}else{active_index};
     let previous=if eligible.len==0{()}else{eligible[if current>0{current-1}else{0}].key};
     let next=if eligible.len==0{()}else{eligible[if current+1<eligible.len{current+1}else{eligible.len-1}].key};
     let first=if eligible.len==0{()}else{eligible[0].key};let last=if eligible.len==0{()}else{eligible[eligible.len-1].key};
     let active_row=if eligible.len==0{()}else{eligible[current]};
+    let parent=if active_row==(){()}else{eligible_parent(rows,eligible,active_row.parent)};
     let left=if active_row==(){#{kind:"none"}}else if active_row.has_children&&active_row.expanded{
-        #{kind:"toggle",key:active_row.key}}else if active_row.parent!=(){#{kind:"active",key:active_row.parent}}else{#{kind:"none"}};
+        #{kind:"toggle",key:active_row.key}}else if parent!=(){#{kind:"active",key:parent}}else{#{kind:"none"}};
     let right=if active_row==(){#{kind:"none"}}else if active_row.has_children&&!active_row.expanded{
         #{kind:"toggle",key:active_row.key}}else if current+1<eligible.len&&eligible[current+1].depth>active_row.depth{
         #{kind:"active",key:eligible[current+1].key}}else{#{kind:"none"}};
     let renderer=Fn("tree_row").curry(props.expanded,props.selected_keys,active,props.selection_mode,props.disabled);
-    let config=#{key:`${props.key}-rows`,label:props.label,data:rows,estimated_height:props.estimated_row_height,
-        reveal_key:if active!=(){active}else{()}};
+    let config=#{key:`${props.key}-rows`,label:props.label,data:rows,estimated_height:props.estimated_row_height};
+    if active!=(){config.reveal_key=active;}
     if "height" in props&&props.height!=(){config.height=props.height;}else{config.fill_height=true;}
     let root=virtual_collection(config,renderer).with_key(props.key)
         .with_style(ctx.component_style("root",style().border(px(1)).border_color(theme_color("border"))))

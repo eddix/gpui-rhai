@@ -41,7 +41,7 @@ exact family version:
 
 ```toml
 [dependencies]
-gpui-rhai = "0.1.7"
+gpui-rhai = "0.1.8"
 gpui = { package = "gpui-pre", version = "=0.3.7", default-features = false, features = ["font-kit"] }
 gpui_platform = { package = "gpui-pre-platform", version = "=0.3.7", default-features = false, features = ["font-kit", "runtime_shaders", "wayland", "x11"] }
 ```
@@ -112,6 +112,14 @@ placements.
 Several Hosts may intentionally coexist in one window. Capture routing is
 limited to each Host container, so their Overlay domains do not dismiss one
 another. Use one shared Host whenever sibling widgets should coordinate.
+Within one Host, every mounted View retains its own pointer-capture route;
+painting or suspending a sibling cannot overwrite the actual capture owner.
+
+Suspension quiesces focus, overlays, gestures and native previews before the
+API returns, without scheduling a render of the now-suspended child. The Host
+must stop requesting `element()` until `resume` succeeds; calling `element()`
+while suspended remains an explicit `SuspendedView` error rather than silently
+resuming or painting stale UI.
 
 ## Rhai shells around Host-owned content
 

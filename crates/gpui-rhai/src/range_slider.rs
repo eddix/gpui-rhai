@@ -69,6 +69,7 @@ struct RangeSliderEntity {
     fill_style: Style,
     thumb_style: Style,
     theme: PrimitiveTheme,
+    revision: u64,
 }
 
 impl RangeSliderEntity {
@@ -101,6 +102,7 @@ impl RangeSliderEntity {
             fill_style: config.fill_style,
             thumb_style: config.thumb_style,
             theme: config.theme,
+            revision: 1,
         }
     }
 
@@ -109,8 +111,20 @@ impl RangeSliderEntity {
         config: RangeSliderConfig,
         events: PrimitiveContext,
         cx: &mut Context<Self>,
-    ) {
+    ) -> bool {
         let values = normalize_pair(config.values, &config);
+        let changed = self.controlled != values
+            || self.min.to_bits() != config.min.to_bits()
+            || self.max.to_bits() != config.max.to_bits()
+            || self.step.to_bits() != config.step.to_bits()
+            || self.minimum_gap.to_bits() != config.minimum_gap.to_bits()
+            || self.orientation != config.orientation
+            || self.disabled != config.disabled;
+        if changed {
+            self.revision = self.revision.saturating_add(1);
+            self.preview = values;
+            self.dragging = false;
+        }
         self.controlled = values;
         if !self.dragging || config.disabled {
             self.preview = values;
@@ -130,6 +144,7 @@ impl RangeSliderEntity {
         self.thumb_style = config.thumb_style;
         self.theme = config.theme;
         cx.notify();
+        changed
     }
 
     fn ratio(&self, value: f64) -> f64 {
@@ -165,17 +180,21 @@ impl RangeSliderEntity {
     fn set_active_value(&mut self, value: f64) {
         match self.active {
             RangeThumb::Low => {
-                self.preview.low = normalize_value(
+                self.preview.low = normalize_constrained_value(
                     value,
                     self.min,
+                    self.min,
                     self.preview.high - self.minimum_gap,
+                    self.max,
                     self.step,
                 );
             }
             RangeThumb::High => {
-                self.preview.high = normalize_value(
+                self.preview.high = normalize_constrained_value(
                     value,
+                    self.min,
                     self.preview.low + self.minimum_gap,
+                    self.max,
                     self.max,
                     self.step,
                 );
@@ -194,25 +213,31 @@ impl RangeSliderEntity {
             RangeThumb::High => self.high_focus.focus(window, cx),
         }
         self.dragging = true;
+        let revision = self.revision;
         self.set_active_value(value);
         let entity = cx.entity();
         let update_entity = entity.clone();
         let update =
             move |gesture: crate::interaction::GestureUpdate, _: &mut Window, cx: &mut App| {
-                update_entity.update(cx, |slider, cx| {
-                    if slider.disabled {
-                        return;
+                let current = update_entity.update(cx, |slider, cx| {
+                    if slider.disabled || slider.revision != revision {
+                        return false;
                     }
                     slider.set_active_value(slider.value_at(gesture.current()));
                     cx.notify();
+                    true
                 });
-                crate::interaction::InteractionFlow::Continue
+                if current {
+                    crate::interaction::InteractionFlow::Continue
+                } else {
+                    crate::interaction::InteractionFlow::Cancel
+                }
             };
         let finish_entity = entity.clone();
         let finish =
             move |gesture: crate::interaction::GestureUpdate, window: &mut Window, cx: &mut App| {
                 finish_entity.update(cx, |slider, cx| {
-                    if !slider.disabled {
+                    if !slider.disabled && slider.revision == revision {
                         slider.set_active_value(slider.value_at(gesture.current()));
                         slider.emit_change(window, cx);
                     }
@@ -501,7 +526,7 @@ impl PrimitiveHandler for RangeSliderPrimitiveHandler {
         instance: &PrimitiveInstance,
         events: &PrimitiveContext,
         theme: &PrimitiveTheme,
-        _: &mut Window,
+        window: &mut Window,
         cx: &mut App,
     ) -> Result<AnyElement, String> {
         let id = instance
@@ -516,12 +541,16 @@ impl PrimitiveHandler for RangeSliderPrimitiveHandler {
             let interaction_key = format!("{}:{}", id.key(), id.node());
             let entity =
                 cx.new(|cx| RangeSliderEntity::new(config.clone(), events, interaction_key, cx));
-            self.instances.insert(id, entity.clone());
+            self.instances.insert(id.clone(), entity.clone());
             entity
         };
-        entity.update(cx, |slider, cx| {
-            slider.update_props(config, events.clone(), cx);
+        let changed = entity.update(cx, |slider, cx| {
+            slider.update_props(config, events.clone(), cx)
         });
+        if changed {
+            let owner = events.interaction_owner(&format!("{}:{}", id.key(), id.node()));
+            events.cancel_interaction(&owner, window, cx);
+        }
         Ok(entity.into_any_element())
     }
 
@@ -598,11 +627,40 @@ fn normalize_pair_values(
     step: f64,
     minimum_gap: f64,
 ) -> RangePair {
-    let low = normalize_value(values.low, min, max, step);
-    let high = normalize_value(values.high, min, max, step);
-    RangePair {
-        low: low.min(high - minimum_gap),
-        high: high.max(low + minimum_gap),
+    let mut low = normalize_value(values.low, min, max, step);
+    let mut high = normalize_value(values.high, min, max, step);
+    if high - low < minimum_gap {
+        high =
+            normalize_constrained_value(low + minimum_gap, min, low + minimum_gap, max, max, step);
+        if high - low < minimum_gap {
+            low = normalize_constrained_value(
+                high - minimum_gap,
+                min,
+                min,
+                high - minimum_gap,
+                max,
+                step,
+            );
+        }
+    }
+    RangePair { low, high }
+}
+
+fn normalize_constrained_value(
+    value: f64,
+    origin: f64,
+    feasible_min: f64,
+    feasible_max: f64,
+    global_max: f64,
+    step: f64,
+) -> f64 {
+    let snapped = normalize_value(value, origin, global_max, step);
+    let first = origin + ((feasible_min - origin) / step).ceil() * step;
+    let last = origin + ((feasible_max - origin) / step).floor() * step;
+    if first <= last {
+        snapped.clamp(first, last)
+    } else {
+        value.clamp(feasible_min, feasible_max)
     }
 }
 
