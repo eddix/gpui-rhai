@@ -36,3 +36,10 @@ Product verification includes 476 core all-feature tests, 446 default-feature
 tests, the complete workspace integration/example/CLI matrix, 133 independent
 native tests, structural performance, strict Clippy and release gates. Remote
 CI status is recorded on PR #94. No crate or tag is published by this work.
+
+Final lifecycle combination review added one further native regression: active
+rotation suspension previously tried to read its ScriptHostView while that
+entity was being updated. Primitive geometry reads now share the existing
+lifecycle Runtime access lease with signal cleanup. The corrected test also
+models the Host's required removal of a suspended view from its render tree.
+The native suite therefore contains 134 tests after this addition.

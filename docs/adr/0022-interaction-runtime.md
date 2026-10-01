@@ -46,6 +46,8 @@ Primitive suspend/resume/compensation runs inside the owning ScriptHostView
 update. During that lifecycle lease, signal reads and writes use the runtime
 state directly instead of re-reading or updating the same GPUI Entity. This
 single phase boundary covers idle controls as well as active cancellation.
+Primitive geometry reads share this Runtime lease: cancellation can inspect
+current Canvas bounds during suspend without re-entering the ScriptHostView.
 
 A retained primitive has one canonical instance identity: primitive type,
 presented retained key and retained `NodeId`. Constructor-local keys remain

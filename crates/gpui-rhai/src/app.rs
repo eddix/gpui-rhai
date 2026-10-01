@@ -3196,6 +3196,33 @@ struct DirectSignalAccessGuard {
     previous: bool,
 }
 
+#[derive(Clone)]
+struct PrimitiveRuntimeReader {
+    owner: gpui::WeakEntity<ScriptHostView>,
+    runtime: Rc<RefCell<UiRuntimeState>>,
+    view_id: String,
+    lifecycle_access: Rc<Cell<bool>>,
+}
+
+impl PrimitiveRuntimeReader {
+    fn read<T>(
+        &self,
+        app: &App,
+        query: impl FnOnce(&UiRuntimeState, &str) -> Option<T>,
+    ) -> Option<T> {
+        if self.lifecycle_access.get() {
+            query(&self.runtime.borrow(), &self.view_id)
+        } else {
+            self.owner
+                .read_with(app, |view, _| {
+                    query(&view.lifecycle.runtime().borrow(), &view.view_id)
+                })
+                .ok()
+                .flatten()
+        }
+    }
+}
+
 impl Drop for DirectSignalAccessGuard {
     fn drop(&mut self) {
         self.flag.set(self.previous);
@@ -3344,6 +3371,7 @@ fn script_node_dispatcher(
     cx: &Context<ScriptHostView>,
     runtime: Rc<RefCell<UiRuntimeState>>,
     direct_signal_access: Rc<Cell<bool>>,
+    view_id: &str,
 ) -> NodeEventDispatcher {
     let script_entity = cx.entity().downgrade();
     let native_entity = script_entity.clone();
@@ -3351,9 +3379,14 @@ fn script_node_dispatcher(
     let signal_read_entity = script_entity.clone();
     let signal_read_runtime = Rc::clone(&runtime);
     let signal_read_direct = Rc::clone(&direct_signal_access);
-    let geometry_entity = script_entity.clone();
-    let canvas_geometry_entity = script_entity.clone();
-    let canvas_bounds_entity = script_entity.clone();
+    let geometry_reader = PrimitiveRuntimeReader {
+        owner: script_entity.clone(),
+        runtime: Rc::clone(&runtime),
+        view_id: view_id.to_owned(),
+        lifecycle_access: Rc::clone(&direct_signal_access),
+    };
+    let canvas_geometry_reader = geometry_reader.clone();
+    let canvas_bounds_reader = geometry_reader.clone();
     NodeEventDispatcher::new(move |callback, payload, target, window, app| {
         script_entity
             .update(app, |view, cx| {
@@ -3406,55 +3439,40 @@ fn script_node_dispatcher(
             .unwrap_or_else(|_| Err(crate::SignalError::Stale(signal.id().clone())))
     })
     .with_element_bounds(move |reference, app| {
-        geometry_entity
-            .read_with(app, |view, _| {
-                let runtime = view.lifecycle.runtime();
-                let runtime = runtime.borrow();
-                let node = runtime.element_refs.resolve(reference).ok()?;
-                runtime
-                    .geometry_for(Some(&view.view_id))
-                    .presented(node)
-                    .ok()
-                    .map(|geometry| geometry.layout)
-            })
-            .ok()
-            .flatten()
+        geometry_reader.read(app, |runtime, view_id| {
+            let node = runtime.element_refs.resolve(reference).ok()?;
+            runtime
+                .geometry_for(Some(view_id))
+                .presented(node)
+                .ok()
+                .map(|geometry| geometry.layout)
+        })
     })
     .with_canvas_local_point(move |reference, point, app| {
-        canvas_geometry_entity
-            .read_with(app, |view, _| {
-                let runtime = view.lifecycle.runtime();
-                let runtime = runtime.borrow();
-                let node = runtime.element_refs.resolve(reference).ok()?;
-                let geometry = runtime.geometry_for(Some(&view.view_id));
-                let bounds = geometry.canvas_drawable(node)?;
-                let local = (point.0 - bounds.visual.x, point.1 - bounds.visual.y);
-                Some(
-                    crate::canvas::canvas_motion_affine(
-                        bounds.layout.width,
-                        bounds.layout.height,
-                        geometry.canvas_transform(node),
-                    )
-                    .inverse()?
-                    .map_point(local),
+        canvas_geometry_reader.read(app, |runtime, view_id| {
+            let node = runtime.element_refs.resolve(reference).ok()?;
+            let geometry = runtime.geometry_for(Some(view_id));
+            let bounds = geometry.canvas_drawable(node)?;
+            let local = (point.0 - bounds.visual.x, point.1 - bounds.visual.y);
+            Some(
+                crate::canvas::canvas_motion_affine(
+                    bounds.layout.width,
+                    bounds.layout.height,
+                    geometry.canvas_transform(node),
                 )
-            })
-            .ok()
-            .flatten()
+                .inverse()?
+                .map_point(local),
+            )
+        })
     })
     .with_canvas_bounds(move |reference, app| {
-        canvas_bounds_entity
-            .read_with(app, |view, _| {
-                let runtime = view.lifecycle.runtime();
-                let runtime = runtime.borrow();
-                let node = runtime.element_refs.resolve(reference).ok()?;
-                runtime
-                    .geometry_for(Some(&view.view_id))
-                    .canvas_drawable(node)
-                    .map(|bounds| bounds.layout)
-            })
-            .ok()
-            .flatten()
+        canvas_bounds_reader.read(app, |runtime, view_id| {
+            let node = runtime.element_refs.resolve(reference).ok()?;
+            runtime
+                .geometry_for(Some(view_id))
+                .canvas_drawable(node)
+                .map(|bounds| bounds.layout)
+        })
     })
 }
 
@@ -3568,6 +3586,7 @@ impl Render for ScriptHostView {
             cx,
             self.lifecycle.runtime(),
             Rc::clone(&self.direct_signal_access),
+            &self.view_id,
         );
         let appearance = system_appearance(window.appearance());
         let snapshot = self.render_snapshot(appearance);
