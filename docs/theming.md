@@ -119,6 +119,13 @@ Rhai may select fixed variants with `set_theme`, `set_window_theme`, and
 corresponding `*_theme_system(family)` methods. App-level changes invalidate all
 windows; window and subtree changes remain local.
 
+Scripts may also read what resolved: `ctx.theme_variant()` returns
+`#{ family, name, mode }` for the context's window and component scope (or
+`()` when no theme is installed), tracked as a theme environment dependency
+— effects that read it re-run when the selection or the system appearance
+changes. This is how a canvas palette that computes colors in script can
+follow a `*_theme_system` preference.
+
 Literal colors are supported for exceptional geometry, but official components
 should use `theme_color("semantic_name")`.
 
