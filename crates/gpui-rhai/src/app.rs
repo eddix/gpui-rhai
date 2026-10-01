@@ -1399,6 +1399,7 @@ pub struct FileScriptView {
     runtime_clock: crate::RuntimeClock,
     fonts: Vec<crate::FontSource>,
     theme_token_overrides: ThemeTokenOverrides,
+    operation_limit: Option<u64>,
 }
 
 impl FileScriptView {
@@ -1416,6 +1417,7 @@ impl FileScriptView {
             runtime_clock: crate::RuntimeClock::default(),
             fonts: Vec::new(),
             theme_token_overrides: ThemeTokenOverrides::default(),
+            operation_limit: None,
         }
     }
 
@@ -1486,6 +1488,18 @@ impl FileScriptView {
         self
     }
 
+    /// Raise or lower the per-execution script operation budget for this
+    /// view's scripts. `None` (the default) keeps the runtime's built-in
+    /// 1,000,000-operation budget; hosts that run known one-shot cacheable
+    /// script phases may raise it. The limit is applied to every engine
+    /// instantiated for this view, including hot-reload candidates and
+    /// additional windows.
+    #[must_use]
+    pub fn operation_limit(mut self, limit: u64) -> Self {
+        self.operation_limit = Some(limit);
+        self
+    }
+
     /// Read, compile, initialize, and render the app before opening GPUI.
     ///
     /// # Errors
@@ -1499,6 +1513,9 @@ impl FileScriptView {
         })?;
         let extensions = Rc::new(self.extensions);
         let mut engine = RuntimeEngine::new();
+        if let Some(limit) = self.operation_limit {
+            engine.set_operation_limit(limit);
+        }
         for extension in extensions.iter() {
             extension
                 .configure_engine(&mut engine)
@@ -1563,6 +1580,7 @@ impl FileScriptView {
             #[cfg(feature = "dev-reload")]
             theme_token_overrides: self.theme_token_overrides.clone(),
             show_error_banner: Cell::new(true),
+            operation_limit: self.operation_limit,
             #[cfg(feature = "dev-reload")]
             development: self.development,
         });
@@ -1602,6 +1620,7 @@ pub struct EmbeddedScriptView {
     runtime_clock: crate::RuntimeClock,
     fonts: Vec<crate::FontSource>,
     theme_token_overrides: ThemeTokenOverrides,
+    operation_limit: Option<u64>,
 }
 
 impl EmbeddedScriptView {
@@ -1631,6 +1650,7 @@ impl EmbeddedScriptView {
             runtime_clock: crate::RuntimeClock::default(),
             fonts: Vec::new(),
             theme_token_overrides: ThemeTokenOverrides::default(),
+            operation_limit: None,
         }
     }
 
@@ -1732,6 +1752,17 @@ impl EmbeddedScriptView {
         self
     }
 
+    /// Raise or lower the per-execution script operation budget for this
+    /// view's scripts. `None` (the default) keeps the runtime's built-in
+    /// 1,000,000-operation budget; hosts that run known one-shot cacheable
+    /// script phases may raise it. The limit is applied to every engine
+    /// instantiated for this view, including additional windows.
+    #[must_use]
+    pub fn operation_limit(mut self, limit: u64) -> Self {
+        self.operation_limit = Some(limit);
+        self
+    }
+
     /// Compile and initialize a fully embedded application.
     ///
     /// # Errors
@@ -1743,6 +1774,9 @@ impl EmbeddedScriptView {
         validate_manifest_entry(&self.manifest, &self.entry)?;
         let extensions = Rc::new(self.extensions);
         let mut engine = RuntimeEngine::new();
+        if let Some(limit) = self.operation_limit {
+            engine.set_operation_limit(limit);
+        }
         for extension in extensions.iter() {
             extension
                 .configure_engine(&mut engine)
@@ -1817,6 +1851,7 @@ impl EmbeddedScriptView {
             #[cfg(feature = "dev-reload")]
             theme_token_overrides: self.theme_token_overrides.clone(),
             show_error_banner: Cell::new(true),
+            operation_limit: self.operation_limit,
             #[cfg(feature = "dev-reload")]
             development: self.development,
         });
@@ -2303,6 +2338,7 @@ struct ScriptWindowFactory {
     #[cfg(feature = "dev-reload")]
     theme_token_overrides: ThemeTokenOverrides,
     show_error_banner: Cell<bool>,
+    operation_limit: Option<u64>,
     #[cfg(feature = "dev-reload")]
     development: bool,
 }
@@ -2314,6 +2350,9 @@ impl ScriptWindowFactory {
         window_id: &str,
     ) -> Result<(RuntimeEngine, ScriptLifecycle, PrimitiveRegistry), ScriptViewError> {
         let mut engine = RuntimeEngine::new();
+        if let Some(limit) = self.operation_limit {
+            engine.set_operation_limit(limit);
+        }
         for extension in self.extensions.iter() {
             extension
                 .configure_engine(&mut engine)
