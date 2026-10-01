@@ -2789,8 +2789,20 @@ impl UiContext {
 
     #[must_use]
     pub fn motion_tokens(&self) -> crate::ThemeMotion {
+        self.resolved_theme_variant()
+            .map_or_else(crate::ThemeMotion::default, |variant| {
+                variant.tokens.motion.clone()
+            })
+    }
+
+    /// The active theme variant for this context's window/component scope,
+    /// tracked as a theme environment dependency so effects that read it
+    /// re-run when the selection or system appearance changes. `None` when
+    /// no theme manager is installed or the preference fails to resolve.
+    #[must_use]
+    pub fn resolved_theme_variant(&self) -> Option<crate::ThemeVariant> {
         let Ok(mut runtime) = self.runtime.try_borrow_mut() else {
-            return crate::ThemeMotion::default();
+            return None;
         };
         runtime
             .environment_dependencies
@@ -2808,9 +2820,17 @@ impl UiContext {
                     .resolve(self.window.as_deref(), Some(&self.component), appearance)
                     .ok()
             })
-            .map_or_else(crate::ThemeMotion::default, |theme| {
-                theme.variant().tokens.motion.clone()
-            })
+            .map(|theme| theme.variant().clone())
+    }
+
+    /// The active theme's family and variant names, e.g. `("base", "Dark")`.
+    ///
+    /// The read participates in theme environment tracking: an effect or
+    /// render that depends on it is invalidated when the theme changes.
+    #[must_use]
+    pub fn theme_selection(&self) -> Option<(String, String)> {
+        self.resolved_theme_variant()
+            .map(|variant| (variant.family.clone(), variant.name.clone()))
     }
 
     /// Resolve a semantic motion duration.
@@ -4063,6 +4083,25 @@ fn number_format_options(mut options: Map) -> Result<NumberFormatOptions, Box<Ev
 fn register_theme_context_methods(builder: &mut TypeBuilder<UiContext>) {
     builder
         .with_fn(
+            "theme_variant",
+            |context: &mut UiContext| -> Result<Dynamic, Box<EvalAltResult>> {
+                let Some(variant) = context.resolved_theme_variant() else {
+                    return Ok(Dynamic::UNIT);
+                };
+                let mut map = rhai::Map::new();
+                map.insert("family".into(), Dynamic::from(variant.family.clone()));
+                map.insert("name".into(), Dynamic::from(variant.name.clone()));
+                map.insert(
+                    "mode".into(),
+                    Dynamic::from(match variant.mode {
+                        crate::ThemeMode::Light => "light",
+                        crate::ThemeMode::Dark => "dark",
+                    }),
+                );
+                Ok(Dynamic::from(map))
+            },
+        )
+        .with_fn(
             "set_theme",
             |context: &mut UiContext, family: ImmutableString, variant: ImmutableString| {
                 context
@@ -4505,6 +4544,38 @@ mod tests {
                 },
             )]),
         )
+    }
+
+    #[test]
+    fn theme_variant_reads_the_resolved_selection() {
+        let mut context = mounted_context(ExecutionPhase::Event);
+        // No theme manager installed: the read is (), not an error.
+        assert!(context.resolved_theme_variant().is_none());
+        assert_eq!(context.theme_selection(), None);
+
+        let engine = RuntimeEngine::new();
+        let dark = crate::load_theme_source(
+            engine.engine(),
+            "default_dark.rhai",
+            include_str!("../../../registry/themes/default_dark.rhai"),
+        )
+        .unwrap();
+        let mut light = dark.clone();
+        light.name = "Light".to_owned();
+        light.mode = crate::ThemeMode::Light;
+        let manager = crate::ThemeManager::from_variants(
+            [dark, light],
+            crate::ThemeSelection::new("Default".to_owned(), "Dark".to_owned()),
+        )
+        .unwrap();
+        context.runtime.borrow_mut().theme = Some(manager);
+
+        let variant = context.resolved_theme_variant().expect("resolves");
+        assert_eq!(variant.mode, crate::ThemeMode::Dark);
+        assert_eq!(
+            context.theme_selection(),
+            Some(("Default".to_owned(), "Dark".to_owned()))
+        );
     }
 
     #[test]
