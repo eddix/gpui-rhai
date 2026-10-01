@@ -296,7 +296,7 @@ impl PanZoomEntity {
                     == Some(generation)
                     && let Some(transform) = read_transform(&context, &config, cx)
                 {
-                    write_bool_signal(&context, &config.wheel_pending_signal, false, cx);
+                    invalidate_wheel(&context, &config, cx);
                     write_transform(&context, &config, config.source, cx);
                     if transform_changed(config.source, transform) {
                         context.propose("transform_change", transform_value(transform), window, cx);

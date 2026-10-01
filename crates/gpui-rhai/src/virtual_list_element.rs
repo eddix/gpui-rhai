@@ -5,8 +5,9 @@ use std::rc::Rc;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     AnyElement, App, AppContext, Bounds, Context, Element, ElementId, Entity, GlobalElementId,
-    InspectorElementId, InteractiveElement, IntoElement, LayoutId, ListAlignment, ListOffset,
-    ListState, ParentElement, Pixels, Render, SharedString, Styled, Window, div, list, px,
+    HitboxBehavior, InspectorElementId, InteractiveElement, IntoElement, LayoutId, ListAlignment,
+    ListOffset, ListState, ParentElement, Pixels, Render, SharedString, Styled, Window, div, list,
+    px,
 };
 
 use crate::VirtualCollectionNodeSpec;
@@ -16,6 +17,7 @@ pub(crate) struct VirtualListEntityElement {
     id: ElementId,
     content: VirtualCollectionNodeSpec,
     runtime: NodeSlotRuntime,
+    retained_node: Option<crate::NodeId>,
 }
 
 impl VirtualListEntityElement {
@@ -23,11 +25,13 @@ impl VirtualListEntityElement {
         path: &str,
         spec: VirtualCollectionNodeSpec,
         runtime: NodeSlotRuntime,
+        retained_node: Option<crate::NodeId>,
     ) -> Self {
         Self {
             id: SharedString::from(format!("{path}/virtual-collection-entity")).into(),
             content: spec,
             runtime,
+            retained_node,
         }
     }
 }
@@ -101,6 +105,16 @@ impl Element for VirtualListEntityElement {
         cx: &mut App,
     ) {
         frame.element.prepaint(window, cx);
+        let scroll = frame.view.read(cx).scroll.clone();
+        let hitbox = window.insert_hitbox(scroll.viewport_bounds(), HitboxBehavior::Normal);
+        self.runtime.interactions.register_virtual_scroll(
+            format!("{}:{}", self.content.id.component, self.content.id.key),
+            self.runtime.view_id.clone(),
+            self.retained_node,
+            scroll,
+            frame.view.entity_id(),
+            hitbox,
+        );
         let mut required = frame.view.read(cx).frame_indices.borrow().clone();
         let collection = format!("{}:{}", self.content.id.component, self.content.id.key);
         if let Some((source, index)) = self.runtime.interactions.app_drag_pin(&collection)
@@ -290,13 +304,7 @@ fn estimated_target_is_initially_visible(
 }
 
 impl Render for VirtualListView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        self.runtime.interactions.register_virtual_scroll(
-            format!("{}:{}", self.content.id.component, self.content.id.key),
-            self.runtime.view_id.clone(),
-            self.scroll.clone(),
-            cx.entity_id(),
-        );
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         let viewport = self.scroll.viewport_bounds();
         let scroll_top = self.scroll.logical_scroll_top();
         let measured_visible = measured_visible_range(&self.scroll, &self.content, viewport);

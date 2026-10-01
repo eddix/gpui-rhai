@@ -1,0 +1,28 @@
+   Compiling audit-resize-controls-round3 v0.0.0 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/docs/audits/2026-09-30-interaction-0.1.8-round3/resize-controls)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.24s
+     Running probe.rs (tests/native-keyboard/target/debug/deps/resize_controls_round3_probe-ab3ffe5163b40710)
+
+running 6 tests
+test range_aligned_endpoint_control ... ok
+test range_equal_native_and_retained_key_diagnostic_control ... r3-range-identity-control: focus frame 0 before=Some("FocusHandle(FocusId(3v1))") after=Some("FocusHandle(FocusId(3v1))")
+r3-range-identity-control: focus frame 1 before=Some("FocusHandle(FocusId(4v1))") after=Some("FocusHandle(FocusId(4v1))")
+r3-range-identity-control: focus frame 2 before=Some("FocusHandle(FocusId(3v1))") after=Some("FocusHandle(FocusId(3v1))")
+r3-range-identity-control: before-key 20.0,80.0
+r3-range-identity-control: after-key 20.0,90.0
+ok
+test range_keyboard_focus_survives_native_repaint ... r3-range-identity-product: focus frame 0 before=Some("FocusHandle(FocusId(3v1))") after=Some("FocusHandle(FocusId(3v1))")
+r3-range-identity-product: focus frame 1 before=Some("FocusHandle(FocusId(4v1))") after=Some("FocusHandle(FocusId(4v1))")
+r3-range-identity-product: focus frame 2 before=Some("FocusHandle(FocusId(3v1))") after=Some("FocusHandle(FocusId(3v1))")
+r3-range-identity-product: before-key 20.0,80.0
+r3-range-identity-product: after-key 20.0,90.0
+ok
+test range_pointer_agrees_with_the_accepted_off_grid_endpoint ... off-grid pointer endpoint=20.0,97.0
+ok
+test resizable_keyboard_uses_current_boundary_after_window_resize ... resizable narrowed boundary proposal=205.0
+ok
+test table_uncontrolled_cancel_restores_last_accepted_width ... uncontrolled accepted initial_x=149,accepted_x=189
+uncontrolled after cancel_x=189
+ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.89s
+

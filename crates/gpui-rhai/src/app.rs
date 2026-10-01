@@ -3339,6 +3339,7 @@ fn build_error_banner(
         .into_any_element()
 }
 
+#[allow(clippy::too_many_lines)]
 fn script_node_dispatcher(
     cx: &Context<ScriptHostView>,
     runtime: Rc<RefCell<UiRuntimeState>>,
@@ -3352,6 +3353,7 @@ fn script_node_dispatcher(
     let signal_read_direct = Rc::clone(&direct_signal_access);
     let geometry_entity = script_entity.clone();
     let canvas_geometry_entity = script_entity.clone();
+    let canvas_bounds_entity = script_entity.clone();
     NodeEventDispatcher::new(move |callback, payload, target, window, app| {
         script_entity
             .update(app, |view, cx| {
@@ -3425,7 +3427,7 @@ fn script_node_dispatcher(
                 let runtime = runtime.borrow();
                 let node = runtime.element_refs.resolve(reference).ok()?;
                 let geometry = runtime.geometry_for(Some(&view.view_id));
-                let bounds = geometry.get(node)?;
+                let bounds = geometry.canvas_drawable(node)?;
                 let local = (point.0 - bounds.visual.x, point.1 - bounds.visual.y);
                 Some(
                     crate::canvas::canvas_motion_affine(
@@ -3436,6 +3438,20 @@ fn script_node_dispatcher(
                     .inverse()?
                     .map_point(local),
                 )
+            })
+            .ok()
+            .flatten()
+    })
+    .with_canvas_bounds(move |reference, app| {
+        canvas_bounds_entity
+            .read_with(app, |view, _| {
+                let runtime = view.lifecycle.runtime();
+                let runtime = runtime.borrow();
+                let node = runtime.element_refs.resolve(reference).ok()?;
+                runtime
+                    .geometry_for(Some(&view.view_id))
+                    .canvas_drawable(node)
+                    .map(|bounds| bounds.layout)
             })
             .ok()
             .flatten()
@@ -4077,6 +4093,9 @@ impl ScriptHostView {
 
     fn prepare_host_render(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.prepare_render(window);
+        self.host
+            .interactions()
+            .set_retained_tree(&self.view_id, self.lifecycle.retained());
         self.lifecycle
             .runtime()
             .borrow()

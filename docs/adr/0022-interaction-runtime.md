@@ -123,6 +123,11 @@ Rotatable reads the actual styled Canvas node, and a geometry revision change
 during a gesture cancels against current geometry. Degenerate marquee input is
 decided in window logical pixels; content-space predicates use relative numeric
 tolerance rather than a fixed area in arbitrary Canvas units.
+The GeometryRegistry separately records the border/layout box and the actual
+inner Canvas drawable bounds measured by GPUI, including snapped element
+offsets. Canvas paint, inverse hit mapping and pivot compensation share that
+drawable rectangle. Area and intersection predicates use translated edge
+vectors so content origin and supported zoom do not change selection.
 
 ### Typed primitive boundary
 
@@ -156,6 +161,11 @@ offscreen; actual drop targets still require presented hitboxes. Variable-list
 auto-scroll boundary. Auto-scroll belongs to the accepting destination and its
 scroll ancestry, not to the source collection. Unrelated lists are not scanned.
 Drop preview never mutates the canonical collection.
+Virtual destinations carry a retained container identity. Auto-scroll follows
+the accepting target's real ancestor chain and can continue through row gaps
+only while the validated container hitbox remains visible and unoccluded.
+Stationary scrolling uses one bounded native tick after a presented frame;
+freshly registered hitboxes are not queried before that frame is available.
 
 Escape is intercepted at the Host/window interaction domain while a session is
 active. It cancels the actual pointer, application-drag or wheel owner even if
@@ -187,6 +197,13 @@ identity, but callback props retain the real formal/root component owner and
 incarnation. Effect deliveries additionally carry an activation lease checked
 immediately before invocation, so a message drained before cleanup cannot run
 after that activation is replaced.
+Initial and delayed virtual realization share the same structural owner rules.
+Their commit manifest covers all target rows, retaining unchanged component
+resources and releasing removed rows even when there is no new row to execute.
+Raw row reads belong to the caller's executable render boundary; formal row
+components own their own resources and dependencies. Cancelled async scopes are
+discarded before callback-owner checks, while explicit stale callbacks remain
+errors. Debounce and explicit wheel completion both release Escape ownership.
 
 Task and subscription payloads are recursively checked against the same
 string/array/map limits configured on the Rhai Engine before schema traversal

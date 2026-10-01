@@ -1176,6 +1176,8 @@ impl UiContext {
         component: ComponentInstancePath,
         events: BTreeMap<String, EventSchema>,
     ) -> Self {
+        // Structure supplies child identity, while callbacks and observable
+        // reads must still belong to an executable formal/root component.
         let mut context = self.for_component(component, events);
         context.callback_component = self.callback_component.clone();
         context.callback_incarnation = self.callback_incarnation;
@@ -1228,7 +1230,7 @@ impl UiContext {
         if self.phase == ExecutionPhase::Render {
             self.non_reusable_render_reads
                 .borrow_mut()
-                .insert(self.component.clone());
+                .insert(self.callback_component.clone());
         }
     }
 
@@ -1304,10 +1306,10 @@ impl UiContext {
             .try_borrow()
             .map_err(|_| UiContextError::Borrowed)?
             .component_state
-            .get(&self.component, field)
+            .get(&self.callback_component, field)
             .cloned()
             .ok_or_else(|| UiContextError::UnknownState {
-                component: self.component.clone(),
+                component: self.callback_component.clone(),
                 field: field.to_owned(),
             })
     }
@@ -1545,7 +1547,7 @@ impl UiContext {
         let node = if self.phase == ExecutionPhase::Render {
             runtime
                 .element_refs
-                .resolve_and_track_geometry(reference, &self.component)
+                .resolve_and_track_geometry(reference, &self.callback_component)
         } else {
             Some(runtime.element_refs.resolve(reference)?)
         };
@@ -1555,7 +1557,7 @@ impl UiContext {
         let geometry_registry =
             runtime.geometry_for(self.view.as_deref().or(self.window.as_deref()));
         drop(runtime);
-        let Some(geometry) = geometry_registry.read_tracked(node, &self.component) else {
+        let Some(geometry) = geometry_registry.read_tracked(node, &self.callback_component) else {
             return Ok(UiValue::Null);
         };
         Ok(UiValue::Map(BTreeMap::from([
@@ -1736,7 +1738,7 @@ impl UiContext {
             .map_err(|_| UiContextError::Borrowed)?;
         Ok(runtime
             .stores
-            .read_tracked(&self.component, &StoreId::app(store), field)?)
+            .read_tracked(&self.callback_component, &StoreId::app(store), field)?)
     }
 
     /// Read one Rust-owned collection and subscribe the current component.
@@ -1756,7 +1758,7 @@ impl UiContext {
             .try_borrow_mut()
             .map_err(|_| UiContextError::Borrowed)?;
         Ok(runtime.native_collections.read_tracked_with_missing(
-            &self.component,
+            &self.callback_component,
             name,
             self.phase == ExecutionPhase::Render,
         )?)
@@ -1777,7 +1779,7 @@ impl UiContext {
             .map_err(|_| UiContextError::Borrowed)?;
         Ok(runtime
             .native_documents
-            .read_tracked(&self.component, name)?)
+            .read_tracked(&self.callback_component, name)?)
     }
 
     /// Read one Host-owned chart data handle. The handle performs its own
@@ -1896,9 +1898,11 @@ impl UiContext {
             .runtime
             .try_borrow_mut()
             .map_err(|_| UiContextError::Borrowed)?;
-        Ok(runtime
-            .stores
-            .read_tracked(&self.component, &StoreId::window(window, store), field)?)
+        Ok(runtime.stores.read_tracked(
+            &self.callback_component,
+            &StoreId::window(window, store),
+            field,
+        )?)
     }
 
     /// Read and subscribe to one exact path in the current window's store.
@@ -2129,7 +2133,7 @@ impl UiContext {
             .map_err(|_| UiContextError::Borrowed)?;
         runtime
             .environment_dependencies
-            .track_locale(self.window.as_deref(), &self.component);
+            .track_locale(self.window.as_deref(), &self.callback_component);
         let locale = runtime
             .locale
             .as_ref()
@@ -2356,7 +2360,7 @@ impl UiContext {
             .map_err(|_| UiContextError::Borrowed)?;
         runtime
             .environment_dependencies
-            .track_viewport(window, &self.component);
+            .track_viewport(window, &self.callback_component);
         Ok(runtime.responsive.class(window).as_str().to_owned())
     }
 
@@ -2706,7 +2710,7 @@ impl UiContext {
         };
         runtime
             .environment_dependencies
-            .track_theme(self.window.as_deref(), &self.component);
+            .track_theme(self.window.as_deref(), &self.callback_component);
         let appearance = self
             .window
             .as_deref()

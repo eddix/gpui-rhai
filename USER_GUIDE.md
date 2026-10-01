@@ -233,6 +233,21 @@ define Rust-like struct or class types.
 
 ## 4. State and controlled components
 
+State field defaults use the serialized `UiValue` form. Each nested map entry
+and array item needs its own `type` descriptor; a schema of `ui_value` does not
+change this encoding. For example, a map default is:
+
+```rhai
+"default": #{ type: "map", value: #{
+    family: #{ type: "string", value: "Default" },
+    name: #{ type: "string", value: "Dark" },
+} }
+```
+
+An empty map is `#{ type: "map", value: #{} }`, an empty array is
+`#{ type: "array", value: [] }`, and null is `#{ type: "null" }`.
+Invalid defaults report the owning state field and the required encoding.
+
 State is declared, schema-checked, and scoped to a stable component instance.
 
 ```rhai

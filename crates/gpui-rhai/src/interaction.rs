@@ -3,6 +3,7 @@
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
+use std::time::Duration;
 
 use gpui::{
     App, DispatchPhase, EntityId, Hitbox, ListState, MouseButton, MouseMoveEvent, MouseUpEvent,
@@ -412,6 +413,7 @@ struct ActiveApplicationDrag {
     spec: ApplicationDragSpec,
     position: Point<Pixels>,
     target: Option<InteractionOwner>,
+    scroll_destination: Option<(String, crate::NodeId)>,
 }
 
 #[derive(Clone)]
@@ -447,16 +449,28 @@ struct InteractionState {
     drop_targets: BTreeMap<InteractionOwner, DropTargetRegistration>,
     next_drop_order: u64,
     virtual_scrolls: BTreeMap<String, VirtualScrollTarget>,
+    parents: BTreeMap<(String, crate::NodeId), Option<crate::NodeId>>,
+    scroll_tick_queued: bool,
 }
 
 #[derive(Clone)]
 struct VirtualScrollTarget {
     view: String,
+    node: Option<crate::NodeId>,
     state: ListState,
     notify: EntityId,
+    hitbox: Hitbox,
 }
 
 impl WindowInteractionCoordinator {
+    pub(crate) fn set_retained_tree(&self, view: &str, tree: &crate::RetainedUiTree) {
+        let mut state = self.0.borrow_mut();
+        state.parents.retain(|(owner, _), _| owner != view);
+        state.parents.extend(
+            tree.nodes()
+                .map(|node| ((view.to_owned(), node.id()), node.parent())),
+        );
+    }
     pub(crate) fn begin_frame(&self) {
         let mut state = self.0.borrow_mut();
         state.presented.clear();
@@ -487,7 +501,7 @@ impl WindowInteractionCoordinator {
     }
 
     pub(crate) fn finish_frame(&self, window: &mut Window, cx: &mut App) {
-        let stale = {
+        let expired_session = {
             let mut state = self.0.borrow_mut();
             let should_cancel = state.active.as_ref().is_some_and(|active| {
                 !state.presented.contains(&active.owner)
@@ -499,12 +513,36 @@ impl WindowInteractionCoordinator {
             }
             expired
         };
-        if let Some(active) = stale {
+        if let Some(active) = expired_session {
             window.defer(cx, move |window, cx| cancel_active(active, window, cx));
         }
-        let position = self.0.borrow().drag.as_ref().map(|drag| drag.position);
-        if let Some(position) = position {
-            self.update_app_drag(position, window, cx);
+        let schedule_tick = {
+            let mut state = self.0.borrow_mut();
+            let schedule = state.drag.is_some() && !state.scroll_tick_queued;
+            state.scroll_tick_queued |= schedule;
+            schedule
+        };
+        if schedule_tick {
+            // GPUI hit testing reads the presented frame. Delay the stationary
+            // sample until the current paint has published its fresh hitboxes.
+            let coordinator = self.clone();
+            window
+                .spawn(cx, async move |cx| {
+                    cx.background_executor()
+                        .timer(Duration::from_millis(16))
+                        .await;
+                    coordinator.0.borrow_mut().scroll_tick_queued = false;
+                    let _ = cx.update(|window, cx| {
+                        let position = {
+                            let state = coordinator.0.borrow();
+                            state.drag.as_ref().map(|drag| drag.position)
+                        };
+                        if let Some(position) = position {
+                            coordinator.update_app_drag(position, window, cx);
+                        }
+                    });
+                })
+                .detach();
         }
     }
 
@@ -519,15 +557,19 @@ impl WindowInteractionCoordinator {
         &self,
         collection: String,
         view: String,
+        node: Option<crate::NodeId>,
         state: ListState,
         notify: EntityId,
+        hitbox: Hitbox,
     ) {
         self.0.borrow_mut().virtual_scrolls.insert(
             collection,
             VirtualScrollTarget {
                 view,
+                node,
                 state,
                 notify,
+                hitbox,
             },
         );
     }
@@ -545,6 +587,7 @@ impl WindowInteractionCoordinator {
             spec,
             position,
             target: None,
+            scroll_destination: None,
         });
         self.0.borrow_mut().drag_window = Some(window.window_handle().window_id());
         cx.notify(notify);
@@ -582,13 +625,30 @@ impl WindowInteractionCoordinator {
                 .and_then(|owner| state.drop_targets.get(owner))
                 .cloned();
             let virtual_scroll = resolve_virtual_scroll_target(
-                drag,
                 target.as_ref(),
-                &state.drop_targets,
                 &state.virtual_scrolls,
+                &state.parents,
                 position,
-            );
+            )
+            .or_else(|| {
+                if target.is_some() {
+                    return None;
+                }
+                let (view, node) = drag.scroll_destination.as_ref()?;
+                state
+                    .virtual_scrolls
+                    .values()
+                    .find(|scroll| {
+                        scroll.view == *view
+                            && scroll.node == Some(*node)
+                            && scroll.hitbox.is_hovered_at(position, window)
+                    })
+                    .cloned()
+            });
             let drag = state.drag.as_mut().expect("active drag was checked");
+            drag.scroll_destination = virtual_scroll
+                .as_ref()
+                .and_then(|scroll| scroll.node.map(|node| (scroll.view.clone(), node)));
             drag.position = position;
             drag.target.clone_from(&next);
             (old, next, target, virtual_scroll, notifications)
@@ -904,6 +964,7 @@ impl WindowInteractionCoordinator {
         }
         state.captured_move.remove(view);
         state.captured_up.remove(view);
+        state.parents.retain(|(owner, _), _| owner != view);
         state
             .drop_targets
             .retain(|owner, _| !owner.belongs_to(view));
@@ -1095,47 +1156,25 @@ fn resolve_drop_target(
 }
 
 fn resolve_virtual_scroll_target(
-    drag: &ActiveApplicationDrag,
     active_target: Option<&DropTargetRegistration>,
-    targets: &BTreeMap<InteractionOwner, DropTargetRegistration>,
     virtual_scrolls: &BTreeMap<String, VirtualScrollTarget>,
+    parents: &BTreeMap<(String, crate::NodeId), Option<crate::NodeId>>,
     position: Point<Pixels>,
 ) -> Option<VirtualScrollTarget> {
-    virtual_scrolls
-        .values()
-        .filter(|scroll| {
-            let viewport = scroll.state.viewport_bounds();
-            if !viewport.contains(&position) {
-                return false;
-            }
-            active_target.is_some_and(|target| {
-                target.owner.view == scroll.view
-                    && geometry_intersects_viewport(target.bounds, viewport)
-            }) || targets.values().any(|target| {
-                target.owner.view == scroll.view
-                    && target.accepts(&drag.spec)
-                    && geometry_intersects_viewport(target.bounds, viewport)
-            })
-        })
-        .min_by(|left, right| {
-            let left = left.state.viewport_bounds().size;
-            let right = right.state.viewport_bounds().size;
-            (f64::from(left.width) * f64::from(left.height))
-                .partial_cmp(&(f64::from(right.width) * f64::from(right.height)))
-                .unwrap_or(std::cmp::Ordering::Equal)
-        })
-        .cloned()
-}
-
-fn geometry_intersects_viewport(bounds: GeometryBounds, viewport: gpui::Bounds<Pixels>) -> bool {
-    let left = f64::from(viewport.left());
-    let top = f64::from(viewport.top());
-    let right = f64::from(viewport.right());
-    let bottom = f64::from(viewport.bottom());
-    bounds.x < right
-        && bounds.x + bounds.width > left
-        && bounds.y < bottom
-        && bounds.y + bounds.height > top
+    let target = active_target?;
+    let view = &target.owner.view;
+    let mut cursor = target.owner.retained;
+    while let Some(node) = cursor {
+        if let Some(scroll) = virtual_scrolls.values().find(|scroll| {
+            scroll.view == *view
+                && scroll.node == Some(node)
+                && scroll.state.viewport_bounds().contains(&position)
+        }) {
+            return Some(scroll.clone());
+        }
+        cursor = parents.get(&(view.clone(), node)).copied().flatten();
+    }
+    None
 }
 
 fn compare_drop_targets(

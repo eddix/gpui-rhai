@@ -849,6 +849,7 @@ pub struct PrimitiveContext {
     scroll_handles: Vec<gpui::ScrollHandle>,
     view_id: String,
     instance: Option<PrimitiveInstanceId>,
+    retained_node: Option<crate::NodeId>,
 }
 
 /// A schema-checked semantic proposal produced by a native primitive policy.
@@ -1020,8 +1021,11 @@ impl PrimitiveContext {
             self.view_id.clone(),
             format!("{}:{key}", self.primitive.as_str()),
         );
-        if let Some(instance) = self.instance.as_ref() {
-            owner.with_retained(instance.node())
+        if let Some(node) = self
+            .retained_node
+            .or_else(|| self.instance.as_ref().map(PrimitiveInstanceId::node))
+        {
+            owner.with_retained(node)
         } else {
             owner
         }
@@ -1150,6 +1154,16 @@ impl PrimitiveContext {
         self.dispatcher.as_ref().and_then(|dispatcher| {
             dispatcher.canvas_local_point(reference, (f64::from(point.x), f64::from(point.y)), cx)
         })
+    }
+
+    pub(crate) fn canvas_bounds(
+        &self,
+        reference: &crate::ElementRef,
+        cx: &App,
+    ) -> Option<crate::GeometryBounds> {
+        self.dispatcher
+            .as_ref()
+            .and_then(|dispatcher| dispatcher.canvas_bounds(reference, cx))
     }
 }
 
@@ -1949,6 +1963,7 @@ impl RenderOnce for RegisteredPrimitiveElement {
             scroll_handles: self.runtime.scroll_handles,
             view_id: self.runtime.view_id,
             instance: None,
+            retained_node: self.retained.as_ref().map(|(node, _)| *node),
         };
         match registry.render_instance(
             self.node,
@@ -2594,6 +2609,7 @@ mod tests {
             scroll_handles: Vec::new(),
             view_id: "test".to_owned(),
             instance: None,
+            retained_node: None,
         };
         assert_eq!(Rc::strong_count(&registry.inner), 1);
         drop(registry);

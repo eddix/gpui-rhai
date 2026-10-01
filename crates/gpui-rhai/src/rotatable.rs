@@ -98,7 +98,7 @@ impl Element for RotationElement {
         window: &mut Window,
         cx: &mut App,
     ) -> RotationPrepaint {
-        if let Some(viewport) = self.context.element_bounds(&self.config.content_ref, cx) {
+        if let Some(viewport) = self.context.canvas_bounds(&self.config.content_ref, cx) {
             sync_controlled_source(&self.context, &self.config, viewport, cx);
         }
         RotationPrepaint {
@@ -133,7 +133,7 @@ impl Element for RotationElement {
             {
                 return;
             }
-            let Some(viewport) = context.element_bounds(&config.content_ref, cx) else {
+            let Some(viewport) = context.canvas_bounds(&config.content_ref, cx) else {
                 return;
             };
             if let Some(focus) = config.focus.as_ref() {
@@ -149,7 +149,7 @@ impl Element for RotationElement {
                                cx: &mut App| {
                 if gesture.moved() {
                     let Some(current_viewport) =
-                        update_context.element_bounds(&update_config.content_ref, cx)
+                        update_context.canvas_bounds(&update_config.content_ref, cx)
                     else {
                         return crate::interaction::InteractionFlow::Cancel;
                     };
@@ -169,7 +169,7 @@ impl Element for RotationElement {
                                window: &mut Window,
                                cx: &mut App| {
                 let Some(current_viewport) =
-                    finish_context.element_bounds(&finish_config.content_ref, cx)
+                    finish_context.canvas_bounds(&finish_config.content_ref, cx)
                 else {
                     return;
                 };
@@ -201,7 +201,7 @@ impl Element for RotationElement {
             let cancel_config = config.clone();
             let cancel = move |_: &mut Window, cx: &mut App| {
                 if let Some(current_viewport) =
-                    cancel_context.element_bounds(&cancel_config.content_ref, cx)
+                    cancel_context.canvas_bounds(&cancel_config.content_ref, cx)
                 {
                     write_preview(
                         &cancel_context,
@@ -247,7 +247,7 @@ impl PrimitiveHandler for RotatablePrimitiveHandler {
         cx: &mut App,
     ) -> Result<AnyElement, String> {
         let config = parse_config(&instance.node.props, instance.focus_handle().cloned())?;
-        if let Some(viewport) = context.element_bounds(&config.content_ref, cx) {
+        if let Some(viewport) = context.canvas_bounds(&config.content_ref, cx) {
             sync_controlled_source(context, &config, viewport, cx);
         }
         let key_config = config.clone();

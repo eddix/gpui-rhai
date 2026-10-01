@@ -108,3 +108,9 @@ off-grid range endpoints, repeated uncontrolled Table resize/cancel,
 scale-independent marquee selection, bounded render-only negative collection
 dependencies, shared disabled Tree ancestors and fail-fast online schema
 diagnostics.
+Also run `docs/audits/2026-10-01-interaction-0.1.8-round4`: full virtual target
+resources and rollback, prune-only cleanup, unseeded row callbacks/read
+dependencies, real Canvas paint/hit/pivot with padding/border, translation/zoom
+invariance, foreground occlusion, row-gap/stationary auto-scroll, debounce
+completion and silent cancelled-effect delivery. Verify #93 default diagnostics
+and preserve the recursive tagged-default contract.
