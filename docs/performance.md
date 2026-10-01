@@ -13,7 +13,8 @@ The budgets are diagnostics, not permission to move per-frame policy into Rhai.
   cannot evade the aggregate cap. Imported component/helper calls are included
   in their outer render/callback total; Inspector shows the latest counts beside
   duration.
-- Rhai execution is capped at 1,000,000 operations, 64 call levels, bounded
+- Rhai execution is capped at 1,000,000 operations by default (host-configurable
+  via the view builders' `operation_limit`), 64 call levels, bounded
   expression depth, 10,000 array entries, 100,000 aggregate map fields, and
   1 MiB strings.
 - Declarative timers are one-shot, component-scoped, capped by

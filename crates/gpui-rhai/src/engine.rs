@@ -524,6 +524,7 @@ pub struct RuntimeEngine {
     last_failed_timing: RefCell<Option<ExecutionTiming>>,
     last_failed_component: RefCell<Option<ComponentInstancePath>>,
     operation_tracker: Rc<OperationTracker>,
+    operation_limit: Rc<Cell<u64>>,
     slow_threshold: Duration,
     component_render: ActiveComponentRenderState,
     component_invocations: BTreeMap<ComponentInstancePath, ComponentInvocationRecipe>,
@@ -617,6 +618,7 @@ impl RuntimeEngine {
     pub(crate) fn candidate_engine(&self) -> Self {
         let mut candidate = Self::new();
         candidate.slow_threshold = self.slow_threshold;
+        candidate.operation_limit.set(self.operation_limit.get());
         #[cfg(feature = "charts")]
         {
             candidate.chart_transforms.copy_from(&self.chart_transforms);
@@ -639,11 +641,14 @@ impl RuntimeEngine {
         engine.set_module_resolver(crate::source::RestrictedModuleResolver::new());
         let operation_tracker = Rc::new(OperationTracker::default());
         let progress = Rc::clone(&operation_tracker);
+        let operation_limit = Rc::new(Cell::new(MAX_SCRIPT_OPERATIONS));
+        let limit_probe = Rc::clone(&operation_limit);
         engine.on_progress(move |operations| {
             let total = progress.observe(operations);
-            (total > MAX_SCRIPT_OPERATIONS).then(|| {
+            let limit = limit_probe.get();
+            (total > limit).then(|| {
                 Dynamic::from(format!(
-                    "script operation budget exceeded: {total} > {MAX_SCRIPT_OPERATIONS}"
+                    "script operation budget exceeded: {total} > {limit}"
                 ))
             })
         });
@@ -709,6 +714,7 @@ impl RuntimeEngine {
             last_failed_timing: RefCell::new(None),
             last_failed_component: RefCell::new(None),
             operation_tracker,
+            operation_limit,
             slow_threshold: Duration::from_millis(16),
             component_render,
             component_invocations: BTreeMap::new(),
@@ -2056,6 +2062,24 @@ impl RuntimeEngine {
         self.slow_threshold = threshold;
     }
 
+    /// Set the per-execution script operation budget.
+    ///
+    /// The default ([`MAX_SCRIPT_OPERATIONS`]) keeps ordinary UI callbacks
+    /// inside one frame budget. A host that runs known one-shot, cacheable
+    /// script phases (a layout pass, an analysis sweep) may raise it; the
+    /// wall-clock slow threshold still flags anything that stalls the
+    /// foreground. Scripts cannot change this limit; only the embedding
+    /// application can.
+    pub fn set_operation_limit(&mut self, limit: u64) {
+        self.operation_limit.set(limit.max(1));
+    }
+
+    /// The per-execution script operation budget in force.
+    #[must_use]
+    pub fn operation_limit(&self) -> u64 {
+        self.operation_limit.get()
+    }
+
     #[must_use]
     pub fn take_timings(&self) -> Vec<ExecutionTiming> {
         std::mem::take(&mut *self.timings.borrow_mut())
@@ -2274,7 +2298,12 @@ pub(crate) const RHAI_MAX_DATA_DEPTH: usize = 64;
 
 fn configure_engine_limits(engine: &mut Engine) {
     engine.set_max_call_levels(64);
-    engine.set_max_expr_depths(64, 32);
+    // Function bodies at 32 (rhai's own default is 16) reject realistic
+    // algorithmic script code — a ~90-line layout function already parses at
+    // depth ~22. 128 keeps parse stack cost trivial while leaving room for
+    // algorithm-scale functions; recursion stays capped by call levels and
+    // runaway work by the operation budget.
+    engine.set_max_expr_depths(64, 128);
     // Rhai's counter is evaluator-local and cloned into stored callback
     // contexts. The runtime's progress adapter enforces one cumulative budget
     // across nested evaluators and starts delayed callbacks with fresh quota.
@@ -5031,6 +5060,37 @@ mod tests {
                 .take_timings()
                 .iter()
                 .any(|timing| timing.operations > MAX_SCRIPT_OPERATIONS)
+        );
+    }
+
+    #[test]
+    fn operation_limit_is_host_configurable() {
+        let heavy =
+            r#"fn view() { let n = 0; for i in 0..60000 { n += 1; } text(`${n}`) }"#;
+        let mut runtime = RuntimeEngine::new();
+        assert_eq!(runtime.operation_limit(), MAX_SCRIPT_OPERATIONS);
+        let compiled = runtime.compile_self_contained_named("limit", heavy).unwrap();
+        assert!(
+            runtime.render(&compiled).is_ok(),
+            "the same work fits the default budget"
+        );
+
+        runtime.set_operation_limit(10_000);
+        let compiled = runtime
+            .compile_self_contained_named("limit-low", heavy)
+            .unwrap();
+        assert!(
+            runtime.render(&compiled).is_err(),
+            "a lowered budget rejects the same script"
+        );
+
+        runtime.set_operation_limit(50_000_000);
+        let compiled = runtime
+            .compile_self_contained_named("limit-high", heavy)
+            .unwrap();
+        assert!(
+            runtime.render(&compiled).is_ok(),
+            "a raised budget admits heavier one-shot work"
         );
     }
 
