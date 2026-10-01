@@ -133,7 +133,17 @@ impl ScriptViewHost {
         Self::new_with_policy(window_id, WindowCommandPolicy::Disabled, cx)
     }
 
-    fn new_with_policy(
+    /// Construct a host with an explicit window-command policy.
+    ///
+    /// `ScriptViewHost::new` embeds views with [`WindowCommandPolicy::Disabled`],
+    /// so script calls like `close_window` are rejected. A host that owns the
+    /// top-level window and mounts the view manually — rather than through
+    /// [`ScriptApplication::run`] — needs to opt in explicitly.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ScriptViewError::Window`] when the view id is invalid.
+    pub fn new_with_policy(
         window_id: impl Into<String>,
         window_policy: WindowCommandPolicy,
         cx: &mut App,
