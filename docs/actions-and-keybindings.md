@@ -44,3 +44,23 @@ explicit left-to-right unified patch. None is global. A Rust Host can bind or
 dispatch `gpui_rhai::RevealDocumentLine { side, line }`; CodeViewer requires
 `side: None`, while DiffViewer accepts `Some(DiffSide::Left)` or
 `Some(DiffSide::Right)`.
+
+## Node key handlers
+
+Beside host-bound actions, an element can bind single keys directly and
+receive them while it (or a descendant) holds focus:
+
+```rhai
+canvas(scene)
+    .on_key_value("escape", Fn("close"), ())
+    .on_key_value("?", Fn("help"), ())
+    .on("key:-", Fn("zoom_out"))
+```
+
+The name is the gpui key string, lowercased: named keys (`escape`, `left`,
+`enter`) as well as single printable punctuation keys (`?`, `/`, `[`, `]`,
+`-`, `=`), which gpui delivers as their literal key string. The `:` character
+is reserved as the event namespace separator and cannot appear in a key name.
+Modifiers are not part of node key handlers; chorded shortcuts
+(`alt-left`, `cmd-s`) belong to host-bound actions. `enter` and `space`
+additionally activate the node's `click` handlers.
