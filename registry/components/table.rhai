@@ -350,10 +350,7 @@ fn table_column_model(props) {
     let table_resizable = prop_or(props, "resizable_columns", false);
     let requested = false;
     for index in 0..props.columns.len {
-        if index + 1 < props.columns.len
-                && optional_or(props.columns[index], "resizable", table_resizable) {
-            requested = true;
-        }
+        if optional_or(props.columns[index], "resizable", table_resizable) { requested = true; }
     }
     if !requested { return #{ columns: props.columns, signals: [], resize_signals: #{} }; }
     let column_keys = [];
@@ -364,8 +361,9 @@ fn table_column_model(props) {
         let source = props.columns[index];
         if source.key in column_keys { throw `Table column key ${source.key} is duplicated`; }
         column_keys.push(source.key);
-        let enabled = index + 1 < props.columns.len
-            && optional_or(source, "resizable", table_resizable);
+        // Every column can be resized, including the last one: widening it scrolls the table
+        // horizontally (the root already scrolls on x), narrowing it leaves space on the right.
+        let enabled = optional_or(source, "resizable", table_resizable);
         let column = #{
             key: source.key, title: source.title, width: source.width,
             align: prop_or(source, "align", "start"), sortable: prop_or(source, "sortable", false),
@@ -391,10 +389,15 @@ fn table_column_model(props) {
     #{ columns: columns, signals: resize_signals, resize_signals: resize_signal_map }
 }
 
-fn table_resize_handle(ctx, table_key, column, index, signal, header_ref, emit_resize) {
-    let base = style().width(px(8)).height(relative(1.0)).flex_shrink(false)
-        .margin_start(offset_px(-4)).margin_end(offset_px(-4)).cursor_resize_x()
+// The handle sits on the column's right boundary, positioned absolutely so the header cell's
+// horizontal padding cannot shift it. Column i's handle lives at the left edge of header
+// cell i + 1 ("left"): it paints after cell i, so the half that reaches into cell i is
+// drawn and hit-tested on top of it. The last column's handle lives at the right edge of
+// its own cell ("right").
+fn table_resize_handle(ctx, table_key, column, index, signal, header_ref, emit_resize, edge) {
+    let base = style().absolute().top(px(0)).width(px(8)).height(relative(1.0)).cursor_resize_x()
         .focus(style().background(theme_color("selection")));
+    base = if edge == "left" { base.left(offset_px(-4)) } else { base.right(px(0)) };
     let key_payload = #{ column_key: column.key,
         signal_key: column.resize_signal_key, ref_key: column.resize_ref_key,
         min_width: column.min_width, max_width: column.max_width, delta: -8.0,
@@ -418,6 +421,14 @@ fn table_resize_handle(ctx, table_key, column, index, signal, header_ref, emit_r
 fn table_header(ctx, props, columns, resize_signals, current_sort) {
     let headers = [];
     let emit_resize = "on_column_resize" in props && props.on_column_resize != ();
+    let last = columns.len - 1;
+    // One ref per resizable header cell: the cell binds it and the handle that resizes the
+    // column (which lives in the next cell) measures through it. A ref key may be declared
+    // only once per render.
+    let refs = [];
+    for column in columns {
+        refs.push(if prop_or(column, "resize_enabled", false) { element_ref(column.resize_ref_key) } else { () });
+    }
     for index in 0..columns.len {
         let column = columns[index];
         let resize_enabled = prop_or(column, "resize_enabled", false);
@@ -438,10 +449,14 @@ fn table_header(ctx, props, columns, resize_signals, current_sort) {
         }
         let children = [row(content).with_style(
                 style().flex_grow().min_width(px(0)).height(relative(1.0)).items_center().gap(theme_spacing("xs")))];
-        let header_ref = if resize_enabled { element_ref(column.resize_ref_key) } else { () };
-        if resize_enabled {
+        let header_ref = refs[index];
+        if index > 0 && prop_or(columns[index - 1], "resize_enabled", false) {
+            children.push(table_resize_handle(ctx, props.key, columns[index - 1], index - 1,
+                resize_signals[index - 1], refs[index - 1], emit_resize, "left"));
+        }
+        if index == last && resize_enabled {
             children.push(table_resize_handle(
-                ctx, props.key, column, index, resize_signal, header_ref, emit_resize));
+                ctx, props.key, column, index, resize_signal, header_ref, emit_resize, "right"));
         }
         let cell = row(children).with_key(column.key)
             .with_style(ctx.component_style("header_cell",
