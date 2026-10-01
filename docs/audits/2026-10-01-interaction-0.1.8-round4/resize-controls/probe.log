@@ -1,0 +1,20 @@
+   Compiling audit-resize-controls-round4 v0.0.0 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/docs/audits/2026-10-01-interaction-0.1.8-round4/resize-controls)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.37s
+     Running probe.rs (tests/native-keyboard/target/debug/deps/resize_controls_round4_probe-2eeef5ce6274fa15)
+
+running 6 tests
+test narrowed_table_constraint_wins_over_previous_native_override ... Table max180 overrides old accepted200: initial_x=149,final_x=149,max=180.0
+ok
+test new_table_source_wins_over_prior_uncontrolled_override_on_cancel ... table source180 after old override200: initial_x=149,final_x=169,source=180.0
+ok
+test range_horizontal_end_uses_same_endpoint_domain ... RangeSlider horizontal End=20.0,97.0
+ok
+test range_noop_callback_control ... callback=true thumb x before=[82.0, 370.0],after=[82.0, 370.0]
+ok
+test range_vertical_end_uses_same_endpoint_domain ... RangeSlider vertical End=20.0,97.0
+ok
+test range_without_callback_stays_controlled_on_keyboard ... callback=false thumb x before=[82.0, 370.0],after=[82.0, 370.0]
+ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.83s
+

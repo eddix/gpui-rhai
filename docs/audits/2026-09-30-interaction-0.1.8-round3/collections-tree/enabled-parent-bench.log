@@ -1,0 +1,8 @@
+source=/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai/src/collection_projection.rs sha256=640ab35f8929409f9764805d6c2ea1a15a6af1af4beabee38eb7ea78e6e7fb53
+count=1000 depth=128 disabled=false collapsed_rows=1 elapsed=1.342709ms
+count=1000 depth=128 disabled=true collapsed_rows=1 elapsed=9.422709ms
+count=4096 depth=256 disabled=false collapsed_rows=1 elapsed=9.356042ms
+count=4096 depth=256 disabled=true collapsed_rows=1 elapsed=105.3945ms
+count=10000 depth=256 disabled=false collapsed_rows=1 elapsed=16.57875ms
+count=10000 depth=256 disabled=true collapsed_rows=1 elapsed=290.133834ms
+unsorted child eligible_parent=String("root")

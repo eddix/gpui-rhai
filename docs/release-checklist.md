@@ -100,3 +100,17 @@ offscreen source leases and ListState edge scrolling, degenerate/single
 selection, wheel Escape, complex disabled Tree ancestry, early async rejection,
 Host-init-dependent CLI validation, missing NativeCollection readers, and
 synchronous native Automation failure reporting.
+Also run `docs/audits/2026-09-30-interaction-0.1.8-round3`: presented primitive
+identity and focus survival, mixed-success async batches, drained stale effect
+activations, Host/window owner cancellation, external-source virtual target
+scrolling, virtual-row formal callbacks, current Rotatable Canvas geometry,
+off-grid range endpoints, repeated uncontrolled Table resize/cancel,
+scale-independent marquee selection, bounded render-only negative collection
+dependencies, shared disabled Tree ancestors and fail-fast online schema
+diagnostics.
+Also run `docs/audits/2026-10-01-interaction-0.1.8-round4`: full virtual target
+resources and rollback, prune-only cleanup, unseeded row callbacks/read
+dependencies, real Canvas paint/hit/pivot with padding/border, translation/zoom
+invariance, foreground occlusion, row-gap/stationary auto-scroll, debounce
+completion and silent cancelled-effect delivery. Verify #93 default diagnostics
+and preserve the recursive tagged-default contract.

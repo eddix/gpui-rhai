@@ -1043,6 +1043,9 @@ pub struct UiContext {
     runtime: Rc<RefCell<UiRuntimeState>>,
     component: ComponentInstancePath,
     incarnation: ComponentIncarnation,
+    callback_component: ComponentInstancePath,
+    callback_incarnation: ComponentIncarnation,
+    callback_events: BTreeMap<String, EventSchema>,
     window: Option<String>,
     view: Option<String>,
     phase: ExecutionPhase,
@@ -1077,8 +1080,11 @@ impl UiContext {
             .unwrap_or_default();
         let context = Self {
             runtime,
-            component,
+            component: component.clone(),
             incarnation,
+            callback_component: component,
+            callback_incarnation: incarnation,
+            callback_events: events.clone(),
             window,
             view: None,
             phase,
@@ -1139,8 +1145,11 @@ impl UiContext {
             .unwrap_or_default();
         let context = Self {
             runtime: Rc::clone(&self.runtime),
-            component,
+            component: component.clone(),
             incarnation,
+            callback_component: component,
+            callback_incarnation: incarnation,
+            callback_events: events.clone(),
             window: self.window.clone(),
             view: self.view.clone(),
             phase: self.phase,
@@ -1159,6 +1168,20 @@ impl UiContext {
         {
             runtime.reset_component_readers(&context.component);
         }
+        context
+    }
+
+    pub(crate) fn for_structural_scope(
+        &self,
+        component: ComponentInstancePath,
+        events: BTreeMap<String, EventSchema>,
+    ) -> Self {
+        // Structure supplies child identity, while callbacks and observable
+        // reads must still belong to an executable formal/root component.
+        let mut context = self.for_component(component, events);
+        context.callback_component = self.callback_component.clone();
+        context.callback_incarnation = self.callback_incarnation;
+        context.callback_events = self.callback_events.clone();
         context
     }
 
@@ -1207,7 +1230,7 @@ impl UiContext {
         if self.phase == ExecutionPhase::Render {
             self.non_reusable_render_reads
                 .borrow_mut()
-                .insert(self.component.clone());
+                .insert(self.callback_component.clone());
         }
     }
 
@@ -1229,9 +1252,9 @@ impl UiContext {
     fn scoped_callback(&self, function: FnPtr) -> Result<ScriptCallback, UiContextError> {
         let mut callback = ScriptCallback::try_from_fn_ptr(function, self.generation)?;
         callback.bind_component_scope_if_unset(
-            &self.component,
-            self.incarnation,
-            self.events.clone(),
+            &self.callback_component,
+            self.callback_incarnation,
+            self.callback_events.clone(),
         );
         if let Some(context) = &self.native_context {
             callback.bind_native_context_if_unset(context.clone());
@@ -1256,6 +1279,18 @@ impl UiContext {
         &self.events
     }
 
+    pub(crate) fn callback_component_path(&self) -> &ComponentInstancePath {
+        &self.callback_component
+    }
+
+    pub(crate) const fn callback_component_incarnation(&self) -> ComponentIncarnation {
+        self.callback_incarnation
+    }
+
+    pub(crate) fn callback_event_schemas(&self) -> &BTreeMap<String, EventSchema> {
+        &self.callback_events
+    }
+
     pub(crate) fn native_context(&self) -> Option<&crate::invocation::ScriptInvocationContext> {
         self.native_context.as_ref()
     }
@@ -1271,10 +1306,10 @@ impl UiContext {
             .try_borrow()
             .map_err(|_| UiContextError::Borrowed)?
             .component_state
-            .get(&self.component, field)
+            .get(&self.callback_component, field)
             .cloned()
             .ok_or_else(|| UiContextError::UnknownState {
-                component: self.component.clone(),
+                component: self.callback_component.clone(),
                 field: field.to_owned(),
             })
     }
@@ -1512,7 +1547,7 @@ impl UiContext {
         let node = if self.phase == ExecutionPhase::Render {
             runtime
                 .element_refs
-                .resolve_and_track_geometry(reference, &self.component)
+                .resolve_and_track_geometry(reference, &self.callback_component)
         } else {
             Some(runtime.element_refs.resolve(reference)?)
         };
@@ -1522,7 +1557,7 @@ impl UiContext {
         let geometry_registry =
             runtime.geometry_for(self.view.as_deref().or(self.window.as_deref()));
         drop(runtime);
-        let Some(geometry) = geometry_registry.read_tracked(node, &self.component) else {
+        let Some(geometry) = geometry_registry.read_tracked(node, &self.callback_component) else {
             return Ok(UiValue::Null);
         };
         Ok(UiValue::Map(BTreeMap::from([
@@ -1703,7 +1738,7 @@ impl UiContext {
             .map_err(|_| UiContextError::Borrowed)?;
         Ok(runtime
             .stores
-            .read_tracked(&self.component, &StoreId::app(store), field)?)
+            .read_tracked(&self.callback_component, &StoreId::app(store), field)?)
     }
 
     /// Read one Rust-owned collection and subscribe the current component.
@@ -1722,9 +1757,11 @@ impl UiContext {
             .runtime
             .try_borrow_mut()
             .map_err(|_| UiContextError::Borrowed)?;
-        Ok(runtime
-            .native_collections
-            .read_tracked(&self.component, name)?)
+        Ok(runtime.native_collections.read_tracked_with_missing(
+            &self.callback_component,
+            name,
+            self.phase == ExecutionPhase::Render,
+        )?)
     }
 
     /// Read and subscribe to one immutable Host-owned text revision.
@@ -1742,7 +1779,7 @@ impl UiContext {
             .map_err(|_| UiContextError::Borrowed)?;
         Ok(runtime
             .native_documents
-            .read_tracked(&self.component, name)?)
+            .read_tracked(&self.callback_component, name)?)
     }
 
     /// Read one Host-owned chart data handle. The handle performs its own
@@ -1861,9 +1898,11 @@ impl UiContext {
             .runtime
             .try_borrow_mut()
             .map_err(|_| UiContextError::Borrowed)?;
-        Ok(runtime
-            .stores
-            .read_tracked(&self.component, &StoreId::window(window, store), field)?)
+        Ok(runtime.stores.read_tracked(
+            &self.callback_component,
+            &StoreId::window(window, store),
+            field,
+        )?)
     }
 
     /// Read and subscribe to one exact path in the current window's store.
@@ -2094,7 +2133,7 @@ impl UiContext {
             .map_err(|_| UiContextError::Borrowed)?;
         runtime
             .environment_dependencies
-            .track_locale(self.window.as_deref(), &self.component);
+            .track_locale(self.window.as_deref(), &self.callback_component);
         let locale = runtime
             .locale
             .as_ref()
@@ -2321,7 +2360,7 @@ impl UiContext {
             .map_err(|_| UiContextError::Borrowed)?;
         runtime
             .environment_dependencies
-            .track_viewport(window, &self.component);
+            .track_viewport(window, &self.callback_component);
         Ok(runtime.responsive.class(window).as_str().to_owned())
     }
 
@@ -2671,7 +2710,7 @@ impl UiContext {
         };
         runtime
             .environment_dependencies
-            .track_theme(self.window.as_deref(), &self.component);
+            .track_theme(self.window.as_deref(), &self.callback_component);
         let appearance = self
             .window
             .as_deref()

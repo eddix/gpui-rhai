@@ -248,6 +248,7 @@ fn register_pointer_down(
             return;
         }
         let width = clamp_width(bounds.width, config.min, config.max);
+        let previous_override = events.read_signal(&config.signal, cx).ok();
         let update_config = config.clone();
         let update_events = events.clone();
         let update = move |gesture: crate::interaction::GestureUpdate,
@@ -293,8 +294,10 @@ fn register_pointer_down(
         let cancel_signal = config.signal.clone();
         let cancel_events = events.clone();
         let cancel = move |_: &mut Window, cx: &mut App| {
-            let _ =
-                cancel_events.write_signal(&cancel_signal, SignalValue::OptionalFloat(None), cx);
+            let value = previous_override
+                .clone()
+                .unwrap_or(SignalValue::OptionalFloat(None));
+            let _ = cancel_events.write_signal(&cancel_signal, value, cx);
         };
         let owner = events.interaction_owner(&config.id);
         events.begin_interaction(

@@ -1,0 +1,23 @@
+{
+  "headRefOid": "b5185e01d62cbf5d3452efaea77d0139936a4fba",
+  "mergeCommit": {
+    "oid": "815bb82b8103c88ef6ba50620128780c9d64b216"
+  },
+  "mergedAt": "2026-09-30T14:47:34Z",
+  "number": 92,
+  "state": "MERGED",
+  "statusCheckRollup": [
+    {
+      "__typename": "CheckRun",
+      "completedAt": "2026-09-30T14:46:27Z",
+      "conclusion": "SUCCESS",
+      "detailsUrl": "https://github.com/eddix/gpui-rhai/actions/runs/36728192316/job/109930447398",
+      "name": "portable",
+      "startedAt": "2026-09-30T14:19:07Z",
+      "status": "COMPLETED",
+      "workflowName": "CI"
+    }
+  ],
+  "title": "Fix 0.1.8 interaction runtime round-two findings",
+  "url": "https://github.com/eddix/gpui-rhai/pull/92"
+}

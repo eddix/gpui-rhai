@@ -1,0 +1,91 @@
+   Compiling audit-transforms-selection-round4 v0.0.0 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/docs/audits/2026-10-01-interaction-0.1.8-round4/transforms-selection)
+warning: constant `ROOT` is never used
+ --> src/lib.rs:8:7
+  |
+8 | const ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../../..");
+  |       ^^^^
+  |
+  = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: struct `Host` is never constructed
+ --> src/lib.rs:9:8
+  |
+9 | struct Host {
+  |        ^^^^
+
+warning: function `mount` is never used
+  --> src/lib.rs:18:4
+   |
+18 | fn mount(
+   |    ^^^^^
+
+warning: function `find_signal` is never used
+  --> src/lib.rs:56:4
+   |
+56 | fn find_signal(node: &UiNode, property: SignalProperty) -> Option<NativeSignal> {
+   |    ^^^^^^^^^^^
+
+warning: function `status` is never used
+  --> src/lib.rs:67:4
+   |
+67 | fn status(v: &mut VisualTestContext, view: &ScriptViewHandle) -> String {
+   |    ^^^^^^
+
+warning: function `bounds` is never used
+  --> src/lib.rs:78:4
+   |
+78 | fn bounds(
+   |    ^^^^^^
+
+warning: function `select_script` is never used
+  --> src/lib.rs:95:4
+   |
+95 | fn select_script(multiple: bool) -> String {
+   |    ^^^^^^^^^^^^^
+
+warning: function `signal_value` is never used
+   --> src/lib.rs:106:4
+    |
+106 | fn signal_value(
+    |    ^^^^^^^^^^^^
+
+warning: function `large_canvas_enclose` is never used
+   --> src/lib.rs:148:4
+    |
+148 | fn large_canvas_enclose(cx: &mut TestAppContext, scale: f64, name: &str) {
+    |    ^^^^^^^^^^^^^^^^^^^^
+
+warning: `audit-transforms-selection-round4` (lib) generated 9 warnings
+warning: unused import: `point`
+ --> src/bin/paint_geometry.rs:4:75
+  |
+4 |     PlatformAtlas, PlatformHeadlessRenderer, Render, Scene, Size, Window, point, px, size,
+  |                                                                           ^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused `ArenaClearNeeded` that must be used
+   --> src/bin/paint_geometry.rs:108:17
+    |
+108 |                 window.draw(cx);
+    |                 ^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(unused_must_use)]` (part of `#[warn(unused)]`) on by default
+help: use `let _ = ...` to ignore the resulting value
+    |
+108 |                 let _ = window.draw(cx);
+    |                 +++++++
+
+warning: `audit-transforms-selection-round4` (bin "paint_geometry") generated 2 warnings (run `cargo fix --bin "paint_geometry" -p audit-transforms-selection-round4` to apply 1 suggestion)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 5.23s
+     Running `tests/native-keyboard/target/debug/paint_geometry`
+actual GPUI paint path: padding=0, border=0, angle=0, scaled_bounds=[(192.0, 32.0, 20.0, 20.0)], logical_center=(101.0, 21.0)
+actual GPUI paint path: padding=0, border=0, angle=90, scaled_bounds=[(192.0, 32.0, 20.0, 20.0)], logical_center=(101.0, 21.0)
+actual GPUI paint path: padding=20, border=10, angle=0, scaled_bounds=[(252.0, 92.0, 20.0, 20.0)], logical_center=(131.0, 51.0)
+actual GPUI paint path: padding=20, border=10, angle=90, scaled_bounds=[(132.0, 92.0, 20.0, 20.0)], logical_center=(71.0, 51.0)
+
+thread 'main' (1046810) panicked at src/bin/paint_geometry.rs:130:5:
+assertion `left == right` failed: padded/bordered Canvas pivot moved in actual GPUI paint scene
+  left: (131.0, 51.0)
+ right: (71.0, 51.0)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace

@@ -1622,6 +1622,10 @@ fn validate_name(name: &str, label: &'static str) -> Result<(), NativeCollection
     }
 }
 
+const MAX_MISSING_NAMES_PER_READER: usize = 64;
+const MAX_MISSING_READER_PAIRS: usize = 4_096;
+const MAX_MISSING_NAME_BYTES: usize = 64 * 1024;
+
 #[derive(Clone, Debug, Default)]
 pub struct NativeCollectionRegistry {
     collections: BTreeMap<String, NativeCollection>,
@@ -1683,16 +1687,26 @@ impl NativeCollectionRegistry {
         Ok(self.readers.get(name).cloned().unwrap_or_default())
     }
 
+    #[cfg(test)]
     pub(crate) fn read_tracked(
         &mut self,
         reader: &ComponentInstancePath,
         name: &str,
     ) -> Result<NativeCollection, NativeCollectionError> {
+        self.read_tracked_with_missing(reader, name, true)
+    }
+
+    pub(crate) fn read_tracked_with_missing(
+        &mut self,
+        reader: &ComponentInstancePath,
+        name: &str,
+        track_missing: bool,
+    ) -> Result<NativeCollection, NativeCollectionError> {
+        validate_name(name, "collection name")?;
         let Some(collection) = self.collections.get(name).cloned() else {
-            self.missing_readers
-                .entry(name.to_owned())
-                .or_default()
-                .insert(reader.clone());
+            if track_missing {
+                self.track_missing_reader(reader, name)?;
+            }
             return Err(NativeCollectionError::UnknownCollection(name.to_owned()));
         };
         if let Some(readers) = self.missing_readers.get_mut(name) {
@@ -1706,6 +1720,56 @@ impl NativeCollectionRegistry {
             .or_default()
             .insert(reader.clone());
         Ok(collection)
+    }
+
+    fn track_missing_reader(
+        &mut self,
+        reader: &ComponentInstancePath,
+        name: &str,
+    ) -> Result<(), NativeCollectionError> {
+        if self
+            .missing_readers
+            .get(name)
+            .is_some_and(|readers| readers.contains(reader))
+        {
+            return Ok(());
+        }
+        let reader_names = self
+            .missing_readers
+            .values()
+            .filter(|readers| readers.contains(reader))
+            .count();
+        if reader_names >= MAX_MISSING_NAMES_PER_READER {
+            return Err(NativeCollectionError::MissingDependencyBudget {
+                kind: "names per component",
+                limit: MAX_MISSING_NAMES_PER_READER,
+            });
+        }
+        let pairs = self
+            .missing_readers
+            .values()
+            .map(BTreeSet::len)
+            .sum::<usize>();
+        if pairs >= MAX_MISSING_READER_PAIRS {
+            return Err(NativeCollectionError::MissingDependencyBudget {
+                kind: "component/name pairs",
+                limit: MAX_MISSING_READER_PAIRS,
+            });
+        }
+        if !self.missing_readers.contains_key(name) {
+            let bytes = self.missing_readers.keys().map(String::len).sum::<usize>();
+            if bytes.saturating_add(name.len()) > MAX_MISSING_NAME_BYTES {
+                return Err(NativeCollectionError::MissingDependencyBudget {
+                    kind: "name bytes",
+                    limit: MAX_MISSING_NAME_BYTES,
+                });
+            }
+        }
+        self.missing_readers
+            .entry(name.to_owned())
+            .or_default()
+            .insert(reader.clone());
+        Ok(())
     }
 
     pub(crate) fn reset_reader(&mut self, reader: &ComponentInstancePath) {
@@ -1835,6 +1899,8 @@ pub enum NativeCollectionError {
     DuplicateCollection(String),
     #[error("native collection `{0}` is not registered")]
     UnknownCollection(String),
+    #[error("native collection missing-dependency {kind} exceeds limit {limit}")]
+    MissingDependencyBudget { kind: &'static str, limit: usize },
     #[error(
         "native collection key field `{source_key}` does not match requested row key `{requested}`"
     )]
@@ -2102,6 +2168,40 @@ mod tests {
                 .unwrap(),
             BTreeSet::from([reader])
         );
+    }
+
+    #[test]
+    fn missing_dependencies_are_render_only_validated_and_bounded() {
+        let mut registry = NativeCollectionRegistry::new();
+        let reader = ComponentInstancePath::root("View", "missing-budget");
+        assert!(matches!(
+            registry.read_tracked_with_missing(&reader, &"x".repeat(257), true),
+            Err(NativeCollectionError::InvalidName(_, _))
+        ));
+        assert!(registry.missing_readers.is_empty());
+
+        for index in 0..128 {
+            assert!(
+                registry
+                    .read_tracked_with_missing(&reader, &format!("event-{index}"), false)
+                    .is_err()
+            );
+        }
+        assert!(registry.missing_readers.is_empty());
+
+        for index in 0..MAX_MISSING_NAMES_PER_READER {
+            assert!(
+                registry
+                    .read_tracked_with_missing(&reader, &format!("render-{index}"), true)
+                    .is_err()
+            );
+        }
+        assert_eq!(registry.missing_readers.len(), MAX_MISSING_NAMES_PER_READER);
+        assert!(matches!(
+            registry.read_tracked_with_missing(&reader, "one-too-many", true),
+            Err(NativeCollectionError::MissingDependencyBudget { .. })
+        ));
+        assert_eq!(registry.missing_readers.len(), MAX_MISSING_NAMES_PER_READER);
     }
 
     #[test]

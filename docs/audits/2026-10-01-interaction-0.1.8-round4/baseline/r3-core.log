@@ -1,0 +1,26 @@
+   Compiling gpui-rhai-native-keyboard-tests v0.0.0 (/var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T/gpui-runtime-core-round3-reviewed-lv049amx)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.61s
+     Running tests/runtime_core_round3_reviewed.rs (tests/native-keyboard/target/debug/deps/runtime_core_round3_reviewed-e2c50ab7c57321a1)
+
+running 4 tests
+
+thread 'pan_zoom_compensate_retry_resume_then_interact' (1038408) panicked at tests/runtime_core_round3_reviewed.rs:19:9:
+injected late primitive suspend failure
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+suspend injected=false: Ok(true); state=Suspended
+suspend injected=true: Err(Suspend("native primitive suspend failed: primitive `PrimitiveId(\"zz_audit.fault\")` panicked during suspend")); state=Active
+batch failing=true advance=Err(Automation(Command("failed to evaluate Rhai UI source: Runtime error: independent timer failure @ 'main' (line 9, position 28)\nin call to function 'failing_delivery' (from 'main') (line 12, position 2)")))
+batch before release=["vertical:none", "Handle", "Body"]
+batch after release=["vertical:none", "Handle", "Body"]
+batch failing=false advance=Ok(Advanced { millis: 100 })
+batch before release=["vertical:none", "Handle", "Body"]
+test failed_sibling_delivery_preserves_successful_invalidation ... ok
+batch after release=["vertical:none", "Handle", "Body"]
+test single_timer_contract_control ... ok
+post lifecycle injected=false: ["Canvas contents", "50.0,1"], error=None
+test pan_zoom_suspend_resume_then_interact ... ok
+post lifecycle injected=true: ["Canvas contents", "50.0,1"], error=None
+test pan_zoom_compensate_retry_resume_then_interact ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.01s
+

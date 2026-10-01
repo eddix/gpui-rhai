@@ -3,10 +3,11 @@
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
+use std::time::Duration;
 
 use gpui::{
     App, DispatchPhase, EntityId, Hitbox, ListState, MouseButton, MouseMoveEvent, MouseUpEvent,
-    Pixels, Point, ScrollHandle, Window, point, px,
+    Pixels, Point, ScrollHandle, Window, WindowId, point, px,
 };
 
 use crate::{GeometryBounds, UiValue};
@@ -164,6 +165,7 @@ type FinishHandler = dyn Fn(GestureUpdate, &mut Window, &mut App);
 type CancelHandler = dyn Fn(&mut Window, &mut App);
 type CapturedMoveHandler = dyn Fn(&MouseMoveEvent, &mut Window, &mut App) -> bool;
 type CapturedUpHandler = dyn Fn(&MouseUpEvent, &mut Window, &mut App) -> bool;
+type AuxiliaryCancelHandler = dyn Fn(&mut Window, &mut App);
 
 pub(crate) struct NativeGesture {
     owner: InteractionOwner,
@@ -411,6 +413,15 @@ struct ActiveApplicationDrag {
     spec: ApplicationDragSpec,
     position: Point<Pixels>,
     target: Option<InteractionOwner>,
+    scroll_destination: Option<(String, crate::NodeId)>,
+}
+
+#[derive(Clone)]
+struct AuxiliaryInteraction {
+    owner: InteractionOwner,
+    window: WindowId,
+    notify: EntityId,
+    cancel: Rc<AuxiliaryCancelHandler>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -427,23 +438,39 @@ pub(crate) struct WindowInteractionCoordinator(Rc<RefCell<InteractionState>>);
 #[derive(Default)]
 struct InteractionState {
     active: Option<NativeGesture>,
+    active_window: Option<WindowId>,
     presented: BTreeSet<InteractionOwner>,
     logical_sources: BTreeSet<InteractionOwner>,
     captured_move: BTreeMap<String, Rc<CapturedMoveHandler>>,
     captured_up: BTreeMap<String, Rc<CapturedUpHandler>>,
     drag: Option<ActiveApplicationDrag>,
+    drag_window: Option<WindowId>,
+    auxiliary: Option<AuxiliaryInteraction>,
     drop_targets: BTreeMap<InteractionOwner, DropTargetRegistration>,
     next_drop_order: u64,
     virtual_scrolls: BTreeMap<String, VirtualScrollTarget>,
+    parents: BTreeMap<(String, crate::NodeId), Option<crate::NodeId>>,
+    scroll_tick_queued: bool,
 }
 
 #[derive(Clone)]
 struct VirtualScrollTarget {
+    view: String,
+    node: Option<crate::NodeId>,
     state: ListState,
     notify: EntityId,
+    hitbox: Hitbox,
 }
 
 impl WindowInteractionCoordinator {
+    pub(crate) fn set_retained_tree(&self, view: &str, tree: &crate::RetainedUiTree) {
+        let mut state = self.0.borrow_mut();
+        state.parents.retain(|(owner, _), _| owner != view);
+        state.parents.extend(
+            tree.nodes()
+                .map(|node| ((view.to_owned(), node.id()), node.parent())),
+        );
+    }
     pub(crate) fn begin_frame(&self) {
         let mut state = self.0.borrow_mut();
         state.presented.clear();
@@ -474,20 +501,48 @@ impl WindowInteractionCoordinator {
     }
 
     pub(crate) fn finish_frame(&self, window: &mut Window, cx: &mut App) {
-        let stale = {
+        let expired_session = {
             let mut state = self.0.borrow_mut();
             let should_cancel = state.active.as_ref().is_some_and(|active| {
                 !state.presented.contains(&active.owner)
                     && !state.logical_sources.contains(&active.owner)
             });
-            should_cancel.then(|| state.active.take()).flatten()
+            let expired = should_cancel.then(|| state.active.take()).flatten();
+            if expired.is_some() {
+                state.active_window = None;
+            }
+            expired
         };
-        if let Some(active) = stale {
+        if let Some(active) = expired_session {
             window.defer(cx, move |window, cx| cancel_active(active, window, cx));
         }
-        let position = self.0.borrow().drag.as_ref().map(|drag| drag.position);
-        if let Some(position) = position {
-            self.update_app_drag(position, window, cx);
+        let schedule_tick = {
+            let mut state = self.0.borrow_mut();
+            let schedule = state.drag.is_some() && !state.scroll_tick_queued;
+            state.scroll_tick_queued |= schedule;
+            schedule
+        };
+        if schedule_tick {
+            // GPUI hit testing reads the presented frame. Delay the stationary
+            // sample until the current paint has published its fresh hitboxes.
+            let coordinator = self.clone();
+            window
+                .spawn(cx, async move |cx| {
+                    cx.background_executor()
+                        .timer(Duration::from_millis(16))
+                        .await;
+                    coordinator.0.borrow_mut().scroll_tick_queued = false;
+                    let _ = cx.update(|window, cx| {
+                        let position = {
+                            let state = coordinator.0.borrow();
+                            state.drag.as_ref().map(|drag| drag.position)
+                        };
+                        if let Some(position) = position {
+                            coordinator.update_app_drag(position, window, cx);
+                        }
+                    });
+                })
+                .detach();
         }
     }
 
@@ -501,13 +556,22 @@ impl WindowInteractionCoordinator {
     pub(crate) fn register_virtual_scroll(
         &self,
         collection: String,
+        view: String,
+        node: Option<crate::NodeId>,
         state: ListState,
         notify: EntityId,
+        hitbox: Hitbox,
     ) {
-        self.0
-            .borrow_mut()
-            .virtual_scrolls
-            .insert(collection, VirtualScrollTarget { state, notify });
+        self.0.borrow_mut().virtual_scrolls.insert(
+            collection,
+            VirtualScrollTarget {
+                view,
+                node,
+                state,
+                notify,
+                hitbox,
+            },
+        );
     }
 
     pub(crate) fn start_app_drag(
@@ -523,7 +587,9 @@ impl WindowInteractionCoordinator {
             spec,
             position,
             target: None,
+            scroll_destination: None,
         });
+        self.0.borrow_mut().drag_window = Some(window.window_handle().window_id());
         cx.notify(notify);
         self.update_app_drag(position, window, cx);
     }
@@ -558,13 +624,31 @@ impl WindowInteractionCoordinator {
                 .as_ref()
                 .and_then(|owner| state.drop_targets.get(owner))
                 .cloned();
-            let virtual_scroll = drag
-                .spec
-                .collection
-                .as_ref()
-                .and_then(|collection| state.virtual_scrolls.get(collection))
-                .cloned();
+            let virtual_scroll = resolve_virtual_scroll_target(
+                target.as_ref(),
+                &state.virtual_scrolls,
+                &state.parents,
+                position,
+            )
+            .or_else(|| {
+                if target.is_some() {
+                    return None;
+                }
+                let (view, node) = drag.scroll_destination.as_ref()?;
+                state
+                    .virtual_scrolls
+                    .values()
+                    .find(|scroll| {
+                        scroll.view == *view
+                            && scroll.node == Some(*node)
+                            && scroll.hitbox.is_hovered_at(position, window)
+                    })
+                    .cloned()
+            });
             let drag = state.drag.as_mut().expect("active drag was checked");
+            drag.scroll_destination = virtual_scroll
+                .as_ref()
+                .and_then(|scroll| scroll.node.map(|node| (scroll.view.clone(), node)));
             drag.position = position;
             drag.target.clone_from(&next);
             (old, next, target, virtual_scroll, notifications)
@@ -599,6 +683,7 @@ impl WindowInteractionCoordinator {
         let (drag, target) = {
             let mut state = self.0.borrow_mut();
             let drag = state.drag.take()?;
+            state.drag_window = None;
             let target = drag
                 .target
                 .as_ref()
@@ -675,6 +760,7 @@ impl WindowInteractionCoordinator {
         let (drag, target_notify) = {
             let mut state = self.0.borrow_mut();
             let drag = state.drag.take()?;
+            state.drag_window = None;
             let target_notify = drag
                 .target
                 .as_ref()
@@ -750,8 +836,12 @@ impl WindowInteractionCoordinator {
 
     pub(crate) fn begin(&self, gesture: NativeGesture, window: &mut Window, cx: &mut App) {
         self.cancel(window, cx);
+        self.cancel_auxiliary_in_window(window, cx);
         let notify = gesture.notify;
-        self.0.borrow_mut().active = Some(gesture);
+        let mut state = self.0.borrow_mut();
+        state.active = Some(gesture);
+        state.active_window = Some(window.window_handle().window_id());
+        drop(state);
         cx.notify(notify);
     }
 
@@ -769,10 +859,28 @@ impl WindowInteractionCoordinator {
         window: &mut Window,
         cx: &mut App,
     ) -> bool {
-        if !self.is_active(owner) {
-            return false;
+        if self.is_active(owner) {
+            return self.cancel(window, cx);
         }
-        self.cancel(window, cx)
+        let auxiliary = {
+            let mut state = self.0.borrow_mut();
+            if state
+                .auxiliary
+                .as_ref()
+                .is_some_and(|active| active.owner == *owner)
+            {
+                state.auxiliary.take()
+            } else {
+                None
+            }
+        };
+        if let Some(active) = auxiliary {
+            (active.cancel)(window, cx);
+            cx.notify(active.notify);
+            true
+        } else {
+            false
+        }
     }
 
     pub(crate) fn cancel_view(&self, view: &str, window: &mut Window, cx: &mut App) -> bool {
@@ -788,14 +896,41 @@ impl WindowInteractionCoordinator {
                 None
             }
         };
-        let Some(mut active) = active else {
-            return false;
+        if active.is_some() {
+            self.0.borrow_mut().active_window = None;
+        }
+        let auxiliary = {
+            let mut state = self.0.borrow_mut();
+            if state
+                .auxiliary
+                .as_ref()
+                .is_some_and(|active| active.owner.belongs_to(view))
+            {
+                state.auxiliary.take()
+            } else {
+                None
+            }
         };
-        // The dispatcher owns a direct runtime signal fallback for this
-        // lifecycle phase, so cleanup is complete before suspension commits.
-        active.session.cancel();
-        (active.cancel)(window, cx);
-        true
+        let drag_owned = self
+            .0
+            .borrow()
+            .drag
+            .as_ref()
+            .is_some_and(|drag| drag.spec.source.belongs_to(view));
+        let mut consumed = false;
+        if let Some(mut active) = active {
+            active.session.cancel();
+            (active.cancel)(window, cx);
+            consumed = true;
+        }
+        if let Some(active) = auxiliary {
+            (active.cancel)(window, cx);
+            consumed = true;
+        }
+        if drag_owned && self.cancel_app_drag(cx).is_some() {
+            consumed = true;
+        }
+        consumed
     }
 
     pub(crate) fn discard_view(&self, view: &str) {
@@ -807,6 +942,7 @@ impl WindowInteractionCoordinator {
             .is_some_and(|active| active.owner.belongs_to(view));
         if owned {
             self.0.borrow_mut().active = None;
+            self.0.borrow_mut().active_window = None;
         }
         let drag_owned = self
             .0
@@ -816,21 +952,113 @@ impl WindowInteractionCoordinator {
             .is_some_and(|drag| drag.spec.source.belongs_to(view));
         if drag_owned {
             self.0.borrow_mut().drag = None;
+            self.0.borrow_mut().drag_window = None;
         }
         let mut state = self.0.borrow_mut();
+        if state
+            .auxiliary
+            .as_ref()
+            .is_some_and(|active| active.owner.belongs_to(view))
+        {
+            state.auxiliary = None;
+        }
         state.captured_move.remove(view);
         state.captured_up.remove(view);
+        state.parents.retain(|(owner, _), _| owner != view);
         state
             .drop_targets
             .retain(|owner, _| !owner.belongs_to(view));
     }
 
     pub(crate) fn cancel(&self, window: &mut Window, cx: &mut App) -> bool {
-        let Some(active) = self.0.borrow_mut().active.take() else {
+        let active = {
+            let mut state = self.0.borrow_mut();
+            let active = state.active.take();
+            if active.is_some() {
+                state.active_window = None;
+            }
+            active
+        };
+        let Some(active) = active else {
             return false;
         };
         cancel_active(active, window, cx);
         true
+    }
+
+    pub(crate) fn register_auxiliary(
+        &self,
+        owner: InteractionOwner,
+        notify: EntityId,
+        cancel: impl Fn(&mut Window, &mut App) + 'static,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        let previous = {
+            let mut state = self.0.borrow_mut();
+            let same_owner = state
+                .auxiliary
+                .as_ref()
+                .is_some_and(|active| active.owner == owner);
+            let previous = (!same_owner).then(|| state.auxiliary.take()).flatten();
+            state.auxiliary = Some(AuxiliaryInteraction {
+                owner,
+                window: window.window_handle().window_id(),
+                notify,
+                cancel: Rc::new(cancel),
+            });
+            previous
+        };
+        if let Some(previous) = previous {
+            (previous.cancel)(window, cx);
+            cx.notify(previous.notify);
+        }
+    }
+
+    pub(crate) fn clear_auxiliary(&self, owner: &InteractionOwner) {
+        let mut state = self.0.borrow_mut();
+        if state
+            .auxiliary
+            .as_ref()
+            .is_some_and(|active| active.owner == *owner)
+        {
+            state.auxiliary = None;
+        }
+    }
+
+    fn cancel_auxiliary_in_window(&self, window: &mut Window, cx: &mut App) -> bool {
+        let window_id = window.window_handle().window_id();
+        let active = {
+            let mut state = self.0.borrow_mut();
+            if state
+                .auxiliary
+                .as_ref()
+                .is_some_and(|active| active.window == window_id)
+            {
+                state.auxiliary.take()
+            } else {
+                None
+            }
+        };
+        if let Some(active) = active {
+            (active.cancel)(window, cx);
+            cx.notify(active.notify);
+            true
+        } else {
+            false
+        }
+    }
+
+    pub(crate) fn cancel_window(&self, window: &mut Window, cx: &mut App) -> bool {
+        let window_id = window.window_handle().window_id();
+        let owns_pointer = self.0.borrow().active_window == Some(window_id);
+        let owns_drag = self.0.borrow().drag_window == Some(window_id);
+        let mut consumed = owns_pointer && self.cancel(window, cx);
+        consumed |= self.cancel_auxiliary_in_window(window, cx);
+        if owns_drag && self.cancel_app_drag(cx).is_some() {
+            consumed = true;
+        }
+        consumed
     }
 
     pub(crate) fn install(&self, window: &mut Window) {
@@ -897,6 +1125,7 @@ impl WindowInteractionCoordinator {
             let Some(mut active) = up_coordinator.0.borrow_mut().active.take() else {
                 return;
             };
+            up_coordinator.0.borrow_mut().active_window = None;
             let update = active.session.finish(event.position);
             (active.finish)(update, window, cx);
             cx.notify(active.notify);
@@ -924,6 +1153,28 @@ fn resolve_drop_target(
         })
         .max_by(|left, right| compare_drop_targets(left, right))
         .map(|target| target.owner.clone())
+}
+
+fn resolve_virtual_scroll_target(
+    active_target: Option<&DropTargetRegistration>,
+    virtual_scrolls: &BTreeMap<String, VirtualScrollTarget>,
+    parents: &BTreeMap<(String, crate::NodeId), Option<crate::NodeId>>,
+    position: Point<Pixels>,
+) -> Option<VirtualScrollTarget> {
+    let target = active_target?;
+    let view = &target.owner.view;
+    let mut cursor = target.owner.retained;
+    while let Some(node) = cursor {
+        if let Some(scroll) = virtual_scrolls.values().find(|scroll| {
+            scroll.view == *view
+                && scroll.node == Some(node)
+                && scroll.state.viewport_bounds().contains(&position)
+        }) {
+            return Some(scroll.clone());
+        }
+        cursor = parents.get(&(view.clone(), node)).copied().flatten();
+    }
+    None
 }
 
 fn compare_drop_targets(

@@ -1199,7 +1199,7 @@ fn error_payload(message: &str) -> UiValue {
 fn validate_async_payload(output: &ValueSchema, value: &UiValue) -> Result<(), UiValue> {
     validate_rhai_delivery(value).map_err(delivery_limit_payload)?;
     output
-        .validate_ui_value(value)
+        .validate_ui_value_first(value)
         .map_err(|error| error_payload(&error.to_string()))
 }
 
@@ -1842,5 +1842,29 @@ mod tests {
                 reason: SubscriptionCloseReason::RegistryDropped
             })
         ));
+    }
+
+    #[test]
+    fn online_schema_rejection_formats_only_the_first_issue() {
+        let value = UiValue::Map(
+            (0..100_000)
+                .map(|index| (format!("field-{index:06}"), UiValue::Null))
+                .collect(),
+        );
+        let error = validate_async_payload(
+            &ValueSchema::Map {
+                values: Box::new(ValueSchema::integer()),
+            },
+            &value,
+        )
+        .unwrap_err();
+        let UiValue::Map(error) = error else {
+            panic!("async schema error must be structured");
+        };
+        let Some(UiValue::String(message)) = error.get("message") else {
+            panic!("async schema error must contain a message");
+        };
+        assert!(message.contains("$.field-000000"), "{message}");
+        assert!(!message.contains("field-000001"), "{message}");
     }
 }

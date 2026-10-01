@@ -36,7 +36,11 @@ struct Host {
 
 impl Render for Host {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        self.host.container(self.view.element().unwrap())
+        if self.view.state() == gpui_rhai::ScriptViewState::Active {
+            self.host.container(self.view.element().unwrap())
+        } else {
+            self.host.container(gpui::div())
+        }
     }
 }
 
@@ -1302,7 +1306,7 @@ fn view(ctx){let value=ctx.get_state("range");column([
     visual.simulate_keystrokes("left");
     visual.run_until_parked();
     let keyboard = status(&mut visual);
-    assert!(keyboard.ends_with(",2"), "status={keyboard}");
+    assert_eq!(keyboard, "50.0,75.0,3", "status={keyboard}");
 }
 
 #[gpui::test]
@@ -1451,6 +1455,30 @@ fn view(ctx){let targets=[#{key:"a",x:20.0,y:20.0,width:50.0,height:40.0},
     visual.simulate_keystrokes("tab right");
     visual.run_until_parked();
     assert!(status(&mut visual).ends_with(",4"));
+}
+
+#[gpui::test]
+fn suspending_active_rotation_cleans_up_using_current_drawable_geometry(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let script = r#"
+        import "components/rotatable" as rotatable;
+        fn view(ctx) {
+            rotatable::Rotatable(#{key:"rotate",label:"Rotate",angle:0.0,
+                pivot:#{x:100.0,y:50.0},
+                content:canvas(canvas_scene([canvas_rect("marker",95.0,45.0,10.0,10.0,rgba(0xff0000ff))]))})
+                .with_style(style().width(px(300)).height(px(200)))
+        }
+    "#;
+    let (window, view) = mount(cx, script, "rotation-suspend");
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    let bounds = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap()
+        .find_by_role_and_name("slider", "Rotate").next().unwrap().geometry.unwrap().visual);
+    let start = point(px((bounds.x + 180.0) as f32), px((bounds.y + 50.0) as f32));
+    let moved = point(start.x - px(60.0), start.y + px(60.0));
+    visual.simulate_mouse_down(start, MouseButton::Left, Modifiers::default());
+    visual.simulate_mouse_move(moved, MouseButton::Left, Modifiers::default());
+    visual.run_until_parked();
+    assert!(visual.update(|window, cx| view.suspend(window, cx)).unwrap());
 }
 
 #[gpui::test]

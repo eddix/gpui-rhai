@@ -1,0 +1,13 @@
+[package]
+name = "audit-transforms-selection-round4"
+version = "0.0.0"
+edition = "2024"
+publish = false
+[workspace]
+[dependencies]
+gpui = { package = "gpui-pre", version = "=0.3.7", default-features = false, features = ["font-kit", "test-support"] }
+gpui-rhai = { path = "../../../../crates/gpui-rhai", features = ["charts"] }
+
+anyhow = "1"
+image = { version = "0.25.10", default-features = false }
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.7", default-features = false, features = ["font-kit", "runtime_shaders", "wayland", "x11"] }

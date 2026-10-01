@@ -137,6 +137,23 @@ impl EffectRegistry {
             .map(|(id, active)| (id, &active.descriptor, active.activation))
     }
 
+    pub(crate) fn contains_scope(&self, scope: &crate::AsyncScope) -> bool {
+        let crate::AsyncScope::Effect {
+            component,
+            key,
+            activation,
+        } = scope
+        else {
+            return true;
+        };
+        self.active
+            .get(&EffectId {
+                component: component.clone(),
+                key: key.clone(),
+            })
+            .is_some_and(|active| active.activation == *activation)
+    }
+
     #[must_use]
     pub fn len(&self) -> usize {
         self.active.len()
@@ -330,5 +347,8 @@ mod tests {
         let start_scope = restart.start_descriptors().next().unwrap().1;
         assert_eq!(cleanup_scope, old_scope);
         assert_ne!(start_scope, old_scope);
+        registry.commit(restart);
+        assert!(!registry.contains_scope(&old_scope));
+        assert!(registry.contains_scope(&start_scope));
     }
 }
