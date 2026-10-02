@@ -1,0 +1,33 @@
+    Blocking waiting for file lock on artifact directory
+   Compiling gpui-rhai v0.1.8 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai)
+   Compiling audit-pr104-table-round6 v0.0.0 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/docs/audits/2026-10-02-interaction-0.1.8-round6/resize-controls)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 36.72s
+     Running probe.rs (tests/native-keyboard/target/debug/deps/pr104_table_round6-c90c7f4bc88c6924)
+
+running 12 tests
+test logical_insets_resolve_signed_and_theme_lengths_without_locale ... insets LTR parent=GeometryBounds { x: 0.0, y: 0.0, width: 300.0, height: 100.0 },start=GeometryBounds { x: -4.0, y: 0.0, width: 8.0, height: 20.0 },end=GeometryBounds { x: 288.0, y: 30.0, width: 8.0, height: 20.0 }
+ok
+test logical_insets_reverse_under_rtl ... insets RTL parent=GeometryBounds { x: 0.0, y: 0.0, width: 300.0, height: 100.0 },start=GeometryBounds { x: 296.0, y: 0.0, width: 8.0, height: 20.0 },end=GeometryBounds { x: 4.0, y: 30.0, width: 8.0, height: 20.0 }
+ok
+test ltr_array_boundary_and_last_column_owner ... LTR final=c:200.0|none
+ok
+test native_last_column_autofit_measures_last_column_without_sort ... native autofit=c:313.0|none
+ok
+test nonresizable_neighbor_preserves_owner_and_last_keyboard_resize ... mixed native last keyboard=c:168.0|none
+ok
+test one_column_table_is_resizable ... ok
+test rtl_dragging_a_boundary_resizes_a_not_its_neighbor ... RTL real A boundary drag=a:160.0|none
+ok
+test rtl_handles_follow_the_owned_columns_logical_end ... RTL A: owned logical end=479,handle center=479
+RTL B: owned logical end=339,handle center=339
+RTL last C: header left=179,handle left=179
+ok
+test rtl_keyboard_arrows_resize_the_focused_logical_column ... ok
+test rtl_last_column_ref_keyboard_and_autofit_share_owner ... RTL last autofit=c:313.0|none
+ok
+test rtl_single_column_can_resize_from_outer_logical_end ... ok
+test table_without_locale_catalog_keeps_ltr_resize_available ... no-locale resize=a:160.0|none
+ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.27s
+
