@@ -4865,16 +4865,9 @@ impl ScriptHostView {
                     open_secondary_window(&spec, &self.factory, &self.native_windows, cx)
                 }
                 WindowCommand::Focus(id) | WindowCommand::Close(id) => {
-                    let handle = {
-                        let mut native = self.native_windows.borrow_mut();
-                        if closing {
-                            native.force_close.insert(id.clone());
-                        }
-                        native.handles.get(&id).copied()
-                    };
+                    let handle = self.native_windows.borrow().handles.get(&id).copied();
                     handle.map_or_else(
                         || {
-                            self.native_windows.borrow_mut().force_close.remove(&id);
                             Err(ScriptFailure::plain(format!(
                                 "native window `{id}` is unavailable"
                             )))
@@ -4886,8 +4879,25 @@ impl ScriptHostView {
                             // apply it after the current entity update unwinds.
                             let view = cx.weak_entity();
                             let native_windows = Rc::clone(&self.native_windows);
+                            let source_state = Rc::clone(&self.state);
                             let close_id = id.clone();
                             cx.defer(move |cx| {
+                                // Authority may be revoked between queueing and
+                                // execution. Do not let a disposed owner operate
+                                // on its replacement or leave a stale close bypass.
+                                if source_state.get() == ScriptViewState::Disposed
+                                    || native_windows.borrow().handles.get(&close_id).is_none_or(
+                                        |current| current.window_id() != handle.window_id(),
+                                    )
+                                {
+                                    return;
+                                }
+                                if closing {
+                                    native_windows
+                                        .borrow_mut()
+                                        .force_close
+                                        .insert(close_id.clone());
+                                }
                                 if let Err(error) = handle.update(cx, |_, window, _| {
                                     if closing {
                                         window.remove_window();

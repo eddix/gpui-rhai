@@ -266,6 +266,52 @@ fn failed_mount_releases_the_command_claim_and_a_host_cannot_bind_another_window
 }
 
 struct Empty;
+
+#[gpui::test]
+fn disposed_command_owner_cannot_close_its_replacement_from_a_queued_operation(
+    cx: &mut TestAppContext,
+) {
+    let (window, owner, host) = mount(cx, SOURCE, true);
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    let replacement = visual.update(|window, cx| {
+        owner
+            .automate(
+                AutomationCommand::Dispatch {
+                    locator: AutomationLocator::TestId { id: "close".into() },
+                    event: "click".into(),
+                    payload: None,
+                },
+                window,
+                cx,
+            )
+            .unwrap();
+        owner.dispose(cx).unwrap();
+        prepared(SOURCE)
+            .mount_window(
+                ScriptViewConfig::new("replacement"),
+                host.clone(),
+                window,
+                cx,
+            )
+            .unwrap()
+    });
+    window
+        .update(cx, |root, _, cx| {
+            root.views = vec![replacement.clone()];
+            cx.notify();
+        })
+        .unwrap();
+    visual.run_until_parked();
+    assert!(cx.windows().contains(&*window));
+    assert_eq!(replacement.state(), ScriptViewState::Active);
+    assert!(
+        !visual.simulate_close(),
+        "revoked queued close must not bypass the replacement's confirmation"
+    );
+    dispatch(&mut visual, &replacement, "close").unwrap();
+    visual.run_until_parked();
+    assert_eq!(replacement.state(), ScriptViewState::Disposed);
+}
 impl Render for Empty {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         gpui::div()
