@@ -447,7 +447,10 @@ impl Element for TableViewportElement {
         // The bounded native follow-up frame uses the measured viewport. No
         // component execution or geometry subscription is needed for resizing.
         if changed {
-            window.refresh();
+            // refresh() is deliberately a no-op during GPUI prepaint. Demand
+            // the next frame for the current view instead of relying on some
+            // unrelated input or a test driver's extra refresh.
+            window.request_animation_frame();
         }
     }
     fn paint(
