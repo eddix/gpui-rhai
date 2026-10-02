@@ -334,6 +334,9 @@ struct GeometryState {
     committed: BTreeMap<NodeId, ElementGeometry>,
     presented: BTreeSet<NodeId>,
     readers: BTreeMap<NodeId, BTreeSet<crate::read_dependency::ReadDependency>>,
+    // Keep direct NodeId dependencies separate: detaching a ref must not detach
+    // an independent direct read of the same node by the same contribution.
+    ref_readers: crate::element_ref::ElementRefGeometryBindings,
     dirty: BTreeSet<ComponentInstancePath>,
     layout_motion: BTreeMap<NodeId, LayoutMotionState>,
     shared_layout: BTreeMap<(String, String), (NodeId, GeometryBounds)>,
@@ -450,8 +453,8 @@ impl GeometryRegistry {
             return false;
         }
         state.committed.insert(node, geometry);
-        let readers = state.readers.get(&node).cloned().unwrap_or_default();
-        state.dirty.extend(crate::read_dependency::owners(readers));
+        let owners = geometry_read_owners(state, node);
+        state.dirty.extend(owners);
         true
     }
 
@@ -636,14 +639,8 @@ impl GeometryRegistry {
         };
         if state.canvas_drawables.get(&node) != Some(&geometry) {
             state.canvas_drawables.insert(node, geometry);
-            state.dirty.extend(
-                state
-                    .readers
-                    .get(&node)
-                    .into_iter()
-                    .flatten()
-                    .map(|reader| reader.owner.clone()),
-            );
+            let owners = geometry_read_owners(state, node);
+            state.dirty.extend(owners);
         }
     }
 
@@ -732,6 +729,7 @@ impl GeometryRegistry {
         Ok(geometry)
     }
 
+    #[cfg(test)]
     pub(crate) fn read_tracked(
         &self,
         node: NodeId,
@@ -743,24 +741,57 @@ impl GeometryRegistry {
         state.committed.get(&node).copied()
     }
 
-    pub(crate) fn register_readers(
+    pub(crate) fn read_ref_tracked(
         &self,
+        reference: &crate::ElementRefId,
         node: NodeId,
-        readers: impl IntoIterator<Item = impl Into<crate::read_dependency::ReadDependency>>,
+        reader: impl Into<crate::read_dependency::ReadDependency>,
+    ) -> Option<ElementGeometry> {
+        let mut current = self.inner.borrow_mut();
+        let state = Rc::make_mut(&mut current);
+        state
+            .ref_readers
+            .entry(node)
+            .or_default()
+            .entry(reference.clone())
+            .or_default()
+            .insert(reader.into());
+        state.committed.get(&node).copied()
+    }
+
+    /// Replace the logical-ref observation targets for one committed view scope.
+    /// The snapshot is authoritative even when no binding currently exists.
+    pub(crate) fn sync_ref_readers(
+        &self,
+        scope: &ComponentInstancePath,
+        bindings: crate::element_ref::ElementRefGeometryBindings,
     ) {
         let mut current = self.inner.borrow_mut();
         let state = Rc::make_mut(&mut current);
-        let committed = state.committed.contains_key(&node);
-        for reader in readers {
-            let reader = reader.into();
-            if state
-                .readers
-                .entry(node)
-                .or_default()
-                .insert(reader.clone())
-                && committed
-            {
-                state.dirty.insert(reader.owner);
+        let previous = state.ref_readers.clone();
+        for refs in state.ref_readers.values_mut() {
+            refs.retain(|reference, _| !reference.component().is_within(scope));
+        }
+        state.ref_readers.retain(|_, refs| !refs.is_empty());
+        for (node, refs) in bindings {
+            for (reference, readers) in refs {
+                if state.committed.contains_key(&node) {
+                    let previous_readers =
+                        previous.get(&node).and_then(|refs| refs.get(&reference));
+                    state.dirty.extend(
+                        readers
+                            .iter()
+                            .filter(|reader| {
+                                previous_readers.is_none_or(|previous| !previous.contains(*reader))
+                            })
+                            .map(|reader| reader.owner.clone()),
+                    );
+                }
+                state
+                    .ref_readers
+                    .entry(node)
+                    .or_default()
+                    .insert(reference, readers);
             }
         }
     }
@@ -771,10 +802,7 @@ impl GeometryRegistry {
 
     pub(crate) fn reset_contribution(&self, reader: &crate::read_dependency::ReadDependency) {
         let mut current = self.inner.borrow_mut();
-        crate::read_dependency::retain_readers(
-            &mut Rc::make_mut(&mut current).readers,
-            |existing| existing != reader,
-        );
+        retain_geometry_readers(Rc::make_mut(&mut current), |existing| existing != reader);
     }
     pub(crate) fn retain_contributions(
         &self,
@@ -782,9 +810,42 @@ impl GeometryRegistry {
         active: &BTreeSet<crate::read_dependency::ReadContribution>,
     ) {
         let mut current = self.inner.borrow_mut();
-        crate::read_dependency::retain_readers(&mut Rc::make_mut(&mut current).readers, |reader| {
+        retain_geometry_readers(Rc::make_mut(&mut current), |reader| {
             reader.retained_in_contribution_scope(scope, active)
         });
+    }
+
+    pub(crate) fn retain_reader_scope(
+        &self,
+        scope: &ComponentInstancePath,
+        active: &BTreeSet<ComponentInstancePath>,
+    ) {
+        let mut current = self.inner.borrow_mut();
+        let state = Rc::make_mut(&mut current);
+        retain_geometry_readers(state, |reader| {
+            reader.retained_in_owner_scope(scope, active)
+        });
+        for refs in state.ref_readers.values_mut() {
+            refs.retain(|reference, _| {
+                let provider = reference.component();
+                !provider.is_within(scope) || provider == scope || active.contains(provider)
+            });
+        }
+        state.ref_readers.retain(|_, refs| !refs.is_empty());
+        state
+            .dirty
+            .retain(|owner| !owner.is_within(scope) || owner == scope || active.contains(owner));
+    }
+
+    pub(crate) fn remove_scope(&self, scope: &ComponentInstancePath) {
+        let mut current = self.inner.borrow_mut();
+        let state = Rc::make_mut(&mut current);
+        retain_geometry_readers(state, |reader| !reader.owner.is_within(scope));
+        for refs in state.ref_readers.values_mut() {
+            refs.retain(|reference, _| !reference.component().is_within(scope));
+        }
+        state.ref_readers.retain(|_, refs| !refs.is_empty());
+        state.dirty.retain(|owner| !owner.is_within(scope));
     }
 
     pub(crate) fn presented(&self, node: NodeId) -> Result<PresentedGeometry, GeometryError> {
@@ -820,6 +881,7 @@ impl GeometryRegistry {
         state.committed.retain(|node, _| active.contains(node));
         state.presented.retain(|node| active.contains(node));
         state.readers.retain(|node, _| active.contains(node));
+        state.ref_readers.retain(|node, _| active.contains(node));
         state.layout_motion.retain(|node, _| active.contains(node));
         state
             .motion_progress
@@ -858,6 +920,35 @@ impl GeometryRegistry {
     pub(crate) fn restore(&self, snapshot: GeometrySnapshot) {
         *self.inner.borrow_mut() = snapshot.0;
     }
+}
+
+fn geometry_read_owners(state: &GeometryState, node: NodeId) -> BTreeSet<ComponentInstancePath> {
+    state
+        .readers
+        .get(&node)
+        .into_iter()
+        .flatten()
+        .chain(
+            state
+                .ref_readers
+                .get(&node)
+                .into_iter()
+                .flat_map(BTreeMap::values)
+                .flatten(),
+        )
+        .map(|reader| reader.owner.clone())
+        .collect()
+}
+
+fn retain_geometry_readers(
+    state: &mut GeometryState,
+    predicate: impl Fn(&crate::read_dependency::ReadDependency) -> bool,
+) {
+    crate::read_dependency::retain_readers(&mut state.readers, &predicate);
+    for refs in state.ref_readers.values_mut() {
+        crate::read_dependency::retain_readers(refs, &predicate);
+    }
+    state.ref_readers.retain(|_, refs| !refs.is_empty());
 }
 
 fn sample_layout_bounds(motion: &LayoutMotionState, now: Instant) -> GeometryBounds {

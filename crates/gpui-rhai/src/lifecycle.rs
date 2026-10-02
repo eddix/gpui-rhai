@@ -1409,13 +1409,12 @@ impl ScriptLifecycle {
             runtime
                 .signals
                 .reconcile(&self.root_path, declarations.signals);
-            let geometry_readers = runtime
+            runtime
                 .element_refs
                 .reconcile(&self.root_path, declarations.element_refs);
+            let geometry_bindings = runtime.element_refs.geometry_bindings(&self.root_path);
             let geometry = runtime.geometry_for(self.presentation_scope());
-            for (node, readers) in geometry_readers {
-                geometry.register_readers(node, readers);
-            }
+            geometry.sync_ref_readers(&self.root_path, geometry_bindings);
             runtime.virtual_requests.retain(&virtual_collections);
         }
         for (descriptor, scope) in plan.start_descriptors() {
