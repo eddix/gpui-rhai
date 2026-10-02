@@ -1,0 +1,13 @@
+[package]
+name = "audit-018-collections-tree-round6"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+gpui-rhai = { path = "../../../../../crates/gpui-rhai" }
+
+[profile.dev.package.audit-018-collections-tree-round6]
+opt-level = 3

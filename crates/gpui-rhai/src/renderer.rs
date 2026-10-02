@@ -1946,6 +1946,9 @@ impl GpuiNodeRenderer {
         path: &str,
         retained_id: Option<NodeId>,
     ) -> AnyElement {
+        if let Some(table) = render_table_layout(node, environment, path, retained_id) {
+            return table;
+        }
         let local_interaction = if is_disabled(node) {
             environment.interaction.clone().with(PseudoState::Disabled)
         } else {
@@ -2233,13 +2236,29 @@ impl GpuiNodeRenderer {
             ),
             UiNodeKind::Svg { source } => render_inline_svg(element, node, source, environment),
             UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => {
-                let element = element.children(render_flattened_children(
+                let children = render_flattened_children(
                     children,
                     environment,
                     boundary_fallback,
                     path,
                     retained_id,
-                ));
+                );
+                let element = if let Some(crate::table_layout::TableLayout::Resolved { extent }) =
+                    node.table_layout()
+                {
+                    let mut track = div()
+                        .flex()
+                        .flex_col()
+                        .w(px(f64_to_f32(*extent)))
+                        .min_w(px(f64_to_f32(*extent)))
+                        .flex_shrink_0();
+                    if node.style().base.flex_grow == Some(true) {
+                        track = track.flex_1().min_h(px(0.0));
+                    }
+                    element.child(track.children(children))
+                } else {
+                    element.children(children)
+                };
                 decorate_scrollbars(element, node, environment, path, retained_id)
                     .into_any_element()
             }
@@ -3567,6 +3586,15 @@ fn native_virtual_collection_element<C: ColorResolver>(
                 .collect()
         })
         .unwrap_or_default();
+    let runtime = owned_slot_runtime(environment, path, retained_roots);
+    VirtualListEntityElement::new_collection(path, spec.clone(), runtime, retained_id)
+}
+
+fn owned_slot_runtime<C: ColorResolver>(
+    environment: &RenderEnvironment<'_, C>,
+    path: &str,
+    retained_roots: BTreeMap<String, NodeId>,
+) -> NodeSlotRuntime {
     let retained_links = retained_link_subtrees(
         environment.retained,
         environment.retained_links,
@@ -3588,7 +3616,7 @@ fn native_virtual_collection_element<C: ColorResolver>(
             }
         }
     }
-    let runtime = NodeSlotRuntime {
+    NodeSlotRuntime {
         now: environment.now,
         clock: environment.clock.clone(),
         colors: OwnedColorResolver::capture(environment.colors),
@@ -3622,8 +3650,74 @@ fn native_virtual_collection_element<C: ColorResolver>(
         a11y_active: environment.a11y_active,
         retained_roots,
         retained_links,
+    }
+}
+
+fn render_table_layout<C: ColorResolver>(
+    node: &UiNode,
+    environment: &RenderEnvironment<'_, C>,
+    path: &str,
+    retained_id: Option<NodeId>,
+) -> Option<AnyElement> {
+    let crate::table_layout::TableLayout::Columns(columns) = node.table_layout()? else {
+        return None;
     };
-    VirtualListEntityElement::new_collection(path, spec.clone(), runtime, retained_id)
+    let mut columns = columns.clone();
+    collect_table_column_minima(node, &mut columns, environment, true);
+    let mut style = node.style().resolve(environment.interaction);
+    resolve_style_lengths(&mut style, environment.colors);
+    let roots = retained_id
+        .into_iter()
+        .map(|root| ("table".to_owned(), root))
+        .collect();
+    let runtime = owned_slot_runtime(environment, path, roots);
+    let table = node.clone();
+    let root_path = path.to_owned();
+    Some(
+        crate::table_layout::TableViewportElement::new(
+            &interaction_element_id(retained_id, path),
+            columns,
+            environment.signals.clone(),
+            environment.direction,
+            style,
+            retained_id.and_then(|root| environment.scroll_handles.get(&root).cloned()),
+            move |plan, border| {
+                let mut table = table;
+                table.resolve_table_layout(&plan, border);
+                runtime.render_at(&table, &root_path, retained_id)
+            },
+        )
+        .into_any_element(),
+    )
+}
+
+fn collect_table_column_minima<C: ColorResolver>(
+    node: &UiNode,
+    columns: &mut [crate::table_layout::TableColumn],
+    environment: &RenderEnvironment<'_, C>,
+    root: bool,
+) {
+    if !root && node.table_layout().is_some() {
+        return;
+    }
+    if let Some(column) = node.table_column().and_then(|index| columns.get_mut(index)) {
+        let mut style = node.style().resolve(environment.interaction);
+        resolve_style_lengths(&mut style, environment.colors);
+        column.include_minimum_style(&style, environment.direction);
+    }
+    match node.kind() {
+        UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => {
+            for child in children {
+                collect_table_column_minima(child, columns, environment, false);
+            }
+        }
+        UiNodeKind::VirtualCollection { spec } => {
+            for child in spec.realized.values() {
+                collect_table_column_minima(child, columns, environment, false);
+            }
+        }
+        _ => {}
+    }
 }
 
 fn retained_link_subtrees(
@@ -3877,7 +3971,7 @@ fn translated(element: AnyElement, x: Option<f64>, y: Option<f64>) -> AnyElement
     }
 }
 
-fn f64_to_f32(value: f64) -> f32 {
+pub(crate) fn f64_to_f32(value: f64) -> f32 {
     value.to_string().parse().unwrap_or_else(|_| {
         if value.is_sign_negative() {
             f32::MIN
@@ -4646,6 +4740,8 @@ fn resolve_style_lengths(style: &mut StyleProperties, resolver: &impl ColorResol
         &mut style.right,
         &mut style.bottom,
         &mut style.left,
+        &mut style.inset_start,
+        &mut style.inset_end,
     ] {
         resolve_layout(value);
     }
@@ -4689,12 +4785,16 @@ pub(crate) fn apply_style_override(
 }
 
 fn apply_layout(element: Div, style: &StyleProperties, text_direction: TextDirection) -> Div {
-    let element = apply_display_and_position(element, style);
+    let element = apply_display_and_position(element, style, text_direction);
     let element = apply_flex_alignment(element, style, text_direction);
     apply_layout_dimensions(element, style)
 }
 
-fn apply_display_and_position(mut element: Div, style: &StyleProperties) -> Div {
+fn apply_display_and_position(
+    mut element: Div,
+    style: &StyleProperties,
+    direction: TextDirection,
+) -> Div {
     if let Some(display) = style.display {
         element = match display {
             DisplayMode::Block => element.block(),
@@ -4712,13 +4812,20 @@ fn apply_display_and_position(mut element: Div, style: &StyleProperties) -> Div 
     if let Some(value) = style.top {
         element = inset_top(element, value);
     }
-    if let Some(value) = style.right {
+    let (left, right) = logical_horizontal_edges(
+        style.left,
+        style.right,
+        style.inset_start,
+        style.inset_end,
+        direction,
+    );
+    if let Some(value) = right {
         element = inset_right(element, value);
     }
     if let Some(value) = style.bottom {
         element = inset_bottom(element, value);
     }
-    if let Some(value) = style.left {
+    if let Some(value) = left {
         element = inset_left(element, value);
     }
     if matches!(style.overflow_x, Some(OverflowMode::Hidden))

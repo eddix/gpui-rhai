@@ -34,6 +34,7 @@ pub mod pan_zoom;
 pub mod primitive;
 pub mod range_input;
 pub mod range_slider;
+mod read_dependency;
 pub mod reload;
 pub mod renderer;
 pub mod resizable;
@@ -53,6 +54,7 @@ pub mod split_resize;
 pub mod state;
 pub mod store;
 pub mod style;
+mod table_layout;
 pub mod text_area;
 mod text_edit;
 pub mod text_input;
@@ -285,7 +287,8 @@ pub use virtual_list::{
     VirtualCollectionMetrics, VirtualCollectionNodeSpec, VirtualListError, VirtualRequestRegistry,
 };
 pub use window::{
-    ScriptWindowSpec, WindowCommand, WindowCommandError, WindowCommandPolicy, WindowCommandRegistry,
+    QueuedWindowCommand, ScriptWindowSpec, WindowCommand, WindowCommandError, WindowCommandPolicy,
+    WindowCommandRegistry,
 };
 
 /// The first runtime API generation understood by component source.

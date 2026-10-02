@@ -1,0 +1,10 @@
+{
+  "baseline": "cda11ce7d80f817e5675543cc7a95f577b977320",
+  "comparison": "83b19b1d",
+  "sha256": {
+    "crates/gpui-rhai/src/element_ref.rs": "52014e2ae42c868e474359890daf1d59f4bc5c1fcea5a556a8c4675dced3854f",
+    "crates/gpui-rhai/src/geometry.rs": "2b5324438f7967eaf18eb94b293680204b2eab0142a7aad0d1b3f4f0bfba60f5",
+    "crates/gpui-rhai/src/context.rs": "736efff21ae48be085703358048c46779eec4c7901168d84421a0e783af5fd53",
+    "crates/gpui-rhai/src/read_dependency.rs": "572fe3ae8da06b05a2a267c55900db46cfe47675aa20a253154530f2645e1e86"
+  }
+}

@@ -1,0 +1,131 @@
+   Compiling gpui-rhai-native-keyboard-tests v0.0.0 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 8.78s
+     Running tests/element_ref_subscriptions.rs (tests/native-keyboard/target/debug/deps/element_ref_subscriptions-41163fb8d0dd763c)
+
+running 8 tests
+test tests::failed_effect_commit_restores_ref_binding_and_native_subscription ... ok
+test tests::reader_retargets_ref_without_retaining_old_node_subscription ... ok
+test tests::round7_existing_node_geometry_change_control ... same-node target=Some(180.0), reader=["180.0"]
+ok
+test tests::round7_formal_virtual_row_unknown_geometry_has_executable_owner_control ... formal virtual row initial ref→geometry readout=["120.0"]
+ok
+test tests::round7_pending_ref_wakes_formal_reader_when_producer_appears ... appearance target=Some(120.0), reader=["120.0"]
+ok
+test tests::round7_ref_rebinding_to_new_node_preserves_reader ... ref target identity changed Some(4) -> Some(6)
+replacement target=Some(180.0), reader=["180.0"]
+ok
+test tests::round7_ref_removal_notifies_reader ... removed target=None, reader=["pending"]
+ok
+test tests::suspend_resume_preserves_logical_ref_readers ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.00s
+
+     Running tests/table_boundaries.rs (tests/native-keyboard/target/debug/deps/table_boundaries-8934c074dd07df75)
+
+running 8 tests
+test data_loading_and_both_empty_paths_share_the_bordered_horizontal_viewport ... ok
+test ltr_array_boundary_and_last_column_owner ... LTR final=c:200.0|none
+ok
+test native_last_column_autofit_measures_last_column_without_sort ... native autofit=c:313.0|none
+ok
+test nonresizable_neighbor_preserves_owner_and_last_keyboard_resize ... mixed native last keyboard=c:168.0|none
+ok
+test one_column_table_is_resizable ... ok
+test rtl_dragging_a_boundary_resizes_a_not_its_neighbor ... RTL real A boundary drag=a:160.0|none
+ok
+test rtl_handles_follow_the_owned_columns_logical_end ... RTL A: owned logical end=479,handle center=479
+RTL B: owned logical end=339,handle center=339
+RTL last C: header left=179,handle left=179
+ok
+test rtl_keyboard_arrows_resize_the_focused_logical_column ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.77s
+
+     Running tests/table_extent.rs (tests/native-keyboard/target/debug/deps/table_extent-597838bcc7cccc5a)
+
+running 9 tests
+test accepted_final_column_width_recomputes_extent_and_clamps_offset ... ok
+test component_min_max_and_native_override_use_one_width_authority ... ok
+test fixed_wide_ltr_rtl_array_native_share_scroll_and_all_states ... ok
+test horizontal_body_input_and_vertical_input_are_independent ... ok
+test native_drag_override_repaints_widths_and_extent_without_rhai ... ok
+test percentage_and_weighted_flex_use_viewport_not_extent ... ok
+test percentage_overflow_does_not_feedback_into_its_basis ... ok
+test single_column_under_equal_overflow_and_autofit_share_the_viewport ... ok
+test theme_insets_are_in_the_shared_column_plan_and_real_extent ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.95s
+
+     Running tests/table_frame_demand.rs (tests/native-keyboard/target/debug/deps/table_frame_demand-567fefe98c6298fe)
+
+running 2 tests
+test tests::measured_viewport_schedules_its_own_followup_frame ... after initial frame + normal clock, scheduled=[3, 1, 0], no manual followup: [120.0, 149.0, 29.0]
+explicit extra refresh driver control: [120.0, 149.0, 29.0]
+ok
+test tests::viewport_change_schedules_its_own_followup_frame ... after resize frame + normal clock, scheduled=[8, 1, 0], viewport=500, no manual followup: [120.0, 249.0, 129.0]
+explicit extra refresh driver control: [120.0, 249.0, 129.0]
+ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.05s
+
+     Running tests/transformed_selection.rs (tests/native-keyboard/target/debug/deps/transformed_selection-157cf4cc252eb782)
+
+running 4 tests
+test asymmetric_insets_negative_scale_rotation_click_control ... asymmetric/negative/rotate at DPI1.25 click=Point { x: 151.74922px, y: 96.92154px }, selected=["a"]
+ok
+test larger_invertible_zoom_control ... low zoom=0.0000001, visible=GeometryBounds { x: 129.9999871, y: 59.9999941, width: 5.0, height: 4.999999999999993 }, inverse available=true, selected=["a"]
+ok
+test rotation_suspend_resume_resize_cycles_control ... suspend/resume to width=600: preview=85.98920093610042, source restored=20, commits=0
+suspend/resume to width=900: preview=85.98920093610042, source restored=20, commits=0
+ok
+test small_invertible_zoom_selection ... low zoom=0.000000001, visible=GeometryBounds { x: 129.999999871, y: 59.999999941, width: 5.0, height: 5.0 }, inverse available=true, selected=["a"]
+ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.96s
+
+     Running tests/window_authority.rs (tests/native-keyboard/target/debug/deps/window_authority-b73278b6ff47d2d1)
+
+running 5 tests
+test dropping_last_handle_revokes_queued_authority ... explicit_dispose=false: window_remains=true, replacement_state=Active
+ok
+test explicit_dispose_revokes_queued_authority_control ... explicit_dispose=true: window_remains=true, replacement_state=Active
+ok
+test late_old_view_cleanup_cannot_unregister_same_id_replacement ... late old rendered view cleanup: replacement_state=Active, competing_owner_result=Err("window `domain` already has script command owner `owner`")
+ok
+test mount_identity_guards_close_and_focus_across_same_and_new_host_replacements ... ok
+test retained_handle_clone_keeps_the_mount_authorized ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.03s
+
+     Running tests/window_command_deliveries.rs (tests/native-keyboard/target/debug/deps/window_command_deliveries-b96d3f1bea647420)
+
+running 6 tests
+test actual_mouse_and_worker_task_focus_the_qualified_source ... ok
+test cancelled_open_releases_reservation_for_a_live_peer ... ok
+test live_source_cannot_redirect_stale_focus_or_close_to_a_same_name_target ... ok
+test same_batch_open_focus_and_open_focus_close_keep_the_pending_target_identity ... ok
+test subscription_origin_is_revoked_by_dispose_drop_native_close_and_remount ... ok
+test suspended_source_keeps_origin_while_peer_pumps_subscription_commands ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.30s
+
+     Running tests/window_command_origin.rs (tests/native-keyboard/target/debug/deps/window_command_origin-b962b0ce1e4ff3ee)
+
+running 2 tests
+test live_origin_survives_peer_delivery_and_initial_open_focus_uses_one_reservation ... ok
+test peer_pump_cannot_reauthorize_revoked_open_close_or_focus ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.06s
+
+     Running tests/window_ownership.rs (tests/native-keyboard/target/debug/deps/window_ownership-079646377a57c929)
+
+running 6 tests
+test disposed_command_owner_cannot_close_its_replacement_from_a_queued_operation ... ok
+test failed_mount_releases_the_command_claim_and_a_host_cannot_bind_another_window ... ok
+test managed_embedding_focuses_opens_and_closes_real_native_windows ... ok
+test native_close_confirmation_and_forced_close_share_the_owner ... ok
+test ordinary_embedding_stays_disabled_beside_a_command_owner ... ok
+test owner_conflicts_fail_without_revoking_the_existing_owner_and_dispose_allows_replacement ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.95s
+

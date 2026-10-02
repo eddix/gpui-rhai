@@ -1,0 +1,14 @@
+   Compiling gpui-rhai-native-keyboard-tests v0.0.0 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.17s
+     Running tests/table_frame_demand.rs (tests/native-keyboard/target/debug/deps/table_frame_demand-567fefe98c6298fe)
+
+running 2 tests
+test tests::measured_viewport_schedules_its_own_followup_frame ... after initial frame + normal clock, scheduled=[3, 1, 0], no manual followup: [120.0, 149.0, 29.0]
+explicit extra refresh driver control: [120.0, 149.0, 29.0]
+ok
+test tests::viewport_change_schedules_its_own_followup_frame ... after resize frame + normal clock, scheduled=[8, 1, 0], viewport=500, no manual followup: [120.0, 249.0, 129.0]
+explicit extra refresh driver control: [120.0, 249.0, 129.0]
+ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.98s
+

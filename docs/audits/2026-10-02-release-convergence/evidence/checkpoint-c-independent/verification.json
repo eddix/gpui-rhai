@@ -1,0 +1,44 @@
+{
+  "checkpoint": "C",
+  "date": "2026-10-02",
+  "source_sha": "c6c1dc77f33406438c0e29c24013f99f72ce754b",
+  "baseline_sha": "cda11ce7d80f817e5675543cc7a95f577b977320",
+  "assessment": "REQUEST_CHANGES",
+  "findings": [{
+    "id": "C-TABLE-01",
+    "priority": "P1",
+    "source": "crates/gpui-rhai/src/table_layout.rs:450",
+    "actual": {"viewport": 500, "widths": [120, 149, 29]},
+    "expected_widths": [120, 249, 129],
+    "extra_refresh_control_widths": [120, 249, 129],
+    "scheduled_frame_callback_counts": [6, 0, 0],
+    "advance_clock_ms": 128
+  }],
+  "platform": {"os": "macOS", "version": "27.0.1", "build": "26A434", "arch": "arm64"},
+  "toolchain": {"rustc": "1.95.0", "cargo": "1.95.0"},
+  "dependencies": {
+    "gpui-pre": "0.3.7",
+    "gpui-pre-platform": "0.3.7",
+    "rhai": "1.26.0",
+    "source": "crates.io registry",
+    "rhai_features": ["default", "internals", "metadata", "serde"],
+    "rhai_sync": false,
+    "native_test_support_workspace": "tests/native-keyboard"
+  },
+  "RUST_MIN_STACK": "unset for every execution",
+  "results": [
+    {"command": "env -u RUST_MIN_STACK cargo test --manifest-path tests/native-keyboard/Cargo.toml --locked -- --test-threads=1", "status": "pass", "passed": 186, "failed": 0, "log": "native-default-stack.log"},
+    {"command": "env -u RUST_MIN_STACK cargo test -p gpui-rhai --lib --locked", "status": "pass", "passed": 464, "failed": 0, "log": "core-lib.log"},
+    {"command": "env -u RUST_MIN_STACK cargo test -p gpui-rhai --lib --all-features --locked", "status": "pass", "passed": 494, "failed": 0, "log": "core-lib-all-features.log"},
+    {"command": "env -u RUST_MIN_STACK cargo test -p gpui-rhai --test virtual_transactions --test virtual_read_contributions --locked", "status": "pass", "passed": 5, "failed": 0, "log": "virtual-fixed-matrix.log"},
+    {"command": "env -u RUST_MIN_STACK python3 docs/audits/2026-10-02-interaction-0.1.8-round7/runtime-core/run-probes.py", "status": "pass", "passed": 6, "failed": 0, "log": "round7-window.log"},
+    {"command": "env -u RUST_MIN_STACK CARGO_TARGET_DIR=tests/native-keyboard/target cargo test --manifest-path docs/audits/2026-10-02-interaction-0.1.8-round7/geometry-reads/Cargo.toml --locked --offline --lib -- --nocapture --test-threads=1", "status": "pass", "passed": 5, "failed": 0, "log": "round7-ref.log"},
+    {"command": "env -u RUST_MIN_STACK CARGO_TARGET_DIR=tests/native-keyboard/target cargo test --manifest-path docs/audits/2026-10-02-interaction-0.1.8-round7/resize-controls/Cargo.toml --locked --offline --test table_round7 -- --nocapture --test-threads=1", "status": "pass", "passed": 4, "failed": 0, "log": "round7-table.log"},
+    {"command": "env -u RUST_MIN_STACK CARGO_TARGET_DIR=tests/native-keyboard/target cargo test --manifest-path docs/audits/2026-10-02-release-convergence/evidence/checkpoint-c-independent/table-frame-probe/Cargo.toml --locked --offline --lib -- --nocapture --test-threads=1", "status": "fail", "passed": 1, "failed": 1, "log": "table-frame-followup.log"},
+    {"command": "env -u RUST_MIN_STACK CARGO_TARGET_DIR=tests/native-keyboard/target cargo test --manifest-path docs/audits/2026-10-02-release-convergence/evidence/checkpoint-c-independent/table-frame-probe/Cargo.toml --locked --offline --lib tests::viewport_change_schedules_its_own_followup_frame -- --exact --nocapture --test-threads=1", "status": "fail", "passed": 0, "failed": 1, "log": "table-frame-followup-repeat.log"}
+  ],
+  "counting_note": "Core feature runs and promoted/original probes overlap; do not sum them as distinct tests.",
+  "cutoff_note": "All listed results exercise frozen c6c1dc77. The implementer began a narrow table_layout WIP after the finding was reported; this review does not approve that uncommitted fix.",
+  "not_run": ["independent strict Clippy", "package", "release smoke", "remote CI", "release performance/120Hz", "Linux X11/Wayland", "VoiceOver", "five visual baselines", "work package D"],
+  "scope_preservation": {"product_modified": false, "formal_tests_modified": false, "historical_audit_modified": false, "dependencies_modified": false, "github_modified": false, "committed": false}
+}

@@ -1,0 +1,13 @@
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+   Compiling gpui-rhai v0.1.8 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 58.94s
+     Running unittests src/lib.rs (target/debug/deps/gpui_rhai-56ecbb5b7b93d5e9)
+
+running 1 test
+UiNode=592 bytes; Style=5680 bytes
+test node::tests::node_styles_share_immutable_snapshots_and_mutate_without_aliasing ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 479 filtered out; finished in 0.01s
+

@@ -146,14 +146,9 @@ fn optional_or(props, name, fallback) {
 }
 
 fn column_style(column) {
-    let style = style().padding_x(theme_spacing("sm"));
-    if column.width.kind == "fixed" {
-        style.width(px(column.width.value)).flex_shrink(false)
-    } else if column.width.kind == "percent" {
-        style.width(relative(column.width.value / 100.0)).flex_shrink(false)
-    } else {
-        style.flex_basis(relative(0)).flex_grow(column.width.value).min_width(px(0))
-    }
+    // Native Table layout supplies the same viewport-resolved width to header
+    // and virtual cells; padding remains a theme-controlled border-box inset.
+    style().padding_x(theme_spacing("sm")).flex_shrink(false)
 }
 
 fn next_sort(current, key) {
@@ -250,9 +245,7 @@ fn render_table_row(resize_signals, total_rows, ctx, payload) {
                     .background(if item.selected { theme_color("table.selection") }
                         else { rgba(0x00000000) }))
         );
-        if "resize_signal_key" in cell {
-            node = node.bind_parent_signal(ctx, "width_override", cell.resize_signal_key);
-        }
+        node = node.with_table_column(cell_index - 1);
         node = node.accessibility_table_cell(cell_label, cell_index);
         cells.push(node);
         cell_index += 1;
@@ -350,10 +343,7 @@ fn table_column_model(props) {
     let table_resizable = prop_or(props, "resizable_columns", false);
     let requested = false;
     for index in 0..props.columns.len {
-        if index + 1 < props.columns.len
-                && optional_or(props.columns[index], "resizable", table_resizable) {
-            requested = true;
-        }
+        if optional_or(props.columns[index], "resizable", table_resizable) { requested = true; }
     }
     if !requested { return #{ columns: props.columns, signals: [], resize_signals: #{} }; }
     let column_keys = [];
@@ -364,8 +354,9 @@ fn table_column_model(props) {
         let source = props.columns[index];
         if source.key in column_keys { throw `Table column key ${source.key} is duplicated`; }
         column_keys.push(source.key);
-        let enabled = index + 1 < props.columns.len
-            && optional_or(source, "resizable", table_resizable);
+        // Every column can be resized, including the last one: widening it scrolls the table
+        // horizontally (the root already scrolls on x), narrowing it leaves space on the right.
+        let enabled = optional_or(source, "resizable", table_resizable);
         let column = #{
             key: source.key, title: source.title, width: source.width,
             align: prop_or(source, "align", "start"), sortable: prop_or(source, "sortable", false),
@@ -391,10 +382,13 @@ fn table_column_model(props) {
     #{ columns: columns, signals: resize_signals, resize_signals: resize_signal_map }
 }
 
-fn table_resize_handle(ctx, table_key, column, index, signal, header_ref, emit_resize) {
-    let base = style().width(px(8)).height(relative(1.0)).flex_shrink(false)
-        .margin_start(offset_px(-4)).margin_end(offset_px(-4)).cursor_resize_x()
+// The handle sits at the column's logical end, independent of cell padding and RTL.
+// Inner handles paint at the next header's inline start so they overlay both cells.
+// The last handle stays inside its own header's inline end.
+fn table_resize_handle(ctx, table_key, column, index, signal, header_ref, emit_resize, edge) {
+    let base = style().absolute().top(px(0)).width(px(8)).height(relative(1.0)).cursor_resize_x()
         .focus(style().background(theme_color("selection")));
+    base = if edge == "start" { base.inset_start(offset_px(-4)) } else { base.inset_end(px(0)) };
     let key_payload = #{ column_key: column.key,
         signal_key: column.resize_signal_key, ref_key: column.resize_ref_key,
         min_width: column.min_width, max_width: column.max_width, delta: -8.0,
@@ -406,6 +400,8 @@ fn table_resize_handle(ctx, table_key, column, index, signal, header_ref, emit_r
     if emit_resize { resize_props.on_resize = Fn("column_resize_action"); }
     if column.max_width != () { resize_props.max_width = column.max_width; }
     let handle = gpui_rhai::ColumnResizePrimitive(resize_props)
+        .with_key(`${table_key}-column-resize-${index}`)
+        .with_ref(element_ref(`${table_key}-column-resize-${index}-handle`))
         .with_style(ctx.component_style("resize_handle", base))
         .tab_stop(true).accessibility_role("separator")
         .accessibility_label(`Resize ${column.title} column`)
@@ -418,6 +414,14 @@ fn table_resize_handle(ctx, table_key, column, index, signal, header_ref, emit_r
 fn table_header(ctx, props, columns, resize_signals, current_sort) {
     let headers = [];
     let emit_resize = "on_column_resize" in props && props.on_column_resize != ();
+    let last = columns.len - 1;
+    // One ref per resizable header cell: the cell binds it and the handle that resizes the
+    // column (which lives in the next cell) measures through it. A ref key may be declared
+    // only once per render.
+    let refs = [];
+    for column in columns {
+        refs.push(if prop_or(column, "resize_enabled", false) { element_ref(column.resize_ref_key) } else { () });
+    }
     for index in 0..columns.len {
         let column = columns[index];
         let resize_enabled = prop_or(column, "resize_enabled", false);
@@ -438,10 +442,14 @@ fn table_header(ctx, props, columns, resize_signals, current_sort) {
         }
         let children = [row(content).with_style(
                 style().flex_grow().min_width(px(0)).height(relative(1.0)).items_center().gap(theme_spacing("xs")))];
-        let header_ref = if resize_enabled { element_ref(column.resize_ref_key) } else { () };
-        if resize_enabled {
+        let header_ref = refs[index];
+        if index > 0 && prop_or(columns[index - 1], "resize_enabled", false) {
+            children.push(table_resize_handle(ctx, props.key, columns[index - 1], index - 1,
+                resize_signals[index - 1], refs[index - 1], emit_resize, "start"));
+        }
+        if index == last && resize_enabled {
             children.push(table_resize_handle(
-                ctx, props.key, column, index, resize_signal, header_ref, emit_resize));
+                ctx, props.key, column, index, resize_signal, header_ref, emit_resize, "end"));
         }
         let cell = row(children).with_key(column.key)
             .with_style(ctx.component_style("header_cell",
@@ -449,8 +457,9 @@ fn table_header(ctx, props, columns, resize_signals, current_sort) {
                     .typography("body_small").font_weight(700)
                     .hover(style().background(theme_color("surface_hover")))))
             .accessibility_column_header(column.title, index + 1);
+        cell = cell.with_table_column(index);
         if resize_enabled {
-            cell = cell.bind_signal("width_override", resize_signal).with_ref(header_ref);
+            cell = cell.with_ref(header_ref);
         }
         headers.push(if optional_or(column, "sortable", false) {
             cell.on_click_value(Fn("sort_action"), next_sort(current_sort, column.key))
@@ -462,6 +471,24 @@ fn table_header(ctx, props, columns, resize_signals, current_sort) {
             .background(theme_color("surface_raised"))))
         .accessibility_role("row")
         .accessibility_row_index(1)
+}
+
+fn table_shell(ctx,props,columns,signals,header,body,row_count) {
+    let root_style=if prop_or(props,"fill_height",false) {
+        style().flex_col().flex_grow().min_width(px(0)).min_height(px(0)).overflow_x_scroll()
+    }else{style().flex_col().min_width(px(0)).overflow_x_scroll()};
+    box([header,body]).with_key(props.key).with_table_track(columns,signals)
+        .with_style(ctx.component_style("root",root_style.border(px(1)).border_color(theme_color("border"))))
+        .accessibility_role("table").accessibility_label(props.label)
+        .accessibility_row_count(row_count).accessibility_column_count(columns.len)
+}
+
+fn table_state_body(ctx,props,part,content) {
+    let base=if prop_or(props,"fill_height",false) {
+        style().flex_grow().min_width(px(0)).min_height(px(0))
+    }else{style().min_width(px(0)).height(px(props.height))};
+    content.with_style(ctx.component_style(part,base.padding(theme_spacing("md"))
+        .typography("body_small").text_color(theme_color("text_muted"))))
 }
 
 fn render_Table(ctx, props) {
@@ -481,22 +508,12 @@ fn render_Table(ctx, props) {
         let loading = if "loading_content" in props && props.loading_content != () {
             props.loading_content
         } else { text("Loading…") };
-        return box([header, loading.with_style(ctx.component_style("loading", style()
-            .padding(theme_spacing("md")).typography("body_small").text_color(theme_color("text_muted"))))])
-            .with_key(props.key).with_style(ctx.component_style("root", style().flex_col()
-                .border(px(1)).border_color(theme_color("border"))))
-            .accessibility_role("table").accessibility_label(props.label)
-            .accessibility_row_count(1).accessibility_column_count(columns.len);
+        return table_shell(ctx,props,columns,model.signals,header,table_state_body(ctx,props,"loading",loading),1);
     }
     if props.rows.len == 0 {
         let empty = if "empty" in props && props.empty != () { props.empty }
             else { text(prop_or(props, "empty_text", "No results")) };
-        return box([header, empty.with_style(ctx.component_style("empty", style()
-            .padding(theme_spacing("md")).typography("body_small").text_color(theme_color("text_muted"))))])
-            .with_key(props.key).with_style(ctx.component_style("root", style().flex_col()
-                .border(px(1)).border_color(theme_color("border"))))
-            .accessibility_role("table").accessibility_label(props.label)
-            .accessibility_row_count(1).accessibility_column_count(columns.len);
+        return table_shell(ctx,props,columns,model.signals,header,table_state_body(ctx,props,"empty",empty),1);
     }
 
     let selected = prop_or(props, "selected_keys", []);
@@ -591,12 +608,7 @@ fn render_Table(ctx, props) {
     if data.len == 0 {
         let empty = if "empty" in props && props.empty != () { props.empty }
             else { text(prop_or(props, "empty_text", "No results")) };
-        return box([header, empty.with_style(ctx.component_style("empty", style()
-            .padding(theme_spacing("md")).typography("body_small").text_color(theme_color("text_muted"))))])
-            .with_key(props.key).with_style(ctx.component_style("root", style().flex_col()
-                .border(px(1)).border_color(theme_color("border"))))
-            .accessibility_role("table").accessibility_label(props.label)
-            .accessibility_row_count(1).accessibility_column_count(columns.len);
+        return table_shell(ctx,props,columns,model.signals,header,table_state_body(ctx,props,"empty",empty),1);
     }
     let collection = #{
         key: `${props.key}-body`, label: props.label, data: data,
@@ -613,12 +625,5 @@ fn render_Table(ctx, props) {
     let body = virtual_collection(collection,
         Fn("render_table_row").curry(model.resize_signals).curry(data.len))
         .with_style(ctx.component_style("body", body_style));
-    let root_style = if fill_height {
-        style().flex_col().flex_grow().min_width(px(0)).min_height(px(0))
-    } else { style().flex_col().min_width(px(0)) };
-    box([header, body]).with_key(props.key)
-        .with_style(ctx.component_style("root", root_style.overflow_x_scroll()
-            .border(px(1)).border_color(theme_color("border"))))
-        .accessibility_role("table").accessibility_label(props.label)
-        .accessibility_row_count(data.len + 1).accessibility_column_count(columns.len)
+    table_shell(ctx,props,columns,model.signals,header,body,data.len+1)
 }

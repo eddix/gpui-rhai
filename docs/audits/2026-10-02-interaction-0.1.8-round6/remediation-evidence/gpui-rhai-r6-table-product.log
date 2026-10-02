@@ -1,0 +1,20 @@
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+   Compiling gpui-rhai v0.1.8 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai)
+   Compiling gpui-rhai-cli v0.1.8 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai-cli)
+   Compiling gpui-rhai-native-keyboard-tests v0.0.0 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 12.48s
+     Running tests/table_boundaries.rs (tests/native-keyboard/target/debug/deps/table_boundaries-8934c074dd07df75)
+
+running 8 tests
+test rtl_handles_follow_the_owned_columns_logical_end ... ok
+test one_column_table_is_resizable ... ok
+test ltr_array_boundary_and_last_column_owner ... ok
+test native_last_column_autofit_measures_last_column_without_sort ... ok
+test rtl_dragging_a_boundary_resizes_a_not_its_neighbor ... ok
+test nonresizable_neighbor_preserves_owner_and_last_keyboard_resize ... ok
+test rtl_keyboard_arrows_resize_the_focused_logical_column ... ok
+test data_loading_and_both_empty_paths_share_the_bordered_horizontal_viewport ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.96s
+

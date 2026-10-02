@@ -4447,6 +4447,158 @@ fn table_column_resize_previews_natively_and_emits_once_on_commit(cx: &mut TestA
 }
 
 #[gpui::test]
+fn table_resize_handles_sit_on_column_boundaries_including_the_last_column(
+    cx: &mut TestAppContext,
+) {
+    cx.update(gpui_rhai::install);
+    let entry = ModuleId::parse("main").unwrap();
+    let prepared = EmbeddedScriptView::new(
+        entry.clone(),
+        EmbeddedScriptSource::new(std::collections::BTreeMap::from([
+            (
+                entry,
+                r#"
+                    import "components/table" as table;
+                    fn view(ctx) {
+                        table::Table(#{
+                            key: "boundaries", label: "Boundaries", row_key: "id",
+                            rows: [#{ id: "row", name: "Ada", score: "42", status: "Active" }],
+                            columns: [
+                                #{ key: "name", title: "Name", width: #{ kind: "fixed", value: 120 } },
+                                #{ key: "score", title: "Score", width: #{ kind: "fixed", value: 140 },
+                                    max_width: 400 },
+                                #{ key: "status", title: "Status", width: #{ kind: "fixed", value: 160 },
+                                    max_width: 400 },
+                            ],
+                            height: 140, resizable_columns: true,
+                        })
+                    }
+                "#
+                .to_owned(),
+            ),
+            (
+                ModuleId::parse("components/table").unwrap(),
+                include_str!("../../../registry/components/table.rhai").to_owned(),
+            ),
+            (
+                ModuleId::parse("components/badge").unwrap(),
+                include_str!("../../../registry/components/badge.rhai").to_owned(),
+            ),
+        ])),
+        include_str!("../../../registry/themes/default_dark.rhai"),
+    )
+    .asset_sources(official_icon_assets())
+    .prepare()
+    .unwrap();
+    let captured = Rc::new(RefCell::new(None));
+    let captured_for_window = Rc::clone(&captured);
+    let window = cx.add_window(move |window, cx| {
+        let host = ScriptViewHost::new("boundary-table-window", cx).unwrap();
+        let view = prepared
+            .mount(
+                ScriptViewConfig::new("boundary-table-view"),
+                host.clone(),
+                window,
+                cx,
+            )
+            .unwrap();
+        *captured_for_window.borrow_mut() = Some(view.clone());
+        SingleEmbeddedHost { host, view }
+    });
+    cx.run_until_parked();
+    cx.refresh().unwrap();
+    cx.run_until_parked();
+
+    let view = captured.borrow().as_ref().unwrap().clone();
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    visual.simulate_resize(size(px(800.0), px(420.0)));
+    visual.run_until_parked();
+    // (header x, header right edge, handle x, handle right edge) per column title.
+    let geometry = |visual: &mut VisualTestContext, title: &str| {
+        visual.update(|_, cx| {
+            let snapshot = view.accessibility_snapshot(cx).unwrap();
+            let header = snapshot
+                .find_by_role_and_name("columnheader", title)
+                .next()
+                .unwrap()
+                .geometry
+                .unwrap()
+                .visual;
+            let handle = snapshot
+                .find_by_role_and_name("separator", &format!("Resize {title} column"))
+                .next()
+                .unwrap_or_else(|| panic!("{title} has no resize handle"))
+                .geometry
+                .unwrap()
+                .visual;
+            (
+                header.x,
+                header.x + header.width,
+                handle.x,
+                handle.x + handle.width,
+            )
+        })
+    };
+
+    // Inner columns: the handle (and the line painted at its center) straddles the boundary.
+    for title in ["Name", "Score"] {
+        let (_, boundary, handle_x, handle_right) = geometry(&mut visual, title);
+        let center = (handle_x + handle_right) / 2.0;
+        assert!(
+            (center - boundary).abs() < 0.5,
+            "{title}: handle center {center} must sit on the column boundary {boundary}"
+        );
+    }
+    // The last column's handle ends at the table's right edge instead of overhanging it.
+    let (_, status_right, _, status_handle_right) = geometry(&mut visual, "Status");
+    assert!(
+        (status_handle_right - status_right).abs() < 0.5,
+        "Status: handle right {status_handle_right} must meet the header right edge {status_right}"
+    );
+
+    let drag = |visual: &mut VisualTestContext, x: f64, y: f64| {
+        let start = point(px(x as f32), px(y as f32));
+        let end = point(start.x + px(40.0), start.y);
+        visual.simulate_mouse_down(start, MouseButton::Left, Modifiers::default());
+        visual.simulate_mouse_move(end, MouseButton::Left, Modifiers::default());
+        visual.simulate_mouse_up(end, MouseButton::Left, Modifiers::default());
+        visual.run_until_parked();
+    };
+    let header_y = visual.update(|_, cx| {
+        let header = view
+            .accessibility_snapshot(cx)
+            .unwrap()
+            .find_by_role_and_name("columnheader", "Score")
+            .next()
+            .unwrap()
+            .geometry
+            .unwrap()
+            .visual;
+        header.y + header.height / 2.0
+    });
+
+    // Grabbing just right of the boundary, over the next header cell, resizes the left column.
+    let (score_x, score_right, _, _) = geometry(&mut visual, "Score");
+    drag(&mut visual, score_right + 2.0, header_y);
+    let (_, resized_right, _, _) = geometry(&mut visual, "Score");
+    assert!(
+        (resized_right - score_x - 180.0).abs() < 1.0,
+        "Score must grow from 140 to 180, got {}",
+        resized_right - score_x
+    );
+
+    // The last column resizes from the table's right edge.
+    let (status_x, status_right, _, _) = geometry(&mut visual, "Status");
+    drag(&mut visual, status_right - 2.0, header_y);
+    let (_, resized_right, _, _) = geometry(&mut visual, "Status");
+    assert!(
+        (resized_right - status_x - 200.0).abs() < 1.0,
+        "Status must grow from 160 to 200, got {}",
+        resized_right - status_x
+    );
+}
+
+#[gpui::test]
 fn native_collection_table_autofit_stays_on_the_realized_rust_path(cx: &mut TestAppContext) {
     cx.update(gpui_rhai::install);
     let prepared = table_1000_example::table_1000_resizable_view()

@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
+use crate::state::topmost_paths;
 use rhai::Dynamic;
 use thiserror::Error;
 
@@ -245,6 +246,7 @@ impl ScriptLifecycle {
                 &self.compiled,
                 runtime_snapshot.component_state().clone(),
                 &retained,
+                &root,
             )?;
             self.retain_geometry_nodes(&retained)?;
             self.validate_signal_bindings(&root)?;
@@ -340,6 +342,7 @@ impl ScriptLifecycle {
                 &self.compiled,
                 runtime_snapshot.component_state().clone(),
                 &retained,
+                &root,
             )?;
             self.retain_geometry_nodes(&retained)?;
             self.validate_signal_bindings(&root)?;
@@ -486,6 +489,7 @@ impl ScriptLifecycle {
                 &self.compiled,
                 runtime_snapshot.component_state().clone(),
                 &retained,
+                &root,
             )?;
             self.retain_geometry_nodes(&retained)?;
             self.validate_signal_bindings(&root)?;
@@ -918,6 +922,7 @@ impl ScriptLifecycle {
                 &candidate,
                 snapshot.component_state().clone(),
                 &retained,
+                &root,
             )?;
             self.retain_geometry_nodes(&retained)?;
             self.validate_signal_bindings(&root)?;
@@ -1021,6 +1026,7 @@ impl ScriptLifecycle {
                 &candidate,
                 snapshot.component_state().clone(),
                 &retained,
+                &root,
             )?;
             self.resume_runtime_mechanisms(now, elapsed)?;
             self.retain_geometry_nodes(&retained)?;
@@ -1340,6 +1346,7 @@ impl ScriptLifecycle {
         candidate: &CompiledUi,
         previous_state: crate::StateStore,
         retained: &crate::RetainedUiTree,
+        root: &UiNode,
     ) -> Result<(), LifecycleError> {
         let declarations = RetainedDeclarations {
             effects: engine.component_effects_in_scope(&self.root_path),
@@ -1347,6 +1354,10 @@ impl ScriptLifecycle {
             signals: engine.component_signals_in_scope(&self.root_path),
             element_refs: self.element_ref_bindings(engine, retained)?,
         };
+        self.runtime
+            .try_borrow_mut()
+            .map_err(|_| LifecycleError::Borrowed)?
+            .retain_virtual_read_contributions(&self.root_path, &root.virtual_read_contributions());
         self.reconcile_effect_candidate(engine, candidate, declarations, Some(previous_state))
     }
 
@@ -1398,13 +1409,12 @@ impl ScriptLifecycle {
             runtime
                 .signals
                 .reconcile(&self.root_path, declarations.signals);
-            let geometry_readers = runtime
+            runtime
                 .element_refs
                 .reconcile(&self.root_path, declarations.element_refs);
+            let geometry_bindings = runtime.element_refs.geometry_bindings(&self.root_path);
             let geometry = runtime.geometry_for(self.presentation_scope());
-            for (node, readers) in geometry_readers {
-                geometry.register_readers(node, readers);
-            }
+            geometry.sync_ref_readers(&self.root_path, geometry_bindings);
             runtime.virtual_requests.retain(&virtual_collections);
         }
         for (descriptor, scope) in plan.start_descriptors() {
@@ -1722,18 +1732,6 @@ pub enum LifecycleError {
     Budget(#[from] crate::RuntimeBudgetError),
     #[error(transparent)]
     Accessibility(#[from] crate::AccessibilityError),
-}
-
-fn topmost_paths(paths: &BTreeSet<ComponentInstancePath>) -> Vec<ComponentInstancePath> {
-    paths
-        .iter()
-        .filter(|path| {
-            !paths
-                .iter()
-                .any(|candidate| *path != candidate && path.is_within(candidate))
-        })
-        .cloned()
-        .collect()
 }
 
 fn collect_removed_exit_nodes<'a>(
