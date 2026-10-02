@@ -307,6 +307,8 @@ pub struct UiNode {
     progress_motions: Vec<crate::MotionProgressBinding>,
     timelines: Vec<crate::MotionTimeline>,
     signal_bindings: BTreeMap<crate::SignalProperty, crate::NativeSignal>,
+    table_layout: Option<Rc<crate::table_layout::TableLayout>>,
+    table_column: Option<usize>,
     element_ref: Option<crate::ElementRef>,
     presentation: Vec<NodePresentationMutation>,
     component_snapshot: Option<ComponentOwnedSnapshotRef>,
@@ -668,6 +670,8 @@ impl UiNode {
             progress_motions: Vec::new(),
             timelines: Vec::new(),
             signal_bindings: BTreeMap::new(),
+            table_layout: None,
+            table_column: None,
             element_ref: None,
             presentation: Vec::new(),
             component_snapshot: None,
@@ -692,6 +696,8 @@ impl UiNode {
             progress_motions: Vec::new(),
             timelines: Vec::new(),
             signal_bindings: BTreeMap::new(),
+            table_layout: None,
+            table_column: None,
             element_ref: None,
             presentation: Vec::new(),
             component_snapshot: None,
@@ -736,6 +742,8 @@ impl UiNode {
             progress_motions: Vec::new(),
             timelines: Vec::new(),
             signal_bindings: BTreeMap::new(),
+            table_layout: None,
+            table_column: None,
             element_ref: None,
             presentation: Vec::new(),
             component_snapshot: None,
@@ -780,6 +788,8 @@ impl UiNode {
             progress_motions: Vec::new(),
             timelines: Vec::new(),
             signal_bindings: BTreeMap::new(),
+            table_layout: None,
+            table_column: None,
             element_ref: None,
             presentation: Vec::new(),
             component_snapshot: None,
@@ -806,6 +816,8 @@ impl UiNode {
             progress_motions: Vec::new(),
             timelines: Vec::new(),
             signal_bindings: BTreeMap::new(),
+            table_layout: None,
+            table_column: None,
             element_ref: None,
             presentation: Vec::new(),
             component_snapshot: None,
@@ -838,6 +850,8 @@ impl UiNode {
             progress_motions: Vec::new(),
             timelines: Vec::new(),
             signal_bindings: BTreeMap::new(),
+            table_layout: None,
+            table_column: None,
             element_ref: None,
             presentation: Vec::new(),
             component_snapshot: None,
@@ -882,6 +896,8 @@ impl UiNode {
             progress_motions: Vec::new(),
             timelines: Vec::new(),
             signal_bindings: BTreeMap::new(),
+            table_layout: None,
+            table_column: None,
             element_ref: None,
             presentation: Vec::new(),
             component_snapshot: None,
@@ -909,6 +925,8 @@ impl UiNode {
             progress_motions: Vec::new(),
             timelines: Vec::new(),
             signal_bindings: BTreeMap::new(),
+            table_layout: None,
+            table_column: None,
             element_ref: None,
             presentation: Vec::new(),
             component_snapshot: None,
@@ -936,6 +954,8 @@ impl UiNode {
             progress_motions: Vec::new(),
             timelines: Vec::new(),
             signal_bindings: BTreeMap::new(),
+            table_layout: None,
+            table_column: None,
             element_ref: None,
             presentation: Vec::new(),
             component_snapshot: None,
@@ -960,6 +980,8 @@ impl UiNode {
             progress_motions: Vec::new(),
             timelines: Vec::new(),
             signal_bindings: BTreeMap::new(),
+            table_layout: None,
+            table_column: None,
             element_ref: None,
             presentation: Vec::new(),
             component_snapshot: None,
@@ -1822,6 +1844,67 @@ impl UiNode {
     pub const fn element_ref(&self) -> Option<&crate::ElementRef> {
         self.element_ref.as_ref()
     }
+
+    pub(crate) fn table_layout(&self) -> Option<&crate::table_layout::TableLayout> {
+        self.table_layout.as_deref()
+    }
+
+    pub(crate) const fn table_column(&self) -> Option<usize> {
+        self.table_column
+    }
+
+    /// Apply the one resolved column plan to both header cells and retained
+    /// virtual rows. Nested tables own their own viewport and plan.
+    pub(crate) fn resolve_table_layout(
+        &mut self,
+        plan: &crate::table_layout::ResolvedColumns,
+        border: f64,
+    ) {
+        self.table_layout = Some(Rc::new(crate::table_layout::TableLayout::Resolved {
+            extent: plan.extent + border,
+        }));
+        if let UiNodeKind::Box { children } = &mut self.kind {
+            for child in children {
+                child.resolve_table_columns(plan);
+                let mut width = Style::new();
+                width.base.width = Some(crate::Length::Pixels(plan.extent).into());
+                width.base.flex_shrink = Some(false);
+                Rc::make_mut(&mut child.style).merge_in_place(&width);
+            }
+        }
+    }
+
+    fn resolve_table_columns(&mut self, plan: &crate::table_layout::ResolvedColumns) {
+        if self.table_layout.is_some() {
+            return;
+        }
+        if let Some(width) = self.table_column.and_then(|index| plan.widths.get(index)) {
+            let style = Rc::make_mut(&mut self.style);
+            style.base.width = Some(crate::Length::Pixels(*width).into());
+            style.base.min_width = style.base.width;
+            style.base.max_width = style.base.width;
+            style.base.flex_basis = None;
+            style.base.flex_grow = Some(false);
+            style.base.flex_grow_weight = None;
+            style.base.flex_shrink = Some(false);
+            self.signal_bindings.remove(&crate::SignalProperty::Width);
+            self.signal_bindings
+                .remove(&crate::SignalProperty::WidthOverride);
+        }
+        match &mut self.kind {
+            UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => {
+                for child in children {
+                    child.resolve_table_columns(plan);
+                }
+            }
+            UiNodeKind::VirtualCollection { spec } => {
+                for child in spec.realized.values_mut() {
+                    child.resolve_table_columns(plan);
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
 fn replace_in_nodes<'a>(
@@ -1847,6 +1930,40 @@ impl CustomType for UiNode {
             .with_fn("with_style", |node: &mut Self, style: Style| {
                 node.clone().with_style(&style)
             })
+            .with_fn(
+                "with_table_track",
+                |node: &mut Self, columns: Array, signals: Array| {
+                    if !matches!(node.kind(), UiNodeKind::Box { .. }) {
+                        return Err(crate::table_layout::runtime_error(
+                            "Table track requires a Box container",
+                        ));
+                    }
+                    crate::table_layout::decode_columns(&columns, &signals).map(|columns| {
+                        let mut result = node.clone();
+                        result.table_layout =
+                            Some(Rc::new(crate::table_layout::TableLayout::Columns(columns)));
+                        result
+                    })
+                },
+            )
+            .with_fn(
+                "with_table_column",
+                |node: &mut Self, index: INT| -> Result<Self, Box<EvalAltResult>> {
+                    let index = usize::try_from(index).map_err(|_| {
+                        crate::table_layout::runtime_error(
+                            "Table column index must be non-negative",
+                        )
+                    })?;
+                    if index >= 256 {
+                        return Err(crate::table_layout::runtime_error(
+                            "Table column index must be below 256",
+                        ));
+                    }
+                    let mut result = node.clone();
+                    result.table_column = Some(index);
+                    Ok(result)
+                },
+            )
             .with_fn(
                 "bind_signal",
                 |node: &mut Self,
