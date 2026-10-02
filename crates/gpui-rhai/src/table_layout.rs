@@ -110,6 +110,10 @@ pub(crate) struct ResolvedColumns {
     pub extent: f64,
 }
 
+#[allow(
+    clippy::unnecessary_box_returns,
+    reason = "Rhai native-function error signatures require Box<EvalAltResult>"
+)]
 pub(crate) fn runtime_error(message: &str) -> Box<EvalAltResult> {
     Box::new(EvalAltResult::ErrorRuntime(message.into(), Position::NONE))
 }
@@ -147,10 +151,12 @@ pub(crate) fn decode_columns(
             let value = spec
                 .get("value")
                 .and_then(|value| {
-                    value
-                        .clone()
-                        .try_cast::<FLOAT>()
-                        .or_else(|| value.clone().try_cast::<INT>().map(|value| value as f64))
+                    value.clone().try_cast::<FLOAT>().or_else(|| {
+                        value
+                            .clone()
+                            .try_cast::<INT>()
+                            .and_then(|value| value.to_string().parse::<f64>().ok())
+                    })
                 })
                 .filter(|value| value.is_finite() && *value > 0.0)
                 .ok_or_else(|| runtime_error("Table column width must be positive and finite"))?;
@@ -425,7 +431,10 @@ impl Element for TableViewportElement {
             } else {
                 old.clamp(-maximum, 0.0)
             };
-            scroll.set_offset(point(px(offset as f32), scroll.offset().y));
+            scroll.set_offset(point(
+                px(crate::renderer::f64_to_f32(offset)),
+                scroll.offset().y,
+            ));
         }
         let changed =
             (state.viewport - viewport).abs() > 0.01 || (state.border - border).abs() > 0.01;
@@ -447,7 +456,7 @@ impl Element for TableViewportElement {
         _: Option<&InspectorElementId>,
         _: Bounds<Pixels>,
         frame: &mut TableViewportFrame,
-        _: &mut (),
+        (): &mut (),
         window: &mut Window,
         cx: &mut App,
     ) {
@@ -515,7 +524,7 @@ mod tests {
         );
         let large = resolve(&columns, 800.0, &registry);
         assert_eq!(large.widths, [160.0, 400.0, 60.0, 180.0]);
-        assert_eq!(large.extent, 800.0);
+        assert_eq!(large.extent.to_bits(), 800.0_f64.to_bits());
         assert_eq!(
             resolve(
                 &[
@@ -526,8 +535,9 @@ mod tests {
                 300.0,
                 &registry
             )
-            .extent,
-            420.0
+            .extent
+            .to_bits(),
+            420.0_f64.to_bits()
         );
     }
     #[test]
@@ -535,7 +545,7 @@ mod tests {
         let registry = SignalRegistry::default();
         let small = resolve(&[column(ColumnWidth::Fixed(100.0))], 300.0, &registry);
         assert_eq!(small.widths, [100.0]);
-        assert_eq!(small.extent, 300.0);
+        assert_eq!(small.extent.to_bits(), 300.0_f64.to_bits());
         let large = resolve(
             &[
                 column(ColumnWidth::Flex(f64::MAX)),
@@ -568,7 +578,7 @@ mod tests {
             &SignalRegistry::default(),
         );
         assert_eq!(plan.widths, [350.0, 149.0, 48.0]);
-        assert_eq!(plan.extent, 547.0);
+        assert_eq!(plan.extent.to_bits(), 547.0_f64.to_bits());
     }
 
     #[test]
@@ -595,8 +605,8 @@ mod tests {
             100.0,
             &SignalRegistry::default(),
         );
-        assert_eq!(plan.widths[0], 90.0);
-        assert!((plan.widths[1] - 9.900990099).abs() < 1e-8);
-        assert!((plan.widths[2] - 0.099009901).abs() < 1e-8);
+        assert_eq!(plan.widths[0].to_bits(), 90.0_f64.to_bits());
+        assert!((plan.widths[1] - 9.900_990_099).abs() < 1e-8);
+        assert!((plan.widths[2] - 0.099_009_901).abs() < 1e-8);
     }
 }

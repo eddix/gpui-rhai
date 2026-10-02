@@ -1946,32 +1946,8 @@ impl GpuiNodeRenderer {
         path: &str,
         retained_id: Option<NodeId>,
     ) -> AnyElement {
-        if let Some(crate::table_layout::TableLayout::Columns(columns)) = node.table_layout() {
-            let mut columns = columns.clone();
-            collect_table_column_minima(node, &mut columns, environment, true);
-            let mut style = node.style().resolve(environment.interaction);
-            resolve_style_lengths(&mut style, environment.colors);
-            let roots = retained_id
-                .into_iter()
-                .map(|root| ("table".to_owned(), root))
-                .collect();
-            let runtime = owned_slot_runtime(environment, path, roots);
-            let table = node.clone();
-            let root_path = path.to_owned();
-            return crate::table_layout::TableViewportElement::new(
-                &interaction_element_id(retained_id, path),
-                columns,
-                environment.signals.clone(),
-                environment.direction,
-                style,
-                retained_id.and_then(|root| environment.scroll_handles.get(&root).cloned()),
-                move |plan, border| {
-                    let mut table = table;
-                    table.resolve_table_layout(&plan, border);
-                    runtime.render_at(&table, &root_path, retained_id)
-                },
-            )
-            .into_any_element();
+        if let Some(table) = render_table_layout(node, environment, path, retained_id) {
+            return table;
         }
         let local_interaction = if is_disabled(node) {
             environment.interaction.clone().with(PseudoState::Disabled)
@@ -3677,6 +3653,44 @@ fn owned_slot_runtime<C: ColorResolver>(
     }
 }
 
+fn render_table_layout<C: ColorResolver>(
+    node: &UiNode,
+    environment: &RenderEnvironment<'_, C>,
+    path: &str,
+    retained_id: Option<NodeId>,
+) -> Option<AnyElement> {
+    let crate::table_layout::TableLayout::Columns(columns) = node.table_layout()? else {
+        return None;
+    };
+    let mut columns = columns.clone();
+    collect_table_column_minima(node, &mut columns, environment, true);
+    let mut style = node.style().resolve(environment.interaction);
+    resolve_style_lengths(&mut style, environment.colors);
+    let roots = retained_id
+        .into_iter()
+        .map(|root| ("table".to_owned(), root))
+        .collect();
+    let runtime = owned_slot_runtime(environment, path, roots);
+    let table = node.clone();
+    let root_path = path.to_owned();
+    Some(
+        crate::table_layout::TableViewportElement::new(
+            &interaction_element_id(retained_id, path),
+            columns,
+            environment.signals.clone(),
+            environment.direction,
+            style,
+            retained_id.and_then(|root| environment.scroll_handles.get(&root).cloned()),
+            move |plan, border| {
+                let mut table = table;
+                table.resolve_table_layout(&plan, border);
+                runtime.render_at(&table, &root_path, retained_id)
+            },
+        )
+        .into_any_element(),
+    )
+}
+
 fn collect_table_column_minima<C: ColorResolver>(
     node: &UiNode,
     columns: &mut [crate::table_layout::TableColumn],
@@ -3957,7 +3971,7 @@ fn translated(element: AnyElement, x: Option<f64>, y: Option<f64>) -> AnyElement
     }
 }
 
-fn f64_to_f32(value: f64) -> f32 {
+pub(crate) fn f64_to_f32(value: f64) -> f32 {
     value.to_string().parse().unwrap_or_else(|_| {
         if value.is_sign_negative() {
             f32::MIN
