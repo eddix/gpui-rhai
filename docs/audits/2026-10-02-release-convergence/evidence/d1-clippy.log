@@ -1,0 +1,19 @@
+    Checking gpui-rhai v0.1.8 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai)
+error: unnecessary hashes around raw string literal
+    --> crates/gpui-rhai/src/engine.rs:5171:21
+     |
+5171 |         let heavy = r#"fn view() { let n = 0; for i in 0..400000 { n += 1; } text(`${n}`) }"#;
+     |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#needless_raw_string_hashes
+     = note: `-D clippy::needless-raw-string-hashes` implied by `-D warnings`
+     = help: to override `-D warnings` add `#[allow(clippy::needless_raw_string_hashes)]`
+help: remove all the hashes around the string literal
+     |
+5171 -         let heavy = r#"fn view() { let n = 0; for i in 0..400000 { n += 1; } text(`${n}`) }"#;
+5171 +         let heavy = r"fn view() { let n = 0; for i in 0..400000 { n += 1; } text(`${n}`) }";
+     |
+
+    Checking gpui-rhai-cli v0.1.8 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai-cli)
+error: could not compile `gpui-rhai` (lib test) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
