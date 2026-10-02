@@ -18,6 +18,7 @@ programs remain unchanged evidence; they are not substituted for these tests.
 | POLICY-01 independent Host policy | Root/native `host_execution_policy.rs`: real over-default finite work, cumulative siblings, fresh delayed/retained rounds, parser defaults and extension/secondary precedence; engine candidate and diagnostic quota units |
 | KEY-01 one grammar and executable phase | `node_key_contract.rs` and node units: canonical names, Capture/Target/Bubble, focus/stop/disabled/fallback, input/IME and Host Escape owner |
 | THEME-01 resolved environment | Root/native `resolved_theme.rs`: lightweight identity, init-before-native-environment, effects/scope/borrow/override and secondary failure; core appearance ingestion unit |
+| THEME-02 native notification ingress | Actual macOS `tests/native-keyboard/src/bin/theme_appearance_probe.rs` and `theme_appearance_lifecycle.rs`: genuine idle Light/Dark, primary/secondary init-once, explicit effects, independent Runtime views/fixed control, suspended pending/resume, old disposed Handle/remount, token-only native repaint; these are structured-result native app gates, not TestPlatform or OS-global preference changes |
 | ASSET-01 explicit Host publication | `asset_refresh_host.rs`: typed worker/foreground bridge, stable ID+decoded pixels, explicit shared-registry dual-window repaint |
 
 The fixed matrix covers identity, lifecycle, sequential versus batched targets,

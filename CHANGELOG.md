@@ -21,6 +21,10 @@ semantic versioning from this release.
 - Unifies named/punctuation node-key validation and native capture/target/bubble
   routing. Adds lightweight resolved-theme metadata and initializes System
   appearance before mounted init/effects in primary and secondary windows.
+- Ingests native appearance notifications through a View-owned weak subscription,
+  including idle windows and token-only UI; suspended views retain the new mode
+  for resume and disposed views detach. Embedded manifest generation is warning
+  free for empty as well as nonempty capability lists.
 - Adds a bounded foreground asset-publication bridge example and interactive
   Gallery wide/loading/empty/projected-empty Table cases. See the
   [0.1.8 candidate notes](docs/releases/0.1.8.md) for Rust/key breaking changes,
