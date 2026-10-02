@@ -4646,6 +4646,8 @@ fn resolve_style_lengths(style: &mut StyleProperties, resolver: &impl ColorResol
         &mut style.right,
         &mut style.bottom,
         &mut style.left,
+        &mut style.inset_start,
+        &mut style.inset_end,
     ] {
         resolve_layout(value);
     }
@@ -4689,12 +4691,16 @@ pub(crate) fn apply_style_override(
 }
 
 fn apply_layout(element: Div, style: &StyleProperties, text_direction: TextDirection) -> Div {
-    let element = apply_display_and_position(element, style);
+    let element = apply_display_and_position(element, style, text_direction);
     let element = apply_flex_alignment(element, style, text_direction);
     apply_layout_dimensions(element, style)
 }
 
-fn apply_display_and_position(mut element: Div, style: &StyleProperties) -> Div {
+fn apply_display_and_position(
+    mut element: Div,
+    style: &StyleProperties,
+    direction: TextDirection,
+) -> Div {
     if let Some(display) = style.display {
         element = match display {
             DisplayMode::Block => element.block(),
@@ -4712,13 +4718,20 @@ fn apply_display_and_position(mut element: Div, style: &StyleProperties) -> Div 
     if let Some(value) = style.top {
         element = inset_top(element, value);
     }
-    if let Some(value) = style.right {
+    let (left, right) = logical_horizontal_edges(
+        style.left,
+        style.right,
+        style.inset_start,
+        style.inset_end,
+        direction,
+    );
+    if let Some(value) = right {
         element = inset_right(element, value);
     }
     if let Some(value) = style.bottom {
         element = inset_bottom(element, value);
     }
-    if let Some(value) = style.left {
+    if let Some(value) = left {
         element = inset_left(element, value);
     }
     if matches!(style.overflow_x, Some(OverflowMode::Hidden))

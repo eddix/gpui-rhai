@@ -389,15 +389,13 @@ fn table_column_model(props) {
     #{ columns: columns, signals: resize_signals, resize_signals: resize_signal_map }
 }
 
-// The handle sits on the column's right boundary, positioned absolutely so the header cell's
-// horizontal padding cannot shift it. Column i's handle lives at the left edge of header
-// cell i + 1 ("left"): it paints after cell i, so the half that reaches into cell i is
-// drawn and hit-tested on top of it. The last column's handle lives at the right edge of
-// its own cell ("right").
+// The handle sits at the column's logical end, independent of cell padding and RTL.
+// Inner handles paint at the next header's inline start so they overlay both cells.
+// The last handle stays inside its own header's inline end.
 fn table_resize_handle(ctx, table_key, column, index, signal, header_ref, emit_resize, edge) {
     let base = style().absolute().top(px(0)).width(px(8)).height(relative(1.0)).cursor_resize_x()
         .focus(style().background(theme_color("selection")));
-    base = if edge == "left" { base.left(offset_px(-4)) } else { base.right(px(0)) };
+    base = if edge == "start" { base.inset_start(offset_px(-4)) } else { base.inset_end(px(0)) };
     let key_payload = #{ column_key: column.key,
         signal_key: column.resize_signal_key, ref_key: column.resize_ref_key,
         min_width: column.min_width, max_width: column.max_width, delta: -8.0,
@@ -409,6 +407,8 @@ fn table_resize_handle(ctx, table_key, column, index, signal, header_ref, emit_r
     if emit_resize { resize_props.on_resize = Fn("column_resize_action"); }
     if column.max_width != () { resize_props.max_width = column.max_width; }
     let handle = gpui_rhai::ColumnResizePrimitive(resize_props)
+        .with_key(`${table_key}-column-resize-${index}`)
+        .with_ref(element_ref(`${table_key}-column-resize-${index}-handle`))
         .with_style(ctx.component_style("resize_handle", base))
         .tab_stop(true).accessibility_role("separator")
         .accessibility_label(`Resize ${column.title} column`)
@@ -452,11 +452,11 @@ fn table_header(ctx, props, columns, resize_signals, current_sort) {
         let header_ref = refs[index];
         if index > 0 && prop_or(columns[index - 1], "resize_enabled", false) {
             children.push(table_resize_handle(ctx, props.key, columns[index - 1], index - 1,
-                resize_signals[index - 1], refs[index - 1], emit_resize, "left"));
+                resize_signals[index - 1], refs[index - 1], emit_resize, "start"));
         }
         if index == last && resize_enabled {
             children.push(table_resize_handle(
-                ctx, props.key, column, index, resize_signal, header_ref, emit_resize, "right"));
+                ctx, props.key, column, index, resize_signal, header_ref, emit_resize, "end"));
         }
         let cell = row(children).with_key(column.key)
             .with_style(ctx.component_style("header_cell",
