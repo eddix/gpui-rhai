@@ -136,6 +136,22 @@ pub struct UiRuntimeState {
 }
 
 impl UiRuntimeState {
+    pub(crate) fn update_window_appearance(
+        &mut self,
+        window: &str,
+        appearance: crate::SystemAppearance,
+    ) {
+        let previous = self
+            .window_appearances
+            .insert(window.to_owned(), appearance)
+            .unwrap_or(crate::SystemAppearance::Dark);
+        if previous != appearance {
+            let invalidated = self
+                .environment_dependencies
+                .invalidate_theme_window(window);
+            self.mark_dirty(invalidated);
+        }
+    }
     const SUSPENDED_DELIVERY_CAPACITY: usize = 256;
     #[must_use]
     pub fn new() -> Self {
@@ -2789,12 +2805,34 @@ impl UiContext {
 
     #[must_use]
     pub fn motion_tokens(&self) -> crate::ThemeMotion {
+        self.with_resolved_theme(|variant| variant.tokens.motion.clone())
+            .unwrap_or_default()
+    }
+
+    /// The active theme variant metadata for this context's window/component scope.
+    /// Read during render to track its theme dependency. Effects restart only
+    /// when this metadata is explicitly included in their declared deps.
+    /// Headless/pre-native contexts resolve System using Dark until an actual
+    /// window appearance is known. Returns None for missing/unresolvable themes
+    /// or an unavailable runtime borrow; it does not clone theme tokens.
+    #[must_use]
+    pub fn resolved_theme_variant(&self) -> Option<crate::ThemeVariantInfo> {
+        self.with_resolved_theme(|variant| crate::ThemeVariantInfo {
+            family: variant.family.clone(),
+            name: variant.name.clone(),
+            mode: variant.mode,
+        })
+    }
+
+    fn with_resolved_theme<R>(&self, project: impl FnOnce(&crate::ThemeVariant) -> R) -> Option<R> {
         let Ok(mut runtime) = self.runtime.try_borrow_mut() else {
-            return crate::ThemeMotion::default();
+            return None;
         };
-        runtime
-            .environment_dependencies
-            .track_theme(self.window.as_deref(), &self.read_dependency);
+        if self.phase == ExecutionPhase::Render {
+            runtime
+                .environment_dependencies
+                .track_theme(self.window.as_deref(), &self.read_dependency);
+        }
         let appearance = self
             .window
             .as_deref()
@@ -2808,9 +2846,13 @@ impl UiContext {
                     .resolve(self.window.as_deref(), Some(&self.component), appearance)
                     .ok()
             })
-            .map_or_else(crate::ThemeMotion::default, |theme| {
-                theme.variant().tokens.motion.clone()
-            })
+            .map(|theme| project(theme.variant()))
+    }
+
+    /// Resolved identity, not the app/window/local preference selecting it.
+    #[must_use]
+    pub fn resolved_theme_selection(&self) -> Option<ThemeSelection> {
+        self.with_resolved_theme(|variant| ThemeSelection::new(&variant.family, &variant.name))
     }
 
     /// Resolve a semantic motion duration.
@@ -4063,6 +4105,25 @@ fn number_format_options(mut options: Map) -> Result<NumberFormatOptions, Box<Ev
 fn register_theme_context_methods(builder: &mut TypeBuilder<UiContext>) {
     builder
         .with_fn(
+            "theme_variant",
+            |context: &mut UiContext| -> Result<Dynamic, Box<EvalAltResult>> {
+                let Some(variant) = context.resolved_theme_variant() else {
+                    return Ok(Dynamic::UNIT);
+                };
+                let mut map = rhai::Map::new();
+                map.insert("family".into(), Dynamic::from(variant.family.clone()));
+                map.insert("name".into(), Dynamic::from(variant.name.clone()));
+                map.insert(
+                    "mode".into(),
+                    Dynamic::from(match variant.mode {
+                        crate::ThemeMode::Light => "light",
+                        crate::ThemeMode::Dark => "dark",
+                    }),
+                );
+                Ok(Dynamic::from(map))
+            },
+        )
+        .with_fn(
             "set_theme",
             |context: &mut UiContext, family: ImmutableString, variant: ImmutableString| {
                 context
@@ -4505,6 +4566,95 @@ mod tests {
                 },
             )]),
         )
+    }
+
+    #[test]
+    fn theme_variant_reads_the_resolved_selection() {
+        let context = mounted_context(ExecutionPhase::Event);
+        // No theme manager installed: the read is (), not an error.
+        assert!(context.resolved_theme_variant().is_none());
+        assert_eq!(context.resolved_theme_selection(), None);
+
+        let engine = RuntimeEngine::new();
+        let dark = crate::load_theme_source(
+            engine.engine(),
+            "default_dark.rhai",
+            include_str!("../../../registry/themes/default_dark.rhai"),
+        )
+        .unwrap();
+        let mut light = dark.clone();
+        light.name = "Light".to_owned();
+        light.mode = crate::ThemeMode::Light;
+        let manager = crate::ThemeManager::from_variants(
+            [dark, light],
+            crate::ThemeSelection::new("Default".to_owned(), "Dark".to_owned()),
+        )
+        .unwrap();
+        context.runtime.borrow_mut().theme = Some(manager);
+
+        let variant = context.resolved_theme_variant().expect("resolves");
+        assert_eq!(variant.mode, crate::ThemeMode::Dark);
+        assert_eq!(
+            context.resolved_theme_selection(),
+            Some(ThemeSelection::new("Default", "Dark"))
+        );
+    }
+
+    #[test]
+    fn first_native_appearance_replaces_dark_fallback_and_invalidates_render_readers_once() {
+        let context = mounted_context(ExecutionPhase::Render);
+        let engine = RuntimeEngine::new();
+        let dark = crate::load_theme_source(
+            engine.engine(),
+            "dark",
+            include_str!("../../../registry/themes/default_dark.rhai"),
+        )
+        .unwrap();
+        let light = crate::load_theme_source(
+            engine.engine(),
+            "light",
+            include_str!("../../../registry/themes/default_light.rhai"),
+        )
+        .unwrap();
+        let mut manager = crate::ThemeManager::from_variants(
+            [dark, light],
+            ThemeSelection::new("Default", "Dark"),
+        )
+        .unwrap();
+        manager
+            .set_app(ThemePreference::System {
+                family: "Default".into(),
+            })
+            .unwrap();
+        context.runtime.borrow_mut().theme = Some(manager);
+        assert_eq!(
+            context.resolved_theme_variant().unwrap().mode,
+            crate::ThemeMode::Dark
+        );
+        {
+            let mut runtime = context.runtime.borrow_mut();
+            runtime.dirty.clear();
+            runtime.update_window_appearance("main", crate::SystemAppearance::Light);
+            assert_eq!(
+                runtime.dirty,
+                BTreeSet::from([context.component_path().clone()])
+            );
+            runtime.dirty.clear();
+            runtime.update_window_appearance("main", crate::SystemAppearance::Light);
+            assert!(runtime.dirty.is_empty());
+        }
+        assert_eq!(
+            context.resolved_theme_variant().unwrap().mode,
+            crate::ThemeMode::Light
+        );
+        context
+            .runtime
+            .borrow_mut()
+            .update_window_appearance("main", crate::SystemAppearance::Dark);
+        assert_eq!(
+            context.resolved_theme_variant().unwrap().mode,
+            crate::ThemeMode::Dark
+        );
     }
 
     #[test]

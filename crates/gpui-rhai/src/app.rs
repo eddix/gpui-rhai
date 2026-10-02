@@ -2714,6 +2714,10 @@ impl PreparedScriptView {
                 host.unregister_view(&config.view_id, &mount_lease);
             })?;
         let window_id = host.window_id();
+        self.factory
+            .runtime
+            .borrow_mut()
+            .update_window_appearance(&window_id, system_appearance(window.appearance()));
         let lifecycle = mount_prepared_lifecycle(
             &self.factory,
             &mut self.engine,
@@ -3048,20 +3052,14 @@ fn open_secondary_window(
     let window_id = spec.id.clone();
     let host = ScriptViewHost::new(window_id.clone(), cx).map_err(ScriptFailure::from)?;
     let mount_lease = host.reserve_view(&window_id).map_err(ScriptFailure::from)?;
-    let (engine, lifecycle, primitives) =
-        match factory.instantiate(&window_id, &window_id, Some(&mount_lease)) {
-            Ok(instance) => instance,
-            Err(error) => {
-                host.unregister_view(&window_id, &mount_lease);
-                let root = ComponentInstancePath::root("View", &window_id);
-                let _ = factory
-                    .runtime
-                    .borrow_mut()
-                    .release_window(&window_id, &root);
-                return Err(error.into());
-            }
-        };
-    let timings = engine.take_timings();
+    factory
+        .runtime
+        .borrow_mut()
+        .windows
+        .qualify_mount(&window_id, &mount_lease)
+        .map_err(|error| ScriptFailure::plain(error.to_string()))?;
+    let startup_error = Rc::new(RefCell::new(None));
+    let view_startup_error = Rc::clone(&startup_error);
     let options = script_window_options(spec, cx);
     let view_factory = Rc::clone(&factory);
     let view_native_windows = Rc::clone(&native_windows);
@@ -3083,6 +3081,37 @@ fn open_secondary_window(
             .windows
             .bind_native(&view_window_id, window.window_handle().window_id())
             .expect("secondary reservation keeps its qualified mount identity");
+        view_factory
+            .runtime
+            .borrow_mut()
+            .update_window_appearance(&view_window_id, system_appearance(window.appearance()));
+        // Init/effects run only after the native appearance and the same
+        // reserved mount are known. Never replay side-effecting init to repair
+        // a guessed pre-native theme.
+        let (engine, lifecycle, primitives) = match view_factory.instantiate(
+            &view_window_id,
+            &view_window_id,
+            Some(&view_mount_lease),
+        ) {
+            Ok(instance) => instance,
+            Err(error) => {
+                view_host.unregister_view(&view_window_id, &view_mount_lease);
+                let root = ComponentInstancePath::root("View", &view_window_id);
+                let _ = view_factory
+                    .runtime
+                    .borrow_mut()
+                    .release_window(&view_window_id, &root);
+                let failure = ScriptFailure::from(error);
+                let message = failure.message.clone();
+                *view_startup_error.borrow_mut() = Some(failure);
+                return cx.new(|_| ScriptApplicationRoot {
+                    host: view_host,
+                    view: None,
+                    error: Some(message),
+                });
+            }
+        };
+        let timings = engine.take_timings();
         let (theme_handle, view_theme_handle) =
             theme_handles_for_lifecycle(&lifecycle, &view_factory.theme, window, cx);
         let view_state = Rc::new(Cell::new(ScriptViewState::Active));
@@ -3178,7 +3207,11 @@ fn open_secondary_window(
         })
     });
     match result {
-        Ok(_handle) => {
+        Ok(handle) => {
+            if let Some(error) = startup_error.borrow_mut().take() {
+                let _ = handle.update(cx, |_, window, _| window.remove_window());
+                return Err(error);
+            }
             factory
                 .runtime
                 .borrow_mut()
@@ -4347,16 +4380,7 @@ impl ScriptHostView {
     fn render_snapshot(&self, appearance: SystemAppearance) -> ScriptRenderSnapshot {
         let runtime = self.lifecycle.runtime();
         let mut runtime = runtime.borrow_mut();
-        let appearance_changed = runtime
-            .window_appearances
-            .insert(self.window_id.clone(), appearance)
-            .is_some_and(|previous| previous != appearance);
-        if appearance_changed {
-            let invalidated = runtime
-                .environment_dependencies
-                .invalidate_theme_window(&self.window_id);
-            runtime.mark_dirty(invalidated);
-        }
+        runtime.update_window_appearance(&self.window_id, appearance);
         let root = self.lifecycle.root_path();
         let theme = resolve_root_theme_from_runtime(
             &runtime,

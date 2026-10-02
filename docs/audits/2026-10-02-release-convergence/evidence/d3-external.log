@@ -1,0 +1,13 @@
+   Compiling gpui-rhai v0.1.8 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 17.27s
+     Running tests/resolved_theme.rs (target/debug/deps/resolved_theme-1f2b6219c05ca65e)
+
+running 5 tests
+test resolved_identity_is_not_system_preference_and_headless_fallback_is_explicit ... ok
+test token_and_motion_updates_do_not_infer_a_different_identity_from_colors ... ok
+test window_nearest_local_and_sibling_resolution_share_one_identity_projection ... ok
+test no_theme_and_unavailable_borrow_return_none_without_panicking ... ok
+test only_render_reads_track_theme_and_rhai_returns_exact_metadata_fields ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.83s
+
