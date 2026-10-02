@@ -1,0 +1,20 @@
+BASELINE=cda11ce7d80f817e5675543cc7a95f577b977320
+   Compiling gpui-rhai-native-keyboard-tests v0.0.0 (/var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T/gpui-rhai-r7-reads-9ubqfu8e)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.04s
+     Running tests/audit_r7_read_contributions.rs (tests/native-keyboard/target/debug/deps/audit_r7_read_contributions-ec1a8ff686c02b07)
+
+running 3 tests
+test failed_candidate_restores_reads_and_discards_its_new_contributions ... ROLLBACK formal=false previous_edges_preserved=true failed_candidate_edges_gone=true
+ROLLBACK formal=true previous_edges_preserved=true failed_candidate_edges_gone=true
+ok
+test raw_and_formal_66_rows_prune_all_registry_contributions_without_losing_shared_readers ... ROOT_RERENDER formal=false legitimate_reseed=([0, 1], [0, 1]) readers=(4, 4, 4)
+LIFETIME formal=false 66_targets_bounded=true offscreen_store_document_missing_edges_removed=true other_collection_and_direct_survive=true last_contribution_removed=true
+ROOT_RERENDER formal=true legitimate_reseed=([0, 1], [0, 1]) readers=(4, 4, 4)
+LIFETIME formal=true 66_targets_bounded=true offscreen_store_document_missing_edges_removed=true other_collection_and_direct_survive=true last_contribution_removed=true
+ok
+test reordered_stable_keys_replace_contributions_using_the_new_realized_keys ... REORDER formal=false realized_keys=["row-1", "row-2"] old_edges_removed=true current_key_wakes_correct_owner=true
+REORDER formal=true realized_keys=["row-1", "row-2"] old_edges_removed=true current_key_wakes_correct_owner=true
+ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.07s
+

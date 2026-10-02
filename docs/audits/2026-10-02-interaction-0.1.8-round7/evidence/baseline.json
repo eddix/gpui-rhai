@@ -1,0 +1,7 @@
+{
+  "date": "2026-10-02",
+  "head": "cda11ce7d80f817e5675543cc7a95f577b977320",
+  "base": "83b19b1d2bc742523f4b44caa8dbe42f6b83637c",
+  "product_initially_clean": true,
+  "scope": "gpui-rhai only; disktree-rhai product excluded; prior opinions copied into its own repository."
+}

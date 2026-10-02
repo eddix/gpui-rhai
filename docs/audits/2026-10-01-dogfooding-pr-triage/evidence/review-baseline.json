@@ -1,0 +1,18 @@
+{
+  "date": "2026-10-01",
+  "base_head": "f6e936a509d9aaf75f2e28836bedd439fe83887e",
+  "pr_heads": {
+    "14": "6427de4733e61fcc92b9e1d05ff98c177baf899d",
+    "96": "befbe926ee7d53be2f540538112766ae07aec792",
+    "97": "31df838797767811ee29fa2385ec17a298bdf53d",
+    "99": "3209039e2d792dde9f65daa7eb2600cd90a3e3f6"
+  },
+  "fixed_source_sha256": {
+    "crates/gpui-rhai/src/context.rs": "4165284af9226e8739778c1c8ec4f8c9d9b81640caed7f2c11853d00cc8752f3",
+    "crates/gpui-rhai/src/capability.rs": "f893c9cdb9497d5886cd9dbb12dbce96543bf511af9b8c526a9b865b600e2e0a",
+    "crates/gpui-rhai/src/lifecycle.rs": "0088682491212f7737b06ec0d5fa68af2ebd855dfd68759a2c21db9f6a158e94",
+    "crates/gpui-rhai/src/app.rs": "9194c593fa8c1ad45484809a983a61636b569c0c774e5a851db8aa8719add9ad"
+  },
+  "concurrent_worktree_edits_observed": true,
+  "review_policy": "Review fixed Git commits. Preserve concurrent working-tree edits. Do not treat live dependency builds as PR-head end-to-end validation."
+}

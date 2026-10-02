@@ -1,0 +1,18 @@
+PINNED_BASELINE=f6e936a509d9aaf75f2e28836bedd439fe83887e
+   Compiling gpui-rhai v0.1.8 (/private/var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T/gpui-rhai-pr96-semantic-5eli441g/baseline/crates/gpui-rhai)
+   Compiling gpui-rhai-registry v0.1.8 (/private/var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T/gpui-rhai-pr96-semantic-5eli441g/baseline/registry)
+   Compiling gpui-rhai-cli v0.1.8 (/private/var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T/gpui-rhai-pr96-semantic-5eli441g/baseline/crates/gpui-rhai-cli)
+   Compiling gpui-rhai-native-keyboard-tests v0.0.0 (/var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T/gpui-rhai-pr96-semantic-5eli441g)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 36.53s
+     Running tests/audit_pr96_semantics.rs (tests/native-keyboard/target/debug/deps/audit_pr96_semantics-873d5b9a6193d17d)
+
+running 2 tests
+test parser_expression_limit_is_distinct_from_runtime_operations ... PARSE nesting=4 ok=true operations=0 error=None
+PARSE nesting=64 ok=false operations=0 error=Some("failed to compile Rhai UI source: Syntax error: Expression exceeds maximum complexity (line 1, position 31)")
+ok
+test pr_workload_and_a_true_over_default_case ... BASELINE iterations=60000 ok=true operations=180009 elapsed_ms=37.326
+BASELINE iterations=400000 ok=false operations=1000001 elapsed_ms=206.275
+ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.08s
+

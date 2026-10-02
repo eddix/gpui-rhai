@@ -1,0 +1,11 @@
+{
+  "pr_head": "31df838797767811ee29fa2385ec17a298bdf53d",
+  "repo_head": "f6e936a509d9aaf75f2e28836bedd439fe83887e",
+  "mode": "Native characterization on changing worktree, not a PR end-to-end build. PR validator helpers extracted from fixed PR head.",
+  "gpui": "gpui-pre 0.3.7",
+  "base_renderer_blob": "4c582e0b849e08120de6018b86416f45fdf0adba",
+  "current_renderer_blob": "77171c6208cb47865af7f40a91ee6741cf1f29a4",
+  "base_dispatch_sha256": "f0b60930d25a0dada53445bae9fd95719fde732f78e21ad0fb0e78da535c2963",
+  "live_dispatch_sha256": "f0b60930d25a0dada53445bae9fd95719fde732f78e21ad0fb0e78da535c2963",
+  "dispatch_block_identical": true
+}
