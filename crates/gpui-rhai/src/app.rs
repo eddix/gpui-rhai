@@ -2800,6 +2800,7 @@ impl PreparedScriptView {
                 activity_wake: entity_activity_wake,
                 _runtime_tasks: runtime_tasks,
                 window_activation: None,
+                window_appearance: None,
                 window_closed: None,
                 #[cfg(feature = "dev-reload")]
                 module_cache: self.module_cache,
@@ -3159,6 +3160,7 @@ fn open_secondary_window(
                 activity_wake: entity_activity_wake,
                 _runtime_tasks: runtime_tasks,
                 window_activation: None,
+                window_appearance: None,
                 window_closed: None,
                 #[cfg(feature = "dev-reload")]
                 module_cache: ModuleCompileCache::new(),
@@ -3465,6 +3467,7 @@ struct ScriptHostView {
     _runtime_tasks: HostRuntimeTasks,
     #[allow(dead_code)]
     window_activation: Option<Subscription>,
+    window_appearance: Option<Subscription>,
     #[allow(dead_code)]
     window_closed: Option<Subscription>,
     #[cfg(feature = "dev-reload")]
@@ -3498,6 +3501,12 @@ fn install_window_lifecycle_hooks(
         })
     });
     entity.update(cx, |view, _| view.window_activation = Some(subscription));
+    let appearance = entity.update(cx, |_, entity_cx| {
+        entity_cx.observe_window_appearance(window, |view, window, cx| {
+            view.on_window_appearance_changed(window.appearance(), cx);
+        })
+    });
+    entity.update(cx, |view, _| view.window_appearance = Some(appearance));
     let window_id = window.window_handle().window_id();
     let weak = entity.downgrade();
     let closed = cx.on_window_closed(move |cx, closed_id| {
@@ -4061,6 +4070,33 @@ fn native_lifecycle_error(
 }
 
 impl ScriptHostView {
+    fn on_window_appearance_changed(
+        &mut self,
+        appearance: WindowAppearance,
+        cx: &mut Context<Self>,
+    ) {
+        if self.state.get() == ScriptViewState::Disposed {
+            return;
+        }
+        let changed = self
+            .lifecycle
+            .runtime()
+            .borrow_mut()
+            .update_window_appearance(&self.window_id, system_appearance(appearance));
+        if changed && self.state.get() == ScriptViewState::Active {
+            // Ingest before scheduling normal transactional work. Do not run
+            // Rhai or effects inside GPUI's appearance observer delivery.
+            // Defer with a weak entity; poll_async rechecks current lifecycle.
+            let owner = cx.weak_entity();
+            cx.defer(move |cx| {
+                let _ = owner.update(cx, Self::poll_async);
+            });
+            cx.notify();
+        }
+        // Suspended views retain the new environment/dirty owners for resume;
+        // no script, effect or animation is activated by this notification.
+    }
+
     fn sample_motion_frame(&mut self, domain: &str) -> (bool, Vec<crate::MotionTimelineEvent>) {
         let runtime = self.lifecycle.runtime();
         let mut runtime = runtime.borrow_mut();
@@ -5044,6 +5080,7 @@ impl ScriptHostView {
         if self.state.get() == ScriptViewState::Disposed {
             return;
         }
+        self.window_appearance.take();
         if let Err(error) = self.primitives.retain_mounted(&BTreeSet::new()) {
             self.set_plain_failure(error.to_string());
         }

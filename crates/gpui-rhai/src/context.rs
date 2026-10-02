@@ -140,17 +140,19 @@ impl UiRuntimeState {
         &mut self,
         window: &str,
         appearance: crate::SystemAppearance,
-    ) {
+    ) -> bool {
         let previous = self
             .window_appearances
             .insert(window.to_owned(), appearance)
             .unwrap_or(crate::SystemAppearance::Dark);
-        if previous != appearance {
+        let changed = previous != appearance;
+        if changed {
             let invalidated = self
                 .environment_dependencies
                 .invalidate_theme_window(window);
             self.mark_dirty(invalidated);
         }
+        changed
     }
     const SUSPENDED_DELIVERY_CAPACITY: usize = 256;
     #[must_use]
@@ -4634,13 +4636,13 @@ mod tests {
         {
             let mut runtime = context.runtime.borrow_mut();
             runtime.dirty.clear();
-            runtime.update_window_appearance("main", crate::SystemAppearance::Light);
+            assert!(runtime.update_window_appearance("main", crate::SystemAppearance::Light));
             assert_eq!(
                 runtime.dirty,
                 BTreeSet::from([context.component_path().clone()])
             );
             runtime.dirty.clear();
-            runtime.update_window_appearance("main", crate::SystemAppearance::Light);
+            assert!(!runtime.update_window_appearance("main", crate::SystemAppearance::Light));
             assert!(runtime.dirty.is_empty());
         }
         assert_eq!(
