@@ -116,10 +116,10 @@ fn init(ctx) {
 
 fn table_columns() {
     [
-        #{ key: "name", title: "Name", width: #{ kind: "fixed", value: 220 }, sortable: true },
-        #{ key: "email", title: "Email", width: #{ kind: "fixed", value: 320 } },
-        #{ key: "score", title: "Score", width: #{ kind: "flex", value: 1 }, align: "end" },
-        #{ key: "joined", title: "Joined", width: #{ kind: "percent", value: 25 }, align: "end" },
+        #{ key: "name", title: "Name", width: #{ kind: "fixed", value: 180 }, sortable: true },
+        #{ key: "email", title: "Email", width: #{ kind: "flex", value: 1 } },
+        #{ key: "score", title: "Score", width: #{ kind: "fixed", value: 96 }, align: "end" },
+        #{ key: "joined", title: "Joined", width: #{ kind: "fixed", value: 128 }, align: "end" },
         #{ key: "status", title: "Status", width: #{ kind: "fixed", value: 110 } },
         #{ key: "id", title: "Action", width: #{ kind: "fixed", value: 80 },
             align: "center" },

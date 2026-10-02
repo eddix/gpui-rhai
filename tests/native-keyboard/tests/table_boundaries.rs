@@ -378,3 +378,78 @@ fn nonresizable_neighbor_preserves_owner_and_last_keyboard_resize(cx: &mut TestA
     println!("mixed native last keyboard={actual}");
     assert_eq!(actual, "c:168.0|none");
 }
+
+#[gpui::test]
+fn data_loading_and_both_empty_paths_share_the_bordered_horizontal_viewport(
+    cx: &mut TestAppContext,
+) {
+    let mut heights = Vec::new();
+    for (name, patch) in [
+        ("data", ""),
+        ("loading", "loading:true,"),
+        ("empty", "empty"),
+        (
+            "filtered",
+            "query:\"unmatched-value\",search_fields:[\"a\",\"b\",\"c\"],",
+        ),
+    ] {
+        let mut source =
+            script(false, true, false).replace("style().width(px(600))", "style().width(px(300))");
+        if patch == "empty" {
+            source = source.replace("rows:ctx.get_native_collection(\"rows\")", "rows:[]");
+        } else if !patch.is_empty() {
+            source = source.replace("rows:", &format!("{patch}rows:"));
+        }
+        let (window, view) = mount(cx, source, &format!("state-shell-{name}"));
+        let mut visual = VisualTestContext::from_window(*window, cx);
+        visual.update(|_, cx| {
+            let snapshot = view.accessibility_snapshot(cx).unwrap();
+            let root = snapshot
+                .find_by_role_and_name("table", "Table")
+                .next()
+                .unwrap()
+                .geometry
+                .unwrap()
+                .visual;
+            let header = snapshot
+                .find_by_role_and_name("columnheader", "C")
+                .next()
+                .unwrap()
+                .geometry
+                .unwrap();
+            assert!(
+                header.visual.x + header.visual.width > root.x + root.width,
+                "fixture must really overflow: {name}"
+            );
+            heights.push(root.height);
+        });
+        let h = bounds(&mut visual, &view, "columnheader", "C");
+        let outside = point(
+            px((h.x + h.width / 2.0) as f32),
+            px((h.y + h.height / 2.0) as f32),
+        );
+        visual.simulate_mouse_down(outside, MouseButton::Left, Modifiers::default());
+        visual.simulate_mouse_up(outside, MouseButton::Left, Modifiers::default());
+        visual.run_until_parked();
+        assert_eq!(
+            status(&mut visual, &view),
+            "none|none",
+            "{name}: outside viewport must not receive sort"
+        );
+        let inside = point(px((h.x + 16.0) as f32), outside.y);
+        visual.simulate_mouse_down(inside, MouseButton::Left, Modifiers::default());
+        visual.simulate_mouse_up(inside, MouseButton::Left, Modifiers::default());
+        visual.run_until_parked();
+        assert_eq!(
+            status(&mut visual, &view),
+            "none|c",
+            "{name}: visible header must remain interactive"
+        );
+    }
+    assert!(
+        heights
+            .iter()
+            .all(|height| (*height - heights[0]).abs() < 0.5),
+        "state switches must keep the declared body viewport: {heights:?}"
+    );
+}
