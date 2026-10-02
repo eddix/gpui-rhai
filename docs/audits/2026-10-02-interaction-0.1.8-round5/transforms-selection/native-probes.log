@@ -1,0 +1,29 @@
+   Compiling audit-transforms-selection-round5 v0.0.0 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/docs/audits/2026-10-02-interaction-0.1.8-round5/transforms-selection)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.75s
+     Running unittests src/lib.rs (tests/native-keyboard/target/debug/deps/audit_transforms_selection_round5-d51badbbe603d8b8)
+
+running 4 tests
+low zoom=0.000000001, visible=GeometryBounds { x: 129.999999871, y: 59.999999941, width: 5.0, height: 5.0 }, inverse available=false, selected=[]
+
+thread 'round5_small_invertible_zoom_selection' (2388926) panicked at src/lib.rs:153:5:
+assertion `left == right` failed
+  left: "[]"
+ right: "[\"a\"]"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test round5_small_invertible_zoom_selection ... FAILED
+low zoom=0.0000001, visible=GeometryBounds { x: 129.9999871, y: 59.9999941, width: 5.0, height: 4.999999999999993 }, inverse available=true, selected=["a"]
+test round5_larger_invertible_zoom_control ... ok
+suspend/resume to width=600: preview=85.98920093610042, source restored=20, commits=0
+asymmetric/negative/rotate at DPI1.25 click=Point { x: 151.74922px, y: 96.92154px }, selected=["a"]
+test round5_asymmetric_insets_negative_scale_rotation_click_control ... ok
+suspend/resume to width=900: preview=85.98920093610042, source restored=20, commits=0
+test round5_rotation_suspend_resume_resize_cycles_control ... ok
+
+failures:
+
+failures:
+    round5_small_invertible_zoom_selection
+
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.98s
+
+error: test failed, to rerun pass `--lib`

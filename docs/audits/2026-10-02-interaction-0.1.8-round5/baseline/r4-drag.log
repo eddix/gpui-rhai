@@ -1,0 +1,22 @@
+    Blocking waiting for file lock on artifact directory
+   Compiling audit-018-round4-drag-sort v0.0.0 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/docs/audits/2026-10-01-interaction-0.1.8-round4/drag-sort/probe)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 35.47s
+     Running unittests src/lib.rs (tests/native-keyboard/target/debug/deps/audit_018_round4_drag_sort-03b9d2a86c1713c8)
+
+running 6 tests
+test accepting_foreground_does_not_scroll_unrelated_hidden_list ... foreground accepts=true, native drop=cover, hidden list scroll_item=0, error=None
+ok
+test delayed_row_forwarded_callback_preserves_root_owner ... forwarded callback actual seed indices={0, 1, 2, 3, 4, 5, 6}; destination index=13
+forwarded callback expected count=2, actual=2, diagnostic=None
+ok
+test latest_realized_formal_dropzone_preserves_parent_callback_owner ... latest virtual row keyboard expected=lane-5, actual=lane-5, diagnostic=None
+ok
+test newly_realized_dropzone_callback_keeps_formal_owner ... fresh virtual row expected=lane-14, actual=lane-14, diagnostic=None
+ok
+test rejecting_foreground_does_not_activate_hidden_destination_scroll ... foreground accepts=false, native drop=rejected, hidden list scroll_item=0, error=None
+ok
+test still_visible_seed_callback_survives_neighbor_realization ... retained seed virtual row expected=lane-2, actual=lane-2, diagnostic=None
+ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.77s
+

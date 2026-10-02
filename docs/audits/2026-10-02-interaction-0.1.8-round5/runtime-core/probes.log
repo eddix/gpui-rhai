@@ -1,0 +1,28 @@
+   Compiling gpui-rhai-native-keyboard-tests v0.0.0 (/var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T/gpui-runtime-core-round5-audit-x8dpo43o)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.46s
+     Running tests/runtime_core_round5_audit.rs (tests/native-keyboard/target/debug/deps/runtime_core_round5_audit-a4ecdf8331034b20)
+
+running 5 tests
+Disabled close: Err(Automation(Command("failed to evaluate Rhai UI source: Runtime error: window command `close_window` is unavailable for embedded view `view` in window `embedded-window` @ 'main' (line 2, position 25)\nin call to function 'close' (from 'main') (line 4, position 53)")))
+active rotation angle=92.19402501344507, suspend=Ok(true)
+test embedded_disabled_policy_control ... ok
+ApplicationOwned logical policy close: Err(Automation(Command("native window `embedded-window` is unavailable"))); focus: Err(Automation(Command("native window `embedded-window` is unavailable"))); window_remains=true
+
+thread 'pr100_application_policy_needs_real_native_window_registration' (2392616) panicked at tests/runtime_core_round5_audit.rs:125:5:
+PR100 intended embedded close requires a native handle, not just policy permission
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test active_rotation_suspend_reads_canvas_geometry_inside_lifecycle ... ok
+test pr100_application_policy_needs_real_native_window_registration ... FAILED
+suspend/pending debounce/resume: source restored and Escape released
+test suspended_debounce_cannot_steal_resumed_escape ... ok
+stale debounce/new explicit generation: retained then cancelled correctly
+test stale_debounce_cannot_release_new_wheel_owner ... ok
+
+failures:
+
+failures:
+    pr100_application_policy_needs_real_native_window_registration
+
+test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.86s
+
+error: test failed, to rerun pass `--test runtime_core_round5_audit`

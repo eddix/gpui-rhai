@@ -1,0 +1,22 @@
+   Compiling audit-018-round2-drag-sort v0.0.0 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/docs/audits/2026-09-30-interaction-0.1.8-round2/drag-sort/probe)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.43s
+     Running unittests src/lib.rs (tests/native-keyboard/target/debug/deps/audit_018_round2_drag_sort-12fe596700a7e069)
+
+running 5 tests
+test explicit_occlusion_blocks_underlying_drop_target ... foreground location=Point { x: 290px, y: 90px }; error=None
+covered target drop=cover clicked
+ok
+test modal_explicit_keyboard_target_policy_characterization ... modal=GeometryBounds { x: 750.0, y: 477.5, width: 378.0, height: 125.0 }; source=Point { x: 939px, y: 548.5px }; background=Point { x: 40px, y: 40px }
+modal background drops after keyboard=1
+modal background drops after pointer=1
+ok
+test same_host_cross_view_drop_is_supported_for_pointer_and_keyboard ... ok
+test virtual_sortable_edge_auto_scroll_advances_realization ... realized after scroll=["Item 9", "Item 10", "Item 11", "Item 12", "Item 13"]
+long virtual drag=item-0:after:item-13
+ok
+test virtual_sortable_preserves_drag_across_actual_wheel_scroll ... realized after actual wheel=["Item 2", "Item 3", "Item 4", "Item 5", "Item 6"]
+actual wheel drag result=item-0:after:item-4
+ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.46s
+
