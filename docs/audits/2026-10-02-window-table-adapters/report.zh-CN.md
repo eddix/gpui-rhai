@@ -6,6 +6,8 @@
 
 没有将 policy constructor 单独公开当作能力完成，而是提供 `PreparedScriptView::mount_window`：
 
+工作期间又出现 PR #103（独立的 register_native_window 提案），根因和本工作包一致。其“先给 policy、再手工填 native registry”需求由同一个显式 mount adapter 完整覆盖；不额外暴露可覆盖 registry alias 的第二条接入路径。
+
 - 普通 `mount` 继续使用 Disabled policy；同 Host 的其他嵌入 View 不继承窗口权限。
 - 显式 adapter 同时建立逻辑 WindowRecord、真实 AnyWindowHandle、close interceptor 和 command-owner lease。Rust 仍拥有原生 root/layout。
 - 命令 owner 按真实 GPUI WindowId 唯一，不能通过另建 Host 别名绕过；Host 本身也不能绑定另一个原生窗口。
