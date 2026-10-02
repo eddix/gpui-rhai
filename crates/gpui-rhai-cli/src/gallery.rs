@@ -171,6 +171,11 @@ fn materialize_story_source(
                 "__OPERATIONS_TOAST_VISIBLE__",
                 &failure_terminal.to_string(),
             ))
+    } else if story.id == "components/table" {
+        Ok(story.source.replace(
+            "__TABLE_CASE__",
+            &serde_json::to_string(&launch.case).map_err(|error| error.to_string())?,
+        ))
     } else if story.id == "components/catalog" {
         let json = |value: &str| serde_json::to_string(value).map_err(|error| error.to_string());
         let category = if launch.case == "basic" {
