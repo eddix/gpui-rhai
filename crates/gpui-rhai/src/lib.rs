@@ -171,9 +171,9 @@ pub use draggable::{DraggablePrimitiveHandler, draggable_primitive_descriptor};
 pub use effect::{EffectDescriptor, EffectError, EffectId, EffectRegistry};
 pub use element_ref::{ElementRef, ElementRefError, ElementRefId, ElementRefRegistry};
 pub use engine::{
-    CompiledUi, ComponentInvocationRecipe, ExecutionOperation, ExecutionTiming,
-    MAX_SCRIPT_OPERATIONS, OPERATION_SEMANTICS_VERSION, RuntimeEngine, RuntimeError,
-    ScriptCallback, ScriptCallbackDefinitionError, ScriptGeneration,
+    CompiledUi, ComponentInvocationRecipe, DEFAULT_SCRIPT_OPERATION_LIMIT, ExecutionOperation,
+    ExecutionTiming, OPERATION_SEMANTICS_VERSION, RuntimeEngine, RuntimeError, ScriptCallback,
+    ScriptCallbackDefinitionError, ScriptGeneration,
 };
 pub use event::{
     EventDispatchReport, EventModifiers, EventPhase, EventPropagation, EventResponse, EventRouter,
