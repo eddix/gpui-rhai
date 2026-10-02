@@ -1,0 +1,31 @@
+   Compiling gpui-rhai v0.1.8 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai)
+   Compiling gpui-rhai-cli v0.1.8 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai-cli)
+   Compiling gpui-rhai-native-keyboard-tests v0.0.0 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 10.19s
+     Running tests/table_extent.rs (tests/native-keyboard/target/debug/deps/table_extent-597838bcc7cccc5a)
+
+running 9 tests
+test accepted_final_column_width_recomputes_extent_and_clamps_offset ... ok
+test component_min_max_and_native_override_use_one_width_authority ... ok
+test fixed_wide_ltr_rtl_array_native_share_scroll_and_all_states ... ok
+test horizontal_body_input_and_vertical_input_are_independent ... ok
+test native_drag_override_repaints_widths_and_extent_without_rhai ... ok
+test percentage_and_weighted_flex_use_viewport_not_extent ... ok
+test percentage_overflow_does_not_feedback_into_its_basis ... ok
+test single_column_under_equal_overflow_and_autofit_share_the_viewport ... ok
+test theme_insets_are_in_the_shared_column_plan_and_real_extent ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.85s
+
+     Running tests/table_frame_demand.rs (tests/native-keyboard/target/debug/deps/table_frame_demand-567fefe98c6298fe)
+
+running 2 tests
+test tests::measured_viewport_schedules_its_own_followup_frame ... after initial frame + normal clock, scheduled=[3, 1, 0], no manual followup: [120.0, 149.0, 29.0]
+explicit extra refresh driver control: [120.0, 149.0, 29.0]
+ok
+test tests::viewport_change_schedules_its_own_followup_frame ... after resize frame + normal clock, scheduled=[8, 1, 0], viewport=500, no manual followup: [120.0, 249.0, 129.0]
+explicit extra refresh driver control: [120.0, 249.0, 129.0]
+ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.97s
+

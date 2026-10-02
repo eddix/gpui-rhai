@@ -29,6 +29,16 @@ GPUI frame still retains the Entity. Deferred source and target authority checks
 use mount identity and actual WindowId; names or temporary Entity liveness alone
 do not confer permission. A remaining Handle clone keeps the same mount valid.
 
+The queue captures origin and target registration at request time. A secondary
+view can pump shared work, but cannot substitute its own authority for the
+source. This also holds when a successful async delivery queues work and a later
+independent delivery fails. Revoking an Open releases only its own pending ID
+reservation. `Open → Focus/Close` in one entry uses that same reservation, then
+the actual created native window; it does not retarget a same-name replacement.
+Direct Rust `WindowCommandRegistry::request_*` calls explicitly use trusted Host
+origin. `drain_commands` returns qualified `QueuedWindowCommand` records; the
+payload is available through `command()`.
+
 This opt-in installs the should-close interceptor described below, replacing any
 previous Rust should-close callback. Do not opt in when Rust must retain that
 policy: keep ordinary `mount` and use application-defined Rust capabilities or

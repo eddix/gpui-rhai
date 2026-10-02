@@ -1,0 +1,129 @@
+    Checking gpui-rhai v0.1.8 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai)
+    Checking gpui-rhai-registry v0.1.8 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/registry)
+error: long literal lacking separators
+   --> crates/gpui-rhai/src/table_layout.rs:599:35
+    |
+599 |         assert!((plan.widths[1] - 9.900990099).abs() < 1e-8);
+    |                                   ^^^^^^^^^^^ help: consider: `9.900_990_099`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#unreadable_literal
+    = note: `-D clippy::unreadable-literal` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::unreadable_literal)]`
+
+error: long literal lacking separators
+   --> crates/gpui-rhai/src/table_layout.rs:600:35
+    |
+600 |         assert!((plan.widths[2] - 0.099009901).abs() < 1e-8);
+    |                                   ^^^^^^^^^^^ help: consider: `0.099_009_901`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#unreadable_literal
+
+error: this function has too many lines (124/100)
+    --> crates/gpui-rhai/src/renderer.rs:1942:5
+     |
+1942 | /     fn render_internal<C: ColorResolver>(
+1943 | |         node: &UiNode,
+1944 | |         environment: &RenderEnvironment<'_, C>,
+1945 | |         boundary_fallback: Option<&UiNode>,
+1946 | |         path: &str,
+1947 | |         retained_id: Option<NodeId>,
+1948 | |     ) -> AnyElement {
+     | |___________________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#too_many_lines
+     = note: `-D clippy::too-many-lines` implied by `-D warnings`
+     = help: to override `-D warnings` add `#[allow(clippy::too_many_lines)]`
+
+error: boxed return of the sized type `rhai::EvalAltResult`
+   --> crates/gpui-rhai/src/table_layout.rs:113:47
+    |
+113 | pub(crate) fn runtime_error(message: &str) -> Box<EvalAltResult> {
+    |                                               ^^^^^^^^^^^^^^^^^^ help: try: `rhai::EvalAltResult`
+    |
+    = help: changing this also requires a change to the return expressions in this function
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#unnecessary_box_returns
+    = note: `-D clippy::unnecessary-box-returns` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::unnecessary_box_returns)]`
+
+error: casting `i64` to `f64` may cause a loss of precision (`i64` is 64 bits wide, but `f64`'s mantissa is only 52 bits wide)
+   --> crates/gpui-rhai/src/table_layout.rs:153:81
+    |
+153 |                         .or_else(|| value.clone().try_cast::<INT>().map(|value| value as f64))
+    |                                                                                 ^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_precision_loss
+    = note: `-D clippy::cast-precision-loss` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::cast_precision_loss)]`
+
+error: casting `f64` to `f32` may truncate the value
+   --> crates/gpui-rhai/src/table_layout.rs:428:40
+    |
+428 |             scroll.set_offset(point(px(offset as f32), scroll.offset().y));
+    |                                        ^^^^^^^^^^^^^
+    |
+    = help: if this is intentional allow the lint with `#[allow(clippy::cast_possible_truncation)]` ...
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_possible_truncation
+    = note: `-D clippy::cast-possible-truncation` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::cast_possible_truncation)]`
+
+error: matching over `()` is more explicit
+   --> crates/gpui-rhai/src/table_layout.rs:450:9
+    |
+450 |         _: &mut (),
+    |         ^ help: use `()` instead of `_`: `()`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#ignored_unit_patterns
+    = note: `-D clippy::ignored-unit-patterns` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::ignored_unit_patterns)]`
+
+error: strict comparison of `f32` or `f64`
+   --> crates/gpui-rhai/src/table_layout.rs:518:9
+    |
+518 |         assert_eq!(large.extent, 800.0);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#float_cmp
+    = note: `-D clippy::float-cmp` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::float_cmp)]`
+
+error: strict comparison of `f32` or `f64`
+   --> crates/gpui-rhai/src/table_layout.rs:519:9
+    |
+519 | /         assert_eq!(
+520 | |             resolve(
+521 | |                 &[
+522 | |                     column(ColumnWidth::Fixed(120.0)),
+...   |
+530 | |             420.0
+531 | |         );
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#float_cmp
+
+error: strict comparison of `f32` or `f64`
+   --> crates/gpui-rhai/src/table_layout.rs:538:9
+    |
+538 |         assert_eq!(small.extent, 300.0);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#float_cmp
+
+error: strict comparison of `f32` or `f64`
+   --> crates/gpui-rhai/src/table_layout.rs:571:9
+    |
+571 |         assert_eq!(plan.extent, 547.0);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#float_cmp
+
+error: strict comparison of `f32` or `f64`
+   --> crates/gpui-rhai/src/table_layout.rs:598:9
+    |
+598 |         assert_eq!(plan.widths[0], 90.0);
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#float_cmp
+
+error: could not compile `gpui-rhai` (lib) due to 5 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `gpui-rhai` (lib test) due to 12 previous errors

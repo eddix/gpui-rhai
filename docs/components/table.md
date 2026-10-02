@@ -85,8 +85,17 @@ percentage of the row width, and flex values are positive weights that divide
 the space remaining after fixed and percentage columns. A flex value is never
 interpreted as pixels. Fixed and percent columns keep their declared width and
 horizontal overflow remains available when the complete contract is wider than
-the viewport. Header cells and Array/NativeCollection body cells call the same
-width function. The old eager `cell_renderer`, native locale formatter maps,
+the viewport. A native viewport-based plan resolves header cells, realized
+Array/NativeCollection cells and the direct scroll content track together.
+Percentages never depend on the overflowing extent. Flex widths share remaining
+viewport space with a feasible styled border-box minimum; extreme padding can
+therefore require overflow rather than silently making a column unreachable.
+Horizontal wheel is native, keeps header and body aligned, and does not convert
+pure vertical input into horizontal movement. Data/loading/original-empty/
+projected-empty share the same shell; their logical scroll distance is retained
+and clamped when the extent shrinks. Header/body styled min/max widths also
+participate in the common plan; a feasible minimum wins over an incompatible
+maximum. Native overrides cannot bypass this plan. The old eager `cell_renderer`, native locale formatter maps,
 selection geometry, private horizontal scrollbar configuration, and bundled
 sort/check assets were removed. Applications that require richer cells should
 supply domain data formatted before the Table boundary or compose a specialized
@@ -97,7 +106,8 @@ source component over `virtual_collection`.
 Set `resizable_columns: true` to add a divider between eligible headers. A
 column may override the table default with `resizable: true/false` and may set
 positive logical-pixel `min_width` and `max_width`; the defaults are 48px and a
-bounded implementation ceiling. The last column has no trailing divider.
+bounded implementation ceiling. The logical final edge has a divider too, so
+the last or sole column supports dragging, keyboard adjustment and autofit.
 
 ```rhai
 fn column_resized(ctx, change) {
