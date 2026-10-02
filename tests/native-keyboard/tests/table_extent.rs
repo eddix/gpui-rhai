@@ -66,7 +66,7 @@ fn view(ctx) {{
     let props = #{{key:"table",label:"Extent Table",row_key:"id",rows:if mode==2 {{[]}} else {{{rows}}},
         columns:columns,height:180.0,resizable_columns:true,loading:mode==1,
         query:if mode==3 {{"missing"}} else {{""}},search_fields:["a","b","c"],on_sort_change:Fn("sorted")}};
-    {} 
+    {}
     column([
         row([text("Data").accessibility_role("button").accessibility_label("Mode0").on_click_value(Fn("mode"),0),
             text("Loading").accessibility_role("button").accessibility_label("Mode1").on_click_value(Fn("mode"),1),
