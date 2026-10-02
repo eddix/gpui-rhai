@@ -1629,8 +1629,8 @@ const MAX_MISSING_NAME_BYTES: usize = 64 * 1024;
 #[derive(Clone, Debug, Default)]
 pub struct NativeCollectionRegistry {
     collections: BTreeMap<String, NativeCollection>,
-    readers: BTreeMap<String, BTreeSet<ComponentInstancePath>>,
-    missing_readers: BTreeMap<String, BTreeSet<ComponentInstancePath>>,
+    readers: BTreeMap<String, BTreeSet<crate::read_dependency::ReadDependency>>,
+    missing_readers: BTreeMap<String, BTreeSet<crate::read_dependency::ReadDependency>>,
 }
 
 impl NativeCollectionRegistry {
@@ -1663,7 +1663,9 @@ impl NativeCollectionRegistry {
             return Err(NativeCollectionError::DuplicateCollection(name));
         }
         self.collections.insert(name.clone(), collection);
-        Ok(self.missing_readers.remove(&name).unwrap_or_default())
+        Ok(crate::read_dependency::owners(
+            self.missing_readers.remove(&name).unwrap_or_default(),
+        ))
     }
 
     /// Replace an existing collection and return its exact subscribed readers.
@@ -1684,7 +1686,9 @@ impl NativeCollectionRegistry {
             return Ok(BTreeSet::new());
         }
         *current = collection;
-        Ok(self.readers.get(name).cloned().unwrap_or_default())
+        Ok(crate::read_dependency::owners(
+            self.readers.get(name).cloned().unwrap_or_default(),
+        ))
     }
 
     #[cfg(test)]
@@ -1696,9 +1700,23 @@ impl NativeCollectionRegistry {
         self.read_tracked_with_missing(reader, name, true)
     }
 
+    #[cfg(test)]
     pub(crate) fn read_tracked_with_missing(
         &mut self,
         reader: &ComponentInstancePath,
+        name: &str,
+        track_missing: bool,
+    ) -> Result<NativeCollection, NativeCollectionError> {
+        self.read_dependency(
+            &crate::read_dependency::ReadDependency::component(reader),
+            name,
+            track_missing,
+        )
+    }
+
+    pub(crate) fn read_dependency(
+        &mut self,
+        reader: &crate::read_dependency::ReadDependency,
         name: &str,
         track_missing: bool,
     ) -> Result<NativeCollection, NativeCollectionError> {
@@ -1724,7 +1742,7 @@ impl NativeCollectionRegistry {
 
     fn track_missing_reader(
         &mut self,
-        reader: &ComponentInstancePath,
+        reader: &crate::read_dependency::ReadDependency,
         name: &str,
     ) -> Result<(), NativeCollectionError> {
         if self
@@ -1773,6 +1791,10 @@ impl NativeCollectionRegistry {
     }
 
     pub(crate) fn reset_reader(&mut self, reader: &ComponentInstancePath) {
+        self.reset_contribution(&crate::read_dependency::ReadDependency::component(reader));
+    }
+
+    pub(crate) fn reset_contribution(&mut self, reader: &crate::read_dependency::ReadDependency) {
         for readers in self.readers.values_mut() {
             readers.remove(reader);
         }
@@ -1790,15 +1812,11 @@ impl NativeCollectionRegistry {
         active: &BTreeSet<ComponentInstancePath>,
     ) {
         for readers in self.readers.values_mut() {
-            readers.retain(|reader| {
-                !reader.is_within(root) || reader == root || active.contains(reader)
-            });
+            readers.retain(|reader| reader.retained_in_owner_scope(root, active));
         }
         self.readers.retain(|_, readers| !readers.is_empty());
         for readers in self.missing_readers.values_mut() {
-            readers.retain(|reader| {
-                !reader.is_within(root) || reader == root || active.contains(reader)
-            });
+            readers.retain(|reader| reader.retained_in_owner_scope(root, active));
         }
         self.missing_readers
             .retain(|_, readers| !readers.is_empty());
@@ -1806,14 +1824,27 @@ impl NativeCollectionRegistry {
 
     pub(crate) fn remove_reader_scope(&mut self, root: &ComponentInstancePath) {
         for readers in self.readers.values_mut() {
-            readers.retain(|reader| !reader.is_within(root));
+            readers.retain(|reader| !reader.owner.is_within(root));
         }
         self.readers.retain(|_, readers| !readers.is_empty());
         for readers in self.missing_readers.values_mut() {
-            readers.retain(|reader| !reader.is_within(root));
+            readers.retain(|reader| !reader.owner.is_within(root));
         }
         self.missing_readers
             .retain(|_, readers| !readers.is_empty());
+    }
+
+    pub(crate) fn retain_contributions(
+        &mut self,
+        scope: &ComponentInstancePath,
+        active: &BTreeSet<crate::read_dependency::ReadContribution>,
+    ) {
+        crate::read_dependency::retain_readers(&mut self.readers, |reader| {
+            reader.retained_in_contribution_scope(scope, active)
+        });
+        crate::read_dependency::retain_readers(&mut self.missing_readers, |reader| {
+            reader.retained_in_contribution_scope(scope, active)
+        });
     }
 }
 

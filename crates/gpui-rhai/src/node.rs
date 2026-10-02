@@ -1232,6 +1232,35 @@ impl UiNode {
         self.virtual_collection_spec(id).map(|spec| &spec.realized)
     }
 
+    pub(crate) fn virtual_read_contributions(
+        &self,
+    ) -> std::collections::BTreeSet<crate::read_dependency::ReadContribution> {
+        let mut active = std::collections::BTreeSet::new();
+        self.collect_virtual_read_contributions(&mut active);
+        active
+    }
+
+    fn collect_virtual_read_contributions(
+        &self,
+        active: &mut std::collections::BTreeSet<crate::read_dependency::ReadContribution>,
+    ) {
+        if let UiNodeKind::VirtualCollection { spec } = &self.kind {
+            for index in spec.realized.keys() {
+                if let Some(key) = spec.data.key(*index) {
+                    active.insert(crate::read_dependency::ReadContribution::VirtualItem {
+                        collection: spec.id.clone(),
+                        key: key.to_owned(),
+                    });
+                }
+            }
+        }
+        for (_, children) in self.retained_child_groups() {
+            for child in children {
+                child.collect_virtual_read_contributions(active);
+            }
+        }
+    }
+
     pub(crate) fn virtual_collection_spec(
         &self,
         id: &crate::VirtualCollectionId,
