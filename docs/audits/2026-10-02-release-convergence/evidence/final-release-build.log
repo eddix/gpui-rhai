@@ -1,0 +1,6 @@
+   Compiling gpui-rhai v0.1.8 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai)
+    Finished `release` profile [optimized] target(s) in 1m 07s
+   Compiling gpui-rhai-registry v0.1.8 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/registry)
+   Compiling gpui-rhai v0.1.8 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai)
+   Compiling gpui-rhai-cli v0.1.8 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai-cli)
+    Finished `release` profile [optimized] target(s) in 1m 05s

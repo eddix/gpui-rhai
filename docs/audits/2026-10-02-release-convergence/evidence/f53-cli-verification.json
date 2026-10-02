@@ -1,0 +1,30 @@
+{
+  "sdk_product_source_sha": "53a62e3f2be05e5ae7a961936648195bc4fe9477",
+  "test_documentation_head": "be7a8eb83f5c97b9932661d74e5c3b7c684be4ce",
+  "product_source_applicability": "git diff 53a62e3f..be7a8eb8 -- crates/gpui-rhai/src crates/gpui-rhai-cli/src registry is empty",
+  "rebuilt_release_cli_sha256": "c2faa911cdc7aed841810112c61e630f05853aabb3f841d3ba7b12ccebadb3a7",
+  "owned_fixture": "/tmp/gpui-rhai-018-cli-final.6HrsCz",
+  "commands": [
+    "target/release/gpui-rhai --root /tmp/gpui-rhai-018-cli-final.6HrsCz check",
+    "target/release/gpui-rhai --root /tmp/gpui-rhai-018-cli-final.6HrsCz embed",
+    "CARGO_TARGET_DIR=/Users/eddix/Codes/github.com/eddix/gpui-rhai/target cargo rustc --manifest-path /tmp/gpui-rhai-018-cli-final.6HrsCz/Cargo.toml --offline --locked -- -D warnings",
+    "target/debug/gpui-rhai-018-fixture"
+  ],
+  "nonempty_capability_case": {
+    "manifest": "app.fixture ^1.0",
+    "host_fixture": "owned Null-to-Null noop registration",
+    "cli_check": "static check passed; Host capability lifecycle validation was explicitly not executed by CLI",
+    "strict_consumer_compile": "passed without warnings",
+    "actual_prepare": "passed against local SDK source 53a62e3f",
+    "log": "f53-cli-nonempty-strict.log"
+  },
+  "empty_capability_case": {
+    "cli_check": "passed including hostless lifecycle validation of the Table/theme/key entry",
+    "strict_consumer_compile": "passed without warnings",
+    "actual_prepare": "passed against local SDK source 53a62e3f",
+    "log": "f53-cli-empty-strict.log"
+  },
+  "last_owned_fixture_state": "restored original nonempty manifest, matching one-capability Rust assertion, and regenerated its matching embedded module using the final release CLI",
+  "boundary": "exact local unpublished gpui-rhai 0.1.8 path, existing shared target; no crates.io installation or publication claim",
+  "workflow_log": "f53-cli-fixture.log"
+}

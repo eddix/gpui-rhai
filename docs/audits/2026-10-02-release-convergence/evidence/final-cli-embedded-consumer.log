@@ -1,0 +1,153 @@
+     Locking 732 packages to latest Rust 1.95.0 compatible versions
+      Adding wasm-bindgen v0.2.127 (available: v0.2.129)
+      Adding wasm-bindgen-macro v0.2.127 (available: v0.2.129)
+      Adding wasm-bindgen-macro-support v0.2.127 (available: v0.2.129)
+      Adding wasm-bindgen-shared v0.2.127 (available: v0.2.129)
+   Compiling serde v1.0.229
+   Compiling synstructure v0.13.2
+   Compiling zerocopy v0.8.59
+   Compiling futures-util v0.3.34
+   Compiling gpui-pre-collections v0.3.7
+   Compiling rustix v1.1.5
+   Compiling compression-codecs v0.4.44
+   Compiling derive_more-impl v2.1.1
+   Compiling bindgen v0.72.1
+   Compiling yoke-derive v0.8.2
+   Compiling smallvec v1.16.2
+   Compiling chrono v0.4.45
+   Compiling toml_datetime v0.6.11
+   Compiling rustybuzz v0.20.1
+   Compiling yoke v0.8.3
+   Compiling parking_lot_core v0.9.12
+   Compiling serde_spanned v0.6.9
+   Compiling toml_edit v0.22.27
+   Compiling zerovec v0.11.8
+   Compiling zerotrie v0.2.5
+   Compiling futures-executor v0.3.34
+   Compiling futures v0.3.34
+   Compiling parking_lot v0.12.5
+   Compiling kurbo v0.13.1
+   Compiling half v2.7.1
+   Compiling ppv-lite86 v0.2.21
+   Compiling tinystr v0.8.4
+   Compiling potential_utf v0.1.6
+   Compiling rand_chacha v0.9.0
+   Compiling svgtypes v0.16.1
+   Compiling icu_collections v2.3.0
+   Compiling toml v0.8.23
+   Compiling gpui-pre-zlog v0.3.7
+   Compiling tracing-subscriber v0.3.23
+   Compiling tempfile v3.27.0
+   Compiling icu_locale_core v2.3.0
+   Compiling accesskit v0.24.1
+   Compiling tracing v0.1.44
+   Compiling ref-cast v1.0.27
+   Compiling schemars_derive v1.2.2
+   Compiling pin-project v1.1.13
+   Compiling tiny-skia v0.11.4
+   Compiling icu_provider v2.3.1
+   Compiling rayon v1.12.0
+   Compiling objc2-foundation v0.3.2
+   Compiling objc2-core-video v0.3.2
+   Compiling thiserror-impl v2.0.21
+   Compiling icu_properties v2.3.0
+   Compiling icu_normalizer v2.3.0
+   Compiling thiserror-impl v1.0.69
+   Compiling backtrace v0.3.76
+   Compiling gpui-pre-ztracing v0.3.7
+   Compiling lyon_tessellation v1.0.22
+   Compiling thiserror v2.0.21
+   Compiling idna_adapter v1.2.2
+   Compiling thiserror v1.0.69
+   Compiling idna v1.1.0
+   Compiling schemars v1.2.2
+   Compiling usvg v0.46.0
+   Compiling url v2.5.8
+   Compiling tiff v0.11.3
+   Compiling exr v1.74.2
+   Compiling cbindgen v0.28.0
+   Compiling serde_urlencoded v0.7.1
+   Compiling io-surface v0.16.1
+   Compiling pathfinder_geometry v0.5.1
+   Compiling proc-macro-crate v3.5.0
+   Compiling gpui-pre v0.3.7
+   Compiling rand v0.9.5
+   Compiling derive_more v2.1.1
+   Compiling gpui-pre-perf v0.3.7
+   Compiling async-compression v0.4.49
+   Compiling strum_macros v0.28.0
+   Compiling core-text v21.0.0
+   Compiling lyon_algorithms v1.0.21
+   Compiling metal v0.33.0
+   Compiling core-graphics2 v0.5.2
+   Compiling png v0.18.1
+   Compiling concurrent-queue v2.5.0
+   Compiling crossbeam-queue v0.3.14
+   Compiling gpui-pre-derive-refineable v0.3.7
+   Compiling profiling-procmacros v1.0.18
+   Compiling zed-font-kit v0.14.1-zed
+   Compiling profiling v1.0.18
+   Compiling strum v0.28.0
+   Compiling gpui-pre-refineable v0.3.7
+   Compiling image v0.25.10
+   Compiling gpui-pre-apple v0.3.7
+   Compiling futures-concurrency v7.7.1
+   Compiling gpui-pre-scheduler v0.3.7
+   Compiling postage v0.5.0
+   Compiling gpui-pre-shared-string v0.3.7
+   Compiling async-channel v2.5.0
+   Compiling lyon v1.0.19
+   Compiling gpui-pre-http-client v0.3.7
+   Compiling gpui-pre-util-macros v0.3.7
+   Compiling gpui-pre-macros v0.3.7
+   Compiling core-video v0.5.2
+   Compiling resvg v0.46.0
+   Compiling objc2-foundation v0.2.2
+   Compiling gpui-pre-sum-tree v0.3.7
+   Compiling taffy v0.13.0
+   Compiling cocoa-foundation v0.2.1
+   Compiling getrandom v0.2.17
+   Compiling const-random-macro v0.1.16
+   Compiling cocoa v0.26.1
+   Compiling accesskit_consumer v0.38.0
+   Compiling objc2-core-location v0.3.2
+   Compiling objc2-core-media v0.3.2
+   Compiling objc2-app-kit v0.2.2
+   Compiling kurbo v0.11.3
+   Compiling dispatch2 v0.3.1
+   Compiling objc2-core-graphics v0.3.2
+   Compiling objc2-user-notifications v0.3.2
+   Compiling objc2-screen-capture-kit v0.3.2
+   Compiling svgtypes v0.15.3
+   Compiling accesskit_macos v0.26.3
+   Compiling const-random v0.1.18
+   Compiling objc2-app-kit v0.3.2
+   Compiling usvg v0.45.1
+   Compiling bincode v1.3.3
+   Compiling ahash v0.8.12
+   Compiling rhai_codegen v3.2.0
+   Compiling jiff-core v0.1.1
+   Compiling thin-vec v0.2.20
+   Compiling syntect v5.3.0
+   Compiling rhai v1.26.0
+   Compiling resvg v0.45.1
+   Compiling jiff v0.2.37
+   Compiling gpui-pre-macos v0.3.7
+   Compiling gpui-pre-platform v0.3.7
+   Compiling gpui-rhai v0.1.8 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai)
+   Compiling gpui-rhai-018-fixture v0.1.0 (/tmp/gpui-rhai-018-cli.ZAwJig)
+warning: variable does not need to be mutable
+ --> src/gpui_rhai_embedded.rs:4:9
+  |
+4 |     let mut manifest = gpui_rhai::AppManifest::new(gpui_rhai::ModuleId::parse("main").expect("generated entry id"));
+  |         ----^^^^^^^^
+  |         |
+  |         help: remove this `mut`
+  |
+  = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: `gpui-rhai-018-fixture` (bin "gpui-rhai-018-fixture") generated 1 warning (run `cargo fix --bin "gpui-rhai-018-fixture" -p gpui-rhai-018-fixture` to apply 1 suggestion)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 04s
+     Running `target/debug/gpui-rhai-018-fixture`
+fixture-owner-main
+embedded-candidate-prepare-ok

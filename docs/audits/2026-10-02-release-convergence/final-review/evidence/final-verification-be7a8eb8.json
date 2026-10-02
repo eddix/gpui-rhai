@@ -1,0 +1,31 @@
+{
+  "review_stage": "H final independent code/behavior review; overall release readiness pending",
+  "date": "2026-10-03",
+  "reviewed_head": "be7a8eb83f5c97b9932661d74e5c3b7c684be4ce",
+  "frozen_product_head": "53a62e3f2be05e5ae7a961936648195bc4fe9477",
+  "product_cli_registry_performance_diff_53_to_be7": "empty",
+  "code_contract_assessment": "APPROVE within approved scope",
+  "overall_candidate_ready": false,
+  "overall_h_passed": false,
+  "open_confirmed_code_findings": [],
+  "closed_findings": {"C-TABLE-01": "99f77b1a", "E-DOC-01": "b1aa8c7d", "H-THEME-01": "53a62e3f with independent be7 actual idle/lifecycle proof"},
+  "independent_actual_runs": [
+    {"binary": "theme_appearance_probe", "initial": "light", "source_sha": "be7a8eb83f5c97b9932661d74e5c3b7c684be4ce", "exit_code": 0, "structured_pass": true, "samples": 7, "idle_stages": 2, "idle_ms": 750, "cleanup_remaining": 0, "cleanup_errors": [], "per_app_override_cleared": true, "json": "appearance-light-be7a8eb8.json", "log": "appearance-light-be7a8eb8.log"},
+    {"binary": "theme_appearance_probe", "initial": "dark", "source_sha": "be7a8eb83f5c97b9932661d74e5c3b7c684be4ce", "exit_code": 0, "structured_pass": true, "samples": 7, "idle_stages": 2, "idle_ms": 750, "cleanup_remaining": 0, "cleanup_errors": [], "per_app_override_cleared": true, "json": "appearance-dark-be7a8eb8.json", "log": "appearance-dark-be7a8eb8.log"},
+    {"binary": "theme_appearance_lifecycle", "source_sha": "be7a8eb83f5c97b9932661d74e5c3b7c684be4ce", "exit_code": 0, "structured_pass": true, "reported_passed": true, "error": null, "checks": ["same-native-mode dedup", "two independent System runtimes plus fixed control one window", "suspended timing0 and latest mode on resume/init1", "retained disposed handle/sameID remount", "token-only native repaint/Host snapshot and timing0"], "cleanup_remaining": 0, "cleanup_errors": [], "per_app_override_cleared": true, "json": "appearance-lifecycle-be7a8eb8.json", "log": "appearance-lifecycle-be7a8eb8.log"}
+  ],
+  "actual_run_boundary": {"platform": "actual MacPlatform current_platform(false)", "os_preferences_changed": false, "rift_changed": false, "input_injected": false, "fixture_refresh": false, "maximum_own_windows_per_process": 2, "manual_os_global_appearance_acceptance": false, "manual_ime_voiceover_120hz_acceptance": false},
+  "hashes": {
+    "appearance_source": "ea3a220a39829385bbc466e5784a14cec4552284c06c4bf04a44eaf51aa4268f",
+    "appearance_binary": "54eabd3c890f71286d603d392a4506a3890eac29a98929eb837427d54d741ef4",
+    "lifecycle_source": "88241b41cee2b065ae3e4cf1ea1ec03df77a1d9f2f1a1d677c0b556409f3d169",
+    "lifecycle_binary": "532c9ce1f941e73579e20dc965449ffe735c2c1838dbf3bc643aeb8dbe9f3b4e"
+  },
+  "earlier_personal_runs_not_relabelled": {"native_and_gallery": {"head": "4785703f", "passed": 144}, "root_debug_policy_theme_virtual": {"head": "4785703f", "passed": 16}, "root_release_policy": {"head": "4785703f", "passed": 6, "duplicates_debug_semantics": true}, "cli_lib": {"head": "b1aa8c7d", "passed": 33, "cli_source_unchanged_to_be7": true}},
+  "provided_results_not_personal_reruns": ["native208 full/strict fmt/clippy at source53/equivalent be7", "root656/default473/MSRV/stable1.99/clippy/rustdoc/package95-146-12", "release smoke26 launches (20 examples including1 short performance, Studio1, Gallery1, Table states4; 25long+1short)/artifact checks", "quiet performance3 with old PID noise"],
+  "source_ci": {"head": "53a62e3f2be05e5ae7a961936648195bc4fe9477", "status": "completed", "conclusion": "success", "linux_x11": "pass", "linux_wayland": "pass", "json": "../../evidence/ci-53a62e3f.json", "log": "../../evidence/ci-53a62e3f.log"},
+  "final_rc_archive_test_head_ci": {"status": "pending", "note": "source53 success is not relabeled as final archive/test head CI; await its exact run without recursive evidence-commit SHA churn"},
+  "mandatory_pending": ["five final-binary Table visual baselines and unconfirmed temporary floating", "OS manual input/preedit/VoiceOver/focus/clipboard/window matrix as applicable", "physical120Hz", "completed final RC archive/test head CI and verification reconciliation; source53 CI/Linux already completed SUCCESS"],
+  "authority": {"merge": false, "publish": false, "tag": false, "github_closure": false},
+  "preservation": "original failed/falsegreen reports/probes/logs unchanged; reviewer writes only new final-review reports/evidence"
+}

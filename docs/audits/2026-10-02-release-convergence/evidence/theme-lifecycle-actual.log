@@ -1,0 +1,344 @@
+{
+  "source_sha": "53a62e3f2be05e5ae7a961936648195bc4fe9477",
+  "platform": "actual macOS MacPlatform",
+  "gpui_pre": "0.3.7",
+  "passed": true,
+  "samples": [
+    {
+      "native": "Light",
+      "views": [
+        {
+          "id": "A",
+          "state": "Active",
+          "mode": "Light",
+          "labels": [
+            "A:1:light:light",
+            "effect:1"
+          ],
+          "presented": true
+        },
+        {
+          "id": "B",
+          "state": "Active",
+          "mode": "Light",
+          "labels": [
+            "B:1:light:light",
+            "effect:1"
+          ],
+          "presented": true
+        },
+        {
+          "id": "F",
+          "state": "Active",
+          "mode": "Dark",
+          "labels": [
+            "F:1:dark:dark",
+            "effect:1"
+          ],
+          "presented": true
+        }
+      ]
+    },
+    {
+      "stage": "genuine-idle",
+      "milliseconds": 600,
+      "timings": [
+        0,
+        0,
+        0
+      ],
+      "records_unchanged": true
+    },
+    {
+      "stage": "genuine-idle",
+      "milliseconds": 600,
+      "timings": [
+        0,
+        0,
+        0
+      ],
+      "records_unchanged": true
+    },
+    {
+      "stage": "same-native-mode-deduplicated"
+    },
+    {
+      "native": "Dark",
+      "views": [
+        {
+          "id": "A",
+          "state": "Active",
+          "mode": "Dark",
+          "labels": [
+            "A:1:light:dark",
+            "effect:2"
+          ],
+          "presented": true
+        },
+        {
+          "id": "B",
+          "state": "Active",
+          "mode": "Dark",
+          "labels": [
+            "B:1:light:dark",
+            "effect:2"
+          ],
+          "presented": true
+        },
+        {
+          "id": "F",
+          "state": "Active",
+          "mode": "Dark",
+          "labels": [
+            "F:1:dark:dark",
+            "effect:1"
+          ],
+          "presented": true
+        }
+      ]
+    },
+    {
+      "stage": "independent-runtimes-one-window-and-fixed-control"
+    },
+    {
+      "native": "Light",
+      "views": [
+        {
+          "id": "B",
+          "state": "Active",
+          "mode": "Light",
+          "labels": [
+            "B:1:light:light",
+            "effect:3"
+          ],
+          "presented": true
+        },
+        {
+          "id": "F",
+          "state": "Active",
+          "mode": "Dark",
+          "labels": [
+            "F:1:dark:dark",
+            "effect:1"
+          ],
+          "presented": true
+        }
+      ]
+    },
+    {
+      "stage": "suspended-appearance-kept-pending",
+      "suspended_timing_count": 0,
+      "records_unchanged": true
+    },
+    {
+      "native": "Light",
+      "views": [
+        {
+          "id": "A",
+          "state": "Active",
+          "mode": "Light",
+          "labels": [
+            "A:1:light:light",
+            "effect:3"
+          ],
+          "presented": true
+        },
+        {
+          "id": "B",
+          "state": "Active",
+          "mode": "Light",
+          "labels": [
+            "B:1:light:light",
+            "effect:3"
+          ],
+          "presented": true
+        },
+        {
+          "id": "F",
+          "state": "Active",
+          "mode": "Dark",
+          "labels": [
+            "F:1:dark:dark",
+            "effect:1"
+          ],
+          "presented": true
+        }
+      ]
+    },
+    {
+      "native": "Light",
+      "views": [
+        {
+          "id": "A",
+          "state": "Active",
+          "mode": "Light",
+          "labels": [
+            "A2:1:light:light",
+            "effect:1"
+          ],
+          "presented": true
+        },
+        {
+          "id": "B",
+          "state": "Active",
+          "mode": "Light",
+          "labels": [
+            "B:1:light:light",
+            "effect:3"
+          ],
+          "presented": true
+        },
+        {
+          "id": "F",
+          "state": "Active",
+          "mode": "Dark",
+          "labels": [
+            "F:1:dark:dark",
+            "effect:1"
+          ],
+          "presented": true
+        }
+      ]
+    },
+    {
+      "stage": "genuine-idle",
+      "milliseconds": 600,
+      "timings": [
+        0,
+        0,
+        0
+      ],
+      "records_unchanged": true
+    },
+    {
+      "native": "Dark",
+      "views": [
+        {
+          "id": "A",
+          "state": "Active",
+          "mode": "Dark",
+          "labels": [
+            "A2:1:light:dark",
+            "effect:2"
+          ],
+          "presented": true
+        },
+        {
+          "id": "B",
+          "state": "Active",
+          "mode": "Dark",
+          "labels": [
+            "B:1:light:dark",
+            "effect:4"
+          ],
+          "presented": true
+        },
+        {
+          "id": "F",
+          "state": "Active",
+          "mode": "Dark",
+          "labels": [
+            "F:1:dark:dark",
+            "effect:1"
+          ],
+          "presented": true
+        }
+      ]
+    },
+    {
+      "stage": "retained-disposed-same-id-remount",
+      "old_state": "Disposed",
+      "old_records_unchanged": true
+    },
+    {
+      "native": "Dark",
+      "views": [
+        {
+          "id": "T",
+          "state": "Active",
+          "mode": "Dark",
+          "labels": [
+            "token-only"
+          ],
+          "presented": true
+        },
+        {
+          "id": "F",
+          "state": "Active",
+          "mode": "Dark",
+          "labels": [
+            "F:1:dark:dark",
+            "effect:1"
+          ],
+          "presented": true
+        }
+      ]
+    },
+    {
+      "stage": "genuine-idle",
+      "milliseconds": 600,
+      "timings": [
+        0,
+        0
+      ],
+      "records_unchanged": true
+    },
+    {
+      "native": "Light",
+      "views": [
+        {
+          "id": "T",
+          "state": "Active",
+          "mode": "Light",
+          "labels": [
+            "token-only"
+          ],
+          "presented": true
+        },
+        {
+          "id": "F",
+          "state": "Active",
+          "mode": "Dark",
+          "labels": [
+            "F:1:dark:dark",
+            "effect:1"
+          ],
+          "presented": true
+        }
+      ]
+    },
+    {
+      "stage": "token-only-native-repaint-and-host-snapshot",
+      "rhai_timing_count": 0,
+      "geometry_and_theme_presented": true
+    }
+  ],
+  "error": null,
+  "records": [
+    "A:init:1:light",
+    "A:effect:1:light",
+    "B:init:1:light",
+    "B:effect:1:light",
+    "F:init:1:dark",
+    "F:effect:1:dark",
+    "A:effect:2:dark",
+    "B:effect:2:dark",
+    "B:effect:3:light",
+    "A:effect:3:light",
+    "A2:init:1:light",
+    "A2:effect:1:light",
+    "B:effect:4:dark",
+    "A2:effect:2:dark",
+    "T:init"
+  ],
+  "cleanup": {
+    "close_requests": 1,
+    "remaining_owned_windows": 0,
+    "errors": [],
+    "per_app_override_clear_called": true
+  },
+  "os_preferences_changed": false,
+  "maximum_own_windows": 1,
+  "maximum_live_views": 3,
+  "binary_path": "/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/theme_appearance_lifecycle"
+}
