@@ -104,8 +104,13 @@ shared icons. GPUI remains the rendering backend; invalid markup is a script
 evaluation error and preserves the last-good tree.
 
 In file-backed development, supported asset changes refresh the provider
-transactionally. Existing logical identity remains stable, SVG variants and
-pending work are invalidated, and affected windows repaint.
+transactionally. Existing logical identity remains stable and SVG variants are
+invalidated; development scheduling arranges repaint. This does not establish a
+strong per-asset revision protocol: a pending-only `start_image_decode` can
+still publish its earlier bytes. See [mutable-image Host bridging](asset-refresh-host.md)
+for a bounded foreground example, explicit shared-window redraw, immutable
+versioned IDs and cache-lifetime limits. Repeating `load_image` or decoding an
+already-cached ID is not a reload operation.
 
 ## Declared fonts
 

@@ -773,7 +773,8 @@ contract. Rust Hosts can inspect the bounded shared variant cache through
 generic fallbacks; Host-provided in-memory `FontSource` values currently apply
 to GPUI text, not to the separate SVG font database.
 
-See [Style](docs/style.md), [Assets](docs/assets.md), [Canvas](docs/canvas.md),
+See [Style](docs/style.md), [Assets](docs/assets.md),
+[mutable-image Host bridging](docs/asset-refresh-host.md), [Canvas](docs/canvas.md),
 and [Locale and RTL](docs/locale-and-rtl.md).
 
 ### 8.1 CodeViewer, DiffViewer, and NativeTextDocument
