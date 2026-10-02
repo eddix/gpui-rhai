@@ -15,6 +15,10 @@ programs remain unchanged evidence; they are not substituted for these tests.
 | REF-01 binding continuity | `element_ref_subscriptions.rs`: unknown→bound, same-node, rebind, removed, formal virtual row controls |
 | REF-02 retarget/contribution/teardown | `element_ref.rs` units: contribution retarget, last-item prune, direct+ref coexistence, provider and owner final-manifest removal |
 | REF-03 last-good rollback/resume | Native `failed_effect_commit_restores_ref_binding_and_native_subscription`, `suspend_resume_preserves_logical_ref_readers`; snapshot and unchanged-binding unit controls |
+| POLICY-01 independent Host policy | Root/native `host_execution_policy.rs`: real over-default finite work, cumulative siblings, fresh delayed/retained rounds, parser defaults and extension/secondary precedence; engine candidate and diagnostic quota units |
+| KEY-01 one grammar and executable phase | `node_key_contract.rs` and node units: canonical names, Capture/Target/Bubble, focus/stop/disabled/fallback, input/IME and Host Escape owner |
+| THEME-01 resolved environment | Root/native `resolved_theme.rs`: lightweight identity, init-before-native-environment, effects/scope/borrow/override and secondary failure; core appearance ingestion unit |
+| ASSET-01 explicit Host publication | `asset_refresh_host.rs`: typed worker/foreground bridge, stable ID+decoded pixels, explicit shared-registry dual-window repaint |
 
 The fixed matrix covers identity, lifecycle, sequential versus batched targets,
 retained/added/pruned contributions, actual geometry and failure rollback. The

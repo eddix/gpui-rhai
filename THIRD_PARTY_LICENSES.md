@@ -9,7 +9,7 @@ icon or raster image assets are currently included.
 
 ## Direct Rust dependencies
 
-- GPUI 0.2.2 — Apache-2.0.
+- gpui-pre / gpui-pre-platform 0.3.7 — Apache-2.0.
   `crates/gpui-rhai/src/text_input.rs` adapts GPUI's Apache-2.0
   `examples/input.rs`; the source notice and Zed Industries copyright are
   retained in that module and the distributed Apache license.
@@ -29,8 +29,10 @@ icon or raster image assets are currently included.
 - image 0.25.10, regex 1.13.1, unicode-segmentation 1.13.3, serde, serde_json,
   semver, thiserror, toml, toml_edit, clap, and tempfile — MIT OR Apache-2.0.
 
-The 2026-09-08 all-features Cargo metadata audit covered 651 resolved packages
-and found no missing license metadata. MPL-2.0 dependencies are used under their
+The 2026-10-02 locked all-features Cargo metadata inventory covers 761 resolved
+packages and reports no missing license metadata. Its source/manifest/license
+matrix is retained in the convergence evidence; this records upstream metadata,
+not a substitute for checking the actual distributed license texts. MPL-2.0 dependencies are used under their
 file-level terms; dependencies offering LGPL as one option also offer MIT or
 Apache-2.0. Cargo source distributions contain the authoritative license text
 for every resolved package.
