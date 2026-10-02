@@ -503,6 +503,10 @@ impl UiRuntimeState {
         self.effects.remove_scope(root);
         self.signals.remove_scope(root);
         self.element_refs.remove_scope(root);
+        self.geometry.remove_scope(root);
+        for presentation in self.presentations.values() {
+            presentation.geometry.remove_scope(root);
+        }
         self.windows.remove(window);
         self.responsive.remove_window(window);
         Ok(())
@@ -593,6 +597,7 @@ impl UiRuntimeState {
     }
 
     pub(crate) fn flush_geometry_dependencies(&mut self) {
+        self.dirty.extend(self.element_refs.take_dirty());
         self.dirty.extend(self.geometry.take_dirty());
         for presentation in self.presentations.values() {
             self.dirty.extend(presentation.geometry.take_dirty());
@@ -758,6 +763,11 @@ impl UiRuntimeState {
             .retain(|(path, _), _| !path.is_within(root) || path == root || active.contains(path));
         self.native_collections.retain_reader_scope(root, active);
         self.native_documents.retain_reader_scope(root, active);
+        self.element_refs.retain_scope(root, active);
+        self.geometry.retain_reader_scope(root, active);
+        for presentation in self.presentations.values() {
+            presentation.geometry.retain_reader_scope(root, active);
+        }
         self.environment_dependencies.retain_scope(root, active);
         self.dirty
             .retain(|path| !path.is_within(root) || path == root || active.contains(path));
@@ -1623,7 +1633,12 @@ impl UiContext {
         let geometry_registry =
             runtime.geometry_for(self.view.as_deref().or(self.window.as_deref()));
         drop(runtime);
-        let Some(geometry) = geometry_registry.read_tracked(node, &self.read_dependency) else {
+        let geometry = if self.phase == ExecutionPhase::Render {
+            geometry_registry.read_ref_tracked(reference.id(), node, &self.read_dependency)
+        } else {
+            geometry_registry.get(node)
+        };
+        let Some(geometry) = geometry else {
             return Ok(UiValue::Null);
         };
         Ok(UiValue::Map(BTreeMap::from([
