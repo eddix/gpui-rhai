@@ -1,0 +1,18 @@
+{
+  "head": "83b19b1d2bc742523f4b44caa8dbe42f6b83637c",
+  "independent_product_native_passed": 155,
+  "rust_min_stack_override": false,
+  "gallery_passed": 15,
+  "gallery_included_in_native": true,
+  "table_cross_checks": 12,
+  "table_product_seven_included_in_native": true,
+  "cow_independent_passed": 3,
+  "framework_findings": {
+    "P1": 3,
+    "P2": 2
+  },
+  "dogfood_separate": true,
+  "formal_visual_baselines_replaced": false,
+  "candidate_screenshots": 5,
+  "canonical_size_candidates": 3
+}

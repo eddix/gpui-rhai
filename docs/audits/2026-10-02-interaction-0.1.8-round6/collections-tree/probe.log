@@ -1,0 +1,15 @@
+   Compiling audit-018-collections-tree-round6 v0.0.0 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/docs/audits/2026-10-02-interaction-0.1.8-round6/collections-tree/probe)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 4.27s
+     Running `target/debug/audit-018-collections-tree-round6`
+nested batch=false: realization=Ok(true), new inner state=Some(Integer(7)), self callback=Ok(7)
+nested batch=true: realization=Ok(true), new inner state=Some(Integer(7)), self callback=Err(Runtime(StaleComponentCallback { name: "read_count", component: ComponentInstancePath([ComponentInstanceSegment { component: "App", key: "nested-batch" }, ComponentInstanceSegment { component: "VirtualCollection", key: "outer" }, ComponentInstanceSegment { component: "VirtualCollection", key: "inner-row-0" }, ComponentInstanceSegment { component: "Counter", key: "row-10" }]) }))
+siblings batch=false: realization=Ok(true), removed row0 state=None, remounted row0 state=Some(Integer(7))
+siblings batch=true: realization=Ok(true), removed row0 state=Some(Integer(9)), remounted row0 state=Some(Integer(9))
+row formal=false scroll index=2, realized=1, registered negative names=3, display=Text { text: "native collection `source-2` is not registered" }
+row formal=false scroll index=63, realized=1, registered negative names=64, display=Text { text: "native collection `source-63` is not registered" }
+row formal=false scroll index=65, realized=1, registered negative names=64, display=Text { text: "native collection missing-dependency names per component exceeds limit 64" }
+row formal=false register currently visible source-65: render_dirty=Ok(false), display=Text { text: "native collection missing-dependency names per component exceeds limit 64" }
+row formal=true scroll index=2, realized=1, registered negative names=1, display=Text { text: "native collection `source-2` is not registered" }
+row formal=true scroll index=63, realized=1, registered negative names=1, display=Text { text: "native collection `source-63` is not registered" }
+row formal=true scroll index=65, realized=1, registered negative names=1, display=Text { text: "native collection `source-65` is not registered" }
+row formal=true register currently visible source-65: render_dirty=Ok(true), display=Text { text: "ready" }

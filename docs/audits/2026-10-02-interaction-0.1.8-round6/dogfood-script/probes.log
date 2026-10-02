@@ -1,0 +1,43 @@
+     Locking 52 packages to latest Rust 1.95.0 compatible versions
+      Adding wasm-bindgen v0.2.127 (available: v0.2.129)
+      Adding wasm-bindgen-macro v0.2.127 (available: v0.2.129)
+      Adding wasm-bindgen-macro-support v0.2.127 (available: v0.2.129)
+      Adding wasm-bindgen-shared v0.2.127 (available: v0.2.129)
+   Compiling dogfood-script-audit v0.0.0 (/var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T/gpui-r6-dogfood-script-r5udmzrk)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.29s
+     Running unittests src/lib.rs (tests/native-keyboard/target/debug/deps/dogfood_script_audit-0678a8fcee4ed8de)
+
+running 1 test
+PARSE path=ui/core.rhai function_depth=32 ok=true error=None
+PARSE path=ui/core.rhai function_depth=48 ok=true error=None
+PARSE path=ui/core.rhai function_depth=64 ok=true error=None
+PARSE path=ui/core.rhai function_depth=128 ok=true error=None
+PARSE path=ui/main.rhai function_depth=32 ok=false error=Some("Expression exceeds maximum complexity (line 1448, position 31)")
+PARSE path=ui/main.rhai function_depth=48 ok=false error=Some("Expression exceeds maximum complexity (line 1464, position 31)")
+PARSE path=ui/main.rhai function_depth=64 ok=true error=None
+PARSE path=ui/main.rhai function_depth=128 ok=true error=None
+PARSE split_key_chain path=ui/main.rhai depth=32 ok=false error=Some("Expression exceeds maximum complexity (line 2667, position 47)")
+PARSE path=skins/minimal/core.rhai function_depth=32 ok=true error=None
+PARSE path=skins/minimal/core.rhai function_depth=48 ok=true error=None
+PARSE path=skins/minimal/core.rhai function_depth=64 ok=true error=None
+PARSE path=skins/minimal/core.rhai function_depth=128 ok=true error=None
+PARSE path=skins/minimal/main.rhai function_depth=32 ok=false error=Some("Expression exceeds maximum complexity (line 1440, position 31)")
+PARSE path=skins/minimal/main.rhai function_depth=48 ok=false error=Some("Expression exceeds maximum complexity (line 1456, position 31)")
+PARSE path=skins/minimal/main.rhai function_depth=64 ok=true error=None
+PARSE path=skins/minimal/main.rhai function_depth=128 ok=true error=None
+PARSE split_key_chain path=skins/minimal/main.rhai depth=32 ok=false error=Some("Expression exceeds maximum complexity (line 2645, position 47)")
+CACHE push_before_index_assignment_retains_empty_map=true
+CACHE 1200_depth3_tiles_plus_one_cache_and_paint=Err("Size of array/BLOB too large (line 4, position 57)")
+RHAI computed_range_index=Err("Data type incorrect: core::ops::range::Range<i64> (expecting i64) (line 1, position 46)")
+RHAI underscore_identifier=Err(ErrorParsing(BadInput(MalformedIdentifier("_i")), 1:5))
+SQUARIFY fixture_7_items_runs=true
+test actual_skin_parser_limits_and_small_value_fixtures ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.70s
+
+   Doc-tests dogfood_script_audit
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

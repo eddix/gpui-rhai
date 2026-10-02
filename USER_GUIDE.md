@@ -984,6 +984,11 @@ Guidelines:
   Transparent wrappers may return a formal child directly without adding a
   layout container. Nested collections retain their current realized windows
   across parent reuse; deleting a parent also removes its nested targets.
+- Raw row reads wake the executable owner, but their subscriptions belong to
+  each live data-key contribution. Scrolling removes old contributions without
+  clearing sibling collections or the root's own reads. Sequential and batched
+  virtual targets have the same final state, callback and resource lifetimes;
+  failed batches keep the prior committed target and dependencies.
 - Keep large stable row sets in `NativeCollection`; let Rhai declare the Table
   and controlled state while Rust caches sort/group/collapse order and projects
   only visible rows.

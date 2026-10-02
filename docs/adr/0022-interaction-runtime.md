@@ -200,6 +200,11 @@ incarnation. Effect deliveries additionally carry an activation lease checked
 immediately before invocation, so a message drained before cleanup cannot run
 after that activation is replaced.
 Initial and delayed virtual realization share the same structural owner rules.
+One foreground batch publishes one final invocation manifest. State scope
+transactions contribute only their own candidate delta; disjoint scopes cannot
+overwrite each other's latest writes/deletions, and overlapping ancestors cannot
+retire descendants created by a later target. Incarnations, events and resources
+are pruned once against the final manifest, not each intermediate target.
 Their commit manifest covers all target rows, retaining unchanged component
 resources and releasing removed rows even when there is no new row to execute.
 The manifest follows committed invocation ownership: a transparent component
@@ -213,6 +218,12 @@ Raw row reads belong to the caller's executable render boundary; formal row
 components own their own resources and dependencies. Cancelled async scopes are
 discarded before callback-owner checks, while explicit stale callbacks remain
 errors. Debounce and explicit wheel completion both release Escape ownership.
+Tracked reads carry an executable owner and a separate contribution identity.
+A raw virtual item's contribution is keyed by collection and stable data key.
+Retained items preserve it; removed items release it, while other items and the
+owner's direct reads remain subscribed. Store, native collection/document,
+environment and geometry/ref dependencies use this same lifetime rule. Failed
+candidates roll back the complete dependency snapshot with state.
 Continuation scroll hitboxes are painted beneath their content, so internal
 occluding children stop continuation just like foreground overlays. PanZoom
 anchors use the measured Canvas drawable rectangle, not its decorated outer
