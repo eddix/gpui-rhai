@@ -479,6 +479,24 @@ fn table_header(ctx, props, columns, resize_signals, current_sort) {
         .accessibility_row_index(1)
 }
 
+fn table_shell(ctx,props,columns,header,body,row_count) {
+    let root_style=if prop_or(props,"fill_height",false) {
+        style().flex_col().flex_grow().min_width(px(0)).min_height(px(0)).overflow_x_scroll()
+    }else{style().flex_col().min_width(px(0)).overflow_x_scroll()};
+    box([header,body]).with_key(props.key)
+        .with_style(ctx.component_style("root",root_style.border(px(1)).border_color(theme_color("border"))))
+        .accessibility_role("table").accessibility_label(props.label)
+        .accessibility_row_count(row_count).accessibility_column_count(columns.len)
+}
+
+fn table_state_body(ctx,props,part,content) {
+    let base=if prop_or(props,"fill_height",false) {
+        style().flex_grow().min_width(px(0)).min_height(px(0))
+    }else{style().min_width(px(0)).height(px(props.height))};
+    content.with_style(ctx.component_style(part,base.padding(theme_spacing("md"))
+        .typography("body_small").text_color(theme_color("text_muted"))))
+}
+
 fn render_Table(ctx, props) {
     let fill_height = prop_or(props, "fill_height", false);
     if fill_height && "height" in props {
@@ -496,22 +514,12 @@ fn render_Table(ctx, props) {
         let loading = if "loading_content" in props && props.loading_content != () {
             props.loading_content
         } else { text("Loading…") };
-        return box([header, loading.with_style(ctx.component_style("loading", style()
-            .padding(theme_spacing("md")).typography("body_small").text_color(theme_color("text_muted"))))])
-            .with_key(props.key).with_style(ctx.component_style("root", style().flex_col()
-                .border(px(1)).border_color(theme_color("border"))))
-            .accessibility_role("table").accessibility_label(props.label)
-            .accessibility_row_count(1).accessibility_column_count(columns.len);
+        return table_shell(ctx,props,columns,header,table_state_body(ctx,props,"loading",loading),1);
     }
     if props.rows.len == 0 {
         let empty = if "empty" in props && props.empty != () { props.empty }
             else { text(prop_or(props, "empty_text", "No results")) };
-        return box([header, empty.with_style(ctx.component_style("empty", style()
-            .padding(theme_spacing("md")).typography("body_small").text_color(theme_color("text_muted"))))])
-            .with_key(props.key).with_style(ctx.component_style("root", style().flex_col()
-                .border(px(1)).border_color(theme_color("border"))))
-            .accessibility_role("table").accessibility_label(props.label)
-            .accessibility_row_count(1).accessibility_column_count(columns.len);
+        return table_shell(ctx,props,columns,header,table_state_body(ctx,props,"empty",empty),1);
     }
 
     let selected = prop_or(props, "selected_keys", []);
@@ -606,12 +614,7 @@ fn render_Table(ctx, props) {
     if data.len == 0 {
         let empty = if "empty" in props && props.empty != () { props.empty }
             else { text(prop_or(props, "empty_text", "No results")) };
-        return box([header, empty.with_style(ctx.component_style("empty", style()
-            .padding(theme_spacing("md")).typography("body_small").text_color(theme_color("text_muted"))))])
-            .with_key(props.key).with_style(ctx.component_style("root", style().flex_col()
-                .border(px(1)).border_color(theme_color("border"))))
-            .accessibility_role("table").accessibility_label(props.label)
-            .accessibility_row_count(1).accessibility_column_count(columns.len);
+        return table_shell(ctx,props,columns,header,table_state_body(ctx,props,"empty",empty),1);
     }
     let collection = #{
         key: `${props.key}-body`, label: props.label, data: data,
@@ -628,12 +631,5 @@ fn render_Table(ctx, props) {
     let body = virtual_collection(collection,
         Fn("render_table_row").curry(model.resize_signals).curry(data.len))
         .with_style(ctx.component_style("body", body_style));
-    let root_style = if fill_height {
-        style().flex_col().flex_grow().min_width(px(0)).min_height(px(0))
-    } else { style().flex_col().min_width(px(0)) };
-    box([header, body]).with_key(props.key)
-        .with_style(ctx.component_style("root", root_style.overflow_x_scroll()
-            .border(px(1)).border_color(theme_color("border"))))
-        .accessibility_role("table").accessibility_label(props.label)
-        .accessibility_row_count(data.len + 1).accessibility_column_count(columns.len)
+    table_shell(ctx,props,columns,header,body,data.len+1)
 }
