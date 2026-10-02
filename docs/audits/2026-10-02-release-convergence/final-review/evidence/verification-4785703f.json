@@ -1,0 +1,34 @@
+{
+  "stage": "H preliminary code and behavior review",
+  "date": "2026-10-03",
+  "execution_head": "4785703fb43c7c75516ff2ab960de7341a58d983",
+  "product_source_head": "33d601198690bbef912e8f7737121e981f2830b1",
+  "product_cli_registry_byte_identical_at_execution": true,
+  "overall_candidate_ready": false,
+  "new_confirmed_product_p0_p1": [],
+  "documentation_findings": [{"id": "E-DOC-01", "priority": "P2", "file": "docs/release-checklist.md", "status_at_review": "missing maintained final contract index and R5-R7/D matrices", "subsequent_implementer_status": "WIP correction observed; final frozen document confirmation pending"}],
+  "RUST_MIN_STACK": "unset in every command",
+  "results": [
+    {
+      "command": "env -u RUST_MIN_STACK cargo test --manifest-path tests/native-keyboard/Cargo.toml --locked --test host_execution_policy --test node_key_contract --test resolved_theme --test asset_refresh_host --test window_authority --test window_command_deliveries --test window_command_origin --test window_ownership --test element_ref_subscriptions --test table_frame_demand --test table_extent --test table_boundaries --test keyboard -- --nocapture --test-threads=1",
+      "status": "pass", "passed": 129, "failed": 0, "log": "native-d-and-core-4785703f.log"
+    },
+    {
+      "command": "env -u RUST_MIN_STACK cargo test --manifest-path tests/native-keyboard/Cargo.toml --locked --test gallery -- --test-threads=1",
+      "status": "pass", "passed": 15, "failed": 0, "log": "gallery-4785703f.log"
+    },
+    {
+      "command": "env -u RUST_MIN_STACK cargo test -p gpui-rhai --all-features --test host_execution_policy --test resolved_theme --test virtual_transactions --test virtual_read_contributions --locked -- --nocapture",
+      "status": "pass", "passed": 16, "failed": 0, "log": "root-d-and-virtual-debug-4785703f.log"
+    },
+    {
+      "command": "env -u RUST_MIN_STACK cargo test -p gpui-rhai --release --test host_execution_policy --locked -- --nocapture",
+      "status": "pass", "passed": 6, "failed": 0, "log": "policy-release-4785703f.log", "counting_note": "same policy tests as debug; not a distinct semantic contract total"
+    }
+  ],
+  "native_independent_total": 144,
+  "policy_operation_control": {"default_reject": 1000001, "raised_pass": 1350012, "lowered_reject": 500001, "result": 450000},
+  "pending_at_this_stage": ["final CLI generated-source warning fix and two-capability-branch consumer verification", "final frozen probe/source head", "actual Mac appearance run/restoration evidence", "five final-binary Table screenshots", "OS manual input/preedit/VoiceOver/focus/clipboard/window matrix", "physical120Hz", "complete final verification/CI/Linux and package/no-verify boundary reconciliation"],
+  "authority_boundary": {"merge": false, "publish": false, "tag": false, "github_closure": false},
+  "reviewer_mutations": "only new final-review reports/evidence; no product, formal test, old audit, dependency, commit or GitHub mutation"
+}

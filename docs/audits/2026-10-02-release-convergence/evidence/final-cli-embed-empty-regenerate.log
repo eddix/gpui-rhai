@@ -1,0 +1,6 @@
+   Compiling gpui-rhai v0.1.8 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai)
+   Compiling gpui-rhai-cli v0.1.8 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai-cli)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 31.96s
+     Running `target/debug/gpui-rhai --root /tmp/gpui-rhai-018-cli.ZAwJig embed`
+1 file change(s):
+- update src/gpui_rhai_embedded.rs
