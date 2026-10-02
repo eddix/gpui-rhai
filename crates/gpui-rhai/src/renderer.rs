@@ -374,6 +374,9 @@ fn apply_pointer_response(
 }
 
 fn key_handler_bindings(node: &UiNode) -> BTreeMap<String, (Vec<crate::UiEventBinding>, UiValue)> {
+    if is_disabled(node) {
+        return BTreeMap::new();
+    }
     node.handlers()
         .iter()
         .filter_map(|(event, bindings)| {
@@ -2168,22 +2171,56 @@ impl GpuiNodeRenderer {
             element
         };
         let element = apply_hover_handler(element, hover, hover_dispatcher, hover_target);
+        let element = if key_handlers.values().any(|(bindings, _)| {
+            bindings
+                .iter()
+                .any(|binding| binding.phase() == crate::EventPhase::Capture)
+        }) {
+            let handlers = key_handlers.clone();
+            let dispatcher = keyboard_dispatcher.clone();
+            let target = keyboard_target.clone();
+            element.capture_key_down(move |event, window, cx| {
+                let key = logical_keyboard_key(event.keystroke.key.as_str(), text_direction);
+                if let Some((bindings, payload)) = handlers.get(key) {
+                    let response = dispatch_ui_handler_phases(
+                        bindings,
+                        "key",
+                        &[crate::EventPhase::Capture],
+                        payload,
+                        EventRoute::new(target.snapshot(), dispatcher.as_ref()),
+                        window,
+                        cx,
+                    );
+                    apply_event_response(response, window, cx);
+                }
+            })
+        } else {
+            element
+        };
         let element = element.on_key_down(move |event, window, cx| {
             let semantic_key = logical_keyboard_key(event.keystroke.key.as_str(), text_direction);
-            let semantic = key_handlers.get(semantic_key).or_else(|| {
+            let explicit = key_handlers.get(semantic_key);
+            let semantic = explicit.or_else(|| {
                 matches!(event.keystroke.key.as_str(), "enter" | "space")
                     .then_some(())
                     .and(keyboard_click.as_ref())
             });
             if let Some((bindings, payload)) = semantic {
-                let response = dispatch_ui_handlers(
+                let phases = if explicit.is_some() {
+                    &[crate::EventPhase::Target, crate::EventPhase::Bubble][..]
+                } else {
+                    // Preserve the existing click fallback, rather than also
+                    // firing a click or changing mouse-click phase policy.
+                    &[crate::EventPhase::Target][..]
+                };
+                let response = dispatch_ui_handler_phases(
                     bindings,
                     "key",
+                    phases,
                     payload,
-                    keyboard_target.snapshot(),
+                    EventRoute::new(keyboard_target.snapshot(), keyboard_dispatcher.as_ref()),
                     window,
                     cx,
-                    keyboard_dispatcher.as_ref(),
                 );
                 apply_event_response(response, window, cx);
             }
