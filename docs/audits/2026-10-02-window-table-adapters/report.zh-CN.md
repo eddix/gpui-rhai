@@ -1,6 +1,6 @@
 # 嵌入窗口、Table 边界与节点样式存储整改
 
-日期：2026-10-02。基线为已通过远端 CI 并合入的 PR #102（main `c088e96f`）。产品提交：`f7296538`；保留了 PR #101 作者的原始修复（本分支 `32b7efae`）。本记录是实施回归，不替代独立验收，不发布 0.1.8、不创建 tag。
+日期：2026-10-02。基线为已通过远端 CI 并合入的 PR #102（main `c088e96f`）。产品提交：`f7296538`、`bf77b9c3`；保留了 PR #101 作者的原始修复（本分支 `32b7efae`）。本记录是实施回归，不替代独立验收，不发布 0.1.8、不创建 tag。
 
 ## 1. #100：完整原生窗口接入
 
@@ -14,10 +14,11 @@
 - App 索引只持有弱 lease；失败挂载、dispose 和 native close 释放权威。dispose 不关闭 Rust 的窗口，替换 owner 可以重挂。
 - 所有 View 都观察 native close，即使应用保留 ScriptViewHandle，也进入 Disposed 并清理资源。回调只保留 WeakEntity，释放更新经 defer 离开当前栈。
 - focus 与 close 共用延迟 native operation 路径，修掉同窗 focus 的 GPUI 重入。成功请求表示已排队，不声称 native 操作已同步结束；异步 native 错误仍进入 last_error。
+- 队列执行前再次检查 source 未被 dispose，且 target 仍指向原 native handle。force-close 标记在执行时才建立；已撤权的旧操作不会关闭新 owner，也不会绕过新 owner 的确认策略。
 
 接口文档明确：选择 mount_window 会替换原先的 should-close callback。Rust 若保留该策略，应使用普通 mount + 应用自己的 Rust capability/callback，而不是让 SDK 隐式接管。
 
-五项正式原生测试覆盖真实失焦/激活、open/close child、关闭确认、默认拒绝、同 Host/跨 Host owner 冲突、dispose/replacement、init 失败回滚、错误 native window 绑定、Rust 直接关窗及外部 retained handle 清理。
+六项正式原生测试覆盖真实失焦/激活、open/close child、关闭确认、默认拒绝、同 Host/跨 Host owner 冲突、dispose/replacement、排队旧 close 后替换 owner、init 失败回滚、错误 native window 绑定、Rust 直接关窗及外部 retained handle 清理。
 
 ## 2. #101：逻辑列边界
 
@@ -33,12 +34,12 @@
 
 UiNode 的 Style 改为私有 immutable Rc snapshot：默认空样式每线程共享，样式合成和 ghost 修改走 copy-on-write。公共 `style() -> &Style` 和 Style DSL 保持值语义；节点 clone 不再携带大型 Style 结构穿过每层调用帧。
 
-实测 **UiNode=592 bytes，Style=5680 bytes**。默认线程栈下原失败 Gallery 用例以及全部 154 项产品 native 测试通过。正式回归验证 clone 的样式共享、修改隔离、owned snapshot 及 ghost 不污染原节点；ghost 同时清掉物理和逻辑 inset，避免几何域混用。
+实测 **UiNode=592 bytes，Style=5680 bytes**。默认线程栈下原失败 Gallery 用例以及全部 155 项产品 native 测试通过。正式回归验证 clone 的样式共享、修改隔离、owned snapshot 及 ghost 不污染原节点；ghost 同时清掉物理和逻辑 inset，避免几何域混用。
 
 ## 验证
 
 - workspace all-target/all-feature **616 项**，core all-feature **480 项**；default core **450 项**。
-- 独立 native workspace **154 项**全部通过，未为正式测试设置 RUST_MIN_STACK。
+- 独立 native workspace **155 项**全部通过，未为正式测试设置 RUST_MIN_STACK。`*-final.log` 对应最终排队操作撤权修复，先前记录的 154 项日志保留供比较。
 - workspace/native 严格 Clippy、fmt、公开 rustdoc、20 example manifest、performance structure（2 passed，3 显式 ignored 可选性能测量）通过。
 - core/registry 实际 package 解包编译验证通过；CLI 使用既有 `--no-verify` + local dependency patch，workspace/release CLI build 验证本地依赖图。
 - 完整 macOS release smoke 与 artifact 审计通过。其输出及 stack characterization/回归结果在 `evidence/`。

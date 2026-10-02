@@ -22,6 +22,8 @@ lifetime. Only one command owner can be mounted on a native window, even through
 another Host alias. A Host also cannot be reused across different native windows.
 Failed mounts release their claim; disposing the owner releases authority without
 closing Rust's window, and a replacement owner can then mount.
+Disposal revokes queued native operations that have not executed yet; stale
+operations cannot close a replacement owner or bypass its close confirmation.
 
 This opt-in installs the should-close interceptor described below, replacing any
 previous Rust should-close callback. Do not opt in when Rust must retain that
