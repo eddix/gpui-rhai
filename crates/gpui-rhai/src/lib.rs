@@ -275,8 +275,8 @@ pub use theme::{
     REQUIRED_TYPOGRAPHY, ResolvedTheme, ResolvedTypography, SystemAppearance, ThemeError,
     ThemeFamily, ThemeManager, ThemeMode, ThemeMotion, ThemeMotionOverrides, ThemeMotionSpring,
     ThemePreference, ThemeSelection, ThemeSnapshot, ThemeTokenOverrides, ThemeTokenValue,
-    ThemeTokens, ThemeTypography, ThemeTypographyOverrides, ThemeVariant, TypographyToken,
-    load_theme_source,
+    ThemeTokens, ThemeTypography, ThemeTypographyOverrides, ThemeVariant, ThemeVariantInfo,
+    TypographyToken, load_theme_source,
 };
 pub use timer::{TimerDescriptor, TimerError, TimerId, TimerRegistry, TimerSnapshot};
 pub use value::{

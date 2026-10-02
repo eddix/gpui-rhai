@@ -121,10 +121,30 @@ windows; window and subtree changes remain local.
 
 Scripts may also read what resolved: `ctx.theme_variant()` returns
 `#{ family, name, mode }` for the context's window and component scope (or
-`()` when no theme is installed), tracked as a theme environment dependency
-— effects that read it re-run when the selection or the system appearance
-changes. This is how a canvas palette that computes colors in script can
-follow a `*_theme_system` preference.
+`()` for missing/unresolvable themes or an unavailable borrow). Reading during
+render tracks a theme dependency. Effects use explicit dependencies; reading
+only inside the effect body does not subscribe or restart that activation:
+
+```rhai
+fn render_Palette(ctx, props) {
+    let info = ctx.theme_variant();
+    effect("palette", info, Fn("start_palette"), Fn("stop_palette"));
+    // Return the UI derived from info.
+}
+```
+
+Declare that effect in the formal component schema. Its start callback receives
+the same metadata as deps and restarts only when they change. Event-time reads
+are imperative, not subscriptions. Rust uses lightweight `ThemeVariantInfo` or
+`resolved_theme_selection()`; these are resolved identity, not ThemePreference.
+Motion getters share the resolver and clone only motion tokens, never the full
+theme. Token overrides do not rewrite family/name/mode.
+
+Mount establishes native appearance before init, effects and initial render,
+including secondary windows; it does not replay init to correct a guessed mode.
+Standalone/headless contexts with no native appearance explicitly resolve
+System using Dark until real window information is available. First actual
+Light appearance invalidates pre-existing fallback readers normally.
 
 Literal colors are supported for exceptional geometry, but official components
 should use `theme_color("semantic_name")`.
