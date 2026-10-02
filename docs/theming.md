@@ -146,6 +146,14 @@ Standalone/headless contexts with no native appearance explicitly resolve
 System using Dark until real window information is available. First actual
 Light appearance invalidates pre-existing fallback readers normally.
 
+Mounted views retain a weak, View-owned subscription to native window
+appearance notifications. Changed modes enter the same runtime resolver before
+deferred foreground work, including an otherwise idle window. Native token-only
+UI also repaints without executing Rhai. Identical modes do not invalidate
+again. Suspended views retain the new environment until resume without starting
+effects; disposal cancels the subscription, so an old Handle cannot update a
+replacement. This does not change the application's OS theme preference.
+
 Literal colors are supported for exceptional geometry, but official components
 should use `theme_color("semantic_name")`.
 

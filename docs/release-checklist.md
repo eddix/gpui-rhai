@@ -152,6 +152,16 @@ source SHA, commands, counts, platform, binary hashes and pass/fail/pending in
 the candidate verification manifest; final-head Linux X11/Wayland CI must
 finish, not merely start.
 
+On macOS run the maintained actual-appearance binaries from the independent
+native workspace (`theme_appearance_probe`, with `--initial light` and `dark`,
+and `theme_appearance_lifecycle`). Pass `--output` and the verified
+`--source-sha`; assert their structured error/pass and cleanup results. AppKit
+termination can report process status 0 even for a failing assertion. These
+gates use an app-only appearance override, restore it and close their owned
+windows; they neither alter OS preferences nor require floating. GPUI's external
+TestAppContext does not expose its private TestWindow appearance simulator;
+do not replace this gate with a no-op TestPlatform setter or a forced refresh.
+
 The scope deferrals #83/#89/#91/#95 and #14 are not acceptance failures or
 delivered capabilities. Follow the explicit PR/issue disposition table; no
 merge, closure, package publication or tag is authorized by green checks alone.
