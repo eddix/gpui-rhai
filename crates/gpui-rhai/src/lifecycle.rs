@@ -441,6 +441,16 @@ impl ScriptLifecycle {
         let result = (|| {
             let mut changed = false;
             for (id, indices) in selected {
+                // Parent targets are processed first. A child that existed at
+                // batch start may legitimately be removed by a parent prune.
+                if root.virtual_collection_spec(&id).is_none()
+                    && self
+                        .root
+                        .as_deref()
+                        .is_some_and(|root| root.virtual_collection_spec(&id).is_some())
+                {
+                    continue;
+                }
                 let mut items = root
                     .virtual_collection_items(&id)
                     .cloned()
@@ -461,7 +471,7 @@ impl ScriptLifecycle {
                 if !root.replace_virtual_collection_items(&id, items.clone()) {
                     return Err(LifecycleError::MissingVirtualCollection(id));
                 }
-                engine.update_virtual_collection_snapshot(&id, &items)?;
+                engine.update_virtual_collection_snapshot(&id, &items);
                 changed = true;
             }
             if !changed {
@@ -2736,8 +2746,37 @@ mod tests {
     #[test]
     #[allow(clippy::too_many_lines)]
     fn virtual_target_commit_retains_and_releases_the_complete_component_manifest() {
-        let mut engine = RuntimeEngine::new();
-        let compiled = engine.compile(r#"
+        fn counter_callback(node: &UiNode) -> Option<ScriptCallback> {
+            if let Some(handler) = node.handler("click") {
+                return handler.as_script().cloned();
+            }
+            match node.kind() {
+                crate::UiNodeKind::Box { children } | crate::UiNodeKind::Fragment { children } => {
+                    children.iter().find_map(counter_callback)
+                }
+                _ => None,
+            }
+        }
+        for (wrapper, row) in [
+            (
+                "child",
+                r#"render_component("test/virtual_counter",#{key:payload.key})"#,
+            ),
+            (
+                "child",
+                r#"render_component("test/wrapper",#{key:payload.key,depth:0})"#,
+            ),
+            (
+                "child",
+                r#"render_component("test/wrapper",#{key:payload.key,depth:2})"#,
+            ),
+            (
+                "column([child])",
+                r#"render_component("test/wrapper",#{key:payload.key,depth:0})"#,
+            ),
+        ] {
+            let mut engine = RuntimeEngine::new();
+            let source = r#"
             define_component(#{
                 metadata: #{id:"test/virtual_counter", "export":"Counter", version:"0.1.8",
                     runtime_api:#{min_inclusive:2,max_exclusive:3},dependencies:[],capabilities:#{}},
@@ -2753,60 +2792,228 @@ mod tests {
                 effect("keep",(),Fn("start"),Fn("cleanup"));
                 timeout("tick",1000,false,Fn("tick"),());
                 let opacity=signal("opacity",1.0);
-                text(props.key).bind_signal("opacity",opacity)
+                text(`${ctx.get_state("count")}`).with_key(props.key).bind_signal("opacity",opacity)
                     .with_ref(element_ref("counter")).on_click(Fn("read_count"))
+            }
+            define_component(#{
+                metadata:#{id:"test/wrapper","export":"Wrapper",version:"0.1.8",
+                    runtime_api:#{min_inclusive:2,max_exclusive:3},dependencies:[],capabilities:#{}},
+                schema:#{props:#{key:#{schema:#{type:"string"},required:true,sensitive:false},
+                    depth:#{schema:#{type:"integer"},required:true,sensitive:false}},
+                    state:#{fields:#{}},events:#{},slots:#{},parts:[]},render:Fn("render_wrapper")
+            });
+            fn render_wrapper(ctx,props) {
+                let child=if props.depth==0 {
+                    render_component("test/virtual_counter",#{key:"inner"})
+                } else {
+                    render_component("test/wrapper",#{key:"inner",depth:props.depth-1})
+                };
+                WRAPPER_BODY
             }
             fn row(ctx,payload) {
                 if payload.index==19 {throw "candidate row failed";}
-                render_component("test/virtual_counter",#{key:payload.key})
+                ROW_BODY
             }
             fn view(ctx) {
                 let data=[];for index in 0..20 {data.push(#{key:`row-${index}`});}
                 virtual_collection(#{key:"rows",label:"Rows",data:data,height:24,
                     estimated_height:24,overdraw_pixels:0},Fn("row"))
             }
+        "#.replace("WRAPPER_BODY",wrapper).replace("ROW_BODY",row);
+            let compiled = engine.compile(&source).unwrap();
+            let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+            let path = ComponentInstancePath::root("App", "manifest");
+            let mut lifecycle = ScriptLifecycle::new(
+                compiled,
+                Rc::clone(&runtime),
+                path.clone(),
+                None,
+                BTreeMap::new(),
+                &ComponentStateSchema::default(),
+            )
+            .unwrap();
+            lifecycle.start(&mut engine).unwrap();
+            let id = engine
+                .virtual_collection_ids_in_scope(&path)
+                .into_iter()
+                .next()
+                .unwrap();
+            let callback = counter_callback(
+                &lifecycle
+                    .root()
+                    .unwrap()
+                    .virtual_collection_items(&id)
+                    .unwrap()[&0],
+            )
+            .unwrap();
+            let child = callback.component().unwrap().clone();
+            let signal = runtime.borrow().signals.resolve(&child, "opacity").unwrap();
+            let initial_effects = runtime
+                .borrow()
+                .effects
+                .iter_active()
+                .filter(|(id, _, _)| id.component() == &child)
+                .map(|(id, _, activation)| (id.clone(), activation))
+                .collect::<Vec<_>>();
+            runtime
+                .borrow()
+                .virtual_requests
+                .request(id.clone(), [0, 10]);
+            lifecycle.realize_virtual_requests(&mut engine).unwrap();
+            assert_eq!(
+                lifecycle
+                    .invoke_callback(&engine, &callback, UiValue::Null)
+                    .unwrap()
+                    .as_int()
+                    .unwrap(),
+                7
+            );
+            assert_eq!(
+                runtime
+                    .borrow()
+                    .effects
+                    .iter_active()
+                    .filter(|(id, _, _)| id.component() == &child)
+                    .map(|(id, _, activation)| (id.clone(), activation))
+                    .collect::<Vec<_>>(),
+                initial_effects
+            );
+            assert!(runtime.borrow().signals.read(&signal).is_ok());
+            assert_eq!(engine.component_timers_in_scope(&child).len(), 1);
+            assert_eq!(engine.component_element_refs_in_scope(&child).len(), 1);
+            let event = UiContext::new(
+                Rc::clone(&runtime),
+                child.clone(),
+                None,
+                ExecutionPhase::Event,
+                BTreeMap::new(),
+            );
+            event
+                .set_state("count", UiValue::Integer(8).into_dynamic())
+                .unwrap();
+            assert!(lifecycle.render_dirty(&mut engine).unwrap());
+            assert_eq!(
+                lifecycle
+                    .invoke_callback(&engine, &callback, UiValue::Null)
+                    .unwrap()
+                    .as_int()
+                    .unwrap(),
+                8,
+                "transparent descendants remain executable after scrolling"
+            );
+            runtime
+                .borrow()
+                .virtual_requests
+                .request(id.clone(), [0, 10, 19]);
+            assert!(lifecycle.realize_virtual_requests(&mut engine).is_err());
+            assert_eq!(
+                lifecycle
+                    .root()
+                    .unwrap()
+                    .virtual_collection_items(&id)
+                    .unwrap()
+                    .keys()
+                    .copied()
+                    .collect::<Vec<_>>(),
+                vec![0, 10]
+            );
+            assert!(runtime.borrow().signals.read(&signal).is_ok());
+            runtime.borrow().virtual_requests.request_target(id, [10]);
+            lifecycle.realize_virtual_requests(&mut engine).unwrap();
+            assert!(
+                runtime
+                    .borrow()
+                    .component_state
+                    .get(&child, "count")
+                    .is_none()
+            );
+            assert!(
+                lifecycle
+                    .invoke_callback(&engine, &callback, UiValue::Null)
+                    .is_err()
+            );
+            assert!(runtime.borrow().signals.read(&signal).is_err());
+            assert!(engine.component_timers_in_scope(&child).is_empty());
+            assert!(engine.component_element_refs_in_scope(&child).is_empty());
+            assert!(
+                !runtime
+                    .borrow()
+                    .effects
+                    .iter()
+                    .any(|(id, _)| id.component() == &child)
+            );
+        }
+    }
+
+    #[test]
+    #[allow(clippy::too_many_lines)]
+    fn nested_virtual_targets_preserve_callbacks_snapshots_and_prune_atomically() {
+        let mut engine = RuntimeEngine::new();
+        let compiled = engine.compile(r#"
+            define_component(#{
+                metadata:#{id:"test/panel","export":"Panel",version:"0.1.8",
+                    runtime_api:#{min_inclusive:2,max_exclusive:3},dependencies:[],capabilities:#{}},
+                schema:#{props:#{key:#{schema:#{type:"string"},required:true,sensitive:false}},
+                    state:#{fields:#{count:#{schema:#{type:"integer"},"default":#{type:"integer",value:7}}}},
+                    events:#{},slots:#{},parts:[]},render:Fn("render_panel")
+            });
+            fn data() {let rows=[];for i in 0..20 {rows.push(#{key:`row-${i}`});}rows}
+            fn read_count(ctx,payload) {ctx.get_state("count")}
+            fn inner_row(ctx,payload) {
+                if payload.index==19 {throw "candidate rejected";}
+                text(payload.key).on_click(Fn("read_count"))
+            }
+            fn outer_row(ctx,payload) {
+                virtual_collection(#{key:`inner-${payload.key}`,label:"Inner",data:data(),height:24,
+                    estimated_height:24,overdraw_pixels:0},Fn("inner_row"))
+            }
+            fn render_panel(ctx,props) {
+                virtual_collection(#{key:"outer",label:"Outer",data:data(),height:24,
+                    estimated_height:24,overdraw_pixels:0},Fn("outer_row"))
+            }
+            fn view(ctx) {column([text(`${ctx.get_state("other")}`),render_component("test/panel",#{key:"panel"})])}
         "#).unwrap();
         let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
-        let path = ComponentInstancePath::root("App", "manifest");
+        let path = ComponentInstancePath::root("App", "nested");
+        let schema = ComponentStateSchema::new(BTreeMap::from([(
+            "other".into(),
+            crate::StateField::new(crate::ValueSchema::integer(), UiValue::Integer(0)),
+        )]))
+        .unwrap();
         let mut lifecycle = ScriptLifecycle::new(
             compiled,
             Rc::clone(&runtime),
             path.clone(),
             None,
             BTreeMap::new(),
-            &ComponentStateSchema::default(),
+            &schema,
         )
         .unwrap();
         lifecycle.start(&mut engine).unwrap();
-        let id = engine
-            .virtual_collection_ids_in_scope(&path)
-            .into_iter()
-            .next()
-            .unwrap();
+        let panel = path.child("Panel", "panel");
+        let ids = engine.virtual_collection_ids_in_scope(&path);
+        let outer = ids.iter().find(|id| id.key == "outer").unwrap().clone();
+        let inner = ids
+            .iter()
+            .find(|id| id.key == "inner-row-0")
+            .unwrap()
+            .clone();
+        runtime
+            .borrow()
+            .virtual_requests
+            .request_target(inner.clone(), [10]);
+        lifecycle.realize_virtual_requests(&mut engine).unwrap();
         let callback = lifecycle
             .root()
             .unwrap()
-            .virtual_collection_items(&id)
-            .unwrap()[&0]
+            .virtual_collection_items(&inner)
+            .unwrap()[&10]
             .handler("click")
             .unwrap()
             .as_script()
             .unwrap()
             .clone();
-        let child = callback.component().unwrap().clone();
-        let signal = runtime.borrow().signals.resolve(&child, "opacity").unwrap();
-        let initial_effects = runtime
-            .borrow()
-            .effects
-            .iter_active()
-            .filter(|(id, _, _)| id.component() == &child)
-            .map(|(id, _, activation)| (id.clone(), activation))
-            .collect::<Vec<_>>();
-        runtime
-            .borrow()
-            .virtual_requests
-            .request(id.clone(), [0, 10]);
-        lifecycle.realize_virtual_requests(&mut engine).unwrap();
+        assert_eq!(callback.component(), Some(&panel));
         assert_eq!(
             lifecycle
                 .invoke_callback(&engine, &callback, UiValue::Null)
@@ -2815,59 +3022,82 @@ mod tests {
                 .unwrap(),
             7
         );
-        assert_eq!(
-            runtime
-                .borrow()
-                .effects
-                .iter_active()
-                .filter(|(id, _, _)| id.component() == &child)
-                .map(|(id, _, activation)| (id.clone(), activation))
-                .collect::<Vec<_>>(),
-            initial_effects
+
+        // An unrelated root update reuses Panel. Its committed snapshot must
+        // contain the latest inner target, not the initial seed window.
+        let context = UiContext::new(
+            Rc::clone(&runtime),
+            path,
+            None,
+            ExecutionPhase::Event,
+            BTreeMap::new(),
         );
-        assert!(runtime.borrow().signals.read(&signal).is_ok());
-        assert_eq!(engine.component_timers_in_scope(&child).len(), 1);
-        assert_eq!(engine.component_element_refs_in_scope(&child).len(), 1);
+        context
+            .set_state("other", UiValue::Integer(1).into_dynamic())
+            .unwrap();
+        lifecycle.render_dirty(&mut engine).unwrap();
+        assert_eq!(
+            lifecycle
+                .root()
+                .unwrap()
+                .virtual_collection_items(&inner)
+                .unwrap()
+                .keys()
+                .copied()
+                .collect::<Vec<_>>(),
+            vec![10]
+        );
+
+        // Keep the outer row while adding a sibling, then exercise rollback.
         runtime
             .borrow()
             .virtual_requests
-            .request(id.clone(), [0, 10, 19]);
+            .request_target(outer.clone(), [0, 10]);
+        lifecycle.realize_virtual_requests(&mut engine).unwrap();
+        assert!(
+            engine
+                .virtual_collection_ids_in_scope(&panel)
+                .contains(&inner)
+        );
+        runtime
+            .borrow()
+            .virtual_requests
+            .request_target(inner.clone(), [10, 19]);
         assert!(lifecycle.realize_virtual_requests(&mut engine).is_err());
         assert_eq!(
             lifecycle
                 .root()
                 .unwrap()
-                .virtual_collection_items(&id)
+                .virtual_collection_items(&inner)
                 .unwrap()
                 .keys()
                 .copied()
                 .collect::<Vec<_>>(),
-            vec![0, 10]
+            vec![10]
         );
-        assert!(runtime.borrow().signals.read(&signal).is_ok());
-        runtime.borrow().virtual_requests.request_target(id, [10]);
+
+        // A simultaneous parent prune makes a child request obsolete; it must
+        // not roll back the parent or recreate the removed collection.
+        runtime
+            .borrow()
+            .virtual_requests
+            .request_target(outer, [10]);
+        runtime
+            .borrow()
+            .virtual_requests
+            .request_target(inner.clone(), [11]);
         lifecycle.realize_virtual_requests(&mut engine).unwrap();
         assert!(
-            runtime
-                .borrow()
-                .component_state
-                .get(&child, "count")
+            lifecycle
+                .root()
+                .unwrap()
+                .virtual_collection_spec(&inner)
                 .is_none()
         );
         assert!(
-            lifecycle
-                .invoke_callback(&engine, &callback, UiValue::Null)
-                .is_err()
-        );
-        assert!(runtime.borrow().signals.read(&signal).is_err());
-        assert!(engine.component_timers_in_scope(&child).is_empty());
-        assert!(engine.component_element_refs_in_scope(&child).is_empty());
-        assert!(
-            !runtime
-                .borrow()
-                .effects
-                .iter()
-                .any(|(id, _)| id.component() == &child)
+            !engine
+                .virtual_collection_ids_in_scope(&panel)
+                .contains(&inner)
         );
     }
 

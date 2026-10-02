@@ -1231,6 +1231,19 @@ impl UiNode {
     ) -> Option<&crate::VirtualCollectionNodeSpec> {
         match &self.kind {
             UiNodeKind::VirtualCollection { spec } if &spec.id == id => Some(spec),
+            UiNodeKind::VirtualCollection { spec } => spec
+                .realized
+                .values()
+                .find_map(|child| child.virtual_collection_spec(id)),
+            UiNodeKind::Custom { primitive } => {
+                primitive.props.iter().find_map(|(_, value)| match value {
+                    crate::PrimitiveValue::Node(node) => node.virtual_collection_spec(id),
+                    crate::PrimitiveValue::Nodes(nodes) => nodes
+                        .iter()
+                        .find_map(|node| node.virtual_collection_spec(id)),
+                    _ => None,
+                })
+            }
             UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => children
                 .iter()
                 .find_map(|child| child.virtual_collection_spec(id)),
@@ -1271,6 +1284,21 @@ impl UiNode {
                     spec.realized = items;
                 }
                 true
+            }
+            UiNodeKind::VirtualCollection { spec } => spec
+                .realized
+                .values_mut()
+                .any(|child| child.replace_virtual_collection_items_in(id, items)),
+            UiNodeKind::Custom { primitive } => {
+                primitive.props.iter_mut().any(|(_, value)| match value {
+                    crate::PrimitiveValue::Node(node) => {
+                        node.replace_virtual_collection_items_in(id, items)
+                    }
+                    crate::PrimitiveValue::Nodes(nodes) => nodes
+                        .iter_mut()
+                        .any(|node| node.replace_virtual_collection_items_in(id, items)),
+                    _ => false,
+                })
             }
             UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => children
                 .iter_mut()
@@ -3326,16 +3354,7 @@ mod tests {
         node: &'a UiNode,
         id: &crate::VirtualCollectionId,
     ) -> Option<&'a BTreeMap<usize, UiNode>> {
-        match node.kind() {
-            UiNodeKind::VirtualCollection { spec } if &spec.id == id => Some(&spec.realized),
-            UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => {
-                children.iter().find_map(|child| find_realized(child, id))
-            }
-            UiNodeKind::ErrorBoundary { child, fallback } => {
-                find_realized(child, id).or_else(|| find_realized(fallback, id))
-            }
-            _ => None,
-        }
+        node.virtual_collection_items(id)
     }
 
     #[test]
@@ -3381,6 +3400,31 @@ mod tests {
                 nested(UiNode::text("no collection here")),
                 nested(collection()),
             ]),
+            {
+                let mut outer = collection();
+                let UiNodeKind::VirtualCollection { spec } = &mut outer.kind else {
+                    unreachable!()
+                };
+                spec.id.key = "outer".to_owned();
+                spec.realized.insert(0, collection());
+                outer
+            },
+            UiNode::custom(PrimitiveNode {
+                primitive: crate::PrimitiveId::parse("test.slot").unwrap(),
+                key: None,
+                props: crate::PrimitiveProps::new().with(
+                    "content",
+                    crate::PrimitiveValue::Node(Box::new(collection())),
+                ),
+            }),
+            UiNode::custom(PrimitiveNode {
+                primitive: crate::PrimitiveId::parse("test.slots").unwrap(),
+                key: None,
+                props: crate::PrimitiveProps::new().with(
+                    "content",
+                    crate::PrimitiveValue::Nodes(vec![UiNode::text("prefix"), collection()]),
+                ),
+            }),
         ];
         for (index, mut root) in layouts.into_iter().enumerate() {
             let item = UiNode::text("row")

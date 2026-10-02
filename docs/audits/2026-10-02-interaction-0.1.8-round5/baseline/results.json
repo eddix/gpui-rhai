@@ -1,0 +1,152 @@
+{
+  "head": "23fce23829c6694c3e077a61a20a9038b87f0759",
+  "results": [
+    {
+      "name": "r1-core",
+      "exit": 0,
+      "seconds": 78.369145875,
+      "source": "docs/audits/2026-09-30-interaction-0.1.8/runtime-core/probes.rs",
+      "source_sha256": "e291c6cbf0ea2fa07dd8632fb62ad2915b4d6728c1d315a049cc6d83d2bbd9a1"
+    },
+    {
+      "name": "r1-drag",
+      "exit": 0,
+      "seconds": 32.675672041,
+      "source": "docs/audits/2026-09-30-interaction-0.1.8/drag-sort/probe/src/lib.rs",
+      "source_sha256": "04a3ea63185d0c2c837060ab187e270d96daf62752362c34aefb7e611740dd62"
+    },
+    {
+      "name": "r1-resize",
+      "exit": 0,
+      "seconds": 11.254495334000012,
+      "source": "docs/audits/2026-09-30-interaction-0.1.8/resize-controls/probe.rs",
+      "source_sha256": "c8fe6f4a3f33dbe2dc04680ca217b5d877c71d91ab18a0abf9a372d4a4b65a48"
+    },
+    {
+      "name": "r1-transforms",
+      "exit": 0,
+      "seconds": 6.451862167000002,
+      "source": "docs/audits/2026-09-30-interaction-0.1.8/transforms-selection/src/lib.rs",
+      "source_sha256": "d27d605f69ce05b001e0cd17a69f2aec04fa6716843c7344ef71d5da3b6f930c"
+    },
+    {
+      "name": "r2-core",
+      "exit": 0,
+      "seconds": 7.173477291000012,
+      "source": "docs/audits/2026-09-30-interaction-0.1.8-round2/runtime-core/probes.rs",
+      "source_sha256": "503b58aeef315e6d34218719af67eeea275dbb1563a4284eae69bd0f13ba3631"
+    },
+    {
+      "name": "r2-drag",
+      "exit": 0,
+      "seconds": 6.787097791999997,
+      "source": "docs/audits/2026-09-30-interaction-0.1.8-round2/drag-sort/probe/src/lib.rs",
+      "source_sha256": "023a13bf2eeecc103fe22f4796e7431b2003b4b721b6a5bdaad7bd0e67b6a074"
+    },
+    {
+      "name": "r2-resize",
+      "exit": 0,
+      "seconds": 7.709742874999989,
+      "source": "docs/audits/2026-09-30-interaction-0.1.8-round2/resize-controls/probe.rs",
+      "source_sha256": "a1eb24ef0d54e48088fbc4573340f24eaa5fd19501b09ab3297524b284a173e2"
+    },
+    {
+      "name": "r2-transforms",
+      "exit": 0,
+      "seconds": 7.107672625000021,
+      "source": "docs/audits/2026-09-30-interaction-0.1.8-round2/transforms-selection/src/lib.rs",
+      "source_sha256": "5d3d902597c3fe66ad8382fc91d90903315ca1ea93abd0d26b1e1ed2db414f1f"
+    },
+    {
+      "name": "r2-tooling",
+      "exit": 0,
+      "seconds": 5.848991124999998,
+      "source": "docs/audits/2026-09-30-interaction-0.1.8-round2/tooling/probes.rs",
+      "source_sha256": "08b5628ce17f49324a01edec4b1ab913a703becec3e3bc5d81db0622df4afc69"
+    },
+    {
+      "name": "r3-core",
+      "exit": 0,
+      "seconds": 7.629994457999999,
+      "source": "docs/audits/2026-09-30-interaction-0.1.8-round3/runtime-core/reviewed-probes.rs",
+      "source_sha256": "b498bea9c5c9172b3eecaea421b9d30afcc388a99f11fae93e6ccc0875501f90"
+    },
+    {
+      "name": "r3-drag",
+      "exit": 0,
+      "seconds": 45.93187908300001,
+      "source": "docs/audits/2026-09-30-interaction-0.1.8-round3/drag-sort/probe/src/lib.rs",
+      "source_sha256": "638b6943265e5cf93059b9171b60026e77691eb41fdc98d050d963a16c61e36c"
+    },
+    {
+      "name": "r3-resize",
+      "exit": 0,
+      "seconds": 8.253439791000005,
+      "source": "docs/audits/2026-09-30-interaction-0.1.8-round3/resize-controls/probe.rs",
+      "source_sha256": "180eb8838f07de031158867137a4a328fc7f06f7854fab88f3bb48f5673f11e2"
+    },
+    {
+      "name": "r3-transforms",
+      "exit": 0,
+      "seconds": 8.46624779199999,
+      "source": "docs/audits/2026-09-30-interaction-0.1.8-round3/transforms-selection/src/lib.rs",
+      "source_sha256": "b18494c30b3b624676ca88d434790a576805e0d4534ed028744f015b88f2f2b0"
+    },
+    {
+      "name": "r4-core",
+      "exit": 0,
+      "seconds": 38.173656541999975,
+      "source": "docs/audits/2026-10-01-interaction-0.1.8-round4/runtime-core/probes.rs",
+      "source_sha256": "7fdf500cf791301c7e8187f3cb5e0649df8747879b32050f263218ed03db8fc6"
+    },
+    {
+      "name": "r4-drag",
+      "exit": 0,
+      "seconds": 39.531729583000015,
+      "source": "docs/audits/2026-10-01-interaction-0.1.8-round4/drag-sort/probe/src/lib.rs",
+      "source_sha256": "8b3a7c1d6d9686a4d7f4f29e65af0fcc9c5dff043966a532c44669c3805f93f4"
+    },
+    {
+      "name": "r4-resize",
+      "exit": 0,
+      "seconds": 8.12542270800003,
+      "source": "docs/audits/2026-10-01-interaction-0.1.8-round4/resize-controls/probe.rs",
+      "source_sha256": "1818ea633d05549baa8756235982a33f331a78ed8ed3bc0bd9e4d4a7762e6a93"
+    },
+    {
+      "name": "r4-transforms",
+      "exit": 0,
+      "seconds": 10.414972708999983,
+      "source": "docs/audits/2026-10-01-interaction-0.1.8-round4/transforms-selection/src/lib.rs",
+      "source_sha256": "c24a3bafac08f9e169be52f86b2ac32347fed4490062e8c9971069488a2a51ab"
+    },
+    {
+      "name": "r4-paint",
+      "exit": 0,
+      "seconds": 6.672151332999988,
+      "source": "docs/audits/2026-10-01-interaction-0.1.8-round4/transforms-selection/src/bin/paint_geometry.rs",
+      "source_sha256": "10ae212de0745593ab800924079561c124431e7c81d0c063ff0e7eb2819ae993"
+    },
+    {
+      "name": "r4-async",
+      "exit": 0,
+      "seconds": 4.745091666999997,
+      "source": "docs/audits/2026-10-01-interaction-0.1.8-round4/rhai-async/probes.rs",
+      "source_sha256": "2a13c6d3ea58260117f237c43016ba559585a6e3c0fa43ada8185531101b9072"
+    },
+    {
+      "name": "r4-schema",
+      "exit": 0,
+      "seconds": 5.2205553750000036,
+      "source": "docs/audits/2026-10-01-interaction-0.1.8-round4/schema/probes.rs",
+      "source_sha256": "de1ab6f64795df5dada11759f31a2a8defed200ba8ab6e6365a217e20eaa20da"
+    },
+    {
+      "name": "r2-async",
+      "exit": 0,
+      "seconds": 6.7067792920000215,
+      "source": "docs/audits/2026-09-30-interaction-0.1.8-round2/rhai-async/probes.rs",
+      "source_sha256": "2beb465cb3c48434bbe9cb5f78916ae797a5095db822d01690e364bb7c52f620"
+    }
+  ]
+}

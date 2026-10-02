@@ -1818,9 +1818,12 @@ impl UiContext {
             .runtime
             .try_borrow_mut()
             .map_err(|_| UiContextError::Borrowed)?;
-        Ok(runtime
-            .stores
-            .read_path_tracked(&self.component, &StoreId::app(store), field, path)?)
+        Ok(runtime.stores.read_path_tracked(
+            &self.callback_component,
+            &StoreId::app(store),
+            field,
+            path,
+        )?)
     }
 
     /// Queue a schema-checked app store mutation.
@@ -1922,7 +1925,7 @@ impl UiContext {
             .try_borrow_mut()
             .map_err(|_| UiContextError::Borrowed)?;
         Ok(runtime.stores.read_path_tracked(
-            &self.component,
+            &self.callback_component,
             &StoreId::window(window, store),
             field,
             path,
@@ -4640,6 +4643,70 @@ mod tests {
             .invoke_callback(&compiled, &callback, (context.clone(),))
             .unwrap();
         assert_eq!(context.get_state("count").unwrap(), UiValue::Integer(1));
+    }
+
+    #[test]
+    fn structural_store_paths_invalidate_executable_owner_not_synthetic_scope() {
+        for window_store in [false, true] {
+            let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+            let owner = ComponentInstancePath::root("Panel", "paths");
+            let store = if window_store {
+                StoreId::window("main", "data")
+            } else {
+                StoreId::app("data")
+            };
+            runtime
+                .borrow_mut()
+                .stores
+                .declare(
+                    store,
+                    ComponentStateSchema::new(BTreeMap::from([(
+                        "model".into(),
+                        StateField::new(
+                            ValueSchema::UiValue,
+                            UiValue::Map(BTreeMap::from([
+                                ("label".into(), UiValue::String("before".into())),
+                                ("sibling".into(), UiValue::String("untouched".into())),
+                            ])),
+                        ),
+                    )]))
+                    .unwrap(),
+                )
+                .unwrap();
+            let render = UiContext::new(
+                Rc::clone(&runtime),
+                owner.clone(),
+                Some("main".into()),
+                ExecutionPhase::Render,
+                BTreeMap::new(),
+            );
+            let structural = render
+                .for_structural_scope(owner.child("VirtualCollection", "rows"), BTreeMap::new());
+            let label = UiValuePath::new(vec![UiValuePathSegment::Key("label".into())]).unwrap();
+            let sibling =
+                UiValuePath::new(vec![UiValuePathSegment::Key("sibling".into())]).unwrap();
+            let value = if window_store {
+                structural.get_window_store_path("data", "model", &label)
+            } else {
+                structural.get_app_store_path("data", "model", &label)
+            }
+            .unwrap();
+            assert_eq!(value, UiValue::String("before".into()));
+            let mut event = render.clone();
+            event.phase = ExecutionPhase::Event;
+            let write = |path: &UiValuePath| {
+                if window_store {
+                    event.set_window_store_path("data", "model", path, Dynamic::from("after"))
+                } else {
+                    event.set_app_store_path("data", "model", path, Dynamic::from("after"))
+                }
+                .unwrap();
+            };
+            write(&sibling);
+            assert!(runtime.borrow().dirty.is_empty());
+            write(&label);
+            assert_eq!(runtime.borrow().dirty, BTreeSet::from([owner]));
+        }
     }
 
     #[test]

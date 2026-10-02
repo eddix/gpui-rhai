@@ -1471,14 +1471,26 @@ fn suspending_active_rotation_cleans_up_using_current_drawable_geometry(cx: &mut
     "#;
     let (window, view) = mount(cx, script, "rotation-suspend");
     let mut visual = VisualTestContext::from_window(*window, cx);
-    let bounds = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap()
-        .find_by_role_and_name("slider", "Rotate").next().unwrap().geometry.unwrap().visual);
+    let bounds = visual.update(|_, cx| {
+        view.accessibility_snapshot(cx)
+            .unwrap()
+            .find_by_role_and_name("slider", "Rotate")
+            .next()
+            .unwrap()
+            .geometry
+            .unwrap()
+            .visual
+    });
     let start = point(px((bounds.x + 180.0) as f32), px((bounds.y + 50.0) as f32));
     let moved = point(start.x - px(60.0), start.y + px(60.0));
     visual.simulate_mouse_down(start, MouseButton::Left, Modifiers::default());
     visual.simulate_mouse_move(moved, MouseButton::Left, Modifiers::default());
     visual.run_until_parked();
-    assert!(visual.update(|window, cx| view.suspend(window, cx)).unwrap());
+    assert!(
+        visual
+            .update(|window, cx| view.suspend(window, cx))
+            .unwrap()
+    );
 }
 
 #[gpui::test]

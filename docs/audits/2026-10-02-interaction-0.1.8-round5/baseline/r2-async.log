@@ -1,0 +1,40 @@
+   Compiling gpui-rhai-native-keyboard-tests v0.0.0 (/var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T/gpui-rhai-async-audit-s6n51dr6)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.18s
+     Running tests/audit_rhai_async.rs (tests/native-keyboard/target/debug/deps/audit_rhai_async-cb6e0881112da4f4)
+
+running 6 tests
+test callback_failure_does_not_retry_error_and_retained_guard_remains ... CALLBACK execution_failure_not_retried=true external_effects=1 error_callback=0
+GUARD actual_recursion_still_limited=true
+ok
+test fixed_task_preflight_and_error_routing_have_exactly_one_callback ... TASK string_exact accepted=true exactly_one_callback=true host_success_side_effects=1
+TASK string_plus_one accepted=false exactly_one_callback=true host_success_side_effects=0
+TASK nested_string_exact accepted=true exactly_one_callback=true host_success_side_effects=1
+TASK nested_string_excess accepted=false exactly_one_callback=true host_success_side_effects=0
+TASK array_exact accepted=true exactly_one_callback=true host_success_side_effects=1
+TASK array_plus_one accepted=false exactly_one_callback=true host_success_side_effects=0
+TASK nested_array_exact accepted=true exactly_one_callback=true host_success_side_effects=1
+TASK nested_array_excess accepted=false exactly_one_callback=true host_success_side_effects=0
+TASK depth64 accepted=true exactly_one_callback=true host_success_side_effects=1
+TASK depth65 accepted=false exactly_one_callback=true host_success_side_effects=0
+TASK large_utf8_error accepted=false exactly_one_callback=true host_success_side_effects=0
+TASK large_schema_error accepted=false exactly_one_callback=true host_success_side_effects=0
+ok
+test map_accounting_matches_actual_rhai_including_keys ... MAP entries=100000 accepted=true
+MAP entries=100001 accepted=false
+MAP large_key_excluded_from_rhai_string_quota=true
+ok
+test preflight_rejection_cost_characterization ... COST items=10001 schema=valid_schema elapsed_ms=0.031 error_kind=String("async_delivery_limit")
+COST items=10001 schema=invalid_schema elapsed_ms=0.028 error_kind=String("async_delivery_limit")
+COST items=100000 schema=valid_schema elapsed_ms=0.235 error_kind=String("async_delivery_limit")
+COST items=100000 schema=invalid_schema elapsed_ms=0.235 error_kind=String("async_delivery_limit")
+COST items=900000 schema=valid_schema elapsed_ms=2.387 error_kind=String("async_delivery_limit")
+COST items=900000 schema=invalid_schema elapsed_ms=2.067 error_kind=String("async_delivery_limit")
+SCHEMA intermediates issues=900000 formatted_message_bytes=33188888 final_bound=1027
+ok
+test subscription_close_preserves_order_and_cancel_or_stale_discards ... SUBSCRIPTION ordered=[success,failure,failure,success] close_flush_once=true cancel_and_stale_drop=true
+ok
+test task_cancel_and_stale_never_deliver_rejected_payload ... TASK cancellation_and_stale_drop=true
+ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.63s
+

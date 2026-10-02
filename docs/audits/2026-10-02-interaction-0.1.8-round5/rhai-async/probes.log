@@ -1,0 +1,26 @@
+PINNED_BASELINE=23fce23829c6694c3e077a61a20a9038b87f0759
+    Blocking waiting for file lock on artifact directory
+   Compiling gpui-rhai v0.1.8 (/private/var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T/gpui-rhai-r5-async-94sd6u_n/baseline/crates/gpui-rhai)
+   Compiling gpui-rhai-registry v0.1.8 (/private/var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T/gpui-rhai-r5-async-94sd6u_n/baseline/registry)
+   Compiling gpui-rhai-cli v0.1.8 (/private/var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T/gpui-rhai-r5-async-94sd6u_n/baseline/crates/gpui-rhai-cli)
+   Compiling gpui-rhai-native-keyboard-tests v0.0.0 (/var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T/gpui-rhai-r5-async-94sd6u_n)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 57.93s
+     Running tests/audit_r5_rhai_async.rs (tests/native-keyboard/target/debug/deps/audit_r5_rhai_async-8b8186e5f457eda3)
+
+running 4 tests
+test invalid_recursive_defaults_name_root_and_formal_fields ... DEFAULT root map_plain_item: failed to evaluate Rhai UI source: Runtime error: state_schema.fields.data.default: expected recursively tagged UiValue; map entries and array items each require type/value descriptors (Output type incorrect: string (expecting Map))
+DEFAULT formal map_plain_item: failed to evaluate Rhai UI source: Runtime error: component.schema.state.fields.data.default: expected recursively tagged UiValue; map entries and array items each require type/value descriptors (Output type incorrect: string (expecting Map)) (line 1, position 1)
+DEFAULT root array_plain_item: failed to evaluate Rhai UI source: Runtime error: state_schema.fields.data.default: expected recursively tagged UiValue; map entries and array items each require type/value descriptors (Output type incorrect: string (expecting Map))
+DEFAULT formal array_plain_item: failed to evaluate Rhai UI source: Runtime error: component.schema.state.fields.data.default: expected recursively tagged UiValue; map entries and array items each require type/value descriptors (Output type incorrect: string (expecting Map)) (line 1, position 1)
+DEFAULT root nested_array_map: failed to evaluate Rhai UI source: Runtime error: state_schema.fields.data.default: expected recursively tagged UiValue; map entries and array items each require type/value descriptors (Output type incorrect: string (expecting Map))
+DEFAULT formal nested_array_map: failed to evaluate Rhai UI source: Runtime error: component.schema.state.fields.data.default: expected recursively tagged UiValue; map entries and array items each require type/value descriptors (Output type incorrect: string (expecting Map)) (line 1, position 1)
+ok
+test old_effect_delivery_is_dropped_after_same_path_remount_but_explicit_owner_errors_remain ... ASYNC remount_old_scope_silent_drop=true explicit_old_callback_error=true active_scope_wrong_owner_error=true new_scope_delivery=true
+ok
+test rejected_formal_default_rolls_back_candidate_init_and_keeps_last_good ... ROLLBACK invalid_formal_default_restores_init_state_root_generation_and_old_callback=true
+ok
+test valid_recursive_defaults_remain_accepted_and_preserve_values ... DEFAULT tagged_null_empty_map_empty_array_nested_array_map accepted_at_root_and_formal=true
+ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.91s
+

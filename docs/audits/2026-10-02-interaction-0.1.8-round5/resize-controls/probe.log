@@ -1,0 +1,39 @@
+PR snapshot commit=f9203250609dd2c2bc0696a70e277753dbdb65e1
+   Compiling gpui-rhai v0.1.8 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/docs/audits/2026-10-02-interaction-0.1.8-round5/resize-controls/pr101-snapshot-f5sok5l_/source/crates/gpui-rhai)
+   Compiling audit-pr101-table-boundary v0.0.0 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/docs/audits/2026-10-02-interaction-0.1.8-round5/resize-controls/pr101-snapshot-f5sok5l_/harness)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 31.86s
+     Running probe.rs (tests/native-keyboard/target/debug/deps/pr101_table_boundary-cc98c47a3e82d5fc)
+
+running 6 tests
+test ltr_array_boundary_and_last_column_owner ... LTR final=c:200.0|none
+ok
+test native_last_column_autofit_measures_last_column_without_sort ... native autofit=c:313.0|none
+ok
+test nonresizable_neighbor_preserves_owner_and_last_keyboard_resize ... mixed native last keyboard=c:168.0|none
+ok
+test one_column_table_is_resizable ... ok
+test rtl_dragging_a_boundary_resizes_a_not_its_neighbor ... RTL real A boundary drag=none|b
+
+thread 'rtl_dragging_a_boundary_resizes_a_not_its_neighbor' (2394195) panicked at probe.rs:49:329:
+assertion `left == right` failed
+  left: "none|b"
+ right: "a:160.0|none"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test rtl_handles_follow_the_owned_columns_logical_end ... RTL A: owned logical end=479,handle center=339
+RTL B: owned logical end=339,handle center=179
+RTL last C: header left=179,handle left=331
+
+thread 'rtl_handles_follow_the_owned_columns_logical_end' (2394200) panicked at probe.rs:45:167:
+physical left/right placement moved handles away from their RTL column boundaries
+FAILED
+
+failures:
+
+failures:
+    rtl_dragging_a_boundary_resizes_a_not_its_neighbor
+    rtl_handles_follow_the_owned_columns_logical_end
+
+test result: FAILED. 4 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.87s
+
+error: test failed, to rerun pass `--test pr101_table_boundary`

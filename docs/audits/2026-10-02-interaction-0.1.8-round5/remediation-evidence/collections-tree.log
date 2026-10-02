@@ -1,0 +1,23 @@
+   Compiling gpui-rhai v0.1.8 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai)
+   Compiling audit-018-collections-tree-round5 v0.0.0 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/docs/audits/2026-10-02-interaction-0.1.8-round5/collections-tree/probe)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 08s
+     Running `target/debug/audit-018-collections-tree-round5`
+store kind=app path=false before=Text { text: "before" }, render_dirty=Ok(true), after=Text { text: "after" }
+store kind=app path=true before=Text { text: "before" }, render_dirty=Ok(true), after=Text { text: "after" }
+store kind=window path=false before=Text { text: "before" }, render_dirty=Ok(true), after=Text { text: "after" }
+store kind=window path=true before=Text { text: "before" }, render_dirty=Ok(true), after=Text { text: "after" }
+store kind=local path=false before=Text { text: "before" }, render_dirty=Ok(true), after=Text { text: "after" }
+store kind=local path=true before=Text { text: "before" }, render_dirty=Ok(true), after=Text { text: "after" }
+wrapper mode=direct initial callback=Ok(7)
+wrapper mode=direct realize=Ok(true)
+wrapper mode=direct retained row0 inner state=Some(Integer(7)), callback=Ok(7)
+failed candidate add11/19 rollback preserves target0/10 and callback, removes candidate11 state: passed (failed to evaluate Rhai UI source: Runtime error: candidate row rejected @ 'audit/wrapper.rhai' (line 11, position 46)
+in call to function 'row' (from 'audit/wrapper.rhai') (line 13, position 7))
+wrapper mode=bare initial callback=Ok(7)
+wrapper mode=bare realize=Ok(true)
+wrapper mode=bare retained row0 inner state=Some(Integer(7)), callback=Ok(7)
+wrapper mode=boxed initial callback=Ok(7)
+wrapper mode=boxed realize=Ok(true)
+wrapper mode=boxed retained row0 inner state=Some(Integer(7)), callback=Ok(7)
+nested=false request inner row10 realization=Ok(true)
+nested=true request inner row10 realization=Ok(true)

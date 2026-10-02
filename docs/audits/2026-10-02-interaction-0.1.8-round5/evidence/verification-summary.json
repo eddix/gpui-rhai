@@ -1,0 +1,36 @@
+{
+  "head": "23fce23829c6694c3e077a61a20a9038b87f0759",
+  "historical_native_passed": 89,
+  "historical_async_passed": 11,
+  "schema_cases": 12870,
+  "historical_suite_counts": {
+    "r2-resize": 6,
+    "r1-transforms": 6,
+    "r2-tooling": 2,
+    "r4-drag": 6,
+    "r2-drag": 5,
+    "r3-drag": 5,
+    "r2-transforms": 6,
+    "r1-core": 4,
+    "r2-async": 6,
+    "r3-transforms": 6,
+    "r4-async": 5,
+    "r4-transforms": 3,
+    "r4-core": 5,
+    "r3-resize": 6,
+    "r4-schema": 2,
+    "r4-resize": 6,
+    "r3-core": 4,
+    "r2-core": 4,
+    "r1-resize": 10,
+    "r1-drag": 5
+  },
+  "r4_canvas_scene_exit": 0,
+  "tracked_product_changes": false,
+  "main_findings": {
+    "P1": 1,
+    "P2": 4,
+    "P3_nonblocking": 1
+  },
+  "open_pr_findings_counted_in_main": false
+}

@@ -1,0 +1,19 @@
+   Compiling gpui-rhai-native-keyboard-tests v0.0.0 (/var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T/gpui-round4-async-acceptance-yme9fs21)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.04s
+     Running tests/round4_async_acceptance.rs (tests/native-keyboard/target/debug/deps/round4_async_acceptance-004691afe293d617)
+
+running 5 tests
+test failed_replacement_restores_old_activation_delivery_eligibility ... ROLLBACK replacement_failure_retains_old_scope=true
+ok
+test failed_suspend_keeps_eligibility_successful_suspend_and_resume_replace_it ... SUSPEND failed_cleanup_compensated=true successful_suspend_discards_old=true resume_fresh_accepted=true
+ok
+test normal_work_return_and_same_activation_rerender_do_not_discard_valid_messages ... VALID normal_work_return_and_same_activation_rerender_accepted=true
+ok
+test replaced_effect_discards_old_success_and_error_while_new_activation_delivers ... REPLACEMENT old_success_and_error_ignored=true fresh_delivery_accepted=true
+ok
+test unmounted_effect_delivery_reports_owner_error_before_scope_drop_characterization ... UNMOUNT old_scope_closed=Some(ScopeDisposed) delivery_result=Ok(())
+CONTROL explicit_old_callback=Err(Runtime(StaleComponentCallback { name: "received", component: ComponentInstancePath([ComponentInstanceSegment { component: "App", key: "root" }, ComponentInstanceSegment { component: "StreamProbe", key: "stream" }]) }))
+ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.84s
+
