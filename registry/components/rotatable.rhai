@@ -69,9 +69,9 @@ fn render_Rotatable(ctx,props){
         .accessibility_role("slider").accessibility_label(props.label)
         .accessibility_value(props.angle).accessibility_value_min(0.0).accessibility_value_max(360.0);
     let content_style=ctx.component_style("content",style().width(relative(1.0)).height(relative(1.0)));
-    let content_node=props.content.with_style(content_style)
+    let content_node=props.content.with_key(content_key).with_ref(content_ref).with_style(content_style)
         .bind_signal("rotate",angle_signal).bind_signal("translate_x",x_signal).bind_signal("translate_y",y_signal);
-    let content=box([content_node]).with_key(content_key).with_ref(content_ref)
+    let content=box([content_node]).with_key(`${content_key}-frame`)
         .with_style(style().width(relative(1.0)).height(relative(1.0)));
     let children=[content];
     if "handle" in props&&props.handle!=(){

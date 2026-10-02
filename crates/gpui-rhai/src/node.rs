@@ -508,6 +508,10 @@ enum ComponentSubtreeStep {
 }
 
 impl ComponentSubtreeIndex {
+    pub(crate) fn contains(&self, component: &ComponentInstancePath) -> bool {
+        self.addresses.contains_key(component)
+    }
+
     pub(crate) fn new(root: &UiNode) -> Self {
         let mut index = Self {
             addresses: BTreeMap::new(),

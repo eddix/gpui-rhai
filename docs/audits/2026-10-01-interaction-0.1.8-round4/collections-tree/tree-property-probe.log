@@ -1,0 +1,4 @@
+source=/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai/src/collection_projection.rs sha256=d5713b619fa3638893c495e3050adc8c6fcf7f7ee218d201cb00f7eec952e98d
+192 shuffled/reversed, expanded/collapsed, disabled-toggled forest projections matched independent order/depth/nearest-parent oracle
+legal shared depth256 / nodes10000 / disabled=false: visible=1 elapsed=15.11075ms
+legal shared depth256 / nodes10000 / disabled=true: visible=1 elapsed=16.169209ms

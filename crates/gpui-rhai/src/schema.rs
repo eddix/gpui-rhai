@@ -286,6 +286,211 @@ impl ValueSchema {
         self.validate(&value.clone().into_dynamic())
     }
 
+    /// Validate an online durable payload without constructing an unbounded
+    /// issue list or converting the complete value back into `Dynamic`.
+    pub(crate) fn validate_ui_value_first(
+        &self,
+        value: &UiValue,
+    ) -> Result<(), SchemaValidationError> {
+        value.validate().map_err(|error| SchemaValidationError {
+            issues: vec![SchemaIssue::new("$", error.to_string())],
+        })?;
+        self.validate_ui_value_at_first(value, "$")
+            .map_or(Ok(()), |issue| {
+                Err(SchemaValidationError {
+                    issues: vec![issue],
+                })
+            })
+    }
+
+    #[allow(clippy::too_many_lines)]
+    fn validate_ui_value_at_first(&self, value: &UiValue, path: &str) -> Option<SchemaIssue> {
+        let expected = |name: &str| {
+            Some(SchemaIssue::new(
+                path,
+                format!("expected {name}, got {}", ui_value_type_name(value)),
+            ))
+        };
+        match self {
+            Self::Null => (!matches!(value, UiValue::Null))
+                .then(|| expected("null"))
+                .flatten(),
+            Self::Bool => (!matches!(value, UiValue::Bool(_)))
+                .then(|| expected("bool"))
+                .flatten(),
+            Self::Integer { min, max } => match value {
+                UiValue::Integer(value) => {
+                    if min.is_some_and(|min| *value < min) {
+                        Some(SchemaIssue::new(
+                            path,
+                            format!("expected integer >= {}, got {value}", min.unwrap()),
+                        ))
+                    } else if max.is_some_and(|max| *value > max) {
+                        Some(SchemaIssue::new(
+                            path,
+                            format!("expected integer <= {}, got {value}", max.unwrap()),
+                        ))
+                    } else {
+                        None
+                    }
+                }
+                _ => expected("integer"),
+            },
+            Self::Float {
+                min,
+                max,
+                exclusive_min,
+                exclusive_max,
+            } => match value {
+                UiValue::Float(value) => {
+                    first_float_issue(*value, *min, *max, *exclusive_min, *exclusive_max, path)
+                }
+                _ => expected("float"),
+            },
+            Self::Number {
+                min,
+                max,
+                exclusive_min,
+                exclusive_max,
+            } => match value {
+                UiValue::Float(value) => {
+                    first_float_issue(*value, *min, *max, *exclusive_min, *exclusive_max, path)
+                }
+                UiValue::Integer(value) => first_float_issue(
+                    integer_as_float(*value),
+                    *min,
+                    *max,
+                    *exclusive_min,
+                    *exclusive_max,
+                    path,
+                ),
+                _ => expected("number"),
+            },
+            Self::String { allowed } => match value {
+                UiValue::String(value)
+                    if !allowed.is_empty() && !allowed.iter().any(|item| item == value) =>
+                {
+                    Some(SchemaIssue::new(
+                        path,
+                        format!("expected one of [{}], got `{value}`", allowed.join(", ")),
+                    ))
+                }
+                UiValue::String(_) => None,
+                _ => expected("string"),
+            },
+            Self::Array { items, max_items } => match value {
+                UiValue::Array(values) => {
+                    if max_items.is_some_and(|max| values.len() > max) {
+                        Some(SchemaIssue::new(
+                            path,
+                            format!(
+                                "expected at most {} items, got {}",
+                                max_items.unwrap(),
+                                values.len()
+                            ),
+                        ))
+                    } else {
+                        values.iter().enumerate().find_map(|(index, value)| {
+                            items.validate_ui_value_at_first(value, &format!("{path}[{index}]"))
+                        })
+                    }
+                }
+                _ => expected("array"),
+            },
+            Self::Map { values } => match value {
+                UiValue::Map(items) => items.iter().find_map(|(key, value)| {
+                    values.validate_ui_value_at_first(value, &format!("{path}.{key}"))
+                }),
+                _ => expected("map"),
+            },
+            Self::Object {
+                fields,
+                allow_unknown,
+            } => match value {
+                UiValue::Map(values) => {
+                    let field_issue = fields.iter().find_map(|(name, field)| {
+                        values.get(name).map_or_else(
+                            || {
+                                field.required.then(|| {
+                                    SchemaIssue::new(
+                                        format!("{path}.{name}"),
+                                        "required field is missing",
+                                    )
+                                })
+                            },
+                            |value| {
+                                field
+                                    .schema
+                                    .validate_ui_value_at_first(value, &format!("{path}.{name}"))
+                            },
+                        )
+                    });
+                    field_issue.or_else(|| {
+                        (!*allow_unknown).then(|| {
+                            values
+                                .keys()
+                                .find(|key| !fields.contains_key(*key))
+                                .map(|key| {
+                                    SchemaIssue::new(format!("{path}.{key}"), "unknown field")
+                                })
+                        })?
+                    })
+                }
+                _ => expected("object"),
+            },
+            Self::Optional { value: schema } => {
+                if matches!(value, UiValue::Null) {
+                    None
+                } else {
+                    schema.validate_ui_value_at_first(value, path)
+                }
+            }
+            Self::OneOf { variants } => {
+                let failures = variants
+                    .iter()
+                    .map(|variant| variant.validate_ui_value_at_first(value, path))
+                    .collect::<Vec<_>>();
+                if failures.iter().any(Option::is_none) {
+                    None
+                } else {
+                    Some(SchemaIssue::new(
+                        path,
+                        format!(
+                            "value did not match any one_of variant ({})",
+                            failures
+                                .into_iter()
+                                .enumerate()
+                                .filter_map(|(index, issue)| issue
+                                    .map(|issue| format!("variant {index}: {}", issue.message)))
+                                .collect::<Vec<_>>()
+                                .join("; ")
+                        ),
+                    ))
+                }
+            }
+            Self::UiValue => None,
+            Self::Handle { kind } => match value {
+                UiValue::Handle(handle) if handle.kind() == kind => None,
+                UiValue::Handle(handle) => Some(SchemaIssue::new(
+                    path,
+                    format!("expected `{kind}` handle, got `{}` handle", handle.kind()),
+                )),
+                _ => expected(&format!("{kind} handle")),
+            },
+            Self::Node => expected("UiNode"),
+            Self::Callback => expected("callback or NativeHandlerRef"),
+            Self::Style => expected("Style"),
+            Self::Length => expected("Length"),
+            Self::Asset => expected("AssetId"),
+            Self::Signal => expected("NativeSignal"),
+            Self::Collection => expected("NativeCollection"),
+            Self::Document => expected("NativeTextDocument"),
+            #[cfg(feature = "charts")]
+            Self::ChartData => expected("NativeChartData"),
+            Self::Ref => expected("ElementRef"),
+        }
+    }
+
     fn validate_at(&self, value: &Dynamic, path: &str, issues: &mut Vec<SchemaIssue>) {
         match self {
             Self::Null => expect_type(value.is_unit(), value, path, "null", issues),
@@ -382,6 +587,54 @@ impl ValueSchema {
             Self::Ref => expect_type(value.is::<ElementRef>(), value, path, "ElementRef", issues),
             Self::Handle { kind } => validate_handle(value, kind, path, issues),
         }
+    }
+}
+
+fn ui_value_type_name(value: &UiValue) -> &'static str {
+    match value {
+        UiValue::Null => "null",
+        UiValue::Bool(_) => "bool",
+        UiValue::Integer(_) => "integer",
+        UiValue::Float(_) => "float",
+        UiValue::String(_) => "string",
+        UiValue::Array(_) => "array",
+        UiValue::Map(_) => "map",
+        UiValue::Handle(_) => "handle",
+    }
+}
+
+fn first_float_issue(
+    value: FLOAT,
+    min: Option<FLOAT>,
+    max: Option<FLOAT>,
+    exclusive_min: Option<FLOAT>,
+    exclusive_max: Option<FLOAT>,
+    path: &str,
+) -> Option<SchemaIssue> {
+    if !value.is_finite() {
+        Some(SchemaIssue::new(path, "number must be finite"))
+    } else if min.is_some_and(|min| value < min) {
+        Some(SchemaIssue::new(
+            path,
+            format!("expected number >= {}, got {value}", min.unwrap()),
+        ))
+    } else if max.is_some_and(|max| value > max) {
+        Some(SchemaIssue::new(
+            path,
+            format!("expected number <= {}, got {value}", max.unwrap()),
+        ))
+    } else if exclusive_min.is_some_and(|min| value <= min) {
+        Some(SchemaIssue::new(
+            path,
+            format!("expected number > {}, got {value}", exclusive_min.unwrap()),
+        ))
+    } else if exclusive_max.is_some_and(|max| value >= max) {
+        Some(SchemaIssue::new(
+            path,
+            format!("expected number < {}, got {value}", exclusive_max.unwrap()),
+        ))
+    } else {
+        None
     }
 }
 
@@ -989,5 +1242,64 @@ mod tests {
                 .validate(&Dynamic::from(UiNode::text("not data")))
                 .is_err()
         );
+    }
+
+    #[test]
+    fn online_ui_value_validation_stops_after_the_first_issue() {
+        let value = UiValue::Map(
+            (0..100_000)
+                .map(|index| (format!("field-{index}"), UiValue::Null))
+                .collect(),
+        );
+        let error = ValueSchema::Map {
+            values: Box::new(ValueSchema::integer()),
+        }
+        .validate_ui_value_first(&value)
+        .unwrap_err();
+        assert_eq!(error.issues.len(), 1);
+        assert_eq!(error.issues[0].path, "$.field-0");
+    }
+
+    #[test]
+    fn online_and_complete_durable_validation_agree_on_acceptance() {
+        let cases = [
+            (ValueSchema::integer(), UiValue::Integer(2)),
+            (ValueSchema::integer(), UiValue::Null),
+            (
+                ValueSchema::Array {
+                    items: Box::new(ValueSchema::string()),
+                    max_items: Some(2),
+                },
+                UiValue::Array(vec![UiValue::String("ok".to_owned())]),
+            ),
+            (
+                ValueSchema::Array {
+                    items: Box::new(ValueSchema::string()),
+                    max_items: Some(2),
+                },
+                UiValue::Array(vec![UiValue::Integer(1)]),
+            ),
+            (
+                button_schema(),
+                UiValue::Map(BTreeMap::from([(
+                    "text".to_owned(),
+                    UiValue::String("Save".to_owned()),
+                )])),
+            ),
+            (
+                button_schema(),
+                UiValue::Map(BTreeMap::from([(
+                    "variant".to_owned(),
+                    UiValue::String("danger".to_owned()),
+                )])),
+            ),
+        ];
+        for (schema, value) in cases {
+            assert_eq!(
+                schema.validate_ui_value(&value).is_ok(),
+                schema.validate_ui_value_first(&value).is_ok(),
+                "schema={schema:?}, value={value:?}"
+            );
+        }
     }
 }

@@ -233,6 +233,21 @@ define Rust-like struct or class types.
 
 ## 4. State and controlled components
 
+State field defaults use the serialized `UiValue` form. Each nested map entry
+and array item needs its own `type` descriptor; a schema of `ui_value` does not
+change this encoding. For example, a map default is:
+
+```rhai
+"default": #{ type: "map", value: #{
+    family: #{ type: "string", value: "Default" },
+    name: #{ type: "string", value: "Dark" },
+} }
+```
+
+An empty map is `#{ type: "map", value: #{} }`, an empty array is
+`#{ type: "array", value: [] }`, and null is `#{ type: "null" }`.
+Invalid defaults report the owning state field and the required encoding.
+
 State is declared, schema-checked, and scoped to a stable component instance.
 
 ```rhai
@@ -956,7 +971,12 @@ Guidelines:
   later, call `ScriptViewHandle::register_native_collection`; a component that
   previously handled the missing-name error is tracked and invalidated exactly
   when registration succeeds. Use `replace_native_collection` only for an
-  already registered name.
+  already registered name. Missing-name dependencies are render-only and
+  bounded; do not probe unbounded dynamic names from event callbacks.
+- Escape cancellation belongs to the Host interaction domain, so active
+  pointer/wheel/drag work remains cancellable when a virtual source goes
+  offscreen or keyboard focus moves. With no active interaction, Escape remains
+  available to dialogs, overlays and Host shortcuts.
 - Use Table `query`/`search_fields` and `page`/`page_size` for controlled
   Rust-side filtering and paging; reset page one when query or sort changes.
 - Keep large or rapidly replaced source text in `NativeTextDocument`; direct

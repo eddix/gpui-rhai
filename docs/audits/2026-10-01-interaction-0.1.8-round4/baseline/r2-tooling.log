@@ -1,0 +1,12 @@
+   Compiling gpui-rhai-native-keyboard-tests v0.0.0 (/var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T/gpui-round2-tooling-h__ho63j)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.49s
+     Running tests/round2_tooling.rs (tests/native-keyboard/target/debug/deps/round2_tooling-fda9bd115c680af6)
+
+running 2 tests
+test declarative_automation_failure_control ... DECLARATIVE immediate=Err(Automation(Command("failed to evaluate Rhai UI source: Runtime error: audit-tooling-callback-failed @ 'main' (line 3, position 22)\nin call to function 'fail' (from 'main') (line 5, position 89)")))
+ok
+test native_automation_must_report_its_callback_failure ... NATIVE immediate=Err(Automation(Command("failed to evaluate Rhai UI source: Runtime error: audit-tooling-callback-failed @ 'main' (line 3, position 22)\nin call to function 'fail' (from 'main') (line 76, position 23)"))) settled_error=Some("failed to evaluate Rhai UI source: Runtime error: audit-tooling-callback-failed @ 'main' (line 3, position 22)\nin call to function 'fail' (from 'main') (line 76, position 23)")
+ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.06s
+

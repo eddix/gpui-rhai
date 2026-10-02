@@ -445,27 +445,18 @@ impl ScriptLifecycle {
                     .virtual_collection_items(&id)
                     .cloned()
                     .ok_or_else(|| LifecycleError::MissingVirtualCollection(id.clone()))?;
-                let missing = indices
-                    .iter()
-                    .filter(|index| !items.contains_key(index))
-                    .copied()
-                    .collect::<BTreeSet<_>>();
                 let previous_indices = items.keys().copied().collect::<BTreeSet<_>>();
-                if missing.is_empty() && previous_indices == indices {
+                if previous_indices == indices {
                     continue;
                 }
-                items.retain(|index, _| indices.contains(index));
-                if !missing.is_empty() {
-                    let inherited_motion_group = root
-                        .virtual_collection_spec(&id)
-                        .and_then(|spec| spec.inherited_motion_group.clone());
-                    let mut realized = engine.realize_virtual_collection(&id, &missing)?;
-                    if let Some(group) = inherited_motion_group {
-                        for node in realized.values_mut() {
-                            crate::node::apply_motion_group(node, &group);
-                        }
+                let inherited_motion_group = root
+                    .virtual_collection_spec(&id)
+                    .and_then(|spec| spec.inherited_motion_group.clone());
+                items = engine.realize_virtual_collection(&id, &indices, &items)?;
+                if let Some(group) = inherited_motion_group {
+                    for node in items.values_mut() {
+                        crate::node::apply_motion_group(node, &group);
                     }
-                    items.extend(realized);
                 }
                 if !root.replace_virtual_collection_items(&id, items.clone()) {
                     return Err(LifecycleError::MissingVirtualCollection(id));
@@ -782,6 +773,15 @@ impl ScriptLifecycle {
         engine: &RuntimeEngine,
         delivery: AsyncDelivery,
     ) -> Result<Dynamic, LifecycleError> {
+        if !self
+            .runtime
+            .try_borrow()
+            .map_err(|_| LifecycleError::Borrowed)?
+            .effects
+            .contains_scope(&delivery.scope)
+        {
+            return Ok(Dynamic::UNIT);
+        }
         self.validate_callback_owner(&delivery.callback)?;
         let component = delivery
             .callback
@@ -2734,6 +2734,144 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
+    fn virtual_target_commit_retains_and_releases_the_complete_component_manifest() {
+        let mut engine = RuntimeEngine::new();
+        let compiled = engine.compile(r#"
+            define_component(#{
+                metadata: #{id:"test/virtual_counter", "export":"Counter", version:"0.1.8",
+                    runtime_api:#{min_inclusive:2,max_exclusive:3},dependencies:[],capabilities:#{}},
+                schema: #{props:#{key:#{schema:#{type:"string"},required:true,sensitive:false}},
+                    state:#{fields:#{count:#{schema:#{type:"integer"},"default":#{type:"integer",value:7}}}},
+                    events:#{},slots:#{},parts:[],effects:["keep"]},render:Fn("render_counter")
+            });
+            fn read_count(ctx,payload) {ctx.get_state("count")}
+            fn start(ctx,deps) {()}
+            fn cleanup(ctx,deps) {()}
+            fn tick(ctx,value) {()}
+            fn render_counter(ctx,props) {
+                effect("keep",(),Fn("start"),Fn("cleanup"));
+                timeout("tick",1000,false,Fn("tick"),());
+                let opacity=signal("opacity",1.0);
+                text(props.key).bind_signal("opacity",opacity)
+                    .with_ref(element_ref("counter")).on_click(Fn("read_count"))
+            }
+            fn row(ctx,payload) {
+                if payload.index==19 {throw "candidate row failed";}
+                render_component("test/virtual_counter",#{key:payload.key})
+            }
+            fn view(ctx) {
+                let data=[];for index in 0..20 {data.push(#{key:`row-${index}`});}
+                virtual_collection(#{key:"rows",label:"Rows",data:data,height:24,
+                    estimated_height:24,overdraw_pixels:0},Fn("row"))
+            }
+        "#).unwrap();
+        let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+        let path = ComponentInstancePath::root("App", "manifest");
+        let mut lifecycle = ScriptLifecycle::new(
+            compiled,
+            Rc::clone(&runtime),
+            path.clone(),
+            None,
+            BTreeMap::new(),
+            &ComponentStateSchema::default(),
+        )
+        .unwrap();
+        lifecycle.start(&mut engine).unwrap();
+        let id = engine
+            .virtual_collection_ids_in_scope(&path)
+            .into_iter()
+            .next()
+            .unwrap();
+        let callback = lifecycle
+            .root()
+            .unwrap()
+            .virtual_collection_items(&id)
+            .unwrap()[&0]
+            .handler("click")
+            .unwrap()
+            .as_script()
+            .unwrap()
+            .clone();
+        let child = callback.component().unwrap().clone();
+        let signal = runtime.borrow().signals.resolve(&child, "opacity").unwrap();
+        let initial_effects = runtime
+            .borrow()
+            .effects
+            .iter_active()
+            .filter(|(id, _, _)| id.component() == &child)
+            .map(|(id, _, activation)| (id.clone(), activation))
+            .collect::<Vec<_>>();
+        runtime
+            .borrow()
+            .virtual_requests
+            .request(id.clone(), [0, 10]);
+        lifecycle.realize_virtual_requests(&mut engine).unwrap();
+        assert_eq!(
+            lifecycle
+                .invoke_callback(&engine, &callback, UiValue::Null)
+                .unwrap()
+                .as_int()
+                .unwrap(),
+            7
+        );
+        assert_eq!(
+            runtime
+                .borrow()
+                .effects
+                .iter_active()
+                .filter(|(id, _, _)| id.component() == &child)
+                .map(|(id, _, activation)| (id.clone(), activation))
+                .collect::<Vec<_>>(),
+            initial_effects
+        );
+        assert!(runtime.borrow().signals.read(&signal).is_ok());
+        assert_eq!(engine.component_timers_in_scope(&child).len(), 1);
+        assert_eq!(engine.component_element_refs_in_scope(&child).len(), 1);
+        runtime
+            .borrow()
+            .virtual_requests
+            .request(id.clone(), [0, 10, 19]);
+        assert!(lifecycle.realize_virtual_requests(&mut engine).is_err());
+        assert_eq!(
+            lifecycle
+                .root()
+                .unwrap()
+                .virtual_collection_items(&id)
+                .unwrap()
+                .keys()
+                .copied()
+                .collect::<Vec<_>>(),
+            vec![0, 10]
+        );
+        assert!(runtime.borrow().signals.read(&signal).is_ok());
+        runtime.borrow().virtual_requests.request_target(id, [10]);
+        lifecycle.realize_virtual_requests(&mut engine).unwrap();
+        assert!(
+            runtime
+                .borrow()
+                .component_state
+                .get(&child, "count")
+                .is_none()
+        );
+        assert!(
+            lifecycle
+                .invoke_callback(&engine, &callback, UiValue::Null)
+                .is_err()
+        );
+        assert!(runtime.borrow().signals.read(&signal).is_err());
+        assert!(engine.component_timers_in_scope(&child).is_empty());
+        assert!(engine.component_element_refs_in_scope(&child).is_empty());
+        assert!(
+            !runtime
+                .borrow()
+                .effects
+                .iter()
+                .any(|(id, _)| id.component() == &child)
+        );
+    }
+
+    #[test]
     fn controlled_rerender_synchronously_rebuilds_the_retained_virtual_window() {
         let mut engine = RuntimeEngine::new();
         let compiled = engine
@@ -3332,7 +3470,10 @@ mod tests {
         }
 
         let mut engine = RuntimeEngine::new();
-        let compiled = engine.compile(STREAM_COMPONENT_APP).unwrap();
+        let compiled = engine.compile(&STREAM_COMPONENT_APP.replace(
+            "fn view(ctx) { render_component(\"test/stream\", #{ key: \"stream\" }) }",
+            "fn view(ctx) { if ctx.get_state(\"phase\")==\"hidden\" {text(\"hidden\")} else {render_component(\"test/stream\", #{key:\"stream\"})} }",
+        )).unwrap();
         let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
         let capability = CapabilityId::parse("app.stream").unwrap();
         runtime
@@ -3371,12 +3512,14 @@ mod tests {
         lifecycle.start(&mut engine).unwrap();
 
         let deadline = Instant::now() + Duration::from_secs(1);
+        let mut already_drained = None;
         loop {
             let deliveries = runtime
                 .borrow_mut()
                 .subscriptions
                 .drain(lifecycle.generation());
             for delivery in deliveries {
+                already_drained = Some(delivery.clone());
                 let _ = lifecycle.invoke_async_delivery(&engine, delivery).unwrap();
             }
             if runtime.borrow().subscriptions.active_count() == 0 {
@@ -3392,6 +3535,19 @@ mod tests {
                 .component_state
                 .get(&path.child("StreamProbe", "stream"), "phase"),
             Some(&UiValue::String("second".to_owned()))
+        );
+        let late = already_drained.unwrap();
+        runtime
+            .borrow_mut()
+            .set_component_state_from_host(&path, "phase", UiValue::String("hidden".to_owned()))
+            .unwrap();
+        lifecycle.render_dirty(&mut engine).unwrap();
+        let callback = late.callback.clone();
+        let _ = lifecycle.invoke_async_delivery(&engine, late).unwrap();
+        assert!(
+            lifecycle
+                .invoke_callback(&engine, &callback, UiValue::Null)
+                .is_err()
         );
     }
 

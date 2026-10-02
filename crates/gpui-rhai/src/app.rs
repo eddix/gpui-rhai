@@ -121,6 +121,8 @@ struct ScriptViewHostState {
     window_policy: WindowCommandPolicy,
     frame_active: bool,
     container_bounds: Option<Bounds<Pixels>>,
+    #[allow(dead_code)]
+    escape_interceptor: Option<Subscription>,
 }
 
 impl ScriptViewHost {
@@ -151,20 +153,34 @@ impl ScriptViewHost {
         install(cx);
         let window_id = window_id.into();
         validate_view_id(&window_id)?;
-        Ok(Self {
-            inner: Rc::new(RefCell::new(ScriptViewHostState {
-                window_id,
-                overlays: WindowOverlayCoordinator::default(),
-                interactions: crate::interaction::WindowInteractionCoordinator::default(),
-                fallback_focus: cx.focus_handle(),
-                views: BTreeMap::new(),
-                pending_focus_recovery: Vec::new(),
-                overlay_viewport: None,
-                window_policy,
-                frame_active: false,
-                container_bounds: None,
-            })),
-        })
+        let inner = Rc::new(RefCell::new(ScriptViewHostState {
+            window_id,
+            overlays: WindowOverlayCoordinator::default(),
+            interactions: crate::interaction::WindowInteractionCoordinator::default(),
+            fallback_focus: cx.focus_handle(),
+            views: BTreeMap::new(),
+            pending_focus_recovery: Vec::new(),
+            overlay_viewport: None,
+            window_policy,
+            frame_active: false,
+            container_bounds: None,
+            escape_interceptor: None,
+        }));
+        let weak = Rc::downgrade(&inner);
+        let interceptor = cx.intercept_keystrokes(move |event, window, cx| {
+            if event.keystroke.key.as_str() != "escape" {
+                return;
+            }
+            let Some(state) = weak.upgrade() else {
+                return;
+            };
+            let interactions = state.borrow().interactions.clone();
+            if interactions.cancel_window(window, cx) {
+                cx.stop_propagation();
+            }
+        });
+        inner.borrow_mut().escape_interceptor = Some(interceptor);
+        Ok(Self { inner })
     }
 
     #[must_use]
@@ -248,23 +264,17 @@ impl ScriptViewHost {
 
     #[must_use]
     pub fn container(&self, child: impl IntoElement) -> AnyElement {
-        let (fallback, overlays, interactions) = {
+        let (fallback, overlays) = {
             let state = self.inner.borrow();
-            (
-                state.fallback_focus.clone(),
-                state.overlays.clone(),
-                state.interactions.clone(),
-            )
+            (state.fallback_focus.clone(), state.overlays.clone())
         };
         let escape_overlays = overlays.clone();
-        let escape_interactions = interactions;
         let child = div()
             .size_full()
             .track_focus(&fallback)
             .on_key_down(move |event, window, cx| {
                 if event.keystroke.key.as_str() == "escape"
-                    && (escape_interactions.cancel(window, cx)
-                        || escape_overlays.dismiss_escape(window, cx))
+                    && escape_overlays.dismiss_escape(window, cx)
                 {
                     cx.stop_propagation();
                 }
@@ -824,6 +834,36 @@ impl ScriptViewHandle {
             .last_failure
             .as_ref()
             .and_then(|failure| failure.diagnostic.as_deref().cloned()))
+    }
+
+    /// Register one of the host's own OS windows under `id`.
+    ///
+    /// A host that owns the top-level window and mounts the view manually
+    /// (instead of via [`ScriptApplication::run`]) starts with an empty
+    /// native-window registry, so script window commands such as
+    /// `ctx.close_window(id)` fail with `native window ... unavailable`.
+    /// Call this once after [`PreparedScriptView::mount`] with the window
+    /// the view was mounted into. Re-registering an `id` replaces the
+    /// handle; disposing the view removes it.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ScriptViewError::DisposedView`] after disposal.
+    pub fn register_native_window(
+        &self,
+        id: &str,
+        window: &Window,
+        cx: &mut App,
+    ) -> Result<(), ScriptViewError> {
+        self.require_not_disposed()?;
+        let handle = window.window_handle();
+        self.0.entity.update(cx, |view, _| {
+            view.native_windows
+                .borrow_mut()
+                .handles
+                .insert(id.to_owned(), handle);
+        });
+        Ok(())
     }
 
     /// Drain execution timings and snapshot retained/virtual metrics.
@@ -2584,6 +2624,7 @@ impl PreparedScriptView {
                 pending_interaction_cancel: false,
                 activity_wake: entity_activity_wake,
                 _runtime_tasks: runtime_tasks,
+                window_activation: None,
                 #[cfg(feature = "dev-reload")]
                 module_cache: self.module_cache,
                 #[cfg(feature = "dev-reload")]
@@ -2602,6 +2643,7 @@ impl PreparedScriptView {
                 pending_reload_paths: BTreeSet::new(),
             }
         });
+        install_window_interaction_cancellation(&entity, window, cx);
         attach_script_view_focus(&host, &config.view_id, &entity, cx);
         Ok(mounted_script_view_handle(
             entity,
@@ -2900,6 +2942,7 @@ fn open_secondary_window(
                 pending_interaction_cancel: false,
                 activity_wake: entity_activity_wake,
                 _runtime_tasks: runtime_tasks,
+                window_activation: None,
                 #[cfg(feature = "dev-reload")]
                 module_cache: ModuleCompileCache::new(),
                 #[cfg(feature = "dev-reload")]
@@ -2918,6 +2961,7 @@ fn open_secondary_window(
                 pending_reload_paths: BTreeSet::new(),
             }
         });
+        install_window_interaction_cancellation(&entity, window, cx);
         view_host.attach_view_focus(&view_window_id, entity.read(cx).host_focus.clone());
         let view = ScriptViewHandle(Rc::new(ScriptViewHandleInner {
             entity: entity.clone(),
@@ -3191,6 +3235,8 @@ struct ScriptHostView {
     pending_interaction_cancel: bool,
     activity_wake: crate::async_runtime::AsyncWake,
     _runtime_tasks: HostRuntimeTasks,
+    #[allow(dead_code)]
+    window_activation: Option<Subscription>,
     #[cfg(feature = "dev-reload")]
     module_cache: ModuleCompileCache,
     #[cfg(feature = "dev-reload")]
@@ -3209,9 +3255,51 @@ struct ScriptHostView {
     pending_reload_paths: BTreeSet<PathBuf>,
 }
 
+fn install_window_interaction_cancellation(
+    entity: &Entity<ScriptHostView>,
+    window: &mut Window,
+    cx: &mut App,
+) {
+    let subscription = entity.update(cx, |_, entity_cx| {
+        entity_cx.observe_window_activation(window, |view, window, cx| {
+            if !window.is_window_active() && view.cancel_view_interaction(window, cx) {
+                cx.notify();
+            }
+        })
+    });
+    entity.update(cx, |view, _| view.window_activation = Some(subscription));
+}
+
 struct DirectSignalAccessGuard {
     flag: Rc<Cell<bool>>,
     previous: bool,
+}
+
+#[derive(Clone)]
+struct PrimitiveRuntimeReader {
+    owner: gpui::WeakEntity<ScriptHostView>,
+    runtime: Rc<RefCell<UiRuntimeState>>,
+    view_id: String,
+    lifecycle_access: Rc<Cell<bool>>,
+}
+
+impl PrimitiveRuntimeReader {
+    fn read<T>(
+        &self,
+        app: &App,
+        query: impl FnOnce(&UiRuntimeState, &str) -> Option<T>,
+    ) -> Option<T> {
+        if self.lifecycle_access.get() {
+            query(&self.runtime.borrow(), &self.view_id)
+        } else {
+            self.owner
+                .read_with(app, |view, _| {
+                    query(&view.lifecycle.runtime().borrow(), &view.view_id)
+                })
+                .ok()
+                .flatten()
+        }
+    }
 }
 
 impl Drop for DirectSignalAccessGuard {
@@ -3357,10 +3445,12 @@ fn build_error_banner(
         .into_any_element()
 }
 
+#[allow(clippy::too_many_lines)]
 fn script_node_dispatcher(
     cx: &Context<ScriptHostView>,
     runtime: Rc<RefCell<UiRuntimeState>>,
     direct_signal_access: Rc<Cell<bool>>,
+    view_id: &str,
 ) -> NodeEventDispatcher {
     let script_entity = cx.entity().downgrade();
     let native_entity = script_entity.clone();
@@ -3368,8 +3458,14 @@ fn script_node_dispatcher(
     let signal_read_entity = script_entity.clone();
     let signal_read_runtime = Rc::clone(&runtime);
     let signal_read_direct = Rc::clone(&direct_signal_access);
-    let geometry_entity = script_entity.clone();
-    let canvas_geometry_entity = script_entity.clone();
+    let geometry_reader = PrimitiveRuntimeReader {
+        owner: script_entity.clone(),
+        runtime: Rc::clone(&runtime),
+        view_id: view_id.to_owned(),
+        lifecycle_access: Rc::clone(&direct_signal_access),
+    };
+    let canvas_geometry_reader = geometry_reader.clone();
+    let canvas_bounds_reader = geometry_reader.clone();
     NodeEventDispatcher::new(move |callback, payload, target, window, app| {
         script_entity
             .update(app, |view, cx| {
@@ -3422,41 +3518,40 @@ fn script_node_dispatcher(
             .unwrap_or_else(|_| Err(crate::SignalError::Stale(signal.id().clone())))
     })
     .with_element_bounds(move |reference, app| {
-        geometry_entity
-            .read_with(app, |view, _| {
-                let runtime = view.lifecycle.runtime();
-                let runtime = runtime.borrow();
-                let node = runtime.element_refs.resolve(reference).ok()?;
-                runtime
-                    .geometry_for(Some(&view.view_id))
-                    .presented(node)
-                    .ok()
-                    .map(|geometry| geometry.layout)
-            })
-            .ok()
-            .flatten()
+        geometry_reader.read(app, |runtime, view_id| {
+            let node = runtime.element_refs.resolve(reference).ok()?;
+            runtime
+                .geometry_for(Some(view_id))
+                .presented(node)
+                .ok()
+                .map(|geometry| geometry.layout)
+        })
     })
     .with_canvas_local_point(move |reference, point, app| {
-        canvas_geometry_entity
-            .read_with(app, |view, _| {
-                let runtime = view.lifecycle.runtime();
-                let runtime = runtime.borrow();
-                let node = runtime.element_refs.resolve(reference).ok()?;
-                let geometry = runtime.geometry_for(Some(&view.view_id));
-                let bounds = geometry.get(node)?;
-                let local = (point.0 - bounds.visual.x, point.1 - bounds.visual.y);
-                Some(
-                    crate::canvas::canvas_motion_affine(
-                        bounds.layout.width,
-                        bounds.layout.height,
-                        geometry.canvas_transform(node),
-                    )
-                    .inverse()?
-                    .map_point(local),
+        canvas_geometry_reader.read(app, |runtime, view_id| {
+            let node = runtime.element_refs.resolve(reference).ok()?;
+            let geometry = runtime.geometry_for(Some(view_id));
+            let bounds = geometry.canvas_drawable(node)?;
+            let local = (point.0 - bounds.visual.x, point.1 - bounds.visual.y);
+            Some(
+                crate::canvas::canvas_motion_affine(
+                    bounds.layout.width,
+                    bounds.layout.height,
+                    geometry.canvas_transform(node),
                 )
-            })
-            .ok()
-            .flatten()
+                .inverse()?
+                .map_point(local),
+            )
+        })
+    })
+    .with_canvas_bounds(move |reference, app| {
+        canvas_bounds_reader.read(app, |runtime, view_id| {
+            let node = runtime.element_refs.resolve(reference).ok()?;
+            runtime
+                .geometry_for(Some(view_id))
+                .canvas_drawable(node)
+                .map(|bounds| bounds.layout)
+        })
     })
 }
 
@@ -3570,6 +3665,7 @@ impl Render for ScriptHostView {
             cx,
             self.lifecycle.runtime(),
             Rc::clone(&self.direct_signal_access),
+            &self.view_id,
         );
         let appearance = system_appearance(window.appearance());
         let snapshot = self.render_snapshot(appearance);
@@ -4095,6 +4191,9 @@ impl ScriptHostView {
 
     fn prepare_host_render(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.prepare_render(window);
+        self.host
+            .interactions()
+            .set_retained_tree(&self.view_id, self.lifecycle.retained());
         self.lifecycle
             .runtime()
             .borrow()
@@ -5050,6 +5149,7 @@ impl ScriptHostView {
 
         let (delivery_changed, delivery_contract_changed, delivery_error) =
             self.deliver_async_batch(deliveries);
+        self.mark_interaction_contract_changed(delivery_contract_changed);
         let result = if dirty || pending_dispatch || virtual_requests {
             self.run_script_transaction(|view| {
                 let mut changed = view.invoke_pending_effects()?;

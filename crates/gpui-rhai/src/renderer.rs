@@ -58,6 +58,7 @@ pub struct NodeEventDispatcher {
     signal_write: Rc<SignalWriteFn>,
     signal_read: Rc<SignalReadFn>,
     element_bounds: Rc<ElementBoundsFn>,
+    canvas_bounds: Rc<ElementBoundsFn>,
     canvas_local_point: Rc<CanvasLocalPointFn>,
 }
 
@@ -88,6 +89,7 @@ impl NodeEventDispatcher {
             }),
             signal_read: Rc::new(|signal, _| Err(crate::SignalError::Stale(signal.id().clone()))),
             element_bounds: Rc::new(|_, _| None),
+            canvas_bounds: Rc::new(|_, _| None),
             canvas_local_point: Rc::new(|_, _, _| None),
         }
     }
@@ -149,6 +151,22 @@ impl NodeEventDispatcher {
     ) -> Self {
         self.canvas_local_point = Rc::new(read);
         self
+    }
+
+    pub(crate) fn with_canvas_bounds(
+        mut self,
+        read: impl Fn(&crate::ElementRef, &App) -> Option<crate::GeometryBounds> + 'static,
+    ) -> Self {
+        self.canvas_bounds = Rc::new(read);
+        self
+    }
+
+    pub(crate) fn canvas_bounds(
+        &self,
+        reference: &crate::ElementRef,
+        app: &App,
+    ) -> Option<crate::GeometryBounds> {
+        (self.canvas_bounds)(reference, app)
     }
 
     pub(crate) fn dispatch(
@@ -504,14 +522,18 @@ impl PointerPayloadContext {
                 self.canvas
                     .as_ref()
                     .and_then(|scene| {
-                        let geometry = geometry?;
+                        let geometry = self
+                            .node
+                            .and_then(|node| self.geometry.canvas_drawable(node))
+                            .or(geometry)?;
+                        let (window_x, window_y) = window?;
                         let transform = self
                             .node
                             .map(|node| self.geometry.canvas_transform(node))
                             .unwrap_or_default();
                         scene.hit_test_presented(
-                            x,
-                            y,
+                            window_x - geometry.visual.x,
+                            window_y - geometry.visual.y,
                             geometry.layout.width,
                             geometry.layout.height,
                             transform,
@@ -2201,9 +2223,14 @@ impl GpuiNodeRenderer {
                     ),
                 ))
                 .into_any_element(),
-            UiNodeKind::Canvas { scene } => {
-                render_canvas(element, scene, environment.colors, motion)
-            }
+            UiNodeKind::Canvas { scene } => render_canvas(
+                element,
+                scene,
+                environment.colors,
+                motion,
+                retained_id,
+                environment.geometry,
+            ),
             UiNodeKind::Svg { source } => render_inline_svg(element, node, source, environment),
             UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => {
                 let element = element.children(render_flattened_children(
@@ -2220,7 +2247,7 @@ impl GpuiNodeRenderer {
                 .child(
                     environment.primitives.element(
                         primitive.clone(),
-                        retained_id,
+                        retained_id.zip(node.key().map(|key| key.as_str().to_owned())),
                         environment
                             .primitives
                             .uses_primary_focus(&primitive.primitive)
@@ -2991,11 +3018,30 @@ fn render_canvas(
     scene: &crate::CanvasScene,
     colors: &impl ColorResolver,
     motion: NodeMotionValues,
+    retained_id: Option<NodeId>,
+    geometry: &crate::GeometryRegistry,
 ) -> AnyElement {
     let scene = scene.clone();
     let colors = OwnedColorResolver::capture(colors);
+    let geometry = geometry.clone();
     let canvas = gpui::canvas(
-        |_, _, _| (),
+        move |bounds, window, _| {
+            if let Some(node) = retained_id
+                && let Ok(drawable) = crate::GeometryBounds::new(
+                    f64::from(bounds.origin.x),
+                    f64::from(bounds.origin.y),
+                    f64::from(bounds.size.width),
+                    f64::from(bounds.size.height),
+                )
+            {
+                let offset = window.pixel_snap_point(window.element_offset());
+                geometry.update_canvas_drawable(
+                    node,
+                    drawable,
+                    (f64::from(offset.x), f64::from(offset.y)),
+                );
+            }
+        },
         move |bounds, (), window, _| {
             paint_canvas_scene(bounds, &scene, &colors, motion, window);
         },
@@ -3577,7 +3623,7 @@ fn native_virtual_collection_element<C: ColorResolver>(
         retained_roots,
         retained_links,
     };
-    VirtualListEntityElement::new_collection(path, spec.clone(), runtime)
+    VirtualListEntityElement::new_collection(path, spec.clone(), runtime, retained_id)
 }
 
 fn retained_link_subtrees(
@@ -4217,6 +4263,11 @@ impl Element for GeometryTrackedElement {
         window: &mut Window,
         cx: &mut App,
     ) {
+        let base_offset = window.pixel_snap_point(window.element_offset());
+        self.registry.record_element_offset(
+            self.node,
+            (f64::from(base_offset.x), f64::from(base_offset.y)),
+        );
         if let Ok(layout) = crate::GeometryBounds::new(
             f64::from(bounds.origin.x),
             f64::from(bounds.origin.y),

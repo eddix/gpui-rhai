@@ -140,6 +140,14 @@ The next foreground runtime turn invokes the retained named renderer only for
 missing target indices in its original module/component context, renders formal
 item components inside a stable `VirtualCollection[key]` state scope, prunes
 items outside the target, reconciles once, runs effects, and notifies GPUI.
+Every commit uses the complete target, including a prune-only change. Retained
+rows preserve state, incarnation, dependencies, effects, timers, signals and
+refs; removed rows release those resources together. A failed candidate restores
+the last successful node and resource manifest.
+The structural collection scope preserves the real caller's callback and read
+owner in both initial and delayed realization. Reads from a raw row renderer
+invalidate the owning root/formal component; reads inside a formal row component
+remain that component's dependencies.
 When the same target is already realized, no request is queued and the frame
 poll does not notify, so cached overdraw cannot create an evaluation or repaint
 loop.

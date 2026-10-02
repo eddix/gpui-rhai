@@ -1,0 +1,21 @@
+   Compiling audit-resize-controls-round2 v0.0.0 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/docs/audits/2026-09-30-interaction-0.1.8-round2/resize-controls)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.83s
+     Running probe.rs (tests/native-keyboard/target/debug/deps/probe-c7284d5ed821f80f)
+
+running 6 tests
+test async_axes_change_cancels_draggable_old_gesture ... async source before mouseup=vertical:none
+async axes result=vertical:none
+ok
+test range_legal_endpoint_gap_must_render_and_accept_input ... range endpoint callback count=1
+ok
+test split_keyboard_can_shrink_a_clamped_start_pane ... split left: before_x=312,after_x=304,ratio=0.76
+ok
+test split_wrappers_preserve_nested_percentage_geometry ... nested percentages: inner start=200x100,inner end=200x92,outer end=192x200
+ok
+test table_autofit_rejection_clears_native_override ... table autofit rejected: before_x=149, after_x=149, callbacks=1
+ok
+test table_keyboard_rejection_clears_native_override ... table keyboard rejected: before_x=149, after_x=149, callbacks=1
+ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.92s
+

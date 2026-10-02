@@ -1,0 +1,21 @@
+   Compiling audit-transforms-selection v0.0.0 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/docs/audits/2026-09-30-interaction-0.1.8/transforms-selection)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.78s
+     Running unittests src/lib.rs (tests/native-keyboard/target/debug/deps/audit_transforms_selection-4d7b5f5afcfb0486)
+
+running 6 tests
+test audit_blank_click_should_clear ... selection=["a"]
+selection=[]
+ok
+test audit_cancelled_modifier_wheel_must_not_commit ... immediately after Cancelled scale=Float(1.0) (expected Float(1.0))
+cancelled wheel commits=0
+ok
+test audit_finite_panzoom_scale_does_not_panic ... ok
+test audit_initial_rotation_pivot ... initial rotated canvas visual=GeometryBounds { x: -257.0, y: 41.0, width: 298.0, height: 218.0 }
+ok
+test audit_rotated_canvas_marquee ... rotated marquee selected=["a"]
+ok
+test audit_single_mode_marquee ... multiple=false selected=["b"]
+ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.01s
+

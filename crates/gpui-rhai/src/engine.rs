@@ -1491,6 +1491,7 @@ impl RuntimeEngine {
         &mut self,
         id: &crate::VirtualCollectionId,
         indices: &BTreeSet<usize>,
+        previous: &BTreeMap<usize, UiNode>,
     ) -> Result<BTreeMap<usize, UiNode>, RuntimeError> {
         let recipe = self.virtual_collections.get(id).cloned().ok_or_else(|| {
             RuntimeError::ComponentRuntime(format!(
@@ -1508,15 +1509,27 @@ impl RuntimeEngine {
         let scope = id.component.child("VirtualCollection", id.key.clone());
         let context = recipe
             .context
-            .for_component(scope, BTreeMap::new())
+            .for_structural_scope(scope, BTreeMap::new())
             .with_generation(recipe.generation);
-        self.begin_component_render(context.clone(), recipe.generation, None, None)?;
+        let retained = previous
+            .iter()
+            .filter(|(index, _)| indices.contains(index))
+            .map(|(index, node)| (*index, node.clone()))
+            .collect::<BTreeMap<_, _>>();
+        let previous_root = Rc::new(UiNode::box_node(retained.values().cloned().collect()));
+        self.begin_component_render(
+            context.clone(),
+            recipe.generation,
+            None,
+            Some(ComponentReusePlan::new(previous_root, BTreeSet::new())),
+        )?;
+        retain_virtual_component_manifest(&self.component_render)?;
         let result = (|| {
-            let mut realized = BTreeMap::new();
+            let mut realized = retained;
             for index in indices
                 .iter()
                 .copied()
-                .filter(|index| *index < recipe.data.len())
+                .filter(|index| *index < recipe.data.len() && !previous.contains_key(index))
             {
                 let item = recipe
                     .data
@@ -1668,6 +1681,8 @@ impl RuntimeEngine {
             let raw: Dynamic = self
                 .engine
                 .call_fn(&mut Scope::new(), &compiled.ast, "state_schema", ())
+                .map_err(RuntimeError::Evaluate)?;
+            validate_state_default_encoding(&raw, "state_schema")
                 .map_err(RuntimeError::Evaluate)?;
             rhai::serde::from_dynamic(&raw).map_err(RuntimeError::Evaluate)
         })();
@@ -2328,6 +2343,12 @@ fn register_define_component_api(
                         "formal component render must be an uncurried named function",
                     )));
                 }
+                if let Some(schema) = raw.get("schema")
+                    && schema.is::<Map>()
+                    && let Some(state) = schema.clone_cast::<Map>().get("state")
+                {
+                    validate_state_default_encoding(state, "component.schema.state")?;
+                }
                 let decoded: crate::ComponentDefinition =
                     rhai::serde::from_dynamic(&Dynamic::from_map(raw))?;
                 let definition = crate::ComponentDefinition::new(decoded.metadata, decoded.schema)
@@ -2353,6 +2374,30 @@ fn register_define_component_api(
                 Ok(())
             },
         );
+}
+
+fn validate_state_default_encoding(raw: &Dynamic, path: &str) -> Result<(), Box<EvalAltResult>> {
+    if !raw.is::<Map>() {
+        return Ok(());
+    }
+    let raw = raw.clone_cast::<Map>();
+    let Some(fields) = raw.get("fields").filter(|fields| fields.is::<Map>()) else {
+        return Ok(());
+    };
+    for (name, field) in fields.clone_cast::<Map>() {
+        if !field.is::<Map>() {
+            continue;
+        }
+        let field = field.cast::<Map>();
+        if let Some(value) = field.get("default") {
+            rhai::serde::from_dynamic::<UiValue>(value).map_err(|source| {
+                Box::new(component_render_error(format!(
+                    "{path}.fields.{name}.default: expected recursively tagged UiValue; map entries and array items each require type/value descriptors ({source})"
+                )))
+            })?;
+        }
+    }
+    Ok(())
 }
 
 fn register_component_runtime_apis(
@@ -2559,9 +2604,9 @@ fn caller_component_binding(
     caller_context: &UiContext,
 ) -> ComponentCallbackBinding {
     ComponentCallbackBinding {
-        component: caller_context.component_path().clone(),
-        incarnation: caller_context.component_incarnation(),
-        events: caller_context.event_schemas().clone(),
+        component: caller_context.callback_component_path().clone(),
+        incarnation: caller_context.callback_component_incarnation(),
+        events: caller_context.callback_event_schemas().clone(),
         context: Some(caller_context.native_context().cloned().unwrap_or_else(|| {
             crate::invocation::ScriptInvocationContext::capture_entry_retained(call)
         })),
@@ -2643,6 +2688,84 @@ fn try_reuse_component_subtree(
         .reused
         .push((component.metadata.id.to_string(), reused_components));
     Ok(Some(scope.node))
+}
+
+fn retain_virtual_component_manifest(
+    shared: &ActiveComponentRenderState,
+) -> Result<(), RuntimeError> {
+    let mut guard = shared.try_borrow_mut().map_err(|_| {
+        RuntimeError::ComponentRuntime("component render stack is already borrowed".to_owned())
+    })?;
+    let active = guard.as_mut().ok_or_else(|| {
+        RuntimeError::ComponentRuntime("virtual render has no active transaction".to_owned())
+    })?;
+    let Some(reuse) = active.reuse.as_ref() else {
+        return Ok(());
+    };
+    let retained = reuse
+        .invocations
+        .keys()
+        .filter(|path| reuse.subtrees.contains(path))
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    for path in &retained {
+        if !active.transaction.retain_existing(path) {
+            return Err(RuntimeError::ComponentRuntime(format!(
+                "retained virtual component `{path}` has no committed state"
+            )));
+        }
+    }
+    active.seen.extend(retained.iter().cloned());
+    active.invocations.extend(
+        reuse
+            .invocations
+            .iter()
+            .filter(|(path, _)| retained.contains(*path))
+            .map(|(path, recipe)| (path.clone(), recipe.clone())),
+    );
+    active.event_handlers.extend(
+        reuse
+            .event_handlers
+            .iter()
+            .filter(|((path, _), _)| retained.contains(path))
+            .map(|(id, callback)| (id.clone(), callback.clone())),
+    );
+    active.effects.extend(
+        reuse
+            .effects
+            .iter()
+            .filter(|(id, _)| retained.contains(id.component()))
+            .map(|(id, descriptor)| (id.clone(), descriptor.clone())),
+    );
+    active.timers.extend(
+        reuse
+            .timers
+            .iter()
+            .filter(|(id, _)| retained.contains(id.component()))
+            .map(|(id, descriptor)| (id.clone(), descriptor.clone())),
+    );
+    active.signals.extend(
+        reuse
+            .signals
+            .iter()
+            .filter(|(id, _)| retained.contains(id.component()))
+            .map(|(id, descriptor)| (id.clone(), descriptor.clone())),
+    );
+    active.element_refs.extend(
+        reuse
+            .element_refs
+            .iter()
+            .filter(|id| retained.contains(id.component()))
+            .cloned(),
+    );
+    active.virtual_collections.extend(
+        reuse
+            .virtual_collections
+            .iter()
+            .filter(|(id, _)| retained.contains(&id.component))
+            .map(|(id, recipe)| (id.clone(), recipe.clone())),
+    );
+    Ok(())
 }
 
 fn reusable_component_scope(
@@ -3361,7 +3484,7 @@ fn register_virtual_collection_api(engine: &mut Engine, active: &ActiveComponent
                     key: decoded.key.clone(),
                 };
                 let collection_context = context
-                    .for_component(
+                    .for_structural_scope(
                         component.child("VirtualCollection", decoded.key.clone()),
                         BTreeMap::new(),
                     )
@@ -5214,6 +5337,128 @@ mod tests {
             spec.realized[&31].kind(),
             crate::UiNodeKind::Text { text } if text == "Rich 31"
         ));
+    }
+
+    #[test]
+    #[allow(clippy::too_many_lines)]
+    fn virtual_row_formal_component_preserves_the_real_callback_owner() {
+        let mut engine = RuntimeEngine::new();
+        let compiled = engine
+            .compile_named(
+                "virtual-callback-owner",
+                r#"
+                    define_component(#{
+                        metadata: #{ id: "test/action", "export": "Action", version: "0.1.8",
+                            runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
+                            dependencies: [], capabilities: #{} },
+                        schema: #{ props: #{
+                                key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
+                                on_action: #{ schema: #{ type: "callback" }, required: true, sensitive: false },
+                            }, state: #{ fields: #{} }, events: #{}, slots: #{}, parts: [] },
+                        render: Fn("render_Action")
+                    });
+                    fn Action(props) { render_component("test/action", props) }
+                    fn render_Action(ctx, props) { text("Action").on_click(props.on_action) }
+                    fn increment(ctx, payload) { ctx.set_state("count", ctx.get_state("count") + 1); }
+                    fn render_item(ctx, payload) {
+                        Action(#{ key: payload.key, on_action: Fn("increment") })
+                    }
+                    fn view(ctx) {
+                        let data=[];for index in 0..32 {data.push(#{key:`row-${index}`});}
+                        virtual_collection(#{
+                            key: "rows", label: "Rows", data: data,
+                            estimated_height: 24, height: 24, overdraw_pixels: 0,
+                            alignment: "top", follow_tail: false,
+                        }, Fn("render_item"))
+                    }
+                "#,
+            )
+            .unwrap();
+        let runtime = Rc::new(RefCell::new(crate::UiRuntimeState::new()));
+        let root_path = ComponentInstancePath::root("App", "virtual-callback");
+        let schema = ComponentStateSchema::new(BTreeMap::from([(
+            "count".to_owned(),
+            crate::StateField::new(
+                crate::ValueSchema::Integer {
+                    min: None,
+                    max: None,
+                },
+                UiValue::Integer(0),
+            ),
+        )]))
+        .unwrap();
+        let mut lifecycle = crate::ScriptLifecycle::new(
+            compiled,
+            Rc::clone(&runtime),
+            root_path.clone(),
+            None,
+            BTreeMap::new(),
+            &schema,
+        )
+        .unwrap();
+        lifecycle.start(&mut engine).unwrap();
+        let crate::UiNodeKind::VirtualCollection { spec } = lifecycle.root().unwrap().kind() else {
+            unreachable!()
+        };
+        let crate::UiEventHandler::Script(callback) =
+            spec.realized[&0].handlers()["click"][0].handler()
+        else {
+            panic!("formal row component must retain its callback");
+        };
+        let _ = lifecycle
+            .invoke_callback_transactional(&engine, callback, UiValue::Null)
+            .unwrap();
+        assert_eq!(
+            runtime.borrow().component_state.get(&root_path, "count"),
+            Some(&UiValue::Integer(1))
+        );
+        let id = engine
+            .virtual_collection_ids_in_scope(&root_path)
+            .into_iter()
+            .next()
+            .unwrap();
+        assert!(
+            !lifecycle
+                .root()
+                .unwrap()
+                .virtual_collection_items(&id)
+                .unwrap()
+                .contains_key(&31)
+        );
+        runtime.borrow().virtual_requests.request(id.clone(), [31]);
+        lifecycle.realize_virtual_requests(&mut engine).unwrap();
+        let callback = lifecycle
+            .root()
+            .unwrap()
+            .virtual_collection_items(&id)
+            .unwrap()[&31]
+            .handler("click")
+            .unwrap()
+            .as_script()
+            .unwrap();
+        let _ = lifecycle
+            .invoke_callback_transactional(&engine, callback, UiValue::Null)
+            .unwrap();
+        assert_eq!(
+            runtime.borrow().component_state.get(&root_path, "count"),
+            Some(&UiValue::Integer(2))
+        );
+    }
+
+    #[test]
+    fn invalid_state_default_reports_the_field_and_tagged_encoding() {
+        let mut engine = RuntimeEngine::new();
+        let compiled = engine.compile(r#"
+            fn state_schema() {#{fields:#{current_theme:#{schema:#{type:"map",values:#{type:"ui_value"}},
+                "default":#{type:"map",value:#{family:"Default"}}}}}}
+            fn view(ctx) {text("view")}
+        "#).unwrap();
+        let error = engine.root_state_schema(&compiled).unwrap_err().to_string();
+        assert!(
+            error.contains("state_schema.fields.current_theme.default"),
+            "{error}"
+        );
+        assert!(error.contains("recursively tagged UiValue"), "{error}");
     }
 
     #[test]

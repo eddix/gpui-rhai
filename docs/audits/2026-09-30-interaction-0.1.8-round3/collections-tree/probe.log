@@ -1,0 +1,13 @@
+   Compiling audit-018-collections-tree-round3 v0.0.0 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/docs/audits/2026-09-30-interaction-0.1.8-round3/collections-tree/probe)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 6.93s
+     Running `target/debug/audit-018-collections-tree-round3`
+caught-miss callback batch=0, retained_invalid_names=64, registry_debug_bytes=39938, render_dirty=false
+caught-miss callback batch=1, retained_invalid_names=128, registry_debug_bytes=79800, render_dirty=false
+caught-miss callback batch=2, retained_invalid_names=192, registry_debug_bytes=119662, render_dirty=false
+valid missing callback batch=0, retained_valid_names=64, render_dirty=false
+valid missing callback batch=1, retained_valid_names=128, render_dirty=false
+host register corresponding name (length=527): Err("InvalidName")
+register rolled-back dependency render_dirty=false
+register prior dependency render_dirty=true
+release_window missing_readers_cleared=true
+cross-root exact-reader invalidation and positive-reader cleanup: passed

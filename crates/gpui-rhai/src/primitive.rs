@@ -849,6 +849,7 @@ pub struct PrimitiveContext {
     scroll_handles: Vec<gpui::ScrollHandle>,
     view_id: String,
     instance: Option<PrimitiveInstanceId>,
+    retained_node: Option<crate::NodeId>,
 }
 
 /// A schema-checked semantic proposal produced by a native primitive policy.
@@ -1020,8 +1021,11 @@ impl PrimitiveContext {
             self.view_id.clone(),
             format!("{}:{key}", self.primitive.as_str()),
         );
-        if let Some(instance) = self.instance.as_ref() {
-            owner.with_retained(instance.node())
+        if let Some(node) = self
+            .retained_node
+            .or_else(|| self.instance.as_ref().map(PrimitiveInstanceId::node))
+        {
+            owner.with_retained(node)
         } else {
             owner
         }
@@ -1054,6 +1058,25 @@ impl PrimitiveContext {
         cx: &mut App,
     ) -> bool {
         self.interactions.cancel_owner(owner, window, cx)
+    }
+
+    pub(crate) fn register_interaction_cancellation(
+        &self,
+        owner: crate::interaction::InteractionOwner,
+        notify: gpui::EntityId,
+        cancel: impl Fn(&mut Window, &mut App) + 'static,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        self.interactions
+            .register_auxiliary(owner, notify, cancel, window, cx);
+    }
+
+    pub(crate) fn clear_interaction_cancellation(
+        &self,
+        owner: &crate::interaction::InteractionOwner,
+    ) {
+        self.interactions.clear_auxiliary(owner);
     }
 
     pub(crate) fn register_drop_target(&self, target: crate::interaction::DropTargetRegistration) {
@@ -1131,6 +1154,16 @@ impl PrimitiveContext {
         self.dispatcher.as_ref().and_then(|dispatcher| {
             dispatcher.canvas_local_point(reference, (f64::from(point.x), f64::from(point.y)), cx)
         })
+    }
+
+    pub(crate) fn canvas_bounds(
+        &self,
+        reference: &crate::ElementRef,
+        cx: &App,
+    ) -> Option<crate::GeometryBounds> {
+        self.dispatcher
+            .as_ref()
+            .and_then(|dispatcher| dispatcher.canvas_bounds(reference, cx))
     }
 }
 
@@ -1636,7 +1669,7 @@ impl PrimitiveRegistry {
     pub(crate) fn element(
         &self,
         node: PrimitiveNode,
-        retained_id: Option<crate::NodeId>,
+        retained: Option<(crate::NodeId, String)>,
         focus_handle: Option<gpui::FocusHandle>,
         fallback: Option<UiNode>,
         runtime: PrimitiveWindowContext,
@@ -1645,7 +1678,7 @@ impl PrimitiveRegistry {
         RegisteredPrimitiveElement {
             registry: self.clone(),
             node,
-            retained_id,
+            retained,
             focus_handle,
             fallback,
             runtime,
@@ -1674,10 +1707,10 @@ impl PrimitiveRegistry {
         }
         let instance_id = retained_instance.then(|| PrimitiveInstanceId {
             primitive: node.primitive.clone(),
-            key: node
-                .key
+            key: identity
+                .retained_key
                 .clone()
-                .expect("retained primitive descriptors require a key"),
+                .expect("retained primitive descriptors require a retained key"),
             node: identity
                 .retained_id
                 .expect("retained primitive renderer supplies NodeId"),
@@ -1861,7 +1894,7 @@ fn guard_primitive_panic<T>(
 struct RegisteredPrimitiveElement {
     registry: PrimitiveRegistry,
     node: PrimitiveNode,
-    retained_id: Option<crate::NodeId>,
+    retained: Option<(crate::NodeId, String)>,
     focus_handle: Option<gpui::FocusHandle>,
     fallback: Option<UiNode>,
     runtime: PrimitiveWindowContext,
@@ -1894,6 +1927,7 @@ impl PrimitiveWindowContext {
 
 struct PrimitiveRenderIdentity {
     retained_id: Option<crate::NodeId>,
+    retained_key: Option<String>,
     focus_handle: Option<gpui::FocusHandle>,
 }
 
@@ -1929,11 +1963,13 @@ impl RenderOnce for RegisteredPrimitiveElement {
             scroll_handles: self.runtime.scroll_handles,
             view_id: self.runtime.view_id,
             instance: None,
+            retained_node: self.retained.as_ref().map(|(node, _)| *node),
         };
         match registry.render_instance(
             self.node,
             PrimitiveRenderIdentity {
-                retained_id: self.retained_id,
+                retained_id: self.retained.as_ref().map(|(node, _)| *node),
+                retained_key: self.retained.map(|(_, key)| key),
                 focus_handle: self.focus_handle,
             },
             &events,
@@ -2542,6 +2578,24 @@ mod tests {
     }
 
     #[test]
+    fn primitive_identity_uses_the_presented_retained_key() {
+        let primitive = PrimitiveId::parse("my_app.editor").unwrap();
+        let node = UiNode::custom(PrimitiveNode {
+            primitive,
+            key: Some("constructor-key".to_owned()),
+            props: PrimitiveProps::new(),
+        })
+        .with_key("presented-key");
+        let mut tree = crate::RetainedUiTree::new();
+        tree.reconcile(node).unwrap();
+        let instance = collect_primitive_instances(&tree)
+            .into_iter()
+            .next()
+            .unwrap();
+        assert_eq!(instance.key(), "presented-key");
+    }
+
+    #[test]
     fn primitive_context_holds_only_a_weak_registry_reference() {
         let registry = PrimitiveRegistry::new();
         let weak = Rc::downgrade(&registry.inner);
@@ -2555,6 +2609,7 @@ mod tests {
             scroll_handles: Vec::new(),
             view_id: "test".to_owned(),
             instance: None,
+            retained_node: None,
         };
         assert_eq!(Rc::strong_count(&registry.inner), 1);
         drop(registry);

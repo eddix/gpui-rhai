@@ -6,7 +6,7 @@ use gpui::{
     AnyElement, App, AppContext, Bounds, Context, Element, ElementId, Entity, FocusHandle,
     GlobalElementId, InspectorElementId, InteractiveElement, IntoElement, KeyDownEvent, LayoutId,
     Modifiers, MouseButton, MouseDownEvent, ParentElement, Pixels, Point, Render, Style, Styled,
-    Window, div, point, rgba, size,
+    Window, div, point, px, rgba, size,
 };
 
 use crate::{
@@ -104,12 +104,14 @@ impl SelectionAreaEntity {
             move |gesture: crate::interaction::GestureUpdate, window: &mut Window, cx: &mut App| {
                 finish_entity.update(cx, |selection, cx| {
                     let proposal = if gesture.moved() {
+                        let marquee = pixel_bounds(start_window, gesture.current());
                         marquee_proposal(
                             &selection.config,
                             &window_quad(start_window, gesture.current())
                                 .into_iter()
                                 .filter_map(|point| selection.local_point(point, cx))
                                 .collect::<Vec<_>>(),
+                            marquee.size.width > px(0.0) && marquee.size.height > px(0.0),
                             modifiers,
                         )
                     } else {
@@ -446,9 +448,10 @@ fn range_proposal(config: &SelectionConfig, key: &str) -> SelectionProposal {
 fn marquee_proposal(
     config: &SelectionConfig,
     polygon: &[(f64, f64)],
+    has_window_area: bool,
     modifiers: Modifiers,
 ) -> Option<SelectionProposal> {
-    if polygon.len() != 4 {
+    if polygon.len() != 4 || !has_window_area {
         return None;
     }
     let mut hits = config
@@ -511,13 +514,25 @@ fn rect_corners(bounds: GeometryBounds) -> [(f64, f64); 4] {
 }
 
 fn point_in_polygon(point: (f64, f64), polygon: &[(f64, f64)]) -> bool {
+    let Some(anchor) = polygon.first() else {
+        return false;
+    };
     let twice_area = (0..polygon.len())
         .map(|index| {
             let next = (index + 1) % polygon.len();
-            polygon[index].0 * polygon[next].1 - polygon[next].0 * polygon[index].1
+            let a = (polygon[index].0 - anchor.0, polygon[index].1 - anchor.1);
+            let b = (polygon[next].0 - anchor.0, polygon[next].1 - anchor.1);
+            a.0.mul_add(b.1, -b.0 * a.1)
         })
         .sum::<f64>();
-    if twice_area.abs() <= 1e-9 {
+    let coordinate_scale = polygon
+        .iter()
+        .flat_map(|(x, y)| [(x - anchor.0).abs(), (y - anchor.1).abs()])
+        .fold(0.0_f64, f64::max)
+        .max(f64::MIN_POSITIVE);
+    let point_count = f64::from(u32::try_from(polygon.len()).unwrap_or(u32::MAX));
+    let area_epsilon = f64::EPSILON * coordinate_scale * coordinate_scale * point_count * 16.0;
+    if twice_area.abs() <= area_epsilon {
         return false;
     }
     let mut sign = 0.0_f64;
@@ -525,7 +540,11 @@ fn point_in_polygon(point: (f64, f64), polygon: &[(f64, f64)]) -> bool {
         let a = polygon[index];
         let b = polygon[(index + 1) % polygon.len()];
         let cross = (b.0 - a.0).mul_add(point.1 - a.1, -(b.1 - a.1) * (point.0 - a.0));
-        if cross.abs() <= 1e-9 {
+        let cross_epsilon = f64::EPSILON
+            * ((b.0 - a.0).abs() * (point.1 - a.1).abs()
+                + (b.1 - a.1).abs() * (point.0 - a.0).abs())
+            * 16.0;
+        if cross.abs() <= cross_epsilon {
             continue;
         }
         if sign == 0.0 {
@@ -539,7 +558,14 @@ fn point_in_polygon(point: (f64, f64), polygon: &[(f64, f64)]) -> bool {
 
 fn segments_intersect(a: (f64, f64), b: (f64, f64), c: (f64, f64), d: (f64, f64)) -> bool {
     fn orientation(a: (f64, f64), b: (f64, f64), c: (f64, f64)) -> f64 {
-        (b.0 - a.0).mul_add(c.1 - a.1, -(b.1 - a.1) * (c.0 - a.0))
+        let lhs = (b.0 - a.0) * (c.1 - a.1);
+        let rhs = (b.1 - a.1) * (c.0 - a.0);
+        let cross = (b.0 - a.0).mul_add(c.1 - a.1, -rhs);
+        if cross.abs() <= f64::EPSILON * (lhs.abs() + rhs.abs()) * 16.0 {
+            0.0
+        } else {
+            cross
+        }
     }
     let (o1, o2, o3, o4) = (
         orientation(a, b, c),
@@ -547,19 +573,19 @@ fn segments_intersect(a: (f64, f64), b: (f64, f64), c: (f64, f64), d: (f64, f64)
         orientation(c, d, a),
         orientation(c, d, b),
     );
-    let epsilon = 1e-9;
     let on_segment = |a: (f64, f64), b: (f64, f64), point: (f64, f64)| {
+        let epsilon = f64::EPSILON * (a.0 - b.0).abs().max((a.1 - b.1).abs()) * 16.0;
         point.0 >= a.0.min(b.0) - epsilon
             && point.0 <= a.0.max(b.0) + epsilon
             && point.1 >= a.1.min(b.1) - epsilon
             && point.1 <= a.1.max(b.1) + epsilon
     };
-    (o1.abs() <= epsilon && on_segment(a, b, c))
-        || (o2.abs() <= epsilon && on_segment(a, b, d))
-        || (o3.abs() <= epsilon && on_segment(c, d, a))
-        || (o4.abs() <= epsilon && on_segment(c, d, b))
-        || ((o1 > epsilon && o2 < -epsilon || o1 < -epsilon && o2 > epsilon)
-            && (o3 > epsilon && o4 < -epsilon || o3 < -epsilon && o4 > epsilon))
+    (o1 == 0.0 && on_segment(a, b, c))
+        || (o2 == 0.0 && on_segment(a, b, d))
+        || (o3 == 0.0 && on_segment(c, d, a))
+        || (o4 == 0.0 && on_segment(c, d, b))
+        || ((o1 > 0.0 && o2 < 0.0 || o1 < 0.0 && o2 > 0.0)
+            && (o3 > 0.0 && o4 < 0.0 || o3 < 0.0 && o4 > 0.0))
 }
 
 fn rect_inside_polygon(bounds: GeometryBounds, polygon: &[(f64, f64)]) -> bool {
@@ -877,5 +903,36 @@ mod tests {
             &line,
             GeometryBounds::new(95.0, 5.0, 10.0, 10.0).unwrap()
         ));
+    }
+
+    #[test]
+    fn polygon_predicates_preserve_translation_and_scale() {
+        for origin in [0.0, 499.0, 1000.0] {
+            for scale in [1.0, 1e-4, 1e-6] {
+                let polygon = vec![
+                    (origin, origin),
+                    (origin + 20.0 * scale, origin),
+                    (origin + 20.0 * scale, origin + 20.0 * scale),
+                    (origin, origin + 20.0 * scale),
+                ];
+                let inside = GeometryBounds::new(
+                    origin + 5.0 * scale,
+                    origin + 5.0 * scale,
+                    5.0 * scale,
+                    5.0 * scale,
+                )
+                .unwrap();
+                let outside = GeometryBounds::new(
+                    origin + 25.0 * scale,
+                    origin + 5.0 * scale,
+                    5.0 * scale,
+                    5.0 * scale,
+                )
+                .unwrap();
+                assert!(rect_inside_polygon(inside, &polygon));
+                assert!(polygon_intersects_rect(&polygon, inside));
+                assert!(!polygon_intersects_rect(&polygon, outside));
+            }
+        }
     }
 }

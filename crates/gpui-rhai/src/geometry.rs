@@ -327,6 +327,8 @@ struct GeometryState {
     motion_trigger_targets: BTreeMap<(NodeId, crate::MotionProgressDriver), bool>,
     motion_triggers: BTreeMap<(NodeId, crate::MotionProgressDriver), TriggerMotionState>,
     canvas_transforms: BTreeMap<NodeId, CanvasMotionTransform>,
+    canvas_drawables: BTreeMap<NodeId, ElementGeometry>,
+    element_offsets: BTreeMap<NodeId, (f64, f64)>,
 }
 
 #[derive(Clone, Debug)]
@@ -587,6 +589,49 @@ impl GeometryRegistry {
             .unwrap_or_default()
     }
 
+    pub(crate) fn record_element_offset(&self, node: NodeId, offset: (f64, f64)) {
+        Rc::make_mut(&mut self.inner.borrow_mut())
+            .element_offsets
+            .insert(node, offset);
+    }
+
+    pub(crate) fn update_canvas_drawable(
+        &self,
+        node: NodeId,
+        visual: GeometryBounds,
+        offset: (f64, f64),
+    ) {
+        let mut current = self.inner.borrow_mut();
+        let state = Rc::make_mut(&mut current);
+        let Some(outer) = state.committed.get(&node) else {
+            return;
+        };
+        let base_offset = state
+            .element_offsets
+            .get(&node)
+            .copied()
+            .unwrap_or_default();
+        let geometry = ElementGeometry {
+            layout: GeometryBounds {
+                x: visual.x - (offset.0 - base_offset.0),
+                y: visual.y - (offset.1 - base_offset.1),
+                ..visual
+            },
+            visual,
+            clip: outer.clip,
+        };
+        if state.canvas_drawables.get(&node) != Some(&geometry) {
+            state.canvas_drawables.insert(node, geometry);
+            state
+                .dirty
+                .extend(state.readers.get(&node).into_iter().flatten().cloned());
+        }
+    }
+
+    pub(crate) fn canvas_drawable(&self, node: NodeId) -> Option<ElementGeometry> {
+        self.inner.borrow().canvas_drawables.get(&node).copied()
+    }
+
     pub(crate) fn sample_motion_trigger(
         &self,
         node: NodeId,
@@ -752,6 +797,12 @@ impl GeometryRegistry {
             .retain(|(node, _), _| active.contains(node));
         state
             .canvas_transforms
+            .retain(|node, _| active.contains(node));
+        state
+            .canvas_drawables
+            .retain(|node, _| active.contains(node));
+        state
+            .element_offsets
             .retain(|node, _| active.contains(node));
     }
 
