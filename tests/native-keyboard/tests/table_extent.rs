@@ -670,3 +670,41 @@ fn component_min_max_and_native_override_use_one_width_authority(cx: &mut TestAp
         }
     }
 }
+
+#[gpui::test]
+fn four_column_registry_width_descriptors_share_the_actual_native_plan(cx: &mut TestAppContext) {
+    // Exact original registry specimen: 120px / flex(2) / 30% / 90px.
+    // Leaf style snapshots cannot establish this native layout contract.
+    let columns = r#"[#{key:"a",title:"Name",width:#{kind:"fixed",value:120}},#{key:"b",title:"Score",width:#{kind:"flex",value:2}},#{key:"c",title:"Joined",width:#{kind:"percent",value:30}},#{key:"id",title:"Status",width:#{kind:"fixed",value:90}}]"#;
+    for rtl in [false, true] {
+        for native in [false, true] {
+            let (window, view) = mount(
+                cx,
+                script(rtl, native, columns, true),
+                &format!("extent-registry-four-{rtl}-{native}"),
+            );
+            let mut v = VisualTestContext::from_window(*window, cx);
+            settle(&mut v);
+            assert_width(&mut v, &view, "Name", "Alpha", 120.0);
+            assert_width(&mut v, &view, "Score", "Beta", 16.0);
+            assert_width(&mut v, &view, "Joined", "Gamma", 89.4);
+            assert_width(&mut v, &view, "Status", "row-0", 90.0);
+            let table = bounds(&mut v, &view, "table", "Extent Table");
+            let last = bounds(&mut v, &view, "columnheader", "Status");
+            let p = point(px((table.x + 150.0) as f32), px((last.y + 15.0) as f32));
+            wheel(&mut v, p, if rtl { 1000.0 } else { -1000.0 }, 0.0);
+            let last = bounds(&mut v, &view, "columnheader", "Status");
+            if rtl {
+                assert!((last.x - table.x - 1.0).abs() < 0.6);
+            } else {
+                assert!((last.x + last.width - table.x - table.width + 1.0).abs() < 0.6);
+            }
+            command(&mut v, &view, "button", "Viewport", "click");
+            settle(&mut v);
+            assert_width(&mut v, &view, "Name", "Alpha", 120.0);
+            assert_width(&mut v, &view, "Score", "Beta", 138.6);
+            assert_width(&mut v, &view, "Joined", "Gamma", 149.4);
+            assert_width(&mut v, &view, "Status", "row-0", 90.0);
+        }
+    }
+}

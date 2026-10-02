@@ -10,7 +10,7 @@ programs remain unchanged evidence; they are not substituted for these tests.
 | VIRT-01 final invocation manifest/scoped atomic state deltas | `crates/gpui-rhai/tests/virtual_transactions.rs`: sibling/overlap order, batch, failure retry; existing lifecycle transparent-wrapper tests |
 | READ-01 direct/item contributions and rollback | `crates/gpui-rhai/tests/virtual_read_contributions.rs`: raw/formal, root/shared/path, 80-key history, late registration, failed candidate |
 | TABLE-01 shared shell/clipping/controlled columns | `table_boundaries.rs`: four states, fill/fixed height, final/sole divider, rejection |
-| TABLE-02 resolved extent/RTL/native wheel | `table_extent.rs`: fixed/mixed, Array/Native, state transitions, viewport resize, actual tail interaction, zero-Rhai X/Y controls, theme insets |
+| TABLE-02 resolved extent/RTL/native wheel | `table_extent.rs`: fixed/mixed, Array/Native, state transitions, viewport resize, actual tail interaction, zero-Rhai X/Y controls, theme insets; `four_column_registry_width_descriptors_share_the_actual_native_plan` measures the original 120/flex(2)/30%/90 specimen rather than its obsolete per-leaf style representation |
 | TABLE-03 measured-frame demand | `table_frame_demand.rs`: initial/changed viewport converges through scheduled frames alone, zero-Rhai follow-up and bounded idle; extra refresh is only an after-assertion driver control |
 | REF-01 binding continuity | `element_ref_subscriptions.rs`: unknown→bound, same-node, rebind, removed, formal virtual row controls |
 | REF-02 retarget/contribution/teardown | `element_ref.rs` units: contribution retarget, last-item prune, direct+ref coexistence, provider and owner final-manifest removal |
