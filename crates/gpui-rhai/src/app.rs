@@ -147,6 +147,10 @@ impl NativeWindowAuthority {
     fn is_current(&self, cx: &App) -> bool {
         self.lease.strong_count() > 0
             && cx
+                .windows()
+                .iter()
+                .any(|window| window.window_id() == self.window)
+            && cx
                 .global::<ScriptRuntimeInstallation>()
                 .window_command_owners
                 .get(&self.window)
@@ -2415,6 +2419,7 @@ impl ScriptWindowFactory {
         &self,
         view_id: &str,
         window_id: &str,
+        mount_lease: Option<&std::rc::Weak<()>>,
     ) -> Result<(RuntimeEngine, ScriptLifecycle, PrimitiveRegistry), ScriptViewError> {
         let mut engine = RuntimeEngine::new();
         for extension in self.extensions.iter() {
@@ -2432,11 +2437,13 @@ impl ScriptWindowFactory {
             window_id,
             WindowCommandPolicy::ApplicationOwned,
             false,
+            mount_lease,
         )?;
         let primitives = engine.primitive_registry();
         Ok((engine, lifecycle, primitives))
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn mount_lifecycle(
         &self,
         engine: &mut RuntimeEngine,
@@ -2445,6 +2452,7 @@ impl ScriptWindowFactory {
         window_id: &str,
         policy: WindowCommandPolicy,
         register_window: bool,
+        mount_lease: Option<&std::rc::Weak<()>>,
     ) -> Result<ScriptLifecycle, ScriptViewError> {
         {
             let mut runtime = self.runtime.borrow_mut();
@@ -2452,6 +2460,12 @@ impl ScriptWindowFactory {
                 runtime
                     .windows
                     .register_open_for_view(window_id, policy, view_id)
+                    .map_err(|error| ScriptViewError::Extension(error.to_string()))?;
+            }
+            if let Some(lease) = mount_lease {
+                runtime
+                    .windows
+                    .qualify_mount(window_id, lease)
                     .map_err(|error| ScriptViewError::Extension(error.to_string()))?;
             }
             for extension in self.extensions.iter() {
@@ -2515,6 +2529,23 @@ struct NativeWindowRegistry {
 struct NativeWindowRegistration {
     handle: AnyWindowHandle,
     authority: NativeWindowAuthority,
+}
+
+fn window_command_is_current(
+    command: &crate::QueuedWindowCommand,
+    windows: &crate::WindowCommandRegistry,
+    cx: &App,
+) -> bool {
+    windows.is_current_target(command)
+        && windows.is_current_origin(command)
+        && (command.is_host_origin()
+            || command.source_binding().is_some_and(|binding| {
+                NativeWindowAuthority {
+                    window: binding.window,
+                    lease: binding.lease,
+                }
+                .is_current(cx)
+            }))
 }
 
 pub struct PreparedScriptView {
@@ -2621,6 +2652,14 @@ impl PreparedScriptView {
             policy,
             &mount_lease,
         )?;
+        if window_authority.is_some() {
+            self.factory
+                .runtime
+                .borrow_mut()
+                .windows
+                .bind_native(&window_id, window.window_handle().window_id())
+                .map_err(|error| ScriptViewError::Extension(error.to_string()))?;
+        }
         #[cfg(not(feature = "dev-reload"))]
         let _ = (
             &self.entry,
@@ -2654,7 +2693,6 @@ impl PreparedScriptView {
                 .map(|_| spawn_host_reload_poll(entity_cx, Rc::clone(&entity_view_state)));
             ScriptHostView {
                 mount_lease: mount_lease.clone(),
-                window_authority: window_authority.clone(),
                 view_id: view_id.clone(),
                 window_id,
                 engine: self.engine,
@@ -2939,18 +2977,19 @@ fn open_secondary_window(
     let window_id = spec.id.clone();
     let host = ScriptViewHost::new(window_id.clone(), cx).map_err(ScriptFailure::from)?;
     let mount_lease = host.reserve_view(&window_id).map_err(ScriptFailure::from)?;
-    let (engine, lifecycle, primitives) = match factory.instantiate(&window_id, &window_id) {
-        Ok(instance) => instance,
-        Err(error) => {
-            host.unregister_view(&window_id, &mount_lease);
-            let root = ComponentInstancePath::root("View", &window_id);
-            let _ = factory
-                .runtime
-                .borrow_mut()
-                .release_window(&window_id, &root);
-            return Err(error.into());
-        }
-    };
+    let (engine, lifecycle, primitives) =
+        match factory.instantiate(&window_id, &window_id, Some(&mount_lease)) {
+            Ok(instance) => instance,
+            Err(error) => {
+                host.unregister_view(&window_id, &mount_lease);
+                let root = ComponentInstancePath::root("View", &window_id);
+                let _ = factory
+                    .runtime
+                    .borrow_mut()
+                    .release_window(&window_id, &root);
+                return Err(error.into());
+            }
+        };
     let timings = engine.take_timings();
     let options = script_window_options(spec, cx);
     let view_factory = Rc::clone(&factory);
@@ -2967,6 +3006,12 @@ fn open_secondary_window(
                 cx,
             )
             .expect("fresh secondary Host has no native window or command owner");
+        view_factory
+            .runtime
+            .borrow_mut()
+            .windows
+            .bind_native(&view_window_id, window.window_handle().window_id())
+            .expect("secondary reservation keeps its qualified mount identity");
         let (theme_handle, view_theme_handle) =
             theme_handles_for_lifecycle(&lifecycle, &view_factory.theme, window, cx);
         let view_state = Rc::new(Cell::new(ScriptViewState::Active));
@@ -2982,7 +3027,6 @@ fn open_secondary_window(
             let host_focus = entity_cx.focus_handle();
             ScriptHostView {
                 mount_lease: view_mount_lease.clone(),
-                window_authority: window_authority.clone(),
                 view_id: view_window_id.clone(),
                 window_id: view_window_id.clone(),
                 engine,
@@ -3284,7 +3328,6 @@ impl From<String> for ScriptFailure {
 #[allow(clippy::struct_excessive_bools)]
 struct ScriptHostView {
     mount_lease: std::rc::Weak<()>,
-    window_authority: Option<NativeWindowAuthority>,
     view_id: String,
     window_id: String,
     engine: RuntimeEngine,
@@ -3725,9 +3768,18 @@ fn mount_prepared_lifecycle(
     lease: &std::rc::Weak<()>,
 ) -> Result<ScriptLifecycle, ScriptViewError> {
     factory
-        .mount_lifecycle(engine, factory.program(), view_id, window_id, policy, true)
+        .mount_lifecycle(
+            engine,
+            factory.program(),
+            view_id,
+            window_id,
+            policy,
+            true,
+            Some(lease),
+        )
         .inspect_err(|_| {
             host.unregister_view(view_id, lease);
+            factory.runtime.borrow_mut().windows.remove(window_id);
         })
 }
 
@@ -4933,16 +4985,14 @@ impl ScriptHostView {
             .borrow_mut()
             .windows
             .drain_commands();
-        for command in commands {
-            if self
-                .window_authority
-                .as_ref()
-                .is_none_or(|authority| !authority.is_current(cx))
-            {
+        let runtime = self.lifecycle.runtime();
+        for queued in commands {
+            if !window_command_is_current(&queued, &runtime.borrow().windows, cx) {
+                runtime.borrow_mut().windows.cancel_open(&queued);
                 continue;
             }
-            let closing = matches!(command, WindowCommand::Close(_));
-            let result = match command {
+            let closing = matches!(queued.command(), WindowCommand::Close(_));
+            let result = match queued.command().clone() {
                 WindowCommand::Open(spec) => {
                     open_secondary_window(&spec, &self.factory, &self.native_windows, cx)
                 }
@@ -4953,7 +5003,13 @@ impl ScriptHostView {
                         .handles
                         .get(&id)
                         .cloned()
-                        .filter(|registration| registration.authority.is_current(cx));
+                        .filter(|registration| {
+                            registration.authority.is_current(cx)
+                                && queued.target_binding().is_some_and(|target| {
+                                    target.window == registration.handle.window_id()
+                                        && target.lease.ptr_eq(&registration.authority.lease)
+                                })
+                        });
                     registration.map_or_else(
                         || {
                             Err(ScriptFailure::plain(format!(
@@ -4969,18 +5025,17 @@ impl ScriptHostView {
                             // apply it after the current entity update unwinds.
                             let view = cx.weak_entity();
                             let native_windows = Rc::clone(&self.native_windows);
-                            let source_state = Rc::clone(&self.state);
-                            let authority = self.window_authority.clone();
+                            let runtime = Rc::clone(&runtime);
                             let close_id = id.clone();
                             cx.defer(move |cx| {
                                 // Authority may be revoked between queueing and
                                 // execution. Do not let a disposed owner operate
                                 // on its replacement or leave a stale close bypass.
-                                if source_state.get() == ScriptViewState::Disposed
-                                    || !target_authority.is_current(cx)
-                                    || authority
-                                        .as_ref()
-                                        .is_none_or(|authority| !authority.is_current(cx))
+                                if !window_command_is_current(
+                                    &queued,
+                                    &runtime.borrow().windows,
+                                    cx,
+                                ) || !target_authority.is_current(cx)
                                     || native_windows.borrow().handles.get(&close_id).is_none_or(
                                         |current| current.handle.window_id() != handle.window_id(),
                                     )
@@ -5999,6 +6054,7 @@ mod tests {
                 window_id,
                 WindowCommandPolicy::Disabled,
                 true,
+                None,
             )
             .unwrap();
         (prepared.engine, lifecycle)
@@ -6063,6 +6119,7 @@ mod tests {
             "main",
             WindowCommandPolicy::Disabled,
             true,
+            None,
         ) else {
             panic!("mount unexpectedly succeeded");
         };
@@ -6359,7 +6416,7 @@ mod tests {
             .unwrap();
         let (_, lifecycle, _) = prepared
             .factory
-            .instantiate("settings-view", "settings")
+            .instantiate("settings-view", "settings", None)
             .unwrap();
         assert!(lifecycle.root().is_some());
     }
@@ -6713,7 +6770,7 @@ fn render_MissingAsset(ctx, props) { image(asset("app/icons/missing")) }
         let mut runtime = runtime.borrow_mut();
         assert!(runtime.windows.close_handler("main").is_some());
         assert!(matches!(
-            runtime.windows.drain_commands().as_slice(),
+            runtime.windows.drain_commands().iter().map(crate::QueuedWindowCommand::command).collect::<Vec<_>>().as_slice(),
             [WindowCommand::Open(spec)] if spec.id == "settings" && spec.focus
         ));
     }

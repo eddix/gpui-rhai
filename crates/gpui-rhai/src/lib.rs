@@ -287,7 +287,8 @@ pub use virtual_list::{
     VirtualCollectionMetrics, VirtualCollectionNodeSpec, VirtualListError, VirtualRequestRegistry,
 };
 pub use window::{
-    ScriptWindowSpec, WindowCommand, WindowCommandError, WindowCommandPolicy, WindowCommandRegistry,
+    QueuedWindowCommand, ScriptWindowSpec, WindowCommand, WindowCommandError, WindowCommandPolicy,
+    WindowCommandRegistry,
 };
 
 /// The first runtime API generation understood by component source.
