@@ -719,6 +719,15 @@ for the full hot-reload and generation rules.
 
 See [Embedding](docs/embedding.md) and [Multi-window](docs/multi-window.md).
 
+Use ordinary `PreparedScriptView::mount` for an embedded view without native
+window authority. If Rust deliberately delegates native open/focus/close and
+close-confirmation policy to one view, use `mount_window` instead. It registers
+the real native handle and enforces one command owner per native window; sibling
+views remain restricted. It replaces the previous should-close callback, not
+the Rust root/layout. Disposing the owner does not close Rust's window; native
+closure disposes retained view handles. See the multi-window guide for the
+queued-operation boundary and cleanup rules.
+
 ## 8. Layout, text, images, and assets
 
 Use `row` and `column` for ordinary flex containers:
@@ -961,6 +970,11 @@ Guidelines:
   stays on the native signal path; `on_column_resize` runs once on release with
   a fixed pixel descriptor that the caller may persist. Focused dividers use
   logical Left/Right in 8px steps.
+- Table dividers sit at the logical column boundary, including the final or
+  sole column. Inline `inset_start`/`inset_end` styles resolve in LTR/RTL and accept
+  definite, `auto()` or signed `offset_*` values. Each divider has its own stable
+  element ref for Host-native focus; its measurement ref still belongs to the
+  column header.
 - Treat `virtual_collection` as presentation-only. The owning component defines
   enabled items, keyboard navigation, the single active style, and passes its
   controlled key as `reveal_key`; sticky rows are a separate layout policy.

@@ -984,6 +984,8 @@ pub struct StyleProperties {
     pub bottom: Option<LayoutLength>,
     pub left: Option<LayoutLength>,
     pub opacity: Option<f64>,
+    pub inset_start: Option<LayoutLength>,
+    pub inset_end: Option<LayoutLength>,
     pub visible: Option<bool>,
     pub cursor: Option<CursorKind>,
     pub hit_test: Option<HitTestBehavior>,
@@ -1049,6 +1051,8 @@ impl StyleProperties {
         merge_option(&mut self.right, overlay.right);
         merge_option(&mut self.bottom, overlay.bottom);
         merge_option(&mut self.left, overlay.left);
+        merge_option(&mut self.inset_start, overlay.inset_start);
+        merge_option(&mut self.inset_end, overlay.inset_end);
         merge_option(&mut self.opacity, overlay.opacity);
         merge_option(&mut self.visible, overlay.visible);
         merge_option(&mut self.cursor, overlay.cursor);
@@ -1098,12 +1102,16 @@ impl Style {
 
     #[must_use]
     pub fn merged(mut self, overlay: &Self) -> Self {
+        self.merge_in_place(overlay);
+        self
+    }
+
+    pub(crate) fn merge_in_place(&mut self, overlay: &Self) {
         self.base.merge(&overlay.base);
         merge_pseudo(&mut self.hover, overlay.hover.as_ref());
         merge_pseudo(&mut self.active, overlay.active.as_ref());
         merge_pseudo(&mut self.focus, overlay.focus.as_ref());
         merge_pseudo(&mut self.disabled, overlay.disabled.as_ref());
-        self
     }
 
     #[must_use]
@@ -1647,6 +1655,20 @@ impl Style {
         self
     }
 
+    /// Position at the logical inline start; overrides the matching physical edge.
+    #[must_use]
+    pub fn inset_start(mut self, value: impl Into<LayoutLength>) -> Self {
+        self.base.inset_start = Some(value.into());
+        self
+    }
+
+    /// Position at the logical inline end; overrides the matching physical edge.
+    #[must_use]
+    pub fn inset_end(mut self, value: impl Into<LayoutLength>) -> Self {
+        self.base.inset_end = Some(value.into());
+        self
+    }
+
     /// Set finite unit opacity.
     ///
     /// # Errors
@@ -1928,6 +1950,8 @@ enum LayoutSlot {
     Right,
     Bottom,
     Left,
+    InsetStart,
+    InsetEnd,
 }
 
 fn with_layout_value(mut style: Style, slot: LayoutSlot, value: LayoutLength) -> Style {
@@ -1955,6 +1979,8 @@ fn with_layout_value(mut style: Style, slot: LayoutSlot, value: LayoutLength) ->
         LayoutSlot::Right => style.base.right = Some(value),
         LayoutSlot::Bottom => style.base.bottom = Some(value),
         LayoutSlot::Left => style.base.left = Some(value),
+        LayoutSlot::InsetStart => style.base.inset_start = Some(value),
+        LayoutSlot::InsetEnd => style.base.inset_end = Some(value),
     }
     style
 }
@@ -2001,6 +2027,8 @@ fn register_property_specific_layout_methods(builder: &mut TypeBuilder<Style>) {
         ("right", LayoutSlot::Right),
         ("bottom", LayoutSlot::Bottom),
         ("left", LayoutSlot::Left),
+        ("inset_start", LayoutSlot::InsetStart),
+        ("inset_end", LayoutSlot::InsetEnd),
     ] {
         register_layout_overloads(builder, name, slot, true);
     }
@@ -2197,6 +2225,12 @@ fn register_position_methods(builder: &mut TypeBuilder<Style>) {
         })
         .with_fn("left", |style: &mut Style, value: Length| {
             style.clone().left(value)
+        })
+        .with_fn("inset_start", |style: &mut Style, value: Length| {
+            style.clone().inset_start(value)
+        })
+        .with_fn("inset_end", |style: &mut Style, value: Length| {
+            style.clone().inset_end(value)
         });
 }
 
@@ -2938,15 +2972,30 @@ mod tests {
         register_style_api(&mut engine);
         let style: Style = engine
             .eval(
-                r"
+                r#"
                     style()
                         .width(auto()).flex_basis(auto())
                         .margin_x(auto()).margin_bottom(offset_relative(-0.5))
                         .top(offset_px(-12)).left(offset_rem(1.5))
-                ",
+                        .inset_start(offset_px(-4)).inset_end(theme_spacing("xs"))
+                "#,
             )
             .unwrap();
         assert_eq!(style.base.width, Some(LayoutLength::Auto));
+        assert_eq!(
+            style.base.inset_start,
+            Some(LayoutLength::Signed(SignedLength::Pixels(-4.0)))
+        );
+        assert_eq!(
+            style.base.inset_end,
+            Some(LayoutLength::Definite(Length::ThemeSpacing(
+                SpacingToken::Xs
+            )))
+        );
+        let auto: Style = engine.eval("style().inset_start(auto())").unwrap();
+        assert_eq!(auto.base.inset_start, Some(LayoutLength::Auto));
+        let composed = style.clone().merged(&auto);
+        assert_eq!(composed.base.inset_start, Some(LayoutLength::Auto));
         assert_eq!(style.base.flex_basis, Some(LayoutLength::Auto));
         assert_eq!(style.base.margin.left, Some(LayoutLength::Auto));
         assert_eq!(style.base.margin.right, Some(LayoutLength::Auto));

@@ -46,6 +46,7 @@ const HOST_KEY_CONTEXT: &str = "GPUIRhaiHost";
 struct ScriptRuntimeInstallation {
     bindings: BTreeMap<(String, Option<String>), ActionId>,
     loaded_fonts: BTreeSet<u64>,
+    window_command_owners: BTreeMap<gpui::WindowId, (std::rc::Weak<()>, String)>,
 }
 
 impl Global for ScriptRuntimeInstallation {}
@@ -118,11 +119,17 @@ struct ScriptViewHostState {
     views: BTreeMap<String, FocusHandle>,
     pending_focus_recovery: Vec<FocusHandle>,
     overlay_viewport: Option<crate::OverlayBounds>,
-    window_policy: WindowCommandPolicy,
+    native_window: Option<AnyWindowHandle>,
+    window_command_owner: Option<NativeWindowCommandOwner>,
     frame_active: bool,
     container_bounds: Option<Bounds<Pixels>>,
     #[allow(dead_code)]
     escape_interceptor: Option<Subscription>,
+}
+
+struct NativeWindowCommandOwner {
+    view_id: String,
+    _lease: Rc<()>,
 }
 
 impl ScriptViewHost {
@@ -132,14 +139,6 @@ impl ScriptViewHost {
     ///
     /// Returns [`ScriptViewError::InvalidId`] for an unsafe window identifier.
     pub fn new(window_id: impl Into<String>, cx: &mut App) -> Result<Self, ScriptViewError> {
-        Self::new_with_policy(window_id, WindowCommandPolicy::Disabled, cx)
-    }
-
-    fn new_with_policy(
-        window_id: impl Into<String>,
-        window_policy: WindowCommandPolicy,
-        cx: &mut App,
-    ) -> Result<Self, ScriptViewError> {
         install(cx);
         let window_id = window_id.into();
         validate_view_id(&window_id)?;
@@ -151,7 +150,8 @@ impl ScriptViewHost {
             views: BTreeMap::new(),
             pending_focus_recovery: Vec::new(),
             overlay_viewport: None,
-            window_policy,
+            native_window: None,
+            window_command_owner: None,
             frame_active: false,
             container_bounds: None,
             escape_interceptor: None,
@@ -298,8 +298,60 @@ impl ScriptViewHost {
         }
     }
 
+    fn bind_window(
+        &self,
+        view_id: &str,
+        handle: AnyWindowHandle,
+        policy: WindowCommandPolicy,
+        cx: &mut App,
+    ) -> Result<(), ScriptViewError> {
+        let mut state = self.inner.borrow_mut();
+        if state
+            .native_window
+            .is_some_and(|previous| previous.window_id() != handle.window_id())
+        {
+            return Err(ScriptViewError::WrongNativeWindow(state.window_id.clone()));
+        }
+        if policy == WindowCommandPolicy::ApplicationOwned {
+            if let Some(owner) = &state.window_command_owner {
+                return Err(ScriptViewError::WindowCommandOwner {
+                    window: state.window_id.clone(),
+                    owner: owner.view_id.clone(),
+                });
+            }
+            let owners = &mut cx
+                .global_mut::<ScriptRuntimeInstallation>()
+                .window_command_owners;
+            owners.retain(|_, (lease, _)| lease.strong_count() > 0);
+            if let Some((_, owner)) = owners.get(&handle.window_id()) {
+                return Err(ScriptViewError::WindowCommandOwner {
+                    window: state.window_id.clone(),
+                    owner: owner.clone(),
+                });
+            }
+            let lease = Rc::new(());
+            owners.insert(
+                handle.window_id(),
+                (Rc::downgrade(&lease), view_id.to_owned()),
+            );
+            state.window_command_owner = Some(NativeWindowCommandOwner {
+                view_id: view_id.to_owned(),
+                _lease: lease,
+            });
+        }
+        state.native_window = Some(handle);
+        Ok(())
+    }
+
     fn unregister_view(&self, view_id: &str) {
         let mut state = self.inner.borrow_mut();
+        if state
+            .window_command_owner
+            .as_ref()
+            .is_some_and(|owner| owner.view_id == view_id)
+        {
+            state.window_command_owner = None;
+        }
         if let Some(focus) = state.views.remove(view_id) {
             state.pending_focus_recovery.push(focus);
         }
@@ -329,10 +381,6 @@ impl ScriptViewHost {
 
     fn interactions(&self) -> crate::interaction::WindowInteractionCoordinator {
         self.inner.borrow().interactions.clone()
-    }
-
-    fn window_policy(&self) -> WindowCommandPolicy {
-        self.inner.borrow().window_policy
     }
 
     fn frame_active(&self) -> bool {
@@ -2454,7 +2502,39 @@ impl PreparedScriptView {
         self.mount_with_registry(
             config,
             host,
-            Rc::new(RefCell::new(NativeWindowRegistry::default())),
+            &Rc::new(RefCell::new(NativeWindowRegistry::default())),
+            WindowCommandPolicy::Disabled,
+            window,
+            cx,
+        )
+    }
+
+    /// Mount the single script command owner of an existing Rust-owned window.
+    ///
+    /// Unlike [`Self::mount`], this explicitly enables open/focus/close commands,
+    /// registers the native window, and installs the script close interceptor.
+    /// Rust still owns the window's root and layout. Other views on the same
+    /// Host use ordinary `mount` and do not inherit this authority. This replaces
+    /// the window's previous should-close callback; opt in only when delegating
+    /// that policy to this view. Disposing the view does not close the window.
+    ///
+    /// # Errors
+    ///
+    /// Returns mount errors, [`ScriptViewError::WindowCommandOwner`] for an
+    /// existing command owner, or [`ScriptViewError::WrongNativeWindow`] when
+    /// the Host belongs to another native window.
+    pub fn mount_window(
+        self,
+        config: ScriptViewConfig,
+        host: ScriptViewHost,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Result<ScriptViewHandle, ScriptViewError> {
+        self.mount_with_registry(
+            config,
+            host,
+            &Rc::new(RefCell::new(NativeWindowRegistry::default())),
+            WindowCommandPolicy::ApplicationOwned,
             window,
             cx,
         )
@@ -2465,7 +2545,8 @@ impl PreparedScriptView {
         mut self,
         config: ScriptViewConfig,
         host: ScriptViewHost,
-        native_windows: Rc<RefCell<NativeWindowRegistry>>,
+        native_windows: &Rc<RefCell<NativeWindowRegistry>>,
+        policy: WindowCommandPolicy,
         window: &mut Window,
         cx: &mut App,
     ) -> Result<ScriptViewHandle, ScriptViewError> {
@@ -2474,6 +2555,10 @@ impl PreparedScriptView {
         #[cfg(feature = "dev-reload")]
         let watcher = development_watcher(self.development, &self.ui_root)?;
         host.reserve_view(&config.view_id)?;
+        host.bind_window(&config.view_id, window.window_handle(), policy, cx)
+            .inspect_err(|_| {
+                host.unregister_view(&config.view_id);
+            })?;
         let window_id = host.window_id();
         let lifecycle = mount_prepared_lifecycle(
             &self.factory,
@@ -2481,6 +2566,7 @@ impl PreparedScriptView {
             &host,
             &config.view_id,
             &window_id,
+            policy,
         )?;
         #[cfg(not(feature = "dev-reload"))]
         let _ = (
@@ -2533,7 +2619,7 @@ impl PreparedScriptView {
                 show_error_banner: config.show_error_banner,
                 content_bounds: None,
                 factory,
-                native_windows,
+                native_windows: Rc::clone(native_windows),
                 host_focus,
                 focus_handles: BTreeMap::new(),
                 scroll_handles: BTreeMap::new(),
@@ -2546,6 +2632,7 @@ impl PreparedScriptView {
                 activity_wake: entity_activity_wake,
                 _runtime_tasks: runtime_tasks,
                 window_activation: None,
+                window_closed: None,
                 #[cfg(feature = "dev-reload")]
                 module_cache: self.module_cache,
                 #[cfg(feature = "dev-reload")]
@@ -2564,7 +2651,14 @@ impl PreparedScriptView {
                 pending_reload_paths: BTreeSet::new(),
             }
         });
-        install_window_interaction_cancellation(&entity, window, cx);
+        install_window_lifecycle_hooks(&entity, window, cx);
+        if policy == WindowCommandPolicy::ApplicationOwned {
+            native_windows
+                .borrow_mut()
+                .handles
+                .insert(host.window_id(), window.window_handle());
+            install_close_interceptor(window, cx, &entity);
+        }
         attach_script_view_focus(&host, &config.view_id, &entity, cx);
         Ok(mounted_script_view_handle(
             entity,
@@ -2652,11 +2746,7 @@ impl ScriptApplication {
         prepared.factory.show_error_banner.set(show_error_banner);
         gpui_platform::application().run(move |cx: &mut App| {
             install(cx);
-            let host = match ScriptViewHost::new_with_policy(
-                "main",
-                WindowCommandPolicy::ApplicationOwned,
-                cx,
-            ) {
+            let host = match ScriptViewHost::new("main", cx) {
                 Ok(host) => host,
                 Err(error) => {
                     *reported_error.borrow_mut() = Some(error.to_string());
@@ -2696,14 +2786,14 @@ impl ScriptApplication {
                             .paint_background(true)
                             .show_error_banner(show_error_banner),
                         host,
-                        Rc::clone(&view_native_windows),
+                        &view_native_windows,
+                        WindowCommandPolicy::ApplicationOwned,
                         window,
                         cx,
                     );
                     match view {
                         Ok(view) => {
                             let _ = view.focus(window, cx);
-                            install_close_interceptor(window, cx, &view.0.entity);
                             let _ = weak_root.update(cx, |root, cx| {
                                 root.view = Some(view);
                                 cx.notify();
@@ -2792,12 +2882,7 @@ fn open_secondary_window(
     let factory = Rc::clone(factory);
     let native_windows = Rc::clone(native_windows);
     let window_id = spec.id.clone();
-    let host = ScriptViewHost::new_with_policy(
-        window_id.clone(),
-        WindowCommandPolicy::ApplicationOwned,
-        cx,
-    )
-    .map_err(ScriptFailure::from)?;
+    let host = ScriptViewHost::new(window_id.clone(), cx).map_err(ScriptFailure::from)?;
     host.reserve_view(&window_id).map_err(ScriptFailure::from)?;
     let (engine, lifecycle, primitives) = match factory.instantiate(&window_id, &window_id) {
         Ok(instance) => instance,
@@ -2818,6 +2903,14 @@ fn open_secondary_window(
     let view_window_id = window_id.clone();
     let view_host = host.clone();
     let result = cx.open_window(options, move |window, cx| {
+        view_host
+            .bind_window(
+                &view_window_id,
+                window.window_handle(),
+                WindowCommandPolicy::ApplicationOwned,
+                cx,
+            )
+            .expect("fresh secondary Host has no native window or command owner");
         let (theme_handle, view_theme_handle) =
             theme_handles_for_lifecycle(&lifecycle, &view_factory.theme, window, cx);
         let view_state = Rc::new(Cell::new(ScriptViewState::Active));
@@ -2864,6 +2957,7 @@ fn open_secondary_window(
                 activity_wake: entity_activity_wake,
                 _runtime_tasks: runtime_tasks,
                 window_activation: None,
+                window_closed: None,
                 #[cfg(feature = "dev-reload")]
                 module_cache: ModuleCompileCache::new(),
                 #[cfg(feature = "dev-reload")]
@@ -2882,7 +2976,7 @@ fn open_secondary_window(
                 pending_reload_paths: BTreeSet::new(),
             }
         });
-        install_window_interaction_cancellation(&entity, window, cx);
+        install_window_lifecycle_hooks(&entity, window, cx);
         view_host.attach_view_focus(&view_window_id, entity.read(cx).host_focus.clone());
         let view = ScriptViewHandle(Rc::new(ScriptViewHandleInner {
             entity: entity.clone(),
@@ -3158,6 +3252,8 @@ struct ScriptHostView {
     _runtime_tasks: HostRuntimeTasks,
     #[allow(dead_code)]
     window_activation: Option<Subscription>,
+    #[allow(dead_code)]
+    window_closed: Option<Subscription>,
     #[cfg(feature = "dev-reload")]
     module_cache: ModuleCompileCache,
     #[cfg(feature = "dev-reload")]
@@ -3176,7 +3272,7 @@ struct ScriptHostView {
     pending_reload_paths: BTreeSet<PathBuf>,
 }
 
-fn install_window_interaction_cancellation(
+fn install_window_lifecycle_hooks(
     entity: &Entity<ScriptHostView>,
     window: &mut Window,
     cx: &mut App,
@@ -3189,6 +3285,20 @@ fn install_window_interaction_cancellation(
         })
     });
     entity.update(cx, |view, _| view.window_activation = Some(subscription));
+    let window_id = window.window_handle().window_id();
+    let weak = entity.downgrade();
+    let closed = cx.on_window_closed(move |cx, closed_id| {
+        if closed_id == window_id {
+            let weak = weak.clone();
+            cx.defer(move |cx| {
+                let _ = weak.update(cx, |view, cx| {
+                    view.release_view();
+                    cx.notify();
+                });
+            });
+        }
+    });
+    entity.update(cx, |view, _| view.window_closed = Some(closed));
 }
 
 struct DirectSignalAccessGuard {
@@ -3543,16 +3653,10 @@ fn mount_prepared_lifecycle(
     host: &ScriptViewHost,
     view_id: &str,
     window_id: &str,
+    policy: WindowCommandPolicy,
 ) -> Result<ScriptLifecycle, ScriptViewError> {
     factory
-        .mount_lifecycle(
-            engine,
-            factory.program(),
-            view_id,
-            window_id,
-            host.window_policy(),
-            true,
-        )
+        .mount_lifecycle(engine, factory.program(), view_id, window_id, policy, true)
         .inspect_err(|_| {
             host.unregister_view(view_id);
         })
@@ -4755,29 +4859,17 @@ impl ScriptHostView {
             .windows
             .drain_commands();
         for command in commands {
+            let closing = matches!(command, WindowCommand::Close(_));
             let result = match command {
                 WindowCommand::Open(spec) => {
                     open_secondary_window(&spec, &self.factory, &self.native_windows, cx)
                 }
-                WindowCommand::Focus(id) => {
-                    let handle = self.native_windows.borrow().handles.get(&id).copied();
-                    handle.map_or_else(
-                        || {
-                            Err(ScriptFailure::plain(format!(
-                                "native window `{id}` is unavailable"
-                            )))
-                        },
-                        |handle| {
-                            handle
-                                .update(cx, |_, window, _| window.activate_window())
-                                .map_err(|error| ScriptFailure::plain(error.to_string()))
-                        },
-                    )
-                }
-                WindowCommand::Close(id) => {
+                WindowCommand::Focus(id) | WindowCommand::Close(id) => {
                     let handle = {
                         let mut native = self.native_windows.borrow_mut();
-                        native.force_close.insert(id.clone());
+                        if closing {
+                            native.force_close.insert(id.clone());
+                        }
                         native.handles.get(&id).copied()
                     };
                     handle.map_or_else(
@@ -4788,17 +4880,21 @@ impl ScriptHostView {
                             )))
                         },
                         |handle| {
-                            // A script commonly confirms closing from an event
+                            // A script commonly focuses/closes from an event
                             // dispatched by the same window. Updating that window
                             // recursively fails in GPUI with `window not found`, so
-                            // remove it after the current entity update unwinds.
+                            // apply it after the current entity update unwinds.
                             let view = cx.weak_entity();
                             let native_windows = Rc::clone(&self.native_windows);
                             let close_id = id.clone();
                             cx.defer(move |cx| {
-                                if let Err(error) =
-                                    handle.update(cx, |_, window, _| window.remove_window())
-                                {
+                                if let Err(error) = handle.update(cx, |_, window, _| {
+                                    if closing {
+                                        window.remove_window();
+                                    } else {
+                                        window.activate_window();
+                                    }
+                                }) {
                                     native_windows.borrow_mut().force_close.remove(&close_id);
                                     let message = error.to_string();
                                     let _ = view.update(cx, |view, cx| {
@@ -5620,6 +5716,10 @@ pub enum ScriptViewError {
     InvalidId(String),
     #[error("script view `{0}` is already mounted in this host")]
     DuplicateView(String),
+    #[error("Host `{0}` is already bound to a different native window")]
+    WrongNativeWindow(String),
+    #[error("window `{window}` already has script command owner `{owner}`")]
+    WindowCommandOwner { window: String, owner: String },
     #[error("script view `{0}` has been disposed")]
     DisposedView(String),
     #[error("script view `{0}` is suspended; resume it before rendering or interaction")]

@@ -295,7 +295,7 @@ pub enum UiNodeKindTag {
 pub struct UiNode {
     kind: UiNodeKind,
     key: Option<NodeKey>,
-    style: Style,
+    style: Rc<Style>,
     part_styles: BTreeMap<String, Style>,
     source: Option<SourceLocation>,
     component_root: Option<ComponentInstancePath>,
@@ -310,6 +310,13 @@ pub struct UiNode {
     element_ref: Option<crate::ElementRef>,
     presentation: Vec<NodePresentationMutation>,
     component_snapshot: Option<ComponentOwnedSnapshotRef>,
+}
+
+fn default_node_style() -> Rc<Style> {
+    thread_local! {
+        static STYLE: Rc<Style> = Rc::new(Style::new());
+    }
+    STYLE.with(Rc::clone)
 }
 
 #[derive(Clone, Default)]
@@ -411,7 +418,7 @@ impl NodePresentationMutation {
     fn apply(&self, node: &mut UiNode) {
         match self {
             Self::Key(key) => node.key = Some(key.clone()),
-            Self::Style(style) => node.style = std::mem::take(&mut node.style).merged(style),
+            Self::Style(style) => Rc::make_mut(&mut node.style).merge_in_place(style),
             Self::PartStyles(styles) => node.part_styles.extend(styles.as_ref().clone()),
             Self::Signal(property, signal) => {
                 node.signal_bindings.insert(*property, signal.clone());
@@ -649,7 +656,7 @@ impl UiNode {
         Self {
             kind: UiNodeKind::Text { text: text.into() },
             key: None,
-            style: Style::new(),
+            style: default_node_style(),
             part_styles: BTreeMap::new(),
             source: None,
             component_root: None,
@@ -673,7 +680,7 @@ impl UiNode {
         Self {
             kind: UiNodeKind::RichText { text, spans },
             key: None,
-            style: Style::new(),
+            style: default_node_style(),
             part_styles: BTreeMap::new(),
             source: None,
             component_root: None,
@@ -717,7 +724,7 @@ impl UiNode {
         Self {
             kind: UiNodeKind::Box { children },
             key: None,
-            style: Style::new(),
+            style: default_node_style(),
             part_styles: BTreeMap::new(),
             source: None,
             component_root: None,
@@ -761,7 +768,7 @@ impl UiNode {
         Self {
             kind: UiNodeKind::Custom { primitive },
             key,
-            style: Style::new(),
+            style: default_node_style(),
             part_styles: BTreeMap::new(),
             source: None,
             component_root: None,
@@ -787,7 +794,7 @@ impl UiNode {
                 fallback: Box::new(fallback),
             },
             key: None,
-            style: Style::new(),
+            style: default_node_style(),
             part_styles: BTreeMap::new(),
             source: None,
             component_root: None,
@@ -819,7 +826,7 @@ impl UiNode {
         Self {
             kind: UiNodeKind::Image { source },
             key: None,
-            style: Style::new(),
+            style: default_node_style(),
             part_styles: BTreeMap::new(),
             source: None,
             component_root: None,
@@ -863,7 +870,7 @@ impl UiNode {
                 right_to_left,
             },
             key: None,
-            style: Style::new(),
+            style: default_node_style(),
             part_styles: BTreeMap::new(),
             source: None,
             component_root: None,
@@ -890,7 +897,7 @@ impl UiNode {
                 spec,
             },
             key: None,
-            style: Style::new(),
+            style: default_node_style(),
             part_styles: BTreeMap::new(),
             source: None,
             component_root: None,
@@ -917,7 +924,7 @@ impl UiNode {
                 spec,
             },
             key: Some(NodeKey::new(key)),
-            style: Style::new(),
+            style: default_node_style(),
             part_styles: BTreeMap::new(),
             source: None,
             component_root: None,
@@ -941,7 +948,7 @@ impl UiNode {
         Self {
             kind: UiNodeKind::VirtualCollection { spec },
             key: Some(NodeKey::new(key)),
-            style: Style::new(),
+            style: default_node_style(),
             part_styles: BTreeMap::new(),
             source: None,
             component_root: None,
@@ -1511,22 +1518,25 @@ impl UiNode {
         ghost
             .attributes
             .insert("motion_ghost".to_owned(), UiValue::Bool(true));
-        ghost.style.base.hit_test = None;
-        ghost.style.base.cursor = None;
+        let style = &mut Rc::make_mut(&mut ghost.style).base;
+        style.hit_test = None;
+        style.cursor = None;
         if root {
-            ghost.style.base.margin = crate::LayoutEdgeLengths::default();
-            ghost.style.base.position = None;
-            ghost.style.base.top = None;
-            ghost.style.base.right = None;
-            ghost.style.base.bottom = None;
-            ghost.style.base.left = None;
-            ghost.style.base.translate_x = None;
-            ghost.style.base.translate_y = None;
-            ghost.style.base.align_self = None;
-            ghost.style.base.flex_grow = None;
-            ghost.style.base.flex_grow_weight = None;
-            ghost.style.base.flex_shrink = None;
-            ghost.style.base.flex_basis = None;
+            style.margin = crate::LayoutEdgeLengths::default();
+            style.position = None;
+            style.top = None;
+            style.right = None;
+            style.bottom = None;
+            style.left = None;
+            style.inset_start = None;
+            style.inset_end = None;
+            style.translate_x = None;
+            style.translate_y = None;
+            style.align_self = None;
+            style.flex_grow = None;
+            style.flex_grow_weight = None;
+            style.flex_shrink = None;
+            style.flex_basis = None;
         }
         match &mut ghost.kind {
             UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => {
@@ -3194,6 +3204,43 @@ mod tests {
         ColorValue, EventPropagation, Length, MotionProperty, MotionTransition, Rgba8, SignalId,
         SignalKind, SignalProperty,
     };
+
+    #[test]
+    fn node_styles_share_immutable_snapshots_and_mutate_without_aliasing() {
+        let empty = UiNode::text("empty");
+        assert!(Rc::ptr_eq(&empty.style, &UiNode::text("other").style));
+        let original = empty.with_style(
+            &Style::new()
+                .opacity(0.25)
+                .unwrap()
+                .inset_start(crate::SignedLength::pixels(-4.0).unwrap()),
+        );
+        let shared = original.clone();
+        assert!(Rc::ptr_eq(&original.style, &shared.style));
+        let changed = shared.with_style(
+            &Style::new()
+                .opacity(0.75)
+                .unwrap()
+                .inset_end(Length::Pixels(2.0)),
+        );
+        assert_eq!(original.style().base.opacity, Some(0.25));
+        assert!(original.style().base.inset_end.is_none());
+        assert_eq!(changed.style().base.opacity, Some(0.75));
+        let ghost = changed.motion_ghost().unwrap();
+        assert!(ghost.style().base.inset_start.is_none());
+        assert!(ghost.style().base.inset_end.is_none());
+        assert!(changed.style().base.inset_start.is_some());
+        assert!(changed.style().base.inset_end.is_some());
+        println!(
+            "UiNode={} bytes; Style={} bytes",
+            std::mem::size_of::<UiNode>(),
+            std::mem::size_of::<Style>()
+        );
+        assert!(
+            std::mem::size_of::<UiNode>() <= 2048,
+            "node stack values must not inline a multi-kilobyte Style"
+        );
+    }
 
     #[test]
     fn node_identity_style_source_and_attributes_are_runtime_owned() {

@@ -353,22 +353,20 @@ fn resize_handles(header: &gpui_rhai::UiNode) -> Vec<&gpui_rhai::UiNode> {
 }
 
 fn assert_table_resize_handles(headers: &[gpui_rhai::UiNode], titles: &[&str]) {
-    // Column i's handle sits on its right boundary: absolutely positioned at the left edge of
-    // header cell i + 1 (so cell padding cannot shift it). The last column's handle sits at
-    // the right edge of its own cell.
+    // Inline edges resolve against the renderer direction, including RTL.
     let edge = |node: &gpui_rhai::UiNode, side: &str| {
         let style = &node.style().base;
         assert_eq!(style.position, Some(gpui_rhai::PositionMode::Absolute));
-        if side == "left" {
+        if side == "start" {
             assert_eq!(
-                style.left,
+                style.inset_start,
                 Some(gpui_rhai::LayoutLength::Signed(
                     gpui_rhai::SignedLength::Pixels(-4.0)
                 ))
             );
         } else {
             assert_eq!(
-                style.right,
+                style.inset_end,
                 Some(gpui_rhai::LayoutLength::Definite(
                     gpui_rhai::Length::Pixels(0.0)
                 ))
@@ -388,13 +386,13 @@ fn assert_table_resize_handles(headers: &[gpui_rhai::UiNode], titles: &[&str]) {
                 titles[index - 1]
             )))
         );
-        edge(handles[0], "left");
+        edge(handles[0], "start");
         if last {
             assert_eq!(
                 handles[1].attributes().get("label"),
                 Some(&UiValue::String(format!("Resize {} column", titles[index])))
             );
-            edge(handles[1], "right");
+            edge(handles[1], "end");
         }
     }
 }
