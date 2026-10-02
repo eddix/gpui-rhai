@@ -21,6 +21,9 @@ duplication and migration boundaries.
 
 ## Decision
 
+The [final ownership and commit supplement](0022-final-runtime-invariants.md)
+defines the authoritative 0.1.8 model and its maintained product-test index.
+
 ### One interaction domain per ScriptViewHost
 
 `ScriptViewHost` owns a `WindowInteractionCoordinator` alongside its overlay
