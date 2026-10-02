@@ -5,7 +5,26 @@ All notable runtime, CLI, and registry changes are documented here. Version
 component schema, manifest, locale, and generated-source changes follow
 semantic versioning from this release.
 
-## 0.1.8 - 2026-09-30
+## 0.1.8 - Unreleased
+
+- Qualifies queued window commands by their original mount, independently of
+  which View drains them. Revoked sources and replaced targets cannot operate
+  newer windows; pending Open/Focus/Close retains one reservation identity.
+- Resolves Table columns once against the native viewport and shares the same
+  widths, horizontal extent and offset across the header, virtual rows, and
+  loading/empty states. Native resize requests its own follow-up frame without
+  re-running the Rhai root. ElementRef readers now remain subscribed through
+  appearance, rebind and removal, with contribution-owned cleanup.
+- Adds trusted Host operation-limit and expression-depth configuration without
+  raising defaults or data limits. ExecutionTiming reports the configured
+  round limit and cumulative consumption separately from each span's cost.
+- Unifies named/punctuation node-key validation and native capture/target/bubble
+  routing. Adds lightweight resolved-theme metadata and initializes System
+  appearance before mounted init/effects in primary and secondary windows.
+- Adds a bounded foreground asset-publication bridge example and interactive
+  Gallery wide/loading/empty/projected-empty Table cases. See the
+  [0.1.8 candidate notes](docs/releases/0.1.8.md) for Rust/key breaking changes,
+  integration steps, verified boundaries and explicit 0.1.9 deferrals.
 
 - Adds one Host-domain Interaction Runtime for gesture ownership, pointer
   capture, cancellation, typed application drag sessions, drop-target priority,

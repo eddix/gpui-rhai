@@ -520,7 +520,10 @@ long-lived stream with recursively started unowned tasks.
 ### 6.2 Events, propagation, and geometry
 
 Atomic nodes accept `on(event, handler)`, `on_capture(event, handler)`, and
-`on_bubble(event, handler)`. Dispatch order is capture → target → bubble.
+`on_bubble(event, handler)`. Raw pointer/wheel and focused `key:*` dispatch
+support capture → target → bubble. Ordinary native clicks and declared
+component events retain target-only delivery; adding a phased handler does
+not turn them into raw events.
 Handlers may return `event_response()` and refine it with `prevent_default()`,
 `stop()`, `stop_immediate()`, `capture_pointer()`, or `release_pointer()`.
 
