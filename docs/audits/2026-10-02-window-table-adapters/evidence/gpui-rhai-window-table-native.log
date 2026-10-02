@@ -1,0 +1,31 @@
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+   Compiling gpui-rhai v0.1.8 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai)
+   Compiling gpui-rhai-cli v0.1.8 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai-cli)
+   Compiling gpui-rhai-native-keyboard-tests v0.0.0 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 42.41s
+     Running tests/table_boundaries.rs (tests/native-keyboard/target/debug/deps/table_boundaries-8934c074dd07df75)
+
+running 7 tests
+test rtl_handles_follow_the_owned_columns_logical_end ... ok
+test one_column_table_is_resizable ... ok
+test ltr_array_boundary_and_last_column_owner ... ok
+test native_last_column_autofit_measures_last_column_without_sort ... ok
+test rtl_dragging_a_boundary_resizes_a_not_its_neighbor ... ok
+test nonresizable_neighbor_preserves_owner_and_last_keyboard_resize ... ok
+test rtl_keyboard_arrows_resize_the_focused_logical_column ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.41s
+
+     Running tests/window_ownership.rs (tests/native-keyboard/target/debug/deps/window_ownership-079646377a57c929)
+
+running 5 tests
+test native_close_confirmation_and_forced_close_share_the_owner ... ok
+test managed_embedding_focuses_opens_and_closes_real_native_windows ... ok
+test failed_mount_releases_the_command_claim_and_a_host_cannot_bind_another_window ... ok
+test ordinary_embedding_stays_disabled_beside_a_command_owner ... ok
+test owner_conflicts_fail_without_revoking_the_existing_owner_and_dispose_allows_replacement ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.34s
+
