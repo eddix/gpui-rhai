@@ -3554,12 +3554,10 @@ fn native_virtual_collection_element<C: ColorResolver>(
     path: &str,
     retained_id: Option<NodeId>,
 ) -> VirtualListEntityElement {
-    let retained_roots: BTreeMap<String, NodeId> = environment
-        .retained
-        .and_then(|tree| retained_id.and_then(|id| tree.node(id)))
-        .map(|retained| {
-            retained
-                .children()
+    let retained_roots: BTreeMap<String, NodeId> = retained_id
+        .map(|node| {
+            retained_children(environment.retained, environment.retained_links, node)
+                .into_iter()
                 .filter(|child| child.group() == "items")
                 .zip(spec.realized.keys())
                 .filter_map(|(child, index)| {
@@ -3569,9 +3567,11 @@ fn native_virtual_collection_element<C: ColorResolver>(
                 .collect()
         })
         .unwrap_or_default();
-    let retained_links = environment.retained.map_or_else(BTreeMap::new, |tree| {
-        retained_link_subtrees(tree, retained_roots.values().copied())
-    });
+    let retained_links = retained_link_subtrees(
+        environment.retained,
+        environment.retained_links,
+        retained_roots.values().copied(),
+    );
     let mut focus_handles = environment.focus_handles.clone();
     if let Some(tree) = environment.retained {
         let nodes = retained_links
@@ -3627,20 +3627,29 @@ fn native_virtual_collection_element<C: ColorResolver>(
 }
 
 fn retained_link_subtrees(
-    tree: &RetainedUiTree,
+    tree: Option<&RetainedUiTree>,
+    links: Option<&BTreeMap<NodeId, Vec<crate::RetainedChildLink>>>,
     roots: impl IntoIterator<Item = NodeId>,
 ) -> BTreeMap<NodeId, Vec<crate::RetainedChildLink>> {
-    let mut links = BTreeMap::new();
+    let mut result = BTreeMap::new();
     let mut pending = roots.into_iter().collect::<Vec<_>>();
     while let Some(node) = pending.pop() {
-        let Some(retained) = tree.node(node) else {
-            continue;
-        };
-        let children = retained.children().cloned().collect::<Vec<_>>();
+        let children = retained_children(tree, links, node);
         pending.extend(children.iter().map(crate::RetainedChildLink::node));
-        links.insert(node, children);
+        result.insert(node, children);
     }
-    links
+    result
+}
+
+fn retained_children(
+    tree: Option<&RetainedUiTree>,
+    links: Option<&BTreeMap<NodeId, Vec<crate::RetainedChildLink>>>,
+    node: NodeId,
+) -> Vec<crate::RetainedChildLink> {
+    tree.and_then(|tree| tree.node(node))
+        .map(|node| node.children().cloned().collect())
+        .or_else(|| links.and_then(|links| links.get(&node)).cloned())
+        .unwrap_or_default()
 }
 
 #[derive(Clone, Copy, Default)]

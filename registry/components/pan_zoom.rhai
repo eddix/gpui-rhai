@@ -66,6 +66,7 @@ fn render_PanZoom(ctx, props) {
     }
     let viewport_key = `${props.key}-viewport`;
     let viewport_ref = element_ref(viewport_key);
+    let content_ref = element_ref(`${props.key}-content`);
     let x_signal = signal("pan-zoom-x", props.transform.x * 1.0);
     let y_signal = signal("pan-zoom-y", props.transform.y * 1.0);
     let scale_x_signal = signal("pan-zoom-scale-x", props.transform.scale * 1.0);
@@ -81,7 +82,7 @@ fn render_PanZoom(ctx, props) {
         axes:props.axes, wheel_zoom:props.wheel_zoom, pan_button:props.pan_button,
         threshold:props.threshold, keyboard_pan_step:props.keyboard_pan_step,
         keyboard_zoom_factor:props.keyboard_zoom_factor, disabled:props.disabled,
-        viewport_ref:viewport_ref, x_signal:x_signal, y_signal:y_signal,
+        viewport_ref:viewport_ref, content_ref:content_ref, x_signal:x_signal, y_signal:y_signal,
         scale_x_signal:scale_x_signal, scale_y_signal:scale_y_signal,
         wheel_generation_signal:wheel_generation_signal, wheel_active_signal:wheel_active_signal,
         wheel_pending_signal:wheel_pending_signal, source_token_signal:source_token_signal,
@@ -90,6 +91,7 @@ fn render_PanZoom(ctx, props) {
         } else { () }
     };
     let content = props.content.with_key(`${props.key}-content`)
+        .with_ref(content_ref)
         .with_style(ctx.component_style("content", style().width(relative(1.0)).height(relative(1.0))))
         .bind_signal("translate_x", x_signal).bind_signal("translate_y", y_signal)
         .bind_signal("scale_x", scale_x_signal).bind_signal("scale_y", scale_y_signal);

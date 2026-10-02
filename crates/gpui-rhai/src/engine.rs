@@ -415,10 +415,8 @@ struct VirtualCollectionRecipe {
     id: crate::VirtualCollectionId,
     data: crate::VirtualCollectionData,
     renderer: FnPtr,
-    renderer_events: BTreeMap<String, crate::EventSchema>,
     renderer_context: crate::invocation::ScriptInvocationContext,
     context: UiContext,
-    event_context: UiContext,
     generation: ScriptGeneration,
 }
 
@@ -1554,9 +1552,9 @@ impl RuntimeEngine {
                 let mut node = item.map_err(RuntimeError::Evaluate)?.with_key(key);
                 node.bind_generation(recipe.generation);
                 node.bind_component_scope(
-                    recipe.event_context.component_path(),
-                    recipe.event_context.component_incarnation(),
-                    &recipe.renderer_events,
+                    recipe.context.callback_component_path(),
+                    recipe.context.callback_component_incarnation(),
+                    recipe.context.callback_event_schemas(),
                     Some(&recipe.renderer_context),
                 );
                 realized.insert(index, node);
@@ -1574,22 +1572,22 @@ impl RuntimeEngine {
         &mut self,
         id: &crate::VirtualCollectionId,
         items: &BTreeMap<usize, UiNode>,
-    ) -> Result<(), RuntimeError> {
-        let Some(owner) = self.component_invocations.get_mut(&id.component) else {
-            return Ok(());
-        };
-        let Some(current) = owner.snapshot.current() else {
-            return Ok(());
-        };
-        let mut rendered = current.as_ref().clone();
-        if !rendered.replace_virtual_collection_items(id, items.clone()) {
-            return Err(RuntimeError::ComponentRuntime(format!(
-                "virtual collection `{}` is missing from its owning component snapshot",
-                id.key
-            )));
+    ) {
+        // Structural collection scopes are not executable component owners.
+        // Update every containing invocation snapshot so a later parent bailout
+        // cannot resurrect an older realized window (including nested lists).
+        let mut path = Some(id.component.clone());
+        while let Some(current_path) = path {
+            if let Some(owner) = self.component_invocations.get_mut(&current_path)
+                && let Some(current) = owner.snapshot.current()
+                && current.virtual_collection_spec(id).is_some()
+            {
+                let mut rendered = current.as_ref().clone();
+                rendered.replace_virtual_collection_items(id, items.clone());
+                owner.snapshot.replace_if_active(Rc::new(rendered));
+            }
+            path = current_path.parent();
         }
-        owner.snapshot.replace_if_active(Rc::new(rendered));
-        Ok(())
     }
 
     /// Invoke an optional one-argument lifecycle function.
@@ -2673,12 +2671,29 @@ fn retain_virtual_component_manifest(
     let Some(reuse) = active.reuse.as_ref() else {
         return Ok(());
     };
-    let retained = reuse
+    let mut retained = reuse
         .invocations
         .keys()
         .filter(|path| reuse.subtrees.contains(path))
         .cloned()
         .collect::<BTreeSet<_>>();
+    // A transparent component can share its display root with its parent.
+    // Follow committed invocation ownership, not only display-root markers.
+    let mut children = BTreeMap::<ComponentInstancePath, Vec<ComponentInstancePath>>::new();
+    for (path, recipe) in &reuse.invocations {
+        children
+            .entry(recipe.parent.clone())
+            .or_default()
+            .push(path.clone());
+    }
+    let mut pending = retained.iter().cloned().collect::<Vec<_>>();
+    while let Some(parent) = pending.pop() {
+        for child in children.get(&parent).into_iter().flatten() {
+            if retained.insert(child.clone()) {
+                pending.push(child.clone());
+            }
+        }
+    }
     for path in &retained {
         if !active.transaction.retain_existing(path) {
             return Err(RuntimeError::ComponentRuntime(format!(
@@ -2733,7 +2748,7 @@ fn retain_virtual_component_manifest(
         reuse
             .virtual_collections
             .iter()
-            .filter(|(id, _)| retained.contains(&id.component))
+            .filter(|(id, _)| reuse.previous_root.virtual_collection_spec(id).is_some())
             .map(|(id, recipe)| (id.clone(), recipe.clone())),
     );
     Ok(())
@@ -3448,7 +3463,6 @@ fn register_virtual_collection_api(engine: &mut Engine, active: &ActiveComponent
                     component,
                     context,
                     generation,
-                    events,
                 } = virtual_collection_context(&active)?;
                 let id = crate::VirtualCollectionId {
                     component: component.clone(),
@@ -3474,10 +3488,8 @@ fn register_virtual_collection_api(engine: &mut Engine, active: &ActiveComponent
                     id: id.clone(),
                     data: decoded.data.clone(),
                     renderer,
-                    renderer_events: events,
                     renderer_context: native_context,
                     context: collection_context,
-                    event_context: context,
                     generation,
                 };
                 let mut guard = active.try_borrow_mut().map_err(|_| {
@@ -3698,7 +3710,6 @@ struct VirtualCollectionContext {
     component: ComponentInstancePath,
     context: UiContext,
     generation: ScriptGeneration,
-    events: BTreeMap<String, EventSchema>,
 }
 
 fn enter_virtual_collection_scope(
@@ -3743,7 +3754,6 @@ fn virtual_collection_context(
         component: context.component_path().clone(),
         context: context.clone(),
         generation: render.generation,
-        events: context.event_schemas().clone(),
     })
 }
 

@@ -206,15 +206,29 @@ impl Affine2D {
 
     #[must_use]
     pub fn inverse(self) -> Option<Self> {
-        let determinant = self.m11.mul_add(self.m22, -(self.m12 * self.m21));
+        let scale = self
+            .m11
+            .abs()
+            .max(self.m12.abs())
+            .max(self.m21.abs())
+            .max(self.m22.abs());
+        if scale == 0.0 || !scale.is_finite() {
+            return None;
+        }
+        let (a, b, c, d) = (
+            self.m11 / scale,
+            self.m12 / scale,
+            self.m21 / scale,
+            self.m22 / scale,
+        );
+        let determinant = a.mul_add(d, -(b * c));
         if !determinant.is_finite() || determinant.abs() <= f64::EPSILON {
             return None;
         }
-        let inverse = 1.0 / determinant;
-        let m11 = self.m22 * inverse;
-        let m12 = -self.m12 * inverse;
-        let m21 = -self.m21 * inverse;
-        let m22 = self.m11 * inverse;
+        let m11 = (d / determinant) / scale;
+        let m12 = (-b / determinant) / scale;
+        let m21 = (-c / determinant) / scale;
+        let m22 = (a / determinant) / scale;
         Self::new(
             m11,
             m12,
@@ -881,6 +895,29 @@ pub enum GeometryError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn affine_inverse_is_scale_relative_and_rejects_singular_matrices() {
+        for scale in [1e-200, 1e-10, 1e-5, 1.0, 1e5, 1e200] {
+            let transform = Affine2D::scale(scale, scale * 2.0)
+                .unwrap()
+                .then(Affine2D::rotation_degrees(31.0).unwrap())
+                .unwrap();
+            let inverse = transform.inverse().unwrap();
+            for point in [(0.0, 0.0), (1.0, 2.0), (-10.0, 40.0)] {
+                let restored = inverse.map_point(transform.map_point(point));
+                assert!((restored.0 - point.0).abs() < 1e-10);
+                assert!((restored.1 - point.1).abs() < 1e-10);
+            }
+        }
+        assert!(Affine2D::scale(0.0, 1.0).unwrap().inverse().is_none());
+        assert!(
+            Affine2D::new(1.0, 2.0, 2.0, 4.0, 0.0, 0.0)
+                .unwrap()
+                .inverse()
+                .is_none()
+        );
+    }
 
     #[test]
     fn affine_composition_inverse_and_bounds_share_one_coordinate_fact() {

@@ -55,6 +55,7 @@ struct PanZoomConfig {
     keyboard_zoom_factor: f64,
     disabled: bool,
     viewport_ref: crate::ElementRef,
+    content_ref: crate::ElementRef,
     x_signal: crate::NativeSignal,
     y_signal: crate::NativeSignal,
     scale_x_signal: crate::NativeSignal,
@@ -230,7 +231,7 @@ impl PanZoomEntity {
             invalidate_wheel(&self.context, &self.config, cx);
             write_bool_signal(&self.context, &self.config.wheel_active_signal, true, cx);
         }
-        let Some(viewport) = self.context.element_bounds(&self.config.viewport_ref, cx) else {
+        let Some(viewport) = self.context.canvas_bounds(&self.config.content_ref, cx) else {
             return;
         };
         let delta = event.delta.pixel_delta(px(16.0));
@@ -480,6 +481,10 @@ fn parse_config(
             .element_ref("viewport_ref")
             .cloned()
             .ok_or_else(|| "pan zoom viewport_ref is required".to_owned())?,
+        content_ref: props
+            .element_ref("content_ref")
+            .cloned()
+            .ok_or_else(|| "pan zoom content_ref is required".to_owned())?,
         x_signal,
         y_signal,
         scale_x_signal: scale_signals.0,
@@ -726,25 +731,22 @@ fn centered_zoom(
     context: &PrimitiveContext,
     cx: &App,
 ) -> ViewTransform {
-    context
-        .element_bounds(&config.viewport_ref, cx)
-        .map_or_else(
-            || ViewTransform {
-                scale: (config.source.scale * factor)
-                    .clamp(config.minimum_scale, config.maximum_scale),
-                ..config.source
-            },
-            |viewport| {
-                zoom_transform(
-                    config.source,
-                    factor,
-                    (viewport.width / 2.0, viewport.height / 2.0),
-                    (viewport.width, viewport.height),
-                    config.minimum_scale,
-                    config.maximum_scale,
-                )
-            },
-        )
+    context.canvas_bounds(&config.content_ref, cx).map_or_else(
+        || ViewTransform {
+            scale: (config.source.scale * factor).clamp(config.minimum_scale, config.maximum_scale),
+            ..config.source
+        },
+        |viewport| {
+            zoom_transform(
+                config.source,
+                factor,
+                (viewport.width / 2.0, viewport.height / 2.0),
+                (viewport.width, viewport.height),
+                config.minimum_scale,
+                config.maximum_scale,
+            )
+        },
+    )
 }
 
 fn contains(bounds: crate::GeometryBounds, point: Point<Pixels>) -> bool {
@@ -866,6 +868,10 @@ pub fn pan_zoom_primitive_descriptor() -> PrimitiveDescriptor {
         ),
         (
             "viewport_ref".to_owned(),
+            ObjectField::required(ValueSchema::Ref),
+        ),
+        (
+            "content_ref".to_owned(),
             ObjectField::required(ValueSchema::Ref),
         ),
         (

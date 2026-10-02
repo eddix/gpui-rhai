@@ -964,6 +964,12 @@ Guidelines:
 - Treat `virtual_collection` as presentation-only. The owning component defines
   enabled items, keyboard navigation, the single active style, and passes its
   controlled key as `reveal_key`; sticky rows are a separate layout policy.
+- Virtual row namespaces supply identity, not a new callback/state owner. Raw
+  row callbacks and app/window store path subscriptions belong to the caller's
+  executable component; formal row components own their own state/resources.
+  Transparent wrappers may return a formal child directly without adding a
+  layout container. Nested collections retain their current realized windows
+  across parent reuse; deleting a parent also removes its nested targets.
 - Keep large stable row sets in `NativeCollection`; let Rhai declare the Table
   and controlled state while Rust caches sort/group/collapse order and projects
   only visible rows.
@@ -977,6 +983,11 @@ Guidelines:
   pointer/wheel/drag work remains cancellable when a virtual source goes
   offscreen or keyboard focus moves. With no active interaction, Escape remains
   available to dialogs, overlays and Host shortcuts.
+- PanZoom zoom anchors and SelectionArea hit tests use the Canvas drawable
+  rectangle after padding/border and pixel snapping. Decorating the viewport
+  does not move the point beneath the pointer while zooming. An occluding
+  rejecting child inside a virtual destination blocks drag auto-scroll;
+  genuine open gaps may continue only that session's accepted destination.
 - Use Table `query`/`search_fields` and `page`/`page_size` for controlled
   Rust-side filtering and paging; reset page one when query or sort changes.
 - Keep large or rapidly replaced source text in `NativeTextDocument`; direct

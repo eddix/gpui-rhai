@@ -99,14 +99,16 @@ impl Element for VirtualListEntityElement {
         &mut self,
         _id: Option<&GlobalElementId>,
         _inspector_id: Option<&InspectorElementId>,
-        _bounds: Bounds<Pixels>,
+        bounds: Bounds<Pixels>,
         frame: &mut Self::RequestLayoutState,
         window: &mut Window,
         cx: &mut App,
     ) {
+        // Register the container beneath its children using this layout's
+        // bounds. Scroll physics still use ListState's measured viewport.
+        let hitbox = window.insert_hitbox(bounds, HitboxBehavior::Normal);
         frame.element.prepaint(window, cx);
         let scroll = frame.view.read(cx).scroll.clone();
-        let hitbox = window.insert_hitbox(scroll.viewport_bounds(), HitboxBehavior::Normal);
         self.runtime.interactions.register_virtual_scroll(
             format!("{}:{}", self.content.id.component, self.content.id.key),
             self.runtime.view_id.clone(),

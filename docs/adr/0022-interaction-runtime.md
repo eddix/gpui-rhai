@@ -202,10 +202,21 @@ after that activation is replaced.
 Initial and delayed virtual realization share the same structural owner rules.
 Their commit manifest covers all target rows, retaining unchanged component
 resources and releasing removed rows even when there is no new row to execute.
+The manifest follows committed invocation ownership: a transparent component
+returning another component's root does not hide the child's state or resources.
+Nested targets are traversed through realized rows and native Node/Nodes slots;
+each successful inner target updates all containing component snapshots before
+parent reuse. A parent prune discards now-obsolete child requests in the same
+batch. Delayed raw handlers, whole-field reads and path reads use the executable
+owner, not the structural namespace.
 Raw row reads belong to the caller's executable render boundary; formal row
 components own their own resources and dependencies. Cancelled async scopes are
 discarded before callback-owner checks, while explicit stale callbacks remain
 errors. Debounce and explicit wheel completion both release Escape ownership.
+Continuation scroll hitboxes are painted beneath their content, so internal
+occluding children stop continuation just like foreground overlays. PanZoom
+anchors use the measured Canvas drawable rectangle, not its decorated outer
+viewport. Inverse-affine singularity checks are relative to linear scale.
 
 Task and subscription payloads are recursively checked against the same
 string/array/map limits configured on the Rhai Engine before schema traversal
