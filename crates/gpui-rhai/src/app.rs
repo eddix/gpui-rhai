@@ -1494,6 +1494,23 @@ fn parse_motion_preference(value: &str) -> MotionPreference {
     }
 }
 
+#[derive(Clone, Copy, Default)]
+struct ScriptExecutionPolicy {
+    operation_limit: Option<u64>,
+    expression_depth_limits: Option<(usize, usize)>,
+}
+
+impl ScriptExecutionPolicy {
+    fn apply(self, engine: &mut RuntimeEngine) {
+        if let Some(limit) = self.operation_limit {
+            engine.set_operation_limit(limit);
+        }
+        if let Some((global, functions)) = self.expression_depth_limits {
+            engine.set_expression_depth_limits(global, functions);
+        }
+    }
+}
+
 pub struct FileScriptView {
     entry: PathBuf,
     development: bool,
@@ -1506,7 +1523,7 @@ pub struct FileScriptView {
     runtime_clock: crate::RuntimeClock,
     fonts: Vec<crate::FontSource>,
     theme_token_overrides: ThemeTokenOverrides,
-    operation_limit: Option<u64>,
+    execution_policy: ScriptExecutionPolicy,
 }
 
 impl FileScriptView {
@@ -1524,7 +1541,7 @@ impl FileScriptView {
             runtime_clock: crate::RuntimeClock::default(),
             fonts: Vec::new(),
             theme_token_overrides: ThemeTokenOverrides::default(),
-            operation_limit: None,
+            execution_policy: ScriptExecutionPolicy::default(),
         }
     }
 
@@ -1596,14 +1613,25 @@ impl FileScriptView {
     }
 
     /// Raise or lower the per-execution script operation budget for this
-    /// view's scripts. `None` (the default) keeps the runtime's built-in
+    /// view's scripts. Omitting this builder keeps the runtime's built-in
     /// 1,000,000-operation budget; hosts that run known one-shot cacheable
     /// script phases may raise it. The limit is applied to every engine
     /// instantiated for this view, including hot-reload candidates and
     /// additional windows.
+    /// Zero normalizes to one. This quota does not promise a frame time or
+    /// preempt native Rust work. Trusted extensions run after builder policy.
     #[must_use]
     pub fn operation_limit(mut self, limit: u64) -> Self {
-        self.operation_limit = Some(limit);
+        self.execution_policy.operation_limit = Some(limit);
+        self
+    }
+
+    /// Set trusted parser depth limits; default global=64/function=32.
+    /// Zero normalizes to one. Builder policy is applied before trusted
+    /// extensions, which may override it; the same ordering applies to children.
+    #[must_use]
+    pub fn expression_depth_limits(mut self, global: usize, functions: usize) -> Self {
+        self.execution_policy.expression_depth_limits = Some((global, functions));
         self
     }
 
@@ -1620,9 +1648,7 @@ impl FileScriptView {
         })?;
         let extensions = Rc::new(self.extensions);
         let mut engine = RuntimeEngine::new();
-        if let Some(limit) = self.operation_limit {
-            engine.set_operation_limit(limit);
-        }
+        self.execution_policy.apply(&mut engine);
         for extension in extensions.iter() {
             extension
                 .configure_engine(&mut engine)
@@ -1687,7 +1713,7 @@ impl FileScriptView {
             #[cfg(feature = "dev-reload")]
             theme_token_overrides: self.theme_token_overrides.clone(),
             show_error_banner: Cell::new(true),
-            operation_limit: self.operation_limit,
+            execution_policy: self.execution_policy,
             #[cfg(feature = "dev-reload")]
             development: self.development,
         });
@@ -1727,7 +1753,7 @@ pub struct EmbeddedScriptView {
     runtime_clock: crate::RuntimeClock,
     fonts: Vec<crate::FontSource>,
     theme_token_overrides: ThemeTokenOverrides,
-    operation_limit: Option<u64>,
+    execution_policy: ScriptExecutionPolicy,
 }
 
 impl EmbeddedScriptView {
@@ -1757,7 +1783,7 @@ impl EmbeddedScriptView {
             runtime_clock: crate::RuntimeClock::default(),
             fonts: Vec::new(),
             theme_token_overrides: ThemeTokenOverrides::default(),
-            operation_limit: None,
+            execution_policy: ScriptExecutionPolicy::default(),
         }
     }
 
@@ -1860,13 +1886,23 @@ impl EmbeddedScriptView {
     }
 
     /// Raise or lower the per-execution script operation budget for this
-    /// view's scripts. `None` (the default) keeps the runtime's built-in
+    /// view's scripts. Omitting this builder keeps the runtime's built-in
     /// 1,000,000-operation budget; hosts that run known one-shot cacheable
     /// script phases may raise it. The limit is applied to every engine
     /// instantiated for this view, including additional windows.
+    /// Zero normalizes to one. Trusted extensions run after builder policy;
+    /// operation quotas are cooperative and are not wall-clock deadlines.
     #[must_use]
     pub fn operation_limit(mut self, limit: u64) -> Self {
-        self.operation_limit = Some(limit);
+        self.execution_policy.operation_limit = Some(limit);
+        self
+    }
+
+    /// Set trusted parser depth limits; default global=64/function=32.
+    /// Zero normalizes to one; trusted extensions run after this policy.
+    #[must_use]
+    pub fn expression_depth_limits(mut self, global: usize, functions: usize) -> Self {
+        self.execution_policy.expression_depth_limits = Some((global, functions));
         self
     }
 
@@ -1881,9 +1917,7 @@ impl EmbeddedScriptView {
         validate_manifest_entry(&self.manifest, &self.entry)?;
         let extensions = Rc::new(self.extensions);
         let mut engine = RuntimeEngine::new();
-        if let Some(limit) = self.operation_limit {
-            engine.set_operation_limit(limit);
-        }
+        self.execution_policy.apply(&mut engine);
         for extension in extensions.iter() {
             extension
                 .configure_engine(&mut engine)
@@ -1958,7 +1992,7 @@ impl EmbeddedScriptView {
             #[cfg(feature = "dev-reload")]
             theme_token_overrides: self.theme_token_overrides.clone(),
             show_error_banner: Cell::new(true),
-            operation_limit: self.operation_limit,
+            execution_policy: self.execution_policy,
             #[cfg(feature = "dev-reload")]
             development: self.development,
         });
@@ -2445,7 +2479,7 @@ struct ScriptWindowFactory {
     #[cfg(feature = "dev-reload")]
     theme_token_overrides: ThemeTokenOverrides,
     show_error_banner: Cell<bool>,
-    operation_limit: Option<u64>,
+    execution_policy: ScriptExecutionPolicy,
     #[cfg(feature = "dev-reload")]
     development: bool,
 }
@@ -2458,9 +2492,7 @@ impl ScriptWindowFactory {
         mount_lease: Option<&std::rc::Weak<()>>,
     ) -> Result<(RuntimeEngine, ScriptLifecycle, PrimitiveRegistry), ScriptViewError> {
         let mut engine = RuntimeEngine::new();
-        if let Some(limit) = self.operation_limit {
-            engine.set_operation_limit(limit);
-        }
+        self.execution_policy.apply(&mut engine);
         for extension in self.extensions.iter() {
             extension
                 .configure_engine(&mut engine)

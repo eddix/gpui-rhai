@@ -4,8 +4,8 @@ use rhai::EvalAltResult;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ComponentInstancePath, ExecutionOperation, ExecutionTiming, MAX_SCRIPT_OPERATIONS,
-    OPERATION_SEMANTICS_VERSION, RuntimeError, StateInstanceSnapshot, UiContext, UiValue,
+    ComponentInstancePath, ExecutionOperation, ExecutionTiming, OPERATION_SEMANTICS_VERSION,
+    RuntimeError, StateInstanceSnapshot, UiContext, UiValue,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -281,8 +281,8 @@ fn runtime_context(context: &DiagnosticContext) -> Diagnostic {
             .execution_timing
             .as_ref()
             .map(|timing| DiagnosticOperationBudget {
-                consumed: timing.operations,
-                maximum: MAX_SCRIPT_OPERATIONS,
+                consumed: timing.round_operations,
+                maximum: timing.operation_limit,
                 semantics_version: OPERATION_SEMANTICS_VERSION,
             });
     Diagnostic {
@@ -385,7 +385,7 @@ mod tests {
     use rhai::{Dynamic, Position};
 
     use crate::{
-        ExecutionOperation, ExecutionTiming, MAX_SCRIPT_OPERATIONS, RuntimeEngine,
+        DEFAULT_SCRIPT_OPERATION_LIMIT, ExecutionOperation, ExecutionTiming, RuntimeEngine,
         StateInstanceSnapshot, StateValueSnapshot, UiValue,
     };
 
@@ -435,6 +435,8 @@ mod tests {
             source: "ui/login.rhai".to_owned(),
             duration: Duration::from_micros(2_500),
             operations: 1_000_001,
+            operation_limit: DEFAULT_SCRIPT_OPERATION_LIMIT,
+            round_operations: 1_000_001,
             operation_semantics: crate::OPERATION_SEMANTICS_VERSION,
             slow: false,
             succeeded: false,
@@ -482,7 +484,7 @@ mod tests {
             diagnostic.operation_budget,
             Some(DiagnosticOperationBudget {
                 consumed: 1_000_001,
-                maximum: MAX_SCRIPT_OPERATIONS,
+                maximum: DEFAULT_SCRIPT_OPERATION_LIMIT,
                 semantics_version: crate::OPERATION_SEMANTICS_VERSION,
             })
         );
@@ -518,5 +520,28 @@ mod tests {
             serde_json::json!(crate::OPERATION_SEMANTICS_VERSION)
         );
         assert!(!serialized.to_string().contains("hunter2"));
+    }
+
+    #[test]
+    fn diagnostic_keeps_the_failed_round_quota_after_host_policy_changes() {
+        let mut engine = RuntimeEngine::new();
+        engine.set_operation_limit(100);
+        let compiled = engine
+            .compile("fn view() { let n=0; for i in 0..1000 { n+=1; } text(`${n}`) }")
+            .unwrap();
+        let error = engine.render(&compiled).unwrap_err();
+        let failed = engine.last_failed_timing().unwrap();
+        assert_eq!(failed.operation_limit, 100);
+        engine.set_operation_limit(20_000);
+        let diagnostic = Diagnostic::from_runtime(
+            &error,
+            &DiagnosticContext {
+                execution_timing: Some(failed),
+                ..DiagnosticContext::default()
+            },
+        );
+        let budget = diagnostic.operation_budget.unwrap();
+        assert_eq!(budget.maximum, 100);
+        assert!(budget.consumed > 100);
     }
 }
