@@ -44,6 +44,19 @@ pub(crate) struct NodeSlotRuntime {
 
 impl NodeSlotRuntime {
     pub(crate) fn render(&self, node: &UiNode, slot: &str) -> AnyElement {
+        self.render_at(
+            node,
+            &format!("{}/{slot}", self.base_path),
+            self.retained_roots.get(slot).copied(),
+        )
+    }
+
+    pub(crate) fn render_at(
+        &self,
+        node: &UiNode,
+        path: &str,
+        root: Option<crate::NodeId>,
+    ) -> AnyElement {
         let resources = WindowRenderResources {
             now: self.now,
             clock: &self.clock,
@@ -78,9 +91,9 @@ impl NodeSlotRuntime {
             &InteractionState::default(),
             &self.primitives,
             &resources,
-            &format!("{}/{slot}", self.base_path),
+            path,
             crate::renderer::RetainedSubtree {
-                root: self.retained_roots.get(slot).copied(),
+                root,
                 links: &self.retained_links,
             },
         )

@@ -54,6 +54,7 @@ pub mod split_resize;
 pub mod state;
 pub mod store;
 pub mod style;
+mod table_layout;
 pub mod text_area;
 mod text_edit;
 pub mod text_input;

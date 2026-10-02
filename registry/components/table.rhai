@@ -146,14 +146,9 @@ fn optional_or(props, name, fallback) {
 }
 
 fn column_style(column) {
-    let style = style().padding_x(theme_spacing("sm"));
-    if column.width.kind == "fixed" {
-        style.width(px(column.width.value)).flex_shrink(false)
-    } else if column.width.kind == "percent" {
-        style.width(relative(column.width.value / 100.0)).flex_shrink(false)
-    } else {
-        style.flex_basis(relative(0)).flex_grow(column.width.value).min_width(px(0))
-    }
+    // Native Table layout supplies the same viewport-resolved width to header
+    // and virtual cells; padding remains a theme-controlled border-box inset.
+    style().padding_x(theme_spacing("sm")).flex_shrink(false)
 }
 
 fn next_sort(current, key) {
@@ -250,9 +245,7 @@ fn render_table_row(resize_signals, total_rows, ctx, payload) {
                     .background(if item.selected { theme_color("table.selection") }
                         else { rgba(0x00000000) }))
         );
-        if "resize_signal_key" in cell {
-            node = node.bind_parent_signal(ctx, "width_override", cell.resize_signal_key);
-        }
+        node = node.with_table_column(cell_index - 1);
         node = node.accessibility_table_cell(cell_label, cell_index);
         cells.push(node);
         cell_index += 1;
@@ -464,8 +457,9 @@ fn table_header(ctx, props, columns, resize_signals, current_sort) {
                     .typography("body_small").font_weight(700)
                     .hover(style().background(theme_color("surface_hover")))))
             .accessibility_column_header(column.title, index + 1);
+        cell = cell.with_table_column(index);
         if resize_enabled {
-            cell = cell.bind_signal("width_override", resize_signal).with_ref(header_ref);
+            cell = cell.with_ref(header_ref);
         }
         headers.push(if optional_or(column, "sortable", false) {
             cell.on_click_value(Fn("sort_action"), next_sort(current_sort, column.key))
@@ -479,11 +473,11 @@ fn table_header(ctx, props, columns, resize_signals, current_sort) {
         .accessibility_row_index(1)
 }
 
-fn table_shell(ctx,props,columns,header,body,row_count) {
+fn table_shell(ctx,props,columns,signals,header,body,row_count) {
     let root_style=if prop_or(props,"fill_height",false) {
         style().flex_col().flex_grow().min_width(px(0)).min_height(px(0)).overflow_x_scroll()
     }else{style().flex_col().min_width(px(0)).overflow_x_scroll()};
-    box([header,body]).with_key(props.key)
+    box([header,body]).with_key(props.key).with_table_track(columns,signals)
         .with_style(ctx.component_style("root",root_style.border(px(1)).border_color(theme_color("border"))))
         .accessibility_role("table").accessibility_label(props.label)
         .accessibility_row_count(row_count).accessibility_column_count(columns.len)
@@ -514,12 +508,12 @@ fn render_Table(ctx, props) {
         let loading = if "loading_content" in props && props.loading_content != () {
             props.loading_content
         } else { text("Loading…") };
-        return table_shell(ctx,props,columns,header,table_state_body(ctx,props,"loading",loading),1);
+        return table_shell(ctx,props,columns,model.signals,header,table_state_body(ctx,props,"loading",loading),1);
     }
     if props.rows.len == 0 {
         let empty = if "empty" in props && props.empty != () { props.empty }
             else { text(prop_or(props, "empty_text", "No results")) };
-        return table_shell(ctx,props,columns,header,table_state_body(ctx,props,"empty",empty),1);
+        return table_shell(ctx,props,columns,model.signals,header,table_state_body(ctx,props,"empty",empty),1);
     }
 
     let selected = prop_or(props, "selected_keys", []);
@@ -614,7 +608,7 @@ fn render_Table(ctx, props) {
     if data.len == 0 {
         let empty = if "empty" in props && props.empty != () { props.empty }
             else { text(prop_or(props, "empty_text", "No results")) };
-        return table_shell(ctx,props,columns,header,table_state_body(ctx,props,"empty",empty),1);
+        return table_shell(ctx,props,columns,model.signals,header,table_state_body(ctx,props,"empty",empty),1);
     }
     let collection = #{
         key: `${props.key}-body`, label: props.label, data: data,
@@ -631,5 +625,5 @@ fn render_Table(ctx, props) {
     let body = virtual_collection(collection,
         Fn("render_table_row").curry(model.resize_signals).curry(data.len))
         .with_style(ctx.component_style("body", body_style));
-    table_shell(ctx,props,columns,header,body,data.len+1)
+    table_shell(ctx,props,columns,model.signals,header,body,data.len+1)
 }
