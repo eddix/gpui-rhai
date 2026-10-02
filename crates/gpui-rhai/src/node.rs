@@ -2153,13 +2153,7 @@ fn register_node_behavior_methods(builder: &mut TypeBuilder<UiNode>) {
              callback: FnPtr,
              payload: Dynamic|
              -> Result<UiNode, Box<EvalAltResult>> {
-                let key = key.trim().to_ascii_lowercase();
-                if !is_valid_key_handler_name(&key) {
-                    return Err(Box::new(EvalAltResult::ErrorRuntime(
-                        "key handler name must be a non-empty gpui key name (letters, digits, `_`, or a printable punctuation key such as `?`, `/`, `[`, `-`)".into(),
-                        Position::NONE,
-                    )));
-                }
+                let key = normalize_key_handler_name(key.as_str())?;
                 let payload = UiValue::from_dynamic(payload).map_err(|error| {
                     Box::new(EvalAltResult::ErrorRuntime(
                         error.to_string().into(),
@@ -2227,11 +2221,10 @@ fn register_raw_event_methods(builder: &mut TypeBuilder<UiNode>) {
              event: ImmutableString,
              callback: FnPtr|
              -> Result<UiNode, Box<EvalAltResult>> {
-                validate_node_event_name(event.as_str())?;
-                Ok(node.clone().with_handler(
-                    event.to_string(),
-                    retained_script_callback(&call, callback)?,
-                ))
+                let event = normalize_node_event_name(event.as_str())?;
+                Ok(node
+                    .clone()
+                    .with_handler(event, retained_script_callback(&call, callback)?))
             },
         )
         .with_fn(
@@ -2241,9 +2234,9 @@ fn register_raw_event_methods(builder: &mut TypeBuilder<UiNode>) {
              event: ImmutableString,
              callback: FnPtr|
              -> Result<UiNode, Box<EvalAltResult>> {
-                validate_node_event_name(event.as_str())?;
+                let event = normalize_node_event_name(event.as_str())?;
                 Ok(node.clone().with_handler_phase(
-                    event.to_string(),
+                    event,
                     crate::EventPhase::Capture,
                     retained_script_callback(&call, callback)?,
                 ))
@@ -2256,9 +2249,9 @@ fn register_raw_event_methods(builder: &mut TypeBuilder<UiNode>) {
              event: ImmutableString,
              callback: FnPtr|
              -> Result<UiNode, Box<EvalAltResult>> {
-                validate_node_event_name(event.as_str())?;
+                let event = normalize_node_event_name(event.as_str())?;
                 Ok(node.clone().with_handler_phase(
-                    event.to_string(),
+                    event,
                     crate::EventPhase::Bubble,
                     retained_script_callback(&call, callback)?,
                 ))
@@ -2307,14 +2300,14 @@ fn register_native_event_methods(builder: &mut TypeBuilder<UiNode>) {
              event: ImmutableString,
              handler: crate::NativeHandlerRef|
              -> Result<UiNode, Box<EvalAltResult>> {
-                validate_node_event_name(event.as_str())?;
+                let event = normalize_node_event_name(event.as_str())?;
                 handler.validate_event(event.as_str()).map_err(|error| {
                     Box::new(EvalAltResult::ErrorRuntime(
                         error.to_string().into(),
                         Position::NONE,
                     ))
                 })?;
-                Ok(node.clone().with_handler(event.to_string(), handler))
+                Ok(node.clone().with_handler(event, handler))
             },
         )
         .with_fn(
@@ -2323,18 +2316,16 @@ fn register_native_event_methods(builder: &mut TypeBuilder<UiNode>) {
              event: ImmutableString,
              handler: crate::NativeHandlerRef|
              -> Result<UiNode, Box<EvalAltResult>> {
-                validate_node_event_name(event.as_str())?;
+                let event = normalize_node_event_name(event.as_str())?;
                 handler.validate_event(event.as_str()).map_err(|error| {
                     Box::new(EvalAltResult::ErrorRuntime(
                         error.to_string().into(),
                         Position::NONE,
                     ))
                 })?;
-                Ok(node.clone().with_handler_phase(
-                    event.to_string(),
-                    crate::EventPhase::Capture,
-                    handler,
-                ))
+                Ok(node
+                    .clone()
+                    .with_handler_phase(event, crate::EventPhase::Capture, handler))
             },
         )
         .with_fn(
@@ -2343,40 +2334,33 @@ fn register_native_event_methods(builder: &mut TypeBuilder<UiNode>) {
              event: ImmutableString,
              handler: crate::NativeHandlerRef|
              -> Result<UiNode, Box<EvalAltResult>> {
-                validate_node_event_name(event.as_str())?;
+                let event = normalize_node_event_name(event.as_str())?;
                 handler.validate_event(event.as_str()).map_err(|error| {
                     Box::new(EvalAltResult::ErrorRuntime(
                         error.to_string().into(),
                         Position::NONE,
                     ))
                 })?;
-                Ok(node.clone().with_handler_phase(
-                    event.to_string(),
-                    crate::EventPhase::Bubble,
-                    handler,
-                ))
+                Ok(node
+                    .clone()
+                    .with_handler_phase(event, crate::EventPhase::Bubble, handler))
             },
         );
 }
 
-fn validate_node_event_name(event: &str) -> Result<(), Box<EvalAltResult>> {
-    let valid = if let Some(key) = event.strip_prefix("key:") {
-        // Key handlers are looked up by the raw gpui key string at dispatch
-        // time, so the key segment must accept every key a keyboard can
-        // send: named keys (`escape`, `left`) as well as punctuation (`?`,
-        // `/`, `[`, `-`, `=`). Only the namespace separator and non-printable
-        // characters are reserved.
-        !key.is_empty() && key.len() <= 64 && is_printable_key_character(key)
-    } else {
-        (1..=64).contains(&event.len())
-            && event.chars().all(|character| {
-                character.is_ascii_lowercase()
-                    || character.is_ascii_digit()
-                    || matches!(character, '_' | ':')
-            })
-    };
-    if valid {
-        Ok(())
+fn normalize_node_event_name(event: &str) -> Result<String, Box<EvalAltResult>> {
+    if let Some(key) = event.strip_prefix("key:") {
+        return normalize_key_handler_name(key).map(|key| format!("key:{key}"));
+    }
+    // Keep the ordinary event namespace contract independent of raw keys.
+    if (1..=64).contains(&event.len())
+        && event.chars().all(|character| {
+            character.is_ascii_lowercase()
+                || character.is_ascii_digit()
+                || matches!(character, '_' | ':')
+        })
+    {
+        Ok(event.to_owned())
     } else {
         Err(Box::new(EvalAltResult::ErrorRuntime(
             format!("event `{event}` must be a 1-64 character snake_case or namespaced name")
@@ -2386,24 +2370,23 @@ fn validate_node_event_name(event: &str) -> Result<(), Box<EvalAltResult>> {
     }
 }
 
-/// A key handler name: a gpui key string (`escape`, `left`, `?`, `/`, `[`,
-/// `-`, `=`). Named keys are letters, digits and `_`; punctuation keys are
-/// single printable characters. `:` is reserved as the event namespace
-/// separator and can never be part of a key name.
-fn is_valid_key_handler_name(key: &str) -> bool {
-    !key.is_empty() && key.len() <= 64 && key.chars().all(|character| {
-        character.is_ascii_alphanumeric() || character == '_' || {
-            // Printable ASCII punctuation and symbols, minus the reserved
-            // namespace separator `:`.
-            character.is_ascii_graphic() && character != ':'
-        }
-    })
-}
-
-fn is_printable_key_character(key: &str) -> bool {
-    key.chars().all(|character| {
-        character.is_ascii_graphic() && character != ':'
-    })
+/// One grammar and normalization for every Rhai node-key registration entry.
+/// The `key:` prefix consumes four bytes of the 64-byte event-name budget.
+fn normalize_key_handler_name(key: &str) -> Result<String, Box<EvalAltResult>> {
+    let named = key
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_');
+    let punctuation =
+        key.len() == 1 && key.as_bytes()[0].is_ascii_punctuation() && key.as_bytes()[0] != b':';
+    if (1..=60).contains(&key.len()) && (named || punctuation) {
+        Ok(key.to_ascii_lowercase())
+    } else {
+        Err(Box::new(EvalAltResult::ErrorRuntime(
+            "key handler name must be 1-60 ASCII letters, digits or `_`, or one ASCII punctuation character other than `:`; whitespace and chords are not accepted"
+                .into(),
+            Position::NONE,
+        )))
+    }
 }
 
 fn register_semantic_event_methods(builder: &mut TypeBuilder<UiNode>) {
@@ -3702,5 +3685,82 @@ mod tests {
                 "script should be rejected: {script}"
             );
         }
+    }
+
+    fn key_registration_script(method: &str, key: &str) -> String {
+        let name = if method == "on_key_value" {
+            key.to_owned()
+        } else {
+            format!("key:{key}")
+        };
+        let name = serde_json::to_string(&name).unwrap();
+        let payload = if method == "on_key_value" { ", 7" } else { "" };
+        format!(
+            "fn h(ctx,p){{()}} fn view(){{text(\"target\").{method}({name},Fn(\"h\"){payload})}}"
+        )
+    }
+
+    #[test]
+    fn all_rhai_key_entries_share_normalization_and_exact_limits() {
+        for (method, phase) in [
+            ("on_key_value", crate::EventPhase::Target),
+            ("on", crate::EventPhase::Target),
+            ("on_capture", crate::EventPhase::Capture),
+            ("on_bubble", crate::EventPhase::Bubble),
+        ] {
+            let long = "A".repeat(60);
+            for key in [
+                "Escape", "A", "1", "page_up", "?", "/", "[", "]", "-", "=", &long,
+            ] {
+                let mut runtime = crate::RuntimeEngine::new();
+                let compiled = runtime
+                    .compile_named("key_contract.rhai", &key_registration_script(method, key))
+                    .unwrap();
+                let node = runtime.render(&compiled).unwrap();
+                let event = format!("key:{}", key.to_ascii_lowercase());
+                assert_eq!(node.handlers().len(), 1, "{method}, {key:?}");
+                assert_eq!(node.event_handlers(&event)[0].phase(), phase);
+                if method == "on_key_value" {
+                    assert_eq!(node.handler_payload(&event), Some(&UiValue::Integer(7)));
+                }
+            }
+            let long = "a".repeat(61);
+            for key in [
+                "", " ", " escape", "escape ", "\t", "\n", "\0", ":", "a:b", "中文", "é", "cmd-s",
+                "shift-/", "??", "[]", &long,
+            ] {
+                let mut runtime = crate::RuntimeEngine::new();
+                let compiled = runtime
+                    .compile_named("key_contract.rhai", &key_registration_script(method, key))
+                    .unwrap();
+                assert!(
+                    runtime.render(&compiled).is_err(),
+                    "{method} accepted {key:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn key_normalization_does_not_change_ordinary_event_namespaces() {
+        for event in ["click", "value_changed", "custom:event", ":", "::"] {
+            assert_eq!(normalize_node_event_name(event).unwrap(), event);
+        }
+        for event in [
+            "",
+            "Click",
+            "custom:Event",
+            "Key:Escape",
+            "custom-event",
+            "custom:?",
+            "a b",
+        ] {
+            assert!(
+                normalize_node_event_name(event).is_err(),
+                "accepted {event:?}"
+            );
+        }
+        assert!(normalize_node_event_name(&"a".repeat(64)).is_ok());
+        assert!(normalize_node_event_name(&"a".repeat(65)).is_err());
     }
 }
