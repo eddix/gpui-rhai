@@ -640,6 +640,37 @@ impl UiRuntimeState {
         self.native_collections.reset_reader(component);
         self.native_documents.reset_reader(component);
         self.environment_dependencies.reset_reader(component);
+        self.reset_geometry_read_contribution(&crate::read_dependency::ReadDependency::component(
+            component,
+        ));
+    }
+
+    pub(crate) fn retain_virtual_read_contributions(
+        &mut self,
+        scope: &ComponentInstancePath,
+        active: &BTreeSet<crate::read_dependency::ReadContribution>,
+    ) {
+        self.native_collections.retain_contributions(scope, active);
+        self.native_documents.retain_contributions(scope, active);
+        self.stores.retain_contributions(scope, active);
+        self.environment_dependencies
+            .retain_contributions(scope, active);
+        self.element_refs.retain_contributions(scope, active);
+        self.geometry.retain_contributions(scope, active);
+        for presentation in self.presentations.values() {
+            presentation.geometry.retain_contributions(scope, active);
+        }
+    }
+
+    fn reset_geometry_read_contribution(
+        &mut self,
+        reader: &crate::read_dependency::ReadDependency,
+    ) {
+        self.element_refs.reset_contribution(reader);
+        self.geometry.reset_contribution(reader);
+        for presentation in self.presentations.values() {
+            presentation.geometry.reset_contribution(reader);
+        }
     }
 
     pub(crate) fn component_event_handlers_in_scope(
@@ -723,6 +754,8 @@ impl UiRuntimeState {
             !event.target.is_within(root) || active.contains(&event.target) || event.target == *root
         });
         self.stores.retain_reader_scope(root, active);
+        self.component_event_handlers
+            .retain(|(path, _), _| !path.is_within(root) || path == root || active.contains(path));
         self.native_collections.retain_reader_scope(root, active);
         self.native_documents.retain_reader_scope(root, active);
         self.environment_dependencies.retain_scope(root, active);
@@ -1046,6 +1079,7 @@ pub struct UiContext {
     callback_component: ComponentInstancePath,
     callback_incarnation: ComponentIncarnation,
     callback_events: BTreeMap<String, EventSchema>,
+    read_dependency: crate::read_dependency::ReadDependency,
     window: Option<String>,
     view: Option<String>,
     phase: ExecutionPhase,
@@ -1078,11 +1112,13 @@ impl UiContext {
             .try_borrow_mut()
             .map(|mut runtime| runtime.ensure_component_incarnation(&component))
             .unwrap_or_default();
+        let read_dependency = crate::read_dependency::ReadDependency::component(&component);
         let context = Self {
             runtime,
             component: component.clone(),
             incarnation,
             callback_component: component,
+            read_dependency,
             callback_incarnation: incarnation,
             callback_events: events.clone(),
             window,
@@ -1143,11 +1179,13 @@ impl UiContext {
             .try_borrow_mut()
             .map(|mut runtime| runtime.ensure_component_incarnation(&component))
             .unwrap_or_default();
+        let read_dependency = crate::read_dependency::ReadDependency::component(&component);
         let context = Self {
             runtime: Rc::clone(&self.runtime),
             component: component.clone(),
             incarnation,
             callback_component: component,
+            read_dependency,
             callback_incarnation: incarnation,
             callback_events: events.clone(),
             window: self.window.clone(),
@@ -1182,6 +1220,34 @@ impl UiContext {
         context.callback_component = self.callback_component.clone();
         context.callback_incarnation = self.callback_incarnation;
         context.callback_events = self.callback_events.clone();
+        context.read_dependency = self.read_dependency.clone();
+        context
+    }
+
+    pub(crate) fn for_virtual_item(
+        &self,
+        collection: &crate::VirtualCollectionId,
+        key: &str,
+    ) -> Self {
+        let mut context = self.clone();
+        context.read_dependency = crate::read_dependency::ReadDependency::virtual_item(
+            &self.callback_component,
+            collection,
+            key,
+        );
+        if let Ok(mut runtime) = context.runtime.try_borrow_mut() {
+            runtime
+                .native_collections
+                .reset_contribution(&context.read_dependency);
+            runtime
+                .native_documents
+                .reset_contribution(&context.read_dependency);
+            runtime.stores.reset_contribution(&context.read_dependency);
+            runtime
+                .environment_dependencies
+                .reset_contribution(&context.read_dependency);
+            runtime.reset_geometry_read_contribution(&context.read_dependency);
+        }
         context
     }
 
@@ -1547,7 +1613,7 @@ impl UiContext {
         let node = if self.phase == ExecutionPhase::Render {
             runtime
                 .element_refs
-                .resolve_and_track_geometry(reference, &self.callback_component)
+                .resolve_and_track_geometry(reference, &self.read_dependency)
         } else {
             Some(runtime.element_refs.resolve(reference)?)
         };
@@ -1557,7 +1623,7 @@ impl UiContext {
         let geometry_registry =
             runtime.geometry_for(self.view.as_deref().or(self.window.as_deref()));
         drop(runtime);
-        let Some(geometry) = geometry_registry.read_tracked(node, &self.callback_component) else {
+        let Some(geometry) = geometry_registry.read_tracked(node, &self.read_dependency) else {
             return Ok(UiValue::Null);
         };
         Ok(UiValue::Map(BTreeMap::from([
@@ -1738,7 +1804,7 @@ impl UiContext {
             .map_err(|_| UiContextError::Borrowed)?;
         Ok(runtime
             .stores
-            .read_tracked(&self.callback_component, &StoreId::app(store), field)?)
+            .read_dependency(&self.read_dependency, &StoreId::app(store), field)?)
     }
 
     /// Read one Rust-owned collection and subscribe the current component.
@@ -1757,8 +1823,8 @@ impl UiContext {
             .runtime
             .try_borrow_mut()
             .map_err(|_| UiContextError::Borrowed)?;
-        Ok(runtime.native_collections.read_tracked_with_missing(
-            &self.callback_component,
+        Ok(runtime.native_collections.read_dependency(
+            &self.read_dependency,
             name,
             self.phase == ExecutionPhase::Render,
         )?)
@@ -1779,7 +1845,7 @@ impl UiContext {
             .map_err(|_| UiContextError::Borrowed)?;
         Ok(runtime
             .native_documents
-            .read_tracked(&self.callback_component, name)?)
+            .read_dependency(&self.read_dependency, name)?)
     }
 
     /// Read one Host-owned chart data handle. The handle performs its own
@@ -1818,8 +1884,8 @@ impl UiContext {
             .runtime
             .try_borrow_mut()
             .map_err(|_| UiContextError::Borrowed)?;
-        Ok(runtime.stores.read_path_tracked(
-            &self.callback_component,
+        Ok(runtime.stores.read_path_dependency(
+            &self.read_dependency,
             &StoreId::app(store),
             field,
             path,
@@ -1901,8 +1967,8 @@ impl UiContext {
             .runtime
             .try_borrow_mut()
             .map_err(|_| UiContextError::Borrowed)?;
-        Ok(runtime.stores.read_tracked(
-            &self.callback_component,
+        Ok(runtime.stores.read_dependency(
+            &self.read_dependency,
             &StoreId::window(window, store),
             field,
         )?)
@@ -1924,8 +1990,8 @@ impl UiContext {
             .runtime
             .try_borrow_mut()
             .map_err(|_| UiContextError::Borrowed)?;
-        Ok(runtime.stores.read_path_tracked(
-            &self.callback_component,
+        Ok(runtime.stores.read_path_dependency(
+            &self.read_dependency,
             &StoreId::window(window, store),
             field,
             path,
@@ -2136,7 +2202,7 @@ impl UiContext {
             .map_err(|_| UiContextError::Borrowed)?;
         runtime
             .environment_dependencies
-            .track_locale(self.window.as_deref(), &self.callback_component);
+            .track_locale(self.window.as_deref(), &self.read_dependency);
         let locale = runtime
             .locale
             .as_ref()
@@ -2363,7 +2429,7 @@ impl UiContext {
             .map_err(|_| UiContextError::Borrowed)?;
         runtime
             .environment_dependencies
-            .track_viewport(window, &self.callback_component);
+            .track_viewport(window, &self.read_dependency);
         Ok(runtime.responsive.class(window).as_str().to_owned())
     }
 
@@ -2713,7 +2779,7 @@ impl UiContext {
         };
         runtime
             .environment_dependencies
-            .track_theme(self.window.as_deref(), &self.callback_component);
+            .track_theme(self.window.as_deref(), &self.read_dependency);
         let appearance = self
             .window
             .as_deref()

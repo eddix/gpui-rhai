@@ -426,7 +426,7 @@ type ActiveComponentRenderState = Rc<RefCell<Option<ActiveComponentRender>>>;
 struct PendingComponentCommit {
     root: ComponentInstancePath,
     previous: BTreeSet<ComponentInstancePath>,
-    active: BTreeSet<ComponentInstancePath>,
+    retained_root: Option<ComponentInstancePath>,
     transaction: RenderStateTransaction,
     event_handlers: BTreeMap<(ComponentInstancePath, String), ScriptCallback>,
 }
@@ -1064,7 +1064,9 @@ impl RuntimeEngine {
                 PendingComponentCommit {
                     root: root.clone(),
                     previous,
-                    active: active.seen,
+                    retained_root: (!active.invocations.contains_key(&root)
+                        && active.transaction.retains_root())
+                    .then_some(root.clone()),
                     transaction: active.transaction,
                     event_handlers: active.event_handlers,
                 },
@@ -1414,12 +1416,43 @@ impl RuntimeEngine {
         runtime: &mut UiRuntimeState,
     ) -> Result<(), RuntimeError> {
         let commits = std::mem::take(&mut self.pending_component_commits);
+        if commits.is_empty() {
+            return Ok(());
+        }
+        // One batch has one final invocation graph. Intermediate ancestor
+        // manifests must not retire descendants prepared by later targets.
+        let mut active = self
+            .component_invocations
+            .keys()
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        active.extend(
+            self.virtual_collections
+                .keys()
+                .map(|id| id.component.child("VirtualCollection", id.key.clone())),
+        );
+        active.extend(
+            commits
+                .values()
+                .filter_map(|commit| commit.retained_root.clone()),
+        );
+        let roots = crate::state::topmost_paths(&commits.keys().cloned().collect());
+        let previous = commits
+            .values()
+            .flat_map(|commit| commit.previous.iter().cloned())
+            .collect();
+        let mut transactions = Vec::with_capacity(commits.len());
         for (_, commit) in commits {
-            runtime
-                .reconcile_component_lifetimes(&commit.root, &commit.active, &commit.previous)
-                .map_err(|error| RuntimeError::ComponentRuntime(error.to_string()))?;
             runtime.replace_component_event_handlers(&commit.root, commit.event_handlers);
-            runtime.component_state.commit_render(commit.transaction);
+            transactions.push(commit.transaction);
+        }
+        runtime
+            .component_state
+            .commit_render_batch(transactions, &active);
+        for root in roots {
+            runtime
+                .reconcile_component_lifetimes(&root, &active, &previous)
+                .map_err(|error| RuntimeError::ComponentRuntime(error.to_string()))?;
         }
         Ok(())
     }
@@ -1509,6 +1542,7 @@ impl RuntimeEngine {
             .map(|(index, node)| (*index, node.clone()))
             .collect::<BTreeMap<_, _>>();
         let previous_root = Rc::new(UiNode::box_node(retained.values().cloned().collect()));
+        prune_virtual_read_contributions(&context, id, &recipe.data, indices, &previous_root)?;
         self.begin_component_render(
             context.clone(),
             recipe.generation,
@@ -1541,7 +1575,10 @@ impl RuntimeEngine {
                 let item = invocation.call::<UiNode>(
                     self.engine(),
                     &recipe.renderer,
-                    (context.clone(), Dynamic::from_map(payload)),
+                    (
+                        context.for_virtual_item(id, &key),
+                        Dynamic::from_map(payload),
+                    ),
                 );
                 self.record_timing(
                     ExecutionOperation::VirtualCollection(id.key.clone()),
@@ -2659,6 +2696,33 @@ fn try_reuse_component_subtree(
     Ok(Some(scope.node))
 }
 
+fn prune_virtual_read_contributions(
+    context: &UiContext,
+    id: &crate::VirtualCollectionId,
+    data: &crate::VirtualCollectionData,
+    indices: &BTreeSet<usize>,
+    retained: &UiNode,
+) -> Result<(), RuntimeError> {
+    let mut active = retained.virtual_read_contributions();
+    active.extend(
+        indices
+            .iter()
+            .filter_map(|index| data.key(*index))
+            .map(
+                |key| crate::read_dependency::ReadContribution::VirtualItem {
+                    collection: id.clone(),
+                    key: key.to_owned(),
+                },
+            ),
+    );
+    context
+        .runtime()
+        .try_borrow_mut()
+        .map_err(|_| RuntimeError::ComponentRuntime("UI state is already borrowed".into()))?
+        .retain_virtual_read_contributions(context.component_path(), &active);
+    Ok(())
+}
+
 fn retain_virtual_component_manifest(
     shared: &ActiveComponentRenderState,
 ) -> Result<(), RuntimeError> {
@@ -3556,6 +3620,7 @@ fn realize_initial_collection(
     call: &rhai::NativeCallContext<'_>,
     renderer: &FnPtr,
     context: &UiContext,
+    id: &crate::VirtualCollectionId,
     data: &crate::VirtualCollectionData,
     indices: &BTreeSet<usize>,
 ) -> Result<BTreeMap<usize, UiNode>, Box<EvalAltResult>> {
@@ -3572,7 +3637,10 @@ fn realize_initial_collection(
         let (item_key, mut payload) = collection_payload(&item, index)?;
         add_collection_neighbors(data, index, &mut payload);
         let node = renderer
-            .call_within_context::<UiNode>(call, (context.clone(), payload))?
+            .call_within_context::<UiNode>(
+                call,
+                (context.for_virtual_item(id, &item_key), payload),
+            )?
             .with_key(item_key);
         realized.insert(index, node);
     }
@@ -3615,7 +3683,7 @@ fn realize_seeded_virtual_collection(
     let indices =
         virtual_collection_seed_indices(active, id, decoded, count, previous_metrics.as_ref())?;
     enter_virtual_collection_scope(active, context.clone())?;
-    let realized = realize_initial_collection(call, renderer, context, &decoded.data, &indices);
+    let realized = realize_initial_collection(call, renderer, context, id, &decoded.data, &indices);
     leave_component_render(active)?;
     realized
 }

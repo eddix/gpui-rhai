@@ -433,7 +433,7 @@ pub(crate) fn register_document_api(engine: &mut Engine) {
 #[derive(Clone, Debug, Default)]
 pub struct NativeTextDocumentRegistry {
     documents: BTreeMap<String, NativeTextDocument>,
-    readers: BTreeMap<String, BTreeSet<ComponentInstancePath>>,
+    readers: BTreeMap<String, BTreeSet<crate::read_dependency::ReadDependency>>,
 }
 
 impl NativeTextDocumentRegistry {
@@ -501,12 +501,26 @@ impl NativeTextDocumentRegistry {
             });
         }
         *current = document;
-        Ok(self.readers.get(name).cloned().unwrap_or_default())
+        Ok(crate::read_dependency::owners(
+            self.readers.get(name).cloned().unwrap_or_default(),
+        ))
     }
 
+    #[cfg(test)]
     pub(crate) fn read_tracked(
         &mut self,
         reader: &ComponentInstancePath,
+        name: &str,
+    ) -> Result<NativeTextDocument, DocumentError> {
+        self.read_dependency(
+            &crate::read_dependency::ReadDependency::component(reader),
+            name,
+        )
+    }
+
+    pub(crate) fn read_dependency(
+        &mut self,
+        reader: &crate::read_dependency::ReadDependency,
         name: &str,
     ) -> Result<NativeTextDocument, DocumentError> {
         let document = self
@@ -522,6 +536,9 @@ impl NativeTextDocumentRegistry {
     }
 
     pub(crate) fn reset_reader(&mut self, reader: &ComponentInstancePath) {
+        self.reset_contribution(&crate::read_dependency::ReadDependency::component(reader));
+    }
+    pub(crate) fn reset_contribution(&mut self, reader: &crate::read_dependency::ReadDependency) {
         for readers in self.readers.values_mut() {
             readers.remove(reader);
         }
@@ -534,18 +551,26 @@ impl NativeTextDocumentRegistry {
         active: &BTreeSet<ComponentInstancePath>,
     ) {
         for readers in self.readers.values_mut() {
-            readers.retain(|reader| {
-                !reader.is_within(root) || reader == root || active.contains(reader)
-            });
+            readers.retain(|reader| reader.retained_in_owner_scope(root, active));
         }
         self.readers.retain(|_, readers| !readers.is_empty());
     }
 
     pub(crate) fn remove_reader_scope(&mut self, root: &ComponentInstancePath) {
         for readers in self.readers.values_mut() {
-            readers.retain(|reader| !reader.is_within(root));
+            readers.retain(|reader| !reader.owner.is_within(root));
         }
         self.readers.retain(|_, readers| !readers.is_empty());
+    }
+
+    pub(crate) fn retain_contributions(
+        &mut self,
+        scope: &ComponentInstancePath,
+        active: &BTreeSet<crate::read_dependency::ReadContribution>,
+    ) {
+        crate::read_dependency::retain_readers(&mut self.readers, |reader| {
+            reader.retained_in_contribution_scope(scope, active)
+        });
     }
 }
 

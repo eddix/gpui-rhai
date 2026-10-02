@@ -82,7 +82,8 @@ impl CustomType for ElementRef {
 #[derive(Clone, Debug, Default)]
 pub struct ElementRefRegistry {
     active: BTreeMap<ElementRefId, NodeId>,
-    pending_geometry_readers: BTreeMap<ElementRefId, BTreeSet<ComponentInstancePath>>,
+    pending_geometry_readers:
+        BTreeMap<ElementRefId, BTreeSet<crate::read_dependency::ReadDependency>>,
 }
 
 impl ElementRefRegistry {
@@ -141,12 +142,12 @@ impl ElementRefRegistry {
     pub(crate) fn resolve_and_track_geometry(
         &mut self,
         reference: &ElementRef,
-        reader: &ComponentInstancePath,
+        reader: impl Into<crate::read_dependency::ReadDependency>,
     ) -> Option<NodeId> {
         self.pending_geometry_readers
             .entry(reference.id().clone())
             .or_default()
-            .insert(reader.clone());
+            .insert(reader.into());
         self.active.get(reference.id()).copied()
     }
 
@@ -154,7 +155,7 @@ impl ElementRefRegistry {
         &mut self,
         root: &ComponentInstancePath,
         candidate: BTreeMap<ElementRefId, NodeId>,
-    ) -> BTreeMap<NodeId, BTreeSet<ComponentInstancePath>> {
+    ) -> BTreeMap<NodeId, BTreeSet<crate::read_dependency::ReadDependency>> {
         self.active.retain(|id, _| !id.component.is_within(root));
         self.active.extend(candidate);
         let pending = self
@@ -163,7 +164,8 @@ impl ElementRefRegistry {
             .filter(|id| id.component.is_within(root))
             .cloned()
             .collect::<Vec<_>>();
-        let mut resolved = BTreeMap::<NodeId, BTreeSet<ComponentInstancePath>>::new();
+        let mut resolved =
+            BTreeMap::<NodeId, BTreeSet<crate::read_dependency::ReadDependency>>::new();
         for id in pending {
             let readers = self
                 .pending_geometry_readers
@@ -182,8 +184,23 @@ impl ElementRefRegistry {
             if id.component.is_within(root) {
                 return false;
             }
-            readers.retain(|reader| !reader.is_within(root));
+            readers.retain(|reader| !reader.owner.is_within(root));
             !readers.is_empty()
+        });
+    }
+
+    pub(crate) fn reset_contribution(&mut self, reader: &crate::read_dependency::ReadDependency) {
+        crate::read_dependency::retain_readers(&mut self.pending_geometry_readers, |existing| {
+            existing != reader
+        });
+    }
+    pub(crate) fn retain_contributions(
+        &mut self,
+        scope: &ComponentInstancePath,
+        active: &BTreeSet<crate::read_dependency::ReadContribution>,
+    ) {
+        crate::read_dependency::retain_readers(&mut self.pending_geometry_readers, |reader| {
+            reader.retained_in_contribution_scope(scope, active)
         });
     }
 }

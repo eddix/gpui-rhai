@@ -333,7 +333,7 @@ pub struct ElementGeometry {
 struct GeometryState {
     committed: BTreeMap<NodeId, ElementGeometry>,
     presented: BTreeSet<NodeId>,
-    readers: BTreeMap<NodeId, BTreeSet<ComponentInstancePath>>,
+    readers: BTreeMap<NodeId, BTreeSet<crate::read_dependency::ReadDependency>>,
     dirty: BTreeSet<ComponentInstancePath>,
     layout_motion: BTreeMap<NodeId, LayoutMotionState>,
     shared_layout: BTreeMap<(String, String), (NodeId, GeometryBounds)>,
@@ -451,7 +451,7 @@ impl GeometryRegistry {
         }
         state.committed.insert(node, geometry);
         let readers = state.readers.get(&node).cloned().unwrap_or_default();
-        state.dirty.extend(readers);
+        state.dirty.extend(crate::read_dependency::owners(readers));
         true
     }
 
@@ -636,9 +636,14 @@ impl GeometryRegistry {
         };
         if state.canvas_drawables.get(&node) != Some(&geometry) {
             state.canvas_drawables.insert(node, geometry);
-            state
-                .dirty
-                .extend(state.readers.get(&node).into_iter().flatten().cloned());
+            state.dirty.extend(
+                state
+                    .readers
+                    .get(&node)
+                    .into_iter()
+                    .flatten()
+                    .map(|reader| reader.owner.clone()),
+            );
         }
     }
 
@@ -723,33 +728,31 @@ impl GeometryRegistry {
             .readers
             .entry(node)
             .or_default()
-            .insert(reader.clone());
+            .insert(crate::read_dependency::ReadDependency::component(reader));
         Ok(geometry)
     }
 
     pub(crate) fn read_tracked(
         &self,
         node: NodeId,
-        reader: &ComponentInstancePath,
+        reader: impl Into<crate::read_dependency::ReadDependency>,
     ) -> Option<ElementGeometry> {
         let mut current = self.inner.borrow_mut();
         let state = Rc::make_mut(&mut current);
-        state
-            .readers
-            .entry(node)
-            .or_default()
-            .insert(reader.clone());
+        state.readers.entry(node).or_default().insert(reader.into());
         state.committed.get(&node).copied()
     }
 
-    pub(crate) fn register_readers(&self, node: NodeId, readers: BTreeSet<ComponentInstancePath>) {
-        if readers.is_empty() {
-            return;
-        }
+    pub(crate) fn register_readers(
+        &self,
+        node: NodeId,
+        readers: impl IntoIterator<Item = impl Into<crate::read_dependency::ReadDependency>>,
+    ) {
         let mut current = self.inner.borrow_mut();
         let state = Rc::make_mut(&mut current);
         let committed = state.committed.contains_key(&node);
         for reader in readers {
+            let reader = reader.into();
             if state
                 .readers
                 .entry(node)
@@ -757,13 +760,31 @@ impl GeometryRegistry {
                 .insert(reader.clone())
                 && committed
             {
-                state.dirty.insert(reader);
+                state.dirty.insert(reader.owner);
             }
         }
     }
 
     pub(crate) fn get(&self, node: NodeId) -> Option<ElementGeometry> {
         self.inner.borrow().committed.get(&node).copied()
+    }
+
+    pub(crate) fn reset_contribution(&self, reader: &crate::read_dependency::ReadDependency) {
+        let mut current = self.inner.borrow_mut();
+        crate::read_dependency::retain_readers(
+            &mut Rc::make_mut(&mut current).readers,
+            |existing| existing != reader,
+        );
+    }
+    pub(crate) fn retain_contributions(
+        &self,
+        scope: &ComponentInstancePath,
+        active: &BTreeSet<crate::read_dependency::ReadContribution>,
+    ) {
+        let mut current = self.inner.borrow_mut();
+        crate::read_dependency::retain_readers(&mut Rc::make_mut(&mut current).readers, |reader| {
+            reader.retained_in_contribution_scope(scope, active)
+        });
     }
 
     pub(crate) fn presented(&self, node: NodeId) -> Result<PresentedGeometry, GeometryError> {
