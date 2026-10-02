@@ -114,3 +114,44 @@ dependencies, real Canvas paint/hit/pivot with padding/border, translation/zoom
 invariance, foreground occlusion, row-gap/stationary auto-scroll, debounce
 completion and silent cancelled-effect delivery. Verify #93 default diagnostics
 and preserve the recursive tagged-default contract.
+
+## Final 0.1.8 convergence gate
+
+Use the maintained [runtime contract index](runtime-contract-tests.md) and
+[final runtime model](adr/0022-final-runtime-invariants.md) as the executable
+entrypoints, rather than stopping at one historical audit round. Run the full
+workspace and independent `tests/native-keyboard` suite on the frozen product
+source, with the default thread stack and unchanged safety defaults.
+
+The R5–R7 regressions remain mandatory: transparent virtual-row wrappers,
+path-level reads, nested and sibling target batches, prune-only cleanup,
+callback ownership, bounded raw/formal contributions, occlusion and current
+Canvas geometry; revoked queued-window origins and reused IDs; shared Table
+widths/extent in LTR/RTL and all four body states; and persistent ElementRef
+appearance/rebind/removal with last-good rollback. The index names their
+formal tests and controls. Historical audit probes/logs stay unchanged;
+characterization programs must be interpreted by their documented assertions,
+not mechanically by their exit status.
+
+Additionally verify POLICY/KEY/THEME/ASSET together: cumulative custom Host
+quotas and independent parser limits across constructor/reload/window paths;
+focused key phase routing without stealing native input or Escape ownership;
+actual mounted appearance before init and explicit effect dependencies;
+foreground publication and explicitly scheduled shared-window image redraw.
+Check CLI init/add/check/update/embed in an owned clean directory, including
+modified-source preservation, Table source metadata and the generated Rust
+consumer. A local-path consumer is not a crates.io clean-install result.
+
+Re-capture the five Table PNGs from the final release binary under the exact
+logical viewport/DPI contract in the
+[approved plan](plans/2026-10-02-0.1.8-release-convergence.zh-CN.md#9-五张table视觉基线工作包-g).
+Complete or explicitly mark pending the real keyboard/focus, clipboard, IME,
+VoiceOver, window/multi-View/theme and physical 120Hz gates. Native TestPlatform
+behavior and a 69-file PNG audit do not certify these manual gates. Record
+source SHA, commands, counts, platform, binary hashes and pass/fail/pending in
+the candidate verification manifest; final-head Linux X11/Wayland CI must
+finish, not merely start.
+
+The scope deferrals #83/#89/#91/#95 and #14 are not acceptance failures or
+delivered capabilities. Follow the explicit PR/issue disposition table; no
+merge, closure, package publication or tag is authorized by green checks alone.
