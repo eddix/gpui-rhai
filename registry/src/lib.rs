@@ -509,6 +509,34 @@ const BASIC_CASE: &[StoryCase] = &[StoryCase {
     purpose: "Exercise the normal controlled interaction path.",
 }];
 
+const TABLE_CASES: &[StoryCase] = &[
+    StoryCase {
+        id: "basic",
+        title: "Interactive",
+        purpose: "Sort, select and resize controlled columns.",
+    },
+    StoryCase {
+        id: "wide",
+        title: "Wide",
+        purpose: "Reach the logical tail column with native horizontal scrolling in either locale direction.",
+    },
+    StoryCase {
+        id: "loading",
+        title: "Loading",
+        purpose: "Retain the bordered viewport while loading.",
+    },
+    StoryCase {
+        id: "empty",
+        title: "Empty",
+        purpose: "Keep header and body geometry for empty data.",
+    },
+    StoryCase {
+        id: "projected-empty",
+        title: "Filtered empty",
+        purpose: "Show a valid projection with no matching rows.",
+    },
+];
+
 const NO_FEATURES: &[&str] = &[];
 const CHARTS_FEATURE: &[&str] = &["charts"];
 const DESKTOP_PLATFORMS: &[&str] = &["macos", "linux"];
@@ -705,7 +733,7 @@ pub const BUNDLED_STORIES: &[StoryDefinition] = &[
         module_ids: &["components/table", "components/badge"],
         source_module: "stories/components/table",
         source: TABLE_STORY_SOURCE,
-        cases: BASIC_CASE,
+        cases: TABLE_CASES,
         fixture: None,
         required_features: NO_FEATURES,
         platforms: DESKTOP_PLATFORMS,
