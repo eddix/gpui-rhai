@@ -1,0 +1,83 @@
+   Compiling gpui-rhai v0.1.8 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai)
+   Compiling gpui-rhai-registry v0.1.8 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/registry)
+   Compiling gpui-rhai-cli v0.1.8 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai-cli)
+   Compiling gpui-rhai-native-keyboard-tests v0.0.0 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 25.97s
+     Running tests/asset_refresh_host.rs (tests/native-keyboard/target/debug/deps/asset_refresh_host-8a11ba984afc1002)
+
+running 2 tests
+test shared_registry_requires_host_scheduled_foreground_window_refresh ... ok
+test task_result_publishes_changed_pixels_with_stable_asset_and_opaque_handle ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.84s
+
+     Running tests/gallery.rs (tests/native-keyboard/target/debug/deps/gallery-1cda830ea3fb31b7)
+
+running 15 tests
+test chart_diagnostic_story_exposes_last_good_invalid_semantics ... ok
+test content_bearing_tabs_stretch_table_and_chart_panels ... ok
+test critical_story_viewport_and_locale_matrix_mounts_real_frames ... ok
+test every_bundled_theme_hot_switches_the_shared_design_story ... ok
+test every_gallery_story_case_mounts_draws_and_presents_semantics ... ok
+test full_gallery_shell_supports_keyboard_modes_and_resizable_panes ... ok
+test host_embedding_story_types_through_the_real_nested_view_boundary ... ok
+test host_theme_overrides_survive_live_theme_switches ... ok
+test operations_fixture_cases_are_observable_and_streaming_is_bounded ... ok
+test operations_workbench_completes_and_cancels_the_deployment_boundary ... ok
+test operations_workbench_failure_keeps_the_previous_configuration ... ok
+test streaming_workbench_suspend_cancels_late_delivery_and_resume_restarts ... ok
+test workbench_consumes_host_owned_events_and_configuration_documents ... ok
+test workbench_large_hosts_filter_in_rust_without_materializing_rows_in_rhai ... ok
+test workbench_sheet_and_command_dialog_share_session_navigation ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 43.03s
+
+     Running tests/node_key_contract.rs (tests/native-keyboard/target/debug/deps/node_key_contract-12feae912f11b8d8)
+
+running 8 tests
+test active_gesture_escape_owner_precedes_script_key_capture ... ok
+test disabled_key_control_is_not_a_tab_target_or_click_fallback ... ok
+test enter_and_space_click_only_when_their_key_handler_is_absent ... ok
+test every_entry_dispatches_normalized_named_and_literal_punctuation_keys ... ok
+test explicit_capture_and_bubble_enter_replace_click_fallback ... ok
+test native_key_phases_follow_the_focus_path_and_stop_prevents_later_phases ... ok
+test raw_key_matching_ignores_modifiers_but_not_key_char ... ok
+test unrelated_native_text_focus_and_ime_commits_do_not_activate_node_shortcuts ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.80s
+
+     Running tests/resolved_theme.rs (tests/native-keyboard/target/debug/deps/resolved_theme-4f9eaae2d98ed94a)
+
+running 6 tests
+test effect_body_only_does_not_restart_but_explicit_render_deps_do ... ok
+test first_system_light_init_and_render_match_host_without_replaying_init ... ok
+test fixed_dark_and_host_token_overrides_preserve_resolved_identity ... ok
+test missing_theme_is_unit_in_a_mounted_script ... ok
+test secondary_initial_theme_and_failed_startup_keep_native_authority_closed ... ok
+test window_and_local_setters_keep_sibling_scopes_separate ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.97s
+
+     Running tests/table_extent.rs (tests/native-keyboard/target/debug/deps/table_extent-597838bcc7cccc5a)
+
+running 9 tests
+test accepted_final_column_width_recomputes_extent_and_clamps_offset ... ok
+test component_min_max_and_native_override_use_one_width_authority ... ok
+test fixed_wide_ltr_rtl_array_native_share_scroll_and_all_states ... ok
+test horizontal_body_input_and_vertical_input_are_independent ... ok
+test native_drag_override_repaints_widths_and_extent_without_rhai ... ok
+test percentage_and_weighted_flex_use_viewport_not_extent ... ok
+test percentage_overflow_does_not_feedback_into_its_basis ... ok
+test single_column_under_equal_overflow_and_autofit_share_the_viewport ... ok
+test theme_insets_are_in_the_shared_column_plan_and_real_extent ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.91s
+
+     Running tests/table_frame_demand.rs (tests/native-keyboard/target/debug/deps/table_frame_demand-567fefe98c6298fe)
+
+running 2 tests
+test tests::measured_viewport_schedules_its_own_followup_frame ... ok
+test tests::viewport_change_schedules_its_own_followup_frame ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.98s
+
