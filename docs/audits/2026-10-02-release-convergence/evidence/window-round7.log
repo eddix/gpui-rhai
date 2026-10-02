@@ -1,0 +1,22 @@
+   Compiling gpui-rhai-native-keyboard-tests v0.0.0 (/var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T/gpui-runtime-core-round7-audit-eda2cp6k)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.71s
+     Running tests/runtime_core_round7_audit.rs (tests/native-keyboard/target/debug/deps/runtime_core_round7_audit-427a9f6f770825fd)
+
+running 6 tests
+queued open then failing sibling: Err(Automation(Command("failed to evaluate Rhai UI source: Runtime error: independent delivery failure @ 'main' (line 5, position 16)\nin call to function 'fail' (from 'main') (line 9, position 3)")))
+revoked source queued open: native_count=2, child_survives=true
+explicit_dispose=false: window_remains=true, replacement_state=Active
+ordinary clone drop retained authority; current owner closed its window
+test dropping_one_clone_keeps_current_owner_authorized ... ok
+test disposed_source_open_is_not_reauthorized_by_secondary_pump ... ok
+test dropping_last_handle_revokes_queued_authority ... ok
+queued close then failing sibling: Err(Automation(Command("failed to evaluate Rhai UI source: Runtime error: independent delivery failure @ 'main' (line 5, position 16)\nin call to function 'fail' (from 'main') (line 9, position 3)")))
+revoked source queued close: native_count=2, child_survives=true
+explicit_dispose=true: window_remains=true, replacement_state=Active
+test disposed_source_close_is_not_reauthorized_by_secondary_pump ... ok
+late old rendered view cleanup: replacement_state=Active, competing_owner_result=Err("window `domain` already has script command owner `owner`")
+test explicit_dispose_revokes_queued_authority_control ... ok
+test late_old_view_cleanup_cannot_unregister_same_id_replacement ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.82s
+

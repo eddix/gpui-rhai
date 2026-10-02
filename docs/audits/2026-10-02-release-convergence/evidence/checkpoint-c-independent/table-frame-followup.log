@@ -1,0 +1,24 @@
+   Compiling checkpoint-c-table-frame-probe v0.0.0 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/docs/audits/2026-10-02-release-convergence/evidence/checkpoint-c-independent/table-frame-probe)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.79s
+     Running unittests src/lib.rs (tests/native-keyboard/target/debug/deps/checkpoint_c_table_frame_probe-2e1cb16cbb24f441)
+
+running 2 tests
+test tests::measured_viewport_schedules_its_own_followup_frame ... after initial frame + normal clock, scheduled=[2, 0, 0], no manual followup: [120.0, 149.0, 29.0]
+explicit extra refresh driver control: [120.0, 149.0, 29.0]
+ok
+test tests::viewport_change_schedules_its_own_followup_frame ... after resize frame + normal clock, scheduled=[6, 0, 0], viewport=500, no manual followup: [120.0, 149.0, 29.0]
+explicit extra refresh driver control: [120.0, 249.0, 129.0]
+
+thread 'tests::viewport_change_schedules_its_own_followup_frame' (3402913) panicked at src/lib.rs:120:9:
+percent column must use new measured viewport
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    tests::viewport_change_schedules_its_own_followup_frame
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.97s
+
+error: test failed, to rerun pass `--lib`

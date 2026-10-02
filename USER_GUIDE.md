@@ -557,7 +557,10 @@ Use `element_ref(...)` plus `ctx.element_bounds(ref)` only when rendering must
 react to another retained element's last committed geometry. That read creates
 an exact dependency, returns `#{ layout, visual, clip }`, and may initially be
 `()`. The runtime keeps the unresolved dependency by ref identity, binds it to
-the committed `NodeId`, and rerenders after first prepaint reports geometry; do
+the current `NodeId`, and rerenders after first prepaint reports geometry.
+The logical subscription remains live through appearance, rebind and removal;
+removal produces `()` and old-node changes no longer wake a rebound reader. It
+is released when its component/item contribution leaves the committed graph; do
 not add an unrelated redraw to make it self-heal. Event callbacks cannot retain
 the custom `ElementRef` value and instead call
 `ctx.element_bounds("component_local_ref_key")`. It cannot provide synchronous
@@ -963,8 +966,12 @@ Guidelines:
 - Do not parse files, access the network, or perform blocking work in `view`.
 - Use `virtual_collection` for large lists and Tables.
 - In Table column widths, `fixed` values are pixels, `percent` values are
-  percentages, and `flex` values are positive weights over the remaining row
+  percentages of the Table viewport, and `flex` values are positive weights over the remaining viewport
   width; use 1/2 rather than pixel-like values such as 100/200.
+  Header and realized rows share one native column plan and horizontal extent.
+  Percentage widths never use the growing scroll extent as their basis. Wide
+  tables stay clipped and horizontally reachable in LTR and RTL; switching
+  loading/empty/data retains the logical offset, clamped to the current range.
 - Set `resizable_columns: true` for native divider dragging. Per-column
   `resizable`, `min_width`, and `max_width` refine the policy. Pointer movement
   stays on the native signal path; `on_column_resize` runs once on release with
