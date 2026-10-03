@@ -19,8 +19,8 @@
 | D3 | 接管 #99，轻量 resolved metadata，native 外观先于 primary/secondary init；最终以弱订阅接入真实外观通知，defer 正常前台事务，暂停只保留 dirty，释放时取消订阅。 |
 | E | #98 的有界后台数据→前台资产刷新桥与共享窗口重绘已验证；Gallery 增宽表/四态/主题读数；公开指南、最终模型、合同索引、release notes、处置表与许可证矩阵更新；空/非空 capability 生成 consumer 均消除 unused_mut。 |
 | F | 全目标工作区、默认 feature、原生、工具链、Clippy、文档、打包、release 启动、产物审计、性能与 CLI consumer 门槛通过。远端完整 CI 以精确源码/最终 head 的实际结果为准。 |
-| G | **待完成**：最终 binary 的五张 Table PNG 尚未拍摄，不替换旧基线。临时 floating 授权尚未收到。 |
-| H | 独立代码/行为复验已完成；整体验收仍受 G 和既定人工门槛约束，未授权发布。 |
+| G | **已完成并独立通过**：用户另行授权原生定位/捕获后，取得五张干净 1960×1504 PNG，仅按 2×→1× 更新正式 980×752 基线。AX/CG 前后均 980×752@(100,100)；原 runtime 配置完整恢复，自有实例关闭。见 [原生捕获复验](final-review/table-native-capture-dface4b4.zh-CN.md)；[早期失败尝试](final-review/table-capture-attempt-dface4b4.zh-CN.md)保留。 |
+| H | 独立代码/行为及 G 视觉复验已完成；整体验收仍受既定 OS 人工、120Hz 与最终 head CI 门槛约束，未授权发布。 |
 
 最终模型与正式测试对应关系见 [合同索引](../../runtime-contract-tests.md)、
 [ADR 0022 补充](../../adr/0022-final-runtime-invariants.md)。
@@ -75,14 +75,19 @@ Chart streaming operations=0。不要把 resize 总 operations 或整个 GUI 帧
 
 ## 未完成门槛与下一步
 
-1. G 五张 Table 基线：default-light en default/loading/empty、default-dark en
-   selected、catppuccin-mocha ar default。仅获准后对本轮精确 bundle 临时 floating，
-   使用整数逻辑位置、980×752 viewport，记录 raw/DPI/binary SHA 并恢复设置。
-2. OS 输入/辅助功能人工矩阵：IME preedit、剪贴板、VoiceOver、真实焦点/输入等
+G 已完成：五张 Table 原图、窗口测量、binary SHA、差异说明与恢复证据已归档，
+正式基线文件审计 **69/69** 通过。原生接口定位仅作用于五个精确测试 bundle，
+没有修改产品布局、OS 外观、其他 app 规则或持久 Rift 配置；原有 PID 90509 保留。
+默认六列 fixture 本次不溢出，照片不能代替正式 native 的 LTR/RTL 横滚断言。
+
+剩余门槛：
+
+1. OS 输入/辅助功能人工矩阵：IME preedit、剪贴板、VoiceOver、真实焦点/输入等
    变更相关组合尚未本轮重验。模拟输入和 AX tree 不是这些人工结果。
-3. 物理 120Hz：当前 Macmini9,1/M1/16GiB、macOS 27.0.1 26A434、AC Power 的
+2. 物理 120Hz：当前 Macmini9,1/M1/16GiB、macOS 27.0.1 26A434、AC Power 的
    显示器为 60Hz，无硬件门槛通过证据。需适用硬件/人工验收，不自行降级为 N/A。
-4. 精确最终候选远端 CI 完整结束，特别是 Linux X11/Wayland smoke。
+3. 精确归档提交 `dface4b4` 的 [完整 CI](https://github.com/eddix/gpui-rhai/actions/runs/37041257700)
+   已通过，包含 Linux X11/Wayland smoke。后续提交需核对对应 head，不沿用旧绿灯。
 
 完成后按固定合同再交独立复验，给用户精确候选与外部操作列表；只有用户明确批准
 后才能合入、关闭替代事项、按依赖顺序发三个 crate、干净安装和创建 tag/release。

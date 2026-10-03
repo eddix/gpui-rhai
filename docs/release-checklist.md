@@ -145,6 +145,10 @@ consumer. A local-path consumer is not a crates.io clean-install result.
 Re-capture the five Table PNGs from the final release binary under the exact
 logical viewport/DPI contract in the
 [approved plan](plans/2026-10-02-0.1.8-release-convergence.zh-CN.md#9-五张table视觉基线工作包-g).
+The 2026-10-03 five-case refresh has an independently approved
+[capture manifest](../tests/visual/macos/data_table/capture.json) with native
+AX/CG frame measurements, raw PNG hashes and runtime-setting restoration.
+It closes that candidate's G visual gate, not the following manual gates.
 Complete or explicitly mark pending the real keyboard/focus, clipboard, IME,
 VoiceOver, window/multi-View/theme and physical 120Hz gates. Native TestPlatform
 behavior and a 69-file PNG audit do not certify these manual gates. Record
