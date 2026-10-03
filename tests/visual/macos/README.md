@@ -9,6 +9,7 @@ evidence tied to an explicit environment, not portable pixel-perfect promises.
 - Complex-control refresh: 2026-08-30
 - Registry design-system refresh: 2026-09-01
 - Gallery/Acceptance Application capture: 2026-09-27
+- Data Table release-candidate refresh: 2026-10-03 (see the separate environment below)
 - macOS: 26.6.2 (25G83)
 - Original product captures: GPUI 0.2.2 / Rust 1.94.1
 - Gallery captures: gpui-pre 0.3.6 / Rust 1.95.0
@@ -53,6 +54,36 @@ bounded skeleton rows, empty copy, and Pagination.
 The new deterministic `grouped` state exercises counted/collapsible sticky
 sections; its refreshed screenshot is pending the next unlocked visual pass.
 
+### Data Table 0.1.8 candidate refresh
+
+The five Table files were recaptured on 2026-10-03 from product source
+`53a62e3f` (capture checkout `dface4b4`) using gpui-pre 0.3.7 on
+macOS 27.0.1 (26A434). Their environment supersedes the older environment
+above for these five files only. See [capture.json](data_table/capture.json)
+for binary/raw/baseline hashes and per-case state.
+
+Native AX and CoreGraphics measurements agree before and after every capture:
+integer origin `(100,100)`, window `980×752`, content `980×720`, scale 2.
+The native `screencapture -x -o -l` output is a real `1960×1504` PNG,
+normalized only from 2x to 1x. No width-to-fit squeeze, crop, compositing,
+or screen-control-marker retouching was performed. Raw images and frame
+measurements are archived in the linked audit evidence.
+
+Only the five exact test bundles were temporarily excluded from Rift
+management for native placement, with explicit user permission. The original
+11 runtime rules and all other runtime settings were restored afterward;
+owned test processes were closed and the pre-existing test instance retained.
+The native title bar is included: its dark system chrome and colored traffic
+lights differ from the older capture environment, independently of the Rhai
+content theme.
+
+The refresh shows shared resolved column widths and resize separators,
+contained loading/empty shells and pagination, genuine two-row accent
+selection in Default Dark, and reversed logical columns/Arabic pagination in
+Mocha RTL. The default fixture fits all six columns; these PNGs do not prove
+horizontal scrolling. Overflow reachability and state transitions remain
+covered by the formal native Table tests.
+
 Theme Studio replaced the old Component Gallery on 2026-09-01. An unlocked
 manual pass on 2026-09-05 verified its independent editor/specimen scrolling
 and the shared specimen across the Gallery's 15-theme, category, compact,
@@ -62,8 +93,10 @@ Gallery PNGs. They cover every Component Catalog case in Default Light/Dark,
 Catppuccin Mocha Arabic RTL, Tokyo Night reduced motion, Chart normal/reduced/
 none plus diagnostics, Motion none, HostSlot, and Operations dashboard/config/
 loading/empty/large/failure/CommandDialog states. Obsolete Gallery PNGs were
-not relabeled as Theme Studio evidence. The original 38 captures remain
-product-context and shared-Host evidence, for 67 baselines in total.
+not relabeled as Theme Studio evidence. With the original 38 product-context
+and shared-Host captures, that pass yielded 67 baselines. The later Resizable
+and SplitPane captures bring the maintained inventory to 69; refreshing the
+five Table files does not change the count.
 
 `embedded_views/default-dark.shared-host.png` records three independent Rhai
 views inside one host-owned GPUI layout. It proves compact responsive sizing for
