@@ -155,8 +155,9 @@ Seven variants remain. Selection guidance lives in [composition.md](composition.
 
 - Padding `metrics.control_pad`; gap between icon and label `spacing.xs`.
 - Focus: the reserved 2px border turns `focus_ring`.
-- Active: opacity 0.86. Disabled: `surface_hover` fill, `disabled` text, keeps
-  its size.
+- Active: opacity 0.86. Disabled keeps the variant's silhouette and its size:
+  block variants become a neutral `surface_hover` block, `outline` keeps its
+  `border` frame, `ghost` stays bare; the text turns `disabled`.
 - Loading keeps the width of the idle label where possible and announces the
   loading text.
 - Optional `shortcut` part shows the action's key legend after the label in
@@ -254,6 +255,12 @@ lists and Table rows share one row grammar:
 - Selected rows use `table.selection` and the indicator bar on the row start.
 - `numeric: true` columns align to the end with tabular figures unless an
   `align` is given.
+- Adornments (Badges) follow the cell text; a column whose row has no value of
+  its own shows only its adornments, which is how a status column is written.
+- With a selection mode the table is a tab stop: Up/Down/Home/End move the
+  selection and keep it revealed, Enter emits `row_click`, and while the table
+  has focus the selected row carries the focus frame (`cursor` part,
+  `group_focus`).
 
 ## 7. Fields
 
@@ -277,7 +284,8 @@ Things you type into have a frame; things you press are blocks.
   so the mark stays on the content edge. Rows are `metrics.control` high.
 - Slider and RangeSlider: a 4px track, `accent` fill and a fader cap (a 12×20
   cobalt block with a 2px `surface` frame that turns ink while focused),
-  `metrics.control` high.
+  `metrics.control` high. A horizontal slider is a 240-wide unit whose label
+  and value span exactly the track (the `root` part takes another width).
 - Labels are `body` at 400 in `text_primary`; descriptions and errors are
   `caption`, errors in `text.danger`.
 
@@ -301,6 +309,10 @@ Things you type into have a frame; things you press are blocks.
   enclosing box, headers as list rows.
 - Empty states are quiet: centered type on the region's surface, no frame.
 - ScrollArea, CodeViewer and DiffViewer draw no frame; the layout does.
+- TitleBar shows title and subtitle on one line at one size (weight and color
+  tell them apart); start and end share the free width, the start truncates
+  first and the end never shrinks below its controls. StatusBar uses the same
+  three regions.
 
 ## 9. Motion in components
 
@@ -325,7 +337,8 @@ A focus owner that needs no visual of its own declares `.focus(style())`.
 ## 11. New component checklist
 
 - [ ] Declares `size` if interactive; reads every height from `metrics.*`.
-- [ ] Declares the tokens and environment values it reads (C7).
+- [ ] Declares the tokens and environment values it reads (C7), and the assets
+      it draws with `asset(...)`: only declared assets are preloaded.
 - [ ] Rows use `metrics.row` and `metrics.inset`; the indicator bar is a part.
 - [ ] No literal color, font size, line height, control height or spacing;
       structural constants commented.

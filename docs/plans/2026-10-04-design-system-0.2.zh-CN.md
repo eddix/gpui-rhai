@@ -1,6 +1,6 @@
 # gpui-rhai 0.2.0 设计系统重做实施计划
 
-日期：2026-10-04。分支：`feat/design-system-0.2`（自 `v0.1.8` / `d87ebb9`）。状态：实施中。
+日期：2026-10-04。分支：`feat/design-system-0.2`（自 `v0.1.8` / `d87ebb9`）。状态：五步实施完成，待维护者评审；未推送、未发版。
 
 本计划来自 2026-10-04 与维护者的设计 grilling 会话。共识的正式内容写在
 [`docs/design/`](../design/principles.md)，本文件只跟踪执行顺序、完成证据和遗留事项。
@@ -22,7 +22,7 @@
 | 2 | 运行时地基：开放 token 与字阶、token 基础层、组件声明 token、声明式环境值（原生解析）与原生继承 disabled、颜色派生与读取、Rust 派生迁到 L0、action 快捷键查询、组合审计、CLI profile | 完成（3224767、64108b0） |
 | 3 | L0 `tokens.rhai` + 内置主题只写颜色 + 新默认主题；全部 62 个组件的组合契约与新视觉 | 完成（见进度记录） |
 | 4 | L2：`layouts/`（Stack/Inline/Toolbar/Region）与 `patterns/`（Section/DescriptionList/Stat/FormLayout/InlineState/DataView/ListDetail/AppShell） | 完成（见进度记录） |
-| 5 | 用 AppShell + L2 重做 Gallery（规格页 + 场景页）；自带设计参照示例进 CI；审计零告警；纯键盘场景测试；重拍基线；文档、CHANGELOG、迁移说明 | 未开始 |
+| 5 | 用 AppShell + L2 重做 Gallery（规格页 + 场景页）；自带设计参照示例进 CI；审计零告警；纯键盘场景测试；重拍基线；文档、CHANGELOG、迁移说明 | 完成（见进度记录） |
 
 ## 每批验收命令
 
@@ -75,3 +75,42 @@ bash scripts/audit-visual-baselines.sh
   productivity 规则下零发现（测试平台无系统字体，字体规则交给 Gallery 在真实平台上验）；
   F6 依次框住三个区域、Shift+F6 返回上一个。fmt / clippy（all-features）无输出；
   workspace 667 / 0，native-keyboard 215 / 0，performance 2 / 0。
+
+### 2026-10-04 第 5 步：Gallery 验收应用、BYOD 示例、基线与文档
+
+- 提交：53caeca（组件与运行时修正）、416b8c9（Gallery）、7339995（BYOD 示例）、
+  34c0db1（离屏基线）及本文档提交。
+- Gallery：`registry/gallery/` 下的 Rhai 应用，基于 AppShell + L2；83 页 / 11 组
+  （Foundations 4、Markers 8、Fields 14、Lists 9、Overlays 6、Containers 11、Display 7、
+  Interaction 7、Layouts and patterns 12、Scenes 4、Effects 1，合计 83）；四个场景
+  （运维、数据浏览、表单、设置）、命令面板、密度/明暗/语言切换、源码检查器、状态栏实时审计数。
+  Host（`gpui-rhai-cli` 的 `acceptance` 模块）只提供 Cmd+K 绑定、页面源码文档、审计计数。
+  旧 Rust 外壳 `gallery_app` 删除；`--story` 改为无外壳的独立 story 窗口。
+- 审计与视觉复查发现并修复的问题（决策 D20–D33）：RTL 下 `justify_start/end` 不镜像（运行时）；
+  TitleBar 两行标题在紧凑档被裁；0.2 去掉 Alert 图标后 `info`/`warning` 无人声明、画不出来；
+  Slider 数值漂到容器最右；Table 状态列文字与徽标重复；ghost/outline 按钮禁用时多出底色；
+  stacked DescriptionList 无分组；弹层触发按钮与 ToggleGroup 被拉满整行。
+- 排查记录：命令面板“打不进字”的根因是 Gallery 入口脚本的 `fn index_of(values, key)`
+  劫持了 Command 组件里的 `s.index_of(c, pos)`（Rhai 脚本函数可按方法调用且优先于内置函数），
+  渲染失败后事务回滚、`last_error` 又被下一次成功渲染清空，表现为静默。已改名并写入
+  composition.md、迁移说明和 AgentNotes。
+- BYOD：`examples/byod_treemap` 自带调色板、无 token 基础层、无官方组件；进 verification
+  manifest，CI 构建、release smoke 启动。disktree-rhai 在临时副本中经 `cargo --config` 冒烟：
+  需要三处改动（runtime_api 2→3 是唯一由 0.2 引起的），45 个测试通过、自有皮肤渲染正常；
+  未修改其仓库。oh-my-byted 只读扫描，迁移要点写入 `docs/releases/0.2.0.md`，未修改其仓库。
+- 基线：本机运行着平铺窗口管理器 rift，会把新窗口改成 852×1067，屏幕截图不可控；改用
+  gpui-pre 的 `VisualTestAppContext` 离屏窗口 + `Window::render_to_image` 读回 GPU 纹理。
+  19 张 2560×1720（4 页 × 两档密度 × 明暗 + 1 张阿拉伯语 RTL + 2 张简体中文），替换旧外壳的
+  31 张；总数 57 = 示例 38 + Gallery 19。**示例的 38 张仍是 0.1.x 外观，待单独重拍。**
+- 文档：`docs/gallery.md` 重写；`docs/design/` 补 atoms/composition/decisions/wireframes；
+  `registry-design-system.md` 改为指向 `docs/design/`；theming、authoring、locale-and-rtl、
+  visual-testing 更新；CHANGELOG 0.2.0（Unreleased）；`docs/releases/0.2.0.md` 含迁移说明与
+  disktree / omb 实地报告。crate 版本号仍为 0.1.8，按发版流程再改。
+- 证据：`cargo fmt --all --check` 通过（native-keyboard、performance 同）；
+  `cargo clippy --workspace --all-targets --all-features -- -D warnings` 退出码 0，
+  native-keyboard 与 performance 的 clippy 退出码 0；workspace 672 passed / 0 failed
+  （第 4 步 667 + BYOD 2 + acceptance 单测 2 + 资产声明测试 1）；native-keyboard 219 passed /
+  0 failed（215 + gallery_acceptance 5 − 删除的旧外壳测试 1）；performance 2 / 0；
+  `scripts/audit-visual-baselines.sh` 通过（57 张）；`verify-target-manifest.py` 21 个示例；
+  release 版 `gallery --list` 含所需 page/story，`--page scene.operations --density compact`
+  与 `--story apps/operations --case large` 各运行 3 秒退出码 0、无报错、启动目录无写入。

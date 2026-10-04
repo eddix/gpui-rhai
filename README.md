@@ -36,6 +36,13 @@ components: Draggable, DragSource, DropZone, Sortable, PanZoom, SelectionArea,
 Rotatable, RangeSlider, and Tree. Run the complete acceptance scene with
 `gpui-rhai gallery --story workbench/interaction-lab`.
 
+Version 0.2.0 (unreleased) adds a design system for productivity tools on a
+neutral runtime: a token base, 62 rebuilt components, layouts and patterns, a
+composition audit and the [Gallery](docs/gallery.md) as its acceptance
+application (`gpui-rhai gallery`). The specification is in
+[docs/design](docs/design/); migration is in the
+[0.2.0 release notes](docs/releases/0.2.0.md).
+
 The implemented complex-control line is specified under
 [docs/components](docs/components/) for DatePicker, Select, Table, Pagination,
 Textarea, CodeViewer, and DiffViewer.
@@ -87,6 +94,9 @@ cargo run -p gpui-rhai --example settings_panel
 cargo run -p gpui-rhai --example dashboard_layout
 cargo run -p gpui-rhai --example form_showcase
 cargo run -p gpui-rhai --example data_table
+cargo run --release -p gpui-rhai-cli -- gallery
+cargo run --release -p gpui-rhai-cli -- gallery --page scene.operations --density compact
+cargo run --release -p gpui-rhai --example byod_treemap
 cargo run --release -p gpui-rhai-cli -- gallery --story components/catalog
 cargo run --release -p gpui-rhai-cli -- gallery --story motion/catalog
 cargo run --release -p gpui-rhai-cli -- gallery --story charts/catalog

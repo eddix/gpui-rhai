@@ -89,6 +89,10 @@ component state, retained node identity, scroll state, and compiled ASTs.
 The renderer reverses row ordering under RTL, maps logical start/end alignment,
 resolves `padding_start/end` and `margin_start/end`, and maps logical horizontal
 navigation. Reusable components prefer logical alignment and spacing.
+`justify_start()`/`justify_end()` follow the flex direction, so in an RTL row
+`justify_end` puts children at the left edge. (GPUI's own `justify_start`/`end`
+are writing-mode values that stay physical under `row-reverse`; the renderer
+emits `flex-start`/`flex-end` instead.)
 
 Directional icons provide explicit `source` and `rtl_source` resources because
 GPUI exposes no safe public horizontal-mirror API. Do not mirror checks, logos,

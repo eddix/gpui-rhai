@@ -5,6 +5,60 @@ All notable runtime, CLI, and registry changes are documented here. Version
 component schema, manifest, locale, and generated-source changes follow
 semantic versioning from this release.
 
+## 0.2.0 - Unreleased
+
+Runtime API 3. A design system for productivity tools, separated from a neutral
+runtime. See the [0.2.0 release notes](docs/releases/0.2.0.md) for migration
+and [docs/design/](docs/design/) for the specification.
+
+- **Breaking:** the runtime no longer hard-codes design tokens. Themes are an
+  open token registry; components declare the tokens (`tokens`) and environment
+  values (`environment`) they read, and preparation validates the active theme
+  against the mounted components. Typography roles and lengths are open names;
+  lengths may vary with environment values set by `.env(#{ ... })` and resolved
+  during native rendering; `mix`/`alpha`/`readable` color expressions evaluate
+  after the token base, palette and Host layers merge.
+- **Breaking:** the design language moves to the token base
+  `registry/tokens.rhai` (`TOKEN_BASE_SOURCE`, `ui/tokens.rhai`), which official
+  components require. Bundled palettes contain colors only; Default Light/Dark
+  use the paper, ink and cobalt palette.
+- **Breaking:** all 62 components are rebuilt on the 0.2 contracts. Button
+  defaults to `secondary`; Badge shows its square lamp by default and gains
+  `emphasis`; Card `elevated` becomes `variant: "outline"`; Combobox
+  `row_height`/`trigger_height` and Command `row_height` are removed in favor of
+  `size`, density and `metrics.*`. Button, IconButton, Menu, ContextMenu,
+  Command and Tooltip bind `action`; Tag gains a `facet` segment; Kbd gains
+  keycaps; Tabs can be a view switcher.
+- Adds `layouts/` (Stack, Inline, Toolbar, Region) and `patterns/` (Section,
+  DescriptionList, Stat, FormLayout, InlineState, DataView, ListDetail, AppShell
+  with F6 / Shift+F6 regions).
+- Adds the composition audit (`ScriptViewHandle::composition_audit`,
+  `composition_audit_with`) and application profiles (`ui/profile.rhai`,
+  `EmbeddedScriptView::profile_source`, `gpui-rhai init --profile
+  productivity`); `gpui-rhai check` reports literal geometry under a profile.
+  Nodes opt out of a rule with `.audit_allow([...])`.
+- Runtime hooks: `group_focus` and `focus_within` styles; focus-styled nodes
+  honor their tab-stop policy; cross-axis overlay `align`; modifier-qualified
+  key handler names (`shift+f6`); deferred first reveal for fill-height virtual
+  lists; `justify_start`/`justify_end` follow the flex direction, so they mirror
+  in RTL rows.
+- Table with a selection mode is keyboard operable (arrows, Home/End, Enter);
+  a column with no value of its own shows only its adornments.
+- **Breaking:** `gpui-rhai gallery` opens the new Gallery, a Rhai application on
+  AppShell (`registry/gallery/`, `GALLERY_SOURCES_BY_ID`) with 83 pages, four
+  keyboard scenes and a live audit count; every page passes the productivity
+  audit in both densities. `--page`, `--density`, `--theme`, `--locale` select
+  the launch; `--story` opens a development story in a standalone window;
+  `--list` prefixes lines with `page`/`story`. The Rust Gallery shell
+  (`gallery_app`) and `GALLERY_NAVIGATION_SOURCE`/`GALLERY_SOURCE_VIEW_SOURCE`
+  are removed; the `test-support` feature remains and gates nothing.
+- Gallery baselines are rendered offscreen with the real macOS renderer
+  (`scripts/capture-macos-gallery-baselines.sh`); 19 captures replace the 31
+  story-shell captures. The 38 example baselines predate 0.2 and await a
+  refresh.
+- Adds `examples/byod_treemap`, an application with its own palette and no token
+  base or official components.
+
 ## 0.1.8 - 2026-10-04
 
 - Qualifies queued window commands by their original mount, independently of

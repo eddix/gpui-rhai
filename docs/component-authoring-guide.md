@@ -11,14 +11,27 @@ Use `registry/components/label.rhai` as the smallest complete reference.
 
 ## Metadata
 
-The header declares component ID, source version, runtime API range,
-dependencies, capabilities, and component-owned asset paths. The same metadata appears in
-`define_component`; `gpui-rhai check` rejects disagreement.
+The header declares component ID, source version, runtime API range (official
+0.2 components declare `{ "min_inclusive": 3, "max_exclusive": 4 }`),
+dependencies, capabilities, component-owned asset paths, the tokens the
+component reads (`tokens`) and the environment values it reads
+(`environment`, e.g. `["size", "density"]`). The same metadata appears in
+`define_component`; `gpui-rhai check` rejects disagreement, and preparation
+validates the active theme against the tokens of every mounted component.
+Declare every token read through `theme_color`, `theme_length`,
+`theme_spacing`, `theme_radius` and `.typography(...)`; the registry lint
+fails on an undeclared read.
 
 Asset paths are provider-relative files under `ui/assets`, such as
 `icons/chevron_next.svg`. Component source addresses an installed asset through
 the application namespace, for example `asset("app/icons/chevron_next")`. The
 CLI copies declared assets and records their pristine baselines with the source.
+Only declared assets are preloaded: drawing an undeclared asset with `asset(...)`
+renders an image error, because declarative images never load during render.
+
+Component contracts (size and density, content inset, intrinsic width, focus,
+parts) are specified in [design/atoms.md](design/atoms.md); its checklist is the
+review list for a new component.
 
 Module IDs are lowercase logical paths such as `components/form_field`.
 Components are imported under an explicit alias:

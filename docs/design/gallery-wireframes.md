@@ -13,6 +13,21 @@ the L2 APIs from it.
 3. Visual baselines for representative pages in comfortable/compact ×
    light/dark, plus one RTL and one CJK capture.
 
+### As built (0.2.0)
+
+The implementation follows these wireframes with these differences, decided
+during step 5 (see decisions D20 to D33):
+
+- Baselines add a second CJK case (`table` and `description_list` in
+  Simplified Chinese) and are rendered offscreen.
+- The title bar shows title and page on one line (`GPUI RHAI  Button`); the
+  mode toggle is a text Button, and there are no `Cmd+1`/`Cmd+2` region keys
+  (F6 / Shift+F6 and Cmd+K only).
+- The data browser has 120 rows, a sortable CPU column, multiple selection,
+  Pagination in the footer and a density toggle for the region.
+- The form scene uses Input, RadioGroup, Select, DatePicker and Checkbox (no
+  Combobox); the settings scene uses Switch and Slider rows.
+
 ## Shell
 
 ```
@@ -111,20 +126,26 @@ Slider rows; a disabled Section demonstrates inherited `disabled`.
 `ctx.action_shortcut`. Keyboard: type to filter, arrows, Enter runs, Esc closes
 and restores focus.
 
-## Derived L2 APIs
+## L2 APIs as implemented
 
-| Component | Props and slots | Behavior |
+The wireframes above derived these modules; this table records the props they
+shipped with in 0.2.0 (the header comment of each module is authoritative).
+Differences from the first draft: children are `children` (not `items`), the
+Region body is `body` and it does not scroll by itself, DataView takes a
+Toolbar slot map and an InlineState map, AppShell takes TitleBar and StatusBar
+prop maps and hosts overlays, and Stat rows are the `stats(items)` helper.
+
+| Module | Props and slots | Behavior |
 |---|---|---|
-| `layouts/stack` | `items`, `gap` (alias or scale step), `align`, `fill` | vertical; never stretches children unless `align: "stretch"` |
-| `layouts/inline` | `items`, `gap`, `align` (`center` default), `wrap`, `size` | horizontal; `size` sets the size environment for items |
-| `layouts/toolbar` | `context`, `filters`, `actions`, `primary`, `size` | start group (context, filters), end group (actions, primary last); `related` inside groups, `group` between; filters grow |
-| `layouts/region` | `title`, `description`, `actions`, `toolbar`, `body`, `footer`, `fill` | header row, toolbar, body fills remaining height and scrolls, footer pinned; content inset padding; `section` gaps |
-| `patterns/section` | `title`, `description`, `actions`, `body` | subtitle title row with end-side actions; `group` gap to body |
-| `patterns/description_list` | `items` (`label`, `value`, `numeric`), `label_width`, `columns` | label column in muted body, values in body; numeric values end-aligned with tabular figures |
-| `patterns/stat` | `value`, `unit`, `label`, `variant` | display figure, muted unit on the same baseline, label voice caption |
-| `patterns/stats` | `items` | stats separated by hairlines, equal gaps |
-| `patterns/form_layout` | `groups` (`title`, `fields`), `label_position`, `label_width`, `submit` | aligned label column, `related` between fields, `group` between groups |
-| `patterns/inline_state` | `state` (`loading`, `empty`, `error`, `stale`, `refreshing`), `title`, `detail`, `action` | in-place feedback; error detail selectable |
-| `patterns/data_view` | `toolbar`, `content`, `state`, `footer_start`, `footer_end` | Region-like body that fills; shows InlineState instead of or above content |
-| `patterns/list_detail` | `list`, `detail`, `orientation`, `list_size`, `empty` | fixed list, filling detail; arrow keys stay in the list |
-| `patterns/app_shell` | `title`, `title_actions`, `sidebar`, `main`, `inspector`, `inspector_open`, `status`, `regions` | title bar with traffic-light reserve, three columns, status bar, F6 region cycling, command palette host |
+| `layouts/stack` | `children`, `gap` (`unit`/`related`/`group`/`section`, a scale step, or `none`; default `related`), `align` (`stretch`/`start`/`center`/`end`), `fill`, `label` | a column with one relationship |
+| `layouts/inline` | `children`, `gap` (default `related`), `align` (`start`/`center`/`end`, default `center`), `justify` (`start`/`between`/`end`), `wrap`, `size`, `label` | a row; `size` sets the size environment of every control inside |
+| `layouts/toolbar` | `label`, `context`, `filters`, `actions`, `primary`, `size` | start group (context, filters) and end group (actions, primary last); `related` inside a group, `group` between; wraps when narrow |
+| `layouts/region` | `label`, `body`, `title` (string or node), `actions`, `toolbar`, `footer`, `fill` (true), `inset` (true), `bleed` | header, toolbar, filling body and pinned footer, `group` apart; `bleed` lets rows reach the sides |
+| `patterns/section` | `title`, `content`, `description`, `actions`, `voice` (`title`/`label`) | a subtitle or label-voice heading with end-side actions |
+| `patterns/description_list` | `label`, `items` (`label`, `value`, `numeric`, `identifier`), `label_width`, `layout` (`columns`/`stacked`) | one label column at `metrics.label_column`; stacked pairs a unit apart inside, a group apart between |
+| `patterns/stat` | `Stat`: `label`, `value`, `unit`, `delta`, `tone`, `description`; `stats(items)` | a figure with a muted unit on its baseline; only a deviating delta takes color |
+| `patterns/form_layout` | `key`, `label`, `groups` (`title`, `fields`) or `fields`, `submit`, `orientation`, `label_width`; a field has `label`, `control`, `description`, `error`, `required` | aligned label column, `related` between fields, `group` between groups, submit on the field edge |
+| `patterns/inline_state` | `key`, `state` (`loading`/`empty`/`error`/`stale`/`refreshing`), `title`, `description`, `detail`, `actions` | feedback where the content would be; error detail selectable |
+| `patterns/data_view` | `key`, `label`, `body`, `title`, `toolbar` (Toolbar slot map), `state` (InlineState map), `footer` (`status`, `selection`, `count`, `updated`) | Region + Toolbar + body + footer; the state replaces or tops the body |
+| `patterns/list_detail` | `label`, `list`, `detail`, `orientation`, `list_size` | a fixed list beside or above a filling detail, one hairline between |
+| `patterns/app_shell` | `key`, `label`, `main`, `title_bar` (TitleBar props), `sidebar`, `inspector`, `status` (StatusBar props), `overlays`, `sidebar_width`, `inspector_width` | title bar, sidebar, main, inspector, status bar; F6 / Shift+F6 cycle the regions |

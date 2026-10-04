@@ -54,6 +54,12 @@ Rhai limits expression depth (64 per script, 32 inside a function). Build deep
 screens from small functions, one per region or section, as in the examples;
 it reads better too.
 
+Do not name application functions after built-in methods (`index_of`,
+`contains`, `len`, `push`, `replace`, …). Rhai lets a script function be called
+as a method and prefers script functions over built-ins, also inside imported
+components: an application `fn index_of(values, key)` captures every
+`text.index_of(c, position)` call in the registry.
+
 ## 2. Spacing
 
 Use the spacing scale everywhere (`theme_spacing(name)` or
@@ -192,7 +198,8 @@ AppShell defines regions (sidebar, main, inspector, status bar).
   handlers accept modifier-qualified names (`on_key_value("shift+f6", ...)`);
   a plain name fires whatever modifiers are held.
 - Inside a region, arrow keys move within lists and tables; **Tab** moves
-  between controls; **Enter** activates; **Space** toggles.
+  between controls; **Enter** activates; **Space** toggles. A selectable
+  Table is one tab stop: arrows move the selection, Enter opens the row.
 - **Esc** steps back one level: close the overlay, then clear in-region state
   (selection, filter focus), then return to the main region.
 - **Cmd+K** opens the command palette everywhere. It lists every enabled
@@ -253,7 +260,19 @@ correctness problems.
 | `literal-geometry` | literal control heights, spacing, font sizes or colors in application source |
 | `unresolved-font` | a font family whose whole fallback chain does not resolve on this platform |
 
-Controls and markers align by their own edge, not by the text inside them.
+How the rules read a screen:
+
+- Controls, markers and painted or framed boxes align by their own edge, not
+  by the text inside them.
+- Label-voice text (section labels, table headers) and children that contain
+  controls are not counted as data sizes in `mixed-type-in-row`.
+- Overlay content (menus, dialogs, tooltips) is checked as its own layer, not
+  against the gaps of the page under it.
+- A container that opts out of `spacing-not-nested` (a grid-like row whose
+  label column is a track) also does not impose its gap on its children.
+- `unresolved-font` accepts a family when any entry of its fallback chain
+  resolves.
+
 When a composition breaks a rule on purpose, say so on the node:
 `row([value, unit]).audit_allow(["mixed-type-in-row"])` (Stat does this for a
 figure and its unit). Keep these rare; they are greppable.
