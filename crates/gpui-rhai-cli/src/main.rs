@@ -20,7 +20,11 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Command {
     /// Initialize GPUI Rhai files in a Cargo project.
-    Init,
+    Init {
+        /// Install a bundled application profile, such as `productivity`.
+        #[arg(long)]
+        profile: Option<String>,
+    },
     /// Add source components and their dependencies.
     Add {
         /// Registry component identifiers or short names.
@@ -71,8 +75,8 @@ fn run(cli: Cli) -> Result<(), ProjectError> {
     let root = cli.root.clone();
     let project = Project::new(cli.root);
     match cli.command {
-        Command::Init => {
-            let plan = project.plan_init()?;
+        Command::Init { profile } => {
+            let plan = project.plan_init_with_profile(profile.as_deref())?;
             println!("{}", plan.summary());
             if !cli.dry_run {
                 plan.apply()?;

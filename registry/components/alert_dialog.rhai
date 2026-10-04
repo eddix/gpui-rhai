@@ -3,7 +3,7 @@
   "id": "components/alert_dialog",
   "export": "AlertDialog",
   "version": "0.1.6",
-  "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
+  "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/button", "components/dialog"],
   "capabilities": {}
 }
@@ -20,7 +20,7 @@ import "components/dialog" as dialog;
 
 define_component(#{
     metadata: #{ id: "components/alert_dialog", "export": "AlertDialog", version: "0.1.6",
-        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
+        runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/button", "components/dialog"], capabilities: #{} },
     schema: #{
         props: #{

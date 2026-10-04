@@ -3,7 +3,7 @@
   "id": "charts/pie_chart",
   "export": "PieChart",
   "version": "0.1.7",
-  "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
+  "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["charts/chart"],
   "capabilities": {}
 }
@@ -18,7 +18,7 @@ import "charts/chart" as chart;
 
 define_component(#{
     metadata: #{ id: "charts/pie_chart", "export": "PieChart", version: "0.1.7",
-        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: ["charts/chart"], capabilities: #{} },
+        runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: ["charts/chart"], capabilities: #{} },
     schema: #{ props: #{
         key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
         data: #{ schema: #{ type: "one_of", variants: [#{ type: "array", items: #{ type: "ui_value" }, max_items: 10000 }, #{ type: "chart_data" }] }, required: true, sensitive: false },

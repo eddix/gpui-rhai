@@ -3,7 +3,7 @@
   "id": "components/context_menu",
   "export": "ContextMenu",
   "version": "0.1.6",
-  "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
+  "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/menu"],
   "capabilities": {}
 }
@@ -19,7 +19,7 @@ import "components/menu" as menu;
 
 define_component(#{
     metadata: #{ id: "components/context_menu", "export": "ContextMenu", version: "0.1.6",
-        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: ["components/menu"], capabilities: #{} },
+        runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: ["components/menu"], capabilities: #{} },
     schema: #{
         props: #{
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false },

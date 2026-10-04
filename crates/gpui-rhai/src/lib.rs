@@ -3,6 +3,7 @@
 pub mod column_resize;
 pub mod component;
 pub mod component_styles;
+pub mod composition_audit;
 pub mod context;
 pub mod date;
 pub mod dependency;
@@ -134,6 +135,9 @@ pub use component::{
     EventSchema, RuntimeApiRange, SlotSchema, parse_component_header,
 };
 pub use component_styles::{ComponentStyleError, ComponentStyleSheet, load_component_styles};
+pub use composition_audit::{
+    AuditFinding, AuditRule, AuditRules, Profile, STATIC_RULES, load_profile_source,
+};
 pub use context::{
     ComponentIncarnation, ExecutionPhase, PendingEvent, UiContext, UiContextError, UiMutationBatch,
     UiRuntimeState, UiStateSnapshot, UiTransactionError,
@@ -299,5 +303,6 @@ pub use window::{
     WindowCommandRegistry,
 };
 
-/// The first runtime API generation understood by component source.
-pub const RUNTIME_API_VERSION: u32 = 2;
+/// The runtime API generation understood by component source. Generation 3
+/// adds component token and environment declarations.
+pub const RUNTIME_API_VERSION: u32 = 3;

@@ -462,16 +462,28 @@ fn validation_status(theme: &ThemeVariant) -> String {
         ("on_success", "success"),
     ] {
         let ratio = contrast(
-            theme.tokens.colors[foreground],
-            theme.tokens.colors[background],
+            theme
+                .tokens
+                .color(foreground)
+                .unwrap_or(Rgba8::from_rgba_hex(0)),
+            theme
+                .tokens
+                .color(background)
+                .unwrap_or(Rgba8::from_rgba_hex(0)),
         );
         if ratio < 4.5 {
             warnings.push(format!("{foreground}/{background} {ratio:.2}:1"));
         }
     }
     let focus = contrast(
-        theme.tokens.colors["focus_ring"],
-        theme.tokens.colors["surface"],
+        theme
+            .tokens
+            .color("focus_ring")
+            .unwrap_or(Rgba8::from_rgba_hex(0)),
+        theme
+            .tokens
+            .color("surface")
+            .unwrap_or(Rgba8::from_rgba_hex(0)),
     );
     if focus < 3.0 {
         warnings.push(format!("focus_ring/surface {focus:.2}:1"));

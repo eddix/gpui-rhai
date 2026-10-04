@@ -4598,7 +4598,7 @@ mod tests {
                     define_component(#{
                         metadata: #{
                             id: "components/message", "export": "Message", version: "0.1.0",
-                            runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
+                            runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
                             dependencies: [], capabilities: #{}
                         },
                         schema: #{ props: #{}, state: #{ fields: #{} }, events: #{}, slots: #{}, parts: [] },
@@ -4994,7 +4994,7 @@ mod tests {
                     define_component(#{
                         metadata: #{ id: "components/broken", "export": "Broken",
                             version: "0.1.3",
-                            runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
+                            runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
                             dependencies: [], capabilities: #{} },
                         schema: #{ props: #{}, state: #{ fields: #{} }, events: #{},
                             slots: #{}, parts: [] },
@@ -5139,7 +5139,7 @@ mod tests {
         let module = r#"
             define_component(#{
                 metadata: #{ id: "components/heavy", "export": "Heavy", version: "0.1.1",
-                    runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{} },
+                    runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{} },
                 schema: #{ props: #{}, state: #{ fields: #{} }, events: #{}, slots: #{}, parts: ["root"] },
                 render: Fn("render_Heavy")
             });
@@ -5233,7 +5233,7 @@ mod tests {
         let module = r#"
             define_component(#{
                 metadata: #{ id: "components/probe", "export": "Probe", version: "0.1.1",
-                    runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{} },
+                    runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{} },
                 schema: #{ props: #{ key: #{ schema: #{ type: "string" }, required: true, sensitive: false } },
                     state: #{ fields: #{ heavy: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: false } } } },
                     events: #{}, slots: #{}, parts: ["root"] },
@@ -5306,7 +5306,7 @@ mod tests {
         let module = r#"
             define_component(#{
                 metadata: #{ id: "components/probe", "export": "Probe", version: "0.1.1",
-                    runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{} },
+                    runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{} },
                 schema: #{ props: #{ key: #{ schema: #{ type: "string" }, required: true, sensitive: false } },
                     state: #{ fields: #{ heavy: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: false } } } },
                     events: #{}, slots: #{}, parts: ["root"] }, render: Fn("render_Probe") }
@@ -5489,7 +5489,7 @@ mod tests {
                 r#"
                     define_component(#{
                         metadata: #{ id: "test/action", "export": "Action", version: "0.1.8",
-                            runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
+                            runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
                             dependencies: [], capabilities: #{} },
                         schema: #{ props: #{
                                 key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
@@ -5606,7 +5606,7 @@ mod tests {
         let module = r#"
             define_component(#{
                 metadata: #{ id: "components/counter", "export": "Counter", version: "0.1.1",
-                    runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{} },
+                    runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{} },
                 schema: #{ props: #{}, state: #{ fields: #{} }, events: #{}, slots: #{}, parts: ["root"] },
                 render: Fn("render_Counter")
             });
@@ -5660,7 +5660,7 @@ mod tests {
         let module = r#"
             define_component(#{
                 metadata: #{ id: "components/incarnation", "export": "Counter", version: "0.1.1",
-                    runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{} },
+                    runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{} },
                 schema: #{ props: #{ key: #{ schema: #{ type: "string" }, required: true, sensitive: false } },
                     state: #{ fields: #{ count: #{ schema: #{ type: "integer" }, "default": #{ type: "integer", value: 0 } } } },
                     events: #{}, slots: #{}, parts: ["root"] }, render: Fn("render_Counter")

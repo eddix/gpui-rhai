@@ -55,7 +55,7 @@ impl Fixture {
         std::fs::create_dir(&root).unwrap();
         std::fs::write(root.join("main.rhai"), source).unwrap();
         std::fs::write(root.join("theme.rhai"), THEME).unwrap();
-        std::fs::write(root.join("app.toml"), "entry = \"main\"\nruntime_api = 2\n").unwrap();
+        std::fs::write(root.join("app.toml"), "entry = \"main\"\nruntime_api = 3\n").unwrap();
         Self { root }
     }
     fn builder(&self) -> FileScriptView {

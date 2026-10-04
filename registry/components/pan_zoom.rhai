@@ -3,7 +3,7 @@
   "id": "components/pan_zoom",
   "export": "PanZoom",
   "version": "0.1.8",
-  "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
+  "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {}
 }
@@ -19,7 +19,7 @@
 
 define_component(#{
     metadata: #{ id:"components/pan_zoom", "export":"PanZoom", version:"0.1.8",
-        runtime_api:#{min_inclusive:2,max_exclusive:3}, dependencies:[], capabilities:#{} },
+        runtime_api:#{min_inclusive: 3,max_exclusive: 4}, dependencies:[], capabilities:#{} },
     schema: #{ props: #{
         key: #{ schema:#{type:"string"}, required:true, sensitive:false },
         label: #{ schema:#{type:"string"}, required:true, sensitive:false },

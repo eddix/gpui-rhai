@@ -7,7 +7,7 @@ use std::{
 
 const COUNTER: &str = r#"
 define_component(#{metadata:#{id:"test/counter","export":"Counter",version:"0.1.8",
- runtime_api:#{min_inclusive:2,max_exclusive:3},dependencies:[],capabilities:#{}},
+ runtime_api:#{min_inclusive: 3,max_exclusive: 4},dependencies:[],capabilities:#{}},
  schema:#{props:#{key:#{schema:#{type:"string"},required:true,sensitive:false}},
  state:#{fields:#{count:#{schema:#{type:"integer"},"default":#{type:"integer",value:7}}}},
  events:#{},slots:#{},parts:[],effects:["presence"]},render:Fn("counter")});

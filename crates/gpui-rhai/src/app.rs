@@ -1204,6 +1204,60 @@ impl ScriptViewHandle {
         Ok(())
     }
 
+    /// Audit the committed composition with the rules of this view's profile
+    /// (`ui/profile.rhai` or [`EmbeddedScriptView::profile_source`]). With no
+    /// profile the result is empty.
+    ///
+    /// # Errors
+    ///
+    /// Returns after disposal.
+    pub fn composition_audit(&self, cx: &App) -> Result<Vec<crate::AuditFinding>, ScriptViewError> {
+        let rules = self
+            .0
+            .entity
+            .read(cx)
+            .lifecycle
+            .runtime()
+            .borrow()
+            .audit_rules
+            .clone();
+        self.composition_audit_with(&rules, cx)
+    }
+
+    /// Audit the committed composition with an explicit rule set.
+    ///
+    /// # Errors
+    ///
+    /// Returns after disposal.
+    pub fn composition_audit_with(
+        &self,
+        rules: &crate::AuditRules,
+        cx: &App,
+    ) -> Result<Vec<crate::AuditFinding>, ScriptViewError> {
+        self.require_active()?;
+        let theme = self.theme_snapshot(cx)?.variant;
+        let view = self.0.entity.read(cx);
+        let geometry = view
+            .lifecycle
+            .runtime()
+            .borrow()
+            .geometry_for(Some(&view.view_id));
+        let fonts = cx
+            .text_system()
+            .all_font_names()
+            .into_iter()
+            .collect::<std::collections::BTreeSet<_>>();
+        Ok(crate::composition_audit::audit(
+            &crate::composition_audit::AuditInputs {
+                tree: view.lifecycle.retained(),
+                geometry: &geometry,
+                theme: &theme,
+                rules,
+                available_fonts: Some(&fonts),
+            },
+        ))
+    }
+
     /// Snapshot the retained semantic tree and last committed geometry.
     ///
     /// # Errors
@@ -1707,6 +1761,7 @@ impl FileScriptView {
         )?;
         validate_component_tokens(&themes, &component_exports)?;
         runtime_state.theme = Some(themes);
+        runtime_state.audit_rules = load_file_profile(engine.engine(), &ui_root)?.audit;
         runtime_state.replace_component_styles_from_host(component_styles);
         register_file_assets(&runtime_state, &ui_root)?;
         preload_component_assets(&runtime_state, &component_exports)?;
@@ -1771,6 +1826,7 @@ pub struct EmbeddedScriptView {
     runtime_clock: crate::RuntimeClock,
     fonts: Vec<crate::FontSource>,
     token_base: Option<String>,
+    profile_source: Option<String>,
     theme_token_overrides: ThemeTokenOverrides,
     execution_policy: ScriptExecutionPolicy,
 }
@@ -1802,9 +1858,18 @@ impl EmbeddedScriptView {
             runtime_clock: crate::RuntimeClock::default(),
             fonts: Vec::new(),
             token_base: None,
+            profile_source: None,
             theme_token_overrides: ThemeTokenOverrides::default(),
             execution_policy: ScriptExecutionPolicy::default(),
         }
+    }
+
+    /// Install an application profile (`profile() -> map`) whose audit rules
+    /// [`ScriptViewHandle::composition_audit`] applies.
+    #[must_use]
+    pub fn profile_source(mut self, source: impl Into<String>) -> Self {
+        self.profile_source = Some(source.into());
+        self
     }
 
     /// Install a token base (`tokens() -> map`) beneath every embedded theme.
@@ -1997,6 +2062,12 @@ impl EmbeddedScriptView {
             &component_exports,
         )?);
         runtime_state.replace_component_styles_from_host(component_styles);
+        if let Some(source) = &self.profile_source {
+            runtime_state.audit_rules =
+                crate::load_profile_source(engine.engine(), "<embedded-profile>", source)
+                    .map_err(ScriptViewError::Extension)?
+                    .audit;
+        }
         if !self.assets.is_empty() {
             runtime_state
                 .assets
@@ -2180,7 +2251,11 @@ fn preload_component_modules(
 ) -> Result<(), ScriptViewError> {
     let imports = modules
         .into_iter()
-        .filter(|id| id.as_str().starts_with("components/"))
+        .filter(|id| {
+            ["components/", "layouts/", "patterns/"]
+                .iter()
+                .any(|category| id.as_str().starts_with(category))
+        })
         .enumerate()
         .map(|(index, id)| format!("import \"{id}\" as component_{index};"))
         .collect::<Vec<_>>()
@@ -2497,6 +2572,22 @@ fn file_theme_layers(
             .transpose()?,
         overrides: overrides.clone(),
     })
+}
+
+fn load_file_profile(
+    engine: &rhai::Engine,
+    ui_root: &Path,
+) -> Result<crate::Profile, ScriptViewError> {
+    let path = ui_root.join(PROFILE_FILE);
+    if !path.exists() {
+        return Ok(crate::Profile::default());
+    }
+    let source = fs::read_to_string(&path).map_err(|source| ScriptViewError::Io {
+        path: path.clone(),
+        source,
+    })?;
+    crate::load_profile_source(engine, &path.to_string_lossy(), &source)
+        .map_err(ScriptViewError::Extension)
 }
 
 fn embedded_theme_layers(
@@ -3764,17 +3855,20 @@ fn build_host_root(
     theme: &ThemeVariant,
     paint_background: bool,
 ) -> gpui::Stateful<gpui::Div> {
-    let root = div()
+    // Themes need not use the semantic vocabulary; without it the host keeps
+    // GPUI's default text color and paints no background.
+    let mut root = div()
         .id("gpui-rhai-host")
         .size_full()
         .track_focus(host_focus)
-        .text_color(rgba(theme.tokens.colors["text_primary"].as_rgba_hex()))
         .key_context(HOST_KEY_CONTEXT)
         .on_key_down(handle_tab_navigation);
-    if paint_background {
-        root.bg(rgba(theme.tokens.colors["surface"].as_rgba_hex()))
-    } else {
-        root
+    if let Some(color) = theme.tokens.color("text_primary") {
+        root = root.text_color(rgba(color.as_rgba_hex()));
+    }
+    match theme.tokens.color("surface") {
+        Some(color) if paint_background => root.bg(rgba(color.as_rgba_hex())),
+        _ => root,
     }
 }
 
@@ -3805,10 +3899,17 @@ fn build_error_banner(
     let selector = format!("gpui-rhai-error-banner:{view_id}");
     let accessibility_id = selector.clone();
     let owner = format!("window:{window_id}/view:{view_id}/error-banner");
+    // The banner is developer-facing and must render with any vocabulary.
+    let color = |token: &str, fallback: u32| {
+        theme
+            .tokens
+            .color(token)
+            .unwrap_or(crate::Rgba8::from_rgba_hex(fallback))
+    };
     let error_text = crate::renderer::selectable_text_element(
         owner,
         error,
-        theme.tokens.colors["selection"],
+        color("selection", 0x3a5f_cd66),
         selection,
         Some(host_focus),
     );
@@ -3826,10 +3927,10 @@ fn build_error_banner(
                 .font_family(error_banner_font_family())
                 .text_size(px(12.0))
                 .line_height(px(18.0))
-                .bg(rgba(theme.tokens.colors["surface_raised"].as_rgba_hex()))
-                .text_color(rgba(theme.tokens.colors["danger"].as_rgba_hex()))
+                .bg(rgba(color("surface_raised", 0x1f1f_1fff).as_rgba_hex()))
+                .text_color(rgba(color("danger", 0xff55_55ff).as_rgba_hex()))
                 .border_1()
-                .border_color(rgba(theme.tokens.colors["danger"].as_rgba_hex()))
+                .border_color(rgba(color("danger", 0xff55_55ff).as_rgba_hex()))
                 .child(error_text),
         )
         .child(content)
@@ -6324,7 +6425,7 @@ mod tests {
     fn write_manifest(directory: &Path) {
         fs::write(
             directory.join("app.toml"),
-            "entry = \"main\"\nruntime_api = 2\n",
+            "entry = \"main\"\nruntime_api = 3\n",
         )
         .unwrap();
     }
@@ -6735,7 +6836,7 @@ mod tests {
         .unwrap();
         fs::write(
             directory.path().join("app.toml"),
-            "entry = \"main\"\nruntime_api = 2\n[capabilities]\n\"app.missing\" = \"*\"\n",
+            "entry = \"main\"\nruntime_api = 3\n[capabilities]\n\"app.missing\" = \"*\"\n",
         )
         .unwrap();
 
@@ -6850,7 +6951,7 @@ mod tests {
   "id": "components/declarative_icon",
   "export": "DeclarativeIcon",
   "version": "0.1.0",
-  "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
+  "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
   "assets": ["icons/check.svg"]
@@ -6858,7 +6959,7 @@ mod tests {
 */
 define_component(#{
     metadata: #{ id: "components/declarative_icon", "export": "DeclarativeIcon",
-        version: "0.1.0", runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
+        version: "0.1.0", runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: [], capabilities: #{}, assets: ["icons/check.svg"] },
     schema: #{ props: #{}, state: #{ fields: #{} }, events: #{}, slots: #{}, parts: ["root"] },
     render: Fn("render_DeclarativeIcon")
@@ -6916,12 +7017,12 @@ fn render_DeclarativeIcon(ctx, props) { image(asset("app/icons/check")) }
                 r#"/* gpui-rhai
 {
   "id": "components/missing_asset", "export": "MissingAsset", "version": "0.1.0",
-  "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
+  "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [], "capabilities": {}, "assets": ["icons/missing.svg"]
 }
 */
 define_component(#{ metadata: #{ id: "components/missing_asset", "export": "MissingAsset",
-    version: "0.1.0", runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
+    version: "0.1.0", runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
     dependencies: [], capabilities: #{}, assets: ["icons/missing.svg"] },
     schema: #{ props: #{}, state: #{ fields: #{} }, events: #{}, slots: #{}, parts: ["root"] },
     render: Fn("render_MissingAsset") });
@@ -6960,7 +7061,7 @@ fn render_MissingAsset(ctx, props) { image(asset("app/icons/missing")) }
         fs::write(directory.path().join("theme.rhai"), theme).unwrap();
         fs::write(
             directory.path().join("app.toml"),
-            "entry = \"main\"\nruntime_api = 2\n",
+            "entry = \"main\"\nruntime_api = 3\n",
         )
         .unwrap();
         fs::write(directory.path().join("locales/en.rhai"), locale).unwrap();

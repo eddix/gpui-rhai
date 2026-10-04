@@ -3,7 +3,7 @@
   "id": "components/input",
   "export": "Input",
   "version": "0.1.6",
-  "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
+  "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {}
 }
@@ -20,7 +20,7 @@ define_component(#{
         id: "components/input",
         "export": "Input",
         version: "0.1.6",
-        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
+        runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: [],
         capabilities: #{},
     },

@@ -3,7 +3,7 @@
   "id": "components/table",
   "export": "Table",
   "version": "0.1.8",
-  "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
+  "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/badge"],
   "capabilities": {},
   "assets": ["icons/disclosure_down.svg", "icons/chevron_right.svg", "icons/sort_ascending.svg", "icons/sort_descending.svg"]
@@ -21,7 +21,7 @@
 
 define_component(#{
     metadata: #{ id: "components/table", "export": "Table", version: "0.1.8",
-        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
+        runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/badge"], capabilities: #{},
         assets: ["icons/disclosure_down.svg", "icons/chevron_right.svg", "icons/sort_ascending.svg", "icons/sort_descending.svg"] },
     schema: #{

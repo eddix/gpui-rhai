@@ -31,7 +31,7 @@ mod actual {
     const READER: &str = r#"
 fn state_schema(){#{fields:#{init_count:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}},initial:#{schema:#{type:"string"},"default":#{type:"string",value:"none"}}}}}
 fn init(ctx){ctx.set_state("init_count",ctx.get_state("init_count")+1);ctx.set_state("initial",ctx.theme_variant().mode);ctx.call_capability("app.matrix","record",`TAG:init:${ctx.get_state("init_count")}:${ctx.get_state("initial")}`);}
-define_component(#{metadata:#{id:"matrix/reader","export":"Reader",version:"0.1.8",runtime_api:#{min_inclusive:2,max_exclusive:3},dependencies:[],capabilities:#{"app.matrix":"*"}},schema:#{props:#{key:#{schema:#{type:"string"},required:true,sensitive:false}},state:#{fields:#{starts:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}}}},events:#{},slots:#{},parts:[],effects:["theme"]},render:Fn("reader")});
+define_component(#{metadata:#{id:"matrix/reader","export":"Reader",version:"0.1.8",runtime_api:#{min_inclusive: 3,max_exclusive: 4},dependencies:[],capabilities:#{"app.matrix":"*"}},schema:#{props:#{key:#{schema:#{type:"string"},required:true,sensitive:false}},state:#{fields:#{starts:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}}}},events:#{},slots:#{},parts:[],effects:["theme"]},render:Fn("reader")});
 fn start(ctx,deps){let n=ctx.get_state("starts")+1;ctx.set_state("starts",n);ctx.call_capability("app.matrix","record",`TAG:effect:${n}:${deps.mode}`);}
 fn stop(ctx,deps){}
 fn reader(ctx,props){effect("theme",ctx.theme_variant(),Fn("start"),Fn("stop"));text(`effect:${ctx.get_state("starts")}`).accessibility_role("status")}

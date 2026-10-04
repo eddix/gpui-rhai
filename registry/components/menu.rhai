@@ -3,7 +3,7 @@
   "id": "components/menu",
   "export": "Menu",
   "version": "0.1.6",
-  "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
+  "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/divider"],
   "capabilities": {},
   "assets": ["icons/check.svg"]
@@ -21,7 +21,7 @@ import "components/divider" as divider;
 define_component(#{
     metadata: #{
         id: "components/menu", "export": "Menu", version: "0.1.6",
-        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
+        runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/divider"], capabilities: #{}, assets: ["icons/check.svg"],
     },
     schema: #{

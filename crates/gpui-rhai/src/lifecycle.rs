@@ -1807,7 +1807,7 @@ mod tests {
     const STREAM_COMPONENT_APP: &str = r#"
         define_component(#{
             metadata: #{ id: "test/stream", "export": "StreamProbe", version: "0.1.0",
-                runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
+                runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
                 dependencies: [], capabilities: #{ "app.stream": "*" } },
             schema: #{ props: #{ key: #{ schema: #{ type: "string" }, required: true, sensitive: false } },
                 state: #{ fields: #{ phase: #{ schema: #{ type: "string" },
@@ -2778,7 +2778,7 @@ mod tests {
             let source = r#"
             define_component(#{
                 metadata: #{id:"test/virtual_counter", "export":"Counter", version:"0.1.8",
-                    runtime_api:#{min_inclusive:2,max_exclusive:3},dependencies:[],capabilities:#{}},
+                    runtime_api:#{min_inclusive: 3,max_exclusive: 4},dependencies:[],capabilities:#{}},
                 schema: #{props:#{key:#{schema:#{type:"string"},required:true,sensitive:false}},
                     state:#{fields:#{count:#{schema:#{type:"integer"},"default":#{type:"integer",value:7}}}},
                     events:#{},slots:#{},parts:[],effects:["keep"]},render:Fn("render_counter")
@@ -2796,7 +2796,7 @@ mod tests {
             }
             define_component(#{
                 metadata:#{id:"test/wrapper","export":"Wrapper",version:"0.1.8",
-                    runtime_api:#{min_inclusive:2,max_exclusive:3},dependencies:[],capabilities:#{}},
+                    runtime_api:#{min_inclusive: 3,max_exclusive: 4},dependencies:[],capabilities:#{}},
                 schema:#{props:#{key:#{schema:#{type:"string"},required:true,sensitive:false},
                     depth:#{schema:#{type:"integer"},required:true,sensitive:false}},
                     state:#{fields:#{}},events:#{},slots:#{},parts:[]},render:Fn("render_wrapper")
@@ -2951,7 +2951,7 @@ mod tests {
         let compiled = engine.compile(r#"
             define_component(#{
                 metadata:#{id:"test/panel","export":"Panel",version:"0.1.8",
-                    runtime_api:#{min_inclusive:2,max_exclusive:3},dependencies:[],capabilities:#{}},
+                    runtime_api:#{min_inclusive: 3,max_exclusive: 4},dependencies:[],capabilities:#{}},
                 schema:#{props:#{key:#{schema:#{type:"string"},required:true,sensitive:false}},
                     state:#{fields:#{count:#{schema:#{type:"integer"},"default":#{type:"integer",value:7}}}},
                     events:#{},slots:#{},parts:[]},render:Fn("render_panel")
@@ -3884,7 +3884,7 @@ mod tests {
             let source = r#"
                 define_component(#{
                     metadata:#{id:"tests/table_panel","export":"Panel",version:"0.1.8",
-                        runtime_api:#{min_inclusive:2,max_exclusive:3},dependencies:[],capabilities:#{}},
+                        runtime_api:#{min_inclusive: 3,max_exclusive: 4},dependencies:[],capabilities:#{}},
                     schema:#{props:#{key:#{schema:#{type:"string"},required:true,sensitive:false}},
                         state:#{fields:#{count:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}}}},
                         events:#{},slots:#{},parts:[]},render:Fn("render_panel")

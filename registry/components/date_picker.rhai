@@ -3,7 +3,7 @@
   "id": "components/date_picker",
   "export": "DatePicker",
   "version": "0.1.6",
-  "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
+  "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
   "assets": ["icons/calendar.svg", "icons/date_previous.svg", "icons/date_next.svg", "icons/close.svg"]
@@ -17,7 +17,7 @@
 define_component(#{
     metadata: #{
         id: "components/date_picker", "export": "DatePicker", version: "0.1.6",
-        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
+        runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: [], capabilities: #{},
         assets: ["icons/calendar.svg", "icons/date_previous.svg", "icons/date_next.svg", "icons/close.svg"],
     },

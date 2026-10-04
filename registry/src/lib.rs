@@ -427,6 +427,18 @@ bundled_assets!(
     (HELP_SVG, "icons/help.svg", "../assets/icons/help.svg"),
 );
 
+/// Visually neutral layout components (`layouts/*`).
+pub const BUNDLED_LAYOUT_SOURCES_BY_ID: &[(&str, &str)] = &[];
+
+/// Opinionated composite components (`patterns/*`).
+pub const BUNDLED_PATTERN_SOURCES_BY_ID: &[(&str, &str)] = &[];
+
+/// Bundled application profiles, installed by `gpui-rhai init --profile`.
+pub const BUNDLED_PROFILES: &[(&str, &str)] = &[(
+    "productivity",
+    include_str!("../profiles/productivity.rhai"),
+)];
+
 /// The design-language token base, installed as `ui/tokens.rhai`.
 pub const TOKEN_BASE_SOURCE: &str = include_str!("../tokens.rhai");
 pub const DEFAULT_THEME: &str = include_str!("../themes/default_dark.rhai");

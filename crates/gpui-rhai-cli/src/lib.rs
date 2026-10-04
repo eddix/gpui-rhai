@@ -32,7 +32,8 @@ pub mod theme_studio;
 
 use gpui_rhai_registry::{
     AR_LOCALE, BUNDLED_ASSET_SOURCES, BUNDLED_CHART_SOURCES_BY_ID, BUNDLED_COMPONENT_SOURCES_BY_ID,
-    BUNDLED_MOTION_SOURCES_BY_ID, BUNDLED_THEME_SOURCES, DEFAULT_THEME, EN_LOCALE, STUDIO_SOURCE,
+    BUNDLED_LAYOUT_SOURCES_BY_ID, BUNDLED_MOTION_SOURCES_BY_ID, BUNDLED_PATTERN_SOURCES_BY_ID,
+    BUNDLED_PROFILES, BUNDLED_THEME_SOURCES, DEFAULT_THEME, EN_LOCALE, STUDIO_SOURCE,
     TOKEN_BASE_SOURCE, ZH_CN_LOCALE,
 };
 #[cfg(test)]
@@ -84,6 +85,8 @@ impl BundledRegistry {
             .iter()
             .chain(BUNDLED_MOTION_SOURCES_BY_ID)
             .chain(BUNDLED_CHART_SOURCES_BY_ID)
+            .chain(BUNDLED_LAYOUT_SOURCES_BY_ID)
+            .chain(BUNDLED_PATTERN_SOURCES_BY_ID)
         {
             let metadata = parse_component_header(source)?;
             let id = metadata.id.clone();
@@ -145,13 +148,21 @@ impl BundledRegistry {
         for request in requested {
             let normalized = if request.contains('/') {
                 request.clone()
-            } else if self
-                .entries
-                .contains_key(&ModuleId::parse(format!("charts/{request}"))?)
-            {
-                format!("charts/{request}")
             } else {
-                format!("components/{request}")
+                // Short names try charts, layouts and patterns before falling
+                // back to components, so `toolbar` resolves to `layouts/toolbar`.
+                let mut found = None;
+                for category in ["charts", "layouts", "patterns"] {
+                    let candidate = format!("{category}/{request}");
+                    if self
+                        .entries
+                        .contains_key(&ModuleId::parse(candidate.clone())?)
+                    {
+                        found = Some(candidate);
+                        break;
+                    }
+                }
+                found.unwrap_or_else(|| format!("components/{request}"))
             };
             let id = ModuleId::parse(normalized)?;
             self.visit(&id, &mut stack, &mut complete, &mut ordered)?;
@@ -207,6 +218,29 @@ impl Project {
     /// Returns [`ProjectError`] for missing/invalid Cargo metadata or conflicting
     /// generated files.
     pub fn plan_init(&self) -> Result<ProjectPlan, ProjectError> {
+        self.plan_init_with_profile(None)
+    }
+
+    /// Plan project initialization, optionally installing a bundled
+    /// application profile as `ui/profile.rhai`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ProjectError`] for missing/invalid Cargo metadata, an unknown
+    /// profile, or conflicting generated files.
+    pub fn plan_init_with_profile(
+        &self,
+        profile: Option<&str>,
+    ) -> Result<ProjectPlan, ProjectError> {
+        let profile_source = profile
+            .map(|name| {
+                BUNDLED_PROFILES
+                    .iter()
+                    .find(|(candidate, _)| *candidate == name)
+                    .map(|(_, source)| *source)
+                    .ok_or_else(|| ProjectError::UnknownProfile(name.to_owned()))
+            })
+            .transpose()?;
         let cargo_path = self.root.join("Cargo.toml");
         let cargo_source = read(&cargo_path)?;
         let mut cargo =
@@ -243,6 +277,9 @@ impl Project {
             self.root.join("ui/tokens.rhai"),
             TOKEN_BASE_SOURCE.to_owned(),
         )?;
+        if let Some(source) = profile_source {
+            plan.create(self.root.join("ui/profile.rhai"), source.to_owned())?;
+        }
         plan.create(
             self.root.join("ui/styles.rhai"),
             DEFAULT_COMPONENT_STYLES.to_owned(),
@@ -473,11 +510,13 @@ impl Project {
         validate_locales(&self.root)?;
         validate_embedded_assets(&self.root)?;
         validate_fonts(&self.root)?;
+        let warnings = profile_warnings(&self.root, &manifest)?;
         Ok(CheckReport {
             components: manifest.components.len(),
             entry: app.entry,
             host_validation_required,
             initial_view_validated,
+            warnings,
         })
     }
 
@@ -1101,6 +1140,120 @@ fn validate_entry(
     }
 }
 
+/// Static design-rule warnings enabled by `ui/profile.rhai`. Without a
+/// profile there are none.
+fn profile_warnings(root: &Path, manifest: &LocalManifest) -> Result<Vec<String>, ProjectError> {
+    let path = root.join("ui/profile.rhai");
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let runtime = RuntimeEngine::new();
+    let profile =
+        gpui_rhai::load_profile_source(runtime.engine(), "ui/profile.rhai", &read(&path)?)
+            .map_err(ProjectError::Profile)?;
+    if !profile.static_rules.contains("literal-geometry") {
+        return Ok(Vec::new());
+    }
+    let installed = manifest
+        .components
+        .keys()
+        .filter_map(|id| ModuleId::parse(id).ok())
+        .filter_map(|id| component_relative_path(&id).ok())
+        .map(|relative| root.join(relative))
+        .collect::<BTreeSet<_>>();
+    let excluded = ["theme.rhai", "tokens.rhai", "styles.rhai", "profile.rhai"]
+        .map(|name| root.join("ui").join(name));
+    let mut warnings = Vec::new();
+    for path in collect_rhai_files(&root.join("ui"))? {
+        if installed.contains(&path)
+            || excluded.contains(&path)
+            || path
+                .components()
+                .any(|part| matches!(part.as_os_str().to_str(), Some("themes" | "locales")))
+        {
+            continue;
+        }
+        let relative = path
+            .strip_prefix(root)
+            .unwrap_or(&path)
+            .to_string_lossy()
+            .into_owned();
+        for (index, line) in read(&path)?.lines().enumerate() {
+            if let Some(reason) = literal_geometry(line) {
+                warnings.push(format!(
+                    "literal-geometry {relative}:{}: {reason}; use a theme token",
+                    index + 1
+                ));
+            }
+        }
+    }
+    Ok(warnings)
+}
+
+/// A literal control height, spacing, font size or color in application
+/// source. Zero spacing and transparent colors are structural and allowed.
+fn literal_geometry(line: &str) -> Option<&'static str> {
+    let code = line.split("//").next().unwrap_or(line);
+    let nonzero_px = |call: &str| {
+        code.match_indices(call).any(|(index, _)| {
+            let rest = &code[index + call.len()..];
+            let number = rest
+                .chars()
+                .take_while(|character| character.is_ascii_digit() || *character == '.')
+                .collect::<String>();
+            number.parse::<f64>().is_ok_and(|value| value > 0.0)
+        })
+    };
+    if nonzero_px("font_size(px(") || nonzero_px("line_height(px(") {
+        Some("literal font size")
+    } else if nonzero_px(".height(px(") || nonzero_px("min_height(px(") {
+        Some("literal control height")
+    } else if [
+        "gap(px(",
+        "padding(px(",
+        "padding_x(px(",
+        "padding_y(px(",
+        "margin(px(",
+    ]
+    .iter()
+    .any(|call| nonzero_px(call))
+    {
+        Some("literal spacing")
+    } else if code.contains("rgba(0x") && !code.contains("rgba(0x00000000)") {
+        Some("literal color")
+    } else {
+        None
+    }
+}
+
+fn collect_rhai_files(directory: &Path) -> Result<Vec<PathBuf>, ProjectError> {
+    let mut files = Vec::new();
+    let mut pending = vec![directory.to_path_buf()];
+    while let Some(directory) = pending.pop() {
+        if !directory.exists() {
+            continue;
+        }
+        for entry in fs::read_dir(&directory).map_err(|source| ProjectError::Io {
+            path: directory.clone(),
+            source,
+        })? {
+            let path = entry
+                .map_err(|source| ProjectError::Io {
+                    path: directory.clone(),
+                    source,
+                })?
+                .path();
+            if path.is_dir() {
+                pending.push(path);
+            } else if path.extension().and_then(|extension| extension.to_str()) == Some("rhai") {
+                files.push(path);
+            }
+        }
+    }
+    files.sort();
+    Ok(files)
+}
+
 /// Load `ui/theme.rhai` and `ui/themes/*` on top of `ui/tokens.rhai` when it
 /// exists. The primary theme is first.
 fn load_project_themes(
@@ -1332,6 +1485,11 @@ fn component_relative_path(id: &ModuleId) -> Result<PathBuf, ProjectError> {
         .map(|name| ("components", name))
         .or_else(|| path.strip_prefix("motion/").map(|name| ("motion", name)))
         .or_else(|| path.strip_prefix("charts/").map(|name| ("charts", name)))
+        .or_else(|| path.strip_prefix("layouts/").map(|name| ("layouts", name)))
+        .or_else(|| {
+            path.strip_prefix("patterns/")
+                .map(|name| ("patterns", name))
+        })
         .ok_or_else(|| ProjectError::InvalidComponentPath(id.clone()))?;
     Ok(PathBuf::from(directory)
         .join(component)
@@ -1532,7 +1690,7 @@ fn starter_ui() -> String {
     column([
         text("GPUI Rhai"),
         text("Run `gpui-rhai add button label` to install source components.")
-    ]).with_style(style().gap(px(8)).padding(px(16)))
+    ]).with_style(style().gap(theme_length("space.related")).padding(theme_length("metrics.inset")))
 }
 "#
     .to_owned()
@@ -1909,11 +2067,22 @@ pub struct CheckReport {
     pub entry: ModuleId,
     pub host_validation_required: bool,
     pub initial_view_validated: bool,
+    /// Design-rule warnings from the application profile; never fatal.
+    pub warnings: Vec<String>,
 }
 
 impl CheckReport {
     #[must_use]
     pub fn summary(&self) -> String {
+        let mut summary = self.status();
+        for warning in &self.warnings {
+            summary.push_str("\nwarning: ");
+            summary.push_str(warning);
+        }
+        summary
+    }
+
+    fn status(&self) -> String {
         if self.host_validation_required && !self.initial_view_validated {
             format!(
                 "Static check passed: entry `{}`, {} installed component(s). Host capability lifecycle and its dependent initial view were not executed.",
@@ -1935,6 +2104,10 @@ impl CheckReport {
 
 #[derive(Debug, Error)]
 pub enum ProjectError {
+    #[error("unknown profile `{0}`; bundled profiles: productivity")]
+    UnknownProfile(String),
+    #[error("invalid profile: {0}")]
+    Profile(String),
     #[error("I/O failed for `{path}`: {source}")]
     Io {
         path: PathBuf,
@@ -2146,6 +2319,38 @@ mod tests {
     }
 
     #[test]
+    fn profiles_install_with_init_and_warn_only_about_application_source() {
+        let directory = fixture();
+        let project = Project::new(directory.path());
+        assert!(matches!(
+            project.plan_init_with_profile(Some("unknown")),
+            Err(ProjectError::UnknownProfile(_))
+        ));
+        project
+            .plan_init_with_profile(Some("productivity"))
+            .unwrap()
+            .apply()
+            .unwrap();
+        assert!(directory.path().join("ui/profile.rhai").exists());
+        assert!(directory.path().join("ui/tokens.rhai").exists());
+        project
+            .plan_add(&BundledRegistry::load().unwrap(), &["button".to_owned()])
+            .unwrap()
+            .apply()
+            .unwrap();
+        assert!(project.check().unwrap().warnings.is_empty());
+        fs::write(
+            directory.path().join("ui/main.rhai"),
+            "fn view(ctx) {\n    text(\"Hi\").with_style(style().font_size(px(13)).gap(px(0)))\n}\n",
+        )
+        .unwrap();
+        let report = project.check().unwrap();
+        assert_eq!(report.warnings.len(), 1, "{:?}", report.warnings);
+        assert!(report.warnings[0].starts_with("literal-geometry ui/main.rhai:2"));
+        assert!(report.summary().contains("warning: literal-geometry"));
+    }
+
+    #[test]
     fn check_rejects_old_or_misaligned_gpui_package_identity() {
         let directory = fixture();
         let cargo = directory.path().join("Cargo.toml");
@@ -2238,7 +2443,7 @@ mod tests {
         project.plan_init().unwrap().apply().unwrap();
         fs::write(
             directory.path().join("ui/app.toml"),
-            "entry = \"main\"\nruntime_api = 2\n\n[capabilities]\n\"app.demo\" = \"*\"\n",
+            "entry = \"main\"\nruntime_api = 3\n\n[capabilities]\n\"app.demo\" = \"*\"\n",
         )
         .unwrap();
         fs::write(

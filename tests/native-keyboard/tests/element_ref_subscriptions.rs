@@ -23,13 +23,13 @@ mod tests {
     }
     fn script(initial: i64, replace: bool) -> String {
         let src = r#"
-define_component(#{metadata:#{id:"tests/producer","export":"Producer",version:"0.1.8",runtime_api:#{min_inclusive:2,max_exclusive:3},dependencies:[],capabilities:#{}},schema:#{props:#{key:#{schema:#{type:"string"},required:true,sensitive:false},target:#{schema:#{type:"ref"},required:true,sensitive:false}},state:#{fields:#{phase:#{schema:#{type:"integer"},"default":#{type:"integer",value:INITIAL}}}},events:#{},slots:#{},parts:["root"]},render:Fn("render_Producer")});
+define_component(#{metadata:#{id:"tests/producer","export":"Producer",version:"0.1.8",runtime_api:#{min_inclusive: 3,max_exclusive: 4},dependencies:[],capabilities:#{}},schema:#{props:#{key:#{schema:#{type:"string"},required:true,sensitive:false},target:#{schema:#{type:"ref"},required:true,sensitive:false}},state:#{fields:#{phase:#{schema:#{type:"integer"},"default":#{type:"integer",value:INITIAL}}}},events:#{},slots:#{},parts:["root"]},render:Fn("render_Producer")});
 fn advance(ctx,value){ctx.set_state("phase",ctx.get_state("phase")+1);}
 fn render_Producer(ctx,props){let phase=ctx.get_state("phase");let children=[text("Advance").with_key("advance").accessibility_role("button").accessibility_label("Advance").with_style(style().width(px(120)).height(px(30))).on_click(Fn("advance"))];if phase>0&&phase<3{let node=if REPLACE&&phase==2{box([])}else{text("target")};children.push(node.with_key("target").with_ref(props.target).with_style(style().width(px(if phase==1{120}else{180})).height(px(20))).accessibility_role("image").accessibility_label("target"));}column(children)}
-define_component(#{metadata:#{id:"tests/reader","export":"Reader",version:"0.1.8",runtime_api:#{min_inclusive:2,max_exclusive:3},dependencies:[],capabilities:#{}},schema:#{props:#{key:#{schema:#{type:"string"},required:true,sensitive:false},target:#{schema:#{type:"ref"},required:true,sensitive:false}},state:#{fields:#{}},events:#{},slots:#{},parts:["root"]},render:Fn("render_Reader")});
+define_component(#{metadata:#{id:"tests/reader","export":"Reader",version:"0.1.8",runtime_api:#{min_inclusive: 3,max_exclusive: 4},dependencies:[],capabilities:#{}},schema:#{props:#{key:#{schema:#{type:"string"},required:true,sensitive:false},target:#{schema:#{type:"ref"},required:true,sensitive:false}},state:#{fields:#{}},events:#{},slots:#{},parts:["root"]},render:Fn("render_Reader")});
 fn read_text(ctx,target){let facts=ctx.element_bounds(target);text(if facts==(){"pending"}else{`${facts.layout.width}`}).accessibility_role("status")}
 fn render_Reader(ctx,props){read_text(ctx,props.target)}
-define_component(#{metadata:#{id:"tests/provider","export":"Provider",version:"0.1.8",runtime_api:#{min_inclusive:2,max_exclusive:3},dependencies:[],capabilities:#{}},schema:#{props:#{key:#{schema:#{type:"string"},required:true,sensitive:false}},state:#{fields:#{}},events:#{},slots:#{},parts:["root"]},render:Fn("render_Provider")});
+define_component(#{metadata:#{id:"tests/provider","export":"Provider",version:"0.1.8",runtime_api:#{min_inclusive: 3,max_exclusive: 4},dependencies:[],capabilities:#{}},schema:#{props:#{key:#{schema:#{type:"string"},required:true,sensitive:false}},state:#{fields:#{}},events:#{},slots:#{},parts:["root"]},render:Fn("render_Provider")});
 fn render_Provider(ctx,props){let target=element_ref("field");let producer=render_component("tests/producer",#{key:"producer",target:target});let reader=render_component("tests/reader",#{key:"reader",target:target});column([producer,reader])}
 fn view(ctx){render_component("tests/provider",#{key:"provider"})}
 "#;
@@ -300,7 +300,7 @@ fn view(ctx)"#,
         cx: &mut TestAppContext,
     ) {
         let source = r#"
-define_component(#{metadata:#{id:"tests/row_geometry","export":"GeometryRow",version:"0.1.8",runtime_api:#{min_inclusive:2,max_exclusive:3},dependencies:[],capabilities:#{}},schema:#{props:#{key:#{schema:#{type:"string"},required:true,sensitive:false}},state:#{fields:#{}},events:#{},slots:#{},parts:["root"]},render:Fn("render_GeometryRow")});
+define_component(#{metadata:#{id:"tests/row_geometry","export":"GeometryRow",version:"0.1.8",runtime_api:#{min_inclusive: 3,max_exclusive: 4},dependencies:[],capabilities:#{}},schema:#{props:#{key:#{schema:#{type:"string"},required:true,sensitive:false}},state:#{fields:#{}},events:#{},slots:#{},parts:["root"]},render:Fn("render_GeometryRow")});
 fn render_GeometryRow(ctx,props){let target=element_ref("self");let facts=ctx.element_bounds(target);text(if facts==(){"pending"}else{`${facts.layout.width}`}).with_key("self").with_ref(target).with_style(style().width(px(120)).height(px(24))).accessibility_role("status")}
 fn row(ctx,p){render_component("tests/row_geometry",#{key:p.key})}
 fn view(ctx){virtual_collection(#{key:"rows",label:"Rows",data:[#{key:"one"}],height:40,estimated_height:24,overdraw_pixels:0},Fn("row"))}

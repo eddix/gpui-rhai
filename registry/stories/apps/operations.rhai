@@ -21,7 +21,7 @@ import "charts/chart" as chart;
 
 define_component(#{
     metadata: #{ id: "stories/operations_workbench", "export": "OperationsWorkbench",
-        version: "0.1.7", runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
+        version: "0.1.7", runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/button", "components/badge", "components/command",
             "components/command_dialog", "components/dialog", "components/sheet",
             "components/input", "components/table", "components/pagination", "components/code_viewer",

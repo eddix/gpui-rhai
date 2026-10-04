@@ -158,7 +158,7 @@ mod tests {
                         id: ModuleId::parse("components/button").unwrap(),
                         export: "Button".to_owned(),
                         version: Version::new(0, 1, 0),
-                        runtime_api: RuntimeApiRange::new(2, 3),
+                        runtime_api: RuntimeApiRange::new(3, 4),
                         dependencies: std::collections::BTreeSet::default(),
                         capabilities: BTreeMap::default(),
                         assets: std::collections::BTreeSet::default(),
@@ -239,7 +239,7 @@ mod tests {
                     define_component(#{
                         metadata: #{
                             id: "components/button", "export": "Button", version: "0.1.0",
-                            runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
+                            runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
                             dependencies: [], capabilities: #{}
                         },
                         schema: #{ props: #{}, state: #{ fields: #{} }, events: #{},

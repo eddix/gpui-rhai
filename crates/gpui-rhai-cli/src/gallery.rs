@@ -270,6 +270,8 @@ fn bundled_module_source(id: &str) -> Option<&'static str> {
         .iter()
         .chain(BUNDLED_MOTION_SOURCES_BY_ID)
         .chain(BUNDLED_CHART_SOURCES_BY_ID)
+        .chain(gpui_rhai_registry::BUNDLED_LAYOUT_SOURCES_BY_ID)
+        .chain(gpui_rhai_registry::BUNDLED_PATTERN_SOURCES_BY_ID)
         .find_map(|(candidate, source)| (*candidate == id).then_some(*source))
 }
 

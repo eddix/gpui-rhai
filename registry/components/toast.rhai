@@ -3,7 +3,7 @@
   "id": "components/toast",
   "export": "Toast",
   "version": "0.1.6",
-  "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
+  "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
   "assets": ["icons/close.svg"]
@@ -17,7 +17,7 @@
 define_component(#{
     metadata: #{
         id: "components/toast", "export": "Toast", version: "0.1.6",
-        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 }, dependencies: [], capabilities: #{},
+        runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{},
         assets: ["icons/close.svg"],
     },
     schema: #{

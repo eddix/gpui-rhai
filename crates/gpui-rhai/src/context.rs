@@ -98,6 +98,8 @@ pub struct UiRuntimeState {
     pub actions: ActionRegistry,
     /// Key bindings declared to this view, used to display shortcuts.
     pub key_bindings: Vec<crate::KeyBindingSpec>,
+    /// Composition audit rules from the application profile.
+    pub audit_rules: crate::AuditRules,
     pub capabilities: CapabilityRegistry,
     pub tasks: TaskRegistry,
     pub subscriptions: SubscriptionRegistry,

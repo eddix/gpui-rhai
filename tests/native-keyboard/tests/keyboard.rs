@@ -1202,7 +1202,7 @@ fn element_bounds_self_heals_after_first_prepaint_and_resolves_event_keys(cx: &m
             r#"
                 define_component(#{
                     metadata: #{ id: "tests/geometry_probe", "export": "GeometryProbe",
-                        version: "0.1.0", runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
+                        version: "0.1.0", runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
                         dependencies: [], capabilities: #{} },
                     schema: #{ props: #{ key: #{ schema: #{ type: "string" }, required: true, sensitive: false } },
                         state: #{ fields: #{ event_measured: #{ schema: #{ type: "bool" },
@@ -1307,7 +1307,7 @@ fn node_prop_component_keeps_latest_ui_when_receiver_rerenders(cx: &mut TestAppC
                 r#"
                     define_component(#{
                         metadata: #{ id: "components/slot_stateful", "export": "SlotStateful",
-                            version: "0.1.0", runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
+                            version: "0.1.0", runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
                             dependencies: [], capabilities: #{} },
                         schema: #{ props: #{ key: #{ schema: #{ type: "string" }, required: true, sensitive: false } },
                             state: #{ fields: #{ value: #{ schema: #{ type: "string" },
@@ -1329,7 +1329,7 @@ fn node_prop_component_keeps_latest_ui_when_receiver_rerenders(cx: &mut TestAppC
                 r#"
                     define_component(#{
                         metadata: #{ id: "components/slot_receiver", "export": "SlotReceiver",
-                            version: "0.1.0", runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
+                            version: "0.1.0", runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
                             dependencies: [], capabilities: #{} },
                         schema: #{ props: #{
                                 key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
@@ -1444,14 +1444,14 @@ fn prepared_failure_view() -> gpui_rhai::PreparedScriptView {
   "id": "components/broken_panel",
   "export": "BrokenPanel",
   "version": "0.1.3",
-  "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
+  "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {}
 }
 */
                 define_component(#{
                     metadata: #{ id: "components/broken_panel", "export": "BrokenPanel",
-                        version: "0.1.3", runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
+                        version: "0.1.3", runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
                         dependencies: [], capabilities: #{} },
                     schema: #{ props: #{
                         broken: #{ schema: #{ type: "bool" }, required: true, sensitive: false },
@@ -2115,7 +2115,7 @@ fn async_workers_wake_the_view_without_input_or_manual_poll(cx: &mut TestAppCont
                 import "helpers/state" as state;
                 define_component(#{
                     metadata: #{ id: "tests/ticker", "export": "Ticker", version: "0.1.0",
-                        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
+                        runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
                         dependencies: [], capabilities: #{ "app.ticker": "*" } },
                     schema: #{
                         props: #{ key: #{ schema: #{ type: "string" }, required: true, sensitive: false } },
@@ -2306,7 +2306,7 @@ fn effect_restart_still_delivers_async_task_results(cx: &mut TestAppContext) {
                 r#"
                 define_component(#{
                     metadata: #{ id: "widgets/loader", "export": "Loader", version: "0.1.0",
-                        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
+                        runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
                         dependencies: [], capabilities: #{ "app.echo": "*" } },
                     schema: #{
                         props: #{ key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
@@ -2469,7 +2469,7 @@ fn effect_start_state_write_restarts_sibling_effect_and_delivers(cx: &mut TestAp
                 r#"
                 define_component(#{
                     metadata: #{ id: "widgets/nested", "export": "Nested", version: "0.1.0",
-                        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
+                        runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
                         dependencies: [], capabilities: #{ "app.echo": "*" } },
                     schema: #{
                         props: #{ key: #{ schema: #{ type: "string" }, required: true, sensitive: false } },
@@ -2635,7 +2635,7 @@ fn subscription_callback_state_write_restarts_effect_and_delivers(cx: &mut TestA
                 r#"
                 define_component(#{
                     metadata: #{ id: "widgets/watcher", "export": "Watcher", version: "0.1.0",
-                        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
+                        runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
                         dependencies: [], capabilities: #{ "app.echo": "*", "app.push": "*" } },
                     schema: #{
                         props: #{ key: #{ schema: #{ type: "string" }, required: true, sensitive: false } },
@@ -3748,7 +3748,7 @@ fn inherited_motion_group_survives_incremental_component_update(cx: &mut TestApp
             r#"
                 define_component(#{
                     metadata: #{ id: "components/group_probe", "export": "GroupProbe",
-                        version: "0.1.0", runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
+                        version: "0.1.0", runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
                         dependencies: [], capabilities: #{} },
                     schema: #{ props: #{ key: #{ schema: #{ type: "string" },
                         required: true, sensitive: false } }, state: #{ fields: #{ count: #{

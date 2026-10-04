@@ -3,7 +3,7 @@
   "id": "components/combobox",
   "export": "Combobox",
   "version": "0.1.6",
-  "runtime_api": { "min_inclusive": 2, "max_exclusive": 3 },
+  "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/input"],
   "capabilities": {},
   "assets": ["icons/check.svg", "icons/close.svg", "icons/chevron_down.svg", "icons/chevron_up.svg"]
@@ -19,7 +19,7 @@ import "components/input" as input;
 
 define_component(#{
     metadata: #{ id: "components/combobox", "export": "Combobox", version: "0.1.6",
-        runtime_api: #{ min_inclusive: 2, max_exclusive: 3 },
+        runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/input"], capabilities: #{},
         assets: ["icons/check.svg", "icons/close.svg", "icons/chevron_down.svg", "icons/chevron_up.svg"] },
     schema: #{

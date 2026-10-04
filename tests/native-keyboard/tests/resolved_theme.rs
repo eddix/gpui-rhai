@@ -192,7 +192,7 @@ fn fixed_dark_and_host_token_overrides_preserve_resolved_identity(cx: &mut TestA
 }
 
 const EFFECT: &str = r#"
-define_component(#{metadata:#{id:"tests/theme_probe","export":"ThemeProbe",version:"0.1.8",runtime_api:#{min_inclusive:2,max_exclusive:3},dependencies:[],capabilities:#{}},
+define_component(#{metadata:#{id:"tests/theme_probe","export":"ThemeProbe",version:"0.1.8",runtime_api:#{min_inclusive: 3,max_exclusive: 4},dependencies:[],capabilities:#{}},
 schema:#{props:#{key:#{schema:#{type:"string"},required:true,sensitive:false}},state:#{fields:#{starts:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}},seen:#{schema:#{type:"string"},"default":#{type:"string",value:"none"}}}},events:#{},slots:#{},parts:[],effects:["observe"]},render:Fn("probe")});
 fn start(ctx,deps){let theme=if deps==(){ctx.theme_variant()}else{deps};ctx.set_state("starts",ctx.get_state("starts")+1);ctx.set_state("seen",theme.mode);}
 fn stop(ctx,deps){}
@@ -248,7 +248,7 @@ fn effect_body_only_does_not_restart_but_explicit_render_deps_do(cx: &mut TestAp
 #[gpui::test]
 fn window_and_local_setters_keep_sibling_scopes_separate(cx: &mut TestAppContext) {
     let source = r#"
-define_component(#{metadata:#{id:"tests/panel","export":"Panel",version:"0.1.8",runtime_api:#{min_inclusive:2,max_exclusive:3},dependencies:[],capabilities:#{}},schema:#{props:#{key:#{schema:#{type:"string"},required:true,sensitive:false}},state:#{fields:#{}},events:#{},slots:#{},parts:[]},render:Fn("panel")});
+define_component(#{metadata:#{id:"tests/panel","export":"Panel",version:"0.1.8",runtime_api:#{min_inclusive: 3,max_exclusive: 4},dependencies:[],capabilities:#{}},schema:#{props:#{key:#{schema:#{type:"string"},required:true,sensitive:false}},state:#{fields:#{}},events:#{},slots:#{},parts:[]},render:Fn("panel")});
 fn local_light(ctx,payload){ctx.set_local_theme("Default","Light");}
 fn local_dark(ctx,payload){ctx.set_local_theme("Default","Dark");}
 fn window_light(ctx,payload){ctx.set_window_theme("Default","Light");}
@@ -343,7 +343,7 @@ impl ScriptViewExtension for Capture {
 const CHILD: &str = r#"
 fn init(ctx){ctx.call_capability("app.capture","record",`init:${ctx.window_id()}:${ctx.theme_variant().mode}`);if ctx.window_id()=="child"&&ctx.call_capability("app.capture","fail_next",()){ctx.open_window("leaked","Leaked",400,300,false);throw "child-startup-failure";}}
 fn open(ctx,payload){ctx.open_window("child","Child",400,300,false);}
-define_component(#{metadata:#{id:"tests/label","export":"Label",version:"0.1.8",runtime_api:#{min_inclusive:2,max_exclusive:3},dependencies:[],capabilities:#{"app.capture":"*"}},schema:#{props:#{key:#{schema:#{type:"string"},required:true,sensitive:false}},state:#{fields:#{}},events:#{},slots:#{},parts:[],effects:["label"]},render:Fn("label")});
+define_component(#{metadata:#{id:"tests/label","export":"Label",version:"0.1.8",runtime_api:#{min_inclusive: 3,max_exclusive: 4},dependencies:[],capabilities:#{"app.capture":"*"}},schema:#{props:#{key:#{schema:#{type:"string"},required:true,sensitive:false}},state:#{fields:#{}},events:#{},slots:#{},parts:[],effects:["label"]},render:Fn("label")});
 fn start_label(ctx,deps){ctx.call_capability("app.capture","record",`view:${ctx.window_id()}:${deps.mode}`);}
 fn stop_label(ctx,deps){}
 fn label(ctx,props){let theme=ctx.theme_variant();effect("label",theme,Fn("start_label"),Fn("stop_label"));text(theme.mode).accessibility_role("status")}
