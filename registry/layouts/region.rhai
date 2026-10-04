@@ -8,7 +8,7 @@
   "capabilities": {},
   "tokens": [
     "space.group", "space.related", "metrics.inset", "metrics.control", "metrics.statusbar",
-    "spacing.md", "border", "text_primary", "text_muted", "typography.title",
+    "border", "text_primary", "text_muted", "typography.title",
     "typography.caption"
   ],
   "environment": ["density"]
@@ -35,7 +35,7 @@ define_component(#{
         dependencies: [], capabilities: #{},
         tokens: [
             "space.group", "space.related", "metrics.inset", "metrics.control",
-            "metrics.statusbar", "spacing.md", "border", "text_primary", "text_muted",
+            "metrics.statusbar", "border", "text_primary", "text_muted",
             "typography.title", "typography.caption"
         ],
         environment: ["density"],
@@ -78,7 +78,8 @@ fn header_style() {
     header.gap(theme_length("space.group")).min_height(theme_length("metrics.control"))
 }
 fn footer_style() {
-    let footer = style().flex_row().items_center().gap(theme_spacing("md"));
+    // Footer fields are groups of related items, so they sit `group` apart.
+    let footer = style().flex_row().items_center().gap(theme_length("space.group"));
     footer = footer.min_height(theme_length("metrics.statusbar"));
     footer.border_top(px(1)).border_color(theme_color("border"))
         .typography("caption").text_color(theme_color("text_muted"))

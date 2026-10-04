@@ -45,12 +45,13 @@ define_component(#{
 });
 
 fn StatusBar(props) { render_component("components/status_bar", props) }
+// Start and end share the free width; the end keeps its fields, the start truncates.
 fn status_region(ctx, part, children, alignment) {
-    let base = style().width(relative(0.333333)).min_width(px(0))
-            .height(relative(1.0)).items_center().gap(theme_spacing("md")).overflow_hidden()
-        .whitespace_nowrap().text_ellipsis();
-    if alignment == "center" { base = base.justify_center(); }
-    else if alignment == "end" { base = base.justify_end(); }
+    let base = style().height(relative(1.0)).items_center().gap(theme_spacing("md"))
+        .whitespace_nowrap();
+    base = if alignment == "center" { base.justify_center().flex_shrink(false) }
+        else if alignment == "end" { base.justify_end().flex_grow().flex_basis(relative(0)) }
+        else { base.flex_grow().flex_basis(relative(0)).min_width(px(0)).overflow_hidden().text_ellipsis() };
     row(children).with_style(ctx.component_style(part, base))
 }
 fn render_StatusBar(ctx, props) {

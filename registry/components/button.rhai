@@ -202,13 +202,16 @@ fn render_Button(ctx, props) {
         .text_color(foreground)
         .typography("control")
         .font_weight(600);
-    let disabled_frame = if variant == "outline" { theme_color("border") }
-        else { theme_color("surface_hover") };
+    // Disabled keeps the variant's silhouette: blocks turn into a neutral block, an
+    // outline keeps its frame, a ghost stays bare; only the color goes.
+    let bare = variant == "ghost" || variant == "outline";
+    let disabled_fill = if bare { rgba(0x00000000) } else { theme_color("surface_hover") };
+    let disabled_frame = if variant == "outline" { theme_color("border") } else { disabled_fill };
     base = base
         .focus(style().border_color(theme_color("focus_ring")))
         .active(style().opacity(0.86))
         .disabled(style()
-            .background(theme_color("surface_hover"))
+            .background(disabled_fill)
             .border_color(disabled_frame)
             .text_color(theme_color("disabled")));
     if hoverable && !disabled && !loading {

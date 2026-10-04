@@ -2875,12 +2875,14 @@ fn official_table_is_public_data_backed_rhai_composition() {
     else {
         panic!("table row must remain a public row composition");
     };
-    // A selected row carries the selection tint and the indicator bar after its cells.
+    // A selected row carries the selection tint, then the indicator bar and the keyboard
+    // cursor frame after its cells.
     assert!(matches!(
         row.style().base.background.as_ref(),
         Some(gpui_rhai::ColorValue::Token(token)) if token == "table.selection"
     ));
-    assert_eq!(row_children.len(), 5);
+    assert_eq!(row_children.len(), 6);
+    assert!(row_children[5].style().group_focus.is_some());
     assert_eq!(
         row_children[4].style().base.background,
         Some(gpui_rhai::ColorValue::Token("accent".to_owned()))

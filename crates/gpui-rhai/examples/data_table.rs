@@ -288,6 +288,18 @@ fn data_table_assets() -> Vec<(String, AssetData)> {
             include_bytes!("../../../registry/assets/icons/search.svg").as_slice(),
         ),
         (
+            "help",
+            include_bytes!("../../../registry/assets/icons/help.svg").as_slice(),
+        ),
+        (
+            "info",
+            include_bytes!("../../../registry/assets/icons/info.svg").as_slice(),
+        ),
+        (
+            "warning",
+            include_bytes!("../../../registry/assets/icons/warning.svg").as_slice(),
+        ),
+        (
             "chevron_left",
             include_bytes!("../../../registry/assets/icons/chevron_left.svg").as_slice(),
         ),

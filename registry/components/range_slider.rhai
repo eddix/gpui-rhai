@@ -84,7 +84,7 @@ fn render_RangeSlider(ctx, props) {
         on_change:if "on_change" in props && props.on_change != (){Fn("range_slider_changed")}else{()}
     }).with_key(`${props.key}-range`)
         .with_style(ctx.component_style("control",style()
-            .width(if horizontal{px(240)}else{theme_length("metrics.control")})
+            .width(if horizontal{relative(1.0)}else{theme_length("metrics.control")})
             .height(if horizontal{theme_length("metrics.control")}else{px(180)})))
         .disabled(props.disabled).accessibility_role("group").accessibility_label(props.label)
         .accessibility_value(`${props.values.low} – ${props.values.high}`)
@@ -96,8 +96,11 @@ fn render_RangeSlider(ctx, props) {
             ctx.component_style("value",style().typography("body").font_feature("tnum", 1)
                 .text_color(theme_color("text_muted")))));
     }
+    // Like Slider: the label and value span exactly the 240-wide track.
+    let root = style().gap(theme_spacing("xs"));
+    root = if horizontal { root.width(px(240)) } else { root.items_start() };
     column([
         row(header).with_style(ctx.component_style("header",style().items_center().justify_between().gap(theme_spacing("sm")))),
         control
-    ]).with_key(props.key).with_style(ctx.component_style("root",style().gap(theme_spacing("xs"))))
+    ]).with_key(props.key).with_style(ctx.component_style("root",root))
 }

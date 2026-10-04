@@ -7,11 +7,7 @@
   "dependencies": ["components/badge"],
   "capabilities": {},
   "assets": ["icons/disclosure_down.svg", "icons/chevron_right.svg", "icons/sort_ascending.svg", "icons/sort_descending.svg"],
-  "tokens": [
-    "surface", "surface_raised", "surface_hover", "border", "table.selection", "accent",
-    "selection", "text_primary", "text_muted", "metrics.row", "metrics.inset", "metrics.icon",
-    "spacing.xs", "spacing.sm", "spacing.md", "typography.body", "typography.label"
-  ],
+  "tokens": ["surface", "surface_raised", "surface_hover", "border", "table.selection", "accent", "selection", "text_primary", "text_muted", "metrics.row", "metrics.inset", "metrics.icon", "spacing.xs", "spacing.sm", "spacing.md", "typography.body", "typography.label", "focus_ring"],
   "environment": ["density"]
 }
 */
@@ -29,12 +25,7 @@ define_component(#{
     metadata: #{ id: "components/table", "export": "Table", version: "0.2.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/badge"], capabilities: #{},
-        tokens: [
-            "surface", "surface_raised", "surface_hover", "border", "table.selection", "accent",
-            "selection", "text_primary", "text_muted", "metrics.row", "metrics.inset",
-            "metrics.icon", "spacing.xs", "spacing.sm", "spacing.md", "typography.body",
-            "typography.label"
-        ],
+        tokens: ["surface", "surface_raised", "surface_hover", "border", "table.selection", "accent", "selection", "text_primary", "text_muted", "metrics.row", "metrics.inset", "metrics.icon", "spacing.xs", "spacing.sm", "spacing.md", "typography.body", "typography.label", "focus_ring"],
         environment: ["density"],
         assets: ["icons/disclosure_down.svg", "icons/chevron_right.svg", "icons/sort_ascending.svg", "icons/sort_descending.svg"] },
     schema: #{
@@ -145,7 +136,7 @@ define_component(#{
             loading_content: #{ required: false, multiple: false },
             empty: #{ required: false, multiple: false },
         },
-        parts: ["root", "header", "header_cell", "resize_handle", "body", "group_header", "indicator_bar",
+        parts: ["root", "header", "header_cell", "resize_handle", "body", "group_header", "indicator_bar", "cursor",
             "group_indicator", "group_label", "group_count", "row", "row_selected",
             "loading", "empty"],
     },
@@ -199,6 +190,9 @@ fn row_action(ctx, payload) {
     if payload.selection != () { ctx.emit("selection_change", payload.selection); }
 }
 fn group_action(ctx, group) { ctx.emit("group_toggle", group); }
+// Keyboard row navigation moves the selection and keeps the row revealed.
+fn keyboard_select(ctx, key) { ctx.emit("selection_change", [key]); handled() }
+fn keyboard_activate(ctx, key) { ctx.emit("row_click", key); handled() }
 fn column_resize_action(ctx, payload) { ctx.emit("column_resize", payload); }
 
 fn intrinsic_column_measure(key, text_value, signal, extra_width) {
@@ -261,15 +255,22 @@ fn render_table_row(resize_signals, numeric, total_rows, ctx, payload) {
     let cells = [];
     let cell_index = 1;
     for cell in item.cells {
-        let content = [text(cell.text).with_key(`${cell.key}-text`)
-            .with_style(style().min_width(px(0)).whitespace_nowrap().text_ellipsis())];
-        let cell_label = cell.text;
+        // A column with no text of its own (a status column) shows only its adornments.
+        let content = [];
+        let labels = [];
+        if cell.text != "" || cell.adornments.len == 0 {
+            content.push(text(cell.text).with_key(`${cell.key}-text`)
+                .with_style(style().min_width(px(0)).whitespace_nowrap().text_ellipsis()));
+            labels.push(cell.text);
+        }
         for index in 0..cell.adornments.len {
             let adornment = cell.adornments[index];
             content.push(badge::Badge(#{ text: adornment.text, variant: adornment.variant,
                 dot: adornment.dot, size: "sm" }).with_key(`${cell.key}-adornment-${index}`));
-            cell_label += `, ${adornment.text}`;
+            labels.push(adornment.text);
         }
+        let cell_label = labels.reduce(|label, part| if label == () { part } else { `${label}, ${part}` });
+        if cell_label == () { cell_label = ""; }
         if "resize_signal_key" in cell {
             content.push(intrinsic_column_measure(
                 `${payload.key}-${cell.key}-measure`, cell.text,
@@ -286,11 +287,16 @@ fn render_table_row(resize_signals, numeric, total_rows, ctx, payload) {
         cells.push(node);
         cell_index += 1;
     }
-    // Selection is the table selection tint plus the 2px indicator bar on the row start.
+    // Selection is the table selection tint plus the 2px indicator bar on the row start;
+    // while the table has keyboard focus the selected row also shows the focus frame.
     if item.selected {
         cells.push(row([]).with_style(ctx.component_style("indicator_bar", style()
             .absolute().inset_start(px(0)).top(px(0)).bottom(px(0))
             .width(px(2)).background(theme_color("accent")))));
+        cells.push(row([]).with_style(ctx.component_style("cursor", style()
+            .absolute().left(px(0)).right(px(0)).top(px(0)).bottom(px(0))
+            .border(px(2)).border_color(rgba(0x00000000))
+            .group_focus(style().border_color(theme_color("focus_ring"))))));
     }
     let base = style().width(relative(1.0))
         .height(theme_length("metrics.row")).items_center()
@@ -529,9 +535,24 @@ fn table_shell(ctx,props,columns,signals,header,body,row_count) {
         style().flex_col().flex_grow().min_width(px(0)).min_height(px(0)).overflow_x_scroll()
     }else{style().flex_col().min_width(px(0)).overflow_x_scroll()};
     box([header,body]).with_key(props.key).with_table_track(columns,signals)
-        .with_style(ctx.component_style("root",root_style))
+        .with_style(ctx.component_style("root",root_style.focus(style())))
         .accessibility_role("table").accessibility_label(props.label)
         .accessibility_row_count(row_count).accessibility_column_count(columns.len)
+}
+
+// One tab stop for the rows: arrows move the selection, Enter activates the row.
+fn with_row_keys(table, keys, selected) {
+    if keys.len == 0 { return table; }
+    let current = -1;
+    for index in 0..keys.len { if current < 0 && keys[index] in selected { current = index; } }
+    let previous = if current <= 0 { 0 } else { current - 1 };
+    let next = if current < 0 { 0 } else if current + 1 < keys.len { current + 1 } else { current };
+    let node = table.tab_stop(true)
+        .on_key_value("up", Fn("keyboard_select"), keys[previous])
+        .on_key_value("down", Fn("keyboard_select"), keys[next])
+        .on_key_value("home", Fn("keyboard_select"), keys[0])
+        .on_key_value("end", Fn("keyboard_select"), keys[keys.len - 1]);
+    if current >= 0 { node.on_key_value("enter", Fn("keyboard_activate"), keys[current]) } else { node }
 }
 
 fn table_state_body(ctx,props,part,content) {
@@ -667,6 +688,12 @@ fn render_Table(ctx, props) {
         overdraw_pixels: row_height * 4.0,
         alignment: "top", follow_tail: false
     };
+    // Array rows support keyboard navigation; the selected row stays revealed.
+    let row_keys = [];
+    if !native_data && selection_mode != "none" {
+        for item in data { if item.kind == "row" { row_keys.push(item.key); } }
+        for key in row_keys { if key in selected { collection.reveal_key = key; break; } }
+    }
     if !native_data || !sticky_groups { collection.sticky_headers = if sticky_groups { sticky_headers } else { [] }; }
     if fill_height { collection.fill_height = true; }
     else { collection.height = props.height; }
@@ -676,5 +703,5 @@ fn render_Table(ctx, props) {
     let body = virtual_collection(collection,
         Fn("render_table_row").curry(model.resize_signals).curry(numeric_keys(columns)).curry(data.len))
         .with_style(ctx.component_style("body", body_style));
-    table_shell(ctx,props,columns,model.signals,header,body,data.len+1)
+    with_row_keys(table_shell(ctx,props,columns,model.signals,header,body,data.len+1), row_keys, selected)
 }

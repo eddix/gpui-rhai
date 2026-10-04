@@ -1279,6 +1279,27 @@ mod tests {
         assert!(problems.is_empty(), "{}", problems.join("\n"));
     }
 
+    /// Declarative assets are preloaded only when a module declares them, so an
+    /// undeclared bundled asset cannot be drawn with `asset(...)` at all.
+    #[test]
+    fn every_bundled_asset_is_declared_by_a_module() {
+        let mut declared = BTreeSet::new();
+        for (_, source) in BUNDLED_COMPONENT_SOURCES_BY_ID
+            .iter()
+            .chain(BUNDLED_LAYOUT_SOURCES_BY_ID)
+            .chain(BUNDLED_PATTERN_SOURCES_BY_ID)
+        {
+            let (header, _) = source.split_once("*/").unwrap();
+            declared.extend(declared_list(header, "\"assets\":"));
+        }
+        let orphans = BUNDLED_ASSET_SOURCES
+            .iter()
+            .map(|(path, _)| (*path).to_owned())
+            .filter(|path| !declared.contains(path))
+            .collect::<Vec<_>>();
+        assert!(orphans.is_empty(), "undeclared bundled assets: {orphans:?}");
+    }
+
     #[test]
     fn release_snapshot_has_the_expected_catalog_size() {
         assert_eq!(BUNDLED_COMPONENT_SOURCES.len(), 62);

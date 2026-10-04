@@ -8,7 +8,7 @@
   "capabilities": {},
   "tokens": [
     "surface_raised", "border", "text_primary", "text_muted", "metrics.titlebar",
-    "metrics.inset", "space.related", "typography.body", "typography.caption"
+    "metrics.inset", "space.related", "typography.body"
   ],
   "environment": ["density"]
 }
@@ -24,7 +24,7 @@ define_component(#{
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{},
         tokens: [
             "surface_raised", "border", "text_primary", "text_muted", "metrics.titlebar",
-            "metrics.inset", "space.related", "typography.body", "typography.caption"
+            "metrics.inset", "space.related", "typography.body"
         ],
         environment: ["density"] },
     schema: #{
@@ -66,25 +66,32 @@ fn title_bar_content(ctx, part, value, typography, muted) {
     }
 }
 fn render_TitleBar(ctx, props) {
-    let title_children = [title_bar_content(ctx, "title", props.title, "body", false)];
+    // Title and subtitle share one line at one size, told apart by weight and color: a
+    // second line does not fit metrics.titlebar, and the subtitle truncates first.
+    let title_children = [title_bar_content(ctx, "title", props.title, "body", false)
+        .with_style(style().flex_shrink(false))];
     if "subtitle" in props && props.subtitle != () {
-        title_children.push(title_bar_content(ctx, "subtitle", props.subtitle, "caption", true));
+        title_children.push(title_bar_content(ctx, "subtitle", props.subtitle, "body", true)
+            .with_style(style().min_width(px(0))));
     }
     let start_children = if "start" in props { props.start } else { [] };
-    start_children.push(column(title_children).with_style(style()
-        .flex_grow().min_width(px(0)).gap(px(0)).overflow_hidden()));
+    start_children.push(row(title_children).with_style(style()
+        .flex_grow().min_width(px(0)).items_center().gap(theme_length("space.related"))
+        .overflow_hidden()));
     let inset = if "inset_start" in props { props.inset_start } else { 0 };
+    // Start and end share the free width equally, so the center stays centered; the end
+    // never shrinks below its controls, and the title truncates first.
     let start = row(start_children).with_style(ctx.component_style("start", style()
-        .width(relative(0.333333)).min_width(px(0)).height(relative(1.0))
+        .flex_grow().flex_basis(relative(0)).min_width(px(0)).height(relative(1.0))
         .padding_start(px(inset)).items_center().gap(theme_length("space.related")).overflow_hidden()));
     let center = row(if "center" in props { props.center } else { [] })
         .with_style(ctx.component_style("center", style()
-            .width(relative(0.333333)).min_width(px(0)).height(relative(1.0))
+            .flex_shrink(false).height(relative(1.0))
         .items_center().justify_center().gap(theme_length("space.related")).overflow_hidden()));
     let end = row(if "end" in props { props.end } else { [] })
         .with_style(ctx.component_style("end", style()
-            .width(relative(0.333333)).min_width(px(0)).height(relative(1.0))
-        .items_center().justify_end().gap(theme_length("space.related")).overflow_hidden()));
+            .flex_grow().flex_basis(relative(0)).height(relative(1.0))
+        .items_center().justify_end().gap(theme_length("space.related"))));
     // Window chrome: a raised block, metrics.titlebar high, content at metrics.inset.
     row([start, center, end])
         .with_style(ctx.component_style("root", style()

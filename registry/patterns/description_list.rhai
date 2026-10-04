@@ -7,8 +7,8 @@
   "dependencies": [],
   "capabilities": {},
   "tokens": [
-    "metrics.row", "metrics.label_column", "space.related", "text_primary", "text_muted",
-    "typography.body"
+    "metrics.row", "metrics.label_column", "space.related", "space.unit", "space.group",
+    "text_primary", "text_muted", "typography.body"
   ],
   "environment": ["density"]
 }
@@ -30,8 +30,8 @@ define_component(#{
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: [], capabilities: #{},
         tokens: [
-            "metrics.row", "metrics.label_column", "space.related", "text_primary", "text_muted",
-            "typography.body"
+            "metrics.row", "metrics.label_column", "space.related", "space.unit", "space.group",
+            "text_primary", "text_muted", "typography.body"
         ],
         environment: ["density"],
     },
@@ -77,12 +77,17 @@ fn render_DescriptionList(ctx, props) {
             text(item.value).with_style(ctx.component_style("value", value_style))
         } else { item.value.with_style(ctx.component_style("value", value_style)) };
         let pair = if stacked { column([term, value]) } else { row([term, value]) };
-        let item_style = style().min_height(theme_length("metrics.row"));
-        item_style = if stacked { item_style.justify_center() }
-            else { item_style.items_center().gap(theme_length("space.related")) };
+        // Columns keep the metrics.row rhythm; stacked pairs group by proximity instead:
+        // a term sits a unit above its value, and each two-line pair is a group, so
+        // pairs stand a group step apart (a related step is too close to read).
+        let item_style = if stacked { style().gap(theme_length("space.unit")) }
+            else { style().min_height(theme_length("metrics.row")).items_center()
+                .gap(theme_length("space.related")) };
         rows.push(pair.with_style(ctx.component_style("item", item_style))
             .accessibility_role("group").accessibility_label(item.label));
     }
-    column(rows).with_style(ctx.component_style("root", style().flex_col().typography("body")))
+    let root = style().flex_col().typography("body");
+    if stacked { root = root.gap(theme_length("space.group")); }
+    column(rows).with_style(ctx.component_style("root", root))
         .accessibility_role("list").accessibility_label(props.label)
 }

@@ -121,9 +121,13 @@ fn form_field(ctx, form_key, index, field, vertical, label_width) {
     let control_cell = column(stack).with_style(style().flex_col().flex_grow().min_width(px(0))
         .gap(theme_spacing("xxs")));
     let pair = if vertical { column([label_cell, control_cell]) } else { row([label_cell, control_cell]) };
-    pair.with_style(ctx.component_style("field", style()
+    // A horizontal field row is a grid: the label column is a fixed track, so its gap
+    // is not a proximity relationship for the control's own layout.
+    let row_node = pair.with_style(ctx.component_style("field", style()
         .gap(if vertical { theme_length("space.unit") } else { theme_length("space.related") })
-        .items_start()))
+        .items_start()));
+    if !vertical { row_node = row_node.audit_allow(["spacing-not-nested"]); }
+    row_node
         .accessibility_role("group").accessibility_label(field.label)
         .accessibility_invalid(error != ())
 }

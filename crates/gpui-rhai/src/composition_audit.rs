@@ -127,6 +127,7 @@ impl std::fmt::Display for AuditFinding {
 
 const CONTROL_ROLES: &[&str] = &[
     "button",
+    "tab",
     "text_field",
     "textbox",
     "searchbox",
@@ -160,6 +161,9 @@ struct Scope {
     background: Rgba8,
     font_size: Option<f64>,
     font_weight: u16,
+    /// Text set in the label voice (`typography("label")`): metadata such as key
+    /// legends and facets, designed to sit beside body text.
+    label_voice: bool,
     /// Gaps of the nearest enclosing rows and columns with at least two
     /// children. Proximity only competes along one axis.
     enclosing_row_gap: Option<f64>,
@@ -204,6 +208,7 @@ pub(crate) fn audit<C: ColorResolver>(inputs: &AuditInputs<'_, C>) -> Vec<AuditF
         background,
         font_size: None,
         font_weight: 400,
+        label_voice: false,
         enclosing_row_gap: None,
         enclosing_column_gap: None,
         inside_control: false,
@@ -332,7 +337,9 @@ impl<C: ColorResolver> Walker<'_, '_, C> {
 
         match node.kind() {
             UiNodeKind::Text { .. } | UiNodeKind::RichText { .. } => {
-                summary.text_size = scope.font_size;
+                if !scope.label_voice {
+                    summary.text_size = scope.font_size;
+                }
                 summary.text_start = bounds.map(|bounds| bounds.x);
                 self.check_contrast(&scope, id, path);
             }
@@ -345,7 +352,9 @@ impl<C: ColorResolver> Walker<'_, '_, C> {
                 let gap = self.pixels(style.gap, &scope.environment);
                 // Distributed rows treat the gap as a floor, not a relationship.
                 let distributed = matches!(style.justify, Some(Justify::Between | Justify::Around));
+                // A control's internal layout is the component's business.
                 let counted = !scope.inside_control
+                    && !is_control
                     && !distributed
                     && children.len() >= 2
                     && gap.is_some_and(|gap| gap > 0.0);
@@ -368,7 +377,12 @@ impl<C: ColorResolver> Walker<'_, '_, C> {
                 }
                 // A heading leads its content: the heading gap is a typographic
                 // relationship, so the content keeps the outer gap as its limit.
-                let sets_limit = counted && !leads_with_heading(children);
+                // A container that opts out of the nesting rule (a grid, such as a
+                // label column) neither answers to it nor imposes its gap below.
+                let opted_out = self
+                    .allowed
+                    .contains(&(path.to_owned(), AuditRule::SpacingNotNested));
+                let sets_limit = counted && !opted_out && !leads_with_heading(children);
                 let mut child_scope = Scope {
                     inside_control: scope.inside_control || is_control,
                     ..scope
@@ -392,7 +406,8 @@ impl<C: ColorResolver> Walker<'_, '_, C> {
                     })
                     .collect::<Vec<_>>();
                 if !scope.inside_control && !is_control {
-                    self.check_container(direction, &summaries, id, path);
+                    let heading_led = leads_with_heading(children);
+                    self.check_container(direction, &summaries, heading_led, id, path);
                 }
                 inherit_first(&mut summary, &summaries, role.as_deref());
             }
@@ -401,17 +416,42 @@ impl<C: ColorResolver> Walker<'_, '_, C> {
             } => {
                 let trigger_id = child_link(self.inputs.tree, id, "trigger", 0);
                 let trigger = self.visit(trigger, trigger_id, scope, &format!("{path}/trigger"));
+                // Overlay content floats in its own layer: no spacing relationship
+                // with the place its trigger sits in.
                 let content_id = child_link(self.inputs.tree, id, "content", 0);
-                self.visit(content, content_id, scope, &format!("{path}/content"));
+                let layer = Scope {
+                    enclosing_row_gap: None,
+                    enclosing_column_gap: None,
+                    ..scope
+                };
+                self.visit(content, content_id, layer, &format!("{path}/content"));
                 inherit_first(&mut summary, &[trigger], role.as_deref());
             }
             _ => {}
         }
-        // Controls and markers align by their own edge; their inner padding is
-        // the component's business.
-        if role
-            .as_deref()
-            .is_some_and(|role| CONTROL_ROLES.contains(&role) || MARKER_ROLES.contains(&role))
+        // Controls, markers and any filled or framed box align by their own edge;
+        // their inner padding is the component's business.
+        let painted = style
+            .background
+            .as_ref()
+            .and_then(|color| self.inputs.theme.resolve(color))
+            .is_some_and(|color| alpha_of(color) > 0.0);
+        let framed = [
+            style.border_widths.top,
+            style.border_widths.right,
+            style.border_widths.bottom,
+            style.border_widths.left,
+        ]
+        .into_iter()
+        .any(|width| {
+            self.pixels(width, &scope.environment)
+                .is_some_and(|width| width > 0.0)
+        });
+        if painted
+            || framed
+            || role
+                .as_deref()
+                .is_some_and(|role| CONTROL_ROLES.contains(&role) || MARKER_ROLES.contains(&role))
         {
             summary.text_start = bounds.map(|bounds| bounds.x).or(summary.text_start);
         }
@@ -445,6 +485,9 @@ impl<C: ColorResolver> Walker<'_, '_, C> {
         id: Option<NodeId>,
         path: &str,
     ) {
+        if let Some(name) = style.typography.as_deref() {
+            scope.label_voice = name == "label";
+        }
         let role = style.typography.as_deref().and_then(|role| {
             self.inputs
                 .theme
@@ -517,6 +560,7 @@ impl<C: ColorResolver> Walker<'_, '_, C> {
         &mut self,
         direction: FlexDirection,
         children: &[NodeSummary],
+        heading_led: bool,
         id: Option<NodeId>,
         path: &str,
     ) {
@@ -538,18 +582,23 @@ impl<C: ColorResolver> Walker<'_, '_, C> {
                         format!("controls in one row range from {min}px to {max}px high"),
                     );
                 }
+                // Markers and controls carry their own type scale (controls are
+                // held to one height by row-height-mismatch instead).
                 let sizes = children
                     .iter()
                     .filter(|child| {
-                        !child
-                            .role
-                            .as_deref()
-                            .is_some_and(|role| MARKER_ROLES.contains(&role))
+                        child.control_height.is_none()
+                            && !child
+                                .role
+                                .as_deref()
+                                .is_some_and(|role| MARKER_ROLES.contains(&role))
                     })
                     .filter_map(|child| child.text_size)
                     .map(centi_pixels)
                     .collect::<BTreeSet<_>>();
-                if sizes.len() > 1 {
+                // A row led by a heading is a header: the title and its actions
+                // differ in size by design.
+                if sizes.len() > 1 && !heading_led {
                     let sizes = sizes
                         .iter()
                         .map(|size| format!("{}px", f64::from(*size) / 100.0))

@@ -5240,9 +5240,18 @@ fn apply_flex_alignment(
     }
     if let Some(justify) = style.justify {
         element = match justify {
-            Justify::Start => element.justify_start(),
+            // Start and end follow the flex direction, which RTL rows reverse.
+            // GPUI's `justify_start`/`justify_end` are the writing-mode `start`
+            // and `end`, which stay physical left/right under `row-reverse`.
+            Justify::Start => {
+                element.style().justify_content = Some(gpui::AlignContent::FlexStart);
+                element
+            }
             Justify::Center => element.justify_center(),
-            Justify::End => element.justify_end(),
+            Justify::End => {
+                element.style().justify_content = Some(gpui::AlignContent::FlexEnd);
+                element
+            }
             Justify::Between => element.justify_between(),
             Justify::Around => element.justify_around(),
         };

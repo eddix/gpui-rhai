@@ -95,7 +95,7 @@ fn render_Slider(ctx, props) {
         thumb_style: ctx.component_style("thumb", slider_cap(orientation)),
         on_change: if "on_change" in props && props.on_change != () { Fn("change_action") } else { () }
     }).with_style(ctx.component_style("control", style()
-        .width(if orientation == "horizontal" { px(240) } else { theme_length("metrics.control") })
+        .width(if orientation == "horizontal" { relative(1.0) } else { theme_length("metrics.control") })
         .height(if orientation == "horizontal" { theme_length("metrics.control") } else { px(180) })))
         .disabled(disabled).accessibility_role("slider").accessibility_label(props.label)
         .accessibility_value(props.value).accessibility_value_min(min).accessibility_value_max(max)
@@ -109,9 +109,13 @@ fn render_Slider(ctx, props) {
         header.push(text(value_label).with_style(ctx.component_style("value", style()
             .typography("body").font_feature("tnum", 1).text_color(theme_color("text_muted")))));
     }
+    // The label and value span exactly the track, so the value sits over the track's end.
+    // A horizontal slider is 240 wide; give the root part a width to change it.
+    let root = style().gap(theme_spacing("xs"));
+    root = if orientation == "horizontal" { root.width(px(240)) } else { root.items_start() };
     column([
         row(header).with_style(ctx.component_style("header", style()
             .items_center().justify_between().gap(theme_spacing("sm")))),
         control
-    ]).with_key(props.key).with_style(ctx.component_style("root", style().gap(theme_spacing("xs"))))
+    ]).with_key(props.key).with_style(ctx.component_style("root", root))
 }

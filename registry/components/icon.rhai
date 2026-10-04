@@ -6,7 +6,10 @@
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
-  "assets": ["icons/check.svg", "icons/close.svg", "icons/search.svg"],
+  "assets": [
+    "icons/check.svg", "icons/close.svg", "icons/search.svg", "icons/help.svg",
+    "icons/info.svg", "icons/warning.svg"
+  ],
   "tokens": ["metrics.icon"],
   "environment": ["size", "density"]
 }
@@ -27,7 +30,11 @@ define_component(#{
         capabilities: #{},
         tokens: ["metrics.icon"],
         environment: ["size", "density"],
-        assets: ["icons/check.svg", "icons/close.svg", "icons/search.svg"],
+        // Generic glyphs no other component declares, so apps can draw them with Icon.
+        assets: [
+            "icons/check.svg", "icons/close.svg", "icons/search.svg", "icons/help.svg",
+            "icons/info.svg", "icons/warning.svg"
+        ],
     },
     schema: #{
         props: #{
