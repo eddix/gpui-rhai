@@ -22,12 +22,8 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use toml_edit::{Array, DocumentMut, InlineTable, Item, Value};
 
+pub mod acceptance;
 pub mod gallery;
-#[cfg(feature = "test-support")]
-#[doc(hidden)]
-pub mod gallery_app;
-#[cfg(not(feature = "test-support"))]
-mod gallery_app;
 pub mod theme_studio;
 
 use gpui_rhai_registry::{

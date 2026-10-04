@@ -2,14 +2,17 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use gpui_rhai::gpui::prelude::*;
+use gpui_rhai::gpui::{
+    App, Bounds, Context, IntoElement, Render, Window, WindowBounds, WindowOptions, div, px, size,
+};
 use gpui_rhai::{
     AppManifest, AssetData, CapabilityDescriptor, CapabilityId, CapabilityMethod, ChartDataLimits,
     ChartDataset, ChartGeoMap, EmbeddedScriptSource, EmbeddedScriptView, HostSlotRegistry,
     ModuleId, NativeChartData, NativeCollection, NativeEvent, NativeHandlerDescriptor,
     NativeHandlerId, NativeTextDocument, ObjectField, PreparedScriptView, RuntimeEngine,
-    ScriptViewExtension, SubscriptionCapabilityHandler, SubscriptionWork, ThemeMode,
-    ThemeTokenOverrides, ThemeVariant, UiRuntimeState, UiValue, ValueSchema, extract_imports,
-    load_theme_source,
+    ScriptViewConfig, ScriptViewExtension, ScriptViewHandle, ScriptViewHost,
+    SubscriptionCapabilityHandler, SubscriptionWork, ThemeMode, ThemeTokenOverrides, ThemeVariant,
+    UiRuntimeState, UiValue, ValueSchema, extract_imports, install, load_theme_source,
 };
 use gpui_rhai_registry::{
     AR_LOCALE, BUNDLED_ASSET_SOURCES, BUNDLED_CHART_SOURCES_BY_ID, BUNDLED_COMPONENT_SOURCES_BY_ID,
@@ -102,7 +105,7 @@ pub fn list_text() -> String {
         .join("\n")
 }
 
-pub(crate) fn resolve_story(id: &str, case: &str) -> Result<&'static StoryDefinition, String> {
+fn resolve_story(id: &str, case: &str) -> Result<&'static StoryDefinition, String> {
     let story = BUNDLED_STORIES
         .iter()
         .find(|story| story.id == id)
@@ -227,15 +230,6 @@ fn materialize_story_source(
     }
 }
 
-pub(crate) fn story_source(launch: &GalleryLaunch) -> Result<String, String> {
-    let story = resolve_story(&launch.story, &launch.case)?;
-    let (theme_name, primary_theme) = theme_source(&launch.theme)?;
-    let engine = RuntimeEngine::new();
-    let selected = load_theme_source(engine.engine(), theme_name, primary_theme)
-        .map_err(|error| error.to_string())?;
-    materialize_story_source(story, launch, &selected)
-}
-
 fn theme_source(slug: &str) -> Result<(&'static str, &'static str), String> {
     let normalized = slug.replace('-', "_");
     BUNDLED_THEME_SOURCES
@@ -275,7 +269,7 @@ fn bundled_module_source(id: &str) -> Option<&'static str> {
         .find_map(|(candidate, source)| (*candidate == id).then_some(*source))
 }
 
-pub(crate) fn bundled_dependency_modules(
+fn bundled_dependency_modules(
     root_source: &str,
     required: &[&str],
 ) -> Result<BTreeMap<ModuleId, String>, String> {
@@ -925,6 +919,9 @@ pub fn prepare(launch: &GalleryLaunch) -> Result<PreparedScriptView, String> {
 
 /// Run one exact bundled story in a standalone GPUI window.
 ///
+/// Stories are development fixtures; the catalog and acceptance surface is the
+/// Gallery application in [`crate::acceptance`].
+///
 /// # Errors
 ///
 /// Returns a preparation or platform application error.
@@ -932,9 +929,145 @@ pub fn run(launch: &GalleryLaunch) -> Result<(), String> {
     // Platform application callbacks cannot unwind safely. Validate every
     // user-controlled launch selector and compile the exact story before
     // entering GPUI, so CLI mistakes return a normal non-zero error instead
-    // of reaching GalleryApp::new and aborting inside did_finish_launching.
+    // of aborting inside did_finish_launching.
     let _ = prepare(launch)?;
-    super::gallery_app::run(launch.clone())
+    let launch = launch.clone();
+    let reported = std::rc::Rc::new(std::cell::RefCell::new(None::<String>));
+    let error = std::rc::Rc::clone(&reported);
+    gpui_rhai::gpui_platform::application().run(move |cx: &mut App| {
+        install(cx);
+        cx.on_window_closed(|cx, _| {
+            if cx.windows().is_empty() {
+                cx.quit();
+            }
+        })
+        .detach();
+        let bounds = Bounds::centered(None, size(px(1180.0), px(820.0)), cx);
+        let opened = cx.open_window(
+            WindowOptions {
+                window_bounds: Some(WindowBounds::Windowed(bounds)),
+                ..WindowOptions::default()
+            },
+            move |window, cx| {
+                let host = ScriptViewHost::new("gallery-story", cx);
+                let mounted = host.map_err(|error| error.to_string()).and_then(|host| {
+                    mount_story(&launch, &host, window, cx).map(|story| (host, story))
+                });
+                cx.new(|_| match mounted {
+                    Ok((host, story)) => StoryWindow {
+                        host: Some(host),
+                        story: Some(story),
+                        error: None,
+                    },
+                    Err(error) => {
+                        eprintln!("gpui-rhai gallery: {error}");
+                        StoryWindow {
+                            host: None,
+                            story: None,
+                            error: Some(error),
+                        }
+                    }
+                })
+            },
+        );
+        if let Err(open_error) = opened {
+            *error.borrow_mut() = Some(open_error.to_string());
+            cx.quit();
+        }
+        if let Some(milliseconds) = std::env::var("GPUI_RHAI_GALLERY_AUTO_QUIT_MS")
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+        {
+            let timer = cx
+                .background_executor()
+                .timer(Duration::from_millis(milliseconds));
+            cx.spawn(async move |cx| {
+                timer.await;
+                cx.update(|app| app.quit());
+            })
+            .detach();
+        }
+        cx.activate(true);
+    });
+    match reported.borrow_mut().take() {
+        Some(error) => Err(error),
+        None => Ok(()),
+    }
+}
+
+/// A mounted story and the views it embeds through Host slots.
+struct MountedStory {
+    primary: ScriptViewHandle,
+    _dependents: Vec<ScriptViewHandle>,
+}
+
+fn mount_story(
+    launch: &GalleryLaunch,
+    host: &ScriptViewHost,
+    window: &mut Window,
+    cx: &mut App,
+) -> Result<MountedStory, String> {
+    let mut dependents = Vec::new();
+    let view = if launch.story == "apps/host-embedding" {
+        let resident_host = ScriptViewHost::new("gallery-resident-window", cx)
+            .map_err(|error| error.to_string())?;
+        let resident = host_resident_view(launch)?
+            .prepare()
+            .map_err(|error| error.to_string())?
+            .mount(
+                ScriptViewConfig::new("gallery-resident"),
+                resident_host,
+                window,
+                cx,
+            )
+            .map_err(|error| error.to_string())?;
+        let slots = HostSlotRegistry::new()
+            .with_script_view("resident-form", resident.clone())
+            .map_err(|error| error.to_string())?;
+        dependents.push(resident);
+        view_with_host_slots(launch, slots)?
+    } else {
+        view(launch)?
+    };
+    let primary = view
+        .prepare()
+        .map_err(|error| error.to_string())?
+        .mount(
+            ScriptViewConfig::new("gallery-story"),
+            host.clone(),
+            window,
+            cx,
+        )
+        .map_err(|error| error.to_string())?;
+    let _ = primary.focus(window, cx);
+    Ok(MountedStory {
+        primary,
+        _dependents: dependents,
+    })
+}
+
+struct StoryWindow {
+    host: Option<ScriptViewHost>,
+    story: Option<MountedStory>,
+    error: Option<String>,
+}
+
+impl Render for StoryWindow {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        let element = match (&self.story, &self.error) {
+            (Some(story), _) => story
+                .primary
+                .flex_item()
+                .unwrap_or_else(|error| div().child(error.to_string()).into_any_element()),
+            (None, Some(error)) => div().child(error.clone()).into_any_element(),
+            (None, None) => div().into_any_element(),
+        };
+        let content = div().size_full().flex().child(element);
+        match &self.host {
+            Some(host) => host.container(content).into_any_element(),
+            None => content.into_any_element(),
+        }
+    }
 }
 
 #[cfg(test)]

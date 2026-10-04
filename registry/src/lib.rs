@@ -465,6 +465,57 @@ pub const BUNDLED_PATTERN_SOURCES_BY_ID: &[(&str, &str)] = &[
     ),
 ];
 
+/// The Gallery acceptance application (`gpui-rhai gallery`), keyed by module ID.
+/// `gallery/main` is the entry module.
+pub const GALLERY_SOURCES_BY_ID: &[(&str, &str)] = &[
+    ("gallery/main", include_str!("../gallery/main.rhai")),
+    ("gallery/kit", include_str!("../gallery/kit.rhai")),
+    (
+        "gallery/pages/foundations",
+        include_str!("../gallery/pages/foundations.rhai"),
+    ),
+    (
+        "gallery/pages/markers",
+        include_str!("../gallery/pages/markers.rhai"),
+    ),
+    (
+        "gallery/pages/fields",
+        include_str!("../gallery/pages/fields.rhai"),
+    ),
+    (
+        "gallery/pages/lists",
+        include_str!("../gallery/pages/lists.rhai"),
+    ),
+    (
+        "gallery/pages/overlays",
+        include_str!("../gallery/pages/overlays.rhai"),
+    ),
+    (
+        "gallery/pages/containers",
+        include_str!("../gallery/pages/containers.rhai"),
+    ),
+    (
+        "gallery/pages/display",
+        include_str!("../gallery/pages/display.rhai"),
+    ),
+    (
+        "gallery/pages/interaction",
+        include_str!("../gallery/pages/interaction.rhai"),
+    ),
+    (
+        "gallery/pages/composition",
+        include_str!("../gallery/pages/composition.rhai"),
+    ),
+    (
+        "gallery/pages/scenes",
+        include_str!("../gallery/pages/scenes.rhai"),
+    ),
+    (
+        "gallery/pages/effects",
+        include_str!("../gallery/pages/effects.rhai"),
+    ),
+];
+
 /// Bundled application profiles, installed by `gpui-rhai init --profile`.
 pub const BUNDLED_PROFILES: &[(&str, &str)] = &[(
     "productivity",
@@ -546,8 +597,6 @@ pub const MOTION_CATALOG_STORY_SOURCE: &str = include_str!("../stories/motion/ca
 pub const OPERATIONS_STORY_SOURCE: &str = include_str!("../stories/apps/operations.rhai");
 pub const HOST_EMBEDDING_STORY_SOURCE: &str = include_str!("../stories/apps/host_embedding.rhai");
 pub const HOST_RESIDENT_STORY_SOURCE: &str = include_str!("../stories/apps/host_resident.rhai");
-pub const GALLERY_NAVIGATION_SOURCE: &str = include_str!("../stories/gallery/navigation.rhai");
-pub const GALLERY_SOURCE_VIEW_SOURCE: &str = include_str!("../stories/gallery/source.rhai");
 
 const BASIC_CASE: &[StoryCase] = &[StoryCase {
     id: "basic",

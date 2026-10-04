@@ -18,6 +18,7 @@ include = [
     "layouts/**/*.rhai",
     "patterns/**/*.rhai",
     "profiles/**/*.rhai",
+    "gallery/**/*.rhai",
     "motion/**/*.rhai",
     "charts/**/*.rhai",
     "themes/**/*.rhai",

@@ -47,12 +47,18 @@ enum Command {
         /// Existing gpui-rhai theme to open. Omit to create a new draft.
         path: Option<PathBuf>,
     },
-    /// Browse first-party stories and the Operations Workbench.
+    /// Open the Gallery, the acceptance application of the design system.
     Gallery {
-        /// Print the bundled story catalog without creating a window.
+        /// Print the Gallery pages and bundled stories without creating a window.
         #[arg(long)]
         list: bool,
-        /// Open one stable story ID.
+        /// Open one Gallery page ID.
+        #[arg(long, default_value = gpui_rhai_cli::acceptance::DEFAULT_PAGE)]
+        page: String,
+        /// Select comfortable or compact density.
+        #[arg(long, default_value = "comfortable")]
+        density: String,
+        /// Open one development story in a standalone window instead of the Gallery.
         #[arg(long)]
         story: Option<String>,
         /// Select a deterministic case within the story.
@@ -129,6 +135,8 @@ fn run(cli: Cli) -> Result<(), ProjectError> {
         }
         Command::Gallery {
             list,
+            page,
+            density,
             story,
             case,
             theme,
@@ -136,42 +144,83 @@ fn run(cli: Cli) -> Result<(), ProjectError> {
             motion,
         } => {
             if list {
-                println!("{}", gpui_rhai_cli::gallery::list_text());
+                println!("{}", gallery_list_text());
             } else if cli.dry_run {
                 println!("would open Gallery");
             } else {
                 let motion = gpui_rhai_cli::gallery::parse_motion_preference(&motion)
                     .map_err(ProjectError::Gallery)?;
-                gpui_rhai_cli::gallery::run(&gpui_rhai_cli::gallery::GalleryLaunch {
-                    story: story
-                        .unwrap_or_else(|| gpui_rhai_cli::gallery::DEFAULT_STORY.to_owned()),
-                    case,
-                    theme,
-                    locale,
-                    motion,
-                })
-                .map_err(ProjectError::Gallery)?;
+                launch_gallery(story, case, page, density, theme, locale, motion)?;
             }
         }
     }
     Ok(())
 }
 
+/// Gallery pages first, then the development stories.
+fn gallery_list_text() -> String {
+    let pages = gpui_rhai_cli::acceptance::page_ids()
+        .into_iter()
+        .map(|page| format!("page\t{page}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let stories = gpui_rhai_cli::gallery::list_text()
+        .lines()
+        .map(|line| format!("story\t{line}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!("{pages}\n{stories}")
+}
+
+fn launch_gallery(
+    story: Option<String>,
+    case: String,
+    page: String,
+    density: String,
+    theme: String,
+    locale: String,
+    motion: gpui_rhai::MotionPreference,
+) -> Result<(), ProjectError> {
+    match story {
+        Some(story) => gpui_rhai_cli::gallery::run(&gpui_rhai_cli::gallery::GalleryLaunch {
+            story,
+            case,
+            theme,
+            locale,
+            motion,
+        }),
+        None => gpui_rhai_cli::acceptance::run(&gpui_rhai_cli::acceptance::AcceptanceLaunch {
+            page,
+            density,
+            theme,
+            locale,
+            motion,
+        }),
+    }
+    .map_err(ProjectError::Gallery)
+}
+
 fn main() -> ExitCode {
     let result = if std::env::var("GPUI_RHAI_GALLERY").is_ok_and(|value| value == "1") {
-        gpui_rhai_cli::gallery::run(&gpui_rhai_cli::gallery::GalleryLaunch {
-            story: std::env::var("GPUI_RHAI_GALLERY_STORY")
-                .unwrap_or_else(|_| gpui_rhai_cli::gallery::DEFAULT_STORY.to_owned()),
-            case: std::env::var("GPUI_RHAI_GALLERY_CASE").unwrap_or_else(|_| "basic".to_owned()),
-            theme: std::env::var("GPUI_RHAI_GALLERY_THEME")
-                .unwrap_or_else(|_| "default-dark".to_owned()),
-            locale: std::env::var("GPUI_RHAI_GALLERY_LOCALE").unwrap_or_else(|_| "en".to_owned()),
-            motion: gpui_rhai_cli::gallery::parse_motion_preference(
-                &std::env::var("GPUI_RHAI_GALLERY_MOTION").unwrap_or_else(|_| "normal".to_owned()),
-            )
-            .unwrap_or(gpui_rhai::MotionPreference::Normal),
-        })
-        .map_err(ProjectError::Gallery)
+        let env = |name: &str, fallback: &str| {
+            std::env::var(name).unwrap_or_else(|_| fallback.to_owned())
+        };
+        gpui_rhai_cli::gallery::parse_motion_preference(&env("GPUI_RHAI_GALLERY_MOTION", "normal"))
+            .map_err(ProjectError::Gallery)
+            .and_then(|motion| {
+                launch_gallery(
+                    std::env::var("GPUI_RHAI_GALLERY_STORY").ok(),
+                    env("GPUI_RHAI_GALLERY_CASE", "basic"),
+                    env(
+                        "GPUI_RHAI_GALLERY_PAGE",
+                        gpui_rhai_cli::acceptance::DEFAULT_PAGE,
+                    ),
+                    env("GPUI_RHAI_GALLERY_DENSITY", "comfortable"),
+                    env("GPUI_RHAI_GALLERY_THEME", "default-dark"),
+                    env("GPUI_RHAI_GALLERY_LOCALE", "en"),
+                    motion,
+                )
+            })
     } else if std::env::var("GPUI_RHAI_THEME_STUDIO").is_ok_and(|value| value == "1") {
         std::env::current_dir()
             .map_err(|error| ProjectError::ThemeStudio(error.to_string()))
