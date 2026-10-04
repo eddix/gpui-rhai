@@ -720,6 +720,8 @@ mod tests {
                     VersionReq::parse("^1.0").unwrap(),
                 )]),
                 assets: BTreeSet::new(),
+                tokens: std::collections::BTreeSet::new(),
+                environment: std::collections::BTreeSet::new(),
             },
             ComponentSchema::default(),
         )

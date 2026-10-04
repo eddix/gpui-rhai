@@ -1269,12 +1269,7 @@ pub fn text_area_primitive_descriptor() -> PrimitiveDescriptor {
             ),
             (
                 "typography".to_owned(),
-                ObjectField::required(ValueSchema::String {
-                    allowed: crate::REQUIRED_TYPOGRAPHY
-                        .iter()
-                        .map(ToString::to_string)
-                        .collect(),
-                }),
+                ObjectField::required(ValueSchema::string()),
             ),
             (
                 "autofocus".to_owned(),

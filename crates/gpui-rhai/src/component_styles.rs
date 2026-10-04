@@ -162,6 +162,8 @@ mod tests {
                         dependencies: std::collections::BTreeSet::default(),
                         capabilities: BTreeMap::default(),
                         assets: std::collections::BTreeSet::default(),
+                        tokens: std::collections::BTreeSet::new(),
+                        environment: std::collections::BTreeSet::new(),
                     },
                     ComponentSchema {
                         parts: ["root".to_owned(), "label".to_owned()]

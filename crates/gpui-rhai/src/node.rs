@@ -1383,6 +1383,42 @@ impl UiNode {
         }
     }
 
+    /// Set environment values inherited by this node's subtree, merging with
+    /// values set earlier on the same node. Names and values are `snake_case`
+    /// strings; whether they are declared is decided by the active token base.
+    ///
+    /// # Errors
+    ///
+    /// Returns a message for non-string or malformed entries, or more than
+    /// [`crate::token::MAX_ENVIRONMENT_VALUES`] names.
+    pub fn with_environment(self, values: &Map) -> Result<Self, String> {
+        let mut merged = match self.attributes.get("environment") {
+            Some(UiValue::Map(existing)) => existing.clone(),
+            _ => BTreeMap::new(),
+        };
+        for (name, value) in values {
+            let value = value
+                .clone()
+                .into_string()
+                .map_err(|_| format!("environment value `{name}` must be a string"))?;
+            if !crate::token::valid_token_segment(name)
+                || !crate::token::valid_token_segment(&value)
+            {
+                return Err(format!(
+                    "environment `{name}: {value}` must use snake_case names and values"
+                ));
+            }
+            merged.insert(name.to_string(), UiValue::String(value));
+        }
+        if merged.len() > crate::token::MAX_ENVIRONMENT_VALUES {
+            return Err(format!(
+                "a node can set at most {} environment values",
+                crate::token::MAX_ENVIRONMENT_VALUES
+            ));
+        }
+        Ok(self.with_attribute("environment", UiValue::Map(merged)))
+    }
+
     #[must_use]
     pub fn with_attribute(mut self, name: impl Into<String>, value: UiValue) -> Self {
         self.apply_presentation_mutation(NodePresentationMutation::Attribute(name.into(), value));
@@ -2103,6 +2139,14 @@ fn register_node_behavior_methods(builder: &mut TypeBuilder<UiNode>) {
             node.clone()
                 .with_attribute("disabled", UiValue::Bool(disabled))
         })
+        .with_fn(
+            "env",
+            |node: &mut UiNode, values: Map| -> Result<UiNode, Box<EvalAltResult>> {
+                node.clone().with_environment(&values).map_err(|message| {
+                    Box::new(EvalAltResult::ErrorRuntime(message.into(), Position::NONE))
+                })
+            },
+        )
         .with_fn("tab_stop", |node: &mut UiNode, tab_stop: bool| {
             node.clone()
                 .with_attribute("tab_stop", UiValue::Bool(tab_stop))

@@ -13,8 +13,9 @@ pub enum Length {
     Pixels(f64),
     Rems(f64),
     Relative(f64),
-    ThemeSpacing(SpacingToken),
-    ThemeRadius(RadiusToken),
+    /// A named token resolved against the active theme and the inherited
+    /// environment during native rendering.
+    Token(crate::token::LengthToken),
 }
 
 impl<'de> Deserialize<'de> for Length {
@@ -28,16 +29,27 @@ impl<'de> Deserialize<'de> for Length {
             Pixels(f64),
             Rems(f64),
             Relative(f64),
-            ThemeSpacing(SpacingToken),
-            ThemeRadius(RadiusToken),
+            Token(TokenRepr),
+        }
+
+        #[derive(Deserialize)]
+        struct TokenRepr {
+            path: String,
+            #[serde(default = "unit_scale")]
+            scale: f64,
+        }
+
+        const fn unit_scale() -> f64 {
+            1.0
         }
 
         match Repr::deserialize(deserializer)? {
             Repr::Pixels(value) => Self::pixels(value),
             Repr::Rems(value) => Self::rems(value),
             Repr::Relative(value) => Self::relative(value),
-            Repr::ThemeSpacing(value) => Ok(Self::ThemeSpacing(value)),
-            Repr::ThemeRadius(value) => Ok(Self::ThemeRadius(value)),
+            Repr::Token(token) => {
+                Self::token(&token.path).and_then(|length| length.scaled(token.scale))
+            }
         }
         .map_err(serde::de::Error::custom)
     }
@@ -141,68 +153,6 @@ impl From<SignedLength> for LayoutLength {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SpacingToken {
-    Xxs,
-    Xs,
-    Sm,
-    Md,
-    Lg,
-}
-
-impl SpacingToken {
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Xxs => "xxs",
-            Self::Xs => "xs",
-            Self::Sm => "sm",
-            Self::Md => "md",
-            Self::Lg => "lg",
-        }
-    }
-
-    fn parse(value: &str) -> Result<Self, LengthError> {
-        match value {
-            "xxs" => Ok(Self::Xxs),
-            "xs" => Ok(Self::Xs),
-            "sm" => Ok(Self::Sm),
-            "md" => Ok(Self::Md),
-            "lg" => Ok(Self::Lg),
-            _ => Err(LengthError::UnknownSpacingToken(value.to_owned())),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum RadiusToken {
-    Sm,
-    Md,
-    Lg,
-}
-
-impl RadiusToken {
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Sm => "sm",
-            Self::Md => "md",
-            Self::Lg => "lg",
-        }
-    }
-
-    fn parse(value: &str) -> Result<Self, LengthError> {
-        match value {
-            "sm" => Ok(Self::Sm),
-            "md" => Ok(Self::Md),
-            "lg" => Ok(Self::Lg),
-            _ => Err(LengthError::UnknownRadiusToken(value.to_owned())),
-        }
-    }
-}
-
 impl Length {
     /// Create a finite, non-negative pixel length.
     ///
@@ -235,27 +185,56 @@ impl Length {
         }
     }
 
-    /// Create one standard semantic spacing reference.
+    /// Reference a named length token such as `metrics.row`.
     ///
     /// # Errors
     ///
-    /// Returns [`LengthError`] for an unknown standard token.
-    pub fn theme_spacing(value: &str) -> Result<Self, LengthError> {
-        SpacingToken::parse(value).map(Self::ThemeSpacing)
+    /// Returns [`LengthError::InvalidToken`] for a malformed path.
+    pub fn token(path: &str) -> Result<Self, LengthError> {
+        crate::token::LengthToken::new(path)
+            .map(Self::Token)
+            .map_err(|error| LengthError::InvalidToken(error.to_string()))
     }
 
-    /// Create one standard semantic radius reference.
+    /// Reference a spacing token: `theme_spacing("sm")` is `spacing.sm`.
     ///
     /// # Errors
     ///
-    /// Returns [`LengthError`] for an unknown standard token.
+    /// Returns [`LengthError::InvalidToken`] for a malformed name.
+    pub fn theme_spacing(value: &str) -> Result<Self, LengthError> {
+        Self::token(&format!("spacing.{value}"))
+    }
+
+    /// Reference a radius token: `theme_radius("md")` is `radius.md`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`LengthError::InvalidToken`] for a malformed name.
     pub fn theme_radius(value: &str) -> Result<Self, LengthError> {
-        RadiusToken::parse(value).map(Self::ThemeRadius)
+        Self::token(&format!("radius.{value}"))
+    }
+
+    /// Multiply a length by a non-negative factor. Tokens keep the factor and
+    /// apply it after resolution.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`LengthError`] for negative or non-finite factors and results.
+    pub fn scaled(self, factor: f64) -> Result<Self, LengthError> {
+        match self {
+            Self::Pixels(value) => Self::pixels(value * factor),
+            Self::Rems(value) => Self::rems(value * factor),
+            Self::Relative(value) => Self::relative(value * factor),
+            Self::Token(token) => token
+                .scaled(factor)
+                .map(Self::Token)
+                .map_err(|error| LengthError::InvalidToken(error.to_string())),
+        }
     }
 
     #[must_use]
     pub const fn is_theme_token(self) -> bool {
-        matches!(self, Self::ThemeSpacing(_) | Self::ThemeRadius(_))
+        matches!(self, Self::Token(_))
     }
 
     /// Revalidate a deserialized length.
@@ -268,7 +247,7 @@ impl Length {
         match self {
             Self::Pixels(value) | Self::Rems(value) => validate_non_negative(value),
             Self::Relative(value) => Self::relative(value).map(|_| ()),
-            Self::ThemeSpacing(_) | Self::ThemeRadius(_) => Ok(()),
+            Self::Token(_) => Ok(()),
         }
     }
 }
@@ -287,10 +266,8 @@ pub enum LengthError {
     InvalidRelative(f64),
     #[error("signed relative length must be finite and between -10 and 10, got {0}")]
     InvalidSignedRelative(f64),
-    #[error("spacing token `{0}` is unknown; expected xs, sm, md, or lg")]
-    UnknownSpacingToken(String),
-    #[error("radius token `{0}` is unknown; expected sm, md, or lg")]
-    UnknownRadiusToken(String),
+    #[error("invalid length token: {0}")]
+    InvalidToken(String),
 }
 
 fn validate_signed(value: f64) -> Result<(), LengthError> {
@@ -299,6 +276,26 @@ fn validate_signed(value: f64) -> Result<(), LengthError> {
     } else {
         Err(LengthError::InvalidLength(value))
     }
+}
+
+fn thousandths(value: f64) -> Result<u16, StyleValueError> {
+    if value.is_finite() && (0.0..=1.0).contains(&value) {
+        Ok(bounded_u16(value * 1000.0))
+    } else {
+        Err(StyleValueError::InvalidColorFactor(value))
+    }
+}
+
+/// Round a value already validated to lie within `0..=u16::MAX`.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn bounded_u16(value: f64) -> u16 {
+    value.round().clamp(0.0, f64::from(u16::MAX)) as u16
+}
+
+/// Round a color channel value into `0..=255`.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn channel_byte(value: f64) -> u32 {
+    value.round().clamp(0.0, 255.0) as u32
 }
 
 fn validate_non_negative(value: f64) -> Result<(), LengthError> {
@@ -318,6 +315,66 @@ impl Rgba8 {
         Self(value)
     }
 
+    fn channel(self, shift: u32) -> f64 {
+        f64::from(((self.0 >> shift) & 0xff) as u8)
+    }
+
+    /// Interpolate every channel, including alpha, toward `other`.
+    #[must_use]
+    pub fn mix(self, other: Self, weight: f64) -> Self {
+        let weight = weight.clamp(0.0, 1.0);
+        let channel = |shift| {
+            let value = self.channel(shift) * (1.0 - weight) + other.channel(shift) * weight;
+            channel_byte(value) << shift
+        };
+        Self(channel(24) | channel(16) | channel(8) | channel(0))
+    }
+
+    /// Multiply the alpha channel by `factor`.
+    #[must_use]
+    pub fn with_alpha_factor(self, factor: f64) -> Self {
+        let alpha = channel_byte(self.channel(0) * factor.clamp(0.0, 1.0));
+        Self((self.0 & 0xffff_ff00) | alpha)
+    }
+
+    /// WCAG relative luminance of the color channels (alpha ignored).
+    #[must_use]
+    pub fn relative_luminance(self) -> f64 {
+        let channel = |shift| {
+            let encoded = self.channel(shift) / 255.0;
+            if encoded <= 0.04045 {
+                encoded / 12.92
+            } else {
+                ((encoded + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        0.2126 * channel(24) + 0.7152 * channel(16) + 0.0722 * channel(8)
+    }
+
+    /// WCAG contrast ratio between two colors (alpha ignored).
+    #[must_use]
+    pub fn contrast_ratio(self, other: Self) -> f64 {
+        let left = self.relative_luminance();
+        let right = other.relative_luminance();
+        (left.max(right) + 0.05) / (left.min(right) + 0.05)
+    }
+
+    /// Move toward `toward` in small steps until the contrast against
+    /// `background` reaches `ratio`; returns `toward` if no step does.
+    #[must_use]
+    pub fn readable(self, toward: Self, background: Self, ratio: f64) -> Self {
+        if self.contrast_ratio(background) >= ratio {
+            return self;
+        }
+        for step in 1..=64 {
+            let candidate = self.mix(toward, f64::from(step) / 64.0);
+            if candidate.contrast_ratio(background) >= ratio {
+                return candidate;
+            }
+        }
+        toward
+    }
+
     #[must_use]
     pub const fn from_rgb_hex(value: u32) -> Self {
         Self((value << 8) | 0xff)
@@ -329,11 +386,30 @@ impl Rgba8 {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "source", content = "value", rename_all = "snake_case")]
 pub enum ColorValue {
     Literal(Rgba8),
     Token(String),
+    /// `base` moved toward `other` by `weight` thousandths, per channel.
+    Mix {
+        base: Box<ColorValue>,
+        other: Box<ColorValue>,
+        weight: u16,
+    },
+    /// `color` with its alpha multiplied by `alpha` thousandths.
+    Alpha {
+        color: Box<ColorValue>,
+        alpha: u16,
+    },
+    /// `color` moved toward `toward` only as far as needed to reach `ratio`
+    /// hundredths of contrast against `background`.
+    Readable {
+        color: Box<ColorValue>,
+        toward: Box<ColorValue>,
+        background: Box<ColorValue>,
+        ratio: u16,
+    },
 }
 
 impl CustomType for ColorValue {
@@ -343,6 +419,85 @@ impl CustomType for ColorValue {
 }
 
 impl ColorValue {
+    /// Resolve the expression, asking `lookup` for token leaves.
+    pub fn resolve_with(&self, lookup: &mut dyn FnMut(&str) -> Option<Rgba8>) -> Option<Rgba8> {
+        match self {
+            Self::Literal(color) => Some(*color),
+            Self::Token(token) => lookup(token),
+            Self::Mix {
+                base,
+                other,
+                weight,
+            } => {
+                let base = base.resolve_with(lookup)?;
+                let other = other.resolve_with(lookup)?;
+                Some(base.mix(other, f64::from(*weight) / 1000.0))
+            }
+            Self::Alpha { color, alpha } => color
+                .resolve_with(lookup)
+                .map(|color| color.with_alpha_factor(f64::from(*alpha) / 1000.0)),
+            Self::Readable {
+                color,
+                toward,
+                background,
+                ratio,
+            } => {
+                let color = color.resolve_with(lookup)?;
+                let toward = toward.resolve_with(lookup)?;
+                let background = background.resolve_with(lookup)?;
+                Some(color.readable(toward, background, f64::from(*ratio) / 100.0))
+            }
+        }
+    }
+
+    /// Move toward `other` by `weight` (0 to 1).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StyleValueError::InvalidColorFactor`] outside 0 to 1.
+    pub fn mix(self, other: Self, weight: f64) -> Result<Self, StyleValueError> {
+        Ok(Self::Mix {
+            base: Box::new(self),
+            other: Box::new(other),
+            weight: thousandths(weight)?,
+        })
+    }
+
+    /// Multiply alpha by `alpha` (0 to 1).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StyleValueError::InvalidColorFactor`] outside 0 to 1.
+    pub fn alpha(self, alpha: f64) -> Result<Self, StyleValueError> {
+        Ok(Self::Alpha {
+            color: Box::new(self),
+            alpha: thousandths(alpha)?,
+        })
+    }
+
+    /// Adjust toward `toward` until the contrast against `background`
+    /// reaches `ratio` (1 to 21).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StyleValueError::InvalidContrastRatio`] outside 1 to 21.
+    pub fn readable(
+        self,
+        toward: Self,
+        background: Self,
+        ratio: f64,
+    ) -> Result<Self, StyleValueError> {
+        if !ratio.is_finite() || !(1.0..=21.0).contains(&ratio) {
+            return Err(StyleValueError::InvalidContrastRatio(ratio));
+        }
+        Ok(Self::Readable {
+            color: Box::new(self),
+            toward: Box::new(toward),
+            background: Box::new(background),
+            ratio: bounded_u16(ratio * 100.0),
+        })
+    }
+
     /// Parse a strict, bounded color literal shared by Style and Canvas.
     ///
     /// Supported forms are `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`, the CSS
@@ -785,8 +940,12 @@ pub enum StyleValueError {
     InvalidFontFamily,
     #[error("font fallback list must contain 1-16 unique non-empty family names")]
     InvalidFontFallbacks,
-    #[error("unknown typography role `{0}`")]
-    UnknownTypographyRole(String),
+    #[error("typography role `{0}` must be a snake_case name")]
+    InvalidTypographyRole(String),
+    #[error("color factor must be finite and between zero and one, got {0}")]
+    InvalidColorFactor(f64),
+    #[error("contrast ratio must be finite and between 1 and 21, got {0}")]
+    InvalidContrastRatio(f64),
     #[error("OpenType feature tag must be four ASCII alphanumeric characters")]
     InvalidFontFeatureTag,
     #[error("OpenType feature value must be between 0 and 65535, got {0}")]
@@ -1706,11 +1865,13 @@ impl Style {
     ///
     /// # Errors
     ///
-    /// Returns [`StyleValueError::UnknownTypographyRole`] for non-core roles.
+    /// Returns [`StyleValueError::InvalidTypographyRole`] for a malformed
+    /// name. Whether the role exists is decided by the active theme at render
+    /// time.
     pub fn typography(mut self, role: impl Into<String>) -> Result<Self, StyleValueError> {
         let role = role.into();
-        if !crate::REQUIRED_TYPOGRAPHY.contains(&role.as_str()) {
-            return Err(StyleValueError::UnknownTypographyRole(role));
+        if !crate::token::valid_token_segment(&role) {
+            return Err(StyleValueError::InvalidTypographyRole(role));
         }
         self.base.typography = Some(role);
         Ok(self)
@@ -2596,6 +2757,7 @@ pub(crate) fn register_style_api(engine: &mut Engine) {
                     .map_err(|error| Box::new(style_runtime_error(error.to_string())))
             },
         );
+    register_token_api(engine);
     FuncRegistration::new("rgb")
         .in_global_namespace()
         .register_into_engine(engine, rgb_color);
@@ -2611,12 +2773,105 @@ pub(crate) fn register_style_api(engine: &mut Engine) {
     FuncRegistration::new("theme_color")
         .in_global_namespace()
         .register_into_engine(engine, |token: String| ColorValue::Token(token));
+    register_color_expression_api(engine);
     FuncRegistration::new("color")
         .in_global_namespace()
         .register_into_engine(
             engine,
             |value: ImmutableString| -> Result<ColorValue, Box<EvalAltResult>> {
                 ColorValue::parse(value.as_str())
+                    .map_err(|error| Box::new(style_runtime_error(error.to_string())))
+            },
+        );
+}
+
+/// Named length tokens, length scaling and environment-variant values.
+fn register_token_api(engine: &mut Engine) {
+    FuncRegistration::new("theme_length")
+        .in_global_namespace()
+        .register_into_engine(
+            engine,
+            |path: ImmutableString| -> Result<Length, Box<EvalAltResult>> {
+                Length::token(path.as_str())
+                    .map_err(|error| Box::new(style_runtime_error(error.to_string())))
+            },
+        );
+    for name in ["*", "times"] {
+        FuncRegistration::new(name)
+            .in_global_namespace()
+            .register_into_engine(
+                engine,
+                |length: Length, factor: FLOAT| -> Result<Length, Box<EvalAltResult>> {
+                    length
+                        .scaled(factor)
+                        .map_err(|error| Box::new(style_runtime_error(error.to_string())))
+                },
+            );
+        FuncRegistration::new(name)
+            .in_global_namespace()
+            .register_into_engine(
+                engine,
+                |length: Length, factor: INT| -> Result<Length, Box<EvalAltResult>> {
+                    let factor = i32::try_from(factor).map_err(|_| {
+                        Box::new(style_runtime_error(
+                            "length scale is out of range".to_owned(),
+                        ))
+                    })?;
+                    length
+                        .scaled(FLOAT::from(factor))
+                        .map_err(|error| Box::new(style_runtime_error(error.to_string())))
+                },
+            );
+    }
+    engine.build_type::<crate::theme_source::EnvTableSource>();
+    FuncRegistration::new("by_env")
+        .in_global_namespace()
+        .register_into_engine(
+            engine,
+            |keys: Dynamic,
+             table: Map|
+             -> Result<crate::theme_source::EnvTableSource, Box<EvalAltResult>> {
+                crate::theme_source::EnvTableSource::new(keys, table)
+                    .map_err(|error| Box::new(style_runtime_error(error)))
+            },
+        );
+}
+
+/// Color expressions over theme tokens: `mix`, `alpha` and `readable`.
+fn register_color_expression_api(engine: &mut Engine) {
+    FuncRegistration::new("mix")
+        .in_global_namespace()
+        .register_into_engine(
+            engine,
+            |base: ColorValue,
+             other: ColorValue,
+             weight: FLOAT|
+             -> Result<ColorValue, Box<EvalAltResult>> {
+                base.mix(other, weight)
+                    .map_err(|error| Box::new(style_runtime_error(error.to_string())))
+            },
+        );
+    FuncRegistration::new("alpha")
+        .in_global_namespace()
+        .register_into_engine(
+            engine,
+            |color: ColorValue, alpha: FLOAT| -> Result<ColorValue, Box<EvalAltResult>> {
+                color
+                    .alpha(alpha)
+                    .map_err(|error| Box::new(style_runtime_error(error.to_string())))
+            },
+        );
+    FuncRegistration::new("readable")
+        .in_global_namespace()
+        .register_into_engine(
+            engine,
+            |color: ColorValue,
+             toward: ColorValue,
+             background: ColorValue,
+             ratio: FLOAT|
+             -> Result<ColorValue, Box<EvalAltResult>> {
+                color
+                    .readable(toward, background, ratio)
                     .map_err(|error| Box::new(style_runtime_error(error.to_string())))
             },
         );
@@ -2833,10 +3088,10 @@ mod tests {
             .unwrap();
         assert_eq!(style.base.direction, Some(FlexDirection::Column));
         assert_eq!(style.base.align_self, Some(Align::Start));
-        assert_eq!(style.base.gap, Some(Length::ThemeSpacing(SpacingToken::Sm)));
+        assert_eq!(style.base.gap, Some(Length::theme_spacing("sm").unwrap()));
         assert_eq!(
             style.base.radii,
-            CornerLengths::all(Length::ThemeRadius(RadiusToken::Md))
+            CornerLengths::all(Length::theme_radius("md").unwrap())
         );
         assert!(style.hover.is_some());
     }
@@ -2951,7 +3206,7 @@ mod tests {
         assert_eq!(style.base.font_weight, Some(650));
         assert!(
             engine
-                .eval::<Style>(r#"style().typography("bodyish")"#)
+                .eval::<Style>(r#"style().typography("Body Ish")"#)
                 .is_err()
         );
     }
@@ -2988,9 +3243,7 @@ mod tests {
         );
         assert_eq!(
             style.base.inset_end,
-            Some(LayoutLength::Definite(Length::ThemeSpacing(
-                SpacingToken::Xs
-            )))
+            Some(LayoutLength::Definite(Length::theme_spacing("xs").unwrap()))
         );
         let auto: Style = engine.eval("style().inset_start(auto())").unwrap();
         assert_eq!(auto.base.inset_start, Some(LayoutLength::Auto));
@@ -3071,7 +3324,8 @@ mod tests {
             Err(LengthError::InvalidRelative(1.5))
         );
         assert!(Length::pixels(f64::NAN).is_err());
-        assert!(Length::theme_spacing("xxl").is_err());
+        assert!(Length::theme_spacing("Extra Large").is_err());
+        assert!(Length::token("row").is_err());
         assert!(Style::new().opacity(1.1).is_err());
         assert!(Style::new().translate_y(f64::NAN).is_err());
         assert!(Style::new().grid_columns(0).is_err());

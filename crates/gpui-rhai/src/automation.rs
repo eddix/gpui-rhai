@@ -272,17 +272,20 @@ pub(crate) fn dispatch_plan(
     {
         return Err(AutomationError::InvalidEvent);
     }
-    let target_node = tree
-        .node(target)
+    tree.node(target)
         .ok_or_else(|| AutomationError::StaleTarget(target.get()))?;
-    if target_node.attributes().get("disabled") == Some(&UiValue::Bool(true)) {
-        return Err(AutomationError::Disabled(target.get()));
-    }
     let mut route = Vec::new();
     let mut current = Some(target);
     while let Some(node) = current {
         route.push(node);
         current = tree.node(node).and_then(crate::RetainedNode::parent);
+    }
+    // A disabled ancestor disables the target as well.
+    if route.iter().any(|node| {
+        tree.node(*node)
+            .is_some_and(|node| node.attributes().get("disabled") == Some(&UiValue::Bool(true)))
+    }) {
+        return Err(AutomationError::Disabled(target.get()));
     }
     route.reverse();
     let mut steps = Vec::new();

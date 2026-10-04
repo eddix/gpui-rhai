@@ -249,6 +249,7 @@ fn data_table_view(theme: &str, locale: &str, visual_state: &str) -> EmbeddedScr
         module("components/input", INPUT),
     ]));
     EmbeddedScriptView::new(ModuleId::parse("main").unwrap(), scripts, DEFAULT_LIGHT)
+        .token_base(include_str!("../../../registry/tokens.rhai"))
         .theme_sources([
             ("default_dark.rhai".to_owned(), DEFAULT_DARK.to_owned()),
             ("tokyo_night.rhai".to_owned(), TOKYO_NIGHT.to_owned()),

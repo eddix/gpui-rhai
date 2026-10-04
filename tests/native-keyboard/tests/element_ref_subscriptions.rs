@@ -48,6 +48,7 @@ fn view(ctx){render_component("tests/provider",#{key:"provider"})}
             EmbeddedScriptSource::new(BTreeMap::from([(entry, source.to_owned())])),
             std::fs::read_to_string(format!("{ROOT}/registry/themes/default_dark.rhai")).unwrap(),
         )
+        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
         .prepare()
         .unwrap();
         let capture = Rc::new(RefCell::new(None));

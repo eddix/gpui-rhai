@@ -255,6 +255,7 @@ fn mount(
         EmbeddedScriptSource::new(BTreeMap::from([(entry, SOURCE.into())])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .manifest(manifest)
     .extension(extension)
     .prepare()

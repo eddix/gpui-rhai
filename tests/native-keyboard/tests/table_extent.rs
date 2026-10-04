@@ -178,6 +178,7 @@ fn mount_with_styles(
         ])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .locale_sources([
         (
             "en.rhai".into(),
@@ -521,19 +522,11 @@ fn theme_insets_are_in_the_shared_column_plan_and_real_extent(cx: &mut TestAppCo
                     roles: BTreeMap::from([
                         (
                             "body".into(),
-                            TypographyToken {
-                                size: Length::Pixels(20.0),
-                                line_height: Length::Pixels(26.0),
-                                weight: 400,
-                            },
+                            TypographyToken::new(Length::Pixels(20.0), Length::Pixels(26.0), 400),
                         ),
                         (
                             "body_small".into(),
-                            TypographyToken {
-                                size: Length::Pixels(20.0),
-                                line_height: Length::Pixels(26.0),
-                                weight: 700,
-                            },
+                            TypographyToken::new(Length::Pixels(20.0), Length::Pixels(26.0), 700),
                         ),
                     ]),
                     ..Default::default()

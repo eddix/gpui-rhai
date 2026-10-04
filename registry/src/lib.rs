@@ -427,6 +427,8 @@ bundled_assets!(
     (HELP_SVG, "icons/help.svg", "../assets/icons/help.svg"),
 );
 
+/// The design-language token base, installed as `ui/tokens.rhai`.
+pub const TOKEN_BASE_SOURCE: &str = include_str!("../tokens.rhai");
 pub const DEFAULT_THEME: &str = include_str!("../themes/default_dark.rhai");
 pub const DEFAULT_LIGHT_THEME: &str = include_str!("../themes/default_light.rhai");
 pub const TOKYO_NIGHT_THEME: &str = include_str!("../themes/tokyo_night.rhai");

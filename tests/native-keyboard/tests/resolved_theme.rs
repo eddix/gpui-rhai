@@ -48,6 +48,7 @@ fn builder(source: &str, system: bool, none: bool) -> EmbeddedScriptView {
         EmbeddedScriptSource::new(BTreeMap::from([(entry, source.into())])),
         DARK,
     )
+        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .theme_sources([("light".into(), LIGHT.into())])
     .extension(Themes { system, none })
 }

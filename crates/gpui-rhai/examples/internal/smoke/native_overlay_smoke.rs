@@ -200,6 +200,7 @@ fn main() {
         scripts,
         THEME,
     )
+    .token_base(include_str!("../../../../../registry/tokens.rhai"))
     .theme_sources([
         ("tokyo_night.rhai".to_owned(), TOKYO_NIGHT.to_owned()),
         (

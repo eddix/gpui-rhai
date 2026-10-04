@@ -140,6 +140,7 @@ fn table_1000_view_with_resizable(resizable: bool) -> EmbeddedScriptView {
         module("components/button", BUTTON),
     ]));
     EmbeddedScriptView::new(ModuleId::parse("main").unwrap(), scripts, THEME)
+        .token_base(include_str!("../../../../../registry/tokens.rhai"))
         .asset_sources(table_assets())
         .extension(TableDataExtension {
             rows: benchmark_collection(),

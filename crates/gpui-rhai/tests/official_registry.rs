@@ -746,13 +746,39 @@ fn unlabeled_icon_is_decorative_presentation() {
     assert!(!root.attributes().contains_key("label"));
 }
 
+const TOKEN_BASE: &str = include_str!("../../../registry/tokens.rhai");
+
+fn load_bundled(engine: &RuntimeEngine, name: &str, source: &str) -> gpui_rhai::ThemeVariant {
+    let base = gpui_rhai::load_token_base(engine.engine(), "tokens.rhai", TOKEN_BASE).unwrap();
+    gpui_rhai::load_theme_with_layers(
+        engine.engine(),
+        Some(&base),
+        &format!("{name}.rhai"),
+        source,
+        &gpui_rhai::ThemeTokenOverrides::default(),
+    )
+    .unwrap_or_else(|error| panic!("{name}: {error}"))
+}
+
+fn environment(pairs: &[(&str, &str)]) -> gpui_rhai::Environment {
+    pairs.iter().fold(
+        gpui_rhai::Environment::EMPTY,
+        |environment, (name, value)| {
+            environment
+                .with(
+                    gpui_rhai::Symbol::intern(name),
+                    gpui_rhai::Symbol::intern(value),
+                )
+                .unwrap()
+        },
+    )
+}
+
 #[test]
 fn official_default_theme_pair_satisfies_one_semantic_contract() {
     let engine = RuntimeEngine::new();
-    let light =
-        gpui_rhai::load_theme_source(engine.engine(), "default_light.rhai", DEFAULT_LIGHT).unwrap();
-    let dark =
-        gpui_rhai::load_theme_source(engine.engine(), "default_dark.rhai", DEFAULT_DARK).unwrap();
+    let light = load_bundled(&engine, "default_light", DEFAULT_LIGHT);
+    let dark = load_bundled(&engine, "default_dark", DEFAULT_DARK);
     assert_eq!(light.family, dark.family);
     assert_eq!(light.mode, gpui_rhai::ThemeMode::Light);
     assert_eq!(dark.mode, gpui_rhai::ThemeMode::Dark);
@@ -760,112 +786,176 @@ fn official_default_theme_pair_satisfies_one_semantic_contract() {
         light.tokens.colors.keys().collect::<Vec<_>>(),
         dark.tokens.colors.keys().collect::<Vec<_>>()
     );
+    // Focus is the ink color in both modes.
+    assert_eq!(
+        light.tokens.colors["focus_ring"],
+        light.tokens.colors["text_primary"]
+    );
+    assert_eq!(
+        dark.tokens.colors["focus_ring"],
+        dark.tokens.colors["text_primary"]
+    );
 }
 
 #[test]
-fn bundled_themes_share_the_readable_square_metric_contract() {
+fn bundled_palettes_own_colors_only_and_share_the_token_base_metrics() {
+    use gpui_rhai::{ColorResolver, Length};
     let engine = RuntimeEngine::new();
     let typography = [
-        ("caption", 11.0, 16.0, 400),
-        ("body_small", 12.0, 16.0, 400),
-        ("body", 13.0, 18.0, 400),
-        ("subtitle", 14.0, 20.0, 400),
-        ("title", 16.0, 22.0, 700),
-        ("heading", 18.0, 24.0, 700),
-        ("display", 24.0, 32.0, 700),
-        ("display_large", 28.0, 36.0, 700),
+        ("caption", 12.0, 18.0, 400),
+        ("body_small", 13.0, 20.0, 400),
+        ("body", 14.0, 22.0, 400),
+        ("subtitle", 16.0, 24.0, 600),
+        ("title", 18.0, 26.0, 600),
+        ("heading", 20.0, 28.0, 600),
+        ("display", 24.0, 32.0, 600),
+        ("display_large", 32.0, 40.0, 600),
+        ("label", 12.0, 16.0, 400),
+        ("code", 13.0, 20.0, 400),
     ];
     for &(name, source) in BUNDLED_THEMES {
-        let theme =
+        let palette =
             gpui_rhai::load_theme_source(engine.engine(), &format!("{name}.rhai"), source).unwrap();
-        assert_eq!(theme.tokens.radii["sm"], gpui_rhai::Length::Pixels(0.0));
-        assert_eq!(theme.tokens.radii["md"], gpui_rhai::Length::Pixels(0.0));
-        assert_eq!(theme.tokens.radii["lg"], gpui_rhai::Length::Pixels(0.0));
+        assert!(
+            palette.tokens.spacing.is_empty()
+                && palette.tokens.radii.is_empty()
+                && palette.tokens.typography.roles.is_empty()
+                && palette.tokens.namespaces.is_empty(),
+            "{name}: palettes must contain colors only"
+        );
+        let theme = load_bundled(&engine, name, source);
+        for radius in ["sm", "md", "lg"] {
+            assert_eq!(
+                theme.resolve_length(Length::theme_radius(radius).unwrap()),
+                Some(Length::Pixels(0.0)),
+                "{name}: radius {radius}"
+            );
+        }
         for &(role, size, line_height, weight) in &typography {
-            let token = &theme.tokens.typography.roles[role];
-            assert_eq!(token.size, gpui_rhai::Length::Pixels(size), "{name}:{role}");
+            let token = theme.resolve_typography(role).unwrap();
+            assert_eq!(token.size, Length::Pixels(size), "{name}:{role}");
             assert_eq!(
                 token.line_height,
-                gpui_rhai::Length::Pixels(line_height),
+                Length::Pixels(line_height),
                 "{name}:{role}"
             );
             assert_eq!(token.weight, weight, "{name}:{role}");
         }
-        assert_ne!(
-            theme.tokens.colors["surface"],
-            theme.tokens.colors["surface_raised"]
+        let control = Length::token("metrics.control").unwrap();
+        assert_eq!(theme.resolve_length(control), Some(Length::Pixels(32.0)));
+        assert_eq!(
+            theme.resolve_length_in(
+                control,
+                &environment(&[("density", "compact"), ("size", "sm")])
+            ),
+            Some(Length::Pixels(24.0))
         );
-        assert_ne!(
-            theme.tokens.colors["surface"],
-            theme.tokens.colors["surface_hover"]
+        assert_eq!(
+            theme
+                .resolve_typography_in("control", &environment(&[("size", "xs")]))
+                .map(|role| role.size),
+            Some(Length::Pixels(13.0))
         );
     }
 }
 
-fn linear_channel(channel: u8) -> f64 {
-    let channel = f64::from(channel) / 255.0;
-    if channel <= 0.040_45 {
-        channel / 12.92
+fn hue(color: gpui_rhai::Rgba8) -> (f64, f64) {
+    let [red, green, blue, _] = color.as_rgba_hex().to_be_bytes();
+    let max = red.max(green).max(blue);
+    let min = red.min(green).min(blue);
+    if max == min {
+        return (0.0, 0.0);
+    }
+    let unit = |channel: u8| f64::from(channel) / 255.0;
+    let delta = unit(max) - unit(min);
+    let lightness = f64::midpoint(unit(max), unit(min));
+    let saturation = delta / (1.0 - (2.0 * lightness - 1.0).abs());
+    let sector = if max == red {
+        ((unit(green) - unit(blue)) / delta).rem_euclid(6.0)
+    } else if max == green {
+        (unit(blue) - unit(red)) / delta + 2.0
     } else {
-        ((channel + 0.055) / 1.055).powf(2.4)
-    }
+        (unit(red) - unit(green)) / delta + 4.0
+    };
+    (sector * 60.0, saturation)
 }
 
-fn luminance(color: gpui_rhai::Rgba8) -> f64 {
-    let [red, green, blue, _alpha] = color.as_rgba_hex().to_be_bytes();
-    0.2126 * linear_channel(red) + 0.7152 * linear_channel(green) + 0.0722 * linear_channel(blue)
-}
-
-fn contrast(first: gpui_rhai::Rgba8, second: gpui_rhai::Rgba8) -> f64 {
-    let first = luminance(first);
-    let second = luminance(second);
-    (first.max(second) + 0.05) / (first.min(second) + 0.05)
+fn hue_distance(left: f64, right: f64) -> f64 {
+    let distance = (left - right).abs() % 360.0;
+    distance.min(360.0 - distance)
 }
 
 #[test]
-fn bundled_theme_text_pairs_meet_small_text_contrast() {
+fn bundled_palettes_meet_the_theme_authoring_constraints() {
     let engine = RuntimeEngine::new();
     for &(name, source) in BUNDLED_THEMES {
-        let theme =
-            gpui_rhai::load_theme_source(engine.engine(), &format!("{name}.rhai"), source).unwrap();
-        for (foreground, background) in [
-            ("text_primary", "surface"),
-            ("text_muted", "surface"),
-            ("on_accent", "accent"),
-            ("on_danger", "danger"),
-            ("on_warning", "warning"),
-            ("on_success", "success"),
-        ] {
-            let ratio = contrast(
-                theme.tokens.colors[foreground],
-                theme.tokens.colors[background],
-            );
+        let theme = load_bundled(&engine, name, source);
+        let color = |token: &str| theme.tokens.color(token).unwrap();
+        for foreground in ["text_primary", "text_muted"] {
+            for background in ["surface", "surface_raised", "surface_hover", "selection"] {
+                let ratio = color(foreground).contrast_ratio(color(background));
+                assert!(
+                    ratio >= 4.5,
+                    "{name}: {foreground} on {background} is {ratio:.2}:1"
+                );
+            }
+        }
+        for fill in ["accent", "danger", "warning", "success"] {
+            let ratio = color(&format!("on_{fill}")).contrast_ratio(color(fill));
+            assert!(ratio >= 4.5, "{name}: on_{fill} is {ratio:.2}:1");
+            let text = color(&format!("text.{fill}"));
             assert!(
-                ratio >= 4.5,
-                "{name}: {foreground} on {background} contrast is {ratio:.2}:1"
+                text.contrast_ratio(color("surface_hover")) >= 4.5,
+                "{name}: text.{fill} is unreadable on tonal blocks"
             );
         }
         assert!(
-            contrast(
-                theme.tokens.colors["focus_ring"],
-                theme.tokens.colors["surface"]
-            ) >= 3.0,
-            "{name}: focus ring does not reach 3:1 against the surface"
+            color("focus_ring").contrast_ratio(color("surface")) >= 3.0,
+            "{name}: focus"
         );
-        let tabs_foreground = theme.tokens.color("tabs.foreground").unwrap();
         assert!(
-            contrast(tabs_foreground, theme.tokens.colors["surface_hover"]) >= 4.5,
+            color("accent").contrast_ratio(color("surface")) >= 3.0,
+            "{name}: accent mark"
+        );
+        assert!(
+            color("surface_hover").contrast_ratio(color("surface")) >= 1.15,
+            "{name}: tonal block is invisible"
+        );
+        assert_ne!(
+            color("selection"),
+            color("surface_hover"),
+            "{name}: selection is hover"
+        );
+        assert!(
+            color("tabs.foreground").contrast_ratio(color("surface_hover")) >= 4.5,
             "{name}: enabled tab foreground is unreadable on its track"
         );
+        let (accent_hue, accent_saturation) = hue(color("accent"));
+        let statuses = ["danger", "warning", "success"].map(|token| (token, hue(color(token))));
+        for (token, (status_hue, status_saturation)) in statuses {
+            if accent_saturation > 0.15 && status_saturation > 0.15 {
+                assert!(
+                    hue_distance(accent_hue, status_hue) >= 29.5,
+                    "{name}: accent and {token} hues are too close"
+                );
+            }
+        }
+        for (index, (left, (left_hue, _))) in statuses.iter().enumerate() {
+            for (right, (right_hue, _)) in &statuses[index + 1..] {
+                assert!(
+                    hue_distance(*left_hue, *right_hue) >= 29.5,
+                    "{name}: {left} and {right} hues are too close"
+                );
+            }
+        }
     }
 }
 
 #[test]
-fn bundled_themes_materialize_complete_document_and_chart_palettes() {
+fn the_token_base_materializes_complete_derived_palettes() {
     let engine = RuntimeEngine::new();
     for &(name, source) in BUNDLED_THEMES {
-        let theme =
-            gpui_rhai::load_theme_source(engine.engine(), &format!("{name}.rhai"), source).unwrap();
+        let theme = load_bundled(&engine, name, source);
         for token in [
             "syntax.comment",
             "syntax.string",
@@ -907,6 +997,9 @@ fn bundled_themes_materialize_complete_document_and_chart_palettes() {
             "charts.palette_8",
             "table.selection",
             "tabs.foreground",
+            "text.accent",
+            "control.hover",
+            "tag.key",
         ] {
             assert!(
                 theme.tokens.color(token).is_some(),

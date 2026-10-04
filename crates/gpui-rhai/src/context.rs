@@ -96,6 +96,8 @@ pub struct UiRuntimeState {
     #[cfg(feature = "charts")]
     pub native_chart_data: BTreeMap<String, crate::NativeChartData>,
     pub actions: ActionRegistry,
+    /// Key bindings declared to this view, used to display shortcuts.
+    pub key_bindings: Vec<crate::KeyBindingSpec>,
     pub capabilities: CapabilityRegistry,
     pub tasks: TaskRegistry,
     pub subscriptions: SubscriptionRegistry,
@@ -2192,6 +2194,76 @@ impl UiContext {
         Ok(())
     }
 
+    /// The shortcut bound to an action, from the key bindings declared to
+    /// this view; `None` when the action has no binding.
+    ///
+    /// # Errors
+    ///
+    /// Returns identifier or borrow errors.
+    pub fn action_shortcut(
+        &self,
+        action: &str,
+    ) -> Result<Option<crate::ActionShortcut>, UiContextError> {
+        let id = ActionId::parse(action)?;
+        let runtime = self
+            .runtime
+            .try_borrow()
+            .map_err(|_| UiContextError::Borrowed)?;
+        Ok(runtime
+            .key_bindings
+            .iter()
+            .find(|binding| binding.action == id)
+            .map(crate::KeyBindingSpec::shortcut))
+    }
+
+    /// Whether an action is registered and enabled.
+    ///
+    /// # Errors
+    ///
+    /// Returns identifier or borrow errors.
+    pub fn action_enabled(&self, action: &str) -> Result<bool, UiContextError> {
+        let id = ActionId::parse(action)?;
+        Ok(self
+            .runtime
+            .try_borrow()
+            .map_err(|_| UiContextError::Borrowed)?
+            .actions
+            .is_enabled(&id)
+            .unwrap_or(false))
+    }
+
+    /// Every registered action with its enabled state and shortcut, for a
+    /// command palette: `[#{ id, enabled, shortcut }]`.
+    ///
+    /// # Errors
+    ///
+    /// Returns borrow errors.
+    pub fn actions(&self) -> Result<Vec<UiValue>, UiContextError> {
+        let runtime = self
+            .runtime
+            .try_borrow()
+            .map_err(|_| UiContextError::Borrowed)?;
+        Ok(runtime
+            .actions
+            .ids()
+            .map(|id| {
+                let shortcut = runtime
+                    .key_bindings
+                    .iter()
+                    .find(|binding| &binding.action == id)
+                    .map_or(UiValue::Null, |binding| binding.shortcut().to_ui_value());
+                UiValue::Map(BTreeMap::from([
+                    ("id".to_owned(), UiValue::String(id.as_str().to_owned())),
+                    (
+                        "enabled".to_owned(),
+                        UiValue::Bool(runtime.actions.is_enabled(id).unwrap_or(false)),
+                    ),
+                    ("shortcut".to_owned(), shortcut),
+                ]))
+            })
+            .collect())
+    }
+
     /// Invoke a manifest-declared Rust capability.
     ///
     /// # Errors
@@ -3785,6 +3857,38 @@ fn register_action_context_methods(builder: &mut TypeBuilder<UiContext>) {
                     .map_err(|error| Box::new(context_runtime_error(&error)))
             },
         )
+        .with_fn(
+            "action_shortcut",
+            |context: &mut UiContext, action: ImmutableString| {
+                context
+                    .action_shortcut(action.as_str())
+                    .map(|shortcut| {
+                        shortcut.map_or(Dynamic::UNIT, |shortcut| {
+                            shortcut.to_ui_value().into_dynamic()
+                        })
+                    })
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        )
+        .with_fn(
+            "action_enabled",
+            |context: &mut UiContext, action: ImmutableString| {
+                context
+                    .action_enabled(action.as_str())
+                    .map_err(|error| Box::new(context_runtime_error(&error)))
+            },
+        )
+        .with_fn("actions", |context: &mut UiContext| {
+            context
+                .actions()
+                .map(|actions| {
+                    actions
+                        .into_iter()
+                        .map(UiValue::into_dynamic)
+                        .collect::<rhai::Array>()
+                })
+                .map_err(|error| Box::new(context_runtime_error(&error)))
+        })
         .with_fn(
             "scroll_to",
             |context: &mut UiContext, reference: crate::ElementRef, x: FLOAT, y: FLOAT| {

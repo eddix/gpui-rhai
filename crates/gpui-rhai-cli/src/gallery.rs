@@ -779,6 +779,7 @@ fn build_view(
     let entry = ModuleId::parse(story.source_module).map_err(|error| error.to_string())?;
     let mut view =
         EmbeddedScriptView::new(entry.clone(), story_scripts(story, source)?, primary_theme)
+            .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
             .theme_sources(
                 BUNDLED_THEME_SOURCES
                     .iter()
@@ -869,6 +870,7 @@ pub fn host_resident_view(launch: &GalleryLaunch) -> Result<EmbeddedScriptView, 
     modules.insert(entry.clone(), source);
     Ok(
         EmbeddedScriptView::new(entry, EmbeddedScriptSource::new(modules), primary_theme)
+            .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
             .theme_sources(
                 BUNDLED_THEME_SOURCES
                     .iter()

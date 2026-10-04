@@ -1,5 +1,7 @@
 // Semantic adaptation of Hermarchy by Archer Clawbot (MIT).
 // Source: https://github.com/archer-clawbot/omarchy-hermarchy-theme
+// Adjusted for the design-system palette constraints (docs/design/themes.md):
+// - selection tinted toward the accent so it differs from hover.
 fn theme() {
     #{ family: "Hermarchy", name: "Dark", mode: "dark", tokens: #{
         colors: #{
@@ -10,36 +12,7 @@ fn theme() {
             warning: 0xe2c275ff, on_warning: 0x08090aff,
             success: 0x86d993ff, on_success: 0x08090aff,
             border: 0x3b4044ff, focus_ring: 0x8de4ffff,
-            selection: 0x26333aff, disabled: 0x606468ff,
-        },
-        spacing: #{
-            xxs: #{ unit: "pixels", value: 2.0 },
-            xs: #{ unit: "pixels", value: 4.0 }, sm: #{ unit: "pixels", value: 8.0 },
-            md: #{ unit: "pixels", value: 12.0 }, lg: #{ unit: "pixels", value: 16.0 },
-        },
-        radii: #{
-            sm: #{ unit: "pixels", value: 0.0 }, md: #{ unit: "pixels", value: 0.0 },
-            lg: #{ unit: "pixels", value: 0.0 },
-        },
-        typography: #{
-            roles: #{
-                caption: #{ size: #{ unit: "pixels", value: 11.0 },
-                    line_height: #{ unit: "pixels", value: 16.0 }, weight: 400 },
-                body_small: #{ size: #{ unit: "pixels", value: 12.0 },
-                    line_height: #{ unit: "pixels", value: 16.0 }, weight: 400 },
-                body: #{ size: #{ unit: "pixels", value: 13.0 },
-                    line_height: #{ unit: "pixels", value: 18.0 }, weight: 400 },
-                subtitle: #{ size: #{ unit: "pixels", value: 14.0 },
-                    line_height: #{ unit: "pixels", value: 20.0 }, weight: 400 },
-                title: #{ size: #{ unit: "pixels", value: 16.0 },
-                    line_height: #{ unit: "pixels", value: 22.0 }, weight: 700 },
-                heading: #{ size: #{ unit: "pixels", value: 18.0 },
-                    line_height: #{ unit: "pixels", value: 24.0 }, weight: 700 },
-                display: #{ size: #{ unit: "pixels", value: 24.0 },
-                    line_height: #{ unit: "pixels", value: 32.0 }, weight: 700 },
-                display_large: #{ size: #{ unit: "pixels", value: 28.0 },
-                    line_height: #{ unit: "pixels", value: 36.0 }, weight: 700 },
-            },
+            selection: 0x132227ff, disabled: 0x606468ff,
         },
     } }
 }

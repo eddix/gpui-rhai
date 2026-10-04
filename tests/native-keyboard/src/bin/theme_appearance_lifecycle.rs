@@ -104,6 +104,7 @@ fn view(ctx){text("token-only").accessibility_role("status").with_style(style().
             EmbeddedScriptSource::new(BTreeMap::from([(entry.clone(), source)])),
             DARK,
         )
+        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
         .theme_sources([("light".into(), LIGHT.into())])
         .manifest(
             AppManifest::new(entry)

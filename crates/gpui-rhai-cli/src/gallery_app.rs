@@ -764,6 +764,7 @@ fn prepare_navigation(
     let mut modules = bundled_dependency_modules(&source, &["components/input"])?;
     modules.insert(entry.clone(), source);
     EmbeddedScriptView::new(entry, EmbeddedScriptSource::new(modules), primary_theme)
+        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
         .theme_sources(
             BUNDLED_THEME_SOURCES
                 .iter()
@@ -835,6 +836,7 @@ fn prepare_source_view(
         ),
     ]);
     EmbeddedScriptView::new(entry, EmbeddedScriptSource::new(modules), primary_theme)
+        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
         .theme_sources(
             BUNDLED_THEME_SOURCES
                 .iter()

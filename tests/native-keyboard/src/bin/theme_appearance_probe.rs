@@ -145,6 +145,7 @@ fn view(ctx){let info=ctx.theme_variant();column([text(`${ctx.window_id()}:${ctx
             EmbeddedScriptSource::new(BTreeMap::from([(entry.clone(), SOURCE.into())])),
             include_str!("../../../../registry/themes/default_dark.rhai"),
         )
+        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
         .theme_sources([(
             "light".into(),
             include_str!("../../../../registry/themes/default_light.rhai").into(),

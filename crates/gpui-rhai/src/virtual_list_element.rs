@@ -229,9 +229,14 @@ impl VirtualListView {
         runtime: NodeSlotRuntime,
         cx: &mut Context<Self>,
     ) {
-        let changed = self.content != content;
+        // Row heights come from measuring rendered rows; a new environment or
+        // theme can change every row's geometry, so cached heights are stale.
+        let geometry_changed = self.runtime.environment != runtime.environment
+            || self.runtime.inherited_disabled != runtime.inherited_disabled
+            || !self.runtime.colors.same_tokens(&runtime.colors);
+        let changed = self.content != content || geometry_changed;
         let recreate = collection_requires_recreation(&self.content, &content);
-        let reset = collection_requires_reset(&self.content, &content);
+        let reset = collection_requires_reset(&self.content, &content) || geometry_changed;
         let reveal_changed = self.content.reveal_key != content.reveal_key;
         self.content = content;
         self.runtime = runtime;

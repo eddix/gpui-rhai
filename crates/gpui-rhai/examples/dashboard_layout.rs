@@ -128,6 +128,7 @@ fn main() {
         module("components/popover", POPOVER),
     ]));
     EmbeddedScriptView::new(ModuleId::parse("main").unwrap(), scripts, DEFAULT_DARK)
+        .token_base(include_str!("../../../registry/tokens.rhai"))
         .theme_sources([
             ("default_light.rhai".to_owned(), DEFAULT_LIGHT.to_owned()),
             ("tokyo_night.rhai".to_owned(), TOKYO_NIGHT.to_owned()),

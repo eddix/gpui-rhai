@@ -59,7 +59,9 @@ pub mod text_area;
 mod text_edit;
 pub mod text_input;
 pub mod theme;
+mod theme_source;
 pub mod timer;
+pub mod token;
 pub mod value;
 pub mod virtual_list;
 mod virtual_list_element;
@@ -89,7 +91,8 @@ pub use accessibility::{
     AccessibilityError, AccessibilityNode, AccessibilityTree, CommittedSemanticFrame,
 };
 pub use action::{
-    ActionError, ActionId, ActionInvocation, ActionRegistry, DispatchScriptAction, KeyBindingSpec,
+    ActionError, ActionId, ActionInvocation, ActionRegistry, ActionShortcut, DispatchScriptAction,
+    KeyBindingSpec, KeyChord,
 };
 pub use app::{
     EmbeddedScriptView, FileScriptView, PreparedScriptView, ScriptApplication, ScriptViewConfig,
@@ -263,22 +266,27 @@ pub use style::{
     Align, AutoLength, BorderLineStyle, ColorParseError, ColorValue, CornerLengths, CursorKind,
     DisplayMode, EdgeLengths, FlexDirection, FlexWrapMode, FontSlant, HitTestBehavior,
     InteractionState, Justify, LayoutEdgeLengths, LayoutLength, Length, LengthError,
-    LinearGradientSpec, OverflowMode, PositionMode, PseudoState, RadiusToken, Rgba8, ShadowSpec,
-    SignedLength, SpacingToken, Style, StyleProperties, StyleValueError, TextAlignMode,
-    WhiteSpaceMode,
+    LinearGradientSpec, OverflowMode, PositionMode, PseudoState, Rgba8, ShadowSpec, SignedLength,
+    Style, StyleProperties, StyleValueError, TextAlignMode, WhiteSpaceMode,
 };
 pub use text_area::{TextAreaPrimitiveHandler, init_text_area, text_area_primitive_descriptor};
 pub use text_input::{
     TextBuffer, TextInputPrimitiveHandler, init_text_input, text_input_primitive_descriptor,
 };
 pub use theme::{
-    REQUIRED_TYPOGRAPHY, ResolvedTheme, ResolvedTypography, SystemAppearance, ThemeError,
-    ThemeFamily, ThemeManager, ThemeMode, ThemeMotion, ThemeMotionOverrides, ThemeMotionSpring,
-    ThemePreference, ThemeSelection, ThemeSnapshot, ThemeTokenOverrides, ThemeTokenValue,
-    ThemeTokens, ThemeTypography, ThemeTypographyOverrides, ThemeVariant, ThemeVariantInfo,
-    TypographyToken, load_theme_source,
+    ResolvedTheme, ResolvedTypography, SystemAppearance, ThemeError, ThemeFamily, ThemeLength,
+    ThemeManager, ThemeMode, ThemeMotion, ThemeMotionOverrides, ThemeMotionSpring, ThemePreference,
+    ThemeSelection, ThemeSnapshot, ThemeTokenOverrides, ThemeTokenValue, ThemeTokens,
+    ThemeTypography, ThemeTypographyOverrides, ThemeVariant, ThemeVariantInfo, TokenLayer,
+    TypographyRole, TypographyToken, contrast_ratio, load_theme_source, load_theme_with_layers,
+    load_token_base,
 };
+pub use theme_source::EnvTableSource;
 pub use timer::{TimerDescriptor, TimerError, TimerId, TimerRegistry, TimerSnapshot};
+pub use token::{
+    EnvTable, Environment, EnvironmentDeclaration, EnvironmentDeclarations, LengthToken, Symbol,
+    TokenError, Variable,
+};
 pub use value::{
     OpaqueHandle, UiValue, UiValueError, UiValuePath, UiValuePathError, UiValuePathSegment,
 };

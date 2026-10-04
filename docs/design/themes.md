@@ -40,8 +40,9 @@ fn tokens() {
             }),
         },
         colors: #{
-            "text.accent": readable(token("accent"), token("text_primary"), token("surface_hover"), 4.5),
-            "control.hover": mix(token("surface_hover"), token("text_primary"), 0.06),
+            "text.accent": readable(theme_color("accent"), theme_color("text_primary"),
+                theme_color("surface_hover"), 4.5),
+            "control.hover": mix(theme_color("surface_hover"), theme_color("text_primary"), 0.06),
         },
     }
 }
@@ -51,13 +52,14 @@ fn tokens() {
 - `by_env(names, table)` makes a value depend on inherited environment values,
   resolved during native rendering. Nested tables follow the order of `names`.
 - Colors: literal `0xrrggbbaa`, `color("...")`, or expressions over other
-  tokens: `token(name)`, `mix(a, b, t)`, `alpha(c, a)`, and
+  tokens: `theme_color(name)`, `mix(a, b, t)`, `alpha(c, a)`, and
   `readable(color, toward, background, ratio)`, which moves `color` toward
   `toward` only as far as needed to reach the contrast `ratio` on
   `background`. Expressions resolve against the final merged token set, so a
   derived color follows the active palette and Host overrides.
 - Environment declarations: `environment: #{ density: #{ values: [...],
-  default: "comfortable" } }`.
+  "default": "comfortable" } }`. `default` is a reserved Rhai keyword, so the
+  key is quoted.
 
 ## 3. Semantic colors
 

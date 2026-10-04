@@ -53,6 +53,16 @@ pub struct ComponentMetadata {
     pub capabilities: BTreeMap<String, VersionReq>,
     #[serde(default)]
     pub assets: BTreeSet<String>,
+    /// Theme tokens this component reads: bare names are semantic colors;
+    /// `spacing.*`, `radius.*` and `namespace.name` are lengths or namespaced
+    /// tokens; `typography.<role>` are roles. Preparation checks every loaded
+    /// theme against the union of mounted components.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub tokens: BTreeSet<String>,
+    /// Environment values this component responds to, such as `density` and
+    /// `size`. Each must be declared by the token base.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub environment: BTreeSet<String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -675,6 +685,21 @@ fn validate_metadata(metadata: &ComponentMetadata) -> Result<(), ComponentError>
             return Err(ComponentError::InvalidAsset(asset.clone()));
         }
     }
+    for token in &metadata.tokens {
+        let valid = if token.contains('.') {
+            crate::token::validate_token_path(token).is_ok()
+        } else {
+            crate::token::valid_token_segment(token)
+        };
+        if !valid {
+            return Err(ComponentError::InvalidToken(token.clone()));
+        }
+    }
+    for name in &metadata.environment {
+        if !crate::token::valid_token_segment(name) {
+            return Err(ComponentError::InvalidEnvironment(name.clone()));
+        }
+    }
     Ok(())
 }
 
@@ -827,6 +852,10 @@ fn is_component_asset_path(value: &str) -> bool {
 
 #[derive(Debug, Error)]
 pub enum ComponentError {
+    #[error("component token requirement `{0}` must be a snake_case name or `namespace.name` path")]
+    InvalidToken(String),
+    #[error("component environment value `{0}` must be a snake_case name")]
+    InvalidEnvironment(String),
     #[error("component export `{0}` must be a PascalCase identifier")]
     InvalidExport(String),
     #[error("runtime API range {0:?} is empty")]
@@ -949,6 +978,8 @@ mod tests {
             dependencies: BTreeSet::new(),
             capabilities: BTreeMap::new(),
             assets: BTreeSet::new(),
+            tokens: std::collections::BTreeSet::new(),
+            environment: std::collections::BTreeSet::new(),
         }
     }
 

@@ -70,6 +70,7 @@ fn mount(
         ])),
         source("registry/themes/default_dark.rhai"),
     )
+        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .motion_preference(MotionPreference::None)
     .prepare()
     .unwrap();
@@ -794,6 +795,7 @@ fn mount_with_layout_counter(
         ])),
         source("registry/themes/default_dark.rhai"),
     )
+        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .extension(CountExtension(counter))
     .motion_preference(MotionPreference::None)
     .prepare()
@@ -833,6 +835,7 @@ fn mount_streaming_chart(
         ])),
         source("registry/themes/default_dark.rhai"),
     )
+        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .extension(StreamExtension { data, counter })
     .motion_preference(MotionPreference::None)
     .prepare()
@@ -1032,6 +1035,7 @@ fn mount_extended_chart(
         ])),
         source("registry/themes/default_dark.rhai"),
     )
+        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .extension(extension)
     .runtime_clock(clock)
     .motion_preference(preference)

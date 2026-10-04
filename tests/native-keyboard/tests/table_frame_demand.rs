@@ -46,6 +46,7 @@ fn view(ctx){column([
             EmbeddedScriptSource::new(modules),
             std::fs::read_to_string(format!("{REPO}/registry/themes/default_dark.rhai")).unwrap(),
         )
+        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
         .asset_sources(
             [
                 "disclosure_down",

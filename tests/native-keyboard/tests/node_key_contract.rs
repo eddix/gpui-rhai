@@ -64,6 +64,7 @@ fn mount(cx: &mut TestAppContext, target: &str) -> WindowHandle<Host> {
         ])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
+        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .prepare()
     .unwrap();
     let window = cx.add_window(move |window, cx| {

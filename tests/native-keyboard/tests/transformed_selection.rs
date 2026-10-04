@@ -38,6 +38,7 @@ fn mount(
         EmbeddedScriptSource::new(sources),
         std::fs::read_to_string(format!("{ROOT}/registry/themes/default_dark.rhai")).unwrap(),
     )
+        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .motion_preference(MotionPreference::None)
     .prepare()
     .unwrap();

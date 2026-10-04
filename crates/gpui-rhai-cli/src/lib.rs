@@ -13,8 +13,9 @@ use gpui_rhai::{
     AppManifest, ComponentDefinition, ComponentInstancePath, ComponentMetadata, ComponentRegistry,
     DirectoryAssetProvider, EmbeddedScriptSource, FontSource, LocaleManager, ModuleId,
     RUNTIME_API_VERSION, RestrictedModuleResolver, RuntimeEngine, ScriptAsset, ScriptLifecycle,
-    ThemeManager, ThemeSelection, UiRuntimeState, load_component_styles, load_locale_source,
-    load_theme_source, parse_component_header, validate_font_sources,
+    ThemeManager, ThemeSelection, ThemeTokenOverrides, ThemeVariant, UiRuntimeState,
+    load_component_styles, load_locale_source, load_theme_with_layers, load_token_base,
+    parse_component_header, validate_font_sources,
 };
 use semver::Version;
 use serde::{Deserialize, Serialize};
@@ -32,7 +33,7 @@ pub mod theme_studio;
 use gpui_rhai_registry::{
     AR_LOCALE, BUNDLED_ASSET_SOURCES, BUNDLED_CHART_SOURCES_BY_ID, BUNDLED_COMPONENT_SOURCES_BY_ID,
     BUNDLED_MOTION_SOURCES_BY_ID, BUNDLED_THEME_SOURCES, DEFAULT_THEME, EN_LOCALE, STUDIO_SOURCE,
-    ZH_CN_LOCALE,
+    TOKEN_BASE_SOURCE, ZH_CN_LOCALE,
 };
 #[cfg(test)]
 use gpui_rhai_registry::{
@@ -238,6 +239,10 @@ impl Project {
         }
         plan.create(self.root.join("ui/main.rhai"), starter_ui())?;
         plan.create(self.root.join("ui/theme.rhai"), DEFAULT_THEME.to_owned())?;
+        plan.create(
+            self.root.join("ui/tokens.rhai"),
+            TOKEN_BASE_SOURCE.to_owned(),
+        )?;
         plan.create(
             self.root.join("ui/styles.rhai"),
             DEFAULT_COMPONENT_STYLES.to_owned(),
@@ -459,18 +464,10 @@ impl Project {
             )
             .map_err(|error| ProjectError::ComponentStyle(error.to_string()))?;
         }
-        let theme_source = read(&self.root.join("ui/theme.rhai"))?;
         let theme_runtime = RuntimeEngine::new();
-        let primary = load_theme_source(theme_runtime.engine(), "ui/theme.rhai", &theme_source)
-            .map_err(|error| ProjectError::Theme(error.to_string()))?;
-        let mut variants = vec![primary.clone()];
-        for path in collect_paths(&self.root.join("ui/themes"))? {
-            let source = read(&path)?;
-            variants.push(
-                load_theme_source(theme_runtime.engine(), &path.to_string_lossy(), &source)
-                    .map_err(|error| ProjectError::Theme(error.to_string()))?,
-            );
-        }
+        let variants = load_project_themes(&self.root, &theme_runtime)?;
+        let primary = variants[0].clone();
+        validate_theme_requirements(&variants, &components)?;
         ThemeManager::from_variants(variants, ThemeSelection::new(primary.family, primary.name))
             .map_err(|error| ProjectError::Theme(error.to_string()))?;
         validate_locales(&self.root)?;
@@ -653,6 +650,10 @@ impl Project {
         if !styles.exists() {
             plan.create(styles, DEFAULT_COMPONENT_STYLES.to_owned())?;
         }
+        let tokens = self.root.join("ui/tokens.rhai");
+        if !tokens.exists() {
+            plan.create(tokens, TOKEN_BASE_SOURCE.to_owned())?;
+        }
         plan.update(
             manifest_path,
             toml::to_string_pretty(&manifest)?,
@@ -723,7 +724,15 @@ impl Project {
         let themes = collect_relative_files(&self.root.join("ui/themes"), "../ui/themes")?;
         let assets = collect_relative_files(&self.root.join("ui/assets"), "../ui/assets")?;
         let fonts = collect_relative_files(&self.root.join("ui/fonts"), "../ui/fonts")?;
-        let generated = generated_embed_module(&app, &modules, &locales, &themes, &assets, &fonts)?;
+        let generated = generated_embed_module(
+            &app,
+            &modules,
+            &locales,
+            &themes,
+            &assets,
+            &fonts,
+            self.root.join("ui/tokens.rhai").exists(),
+        )?;
         let path = self.root.join("src/gpui_rhai_embedded.rs");
         let mut plan = ProjectPlan::new(self.root.clone());
         match fs::read_to_string(&path) {
@@ -1039,16 +1048,8 @@ fn validate_entry(
     }
     let has_init = compiled.has_function("init", 1);
     let schema = runtime.root_state_schema(&compiled)?;
-    let primary_source = read(&root.join("ui/theme.rhai"))?;
-    let primary = load_theme_source(runtime.engine(), "ui/theme.rhai", &primary_source)
-        .map_err(|error| ProjectError::Theme(error.to_string()))?;
-    let mut themes = vec![primary.clone()];
-    for path in collect_paths(&root.join("ui/themes"))? {
-        themes.push(
-            load_theme_source(runtime.engine(), &path.to_string_lossy(), &read(&path)?)
-                .map_err(|error| ProjectError::Theme(error.to_string()))?,
-        );
-    }
+    let themes = load_project_themes(root, &runtime)?;
+    let primary = themes[0].clone();
     let mut state = UiRuntimeState::new();
     let styles_path = root.join("ui/styles.rhai");
     if styles_path.exists() {
@@ -1098,6 +1099,68 @@ fn validate_entry(
     } else {
         Ok(false)
     }
+}
+
+/// Load `ui/theme.rhai` and `ui/themes/*` on top of `ui/tokens.rhai` when it
+/// exists. The primary theme is first.
+fn load_project_themes(
+    root: &Path,
+    runtime: &RuntimeEngine,
+) -> Result<Vec<ThemeVariant>, ProjectError> {
+    let engine = runtime.engine();
+    let tokens_path = root.join("ui/tokens.rhai");
+    let base = if tokens_path.exists() {
+        Some(
+            load_token_base(engine, "ui/tokens.rhai", &read(&tokens_path)?)
+                .map_err(|error| ProjectError::Theme(error.to_string()))?,
+        )
+    } else {
+        None
+    };
+    let load = |name: &str, source: &str| {
+        load_theme_with_layers(
+            engine,
+            base.as_ref(),
+            name,
+            source,
+            &ThemeTokenOverrides::default(),
+        )
+        .map_err(|error| ProjectError::Theme(error.to_string()))
+    };
+    let mut themes = vec![load("ui/theme.rhai", &read(&root.join("ui/theme.rhai"))?)?];
+    for path in collect_paths(&root.join("ui/themes"))? {
+        themes.push(load(&path.to_string_lossy(), &read(&path)?)?);
+    }
+    Ok(themes)
+}
+
+/// Every theme must provide the tokens and environment values declared by
+/// the installed components.
+fn validate_theme_requirements(
+    themes: &[ThemeVariant],
+    components: &gpui_rhai::ComponentRegistry,
+) -> Result<(), ProjectError> {
+    for theme in themes {
+        for (_, definition) in components.iter() {
+            let metadata = &definition.metadata;
+            let environment = metadata
+                .environment
+                .iter()
+                .map(|name| format!("environment.{name}"))
+                .collect::<Vec<_>>();
+            theme
+                .require(
+                    metadata.id.as_str(),
+                    metadata
+                        .tokens
+                        .iter()
+                        .chain(&environment)
+                        .map(String::as_str),
+                )
+                .map_err(|error| ProjectError::Theme(error.to_string()))?;
+        }
+    }
+    Ok(())
 }
 
 fn load_check_locales(root: &Path) -> Result<Option<LocaleManager>, ProjectError> {
@@ -1346,6 +1409,7 @@ fn generated_embed_module(
     themes: &[(String, String)],
     assets: &[(String, String)],
     fonts: &[(String, String)],
+    has_token_base: bool,
 ) -> Result<String, ProjectError> {
     let mut output =
         String::from("// @generated by `gpui-rhai embed`; edit files under `ui/` instead.\n\n");
@@ -1374,6 +1438,11 @@ fn generated_embed_module(
     }
     output.push_str("    ]))\n}\n\n");
     output.push_str("pub const THEME_SOURCE: &str = include_str!(\"../ui/theme.rhai\");\n\n");
+    if has_token_base {
+        output.push_str(
+            "/// Pass to `EmbeddedScriptView::token_base`.\npub const TOKEN_BASE_SOURCE: &str = include_str!(\"../ui/tokens.rhai\");\n\n",
+        );
+    }
     output.push_str(
         "pub const COMPONENT_STYLES_SOURCE: &str = include_str!(\"../ui/styles.rhai\");\n\n",
     );
@@ -2364,7 +2433,8 @@ mod tests {
                     .with_capability("app.beta", "*")
                     .unwrap();
             }
-            let generated = generated_embed_module(&manifest, &[], &[], &[], &[], &[]).unwrap();
+            let generated =
+                generated_embed_module(&manifest, &[], &[], &[], &[], &[], false).unwrap();
             assert!(generated.contains("let manifest = gpui_rhai::AppManifest::new("));
             assert!(!generated.contains("let mut manifest"));
             assert!(!generated.contains("#[allow(unused_mut)]"));

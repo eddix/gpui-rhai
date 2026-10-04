@@ -123,9 +123,18 @@ pub(crate) fn native_typography(
     role: &str,
     window: &Window,
 ) -> Result<NativeTypography, String> {
-    let typography = theme
-        .typography(role)
-        .ok_or_else(|| format!("native text primitive cannot resolve typography role `{role}`"))?;
+    // Without a token base the role is unknown; fall back to the platform text
+    // size (the window rem) so native text works without a design language.
+    let Some(typography) = theme.typography(role) else {
+        let font_size = window.rem_size();
+        return Ok(NativeTypography {
+            family: None,
+            fallbacks: Vec::new(),
+            font_size,
+            line_height: (font_size * 1.25).round(),
+            weight: 400,
+        });
+    };
     Ok(NativeTypography {
         family: typography.family,
         fallbacks: typography.fallbacks,
@@ -157,9 +166,7 @@ fn native_length(
             .parse::<f32>()
             .map(|value| rem_size * value)
             .map_err(|_| format!("typography `{role}.{field}` cannot fit native f32 rems")),
-        crate::Length::Relative(_)
-        | crate::Length::ThemeSpacing(_)
-        | crate::Length::ThemeRadius(_) => Err(format!(
+        crate::Length::Relative(_) | crate::Length::Token(_) => Err(format!(
             "typography `{role}.{field}` must resolve to pixels or rems"
         )),
     }
@@ -980,12 +987,7 @@ pub fn text_input_primitive_descriptor() -> PrimitiveDescriptor {
             ),
             (
                 "typography".to_owned(),
-                ObjectField::required(ValueSchema::String {
-                    allowed: crate::REQUIRED_TYPOGRAPHY
-                        .iter()
-                        .map(ToString::to_string)
-                        .collect(),
-                }),
+                ObjectField::required(ValueSchema::string()),
             ),
             ("on_change".to_owned(), optional_callback()),
             ("on_submit".to_owned(), optional_callback()),

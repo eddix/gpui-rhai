@@ -100,6 +100,17 @@ impl ActionRegistry {
         });
     }
 
+    /// Whether a registered action may dispatch; `None` when unregistered.
+    #[must_use]
+    pub fn is_enabled(&self, id: &ActionId) -> Option<bool> {
+        self.actions.get(id).map(|entry| entry.enabled)
+    }
+
+    /// Registered action IDs in order.
+    pub fn ids(&self) -> impl Iterator<Item = &ActionId> {
+        self.actions.keys()
+    }
+
     /// Change whether an action may dispatch.
     ///
     /// # Errors
@@ -191,6 +202,13 @@ impl KeyBindingSpec {
         })
     }
 
+    /// The binding as a display label plus structured chords, formatted for
+    /// the current platform (`⌃⌥⇧⌘K` on macOS, `Ctrl+Shift+K` elsewhere).
+    #[must_use]
+    pub fn shortcut(&self) -> ActionShortcut {
+        ActionShortcut::from_keystrokes(&self.keystrokes, cfg!(target_os = "macos"))
+    }
+
     /// Convert the validated specification into a GPUI key binding.
     ///
     /// # Errors
@@ -219,6 +237,171 @@ impl KeyBindingSpec {
     }
 }
 
+/// One key chord: a key and its modifiers in canonical order
+/// (`ctrl`, `alt`, `shift`, `cmd`, `fn`).
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct KeyChord {
+    pub key: String,
+    pub modifiers: Vec<String>,
+}
+
+/// A displayable shortcut derived from a declared key binding.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ActionShortcut {
+    /// Platform-formatted text, chords separated by a space.
+    pub label: String,
+    /// Structured chords, so custom UIs can draw their own key caps.
+    pub chords: Vec<KeyChord>,
+    /// The original binding text, such as `cmd-shift-k`.
+    pub keystrokes: String,
+}
+
+impl ActionShortcut {
+    fn from_keystrokes(keystrokes: &str, mac: bool) -> Self {
+        let chords = keystrokes
+            .split_whitespace()
+            .filter_map(|chord| gpui::Keystroke::parse(chord).ok())
+            .map(|keystroke| {
+                let modifiers = keystroke.modifiers;
+                let mut names = Vec::new();
+                if modifiers.control {
+                    names.push("ctrl".to_owned());
+                }
+                if modifiers.alt {
+                    names.push("alt".to_owned());
+                }
+                if modifiers.shift {
+                    names.push("shift".to_owned());
+                }
+                if modifiers.platform {
+                    names.push("cmd".to_owned());
+                }
+                if modifiers.function {
+                    names.push("fn".to_owned());
+                }
+                KeyChord {
+                    key: keystroke.key,
+                    modifiers: names,
+                }
+            })
+            .collect::<Vec<_>>();
+        let label = chords
+            .iter()
+            .map(|chord| format_chord(chord, mac))
+            .collect::<Vec<_>>()
+            .join(" ");
+        Self {
+            label,
+            chords,
+            keystrokes: keystrokes.to_owned(),
+        }
+    }
+
+    /// The shortcut as a script value: `#{ label, keystrokes, chords }`.
+    #[must_use]
+    pub fn to_ui_value(&self) -> UiValue {
+        UiValue::Map(BTreeMap::from([
+            ("label".to_owned(), UiValue::String(self.label.clone())),
+            (
+                "keystrokes".to_owned(),
+                UiValue::String(self.keystrokes.clone()),
+            ),
+            (
+                "chords".to_owned(),
+                UiValue::Array(
+                    self.chords
+                        .iter()
+                        .map(|chord| {
+                            UiValue::Map(BTreeMap::from([
+                                ("key".to_owned(), UiValue::String(chord.key.clone())),
+                                (
+                                    "modifiers".to_owned(),
+                                    UiValue::Array(
+                                        chord
+                                            .modifiers
+                                            .iter()
+                                            .cloned()
+                                            .map(UiValue::String)
+                                            .collect(),
+                                    ),
+                                ),
+                            ]))
+                        })
+                        .collect(),
+                ),
+            ),
+        ]))
+    }
+}
+
+fn format_chord(chord: &KeyChord, mac: bool) -> String {
+    let key = format_key(&chord.key, mac);
+    if mac {
+        let mut label = String::new();
+        for modifier in &chord.modifiers {
+            label.push_str(match modifier.as_str() {
+                "ctrl" => "⌃",
+                "alt" => "⌥",
+                "shift" => "⇧",
+                "cmd" => "⌘",
+                _ => "fn ",
+            });
+        }
+        label.push_str(&key);
+        label
+    } else {
+        let mut parts = chord
+            .modifiers
+            .iter()
+            .map(|modifier| match modifier.as_str() {
+                "ctrl" => "Ctrl",
+                "alt" => "Alt",
+                "shift" => "Shift",
+                "cmd" => "Super",
+                _ => "Fn",
+            })
+            .map(ToOwned::to_owned)
+            .collect::<Vec<_>>();
+        parts.push(key);
+        parts.join("+")
+    }
+}
+
+fn format_key(key: &str, mac: bool) -> String {
+    let named = match key {
+        "enter" => Some(if mac { "↩" } else { "Enter" }),
+        "escape" => Some(if mac { "⎋" } else { "Esc" }),
+        "backspace" => Some(if mac { "⌫" } else { "Backspace" }),
+        "delete" => Some(if mac { "⌦" } else { "Delete" }),
+        "tab" => Some(if mac { "⇥" } else { "Tab" }),
+        "space" => Some("Space"),
+        "up" => Some("↑"),
+        "down" => Some("↓"),
+        "left" => Some("←"),
+        "right" => Some("→"),
+        "home" => Some("Home"),
+        "end" => Some("End"),
+        "pageup" => Some("PgUp"),
+        "pagedown" => Some("PgDn"),
+        _ => None,
+    };
+    named.map_or_else(
+        || {
+            let mut characters = key.chars();
+            if let (Some(character), None) = (characters.next(), characters.next()) {
+                character.to_uppercase().collect()
+            } else {
+                let mut text = key.to_owned();
+                if let Some(first) = text.get_mut(0..1) {
+                    first.make_ascii_uppercase();
+                }
+                text
+            }
+        },
+        ToOwned::to_owned,
+    )
+}
+
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
 pub enum ActionError {
     #[error("action ID `{0}` must be `namespace.snake_case_action`")]
@@ -233,6 +416,24 @@ pub enum ActionError {
     InvalidKeystroke(String),
     #[error("invalid key context: {0}")]
     InvalidContext(String),
+}
+
+#[cfg(test)]
+mod shortcut_tests {
+    use super::*;
+
+    #[test]
+    fn shortcuts_format_for_both_platforms_in_canonical_order() {
+        let mac = ActionShortcut::from_keystrokes("cmd-shift-k", true);
+        assert_eq!(mac.label, "⇧⌘K");
+        assert_eq!(mac.chords[0].modifiers, ["shift", "cmd"]);
+        let other = ActionShortcut::from_keystrokes("ctrl-alt-enter", false);
+        assert_eq!(other.label, "Ctrl+Alt+Enter");
+        let chord = ActionShortcut::from_keystrokes("cmd-k cmd-s", true);
+        assert_eq!(chord.label, "⌘K ⌘S");
+        assert_eq!(chord.chords.len(), 2);
+        assert_eq!(ActionShortcut::from_keystrokes("f6", true).label, "F6");
+    }
 }
 
 #[cfg(test)]

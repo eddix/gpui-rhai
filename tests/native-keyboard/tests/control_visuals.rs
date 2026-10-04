@@ -128,6 +128,7 @@ fn mount_with_overrides(
         ])),
         DEFAULT_DARK,
     )
+        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .asset_sources([
         (
             "icons/chevron_down".to_owned(),
@@ -180,11 +181,7 @@ fn view(ctx){tabs::Tabs(#{label:"Sections",value:"one",tabs:[
         typography: ThemeTypographyOverrides {
             roles: BTreeMap::from([(
                 "body".to_owned(),
-                TypographyToken {
-                    size: Length::Pixels(24.0),
-                    line_height: Length::Pixels(36.0),
-                    weight: 400,
-                },
+                TypographyToken::new(Length::Pixels(24.0), Length::Pixels(36.0), 400),
             )]),
             ..Default::default()
         },
@@ -250,7 +247,7 @@ fn view(ctx) { row([
         .unwrap()
         .visual;
     assert_eq!(button.height, 32.0);
-    assert_eq!(badge.height, 22.0);
+    assert_eq!(badge.height, 26.0);
     assert!(
         button.width >= badge.width + 12.0,
         "button={button:?}, badge={badge:?}"
@@ -269,8 +266,8 @@ fn view(ctx) { row([
         .geometry
         .unwrap()
         .visual;
-    assert_eq!(cjk_button.height, 24.0);
-    assert_eq!(cjk_badge.height, 18.0);
+    assert_eq!(cjk_button.height, 26.0);
+    assert_eq!(cjk_badge.height, 20.0);
     let large_button = tree
         .find_by_role_and_name("button", "Large line")
         .next()
@@ -324,13 +321,13 @@ fn view(ctx){column([
         .filter(|node| node.role == "tab")
         .collect::<Vec<_>>();
     assert_eq!(tabs.len(), 3);
-    assert_eq!(list.height, 30.0);
+    assert_eq!(list.height, 32.0);
     let bounds = tabs
         .iter()
         .map(|tab| tab.geometry.unwrap().visual)
         .collect::<Vec<_>>();
     assert_eq!(bounds[0].y - list.y, 2.0);
-    assert_eq!(bounds[0].height, 26.0);
+    assert_eq!(bounds[0].height, 28.0);
     assert_eq!(bounds[0].x - list.x, 2.0);
     assert!((list.x + list.width - (bounds[2].x + bounds[2].width) - 2.0).abs() < 0.01);
     assert!(

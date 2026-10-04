@@ -66,6 +66,7 @@ fn prepared() -> gpui_rhai::PreparedScriptView {
         ])),
         THEME,
     )
+    .token_base(include_str!("../../../registry/tokens.rhai"))
     .prepare()
     .expect("DiffViewer prepares")
 }

@@ -22,9 +22,9 @@ use crate::{
     Align, AssetRegistry, ColorValue, CursorKind, DisplayMode, EventPropagation, EventResponse,
     FlexDirection, FlexWrapMode, FontSlant, HitTestBehavior, ImageSourceSpec, InteractionState,
     Justify, LayoutLength, Length, MotionKey, MotionProperty, NodeId, OverflowMode,
-    OverlayNodeSpec, PositionMode, PrimitiveRegistry, PseudoState, RadiusToken, RetainedUiTree,
-    Rgba8, ScriptCallback, SignedLength, SpacingToken, Style, StyleProperties, TextAlignMode,
-    TextDirection, UiEventHandler, UiNode, UiNodeKind, UiValue, WhiteSpaceMode,
+    OverlayNodeSpec, PositionMode, PrimitiveRegistry, PseudoState, RetainedUiTree, Rgba8,
+    ScriptCallback, SignedLength, Style, StyleProperties, TextAlignMode, TextDirection,
+    UiEventHandler, UiNode, UiNodeKind, UiValue, WhiteSpaceMode,
 };
 
 type DispatchFn = dyn Fn(
@@ -373,8 +373,11 @@ fn apply_pointer_response(
     apply_event_response(response, window, app);
 }
 
-fn key_handler_bindings(node: &UiNode) -> BTreeMap<String, (Vec<crate::UiEventBinding>, UiValue)> {
-    if is_disabled(node) {
+fn key_handler_bindings(
+    node: &UiNode,
+    disabled: bool,
+) -> BTreeMap<String, (Vec<crate::UiEventBinding>, UiValue)> {
+    if disabled {
         return BTreeMap::new();
     }
     node.handlers()
@@ -1227,28 +1230,61 @@ fn retained_handlers(
         .collect()
 }
 
+/// Resolves symbolic style values against a theme.
+///
+/// Implementors provide token leaves; expressions, environment variants and
+/// scaled lengths are handled by the provided methods.
 pub trait ColorResolver {
-    fn resolve(&self, color: &ColorValue) -> Option<Rgba8>;
+    /// Look up one color token by name or `namespace.name` path.
+    fn resolve_token(&self, token: &str) -> Option<Rgba8>;
 
+    /// Resolve a color value, evaluating expressions over token leaves.
+    fn resolve(&self, color: &ColorValue) -> Option<Rgba8> {
+        color.resolve_with(&mut |token| self.resolve_token(token))
+    }
+
+    /// Every color token this resolver knows, for snapshot capture.
     fn color_snapshot(&self) -> BTreeMap<String, Rgba8> {
-        crate::primitive::RUNTIME_THEME_COLOR_TOKENS
-            .iter()
-            .filter_map(|token| {
-                self.resolve(&ColorValue::Token((*token).to_owned()))
-                    .map(|value| ((*token).to_owned(), value))
-            })
-            .collect()
+        BTreeMap::new()
     }
 
-    fn resolve_typography(&self, role: &str) -> Option<crate::ResolvedTypography> {
-        default_typography(role)
+    /// The environment this resolver is bound to.
+    fn environment(&self) -> crate::Environment {
+        crate::Environment::EMPTY
     }
 
+    /// Resolve a length token against an explicit environment.
+    fn resolve_length_in(
+        &self,
+        length: Length,
+        _environment: &crate::Environment,
+    ) -> Option<Length> {
+        (!length.is_theme_token()).then_some(length)
+    }
+
+    /// Resolve a length token against the bound environment.
     fn resolve_length(&self, length: Length) -> Option<Length> {
-        match length {
-            Length::Pixels(_) | Length::Rems(_) | Length::Relative(_) => Some(length),
-            Length::ThemeSpacing(_) | Length::ThemeRadius(_) => None,
-        }
+        self.resolve_length_in(length, &self.environment())
+    }
+
+    /// Resolve a typography role against an explicit environment.
+    fn resolve_typography_in(
+        &self,
+        _role: &str,
+        _environment: &crate::Environment,
+    ) -> Option<crate::ResolvedTypography> {
+        None
+    }
+
+    /// Resolve a typography role against the bound environment.
+    fn resolve_typography(&self, role: &str) -> Option<crate::ResolvedTypography> {
+        self.resolve_typography_in(role, &self.environment())
+    }
+
+    /// The complete token set, when the resolver is backed by one. Snapshots
+    /// keep it so nested environments can still resolve variants.
+    fn token_set(&self) -> Option<std::sync::Arc<crate::ThemeTokens>> {
+        None
     }
 
     fn resolve_motion(&self) -> crate::ThemeMotion {
@@ -1256,112 +1292,150 @@ pub trait ColorResolver {
     }
 }
 
-fn default_typography(role: &str) -> Option<crate::ResolvedTypography> {
-    let (size, line_height, weight) = match role {
-        "caption" => (11.0, 16.0, 400),
-        "body_small" => (12.0, 16.0, 400),
-        "body" => (13.0, 18.0, 400),
-        "subtitle" => (14.0, 20.0, 400),
-        "title" => (16.0, 22.0, 700),
-        "heading" => (18.0, 24.0, 700),
-        "display" => (24.0, 32.0, 700),
-        "display_large" => (28.0, 36.0, 700),
-        _ => return None,
-    };
-    Some(crate::ResolvedTypography {
-        family: None,
-        fallbacks: Vec::new(),
-        size: Length::Pixels(size),
-        line_height: Length::Pixels(line_height),
-        weight,
-    })
+/// A resolver bound to the environment inherited by one rendered subtree.
+#[derive(Clone, Copy)]
+pub(crate) struct EnvironmentScoped<'a, C: ?Sized> {
+    inner: &'a C,
+    environment: crate::Environment,
+}
+
+impl<'a, C: ColorResolver + ?Sized> EnvironmentScoped<'a, C> {
+    pub(crate) const fn new(inner: &'a C, environment: crate::Environment) -> Self {
+        Self { inner, environment }
+    }
+}
+
+impl<C: ColorResolver + ?Sized> ColorResolver for EnvironmentScoped<'_, C> {
+    fn resolve_token(&self, token: &str) -> Option<Rgba8> {
+        self.inner.resolve_token(token)
+    }
+
+    fn color_snapshot(&self) -> BTreeMap<String, Rgba8> {
+        self.inner.color_snapshot()
+    }
+
+    fn environment(&self) -> crate::Environment {
+        self.environment
+    }
+
+    fn resolve_length_in(
+        &self,
+        length: Length,
+        environment: &crate::Environment,
+    ) -> Option<Length> {
+        self.inner.resolve_length_in(length, environment)
+    }
+
+    fn resolve_typography_in(
+        &self,
+        role: &str,
+        environment: &crate::Environment,
+    ) -> Option<crate::ResolvedTypography> {
+        self.inner.resolve_typography_in(role, environment)
+    }
+
+    fn token_set(&self) -> Option<std::sync::Arc<crate::ThemeTokens>> {
+        self.inner.token_set()
+    }
+
+    fn resolve_motion(&self) -> crate::ThemeMotion {
+        self.inner.resolve_motion()
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct LiteralColorResolver;
 
 impl ColorResolver for LiteralColorResolver {
-    fn resolve(&self, color: &ColorValue) -> Option<Rgba8> {
-        match color {
-            ColorValue::Literal(color) => Some(*color),
-            ColorValue::Token(_) => None,
-        }
+    fn resolve_token(&self, _token: &str) -> Option<Rgba8> {
+        None
     }
 }
 
+/// An owned theme capture for deferred rendering boundaries (slot runtimes,
+/// canvas, overlay backdrops). It keeps the full token set when available so
+/// environment variants still resolve inside the boundary.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct OwnedColorResolver {
-    tokens: BTreeMap<String, Rgba8>,
-    spacing: BTreeMap<SpacingToken, Length>,
-    radii: BTreeMap<RadiusToken, Length>,
-    typography: BTreeMap<String, crate::ResolvedTypography>,
+    tokens: Option<std::sync::Arc<crate::ThemeTokens>>,
+    colors: BTreeMap<String, Rgba8>,
+    environment: crate::Environment,
     motion: crate::ThemeMotion,
 }
 
 impl OwnedColorResolver {
-    fn capture(colors: &impl ColorResolver) -> Self {
-        let spacing = crate::primitive::RUNTIME_THEME_SPACING_TOKENS
-            .iter()
-            .copied()
-            .filter_map(|token| {
-                colors
-                    .resolve_length(Length::ThemeSpacing(token))
-                    .map(|value| (token, value))
-            })
-            .collect();
-        let radii = crate::primitive::RUNTIME_THEME_RADIUS_TOKENS
-            .iter()
-            .copied()
-            .filter_map(|token| {
-                colors
-                    .resolve_length(Length::ThemeRadius(token))
-                    .map(|value| (token, value))
-            })
-            .collect();
-        let typography = crate::REQUIRED_TYPOGRAPHY
-            .iter()
-            .filter_map(|role| {
-                colors
-                    .resolve_typography(role)
-                    .map(|value| ((*role).to_owned(), value))
-            })
-            .collect();
+    pub(crate) fn capture(colors: &(impl ColorResolver + ?Sized)) -> Self {
+        let tokens = colors.token_set();
         Self {
-            tokens: colors.color_snapshot(),
-            spacing,
-            radii,
-            typography,
+            colors: if tokens.is_some() {
+                BTreeMap::new()
+            } else {
+                colors.color_snapshot()
+            },
+            tokens,
+            environment: colors.environment(),
             motion: colors.resolve_motion(),
         }
     }
 }
 
-impl ColorResolver for OwnedColorResolver {
-    fn resolve(&self, color: &ColorValue) -> Option<Rgba8> {
-        match color {
-            ColorValue::Literal(color) => Some(*color),
-            ColorValue::Token(token) => self.tokens.get(token).copied(),
+impl OwnedColorResolver {
+    /// Whether both captures share the same token set.
+    pub(crate) fn same_tokens(&self, other: &Self) -> bool {
+        match (&self.tokens, &other.tokens) {
+            (Some(left), Some(right)) => std::sync::Arc::ptr_eq(left, right),
+            (None, None) => self.colors == other.colors,
+            _ => false,
         }
     }
+}
 
-    fn resolve_length(&self, length: Length) -> Option<Length> {
-        match length {
-            Length::ThemeSpacing(token) => self.spacing.get(&token).copied(),
-            Length::ThemeRadius(token) => self.radii.get(&token).copied(),
-            Length::Pixels(_) | Length::Rems(_) | Length::Relative(_) => Some(length),
+impl ColorResolver for OwnedColorResolver {
+    fn resolve_token(&self, token: &str) -> Option<Rgba8> {
+        match &self.tokens {
+            Some(tokens) => tokens.color(token),
+            None => self.colors.get(token).copied(),
         }
     }
 
     fn color_snapshot(&self) -> BTreeMap<String, Rgba8> {
+        match &self.tokens {
+            Some(tokens) => tokens.color_snapshot(),
+            None => self.colors.clone(),
+        }
+    }
+
+    fn environment(&self) -> crate::Environment {
+        self.environment
+    }
+
+    fn resolve_length_in(
+        &self,
+        length: Length,
+        environment: &crate::Environment,
+    ) -> Option<Length> {
+        match &self.tokens {
+            Some(tokens) => tokens.resolve_length(length, environment),
+            None => (!length.is_theme_token()).then_some(length),
+        }
+    }
+
+    fn resolve_typography_in(
+        &self,
+        role: &str,
+        environment: &crate::Environment,
+    ) -> Option<crate::ResolvedTypography> {
+        self.tokens
+            .as_ref()
+            .and_then(|tokens| tokens.resolve_typography(role, environment))
+    }
+
+    fn token_set(&self) -> Option<std::sync::Arc<crate::ThemeTokens>> {
         self.tokens.clone()
     }
 
     fn resolve_motion(&self) -> crate::ThemeMotion {
         self.motion.clone()
-    }
-
-    fn resolve_typography(&self, role: &str) -> Option<crate::ResolvedTypography> {
-        self.typography.get(role).cloned()
     }
 }
 
@@ -1396,6 +1470,10 @@ struct RenderEnvironment<'a, C> {
     locale: &'a str,
     number: Option<&'a crate::NumberMetadata>,
     ambient_text_color: Option<Rgba8>,
+    /// Environment values inherited from ancestors (`.env(...)`).
+    environment: crate::Environment,
+    /// Whether an ancestor is disabled.
+    inherited_disabled: bool,
     view_id: &'a str,
     retained: Option<&'a RetainedUiTree>,
     retained_links: Option<&'a BTreeMap<NodeId, Vec<crate::RetainedChildLink>>>,
@@ -1403,12 +1481,37 @@ struct RenderEnvironment<'a, C> {
     a11y_active: bool,
 }
 
-impl<C: ColorResolver> RenderEnvironment<'_, C> {
+impl<'a, C: ColorResolver> RenderEnvironment<'a, C> {
+    /// The theme resolver bound to this subtree's inherited environment.
+    fn resolver(&self) -> EnvironmentScoped<'a, C> {
+        EnvironmentScoped::new(self.colors, self.environment)
+    }
+
+    /// Apply a node's own environment overrides and disabled state; the
+    /// result is the scope of the node itself and of its descendants.
+    fn with_node_scope(&self, node: &UiNode) -> Self {
+        let mut environment = self.environment;
+        if let Some(UiValue::Map(values)) = node.attributes().get("environment") {
+            for (name, value) in values {
+                if let UiValue::String(value) = value {
+                    environment = environment
+                        .with(crate::Symbol::intern(name), crate::Symbol::intern(value))
+                        .unwrap_or(environment);
+                }
+            }
+        }
+        Self {
+            environment,
+            inherited_disabled: self.inherited_disabled || is_disabled(node),
+            ..*self
+        }
+    }
+
     fn with_resolved_text_color(&self, style: &StyleProperties) -> Self {
         Self {
             ambient_text_color: resolve_ambient_text_color(
                 style,
-                self.colors,
+                &self.resolver(),
                 self.ambient_text_color,
             ),
             ..*self
@@ -1439,6 +1542,8 @@ pub(crate) struct WindowRenderResources<'a> {
     pub locale: &'a str,
     pub number: Option<&'a crate::NumberMetadata>,
     pub ambient_text_color: Option<Rgba8>,
+    pub environment: crate::Environment,
+    pub inherited_disabled: bool,
     pub root_path: &'a str,
     pub view_id: &'a str,
     pub semantics: &'a crate::CommittedSemanticFrame,
@@ -1515,6 +1620,8 @@ impl GpuiNodeRenderer {
             locale: "en",
             number: None,
             ambient_text_color: None,
+            environment: crate::Environment::EMPTY,
+            inherited_disabled: false,
             view_id: "standalone",
             retained: None,
             retained_links: None,
@@ -1591,6 +1698,8 @@ impl GpuiNodeRenderer {
             locale: "en",
             number: None,
             ambient_text_color: None,
+            environment: crate::Environment::EMPTY,
+            inherited_disabled: false,
             view_id: "standalone",
             retained: Some(tree),
             retained_links: None,
@@ -1660,6 +1769,8 @@ impl GpuiNodeRenderer {
             locale: "en",
             number: None,
             ambient_text_color: None,
+            environment: crate::Environment::EMPTY,
+            inherited_disabled: false,
             view_id: "standalone",
             retained: Some(tree),
             retained_links: None,
@@ -1721,6 +1832,8 @@ impl GpuiNodeRenderer {
             locale: "en",
             number: None,
             ambient_text_color: None,
+            environment: crate::Environment::EMPTY,
+            inherited_disabled: false,
             view_id: "standalone",
             retained: None,
             retained_links: None,
@@ -1773,6 +1886,8 @@ impl GpuiNodeRenderer {
             locale: "en",
             number: None,
             ambient_text_color: None,
+            environment: crate::Environment::EMPTY,
+            inherited_disabled: false,
             root_path: "root",
             view_id: "standalone",
             semantics: &crate::CommittedSemanticFrame::default(),
@@ -1831,6 +1946,8 @@ impl GpuiNodeRenderer {
             locale: resources.locale,
             number: resources.number,
             ambient_text_color: resources.ambient_text_color,
+            environment: resources.environment,
+            inherited_disabled: resources.inherited_disabled,
             view_id: resources.view_id,
             retained: Some(tree),
             retained_links: None,
@@ -1889,6 +2006,8 @@ impl GpuiNodeRenderer {
             locale: resources.locale,
             number: resources.number,
             ambient_text_color: resources.ambient_text_color,
+            environment: resources.environment,
+            inherited_disabled: resources.inherited_disabled,
             view_id: resources.view_id,
             retained: None,
             retained_links: None,
@@ -1933,6 +2052,8 @@ impl GpuiNodeRenderer {
             locale: resources.locale,
             number: resources.number,
             ambient_text_color: resources.ambient_text_color,
+            environment: resources.environment,
+            inherited_disabled: resources.inherited_disabled,
             view_id: resources.view_id,
             retained: None,
             retained_links: Some(retained.links),
@@ -1949,14 +2070,12 @@ impl GpuiNodeRenderer {
         path: &str,
         retained_id: Option<NodeId>,
     ) -> AnyElement {
+        let node_environment = environment.with_node_scope(node);
+        let environment = &node_environment;
         if let Some(table) = render_table_layout(node, environment, path, retained_id) {
             return table;
         }
-        let local_interaction = if is_disabled(node) {
-            environment.interaction.clone().with(PseudoState::Disabled)
-        } else {
-            environment.interaction.clone()
-        };
+        let local_interaction = scoped_interaction(environment);
         let motion_path = retained_id.map_or_else(
             || path.to_owned(),
             |node| crate::motion::retained_node_path(path, node),
@@ -1989,7 +2108,7 @@ impl GpuiNodeRenderer {
         let mut element = apply_style(
             div(),
             &resolved_style,
-            environment.colors,
+            &environment.resolver(),
             environment.direction,
         );
         if matches!(
@@ -2061,7 +2180,8 @@ impl GpuiNodeRenderer {
         retained_id: Option<NodeId>,
         motion: NodeMotionValues,
     ) -> AnyElement {
-        let click = (!is_disabled(node) && !node.event_handlers("click").is_empty()).then(|| {
+        let disabled = environment.inherited_disabled;
+        let click = (!disabled && !node.event_handlers("click").is_empty()).then(|| {
             (
                 node.event_handlers("click").to_vec(),
                 node.handler_payload("click")
@@ -2069,13 +2189,13 @@ impl GpuiNodeRenderer {
                     .unwrap_or(UiValue::Null),
             )
         });
-        let hover = (!node.event_handlers("hover_change").is_empty()).then(|| {
+        let hover = (!disabled && !node.event_handlers("hover_change").is_empty()).then(|| {
             (
                 node.event_handlers("hover_change").to_vec(),
                 node.handler_payload("hover_change").cloned(),
             )
         });
-        let key_handlers = key_handler_bindings(node);
+        let key_handlers = key_handler_bindings(node, disabled);
         let hit_test = resolved_hit_test(node, environment);
         let semantic = environment
             .a11y_active
@@ -2103,7 +2223,7 @@ impl GpuiNodeRenderer {
                 )
             })) << 4
             | u8::from(semantic.is_some()) << 5;
-        if !node_needs_interaction_wrapper(node, needs) {
+        if !node_needs_interaction_wrapper(node, needs, disabled) {
             return Self::populate(
                 element,
                 node,
@@ -2126,13 +2246,16 @@ impl GpuiNodeRenderer {
         let text_direction = environment.direction;
         let stable_id = interaction_element_id(retained_id, path);
         let debug_path = path.to_owned();
-        let element = apply_pseudo_backgrounds(
+        let element = element
+            .id(SharedString::from(stable_id))
+            .debug_selector(move || debug_path.clone());
+        // A disabled node keeps its resolved disabled paint; pointer states
+        // must not repaint it.
+        let element = if disabled {
             element
-                .id(SharedString::from(stable_id))
-                .debug_selector(move || debug_path.clone()),
-            node.style(),
-            environment.colors,
-        );
+        } else {
+            apply_pseudo_backgrounds(element, node.style(), &environment.resolver())
+        };
         let element = apply_native_semantics(element, semantic.as_ref());
         let element = apply_primitive_accessibility_actions(
             element,
@@ -2142,8 +2265,13 @@ impl GpuiNodeRenderer {
             environment,
         );
         let element = apply_hit_test(element, hit_test);
-        let element =
-            apply_tab_behavior(element, node, click.is_some() || !key_handlers.is_empty());
+        let ancestor_disabled = disabled && !is_disabled(node);
+        let element = apply_tab_behavior(
+            element,
+            node,
+            click.is_some() || !key_handlers.is_empty(),
+            ancestor_disabled,
+        );
         let element = apply_environment_scroll(element, node, retained_id, environment);
         let element = apply_motion_trigger_handlers(
             element,
@@ -2225,7 +2353,11 @@ impl GpuiNodeRenderer {
                 apply_event_response(response, window, cx);
             }
         });
-        let element = apply_environment_raw_pointer(element, node, retained_id, environment);
+        let element = if disabled {
+            element
+        } else {
+            apply_environment_raw_pointer(element, node, retained_id, environment)
+        };
         Self::populate(
             element,
             node,
@@ -2255,7 +2387,7 @@ impl GpuiNodeRenderer {
                 .child(styled_text(
                     text.as_str(),
                     spans,
-                    environment.colors,
+                    &environment.resolver(),
                     environment.motions,
                     &retained_id.map_or_else(
                         || path.to_owned(),
@@ -2266,7 +2398,7 @@ impl GpuiNodeRenderer {
             UiNodeKind::Canvas { scene } => render_canvas(
                 element,
                 scene,
-                environment.colors,
+                &environment.resolver(),
                 motion,
                 retained_id,
                 environment.geometry,
@@ -2302,7 +2434,7 @@ impl GpuiNodeRenderer {
             UiNodeKind::Custom { primitive } => element
                 .child(
                     environment.primitives.element(
-                        primitive.clone(),
+                        inherit_primitive_disabled(primitive, environment.inherited_disabled),
                         retained_id.zip(node.key().map(|key| key.as_str().to_owned())),
                         environment
                             .primitives
@@ -2327,14 +2459,15 @@ impl GpuiNodeRenderer {
                             environment.view_id,
                         ),
                         crate::PrimitiveTheme::capture_with_environment(
-                            environment.colors,
+                            &environment.resolver(),
                             environment.direction,
                             environment.locale,
                             environment.number,
                             environment.clock.clone(),
                             environment.motion_preference,
                             environment.motion_quality,
-                        ),
+                        )
+                        .with_inherited_disabled(environment.inherited_disabled),
                     ),
                 )
                 .into_any_element(),
@@ -2532,9 +2665,9 @@ where
                     .resolve(&InteractionState::default())
                     .background
                     .as_ref()
-                    .and_then(|color| environment.colors.resolve(color))
+                    .and_then(|color| environment.resolver().resolve(color))
             })
-            .unwrap_or_else(|| semantic_color(environment.colors, token, fallback))
+            .unwrap_or_else(|| semantic_color(&environment.resolver(), token, fallback))
     };
     element.child(crate::scrollbar::ThemedScrollbar::new(
         format!("{path}/scrollbars"),
@@ -2651,9 +2784,9 @@ fn render_flattened_children<C: ColorResolver>(
     rendered
 }
 
-fn node_needs_interaction_wrapper(node: &UiNode, needs: u8) -> bool {
+fn node_needs_interaction_wrapper(node: &UiNode, needs: u8, disabled: bool) -> bool {
     needs & 0b10_1000 != 0
-        || !is_disabled(node)
+        || !disabled
             && (needs & 0b0111 != 0
                 || node_has_focus_declaration(node)
                 || node.style().hover.is_some()
@@ -2903,16 +3036,23 @@ fn accessibility_value_text(value: &UiValue) -> Option<String> {
     }
 }
 
+/// The interaction state of a node scope, with `Disabled` applied when the
+/// node or an ancestor is disabled.
+fn scoped_interaction<C>(environment: &RenderEnvironment<'_, C>) -> InteractionState {
+    if environment.inherited_disabled {
+        environment.interaction.clone().with(PseudoState::Disabled)
+    } else {
+        environment.interaction.clone()
+    }
+}
+
 fn resolved_hit_test<C: ColorResolver>(
     node: &UiNode,
     environment: &RenderEnvironment<'_, C>,
 ) -> Option<HitTestBehavior> {
-    let interaction = if is_disabled(node) {
-        environment.interaction.clone().with(PseudoState::Disabled)
-    } else {
-        environment.interaction.clone()
-    };
-    node.style().resolve(&interaction).hit_test
+    node.style()
+        .resolve(&scoped_interaction(environment))
+        .hit_test
 }
 
 fn apply_hit_test(element: Stateful<Div>, hit_test: Option<HitTestBehavior>) -> Stateful<Div> {
@@ -2990,15 +3130,20 @@ fn apply_tab_behavior(
     mut element: Stateful<Div>,
     node: &UiNode,
     implicit_tab_stop: bool,
+    ancestor_disabled: bool,
 ) -> Stateful<Div> {
-    element =
-        element
-            .tab_index(node_tab_index(node))
-            .tab_stop(if node_has_focus_declaration(node) {
-                node_tab_stop(node)
-            } else {
-                implicit_tab_stop
-            });
+    // A node's own explicit focus declaration wins over its own `disabled`
+    // (focusable disabled menu items), but a disabled ancestor removes every
+    // descendant from the tab order.
+    element = element
+        .tab_index(node_tab_index(node))
+        .tab_stop(if ancestor_disabled {
+            false
+        } else if node_has_focus_declaration(node) {
+            node_tab_stop(node)
+        } else {
+            implicit_tab_stop
+        });
     if node.attributes().get("tab_group") == Some(&UiValue::Bool(true)) {
         element = element.tab_group();
     }
@@ -3408,7 +3553,7 @@ fn render_inline_svg<C: ColorResolver>(
     source: &crate::InlineSvg,
     environment: &RenderEnvironment<'_, C>,
 ) -> AnyElement {
-    let interaction = if is_disabled(node) {
+    let interaction = if environment.inherited_disabled {
         environment.interaction.clone().with(PseudoState::Disabled)
     } else {
         environment.interaction.clone()
@@ -3536,7 +3681,7 @@ fn native_overlay_element<C: ColorResolver>(
     );
     let backdrop_style = node.part_style("backdrop").map(|style| {
         let style = style.clone();
-        let colors = OwnedColorResolver::capture(environment.colors);
+        let colors = OwnedColorResolver::capture(&environment.resolver());
         let direction = environment.direction;
         Rc::new(move |backdrop: Div| apply_style_override(backdrop, &style, &colors, direction))
             as crate::overlay_element::BackdropStyleHandler
@@ -3544,11 +3689,15 @@ fn native_overlay_element<C: ColorResolver>(
     overlay
         .with_backdrop_style(backdrop_style)
         .with_focus_ring(semantic_color(
-            environment.colors,
+            &environment.resolver(),
             "focus_ring",
             0x003b_82f6,
         ))
-        .with_focus_surface(semantic_color(environment.colors, "surface", 0x0018_181b))
+        .with_focus_surface(semantic_color(
+            &environment.resolver(),
+            "surface",
+            0x0018_181b,
+        ))
         .restore_focus_on_close(restore_focus_on_close)
 }
 
@@ -3656,7 +3805,7 @@ fn owned_slot_runtime<C: ColorResolver>(
     NodeSlotRuntime {
         now: environment.now,
         clock: environment.clock.clone(),
-        colors: OwnedColorResolver::capture(environment.colors),
+        colors: OwnedColorResolver::capture(&environment.resolver()),
         primitives: environment.primitives.clone(),
         assets: environment.assets.cloned().unwrap_or_default(),
         dispatcher: environment
@@ -3681,6 +3830,8 @@ fn owned_slot_runtime<C: ColorResolver>(
         locale: environment.locale.to_owned(),
         number: environment.number.cloned(),
         ambient_text_color: environment.ambient_text_color,
+        environment: environment.environment,
+        inherited_disabled: environment.inherited_disabled,
         base_path: path.to_owned(),
         view_id: environment.view_id.to_owned(),
         semantics: environment.semantics.cloned().unwrap_or_default(),
@@ -3702,7 +3853,7 @@ fn render_table_layout<C: ColorResolver>(
     let mut columns = columns.clone();
     collect_table_column_minima(node, &mut columns, environment, true);
     let mut style = node.style().resolve(environment.interaction);
-    resolve_style_lengths(&mut style, environment.colors);
+    resolve_style_lengths(&mut style, &environment.resolver());
     let roots = retained_id
         .into_iter()
         .map(|root| ("table".to_owned(), root))
@@ -3739,7 +3890,7 @@ fn collect_table_column_minima<C: ColorResolver>(
     }
     if let Some(column) = node.table_column().and_then(|index| columns.get_mut(index)) {
         let mut style = node.style().resolve(environment.interaction);
-        resolve_style_lengths(&mut style, environment.colors);
+        resolve_style_lengths(&mut style, &environment.resolver());
         column.include_minimum_style(&style, environment.direction);
     }
     match node.kind() {
@@ -4705,6 +4856,21 @@ fn is_disabled(node: &UiNode) -> bool {
     node.attributes().get("disabled") == Some(&UiValue::Bool(true))
 }
 
+/// A primitive under a disabled ancestor receives `disabled: true` when its
+/// descriptor declares a `disabled` prop (present after defaulting).
+fn inherit_primitive_disabled(
+    primitive: &crate::PrimitiveNode,
+    inherited_disabled: bool,
+) -> crate::PrimitiveNode {
+    let mut primitive = primitive.clone();
+    if inherited_disabled && primitive.props.get("disabled").is_some() {
+        primitive.props = primitive
+            .props
+            .with("disabled", crate::PrimitiveValue::Data(UiValue::Bool(true)));
+    }
+    primitive
+}
+
 fn apply_style(
     element: Div,
     style: &StyleProperties,
@@ -5257,7 +5423,7 @@ macro_rules! definite_length_fn {
                 Length::Pixels(value) => element.$method(px(to_f32(value))),
                 Length::Rems(value) => element.$method(rems(to_f32(value))),
                 Length::Relative(value) => element.$method(relative(to_f32(value))),
-                Length::ThemeSpacing(_) | Length::ThemeRadius(_) => element,
+                Length::Token(_) => element,
             }
         }
     };
@@ -5288,7 +5454,7 @@ macro_rules! layout_length_fn {
                     element.$method(relative(f64_to_f32(value)))
                 }
                 LayoutLength::Auto => element.$method(auto()),
-                LayoutLength::Definite(Length::ThemeSpacing(_) | Length::ThemeRadius(_)) => element,
+                LayoutLength::Definite(Length::Token(_)) => element,
             }
         }
     };
@@ -5316,7 +5482,7 @@ macro_rules! absolute_length_fn {
             match value {
                 Length::Pixels(value) => element.$method(px(to_f32(value))),
                 Length::Rems(value) => element.$method(rems(to_f32(value))),
-                Length::Relative(_) | Length::ThemeSpacing(_) | Length::ThemeRadius(_) => element,
+                Length::Relative(_) | Length::Token(_) => element,
             }
         }
     };
@@ -5335,7 +5501,7 @@ fn font_size(element: Div, value: Length) -> Div {
     match value {
         Length::Pixels(value) => element.text_size(px(to_f32(value))),
         Length::Rems(value) => element.text_size(rems(to_f32(value))),
-        Length::Relative(_) | Length::ThemeSpacing(_) | Length::ThemeRadius(_) => element,
+        Length::Relative(_) | Length::Token(_) => element,
     }
 }
 
@@ -5343,7 +5509,7 @@ fn line_height(element: Div, value: Length) -> Div {
     match value {
         Length::Pixels(value) => element.line_height(px(to_f32(value))),
         Length::Rems(value) => element.line_height(rems(to_f32(value))),
-        Length::Relative(_) | Length::ThemeSpacing(_) | Length::ThemeRadius(_) => element,
+        Length::Relative(_) | Length::Token(_) => element,
     }
 }
 
@@ -5475,11 +5641,15 @@ mod tests {
     struct TypographyResolver;
 
     impl ColorResolver for TypographyResolver {
-        fn resolve(&self, color: &ColorValue) -> Option<Rgba8> {
-            LiteralColorResolver.resolve(color)
+        fn resolve_token(&self, _token: &str) -> Option<Rgba8> {
+            None
         }
 
-        fn resolve_typography(&self, role: &str) -> Option<crate::ResolvedTypography> {
+        fn resolve_typography_in(
+            &self,
+            role: &str,
+            _environment: &crate::Environment,
+        ) -> Option<crate::ResolvedTypography> {
             (role == "body").then(|| crate::ResolvedTypography {
                 family: Some("JetBrains Mono".to_owned()),
                 fallbacks: vec!["PingFang SC".to_owned()],
@@ -5493,17 +5663,28 @@ mod tests {
     #[test]
     fn owned_color_snapshot_matches_the_native_primitive_theme_surface() {
         let engine = crate::RuntimeEngine::new();
-        let mut theme = crate::load_theme_source(
+        let mut theme = crate::load_theme_with_layers(
             engine.engine(),
+            Some(
+                &crate::load_token_base(
+                    engine.engine(),
+                    "tokens.rhai",
+                    include_str!("../../../registry/tokens.rhai"),
+                )
+                .unwrap(),
+            ),
             "default_light.rhai",
             include_str!("../../../registry/themes/default_light.rhai"),
+            &crate::ThemeTokenOverrides::default(),
         )
         .unwrap();
         let custom = Rgba8::from_rgba_hex(0x55aa_ccff);
-        theme.tokens.namespaces.insert(
-            "brand".to_owned(),
-            BTreeMap::from([("tint".to_owned(), crate::ThemeTokenValue::Color(custom))]),
-        );
+        std::sync::Arc::make_mut(&mut theme.tokens)
+            .namespaces
+            .insert(
+                "brand".to_owned(),
+                BTreeMap::from([("tint".to_owned(), crate::ThemeTokenValue::Color(custom))]),
+            );
         let snapshot = OwnedColorResolver::capture(&theme);
         assert_eq!(
             snapshot.resolve(&ColorValue::Token("selection".to_owned())),
@@ -5514,8 +5695,8 @@ mod tests {
             theme.tokens.color("table.selection")
         );
         assert_eq!(
-            snapshot.resolve_length(Length::ThemeSpacing(SpacingToken::Xxs)),
-            theme.tokens.spacing.get("xxs").copied()
+            snapshot.resolve_length(Length::theme_spacing("xxs").unwrap()),
+            Some(Length::Pixels(2.0))
         );
         assert_eq!(
             snapshot.resolve(&ColorValue::Token("brand.tint".to_owned())),

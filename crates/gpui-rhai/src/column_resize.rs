@@ -453,7 +453,7 @@ fn absolute_length_pixels(value: Length, window: &Window) -> Option<f64> {
     match value {
         Length::Pixels(value) => Some(value),
         Length::Rems(value) => Some(value * f64::from(window.rem_size())),
-        Length::Relative(_) | Length::ThemeSpacing(_) | Length::ThemeRadius(_) => None,
+        Length::Relative(_) | Length::Token(_) => None,
     }
 }
 

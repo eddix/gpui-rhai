@@ -107,6 +107,7 @@ fn timeline_view() -> EmbeddedScriptView {
         ])),
         THEME,
     )
+    .token_base(include_str!("../../../registry/tokens.rhai"))
 }
 
 fn main() {

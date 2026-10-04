@@ -28,6 +28,7 @@ fn mount(cx: &mut TestAppContext, script: &str) -> (WindowHandle<Host>, ScriptVi
     let theme =
         std::fs::read_to_string(format!("{ROOT}/registry/themes/default_dark.rhai")).unwrap();
     let prepared = EmbeddedScriptView::new(entry, EmbeddedScriptSource::new(modules), &theme)
+        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
         .motion_preference(MotionPreference::None)
         .prepare()
         .unwrap();

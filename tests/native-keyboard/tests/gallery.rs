@@ -826,15 +826,15 @@ fn host_theme_overrides_survive_live_theme_switches(cx: &mut TestAppContext) {
     let assert_radii = |snapshot: gpui_rhai::ThemeSnapshot| {
         assert_eq!(
             snapshot.variant.tokens.radii["sm"],
-            gpui_rhai::Length::Pixels(4.0)
+            gpui_rhai::Variable::Fixed(gpui_rhai::Length::Pixels(4.0))
         );
         assert_eq!(
             snapshot.variant.tokens.radii["md"],
-            gpui_rhai::Length::Pixels(7.0)
+            gpui_rhai::Variable::Fixed(gpui_rhai::Length::Pixels(7.0))
         );
         assert_eq!(
             snapshot.variant.tokens.radii["lg"],
-            gpui_rhai::Length::Pixels(10.0)
+            gpui_rhai::Variable::Fixed(gpui_rhai::Length::Pixels(10.0))
         );
     };
     assert_radii(visual.update(|_, cx| view.theme_snapshot(cx).unwrap()));

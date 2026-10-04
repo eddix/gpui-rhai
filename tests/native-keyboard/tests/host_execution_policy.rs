@@ -81,6 +81,7 @@ fn embedded(source: &str) -> EmbeddedScriptView {
         EmbeddedScriptSource::new(BTreeMap::from([(entry, source.into())])),
         THEME,
     )
+        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
 }
 
 fn mount_result(

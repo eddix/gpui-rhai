@@ -226,15 +226,11 @@ fn token_and_motion_updates_do_not_infer_a_different_identity_from_colors() {
         .unwrap()
         .variant()
         .clone();
-    variant
-        .tokens
+    let tokens = std::sync::Arc::make_mut(&mut variant.tokens);
+    tokens
         .colors
         .insert("background".into(), Rgba8::from_rgb_hex(0x00ff_ffff));
-    variant
-        .tokens
-        .motion
-        .durations_ms
-        .insert("normal".into(), 42);
+    tokens.motion.durations_ms.insert("normal".into(), 42);
     themes.replace_variant(variant.clone()).unwrap();
     let mut state = UiRuntimeState::new();
     state.theme = Some(themes);

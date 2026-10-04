@@ -28,6 +28,7 @@ fn main() {
         ),
     ]));
     EmbeddedScriptView::new(entry, scripts, THEME)
+        .token_base(include_str!("../../../registry/tokens.rhai"))
         .locale_sources([
             ("locales/en.rhai".to_owned(), EN.to_owned()),
             ("locales/zh_cn.rhai".to_owned(), ZH_CN.to_owned()),

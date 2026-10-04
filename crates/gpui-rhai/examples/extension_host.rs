@@ -261,6 +261,7 @@ fn main() {
         .expect("static host slot name");
 
     EmbeddedScriptView::new(entry, scripts, DEFAULT_DARK)
+        .token_base(include_str!("../../../registry/tokens.rhai"))
         .extension(DemoExtension)
         .extension(host_slots)
         .manifest(manifest)

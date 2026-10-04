@@ -313,6 +313,7 @@ fn embedded(source: &str) -> EmbeddedScriptView {
         EmbeddedScriptSource::new(BTreeMap::from([(entry, source.into())])),
         THEME,
     )
+    .token_base(include_str!("../../../registry/tokens.rhai"))
 }
 
 fn file(source: &str) -> (tempfile::TempDir, FileScriptView) {
