@@ -2,10 +2,12 @@
 {
   "id": "components/resizable",
   "export": "Resizable",
-  "version": "0.1.7",
+  "version": "0.2.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
-  "capabilities": {}
+  "capabilities": {},
+  "tokens": ["focus_ring"],
+  "environment": []
 }
 */
 // Controlled single-element rectangle resizing inside one local boundary.
@@ -18,8 +20,10 @@
 //     on_resize:Fn("resized") })
 
 define_component(#{
-    metadata: #{ id: "components/resizable", "export": "Resizable", version: "0.1.7",
-        runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{} },
+    metadata: #{ id: "components/resizable", "export": "Resizable", version: "0.2.0",
+        runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{},
+        tokens: ["focus_ring"],
+        environment: [] },
     schema: #{
         props: #{
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
@@ -78,7 +82,7 @@ fn resizable_commit(ctx, value) { ctx.emit("resize", value); }
 
 fn handle_style(handle) {
     let value = style().absolute().flex_shrink(false)
-        .focus(style().background(theme_color("selection")));
+        .focus(style().background(theme_color("focus_ring")));
     if handle == "n" {
         value.left(px(12)).right(px(12)).top(offset_px(-5)).height(px(10))
     } else if handle == "s" {

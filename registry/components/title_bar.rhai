@@ -2,10 +2,15 @@
 {
   "id": "components/title_bar",
   "export": "TitleBar",
-  "version": "0.1.6",
+  "version": "0.2.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
-  "capabilities": {}
+  "capabilities": {},
+  "tokens": [
+    "surface_raised", "border", "text_primary", "text_muted", "metrics.titlebar",
+    "metrics.inset", "space.related", "typography.body", "typography.caption"
+  ],
+  "environment": ["density"]
 }
 */
 // Source-owned application chrome with logical start, center, and end regions.
@@ -15,8 +20,13 @@
 // Example: TitleBar(#{ label: "Workbench", title: breadcrumb_node, end: [settings_button] })
 
 define_component(#{
-    metadata: #{ id: "components/title_bar", "export": "TitleBar", version: "0.1.6",
-        runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{} },
+    metadata: #{ id: "components/title_bar", "export": "TitleBar", version: "0.2.0",
+        runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{},
+        tokens: [
+            "surface_raised", "border", "text_primary", "text_muted", "metrics.titlebar",
+            "metrics.inset", "space.related", "typography.body", "typography.caption"
+        ],
+        environment: ["density"] },
     schema: #{
         props: #{
             label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
@@ -48,7 +58,7 @@ fn title_bar_content(ctx, part, value, typography, muted) {
     if type_of(value) == "string" {
         let defaults = structural.typography(typography)
             .whitespace_nowrap().text_ellipsis();
-        if part == "title" { defaults = defaults.font_weight(700); }
+        if part == "title" { defaults = defaults.font_weight(600); }
         if muted { defaults = defaults.text_color(theme_color("text_muted")); }
         text(value).with_style(ctx.component_style(part, defaults))
     } else {
@@ -56,7 +66,7 @@ fn title_bar_content(ctx, part, value, typography, muted) {
     }
 }
 fn render_TitleBar(ctx, props) {
-    let title_children = [title_bar_content(ctx, "title", props.title, "body_small", false)];
+    let title_children = [title_bar_content(ctx, "title", props.title, "body", false)];
     if "subtitle" in props && props.subtitle != () {
         title_children.push(title_bar_content(ctx, "subtitle", props.subtitle, "caption", true));
     }
@@ -66,18 +76,20 @@ fn render_TitleBar(ctx, props) {
     let inset = if "inset_start" in props { props.inset_start } else { 0 };
     let start = row(start_children).with_style(ctx.component_style("start", style()
         .width(relative(0.333333)).min_width(px(0)).height(relative(1.0))
-        .padding_start(px(inset)).items_center().gap(theme_spacing("sm")).overflow_hidden()));
+        .padding_start(px(inset)).items_center().gap(theme_length("space.related")).overflow_hidden()));
     let center = row(if "center" in props { props.center } else { [] })
         .with_style(ctx.component_style("center", style()
             .width(relative(0.333333)).min_width(px(0)).height(relative(1.0))
-        .items_center().justify_center().gap(theme_spacing("xs")).overflow_hidden()));
+        .items_center().justify_center().gap(theme_length("space.related")).overflow_hidden()));
     let end = row(if "end" in props { props.end } else { [] })
         .with_style(ctx.component_style("end", style()
             .width(relative(0.333333)).min_width(px(0)).height(relative(1.0))
-        .items_center().justify_end().gap(theme_spacing("xs")).overflow_hidden()));
+        .items_center().justify_end().gap(theme_length("space.related")).overflow_hidden()));
+    // Window chrome: a raised block, metrics.titlebar high, content at metrics.inset.
     row([start, center, end])
         .with_style(ctx.component_style("root", style()
-        .width(relative(1.0)).height(px(34)).padding_x(theme_spacing("sm")).items_center()
+        .width(relative(1.0)).height(theme_length("metrics.titlebar"))
+            .padding_x(theme_length("metrics.inset")).items_center()
             .border_bottom(px(1)).border_color(theme_color("border"))
             .background(theme_color("surface_raised")).text_color(theme_color("text_primary"))))
         .accessibility_role("toolbar").accessibility_label(props.label)

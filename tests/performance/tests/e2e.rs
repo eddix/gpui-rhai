@@ -704,7 +704,7 @@ fn document_end_to_end_baseline(cx: &mut TestAppContext) {
         gpui_rhai::EmbeddedScriptSource::new(direct_sources),
         theme,
     )
-        .token_base(include_str!("../../../registry/tokens.rhai"))
+    .token_base(include_str!("../../../registry/tokens.rhai"))
     .prepare()
     .unwrap();
     let direct_string_rhai_prepare_us = micros(direct_started);
@@ -720,7 +720,7 @@ fn document_end_to_end_baseline(cx: &mut TestAppContext) {
         gpui_rhai::EmbeddedScriptSource::new(native_sources),
         theme,
     )
-        .token_base(include_str!("../../../registry/tokens.rhai"))
+    .token_base(include_str!("../../../registry/tokens.rhai"))
     .extension(BenchmarkDocumentExtension { document: native })
     .prepare()
     .unwrap();
@@ -782,7 +782,7 @@ fn view(ctx) {
         gpui_rhai::EmbeddedScriptSource::new(native_ui_sources),
         theme,
     )
-        .token_base(include_str!("../../../registry/tokens.rhai"))
+    .token_base(include_str!("../../../registry/tokens.rhai"))
     .extension(BenchmarkDocumentPairExtension {
         left: gpui_rhai::NativeTextDocument::new(
             "benchmark-left",

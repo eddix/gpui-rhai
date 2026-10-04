@@ -2,23 +2,39 @@
 {
   "id": "components/badge",
   "export": "Badge",
-  "version": "0.1.6",
+  "version": "0.2.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
-  "capabilities": {}
+  "capabilities": {},
+  "tokens": [
+    "text_primary", "text_muted", "surface", "accent", "on_accent", "success", "on_success",
+    "warning", "on_warning", "danger", "on_danger", "metrics.marker", "metrics.marker_small",
+    "spacing.xs", "spacing.sm", "radius.sm", "typography.caption"
+  ],
+  "environment": []
 }
 */
-// Read-only compact status or metadata badge.
-// Props: text, variant, dot, and size.
+// Badge marks a read-only status: a square lamp followed by its label.
+//
+// Props: text (required), variant, emphasis, dot, size.
 // Events/state: stateless and emits no events.
-// Parts: root, dot, label.
-// Example: Badge(#{ text: "Ready", variant: "success", dot: true })
+// Parts: root, lamp, label.
+// Example: Badge(#{ text: "Ready", variant: "success" })
+//
+// `emphasis: "strong"` turns the badge into a solid status block; reserve it for
+// states that require action. Markers keep their size in both densities.
 
 define_component(#{
     metadata: #{
-        id: "components/badge", "export": "Badge", version: "0.1.6",
+        id: "components/badge", "export": "Badge", version: "0.2.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: [], capabilities: #{},
+        tokens: [
+            "text_primary", "text_muted", "surface", "accent", "on_accent", "success", "on_success",
+            "warning", "on_warning", "danger", "on_danger", "metrics.marker", "metrics.marker_small",
+            "spacing.xs", "spacing.sm", "radius.sm", "typography.caption"
+        ],
+        environment: [],
     },
     schema: #{
         props: #{
@@ -28,43 +44,67 @@ define_component(#{
                 required: false, sensitive: false,
                 "default": #{ type: "string", value: "neutral" },
             },
+            emphasis: #{
+                schema: #{ type: "string", allowed: ["subtle", "strong"] },
+                required: false, sensitive: false,
+                "default": #{ type: "string", value: "subtle" },
+            },
             dot: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
-                "default": #{ type: "bool", value: false } },
+                "default": #{ type: "bool", value: true } },
             size: #{ schema: #{ type: "string", allowed: ["sm", "md"] }, required: false, sensitive: false,
                 "default": #{ type: "string", value: "md" } },
         },
         state: #{ fields: #{} }, events: #{}, slots: #{},
-        parts: ["root", "dot", "label"],
+        parts: ["root", "lamp", "label"],
     },
     render: Fn("render_Badge")
 });
 
 fn badge_color(variant) {
-    if variant == "accent" { theme_color("accent") }
-    else if variant == "success" { theme_color("success") }
-    else if variant == "warning" { theme_color("warning") }
-    else if variant == "danger" { theme_color("danger") }
-    else { theme_color("text_muted") }
+    if variant == "neutral" { theme_color("text_muted") } else { theme_color(variant) }
+}
+
+fn badge_on_color(variant) {
+    if variant == "neutral" { theme_color("surface") } else { theme_color(`on_${variant}`) }
 }
 
 fn Badge(props) { render_component("components/badge", props) }
 fn render_Badge(ctx, props) {
     let variant = if "variant" in props { props.variant } else { "neutral" };
-    let size = if "size" in props { props.size } else { "md" };
+    let strong = "emphasis" in props && props.emphasis == "strong";
+    let dot = if "dot" in props { props.dot } else { true };
+    let height = if "size" in props && props.size == "sm" {
+        theme_length("metrics.marker_small")
+    } else {
+        theme_length("metrics.marker")
+    };
+    let root = style()
+        .flex_row()
+        .items_center()
+        .min_height(height)
+        .gap(theme_spacing("xs"))
+        .typography("caption");
+    if strong {
+        // A neutral strong badge inverts ink and paper.
+        let fill = if variant == "neutral" { theme_color("text_primary") } else { badge_color(variant) };
+        root = root
+            .padding_x(theme_spacing("sm"))
+            .radius(theme_radius("sm"))
+            .background(fill)
+            .text_color(badge_on_color(variant))
+            .font_weight(600);
+    } else {
+        root = root.text_color(theme_color("text_primary"));
+    }
     let children = [];
-    if "dot" in props && props.dot {
-        children.push(row([]).with_style(ctx.component_style("dot", style()
-            .width(px(6)).height(px(6)).radius(px(3)).background(badge_color(variant)))));
+    if dot && !strong {
+        // The 6px square lamp is a structural constant.
+        children.push(row([]).with_style(ctx.component_style("lamp", style()
+            .width(px(6)).height(px(6)).background(badge_color(variant)))));
     }
     children.push(text(props.text).with_style(ctx.component_style("label", style())));
-    row(children).with_style(ctx.component_style("root", style()
-        .min_height(px(if size == "sm" { 18 } else { 20 }))
-        .padding_x(theme_spacing("xs"))
-        .padding_y(if size == "sm" { px(0) } else { theme_spacing("xxs") })
-        .gap(theme_spacing("xs")).items_center()
-        .radius(theme_radius("sm")).background(theme_color("surface_raised"))
-        .border(px(1)).border_color(theme_color("border"))
-        .typography(if size == "sm" { "caption" } else { "body_small" }).font_weight(500)
-        .text_color(badge_color(variant))))
-        .accessibility_role("status").accessibility_label(props.text)
+    row(children)
+        .with_style(ctx.component_style("root", root))
+        .accessibility_role("status")
+        .accessibility_label(props.text)
 }

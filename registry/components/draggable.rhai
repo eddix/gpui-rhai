@@ -2,10 +2,12 @@
 {
   "id": "components/draggable",
   "export": "Draggable",
-  "version": "0.1.8",
+  "version": "0.2.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
-  "capabilities": {}
+  "capabilities": {},
+  "tokens": [],
+  "environment": []
 }
 */
 // Controlled in-window positioning. Native pointer movement updates only
@@ -19,8 +21,10 @@
 //     handle:text("Move"), content:text("Body"), on_move:Fn("moved") })
 
 define_component(#{
-    metadata: #{ id: "components/draggable", "export": "Draggable", version: "0.1.8",
-        runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{} },
+    metadata: #{ id: "components/draggable", "export": "Draggable", version: "0.2.0",
+        runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{},
+        tokens: [],
+        environment: [] },
     schema: #{
         props: #{
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false },

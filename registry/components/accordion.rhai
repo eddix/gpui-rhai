@@ -2,11 +2,16 @@
 {
   "id": "components/accordion",
   "export": "Accordion",
-  "version": "0.1.6",
+  "version": "0.2.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
-  "assets": ["icons/minus.svg", "icons/plus.svg"]
+  "assets": ["icons/minus.svg", "icons/plus.svg"],
+  "tokens": [
+    "border", "surface_hover", "focus_ring", "text_primary", "text_muted", "disabled",
+    "metrics.row", "metrics.inset", "metrics.icon", "typography.body"
+  ],
+  "environment": ["density"]
 }
 */
 // Controlled single/multiple accordion with Rust-side clip motion.
@@ -16,8 +21,13 @@
 
 define_component(#{
     metadata: #{
-        id: "components/accordion", "export": "Accordion", version: "0.1.6",
+        id: "components/accordion", "export": "Accordion", version: "0.2.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{},
+        tokens: [
+            "border", "surface_hover", "focus_ring", "text_primary", "text_muted", "disabled",
+            "metrics.row", "metrics.inset", "metrics.icon", "typography.body"
+        ],
+        environment: ["density"],
         assets: ["icons/minus.svg", "icons/plus.svg"],
     },
     schema: #{
@@ -43,7 +53,7 @@ define_component(#{
             on_change: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false },
         },
         state: #{ fields: #{} }, events: #{ change: #{ payload: #{ type: "array", max_items: 256, items: #{ type: "string" } } } },
-        slots: #{}, parts: ["root", "item", "trigger", "content"],
+        slots: #{}, parts: ["root", "item", "trigger", "content", "focus_frame"],
     },
     render: Fn("render_Accordion")
 });
@@ -70,21 +80,26 @@ fn render_Accordion(ctx, props) {
     for item in props.items {
         let open = has_value(props.expanded, item.key);
         let item_disabled = all_disabled || ("disabled" in item && item.disabled);
-        let toggle_color = if open { theme_color("accent") } else { theme_color("text_muted") };
-        let trigger_background = if open { theme_color("surface_raised") }
-            else { rgba(0x00000000) };
-        let trigger_style = style().height(px(32)).padding_x(theme_spacing("sm"))
-            .justify_between().items_center().typography("body")
-            .font_weight(700).background(trigger_background)
-            .border(px(1)).border_color(rgba(0x00000000));
-        trigger_style = trigger_style.hover(style().background(theme_color("surface_hover")));
-        trigger_style = trigger_style.focus(style().border_color(theme_color("focus_ring")));
-        trigger_style = trigger_style.disabled(style()
-            .text_color(theme_color("disabled")).opacity(0.72));
+        // Headers are list rows: metrics.row high, text at metrics.inset. Focus is a 2px
+        // frame drawn over the row so it never moves the title.
+        let trigger_style = style().height(theme_length("metrics.row"))
+            .padding_x(theme_length("metrics.inset"))
+            .justify_between().items_center().typography("body").font_weight(600)
+            .text_color(theme_color("text_primary"));
+        trigger_style = trigger_style
+            .hover(style().background(theme_color("surface_hover")))
+            .focus(style())
+            .disabled(style().text_color(theme_color("disabled")));
+        let focus_frame = row([]).with_style(ctx.component_style("focus_frame", style()
+            .absolute().left(px(0)).right(px(0)).top(px(0)).bottom(px(0))
+            .border(px(2)).border_color(rgba(0x00000000))
+            .group_focus(style().border_color(theme_color("focus_ring")))));
         let trigger = row([
             text(item.title),
             image_source(asset(if open { "app/icons/minus" } else { "app/icons/plus" }))
-                .with_style(style().width(px(14)).height(px(14)).text_color(toggle_color))
+                .with_style(style().width(theme_length("metrics.icon")).height(theme_length("metrics.icon"))
+                    .text_color(if open { theme_color("text_primary") } else { theme_color("text_muted") })),
+            focus_frame,
         ])
             .with_key(`${item.key}-trigger`)
             .with_style(ctx.component_style("trigger", trigger_style))
@@ -96,7 +111,8 @@ fn render_Accordion(ctx, props) {
         }
         let height = item.content_height;
         let panel_content = item.content.with_style(ctx.component_style("content", style()
-                .padding(theme_spacing("sm")).typography("body")));
+                .padding_x(theme_length("metrics.inset")).padding_bottom(theme_length("metrics.inset"))
+                .typography("body")));
         let panel = column([panel_content])
             .with_key(`${item.key}-content`)
             .with_style(style().height(px(if open { height } else { 0 })).clip())
@@ -107,8 +123,8 @@ fn render_Accordion(ctx, props) {
             .with_style(ctx.component_style("item", style()
                 .border_bottom(px(1)).border_color(theme_color("border")))));
     }
+    // A Swiss list: hairlines between sections, no enclosing box.
     column(items).with_key(props.key)
         .with_style(ctx.component_style("root", style()
-            .border(px(1)).border_color(theme_color("border"))
-            .radius(theme_radius("md")).clip()))
+            .border_top(px(1)).border_color(theme_color("border"))))
 }

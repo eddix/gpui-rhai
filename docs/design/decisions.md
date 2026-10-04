@@ -40,3 +40,15 @@ implementation. Runtime mechanism decisions also get an ADR.
 | D5 | 2026-10-04 | The label voice uses the mono family because GPUI 0.3.7 has no letter spacing. | Uppercase proportional text without tracking is cramped. |
 | D6 | 2026-10-04 | `SF Mono` is not used as a family name. | CoreText does not resolve it by name and silently falls back to Helvetica, which is not monospaced. |
 | D7 | 2026-10-04 | Markers keep 20px height and their padding in both densities. | Markers sit inside rows; shrinking them in compact rows harms CJK legibility without saving space. |
+| D8 | 2026-10-04 | Button's default variant is `secondary`. | "Normal is quiet": an unqualified Button must not compete with the one primary action of a region. |
+| D9 | 2026-10-04 | Control text uses `control_small` (13/16) and `control_regular` (14/20) instead of the body roles. | Specimen measurement: a 22px body line plus the reserved 2px focus border made compact `sm` controls 26px instead of 24 and `xs` 24 instead of 20. Font sizes are unchanged, so density still never changes type size. |
+| D10 | 2026-10-04 | The Tag segment prop is `facet`, the derived color `tag.facet`. | `key` is the reserved component instance key. |
+| D11 | 2026-10-04 | Runtime gains `group_focus` and `focus_within` styles; focus-styled nodes now honor their tab stop policy. | A compound control (Checkbox, Switch, Tabs, list rows) must show focus on its mark without moving the content edge; field groups must frame a native input's focus. GPUI applied the element tab policy only to handles it creates, so persistent handles were never tab stops. |
+| D12 | 2026-10-04 | ToggleGroup uses roving focus over its segments. | The previous single-tab-stop group had no visible keyboard cursor. |
+| D13 | 2026-10-04 | Overlays gain a cross-axis `align`; menus and field panels open start-aligned. | Centered dropdowns drift away from their trigger and get clamped at window edges. |
+| D14 | 2026-10-04 | Table, ScrollArea, CodeViewer and DiffViewer draw no outer frame. | Regions provide edges; framed content inside framed regions doubles the lines. |
+| D15 | 2026-10-04 | Button shows its shortcut legend at every size. | Rhai cannot read the resolved size; the caller omits the legend for `xs`. |
+| D16 | 2026-10-04 | `ctx.action_enabled(id)` is read at render and is not dependency-tracked. | Components re-render with their parent; a host that changes enablement without other state change must trigger a render. |
+| D17 | 2026-10-04 | Chart palettes 5 and 8 derive from accent/success and accent/danger mixes. | Hue separation rules leave too few independent hues in most palettes. |
+| D18 | 2026-10-04 | Fill-height virtual lists defer their first reveal until the viewport is measured. | Without a configured height there is no estimate; revealing early top-aligned the target and hid preceding group headers. |
+| D19 | 2026-10-04 | `ScriptApplication` writes fatal startup errors to stderr before quitting. | On macOS quitting terminates the process, so `run` never returned the error. |

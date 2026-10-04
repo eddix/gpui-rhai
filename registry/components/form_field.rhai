@@ -2,10 +2,12 @@
 {
   "id": "components/form_field",
   "export": "FormField",
-  "version": "0.1.6",
+  "version": "0.2.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/label"],
-  "capabilities": {}
+  "capabilities": {},
+  "tokens": ["text_muted", "text.danger", "spacing.xs", "typography.caption"],
+  "environment": []
 }
 */
 // Associates label, control, description, required state, and error content.
@@ -17,9 +19,11 @@ import "components/label" as label_component;
 
 define_component(#{
     metadata: #{
-        id: "components/form_field", "export": "FormField", version: "0.1.6",
+        id: "components/form_field", "export": "FormField", version: "0.2.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/label"], capabilities: #{},
+        tokens: ["text_muted", "text.danger", "spacing.xs", "typography.caption"],
+        environment: [],
     },
     schema: #{
         props: #{
@@ -62,14 +66,14 @@ fn render_FormField(ctx, props) {
     if description != () {
         children.push(text(description)
             .with_style(ctx.component_style("description",
-                style().typography("body_small")
+                style().typography("caption")
                     .text_color(theme_color("text_muted"))))
             .accessibility_id(description_id));
     }
     if error != () {
         children.push(text(error).with_style(ctx.component_style("error",
-            style().typography("body_small")
-                .text_color(theme_color("danger"))))
+            style().typography("caption")
+                .text_color(theme_color("text.danger"))))
             .accessibility_id(error_id).accessibility_role("alert"));
     }
     column(children).with_key(props.id)

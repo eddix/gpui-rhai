@@ -1325,6 +1325,7 @@ impl TableColumn {
         };
         for normalized_only in [
             "title",
+            "numeric",
             "sortable",
             "resize_enabled",
             "resize_ref_key",

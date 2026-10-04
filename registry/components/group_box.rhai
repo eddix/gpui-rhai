@@ -2,10 +2,15 @@
 {
   "id": "components/group_box",
   "export": "GroupBox",
-  "version": "0.1.6",
+  "version": "0.2.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
-  "capabilities": {}
+  "capabilities": {},
+  "tokens": [
+    "border", "text_muted", "space.related", "spacing.xxs", "typography.label",
+    "typography.caption"
+  ],
+  "environment": ["density"]
 }
 */
 // Labelled desktop group surface for related controls or settings.
@@ -15,8 +20,13 @@
 // Example: GroupBox(#{ label: "Sync", content: text("Settings") })
 
 define_component(#{
-    metadata: #{ id: "components/group_box", "export": "GroupBox", version: "0.1.6",
-        runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{} },
+    metadata: #{ id: "components/group_box", "export": "GroupBox", version: "0.2.0",
+        runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{},
+        tokens: [
+            "border", "text_muted", "space.related", "spacing.xxs", "typography.label",
+            "typography.caption"
+        ],
+        environment: ["density"] },
     schema: #{
         props: #{
             label: #{ schema: #{ type: "string" }, required: true, sensitive: false },
@@ -34,20 +44,20 @@ define_component(#{
 
 fn GroupBox(props) { render_component("components/group_box", props) }
 fn render_GroupBox(ctx, props) {
-    let header = [text(props.label).with_style(ctx.component_style("label", style()
-        .typography("body").font_weight(700)
-        .text_color(theme_color("text_primary"))))];
+    // A labelled group: a hairline rule, a label-voice heading and the content, all on
+    // the parent's content edge.
+    let header = [text(props.label.to_upper()).with_style(ctx.component_style("label", style()
+        .typography("label").text_color(theme_color("text_muted"))))];
     if "description" in props && props.description != () {
         header.push(text(props.description).with_style(ctx.component_style("description", style()
-            .typography("body_small").text_color(theme_color("text_muted")))));
+            .typography("caption").text_color(theme_color("text_muted")))));
     }
     column([
         column(header).with_style(style().gap(theme_spacing("xxs"))),
         props.content.with_style(ctx.component_style("content", style()))
     ]).with_style(ctx.component_style("root", style()
-        .padding(theme_spacing("md")).gap(theme_spacing("sm")).radius(theme_radius("md"))
-        .border(px(1)).border_color(theme_color("border"))
-        .background(theme_color("surface"))
+        .padding_top(theme_length("space.related")).gap(theme_length("space.related"))
+        .border_top(px(1)).border_color(theme_color("border"))
         .disabled(style().opacity(0.62))))
         .disabled("disabled" in props && props.disabled)
         .accessibility_role("group").accessibility_label(props.label)

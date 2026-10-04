@@ -101,9 +101,9 @@ fn direction_changes_preserve_logical_scroll_distance_and_clamp(cx: &mut TestApp
                 let table = bounds(v, &view, "table", "Extent Table");
                 let first = bounds(v, &view, "columnheader", "A");
                 if direction_is_rtl {
-                    first.x + first.width - (table.x + table.width - 1.0)
+                    first.x + first.width - (table.x + table.width)
                 } else {
-                    table.x + 1.0 - first.x
+                    table.x - first.x
                 }
             };
             let table = bounds(&mut v, &view, "table", "Extent Table");
@@ -124,15 +124,15 @@ fn direction_changes_preserve_logical_scroll_distance_and_clamp(cx: &mut TestApp
             );
             assert_width(&mut v, &view, "A", "Alpha", 120.0);
 
-            // The wider viewport reduces the range to 420 - (350 - 2) = 72.
+            // The wider viewport reduces the range to 420 - 350 = 70.
             command(&mut v, &view, "button", "Viewport", "click");
             settle(&mut v);
             let clamped = logical_distance(&mut v, !rtl);
-            assert!((clamped - 72.0).abs() < 0.6, "range clamp: {clamped}");
+            assert!((clamped - 70.0).abs() < 0.6, "range clamp: {clamped}");
             v.update(|_, cx| view.select_locale(if rtl { "ar" } else { "en" }, cx))
                 .unwrap();
             settle(&mut v);
-            assert!((logical_distance(&mut v, rtl) - 72.0).abs() < 0.6);
+            assert!((logical_distance(&mut v, rtl) - 70.0).abs() < 0.6);
             assert_width(&mut v, &view, "A", "Alpha", 120.0);
         }
     }
@@ -178,7 +178,7 @@ fn mount_with_styles(
         ])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
-        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
+    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .locale_sources([
         (
             "en.rhai".into(),
@@ -430,12 +430,12 @@ fn percentage_and_weighted_flex_use_viewport_not_extent(cx: &mut TestAppContext)
         let mut v = VisualTestContext::from_window(*window, cx);
         settle(&mut v);
         assert_width(&mut v, &view, "A", "Alpha", 120.0);
-        assert_width(&mut v, &view, "B", "Beta", 149.0);
-        assert_width(&mut v, &view, "C", "Gamma", 29.0);
+        assert_width(&mut v, &view, "B", "Beta", 150.0);
+        assert_width(&mut v, &view, "C", "Gamma", 30.0);
         command(&mut v, &view, "button", "Viewport", "click");
         settle(&mut v);
-        assert_width(&mut v, &view, "B", "Beta", 249.0);
-        assert_width(&mut v, &view, "C", "Gamma", 129.0);
+        assert_width(&mut v, &view, "B", "Beta", 250.0);
+        assert_width(&mut v, &view, "C", "Gamma", 130.0);
     }
 }
 
@@ -449,10 +449,10 @@ fn percentage_overflow_does_not_feedback_into_its_basis(cx: &mut TestAppContext)
     );
     let mut v = VisualTestContext::from_window(*window, cx);
     settle(&mut v);
-    assert_width(&mut v, &view, "B", "Beta", 149.0);
+    assert_width(&mut v, &view, "B", "Beta", 150.0);
     command(&mut v, &view, "button", "Viewport", "click");
     settle(&mut v);
-    assert_width(&mut v, &view, "B", "Beta", 249.0);
+    assert_width(&mut v, &view, "B", "Beta", 250.0);
 }
 
 #[gpui::test]
@@ -501,9 +501,9 @@ fn accepted_final_column_width_recomputes_extent_and_clamps_offset(cx: &mut Test
         wheel(&mut v, p, if rtl { 500.0 } else { -500.0 }, 0.0);
         let c = bounds(&mut v, &view, "columnheader", "C");
         if rtl {
-            assert!((c.x - table.x - 1.0).abs() < 0.6);
+            assert!((c.x - table.x).abs() < 0.6);
         } else {
-            assert!((c.x + c.width - table.x - table.width + 1.0).abs() < 0.6);
+            assert!((c.x + c.width - table.x - table.width).abs() < 0.6);
         }
     }
 }
@@ -516,8 +516,15 @@ fn theme_insets_are_in_the_shared_column_plan_and_real_extent(cx: &mut TestAppCo
             .into_iter()
             .enumerate()
         {
+            // Cell text starts at metrics.inset; overriding it moves every cell edge.
             let overrides = ThemeTokenOverrides {
-                spacing: BTreeMap::from([("sm".into(), spacing)]),
+                namespaces: BTreeMap::from([(
+                    "metrics".into(),
+                    BTreeMap::from([(
+                        "inset".into(),
+                        ThemeTokenValue::Length(Variable::Fixed(spacing)),
+                    )]),
+                )]),
                 typography: ThemeTypographyOverrides {
                     roles: BTreeMap::from([
                         (
@@ -547,7 +554,7 @@ fn theme_insets_are_in_the_shared_column_plan_and_real_extent(cx: &mut TestAppCo
                 _ => unreachable!(),
             });
             assert_width(&mut v, &view, "A", "Alpha", 350.0);
-            assert_width(&mut v, &view, "B", "Beta", 149.0);
+            assert_width(&mut v, &view, "B", "Beta", 150.0);
             assert_width(&mut v, &view, "C", "Gamma", minimum);
             let table = bounds(&mut v, &view, "table", "Extent Table");
             let c = bounds(&mut v, &view, "columnheader", "C");
@@ -559,13 +566,13 @@ fn theme_insets_are_in_the_shared_column_plan_and_real_extent(cx: &mut TestAppCo
             );
             let c = bounds(&mut v, &view, "columnheader", "C");
             if rtl {
-                assert!((c.x - table.x - 1.0).abs() < 0.6);
+                assert!((c.x - table.x).abs() < 0.6);
             } else {
-                assert!((c.x + c.width - table.x - table.width + 1.0).abs() < 0.6);
+                assert!((c.x + c.width - table.x - table.width).abs() < 0.6);
             }
             command(&mut v, &view, "button", "Viewport", "click");
             settle(&mut v);
-            assert_width(&mut v, &view, "B", "Beta", 249.0);
+            assert_width(&mut v, &view, "B", "Beta", 250.0);
             assert_width(&mut v, &view, "C", "Gamma", minimum);
         }
     }
@@ -622,9 +629,9 @@ fn native_drag_override_repaints_widths_and_extent_without_rhai(cx: &mut TestApp
         assert_width(&mut v, &view, "C", "Gamma", 200.0);
         let last = bounds(&mut v, &view, "columnheader", "C");
         if rtl {
-            assert!((last.x - table.x - 1.0).abs() < 0.6);
+            assert!((last.x - table.x).abs() < 0.6);
         } else {
-            assert!((last.x + last.width - table.x - table.width + 1.0).abs() < 0.6);
+            assert!((last.x + last.width - table.x - table.width).abs() < 0.6);
         }
     }
 }
@@ -632,7 +639,7 @@ fn native_drag_override_repaints_widths_and_extent_without_rhai(cx: &mut TestApp
 #[gpui::test]
 fn single_column_under_equal_overflow_and_autofit_share_the_viewport(cx: &mut TestAppContext) {
     for rtl in [false, true] {
-        for width in [200.0, 298.0, 400.0] {
+        for width in [200.0, 300.0, 400.0] {
             let columns = format!(
                 r#"[#{{key:"c",title:"C",width:#{{kind:"fixed",value:{width}}},sortable:true}}]"#
             );
@@ -647,7 +654,7 @@ fn single_column_under_equal_overflow_and_autofit_share_the_viewport(cx: &mut Te
             wheel(&mut v, p, if rtl { 1000.0 } else { -1000.0 }, 0.0);
             assert_width(&mut v, &view, "C", "Gamma", width);
             let after = bounds(&mut v, &view, "columnheader", "C");
-            let expected = (width - 298.0_f64).max(0.0);
+            let expected = (width - 300.0_f64).max(0.0);
             assert!((after.x - before.x - if rtl { expected } else { -expected }).abs() < 0.6);
             let handle = bounds(&mut v, &view, "separator", "Resize C column");
             let h = point(
@@ -668,9 +675,9 @@ fn single_column_under_equal_overflow_and_autofit_share_the_viewport(cx: &mut Te
             assert!(fitted.width >= 48.0 && fitted.width < 200.0);
             assert_width(&mut v, &view, "C", "Gamma", fitted.width);
             if rtl {
-                assert!((fitted.x + fitted.width - table.x - table.width + 1.0).abs() < 0.6);
+                assert!((fitted.x + fitted.width - table.x - table.width).abs() < 0.6);
             } else {
-                assert!((fitted.x - table.x - 1.0).abs() < 0.6);
+                assert!((fitted.x - table.x).abs() < 0.6);
             }
         }
     }
@@ -692,7 +699,7 @@ fn component_min_max_and_native_override_use_one_width_authority(cx: &mut TestAp
         settle(&mut v);
         assert_width(&mut v, &view, "A", "Alpha", 90.0);
         assert_width(&mut v, &view, "B", "Beta", 90.0);
-        assert_width(&mut v, &view, "C", "Gamma", 118.0);
+        assert_width(&mut v, &view, "C", "Gamma", 120.0);
         for _ in 0..6 {
             command(&mut v, &view, "separator", "Resize C column", "key:right");
         }
@@ -707,9 +714,9 @@ fn component_min_max_and_native_override_use_one_width_authority(cx: &mut TestAp
         );
         let c = bounds(&mut v, &view, "columnheader", "C");
         if rtl {
-            assert!((c.x - table.x - 1.0).abs() < 0.6);
+            assert!((c.x - table.x).abs() < 0.6);
         } else {
-            assert!((c.x + c.width - table.x - table.width + 1.0).abs() < 0.6);
+            assert!((c.x + c.width - table.x - table.width).abs() < 0.6);
         }
     }
 }
@@ -729,8 +736,9 @@ fn four_column_registry_width_descriptors_share_the_actual_native_plan(cx: &mut 
             let mut v = VisualTestContext::from_window(*window, cx);
             settle(&mut v);
             assert_width(&mut v, &view, "Name", "Alpha", 120.0);
-            assert_width(&mut v, &view, "Score", "Beta", 16.0);
-            assert_width(&mut v, &view, "Joined", "Gamma", 89.4);
+            // Score's flex share is exhausted; its floor is the two cell insets.
+            assert_width(&mut v, &view, "Score", "Beta", 24.0);
+            assert_width(&mut v, &view, "Joined", "Gamma", 90.0);
             assert_width(&mut v, &view, "Status", "row-0", 90.0);
             let table = bounds(&mut v, &view, "table", "Extent Table");
             let last = bounds(&mut v, &view, "columnheader", "Status");
@@ -738,15 +746,15 @@ fn four_column_registry_width_descriptors_share_the_actual_native_plan(cx: &mut 
             wheel(&mut v, p, if rtl { 1000.0 } else { -1000.0 }, 0.0);
             let last = bounds(&mut v, &view, "columnheader", "Status");
             if rtl {
-                assert!((last.x - table.x - 1.0).abs() < 0.6);
+                assert!((last.x - table.x).abs() < 0.6);
             } else {
-                assert!((last.x + last.width - table.x - table.width + 1.0).abs() < 0.6);
+                assert!((last.x + last.width - table.x - table.width).abs() < 0.6);
             }
             command(&mut v, &view, "button", "Viewport", "click");
             settle(&mut v);
             assert_width(&mut v, &view, "Name", "Alpha", 120.0);
-            assert_width(&mut v, &view, "Score", "Beta", 138.6);
-            assert_width(&mut v, &view, "Joined", "Gamma", 149.4);
+            assert_width(&mut v, &view, "Score", "Beta", 140.0);
+            assert_width(&mut v, &view, "Joined", "Gamma", 150.0);
             assert_width(&mut v, &view, "Status", "row-0", 90.0);
         }
     }

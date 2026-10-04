@@ -347,8 +347,8 @@ impl Render for RangeSliderEntity {
             &self.theme,
             direction,
         );
-        let low_thumb = self.thumb(RangeThumb::Low, low_ratio, cx);
-        let high_thumb = self.thumb(RangeThumb::High, high_ratio, cx);
+        let low_thumb = self.thumb(RangeThumb::Low, low_ratio, window, cx);
+        let high_thumb = self.thumb(RangeThumb::High, high_ratio, window, cx);
         let track = match self.orientation {
             RangeOrientation::Horizontal => {
                 let low_visual = horizontal_thumb_ratio(low_ratio, direction);
@@ -397,35 +397,35 @@ impl RangeSliderEntity {
         &self,
         thumb: RangeThumb,
         ratio: f64,
+        window: &Window,
         cx: &mut Context<Self>,
-    ) -> gpui::Stateful<gpui::Div> {
-        let mut element = crate::renderer::apply_style_override(
-            div().absolute(),
-            &self.thumb_style,
-            &self.theme,
-            self.theme.direction(),
-        );
-        element = match self.orientation {
-            RangeOrientation::Horizontal => element
-                .left(relative(fraction_f32(horizontal_thumb_ratio(
-                    ratio,
-                    self.theme.direction(),
-                ))))
-                .top(relative(0.5))
-                .ml(px(-7.0))
-                .mt(px(-7.0)),
-            RangeOrientation::Vertical => element
-                .bottom(relative(fraction_f32(ratio)))
-                .left(relative(0.5))
-                .mb(px(-7.0))
-                .ml(px(-7.0)),
-        };
+    ) -> gpui::Div {
         let (focus, label, value) = match thumb {
             RangeThumb::Low => (&self.low_focus, self.low_label.clone(), self.preview.low),
             RangeThumb::High => (&self.high_focus, self.high_label.clone(), self.preview.high),
         };
+        let element = crate::renderer::apply_style_override_in(
+            div().flex_none(),
+            &self.thumb_style,
+            &crate::renderer::part_interaction(focus.is_focused(window), self.disabled),
+            &self.theme,
+            self.theme.direction(),
+        );
+        let anchor = match self.orientation {
+            RangeOrientation::Horizontal => div()
+                .absolute()
+                .left(relative(fraction_f32(horizontal_thumb_ratio(
+                    ratio,
+                    self.theme.direction(),
+                ))))
+                .top(relative(0.5)),
+            RangeOrientation::Vertical => div()
+                .absolute()
+                .bottom(relative(fraction_f32(ratio)))
+                .left(relative(0.5)),
+        };
         let entity = cx.entity();
-        element
+        let element = element
             .id(match thumb {
                 RangeThumb::Low => "gpui-rhai-range-slider-low",
                 RangeThumb::High => "gpui-rhai-range-slider-high",
@@ -441,7 +441,8 @@ impl RangeSliderEntity {
                 entity.update(cx, |slider, cx| {
                     slider.keyboard(thumb, event, window, cx);
                 });
-            })
+            });
+        crate::renderer::centered_on_anchor(anchor, element)
     }
 }
 

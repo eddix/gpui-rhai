@@ -50,6 +50,8 @@ fn tokens() {
             inset: by_env("density", #{ comfortable: px(12), compact: px(8) }),
             marker: px(20),
             marker_small: px(18),
+            // Choice marks: Checkbox box, Radio ring, Switch track height.
+            mark: px(16),
             titlebar: by_env("density", #{ comfortable: px(36), compact: px(32) }),
             statusbar: by_env("density", #{ comfortable: px(24), compact: px(22) }),
             label_column: px(128),
@@ -74,8 +76,13 @@ fn tokens() {
                     family: "Menlo", fallbacks: ["DejaVu Sans Mono", "Liberation Mono"] },
                 code: #{ size: px(13), line_height: px(20), weight: 400,
                     family: "Menlo", fallbacks: ["DejaVu Sans Mono", "Liberation Mono"] },
+                // Single-line control text: the body sizes on a tighter line box, so
+                // the reserved 2px focus border fits every compact control height.
+                control_small: #{ size: px(13), line_height: px(16), weight: 400 },
+                control_regular: #{ size: px(14), line_height: px(20), weight: 400 },
                 control: by_env("size", #{
-                    xs: "body_small", sm: "body", md: "body", lg: "body",
+                    xs: "control_small", sm: "control_regular", md: "control_regular",
+                    lg: "control_regular",
                 }),
             },
         },
@@ -91,8 +98,10 @@ fn tokens() {
             "text.success": readable(theme_color("success"), theme_color("text_primary"),
                 theme_color("surface_hover"), 4.5),
             "control.hover": mix(theme_color("surface_hover"), theme_color("text_primary"), 0.06),
-            "tag.key": mix(theme_color("surface_hover"), theme_color("text_primary"), 0.14),
+            "tag.facet": mix(theme_color("surface_hover"), theme_color("text_primary"), 0.14),
             "table.selection": mix(theme_color("surface"), theme_color("accent"), 0.28),
+            "scrollbar.thumb": alpha(theme_color("text_muted"), 0.45),
+            "scrollbar.thumb_hover": theme_color("text_muted"),
             "tabs.foreground": readable(theme_color("text_muted"), theme_color("text_primary"),
                 theme_color("surface_hover"), 4.5),
 

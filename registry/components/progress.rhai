@@ -2,10 +2,12 @@
 {
   "id": "components/progress",
   "export": "Progress",
-  "version": "0.1.6",
+  "version": "0.2.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
-  "capabilities": {}
+  "capabilities": {},
+  "tokens": ["accent", "surface_hover"],
+  "environment": []
 }
 */
 // Determinate or indeterminate progress indicator animated entirely in Rust.
@@ -15,8 +17,10 @@
 
 define_component(#{
     metadata: #{
-        id: "components/progress", "export": "Progress", version: "0.1.6",
+        id: "components/progress", "export": "Progress", version: "0.2.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{},
+        tokens: ["accent", "surface_hover"],
+        environment: [],
     },
     schema: #{
         props: #{

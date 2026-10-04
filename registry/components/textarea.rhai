@@ -2,11 +2,17 @@
 {
   "id": "components/textarea",
   "export": "Textarea",
-  "version": "0.1.6",
+  "version": "0.2.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
-  "assets": []
+  "assets": [],
+  "tokens": [
+    "surface_raised", "border", "danger", "focus_ring", "text_primary", "text_muted",
+    "text.danger", "disabled", "selection", "accent", "metrics.control_pad", "spacing.xs",
+    "radius.md", "typography.body", "typography.body_small", "typography.caption"
+  ],
+  "environment": ["size", "density"]
 }
 */
 // Textarea is a controlled multiline field with native IME, selection, wrapping, and auto-grow.
@@ -18,9 +24,16 @@
 
 define_component(#{
     metadata: #{
-        id: "components/textarea", "export": "Textarea", version: "0.1.6",
+        id: "components/textarea", "export": "Textarea", version: "0.2.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
-        dependencies: [], capabilities: #{}, assets: [],
+        dependencies: [], capabilities: #{},
+        tokens: [
+            "surface_raised", "border", "danger", "focus_ring", "text_primary", "text_muted",
+            "text.danger", "disabled", "selection", "accent", "metrics.control_pad",
+            "spacing.xs", "radius.md", "typography.body", "typography.body_small",
+            "typography.caption"
+        ],
+        environment: ["size", "density"], assets: [],
     },
     schema: #{
         props: #{
@@ -34,8 +47,8 @@ define_component(#{
                 "default": #{ type: "bool", value: false } },
             error: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: false } },
-            size: #{ schema: #{ type: "string", allowed: ["xs", "sm", "md", "lg"] }, required: false, sensitive: false,
-                "default": #{ type: "string", value: "md" } },
+            size: #{ schema: #{ type: "optional", value: #{ type: "string", allowed: ["xs", "sm", "md", "lg"] } },
+                required: false, sensitive: false },
             min_rows: #{ schema: #{ type: "integer", min: 1, max: 1000 }, required: false, sensitive: false,
                 "default": #{ type: "integer", value: 3 } },
             max_rows: #{ schema: #{ type: "integer", min: 1, max: 1000 }, required: false, sensitive: false,
@@ -66,15 +79,14 @@ fn optional_prop(props, name) {
     if name in props { props[name] } else { () }
 }
 
+// Multi-line text keeps the reading line box of body text.
 fn textarea_typography(size) {
-    if size == "xs" { "body_small" }
-    else if size == "lg" { "subtitle" }
-    else { "body" }
+    if size == "xs" { "body_small" } else { "body" }
 }
 
 fn Textarea(props) { render_component("components/textarea", props) }
 fn render_Textarea(ctx, props) {
-    let size = if "size" in props { props.size } else { "md" };
+    let size = if "size" in props && props.size != () { props.size } else { "md" };
     let error = if "error" in props { props.error } else { false };
     let disabled = if "disabled" in props { props.disabled } else { false };
     let read_only = if "read_only" in props { props.read_only } else { false };
@@ -105,18 +117,17 @@ fn render_Textarea(ctx, props) {
     let border = if error { theme_color("danger") } else { theme_color("border") };
     let editor = gpui_rhai::TextareaPrimitive(config)
         .with_style(ctx.component_style("editor",
+            // The text start matches Input: 2px frame plus the control padding.
             style()
-                .padding(theme_spacing("sm"))
+                .padding_x(theme_length("metrics.control_pad"))
+                .padding_y(theme_spacing("xs"))
                 .radius(theme_radius("md"))
-                .border(px(1))
+                .border(px(2))
                 .border_color(border)
-                .background(theme_color("surface"))
-                .text_color(theme_color("text_primary"))
+                .background(theme_color("surface_raised"))
+                .text_color(if read_only { theme_color("text_muted") } else { theme_color("text_primary") })
                 .focus(style().border_color(theme_color("focus_ring")))
-                .disabled(style()
-                    .background(theme_color("surface_raised"))
-                    .text_color(theme_color("disabled"))
-                    .opacity(0.72))
+                .disabled(style().text_color(theme_color("disabled")).opacity(0.72))
         ))
         .disabled(disabled)
         .accessibility_role("text_field")
@@ -139,14 +150,15 @@ fn render_Textarea(ctx, props) {
         };
         let reached = max != () && count >= max;
         let counter_style = ctx.component_style("counter",
-            style().typography("body_small")
+            style().typography("caption")
                 .text_color(theme_color("text_muted")));
         let counter_style = if reached {
-            ctx.component_style("limit", counter_style.text_color(theme_color("danger")))
+            ctx.component_style("limit", counter_style.text_color(theme_color("text.danger")))
         } else { counter_style };
         children.push(row([text(label)]).with_style(counter_style.justify_end()));
     }
-    column(children)
+    let root = column(children)
         .with_key(props.key)
-        .with_style(ctx.component_style("root", style().gap(theme_spacing("xs"))))
+        .with_style(ctx.component_style("root", style().gap(theme_spacing("xs"))));
+    if "size" in props && props.size != () { root.env(#{ size: props.size }) } else { root }
 }

@@ -856,7 +856,7 @@ fn specimen_p0(ctx) {
                 minimum_gap:10.0, on_change:Fn("set_specimen_range") })
         ]).with_style(style().gap(px(10)).items_center().flex_wrap()),
         row([
-            card::Card(#{ header: text("Card"), content: text("Composable content surface"), elevated: true }),
+            card::Card(#{ header: text("Card"), content: text("Composable content surface") }),
             group_box::GroupBox(#{ label: "Group box", description: "Related desktop controls",
                 content: text("Persistent layout content") }),
             empty::Empty(#{ title: "Nothing here", description: "An empty state with a clear next action.",
@@ -984,7 +984,7 @@ fn gallery_title_bar(ctx) {
     let themes = combobox::Combobox(#{ key: "gallery-theme", label: "Gallery theme", options: gallery_theme_options(), mode: "single",
             selected: [ctx.get_state("gallery_theme")], open: ctx.get_state("gallery_theme_open"),
             query: ctx.get_state("gallery_theme_query"), searchable: true, placeholder: "Theme",
-            width: px(if compact { 150 } else { 240 }), trigger_height: 26,
+            width: px(if compact { 150 } else { 240 }), size: "xs",
             on_change: Fn("set_gallery_theme"), on_open_change: Fn("set_gallery_theme_open"),
             on_query_change: Fn("set_gallery_theme_query") });
     let breadcrumb = row([

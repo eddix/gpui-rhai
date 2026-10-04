@@ -200,6 +200,9 @@ struct VirtualListView {
     runtime: NodeSlotRuntime,
     scroll: ListState,
     frame_indices: Rc<RefCell<BTreeSet<usize>>>,
+    /// A fill-height list cannot judge visibility before its viewport is
+    /// measured; the reveal waits for the first measured frame.
+    pending_reveal: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -217,6 +220,7 @@ impl VirtualListView {
             runtime,
             scroll,
             frame_indices: Rc::new(RefCell::new(BTreeSet::new())),
+            pending_reveal: false,
         };
         this.reveal_controlled_target();
         this.install_metrics_handler();
@@ -280,6 +284,9 @@ impl VirtualListView {
             // Before GPUI's first measurement there are no item bounds. Keep
             // the natural top when the configured viewport already contains
             // the target instead of top-aligning (and hiding) its predecessors.
+        } else if viewport.size.height <= px(0.0) && self.content.height.is_none() {
+            // A fill-height viewport has no configured size to estimate with.
+            self.pending_reveal = true;
         } else {
             // GPUI's variable list cannot infer the height of an unmeasured
             // offscreen item. Top-aligning its logical index gives the next
@@ -312,6 +319,10 @@ fn estimated_target_is_initially_visible(
 
 impl Render for VirtualListView {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        if self.pending_reveal && self.scroll.viewport_bounds().size.height > px(0.0) {
+            self.pending_reveal = false;
+            self.reveal_controlled_target();
+        }
         let viewport = self.scroll.viewport_bounds();
         let scroll_top = self.scroll.logical_scroll_top();
         let measured_visible = measured_visible_range(&self.scroll, &self.content, viewport);

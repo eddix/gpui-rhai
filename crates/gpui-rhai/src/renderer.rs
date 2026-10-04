@@ -1443,6 +1443,14 @@ impl ColorResolver for OwnedColorResolver {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct GpuiNodeRenderer;
 
+#[derive(Clone, Copy, Default)]
+struct NodeFocus {
+    /// The nearest focus owner ancestor-or-self holds focus.
+    owner: bool,
+    /// This node or a descendant holds focus.
+    within: bool,
+}
+
 #[derive(Clone, Copy)]
 struct RenderEnvironment<'a, C> {
     now: Instant,
@@ -1474,6 +1482,11 @@ struct RenderEnvironment<'a, C> {
     environment: crate::Environment,
     /// Whether an ancestor is disabled.
     inherited_disabled: bool,
+    /// The retained node whose focus handle has keyboard focus this frame,
+    /// followed by its ancestors.
+    focus_path: &'a [NodeId],
+    /// Focus state seen by `group_focus` and `focus_within` styles.
+    focus: NodeFocus,
     view_id: &'a str,
     retained: Option<&'a RetainedUiTree>,
     retained_links: Option<&'a BTreeMap<NodeId, Vec<crate::RetainedChildLink>>>,
@@ -1505,6 +1518,21 @@ impl<'a, C: ColorResolver> RenderEnvironment<'a, C> {
             inherited_disabled: self.inherited_disabled || is_disabled(node),
             ..*self
         }
+    }
+
+    /// A focusable node that declares a focus style owns the focus state seen
+    /// by `group_focus` styles in its subtree; `tab_stop(false)` children of a
+    /// roving group leave ownership with the group. `focus_within` is per node.
+    fn with_focus_scope(mut self, node: &UiNode, retained_id: Option<NodeId>) -> Self {
+        self.focus.within = retained_id.is_some_and(|id| self.focus_path.contains(&id));
+        if let Some(id) = retained_id
+            && node.style().focus.is_some()
+            && node_tab_stop(node)
+            && self.focus_handles.contains_key(&id)
+        {
+            self.focus.owner = self.focus_path.first() == Some(&id);
+        }
+        self
     }
 
     fn with_resolved_text_color(&self, style: &StyleProperties) -> Self {
@@ -1544,6 +1572,8 @@ pub(crate) struct WindowRenderResources<'a> {
     pub ambient_text_color: Option<Rgba8>,
     pub environment: crate::Environment,
     pub inherited_disabled: bool,
+    pub focus_path: &'a [NodeId],
+    pub owner_focused: bool,
     pub root_path: &'a str,
     pub view_id: &'a str,
     pub semantics: &'a crate::CommittedSemanticFrame,
@@ -1622,6 +1652,8 @@ impl GpuiNodeRenderer {
             ambient_text_color: None,
             environment: crate::Environment::EMPTY,
             inherited_disabled: false,
+            focus_path: &[],
+            focus: NodeFocus::default(),
             view_id: "standalone",
             retained: None,
             retained_links: None,
@@ -1700,6 +1732,8 @@ impl GpuiNodeRenderer {
             ambient_text_color: None,
             environment: crate::Environment::EMPTY,
             inherited_disabled: false,
+            focus_path: &[],
+            focus: NodeFocus::default(),
             view_id: "standalone",
             retained: Some(tree),
             retained_links: None,
@@ -1771,6 +1805,8 @@ impl GpuiNodeRenderer {
             ambient_text_color: None,
             environment: crate::Environment::EMPTY,
             inherited_disabled: false,
+            focus_path: &[],
+            focus: NodeFocus::default(),
             view_id: "standalone",
             retained: Some(tree),
             retained_links: None,
@@ -1834,6 +1870,8 @@ impl GpuiNodeRenderer {
             ambient_text_color: None,
             environment: crate::Environment::EMPTY,
             inherited_disabled: false,
+            focus_path: &[],
+            focus: NodeFocus::default(),
             view_id: "standalone",
             retained: None,
             retained_links: None,
@@ -1888,6 +1926,8 @@ impl GpuiNodeRenderer {
             ambient_text_color: None,
             environment: crate::Environment::EMPTY,
             inherited_disabled: false,
+            focus_path: &[],
+            owner_focused: false,
             root_path: "root",
             view_id: "standalone",
             semantics: &crate::CommittedSemanticFrame::default(),
@@ -1948,6 +1988,11 @@ impl GpuiNodeRenderer {
             ambient_text_color: resources.ambient_text_color,
             environment: resources.environment,
             inherited_disabled: resources.inherited_disabled,
+            focus_path: resources.focus_path,
+            focus: NodeFocus {
+                owner: resources.owner_focused,
+                within: false,
+            },
             view_id: resources.view_id,
             retained: Some(tree),
             retained_links: None,
@@ -2008,6 +2053,11 @@ impl GpuiNodeRenderer {
             ambient_text_color: resources.ambient_text_color,
             environment: resources.environment,
             inherited_disabled: resources.inherited_disabled,
+            focus_path: resources.focus_path,
+            focus: NodeFocus {
+                owner: resources.owner_focused,
+                within: false,
+            },
             view_id: resources.view_id,
             retained: None,
             retained_links: None,
@@ -2054,6 +2104,11 @@ impl GpuiNodeRenderer {
             ambient_text_color: resources.ambient_text_color,
             environment: resources.environment,
             inherited_disabled: resources.inherited_disabled,
+            focus_path: resources.focus_path,
+            focus: NodeFocus {
+                owner: resources.owner_focused,
+                within: false,
+            },
             view_id: resources.view_id,
             retained: None,
             retained_links: Some(retained.links),
@@ -2070,7 +2125,9 @@ impl GpuiNodeRenderer {
         path: &str,
         retained_id: Option<NodeId>,
     ) -> AnyElement {
-        let node_environment = environment.with_node_scope(node);
+        let node_environment = environment
+            .with_node_scope(node)
+            .with_focus_scope(node, retained_id);
         let environment = &node_environment;
         if let Some(table) = render_table_layout(node, environment, path, retained_id) {
             return table;
@@ -2266,11 +2323,18 @@ impl GpuiNodeRenderer {
         );
         let element = apply_hit_test(element, hit_test);
         let ancestor_disabled = disabled && !is_disabled(node);
+        let persistent_focus = retained_id
+            .and_then(|id| environment.focus_handles.get(&id))
+            .filter(|_| {
+                !matches!(node.kind(), UiNodeKind::Custom { primitive }
+                    if environment.primitives.uses_primary_focus(&primitive.primitive))
+            });
         let element = apply_tab_behavior(
             element,
             node,
             click.is_some() || !key_handlers.is_empty(),
             ancestor_disabled,
+            persistent_focus,
         );
         let element = apply_environment_scroll(element, node, retained_id, environment);
         let element = apply_motion_trigger_handlers(
@@ -3039,10 +3103,17 @@ fn accessibility_value_text(value: &UiValue) -> Option<String> {
 /// The interaction state of a node scope, with `Disabled` applied when the
 /// node or an ancestor is disabled.
 fn scoped_interaction<C>(environment: &RenderEnvironment<'_, C>) -> InteractionState {
+    let mut interaction = environment.interaction.clone();
+    if environment.focus.owner {
+        interaction = interaction.with(PseudoState::GroupFocused);
+    }
+    if environment.focus.within {
+        interaction = interaction.with(PseudoState::FocusWithin);
+    }
     if environment.inherited_disabled {
-        environment.interaction.clone().with(PseudoState::Disabled)
+        interaction.with(PseudoState::Disabled)
     } else {
-        environment.interaction.clone()
+        interaction
     }
 }
 
@@ -3131,19 +3202,29 @@ fn apply_tab_behavior(
     node: &UiNode,
     implicit_tab_stop: bool,
     ancestor_disabled: bool,
+    persistent: Option<&FocusHandle>,
 ) -> Stateful<Div> {
     // A node's own explicit focus declaration wins over its own `disabled`
     // (focusable disabled menu items), but a disabled ancestor removes every
     // descendant from the tab order.
-    element = element
-        .tab_index(node_tab_index(node))
-        .tab_stop(if ancestor_disabled {
-            false
-        } else if node_has_focus_declaration(node) {
-            node_tab_stop(node)
-        } else {
-            implicit_tab_stop
-        });
+    let tab_stop = if ancestor_disabled {
+        false
+    } else if node_has_focus_declaration(node) {
+        node_tab_stop(node)
+    } else {
+        implicit_tab_stop
+    };
+    element = element.tab_index(node_tab_index(node)).tab_stop(tab_stop);
+    // GPUI applies the element tab policy only to handles it creates itself; a
+    // tracked persistent handle carries its own policy.
+    if let Some(handle) = persistent {
+        element = element.track_focus(
+            &handle
+                .clone()
+                .tab_stop(tab_stop)
+                .tab_index(node_tab_index(node)),
+        );
+    }
     if node.attributes().get("tab_group") == Some(&UiValue::Bool(true)) {
         element = element.tab_group();
     }
@@ -3553,12 +3634,7 @@ fn render_inline_svg<C: ColorResolver>(
     source: &crate::InlineSvg,
     environment: &RenderEnvironment<'_, C>,
 ) -> AnyElement {
-    let interaction = if environment.inherited_disabled {
-        environment.interaction.clone().with(PseudoState::Disabled)
-    } else {
-        environment.interaction.clone()
-    };
-    let resolved_style = node.style().resolve(&interaction);
+    let resolved_style = node.style().resolve(&scoped_interaction(environment));
     let color = environment.ambient_text_color;
     let fills_styled_box = resolved_style.width.is_some() || resolved_style.height.is_some();
     let image = environment.assets.map_or_else(
@@ -3601,6 +3677,18 @@ fn scoped_overlay_spec(
         }
         (placement, _) => placement,
     };
+    // Logical alignment along a horizontal cross axis follows the text direction.
+    let horizontal_cross = matches!(
+        rendered.placement,
+        crate::OverlayPlacement::Top | crate::OverlayPlacement::Bottom
+    );
+    if horizontal_cross && direction == TextDirection::RightToLeft {
+        rendered.align = match rendered.align {
+            crate::OverlayAlign::Start => crate::OverlayAlign::End,
+            crate::OverlayAlign::End => crate::OverlayAlign::Start,
+            crate::OverlayAlign::Center => crate::OverlayAlign::Center,
+        };
+    }
     rendered
 }
 
@@ -3832,6 +3920,8 @@ fn owned_slot_runtime<C: ColorResolver>(
         ambient_text_color: environment.ambient_text_color,
         environment: environment.environment,
         inherited_disabled: environment.inherited_disabled,
+        focus_path: environment.focus_path.to_vec(),
+        owner_focused: environment.focus.owner,
         base_path: path.to_owned(),
         view_id: environment.view_id.to_owned(),
         semantics: environment.semantics.cloned().unwrap_or_default(),
@@ -4979,12 +5069,51 @@ pub(crate) fn apply_style_override(
     colors: &impl ColorResolver,
     direction: TextDirection,
 ) -> Div {
-    apply_style(
+    apply_style_override_in(
         element,
-        &style.resolve(&InteractionState::default()),
+        style,
+        &InteractionState::default(),
         colors,
         direction,
     )
+}
+
+/// Apply a primitive part style resolved for an explicit interaction state,
+/// such as a focused slider thumb.
+pub(crate) fn apply_style_override_in(
+    element: Div,
+    style: &Style,
+    state: &InteractionState,
+    colors: &impl ColorResolver,
+    direction: TextDirection,
+) -> Div {
+    apply_style(element, &style.resolve(state), colors, direction)
+}
+
+/// Center a part on an anchor point: a zero-size flex box whose overflowing
+/// child stays centered, so the part may have any size.
+pub(crate) fn centered_on_anchor(anchor: Div, child: impl IntoElement) -> Div {
+    anchor
+        .w(px(0.0))
+        .h(px(0.0))
+        .flex()
+        .items_center()
+        .justify_center()
+        .child(child)
+}
+
+/// The interaction state of a focusable primitive part.
+pub(crate) fn part_interaction(focused: bool, disabled: bool) -> InteractionState {
+    let mut state = InteractionState::default();
+    if focused {
+        state = state
+            .with(PseudoState::Focused)
+            .with(PseudoState::GroupFocused);
+    }
+    if disabled {
+        state = state.with(PseudoState::Disabled);
+    }
+    state
 }
 
 fn apply_layout(element: Div, style: &StyleProperties, text_direction: TextDirection) -> Div {
@@ -6119,6 +6248,7 @@ mod tests {
             parent: None,
             kind: crate::OverlayKind::Sheet,
             placement,
+            align: crate::OverlayAlign::Center,
             anchor: None,
             open: true,
             gap: 0.0,

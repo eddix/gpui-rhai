@@ -2,10 +2,12 @@
 {
   "id": "components/drag_source",
   "export": "DragSource",
-  "version": "0.1.8",
+  "version": "0.2.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
-  "capabilities": {}
+  "capabilities": {},
+  "tokens": ["focus_ring"],
+  "environment": []
 }
 */
 // Typed in-application data drag source. It does not move the source object.
@@ -18,8 +20,10 @@
 //     payload_type:"server", payload:#{id:"a"}, content:text("Server A") })
 
 define_component(#{
-    metadata: #{ id:"components/drag_source", "export":"DragSource", version:"0.1.8",
-        runtime_api:#{min_inclusive: 3,max_exclusive: 4}, dependencies:[], capabilities:#{} },
+    metadata: #{ id:"components/drag_source", "export":"DragSource", version: "0.2.0",
+        runtime_api:#{min_inclusive: 3,max_exclusive: 4}, dependencies:[], capabilities:#{},
+        tokens: ["focus_ring"],
+        environment: [] },
     schema: #{ props: #{
         key: #{ schema:#{type:"string"}, required:true, sensitive:false },
         label: #{ schema:#{type:"string"}, required:true, sensitive:false },
@@ -58,7 +62,7 @@ fn render_DragSource(ctx, props) {
     let interaction = gpui_rhai::DragSourcePrimitive(native)
         .with_key(`${props.key}-drag-source`).with_style(ctx.component_style("interaction",
             style().absolute().left(px(0)).right(px(0)).top(px(0)).bottom(px(0))
-                .border(px(1)).border_color(theme_color("border"))
+                .border(px(2)).border_color(rgba(0x00000000))
                 .focus(style().border_color(theme_color("focus_ring")))))
         .disabled(props.disabled).tab_stop(!props.disabled)
         .accessibility_role("button").accessibility_label(props.label);

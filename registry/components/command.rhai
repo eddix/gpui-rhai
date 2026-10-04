@@ -2,15 +2,21 @@
 {
   "id": "components/command",
   "export": "Command",
-  "version": "0.1.6",
+  "version": "0.2.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/input", "components/kbd"],
-  "capabilities": {}
+  "capabilities": {},
+  "tokens": [
+    "surface_raised", "border", "surface_hover", "selection", "accent", "text_primary",
+    "text_muted", "disabled", "metrics.row", "metrics.inset", "spacing.xs", "spacing.sm",
+    "radius.lg", "typography.body", "typography.label"
+  ],
+  "environment": ["density"]
 }
 */
 // Embeddable keyboard-first command search with deterministic fuzzy ranking.
 // Props: key, label, controlled query/active_value, items (text label plus optional rich content),
-//        sizing, disabled, and callbacks.
+//        max_visible, disabled, and callbacks. Items may bind a registered `action`.
 // Events: query_change(string), active_change(string), and action(string).
 // State: caller owns query and the roving active command.
 // Parts: root, search, list, group, item, item_active, label, shortcut, empty.
@@ -20,9 +26,15 @@ import "components/input" as input;
 import "components/kbd" as kbd;
 
 define_component(#{
-    metadata: #{ id: "components/command", "export": "Command", version: "0.1.6",
+    metadata: #{ id: "components/command", "export": "Command", version: "0.2.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
-        dependencies: ["components/input", "components/kbd"], capabilities: #{} },
+        dependencies: ["components/input", "components/kbd"], capabilities: #{},
+        tokens: [
+            "surface_raised", "border", "surface_hover", "selection", "accent", "text_primary",
+            "text_muted", "disabled", "metrics.row", "metrics.inset", "spacing.xs", "spacing.sm",
+            "radius.lg", "typography.body", "typography.label"
+        ],
+        environment: ["density"] },
     schema: #{
         props: #{
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
@@ -40,6 +52,7 @@ define_component(#{
                             required: false, sensitive: false, "default": #{ type: "array", value: [] } },
                         group: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
                         shortcut: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
+                        action: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
                         disabled: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                             "default": #{ type: "bool", value: false } },
                     }
@@ -52,8 +65,6 @@ define_component(#{
                 "default": #{ type: "string", value: "No commands found" } },
             max_visible: #{ schema: #{ type: "integer", min: 1, max: 24 }, required: false, sensitive: false,
                 "default": #{ type: "integer", value: 8 } },
-            row_height: #{ schema: #{ type: "integer", min: 24, max: 64 }, required: false, sensitive: false,
-                "default": #{ type: "integer", value: 32 } },
             disabled: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: false } },
             autofocus: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
@@ -65,7 +76,8 @@ define_component(#{
         state: #{ fields: #{} },
         events: #{ query_change: #{ payload: #{ type: "string" } },
             active_change: #{ payload: #{ type: "string" } }, action: #{ payload: #{ type: "string" } } },
-        slots: #{}, parts: ["root", "search", "list", "group", "item", "item_active", "label", "shortcut", "empty"],
+        slots: #{}, parts: ["root", "search", "list", "group", "item", "item_active", "label", "shortcut", "empty",
+            "indicator_bar"],
     },
     render: Fn("render_Command")
 });
@@ -153,44 +165,71 @@ fn active_hover(is_active, ctx, payload) {
     handled()
 }
 fn action_value(ctx, value) { ctx.emit("action", value); handled() }
-fn submit_action(value, ctx, query) {
-    if value != "" { ctx.emit("action", value); }
+// Items bound to a registered action dispatch it before reporting the activation.
+fn dispatch_value(action, ctx, value) {
+    ctx.dispatch_action(action, ());
+    ctx.emit("action", value);
+    handled()
+}
+fn submit_action(spec, ctx, query) {
+    if spec.value == "" { return; }
+    if spec.action != () { ctx.dispatch_action(spec.action, ()); }
+    ctx.emit("action", spec.value);
+}
+fn activation_handler(action) {
+    if action == () { Fn("action_value") } else { Fn("dispatch_value").curry(action) }
+}
+
+// List rows: metrics.row high, text at metrics.inset; the cursor is a selection block
+// plus the 2px indicator bar inside the inset.
+fn command_indicator(ctx) {
+    row([]).with_style(ctx.component_style("indicator_bar", style()
+        .absolute().inset_start(px(0)).top(px(0)).bottom(px(0))
+        .width(px(2)).background(theme_color("accent"))))
 }
 
 fn render_command_row(content, total_rows, ctx, payload) {
     let item = payload.item;
     if item.kind == "group" {
-        return text(item.label).with_key(payload.key)
+        return row([text(item.label.to_upper())]).with_key(payload.key)
             .with_style(ctx.component_style("group", style()
-                .height(px(item.height)).padding_start(theme_spacing("sm")).padding_end(theme_spacing("sm"))
-                .padding_top(theme_spacing("xs")).items_center()
-                .typography("caption").font_weight(400).opacity(0.72)
+                .height(theme_length("metrics.row")).padding_x(theme_length("metrics.inset"))
+                .items_center().typography("label")
                 .text_color(theme_color("text_muted"))))
             .accessibility_role("heading").accessibility_label(item.label)
             .accessibility_level(2);
     }
+    let action = if "action" in item { item.action } else { () };
+    let disabled = item.disabled || (action != () && !ctx.action_enabled(action));
+    let shortcut = if item.shortcut != "" { item.shortcut }
+        else if action != () {
+            let bound = ctx.action_shortcut(action);
+            if bound == () { "" } else { bound.label }
+        } else { "" };
     let label = if item.value in content { content[item.value] } else { text(item.label) };
     let children = [label.with_style(ctx.component_style("label", style().flex_grow()))];
-    if item.shortcut != "" {
-        children.push(kbd::Kbd(#{ text: item.shortcut }).with_style(ctx.component_style("shortcut", style())));
+    if shortcut != "" {
+        children.push(kbd::Kbd(#{ text: shortcut, appearance: "inline" })
+            .with_style(ctx.component_style("shortcut", style())));
     }
+    if item.active && !disabled { children.push(command_indicator(ctx)); }
+    let row_style = style()
+        .height(theme_length("metrics.row")).padding_x(theme_length("metrics.inset"))
+        .gap(theme_spacing("sm")).items_center()
+        .typography("body")
+        .text_color(theme_color("text_primary"))
+        .disabled(style().text_color(theme_color("disabled")));
+    row_style = if item.active {
+        row_style.background(theme_color("selection")).hover(style().background(theme_color("selection")))
+    } else { row_style.hover(style().background(theme_color("surface_hover"))) };
     let node = row(children).with_key(payload.key)
-        .with_style(ctx.component_style(if item.active { "item_active" } else { "item" }, style()
-            .height(px(item.height)).padding_start(theme_spacing("lg"))
-            .padding_end(theme_spacing("sm")).gap(theme_spacing("sm")).items_center()
-            .radius(theme_radius("sm"))
-            .background(if item.active { theme_color("selection") } else { rgba(0x00000000) })
-            .border_start(px(2)).border_color(if item.active { theme_color("accent") } else { rgba(0x00000000) })
-            .typography("body")
-            .text_color(if item.disabled { theme_color("disabled") } else { theme_color("text_primary") })
-            .hover(style().background(theme_color("surface_hover")))
-            .disabled(style().opacity(0.66))))
-        .tab_stop(false).disabled(item.disabled)
+        .with_style(ctx.component_style(if item.active { "item_active" } else { "item" }, row_style))
+        .tab_stop(false).disabled(disabled)
         .accessibility_option(item.label, item.active, payload.index + 1, total_rows);
-    if item.shortcut != "" { node = node.accessibility_key_shortcuts(item.shortcut); }
-    if item.disabled { node } else {
+    if shortcut != "" { node = node.accessibility_key_shortcuts(shortcut); }
+    if disabled { node } else {
         node.on_hover_value(Fn("active_hover").curry(item.active), item.value)
-            .on_click_value(Fn("action_value"), item.value)
+            .on_click_value(activation_handler(action), item.value)
     }
 }
 
@@ -206,6 +245,7 @@ fn array_command_model(items, query, row_height, stored) {
             if !(group in buckets) { groups.push(group); buckets[group] = []; }
             let bucket = buckets[group];
             let ranked = #{ value: item.value, label: item.label, shortcut: prop_or(item, "shortcut", ""),
+                action: prop_or(item, "action", ()),
                 disabled: item_disabled(item), score: score, source_index: index };
             if "content" in item && item.content != () { content[item.value] = item.content; }
             bucket.push(ranked);
@@ -219,7 +259,7 @@ fn array_command_model(items, query, row_height, stored) {
         if group != "" { data.push(#{ key: `group:${group}`, kind: "group", label: group, height: row_height }); }
         for item in bucket {
             let row = #{ key: `item:${item.value}`, kind: "item", value: item.value,
-                label: item.label, shortcut: item.shortcut, disabled: item.disabled,
+                label: item.label, shortcut: item.shortcut, action: item.action, disabled: item.disabled,
                 active: false, height: row_height };
             data.push(row);
         }
@@ -227,10 +267,15 @@ fn array_command_model(items, query, row_height, stored) {
     let enabled = enabled_values(data);
     let active = if includes(enabled, stored) { stored }
         else if enabled.len > 0 { enabled[0] } else { "" };
+    let active_action = ();
     for index in 0..data.len {
-        if data[index].kind == "item" { data[index].active = data[index].value == active; }
+        if data[index].kind == "item" {
+            data[index].active = data[index].value == active;
+            if data[index].active { active_action = data[index].action; }
+        }
     }
-    #{ data: data, content: content, active: active, enabled: enabled.len > 0,
+    #{ data: data, content: content, active: active, active_action: active_action,
+        enabled: enabled.len > 0,
         previous: if enabled.len > 0 { adjacent(enabled, active, -1) } else { "" },
         next: if enabled.len > 0 { adjacent(enabled, active, 1) } else { "" },
         first: if enabled.len > 0 { enabled[0] } else { "" },
@@ -247,7 +292,7 @@ fn native_command_model(items, query, row_height, stored) {
         config.active = active;
         data = native_fuzzy_view(items, config);
     }
-    #{ data: data, content: #{}, active: active, enabled: active != "",
+    #{ data: data, content: #{}, active: active, active_action: (), enabled: active != "",
         previous: native_fuzzy_adjacent(data, active, -1),
         next: native_fuzzy_adjacent(data, active, 1),
         first: native_fuzzy_edge(data, false), last: native_fuzzy_edge(data, true) }
@@ -255,7 +300,8 @@ fn native_command_model(items, query, row_height, stored) {
 
 fn render_Command(ctx, props) {
     let query = props.query;
-    let row_height = prop_or(props, "row_height", 32);
+    // The native model estimates with the comfortable row; rows render at metrics.row.
+    let row_height = 32;
     let stored = props.active_value;
     let model = if is_native_collection(props.items) {
         native_command_model(props.items, query, row_height, stored)
@@ -269,39 +315,45 @@ fn render_Command(ctx, props) {
         placeholder: prop_or(props, "placeholder", "Type a command"),
         disabled: prop_or(props, "disabled", false),
         autofocus: prop_or(props, "autofocus", false),
-        on_change: Fn("query_action"), on_submit: Fn("submit_action").curry(active) })
+        on_change: Fn("query_action"),
+        on_submit: Fn("submit_action").curry(#{ value: active, action: model.active_action }) })
         .with_style(ctx.component_style("search", style()));
+    let search = column([search]).with_style(style()
+        .padding_x(theme_length("metrics.inset")).padding_y(theme_spacing("xs")));
     let body = if data.len == 0 {
-        text(prop_or(props, "empty_text", "No commands found"))
+        row([text(prop_or(props, "empty_text", "No commands found"))])
             .with_style(ctx.component_style("empty", style()
-                .min_height(px(88)).padding(theme_spacing("lg")).items_center().justify_center()
-                .typography("body_small").text_color(theme_color("text_muted"))))
+                .min_height(theme_length("metrics.row") * 3).padding_x(theme_length("metrics.inset"))
+                .items_center().justify_center()
+                .typography("body").text_color(theme_color("text_muted"))))
             .accessibility_role("status")
     } else {
         let max_visible = prop_or(props, "max_visible", 8);
         let visible_rows = if data.len < max_visible { data.len } else { max_visible };
         let collection = #{ key: `${props.key}-list`, label: props.label, data: data,
-            estimated_height: row_height, height: visible_rows * row_height,
+            estimated_height: row_height, fill_height: true,
             overdraw_pixels: row_height * 2, alignment: "top", follow_tail: false,
         };
         if active != "" {
             collection.reveal_key = if is_native_collection(data) { active } else { `item:${active}` };
         }
-        virtual_collection(collection,
-            Fn("render_command_row").curry(model.content).curry(data.len))
-            .with_style(ctx.component_style("list", style()))
+        // A whole number of metrics.row rows in either density.
+        column([virtual_collection(collection,
+            Fn("render_command_row").curry(model.content).curry(data.len))])
+            .with_style(ctx.component_style("list", style()
+                .height(theme_length("metrics.row") * visible_rows)))
     };
     let root = column([search, body]).with_key(props.key)
         .with_style(ctx.component_style("root", style()
-            .gap(theme_spacing("xs")).padding(theme_spacing("xs")).radius(theme_radius("md"))
+            .padding_bottom(theme_spacing("xs")).radius(theme_radius("lg"))
             .border(px(1)).border_color(theme_color("border"))
-            .background(theme_color("surface"))))
+            .background(theme_color("surface_raised"))))
         .tab_stop(false).accessibility_role("listbox").accessibility_label(props.label);
     if !prop_or(props, "disabled", false) && model.enabled {
         root.on_key_value("up", Fn("active_action").curry(active), model.previous)
             .on_key_value("down", Fn("active_action").curry(active), model.next)
             .on_key_value("home", Fn("active_action").curry(active), model.first)
             .on_key_value("end", Fn("active_action").curry(active), model.last)
-            .on_key_value("enter", Fn("action_value"), active)
+            .on_key_value("enter", activation_handler(model.active_action), active)
     } else { root }
 }

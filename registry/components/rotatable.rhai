@@ -2,10 +2,12 @@
 {
   "id": "components/rotatable",
   "export": "Rotatable",
-  "version": "0.1.8",
+  "version": "0.2.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
-  "capabilities": {}
+  "capabilities": {},
+  "tokens": ["border", "surface", "focus_ring", "metrics.control"],
+  "environment": []
 }
 */
 // Controlled Canvas rotation around an explicit local pivot.
@@ -16,8 +18,10 @@
 // Example: Rotatable(#{key:"dial",label:"Rotate dial",angle:0.0,pivot:#{x:100.0,y:100.0},content:canvas_node,on_rotate:Fn("changed")})
 
 define_component(#{
-    metadata:#{id:"components/rotatable","export":"Rotatable",version:"0.1.8",
-        runtime_api:#{min_inclusive: 3,max_exclusive: 4},dependencies:[],capabilities:#{}},
+    metadata:#{id:"components/rotatable","export":"Rotatable",version: "0.2.0",
+        runtime_api:#{min_inclusive: 3,max_exclusive: 4},dependencies:[],capabilities:#{},
+        tokens: ["border", "surface", "focus_ring", "metrics.control"],
+        environment: []},
     schema:#{props:#{
         key:#{schema:#{type:"string"},required:true,sensitive:false},
         label:#{schema:#{type:"string"},required:true,sensitive:false},
@@ -63,7 +67,7 @@ fn render_Rotatable(ctx,props){
     if "snap" in props&&props.snap!=(){native.snap=props.snap;}
     let interaction=gpui_rhai::RotatablePrimitive(native).with_key(`${props.key}-rotate-interaction`)
         .with_style(ctx.component_style("interaction",style().absolute().left(px(0)).right(px(0))
-            .top(px(0)).bottom(px(0)).cursor_move().border(px(1)).border_color(rgba(0x00000000))
+            .top(px(0)).bottom(px(0)).cursor_move().border(px(2)).border_color(rgba(0x00000000))
             .focus(style().border_color(theme_color("focus_ring")))))
         .disabled(props.disabled).tab_stop(!props.disabled)
         .accessibility_role("slider").accessibility_label(props.label)
@@ -77,7 +81,8 @@ fn render_Rotatable(ctx,props){
     if "handle" in props&&props.handle!=(){
         children.push(box([props.handle,interaction]).with_key(`${props.key}-handle`)
             .with_style(ctx.component_style("handle",style().absolute().right(px(8)).top(px(8))
-                .width(px(28)).height(px(28)).items_center().justify_center())));
+                .width(theme_length("metrics.control")).height(theme_length("metrics.control"))
+                .items_center().justify_center())));
     }else{children.push(interaction);}
     box(children).with_key(viewport_key).with_ref(viewport_ref)
         .with_style(ctx.component_style("root",style().relative().clip().min_width(px(0)).min_height(px(0))

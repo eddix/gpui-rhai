@@ -2,10 +2,12 @@
 {
   "id": "components/skeleton",
   "export": "Skeleton",
-  "version": "0.1.6",
+  "version": "0.2.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
-  "capabilities": {}
+  "capabilities": {},
+  "tokens": ["surface_hover"],
+  "environment": []
 }
 */
 // Content placeholder with optional Rust-side pulse animation.
@@ -15,8 +17,10 @@
 
 define_component(#{
     metadata: #{
-        id: "components/skeleton", "export": "Skeleton", version: "0.1.6",
+        id: "components/skeleton", "export": "Skeleton", version: "0.2.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{},
+        tokens: ["surface_hover"],
+        environment: [],
     },
     schema: #{
         props: #{

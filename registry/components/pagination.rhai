@@ -2,11 +2,16 @@
 {
   "id": "components/pagination",
   "export": "Pagination",
-  "version": "0.1.6",
+  "version": "0.2.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/button", "components/icon", "components/select"],
   "capabilities": {},
-  "assets": ["icons/chevron_left.svg", "icons/chevron_right.svg"]
+  "assets": ["icons/chevron_left.svg", "icons/chevron_right.svg"],
+  "tokens": [
+    "selection", "text_muted", "spacing.xxs", "spacing.xs", "spacing.sm", "space.group",
+    "typography.body"
+  ],
+  "environment": ["size", "density"]
 }
 */
 // Pagination is a stateless Rhai composition for one-based controlled page state.
@@ -21,9 +26,14 @@ import "components/icon" as icon;
 import "components/select" as select;
 
 define_component(#{
-    metadata: #{ id: "components/pagination", "export": "Pagination", version: "0.1.6",
+    metadata: #{ id: "components/pagination", "export": "Pagination", version: "0.2.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/button", "components/icon", "components/select"], capabilities: #{},
+        tokens: [
+            "selection", "text_muted", "spacing.xxs", "spacing.xs", "spacing.sm", "space.group",
+            "typography.body"
+        ],
+        environment: ["size", "density"],
         assets: ["icons/chevron_left.svg", "icons/chevron_right.svg"] },
     schema: #{
         props: #{
@@ -40,8 +50,8 @@ define_component(#{
                 "default": #{ type: "integer", value: 1 } },
             show_summary: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: true } },
-            size: #{ schema: #{ type: "string", allowed: ["xs", "sm", "md", "lg"] }, required: false, sensitive: false,
-                "default": #{ type: "string", value: "md" } },
+            size: #{ schema: #{ type: "optional", value: #{ type: "string", allowed: ["xs", "sm", "md", "lg"] } },
+                required: false, sensitive: false },
             on_change: #{ schema: #{ type: "optional", value: #{ type: "callback" } }, required: false, sensitive: false },
         },
         state: #{ fields: #{
@@ -106,11 +116,15 @@ fn pagination_size(ctx, value) {
 
 fn page_button(ctx, page, current, page_size, size, callback) {
     let selected = page == current;
+    // The current page is a selection block, not a primary action.
+    let current_style = if selected {
+        style().background(theme_color("selection")).border_color(theme_color("selection"))
+    } else { style() };
     let node = button::Button(#{
-        text: `${page}`, size: size,
-        variant: if selected { "primary" } else { "outline" },
+        text: `${page}`, size: size, variant: "ghost",
         hoverable: !selected,
-    }).with_style(ctx.component_style(if selected { "page_current" } else { "page" }, style()));
+    }).with_style(ctx.component_style(if selected { "page_current" } else { "page" },
+        current_style.font_feature("tnum", 1)));
     if selected { node.tab_stop(false).accessibility_current("page") }
     else if callback == () { node }
     else { node.on_click_value(Fn("pagination_emit"), #{ current_page: page, page_size: page_size }) }
@@ -136,7 +150,7 @@ fn render_Pagination(ctx, props) {
     if options.len > 0 && !(props.page_size in options) {
         throw "Pagination page_size_options must contain page_size";
     }
-    let size = prop_or(props, "size", "md");
+    let size = prop_or(props, "size", ());
     let callback = if "on_change" in props { props.on_change } else { () };
     let controls = [];
     let previous_icon = icon::Icon(#{
@@ -146,7 +160,7 @@ fn render_Pagination(ctx, props) {
     });
     let previous = button::Button(#{
         text: ctx.t("pagination.previous"), prefix: previous_icon,
-        size: size, variant: "outline", disabled: props.current_page == 1,
+        size: size, variant: "ghost", disabled: props.current_page == 1,
     }).with_style(ctx.component_style("previous", style()));
     controls.push(if callback == () { previous } else {
         previous.on_click_value(Fn("pagination_emit"), #{ current_page: props.current_page - 1, page_size: props.page_size })
@@ -170,7 +184,7 @@ fn render_Pagination(ctx, props) {
     });
     let next = button::Button(#{
         text: ctx.t("pagination.next"), suffix: next_icon,
-        size: size, variant: "outline", disabled: props.current_page == pages,
+        size: size, variant: "ghost", disabled: props.current_page == pages,
     }).with_style(ctx.component_style("next", style()));
     controls.push(if callback == () { next } else {
         next.on_click_value(Fn("pagination_emit"), #{ current_page: props.current_page + 1, page_size: props.page_size })
@@ -180,10 +194,10 @@ fn render_Pagination(ctx, props) {
     if prop_or(props, "show_summary", true) {
         children.push(text(`${ctx.format_number(props.total_items)} ${ctx.t("pagination.items")} · ${ctx.t("pagination.page")} ${ctx.format_number(props.current_page)} / ${ctx.format_number(pages)}`)
             .with_style(ctx.component_style("summary", style()
-                .typography("body_small").text_color(theme_color("text_muted")))));
+                .typography("body").font_feature("tnum", 1).text_color(theme_color("text_muted")))));
     }
     children.push(row(controls).with_style(ctx.component_style("controls",
-        style().gap(theme_spacing("xs")).items_center())));
+        style().gap(theme_spacing("xxs")).items_center())));
     if options.len > 0 {
         let select_options = [];
         for option in options {
@@ -198,12 +212,12 @@ fn render_Pagination(ctx, props) {
                 on_change: Fn("pagination_size"), on_open_change: Fn("page_size_open"),
                 on_query_change: Fn("page_size_query")
             }).with_style(ctx.component_style("page_size", style()))
-        ]).with_style(style().gap(theme_spacing("xs")).items_center()
-            .typography("body_small")));
+        ]).with_style(style().gap(theme_spacing("sm")).items_center()
+            .text_color(theme_color("text_muted"))));
     }
     row(children).with_key(props.key)
         .with_style(ctx.component_style("root", style()
-            .items_center().justify_between().gap(theme_spacing("sm"))
+            .items_center().justify_between().gap(theme_length("space.group"))
             .typography("body")))
         .accessibility_role("navigation")
         .accessibility_label(props.label)

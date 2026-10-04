@@ -2,10 +2,12 @@
 {
   "id": "components/context_menu",
   "export": "ContextMenu",
-  "version": "0.1.6",
+  "version": "0.2.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/menu"],
-  "capabilities": {}
+  "capabilities": {},
+  "tokens": [],
+  "environment": ["density"]
 }
 */
 // Controlled pointer-anchored action menu sharing Menu items and keyboard behavior.
@@ -18,8 +20,10 @@
 import "components/menu" as menu;
 
 define_component(#{
-    metadata: #{ id: "components/context_menu", "export": "ContextMenu", version: "0.1.6",
-        runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: ["components/menu"], capabilities: #{} },
+    metadata: #{ id: "components/context_menu", "export": "ContextMenu", version: "0.2.0",
+        runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: ["components/menu"], capabilities: #{},
+        tokens: [],
+        environment: ["density"] },
     schema: #{
         props: #{
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
@@ -31,10 +35,11 @@ define_component(#{
                 required: false, sensitive: false, "default": #{ type: "string", value: "bottom" } },
             items: #{ schema: #{ type: "array", max_items: 512, items: #{
                 type: "object", allow_unknown: false, fields: #{
-                    kind: #{ schema: #{ type: "string", allowed: ["item", "separator", "submenu"] }, required: true, sensitive: false },
+                    kind: #{ schema: #{ type: "string", allowed: ["item", "separator", "submenu", "label"] }, required: true, sensitive: false },
                     value: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
                     label: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
                     shortcut: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
+                    action: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
                     checked: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                         "default": #{ type: "bool", value: false } },
                     disabled: #{ schema: #{ type: "bool" }, required: false, sensitive: false,

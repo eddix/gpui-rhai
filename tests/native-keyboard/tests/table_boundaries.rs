@@ -78,7 +78,7 @@ fn mount(
         ])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
-        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
+    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .locale_sources([
         (
             "en.rhai".into(),

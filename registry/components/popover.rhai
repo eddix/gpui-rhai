@@ -2,16 +2,18 @@
 {
   "id": "components/popover",
   "export": "Popover",
-  "version": "0.1.6",
+  "version": "0.2.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
-  "capabilities": {}
+  "capabilities": {},
+  "tokens": ["surface_raised", "border", "metrics.inset", "space.related", "radius.lg", "typography.body"],
+  "environment": ["density"]
 }
 */
 // Popover renders controlled content through the native per-window overlay layer.
 //
-// Props: key, label, trigger/content slots, open, placement, gap, dismissal policy,
-//        on_open_change.
+// Props: key, label, trigger/content slots, open, placement, align (start|center|end,
+//        default start), gap, dismissal policy, on_open_change.
 // Events: open_change(bool). State: controlled by the caller.
 // Parts: root, trigger, content.
 // Example: Popover(#{ key: "profile", label: "Profile", trigger: text("Open"), content: text("Profile"), open: true })
@@ -20,10 +22,15 @@ define_component(#{
     metadata: #{
         id: "components/popover",
         "export": "Popover",
-        version: "0.1.6",
+        version: "0.2.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: [],
         capabilities: #{},
+        tokens: [
+            "surface_raised", "border", "metrics.inset", "space.related", "radius.lg",
+            "typography.body"
+        ],
+        environment: ["density"],
     },
     schema: #{
         props: #{
@@ -42,6 +49,12 @@ define_component(#{
                 required: false,
                 sensitive: false,
                 "default": #{ type: "string", value: "bottom" },
+            },
+            align: #{
+                schema: #{ type: "string", allowed: ["start", "center", "end"] },
+                required: false,
+                sensitive: false,
+                "default": #{ type: "string", value: "start" },
             },
             gap: #{
                 schema: #{ type: "number", min: 0.0 },
@@ -89,13 +102,14 @@ fn render_Popover(ctx, props) {
     let content = column([props.content])
         .with_style(ctx.component_style("content",
             style()
-                .width(px(240))
-                .padding(theme_spacing("sm"))
-                .gap(theme_spacing("sm"))
-                .radius(theme_radius("md"))
+                .min_width(px(240))
+                .max_width(px(400))
+                .padding(theme_length("metrics.inset"))
+                .gap(theme_length("space.related"))
+                .radius(theme_radius("lg"))
                 .border(px(1))
                 .border_color(theme_color("border"))
-                .background(theme_color("surface"))
+                .background(theme_color("surface_raised"))
                 .typography("body")
         ))
         .accessibility_role("dialog")
@@ -104,6 +118,7 @@ fn render_Popover(ctx, props) {
         id: props.key,
         kind: "popover",
         placement: placement,
+        align: if "align" in props { props.align } else { "start" },
         open: props.open,
         gap: gap,
         modal: false,

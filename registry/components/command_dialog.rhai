@@ -2,10 +2,12 @@
 {
   "id": "components/command_dialog",
   "export": "CommandDialog",
-  "version": "0.1.6",
+  "version": "0.2.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/command", "components/dialog"],
-  "capabilities": {}
+  "capabilities": {},
+  "tokens": [],
+  "environment": ["density"]
 }
 */
 // Controlled modal presentation of Command without registering a global shortcut.
@@ -19,9 +21,11 @@ import "components/command" as command;
 import "components/dialog" as dialog;
 
 define_component(#{
-    metadata: #{ id: "components/command_dialog", "export": "CommandDialog", version: "0.1.6",
+    metadata: #{ id: "components/command_dialog", "export": "CommandDialog", version: "0.2.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
-        dependencies: ["components/command", "components/dialog"], capabilities: #{} },
+        dependencies: ["components/command", "components/dialog"], capabilities: #{},
+        tokens: [],
+        environment: ["density"] },
     schema: #{
         props: #{
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
@@ -38,6 +42,7 @@ define_component(#{
                             required: false, sensitive: false, "default": #{ type: "array", value: [] } },
                         group: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
                         shortcut: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
+                        action: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
                         disabled: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                             "default": #{ type: "bool", value: false } },
                     }
@@ -50,8 +55,6 @@ define_component(#{
                 "default": #{ type: "string", value: "No commands found" } },
             max_visible: #{ schema: #{ type: "integer", min: 1, max: 24 }, required: false, sensitive: false,
                 "default": #{ type: "integer", value: 8 } },
-            row_height: #{ schema: #{ type: "integer", min: 24, max: 64 }, required: false, sensitive: false,
-                "default": #{ type: "integer", value: 32 } },
             disabled: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: false } },
             close_on_action: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
@@ -85,13 +88,12 @@ fn render_CommandDialog(ctx, props) {
         placeholder: prop_or(props, "placeholder", "Type a command"),
         empty_text: prop_or(props, "empty_text", "No commands found"),
         max_visible: prop_or(props, "max_visible", 8),
-        row_height: prop_or(props, "row_height", 32),
         disabled: prop_or(props, "disabled", false),
         autofocus: true,
         on_query_change: Fn("query_action"),
         on_active_change: Fn("active_action"),
         on_action: Fn("command_action").curry(prop_or(props, "close_on_action", true)) })
-        .with_style(ctx.component_style("command", style().border(px(0))));
+        .with_style(ctx.component_style("command", style().border(px(0)).padding_bottom(px(0))));
     dialog::Dialog(#{ key: props.key, open: props.open, title: props.label,
         content: list, initial_focus: "first", on_open_change: Fn("open_action") })
         .with_style(ctx.component_style("dialog", ctx.component_style("root", style())))

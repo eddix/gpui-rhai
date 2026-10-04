@@ -2,10 +2,12 @@
 {
   "id": "components/diff_viewer",
   "export": "DiffViewer",
-  "version": "0.1.6",
+  "version": "0.2.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
-  "capabilities": {}
+  "capabilities": {},
+  "tokens": ["surface"],
+  "environment": []
 }
 */
 // Neutral two-way, read-only source comparison over the native document surface.
@@ -15,8 +17,10 @@
 // Example: DiffViewer(#{ key: "servers", left: #{ source: a, label: "Server A" }, right: #{ source: b, label: "Server B" }, mode: "split" })
 
 define_component(#{
-    metadata: #{ id: "components/diff_viewer", "export": "DiffViewer", version: "0.1.6",
-        runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{} },
+    metadata: #{ id: "components/diff_viewer", "export": "DiffViewer", version: "0.2.0",
+        runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{},
+        tokens: ["surface"],
+        environment: [] },
     schema: #{
         props: #{
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
@@ -70,7 +74,7 @@ fn render_DiffViewer(ctx, props) {
     let right = props.right;
     let root_style = ctx.component_style("root", style()
         .width(relative(1.0)).height(relative(1.0)).min_width(px(0)).min_height(px(0))
-        .background(theme_color("surface")).border(px(1)).border_color(theme_color("border")));
+        .background(theme_color("surface")));
     gpui_rhai::DiffViewPrimitive(#{
         key: props.key,
         left_source: left.source,

@@ -2,11 +2,17 @@
 {
   "id": "components/checkbox",
   "export": "Checkbox",
-  "version": "0.1.6",
+  "version": "0.2.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
-  "assets": ["icons/check.svg", "icons/minus.svg"]
+  "assets": ["icons/check.svg", "icons/minus.svg"],
+  "tokens": [
+    "accent", "on_accent", "border", "surface_raised", "surface_hover", "focus_ring",
+    "text_primary", "disabled", "metrics.mark", "metrics.control", "spacing.sm", "radius.sm",
+    "typography.control"
+  ],
+  "environment": ["size", "density"]
 }
 */
 // Controlled checkbox with checked, unchecked, and indeterminate states.
@@ -17,9 +23,15 @@
 
 define_component(#{
     metadata: #{
-        id: "components/checkbox", "export": "Checkbox", version: "0.1.6",
+        id: "components/checkbox", "export": "Checkbox", version: "0.2.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
-        dependencies: [], capabilities: #{}, assets: ["icons/check.svg", "icons/minus.svg"],
+        dependencies: [], capabilities: #{},
+        tokens: [
+            "accent", "on_accent", "border", "surface_raised", "surface_hover", "focus_ring",
+            "text_primary", "disabled", "metrics.mark", "metrics.control", "spacing.sm",
+            "radius.sm", "typography.control"
+        ],
+        environment: ["size", "density"], assets: ["icons/check.svg", "icons/minus.svg"],
     },
     schema: #{
         props: #{
@@ -61,33 +73,32 @@ fn render_Checkbox(ctx, props) {
     let mixed = if "indeterminate" in props { props.indeterminate } else { false };
     let disabled = if "disabled" in props { props.disabled } else { false };
     let active = props.checked || mixed;
-    let box_background = if active { theme_color("accent") } else { theme_color("surface") };
+    // The box is a small field: a 2px frame on the well, filled with accent when
+    // checked. Focus turns the frame ink, so the box stays on the content edge.
     let mark_node = image_source(asset(if mixed { "app/icons/minus" } else { "app/icons/check" }))
         .with_style(ctx.component_style("mark", style()
-            .width(px(12)).height(px(12)).text_color(theme_color("on_accent"))
+            .width(theme_length("metrics.mark") * 0.75).height(theme_length("metrics.mark") * 0.75)
+            .text_color(theme_color("on_accent"))
             .opacity(if active { 1.0 } else { 0.0 })));
-    let box_node = row([mark_node]).with_style(ctx.component_style("box",
-        style()
-                .width(px(16)).height(px(16))
-                .items_center().justify_center().radius(theme_radius("sm"))
-                .border(px(1)).border_color(if active { theme_color("accent") }
-                    else { theme_color("border") })
-                .background(box_background)
-    ));
+    let box_node = row([mark_node]).with_style(ctx.component_style("box", style()
+        .width(theme_length("metrics.mark")).height(theme_length("metrics.mark"))
+        .items_center().justify_center().radius(theme_radius("sm"))
+        .border(px(2)).border_color(if active { theme_color("accent") } else { theme_color("border") })
+        .background(if active { theme_color("accent") } else { theme_color("surface_raised") })
+        .group_focus(style().border_color(theme_color("focus_ring")))
+        .disabled(style().border_color(theme_color("border")).background(theme_color("surface_hover")))));
     let node = row([
         box_node,
         text(props.label).with_style(ctx.component_style("label", style()))
     ])
         .with_style(ctx.component_style("root",
-            style().gap(theme_spacing("sm")).items_center().self_start().padding(theme_spacing("xxs"))
-                .radius(theme_radius("sm"))
-                .border(px(1)).border_color(rgba(0x00000000))
-                .typography("body")
-                .text_color(if disabled { theme_color("disabled") } else { theme_color("text_primary") })
-                .hover(style().background(theme_color("surface_hover")))
-                .focus(style().border_color(theme_color("focus_ring")))
-                .active(style().opacity(0.82))
-                .disabled(style().opacity(0.72))
+            style().min_height(theme_length("metrics.control")).gap(theme_spacing("sm"))
+                .items_center().self_start()
+                .typography("control")
+                .text_color(theme_color("text_primary"))
+                // Owns the focus state shown by the mark (group_focus).
+                .focus(style())
+                .disabled(style().text_color(theme_color("disabled")))
         ))
         .disabled(disabled)
         .accessibility_role("checkbox")

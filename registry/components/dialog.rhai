@@ -2,10 +2,15 @@
 {
   "id": "components/dialog",
   "export": "Dialog",
-  "version": "0.1.6",
+  "version": "0.2.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
-  "capabilities": {}
+  "capabilities": {},
+  "tokens": [
+    "surface_raised", "border", "text_primary", "spacing.xl", "space.group", "space.related",
+    "radius.lg", "typography.title", "typography.body"
+  ],
+  "environment": ["density"]
 }
 */
 // Dialog presents controlled modal content through the native overlay layer.
@@ -20,10 +25,15 @@ define_component(#{
     metadata: #{
         id: "components/dialog",
         "export": "Dialog",
-        version: "0.1.6",
+        version: "0.2.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: [],
         capabilities: #{},
+        tokens: [
+            "surface_raised", "border", "text_primary", "spacing.xl", "space.group",
+            "space.related", "radius.lg", "typography.title", "typography.body"
+        ],
+        environment: ["density"],
     },
     schema: #{
         props: #{
@@ -85,7 +95,7 @@ fn forward_open_change(ctx, open) {
 fn render_Dialog(ctx, props) {
     let children = [
         text(props.title).with_style(ctx.component_style("title",
-            style().typography("title").font_weight(700)
+            style().typography("title")
                 .text_color(theme_color("text_primary"))
         )),
         props.content.with_style(ctx.component_style("content",
@@ -95,21 +105,21 @@ fn render_Dialog(ctx, props) {
         children.push(
             row(props.actions)
                 .with_style(ctx.component_style("actions",
-                style().gap(theme_spacing("sm")).justify_end().padding_top(theme_spacing("xs"))
-                        .border_top(px(1)).border_color(theme_color("border"))))
+                style().gap(theme_length("space.related")).justify_end()))
         );
     }
     let panel = column(children)
         .with_style(ctx.component_style("panel",
+            // Overlays are raised blocks with a hairline; no shadow.
             style()
                 .width(px(420))
                 .max_width(relative(0.9))
-            .padding(theme_spacing("lg"))
-            .gap(theme_spacing("md"))
-                .radius(theme_radius("md"))
+                .padding(theme_spacing("xl"))
+                .gap(theme_length("space.group"))
+                .radius(theme_radius("lg"))
                 .border(px(1))
                 .border_color(theme_color("border"))
-                .background(theme_color("surface"))
+                .background(theme_color("surface_raised"))
         ))
         .accessibility_role("dialog")
         .accessibility_label(props.title);

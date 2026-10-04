@@ -2,10 +2,12 @@
 {
   "id": "components/divider",
   "export": "Divider",
-  "version": "0.1.6",
+  "version": "0.2.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
-  "capabilities": {}
+  "capabilities": {},
+  "tokens": ["border"],
+  "environment": []
 }
 */
 // Divider separates adjacent content without owning layout spacing.
@@ -18,10 +20,12 @@ define_component(#{
     metadata: #{
         id: "components/divider",
         "export": "Divider",
-        version: "0.1.6",
+        version: "0.2.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: [],
         capabilities: #{},
+        tokens: ["border"],
+        environment: [],
     },
     schema: #{
         props: #{
@@ -61,7 +65,7 @@ fn render_Divider(ctx, props) {
     } else {
         requested_thickness
     };
-    let base = style().background(theme_color("border")).opacity(0.72);
+    let base = style().background(theme_color("border"));
     let divider_style = if orientation == "vertical" {
         base.width(px(thickness)).height(relative(1.0))
     } else {

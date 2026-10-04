@@ -2,10 +2,12 @@
 {
   "id": "components/spinner",
   "export": "Spinner",
-  "version": "0.1.6",
+  "version": "0.2.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
-  "capabilities": {}
+  "capabilities": {},
+  "tokens": ["accent"],
+  "environment": []
 }
 */
 // Compact indeterminate activity indicator animated by the native runtime clock.
@@ -15,8 +17,10 @@
 // Example: Spinner(#{ key: "loading", label: "Loading" })
 
 define_component(#{
-    metadata: #{ id: "components/spinner", "export": "Spinner", version: "0.1.6",
-        runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{} },
+    metadata: #{ id: "components/spinner", "export": "Spinner", version: "0.2.0",
+        runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{},
+        tokens: ["accent"],
+        environment: [] },
     schema: #{
         props: #{
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false },

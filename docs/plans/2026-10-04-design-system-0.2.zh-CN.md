@@ -18,9 +18,9 @@
 
 | 步 | 内容 | 状态 |
 |---|---|---|
-| 1 | `docs/design/` 四份规范 + 决策日志 + Gallery 线框；延迟构造 ADR | 进行中 |
-| 2 | 运行时地基：开放 token 与字阶、token 基础层、组件声明 token、声明式环境值（原生解析）与原生继承 disabled、颜色派生与读取、Rust 派生迁到 L0、action 快捷键查询、组合审计、CLI profile | 未开始 |
-| 3 | L0 `tokens.rhai` + 内置主题只写颜色 + 新默认主题；全部 62 个组件的组合契约与新视觉 | 未开始 |
+| 1 | `docs/design/` 四份规范 + 决策日志 + Gallery 线框；延迟构造 ADR | 完成（c232500） |
+| 2 | 运行时地基：开放 token 与字阶、token 基础层、组件声明 token、声明式环境值（原生解析）与原生继承 disabled、颜色派生与读取、Rust 派生迁到 L0、action 快捷键查询、组合审计、CLI profile | 完成（3224767、64108b0） |
+| 3 | L0 `tokens.rhai` + 内置主题只写颜色 + 新默认主题；全部 62 个组件的组合契约与新视觉 | 完成（见进度记录） |
 | 4 | L2：`layouts/`（Stack/Inline/Toolbar/Region）与 `patterns/`（Section/DescriptionList/Stat/FormLayout/InlineState/DataView/ListDetail/AppShell） | 未开始 |
 | 5 | 用 AppShell + L2 重做 Gallery（规格页 + 场景页）；自带设计参照示例进 CI；审计零告警；纯键盘场景测试；重拍基线；文档、CHANGELOG、迁移说明 | 未开始 |
 
@@ -42,3 +42,18 @@ bash scripts/audit-visual-baselines.sh
 ## 进度记录
 
 （按批次追加：日期、提交、内容、证据。）
+
+### 2026-10-04 第 3 步：62 个组件按 0.2 契约重做
+
+- 内容：全部 62 个组件升到 0.2.0，声明 `tokens` / `environment`；尺寸与密度全部走
+  `metrics.*`；标记系统（Button / Tag facet / Badge 方灯 / Kbd 键帽）；字段统一 2px 框；
+  列表行语法（`metrics.row`、`metrics.inset`、指示条）；Table 无外框、标签语气表头、数字列；
+  Tabs 轨道 + 浮起拇指；ToggleGroup 漫游焦点；覆盖层统一为浮起色块 + 发丝线。
+- 为此补的运行时能力：`group_focus` / `focus_within` 样式、带焦点样式节点的 tab stop 修复、
+  覆盖层横轴 `align`、fill-height 虚拟列表延后首次 reveal、`ScriptApplication` 致命错误写 stderr、
+  滑块拇指按锚点居中并解析焦点态。决策见 `docs/design/decisions.md` D8–D19。
+- 截图自查（本机 macOS，默认深浅两套主题）：markers、fields、lists 三张规格图，紧凑档高度
+  量过（md 28、sm 24、xs 20）。
+- 证据：`cargo fmt --all --check` 通过；`cargo clippy --workspace --all-targets --all-features
+  -- -D warnings` 无输出；workspace 667 passed / 0 failed；native-keyboard 213 passed / 0 failed；
+  performance 2 passed / 0 failed；`scripts/audit-visual-baselines.sh` 通过（69 张，基线待第 5 步重拍）。

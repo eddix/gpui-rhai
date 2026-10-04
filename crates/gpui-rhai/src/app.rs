@@ -3151,13 +3151,13 @@ impl ScriptApplication {
             let host = match ScriptViewHost::new("main", cx) {
                 Ok(host) => host,
                 Err(error) => {
-                    *reported_error.borrow_mut() = Some(error.to_string());
+                    report_fatal(&reported_error, error.to_string());
                     cx.quit();
                     return;
                 }
             };
             if let Err(error) = host.bind_keys(prepared.key_bindings.clone(), cx) {
-                *reported_error.borrow_mut() = Some(error.to_string());
+                report_fatal(&reported_error, error.to_string());
                 cx.quit();
                 return;
             }
@@ -3203,7 +3203,7 @@ impl ScriptApplication {
                         }
                         Err(error) => {
                             let message = error.to_string();
-                            *mount_error.borrow_mut() = Some(message.clone());
+                            report_fatal(&mount_error, message.clone());
                             let _ = weak_root.update(cx, |root, cx| {
                                 root.error = Some(message);
                                 cx.notify();
@@ -3219,7 +3219,7 @@ impl ScriptApplication {
                     cx.activate(true);
                 }
                 Err(error) => {
-                    *reported_error.borrow_mut() = Some(error.to_string());
+                    report_fatal(&reported_error, error.to_string());
                     cx.quit();
                 }
             }
@@ -3229,6 +3229,13 @@ impl ScriptApplication {
             None => Ok(()),
         }
     }
+}
+
+/// Record a fatal startup error. Platforms such as macOS terminate the process
+/// on quit, so `run` may never return it; the message is also written to stderr.
+fn report_fatal(slot: &RefCell<Option<String>>, message: String) {
+    eprintln!("gpui-rhai: {message}");
+    *slot.borrow_mut() = Some(message);
 }
 
 fn standalone_window_options(
@@ -4177,6 +4184,7 @@ impl Render for ScriptHostView {
                     .accessibility_projections(self.lifecycle.retained(), cx),
             );
         }
+        let focus_path = self.focus_path(window);
         let render_resources = crate::renderer::WindowRenderResources {
             now: snapshot.now,
             clock: &snapshot.clock,
@@ -4202,6 +4210,8 @@ impl Render for ScriptHostView {
             ambient_text_color: None,
             environment: crate::Environment::EMPTY,
             inherited_disabled: false,
+            focus_path: &focus_path,
+            owner_focused: false,
             root_path: &motion_root,
             view_id: &self.view_id,
             semantics: &semantics,
@@ -4738,6 +4748,34 @@ impl ScriptHostView {
         self.sync_viewport_class(window);
         debug_assert!(self.engine.is_current(self.lifecycle.generation()));
         self.reconcile_primitive_lifecycle();
+    }
+
+    /// The focused retained node followed by its ancestors, for `group_focus`
+    /// and `focus_within` styles.
+    fn focus_path(&self, window: &Window) -> Vec<crate::NodeId> {
+        let Some(focused) = self
+            .focus_handles
+            .iter()
+            .find(|(_, handle)| handle.is_focused(window))
+            .map(|(node, _)| *node)
+        else {
+            return Vec::new();
+        };
+        let mut path = vec![focused];
+        let mut cursor = self
+            .lifecycle
+            .retained()
+            .node(focused)
+            .and_then(crate::RetainedNode::parent);
+        while let Some(node) = cursor {
+            path.push(node);
+            cursor = self
+                .lifecycle
+                .retained()
+                .node(node)
+                .and_then(crate::RetainedNode::parent);
+        }
+        path
     }
 
     fn sync_focus_handles(&mut self, cx: &mut Context<Self>) {
@@ -6761,6 +6799,11 @@ mod tests {
             include_str!("../../../registry/themes/default_dark.rhai"),
         )
         .unwrap();
+        fs::write(
+            directory.path().join(TOKEN_BASE_FILE),
+            include_str!("../../../registry/tokens.rhai"),
+        )
+        .unwrap();
         write_manifest(directory.path());
 
         let prepared = FileScriptView::new(directory.path().join("main.rhai"))
@@ -6798,6 +6841,7 @@ mod tests {
             scripts,
             include_str!("../../../registry/themes/default_dark.rhai"),
         )
+        .token_base(include_str!("../../../registry/tokens.rhai"))
         .prepare()
         .unwrap();
 

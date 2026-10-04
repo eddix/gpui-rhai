@@ -240,9 +240,10 @@ impl Render for RangeInputEntity {
             &self.theme,
             direction,
         );
-        let mut thumb = crate::renderer::apply_style_override(
-            div().absolute(),
+        let thumb = crate::renderer::apply_style_override_in(
+            div().flex_none(),
             &self.thumb_style,
+            &crate::renderer::part_interaction(self.focus.is_focused(window), self.disabled),
             &self.theme,
             direction,
         );
@@ -261,12 +262,13 @@ impl Render for RangeInputEntity {
                 } else {
                     fill.left(px(0.0)).w(relative(fraction_f32(ratio)))
                 };
-                thumb = thumb
+                let anchor = div()
+                    .absolute()
                     .left(relative(fraction_f32(visual_ratio)))
-                    .top(relative(0.5))
-                    .ml(px(-7.0))
-                    .mt(px(-7.0));
-                track.child(fill).child(thumb)
+                    .top(relative(0.5));
+                track
+                    .child(fill)
+                    .child(crate::renderer::centered_on_anchor(anchor, thumb))
             }
             RangeOrientation::Vertical => {
                 fill = fill
@@ -274,12 +276,13 @@ impl Render for RangeInputEntity {
                     .right(px(0.0))
                     .bottom(px(0.0))
                     .h(relative(fraction_f32(ratio)));
-                thumb = thumb
+                let anchor = div()
+                    .absolute()
                     .bottom(relative(fraction_f32(ratio)))
-                    .left(relative(0.5))
-                    .mb(px(-7.0))
-                    .ml(px(-7.0));
-                track.child(fill).child(thumb)
+                    .left(relative(0.5));
+                track
+                    .child(fill)
+                    .child(crate::renderer::centered_on_anchor(anchor, thumb))
             }
         };
         div()

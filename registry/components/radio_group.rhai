@@ -2,10 +2,12 @@
 {
   "id": "components/radio_group",
   "export": "RadioGroup",
-  "version": "0.1.6",
+  "version": "0.2.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/radio"],
-  "capabilities": {}
+  "capabilities": {},
+  "tokens": ["space.group"],
+  "environment": ["size", "density"]
 }
 */
 // Controlled radio group with one tab stop and roving arrow-key selection.
@@ -18,9 +20,11 @@ import "components/radio" as radio;
 
 define_component(#{
     metadata: #{
-        id: "components/radio_group", "export": "RadioGroup", version: "0.1.6",
+        id: "components/radio_group", "export": "RadioGroup", version: "0.2.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["components/radio"], capabilities: #{},
+        tokens: ["space.group"],
+        environment: ["size", "density"],
     },
     schema: #{
         props: #{
@@ -99,6 +103,15 @@ fn render_RadioGroup(ctx, props) {
     let disabled = if "disabled" in props { props.disabled } else { false };
     let orientation = if "orientation" in props { props.orientation } else { "vertical" };
     let callback = if "on_change" in props { props.on_change } else { () };
+    // The keyboard cursor is the selected option, or the first enabled one; only
+    // its ring shows the group's focus.
+    let cursor = ();
+    for option in props.options {
+        if cursor == () && !option_disabled(option) { cursor = option.value; }
+    }
+    for option in props.options {
+        if option.value == props.value && !option_disabled(option) { cursor = option.value; }
+    }
     let options = [];
     for option in props.options {
         options.push(
@@ -107,13 +120,17 @@ fn render_RadioGroup(ctx, props) {
                 selected: option.value == props.value,
                 label: option.label,
                 disabled: disabled || option_disabled(option),
+                focus_mark: option.value == cursor,
                 on_select: if callback == () { () } else { Fn("change_action") },
             }).with_style(ctx.component_style("option", style())).tab_stop(false)
         );
     }
-    let group = if orientation == "horizontal" { row(options) } else { column(options) };
+    let horizontal = orientation == "horizontal";
+    let group = if horizontal { row(options) } else { column(options) };
     group = group
-        .with_style(ctx.component_style("root", style().gap(theme_spacing("xs"))))
+        .with_style(ctx.component_style("root", style()
+            .gap(if horizontal { theme_length("space.group") } else { px(0) })
+            .focus(style())))
         .accessibility_role("radiogroup")
         .accessibility_label(props.label)
         .accessibility_value(props.value);

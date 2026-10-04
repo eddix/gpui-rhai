@@ -2,10 +2,15 @@
 {
   "id": "components/sortable",
   "export": "Sortable",
-  "version": "0.1.8",
+  "version": "0.2.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
-  "capabilities": {}
+  "capabilities": {},
+  "tokens": [
+    "border", "surface", "focus_ring", "text_muted", "metrics.row", "metrics.control",
+    "metrics.inset", "typography.body", "spacing.xs"
+  ],
+  "environment": ["density"]
 }
 */
 // Controlled keyed ordering with native pointer targets and keyboard moves.
@@ -18,8 +23,13 @@
 // Example: Sortable(#{ key:"queue", label:"Queue", items:items, on_reorder:Fn("reordered") })
 
 define_component(#{
-    metadata: #{ id:"components/sortable", "export":"Sortable", version:"0.1.8",
-        runtime_api:#{min_inclusive: 3,max_exclusive: 4}, dependencies:[], capabilities:#{} },
+    metadata: #{ id:"components/sortable", "export":"Sortable", version: "0.2.0",
+        runtime_api:#{min_inclusive: 3,max_exclusive: 4}, dependencies:[], capabilities:#{},
+        tokens: [
+            "border", "surface", "focus_ring", "text_muted", "metrics.row", "metrics.control",
+            "metrics.inset", "typography.body", "spacing.xs"
+        ],
+        environment: ["density"] },
     schema: #{ props: #{
         key: #{ schema:#{type:"string"}, required:true, sensitive:false },
         label: #{ schema:#{type:"string"}, required:true, sensitive:false },
@@ -72,15 +82,17 @@ fn sortable_item_node(ctx,list_id,collection_id,item,previous_key,next_key,first
         item_key:item.key,previous_key:previous_key,next_key:next_key,first_key:first_key,last_key:last_key,
         direction:direction,threshold:threshold,disabled:disabled,item_ref:item_ref,on_reorder:Fn("sortable_commit")};
     let interaction=gpui_rhai::SortableItemPrimitive(native).with_key(`${list_id}-${item.key}-interaction`)
-        .with_style(style().absolute().left(px(0)).right(px(0)).top(px(0)).bottom(px(0)))
+        .with_style(style().absolute().left(px(0)).right(px(0)).top(px(0)).bottom(px(0))
+            .border(px(2)).border_color(rgba(0x00000000)).focus(style().border_color(theme_color("focus_ring"))))
         .disabled(disabled).tab_stop(!disabled).accessibility_role("button").accessibility_label(`Reorder ${item.label}`);
-    let handle_style=style().relative().width(px(28)).min_height(px(28)).flex_shrink(false)
-        .items_center().justify_center().cursor_move().focus(style().background(theme_color("selection")));
+    let handle_style=style().relative().width(theme_length("metrics.control")).min_height(theme_length("metrics.row"))
+        .flex_shrink(false).items_center().justify_center().cursor_move();
     let handle=box([text("≡").with_style(ctx.component_style("handle_icon",style().typography("body")
         .text_color(theme_color("text_muted")))),interaction]).with_key(`${list_id}-${item.key}-handle`)
         .with_style(ctx.component_style("handle",handle_style)).disabled(disabled);
-    let item_style=style().min_width(px(0)).items_center().border(px(1)).border_color(theme_color("border"))
-        .background(theme_color("surface"));let resolved=ctx.component_style("item",item_style);
+    // Sortable items are list rows separated by hairlines.
+    let item_style=style().min_width(px(0)).min_height(theme_length("metrics.row")).items_center()
+        .border_bottom(px(1)).border_color(theme_color("border")).background(theme_color("surface"));let resolved=ctx.component_style("item",item_style);
     if disabled{resolved=ctx.component_style("item_disabled",resolved.opacity(0.64));}
     row([handle,item.content.with_key(`${list_id}-${item.key}-content`)
         .with_style(ctx.component_style("content",style().min_width(px(0)).flex_grow()))])
@@ -97,14 +109,15 @@ fn sortable_virtual_row(list_id,collection_id,label_key,direction,threshold,disa
         last_key:payload.last_key,direction:direction,threshold:threshold,disabled:item_disabled,
         on_reorder:Fn("sortable_commit")};
     let interaction=gpui_rhai::SortableItemPrimitive(native).with_key(`${list_id}-${payload.key}-interaction`)
-        .with_style(style().absolute().left(px(0)).right(px(0)).top(px(0)).bottom(px(0)))
+        .with_style(style().absolute().left(px(0)).right(px(0)).top(px(0)).bottom(px(0))
+            .border(px(2)).border_color(rgba(0x00000000)).focus(style().border_color(theme_color("focus_ring"))))
         .disabled(item_disabled).tab_stop(!item_disabled).accessibility_role("button")
         .accessibility_label(`Reorder ${label}`);
-    let resolved=ctx.component_style("item",style().relative().height(px(40)).min_width(px(0))
-        .items_center().padding_end(theme_spacing("sm")).border(px(1)).border_color(theme_color("border"))
-        .background(theme_color("surface")).focus(style().background(theme_color("selection"))));
+    let resolved=ctx.component_style("item",style().relative().height(theme_length("metrics.row")).min_width(px(0))
+        .items_center().padding_end(theme_length("metrics.inset")).border_bottom(px(1)).border_color(theme_color("border"))
+        .background(theme_color("surface")));
     if item_disabled{resolved=ctx.component_style("item_disabled",resolved.opacity(0.64));}
-    row([text("≡").with_style(ctx.component_style("handle_icon",style().width(px(28)).text_center()
+    row([text("≡").with_style(ctx.component_style("handle_icon",style().width(theme_length("metrics.control")).text_center()
         .text_color(theme_color("text_muted")))),text(label).with_style(ctx.component_style("content",style().flex_grow())),
         interaction]).with_key(`${list_id}-item-${payload.key}`).with_style(resolved)
         .accessibility_role("listitem").accessibility_label(label)

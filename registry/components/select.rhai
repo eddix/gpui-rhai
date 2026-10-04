@@ -2,11 +2,13 @@
 {
   "id": "components/select",
   "export": "Select",
-  "version": "0.1.6",
+  "version": "0.2.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/combobox"],
   "capabilities": {},
-  "assets": []
+  "assets": [],
+  "tokens": ["border", "danger"],
+  "environment": ["size", "density"]
 }
 */
 // Scalar controlled Select composed from the public Rhai Combobox component.
@@ -18,9 +20,11 @@
 import "components/combobox" as combobox;
 
 define_component(#{
-    metadata: #{ id: "components/select", "export": "Select", version: "0.1.6",
+    metadata: #{ id: "components/select", "export": "Select", version: "0.2.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
-        dependencies: ["components/combobox"], capabilities: #{}, assets: [] },
+        dependencies: ["components/combobox"], capabilities: #{},
+        tokens: ["border", "danger"],
+        environment: ["size", "density"], assets: [] },
     schema: #{
         props: #{
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
@@ -55,8 +59,8 @@ define_component(#{
                 "default": #{ type: "bool", value: false } },
             error: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: false } },
-            size: #{ schema: #{ type: "string", allowed: ["xs", "sm", "md", "lg"] }, required: false, sensitive: false,
-                "default": #{ type: "string", value: "md" } },
+            size: #{ schema: #{ type: "optional", value: #{ type: "string", allowed: ["xs", "sm", "md", "lg"] } },
+                required: false, sensitive: false },
             width: #{ schema: #{ type: "optional", value: #{ type: "length" } }, required: false, sensitive: false },
             max_visible: #{ schema: #{ type: "integer", min: 1, max: 32 }, required: false, sensitive: false,
                 "default": #{ type: "integer", value: 8 } },
@@ -82,19 +86,11 @@ fn prop_or(props, name, fallback) { if name in props { props[name] } else { fall
 fn select_values(ctx, values) { ctx.emit("change", if values.len == 0 { () } else { values[0] }); }
 fn select_open(ctx, open) { ctx.emit("open_change", open); }
 fn select_query(ctx, query) { ctx.emit("query_change", query); }
-fn select_height(size) {
-    if size == "xs" { 24 }
-    else if size == "sm" { 28 }
-    else if size == "lg" { 36 }
-    else { 32 }
-}
-
 fn render_Select(ctx, props) {
     let selected = if "value" in props && props.value != () { [props.value] } else { [] };
-    let height = select_height(prop_or(props, "size", "md"));
-    let border = if prop_or(props, "error", false) {
-        theme_color("danger")
-    } else { theme_color("border") };
+    let trigger_style = if prop_or(props, "error", false) {
+        style().border_color(theme_color("danger"))
+    } else { style() };
     let empty_text = prop_or(props, "empty_text", "");
     let node = combobox::Combobox(#{
         key: `${props.key}-combobox`, label: props.label, options: props.options, mode: "single",
@@ -108,13 +104,13 @@ fn render_Select(ctx, props) {
         disabled: prop_or(props, "disabled", false),
         max_visible: prop_or(props, "max_visible", 8),
         placement: prop_or(props, "placement", "bottom"),
-        row_height: 28, trigger_height: height,
+        size: prop_or(props, "size", ()),
         width: if "width" in props { props.width } else { px(280) },
         on_change: Fn("select_values"),
         on_open_change: Fn("select_open"), on_query_change: Fn("select_query"),
         style: ctx.component_style("root", style()),
         part_styles: #{
-            trigger: ctx.component_style("trigger", style().border_color(border)),
+            trigger: ctx.component_style("trigger", trigger_style),
             value: ctx.component_style("value", style()),
             placeholder: ctx.component_style("placeholder", style()),
             indicator: ctx.component_style("indicator", style()),

@@ -720,6 +720,7 @@ mod tests {
                 kind: crate::OverlayKind::Popover,
                 initial_focus: crate::OverlayInitialFocus::Panel,
                 placement: crate::OverlayPlacement::Bottom,
+                align: crate::OverlayAlign::Center,
                 anchor: None,
                 open: true,
                 gap: 0.0,

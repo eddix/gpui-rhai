@@ -1145,6 +1145,103 @@ pub const BUNDLED_THEME_SOURCES: &[(&str, &str)] = &[
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeSet;
+
+    /// Quoted strings of a `"tokens": [...]`-style list starting after `key`.
+    fn declared_list(header: &str, key: &str) -> BTreeSet<String> {
+        let Some(start) = header.find(key) else {
+            return BTreeSet::new();
+        };
+        let rest = &header[start + key.len()..];
+        let open = rest.find('[').unwrap();
+        let close = rest.find(']').unwrap();
+        rest[open + 1..close]
+            .split(',')
+            .map(|item| item.trim().trim_matches('"').to_owned())
+            .filter(|item| !item.is_empty())
+            .collect()
+    }
+
+    /// Literal string arguments of `call("...")` occurrences, mapped through `prefix`.
+    fn literal_arguments(source: &str, call: &str, prefix: &str) -> BTreeSet<String> {
+        source
+            .match_indices(call)
+            .filter_map(|(index, _)| {
+                let rest = source[index + call.len()..].strip_prefix('"')?;
+                let end = rest.find('"')?;
+                Some(format!("{prefix}{}", &rest[..end]))
+            })
+            .collect()
+    }
+
+    fn code_lines(source: &str) -> impl Iterator<Item = &str> {
+        source
+            .split("*/")
+            .nth(1)
+            .unwrap_or(source)
+            .lines()
+            .map(|line| line.split("//").next().unwrap_or(line))
+    }
+
+    /// Component contract C7 and the geometry rules of docs/design/atoms.md, checked on
+    /// source text: every literal token a component reads is declared, the header and
+    /// the runtime metadata agree, and literal sizes are only structural constants.
+    #[test]
+    fn components_declare_what_they_read_and_keep_geometry_in_tokens() {
+        let mut problems = Vec::new();
+        for (id, source) in BUNDLED_COMPONENT_SOURCES_BY_ID {
+            let (header, body) = source.split_once("*/").unwrap();
+            let tokens = declared_list(header, "\"tokens\":");
+            let metadata = body.split("schema:").next().unwrap();
+            if tokens != declared_list(metadata, "tokens:") {
+                problems.push(format!("{id}: header and metadata token lists differ"));
+            }
+            if declared_list(header, "\"environment\":") != declared_list(metadata, "environment:")
+            {
+                problems.push(format!(
+                    "{id}: header and metadata environment lists differ"
+                ));
+            }
+            let code = code_lines(source).collect::<Vec<_>>().join("\n");
+            let mut read = literal_arguments(&code, "theme_color(", "");
+            read.extend(literal_arguments(&code, "theme_length(", ""));
+            read.extend(literal_arguments(&code, "theme_spacing(", "spacing."));
+            read.extend(literal_arguments(&code, "theme_radius(", "radius."));
+            read.extend(literal_arguments(&code, ".typography(", "typography."));
+            let undeclared = read.difference(&tokens).collect::<Vec<_>>();
+            if !undeclared.is_empty() {
+                problems.push(format!("{id} reads undeclared tokens: {undeclared:?}"));
+            }
+            for line in code_lines(source) {
+                for call in [
+                    ".height(px(",
+                    "min_height(px(",
+                    ".width(px(",
+                    "font_size(px(",
+                ] {
+                    for (index, _) in line.match_indices(call) {
+                        let number = line[index + call.len()..]
+                            .chars()
+                            .take_while(char::is_ascii_digit)
+                            .collect::<String>();
+                        let Ok(value) = number.parse::<u32>() else {
+                            continue;
+                        };
+                        let structural = call != "font_size(px(" && value <= 14;
+                        // Width literals above 14px are layout widths (dialogs,
+                        // popovers, toasts), not geometry rhythm.
+                        let layout_width = call == ".width(px(" && value >= 240;
+                        if !(value == 0 || structural || layout_width) {
+                            problems.push(format!(
+                                "{id} hard-codes {call}{value}): use a metrics token"
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        assert!(problems.is_empty(), "{}", problems.join("\n"));
+    }
 
     #[test]
     fn release_snapshot_has_the_expected_catalog_size() {

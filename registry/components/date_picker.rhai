@@ -2,11 +2,19 @@
 {
   "id": "components/date_picker",
   "export": "DatePicker",
-  "version": "0.1.6",
+  "version": "0.2.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
-  "assets": ["icons/calendar.svg", "icons/date_previous.svg", "icons/date_next.svg", "icons/close.svg"]
+  "assets": ["icons/calendar.svg", "icons/date_previous.svg", "icons/date_next.svg", "icons/close.svg"],
+  "tokens": [
+    "surface_raised", "border", "danger", "focus_ring", "surface_hover", "control.hover",
+    "accent", "accent_hover", "on_accent", "text.accent", "text_primary", "text_muted",
+    "disabled", "metrics.control", "metrics.control_pad", "metrics.icon", "metrics.marker",
+    "metrics.inset", "spacing.xs", "spacing.sm", "radius.md", "radius.lg",
+    "typography.control", "typography.body", "typography.label"
+  ],
+  "environment": ["size", "density"]
 }
 */
 // Controlled single-date field composed from public date data helpers, atoms, and Overlay.
@@ -16,9 +24,17 @@
 
 define_component(#{
     metadata: #{
-        id: "components/date_picker", "export": "DatePicker", version: "0.1.6",
+        id: "components/date_picker", "export": "DatePicker", version: "0.2.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: [], capabilities: #{},
+        tokens: [
+            "surface_raised", "border", "danger", "focus_ring", "surface_hover", "control.hover",
+            "accent", "accent_hover", "on_accent", "text.accent", "text_primary", "text_muted",
+            "disabled", "metrics.control", "metrics.control_pad", "metrics.icon",
+            "metrics.marker", "metrics.inset", "spacing.xs", "spacing.sm", "radius.md",
+            "radius.lg", "typography.control", "typography.body", "typography.label"
+        ],
+        environment: ["size", "density"],
         assets: ["icons/calendar.svg", "icons/date_previous.svg", "icons/date_next.svg", "icons/close.svg"],
     },
     schema: #{
@@ -48,8 +64,8 @@ define_component(#{
                 "default": #{ type: "bool", value: false } },
             error: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: false } },
-            size: #{ schema: #{ type: "string", allowed: ["xs", "sm", "md", "lg"] }, required: false, sensitive: false,
-                "default": #{ type: "string", value: "md" } },
+            size: #{ schema: #{ type: "optional", value: #{ type: "string", allowed: ["xs", "sm", "md", "lg"] } },
+                required: false, sensitive: false },
             width: #{ schema: #{ type: "optional", value: #{ type: "length" } }, required: false, sensitive: false },
             placement: #{ schema: #{ type: "string", allowed: ["top", "bottom", "left", "right"] }, required: false, sensitive: false,
                 "default": #{ type: "string", value: "bottom" } },
@@ -75,12 +91,6 @@ define_component(#{
 fn DatePicker(props) { render_component("components/date_picker", props) }
 fn prop_or(props, name, fallback) { if name in props { props[name] } else { fallback } }
 fn optional_prop(props, name) { if name in props && props[name] != () { props[name] } else { () } }
-fn date_picker_size(size) {
-    if size == "xs" { 24 }
-    else if size == "sm" { 28 }
-    else if size == "lg" { 36 }
-    else { 32 }
-}
 fn weekday_index(name) {
     if name == "monday" { 1 }
     else if name == "tuesday" { 2 }
@@ -174,10 +184,34 @@ fn week_target(value, first_weekday, end, min_date, max_date) {
     if target == () { value } else { date_clamp(target, min_date, max_date) }
 }
 
-fn icon_node(source, rtl_source, label, size, part_style) {
+fn icon_node(source, rtl_source, label, part_style) {
     directional_image_source(asset(source), asset(rtl_source))
-        .with_style(part_style.width(px(size)).height(px(size)))
+        .with_style(part_style.width(theme_length("metrics.icon")).height(theme_length("metrics.icon")))
         .accessibility_role("image").accessibility_label(label)
+}
+
+// Presets are xs secondary blocks.
+fn preset_style() {
+    let preset = style()
+        .min_height(theme_length("metrics.control")).padding_x(theme_length("metrics.control_pad"))
+        .items_center().typography("control");
+    preset
+        .border(px(2)).border_color(theme_color("surface_hover"))
+        .background(theme_color("surface_hover")).radius(theme_radius("md"))
+        .hover(style().background(theme_color("control.hover")))
+        .focus(style().border_color(theme_color("focus_ring")))
+        .disabled(style().text_color(theme_color("disabled")))
+}
+
+// Month steppers are square ghost controls.
+fn month_button_style() {
+    style()
+        .width(theme_length("metrics.control")).height(theme_length("metrics.control"))
+        .items_center().justify_center()
+        .border(px(2)).border_color(rgba(0x00000000)).radius(theme_radius("md"))
+        .hover(style().background(theme_color("surface_hover")))
+        .focus(style().border_color(theme_color("focus_ring")))
+        .disabled(style().text_color(theme_color("disabled")))
 }
 
 fn render_DatePicker(ctx, props) {
@@ -198,9 +232,7 @@ fn render_DatePicker(ctx, props) {
     } else { stored_month };
     let focused_date = if stored_focus == "" || anchor_changed { anchor } else { stored_focus };
     let calendar = ctx.calendar();
-    let size = date_picker_size(prop_or(props, "size", "md"));
     let width = if "width" in props && props.width != () { props.width } else { px(280) };
-    let panel_width = size * 7 + 32;
     let placeholder = prop_or(props, "placeholder", "");
     let display = if value == () { placeholder }
         else { ctx.format_date(value, prop_or(props, "display_style", "short")) };
@@ -212,35 +244,34 @@ fn render_DatePicker(ctx, props) {
     let trigger_actions = [];
     if prop_or(props, "clearable", false) && value != () {
         trigger_actions.push(row([image_source(asset("app/icons/close"))
-            .with_style(style().width(px(12)).height(px(12))
-                .text_color(theme_color("text_primary")))])
+            .with_style(style().width(theme_length("metrics.icon")).height(theme_length("metrics.icon"))
+                .text_color(theme_color("text_muted")))])
             .with_style(ctx.component_style("clear", style()
-                .width(px(20)).height(px(20)).items_center().justify_center()
-                .radius(theme_radius("sm"))
+                .items_center().justify_center()
                 .hover(style().background(theme_color("surface_hover")))))
             .accessibility_role("button").accessibility_label(ctx.t("calendar.clear"))
             .on_click_value(Fn("clear_date"), #{ changed: true }));
     }
     trigger_actions.push(row([image_source(asset("app/icons/calendar"))
-        .with_style(style().width(px(14)).height(px(14))
+        .with_style(style().width(theme_length("metrics.icon")).height(theme_length("metrics.icon"))
             .text_color(theme_color("text_muted")))])
         .with_style(ctx.component_style("trigger_icon", style()
-            .width(px(20)).height(px(20)).items_center().justify_center()
+            .items_center().justify_center()
             .text_color(theme_color("text_muted"))))
         .accessibility_role("image").accessibility_label(ctx.t("calendar.open")));
     let trigger_children = [trigger_value, row(trigger_actions)
             .with_style(style().gap(theme_spacing("xs")).items_center())];
-    let trigger_border = if error { theme_color("danger") }
-        else if open { theme_color("focus_ring") } else { theme_color("border") };
-    let trigger_style = style().width(width).height(px(size)).padding_x(theme_spacing("sm")).gap(theme_spacing("sm"))
-        .items_center().border(px(1)).border_color(trigger_border)
-        .radius(theme_radius("md"))
-        .background(if open { theme_color("surface_raised") } else { theme_color("surface") })
-        .typography("body")
-        .hover(style().background(theme_color("surface_raised")))
+    // The trigger is a field; while focused or open the focus color owns the frame.
+    let trigger_border = if open { theme_color("focus_ring") }
+        else if error { theme_color("danger") } else { theme_color("border") };
+    let trigger_style = style().width(width).min_height(theme_length("metrics.control"))
+        .padding_x(theme_length("metrics.control_pad")).gap(theme_spacing("sm")).items_center();
+    trigger_style = trigger_style
+        .border(px(2)).border_color(trigger_border)
+        .radius(theme_radius("md")).background(theme_color("surface_raised"))
+        .typography("control")
         .focus(style().border_color(theme_color("focus_ring")))
-        .disabled(style().background(theme_color("surface_raised"))
-            .text_color(theme_color("disabled")).opacity(0.72));
+        .disabled(style().text_color(theme_color("disabled")).opacity(0.72));
     let trigger = row(trigger_children).with_key(`${props.key}-trigger`)
         .with_style(ctx.component_style("trigger", trigger_style))
         .disabled(prop_or(props, "disabled", false)).tab_stop(true)
@@ -253,28 +284,18 @@ fn render_DatePicker(ctx, props) {
     let can_previous = previous != () && date_month_intersects(previous, min_date, max_date);
     let can_next = next != () && date_month_intersects(next, min_date, max_date);
     let previous_node = row([icon_node(
-        "app/icons/date_previous", "app/icons/date_next", ctx.t("calendar.previous_month"), 16,
+        "app/icons/date_previous", "app/icons/date_next", ctx.t("calendar.previous_month"),
         ctx.component_style("previous", style().text_color(theme_color("text_muted")))
-    )]).with_key(`${props.key}-previous`).with_style(style()
-        .width(px(28)).height(px(28)).items_center().justify_center()
-        .border(px(1)).border_color(rgba(0x00000000)).radius(theme_radius("sm"))
-        .hover(style().background(theme_color("surface_hover")))
-        .focus(style().border_color(theme_color("focus_ring")))
-        .disabled(style().opacity(0.55))).disabled(!can_previous)
+    )]).with_key(`${props.key}-previous`).with_style(month_button_style()).disabled(!can_previous)
         .accessibility_role("button").accessibility_label(ctx.t("calendar.previous_month"));
     if can_previous {
         previous_node = previous_node.on_click_value(Fn("move_month"),
             #{ date: month_target(focused_date, -1, min_date, max_date) });
     }
     let next_node = row([icon_node(
-        "app/icons/date_next", "app/icons/date_previous", ctx.t("calendar.next_month"), 16,
+        "app/icons/date_next", "app/icons/date_previous", ctx.t("calendar.next_month"),
         ctx.component_style("next", style().text_color(theme_color("text_muted")))
-    )]).with_key(`${props.key}-next`).with_style(style()
-        .width(px(28)).height(px(28)).items_center().justify_center()
-        .border(px(1)).border_color(rgba(0x00000000)).radius(theme_radius("sm"))
-        .hover(style().background(theme_color("surface_hover")))
-        .focus(style().border_color(theme_color("focus_ring")))
-        .disabled(style().opacity(0.55))).disabled(!can_next)
+    )]).with_key(`${props.key}-next`).with_style(month_button_style()).disabled(!can_next)
         .accessibility_role("button").accessibility_label(ctx.t("calendar.next_month"));
     if can_next {
         next_node = next_node.on_click_value(Fn("move_month"),
@@ -284,19 +305,20 @@ fn render_DatePicker(ctx, props) {
         previous_node,
         text(ctx.format_month_year(visible_month))
             .with_style(ctx.component_style("month_title",
-                style().typography("body").font_weight(700))),
+                style().typography("body").font_weight(600))),
         next_node,
     ]).with_style(ctx.component_style("header",
-        style().items_center().justify_between().padding_x(theme_spacing("xs"))));
+        style().items_center().justify_between()));
 
     let weekday_nodes = [];
     let first_weekday = weekday_index(calendar.first_weekday);
     for offset in 0..7 {
         let label = calendar.weekdays.short[(first_weekday + offset) % 7];
-        weekday_nodes.push(text(label)
+        weekday_nodes.push(row([text(label.to_upper())])
             .with_style(ctx.component_style("weekday",
-                style().width(px(size)).height(px(24)).items_center().justify_center()
-                    .typography("caption").font_weight(700)
+                style().width(theme_length("metrics.control")).height(theme_length("metrics.marker"))
+                    .items_center().justify_center()
+                    .typography("label")
                     .text_color(theme_color("text_muted"))))
             .accessibility_role("columnheader").accessibility_label(label));
     }
@@ -313,32 +335,32 @@ fn render_DatePicker(ctx, props) {
             let selected = cell.date != () && cell.date == value;
             let is_today = cell.date != () && cell.date == today;
             let is_focused = cell.date != () && cell.date == focused_date;
+            // Day cells are square controls. The keyboard cursor is the 2px ink
+            // frame; today is accent text; the chosen day is the accent block.
             let day_style = ctx.component_style("day",
-                style().width(px(size)).height(px(size)).items_center().justify_center()
-                    .radius(theme_radius("sm")).typography("body_small")
-                    .border(px(1)).border_color(rgba(0x00000000))
-                    .hover(style().background(theme_color("surface_hover")))
-                    .focus(style().border_color(theme_color("focus_ring"))));
+                style().width(theme_length("metrics.control")).height(theme_length("metrics.control"))
+                    .items_center().justify_center()
+                    .radius(theme_radius("md")).typography("control")
+                    .border(px(2)).border_color(rgba(0x00000000))
+                    .hover(style().background(theme_color("surface_hover"))));
             let day_style = if cell.outside {
-                ctx.component_style("day_outside",
-                    day_style.text_color(theme_color("text_muted")).opacity(0.62))
+                ctx.component_style("day_outside", day_style.text_color(theme_color("text_muted")))
             } else { day_style };
             let day_style = if is_today {
                 ctx.component_style("day_today",
-                    day_style.border(px(1)).border_color(theme_color("accent")))
-            } else { day_style };
-            let day_style = if is_focused {
-                ctx.component_style("day_focused",
-                    day_style.border(px(1)).border_color(theme_color("focus_ring")))
+                    day_style.text_color(theme_color("text.accent")).font_weight(600))
             } else { day_style };
             let day_style = if selected {
                 ctx.component_style("day_selected",
-                    day_style.background(theme_color("accent")).border_color(theme_color("accent"))
-                        .text_color(theme_color("on_accent"))
+                    day_style.background(theme_color("accent")).text_color(theme_color("on_accent"))
                         .hover(style().background(theme_color("accent_hover"))))
             } else { day_style };
+            let day_style = if is_focused {
+                ctx.component_style("day_focused", day_style.border_color(theme_color("focus_ring")))
+            } else { day_style };
             let day_style = if disabled {
-                ctx.component_style("day_disabled", day_style.text_color(theme_color("disabled")))
+                ctx.component_style("day_disabled", day_style.text_color(theme_color("disabled"))
+                    .hover(style()))
             } else { day_style };
             let label = if cell.date == () { "" } else { ctx.format_date(cell.date, "long") };
             let day = row([text(if cell.day == () { "" }
@@ -363,12 +385,8 @@ fn render_DatePicker(ctx, props) {
     for preset in prop_or(props, "presets", []) {
         let preset_disabled = prop_or(preset, "disabled", false)
             || !date_enabled(preset.value, min_date, max_date);
-        let preset_node = text(preset.label).with_key(`preset-${preset.value}`)
-            .with_style(ctx.component_style("preset", style()
-                    .height(px(28)).padding_x(theme_spacing("sm")).items_center()
-                .typography("body_small").border(px(1)).border_color(theme_color("border"))
-                .radius(theme_radius("sm")).hover(style().background(theme_color("surface_hover")))
-                .disabled(style().opacity(0.55))))
+        let preset_node = row([text(preset.label)]).with_key(`preset-${preset.value}`)
+            .with_style(ctx.component_style("preset", preset_style()))
             .disabled(preset_disabled).accessibility_role("button")
             .accessibility_label(preset.label).accessibility_value(preset.value);
         if !preset_disabled {
@@ -381,13 +399,14 @@ fn render_DatePicker(ctx, props) {
     if footer_nodes.len > 0 {
         panel_children.push(row(footer_nodes)
             .with_style(ctx.component_style("footer", style().gap(theme_spacing("xs"))
-                .padding_top(theme_spacing("xs")).border_top(px(1)).border_color(theme_color("border")))));
+                .padding_top(theme_spacing("sm")).border_top(px(1)).border_color(theme_color("border"))))
+            .env(#{ size: "xs" }));
     }
     let panel = column(panel_children).with_key(`${props.key}-panel`)
         .with_style(ctx.component_style("panel",
-            style().width(px(panel_width)).gap(theme_spacing("xs")).padding(theme_spacing("sm"))
+            style().gap(theme_spacing("xs")).padding(theme_length("metrics.inset"))
                 .border(px(1)).border_color(theme_color("border"))
-                .radius(theme_radius("md")).background(theme_color("surface"))
+                .radius(theme_radius("lg")).background(theme_color("surface_raised"))
                 .typography("body")
                 .focus(style().border_color(theme_color("focus_ring")))))
         .tab_stop(true).accessibility_role("dialog")
@@ -416,10 +435,11 @@ fn render_DatePicker(ctx, props) {
             #{ date: focused_date, changed: focused_date != value });
 
     let config = #{ id: props.key, kind: "popover", open: open,
-        placement: prop_or(props, "placement", "bottom"), gap: 4,
+        placement: prop_or(props, "placement", "bottom"), align: "start", gap: 4,
         modal: false, dismiss_on_escape: true, dismiss_on_outside: true };
     if "parent_overlay" in props && props.parent_overlay != () { config.parent = props.parent_overlay; }
-    overlay(trigger, panel, config).with_key(props.key)
+    let root = overlay(trigger, panel, config).with_key(props.key)
         .with_style(ctx.component_style("root", style()))
-        .on_open_change(Fn("set_open"))
+        .on_open_change(Fn("set_open"));
+    if "size" in props && props.size != () { root.env(#{ size: props.size }) } else { root }
 }

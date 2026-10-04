@@ -2816,10 +2816,10 @@ mod tests {
         let id = ModuleId::parse("components/button").unwrap();
         let entry = registry.entries.get_mut(&id).unwrap();
         let installed_version = entry.metadata.version.to_string();
-        let source = entry
-            .source
-            .replace(&installed_version, "0.2.0")
-            .replace("// Button presents a desktop action.", upstream_purpose);
+        let source = entry.source.replace(&installed_version, "0.9.0").replace(
+            "// Button presents a desktop action: a large block with a centered label.",
+            upstream_purpose,
+        );
         let source: &'static str = Box::leak(source.into_boxed_str());
         entry.metadata = parse_component_header(source).unwrap();
         entry.source = source;
@@ -2850,7 +2850,7 @@ mod tests {
         let merged = read(&source_path).unwrap();
         assert!(merged.contains("refined desktop action"));
         assert!(merged.contains("application-owned footer"));
-        assert!(merged.contains("0.2.0"));
+        assert!(merged.contains("0.9.0"));
         assert_eq!(
             read(
                 &directory
@@ -2879,7 +2879,7 @@ mod tests {
         let installed_version = entry.metadata.version.to_string();
         let source = entry
             .source
-            .replace(&installed_version, "0.2.0")
+            .replace(&installed_version, "0.9.0")
             .replace("dependencies: []", "dependencies: [\"components/badge\"]")
             .replace(
                 "\"dependencies\": []",
@@ -2940,7 +2940,7 @@ mod tests {
             .join(".gpui-rhai/baselines/components/button.rhai");
         let baseline = read(&baseline_path).unwrap();
         let local = baseline.replace(
-            "// Button presents a desktop action.",
+            "// Button presents a desktop action: a large block with a centered label.",
             "// Button presents the application's custom action.",
         );
         fs::write(&source_path, &local).unwrap();

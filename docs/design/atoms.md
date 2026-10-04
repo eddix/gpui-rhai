@@ -25,9 +25,9 @@ section 9 repeats them for reviews.
 | C5 | **No outer margin** | Components never add space outside their own root. Spacing between components belongs to the parent. |
 | C6 | **Shared line box** | Controls of the same size use the same typography role, so text in a row of mixed controls shares one baseline when centered. Minimum heights are lower bounds; larger type grows the control. |
 | C7 | **Declared consumption** | Component metadata lists the tokens (`tokens`) and environment values (`environment`) it reads. Preparation validates the active theme against the union of mounted components. |
-| C8 | **Removable signatures** | Each structural signature is a declared part (`indicator`, `lamp`, `key`, `shortcut`, `label`), so `ui/styles.rhai` can restyle or hide it. |
+| C8 | **Removable signatures** | Each structural signature is a declared part (`indicator_bar`, `lamp`, `facet`, `shortcut`, `label`, `cursor`, `focus_frame`), so `ui/styles.rhai` can restyle or hide it. |
 | C9 | **States without layout shift** | State priority is `active > focus > hover/cursor > selected > idle`; `disabled` suppresses interaction and wins over pointer states. Borders are reserved in idle geometry. Selection stays visible under focus. |
-| C10 | **Visible focus** | Focusable controls reserve a 2px border. Idle, it takes the control's fill (invisible) or, for outline treatments, the low-contrast `border` role. Focused, it takes `focus_ring`, which defaults to the ink color. |
+| C10 | **Visible focus** | Focus is always a 2px `focus_ring` frame (the ink color by default) and never moves layout. A control frames itself with a reserved 2px border that idles in its fill or, for outline treatments, in `border`. A compound control frames its mark instead of the whole row (`group_focus`), a list frames its cursor row with an overlay, and a field group frames itself while its input has focus (`focus_within`). See section 10. |
 | C11 | **Inherited disabled** | A disabled container disables every descendant natively: input, focus, pseudo styles and accessibility semantics. Components do not need to forward `disabled` to children. |
 | C12 | **Action binding** | Components that trigger commands (Button, IconButton, Menu items, Command items, ContextMenu items, Tooltip hints) accept `action: "id"`. The displayed shortcut, enabled state and dispatch derive from that action. A free-text `shortcut` remains for commands without an action. |
 | C13 | **Data defaults** | When a component knows a value is numeric (a Table column with `numeric: true`, Stat, DescriptionList numeric values), it aligns to the end and enables tabular figures by default. |
@@ -43,14 +43,19 @@ section 9 repeats them for reviews.
 | `metrics.control_pad` by size | 8 / 12 / 16 / 20 | 8 / 8 / 12 / 16 | horizontal padding of text controls |
 | `metrics.row` | 32 | 28 | Menu, Command, option lists, Table, Tree, navigation rows |
 | `metrics.inset` | 12 | 8 | text start in rows, panel padding |
-| `metrics.marker` | 20 | 20 | Badge, Tag, Kbd height |
+| `metrics.marker` | 20 | 20 | Badge, Tag, Kbd height (`metrics.marker_small` 18) |
+| `metrics.mark` | 16 | 16 | Checkbox box, Radio ring, Switch track height, slider cap |
 | `metrics.icon` by size | 12 / 14 / 16 / 16 | 12 / 14 / 14 / 16 | control icon box |
 | `metrics.titlebar` | 36 | 32 | TitleBar |
 | `metrics.statusbar` | 24 | 22 | StatusBar |
 
 Structural constants that stay literal in component source, with a comment:
 the 1px hairline, the 2px focus border, the 2px indicator bar, the 6px lamp,
-icon view boxes, zero offsets, semantic circles.
+the 4px slider track, the 8px splitter grab zone, the 12px close glyph, zero
+offsets, semantic circles. The registry lint
+(`components_declare_what_they_read_and_keep_geometry_in_tokens`) rejects any
+other literal height or font size, and any token a component reads without
+declaring it.
 
 ### Radius roles
 
@@ -60,7 +65,8 @@ icon view boxes, zero offsets, semantic circles.
 | `radius.md` | Button, IconButton, inputs, Select, Tabs track/thumb, ToggleGroup | 0 |
 | `radius.lg` | Popover, Dialog, Menu panel, Tooltip, Toast, Sheet | 0 |
 
-Semantic circles (Radio, Avatar, slider thumb, presence) use half their size.
+Semantic circles (Radio, Avatar, presence) use half their size. Slider caps
+are rectangular faders, not circles.
 Square status lamps are not circles.
 
 ## 3. Typography
@@ -78,8 +84,15 @@ Roles are named freely at the runtime level; the design language declares:
 | `display` | 24 / 32 | 600 | UI | stat figures |
 | `display_large` | 32 / 40 | 600 | UI | hero figures |
 | `label` | 12 / 16 | 400 | mono | label voice (uppercase Latin) |
-| `code` | 13 / 20 | 400 | mono | code, commands, key legends |
-| `control` by size | `body_small` for `xs`, `body` otherwise | — | UI | text inside controls |
+| `code` | 13 / 20 | 400 | mono | code, commands |
+| `control_small` | 13 / 16 | 400 | UI | single-line text in `xs` controls |
+| `control_regular` | 14 / 20 | 400 | UI | single-line text in `sm` to `lg` controls |
+| `control` by size | `control_small` for `xs`, `control_regular` otherwise | — | UI | text inside controls |
+
+Control text keeps the body sizes on a tighter line box: a single line needs no
+reading leading, and the reserved 2px focus border must fit every compact height
+(20 = 16 + 2 × 2). Density still never changes font size. Multi-line fields
+(Textarea) keep `body`.
 
 Only weights 400 and 600 are used. 600 marks titles and the label of a filled
 Button; data in lists is never bold. The UI family is the platform font; the
@@ -112,8 +125,9 @@ uses the monospace family: its built-in advance keeps uppercase legible.
 Derived roles from the token base: `text.accent`, `text.danger`,
 `text.warning`, `text.success` (the status color adjusted to reach 4.5:1 on
 tonal blocks, used whenever a status or accent color is text), `control.hover`
-(tonal block hover step), `control.fill_hover` (solid fill hover step),
-`table.selection`, `tabs.foreground`. See [themes.md](themes.md).
+(tonal block hover step), `tag.facet` (the darker tonal step of a Tag facet),
+`table.selection`, `tabs.foreground`, `scrollbar.thumb` and
+`scrollbar.thumb_hover`. See [themes.md](themes.md).
 
 ## 5. Marker system: Button, Tag, Badge, Kbd
 
@@ -123,7 +137,7 @@ color alone; the distinction survives grayscale.
 | Component | Silhouette | Height | Text | Fill and line |
 |---|---|---|---|---|
 | **Button** | large block, centered label | `metrics.control` | `control`, 600 | solid or tonal block; outline uses a frame; ghost has no fill |
-| **Tag** | small flat tape, optional key segment | `metrics.marker` | `caption`, 400 | tonal block, no frame |
+| **Tag** | small flat tape, optional facet segment | `metrics.marker` | `caption`, 400 | tonal block, no frame |
 | **Badge** | lamp plus text, no container by default | `metrics.marker` | `caption`, 400 | none; `strong` emphasis is a solid status block |
 | **Kbd** | keycap | `metrics.marker` | `code` at 12px | 1px `border` frame, no fill; inline legend has no frame |
 
@@ -137,7 +151,7 @@ Seven variants remain. Selection guidance lives in [composition.md](composition.
 | `secondary` | `surface_hover` fill | `control.hover` | `text_primary` |
 | `outline` | transparent, 2px `border` frame | `surface_hover` fill | `text_primary` |
 | `ghost` | transparent | `surface_hover` fill | `text_primary` |
-| `danger` / `warning` / `success` | status fill | `control.fill_hover` mix | matching `on_*` |
+| `danger` / `warning` / `success` | status fill | the status color mixed 12% toward `text_primary` | matching `on_*` |
 
 - Padding `metrics.control_pad`; gap between icon and label `space.xs`.
 - Focus: the reserved 2px border turns `focus_ring`.
@@ -146,20 +160,29 @@ Seven variants remain. Selection guidance lives in [composition.md](composition.
 - Loading keeps the width of the idle label where possible and announces the
   loading text.
 - Optional `shortcut` part shows the action's key legend after the label in
-  the label's color at 70% opacity; hidden for `xs`.
+  the `code` role at 70% opacity. It shows at every size: a component cannot
+  read the resolved size, so an `xs` caller omits the legend itself.
+- IconButton is the square variant (`metrics.control` on both axes, icon
+  `metrics.icon`); `selected` fills it with `selection`.
+- Toggle is a ghost Button whose pressed state fills with `selection`; its label
+  stays at 400 so pressing never changes width.
+- ButtonGroup joins blocks with a 2px seam (`space.xxs`), so each button keeps
+  its own focus frame and outline frames never double.
 
 ### Tag
 
 - Tonal `surface_hover` block, horizontal padding `space.sm` in both
   densities (markers do not change with density), `radius.sm`.
 - Color variants (`accent`, `success`, `warning`, `danger`) mark a
-  **category**, not a status: without a key they color the text with the
-  derived `text.*` role; with a key they fill the key segment with the color
+  **category**, not a status: without a facet they color the text with the
+  derived `text.*` role; with a facet they fill the facet segment with the color
   and use the matching `on_*` text.
-- `key` prop: a leading segment in the label voice (mono, uppercase) on a
-  darker tonal step (`tag.key`), separated from the value by no gap.
-- `closable`: a 12px close icon at the end, its own hover block, keyboard
-  reachable, announces "Remove <text>".
+- `facet` prop: a leading segment in the label voice (mono, uppercase) on a
+  darker tonal step (`tag.facet`), joined to the value with no gap
+  (`Tag(#{ facet: "env", text: "prod" })`). The prop is not called `key`
+  because `key` is the component instance key.
+- `closable`: a 12px close glyph at the end with its own hover block and a
+  2px focus frame; announces `close_label`, default "Remove <text>".
 
 ### Badge
 
@@ -173,22 +196,28 @@ Seven variants remain. Selection guidance lives in [composition.md](composition.
 
 ### Kbd
 
-- Default: 1px `border` frame, transparent fill, `text_muted`, `code` role at
-  12/16, minimum width equal to its height, padding `space.xs`.
+- Default: 1px `border` frame, transparent fill, `text_muted`, the `label`
+  role (mono 12/16, not uppercased), minimum width equal to its height,
+  padding `spacing.xs`.
 - `appearance: "inline"`: no frame, used inside menus and buttons.
-- Multi-key chords are separate keycaps with `space.xxs` between them when
-  given as an array.
+- `keys: ["⌘", "K"]` renders one keycap per key with `spacing.xxs` between
+  them.
 
 ### Related: ToggleGroup and Tabs
 
 - **ToggleGroup** expresses pressed tool state. Equal-height segments joined
-  without gaps; each pressed segment fills its own area with `selection` and
-  keeps `text_primary`; unpressed segments are transparent on a 2px `border`
-  frame.
-- **Tabs** selects one associated panel: a continuous `surface_hover` track and
-  one `surface_raised` thumb inset by `space.xxs`; labels in `tabs.foreground`
-  / `text_primary`, weight 400 in both states so widths do not jitter. Tabs can
-  render without a panel (`panel: false`) when used as a view switcher.
+  without gaps inside one 2px `border` frame; segments overlap the frame by
+  2px, so a pressed `selection` fill and a focus frame sit flush with the outer
+  edge and the group is exactly `metrics.control` high. Unpressed labels are
+  `text_muted`. Keyboard: roving focus, one tab stop on the active segment,
+  arrows move focus, Enter or Space toggles.
+- **Tabs** selects one associated panel: a continuous `surface_hover` track,
+  `metrics.control` high, and one `surface_raised` thumb inset by
+  `spacing.xxs`; labels in `tabs.foreground` / `text_primary`, `control` type,
+  weight 400 in both states so widths do not jitter. The tab list is one tab
+  stop; its focus frames the thumb (`group_focus`). Tabs can render without a
+  panel (`panel: false`) when used as a view switcher; the panel itself is
+  unframed.
 
 ## 6. List-like components
 
@@ -198,22 +227,33 @@ lists and Table rows share one row grammar:
 | State | Treatment |
 |---|---|
 | idle | transparent |
-| hover / keyboard cursor in a persistent list | `surface_hover` block |
-| current item, or the cursor in a transient list (menus, palettes, options) | `selection` block plus the 2px `accent` **indicator bar** on the start edge, inside the inset |
+| hover | `surface_hover` block |
+| keyboard cursor in a persistent list (Tree, Accordion, Collapsible) | a 2px `focus_ring` frame drawn over the row (part `cursor` / `focus_frame`), only while the list has focus |
+| current item, or the cursor in a transient list (menus, palettes, options) | `selection` block plus the 2px `accent` **indicator bar** on the start edge (part `indicator_bar`, absolutely positioned, so it never pushes text) |
 | checked | check mark in a fixed leading column; the column is reserved for every row of a checkable list |
 | disabled | `disabled` text, no hover |
 
 - Row height `metrics.row`, text start `metrics.inset`, trailing shortcut in
   the inline Kbd legend aligned to the end.
-- Section headers inside lists use the label voice.
+- Section headers inside lists use the label voice and align with item text
+  after the reserved check column.
+- Menu and Command items accept `action`; Menu items also accept
+  `kind: "label"` for section headers.
+- Virtual option lists size their viewport in whole rows
+  (`metrics.row * visible`) with `fill_height`, so both densities show the
+  same number of rows.
 
 ### Table
 
+- No outer frame: the region around the table provides its edges.
 - Header row in the label voice on `surface`, hairline bottom border; sticky
-  copy indistinguishable from the natural row.
-- Body rows `metrics.row`, hairline separators in `border`, no zebra striping.
-- Selected rows use `table.selection` and the indicator bar on the first cell.
-- `numeric: true` columns align to the end with tabular figures.
+  copy indistinguishable from the natural row. Only sortable headers react to
+  hover.
+- Body rows `metrics.row`, cell text at `metrics.inset`, hairline separators in
+  `border`, no zebra striping by default (`striped` remains opt-in).
+- Selected rows use `table.selection` and the indicator bar on the row start.
+- `numeric: true` columns align to the end with tabular figures unless an
+  `align` is given.
 
 ## 7. Fields
 
@@ -221,23 +261,68 @@ Things you type into have a frame; things you press are blocks.
 
 - Input, Textarea, Select trigger, Combobox trigger and DatePicker share:
   height `metrics.control` by size, `surface_raised` well, 2px `border` frame,
-  padding `metrics.control_pad`, `control` text.
+  padding `metrics.control_pad`, `control` text. Text therefore starts at the
+  same x in every field. Textarea keeps `body` for multi-line reading.
+- InputGroup owns the frame for a prefix/suffix and its inner control; the
+  frame takes `focus_ring` while the inner input has focus (`focus_within`).
 - Focus: frame turns `focus_ring`. Invalid: frame turns `danger`; while focused
   the focus color owns the frame and danger returns on blur. Read-only: no
   frame change on hover, muted caret area. Disabled: `disabled` text, frame
   keeps its color at reduced opacity.
-- Checkbox: 16px box with a 2px `border` frame; checked fills `accent` with an
-  `on_accent` mark. Radio: circular. Switch: rectangular 28×16 track,
-  `surface_hover` off and `accent` on, square thumb.
+- Checkbox: `metrics.mark` box with a 2px `border` frame on the well; checked
+  fills `accent` with an `on_accent` mark. Radio: the same frame as a circle
+  with a 6px accent dot. Switch: rectangular 32×16 track (`metrics.mark` × 2),
+  `surface_hover` off and `accent` on, a 12px square thumb, ink off and
+  `on_accent` on. In all three the row is the target and the mark shows focus,
+  so the mark stays on the content edge. Rows are `metrics.control` high.
+- Slider and RangeSlider: a 4px track, `accent` fill and a fader cap (a 12×20
+  cobalt block with a 2px `surface` frame that turns ink while focused),
+  `metrics.control` high.
+- Labels are `body` at 400 in `text_primary`; descriptions and errors are
+  `caption`, errors in `text.danger`.
 
-## 8. Motion in components
+## 8. Overlays and containers
+
+- Overlay panels (Menu, Combobox/Select/DatePicker panels, Popover, Dialog,
+  Sheet, Toast, Command) are `surface_raised` blocks with a 1px `border`
+  hairline and `radius.lg`; no shadow. Menus and field panels align to their
+  trigger's start edge (`align: "start"`, RTL-aware); Tooltips center.
+- Dialog and Sheet pad with `spacing.xl`; actions are separated by space, not
+  a rule. Sheets draw their hairline only on the edge facing the window.
+- Tooltip inverts ink and paper (`text_primary` block, `surface` text, caption)
+  and can show an action's key legend (`action` or `shortcut`).
+- Card is a `surface_raised` block (`variant: "outline"` for cards placed on a
+  raised surface); parts are separated by `space.group`.
+- GroupBox is a hairline rule with a label-voice heading, on the parent's
+  content edge.
+- Alert and Toast mark status with the 6px square lamp; the block itself stays
+  neutral ("normal is quiet").
+- Accordion and Collapsible are Swiss lists: hairlines between sections, no
+  enclosing box, headers as list rows.
+- Empty states are quiet: centered type on the region's surface, no frame.
+- ScrollArea, CodeViewer and DiffViewer draw no frame; the layout does.
+
+## 9. Motion in components
 
 Allowed: Tabs thumb movement (`fast`, `standard`), overlay enter/exit (`fast`),
 Toast enter/exit, Progress indeterminate stripe, Skeleton shimmer, Spinner.
 Everything follows the Host motion policy; `None` places final states directly.
 Decorative motion lives in `motion/*` and is never used by `components/`.
 
-## 9. New component checklist
+## 10. Focus mechanics
+
+Three style hooks keep the single focus metaphor (a 2px ink frame) without
+layout shift:
+
+| Hook | Applies when | Used by |
+|---|---|---|
+| `.focus(style)` | the node itself has focus | Button, fields, Tag close, segments, day cells |
+| `.group_focus(style)` | the nearest focusable ancestor-or-self with a `.focus` style has focus; a `tab_stop(false)` child passes ownership up | Checkbox box, Radio ring, Switch track, Tabs thumb, list cursor frames, the focused RadioGroup option |
+| `.focus_within(style)` | the node or a descendant has focus | InputGroup frame |
+
+A focus owner that needs no visual of its own declares `.focus(style())`.
+
+## 11. New component checklist
 
 - [ ] Declares `size` if interactive; reads every height from `metrics.*`.
 - [ ] Declares the tokens and environment values it reads (C7).

@@ -2,10 +2,15 @@
 {
   "id": "components/label",
   "export": "Label",
-  "version": "0.1.6",
+  "version": "0.2.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
-  "capabilities": {}
+  "capabilities": {},
+  "tokens": [
+    "text_primary", "text_muted", "text.danger", "spacing.xxs", "typography.body",
+    "typography.caption"
+  ],
+  "environment": []
 }
 */
 // Label presents a control label with optional required and description text.
@@ -18,10 +23,15 @@ define_component(#{
     metadata: #{
         id: "components/label",
         "export": "Label",
-        version: "0.1.6",
+        version: "0.2.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: [],
         capabilities: #{},
+        tokens: [
+            "text_primary", "text_muted", "text.danger", "spacing.xxs", "typography.body",
+            "typography.caption"
+        ],
+        environment: [],
     },
     schema: #{
         props: #{
@@ -54,9 +64,11 @@ fn Label(props) { render_component("components/label", props) }
 fn render_Label(ctx, props) {
     let required = if "required" in props { props.required } else { false };
     let description = if "description" in props { props.description } else { () };
+    // Field labels are body text; weight stays 400 so labels never compete with
+    // titles. The required mark uses the readable danger text color.
     let title = if required {
-        text([span(props.text).bold(), span(" *").bold().color(theme_color("danger"))])
-    } else { text([span(props.text).bold()]) };
+        text([span(props.text), span(" *").color(theme_color("text.danger"))])
+    } else { text([span(props.text)]) };
     let children = [title.with_style(ctx.component_style("required",
         ctx.component_style("text", style()
             .typography("body")
@@ -65,7 +77,7 @@ fn render_Label(ctx, props) {
         children.push(
             text(description)
                 .with_style(ctx.component_style("description",
-                    style().typography("body_small")
+                    style().typography("caption")
                         .text_color(theme_color("text_muted"))))
         );
     }

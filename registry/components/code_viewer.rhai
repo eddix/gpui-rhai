@@ -2,10 +2,12 @@
 {
   "id": "components/code_viewer",
   "export": "CodeViewer",
-  "version": "0.1.6",
+  "version": "0.2.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
-  "capabilities": {}
+  "capabilities": {},
+  "tokens": ["surface", "surface_raised"],
+  "environment": []
 }
 */
 // Native, virtualized, selectable read-only source document surface.
@@ -16,8 +18,10 @@
 // Example: CodeViewer(#{ key: "source", source: rhai_source, label: "Rhai source", language: "rhai" })
 
 define_component(#{
-    metadata: #{ id: "components/code_viewer", "export": "CodeViewer", version: "0.1.6",
-        runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{} },
+    metadata: #{ id: "components/code_viewer", "export": "CodeViewer", version: "0.2.0",
+        runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{},
+        tokens: ["surface", "surface_raised"],
+        environment: [] },
     schema: #{
         props: #{
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
@@ -54,7 +58,7 @@ fn location_activate(ctx, payload) { ctx.emit("location_activate", payload); }
 fn render_CodeViewer(ctx, props) {
     let root_style = ctx.component_style("root", style()
         .width(relative(1.0)).height(relative(1.0)).min_width(px(0)).min_height(px(0))
-        .background(theme_color("surface")).border(px(1)).border_color(theme_color("border")));
+        .background(theme_color("surface")));
     gpui_rhai::CodeViewPrimitive(#{
         key: props.key,
         source: props.source,

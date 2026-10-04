@@ -257,6 +257,7 @@ fn accessible_name_contract_source() -> EmbeddedScriptSource {
             PAGINATION.to_owned(),
         ),
         (ModuleId::parse("components/menu").unwrap(), MENU.to_owned()),
+        (ModuleId::parse("components/kbd").unwrap(), KBD.to_owned()),
         (
             ModuleId::parse("components/context_menu").unwrap(),
             CONTEXT_MENU.to_owned(),
@@ -514,6 +515,27 @@ fn find_virtual_collection(node: &gpui_rhai::UiNode) -> Option<&gpui_rhai::UiNod
         UiNodeKind::Overlay {
             trigger, content, ..
         } => find_virtual_collection(trigger).or_else(|| find_virtual_collection(content)),
+        _ => None,
+    }
+}
+
+/// The container that sizes a fill-height virtual collection.
+fn find_virtual_collection_viewport(node: &gpui_rhai::UiNode) -> Option<&gpui_rhai::UiNode> {
+    match node.kind() {
+        UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => {
+            if children
+                .iter()
+                .any(|child| matches!(child.kind(), UiNodeKind::VirtualCollection { .. }))
+            {
+                Some(node)
+            } else {
+                children.iter().find_map(find_virtual_collection_viewport)
+            }
+        }
+        UiNodeKind::Overlay {
+            trigger, content, ..
+        } => find_virtual_collection_viewport(trigger)
+            .or_else(|| find_virtual_collection_viewport(content)),
         _ => None,
     }
 }
@@ -999,7 +1021,7 @@ fn the_token_base_materializes_complete_derived_palettes() {
             "tabs.foreground",
             "text.accent",
             "control.hover",
-            "tag.key",
+            "tag.facet",
         ] {
             assert!(
                 theme.tokens.color(token).is_some(),
@@ -1102,14 +1124,19 @@ fn official_component_sources_reject_decorative_visual_drift() {
 
 #[test]
 fn tabs_and_table_use_semantic_theme_state_surfaces() {
+    // Tabs: one tonal track, a raised thumb inset by xxs that carries the list focus,
+    // control type at a single weight so widths never jitter.
     assert!(TABS.contains("padding(theme_spacing(\"xxs\"))"));
-    assert!(TABS.contains("gap(theme_spacing(\"xxs\"))"));
-    assert!(TABS.contains("radius(theme_radius(\"sm\"))"));
-    assert!(!TABS.contains("radius(px(5))"));
-    assert!(!TABS.contains("radius(px(8))"));
-    assert!(TABS.contains("let root_style = style().gap(theme_spacing(\"xs\"));"));
-    assert!(!TABS.contains("root_style = style().gap(theme_spacing(\"xs\")).margin_end(auto())"));
+    assert!(TABS.contains("radius(theme_radius(\"md\"))"));
+    assert!(TABS.contains("background(theme_color(\"surface_hover\"))"));
+    assert!(TABS.contains("group_focus(style().border_color(theme_color(\"focus_ring\")))"));
+    assert!(TABS.contains("typography(\"control\")"));
+    assert!(!TABS.contains("font_weight("));
+    // Table: label-voice header, metrics.row rows, the selection tint and indicator bar.
     assert!(TABLE.contains("theme_color(\"table.selection\")"));
+    assert!(TABLE.contains("typography(\"label\")"));
+    assert!(TABLE.contains("height(theme_length(\"metrics.row\"))"));
+    assert!(TABLE.contains("ctx.component_style(\"indicator_bar\""));
     assert!(TABLE.contains("if item.selected { \"row_selected\" }"));
 }
 
@@ -1269,7 +1296,7 @@ fn public_launch_static_components_compile_and_compose() {
                         badge::Badge(#{ text: "Ready", variant: "success", dot: true }),
                         button_group::ButtonGroup(#{ label: "Actions", buttons: [primary, secondary] }),
                         card::Card(#{ header: text("Profile"), content: text("Ada"),
-                            footer: text("Updated now"), elevated: true }),
+                            footer: text("Updated now"), variant: "block" }),
                         empty::Empty(#{ title: "No projects", description: "Create one to begin.",
                             actions: [primary] }),
                         group_box::GroupBox(#{ label: "Sync", description: "Cloud settings",
@@ -1676,6 +1703,7 @@ fn context_menu_and_sheet_use_generic_pointer_and_edge_overlay_policies() {
             DIVIDER.to_owned(),
         ),
         (ModuleId::parse("components/menu").unwrap(), MENU.to_owned()),
+        (ModuleId::parse("components/kbd").unwrap(), KBD.to_owned()),
         (
             ModuleId::parse("components/context_menu").unwrap(),
             CONTEXT_MENU.to_owned(),
@@ -1741,6 +1769,7 @@ fn context_menu_and_sheet_use_generic_pointer_and_edge_overlay_policies() {
 }
 
 #[test]
+#[allow(clippy::too_many_lines)]
 fn command_fuzzy_search_and_keyboard_action_are_composable_and_controlled() {
     let source = EmbeddedScriptSource::new(BTreeMap::from([
         (
@@ -1809,7 +1838,25 @@ fn command_fuzzy_search_and_keyboard_action_are_composable_and_controlled() {
         unreachable!()
     };
     assert_eq!(spec.data.len(), 2, "one group header plus one fuzzy match");
-    assert_eq!(spec.height, Some(64.0), "small command sets must shrink");
+    assert_eq!(
+        spec.height, None,
+        "rows size the viewport through metrics.row"
+    );
+    assert_eq!(
+        find_virtual_collection_viewport(command)
+            .unwrap()
+            .style()
+            .base
+            .height,
+        Some(
+            gpui_rhai::Length::token("metrics.row")
+                .unwrap()
+                .scaled(2.0)
+                .unwrap()
+                .into()
+        ),
+        "small command sets must shrink to whole rows"
+    );
     assert_eq!(spec.reveal_key.as_deref(), Some("item:open"));
     let (enter, payload) = target_handler(command, "key:enter");
     let _ = lifecycle
@@ -1932,38 +1979,36 @@ fn icon_button_owns_a_square_target_and_selected_icon_state() {
         BTreeMap::new(),
     );
     let root = engine.render_with_context(&compiled, context).unwrap();
+    let control = gpui_rhai::Length::token("metrics.control").unwrap();
+    assert_eq!(root.style().base.width, Some(control.into()));
+    assert_eq!(root.style().base.height, Some(control.into()));
     assert_eq!(
-        root.style().base.width,
-        Some(gpui_rhai::Length::Pixels(32.0).into())
-    );
-    assert_eq!(
-        root.style().base.height,
-        Some(gpui_rhai::Length::Pixels(32.0).into())
+        root.attributes().get("environment"),
+        Some(&UiValue::Map(BTreeMap::from([(
+            "size".to_owned(),
+            UiValue::String("md".to_owned())
+        )])))
     );
     assert_eq!(
         root.attributes().get("label"),
         Some(&UiValue::String("Close".to_owned()))
     );
     assert_eq!(root.attributes().get("pressed"), Some(&UiValue::Bool(true)));
+    // A selected ghost IconButton fills its square with the selection block.
+    assert_eq!(
+        root.style().base.background,
+        Some(ColorValue::Token("selection".to_owned()))
+    );
     assert_eq!(
         root.style().base.text_color,
-        Some(ColorValue::Token("accent".to_owned()))
+        Some(ColorValue::Token("text_primary".to_owned()))
     );
     let UiNodeKind::Box { children } = root.kind() else {
         panic!("IconButton must render a centered row");
     };
-    assert_eq!(
-        children[0].style().base.width,
-        Some(gpui_rhai::Length::Pixels(16.0).into())
-    );
-    assert_eq!(
-        children[0].style().base.height,
-        Some(gpui_rhai::Length::Pixels(16.0).into())
-    );
-    assert_eq!(
-        children[0].style().base.text_color,
-        Some(ColorValue::Token("accent".to_owned()))
-    );
+    let icon = gpui_rhai::Length::token("metrics.icon").unwrap();
+    assert_eq!(children[0].style().base.width, Some(icon.into()));
+    assert_eq!(children[0].style().base.height, Some(icon.into()));
 }
 
 #[test]
@@ -2824,15 +2869,24 @@ fn official_table_is_public_data_backed_rhai_composition() {
         row.style().base.overflow_x,
         Some(gpui_rhai::OverflowMode::Hidden)
     );
-    let UiNodeKind::Box { children: cells } = row.kind() else {
+    let UiNodeKind::Box {
+        children: row_children,
+    } = row.kind()
+    else {
         panic!("table row must remain a public row composition");
     };
-    assert!(cells.iter().all(|cell| matches!(
-        cell.style().base.background.as_ref(),
+    // A selected row carries the selection tint and the indicator bar after its cells.
+    assert!(matches!(
+        row.style().base.background.as_ref(),
         Some(gpui_rhai::ColorValue::Token(token)) if token == "table.selection"
-    )));
+    ));
+    assert_eq!(row_children.len(), 5);
+    assert_eq!(
+        row_children[4].style().base.background,
+        Some(gpui_rhai::ColorValue::Token("accent".to_owned()))
+    );
+    let cells = &row_children[..4];
     assert_eq!(header_cells.len(), 4);
-    assert_eq!(cells.len(), 4);
     assert!(TABLE.contains(".with_table_track("));
     assert_table_columns_delegate_width_to_native_track(header_cells);
     assert_table_columns_delegate_width_to_native_track(cells);
@@ -3445,6 +3499,7 @@ fn official_pagination_page_size_emits_one_atomic_reset() {
 }
 
 #[test]
+#[allow(clippy::too_many_lines)]
 fn m2_control_sources_emit_typed_values_and_roving_keys() {
     let source = EmbeddedScriptSource::new(BTreeMap::from([
         (
@@ -3534,15 +3589,26 @@ fn m2_control_sources_emit_typed_values_and_roving_keys() {
         children[2].handler_payload("key:right"),
         Some(&UiValue::String("a".to_owned()))
     );
+    // Tag: [value segment [label, close]]; a facet segment would come first.
     let UiNodeKind::Box {
         children: tag_children,
     } = children[3].kind()
     else {
-        panic!("Tag must render label and close affordance");
+        panic!("Tag must render its value segment");
+    };
+    let UiNodeKind::Box {
+        children: value_children,
+    } = tag_children[0].kind()
+    else {
+        panic!("Tag value segment must render label and close affordance");
     };
     assert_eq!(
-        tag_children[1].handler_payload("click"),
+        value_children[1].handler_payload("click"),
         Some(&UiValue::String("Rust".to_owned()))
+    );
+    assert_eq!(
+        value_children[1].attributes().get("label"),
+        Some(&UiValue::String("Remove Rust".to_owned()))
     );
 }
 
@@ -3702,45 +3768,55 @@ fn toggle_group_routes_pointer_and_roving_keyboard_changes_to_caller_state() {
     lifecycle.start(&mut engine).unwrap();
 
     let UiNodeKind::Box { children } = lifecycle.root().unwrap().kind() else {
-        panic!("ToggleGroup must render grouped Toggle children");
+        panic!("ToggleGroup must render its segments");
     };
-    let toggle = children[0]
-        .handler("click")
-        .and_then(gpui_rhai::UiEventHandler::as_script)
-        .cloned()
-        .unwrap();
-    let _ = lifecycle
-        .invoke_callback_transactional(&engine, &toggle, UiValue::Null)
-        .unwrap();
-    for _ in 0..2 {
+    // Roving focus: only the active segment is a tab stop.
+    assert_eq!(
+        children[0].attributes().get("tab_stop"),
+        Some(&UiValue::Bool(true))
+    );
+    assert_eq!(
+        children[1].attributes().get("tab_stop"),
+        Some(&UiValue::Bool(false))
+    );
+    let press = |lifecycle: &mut ScriptLifecycle, engine: &mut RuntimeEngine, index: usize| {
+        let UiNodeKind::Box { children } = lifecycle.root().unwrap().kind() else {
+            unreachable!()
+        };
+        let handler = children[index]
+            .handler("click")
+            .and_then(gpui_rhai::UiEventHandler::as_script)
+            .cloned()
+            .unwrap();
+        let _ = lifecycle
+            .invoke_callback_transactional(engine, &handler, UiValue::Null)
+            .unwrap();
         let events = runtime.borrow_mut().drain_batch().events;
         assert_eq!(events.len(), 1);
         for event in events {
             let _ = lifecycle
-                .invoke_component_event_transactional(&engine, event)
+                .invoke_component_event_transactional(engine, event)
                 .unwrap();
         }
-    }
-    assert!(lifecycle.render_dirty(&mut engine).unwrap());
+        assert!(lifecycle.render_dirty(engine).unwrap());
+    };
+    press(&mut lifecycle, &mut engine, 0);
     assert_eq!(
         runtime.borrow().component_state.get(&path, "formats"),
         Some(&UiValue::Array(vec![UiValue::String("bold".to_owned())]))
     );
 
+    // Arrow keys move the roving segment; Enter/Space then press the focused segment.
     let (right, payload) = target_handler(lifecycle.root().unwrap(), "key:right");
     invoke_and_render(&mut lifecycle, &mut engine, &right, payload);
-    let (enter, payload) = target_handler(lifecycle.root().unwrap(), "key:enter");
-    let _ = lifecycle
-        .invoke_callback_transactional(&engine, &enter, payload)
-        .unwrap();
-    let events = runtime.borrow_mut().drain_batch().events;
-    assert_eq!(events.len(), 1);
-    for event in events {
-        let _ = lifecycle
-            .invoke_component_event_transactional(&engine, event)
-            .unwrap();
-    }
-    assert!(lifecycle.render_dirty(&mut engine).unwrap());
+    let UiNodeKind::Box { children } = lifecycle.root().unwrap().kind() else {
+        unreachable!()
+    };
+    assert_eq!(
+        children[1].attributes().get("tab_stop"),
+        Some(&UiValue::Bool(true))
+    );
+    press(&mut lifecycle, &mut engine, 1);
     assert_eq!(
         runtime.borrow().component_state.get(&path, "formats"),
         Some(&UiValue::Array(vec![
@@ -4061,6 +4137,7 @@ fn tooltip_and_menu_use_window_overlay_policies() {
             TOOLTIP.to_owned(),
         ),
         (ModuleId::parse("components/menu").unwrap(), MENU.to_owned()),
+        (ModuleId::parse("components/kbd").unwrap(), KBD.to_owned()),
     ]));
     let mut engine = RuntimeEngine::new();
     engine.set_module_resolver(RestrictedModuleResolver::from_source(&source).unwrap());
@@ -4132,6 +4209,7 @@ fn tooltip_and_menu_use_window_overlay_policies() {
 fn nested_menu_preserves_parent_overlay_identity() {
     let source = EmbeddedScriptSource::new(BTreeMap::from([
         (ModuleId::parse("components/menu").unwrap(), MENU.to_owned()),
+        (ModuleId::parse("components/kbd").unwrap(), KBD.to_owned()),
         (
             ModuleId::parse("components/divider").unwrap(),
             DIVIDER.to_owned(),
@@ -4253,8 +4331,13 @@ fn toast_source_builds_public_layers_and_declarative_timers() {
     let UiNodeKind::Box { children: header } = children[0].kind() else {
         unreachable!()
     };
+    // A status toast leads with its square lamp, then the styled title.
     assert_eq!(
-        header[0]
+        header[0].style().base.background,
+        Some(ColorValue::Token("success".to_owned()))
+    );
+    assert_eq!(
+        header[1]
             .style()
             .resolve(&gpui_rhai::InteractionState::default())
             .font_size,

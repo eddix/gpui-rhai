@@ -1249,6 +1249,16 @@ pub struct Style {
     pub active: Option<StyleProperties>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub focus: Option<StyleProperties>,
+    /// Applies while the nearest focusable ancestor-or-self that declares a
+    /// `focus` style has keyboard focus (a `tab_stop(false)` node passes
+    /// ownership to its ancestors). Lets the mark of a compound control show
+    /// focus.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group_focus: Option<StyleProperties>,
+    /// Applies while the node or any descendant has keyboard focus, such as
+    /// the frame of a field group around a native input.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub focus_within: Option<StyleProperties>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub disabled: Option<StyleProperties>,
 }
@@ -1270,6 +1280,8 @@ impl Style {
         merge_pseudo(&mut self.hover, overlay.hover.as_ref());
         merge_pseudo(&mut self.active, overlay.active.as_ref());
         merge_pseudo(&mut self.focus, overlay.focus.as_ref());
+        merge_pseudo(&mut self.group_focus, overlay.group_focus.as_ref());
+        merge_pseudo(&mut self.focus_within, overlay.focus_within.as_ref());
         merge_pseudo(&mut self.disabled, overlay.disabled.as_ref());
     }
 
@@ -1288,6 +1300,16 @@ impl Style {
         }
         if state.contains(PseudoState::Focused)
             && let Some(focus) = &self.focus
+        {
+            resolved.merge(focus);
+        }
+        if state.contains(PseudoState::GroupFocused)
+            && let Some(focus) = &self.group_focus
+        {
+            resolved.merge(focus);
+        }
+        if state.contains(PseudoState::FocusWithin)
+            && let Some(focus) = &self.focus_within
         {
             resolved.merge(focus);
         }
@@ -2053,6 +2075,18 @@ impl Style {
     }
 
     #[must_use]
+    pub fn group_focus(mut self, style: &Self) -> Self {
+        merge_pseudo(&mut self.group_focus, Some(&style.base));
+        self
+    }
+
+    #[must_use]
+    pub fn focus_within(mut self, style: &Self) -> Self {
+        merge_pseudo(&mut self.focus_within, Some(&style.base));
+        self
+    }
+
+    #[must_use]
     pub fn disabled(mut self, style: &Self) -> Self {
         merge_pseudo(&mut self.disabled, Some(&style.base));
         self
@@ -2284,6 +2318,12 @@ impl CustomType for Style {
             })
             .with_fn("focus", |style: &mut Self, state: Self| {
                 style.clone().focus(&state)
+            })
+            .with_fn("group_focus", |style: &mut Self, state: Self| {
+                style.clone().group_focus(&state)
+            })
+            .with_fn("focus_within", |style: &mut Self, state: Self| {
+                style.clone().focus_within(&state)
             })
             .with_fn("disabled", |style: &mut Self, state: Self| {
                 style.clone().disabled(&state)
@@ -2687,6 +2727,10 @@ pub enum PseudoState {
     Hovered,
     Active,
     Focused,
+    /// The nearest ancestor-or-self with a `focus` style has focus.
+    GroupFocused,
+    /// The node or one of its descendants has focus.
+    FocusWithin,
     Disabled,
 }
 

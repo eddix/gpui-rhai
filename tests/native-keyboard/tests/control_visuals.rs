@@ -12,6 +12,8 @@ const BUTTON: &str = include_str!("../../../registry/components/button.rhai");
 const BADGE: &str = include_str!("../../../registry/components/badge.rhai");
 const TABS: &str = include_str!("../../../registry/components/tabs.rhai");
 const INPUT: &str = include_str!("../../../registry/components/input.rhai");
+const INPUT_GROUP: &str = include_str!("../../../registry/components/input_group.rhai");
+const CHECKBOX: &str = include_str!("../../../registry/components/checkbox.rhai");
 const SPLIT_PANE: &str = include_str!("../../../registry/components/split_pane.rhai");
 const RESIZABLE: &str = include_str!("../../../registry/components/resizable.rhai");
 const DRAGGABLE: &str = include_str!("../../../registry/components/draggable.rhai");
@@ -21,6 +23,7 @@ const SORTABLE: &str = include_str!("../../../registry/components/sortable.rhai"
 const SCROLL_AREA: &str = include_str!("../../../registry/components/scroll_area.rhai");
 const PAN_ZOOM: &str = include_str!("../../../registry/components/pan_zoom.rhai");
 const RANGE_SLIDER: &str = include_str!("../../../registry/components/range_slider.rhai");
+const SLIDER: &str = include_str!("../../../registry/components/slider.rhai");
 const ROTATABLE: &str = include_str!("../../../registry/components/rotatable.rhai");
 const SELECTION_AREA: &str = include_str!("../../../registry/components/selection_area.rhai");
 const TREE: &str = include_str!("../../../registry/components/tree.rhai");
@@ -77,6 +80,14 @@ fn mount_with_overrides(
                 INPUT.to_owned(),
             ),
             (
+                ModuleId::parse("components/input_group").unwrap(),
+                INPUT_GROUP.to_owned(),
+            ),
+            (
+                ModuleId::parse("components/checkbox").unwrap(),
+                CHECKBOX.to_owned(),
+            ),
+            (
                 ModuleId::parse("components/split_pane").unwrap(),
                 SPLIT_PANE.to_owned(),
             ),
@@ -113,6 +124,10 @@ fn mount_with_overrides(
                 RANGE_SLIDER.to_owned(),
             ),
             (
+                ModuleId::parse("components/slider").unwrap(),
+                SLIDER.to_owned(),
+            ),
+            (
                 ModuleId::parse("components/rotatable").unwrap(),
                 ROTATABLE.to_owned(),
             ),
@@ -128,7 +143,7 @@ fn mount_with_overrides(
         ])),
         DEFAULT_DARK,
     )
-        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
+    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .asset_sources([
         (
             "icons/chevron_down".to_owned(),
@@ -142,6 +157,20 @@ fn mount_with_overrides(
             AssetData {
                 mime_type: "image/svg+xml".to_owned(),
                 bytes: include_bytes!("../../../registry/assets/icons/chevron_right.svg").to_vec(),
+            },
+        ),
+        (
+            "icons/check".to_owned(),
+            AssetData {
+                mime_type: "image/svg+xml".to_owned(),
+                bytes: include_bytes!("../../../registry/assets/icons/check.svg").to_vec(),
+            },
+        ),
+        (
+            "icons/minus".to_owned(),
+            AssetData {
+                mime_type: "image/svg+xml".to_owned(),
+                bytes: include_bytes!("../../../registry/assets/icons/minus.svg").to_vec(),
             },
         ),
     ])
@@ -179,8 +208,9 @@ fn view(ctx){tabs::Tabs(#{label:"Sections",value:"one",tabs:[
     let overrides = ThemeTokenOverrides {
         spacing: BTreeMap::from([("xxs".to_owned(), Length::Pixels(8.0))]),
         typography: ThemeTypographyOverrides {
+            // Tab labels use the control role; overriding its line box grows the slot.
             roles: BTreeMap::from([(
-                "body".to_owned(),
+                "control_regular".to_owned(),
                 TypographyToken::new(Length::Pixels(24.0), Length::Pixels(36.0), 400),
             )]),
             ..Default::default()
@@ -204,7 +234,7 @@ fn view(ctx){tabs::Tabs(#{label:"Sections",value:"one",tabs:[
         .geometry
         .unwrap()
         .visual;
-    assert!(tab.height >= 54.0, "tab={tab:?}");
+    assert!(tab.height >= 36.0, "tab={tab:?}");
     assert!(
         (tab.y - list.y - 8.0).abs() < 0.01,
         "list={list:?}, tab={tab:?}"
@@ -246,8 +276,9 @@ fn view(ctx) { row([
         .geometry
         .unwrap()
         .visual;
+    // A md Button is metrics.control; a Badge is a 20px marker in every density.
     assert_eq!(button.height, 32.0);
-    assert_eq!(badge.height, 26.0);
+    assert_eq!(badge.height, 20.0);
     assert!(
         button.width >= badge.width + 12.0,
         "button={button:?}, badge={badge:?}"
@@ -266,8 +297,8 @@ fn view(ctx) { row([
         .geometry
         .unwrap()
         .visual;
-    assert_eq!(cjk_button.height, 26.0);
-    assert_eq!(cjk_badge.height, 20.0);
+    assert_eq!(cjk_button.height, 24.0);
+    assert_eq!(cjk_badge.height, 18.0);
     let large_button = tree
         .find_by_role_and_name("button", "Large line")
         .next()
@@ -282,8 +313,9 @@ fn view(ctx) { row([
         .geometry
         .unwrap()
         .visual;
+    // Minimum heights are lower bounds: larger type grows both markers.
     assert!(
-        large_button.height >= 38.0 && large_badge.height >= 32.0,
+        large_button.height >= 34.0 && large_badge.height >= 30.0,
         "large button={large_button:?}, badge={large_badge:?}"
     );
     assert!(large_button.height > large_badge.height);
@@ -515,6 +547,100 @@ fn view(ctx) { box([
     visual.update(|window, _| window.refresh());
     visual.run_until_parked();
     assert_eq!(marker_x(&mut visual), before);
+}
+
+/// Quads painted with a visible border in `color`, as (width, height) in scaled pixels.
+fn bordered_quads(visual: &mut VisualTestContext, color: u32) -> Vec<(f32, f32)> {
+    let color: gpui::Hsla = rgba(color).into();
+    visual.update(|window, _| {
+        window
+            .painted_quads()
+            .iter()
+            .filter(|quad| quad.border_widths.left.0 > 0.0 && quad.border_color == color)
+            .map(|quad| (quad.bounds.size.width.0, quad.bounds.size.height.0))
+            .collect()
+    })
+}
+
+#[gpui::test]
+fn compound_controls_show_focus_on_their_mark_and_frame(cx: &mut TestAppContext) {
+    cx.update(gpui_rhai::install);
+    let script = r#"
+import "components/checkbox" as checkbox;
+import "components/input" as input;
+import "components/input_group" as input_group;
+fn state_schema() { #{ fields: #{ value: #{ schema: #{ type: "string" },
+    "default": #{ type: "string", value: "host" } } } } }
+fn changed(ctx, value) { ctx.set_state("value", value); }
+fn toggled(ctx, value) {}
+fn view(ctx) { column([
+    checkbox::Checkbox(#{ checked: false, label: "Audit box", on_change: Fn("toggled") }),
+    input_group::InputGroup(#{ label: "Audit group", prefix: text("https://"),
+        control: input::Input(#{ key: "grouped", label: "Grouped input",
+            value: ctx.get_state("value"), on_change: Fn("changed") }) })
+        .with_style(style().width(px(260))),
+]).with_style(style().gap(px(12)).padding(px(12))) }
+"#;
+    let overrides = ThemeTokenOverrides {
+        colors: BTreeMap::from([("focus_ring".to_owned(), Rgba8::from_rgba_hex(0x00ff00ff))]),
+        ..Default::default()
+    };
+    let (window, view) = mount_with_overrides(cx, script, "compound-focus", overrides);
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    visual.run_until_parked();
+    assert!(
+        bordered_quads(&mut visual, 0x00ff00ff).is_empty(),
+        "nothing is focused yet"
+    );
+
+    // Keyboard focus on the Checkbox row paints the ink frame on its 16px box only
+    // (group_focus), never around the row, so the box stays on the content edge.
+    let tree = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
+    let row = tree
+        .find_by_role_and_name("checkbox", "Audit box")
+        .next()
+        .unwrap()
+        .geometry
+        .unwrap()
+        .visual;
+    visual.update(|window, cx| view.focus(window, cx)).unwrap();
+    visual.simulate_keystrokes("tab");
+    visual.update(|window, _| window.refresh());
+    visual.run_until_parked();
+    let scale = visual.update(|window, _| window.scale_factor());
+    let focused = bordered_quads(&mut visual, 0x00ff00ff);
+    assert!(!focused.is_empty(), "keyboard focus must paint a frame");
+    assert!(
+        focused.iter().all(|(width, height)| {
+            (width / scale - 16.0).abs() < 0.5 && (height / scale - 16.0).abs() < 0.5
+        }),
+        "focus frame must be the box, not the row {row:?}: {focused:?}"
+    );
+
+    // Focus inside the native input paints the InputGroup frame (focus_within).
+    let group = tree
+        .find_by_role_and_name("group", "Audit group")
+        .next()
+        .unwrap()
+        .geometry
+        .unwrap()
+        .visual;
+    visual.simulate_click(
+        point(
+            px((group.x + group.width - 30.) as f32),
+            px((group.y + group.height / 2.) as f32),
+        ),
+        Modifiers::none(),
+    );
+    visual.update(|window, _| window.refresh());
+    visual.run_until_parked();
+    let framed = bordered_quads(&mut visual, 0x00ff00ff);
+    assert!(
+        framed
+            .iter()
+            .any(|(width, _)| (width / scale - group.width as f32).abs() < 1.0),
+        "the group frame must take the focus color: {framed:?}, group={group:?}"
+    );
 }
 
 #[gpui::test]

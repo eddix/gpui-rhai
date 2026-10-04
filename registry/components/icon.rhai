@@ -2,11 +2,13 @@
 {
   "id": "components/icon",
   "export": "Icon",
-  "version": "0.1.6",
+  "version": "0.2.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
-  "assets": ["icons/check.svg", "icons/close.svg", "icons/search.svg"]
+  "assets": ["icons/check.svg", "icons/close.svg", "icons/search.svg"],
+  "tokens": ["metrics.icon"],
+  "environment": ["size", "density"]
 }
 */
 // Icon wraps a declarative AssetId or a runtime image handle with consistent sizing.
@@ -19,10 +21,12 @@ define_component(#{
     metadata: #{
         id: "components/icon",
         "export": "Icon",
-        version: "0.1.6",
+        version: "0.2.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: [],
         capabilities: #{},
+        tokens: ["metrics.icon"],
+        environment: ["size", "density"],
         assets: ["icons/check.svg", "icons/close.svg", "icons/search.svg"],
     },
     schema: #{
@@ -44,10 +48,9 @@ define_component(#{
                 sensitive: false,
             },
             size: #{
-                schema: #{ type: "string", allowed: ["xs", "sm", "md", "lg"] },
+                schema: #{ type: "optional", value: #{ type: "string", allowed: ["xs", "sm", "md", "lg"] } },
                 required: false,
                 sensitive: false,
-                "default": #{ type: "string", value: "md" },
             },
             label: #{
                 schema: #{ type: "optional", value: #{ type: "string" } },
@@ -63,30 +66,28 @@ define_component(#{
     render: Fn("render_Icon")
 });
 
-fn icon_size(size) {
-    if size == "xs" { 12 }
-    else if size == "sm" { 16 }
-    else if size == "lg" { 24 }
-    else { 20 }
+// An explicit size is an absolute glyph box; without one the icon follows the control
+// size of its environment (metrics.icon).
+fn icon_box(size) {
+    if size == "xs" { px(12) }
+    else if size == "sm" { px(14) }
+    else if size == "lg" { px(20) }
+    else if size == "md" { px(16) }
+    else { theme_length("metrics.icon") }
 }
 
 fn Icon(props) { render_component("components/icon", props) }
 fn render_Icon(ctx, props) {
-    let size = if "size" in props { props.size } else { "md" };
+    let size = if "size" in props && props.size != () { props.size } else { () };
     let label = if "label" in props { props.label } else { "" };
     let node = if "rtl_source" in props && props.rtl_source != () {
         directional_image_source(props.source, props.rtl_source)
     } else {
         image_source(props.source)
     };
-    node = node
-        .with_style(ctx.component_style("root",
-            style()
-                .width(px(icon_size(size)))
-                .height(px(icon_size(size)))
-                .text_color(theme_color("text_primary"))
-                .opacity(0.92)
-        ));
+    // Icons take the ambient text color, so they follow the control they sit in.
+    node = node.with_style(ctx.component_style("root",
+        style().width(icon_box(size)).height(icon_box(size)).flex_shrink(false)));
     if label == "" {
         node.accessibility_role("presentation")
     } else {

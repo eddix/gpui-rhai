@@ -2,10 +2,12 @@
 {
   "id": "components/selection_area",
   "export": "SelectionArea",
-  "version": "0.1.8",
+  "version": "0.2.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
-  "capabilities": {}
+  "capabilities": {},
+  "tokens": ["border", "surface", "focus_ring"],
+  "environment": []
 }
 */
 // Controlled Canvas click/range/marquee object selection.
@@ -17,8 +19,10 @@
 // Example: SelectionArea(#{key:"nodes",label:"Nodes",targets:targets,selected_keys:[],content:canvas_node,on_selection_change:Fn("changed")})
 
 define_component(#{
-    metadata:#{id:"components/selection_area","export":"SelectionArea",version:"0.1.8",
-        runtime_api:#{min_inclusive: 3,max_exclusive: 4},dependencies:[],capabilities:#{}},
+    metadata:#{id:"components/selection_area","export":"SelectionArea",version: "0.2.0",
+        runtime_api:#{min_inclusive: 3,max_exclusive: 4},dependencies:[],capabilities:#{},
+        tokens: ["border", "surface", "focus_ring"],
+        environment: []},
     schema:#{props:#{
         key:#{schema:#{type:"string"},required:true,sensitive:false},
         label:#{schema:#{type:"string"},required:true,sensitive:false},
@@ -57,7 +61,7 @@ fn render_SelectionArea(ctx,props){
         .with_style(ctx.component_style("content",style().width(relative(1.0)).height(relative(1.0))));
     let interaction=gpui_rhai::SelectionAreaPrimitive(native).with_key(`${props.key}-selection-area`)
         .with_style(ctx.component_style("interaction",style().absolute().left(px(0)).right(px(0))
-            .top(px(0)).bottom(px(0)).cursor_crosshair().border(px(1)).border_color(rgba(0x00000000))
+            .top(px(0)).bottom(px(0)).cursor_crosshair().border(px(2)).border_color(rgba(0x00000000))
             .focus(style().border_color(theme_color("focus_ring")))))
         .disabled(props.disabled).tab_stop(!props.disabled)
         .accessibility_role("grid").accessibility_label(props.label)

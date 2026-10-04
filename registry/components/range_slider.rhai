@@ -2,10 +2,15 @@
 {
   "id": "components/range_slider",
   "export": "RangeSlider",
-  "version": "0.1.8",
+  "version": "0.2.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
-  "dependencies": [],
-  "capabilities": {}
+  "dependencies": ["components/slider"],
+  "capabilities": {},
+  "tokens": [
+    "surface_hover", "accent", "text_primary", "text_muted", "metrics.control", "spacing.xs",
+    "spacing.sm", "typography.body"
+  ],
+  "environment": ["size", "density"]
 }
 */
 // Controlled two-thumb range selection with native pointer preview and keyboard thumbs.
@@ -15,9 +20,16 @@
 // Parts: root, header, label, value, control, track, fill, thumb.
 // Example: RangeSlider(#{ key:"price", label:"Price", values:#{low:20,high:80}, on_change:Fn("changed") })
 
+import "components/slider" as slider;
+
 define_component(#{
-    metadata: #{ id:"components/range_slider", "export":"RangeSlider", version:"0.1.8",
-        runtime_api:#{min_inclusive: 3,max_exclusive: 4}, dependencies:[], capabilities:#{} },
+    metadata: #{ id:"components/range_slider", "export":"RangeSlider", version: "0.2.0",
+        runtime_api:#{min_inclusive: 3,max_exclusive: 4}, dependencies:["components/slider"], capabilities:#{},
+        tokens: [
+            "surface_hover", "accent", "text_primary", "text_muted", "metrics.control",
+            "spacing.xs", "spacing.sm", "typography.body"
+        ],
+        environment: ["size", "density"] },
     schema: #{ props: #{
         key: #{schema:#{type:"string"},required:true,sensitive:false},
         label: #{schema:#{type:"string"},required:true,sensitive:false},
@@ -68,21 +80,21 @@ fn render_RangeSlider(ctx, props) {
             .height(if horizontal{px(4)}else{relative(1.0)})
             .radius(px(0)).background(theme_color("surface_hover"))),
         fill_style:ctx.component_style("fill",style().radius(px(0)).background(theme_color("accent"))),
-        thumb_style:ctx.component_style("thumb",style().width(px(14)).height(px(14)).radius(px(7))
-            .border(px(2)).border_color(theme_color("accent")).background(theme_color("surface"))),
+        thumb_style:ctx.component_style("thumb",slider::slider_cap(props.orientation)),
         on_change:if "on_change" in props && props.on_change != (){Fn("range_slider_changed")}else{()}
     }).with_key(`${props.key}-range`)
         .with_style(ctx.component_style("control",style()
-            .width(if horizontal{px(240)}else{px(24)})
-            .height(if horizontal{px(24)}else{px(180)})))
+            .width(if horizontal{px(240)}else{theme_length("metrics.control")})
+            .height(if horizontal{theme_length("metrics.control")}else{px(180)})))
         .disabled(props.disabled).accessibility_role("group").accessibility_label(props.label)
         .accessibility_value(`${props.values.low} – ${props.values.high}`)
         .accessibility_orientation(props.orientation);
     let header = [text(props.label).with_style(ctx.component_style("label",style()
-        .typography("body").font_weight(700)))];
+        .typography("body").text_color(theme_color("text_primary"))))];
     if props.show_value {
         header.push(text(`${props.values.low} – ${props.values.high}`).with_style(
-            ctx.component_style("value",style().typography("body_small").text_color(theme_color("text_muted")))));
+            ctx.component_style("value",style().typography("body").font_feature("tnum", 1)
+                .text_color(theme_color("text_muted")))));
     }
     column([
         row(header).with_style(ctx.component_style("header",style().items_center().justify_between().gap(theme_spacing("sm")))),

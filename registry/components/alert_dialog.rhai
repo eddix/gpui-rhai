@@ -2,10 +2,12 @@
 {
   "id": "components/alert_dialog",
   "export": "AlertDialog",
-  "version": "0.1.6",
+  "version": "0.2.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["components/button", "components/dialog"],
-  "capabilities": {}
+  "capabilities": {},
+  "tokens": ["text_muted", "space.related", "typography.body"],
+  "environment": ["density"]
 }
 */
 // Controlled confirmation dialog with explicit cancel and confirm semantics.
@@ -19,9 +21,11 @@ import "components/button" as button;
 import "components/dialog" as dialog;
 
 define_component(#{
-    metadata: #{ id: "components/alert_dialog", "export": "AlertDialog", version: "0.1.6",
+    metadata: #{ id: "components/alert_dialog", "export": "AlertDialog", version: "0.2.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
-        dependencies: ["components/button", "components/dialog"], capabilities: #{} },
+        dependencies: ["components/button", "components/dialog"], capabilities: #{},
+        tokens: ["text_muted", "space.related", "typography.body"],
+        environment: ["density"] },
     schema: #{
         props: #{
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
@@ -70,7 +74,7 @@ fn render_AlertDialog(ctx, props) {
         on_click: Fn("confirm_action") })
         .with_style(ctx.component_style("confirm", style()));
     dialog::Dialog(#{ key: props.key, open: props.open, title: props.title,
-        content: column(body).with_style(style().gap(theme_spacing("sm"))),
+        content: column(body).with_style(style().gap(theme_length("space.related"))),
         actions: [cancel, confirm], initial_focus: "first", on_open_change: Fn("open_action") })
         .with_style(ctx.component_style("root", style()))
 }

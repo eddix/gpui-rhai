@@ -2,10 +2,12 @@
 {
   "id": "components/pan_zoom",
   "export": "PanZoom",
-  "version": "0.1.8",
+  "version": "0.2.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
-  "capabilities": {}
+  "capabilities": {},
+  "tokens": ["border", "surface", "focus_ring"],
+  "environment": []
 }
 */
 // Controlled Canvas viewport transform with native pan and pointer-anchored zoom.
@@ -18,8 +20,10 @@
 // Example: PanZoom(#{ key:"map", label:"Map", transform:viewport, content:canvas_node, on_transform_change:Fn("changed") })
 
 define_component(#{
-    metadata: #{ id:"components/pan_zoom", "export":"PanZoom", version:"0.1.8",
-        runtime_api:#{min_inclusive: 3,max_exclusive: 4}, dependencies:[], capabilities:#{} },
+    metadata: #{ id:"components/pan_zoom", "export":"PanZoom", version: "0.2.0",
+        runtime_api:#{min_inclusive: 3,max_exclusive: 4}, dependencies:[], capabilities:#{},
+        tokens: ["border", "surface", "focus_ring"],
+        environment: [] },
     schema: #{ props: #{
         key: #{ schema:#{type:"string"}, required:true, sensitive:false },
         label: #{ schema:#{type:"string"}, required:true, sensitive:false },
@@ -99,7 +103,7 @@ fn render_PanZoom(ctx, props) {
         .with_key(`${props.key}-pan-zoom`)
         .with_style(ctx.component_style("interaction", style().absolute()
             .left(px(0)).right(px(0)).top(px(0)).bottom(px(0)).cursor_move()
-            .border(px(1)).border_color(rgba(0x00000000))
+            .border(px(2)).border_color(rgba(0x00000000))
             .focus(style().border_color(theme_color("focus_ring")))))
         .disabled(props.disabled).tab_stop(!props.disabled)
         .accessibility_role("region").accessibility_label(props.label)

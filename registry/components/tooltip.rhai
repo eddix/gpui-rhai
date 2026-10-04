@@ -2,22 +2,32 @@
 {
   "id": "components/tooltip",
   "export": "Tooltip",
-  "version": "0.1.6",
+  "version": "0.2.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
-  "capabilities": {}
+  "capabilities": {},
+  "tokens": [
+    "text_primary", "surface", "spacing.xxs", "spacing.sm", "radius.sm", "typography.caption",
+    "typography.label"
+  ],
+  "environment": []
 }
 */
 // Native delayed tooltip using the per-window overlay scheduler.
-// Props: key, label, trigger/content slots, placement, show/hide delay, disabled.
-// Parts: root, trigger, content.
+// Props: key, label, trigger/content slots, placement, show/hide delay, disabled, action, shortcut.
+// Parts: root, trigger, content, shortcut.
 // State/events: stateless delayed overlay; emits no semantic events.
 // Example: Tooltip(#{ key: "help", label: "Help", trigger: text("?"), content: text("Help") })
 
 define_component(#{
     metadata: #{
-        id: "components/tooltip", "export": "Tooltip", version: "0.1.6",
+        id: "components/tooltip", "export": "Tooltip", version: "0.2.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{},
+        tokens: [
+            "text_primary", "surface", "spacing.xxs", "spacing.sm", "radius.sm",
+            "typography.caption", "typography.label"
+        ],
+        environment: [],
     },
     schema: #{
         props: #{
@@ -33,13 +43,15 @@ define_component(#{
                 "default": #{ type: "integer", value: 100 } },
             disabled: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
                 "default": #{ type: "bool", value: false } },
+            action: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
+            shortcut: #{ schema: #{ type: "optional", value: #{ type: "string" } }, required: false, sensitive: false },
         },
         state: #{ fields: #{} }, events: #{},
         slots: #{
             trigger: #{ required: true, multiple: false },
             content: #{ required: true, multiple: false },
         },
-        parts: ["root", "trigger", "content"],
+        parts: ["root", "trigger", "content", "shortcut"],
     },
     render: Fn("render_Tooltip")
 });
@@ -49,9 +61,21 @@ fn render_Tooltip(ctx, props) {
     if "disabled" in props && props.disabled { return props.trigger; }
     let show_delay = if "show_delay_ms" in props && props.show_delay_ms > 0 { props.show_delay_ms } else { 0 };
     let hide_delay = if "hide_delay_ms" in props && props.hide_delay_ms > 0 { props.hide_delay_ms } else { 0 };
-    let content = row([props.content]).with_style(ctx.component_style("content",
-        style().max_width(px(320)).padding_x(theme_spacing("sm")).padding_y(theme_spacing("xs"))
-            .radius(theme_radius("sm")).typography("body_small")
+    let shortcut = if "shortcut" in props && props.shortcut != () { props.shortcut }
+        else if "action" in props && props.action != () {
+            let bound = ctx.action_shortcut(props.action);
+            if bound == () { "" } else { bound.label }
+        } else { "" };
+    let children = [props.content];
+    if shortcut != "" {
+        children.push(text(shortcut).with_style(ctx.component_style("shortcut",
+            style().typography("label").opacity(0.7))));
+    }
+    // Tooltips invert ink and paper; a key legend follows the hint.
+    let content = row(children).with_style(ctx.component_style("content",
+        style().max_width(px(320)).padding_x(theme_spacing("sm")).padding_y(theme_spacing("xxs"))
+            .gap(theme_spacing("sm")).items_center()
+            .radius(theme_radius("sm")).typography("caption")
             .background(theme_color("text_primary"))
             .text_color(theme_color("surface"))
     )).accessibility_role("tooltip").accessibility_label(props.label);

@@ -2,10 +2,12 @@
 {
   "id": "components/split_pane",
   "export": "SplitPane",
-  "version": "0.1.7",
+  "version": "0.2.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
-  "capabilities": {}
+  "capabilities": {},
+  "tokens": ["border", "surface_hover", "focus_ring"],
+  "environment": []
 }
 */
 // Controlled, nestable two-panel split layout with a native drag hot lane.
@@ -21,8 +23,10 @@
 //     start:navigation, end:content, on_resize:Fn("resized") })
 
 define_component(#{
-    metadata: #{ id: "components/split_pane", "export": "SplitPane", version: "0.1.7",
-        runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{} },
+    metadata: #{ id: "components/split_pane", "export": "SplitPane", version: "0.2.0",
+        runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{},
+        tokens: ["border", "surface_hover", "focus_ring"],
+        environment: [] },
     schema: #{
         props: #{
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
@@ -114,16 +118,19 @@ fn render_SplitPane(ctx, props) {
     let preview = optional_float_signal("start-size");
     let start_style = style().min_width(px(0)).min_height(px(0)).flex_shrink(false);
     let end_style = style().min_width(px(0)).min_height(px(0)).flex_grow();
-    let handle_style = style().flex_shrink(false)
-        .focus(style().background(theme_color("selection")));
+    // The 8px grab zone shows a hairline on the start pane's edge; hover fills it with
+    // the tonal step and keyboard focus turns it into an ink bar.
+    let handle_style = style().flex_shrink(false).border_color(theme_color("border"))
+        .hover(style().background(theme_color("surface_hover")))
+        .focus(style().background(theme_color("focus_ring")));
     if horizontal {
         start_style = start_style.width(relative(props.size)).height(relative(1.0));
         end_style = end_style.height(relative(1.0));
-        handle_style = handle_style.width(px(8)).height(relative(1.0)).cursor_resize_x();
+        handle_style = handle_style.width(px(8)).height(relative(1.0)).border_start(px(1)).cursor_resize_x();
     } else {
         start_style = start_style.height(relative(props.size)).width(relative(1.0));
         end_style = end_style.width(relative(1.0));
-        handle_style = handle_style.height(px(8)).width(relative(1.0)).cursor_resize_y();
+        handle_style = handle_style.height(px(8)).width(relative(1.0)).border_top(px(1)).cursor_resize_y();
     }
     let start = box([props.start]).with_key(start_ref_key)
         .with_style(ctx.component_style("start", start_style))

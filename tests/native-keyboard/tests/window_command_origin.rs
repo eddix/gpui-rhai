@@ -73,7 +73,7 @@ fn setup(
         )])),
         include_str!("../../../registry/themes/default_dark.rhai"),
     )
-        .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
+    .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
     .runtime_clock(ManualRuntimeClock::new(Instant::now()).clock())
     .prepare()
     .unwrap();

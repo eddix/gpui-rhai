@@ -2,10 +2,15 @@
 {
   "id": "components/empty",
   "export": "Empty",
-  "version": "0.1.6",
+  "version": "0.2.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
-  "capabilities": {}
+  "capabilities": {},
+  "tokens": [
+    "surface_raised", "text_primary", "text_muted", "metrics.control", "metrics.row",
+    "space.related", "spacing.sm", "spacing.lg", "typography.subtitle", "typography.body"
+  ],
+  "environment": ["density"]
 }
 */
 // Consistent empty-state composition with optional icon, content, and actions.
@@ -15,8 +20,14 @@
 // Example: Empty(#{ title: "No projects", description: "Create one to begin." })
 
 define_component(#{
-    metadata: #{ id: "components/empty", "export": "Empty", version: "0.1.6",
-        runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{} },
+    metadata: #{ id: "components/empty", "export": "Empty", version: "0.2.0",
+        runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{},
+        tokens: [
+            "surface_raised", "text_primary", "text_muted", "metrics.control", "metrics.row",
+            "space.related", "spacing.sm", "spacing.lg", "typography.subtitle",
+            "typography.body"
+        ],
+        environment: ["density"] },
     schema: #{
         props: #{
             title: #{ schema: #{ type: "string" }, required: true, sensitive: false },
@@ -41,13 +52,13 @@ fn render_Empty(ctx, props) {
     let children = [];
     if "icon" in props && props.icon != () {
         children.push(props.icon.with_style(ctx.component_style("icon", style()
-            .width(px(40)).height(px(40)).items_center().justify_center()
-            .radius(px(20)).background(theme_color("surface_raised"))
+            .width(theme_length("metrics.control") * 1.5).height(theme_length("metrics.control") * 1.5)
+            .items_center().justify_center()
+            .background(theme_color("surface_raised"))
             .text_color(theme_color("text_muted")))));
     }
     children.push(text(props.title).with_style(ctx.component_style("title", style()
-        .typography("title").font_weight(700)
-        .text_color(theme_color("text_primary")))));
+        .typography("subtitle").text_color(theme_color("text_primary")))));
     if "description" in props && props.description != () {
         children.push(text(props.description).with_style(ctx.component_style("description", style()
             .max_width(px(420)).typography("body").text_center()
@@ -58,11 +69,12 @@ fn render_Empty(ctx, props) {
     }
     if "actions" in props && props.actions.len > 0 {
         children.push(row(props.actions).with_style(ctx.component_style("actions", style()
-            .padding_top(theme_spacing("xs")).gap(theme_spacing("sm")).items_center().justify_center())));
+            .padding_top(theme_length("space.related")).gap(theme_length("space.related"))
+            .items_center().justify_center())));
     }
+    // An empty state is quiet: centered type on the region's own surface, no frame.
     column(children).with_style(ctx.component_style("root", style()
-        .min_height(px(180)).padding(theme_spacing("lg")).gap(theme_spacing("sm")).items_center().justify_center()
-        .radius(theme_radius("md")).border(px(1)).border_dashed()
-        .border_color(theme_color("border")).background(theme_color("surface"))))
+        .min_height(theme_length("metrics.row") * 6).padding(theme_spacing("lg"))
+        .gap(theme_spacing("sm")).items_center().justify_center()))
         .accessibility_role("status").accessibility_label(props.title)
 }

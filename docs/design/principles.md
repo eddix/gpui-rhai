@@ -150,11 +150,11 @@ can be turned off through parts or `ui/styles.rhai`.
    component is a tonal block plus a 2px accent bar on the start edge, drawn
    inside the content inset so it never pushes text.
 3. **Square lamps.** Status indicators are 6px squares, like device LEDs.
-   Circles remain only where the circle is semantic: Radio, Avatar, slider
-   thumbs.
+   Circles remain only where the circle is semantic: Radio, Avatar,
+   presence. Slider caps are rectangular faders.
 4. **Visible shortcuts.** Menus, the command palette, tooltips and buttons can
    show their action's shortcut in a lightweight key legend.
-5. **Keyed tags.** A Tag may carry a key segment (`SITE│i18n`), resolving the
+5. **Faceted tags.** A Tag may carry a facet segment (`SITE│i18n`), resolving the
    ambiguity of bare context values.
 
 ### Default palette: paper, ink and one cobalt spot color

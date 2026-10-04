@@ -39,6 +39,17 @@ pub enum OverlayPlacement {
     Center,
 }
 
+/// Cross-axis alignment of an anchored overlay. In node specs `Start` and
+/// `End` are logical; rendering resolves them to physical edges (left/top for
+/// `Start`) before placement.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum OverlayAlign {
+    #[default]
+    Center,
+    Start,
+    End,
+}
+
 impl OverlayPlacement {
     const fn opposite(self) -> Self {
         match self {
@@ -91,6 +102,7 @@ pub struct OverlaySpec {
     pub width: f64,
     pub height: f64,
     pub preferred: OverlayPlacement,
+    pub align: OverlayAlign,
     pub gap: f64,
     pub modal: bool,
     pub dismiss_on_escape: bool,
@@ -478,26 +490,26 @@ fn candidate_bounds(
 ) -> OverlayBounds {
     match placement {
         OverlayPlacement::Top => OverlayBounds {
-            x: spec.anchor.x + (spec.anchor.width - spec.width) / 2.0,
+            x: aligned(spec.align, spec.anchor.x, spec.anchor.width, spec.width),
             y: spec.anchor.y - spec.height - spec.gap,
             width: spec.width,
             height: spec.height,
         },
         OverlayPlacement::Bottom => OverlayBounds {
-            x: spec.anchor.x + (spec.anchor.width - spec.width) / 2.0,
+            x: aligned(spec.align, spec.anchor.x, spec.anchor.width, spec.width),
             y: spec.anchor.y + spec.anchor.height + spec.gap,
             width: spec.width,
             height: spec.height,
         },
         OverlayPlacement::Left => OverlayBounds {
             x: spec.anchor.x - spec.width - spec.gap,
-            y: spec.anchor.y + (spec.anchor.height - spec.height) / 2.0,
+            y: aligned(spec.align, spec.anchor.y, spec.anchor.height, spec.height),
             width: spec.width,
             height: spec.height,
         },
         OverlayPlacement::Right => OverlayBounds {
             x: spec.anchor.x + spec.anchor.width + spec.gap,
-            y: spec.anchor.y + (spec.anchor.height - spec.height) / 2.0,
+            y: aligned(spec.align, spec.anchor.y, spec.anchor.height, spec.height),
             width: spec.width,
             height: spec.height,
         },
@@ -509,6 +521,15 @@ fn candidate_bounds(
             width: spec.width,
             height: spec.height,
         },
+    }
+}
+
+/// The panel's origin on the cross axis for a physical alignment.
+fn aligned(align: OverlayAlign, anchor: f64, anchor_extent: f64, extent: f64) -> f64 {
+    match align {
+        OverlayAlign::Center => anchor + (anchor_extent - extent) / 2.0,
+        OverlayAlign::Start => anchor,
+        OverlayAlign::End => anchor + anchor_extent - extent,
     }
 }
 
@@ -575,12 +596,32 @@ mod tests {
             width: 180.0,
             height: 120.0,
             preferred: OverlayPlacement::Bottom,
+            align: OverlayAlign::Center,
             gap: 8.0,
             modal: false,
             dismiss_on_escape: true,
             dismiss_on_outside: true,
             restore_focus: Some(FocusToken(format!("focus-{id}"))),
         }
+    }
+
+    #[test]
+    fn cross_axis_alignment_pins_the_panel_to_an_anchor_edge() {
+        let anchor = OverlayBounds {
+            x: 300.0,
+            y: 100.0,
+            width: 60.0,
+            height: 30.0,
+        };
+        let mut start = spec("start", None, anchor);
+        start.align = OverlayAlign::Start;
+        let mut end = spec("end", None, anchor);
+        end.align = OverlayAlign::End;
+        let centered = spec("center", None, anchor);
+        let x = |spec: &OverlaySpec| place(spec, viewport()).bounds.x;
+        assert!((x(&start) - 300.0).abs() < f64::EPSILON);
+        assert!((x(&end) - 180.0).abs() < f64::EPSILON);
+        assert!((x(&centered) - 240.0).abs() < f64::EPSILON);
     }
 
     #[test]

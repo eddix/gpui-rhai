@@ -2,10 +2,12 @@
 {
   "id": "components/drop_zone",
   "export": "DropZone",
-  "version": "0.1.8",
+  "version": "0.2.0",
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
-  "capabilities": {}
+  "capabilities": {},
+  "tokens": [],
+  "environment": []
 }
 */
 // Typed same-Host application drop target. OS/file and cross-window drops are excluded.
@@ -18,8 +20,10 @@
 //     payload_types:["server"], operations:["move"], content:text("Lane A") })
 
 define_component(#{
-    metadata: #{ id:"components/drop_zone", "export":"DropZone", version:"0.1.8",
-        runtime_api:#{min_inclusive: 3,max_exclusive: 4}, dependencies:[], capabilities:#{} },
+    metadata: #{ id:"components/drop_zone", "export":"DropZone", version: "0.2.0",
+        runtime_api:#{min_inclusive: 3,max_exclusive: 4}, dependencies:[], capabilities:#{},
+        tokens: [],
+        environment: [] },
     schema: #{ props: #{
         key: #{ schema:#{type:"string"}, required:true, sensitive:false },
         label: #{ schema:#{type:"string"}, required:true, sensitive:false },

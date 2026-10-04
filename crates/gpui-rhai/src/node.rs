@@ -27,6 +27,8 @@ pub struct OverlayNodeSpec {
     pub parent: Option<OverlayId>,
     pub kind: OverlayKind,
     pub placement: OverlayPlacement,
+    /// Cross-axis alignment against the trigger; logical `Start`/`End`.
+    pub align: crate::OverlayAlign,
     pub anchor: Option<crate::OverlayBounds>,
     pub open: bool,
     pub gap: f64,
@@ -3148,6 +3150,16 @@ pub(crate) fn overlay_node(
             return overlay_config_error(format!("unknown overlay placement `{other}`"));
         }
     };
+    let align = match optional_string(&mut config, "align")?.as_deref() {
+        None | Some("center") => crate::OverlayAlign::Center,
+        Some("start") => crate::OverlayAlign::Start,
+        Some("end") => crate::OverlayAlign::End,
+        Some(other) => {
+            return overlay_config_error(format!(
+                "unknown overlay align `{other}` (expected `start`, `center` or `end`)"
+            ));
+        }
+    };
     let open = optional_bool(&mut config, "open")?.unwrap_or(false);
     let anchor = optional_overlay_bounds(&mut config, "anchor")?;
     let gap = optional_number(&mut config, "gap")?.unwrap_or(8.0);
@@ -3191,6 +3203,7 @@ pub(crate) fn overlay_node(
                 parent: parent.map(OverlayId::new),
                 kind,
                 placement,
+                align,
                 anchor,
                 open,
                 gap,

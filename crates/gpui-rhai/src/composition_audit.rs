@@ -150,6 +150,9 @@ struct Scope {
     font_weight: u16,
     /// Gap of the nearest enclosing container with at least two children.
     enclosing_gap: Option<f64>,
+    /// Inside a control: its internal layout is the component's own
+    /// responsibility, so composition rules other than contrast stop here.
+    inside_control: bool,
 }
 
 /// What the audit learned about one rendered node, for its parent's checks.
@@ -188,6 +191,7 @@ pub(crate) fn audit<C: ColorResolver>(inputs: &AuditInputs<'_, C>) -> Vec<AuditF
         font_size: None,
         font_weight: 400,
         enclosing_gap: None,
+        inside_control: false,
     };
     let solid = solid_colors(inputs.theme);
     let mut reported_fonts = BTreeSet::new();
@@ -281,6 +285,9 @@ impl<C: ColorResolver> Walker<'_, '_, C> {
             bounds,
             ..NodeSummary::default()
         };
+        let is_control = role
+            .as_deref()
+            .is_some_and(|role| CONTROL_ROLES.contains(&role));
         if let Some(role) = &role
             && CONTROL_ROLES.contains(&role.as_str())
         {
@@ -304,7 +311,9 @@ impl<C: ColorResolver> Walker<'_, '_, C> {
             }
             UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => {
                 let gap = self.pixels(style.gap, &scope.environment);
-                let counted = children.len() >= 2 && gap.is_some_and(|gap| gap > 0.0);
+                let counted = !scope.inside_control
+                    && children.len() >= 2
+                    && gap.is_some_and(|gap| gap > 0.0);
                 if counted
                     && let (Some(inner), Some(outer)) = (gap, parent.enclosing_gap)
                     && inner + EPSILON >= outer
@@ -320,6 +329,7 @@ impl<C: ColorResolver> Walker<'_, '_, C> {
                 }
                 let child_scope = Scope {
                     enclosing_gap: if counted { gap } else { parent.enclosing_gap },
+                    inside_control: scope.inside_control || is_control,
                     ..scope
                 };
                 let summaries = children
@@ -335,7 +345,9 @@ impl<C: ColorResolver> Walker<'_, '_, C> {
                     })
                     .collect::<Vec<_>>();
                 let direction = style.direction.unwrap_or(FlexDirection::Column);
-                self.check_container(direction, &summaries, id, path);
+                if !scope.inside_control && !is_control {
+                    self.check_container(direction, &summaries, id, path);
+                }
                 inherit_first(&mut summary, &summaries, role.as_deref());
             }
             UiNodeKind::Overlay {
