@@ -428,10 +428,42 @@ bundled_assets!(
 );
 
 /// Visually neutral layout components (`layouts/*`).
-pub const BUNDLED_LAYOUT_SOURCES_BY_ID: &[(&str, &str)] = &[];
+pub const BUNDLED_LAYOUT_SOURCES_BY_ID: &[(&str, &str)] = &[
+    ("layouts/stack", include_str!("../layouts/stack.rhai")),
+    ("layouts/inline", include_str!("../layouts/inline.rhai")),
+    ("layouts/toolbar", include_str!("../layouts/toolbar.rhai")),
+    ("layouts/region", include_str!("../layouts/region.rhai")),
+];
 
 /// Opinionated composite components (`patterns/*`).
-pub const BUNDLED_PATTERN_SOURCES_BY_ID: &[(&str, &str)] = &[];
+pub const BUNDLED_PATTERN_SOURCES_BY_ID: &[(&str, &str)] = &[
+    ("patterns/section", include_str!("../patterns/section.rhai")),
+    (
+        "patterns/description_list",
+        include_str!("../patterns/description_list.rhai"),
+    ),
+    ("patterns/stat", include_str!("../patterns/stat.rhai")),
+    (
+        "patterns/form_layout",
+        include_str!("../patterns/form_layout.rhai"),
+    ),
+    (
+        "patterns/inline_state",
+        include_str!("../patterns/inline_state.rhai"),
+    ),
+    (
+        "patterns/data_view",
+        include_str!("../patterns/data_view.rhai"),
+    ),
+    (
+        "patterns/list_detail",
+        include_str!("../patterns/list_detail.rhai"),
+    ),
+    (
+        "patterns/app_shell",
+        include_str!("../patterns/app_shell.rhai"),
+    ),
+];
 
 /// Bundled application profiles, installed by `gpui-rhai init --profile`.
 pub const BUNDLED_PROFILES: &[(&str, &str)] = &[(
@@ -1189,7 +1221,11 @@ mod tests {
     #[test]
     fn components_declare_what_they_read_and_keep_geometry_in_tokens() {
         let mut problems = Vec::new();
-        for (id, source) in BUNDLED_COMPONENT_SOURCES_BY_ID {
+        for (id, source) in BUNDLED_COMPONENT_SOURCES_BY_ID
+            .iter()
+            .chain(BUNDLED_LAYOUT_SOURCES_BY_ID)
+            .chain(BUNDLED_PATTERN_SOURCES_BY_ID)
+        {
             let (header, body) = source.split_once("*/").unwrap();
             let tokens = declared_list(header, "\"tokens\":");
             let metadata = body.split("schema:").next().unwrap();

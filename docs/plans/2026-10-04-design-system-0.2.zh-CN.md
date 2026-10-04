@@ -21,7 +21,7 @@
 | 1 | `docs/design/` 四份规范 + 决策日志 + Gallery 线框；延迟构造 ADR | 完成（c232500） |
 | 2 | 运行时地基：开放 token 与字阶、token 基础层、组件声明 token、声明式环境值（原生解析）与原生继承 disabled、颜色派生与读取、Rust 派生迁到 L0、action 快捷键查询、组合审计、CLI profile | 完成（3224767、64108b0） |
 | 3 | L0 `tokens.rhai` + 内置主题只写颜色 + 新默认主题；全部 62 个组件的组合契约与新视觉 | 完成（见进度记录） |
-| 4 | L2：`layouts/`（Stack/Inline/Toolbar/Region）与 `patterns/`（Section/DescriptionList/Stat/FormLayout/InlineState/DataView/ListDetail/AppShell） | 未开始 |
+| 4 | L2：`layouts/`（Stack/Inline/Toolbar/Region）与 `patterns/`（Section/DescriptionList/Stat/FormLayout/InlineState/DataView/ListDetail/AppShell） | 完成（见进度记录） |
 | 5 | 用 AppShell + L2 重做 Gallery（规格页 + 场景页）；自带设计参照示例进 CI；审计零告警；纯键盘场景测试；重拍基线；文档、CHANGELOG、迁移说明 | 未开始 |
 
 ## 每批验收命令
@@ -57,3 +57,21 @@ bash scripts/audit-visual-baselines.sh
 - 证据：`cargo fmt --all --check` 通过；`cargo clippy --workspace --all-targets --all-features
   -- -D warnings` 无输出；workspace 667 passed / 0 failed；native-keyboard 213 passed / 0 failed；
   performance 2 passed / 0 failed；`scripts/audit-visual-baselines.sh` 通过（69 张，基线待第 5 步重拍）。
+
+### 2026-10-04 第 4 步：L2 layouts 与 patterns
+
+- 内容：`layouts/` 4 个（Stack、Inline、Toolbar、Region）与 `patterns/` 8 个（Section、
+  DescriptionList、Stat + `stats()`、FormLayout、InlineState、DataView、ListDetail、AppShell），
+  登记进 `BUNDLED_LAYOUT_SOURCES_BY_ID` / `BUNDLED_PATTERN_SOURCES_BY_ID`，registry lint 覆盖到 L2。
+- AppShell 区域键盘模型：F6 / Shift+F6 在侧栏、主区、检查器之间移动焦点；区域自身持焦点时
+  显示 2px 墨色框，Tab 进入区域内第一个控件。
+- 运行时：键处理名支持修饰键（`shift+f6`、`cmd+k`，无修饰名仍对任意修饰生效）；
+  `audit_allow([...])` 显式豁免；审计规则按真实组合校正：同轴才比较嵌套间距、
+  `justify_between` 的 gap 视为下限、标题引领的内容向外层看齐、控件与标记按自身边缘对齐、
+  字体检查认可声明的回退链、原生输入框参与同行字号检查。
+- 组合修正（审计发现的真问题）：区域内的 section 之间用 `section` 间距；DataView 让表格
+  `bleed` 到区域两侧，行文字与标题同一条边。
+- 证据：`tests/native-keyboard/tests/l2_patterns.rs` 两项：完整 AppShell 组合在
+  productivity 规则下零发现（测试平台无系统字体，字体规则交给 Gallery 在真实平台上验）；
+  F6 依次框住三个区域、Shift+F6 返回上一个。fmt / clippy（all-features）无输出；
+  workspace 667 / 0，native-keyboard 215 / 0，performance 2 / 0。

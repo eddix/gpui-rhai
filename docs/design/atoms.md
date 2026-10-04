@@ -153,7 +153,7 @@ Seven variants remain. Selection guidance lives in [composition.md](composition.
 | `ghost` | transparent | `surface_hover` fill | `text_primary` |
 | `danger` / `warning` / `success` | status fill | the status color mixed 12% toward `text_primary` | matching `on_*` |
 
-- Padding `metrics.control_pad`; gap between icon and label `space.xs`.
+- Padding `metrics.control_pad`; gap between icon and label `spacing.xs`.
 - Focus: the reserved 2px border turns `focus_ring`.
 - Active: opacity 0.86. Disabled: `surface_hover` fill, `disabled` text, keeps
   its size.
@@ -171,7 +171,7 @@ Seven variants remain. Selection guidance lives in [composition.md](composition.
 
 ### Tag
 
-- Tonal `surface_hover` block, horizontal padding `space.sm` in both
+- Tonal `surface_hover` block, horizontal padding `spacing.sm` in both
   densities (markers do not change with density), `radius.sm`.
 - Color variants (`accent`, `success`, `warning`, `danger`) mark a
   **category**, not a status: without a facet they color the text with the
@@ -190,7 +190,7 @@ Seven variants remain. Selection guidance lives in [composition.md](composition.
   (neutral uses `text_muted`) followed by the label in `text_primary`. No
   container, no frame.
 - `emphasis: "strong"`: a solid block in the status color with `on_*` text,
-  weight 600, padding `space.sm`. Use only for states that require action.
+  weight 600, padding `spacing.sm`. Use only for states that require action.
 - `dot: false` removes the lamp (text-only status), `size: "sm"` uses 18px.
 - Read-only: no tab stop, `status` semantics.
 

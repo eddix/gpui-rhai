@@ -9,7 +9,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
     ColorResolver, Environment, FlexDirection, GeometryBounds, GeometryRegistry, InteractionState,
-    Length, NodeId, RetainedUiTree, Rgba8, StyleProperties, Symbol, UiNode, UiNodeKind, UiValue,
+    Justify, Length, NodeId, RetainedUiTree, Rgba8, StyleProperties, Symbol, UiNode, UiNodeKind,
+    UiValue,
 };
 
 /// One composition rule.
@@ -124,7 +125,18 @@ impl std::fmt::Display for AuditFinding {
     }
 }
 
-const CONTROL_ROLES: &[&str] = &["button", "textbox", "searchbox", "combobox", "spinbutton"];
+const CONTROL_ROLES: &[&str] = &[
+    "button",
+    "text_field",
+    "textbox",
+    "searchbox",
+    "combobox",
+    "spinbutton",
+    "checkbox",
+    "radio",
+    "switch",
+    "slider",
+];
 const MARKER_ROLES: &[&str] = &["status"];
 const NEAR_MISS_MAX: f64 = 8.0;
 const EPSILON: f64 = 0.5;
@@ -148,8 +160,10 @@ struct Scope {
     background: Rgba8,
     font_size: Option<f64>,
     font_weight: u16,
-    /// Gap of the nearest enclosing container with at least two children.
-    enclosing_gap: Option<f64>,
+    /// Gaps of the nearest enclosing rows and columns with at least two
+    /// children. Proximity only competes along one axis.
+    enclosing_row_gap: Option<f64>,
+    enclosing_column_gap: Option<f64>,
     /// Inside a control: its internal layout is the component's own
     /// responsibility, so composition rules other than contrast stop here.
     inside_control: bool,
@@ -190,7 +204,8 @@ pub(crate) fn audit<C: ColorResolver>(inputs: &AuditInputs<'_, C>) -> Vec<AuditF
         background,
         font_size: None,
         font_weight: 400,
-        enclosing_gap: None,
+        enclosing_row_gap: None,
+        enclosing_column_gap: None,
         inside_control: false,
     };
     let solid = solid_colors(inputs.theme);
@@ -198,6 +213,7 @@ pub(crate) fn audit<C: ColorResolver>(inputs: &AuditInputs<'_, C>) -> Vec<AuditF
     let mut walker = Walker {
         inputs,
         solid,
+        allowed: BTreeSet::new(),
         findings: &mut findings,
         reported_fonts: &mut reported_fonts,
     };
@@ -222,13 +238,15 @@ fn solid_colors(theme: &impl ColorResolver) -> BTreeSet<u32> {
 struct Walker<'a, 'b, C: ColorResolver> {
     inputs: &'a AuditInputs<'b, C>,
     solid: BTreeSet<u32>,
+    /// Rules a node deliberately opts out of (`audit_allow`), by node path.
+    allowed: BTreeSet<(String, AuditRule)>,
     findings: &'a mut Vec<AuditFinding>,
     reported_fonts: &'a mut BTreeSet<String>,
 }
 
 impl<C: ColorResolver> Walker<'_, '_, C> {
     fn report(&mut self, rule: AuditRule, node: Option<NodeId>, path: &str, message: String) {
-        if self.inputs.rules.contains(rule) {
+        if self.inputs.rules.contains(rule) && !self.allowed.contains(&(path.to_owned(), rule)) {
             self.findings.push(AuditFinding {
                 rule,
                 node,
@@ -268,6 +286,15 @@ impl<C: ColorResolver> Walker<'_, '_, C> {
             }
         }
         scope.disabled |= node.attributes().get("disabled") == Some(&UiValue::Bool(true));
+        if let Some(UiValue::Array(rules)) = node.attributes().get("audit_allow") {
+            for rule in rules {
+                if let UiValue::String(id) = rule
+                    && let Some(rule) = AuditRule::parse(id)
+                {
+                    self.allowed.insert((path.to_owned(), rule));
+                }
+            }
+        }
         self.apply_paint(&style, &mut scope);
         self.apply_text(&style, &mut scope, id, path);
 
@@ -309,13 +336,25 @@ impl<C: ColorResolver> Walker<'_, '_, C> {
                 summary.text_start = bounds.map(|bounds| bounds.x);
                 self.check_contrast(&scope, id, path);
             }
+            // A native control renders its own text at the inherited size.
+            UiNodeKind::Custom { .. } if style.typography.is_some() => {
+                summary.text_size = scope.font_size;
+            }
             UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => {
+                let direction = style.direction.unwrap_or(FlexDirection::Column);
                 let gap = self.pixels(style.gap, &scope.environment);
+                // Distributed rows treat the gap as a floor, not a relationship.
+                let distributed = matches!(style.justify, Some(Justify::Between | Justify::Around));
                 let counted = !scope.inside_control
+                    && !distributed
                     && children.len() >= 2
                     && gap.is_some_and(|gap| gap > 0.0);
+                let enclosing = match direction {
+                    FlexDirection::Row => parent.enclosing_row_gap,
+                    FlexDirection::Column => parent.enclosing_column_gap,
+                };
                 if counted
-                    && let (Some(inner), Some(outer)) = (gap, parent.enclosing_gap)
+                    && let (Some(inner), Some(outer)) = (gap, enclosing)
                     && inner + EPSILON >= outer
                 {
                     self.report(
@@ -327,11 +366,19 @@ impl<C: ColorResolver> Walker<'_, '_, C> {
                         ),
                     );
                 }
-                let child_scope = Scope {
-                    enclosing_gap: if counted { gap } else { parent.enclosing_gap },
+                // A heading leads its content: the heading gap is a typographic
+                // relationship, so the content keeps the outer gap as its limit.
+                let sets_limit = counted && !leads_with_heading(children);
+                let mut child_scope = Scope {
                     inside_control: scope.inside_control || is_control,
                     ..scope
                 };
+                if sets_limit {
+                    match direction {
+                        FlexDirection::Row => child_scope.enclosing_row_gap = gap,
+                        FlexDirection::Column => child_scope.enclosing_column_gap = gap,
+                    }
+                }
                 let summaries = children
                     .iter()
                     .enumerate()
@@ -344,7 +391,6 @@ impl<C: ColorResolver> Walker<'_, '_, C> {
                         self.visit(child, child_id, child_scope, &child_path)
                     })
                     .collect::<Vec<_>>();
-                let direction = style.direction.unwrap_or(FlexDirection::Column);
                 if !scope.inside_control && !is_control {
                     self.check_container(direction, &summaries, id, path);
                 }
@@ -360,6 +406,14 @@ impl<C: ColorResolver> Walker<'_, '_, C> {
                 inherit_first(&mut summary, &[trigger], role.as_deref());
             }
             _ => {}
+        }
+        // Controls and markers align by their own edge; their inner padding is
+        // the component's business.
+        if role
+            .as_deref()
+            .is_some_and(|role| CONTROL_ROLES.contains(&role) || MARKER_ROLES.contains(&role))
+        {
+            summary.text_start = bounds.map(|bounds| bounds.x).or(summary.text_start);
         }
         summary
     }
@@ -402,7 +456,7 @@ impl<C: ColorResolver> Walker<'_, '_, C> {
                 scope.font_size = Some(size);
             }
             if let Some(family) = &role.family {
-                self.check_font(family, id, path);
+                self.check_font(family, &role.fallbacks, id, path);
             }
         }
         if let Some(size) = self.pixels(style.font_size, &scope.environment) {
@@ -412,15 +466,22 @@ impl<C: ColorResolver> Walker<'_, '_, C> {
             scope.font_weight = weight;
         }
         if let Some(family) = &style.font_family {
-            self.check_font(family, id, path);
+            let fallbacks = style.font_fallbacks.clone().unwrap_or_default();
+            self.check_font(family, &fallbacks, id, path);
         }
     }
 
-    fn check_font(&mut self, family: &str, id: Option<NodeId>, path: &str) {
+    fn check_font(&mut self, family: &str, fallbacks: &[String], id: Option<NodeId>, path: &str) {
         let Some(available) = self.inputs.available_fonts else {
             return;
         };
-        if !available.contains(family) && self.reported_fonts.insert(family.to_owned()) {
+        // Declared fallbacks are a deliberate chain; only a chain that resolves
+        // nowhere falls back silently.
+        let resolves = available.contains(family)
+            || fallbacks
+                .iter()
+                .any(|fallback| available.contains(fallback));
+        if !resolves && self.reported_fonts.insert(family.to_owned()) {
             self.report(
                 AuditRule::UnresolvedFont,
                 id,
@@ -549,6 +610,21 @@ fn alpha_of(color: Rgba8) -> f64 {
 
 fn opaque(color: Rgba8) -> Rgba8 {
     Rgba8::from_rgba_hex(color.as_rgba_hex() | 0xff)
+}
+
+/// Whether the first child subtree starts with a heading.
+fn leads_with_heading(children: &[UiNode]) -> bool {
+    let mut cursor = children.first();
+    while let Some(node) = cursor {
+        if node.attributes().get("role") == Some(&UiValue::String("heading".to_owned())) {
+            return true;
+        }
+        cursor = match node.kind() {
+            UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => children.first(),
+            _ => None,
+        };
+    }
+    false
 }
 
 /// Carry the first control and text of a subtree up to the parent.

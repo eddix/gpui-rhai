@@ -23,40 +23,73 @@ the environment passed to its children:
 
 ```rhai
 toolbar::Toolbar(#{
-    context: [tag::Tag(#{ key: "site", text: "i18n" })],
-    filters: [input::Input(#{ placeholder: "Filter", value: q, on_change: Fn("q") })],
+    label: "Hosts",
+    context: [tag::Tag(#{ facet: "site", text: "i18n" })],
+    filters: [input::Input(#{ key: "q", label: "Filter", placeholder: "Filter", value: q,
+        on_change: Fn("q") })],
     actions: [button::Button(#{ text: "Export", variant: "ghost", action: "data.export" })],
-    primary: button::Button(#{ text: "Deploy", action: "deploy.start" }),
+    primary: button::Button(#{ text: "Deploy", variant: "primary", action: "deploy.start" }),
 })
 ```
 
 Slots accept any node. Putting something unusual in a slot is allowed; if it
 breaks a rule, the audit reports it.
 
+| Module | Export | Use |
+|---|---|---|
+| `layouts/stack` | `Stack` | a column with one relationship (`gap: "related"` by default) |
+| `layouts/inline` | `Inline` | a row with one relationship and one control `size` |
+| `layouts/toolbar` | `Toolbar` | context, filters, actions, one primary; wraps when narrow |
+| `layouts/region` | `Region` | title and actions, toolbar, filling body, footer; `bleed` for rows |
+| `patterns/section` | `Section` | a subtitle (or label voice), description, end actions, content |
+| `patterns/description_list` | `DescriptionList` | label and value pairs on one label column |
+| `patterns/stat` | `Stat`, `stats(items)` | a figure with unit and delta |
+| `patterns/form_layout` | `FormLayout` | aligned labels, field groups, submit row on the field edge |
+| `patterns/inline_state` | `InlineState` | loading, empty, error, stale, refreshing in place |
+| `patterns/data_view` | `DataView` | Region + Toolbar + body + footer, with states |
+| `patterns/list_detail` | `ListDetail` | a fixed list beside or above a filling detail |
+| `patterns/app_shell` | `AppShell` | title bar, sidebar, main, inspector, status bar, F6 regions |
+
+Rhai limits expression depth (64 per script, 32 inside a function). Build deep
+screens from small functions, one per region or section, as in the examples;
+it reads better too.
+
 ## 2. Spacing
 
-Use the spacing scale everywhere; it is density aware.
+Use the spacing scale everywhere (`theme_spacing(name)` or
+`theme_length("spacing.<name>")`); it is density aware.
 
 | Token | comfortable | compact |
 |---|---:|---:|
-| `space.xxs` | 2 | 2 |
-| `space.xs` | 4 | 4 |
-| `space.sm` | 8 | 8 |
-| `space.md` | 12 | 8 |
-| `space.lg` | 16 | 12 |
-| `space.xl` | 24 | 16 |
+| `spacing.xxs` | 2 | 2 |
+| `spacing.xs` | 4 | 4 |
+| `spacing.sm` | 8 | 8 |
+| `spacing.md` | 12 | 8 |
+| `spacing.lg` | 16 | 12 |
+| `spacing.xl` | 24 | 16 |
 
-Relationship aliases name the intent and map onto the scale:
+Relationship aliases (`theme_length("space.<alias>")`, or the `gap` names of
+Stack and Inline) name the intent and map onto the scale:
 
 | Alias | Scale | Relationship | Examples |
 |---|---|---|---|
 | `unit` | `xs` | parts of one unit | icon and label, label and helper text |
 | `related` | `sm` | siblings in one group | buttons in a toolbar group, fields in a form |
-| `group` | `lg` | groups in one area | toolbar start and end groups, form sections |
-| `section` | `xl` | areas of one page | regions, dialog padding |
+| `group` | `lg` | groups in one area | toolbar start and end groups, form groups, region parts |
+| `section` | `xl` | areas of one page | sections of a region, dialog padding |
 
 **Rule: inside a nesting, the inner gap is strictly smaller than the outer
-gap.** The audit checks this on resolved geometry, however the gap was written.
+gap.** The audit checks this on resolved geometry, however the gap was written,
+with three refinements that match how proximity is read:
+
+- Only nesting along the same axis competes (a row's gaps against the
+  enclosing row, a column's against the enclosing column).
+- A row distributed with `justify_between` treats its gap as a floor, not a
+  relationship.
+- A heading leads its content: the gap under a heading is typographic, so the
+  content inside answers to the next gap out. This is why a Region (`group`
+  between its parts) can hold sections separated by `section`.
+
 Patterns choose these relationships for you; when writing a Stack yourself,
 prefer the aliases over raw steps so the intent is readable.
 
@@ -70,6 +103,9 @@ prefer the aliases over raw steps so the intent is readable.
 - **Numbers.** Right-align numeric columns and figures with tabular digits.
   Table does this for `numeric: true` columns; Stat and DescriptionList do it
   for numeric values.
+- **Rows bleed.** Tables and lists carry their own row inset; a Region with
+  `bleed: true` (DataView does this) lets them reach its sides so row text
+  starts on the title's edge.
 - **Units.** Put units after the number in the muted color, sharing the
   baseline: `881 GiB`.
 - **Fill, do not fix.** Main content fills the remaining height of its region;
@@ -137,6 +173,9 @@ Loading, empty and error states appear where the content would appear.
 | first load | `InlineState(#{ state: "loading" })` or Skeleton for fixed shapes | say what is loading |
 | empty | `InlineState(#{ state: "empty" })` | why it is empty and what to do next |
 | error | `InlineState(#{ state: "error", detail })` | one sentence of what happened; the raw error stays selectable |
+
+InlineState requires a `title`: only the caller knows what is loading or why a
+list is empty. DataView takes the same map as `state:` and places it.
 | refresh failed with cached data | keep the data, show a stale note above it | "Showing cached data" plus the reason |
 | background refresh | keep the data, show a quiet refreshing marker | — |
 
@@ -148,7 +187,10 @@ error when other sources still have data.
 AppShell defines regions (sidebar, main, inspector, status bar).
 
 - **F6 / Shift+F6** move between regions; each region can also bind a direct
-  action (for example `Cmd+1` for the sidebar).
+  action (for example `Cmd+1` for the sidebar). A region shows the 2px ink
+  frame while it holds focus itself; Tab then enters its first control. Key
+  handlers accept modifier-qualified names (`on_key_value("shift+f6", ...)`);
+  a plain name fires whatever modifiers are held.
 - Inside a region, arrow keys move within lists and tables; **Tab** moves
   between controls; **Enter** activates; **Space** toggles.
 - **Esc** steps back one level: close the overlay, then clear in-region state
@@ -209,7 +251,12 @@ correctness problems.
 | `mixed-type-in-row` | more than one typography size in a row of data |
 | `low-contrast-text` | text below 4.5:1 against the color actually painted behind it |
 | `literal-geometry` | literal control heights, spacing, font sizes or colors in application source |
-| `unresolved-font` | a font family that does not resolve on this platform |
+| `unresolved-font` | a font family whose whole fallback chain does not resolve on this platform |
+
+Controls and markers align by their own edge, not by the text inside them.
+When a composition breaks a rule on purpose, say so on the node:
+`row([value, unit]).audit_allow(["mixed-type-in-row"])` (Stat does this for a
+figure and its unit). Keep these rare; they are greppable.
 
 ## 11. Copy
 

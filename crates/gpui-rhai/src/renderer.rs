@@ -2391,7 +2391,21 @@ impl GpuiNodeRenderer {
         };
         let element = element.on_key_down(move |event, window, cx| {
             let semantic_key = logical_keyboard_key(event.keystroke.key.as_str(), text_direction);
-            let explicit = key_handlers.get(semantic_key);
+            // A modifier-qualified handler (`shift+f6`) wins; a plain handler
+            // still fires whatever modifiers are held.
+            let modifiers = &event.keystroke.modifiers;
+            let qualified = crate::node::canonical_key_name(
+                [
+                    modifiers.control,
+                    modifiers.alt,
+                    modifiers.shift,
+                    modifiers.platform,
+                ],
+                semantic_key,
+            );
+            let explicit = key_handlers
+                .get(qualified.as_str())
+                .or_else(|| key_handlers.get(semantic_key));
             let semantic = explicit.or_else(|| {
                 matches!(event.keystroke.key.as_str(), "enter" | "space")
                     .then_some(())

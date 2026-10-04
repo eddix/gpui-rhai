@@ -110,6 +110,10 @@ fn control(label, height, solid) {
 fn view(ctx) {
     column([
         row([control("One", 28, true), control("Two", 32, true)])
+            .with_style(style().gap(px(8))),
+        // Proximity competes along one axis: a column inside a column.
+        column([text("Loose").with_style(style().typography("body")),
+            text("Pair").with_style(style().typography("body"))])
             .with_style(style().gap(px(24))),
         row([
             text("Big").with_style(style().typography("title")),

@@ -2153,6 +2153,32 @@ fn register_node_behavior_methods(builder: &mut TypeBuilder<UiNode>) {
             node.clone()
                 .with_attribute("tab_stop", UiValue::Bool(tab_stop))
         })
+        // A deliberate, greppable exception: this node opts out of the named
+        // composition audit rules (for example a figure and its unit).
+        .with_fn(
+            "audit_allow",
+            |node: &mut UiNode, rules: rhai::Array| -> Result<UiNode, Box<EvalAltResult>> {
+                let mut ids = Vec::with_capacity(rules.len());
+                for rule in rules {
+                    let id = rule.into_string().map_err(|_| {
+                        Box::new(EvalAltResult::ErrorRuntime(
+                            "audit_allow expects an array of rule identifiers".into(),
+                            Position::NONE,
+                        ))
+                    })?;
+                    if crate::AuditRule::parse(&id).is_none() {
+                        return Err(Box::new(EvalAltResult::ErrorRuntime(
+                            format!("unknown audit rule `{id}`").into(),
+                            Position::NONE,
+                        )));
+                    }
+                    ids.push(UiValue::String(id));
+                }
+                Ok(node
+                    .clone()
+                    .with_attribute("audit_allow", UiValue::Array(ids)))
+            },
+        )
         .with_fn(
             "selectable",
             |node: &mut UiNode, selectable: bool| -> Result<UiNode, Box<EvalAltResult>> {
@@ -2426,20 +2452,60 @@ fn normalize_node_event_name(event: &str) -> Result<String, Box<EvalAltResult>> 
 /// One grammar and normalization for every Rhai node-key registration entry.
 /// The `key:` prefix consumes four bytes of the 64-byte event-name budget.
 fn normalize_key_handler_name(key: &str) -> Result<String, Box<EvalAltResult>> {
-    let named = key
-        .bytes()
-        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_');
-    let punctuation =
-        key.len() == 1 && key.as_bytes()[0].is_ascii_punctuation() && key.as_bytes()[0] != b':';
-    if (1..=60).contains(&key.len()) && (named || punctuation) {
-        Ok(key.to_ascii_lowercase())
-    } else {
-        Err(Box::new(EvalAltResult::ErrorRuntime(
-            "key handler name must be 1-60 ASCII letters, digits or `_`, or one ASCII punctuation character other than `:`; whitespace and chords are not accepted"
+    let invalid = || {
+        Box::new(EvalAltResult::ErrorRuntime(
+            "key handler name must be 1-60 ASCII letters, digits or `_`, or one ASCII punctuation character other than `:`, optionally preceded by distinct `ctrl+`, `alt+`, `shift+` or `cmd+` modifiers; whitespace and multi-key chords are not accepted"
                 .into(),
             Position::NONE,
-        )))
+        ))
+    };
+    if key.len() > 60 {
+        return Err(invalid());
     }
+    // A lone `+` is the plus key, not a modifier separator.
+    let (modifiers, base) = match key.rsplit_once('+') {
+        Some((modifiers, base)) if !base.is_empty() => (Some(modifiers), base),
+        _ => (None, key),
+    };
+    let named = !base.is_empty()
+        && base
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_');
+    let punctuation =
+        base.len() == 1 && base.as_bytes()[0].is_ascii_punctuation() && base.as_bytes()[0] != b':';
+    if !(named || punctuation) {
+        return Err(invalid());
+    }
+    let mut present = [false; 4];
+    if let Some(modifiers) = modifiers {
+        for modifier in modifiers.split('+') {
+            let index = KEY_MODIFIERS
+                .iter()
+                .position(|name| modifier.eq_ignore_ascii_case(name))
+                .ok_or_else(invalid)?;
+            if present[index] {
+                return Err(invalid());
+            }
+            present[index] = true;
+        }
+    }
+    Ok(canonical_key_name(present, &base.to_ascii_lowercase()))
+}
+
+/// Modifier names in canonical order for key handler names.
+pub(crate) const KEY_MODIFIERS: [&str; 4] = ["ctrl", "alt", "shift", "cmd"];
+
+/// `ctrl+alt+shift+cmd+key`, listing only the present modifiers.
+pub(crate) fn canonical_key_name(present: [bool; 4], key: &str) -> String {
+    let mut name = String::new();
+    for (modifier, on) in KEY_MODIFIERS.iter().zip(present) {
+        if on {
+            name.push_str(modifier);
+            name.push('+');
+        }
+    }
+    name.push_str(key);
+    name
 }
 
 fn register_semantic_event_methods(builder: &mut TypeBuilder<UiNode>) {
@@ -3788,10 +3854,43 @@ mod tests {
                     assert_eq!(node.handler_payload(&event), Some(&UiValue::Integer(7)));
                 }
             }
+            for (key, canonical) in [
+                ("Shift+F6", "shift+f6"),
+                ("cmd+shift+k", "shift+cmd+k"),
+                ("ctrl+alt+/", "ctrl+alt+/"),
+                ("+", "+"),
+            ] {
+                let mut runtime = crate::RuntimeEngine::new();
+                let compiled = runtime
+                    .compile_named("key_contract.rhai", &key_registration_script(method, key))
+                    .unwrap();
+                let node = runtime.render(&compiled).unwrap();
+                let event = format!("key:{canonical}");
+                assert_eq!(node.event_handlers(&event)[0].phase(), phase, "{key:?}");
+            }
             let long = "a".repeat(61);
             for key in [
-                "", " ", " escape", "escape ", "\t", "\n", "\0", ":", "a:b", "中文", "é", "cmd-s",
-                "shift-/", "??", "[]", &long,
+                "",
+                " ",
+                " escape",
+                "escape ",
+                "\t",
+                "\n",
+                "\0",
+                ":",
+                "a:b",
+                "中文",
+                "é",
+                "cmd-s",
+                "shift-/",
+                "??",
+                "[]",
+                &long,
+                "shift+shift+a",
+                "hyper+a",
+                "shift+",
+                "+a",
+                "ctrl++",
             ] {
                 let mut runtime = crate::RuntimeEngine::new();
                 let compiled = runtime
