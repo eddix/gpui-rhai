@@ -1,0 +1,47 @@
+gpui-pre v0.3.7
+├── gpui-pre-apple v0.3.7
+│   ├── gpui-pre-apple feature "default"
+│   │   └── gpui-pre-macos v0.3.7
+│   │       └── gpui-pre-platform v0.3.7
+│   │           ├── gpui-pre-platform feature "font-kit"
+│   │           │   └── gpui-rhai v0.1.8 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai)
+│   │           │       ├── gpui-rhai feature "charts"
+│   │           │       │   ├── audit-rc-keys-cli v0.0.0 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/docs/audits/2026-10-04-release-candidate-review/keys-cli/probe)
+│   │           │       │   │   └── audit-rc-keys-cli feature "default" (command-line)
+│   │           │       │   └── gpui-rhai-cli v0.1.8 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai-cli)
+│   │           │       │       ├── gpui-rhai-cli feature "default"
+│   │           │       │       │   └── audit-rc-keys-cli v0.0.0 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/docs/audits/2026-10-04-release-candidate-review/keys-cli/probe) (*)
+│   │           │       │       └── gpui-rhai-cli feature "test-support"
+│   │           │       │           └── audit-rc-keys-cli v0.0.0 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/docs/audits/2026-10-04-release-candidate-review/keys-cli/probe) (*)
+│   │           │       └── gpui-rhai feature "default"
+│   │           │           ├── audit-rc-keys-cli v0.0.0 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/docs/audits/2026-10-04-release-candidate-review/keys-cli/probe) (*)
+│   │           │           └── gpui-rhai-cli v0.1.8 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai-cli) (*)
+│   │           ├── gpui-pre-platform feature "runtime_shaders"
+│   │           │   └── gpui-rhai v0.1.8 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai) (*)
+│   │           ├── gpui-pre-platform feature "wayland"
+│   │           │   └── gpui-rhai v0.1.8 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai) (*)
+│   │           └── gpui-pre-platform feature "x11"
+│   │               └── gpui-rhai v0.1.8 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai) (*)
+│   │       ├── gpui-pre-macos feature "font-kit"
+│   │       │   └── gpui-pre-platform feature "font-kit" (*)
+│   │       └── gpui-pre-macos feature "runtime_shaders"
+│   │           └── gpui-pre-platform feature "runtime_shaders" (*)
+│   └── gpui-pre-apple feature "runtime_shaders"
+│       └── gpui-pre-macos feature "runtime_shaders" (*)
+├── gpui-pre-macos v0.3.7 (*)
+└── gpui-pre-platform v0.3.7 (*)
+├── gpui-pre feature "backtrace"
+│   └── gpui-pre feature "leak-detection"
+│       └── gpui-pre feature "test-support"
+│           └── audit-rc-keys-cli v0.0.0 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/docs/audits/2026-10-04-release-candidate-review/keys-cli/probe) (*)
+├── gpui-pre feature "font-kit"
+│   ├── audit-rc-keys-cli v0.0.0 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/docs/audits/2026-10-04-release-candidate-review/keys-cli/probe) (*)
+│   └── gpui-rhai v0.1.8 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai) (*)
+├── gpui-pre feature "leak-detection" (*)
+├── gpui-pre feature "proptest"
+│   └── gpui-pre feature "test-support" (*)
+├── gpui-pre feature "test-support" (*)
+├── gpui-pre feature "wayland"
+│   └── gpui-pre feature "test-support" (*)
+└── gpui-pre feature "x11"
+    └── gpui-pre feature "test-support" (*)

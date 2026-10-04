@@ -1,0 +1,8 @@
+   Compiling gpui-rhai v0.1.8 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai)
+   Compiling audit-018-release-virtual-runtime-r8 v0.0.0 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/docs/audits/2026-10-04-release-candidate-review/virtual-runtime/probe)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 28.61s
+     Running `target/debug/audit-018-release-virtual-runtime-r8 table`
+table track=true internal=true: marker_before=true, marker_after=true, caller_width_before=Some(Definite(Pixels(123.0))), caller_width_after=Some(Definite(Pixels(123.0))), rendered_count=1
+table track=true internal=false: marker_before=true, marker_after=true, caller_width_before=Some(Definite(Pixels(123.0))), caller_width_after=Some(Definite(Pixels(123.0))), rendered_count=1
+table track=false internal=true: marker_before=true, marker_after=true, caller_width_before=Some(Definite(Pixels(123.0))), caller_width_after=Some(Definite(Pixels(123.0))), rendered_count=1
+table track=false internal=false: marker_before=true, marker_after=true, caller_width_before=Some(Definite(Pixels(123.0))), caller_width_after=Some(Definite(Pixels(123.0))), rendered_count=1

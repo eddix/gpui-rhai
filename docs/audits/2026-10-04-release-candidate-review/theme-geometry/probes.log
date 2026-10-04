@@ -1,0 +1,31 @@
+   Compiling gpui-rhai v0.1.8 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai)
+   Compiling audit-theme-geometry-round8 v0.0.0 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/docs/audits/2026-10-04-release-candidate-review/theme-geometry)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 48.52s
+     Running unittests src/lib.rs (tests/native-keyboard/target/debug/deps/audit_theme_geometry_round8-7bb461f8315f0cc8)
+
+running 16 tests
+test product_core_theme::window_nearest_local_and_sibling_resolution_share_one_identity_projection ... ok
+test product_core_theme::token_and_motion_updates_do_not_infer_a_different_identity_from_colors ... ok
+test product_core_theme::resolved_identity_is_not_system_preference_and_headless_fallback_is_explicit ... ok
+test product_core_theme::no_theme_and_unavailable_borrow_return_none_without_panicking ... ok
+test product_native_theme::fixed_dark_and_host_token_overrides_preserve_resolved_identity ... ok
+test product_native_theme::missing_theme_is_unit_in_a_mounted_script ... ok
+formal virtual row initial ref→geometry readout=["120.0"]
+test product_native_theme::first_system_light_init_and_render_match_host_without_replaying_init ... ok
+test tests::round7_formal_virtual_row_unknown_geometry_has_executable_owner_control ... ok
+same-node target=Some(180.0), reader=["180.0"]
+test product_native_theme::effect_body_only_does_not_restart_but_explicit_render_deps_do ... ok
+test product_core_theme::only_render_reads_track_theme_and_rhai_returns_exact_metadata_fields ... ok
+test tests::round7_existing_node_geometry_change_control ... ok
+appearance target=Some(120.0), reader=["120.0"]
+test tests::round7_pending_ref_wakes_formal_reader_when_producer_appears ... ok
+test product_native_theme::window_and_local_setters_keep_sibling_scopes_separate ... ok
+removed target=None, reader=["pending"]
+test tests::round7_ref_removal_notifies_reader ... ok
+ref target identity changed Some(4) -> Some(6)
+replacement target=Some(180.0), reader=["180.0"]
+test tests::round7_ref_rebinding_to_new_node_preserves_reader ... ok
+test product_native_theme::secondary_initial_theme_and_failed_startup_keep_native_authority_closed ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.16s
+

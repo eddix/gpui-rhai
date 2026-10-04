@@ -1,0 +1,13 @@
+BASELINE=736025a8b2b1ac44d41d893bc9a929c990b97532
+   Compiling gpui-rhai-native-keyboard-tests v0.0.0 (/var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T/gpui-rhai-r8-policy-teoaxzj6)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.12s
+     Running tests/audit_r8_policy.rs (tests/native-keyboard/target/debug/deps/audit_r8_policy-a33b3bdbe6da0f45)
+
+running 2 tests
+test actual_task_capture_chain_obeys_fresh_quota_and_reports_later_host_change ... ACTUAL_TASK_CHAIN hops=200 aggregate_ops=1207787 per_round_limit=10000 later_limit100_rejected_at101=true rollback_and_diagnostic_snapshot=true
+ok
+test parser_policy_is_independent_of_quota_and_named_failure_keeps_its_source ... PARSE source_preserved=true runtime_ops=0 expression64_admits_same_source=true other_limits_unchanged=true
+ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.15s
+

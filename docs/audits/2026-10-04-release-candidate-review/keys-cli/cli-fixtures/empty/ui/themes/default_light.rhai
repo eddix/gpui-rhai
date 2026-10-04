@@ -1,0 +1,62 @@
+// Project-owned Default Light theme.
+fn theme() {
+    #{
+        family: "Default",
+        name: "Light",
+        mode: "light",
+        tokens: #{
+            colors: #{
+                surface: 0xf5f5f2ff,
+                surface_raised: 0xffffffff,
+                surface_hover: 0xe7e8e3ff,
+                text_primary: 0x202226ff,
+                text_muted: 0x686e78ff,
+                accent: 0x4169a8ff,
+                accent_hover: 0x34598fff,
+                on_accent: 0xffffffff,
+                danger: 0xb4233bff,
+                on_danger: 0xffffffff,
+                warning: 0xa65f00ff,
+                on_warning: 0xffffffff,
+                success: 0x397a2fff,
+                on_success: 0xffffffff,
+                border: 0xc8cbc4ff,
+                focus_ring: 0x4169a8ff,
+                selection: 0xcbd9efff,
+                disabled: 0x92979fff,
+            },
+            spacing: #{
+                xxs: #{ unit: "pixels", value: 2.0 },
+                xs: #{ unit: "pixels", value: 4.0 },
+                sm: #{ unit: "pixels", value: 8.0 },
+                md: #{ unit: "pixels", value: 12.0 },
+                lg: #{ unit: "pixels", value: 16.0 },
+            },
+            radii: #{
+                sm: #{ unit: "pixels", value: 0.0 },
+                md: #{ unit: "pixels", value: 0.0 },
+                lg: #{ unit: "pixels", value: 0.0 },
+            },
+            typography: #{
+                roles: #{
+                    caption: #{ size: #{ unit: "pixels", value: 11.0 },
+                        line_height: #{ unit: "pixels", value: 16.0 }, weight: 400 },
+                    body_small: #{ size: #{ unit: "pixels", value: 12.0 },
+                        line_height: #{ unit: "pixels", value: 16.0 }, weight: 400 },
+                    body: #{ size: #{ unit: "pixels", value: 13.0 },
+                        line_height: #{ unit: "pixels", value: 18.0 }, weight: 400 },
+                    subtitle: #{ size: #{ unit: "pixels", value: 14.0 },
+                        line_height: #{ unit: "pixels", value: 20.0 }, weight: 400 },
+                    title: #{ size: #{ unit: "pixels", value: 16.0 },
+                        line_height: #{ unit: "pixels", value: 22.0 }, weight: 700 },
+                    heading: #{ size: #{ unit: "pixels", value: 18.0 },
+                        line_height: #{ unit: "pixels", value: 24.0 }, weight: 700 },
+                    display: #{ size: #{ unit: "pixels", value: 24.0 },
+                        line_height: #{ unit: "pixels", value: 32.0 }, weight: 700 },
+                    display_large: #{ size: #{ unit: "pixels", value: 28.0 },
+                        line_height: #{ unit: "pixels", value: 36.0 }, weight: 700 },
+                },
+            },
+        },
+    }
+}

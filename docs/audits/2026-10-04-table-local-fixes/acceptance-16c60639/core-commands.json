@@ -1,0 +1,34 @@
+[
+  {
+    "log": "core-replay.log",
+    "command": [
+      "cargo",
+      "test",
+      "-p",
+      "gpui-rhai",
+      "--lib",
+      "table_modifiers",
+      "--locked",
+      "--offline",
+      "--",
+      "--nocapture"
+    ],
+    "exit_code": 0
+  },
+  {
+    "log": "original-modifiers.log",
+    "command": [
+      "cargo",
+      "run",
+      "--manifest-path",
+      "docs/audits/2026-10-04-release-candidate-review/virtual-runtime/probe/Cargo.toml",
+      "--target-dir",
+      "target",
+      "--locked",
+      "--offline",
+      "--",
+      "table"
+    ],
+    "exit_code": 0
+  }
+]

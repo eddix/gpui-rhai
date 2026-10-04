@@ -1,0 +1,101 @@
+{
+  "head": "16c60639dc1be8b7ad7d41255c578379afbce6c8",
+  "product_frozen_source": "43732b89c48ec6add95cc341d9e1090fe862cec4",
+  "equivalent_trees": {
+    "crates/gpui-rhai/src": {
+      "43732b89": "aca2444e34b9df57b41e1669708a3f96bafb8864",
+      "16c60639": "aca2444e34b9df57b41e1669708a3f96bafb8864"
+    },
+    "crates/gpui-rhai-cli/src": {
+      "43732b89": "4bb9240ca340d70693592147e0e4f6839740f0a8",
+      "16c60639": "4bb9240ca340d70693592147e0e4f6839740f0a8"
+    },
+    "registry": {
+      "43732b89": "25fe25032e6bb98ba4eadf947810511b1d7c6262",
+      "16c60639": "25fe25032e6bb98ba4eadf947810511b1d7c6262"
+    },
+    "Cargo.lock": {
+      "43732b89": "7e8735a72bb503057ddd307d7e5bf999a9dfa7ca",
+      "16c60639": "7e8735a72bb503057ddd307d7e5bf999a9dfa7ca"
+    },
+    "tests/native-keyboard/tests": {
+      "43732b89": "0af1488e989afd4547662b3894d2802351a309c0",
+      "16c60639": "0af1488e989afd4547662b3894d2802351a309c0"
+    }
+  },
+  "original_probe_sha256": {
+    "table/probe.rs": "f00630fb2d6abd0b9a266af0848c965c7ec06f176415f47e615b1fd7349d7e55",
+    "table/round7.rs": "162603d2788114deebcca62f7595427fdf8dd741d0628bc3764b7ad7958af51a",
+    "virtual-runtime/probe/src/main.rs": "e1e27d6aa05861956542e2aa9832a878843570e1b70dc93f728b981966dcc9e6"
+  },
+  "original_probes_unchanged": true,
+  "binary_sha256": "4281282285f395906ecbb7e099257a66bb5cab58663f14c42ed6243ea3bb4991",
+  "images": [
+    {
+      "file": "default-light.en.ltr.png",
+      "size": [
+        980,
+        752
+      ],
+      "sha256": "21c71cbc645dade639bf2a48e401faf7c599b0a03ac4fbdbc898d24a8a8c9ca2",
+      "raw_size": [
+        1960,
+        1504
+      ],
+      "raw_sha256": "d763948f04009743e7bc3d540349d2acae3b41830fdbf6ee8cc7f243171aade6"
+    },
+    {
+      "file": "default-light.en.loading.png",
+      "size": [
+        980,
+        752
+      ],
+      "sha256": "e62353a0518cf228a1435699eca9cb13573f40714a6c7c0b0a13c760d8b9d4d8",
+      "raw_size": [
+        1960,
+        1504
+      ],
+      "raw_sha256": "88b7888456fa47e2e2afce8ae38295e75afd6716f8e7ee299c21eac9b348d779"
+    },
+    {
+      "file": "default-light.en.empty.png",
+      "size": [
+        980,
+        752
+      ],
+      "sha256": "b756db92e7215e79a23f2718142816d8b7c33ad46c513b6bedd5a22b3f9ed878",
+      "raw_size": [
+        1960,
+        1504
+      ],
+      "raw_sha256": "7feda50cc60af2ecfed2c4fe559dab6d4c9613f9b001e16eee6ab66b05abe5a2"
+    },
+    {
+      "file": "default-dark.en.selected.png",
+      "size": [
+        980,
+        752
+      ],
+      "sha256": "3e79d30e604518f706bacb6637465b5daffd4a2fb3f05a09799c2106eca7ea06",
+      "raw_size": [
+        1960,
+        1504
+      ],
+      "raw_sha256": "518c2ba16a4f314aed7dd40e1282e21af8820a684d1c9e38c154c7fbf9415fca"
+    },
+    {
+      "file": "catppuccin-mocha.ar.rtl.png",
+      "size": [
+        980,
+        752
+      ],
+      "sha256": "5583359606568f800c7426fc969ff1a040d8909d82f0741d6b1252ba5639e897",
+      "raw_size": [
+        1960,
+        1504
+      ],
+      "raw_sha256": "335ffe81f1970c52b2f0addc703d76f180a4c1bcbf03e4a22b0a5810f21428d1"
+    }
+  ],
+  "review_scope": "Freshly viewed all five saved PNGs and checked hashes/dimensions/source. No UI/settings manipulation or capture. No independent pixel-by-pixel comparison."
+}

@@ -1,0 +1,179 @@
+{
+  "head": "736025a8b2b1ac44d41d893bc9a929c990b97532",
+  "comparison": "cda11ce7",
+  "source_equivalence": {
+    "previous_product": "53a62e3f2be05e5ae7a961936648195bc4fe9477",
+    "current": "736025a8b2b1ac44d41d893bc9a929c990b97532",
+    "paths": [
+      "Cargo.toml",
+      "Cargo.lock",
+      "rust-toolchain.toml",
+      "crates",
+      "registry"
+    ],
+    "git_diff_exit": 0
+  },
+  "r7_probe_body_unchanged": true,
+  "r7_probe_sha256": "bb2471e77e746c413604f59426dc1b577ae69c4845e8da69cab9ce5176c1db1e",
+  "current_execution": {
+    "tests": 16,
+    "passed": 16,
+    "failed": 0,
+    "real_macos_app_launched": false,
+    "os_settings_changed": false
+  },
+  "reviewed_prior_native_evidence": [
+    {
+      "file": "docs/audits/2026-10-02-release-convergence/final-review/evidence/appearance-light-be7a8eb8.json",
+      "sha256": "87e6def5b6be1673a2d3d90532ddacb06a92e5cedfaabc65ef52fca9a92aaf9a",
+      "source_sha": "be7a8eb83f5c97b9932661d74e5c3b7c684be4ce",
+      "error": null,
+      "os_preferences_changed": false,
+      "cleanup": {
+        "close_requests": 2,
+        "errors": [],
+        "remaining_owned_windows": 0,
+        "owned_windows_closed": true,
+        "per_app_override_clear_called": true,
+        "effective_app_appearance_after_clear": "Dark"
+      },
+      "samples": 7,
+      "reviewed_current_turn": true,
+      "executed_current_turn": false,
+      "selected_stages": [
+        {
+          "stage": "idle-before-appearance-change",
+          "real_timer_ms": 750,
+          "primary_timing_count": 0,
+          "shared_dirty_components": 0,
+          "shared_pending_virtual_requests": false,
+          "init_effect_records_unchanged": true,
+          "timings": []
+        },
+        {
+          "stage": "idle-before-appearance-change",
+          "real_timer_ms": 750,
+          "primary_timing_count": 0,
+          "shared_dirty_components": 0,
+          "shared_pending_virtual_requests": false,
+          "init_effect_records_unchanged": true,
+          "timings": []
+        }
+      ]
+    },
+    {
+      "file": "docs/audits/2026-10-02-release-convergence/final-review/evidence/appearance-dark-be7a8eb8.json",
+      "sha256": "04d677c477d15c19e127fa7ee3f679749a665d6ec2a6cb0077783c6beca902fd",
+      "source_sha": "be7a8eb83f5c97b9932661d74e5c3b7c684be4ce",
+      "error": null,
+      "os_preferences_changed": false,
+      "cleanup": {
+        "close_requests": 2,
+        "errors": [],
+        "remaining_owned_windows": 0,
+        "owned_windows_closed": true,
+        "per_app_override_clear_called": true,
+        "effective_app_appearance_after_clear": "Dark"
+      },
+      "samples": 7,
+      "reviewed_current_turn": true,
+      "executed_current_turn": false,
+      "selected_stages": [
+        {
+          "stage": "idle-before-appearance-change",
+          "real_timer_ms": 750,
+          "primary_timing_count": 0,
+          "shared_dirty_components": 0,
+          "shared_pending_virtual_requests": false,
+          "init_effect_records_unchanged": true,
+          "timings": []
+        },
+        {
+          "stage": "idle-before-appearance-change",
+          "real_timer_ms": 750,
+          "primary_timing_count": 0,
+          "shared_dirty_components": 0,
+          "shared_pending_virtual_requests": false,
+          "init_effect_records_unchanged": true,
+          "timings": []
+        }
+      ]
+    },
+    {
+      "file": "docs/audits/2026-10-02-release-convergence/final-review/evidence/appearance-lifecycle-be7a8eb8.json",
+      "sha256": "e01eb2cb9d3060e578b84cc813e823802e0dcb49ae1dd28d982abebaf1fc45e8",
+      "source_sha": "be7a8eb83f5c97b9932661d74e5c3b7c684be4ce",
+      "error": null,
+      "os_preferences_changed": false,
+      "cleanup": {
+        "close_requests": 1,
+        "remaining_owned_windows": 0,
+        "errors": [],
+        "per_app_override_clear_called": true
+      },
+      "samples": 17,
+      "reviewed_current_turn": true,
+      "executed_current_turn": false,
+      "passed": true,
+      "selected_stages": [
+        {
+          "stage": "genuine-idle",
+          "milliseconds": 600,
+          "timings": [
+            0,
+            0,
+            0
+          ],
+          "records_unchanged": true
+        },
+        {
+          "stage": "genuine-idle",
+          "milliseconds": 600,
+          "timings": [
+            0,
+            0,
+            0
+          ],
+          "records_unchanged": true
+        },
+        {
+          "stage": "suspended-appearance-kept-pending",
+          "suspended_timing_count": 0,
+          "records_unchanged": true
+        },
+        {
+          "stage": "genuine-idle",
+          "milliseconds": 600,
+          "timings": [
+            0,
+            0,
+            0
+          ],
+          "records_unchanged": true
+        },
+        {
+          "stage": "genuine-idle",
+          "milliseconds": 600,
+          "timings": [
+            0,
+            0
+          ],
+          "records_unchanged": true
+        },
+        {
+          "stage": "token-only-native-repaint-and-host-snapshot",
+          "rhai_timing_count": 0,
+          "geometry_and_theme_presented": true
+        }
+      ]
+    }
+  ],
+  "current_product_sha256": {
+    "crates/gpui-rhai/src/theme.rs": "8f526b46ba44eb649f3248d3170ac056638651b20a78c02ace6a03045538d238",
+    "crates/gpui-rhai/src/app.rs": "8ba8e54dd12504127f5374dcfccba0cc07181bc115a0fe820cb86f2f0f5cb9af",
+    "crates/gpui-rhai/src/context.rs": "a0d3f16d4542108495574dddbe5b6eaf774852e1af6874aec8760ccd1f69d8cf",
+    "crates/gpui-rhai/src/element_ref.rs": "d74e0d2d2b4d934b65f08a24f44f8cfb4768787ad43f2cd2da7d9328ad1a962f",
+    "crates/gpui-rhai/src/geometry.rs": "74c1d35f459485a869b23355efe3161b70b4a270b1fce18418b79d6b7a3248ae",
+    "crates/gpui-rhai/src/lifecycle.rs": "208cc794070837fa58423d31eb6b7b363e06d7fb19330aff93e1c98198ad6c69"
+  }
+}
