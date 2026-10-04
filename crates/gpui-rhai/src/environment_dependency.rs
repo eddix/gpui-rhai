@@ -5,14 +5,14 @@ use crate::ComponentInstancePath;
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct LocaleReader {
     window: Option<String>,
-    component: ComponentInstancePath,
+    dependency: crate::read_dependency::ReadDependency,
 }
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct EnvironmentDependencyRegistry {
     locale: BTreeSet<LocaleReader>,
     theme: BTreeSet<LocaleReader>,
-    viewport: BTreeMap<String, BTreeSet<ComponentInstancePath>>,
+    viewport: BTreeMap<String, BTreeSet<crate::read_dependency::ReadDependency>>,
 }
 
 impl EnvironmentDependencyRegistry {
@@ -29,32 +29,48 @@ impl EnvironmentDependencyRegistry {
     }
 
     pub fn reset_reader(&mut self, component: &ComponentInstancePath) {
-        self.locale.retain(|reader| &reader.component != component);
-        self.theme.retain(|reader| &reader.component != component);
+        self.reset_contribution(&crate::read_dependency::ReadDependency::component(
+            component,
+        ));
+    }
+    pub(crate) fn reset_contribution(
+        &mut self,
+        component: &crate::read_dependency::ReadDependency,
+    ) {
+        self.locale.retain(|reader| &reader.dependency != component);
+        self.theme.retain(|reader| &reader.dependency != component);
         for readers in self.viewport.values_mut() {
             readers.remove(component);
         }
         self.viewport.retain(|_, readers| !readers.is_empty());
     }
 
-    pub fn track_locale(&mut self, window: Option<&str>, component: &ComponentInstancePath) {
+    pub fn track_locale(
+        &mut self,
+        window: Option<&str>,
+        component: impl Into<crate::read_dependency::ReadDependency>,
+    ) {
         self.locale.insert(LocaleReader {
             window: window.map(ToOwned::to_owned),
-            component: component.clone(),
+            dependency: component.into(),
         });
     }
 
-    pub fn track_theme(&mut self, window: Option<&str>, component: &ComponentInstancePath) {
+    pub fn track_theme(
+        &mut self,
+        window: Option<&str>,
+        component: impl Into<crate::read_dependency::ReadDependency>,
+    ) {
         self.theme.insert(LocaleReader {
             window: window.map(ToOwned::to_owned),
-            component: component.clone(),
+            dependency: component.into(),
         });
     }
 
     pub fn invalidate_theme_app(&self) -> BTreeSet<ComponentInstancePath> {
         self.theme
             .iter()
-            .map(|reader| reader.component.clone())
+            .map(|reader| reader.dependency.owner.clone())
             .collect()
     }
 
@@ -62,7 +78,7 @@ impl EnvironmentDependencyRegistry {
         self.theme
             .iter()
             .filter(|reader| reader.window.as_deref() == Some(window))
-            .map(|reader| reader.component.clone())
+            .map(|reader| reader.dependency.owner.clone())
             .collect()
     }
 
@@ -72,22 +88,26 @@ impl EnvironmentDependencyRegistry {
     ) -> BTreeSet<ComponentInstancePath> {
         self.theme
             .iter()
-            .filter(|reader| reader.component.is_within(scope))
-            .map(|reader| reader.component.clone())
+            .filter(|reader| reader.dependency.owner.is_within(scope))
+            .map(|reader| reader.dependency.owner.clone())
             .collect()
     }
 
-    pub fn track_viewport(&mut self, window: &str, component: &ComponentInstancePath) {
+    pub fn track_viewport(
+        &mut self,
+        window: &str,
+        component: impl Into<crate::read_dependency::ReadDependency>,
+    ) {
         self.viewport
             .entry(window.to_owned())
             .or_default()
-            .insert(component.clone());
+            .insert(component.into());
     }
 
     pub fn invalidate_locale_app(&self) -> BTreeSet<ComponentInstancePath> {
         self.locale
             .iter()
-            .map(|reader| reader.component.clone())
+            .map(|reader| reader.dependency.owner.clone())
             .collect()
     }
 
@@ -95,7 +115,7 @@ impl EnvironmentDependencyRegistry {
         self.locale
             .iter()
             .filter(|reader| reader.window.as_deref() == Some(window))
-            .map(|reader| reader.component.clone())
+            .map(|reader| reader.dependency.owner.clone())
             .collect()
     }
 
@@ -105,13 +125,13 @@ impl EnvironmentDependencyRegistry {
     ) -> BTreeSet<ComponentInstancePath> {
         self.locale
             .iter()
-            .filter(|reader| reader.component.is_within(scope))
-            .map(|reader| reader.component.clone())
+            .filter(|reader| reader.dependency.owner.is_within(scope))
+            .map(|reader| reader.dependency.owner.clone())
             .collect()
     }
 
     pub fn invalidate_viewport(&self, window: &str) -> BTreeSet<ComponentInstancePath> {
-        self.viewport.get(window).cloned().unwrap_or_default()
+        crate::read_dependency::owners(self.viewport.get(window).cloned().unwrap_or_default())
     }
 
     pub fn remove_window(&mut self, window: &str) {
@@ -124,11 +144,11 @@ impl EnvironmentDependencyRegistry {
 
     pub fn remove_scope(&mut self, scope: &ComponentInstancePath) {
         self.locale
-            .retain(|reader| !reader.component.is_within(scope));
+            .retain(|reader| !reader.dependency.owner.is_within(scope));
         self.theme
-            .retain(|reader| !reader.component.is_within(scope));
+            .retain(|reader| !reader.dependency.owner.is_within(scope));
         for readers in self.viewport.values_mut() {
-            readers.retain(|component| !component.is_within(scope));
+            readers.retain(|component| !component.owner.is_within(scope));
         }
         self.viewport.retain(|_, readers| !readers.is_empty());
     }
@@ -138,15 +158,35 @@ impl EnvironmentDependencyRegistry {
         root: &ComponentInstancePath,
         active: &BTreeSet<ComponentInstancePath>,
     ) {
-        let retain = |component: &ComponentInstancePath| {
-            !component.is_within(root) || component == root || active.contains(component)
+        let retain = |component: &crate::read_dependency::ReadDependency| {
+            component.retained_in_owner_scope(root, active)
         };
-        self.locale.retain(|reader| retain(&reader.component));
-        self.theme.retain(|reader| retain(&reader.component));
+        self.locale.retain(|reader| retain(&reader.dependency));
+        self.theme.retain(|reader| retain(&reader.dependency));
         for readers in self.viewport.values_mut() {
             readers.retain(&retain);
         }
         self.viewport.retain(|_, readers| !readers.is_empty());
+    }
+
+    pub(crate) fn retain_contributions(
+        &mut self,
+        scope: &ComponentInstancePath,
+        active: &BTreeSet<crate::read_dependency::ReadContribution>,
+    ) {
+        self.locale.retain(|reader| {
+            reader
+                .dependency
+                .retained_in_contribution_scope(scope, active)
+        });
+        self.theme.retain(|reader| {
+            reader
+                .dependency
+                .retained_in_contribution_scope(scope, active)
+        });
+        crate::read_dependency::retain_readers(&mut self.viewport, |reader| {
+            reader.retained_in_contribution_scope(scope, active)
+        });
     }
 }
 

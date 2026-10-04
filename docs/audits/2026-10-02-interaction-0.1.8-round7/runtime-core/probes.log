@@ -1,0 +1,40 @@
+   Compiling gpui-rhai-native-keyboard-tests v0.0.0 (/var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T/gpui-runtime-core-round7-audit-puksotpn)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.11s
+     Running tests/runtime_core_round7_audit.rs (tests/native-keyboard/target/debug/deps/runtime_core_round7_audit-427a9f6f770825fd)
+
+running 6 tests
+queued open then failing sibling: Err(Automation(Command("failed to evaluate Rhai UI source: Runtime error: independent delivery failure @ 'main' (line 5, position 16)\nin call to function 'fail' (from 'main') (line 9, position 3)")))
+explicit_dispose=true: window_remains=true, replacement_state=Active
+explicit_dispose=false: window_remains=true, replacement_state=Active
+test dropping_last_handle_revokes_queued_authority ... ok
+ordinary clone drop retained authority; current owner closed its window
+test dropping_one_clone_keeps_current_owner_authorized ... ok
+queued close then failing sibling: Err(Automation(Command("failed to evaluate Rhai UI source: Runtime error: independent delivery failure @ 'main' (line 5, position 16)\nin call to function 'fail' (from 'main') (line 9, position 3)")))
+test explicit_dispose_revokes_queued_authority_control ... ok
+revoked source queued close: native_count=1, child_survives=false
+
+thread 'disposed_source_close_is_not_reauthorized_by_secondary_pump' (3014311) panicked at tests/runtime_core_round7_audit.rs:128:5:
+assertion `left == right` failed: another owned view must not execute a command from a disposed source
+  left: 1
+ right: 2
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test disposed_source_close_is_not_reauthorized_by_secondary_pump ... FAILED
+revoked source queued open: native_count=3, child_survives=true
+
+thread 'disposed_source_open_is_not_reauthorized_by_secondary_pump' (3014312) panicked at tests/runtime_core_round7_audit.rs:128:5:
+assertion `left == right` failed: another owned view must not execute a command from a disposed source
+  left: 3
+ right: 2
+test disposed_source_open_is_not_reauthorized_by_secondary_pump ... FAILED
+late old rendered view cleanup: replacement_state=Active, competing_owner_result=Err("window `domain` already has script command owner `owner`")
+test late_old_view_cleanup_cannot_unregister_same_id_replacement ... ok
+
+failures:
+
+failures:
+    disposed_source_close_is_not_reauthorized_by_secondary_pump
+    disposed_source_open_is_not_reauthorized_by_secondary_pump
+
+test result: FAILED. 4 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.84s
+
+error: test failed, to rerun pass `--test runtime_core_round7_audit`

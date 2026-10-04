@@ -1,0 +1,12 @@
+   Compiling audit-018-collections-tree-round7 v0.0.0 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/docs/audits/2026-10-02-interaction-0.1.8-round7/collections-tree/probe)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.12s
+     Running `target/debug/audit-018-collections-tree-round7`
+nested mode=0 (0 parent-first, 1 child-first, 2 batched): live self callback=7
+siblings mode=0: both pruned states absent, both remount defaults=7
+nested mode=1 (0 parent-first, 1 child-first, 2 batched): live self callback=7
+siblings mode=1: both pruned states absent, both remount defaults=7
+nested mode=2 (0 parent-first, 1 child-first, 2 batched): live self callback=7
+siblings mode=2: both pruned states absent, both remount defaults=7
+repeated overlapping batches + candidate rollback: old target/callback retained, candidate branch13 state absent (failed to evaluate Rhai UI source: Runtime error: candidate rejected @ 'audit/round7.rhai' (line 8, position 71)
+in call to function 'inner_row' (from 'audit/round7.rhai') (line 10, position 27))
+retry after candidate failure and simultaneous parent prune/obsolete child request: passed

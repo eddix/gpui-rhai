@@ -1,0 +1,34 @@
+   Compiling gpui-rhai-native-keyboard-tests v0.0.0 (/var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T/gpui-pr97-key-dispatch-audit-etvfejan)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.60s
+     Running tests/pr97_key_dispatch.rs (tests/native-keyboard/target/debug/deps/pr97_key_dispatch-4212a68a92c9a4e5)
+
+running 4 tests
+PR97 name "cmd-s": sugar=true, generic-key=true
+PR97 name "shift-/": sugar=true, generic-key=true
+PR97 name "??": sugar=true, generic-key=true
+
+thread 'pr97_validators_should_reject_chord_and_multi_symbol_names' (1503445) panicked at tests/pr97_key_dispatch.rs:24:5:
+node key names do not represent chords
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test pr97_validators_should_reject_chord_and_multi_symbol_names ... FAILED
+key=? delivered=1
+test literal_question_mark_dispatches ... ok
+generic key:Escape delivered=0; key:escape delivered=1
+
+thread 'uppercase_accepted_by_pr_does_not_dispatch' (1503446) panicked at tests/pr97_key_dispatch.rs:35:25:
+assertion `left == right` failed: accepted key spelling should be normalized or rejected, not silently inert
+  left: 0
+ right: 1
+test uppercase_accepted_by_pr_does_not_dispatch ... FAILED
+ctrl-/ -> slash count=1; key=q,key_char=? -> question count=0; synthetic shift-/ -> question count=0
+test characterize_raw_key_and_modifiers ... ok
+
+failures:
+
+failures:
+    pr97_validators_should_reject_chord_and_multi_symbol_names
+    uppercase_accepted_by_pr_does_not_dispatch
+
+test result: FAILED. 2 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `--test pr97_key_dispatch`

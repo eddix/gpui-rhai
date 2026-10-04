@@ -1,0 +1,103 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-04",
+  "product_source_sha": "43732b89c48ec6add95cc341d9e1090fe862cec4",
+  "capture_source_head": "43732b89c48ec6add95cc341d9e1090fe862cec4",
+  "binary": "target/release/examples/data_table",
+  "binary_sha256": "4281282285f395906ecbb7e099257a66bb5cab58663f14c42ed6243ea3bb4991",
+  "platform": {
+    "os": "macOS 27.0.1",
+    "build": "26A434",
+    "gpui_pre": "0.3.7",
+    "architecture": "aarch64-apple-darwin",
+    "display_refresh_hz": 60,
+    "display_scale": 2
+  },
+  "geometry": {
+    "window_origin": [100, 100],
+    "window_size": [980, 752],
+    "content_viewport": [980, 720],
+    "raw_pixels": [1960, 1504],
+    "baseline_pixels": [980, 752],
+    "before_after_ax_and_cg_equal": true
+  },
+  "capture": {
+    "raw_format": "PNG",
+    "command": "screencapture -x -o -l <verified-owned-window-id> <raw.png>",
+    "normalization": "sips --resampleHeightWidth 752 980 <1960x1504.raw.png> --out <baseline.png>",
+    "density_only": true,
+    "retouched": false,
+    "cropped": false,
+    "native_window_chrome_included": true,
+    "screen_control_indicator_absent": true
+  },
+  "fixture": {
+    "motion": "normal",
+    "horizontal_scroll_offset": 0,
+    "vertical_scroll_offset": 0,
+    "page": 1,
+    "page_size": 25,
+    "generated_rows": 500,
+    "fixed_date_values": ["2026-08-30", "2026-08-31"],
+    "sort": "original-order",
+    "rtl_scope": "Arabic UI locale and logical layout; fixture labels remain English"
+  },
+  "restoration": {
+    "temporary_rules": "five exact test bundle IDs only; final capture uses manage:false so native AX owns placement",
+    "persistent_rift_configuration_modified": false,
+    "rules_restored": true,
+    "other_runtime_configuration_unchanged": true,
+    "original_and_restored_rule_count": 11,
+    "canonical_rules_sha256": "8a4f0e994584a7f71887c0e689d12c9e44d381041248c74e7001e9f209c634aa",
+    "owned_test_processes_remaining": 0,
+    "preexisting_test_process_preserved": true
+  },
+  "evidence_root": "../../../../docs/audits/2026-10-04-table-local-fixes/evidence/table-native",
+  "independent_review": {
+    "status": "approve_five_table_visual_baselines_only",
+    "report": "../../../../docs/audits/2026-10-04-table-local-fixes/visual-review.zh-CN.md"
+  },
+  "cases": [
+    {
+      "file": "default-light.en.ltr.png",
+      "theme": "default-light", "locale": "en", "state": "default", "selected_keys": [],
+      "bundle_id": "com.eddix.gpui-rhai.visual-test.data-table.Yt6e0M",
+      "raw_sha256": "d763948f04009743e7bc3d540349d2acae3b41830fdbf6ee8cc7f243171aade6",
+      "baseline_sha256": "21c71cbc645dade639bf2a48e401faf7c599b0a03ac4fbdbc898d24a8a8c9ca2",
+      "replaced_baseline_sha256": "b1fa18d0d3fd2fb91d16236c5e60e50f378471d5ab0584a5064c2cc5c6891708"
+    },
+    {
+      "file": "default-light.en.loading.png",
+      "theme": "default-light", "locale": "en", "state": "loading", "selected_keys": [],
+      "bundle_id": "com.eddix.gpui-rhai.visual-test.data-table.R6pvav",
+      "raw_sha256": "88b7888456fa47e2e2afce8ae38295e75afd6716f8e7ee299c21eac9b348d779",
+      "baseline_sha256": "e62353a0518cf228a1435699eca9cb13573f40714a6c7c0b0a13c760d8b9d4d8",
+      "replaced_baseline_sha256": "a09a55d80cc6567f1b46f827b6ba861c9e67e8b5cd1b1e88bf7bfe09bc6f2f05"
+    },
+    {
+      "file": "default-light.en.empty.png",
+      "theme": "default-light", "locale": "en", "state": "empty", "selected_keys": [], "rows": 0,
+      "bundle_id": "com.eddix.gpui-rhai.visual-test.data-table.56OPI1",
+      "raw_sha256": "7feda50cc60af2ecfed2c4fe559dab6d4c9613f9b001e16eee6ab66b05abe5a2",
+      "baseline_sha256": "b756db92e7215e79a23f2718142816d8b7c33ad46c513b6bedd5a22b3f9ed878",
+      "replaced_baseline_sha256": "08b3103d7a351db3dabef97cb5b15c7c54db317fd071c4bfb300ec13f3956e12"
+    },
+    {
+      "file": "default-dark.en.selected.png",
+      "theme": "default-dark", "locale": "en", "state": "selected", "selected_keys": ["user-0", "user-1"],
+      "bundle_id": "com.eddix.gpui-rhai.visual-test.data-table.XF7Ffu",
+      "raw_sha256": "518c2ba16a4f314aed7dd40e1282e21af8820a684d1c9e38c154c7fbf9415fca",
+      "baseline_sha256": "3e79d30e604518f706bacb6637465b5daffd4a2fb3f05a09799c2106eca7ea06",
+      "replaced_baseline_sha256": "681a9d9e31bd6750bc91ae5528f127775e8227247f0fc5359af46be14f5dc52d"
+    },
+    {
+      "file": "catppuccin-mocha.ar.rtl.png",
+      "theme": "catppuccin-mocha", "locale": "ar", "state": "default", "selected_keys": [],
+      "bundle_id": "com.eddix.gpui-rhai.visual-test.data-table.cOKIQI",
+      "raw_sha256": "335ffe81f1970c52b2f0addc703d76f180a4c1bcbf03e4a22b0a5810f21428d1",
+      "baseline_sha256": "5583359606568f800c7426fc969ff1a040d8909d82f0741d6b1252ba5639e897",
+      "replaced_baseline_sha256": "1e71c0243a47a9dfeef420bdc44067101eab935c9682cea236cefbe539159d13"
+    }
+  ],
+  "scope": "Five Table visual baselines only; not an assertion of scroll behavior, OS input/accessibility certification or physical120Hz acceptance"
+}

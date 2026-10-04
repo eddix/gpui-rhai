@@ -13,7 +13,12 @@ The budgets are diagnostics, not permission to move per-frame policy into Rhai.
   cannot evade the aggregate cap. Imported component/helper calls are included
   in their outer render/callback total; Inspector shows the latest counts beside
   duration.
-- Rhai execution is capped at 1,000,000 operations, 64 call levels, bounded
+  `operation_limit` records the effective quota at the start of that execution;
+  `round_operations` records its enclosing round's cumulative consumption.
+  Structured errors report these values, not an assumed default or one
+  component's timing delta. `operations` keeps its existing timing-span meaning.
+- Rhai execution is capped at 1,000,000 operations by default (host-configurable
+  via the view builders' `operation_limit`), 64 call levels, bounded
   expression depth, 10,000 array entries, 100,000 aggregate map fields, and
   1 MiB strings.
 - Declarative timers are one-shot, component-scoped, capped by
@@ -57,6 +62,40 @@ Run on a release build:
 ```text
 cargo run --release -p gpui-rhai --example performance_probe
 ```
+
+## Trusted Host execution policy
+
+Ordinary applications keep `DEFAULT_SCRIPT_OPERATION_LIMIT = 1_000_000` and
+parser depths global=64/function=32 in both debug and release. A trusted Host
+can opt into different policies for its known workload:
+
+```rust,ignore
+let prepared = gpui_rhai::FileScriptView::new("ui/main.rhai")
+    .operation_limit(4_000_000)
+    .expression_depth_limits(64, 64)
+    .prepare()?;
+```
+
+`EmbeddedScriptView` has the same builders. Direct `RuntimeEngine` users call
+`set_operation_limit` and `set_expression_depth_limits`. Each zero value
+normalizes to one, never unlimited. These are Rust-only settings: scripts cannot
+raise their own quota. Builder policy is applied before trusted
+`ScriptViewExtension::configure_engine`; an extension may override it. Secondary
+engines use the same ordering, and reload candidates copy the active values
+into independent storage. A failed candidate leaves the active policy intact.
+
+Operation quota, parser expression depth, recursive call depth and durable data
+limits are independent. Raising one does not raise the others. Nested/sibling
+work shares one cumulative execution quota; retained and delayed entry points
+start fresh rounds rather than recharging parent history. Parser policy must be
+set before compilation; operation policy applies to subsequent evaluation.
+
+An operation count is not a latency guarantee or native-code timeout. A larger
+budget can allow a long foreground calculation, and the 16ms warning only
+reports it afterwards. Native Rust calls remain cooperative and cannot be
+preempted by the Rhai quota. Keep high-frequency layout/interaction policy in
+Rust and cache expensive script results; do not raise the global default to
+accommodate one application.
 
 ## Interactive 1,000-row Table baseline
 

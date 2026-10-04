@@ -1,0 +1,19 @@
+   Compiling gpui-rhai v0.1.8 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 30.70s
+     Running tests/virtual_read_contributions.rs (target/debug/deps/virtual_read_contributions-fcfb54498882cff3)
+
+running 2 tests
+test failed_row_candidate_restores_the_previous_read_contributions ... ok
+test raw_scroll_dependencies_release_history_keep_other_contributors_and_wake_the_current_owner ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.87s
+
+     Running tests/virtual_transactions.rs (target/debug/deps/virtual_transactions-fd2ec448e5af5e94)
+
+running 3 tests
+test batch_failure_restores_all_prior_scope_state_and_callbacks ... ok
+test overlapping_targets_keep_new_formal_callbacks_and_resources_live ... ok
+test disjoint_scope_targets_are_equivalent_for_both_orders_and_one_batch ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.82s
+

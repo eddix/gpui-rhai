@@ -104,6 +104,11 @@ pub struct ExecutionTiming {
     pub source: String,
     pub duration: Duration,
     pub operations: u64,
+    /// The effective Host quota captured at the start of this execution.
+    pub operation_limit: u64,
+    /// Cumulative consumption of the enclosing execution round. `operations`
+    /// remains this timing span's delta for performance attribution.
+    pub round_operations: u64,
     pub operation_semantics: u32,
     pub slow: bool,
     pub succeeded: bool,
@@ -426,7 +431,7 @@ type ActiveComponentRenderState = Rc<RefCell<Option<ActiveComponentRender>>>;
 struct PendingComponentCommit {
     root: ComponentInstancePath,
     previous: BTreeSet<ComponentInstancePath>,
-    active: BTreeSet<ComponentInstancePath>,
+    retained_root: Option<ComponentInstancePath>,
     transaction: RenderStateTransaction,
     event_handlers: BTreeMap<(ComponentInstancePath, String), ScriptCallback>,
 }
@@ -522,6 +527,7 @@ pub struct RuntimeEngine {
     last_failed_timing: RefCell<Option<ExecutionTiming>>,
     last_failed_component: RefCell<Option<ComponentInstancePath>>,
     operation_tracker: Rc<OperationTracker>,
+    operation_limit: Rc<Cell<u64>>,
     slow_threshold: Duration,
     component_render: ActiveComponentRenderState,
     component_invocations: BTreeMap<ComponentInstancePath, ComponentInvocationRecipe>,
@@ -545,7 +551,7 @@ pub struct RuntimeEngine {
     virtual_collections: BTreeMap<crate::VirtualCollectionId, VirtualCollectionRecipe>,
 }
 
-pub const MAX_SCRIPT_OPERATIONS: u64 = 1_000_000;
+pub const DEFAULT_SCRIPT_OPERATION_LIMIT: u64 = 1_000_000;
 
 #[derive(Debug, Default)]
 struct OperationTracker {
@@ -588,6 +594,7 @@ impl OperationTracker {
 struct ExecutionTimingStart {
     instant: Instant,
     operations: u64,
+    operation_limit: u64,
 }
 
 #[derive(Clone)]
@@ -615,6 +622,9 @@ impl RuntimeEngine {
     pub(crate) fn candidate_engine(&self) -> Self {
         let mut candidate = Self::new();
         candidate.slow_threshold = self.slow_threshold;
+        candidate.operation_limit.set(self.operation_limit.get());
+        let (global, functions) = self.expression_depth_limits();
+        candidate.set_expression_depth_limits(global, functions);
         #[cfg(feature = "charts")]
         {
             candidate.chart_transforms.copy_from(&self.chart_transforms);
@@ -637,11 +647,14 @@ impl RuntimeEngine {
         engine.set_module_resolver(crate::source::RestrictedModuleResolver::new());
         let operation_tracker = Rc::new(OperationTracker::default());
         let progress = Rc::clone(&operation_tracker);
+        let operation_limit = Rc::new(Cell::new(DEFAULT_SCRIPT_OPERATION_LIMIT));
+        let limit_probe = Rc::clone(&operation_limit);
         engine.on_progress(move |operations| {
             let total = progress.observe(operations);
-            (total > MAX_SCRIPT_OPERATIONS).then(|| {
+            let limit = limit_probe.get();
+            (total > limit).then(|| {
                 Dynamic::from(format!(
-                    "script operation budget exceeded: {total} > {MAX_SCRIPT_OPERATIONS}"
+                    "script operation budget exceeded: {total} > {limit}"
                 ))
             })
         });
@@ -707,6 +720,7 @@ impl RuntimeEngine {
             last_failed_timing: RefCell::new(None),
             last_failed_component: RefCell::new(None),
             operation_tracker,
+            operation_limit,
             slow_threshold: Duration::from_millis(16),
             component_render,
             component_invocations: BTreeMap::new(),
@@ -1052,6 +1066,8 @@ impl RuntimeEngine {
                             source: source.clone(),
                             duration: Duration::ZERO,
                             operations: 0,
+                            operation_limit: self.operation_limit(),
+                            round_operations: self.operation_total(),
                             operation_semantics: OPERATION_SEMANTICS_VERSION,
                             slow: false,
                             succeeded: true,
@@ -1064,7 +1080,9 @@ impl RuntimeEngine {
                 PendingComponentCommit {
                     root: root.clone(),
                     previous,
-                    active: active.seen,
+                    retained_root: (!active.invocations.contains_key(&root)
+                        && active.transaction.retains_root())
+                    .then_some(root.clone()),
                     transaction: active.transaction,
                     event_handlers: active.event_handlers,
                 },
@@ -1414,12 +1432,43 @@ impl RuntimeEngine {
         runtime: &mut UiRuntimeState,
     ) -> Result<(), RuntimeError> {
         let commits = std::mem::take(&mut self.pending_component_commits);
+        if commits.is_empty() {
+            return Ok(());
+        }
+        // One batch has one final invocation graph. Intermediate ancestor
+        // manifests must not retire descendants prepared by later targets.
+        let mut active = self
+            .component_invocations
+            .keys()
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        active.extend(
+            self.virtual_collections
+                .keys()
+                .map(|id| id.component.child("VirtualCollection", id.key.clone())),
+        );
+        active.extend(
+            commits
+                .values()
+                .filter_map(|commit| commit.retained_root.clone()),
+        );
+        let roots = crate::state::topmost_paths(&commits.keys().cloned().collect());
+        let previous = commits
+            .values()
+            .flat_map(|commit| commit.previous.iter().cloned())
+            .collect();
+        let mut transactions = Vec::with_capacity(commits.len());
         for (_, commit) in commits {
-            runtime
-                .reconcile_component_lifetimes(&commit.root, &commit.active, &commit.previous)
-                .map_err(|error| RuntimeError::ComponentRuntime(error.to_string()))?;
             runtime.replace_component_event_handlers(&commit.root, commit.event_handlers);
-            runtime.component_state.commit_render(commit.transaction);
+            transactions.push(commit.transaction);
+        }
+        runtime
+            .component_state
+            .commit_render_batch(transactions, &active);
+        for root in roots {
+            runtime
+                .reconcile_component_lifetimes(&root, &active, &previous)
+                .map_err(|error| RuntimeError::ComponentRuntime(error.to_string()))?;
         }
         Ok(())
     }
@@ -1509,6 +1558,7 @@ impl RuntimeEngine {
             .map(|(index, node)| (*index, node.clone()))
             .collect::<BTreeMap<_, _>>();
         let previous_root = Rc::new(UiNode::box_node(retained.values().cloned().collect()));
+        prune_virtual_read_contributions(&context, id, &recipe.data, indices, &previous_root)?;
         self.begin_component_render(
             context.clone(),
             recipe.generation,
@@ -1541,7 +1591,10 @@ impl RuntimeEngine {
                 let item = invocation.call::<UiNode>(
                     self.engine(),
                     &recipe.renderer,
-                    (context.clone(), Dynamic::from_map(payload)),
+                    (
+                        context.for_virtual_item(id, &key),
+                        Dynamic::from_map(payload),
+                    ),
                 );
                 self.record_timing(
                     ExecutionOperation::VirtualCollection(id.key.clone()),
@@ -2054,6 +2107,43 @@ impl RuntimeEngine {
         self.slow_threshold = threshold;
     }
 
+    /// Set the per-execution script operation budget.
+    ///
+    /// The default is [`DEFAULT_SCRIPT_OPERATION_LIMIT`]. This is a cumulative
+    /// operation quota for each execution round, not a frame-time guarantee.
+    /// A host that runs known one-shot, cacheable
+    /// script phases (a layout pass, an analysis sweep) may raise it; the
+    /// wall-clock slow threshold still flags anything that stalls the
+    /// foreground. Scripts cannot change this limit; only the embedding
+    /// application can.
+    /// Zero normalizes to one; it never disables protection. Changes apply to
+    /// subsequent calls. Native Rust work is not preempted by this quota.
+    pub fn set_operation_limit(&mut self, limit: u64) {
+        self.operation_limit.set(limit.max(1));
+    }
+
+    /// The per-execution script operation budget in force.
+    #[must_use]
+    pub fn operation_limit(&self) -> u64 {
+        self.operation_limit.get()
+    }
+
+    /// Configure parser depth independently of execution/recursion/data limits.
+    /// Defaults are global=64/function=32 in both debug and release. Zero
+    /// normalizes to one rather than adopting Rhai's unlimited convention.
+    pub fn set_expression_depth_limits(&mut self, global: usize, functions: usize) {
+        self.engine
+            .set_max_expr_depths(global.max(1), functions.max(1));
+    }
+
+    #[must_use]
+    pub fn expression_depth_limits(&self) -> (usize, usize) {
+        (
+            self.engine.max_expr_depth(),
+            self.engine.max_function_expr_depth(),
+        )
+    }
+
     #[must_use]
     pub fn take_timings(&self) -> Vec<ExecutionTiming> {
         std::mem::take(&mut *self.timings.borrow_mut())
@@ -2085,6 +2175,8 @@ impl RuntimeEngine {
             source: source.to_owned(),
             duration,
             operations,
+            operation_limit: started.operation_limit,
+            round_operations: self.operation_total(),
             operation_semantics: OPERATION_SEMANTICS_VERSION,
             slow: duration >= self.slow_threshold,
             succeeded,
@@ -2117,6 +2209,7 @@ impl RuntimeEngine {
         ExecutionTimingStart {
             instant: Instant::now(),
             operations: self.operation_total(),
+            operation_limit: self.operation_limit(),
         }
     }
 
@@ -2272,6 +2365,9 @@ pub(crate) const RHAI_MAX_DATA_DEPTH: usize = 64;
 
 fn configure_engine_limits(engine: &mut Engine) {
     engine.set_max_call_levels(64);
+    // Explicit defaults avoid Rhai's profile-dependent parser defaults. A
+    // trusted Host may configure these separately; ordinary applications do
+    // not inherit another application's deeper expression policy.
     engine.set_max_expr_depths(64, 32);
     // Rhai's counter is evaluator-local and cloned into stored callback
     // contexts. The runtime's progress adapter enforces one cumulative budget
@@ -2657,6 +2753,33 @@ fn try_reuse_component_subtree(
         .reused
         .push((component.metadata.id.to_string(), reused_components));
     Ok(Some(scope.node))
+}
+
+fn prune_virtual_read_contributions(
+    context: &UiContext,
+    id: &crate::VirtualCollectionId,
+    data: &crate::VirtualCollectionData,
+    indices: &BTreeSet<usize>,
+    retained: &UiNode,
+) -> Result<(), RuntimeError> {
+    let mut active = retained.virtual_read_contributions();
+    active.extend(
+        indices
+            .iter()
+            .filter_map(|index| data.key(*index))
+            .map(
+                |key| crate::read_dependency::ReadContribution::VirtualItem {
+                    collection: id.clone(),
+                    key: key.to_owned(),
+                },
+            ),
+    );
+    context
+        .runtime()
+        .try_borrow_mut()
+        .map_err(|_| RuntimeError::ComponentRuntime("UI state is already borrowed".into()))?
+        .retain_virtual_read_contributions(context.component_path(), &active);
+    Ok(())
 }
 
 fn retain_virtual_component_manifest(
@@ -3556,6 +3679,7 @@ fn realize_initial_collection(
     call: &rhai::NativeCallContext<'_>,
     renderer: &FnPtr,
     context: &UiContext,
+    id: &crate::VirtualCollectionId,
     data: &crate::VirtualCollectionData,
     indices: &BTreeSet<usize>,
 ) -> Result<BTreeMap<usize, UiNode>, Box<EvalAltResult>> {
@@ -3572,7 +3696,10 @@ fn realize_initial_collection(
         let (item_key, mut payload) = collection_payload(&item, index)?;
         add_collection_neighbors(data, index, &mut payload);
         let node = renderer
-            .call_within_context::<UiNode>(call, (context.clone(), payload))?
+            .call_within_context::<UiNode>(
+                call,
+                (context.for_virtual_item(id, &item_key), payload),
+            )?
             .with_key(item_key);
         realized.insert(index, node);
     }
@@ -3615,7 +3742,7 @@ fn realize_seeded_virtual_collection(
     let indices =
         virtual_collection_seed_indices(active, id, decoded, count, previous_metrics.as_ref())?;
     enter_virtual_collection_scope(active, context.clone())?;
-    let realized = realize_initial_collection(call, renderer, context, &decoded.data, &indices);
+    let realized = realize_initial_collection(call, renderer, context, id, &decoded.data, &indices);
     leave_component_render(active)?;
     realized
 }
@@ -5040,8 +5167,65 @@ mod tests {
             runtime
                 .take_timings()
                 .iter()
-                .any(|timing| timing.operations > MAX_SCRIPT_OPERATIONS)
+                .any(|timing| timing.operations > DEFAULT_SCRIPT_OPERATION_LIMIT)
         );
+    }
+
+    #[test]
+    fn operation_limit_is_host_configurable() {
+        let heavy = r"fn view() { let n = 0; for i in 0..400000 { n += 1; } text(`${n}`) }";
+        let mut runtime = RuntimeEngine::new();
+        assert_eq!(runtime.operation_limit(), DEFAULT_SCRIPT_OPERATION_LIMIT);
+        let compiled = runtime
+            .compile_self_contained_named("limit", heavy)
+            .unwrap();
+        assert!(
+            runtime.render(&compiled).is_err(),
+            "this finite workload actually exceeds the default budget"
+        );
+        assert!(runtime.last_failed_timing().unwrap().operations > DEFAULT_SCRIPT_OPERATION_LIMIT);
+
+        runtime.set_operation_limit(10_000);
+        let compiled = runtime
+            .compile_self_contained_named("limit-low", heavy)
+            .unwrap();
+        assert!(
+            runtime.render(&compiled).is_err(),
+            "a lowered budget rejects the same script"
+        );
+
+        runtime.set_operation_limit(50_000_000);
+        let compiled = runtime
+            .compile_self_contained_named("limit-high", heavy)
+            .unwrap();
+        assert!(
+            runtime.render(&compiled).is_ok(),
+            "a raised budget admits heavier one-shot work"
+        );
+    }
+
+    #[test]
+    fn host_policies_are_independent_and_reload_candidates_do_not_share_mutable_quota() {
+        let mut engine = RuntimeEngine::new();
+        assert_eq!(engine.expression_depth_limits(), (64, 32));
+        engine.set_operation_limit(2_000_000);
+        engine.set_expression_depth_limits(80, 64);
+        assert_eq!(engine.engine().max_call_levels(), 64);
+        assert_eq!(engine.engine().max_array_size(), RHAI_MAX_ARRAY_SIZE);
+        #[cfg(feature = "dev-reload")]
+        {
+            let mut candidate = engine.candidate_engine();
+            assert_eq!(candidate.operation_limit(), 2_000_000);
+            assert_eq!(candidate.expression_depth_limits(), (80, 64));
+            candidate.set_operation_limit(10);
+            candidate.set_expression_depth_limits(20, 10);
+            assert_eq!(engine.operation_limit(), 2_000_000);
+            assert_eq!(engine.expression_depth_limits(), (80, 64));
+        }
+        engine.set_operation_limit(0);
+        engine.set_expression_depth_limits(0, 0);
+        assert_eq!(engine.operation_limit(), 1);
+        assert_eq!(engine.expression_depth_limits(), (1, 1));
     }
 
     #[test]
@@ -5108,7 +5292,10 @@ mod tests {
                 .filter(|timing| timing.operation == ExecutionOperation::Render)
                 .map(|timing| timing.operations)
                 .sum::<u64>();
-            assert!(operations < MAX_SCRIPT_OPERATIONS / 2, "{operations}");
+            assert!(
+                operations < DEFAULT_SCRIPT_OPERATION_LIMIT / 2,
+                "{operations}"
+            );
             measured.push(operations);
         }
         assert_eq!(measured[0], measured[1]);
@@ -5228,7 +5415,10 @@ mod tests {
                 })
                 .map(|timing| timing.operations)
                 .sum::<u64>();
-            assert!(operations < MAX_SCRIPT_OPERATIONS / 2, "{operations}");
+            assert!(
+                operations < DEFAULT_SCRIPT_OPERATION_LIMIT / 2,
+                "{operations}"
+            );
             measured.push(operations);
         }
         assert_eq!(measured[0], measured[1]);

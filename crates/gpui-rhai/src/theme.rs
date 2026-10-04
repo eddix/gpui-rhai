@@ -51,6 +51,14 @@ pub enum ThemeMode {
     Dark,
 }
 
+/// Lightweight resolved identity, distinct from a user preference or token snapshot.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ThemeVariantInfo {
+    pub family: String,
+    pub name: String,
+    pub mode: ThemeMode,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ThemeTokens {
     pub colors: BTreeMap<String, Rgba8>,

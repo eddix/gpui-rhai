@@ -1,0 +1,147 @@
+diff --git a/crates/gpui-rhai/src/node.rs b/crates/gpui-rhai/src/node.rs
+index a922728..96fb285 100644
+--- a/crates/gpui-rhai/src/node.rs
++++ b/crates/gpui-rhai/src/node.rs
+@@ -1966,13 +1966,9 @@ fn register_node_behavior_methods(builder: &mut TypeBuilder<UiNode>) {
+              payload: Dynamic|
+              -> Result<UiNode, Box<EvalAltResult>> {
+                 let key = key.trim().to_ascii_lowercase();
+-                if key.is_empty()
+-                    || !key
+-                        .chars()
+-                        .all(|character| character.is_ascii_alphanumeric() || character == '_')
+-                {
++                if !is_valid_key_handler_name(&key) {
+                     return Err(Box::new(EvalAltResult::ErrorRuntime(
+-                        "key handler name must be a non-empty key identifier".into(),
++                        "key handler name must be a non-empty gpui key name (letters, digits, `_`, or a printable punctuation key such as `?`, `/`, `[`, `-`)".into(),
+                         Position::NONE,
+                     )));
+                 }
+@@ -2176,12 +2172,21 @@ fn register_native_event_methods(builder: &mut TypeBuilder<UiNode>) {
+ }
+ 
+ fn validate_node_event_name(event: &str) -> Result<(), Box<EvalAltResult>> {
+-    let valid = (1..=64).contains(&event.len())
+-        && event.chars().all(|character| {
+-            character.is_ascii_lowercase()
+-                || character.is_ascii_digit()
+-                || matches!(character, '_' | ':')
+-        });
++    let valid = if let Some(key) = event.strip_prefix("key:") {
++        // Key handlers are looked up by the raw gpui key string at dispatch
++        // time, so the key segment must accept every key a keyboard can
++        // send: named keys (`escape`, `left`) as well as punctuation (`?`,
++        // `/`, `[`, `-`, `=`). Only the namespace separator and non-printable
++        // characters are reserved.
++        !key.is_empty() && key.len() <= 64 && is_printable_key_character(key)
++    } else {
++        (1..=64).contains(&event.len())
++            && event.chars().all(|character| {
++                character.is_ascii_lowercase()
++                    || character.is_ascii_digit()
++                    || matches!(character, '_' | ':')
++            })
++    };
+     if valid {
+         Ok(())
+     } else {
+@@ -2193,6 +2198,26 @@ fn validate_node_event_name(event: &str) -> Result<(), Box<EvalAltResult>> {
+     }
+ }
+ 
++/// A key handler name: a gpui key string (`escape`, `left`, `?`, `/`, `[`,
++/// `-`, `=`). Named keys are letters, digits and `_`; punctuation keys are
++/// single printable characters. `:` is reserved as the event namespace
++/// separator and can never be part of a key name.
++fn is_valid_key_handler_name(key: &str) -> bool {
++    !key.is_empty() && key.len() <= 64 && key.chars().all(|character| {
++        character.is_ascii_alphanumeric() || character == '_' || {
++            // Printable ASCII punctuation and symbols, minus the reserved
++            // namespace separator `:`.
++            character.is_ascii_graphic() && character != ':'
++        }
++    })
++}
++
++fn is_printable_key_character(key: &str) -> bool {
++    key.chars().all(|character| {
++        character.is_ascii_graphic() && character != ':'
++    })
++}
++
+ fn register_semantic_event_methods(builder: &mut TypeBuilder<UiNode>) {
+     for (method, event) in [
+         ("on_hover_change", "hover_change"),
+@@ -3398,4 +3423,43 @@ mod tests {
+             );
+         }
+     }
++
++    #[test]
++    fn key_handler_names_accept_punctuation_keys() {
++        // gpui dispatches punctuation keys as their literal key string (`?`,
++        // `/`, `[`, `-`, `=`), so handlers for them must be registrable both
++        // through the sugar and through the generic `on`.
++        for script in [
++            "fn h(ctx, payload) { () } fn view() { text(\"x\").on_key_value(\"?\", Fn(\"h\"), ()) }",
++            "fn h(ctx, payload) { () } fn view() { text(\"x\").on_key_value(\"[\", Fn(\"h\"), ()) }",
++            "fn h(ctx, event) { () } fn view() { text(\"x\").on(\"key:/\", Fn(\"h\")) }",
++            "fn h(ctx, event) { () } fn view() { text(\"x\").on(\"key:-\", Fn(\"h\")) }",
++            "fn h(ctx, payload) { () } fn view() { text(\"x\").on_key_value(\"escape\", Fn(\"h\"), ()) }",
++        ] {
++            let mut runtime = crate::RuntimeEngine::new();
++            let compiled = runtime.compile_named("keys.rhai", script).unwrap();
++            runtime.render(&compiled).unwrap_or_else(|error| {
++                panic!("script should register its key handler: {script}\n{error}")
++            });
++        }
++    }
++
++    #[test]
++    fn key_handler_names_reject_invalid_key_names() {
++        for script in [
++            "fn h(ctx, payload) { () } fn view() { text(\"x\").on_key_value(\"\", Fn(\"h\"), ()) }",
++            "fn h(ctx, payload) { () } fn view() { text(\"x\").on_key_value(\"a b\", Fn(\"h\"), ()) }",
++            "fn h(ctx, payload) { () } fn view() { text(\"x\").on_key_value(\"héllo\", Fn(\"h\"), ()) }",
++            "fn h(ctx, payload) { () } fn view() { text(\"x\").on_key_value(\"a:b\", Fn(\"h\"), ()) }",
++            "fn h(ctx, event) { () } fn view() { text(\"x\").on(\"key:\", Fn(\"h\")) }",
++            "fn h(ctx, event) { () } fn view() { text(\"x\").on(\"key:a b\", Fn(\"h\")) }",
++        ] {
++            let mut runtime = crate::RuntimeEngine::new();
++            let compiled = runtime.compile_named("keys.rhai", script).unwrap();
++            assert!(
++                runtime.render(&compiled).is_err(),
++                "script should be rejected: {script}"
++            );
++        }
++    }
+ }
+diff --git a/docs/actions-and-keybindings.md b/docs/actions-and-keybindings.md
+index cba5332..ff15e51 100644
+--- a/docs/actions-and-keybindings.md
++++ b/docs/actions-and-keybindings.md
+@@ -44,3 +44,23 @@ explicit left-to-right unified patch. None is global. A Rust Host can bind or
+ dispatch `gpui_rhai::RevealDocumentLine { side, line }`; CodeViewer requires
+ `side: None`, while DiffViewer accepts `Some(DiffSide::Left)` or
+ `Some(DiffSide::Right)`.
++
++## Node key handlers
++
++Beside host-bound actions, an element can bind single keys directly and
++receive them while it (or a descendant) holds focus:
++
++```rhai
++canvas(scene)
++    .on_key_value("escape", Fn("close"), ())
++    .on_key_value("?", Fn("help"), ())
++    .on("key:-", Fn("zoom_out"))
++```
++
++The name is the gpui key string, lowercased: named keys (`escape`, `left`,
++`enter`) as well as single printable punctuation keys (`?`, `/`, `[`, `]`,
++`-`, `=`), which gpui delivers as their literal key string. The `:` character
++is reserved as the event namespace separator and cannot appear in a key name.
++Modifiers are not part of node key handlers; chorded shortcuts
++(`alt-left`, `cmd-s`) belong to host-bound actions. `enter` and `space`
++additionally activate the node's `click` handlers.

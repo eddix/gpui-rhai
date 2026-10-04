@@ -1,0 +1,4 @@
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.33s
+     Running `target/debug/gpui-rhai --root /tmp/gpui-rhai-018-cli.ZAwJig embed`
+1 file change(s):
+- update src/gpui_rhai_embedded.rs

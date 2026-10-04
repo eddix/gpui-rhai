@@ -1,0 +1,41 @@
+{
+  "crate": "gpui-pre",
+  "version": "0.3.7",
+  "files": {
+    "style.rs": {
+      "sha256": "b4a0e838fc7050cef25f71aae623cf86010c2ec361600479d24ce1aaff91bdc1",
+      "excerpts": [
+        {
+          "start": 580,
+          "end": 603,
+          "text": "580: pub struct HighlightStyle {\n581:     /// The color of the text\n582:     pub color: Option<Hsla>,\n583: \n584:     /// The font weight, e.g. bold\n585:     pub font_weight: Option<FontWeight>,\n586: \n587:     /// The font style, e.g. italic\n588:     pub font_style: Option<FontStyle>,\n589: \n590:     /// The background color of the text\n591:     pub background_color: Option<Hsla>,\n592: \n593:     /// The underline style of the text\n594:     pub underline: Option<UnderlineStyle>,\n595: \n596:     /// The underline style of the text\n597:     pub strikethrough: Option<StrikethroughStyle>,\n598: \n599:     /// Similar to the CSS `opacity` property, this will cause the text to be less vibrant.\n600:     pub fade_out: Option<f32>,\n601: }\n602: \n603: impl Eq for HighlightStyle {}"
+        }
+      ]
+    },
+    "elements/text.rs": {
+      "sha256": "3ffcc422356924ae4d6eef864421f56588be65cd931c8fe35d7e5e6438c23346",
+      "excerpts": [
+        {
+          "start": 478,
+          "end": 526,
+          "text": "478:     }\n479: \n480:     /// Override the font family for specific byte ranges of the text.\n481:     ///\n482:     /// This is resolved lazily at layout time, so the overrides are applied\n483:     /// on top of the inherited text style from the parent element.\n484:     /// Can be combined with [`with_highlights`](Self::with_highlights).\n485:     ///\n486:     /// The overrides must be sorted by range start and non-overlapping.\n487:     /// Each override range must fall on character boundaries.\n488:     pub fn with_font_family_overrides(\n489:         mut self,\n490:         overrides: impl IntoIterator<Item = (Range<usize>, SharedString)>,\n491:     ) -> Self {\n492:         self.delayed_font_family_overrides = Some(\n493:             overrides\n494:                 .into_iter()\n495:                 .inspect(|(range, _)| {\n496:                     debug_assert!(self.text.is_char_boundary(range.start));\n497:                     debug_assert!(self.text.is_char_boundary(range.end));\n498:                 })\n499:                 .collect(),\n500:         );\n501:         self\n502:     }\n503: \n504:     fn apply_font_family_overrides(\n505:         runs: &mut [TextRun],\n506:         overrides: &[(Range<usize>, SharedString)],\n507:     ) {\n508:         let mut byte_offset = 0;\n509:         let mut override_idx = 0;\n510:         for run in runs.iter_mut() {\n511:             let run_end = byte_offset + run.len;\n512:             while override_idx < overrides.len() && overrides[override_idx].0.end <= byte_offset {\n513:                 override_idx += 1;\n514:             }\n515:             if override_idx < overrides.len() {\n516:                 let (ref range, ref family) = overrides[override_idx];\n517:                 if byte_offset >= range.start && run_end <= range.end {\n518:                     run.font.family = family.clone();\n519:                 }\n520:             }\n521:             byte_offset = run_end;\n522:         }\n523:     }\n524: \n525:     /// Set the text runs for this piece of text.\n526:     pub fn with_runs(mut self, runs: Vec<TextRun>) -> Self {"
+        }
+      ]
+    },
+    "text_system.rs": {
+      "sha256": "b39e05a8a8f7b36e13ffe1211d2c2993f68f2ce4cada87ad3414492a42e927b4",
+      "excerpts": [
+        {
+          "start": 1228,
+          "end": 1243,
+          "text": "1228: pub struct TextRun {\n1229:     /// A number of utf8 bytes\n1230:     pub len: usize,\n1231:     /// The font to use for this run.\n1232:     pub font: Font,\n1233:     /// The color\n1234:     pub color: Hsla,\n1235:     /// The background color (if any)\n1236:     pub background_color: Option<Hsla>,\n1237:     /// The underline style (if any)\n1238:     pub underline: Option<UnderlineStyle>,\n1239:     /// The strikethrough style (if any)\n1240:     pub strikethrough: Option<StrikethroughStyle>,\n1241: }\n1242: \n1243: #[cfg(all(target_os = \"macos\", test))]"
+        },
+        {
+          "start": 1292,
+          "end": 1310,
+          "text": "1292: pub struct Font {\n1293:     /// The font family name.\n1294:     ///\n1295:     /// The special name \".SystemUIFont\" is used to identify the system UI font, which varies based on platform.\n1296:     pub family: SharedString,\n1297: \n1298:     /// The font features to use.\n1299:     pub features: FontFeatures,\n1300: \n1301:     /// The fallbacks fonts to use.\n1302:     pub fallbacks: Option<FontFallbacks>,\n1303: \n1304:     /// The font weight.\n1305:     pub weight: FontWeight,\n1306: \n1307:     /// The font style.\n1308:     pub style: FontStyle,\n1309: }\n1310: "
+        }
+      ]
+    }
+  }
+}

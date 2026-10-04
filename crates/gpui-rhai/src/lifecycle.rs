@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
+use crate::state::topmost_paths;
 use rhai::Dynamic;
 use thiserror::Error;
 
@@ -245,6 +246,7 @@ impl ScriptLifecycle {
                 &self.compiled,
                 runtime_snapshot.component_state().clone(),
                 &retained,
+                &root,
             )?;
             self.retain_geometry_nodes(&retained)?;
             self.validate_signal_bindings(&root)?;
@@ -340,6 +342,7 @@ impl ScriptLifecycle {
                 &self.compiled,
                 runtime_snapshot.component_state().clone(),
                 &retained,
+                &root,
             )?;
             self.retain_geometry_nodes(&retained)?;
             self.validate_signal_bindings(&root)?;
@@ -486,6 +489,7 @@ impl ScriptLifecycle {
                 &self.compiled,
                 runtime_snapshot.component_state().clone(),
                 &retained,
+                &root,
             )?;
             self.retain_geometry_nodes(&retained)?;
             self.validate_signal_bindings(&root)?;
@@ -918,6 +922,7 @@ impl ScriptLifecycle {
                 &candidate,
                 snapshot.component_state().clone(),
                 &retained,
+                &root,
             )?;
             self.retain_geometry_nodes(&retained)?;
             self.validate_signal_bindings(&root)?;
@@ -1021,6 +1026,7 @@ impl ScriptLifecycle {
                 &candidate,
                 snapshot.component_state().clone(),
                 &retained,
+                &root,
             )?;
             self.resume_runtime_mechanisms(now, elapsed)?;
             self.retain_geometry_nodes(&retained)?;
@@ -1340,6 +1346,7 @@ impl ScriptLifecycle {
         candidate: &CompiledUi,
         previous_state: crate::StateStore,
         retained: &crate::RetainedUiTree,
+        root: &UiNode,
     ) -> Result<(), LifecycleError> {
         let declarations = RetainedDeclarations {
             effects: engine.component_effects_in_scope(&self.root_path),
@@ -1347,6 +1354,10 @@ impl ScriptLifecycle {
             signals: engine.component_signals_in_scope(&self.root_path),
             element_refs: self.element_ref_bindings(engine, retained)?,
         };
+        self.runtime
+            .try_borrow_mut()
+            .map_err(|_| LifecycleError::Borrowed)?
+            .retain_virtual_read_contributions(&self.root_path, &root.virtual_read_contributions());
         self.reconcile_effect_candidate(engine, candidate, declarations, Some(previous_state))
     }
 
@@ -1398,13 +1409,12 @@ impl ScriptLifecycle {
             runtime
                 .signals
                 .reconcile(&self.root_path, declarations.signals);
-            let geometry_readers = runtime
+            runtime
                 .element_refs
                 .reconcile(&self.root_path, declarations.element_refs);
+            let geometry_bindings = runtime.element_refs.geometry_bindings(&self.root_path);
             let geometry = runtime.geometry_for(self.presentation_scope());
-            for (node, readers) in geometry_readers {
-                geometry.register_readers(node, readers);
-            }
+            geometry.sync_ref_readers(&self.root_path, geometry_bindings);
             runtime.virtual_requests.retain(&virtual_collections);
         }
         for (descriptor, scope) in plan.start_descriptors() {
@@ -1724,18 +1734,6 @@ pub enum LifecycleError {
     Accessibility(#[from] crate::AccessibilityError),
 }
 
-fn topmost_paths(paths: &BTreeSet<ComponentInstancePath>) -> Vec<ComponentInstancePath> {
-    paths
-        .iter()
-        .filter(|path| {
-            !paths
-                .iter()
-                .any(|candidate| *path != candidate && path.is_within(candidate))
-        })
-        .cloned()
-        .collect()
-}
-
 fn collect_removed_exit_nodes<'a>(
     node: &'a UiNode,
     id: crate::NodeId,
@@ -1792,7 +1790,8 @@ mod tests {
     use crate::{
         AssetData, AsyncCapabilityHandler, CapabilityDescriptor, CapabilityId, CapabilityMethod,
         ExecutionOperation, InMemoryAssetProvider, OpaqueHandle, StateField,
-        SubscriptionCapabilityHandler, SubscriptionWork, TaskWork, UiValue, ValueSchema,
+        SubscriptionCapabilityHandler, SubscriptionWork, TaskWork, UiNodeKind, UiValue,
+        ValueSchema,
     };
     use semver::{Version, VersionReq};
     use std::time::{Duration, Instant};
@@ -3814,5 +3813,152 @@ mod tests {
             error.contains("subscriptions must be started by a declarative component effect"),
             "unexpected error: {error}"
         );
+    }
+
+    fn assert_table_panel_marker(
+        lifecycle: &ScriptLifecycle,
+        runtime: &UiRuntimeState,
+        track: bool,
+        internal: bool,
+        count: i32,
+    ) {
+        let root = lifecycle.root().unwrap();
+        let panel = if track {
+            root
+        } else {
+            let UiNodeKind::Box { children } = root.kind() else {
+                panic!("expected track")
+            };
+            &children[0]
+        };
+        assert_eq!(
+            panel.style().base.width,
+            Some(crate::LayoutLength::Definite(
+                crate::Length::pixels(123.0).unwrap()
+            ))
+        );
+        if track {
+            let Some(crate::table_layout::TableLayout::Columns(columns)) = panel.table_layout()
+            else {
+                panic!("track marker lost: internal={internal}, count={count}")
+            };
+            let plan = crate::table_layout::resolve(columns.as_slice(), 400.0, &runtime.signals);
+            assert_eq!(
+                plan.widths,
+                vec![120.0 + if internal { f64::from(count) } else { 0.0 }, 140.0]
+            );
+        } else {
+            assert_eq!(
+                panel.table_column(),
+                Some(if internal {
+                    usize::try_from(count % 2).unwrap()
+                } else {
+                    0
+                })
+            );
+        }
+        let UiNodeKind::Box { children } = panel.kind() else {
+            panic!("expected panel")
+        };
+        assert!(
+            matches!(children[0].kind(), UiNodeKind::Text { text } if text.as_str() == count.to_string())
+        );
+    }
+
+    fn assert_table_modifier_replay(track: bool) {
+        for internal in [true, false] {
+            let modifier = if track {
+                ".with_table_track(columns(120), [])"
+            } else {
+                ".with_table_column(0)"
+            };
+            let internal_modifier = if track {
+                ".with_table_track(columns(120 + count), [])"
+            } else {
+                ".with_table_column(count % 2)"
+            };
+            let panel = format!(
+                "render_component(\"tests/table_panel\", #{{key:\"panel\"}}){}.with_style(style().width(px(123)))",
+                if internal { "" } else { modifier }
+            );
+            let source = r#"
+                define_component(#{
+                    metadata:#{id:"tests/table_panel","export":"Panel",version:"0.1.8",
+                        runtime_api:#{min_inclusive:2,max_exclusive:3},dependencies:[],capabilities:#{}},
+                    schema:#{props:#{key:#{schema:#{type:"string"},required:true,sensitive:false}},
+                        state:#{fields:#{count:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}}}},
+                        events:#{},slots:#{},parts:[]},render:Fn("render_panel")
+                });
+                fn columns(width) { [#{key:"a",width:#{kind:"fixed",value:width}},
+                    #{key:"b",width:#{kind:"fixed",value:140}}] }
+                fn render_panel(ctx, props) {
+                    let count = ctx.get_state("count");
+                    if count < 0 { throw "rejected panel candidate"; }
+                    column([text(`${count}`)])INTERNAL
+                }
+                fn view(ctx) { VIEW }
+            "#
+            .replace("INTERNAL", if internal { internal_modifier } else { "" })
+            .replace(
+                "VIEW",
+                &if track { panel } else { format!("column([{panel}]).with_table_track(columns(120), [])") },
+            );
+            let mut engine = RuntimeEngine::new();
+            let compiled = engine
+                .compile_named("table-modifier.rhai", &source)
+                .unwrap();
+            let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+            let root = ComponentInstancePath::root("App", format!("table-{track}-{internal}"));
+            let component = root.child("Panel", "panel");
+            let mut lifecycle = ScriptLifecycle::new(
+                compiled,
+                Rc::clone(&runtime),
+                root,
+                Some("main".into()),
+                BTreeMap::new(),
+                &ComponentStateSchema::default(),
+            )
+            .unwrap();
+            lifecycle.start(&mut engine).unwrap();
+            assert_table_panel_marker(&lifecycle, &runtime.borrow(), track, internal, 0);
+            for count in [1, 2] {
+                runtime
+                    .borrow_mut()
+                    .set_component_state_from_host(
+                        &component,
+                        "count",
+                        UiValue::Integer(i64::from(count)),
+                    )
+                    .unwrap();
+                assert_eq!(
+                    runtime.borrow().dirty_components(),
+                    &BTreeSet::from([component.clone()])
+                );
+                assert!(lifecycle.render_dirty(&mut engine).unwrap());
+                assert_table_panel_marker(&lifecycle, &runtime.borrow(), track, internal, count);
+            }
+            runtime
+                .borrow_mut()
+                .set_component_state_from_host(&component, "count", UiValue::Integer(-1))
+                .unwrap();
+            assert!(lifecycle.render_dirty(&mut engine).is_err());
+            assert_table_panel_marker(&lifecycle, &runtime.borrow(), track, internal, 2);
+            runtime
+                .borrow_mut()
+                .set_component_state_from_host(&component, "count", UiValue::Integer(3))
+                .unwrap();
+            assert!(lifecycle.render_dirty(&mut engine).unwrap());
+            assert_table_panel_marker(&lifecycle, &runtime.borrow(), track, internal, 3);
+        }
+    }
+
+    #[test]
+    fn table_modifiers_replay_track_across_incremental_updates_and_failed_candidates() {
+        assert_table_modifier_replay(true);
+    }
+
+    #[test]
+    fn table_modifiers_replay_column_across_incremental_updates_and_failed_candidates() {
+        assert_table_modifier_replay(false);
     }
 }

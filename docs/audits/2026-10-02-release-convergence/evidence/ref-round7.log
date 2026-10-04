@@ -1,0 +1,20 @@
+   Compiling gpui-rhai v0.1.8 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai)
+   Compiling audit-geometry-reads-round7 v0.0.0 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/docs/audits/2026-10-02-interaction-0.1.8-round7/geometry-reads)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 13.32s
+     Running unittests src/lib.rs (tests/native-keyboard/target/debug/deps/audit_geometry_reads_round7-a632586768fc2423)
+
+running 5 tests
+test tests::round7_existing_node_geometry_change_control ... same-node target=Some(180.0), reader=["180.0"]
+ok
+test tests::round7_formal_virtual_row_unknown_geometry_has_executable_owner_control ... formal virtual row initial ref→geometry readout=["120.0"]
+ok
+test tests::round7_pending_ref_wakes_formal_reader_when_producer_appears ... appearance target=Some(120.0), reader=["120.0"]
+ok
+test tests::round7_ref_rebinding_to_new_node_preserves_reader ... ref target identity changed Some(4) -> Some(6)
+replacement target=Some(180.0), reader=["180.0"]
+ok
+test tests::round7_ref_removal_notifies_reader ... removed target=None, reader=["pending"]
+ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.89s
+

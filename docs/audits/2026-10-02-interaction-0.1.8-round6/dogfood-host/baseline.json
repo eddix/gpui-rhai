@@ -1,0 +1,6 @@
+{
+  "gpui_rhai": "83b19b1d2bc742523f4b44caa8dbe42f6b83637c",
+  "dogfood": "e33a61c4ebc8a6cd6de7ca55b36896452ee92685",
+  "dogfood_status": "",
+  "verification": "read-only audit; isolated snapshot fixture, no actual filesystem scan, no GUI launch"
+}

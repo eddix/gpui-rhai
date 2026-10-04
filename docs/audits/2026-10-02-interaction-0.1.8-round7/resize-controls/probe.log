@@ -1,0 +1,41 @@
+   Compiling audit-table-round7 v0.0.0 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/docs/audits/2026-10-02-interaction-0.1.8-round7/resize-controls)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.12s
+     Running probe.rs (tests/native-keyboard/target/debug/deps/table_round7-5235af50a29760c4)
+
+running 4 tests
+test round7_fill_height_live_transitions_keep_viewport ... fill mode=1: initial=310,actual=310
+fill mode=2: initial=310,actual=310
+fill mode=3: initial=310,actual=310
+fill mode=0: initial=310,actual=310
+ok
+test round7_live_states_preserve_height_scroll_and_controlled_width ... scroll root direct semantic children=[("row", Some(GeometryBounds { x: 1.0, y: 51.0, width: 298.0, height: 30.0 })), ("row", Some(GeometryBounds { x: 1.0, y: 81.0, width: 298.0, height: 30.0 })), ("row", Some(GeometryBounds { x: 1.0, y: 111.0, width: 298.0, height: 30.0 })), ("row", Some(GeometryBounds { x: 1.0, y: 141.0, width: 298.0, height: 30.0 })), ("row", Some(GeometryBounds { x: 1.0, y: 171.0, width: 298.0, height: 30.0 })), ("row", Some(GeometryBounds { x: 1.0, y: 201.0, width: 298.0, height: 30.0 })), ("row", Some(GeometryBounds { x: 1.0, y: 231.0, width: 298.0, height: 30.0 }))]
+initial horizontal scroll A.x 1 -> 1
+mode=1 table=GeometryBounds { x: 0.0, y: 50.0, width: 300.0, height: 212.0 }, A=GeometryBounds { x: 1.0, y: 50.5, width: 128.0, height: 30.0 }, C=GeometryBounds { x: 269.0, y: 50.5, width: 160.0, height: 30.0 }
+mode=2 table=GeometryBounds { x: 0.0, y: 50.0, width: 300.0, height: 212.0 }, A=GeometryBounds { x: 1.0, y: 50.5, width: 128.0, height: 30.0 }, C=GeometryBounds { x: 269.0, y: 50.5, width: 160.0, height: 30.0 }
+mode=3 table=GeometryBounds { x: 0.0, y: 50.0, width: 300.0, height: 212.0 }, A=GeometryBounds { x: 1.0, y: 50.5, width: 128.0, height: 30.0 }, C=GeometryBounds { x: 269.0, y: 50.5, width: 160.0, height: 30.0 }
+mode=0 table=GeometryBounds { x: 0.0, y: 50.0, width: 300.0, height: 212.0 }, A=GeometryBounds { x: 1.0, y: 50.5, width: 128.0, height: 30.0 }, C=GeometryBounds { x: 269.0, y: 50.5, width: 160.0, height: 30.0 }
+
+thread 'round7_live_states_preserve_height_scroll_and_controlled_width' (3023954) panicked at probe.rs:207:2:
+wide Table must expose a usable horizontal scroll range
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test round7_rtl_shared_viewport_can_reveal_overflowing_last_column ... RTL mode=0: root.x=0, C before.x=-121,after+160.x=-121,after-160.x=-121
+RTL mode=1: root.x=0, C before.x=-121,after+160.x=-121,after-160.x=-121
+RTL mode=2: root.x=0, C before.x=-121,after+160.x=-121,after-160.x=-121
+RTL mode=3: root.x=0, C before.x=-121,after+160.x=-121,after-160.x=-121
+
+thread 'round7_rtl_shared_viewport_can_reveal_overflowing_last_column' (3023967) panicked at probe.rs:221:2:
+logical end content must be reachable by horizontal scrolling in every state
+FAILED
+test round7_wheel_driver_control_scrolls_a_wide_direct_child ... wheel driver positive control: before.x=0,after.x=-80
+ok
+
+failures:
+
+failures:
+    round7_live_states_preserve_height_scroll_and_controlled_width
+    round7_rtl_shared_viewport_can_reveal_overflowing_last_column
+
+test result: FAILED. 2 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.75s
+
+error: test failed, to rerun pass `--test table_round7`

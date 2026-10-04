@@ -1,0 +1,39 @@
+    Checking gpui-rhai v0.1.8 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai)
+    Checking gpui-rhai-cli v0.1.8 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai-cli)
+    Checking gpui-rhai-native-keyboard-tests v0.0.0 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard)
+error: useless use of `format!`
+  --> tests/window_command_origin.rs:41:5
+   |
+41 | /     format!(r#"
+42 | | fn init(ctx) {{ INIT }}
+43 | | fn open_child(ctx,v) {{ ctx.open_window("child","Child",400,300,false); }}
+44 | | fn queued(ctx,v) {{ QUEUED }}
+...  |
+54 | | }}
+55 | | "#).replace("INIT", if init_open { "if ctx.window_id()==\"domain\" { ctx.open_window(\"child\",\"Child\",400,300,false); ctx.focus...
+   | |___^
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#useless_format
+   = note: `-D clippy::useless-format` implied by `-D warnings`
+   = help: to override `-D warnings` add `#[allow(clippy::useless_format)]`
+help: consider using `.to_string()`
+   |
+41 ~     r#"
+42 + fn init(ctx) { INIT }
+43 + fn open_child(ctx,v) { ctx.open_window("child","Child",400,300,false); }
+44 + fn queued(ctx,v) { QUEUED }
+45 + fn fail(ctx,v) { throw "independent delivery failure"; }
+46 + fn view(ctx) {
+47 +  if ctx.window_id()=="domain" {
+48 +   timeout("a-first",100,false,Fn("FIRST"),());
+49 +   timeout("m-middle",100,false,Fn("SECOND"),());
+50 +   timeout("z-last-failure",100,false,Fn("fail"),());
+51 +  }
+52 +  column([text("Open child").test_id("open-child").on_click(Fn("open_child")),
+53 +   text("Open late").test_id("open-late").on_click(Fn("queued"))])
+54 + }
+55 ~ "#.to_string().replace("INIT", if init_open { "if ctx.window_id()==\"domain\" { ctx.open_window(\"child\",\"Child\",400,300,false); ctx.focus_window(\"child\"); }" } else { "" })
+   |
+
+error: could not compile `gpui-rhai-native-keyboard-tests` (test "window_command_origin") due to 1 previous error
+warning: build failed, waiting for other jobs to finish...

@@ -1,0 +1,34 @@
+PR snapshot commit=3209039e2d792dde9f65daa7eb2600cd90a3e3f6
+   Compiling gpui-rhai v0.1.8 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/docs/audits/2026-10-01-dogfooding-pr-triage/pr-99/pr99-snapshot-2a4oyfu8/source/crates/gpui-rhai)
+   Compiling audit-pr99-theme-characterization v0.0.0 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/docs/audits/2026-10-01-dogfooding-pr-triage/pr-99/pr99-snapshot-2a4oyfu8/harness)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 35.46s
+     Running probe.rs (tests/native-keyboard/target/debug/deps/pr99_theme_characterization-c6363ff1ffd9a828)
+
+running 3 tests
+test body_read_restarts_effect_as_pr_docs_claim ... explicit_deps=false, before=("Dark", "1:dark"), after=("Light", "1:dark")
+
+thread 'body_read_restarts_effect_as_pr_docs_claim' (1511464) panicked at probe.rs:42:103:
+assertion `left == right` failed
+  left: "1:dark"
+ right: "2:light"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test explicit_render_dependency_control ... explicit_deps=true, before=("Dark", "1:dark"), after=("Light", "2:light")
+ok
+test initial_system_light_matches_script_resolved_theme ... Host effective theme=Light,script resolved mode=dark
+
+thread 'initial_system_light_matches_script_resolved_theme' (1511489) panicked at probe.rs:28:97:
+assertion `left == right` failed: script resolver must learn initial native Light appearance
+  left: "dark"
+ right: "light"
+FAILED
+
+failures:
+
+failures:
+    body_read_restarts_effect_as_pr_docs_claim
+    initial_system_light_matches_script_resolved_theme
+
+test result: FAILED. 1 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.86s
+
+error: test failed, to rerun pass `--test pr99_theme_characterization`

@@ -1,0 +1,62 @@
+[
+  {
+    "case": "default-light.en.ltr",
+    "raw_size": [
+      1962,
+      1504
+    ],
+    "rift_size": {
+      "height": 752.0,
+      "width": 981.0
+    },
+    "canonical_ready": false
+  },
+  {
+    "case": "default-light.en.loading",
+    "raw_size": [
+      1960,
+      1504
+    ],
+    "rift_size": {
+      "height": 752.0,
+      "width": 981.0
+    },
+    "canonical_ready": true
+  },
+  {
+    "case": "default-light.en.empty",
+    "raw_size": [
+      1960,
+      1504
+    ],
+    "rift_size": {
+      "height": 752.0,
+      "width": 981.0
+    },
+    "canonical_ready": true
+  },
+  {
+    "case": "default-dark.en.selected",
+    "raw_size": [
+      1960,
+      1504
+    ],
+    "rift_size": {
+      "height": 752.0,
+      "width": 980.0
+    },
+    "canonical_ready": true
+  },
+  {
+    "case": "catppuccin-mocha.ar.rtl",
+    "raw_size": [
+      1962,
+      1504
+    ],
+    "rift_size": {
+      "height": 752.0,
+      "width": 981.0
+    },
+    "canonical_ready": false
+  }
+]

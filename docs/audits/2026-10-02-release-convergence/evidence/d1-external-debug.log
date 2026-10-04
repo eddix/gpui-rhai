@@ -1,0 +1,15 @@
+   Compiling gpui-rhai v0.1.8 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 12.14s
+     Running tests/host_execution_policy.rs (target/debug/deps/host_execution_policy-5ab48ae9f87b95a2)
+
+running 6 tests
+test builder_policy_precedes_extensions_and_zero_never_means_unlimited ... ok
+test parser_depth_defaults_and_independent_host_configuration_cover_all_constructors ... ok
+test nested_and_sibling_components_still_share_a_nondefault_round_quota ... ok
+test restricted_imports_obey_quota_and_failed_reload_preserves_active_policy ... ok
+test retained_component_and_delayed_delivery_begin_fresh_nondefault_rounds ... ok
+same finite workload: default=1000001, raised=1350012, lowered=500001, raised_duration_us=297070 (quota is not a frame guarantee)
+test same_finite_work_exceeds_default_and_obeys_raised_and_lowered_quotas ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.72s
+

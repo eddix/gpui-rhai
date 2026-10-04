@@ -286,45 +286,24 @@ fn target_handler(node: &gpui_rhai::UiNode, event: &str) -> (ScriptCallback, UiV
     )
 }
 
-fn assert_table_column_width_contract(columns: &[gpui_rhai::UiNode]) {
-    assert_eq!(columns.len(), 4);
-    assert_eq!(
-        columns[0].style().base.width,
-        Some(gpui_rhai::Length::Pixels(120.0).into())
-    );
-    assert_eq!(columns[0].style().base.flex_shrink, Some(false));
-    assert_eq!(columns[1].style().base.width, None);
-    assert_eq!(
-        columns[1].style().base.flex_basis,
-        Some(gpui_rhai::Length::Relative(0.0).into())
-    );
-    assert_eq!(columns[1].style().base.flex_grow, None);
-    assert_eq!(columns[1].style().base.flex_grow_weight, Some(2.0));
-    assert_eq!(
-        columns[2].style().base.width,
-        Some(gpui_rhai::Length::Relative(0.3).into())
-    );
-    assert_eq!(columns[2].style().base.flex_shrink, Some(false));
-    assert_eq!(
-        columns[3].style().base.width,
-        Some(gpui_rhai::Length::Pixels(90.0).into())
-    );
-    assert_eq!(columns[3].style().base.flex_shrink, Some(false));
-}
-
-fn assert_resizable_table_width_signals(columns: &[gpui_rhai::UiNode]) {
-    assert!(columns[..columns.len() - 1].iter().all(|column| {
-        matches!(
-            column.signal_bindings().next(),
-            Some((gpui_rhai::SignalProperty::WidthOverride, signal))
-                if signal.id().kind() == gpui_rhai::SignalKind::OptionalFloat
-        ) && column.signal_bindings().count() == 1
-    }));
-    assert!(
-        columns
-            .last()
-            .is_some_and(|column| column.signal_bindings().next().is_none())
-    );
+fn assert_table_columns_delegate_width_to_native_track(columns: &[gpui_rhai::UiNode]) {
+    // Rhai cells remain ordinary compositions. The root native Table plan
+    // owns viewport-based widths and sampling, rather than a second set of
+    // per-cell relative/flex rules or width-override signal consumers.
+    for column in columns {
+        assert_eq!(column.style().base.width, None);
+        assert_eq!(column.style().base.flex_basis, None);
+        assert_eq!(column.style().base.flex_grow, None);
+        assert_eq!(column.style().base.flex_grow_weight, None);
+        assert_eq!(column.style().base.flex_shrink, Some(false));
+        assert!(
+            column.signal_bindings().all(|(property, _)| !matches!(
+                property,
+                gpui_rhai::SignalProperty::Width | gpui_rhai::SignalProperty::WidthOverride
+            )),
+            "native Table plan must be the only column-width consumer"
+        );
+    }
 }
 
 fn assert_resizable_table_autofit_measurements(
@@ -332,42 +311,118 @@ fn assert_resizable_table_autofit_measurements(
     cells: &[gpui_rhai::UiNode],
 ) {
     assert!(
-        headers[..3]
+        headers
             .iter()
             .all(|header| contains_primitive(header, "gpui_rhai.intrinsic_text_measure"))
     );
-    assert!(!contains_primitive(
-        &headers[3],
-        "gpui_rhai.intrinsic_text_measure"
-    ));
     assert!(
-        cells[..3]
+        cells
             .iter()
             .all(|cell| contains_primitive(cell, "gpui_rhai.intrinsic_text_measure"))
     );
-    assert!(!contains_primitive(
-        &cells[3],
-        "gpui_rhai.intrinsic_text_measure"
-    ));
+    for (header, cell) in headers.iter().zip(cells) {
+        let header_group = find_primitive(header, "gpui_rhai.intrinsic_text_measure")
+            .unwrap()
+            .props
+            .get("group");
+        let body_group = find_primitive(cell, "gpui_rhai.intrinsic_text_measure")
+            .unwrap()
+            .props
+            .get("group");
+        assert!(
+            matches!(header_group, Some(gpui_rhai::PrimitiveValue::Signal(signal))
+            if signal.id().kind() == gpui_rhai::SignalKind::OptionalFloat)
+        );
+        assert_eq!(
+            header_group, body_group,
+            "auto-fit must measure the same native column group"
+        );
+    }
 }
 
-fn assert_table_resize_handles(headers: &[gpui_rhai::UiNode]) {
-    for header in &headers[..3] {
-        let UiNodeKind::Box { children } = header.kind() else {
+fn assert_table_resize_source_widths(headers: &[gpui_rhai::UiNode], widths: &[(&str, i64)]) {
+    let handles = headers
+        .iter()
+        .flat_map(|header| resize_handles(header))
+        .collect::<Vec<_>>();
+    assert_eq!(handles.len(), widths.len());
+    for (handle, (kind, value)) in handles.iter().zip(widths) {
+        let UiNodeKind::Custom { primitive } = handle.kind() else {
             unreachable!()
         };
-        assert!(matches!(children.last().map(gpui_rhai::UiNode::kind),
-            Some(UiNodeKind::Custom { primitive })
-                if primitive.primitive.as_str() == "gpui_rhai.column_resize"));
+        assert_eq!(
+            primitive.props.get("source_kind"),
+            Some(&gpui_rhai::PrimitiveValue::Data(UiValue::String(
+                (*kind).to_owned()
+            )))
+        );
+        assert_eq!(
+            primitive.props.get("source_value"),
+            Some(&gpui_rhai::PrimitiveValue::Data(UiValue::Integer(*value)))
+        );
+        assert!(
+            matches!(primitive.props.get("signal"),Some(gpui_rhai::PrimitiveValue::Signal(signal))
+            if signal.id().kind() == gpui_rhai::SignalKind::OptionalFloat)
+        );
     }
-    let UiNodeKind::Box { children } = headers[3].kind() else {
+}
+
+fn resize_handles(header: &gpui_rhai::UiNode) -> Vec<&gpui_rhai::UiNode> {
+    let UiNodeKind::Box { children } = header.kind() else {
         unreachable!()
     };
-    assert!(
-        !children
-            .iter()
-            .any(|node| matches!(node.kind(), UiNodeKind::Custom { .. }))
-    );
+    children
+        .iter()
+        .filter(|node| {
+            matches!(node.kind(), UiNodeKind::Custom { primitive }
+                if primitive.primitive.as_str() == "gpui_rhai.column_resize")
+        })
+        .collect()
+}
+
+fn assert_table_resize_handles(headers: &[gpui_rhai::UiNode], titles: &[&str]) {
+    // Inline edges resolve against the renderer direction, including RTL.
+    let edge = |node: &gpui_rhai::UiNode, side: &str| {
+        let style = &node.style().base;
+        assert_eq!(style.position, Some(gpui_rhai::PositionMode::Absolute));
+        if side == "start" {
+            assert_eq!(
+                style.inset_start,
+                Some(gpui_rhai::LayoutLength::Signed(
+                    gpui_rhai::SignedLength::Pixels(-4.0)
+                ))
+            );
+        } else {
+            assert_eq!(
+                style.inset_end,
+                Some(gpui_rhai::LayoutLength::Definite(
+                    gpui_rhai::Length::Pixels(0.0)
+                ))
+            );
+        }
+    };
+    assert!(resize_handles(&headers[0]).is_empty());
+    for (index, header) in headers.iter().enumerate().skip(1) {
+        let handles = resize_handles(header);
+        let last = index + 1 == headers.len();
+        assert_eq!(handles.len(), if last { 2 } else { 1 }, "header {index}");
+        // The handle at the left edge of cell i resizes column i - 1.
+        assert_eq!(
+            handles[0].attributes().get("label"),
+            Some(&UiValue::String(format!(
+                "Resize {} column",
+                titles[index - 1]
+            )))
+        );
+        edge(handles[0], "start");
+        if last {
+            assert_eq!(
+                handles[1].attributes().get("label"),
+                Some(&UiValue::String(format!("Resize {} column", titles[index])))
+            );
+            edge(handles[1], "end");
+        }
+    }
 }
 
 fn assert_table_has_no_width_signals(root: &gpui_rhai::UiNode) {
@@ -434,6 +489,19 @@ fn contains_primitive(node: &gpui_rhai::UiNode, id: &str) -> bool {
             contains_primitive(child, id) || contains_primitive(fallback, id)
         }
         _ => false,
+    }
+}
+
+fn find_primitive<'node>(
+    node: &'node gpui_rhai::UiNode,
+    id: &str,
+) -> Option<&'node gpui_rhai::PrimitiveNode> {
+    match node.kind() {
+        UiNodeKind::Custom { primitive } if primitive.primitive.as_str() == id => Some(primitive),
+        UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => {
+            children.iter().find_map(|child| find_primitive(child, id))
+        }
+        _ => None,
     }
 }
 
@@ -2583,6 +2651,10 @@ fn official_date_picker_consumes_locale_and_strict_iso_values() {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "Keep the complete source-backed Table specimen and its composition assertions together"
+)]
 fn official_table_is_public_data_backed_rhai_composition() {
     let table_id = ModuleId::parse("components/table").unwrap();
     let skeleton_id = ModuleId::parse("components/skeleton").unwrap();
@@ -2666,11 +2738,16 @@ fn official_table_is_public_data_backed_rhai_composition() {
         cell.style().base.background.as_ref(),
         Some(gpui_rhai::ColorValue::Token(token)) if token == "table.selection"
     )));
-    assert_table_column_width_contract(header_cells);
-    assert_table_column_width_contract(cells);
-    assert_resizable_table_width_signals(header_cells);
-    assert_resizable_table_width_signals(cells);
-    assert_table_resize_handles(header_cells);
+    assert_eq!(header_cells.len(), 4);
+    assert_eq!(cells.len(), 4);
+    assert!(TABLE.contains(".with_table_track("));
+    assert_table_columns_delegate_width_to_native_track(header_cells);
+    assert_table_columns_delegate_width_to_native_track(cells);
+    assert_table_resize_handles(header_cells, &["Name", "Score", "Joined", "Status"]);
+    assert_table_resize_source_widths(
+        header_cells,
+        &[("fixed", 120), ("flex", 2), ("percent", 30), ("fixed", 90)],
+    );
     assert!(cells.iter().all(|cell| {
         cell.style().base.white_space == Some(gpui_rhai::WhiteSpaceMode::NoWrap)
             && cell.style().base.text_ellipsis == Some(true)
@@ -2909,17 +2986,22 @@ fn official_table_groups_native_collection_without_materializing_rows_in_rhai() 
     let UiNodeKind::Box { children: cells } = spec.realized[&1].kind() else {
         panic!("native Table row must remain a public row composition");
     };
-    assert_eq!(cells[1].style().base.width, None);
-    assert_eq!(
-        cells[1].style().base.flex_basis,
-        Some(gpui_rhai::Length::Relative(0.0).into())
-    );
-    assert_eq!(cells[1].style().base.flex_grow_weight, Some(2.0));
+    assert_eq!(cells.len(), 2);
+    assert_table_columns_delegate_width_to_native_track(cells);
+    let UiNodeKind::Box { children } = lifecycle.root().unwrap().kind() else {
+        unreachable!()
+    };
+    let UiNodeKind::Box { children: headers } = children[0].kind() else {
+        unreachable!()
+    };
+    assert_table_columns_delegate_width_to_native_track(headers);
+    assert_table_resize_source_widths(headers, &[("fixed", 120), ("flex", 2)]);
     assert!(contains_primitive(
         &cells[0],
         "gpui_rhai.intrinsic_text_measure"
     ));
-    assert!(!contains_primitive(
+    // The last column is resizable too, so it measures for auto-fit like the others.
+    assert!(contains_primitive(
         &cells[1],
         "gpui_rhai.intrinsic_text_measure"
     ));

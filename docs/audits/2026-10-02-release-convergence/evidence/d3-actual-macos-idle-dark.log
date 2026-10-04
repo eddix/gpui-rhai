@@ -1,0 +1,25 @@
+{
+  "platform": "actual macOS MacPlatform (current_platform(false))",
+  "gpui_pre": "0.3.7",
+  "source_sha": "4785703fb43c7c75516ff2ab960de7341a58d983",
+  "initial": "dark",
+  "samples": null,
+  "error": "primary not settled: native=Light, theme=Dark, statuses=[\"primary:1:dark:8:Dark:dark\", \"effect:1\"]",
+  "records": [
+    "init:primary:1:dark",
+    "effect:primary:1:dark",
+    "init:child:1:dark",
+    "effect:child:1:dark"
+  ],
+  "os_preferences_changed": false,
+  "cleanup": {
+    "close_requests": 2,
+    "errors": [],
+    "remaining_owned_windows": 0,
+    "owned_windows_closed": true,
+    "per_app_override_clear_called": true,
+    "effective_app_appearance_after_clear": "Dark"
+  },
+  "process_id": 90502,
+  "binary_path": "/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard/target/debug/theme_appearance_probe"
+}

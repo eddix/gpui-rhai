@@ -34,6 +34,7 @@ pub mod pan_zoom;
 pub mod primitive;
 pub mod range_input;
 pub mod range_slider;
+mod read_dependency;
 pub mod reload;
 pub mod renderer;
 pub mod resizable;
@@ -53,6 +54,7 @@ pub mod split_resize;
 pub mod state;
 pub mod store;
 pub mod style;
+mod table_layout;
 pub mod text_area;
 mod text_edit;
 pub mod text_input;
@@ -169,9 +171,9 @@ pub use draggable::{DraggablePrimitiveHandler, draggable_primitive_descriptor};
 pub use effect::{EffectDescriptor, EffectError, EffectId, EffectRegistry};
 pub use element_ref::{ElementRef, ElementRefError, ElementRefId, ElementRefRegistry};
 pub use engine::{
-    CompiledUi, ComponentInvocationRecipe, ExecutionOperation, ExecutionTiming,
-    MAX_SCRIPT_OPERATIONS, OPERATION_SEMANTICS_VERSION, RuntimeEngine, RuntimeError,
-    ScriptCallback, ScriptCallbackDefinitionError, ScriptGeneration,
+    CompiledUi, ComponentInvocationRecipe, DEFAULT_SCRIPT_OPERATION_LIMIT, ExecutionOperation,
+    ExecutionTiming, OPERATION_SEMANTICS_VERSION, RuntimeEngine, RuntimeError, ScriptCallback,
+    ScriptCallbackDefinitionError, ScriptGeneration,
 };
 pub use event::{
     EventDispatchReport, EventModifiers, EventPhase, EventPropagation, EventResponse, EventRouter,
@@ -273,8 +275,8 @@ pub use theme::{
     REQUIRED_TYPOGRAPHY, ResolvedTheme, ResolvedTypography, SystemAppearance, ThemeError,
     ThemeFamily, ThemeManager, ThemeMode, ThemeMotion, ThemeMotionOverrides, ThemeMotionSpring,
     ThemePreference, ThemeSelection, ThemeSnapshot, ThemeTokenOverrides, ThemeTokenValue,
-    ThemeTokens, ThemeTypography, ThemeTypographyOverrides, ThemeVariant, TypographyToken,
-    load_theme_source,
+    ThemeTokens, ThemeTypography, ThemeTypographyOverrides, ThemeVariant, ThemeVariantInfo,
+    TypographyToken, load_theme_source,
 };
 pub use timer::{TimerDescriptor, TimerError, TimerId, TimerRegistry, TimerSnapshot};
 pub use value::{
@@ -285,7 +287,8 @@ pub use virtual_list::{
     VirtualCollectionMetrics, VirtualCollectionNodeSpec, VirtualListError, VirtualRequestRegistry,
 };
 pub use window::{
-    ScriptWindowSpec, WindowCommand, WindowCommandError, WindowCommandPolicy, WindowCommandRegistry,
+    QueuedWindowCommand, ScriptWindowSpec, WindowCommand, WindowCommandError, WindowCommandPolicy,
+    WindowCommandRegistry,
 };
 
 /// The first runtime API generation understood by component source.

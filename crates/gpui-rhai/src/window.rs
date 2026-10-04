@@ -1,4 +1,6 @@
+use std::cell::RefCell;
 use std::collections::{BTreeMap, VecDeque};
+use std::rc::{Rc, Weak};
 
 use thiserror::Error;
 
@@ -61,6 +63,69 @@ pub enum WindowCommand {
     Close(String),
 }
 
+impl WindowCommand {
+    fn target(&self) -> &str {
+        match self {
+            Self::Open(spec) => &spec.id,
+            Self::Focus(id) | Self::Close(id) => id,
+        }
+    }
+}
+
+/// A command and the qualifications captured when it was enqueued.
+///
+/// A native pump must not replace this origin with its own authority. Rust
+/// request methods without a source explicitly use trusted Host origin.
+#[derive(Clone, Debug)]
+pub struct QueuedWindowCommand {
+    command: WindowCommand,
+    origin: WindowCommandOrigin,
+    target: Rc<WindowIdentity>,
+}
+
+impl QueuedWindowCommand {
+    #[must_use]
+    pub const fn command(&self) -> &WindowCommand {
+        &self.command
+    }
+
+    pub(crate) fn source_binding(&self) -> Option<NativeWindowBinding> {
+        match &self.origin {
+            WindowCommandOrigin::Host => None,
+            WindowCommandOrigin::View { identity, .. } => identity.native.borrow().clone(),
+        }
+    }
+
+    pub(crate) fn is_host_origin(&self) -> bool {
+        matches!(self.origin, WindowCommandOrigin::Host)
+    }
+
+    pub(crate) fn target_binding(&self) -> Option<NativeWindowBinding> {
+        self.target.native.borrow().clone()
+    }
+}
+
+#[derive(Clone, Debug)]
+enum WindowCommandOrigin {
+    Host,
+    View {
+        id: String,
+        identity: Rc<WindowIdentity>,
+    },
+}
+
+#[derive(Debug, Default)]
+struct WindowIdentity {
+    mount: RefCell<Option<Weak<()>>>,
+    native: RefCell<Option<NativeWindowBinding>>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct NativeWindowBinding {
+    pub(crate) window: gpui::WindowId,
+    pub(crate) lease: Weak<()>,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum WindowCommandPolicy {
     ApplicationOwned,
@@ -79,12 +144,13 @@ struct WindowRecord {
     policy: WindowCommandPolicy,
     view_id: String,
     close_handler: Option<ScriptCallback>,
+    identity: Rc<WindowIdentity>,
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct WindowCommandRegistry {
     windows: BTreeMap<String, WindowRecord>,
-    commands: VecDeque<WindowCommand>,
+    commands: VecDeque<QueuedWindowCommand>,
 }
 
 impl WindowCommandRegistry {
@@ -144,6 +210,7 @@ impl WindowCommandRegistry {
                 policy,
                 view_id: view_id.into(),
                 close_handler: None,
+                identity: Rc::new(WindowIdentity::default()),
             },
         );
         Ok(())
@@ -153,8 +220,17 @@ impl WindowCommandRegistry {
     ///
     /// # Errors
     ///
-    /// Returns duplicate, limit, queue, or spec validation errors.
+    /// Returns duplicate, limit, queue, or spec validation errors. This Rust
+    /// entry explicitly uses trusted Host origin; scripts use `request_open_from`.
     pub fn request_open(&mut self, spec: ScriptWindowSpec) -> Result<(), WindowCommandError> {
+        self.enqueue_open(spec, WindowCommandOrigin::Host)
+    }
+
+    fn enqueue_open(
+        &mut self,
+        spec: ScriptWindowSpec,
+        origin: WindowCommandOrigin,
+    ) -> Result<(), WindowCommandError> {
         spec.validate()?;
         if self.windows.contains_key(&spec.id) {
             return Err(WindowCommandError::Duplicate(spec.id));
@@ -163,6 +239,7 @@ impl WindowCommandRegistry {
             return Err(WindowCommandError::WindowLimit(MAX_WINDOWS));
         }
         self.require_queue_capacity()?;
+        let identity = Rc::new(WindowIdentity::default());
         self.windows.insert(
             spec.id.clone(),
             WindowRecord {
@@ -170,9 +247,14 @@ impl WindowCommandRegistry {
                 policy: WindowCommandPolicy::ApplicationOwned,
                 view_id: spec.id.clone(),
                 close_handler: None,
+                identity: Rc::clone(&identity),
             },
         );
-        self.commands.push_back(WindowCommand::Open(spec));
+        self.commands.push_back(QueuedWindowCommand {
+            command: WindowCommand::Open(spec),
+            origin,
+            target: identity,
+        });
         Ok(())
     }
 
@@ -203,16 +285,17 @@ impl WindowCommandRegistry {
         }
     }
 
-    /// Queue native focus for an existing window.
+    /// Queue native focus with trusted Rust Host origin. A pending Open in the
+    /// same queue is a valid target and retains the same reservation identity.
     ///
     /// # Errors
     ///
     /// Returns unknown-window or queue-limit errors.
     pub fn request_focus(&mut self, id: &str) -> Result<(), WindowCommandError> {
-        self.require_open(id)?;
-        self.require_queue_capacity()?;
-        self.commands.push_back(WindowCommand::Focus(id.to_owned()));
-        Ok(())
+        self.enqueue_target(
+            WindowCommand::Focus(id.to_owned()),
+            WindowCommandOrigin::Host,
+        )
     }
 
     /// Queue focus after verifying that the source view owns window commands.
@@ -222,19 +305,22 @@ impl WindowCommandRegistry {
     /// Returns disabled-policy, unknown-window, or queue errors.
     pub fn request_focus_from(&mut self, source: &str, id: &str) -> Result<(), WindowCommandError> {
         self.require_commands(source, "focus_window")?;
-        self.request_focus(id)
+        self.enqueue_target(
+            WindowCommand::Focus(id.to_owned()),
+            self.view_origin(source),
+        )
     }
 
-    /// Queue forced close after script confirmation.
+    /// Queue forced close with trusted Rust Host origin.
     ///
     /// # Errors
     ///
     /// Returns unknown-window or queue-limit errors.
     pub fn request_close(&mut self, id: &str) -> Result<(), WindowCommandError> {
-        self.require_open(id)?;
-        self.require_queue_capacity()?;
-        self.commands.push_back(WindowCommand::Close(id.to_owned()));
-        Ok(())
+        self.enqueue_target(
+            WindowCommand::Close(id.to_owned()),
+            WindowCommandOrigin::Host,
+        )
     }
 
     /// Queue close after verifying that the source view owns window commands.
@@ -244,7 +330,10 @@ impl WindowCommandRegistry {
     /// Returns disabled-policy, unknown-window, or queue errors.
     pub fn request_close_from(&mut self, source: &str, id: &str) -> Result<(), WindowCommandError> {
         self.require_commands(source, "close_window")?;
-        self.request_close(id)
+        self.enqueue_target(
+            WindowCommand::Close(id.to_owned()),
+            self.view_origin(source),
+        )
     }
 
     /// Queue open after verifying that the source view owns window commands.
@@ -258,7 +347,7 @@ impl WindowCommandRegistry {
         spec: ScriptWindowSpec,
     ) -> Result<(), WindowCommandError> {
         self.require_commands(source, "open_window")?;
-        self.request_open(spec)
+        self.enqueue_open(spec, self.view_origin(source))
     }
 
     /// Install or clear the current generation's close-request callback.
@@ -288,7 +377,7 @@ impl WindowCommandRegistry {
     }
 
     #[must_use]
-    pub fn drain_commands(&mut self) -> Vec<WindowCommand> {
+    pub fn drain_commands(&mut self) -> Vec<QueuedWindowCommand> {
         self.commands.drain(..).collect()
     }
 
@@ -307,14 +396,123 @@ impl WindowCommandRegistry {
     }
 
     pub fn remove(&mut self, id: &str) -> bool {
-        self.windows.remove(id).is_some()
+        let Some(removed) = self.windows.remove(id) else {
+            return false;
+        };
+        let queued = std::mem::take(&mut self.commands);
+        for command in queued {
+            let revoked = matches!(&command.origin, WindowCommandOrigin::View { identity, .. }
+                if Rc::ptr_eq(identity, &removed.identity));
+            if revoked || Rc::ptr_eq(&command.target, &removed.identity) {
+                self.cancel_open(&command);
+            } else {
+                self.commands.push_back(command);
+            }
+        }
+        true
     }
 
-    fn require_open(&self, id: &str) -> Result<(), WindowCommandError> {
-        match self.windows.get(id).map(|record| record.status) {
-            Some(WindowStatus::Open) => Ok(()),
-            Some(WindowStatus::Pending) => Err(WindowCommandError::NotOpen(id.to_owned())),
-            None => Err(WindowCommandError::Unknown(id.to_owned())),
+    fn view_origin(&self, id: &str) -> WindowCommandOrigin {
+        WindowCommandOrigin::View {
+            id: id.to_owned(),
+            identity: Rc::clone(&self.windows[id].identity),
+        }
+    }
+
+    fn enqueue_target(
+        &mut self,
+        command: WindowCommand,
+        origin: WindowCommandOrigin,
+    ) -> Result<(), WindowCommandError> {
+        let target = self
+            .windows
+            .get(command.target())
+            .ok_or_else(|| WindowCommandError::Unknown(command.target().to_owned()))?;
+        let identity = Rc::clone(&target.identity);
+        self.require_queue_capacity()?;
+        self.commands.push_back(QueuedWindowCommand {
+            command,
+            origin,
+            target: identity,
+        });
+        Ok(())
+    }
+
+    pub(crate) fn qualify_mount(
+        &mut self,
+        id: &str,
+        lease: &Weak<()>,
+    ) -> Result<(), WindowCommandError> {
+        let identity = &self
+            .windows
+            .get(id)
+            .ok_or_else(|| WindowCommandError::Unknown(id.to_owned()))?
+            .identity;
+        let mut mount = identity.mount.borrow_mut();
+        if mount
+            .as_ref()
+            .is_some_and(|previous| !previous.ptr_eq(lease))
+        {
+            return Err(WindowCommandError::Duplicate(id.to_owned()));
+        }
+        *mount = Some(lease.clone());
+        Ok(())
+    }
+
+    pub(crate) fn bind_native(
+        &mut self,
+        id: &str,
+        window: gpui::WindowId,
+    ) -> Result<(), WindowCommandError> {
+        let identity = &self
+            .windows
+            .get(id)
+            .ok_or_else(|| WindowCommandError::Unknown(id.to_owned()))?
+            .identity;
+        let lease = identity
+            .mount
+            .borrow()
+            .clone()
+            .ok_or_else(|| WindowCommandError::Unknown(id.to_owned()))?;
+        let mut native = identity.native.borrow_mut();
+        if native
+            .as_ref()
+            .is_some_and(|previous| previous.window != window || !previous.lease.ptr_eq(&lease))
+        {
+            return Err(WindowCommandError::Duplicate(id.to_owned()));
+        }
+        *native = Some(NativeWindowBinding { window, lease });
+        Ok(())
+    }
+
+    pub(crate) fn is_current_target(&self, command: &QueuedWindowCommand) -> bool {
+        self.windows
+            .get(command.command.target())
+            .is_some_and(|record| Rc::ptr_eq(&record.identity, &command.target))
+    }
+
+    pub(crate) fn is_current_origin(&self, command: &QueuedWindowCommand) -> bool {
+        match &command.origin {
+            WindowCommandOrigin::Host => true,
+            WindowCommandOrigin::View { id, identity } => {
+                self.windows.get(id).is_some_and(|record| {
+                    Rc::ptr_eq(&record.identity, identity)
+                        && identity
+                            .mount
+                            .borrow()
+                            .as_ref()
+                            .is_some_and(|lease| lease.strong_count() > 0)
+                })
+            }
+        }
+    }
+
+    pub(crate) fn cancel_open(&mut self, command: &QueuedWindowCommand) {
+        if matches!(command.command, WindowCommand::Open(_))
+            && self.is_current_target(command)
+            && self.windows[command.command.target()].status == WindowStatus::Pending
+        {
+            self.windows.remove(command.command.target());
         }
     }
 
@@ -359,8 +557,6 @@ pub enum WindowCommandError {
     Duplicate(String),
     #[error("window `{0}` is not registered")]
     Unknown(String),
-    #[error("window `{0}` is still pending native creation")]
-    NotOpen(String),
     #[error("window `{0}` is already open")]
     AlreadyOpen(String),
     #[error("at most {0} script windows may be active")]
@@ -400,24 +596,90 @@ mod tests {
             windows.request_open(spec("settings")),
             Err(WindowCommandError::Duplicate(_))
         ));
-        assert!(matches!(
-            windows.request_focus("settings"),
-            Err(WindowCommandError::NotOpen(_))
-        ));
+        windows.request_focus("settings").unwrap();
+        windows.request_close("settings").unwrap();
         assert_eq!(
-            windows.drain_commands(),
-            vec![WindowCommand::Open(spec("settings"))]
+            windows
+                .drain_commands()
+                .into_iter()
+                .map(|queued| queued.command)
+                .collect::<Vec<_>>(),
+            vec![
+                WindowCommand::Open(spec("settings")),
+                WindowCommand::Focus("settings".into()),
+                WindowCommand::Close("settings".into())
+            ]
         );
         windows.mark_open("settings").unwrap();
         windows.request_focus("settings").unwrap();
         windows.request_close("settings").unwrap();
         assert_eq!(
-            windows.drain_commands(),
+            windows
+                .drain_commands()
+                .into_iter()
+                .map(|queued| queued.command)
+                .collect::<Vec<_>>(),
             vec![
                 WindowCommand::Focus("settings".to_owned()),
                 WindowCommand::Close("settings".to_owned()),
             ]
         );
+    }
+
+    #[test]
+    fn queued_origin_and_target_keep_their_registration_identity() {
+        let mut windows = WindowCommandRegistry::new();
+        let lease = Rc::new(());
+        windows.register_open("source").unwrap();
+        windows
+            .qualify_mount("source", &Rc::downgrade(&lease))
+            .unwrap();
+        windows.request_open_from("source", spec("next")).unwrap();
+        windows.request_focus_from("source", "next").unwrap();
+        let queued = windows.drain_commands();
+        assert!(queued.iter().all(
+            |command| windows.is_current_origin(command) && windows.is_current_target(command)
+        ));
+        windows.remove("source");
+        windows.register_open("source").unwrap();
+        let replacement = Rc::new(());
+        windows
+            .qualify_mount("source", &Rc::downgrade(&replacement))
+            .unwrap();
+        assert!(
+            queued
+                .iter()
+                .all(|command| !windows.is_current_origin(command))
+        );
+        windows.cancel_open(&queued[0]);
+        windows.request_open_from("source", spec("next")).unwrap();
+        assert!(!windows.is_current_target(&queued[1]));
+        windows.cancel_open(&queued[0]);
+        assert!(
+            windows.contains("next"),
+            "old cancellation must not release a newer reservation"
+        );
+    }
+
+    #[test]
+    fn revocation_releases_only_its_queued_open_and_host_origin_is_explicit() {
+        let mut windows = WindowCommandRegistry::new();
+        let lease = Rc::new(());
+        windows.register_open("source").unwrap();
+        windows
+            .qualify_mount("source", &Rc::downgrade(&lease))
+            .unwrap();
+        windows
+            .request_open_from("source", spec("cancelled"))
+            .unwrap();
+        windows.request_open(spec("trusted")).unwrap();
+        windows.remove("source");
+        assert!(!windows.contains("cancelled"));
+        let queued = windows.drain_commands();
+        assert_eq!(queued.len(), 1);
+        assert!(queued[0].is_host_origin());
+        assert!(windows.is_current_origin(&queued[0]));
+        assert!(windows.is_current_target(&queued[0]));
     }
 
     #[test]

@@ -1,0 +1,46 @@
+    Checking gpui-rhai v0.1.8 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai)
+error: this function has too many lines (124/100)
+    --> crates/gpui-rhai/src/lifecycle.rs:3818:5
+     |
+3818 |     fn assert_table_modifier_replay(track: bool) {
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#too_many_lines
+     = note: `-D clippy::too-many-lines` implied by `-D warnings`
+     = help: to override `-D warnings` add `#[allow(clippy::too_many_lines)]`
+
+error: casting `i64` to `f64` may cause a loss of precision (`i64` is 64 bits wide, but `f64`'s mantissa is only 52 bits wide)
+    --> crates/gpui-rhai/src/lifecycle.rs:3902:52
+     |
+3902 |                         vec![120.0 + if internal { count as f64 } else { 0.0 }, 140.0]
+     |                                                    ^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_precision_loss
+     = note: `-D clippy::cast-precision-loss` implied by `-D warnings`
+     = help: to override `-D warnings` add `#[allow(clippy::cast_precision_loss)]`
+
+error: casting `i64` to `usize` may lose the sign of the value
+    --> crates/gpui-rhai/src/lifecycle.rs:3907:44
+     |
+3907 |                         Some(if internal { (count % 2) as usize } else { 0 })
+     |                                            ^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#cast_sign_loss
+     = note: `-D clippy::cast-sign-loss` implied by `-D warnings`
+     = help: to override `-D warnings` add `#[allow(clippy::cast_sign_loss)]`
+
+error: taken reference of right operand
+    --> crates/gpui-rhai/src/lifecycle.rs:3914:79
+     |
+3914 |                     matches!(children[0].kind(), UiNodeKind::Text { text } if text == &count.to_string())
+     |                                                                               ^^^^^^^^------------------
+     |                                                                                       |
+     |                                                                                       help: use the right value directly: `count.to_string()`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#op_ref
+     = note: `-D clippy::op-ref` implied by `-D warnings`
+     = help: to override `-D warnings` add `#[allow(clippy::op_ref)]`
+
+    Checking gpui-rhai-cli v0.1.8 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai-cli)
+error: could not compile `gpui-rhai` (lib test) due to 4 previous errors
+warning: build failed, waiting for other jobs to finish...

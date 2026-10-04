@@ -1,0 +1,41 @@
+   Compiling gpui-rhai v0.1.8 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai)
+   Compiling gpui-rhai-registry v0.1.8 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/registry)
+   Compiling gpui-rhai-cli v0.1.8 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai-cli)
+   Compiling gpui-rhai-native-keyboard-tests v0.0.0 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/tests/native-keyboard)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 26.79s
+     Running tests/table_boundaries.rs (tests/native-keyboard/target/debug/deps/table_boundaries-8934c074dd07df75)
+
+running 8 tests
+test data_loading_and_both_empty_paths_share_the_bordered_horizontal_viewport ... ok
+test ltr_array_boundary_and_last_column_owner ... LTR final=c:200.0|none
+ok
+test native_last_column_autofit_measures_last_column_without_sort ... native autofit=c:313.0|none
+ok
+test nonresizable_neighbor_preserves_owner_and_last_keyboard_resize ... mixed native last keyboard=c:168.0|none
+ok
+test one_column_table_is_resizable ... ok
+test rtl_dragging_a_boundary_resizes_a_not_its_neighbor ... RTL real A boundary drag=a:160.0|none
+ok
+test rtl_handles_follow_the_owned_columns_logical_end ... RTL A: owned logical end=479,handle center=479
+RTL B: owned logical end=339,handle center=339
+RTL last C: header left=179,handle left=179
+ok
+test rtl_keyboard_arrows_resize_the_focused_logical_column ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.73s
+
+     Running tests/table_extent.rs (tests/native-keyboard/target/debug/deps/table_extent-597838bcc7cccc5a)
+
+running 9 tests
+test accepted_final_column_width_recomputes_extent_and_clamps_offset ... ok
+test component_min_max_and_native_override_use_one_width_authority ... ok
+test fixed_wide_ltr_rtl_array_native_share_scroll_and_all_states ... ok
+test horizontal_body_input_and_vertical_input_are_independent ... ok
+test native_drag_override_repaints_widths_and_extent_without_rhai ... ok
+test percentage_and_weighted_flex_use_viewport_not_extent ... ok
+test percentage_overflow_does_not_feedback_into_its_basis ... ok
+test single_column_under_equal_overflow_and_autofit_share_the_viewport ... ok
+test theme_insets_are_in_the_shared_column_plan_and_real_extent ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.88s
+

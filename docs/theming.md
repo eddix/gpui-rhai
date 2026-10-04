@@ -119,6 +119,41 @@ Rhai may select fixed variants with `set_theme`, `set_window_theme`, and
 corresponding `*_theme_system(family)` methods. App-level changes invalidate all
 windows; window and subtree changes remain local.
 
+Scripts may also read what resolved: `ctx.theme_variant()` returns
+`#{ family, name, mode }` for the context's window and component scope (or
+`()` for missing/unresolvable themes or an unavailable borrow). Reading during
+render tracks a theme dependency. Effects use explicit dependencies; reading
+only inside the effect body does not subscribe or restart that activation:
+
+```rhai
+fn render_Palette(ctx, props) {
+    let info = ctx.theme_variant();
+    effect("palette", info, Fn("start_palette"), Fn("stop_palette"));
+    // Return the UI derived from info.
+}
+```
+
+Declare that effect in the formal component schema. Its start callback receives
+the same metadata as deps and restarts only when they change. Event-time reads
+are imperative, not subscriptions. Rust uses lightweight `ThemeVariantInfo` or
+`resolved_theme_selection()`; these are resolved identity, not ThemePreference.
+Motion getters share the resolver and clone only motion tokens, never the full
+theme. Token overrides do not rewrite family/name/mode.
+
+Mount establishes native appearance before init, effects and initial render,
+including secondary windows; it does not replay init to correct a guessed mode.
+Standalone/headless contexts with no native appearance explicitly resolve
+System using Dark until real window information is available. First actual
+Light appearance invalidates pre-existing fallback readers normally.
+
+Mounted views retain a weak, View-owned subscription to native window
+appearance notifications. Changed modes enter the same runtime resolver before
+deferred foreground work, including an otherwise idle window. Native token-only
+UI also repaints without executing Rhai. Identical modes do not invalidate
+again. Suspended views retain the new environment until resume without starting
+effects; disposal cancels the subscription, so an old Handle cannot update a
+replacement. This does not change the application's OS theme preference.
+
 Literal colors are supported for exceptional geometry, but official components
 should use `theme_color("semantic_name")`.
 

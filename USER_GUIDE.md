@@ -520,7 +520,10 @@ long-lived stream with recursively started unowned tasks.
 ### 6.2 Events, propagation, and geometry
 
 Atomic nodes accept `on(event, handler)`, `on_capture(event, handler)`, and
-`on_bubble(event, handler)`. Dispatch order is capture → target → bubble.
+`on_bubble(event, handler)`. Raw pointer/wheel and focused `key:*` dispatch
+support capture → target → bubble. Ordinary native clicks and declared
+component events retain target-only delivery; adding a phased handler does
+not turn them into raw events.
 Handlers may return `event_response()` and refine it with `prevent_default()`,
 `stop()`, `stop_immediate()`, `capture_pointer()`, or `release_pointer()`.
 
@@ -557,7 +560,10 @@ Use `element_ref(...)` plus `ctx.element_bounds(ref)` only when rendering must
 react to another retained element's last committed geometry. That read creates
 an exact dependency, returns `#{ layout, visual, clip }`, and may initially be
 `()`. The runtime keeps the unresolved dependency by ref identity, binds it to
-the committed `NodeId`, and rerenders after first prepaint reports geometry; do
+the current `NodeId`, and rerenders after first prepaint reports geometry.
+The logical subscription remains live through appearance, rebind and removal;
+removal produces `()` and old-node changes no longer wake a rebound reader. It
+is released when its component/item contribution leaves the committed graph; do
 not add an unrelated redraw to make it self-heal. Event callbacks cannot retain
 the custom `ElementRef` value and instead call
 `ctx.element_bounds("component_local_ref_key")`. It cannot provide synchronous
@@ -719,6 +725,15 @@ for the full hot-reload and generation rules.
 
 See [Embedding](docs/embedding.md) and [Multi-window](docs/multi-window.md).
 
+Use ordinary `PreparedScriptView::mount` for an embedded view without native
+window authority. If Rust deliberately delegates native open/focus/close and
+close-confirmation policy to one view, use `mount_window` instead. It registers
+the real native handle and enforces one command owner per native window; sibling
+views remain restricted. It replaces the previous should-close callback, not
+the Rust root/layout. Disposing the owner does not close Rust's window; native
+closure disposes retained view handles. See the multi-window guide for the
+queued-operation boundary and cleanup rules.
+
 ## 8. Layout, text, images, and assets
 
 Use `row` and `column` for ordinary flex containers:
@@ -761,7 +776,8 @@ contract. Rust Hosts can inspect the bounded shared variant cache through
 generic fallbacks; Host-provided in-memory `FontSource` values currently apply
 to GPUI text, not to the separate SVG font database.
 
-See [Style](docs/style.md), [Assets](docs/assets.md), [Canvas](docs/canvas.md),
+See [Style](docs/style.md), [Assets](docs/assets.md),
+[mutable-image Host bridging](docs/asset-refresh-host.md), [Canvas](docs/canvas.md),
 and [Locale and RTL](docs/locale-and-rtl.md).
 
 ### 8.1 CodeViewer, DiffViewer, and NativeTextDocument
@@ -954,13 +970,24 @@ Guidelines:
 - Do not parse files, access the network, or perform blocking work in `view`.
 - Use `virtual_collection` for large lists and Tables.
 - In Table column widths, `fixed` values are pixels, `percent` values are
-  percentages, and `flex` values are positive weights over the remaining row
+  percentages of the Table viewport, and `flex` values are positive weights over the remaining viewport
   width; use 1/2 rather than pixel-like values such as 100/200.
+  Header and realized rows share one native column plan and horizontal extent.
+  Percentage widths never use the growing scroll extent as their basis. Wide
+  tables stay clipped and horizontally reachable in LTR and RTL; switching
+  loading/empty/data retains the logical offset, clamped to the current range.
+  LTR↔RTL locale changes also preserve distance from the logical start; a
+  smaller range clamps that distance rather than resetting only one direction.
 - Set `resizable_columns: true` for native divider dragging. Per-column
   `resizable`, `min_width`, and `max_width` refine the policy. Pointer movement
   stays on the native signal path; `on_column_resize` runs once on release with
   a fixed pixel descriptor that the caller may persist. Focused dividers use
   logical Left/Right in 8px steps.
+- Table dividers sit at the logical column boundary, including the final or
+  sole column. Inline `inset_start`/`inset_end` styles resolve in LTR/RTL and accept
+  definite, `auto()` or signed `offset_*` values. Each divider has its own stable
+  element ref for Host-native focus; its measurement ref still belongs to the
+  column header.
 - Treat `virtual_collection` as presentation-only. The owning component defines
   enabled items, keyboard navigation, the single active style, and passes its
   controlled key as `reveal_key`; sticky rows are a separate layout policy.
@@ -970,6 +997,11 @@ Guidelines:
   Transparent wrappers may return a formal child directly without adding a
   layout container. Nested collections retain their current realized windows
   across parent reuse; deleting a parent also removes its nested targets.
+- Raw row reads wake the executable owner, but their subscriptions belong to
+  each live data-key contribution. Scrolling removes old contributions without
+  clearing sibling collections or the root's own reads. Sequential and batched
+  virtual targets have the same final state, callback and resource lifetimes;
+  failed batches keep the prior committed target and dependencies.
 - Keep large stable row sets in `NativeCollection`; let Rhai declare the Table
   and controlled state while Rust caches sort/group/collapse order and projects
   only visible rows.

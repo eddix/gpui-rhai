@@ -250,7 +250,11 @@ This snapshot is event-only and untracked, so reading it cannot dirty a
 component. By contrast, `ctx.element_bounds(ref)` reads tracked last-committed
 `layout`, `visual`, and `clip` geometry for a retained `ElementRef`. An unresolved
 first-render read returns null, follows the ref through commit, and self-heals
-after first prepaint. Event callbacks resolve another node in the same formal
+after first prepaint. The logical subscription follows appearance, NodeId
+replacement and removal for as long as the reader contribution lives; removal
+returns null rather than retaining old geometry. Rebinding detaches the old
+node's observation. These notifications join the normal foreground dirty
+queue and do not re-enter Rhai during prepaint. Event callbacks resolve another node in the same formal
 component with `ctx.element_bounds("local_ref_key")`; the custom ref itself is
 not durable callback data. Use this API only when a render truly depends on
 another element's previous committed geometry; it cannot create same-layout
@@ -262,10 +266,19 @@ synchronous feedback.
 views. `ctx.view_id()` identifies the mounted widget and is unique inside the
 Host.
 
-Embedded views reject `open_window`, `focus_window`, `close_window`, and close
+Ordinary `mount` views reject `open_window`, `focus_window`, `close_window`, and close
 handler registration immediately with `UnsupportedInEmbeddedView`. The
 standalone `ScriptApplication` adapter enables the existing restricted
 multi-window implementation.
+
+Rust can explicitly delegate those commands with `PreparedScriptView::mount_window`.
+This registers the native handle and installs a close-confirmation interceptor
+for one owner view; sibling ordinary mounts remain disabled. The owner claim is
+unique per native window, including across Host aliases, and released on failed
+mount/disposal. Native closure also disposes retained view handles. The adapter
+does not take over Rust's root/layout, but replaces any previous should-close
+callback; keep ordinary `mount` when Rust must retain that policy. See
+[Multi-window](multi-window.md) for the queued command and cleanup boundaries.
 
 Trusted standalone hosts may customize the primary native window while keeping
 that authority out of Rhai:

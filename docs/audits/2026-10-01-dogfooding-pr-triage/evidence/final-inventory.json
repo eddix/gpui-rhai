@@ -1,0 +1,133 @@
+{
+  "date": "2026-10-01",
+  "prs": [
+    {
+      "headRefOid": "3209039e2d792dde9f65daa7eb2600cd90a3e3f6",
+      "number": 99,
+      "statusCheckRollup": [
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-10-01T11:46:25Z",
+          "conclusion": "FAILURE",
+          "detailsUrl": "https://github.com/eddix/gpui-rhai/actions/runs/36857068371/job/110351987225",
+          "name": "portable",
+          "startedAt": "2026-10-01T11:42:42Z",
+          "status": "COMPLETED",
+          "workflowName": "CI"
+        }
+      ],
+      "title": "feat(context): let scripts read the resolved theme variant",
+      "url": "https://github.com/eddix/gpui-rhai/pull/99"
+    },
+    {
+      "headRefOid": "31df838797767811ee29fa2385ec17a298bdf53d",
+      "number": 97,
+      "statusCheckRollup": [
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-10-01T08:01:50Z",
+          "conclusion": "FAILURE",
+          "detailsUrl": "https://github.com/eddix/gpui-rhai/actions/runs/36833752588/job/110276092311",
+          "name": "portable",
+          "startedAt": "2026-10-01T08:01:09Z",
+          "status": "COMPLETED",
+          "workflowName": "CI"
+        }
+      ],
+      "title": "feat(node): accept punctuation key names in key handlers",
+      "url": "https://github.com/eddix/gpui-rhai/pull/97"
+    },
+    {
+      "headRefOid": "befbe926ee7d53be2f540538112766ae07aec792",
+      "number": 96,
+      "statusCheckRollup": [
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-10-01T06:31:09Z",
+          "conclusion": "FAILURE",
+          "detailsUrl": "https://github.com/eddix/gpui-rhai/actions/runs/36825065627/job/110248801225",
+          "name": "portable",
+          "startedAt": "2026-10-01T06:29:45Z",
+          "status": "COMPLETED",
+          "workflowName": "CI"
+        }
+      ],
+      "title": "feat(engine): host-configurable operation budget, deeper function expressions",
+      "url": "https://github.com/eddix/gpui-rhai/pull/96"
+    },
+    {
+      "headRefOid": "f6e936a509d9aaf75f2e28836bedd439fe83887e",
+      "number": 94,
+      "statusCheckRollup": [
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-09-30T17:31:55Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/eddix/gpui-rhai/actions/runs/36748042570/job/109999170621",
+          "name": "portable",
+          "startedAt": "2026-09-30T16:58:10Z",
+          "status": "COMPLETED",
+          "workflowName": "CI"
+        }
+      ],
+      "title": "Fix 0.1.8 interaction runtime round-three findings",
+      "url": "https://github.com/eddix/gpui-rhai/pull/94"
+    },
+    {
+      "headRefOid": "6427de4733e61fcc92b9e1d05ff98c177baf899d",
+      "number": 14,
+      "statusCheckRollup": [
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-09-04T16:12:22Z",
+          "conclusion": "FAILURE",
+          "detailsUrl": "https://github.com/eddix/gpui-rhai/actions/runs/33893816209/job/101091612170",
+          "name": "portable",
+          "startedAt": "2026-09-04T16:12:20Z",
+          "status": "COMPLETED",
+          "workflowName": "CI"
+        }
+      ],
+      "title": "feat: add opt-in adaptive Grain JIT experiment",
+      "url": "https://github.com/eddix/gpui-rhai/pull/14"
+    }
+  ],
+  "issues": [
+    {
+      "number": 98,
+      "title": "No app-level way to invalidate a cached image asset after its content changes on disk",
+      "updatedAt": "2026-10-01T09:07:21Z",
+      "url": "https://github.com/eddix/gpui-rhai/issues/98"
+    },
+    {
+      "number": 95,
+      "title": "Typography: theme-configurable monospace face, and per-column font for Table",
+      "updatedAt": "2026-10-01T02:40:14Z",
+      "url": "https://github.com/eddix/gpui-rhai/issues/95"
+    },
+    {
+      "number": 93,
+      "title": "Map-typed state field default fails with opaque error unless entries are recursively typed — undocumented",
+      "updatedAt": "2026-09-30T15:27:51Z",
+      "url": "https://github.com/eddix/gpui-rhai/issues/93"
+    },
+    {
+      "number": 91,
+      "title": "Capability handlers: expose the invocation origin (user input vs timer / task / subscription / effect)",
+      "updatedAt": "2026-09-30T03:54:43Z",
+      "url": "https://github.com/eddix/gpui-rhai/issues/91"
+    },
+    {
+      "number": 89,
+      "title": "Table: expose a right-click (context request) on rows/cells so callers can attach a menu",
+      "updatedAt": "2026-09-29T15:09:08Z",
+      "url": "https://github.com/eddix/gpui-rhai/issues/89"
+    },
+    {
+      "number": 83,
+      "title": "SplitPane: allow a custom handle node (grip) — paint order, hit area and state need native support",
+      "updatedAt": "2026-09-29T06:51:01Z",
+      "url": "https://github.com/eddix/gpui-rhai/issues/83"
+    }
+  ]
+}

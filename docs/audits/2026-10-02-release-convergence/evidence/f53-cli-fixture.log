@@ -1,0 +1,13 @@
+be7a8eb83f5c97b9932661d74e5c3b7c684be4ce
+c2faa911cdc7aed841810112c61e630f05853aabb3f841d3ba7b12ccebadb3a7  target/release/gpui-rhai
+gpui-rhai 0.1.8
+Static check passed: entry `main`, 10 installed component(s). Host capability lifecycle validation was not executed.
+No filesystem changes required.
+Check passed: entry `main`, 10 installed component(s), including hostless lifecycle validation.
+1 file change(s):
+- update src/gpui_rhai_embedded.rs
+1 file change(s):
+- update src/gpui_rhai_embedded.rs
+c2faa911cdc7aed841810112c61e630f05853aabb3f841d3ba7b12ccebadb3a7  target/release/gpui-rhai
+b904eeb292d772d15e38bb1de3d555598817d2caf3e71eabf6d509b77ab5dc68  /tmp/gpui-rhai-018-cli-final.6HrsCz/ui/app.toml
+c46d2971849e8ec37878255771dca81394c70d01e9234764319d41029ee6c1b2  /tmp/gpui-rhai-018-cli-final.6HrsCz/src/gpui_rhai_embedded.rs
