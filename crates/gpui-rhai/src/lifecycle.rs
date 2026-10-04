@@ -1790,7 +1790,8 @@ mod tests {
     use crate::{
         AssetData, AsyncCapabilityHandler, CapabilityDescriptor, CapabilityId, CapabilityMethod,
         ExecutionOperation, InMemoryAssetProvider, OpaqueHandle, StateField,
-        SubscriptionCapabilityHandler, SubscriptionWork, TaskWork, UiValue, ValueSchema,
+        SubscriptionCapabilityHandler, SubscriptionWork, TaskWork, UiNodeKind, UiValue,
+        ValueSchema,
     };
     use semver::{Version, VersionReq};
     use std::time::{Duration, Instant};
@@ -3812,5 +3813,142 @@ mod tests {
             error.contains("subscriptions must be started by a declarative component effect"),
             "unexpected error: {error}"
         );
+    }
+
+    fn assert_table_modifier_replay(track: bool) {
+        for internal in [true, false] {
+            let modifier = if track {
+                ".with_table_track(columns(120), [])"
+            } else {
+                ".with_table_column(0)"
+            };
+            let internal_modifier = if track {
+                ".with_table_track(columns(120 + count), [])"
+            } else {
+                ".with_table_column(count % 2)"
+            };
+            let panel = format!(
+                "render_component(\"tests/table_panel\", #{{key:\"panel\"}}){}.with_style(style().width(px(123)))",
+                if internal { "" } else { modifier }
+            );
+            let source = r#"
+                define_component(#{
+                    metadata:#{id:"tests/table_panel","export":"Panel",version:"0.1.8",
+                        runtime_api:#{min_inclusive:2,max_exclusive:3},dependencies:[],capabilities:#{}},
+                    schema:#{props:#{key:#{schema:#{type:"string"},required:true,sensitive:false}},
+                        state:#{fields:#{count:#{schema:#{type:"integer"},"default":#{type:"integer",value:0}}}},
+                        events:#{},slots:#{},parts:[]},render:Fn("render_panel")
+                });
+                fn columns(width) { [#{key:"a",width:#{kind:"fixed",value:width}},
+                    #{key:"b",width:#{kind:"fixed",value:140}}] }
+                fn render_panel(ctx, props) {
+                    let count = ctx.get_state("count");
+                    if count < 0 { throw "rejected panel candidate"; }
+                    column([text(`${count}`)])INTERNAL
+                }
+                fn view(ctx) { VIEW }
+            "#
+            .replace("INTERNAL", if internal { internal_modifier } else { "" })
+            .replace(
+                "VIEW",
+                &if track { panel } else { format!("column([{panel}]).with_table_track(columns(120), [])") },
+            );
+            let mut engine = RuntimeEngine::new();
+            let compiled = engine
+                .compile_named("table-modifier.rhai", &source)
+                .unwrap();
+            let runtime = Rc::new(RefCell::new(UiRuntimeState::new()));
+            let root = ComponentInstancePath::root("App", format!("table-{track}-{internal}"));
+            let component = root.child("Panel", "panel");
+            let mut lifecycle = ScriptLifecycle::new(
+                compiled,
+                Rc::clone(&runtime),
+                root,
+                Some("main".into()),
+                BTreeMap::new(),
+                &ComponentStateSchema::default(),
+            )
+            .unwrap();
+            lifecycle.start(&mut engine).unwrap();
+            let assert_panel = |lifecycle: &ScriptLifecycle, count: i64| {
+                let root = lifecycle.root().unwrap();
+                let panel = if track {
+                    root
+                } else {
+                    let UiNodeKind::Box { children } = root.kind() else {
+                        panic!("expected track")
+                    };
+                    &children[0]
+                };
+                assert_eq!(
+                    panel.style().base.width,
+                    Some(crate::LayoutLength::Definite(
+                        crate::Length::pixels(123.0).unwrap()
+                    ))
+                );
+                if track {
+                    let Some(crate::table_layout::TableLayout::Columns(columns)) =
+                        panel.table_layout()
+                    else {
+                        panic!("track marker lost: internal={internal}, count={count}")
+                    };
+                    let plan = crate::table_layout::resolve(
+                        columns.as_slice(),
+                        400.0,
+                        &runtime.borrow().signals,
+                    );
+                    assert_eq!(
+                        plan.widths,
+                        vec![120.0 + if internal { count as f64 } else { 0.0 }, 140.0]
+                    );
+                } else {
+                    assert_eq!(
+                        panel.table_column(),
+                        Some(if internal { (count % 2) as usize } else { 0 })
+                    );
+                }
+                let UiNodeKind::Box { children } = panel.kind() else {
+                    panic!("expected panel")
+                };
+                assert!(
+                    matches!(children[0].kind(), UiNodeKind::Text { text } if text == &count.to_string())
+                );
+            };
+            assert_panel(&lifecycle, 0);
+            for count in [1, 2] {
+                runtime
+                    .borrow_mut()
+                    .set_component_state_from_host(&component, "count", UiValue::Integer(count))
+                    .unwrap();
+                assert_eq!(
+                    runtime.borrow().dirty_components(),
+                    &BTreeSet::from([component.clone()])
+                );
+                assert!(lifecycle.render_dirty(&mut engine).unwrap());
+                assert_panel(&lifecycle, count);
+            }
+            runtime
+                .borrow_mut()
+                .set_component_state_from_host(&component, "count", UiValue::Integer(-1))
+                .unwrap();
+            assert!(lifecycle.render_dirty(&mut engine).is_err());
+            assert_panel(&lifecycle, 2);
+            runtime
+                .borrow_mut()
+                .set_component_state_from_host(&component, "count", UiValue::Integer(3))
+                .unwrap();
+            assert!(lifecycle.render_dirty(&mut engine).unwrap());
+            assert_panel(&lifecycle, 3);
+        }
+    }
+
+    #[test]
+    fn table_modifiers_replay_track_across_incremental_updates_and_failed_candidates() {
+        assert_table_modifier_replay(true);
+    }
+
+    #[test]
+    fn table_modifiers_replay_column_across_incremental_updates_and_failed_candidates() {
+        assert_table_modifier_replay(false);
     }
 }

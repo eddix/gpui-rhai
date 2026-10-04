@@ -399,12 +399,15 @@ impl PartialEq for ComponentOwnedSnapshotRef {
     }
 }
 
+// Caller-visible layout metadata follows the same snapshot/replay boundary as style.
 #[derive(Clone, Debug, PartialEq)]
 enum NodePresentationMutation {
     Key(NodeKey),
     Style(Rc<Style>),
     PartStyles(Rc<BTreeMap<String, Style>>),
     Signal(crate::SignalProperty, crate::NativeSignal),
+    TableTrack(Rc<crate::table_layout::TableLayout>),
+    TableColumn(usize),
     ElementRef(crate::ElementRef),
     Attribute(String, UiValue),
     Handler(String, UiEventBinding),
@@ -425,6 +428,8 @@ impl NodePresentationMutation {
             Self::Signal(property, signal) => {
                 node.signal_bindings.insert(*property, signal.clone());
             }
+            Self::TableTrack(layout) => node.table_layout = Some(Rc::clone(layout)),
+            Self::TableColumn(index) => node.table_column = Some(*index),
             Self::ElementRef(reference) => node.element_ref = Some(reference.clone()),
             Self::Attribute(name, value) => {
                 node.attributes.insert(name.clone(), value.clone());
@@ -1940,8 +1945,9 @@ impl CustomType for UiNode {
                     }
                     crate::table_layout::decode_columns(&columns, &signals).map(|columns| {
                         let mut result = node.clone();
-                        result.table_layout =
-                            Some(Rc::new(crate::table_layout::TableLayout::Columns(columns)));
+                        result.apply_presentation_mutation(NodePresentationMutation::TableTrack(
+                            Rc::new(crate::table_layout::TableLayout::Columns(columns)),
+                        ));
                         result
                     })
                 },
@@ -1960,7 +1966,8 @@ impl CustomType for UiNode {
                         ));
                     }
                     let mut result = node.clone();
-                    result.table_column = Some(index);
+                    result
+                        .apply_presentation_mutation(NodePresentationMutation::TableColumn(index));
                     Ok(result)
                 },
             )

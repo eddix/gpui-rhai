@@ -976,6 +976,8 @@ Guidelines:
   Percentage widths never use the growing scroll extent as their basis. Wide
   tables stay clipped and horizontally reachable in LTR and RTL; switching
   loading/empty/data retains the logical offset, clamped to the current range.
+  LTR↔RTL locale changes also preserve distance from the logical start; a
+  smaller range clamps that distance rather than resetting only one direction.
 - Set `resizable_columns: true` for native divider dragging. Per-column
   `resizable`, `min_width`, and `max_width` refine the policy. Pointer movement
   stays on the native signal path; `on_column_resize` runs once on release with
