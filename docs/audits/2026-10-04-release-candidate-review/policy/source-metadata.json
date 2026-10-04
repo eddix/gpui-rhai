@@ -1,0 +1,20 @@
+{
+  "head": "736025a8b2b1ac44d41d893bc9a929c990b97532",
+  "prior_review_head": "be7a8eb83f5c97b9932661d74e5c3b7c684be4ce",
+  "policy_paths_equal_prior_review": true,
+  "files": {
+    "crates/gpui-rhai/src/engine.rs": "6841895db4bcba40803d0a4a0ef9491b76254598aca8a18b169f60407f445580",
+    "crates/gpui-rhai/src/app.rs": "8ba8e54dd12504127f5374dcfccba0cc07181bc115a0fe820cb86f2f0f5cb9af",
+    "crates/gpui-rhai/src/invocation.rs": "b4623e1580552a228245ec588585da3bc1de34bf2e524e3431cece1c91df0868",
+    "crates/gpui-rhai/src/diagnostic.rs": "84351d1703f27dec5c361e3fb8d32b30560f285b7f08e7b0e5719dfae3e571d9",
+    "crates/gpui-rhai/src/source.rs": "fe979e5e97576de9bed5197e7fb024dbe445cb2061366261a3e3d2b4ff09e93b",
+    "crates/gpui-rhai/tests/host_execution_policy.rs": "cc82909b8492f2b04c953029bd58d496ae827a1a61d40912557527119a88b19a",
+    "tests/native-keyboard/tests/host_execution_policy.rs": "6a748f5797694a6d43a7fc05ab9d837dbb839935f48c636257469dd8a581ad87"
+  },
+  "fresh_runs": {
+    "root_host_execution_policy": 6,
+    "independent_public_api_probes": 2
+  },
+  "native_suite": "owned by root reviewer, not rerun here",
+  "release_profile": "not rerun; prior review evidence read with explicit source equality"
+}

@@ -1,0 +1,9 @@
+   Compiling audit-018-release-virtual-runtime-r8 v0.0.0 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/docs/audits/2026-10-04-release-candidate-review/virtual-runtime/probe)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 3.46s
+     Running `target/debug/audit-018-release-virtual-runtime-r8`
+slot_nodes=false formal_row=false: delayed row/state/callback, exact live theme owner, Event read isolation, prune and failed-read rollback passed
+slot_nodes=false formal_row=true: delayed row/state/callback, exact live theme owner, Event read isolation, prune and failed-read rollback passed
+slot_nodes=true formal_row=false: delayed row/state/callback, exact live theme owner, Event read isolation, prune and failed-read rollback passed
+slot_nodes=true formal_row=true: delayed row/state/callback, exact live theme owner, Event read isolation, prune and failed-read rollback passed
+refs formal=true retain_old=false: realization=Ok(true), committed_indices=[10]
+refs formal=true retain_old=true: realization=Ok(true), committed_indices=[0, 10]

@@ -1,0 +1,46 @@
+{
+  "date": "2026-10-04",
+  "recorded_at": "2026-10-04T02:21:10.701963+00:00",
+  "head": "16c60639dc1be8b7ad7d41255c578379afbce6c8",
+  "verdict": "approve_two_local_fixes_only",
+  "closed_findings": [
+    "R8-T1",
+    "R8-T2"
+  ],
+  "new_findings": [],
+  "fresh_tests": {
+    "core-replay.log": {
+      "passed": 2,
+      "failed": 0
+    },
+    "original-table.log": {
+      "passed": 6,
+      "failed": 0
+    },
+    "table-native.log": {
+      "passed": 13,
+      "failed": 0
+    }
+  },
+  "modifier_characterization_cases": 4,
+  "original_probes_unchanged": true,
+  "visual_baseline_files_verified_and_viewed": 5,
+  "ci": {
+    "status": "in_progress",
+    "conclusion": "",
+    "url": "https://github.com/eddix/gpui-rhai/actions/runs/37170330105"
+  },
+  "pending": [
+    "Exact HEAD CI completion",
+    "Real OS input/accessibility matrix",
+    "Physical 120Hz hardware gate"
+  ],
+  "provided_not_freshly_rerun": [
+    "Workspace 658",
+    "Default core 475",
+    "Full native 209",
+    "Clippy/package/smoke full matrix"
+  ],
+  "product_modified": false,
+  "github_mutations": false
+}

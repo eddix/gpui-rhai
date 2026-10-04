@@ -1,0 +1,21 @@
+   Compiling gpui-rhai-native-keyboard-tests v0.0.0 (/var/folders/r0/rh2q01k55bv9w7lhwxn0_x240000gn/T/gpui-runtime-core-r8-audit-8ij1bpkr)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.17s
+     Running tests/runtime_core_r8_audit.rs (tests/native-keyboard/target/debug/deps/runtime_core_r8_audit-f9d43c094da1ca63)
+
+running 5 tests
+queued open then failing sibling: Err(Automation(Command("failed to evaluate Rhai UI source: Runtime error: independent delivery failure @ 'main' (line 5, position 16)\nin call to function 'fail' (from 'main') (line 10, position 3)")))
+primary and secondary policies: [(300000, (96, 48)), (300000, (96, 48))]; child init native-Light self-close complete
+revoked source queued open: native_count=2, child_survives=true
+explicit trusted Host close after transport dispose: native windows=1
+test trusted_host_origin_survives_transport_view_dispose ... ok
+test secondary_init_self_close_preserves_native_qualification_theme_and_policy ... ok
+queued close then failing sibling: Err(Automation(Command("failed to evaluate Rhai UI source: Runtime error: independent delivery failure @ 'main' (line 5, position 16)\nin call to function 'fail' (from 'main') (line 10, position 3)")))
+revoked source queued close: native_count=2, child_survives=true
+test disposed_source_close_is_not_reauthorized_by_secondary_pump ... ok
+cancelled Open reservation reused by live child: 3 windows
+Open->Focus->Close repeated with same id: native windows=1, error=None
+test open_focus_close_chain_uses_one_reservation ... ok
+test disposed_source_open_is_not_reauthorized_by_secondary_pump ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.83s
+

@@ -2,7 +2,7 @@
 
 | Version | Focus | Integration impact |
 |---|---|---|
-| [0.1.8](0.1.8.md) | Unified Interaction Runtime and direct-manipulation component set | Add controlled interaction state; no Runtime API migration |
+| [0.1.8](0.1.8.md) | Unified Interaction Runtime, direct-manipulation components, Host policy/theme queries and Table/Ref convergence | Upgrade all three crates and copied Table source together; review Rust/key breaking changes; Runtime API stays 2 |
 | [0.1.7](0.1.7.md) | Formal Gallery, Operations Workbench, source-backed acceptance stories | Replace removed Gallery examples; adopt optional Host environment APIs and Table search/page props |
 | [0.1.6](0.1.6.md) | GPUI package-family migration and native AccessKit projection | Rust Host/MSRV migration to the exact gpui-pre 0.3.7 family |
 | [0.1.0](0.1.0.md) | First public runtime, CLI, registry, themes and 50 components | Initial adoption |

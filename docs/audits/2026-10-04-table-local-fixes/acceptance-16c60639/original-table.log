@@ -1,0 +1,37 @@
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+   Compiling gpui-rhai v0.1.8 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai)
+   Compiling audit-table-round8 v0.0.0 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/docs/audits/2026-10-04-release-candidate-review/table)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 34.42s
+     Running probe.rs (tests/native-keyboard/target/debug/deps/table_round8-7c8c42a0d7e5672a)
+
+running 6 tests
+test changing_direction_preserves_distance_from_logical_start ... locale direction initial_rtl=false: logical before=80,after=80
+locale direction initial_rtl=true: logical before=80,after=80
+ok
+test middle_percentage_native_resize_remains_fixed_after_viewport_and_state_changes ... middle percent rtl=false native=false: before=(249.0, 249.0),preview=(289.0, 289.0),after=(289.0, 289.0),flex=(289.0, 289.0)
+middle percent rtl=true native=true: before=(249.0, 249.0),preview=(289.0, 289.0),after=(289.0, 289.0),flex=(289.0, 289.0)
+ok
+test round7_replay::round7_fill_height_live_transitions_keep_viewport ... fill mode=1: initial=310,actual=310
+fill mode=2: initial=310,actual=310
+fill mode=3: initial=310,actual=310
+fill mode=0: initial=310,actual=310
+ok
+test round7_replay::round7_live_states_preserve_height_scroll_and_controlled_width ... scroll root direct semantic children=[("row", Some(GeometryBounds { x: 1.0, y: 51.0, width: 428.0, height: 30.0 })), ("row", Some(GeometryBounds { x: 1.0, y: 81.0, width: 428.0, height: 30.0 })), ("row", Some(GeometryBounds { x: 1.0, y: 111.0, width: 428.0, height: 30.0 })), ("row", Some(GeometryBounds { x: 1.0, y: 141.0, width: 428.0, height: 30.0 })), ("row", Some(GeometryBounds { x: 1.0, y: 171.0, width: 428.0, height: 30.0 })), ("row", Some(GeometryBounds { x: 1.0, y: 201.0, width: 428.0, height: 30.0 })), ("row", Some(GeometryBounds { x: 1.0, y: 231.0, width: 428.0, height: 30.0 }))]
+initial horizontal scroll A.x 1 -> -79
+mode=1 table=GeometryBounds { x: 0.0, y: 50.0, width: 300.0, height: 212.0 }, A=GeometryBounds { x: -79.0, y: 50.5, width: 128.0, height: 30.0 }, C=GeometryBounds { x: 189.0, y: 50.5, width: 160.0, height: 30.0 }
+mode=2 table=GeometryBounds { x: 0.0, y: 50.0, width: 300.0, height: 212.0 }, A=GeometryBounds { x: -79.0, y: 50.5, width: 128.0, height: 30.0 }, C=GeometryBounds { x: 189.0, y: 50.5, width: 160.0, height: 30.0 }
+mode=3 table=GeometryBounds { x: 0.0, y: 50.0, width: 300.0, height: 212.0 }, A=GeometryBounds { x: -79.0, y: 50.5, width: 128.0, height: 30.0 }, C=GeometryBounds { x: 189.0, y: 50.5, width: 160.0, height: 30.0 }
+mode=0 table=GeometryBounds { x: 0.0, y: 50.0, width: 300.0, height: 212.0 }, A=GeometryBounds { x: -79.0, y: 50.5, width: 128.0, height: 30.0 }, C=GeometryBounds { x: 189.0, y: 50.5, width: 160.0, height: 30.0 }
+ok
+test round7_replay::round7_rtl_shared_viewport_can_reveal_overflowing_last_column ... RTL mode=0: root.x=0, C before.x=-121,after+160.x=1,after-160.x=-121
+RTL mode=1: root.x=0, C before.x=-121,after+160.x=1,after-160.x=-121
+RTL mode=2: root.x=0, C before.x=-121,after+160.x=1,after-160.x=-121
+RTL mode=3: root.x=0, C before.x=-121,after+160.x=1,after-160.x=-121
+ok
+test round7_replay::round7_wheel_driver_control_scrolls_a_wide_direct_child ... wheel driver positive control: before.x=0,after.x=-80
+ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.64s
+

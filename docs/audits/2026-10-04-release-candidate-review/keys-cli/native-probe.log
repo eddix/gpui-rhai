@@ -1,0 +1,18 @@
+   Compiling audit-rc-keys-cli v0.0.0 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/docs/audits/2026-10-04-release-candidate-review/keys-cli/probe)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.27s
+     Running unittests src/lib.rs (tests/native-keyboard/target/debug/deps/audit_rc_keys_cli-5b04c7d81aea64aa)
+
+running 4 tests
+on/target_stop: ST
+plain k then ctrl-k/child_capture: CA
+test disabled_ancestor_does_not_run_key_capture_or_bubble ... ok
+test normalized_entry_aliases_share_declared_payload_across_phases ... ok
+on/target_immediate: I
+plain k then ctrl-k/stopped_capture: PA
+test matched_host_chord_precedes_raw_node_capture ... ok
+on_capture/target_stop: ST
+on_capture/target_immediate: I
+test stop_and_stop_immediate_preserve_distinct_same_phase_semantics ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.92s
+

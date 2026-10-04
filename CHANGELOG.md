@@ -5,7 +5,7 @@ All notable runtime, CLI, and registry changes are documented here. Version
 component schema, manifest, locale, and generated-source changes follow
 semantic versioning from this release.
 
-## 0.1.8 - Unreleased
+## 0.1.8 - 2026-10-04
 
 - Qualifies queued window commands by their original mount, independently of
   which View drains them. Revoked sources and replaced targets cannot operate
@@ -15,6 +15,9 @@ semantic versioning from this release.
   loading/empty states. Native resize requests its own follow-up frame without
   re-running the Rhai root. ElementRef readers now remain subscribed through
   appearance, rebind and removal, with contribution-owned cleanup.
+- Preserves Table logical scroll distance across LTR/RTL direction changes and
+  smaller ranges; replays caller track/column markers after component-only
+  updates while retaining last-good presentation on failure.
 - Adds trusted Host operation-limit and expression-depth configuration without
   raising defaults or data limits. ExecutionTiming reports the configured
   round limit and cumulative consumption separately from each span's cost.
@@ -27,7 +30,7 @@ semantic versioning from this release.
   free for empty as well as nonempty capability lists.
 - Adds a bounded foreground asset-publication bridge example and interactive
   Gallery wide/loading/empty/projected-empty Table cases. See the
-  [0.1.8 candidate notes](docs/releases/0.1.8.md) for Rust/key breaking changes,
+  [0.1.8 release notes](docs/releases/0.1.8.md) for Rust/key breaking changes,
   integration steps, verified boundaries and explicit 0.1.9 deferrals.
 
 - Adds one Host-domain Interaction Runtime for gesture ownership, pointer

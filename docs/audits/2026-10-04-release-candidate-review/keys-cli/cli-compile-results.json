@@ -1,0 +1,36 @@
+[
+  {
+    "fixture": "empty",
+    "command": [
+      "cargo",
+      "test",
+      "--manifest-path",
+      "docs/audits/2026-10-04-release-candidate-review/keys-cli/cli-fixtures/empty/Cargo.toml",
+      "--target-dir",
+      "tests/native-keyboard/target",
+      "--offline",
+      "--lib",
+      "--",
+      "--nocapture"
+    ],
+    "exit_code": 0,
+    "strictness": "crate-level #![deny(warnings)] includes generated module"
+  },
+  {
+    "fixture": "nonempty",
+    "command": [
+      "cargo",
+      "test",
+      "--manifest-path",
+      "docs/audits/2026-10-04-release-candidate-review/keys-cli/cli-fixtures/nonempty/Cargo.toml",
+      "--target-dir",
+      "tests/native-keyboard/target",
+      "--offline",
+      "--lib",
+      "--",
+      "--nocapture"
+    ],
+    "exit_code": 0,
+    "strictness": "crate-level #![deny(warnings)] includes generated module"
+  }
+]

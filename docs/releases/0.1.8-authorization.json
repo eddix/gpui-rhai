@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-04",
+  "version": "0.1.8",
+  "approved_candidate": "16c60639dc1be8b7ad7d41255c578379afbce6c8",
+  "validated_source": "43732b89c48ec6add95cc341d9e1090fe862cec4",
+  "independent_acceptance": "../audits/2026-10-04-table-local-fixes/acceptance-16c60639/report.zh-CN.md",
+  "candidate_ci": {
+    "status": "pass",
+    "head": "16c60639dc1be8b7ad7d41255c578379afbce6c8",
+    "url": "https://github.com/eddix/gpui-rhai/actions/runs/37170330105"
+  },
+  "human_authorization": {
+    "merge": true,
+    "related_pr_issue_disposition": true,
+    "crates_io_publish": true,
+    "tag_and_github_release": true,
+    "source": "maintainer message after independent16c60639 acceptance: waive unavailable manual acceptance and perform release/dispositions"
+  },
+  "waived_for_this_release_only": [
+    {"id":"OS_input_accessibility","status":"not_run_user_waived","cases":["real keyboard/focus","clipboard","IME preedit","VoiceOver","applicable window interactions"]},
+    {"id":"physical120Hz","status":"not_run_user_waived","available_hz":60}
+  ],
+  "not_claimed": ["OS manual checks passed","physical120Hz certification"],
+  "release_commit_reference": "v0.1.8 after successful dependency-ordered publication and clean consumption verification",
+  "unchanged_future_policy": true,
+  "notes": "Release-preparation metadata does not change the approved product/test/dependency trees; exact final integration/main CI and crates.io availability are checked operationally before completing release. Historical audit pending/no-authorization statements remain records of their original time."
+}

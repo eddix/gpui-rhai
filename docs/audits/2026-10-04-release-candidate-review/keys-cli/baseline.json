@@ -1,0 +1,58 @@
+{
+  "commit": "736025a8b2b1ac44d41d893bc9a929c990b97532",
+  "packages": [
+    {
+      "name": "gpui-pre",
+      "version": "0.3.7",
+      "manifest_path": "/Users/eddix/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/gpui-pre-0.3.7/Cargo.toml",
+      "features": [
+        "backtrace",
+        "font-kit",
+        "leak-detection",
+        "proptest",
+        "test-support",
+        "wayland",
+        "windows-manifest",
+        "x11"
+      ]
+    },
+    {
+      "name": "gpui-rhai",
+      "version": "0.1.8",
+      "manifest_path": "/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai/Cargo.toml",
+      "features": [
+        "charts",
+        "default"
+      ]
+    },
+    {
+      "name": "gpui-rhai-cli",
+      "version": "0.1.8",
+      "manifest_path": "/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai-cli/Cargo.toml",
+      "features": [
+        "test-support"
+      ]
+    },
+    {
+      "name": "rhai",
+      "version": "1.26.0",
+      "manifest_path": "/Users/eddix/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rhai-1.26.0/Cargo.toml",
+      "features": [
+        "default",
+        "internals",
+        "metadata",
+        "serde",
+        "serde_json",
+        "std"
+      ]
+    }
+  ],
+  "source_sha256": {
+    "crates/gpui-rhai/src/node.rs": "05743777988eaad88ff18eb21ac2a4fcfc4e4bd992d8576fee02caec50d41fd1",
+    "crates/gpui-rhai/src/renderer.rs": "8d0ef2798942ada2f418511dfa7dbeaab0c3f0e63d2763f2aa6806b4f0fe73e7",
+    "crates/gpui-rhai-cli/src/lib.rs": "4703e3f201cfc6219483b3b397e2d6a4080480130ccd0fa6d89c2cf2becb4212",
+    "docs/actions-and-keybindings.md": "31ae2f2cbb3c68aa7f5dc41490d2bd152d0730c54990bcf0e99dfc6ef0dd2f36",
+    "tests/native-keyboard/tests/node_key_contract.rs": "887fea5ffe0f6e43f4a10f1ebde3bb1b3601f3729b7f3d81af2f264a23137f9f"
+  },
+  "product_diff": []
+}
