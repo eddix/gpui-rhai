@@ -1,0 +1,31 @@
+   Compiling gpui-rhai v0.1.8 (/Users/eddix/Codes/github.com/eddix/gpui-rhai/crates/gpui-rhai)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.03s
+     Running unittests src/lib.rs (target/debug/deps/gpui_rhai-211f66b2df6210d9)
+
+running 2 tests
+test lifecycle::tests::table_modifiers_replay_column_across_incremental_updates_and_failed_candidates ... FAILED
+test lifecycle::tests::table_modifiers_replay_track_across_incremental_updates_and_failed_candidates ... FAILED
+
+failures:
+
+---- lifecycle::tests::table_modifiers_replay_column_across_incremental_updates_and_failed_candidates stdout ----
+
+thread 'lifecycle::tests::table_modifiers_replay_column_across_incremental_updates_and_failed_candidates' (5823009) panicked at crates/gpui-rhai/src/lifecycle.rs:3905:21:
+assertion `left == right` failed
+  left: None
+ right: Some(0)
+
+---- lifecycle::tests::table_modifiers_replay_track_across_incremental_updates_and_failed_candidates stdout ----
+
+thread 'lifecycle::tests::table_modifiers_replay_track_across_incremental_updates_and_failed_candidates' (5823010) panicked at crates/gpui-rhai/src/lifecycle.rs:3893:25:
+track marker lost: internal=false, count=1
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    lifecycle::tests::table_modifiers_replay_column_across_incremental_updates_and_failed_candidates
+    lifecycle::tests::table_modifiers_replay_track_across_incremental_updates_and_failed_candidates
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 473 filtered out; finished in 0.81s
+
+error: test failed, to rerun pass `-p gpui-rhai --lib`

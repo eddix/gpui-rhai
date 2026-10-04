@@ -10,6 +10,7 @@ evidence tied to an explicit environment, not portable pixel-perfect promises.
 - Registry design-system refresh: 2026-09-01
 - Gallery/Acceptance Application capture: 2026-09-27
 - Data Table release-candidate refresh: 2026-10-03 (see the separate environment below)
+- Data Table local-fix source refresh: 2026-10-04
 - macOS: 26.6.2 (25G83)
 - Original product captures: GPUI 0.2.2 / Rust 1.94.1
 - Gallery captures: gpui-pre 0.3.6 / Rust 1.95.0
@@ -56,8 +57,8 @@ sections; its refreshed screenshot is pending the next unlocked visual pass.
 
 ### Data Table 0.1.8 candidate refresh
 
-The five Table files were recaptured on 2026-10-03 from product source
-`53a62e3f` (capture checkout `dface4b4`) using gpui-pre 0.3.7 on
+The five Table files were recaptured on 2026-10-04 from frozen local-fix source
+`43732b89`, following the 2026-10-03 `53a62e3f` capture, using gpui-pre 0.3.7 on
 macOS 27.0.1 (26A434). Their environment supersedes the older environment
 above for these five files only. See [capture.json](data_table/capture.json)
 for binary/raw/baseline hashes and per-case state.
@@ -73,9 +74,12 @@ Only the five exact test bundles were temporarily excluded from Rift
 management for native placement, with explicit user permission. The original
 11 runtime rules and all other runtime settings were restored afterward;
 owned test processes were closed and the pre-existing test instance retained.
-The native title bar is included: its dark system chrome and colored traffic
-lights differ from the older capture environment, independently of the Rhai
-content theme.
+The native title bar is included: the system chrome is Light on 2026-10-04
+(Dark on 2026-10-03), independently of the Rhai content theme. No OS appearance
+setting was changed for capture. Decoded comparison against the previous five
+PNGs confines differences to rows 0–33: the title bar and its adjacent boundary;
+rows 34–751, containing the controls, are pixel-identical. This is a frozen-source
+recapture, not a new control-design change.
 
 The refresh shows shared resolved column widths and resize separators,
 contained loading/empty shells and pagination, genuine two-row accent

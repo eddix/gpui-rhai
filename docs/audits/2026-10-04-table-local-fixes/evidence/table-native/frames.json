@@ -1,0 +1,191 @@
+{
+  "date": "2026-10-04",
+  "source": "43732b89c48ec6add95cc341d9e1090fe862cec4",
+  "measurements": [
+    {
+      "after": {
+        "ax_size": {
+          "height": 752,
+          "width": 980
+        },
+        "bundle_id": "com.eddix.gpui-rhai.visual-test.data-table.cOKIQI",
+        "frame": {
+          "Height": 752,
+          "Width": 980,
+          "X": 100,
+          "Y": 100
+        },
+        "pid": 53080,
+        "screen_scale": 2,
+        "window_id": 20421
+      },
+      "attempt": 1,
+      "before": {
+        "ax_size": {
+          "height": 752,
+          "width": 980
+        },
+        "bundle_id": "com.eddix.gpui-rhai.visual-test.data-table.cOKIQI",
+        "frame": {
+          "Height": 752,
+          "Width": 980,
+          "X": 100,
+          "Y": 100
+        },
+        "pid": 53080,
+        "screen_scale": 2,
+        "window_id": 20421
+      },
+      "capture": "/tmp/gpui-rhai-018-native-capture.WZYwOr/r8-43732b89/catppuccin-mocha.ar.rtl.raw.png",
+      "capture_tool": "screencapture -x -o -l"
+    },
+    {
+      "after": {
+        "ax_size": {
+          "height": 752,
+          "width": 980
+        },
+        "bundle_id": "com.eddix.gpui-rhai.visual-test.data-table.XF7Ffu",
+        "frame": {
+          "Height": 752,
+          "Width": 980,
+          "X": 100,
+          "Y": 100
+        },
+        "pid": 53056,
+        "screen_scale": 2,
+        "window_id": 20410
+      },
+      "attempt": 1,
+      "before": {
+        "ax_size": {
+          "height": 752,
+          "width": 980
+        },
+        "bundle_id": "com.eddix.gpui-rhai.visual-test.data-table.XF7Ffu",
+        "frame": {
+          "Height": 752,
+          "Width": 980,
+          "X": 100,
+          "Y": 100
+        },
+        "pid": 53056,
+        "screen_scale": 2,
+        "window_id": 20410
+      },
+      "capture": "/tmp/gpui-rhai-018-native-capture.WZYwOr/r8-43732b89/default-dark.en.selected.raw.png",
+      "capture_tool": "screencapture -x -o -l"
+    },
+    {
+      "after": {
+        "ax_size": {
+          "height": 752,
+          "width": 980
+        },
+        "bundle_id": "com.eddix.gpui-rhai.visual-test.data-table.56OPI1",
+        "frame": {
+          "Height": 752,
+          "Width": 980,
+          "X": 100,
+          "Y": 100
+        },
+        "pid": 53028,
+        "screen_scale": 2,
+        "window_id": 20397
+      },
+      "attempt": 1,
+      "before": {
+        "ax_size": {
+          "height": 752,
+          "width": 980
+        },
+        "bundle_id": "com.eddix.gpui-rhai.visual-test.data-table.56OPI1",
+        "frame": {
+          "Height": 752,
+          "Width": 980,
+          "X": 100,
+          "Y": 100
+        },
+        "pid": 53028,
+        "screen_scale": 2,
+        "window_id": 20397
+      },
+      "capture": "/tmp/gpui-rhai-018-native-capture.WZYwOr/r8-43732b89/default-light.en.empty.raw.png",
+      "capture_tool": "screencapture -x -o -l"
+    },
+    {
+      "after": {
+        "ax_size": {
+          "height": 752,
+          "width": 980
+        },
+        "bundle_id": "com.eddix.gpui-rhai.visual-test.data-table.R6pvav",
+        "frame": {
+          "Height": 752,
+          "Width": 980,
+          "X": 100,
+          "Y": 100
+        },
+        "pid": 53004,
+        "screen_scale": 2,
+        "window_id": 20386
+      },
+      "attempt": 1,
+      "before": {
+        "ax_size": {
+          "height": 752,
+          "width": 980
+        },
+        "bundle_id": "com.eddix.gpui-rhai.visual-test.data-table.R6pvav",
+        "frame": {
+          "Height": 752,
+          "Width": 980,
+          "X": 100,
+          "Y": 100
+        },
+        "pid": 53004,
+        "screen_scale": 2,
+        "window_id": 20386
+      },
+      "capture": "/tmp/gpui-rhai-018-native-capture.WZYwOr/r8-43732b89/default-light.en.loading.raw.png",
+      "capture_tool": "screencapture -x -o -l"
+    },
+    {
+      "after": {
+        "ax_size": {
+          "height": 752,
+          "width": 980
+        },
+        "bundle_id": "com.eddix.gpui-rhai.visual-test.data-table.Yt6e0M",
+        "frame": {
+          "Height": 752,
+          "Width": 980,
+          "X": 100,
+          "Y": 100
+        },
+        "pid": 52974,
+        "screen_scale": 2,
+        "window_id": 20373
+      },
+      "attempt": 1,
+      "before": {
+        "ax_size": {
+          "height": 752,
+          "width": 980
+        },
+        "bundle_id": "com.eddix.gpui-rhai.visual-test.data-table.Yt6e0M",
+        "frame": {
+          "Height": 752,
+          "Width": 980,
+          "X": 100,
+          "Y": 100
+        },
+        "pid": 52974,
+        "screen_scale": 2,
+        "window_id": 20373
+      },
+      "capture": "/tmp/gpui-rhai-018-native-capture.WZYwOr/r8-43732b89/default-light.en.ltr.raw.png",
+      "capture_tool": "screencapture -x -o -l"
+    }
+  ]
+}
