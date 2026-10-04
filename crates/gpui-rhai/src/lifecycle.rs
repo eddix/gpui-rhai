@@ -3815,6 +3815,56 @@ mod tests {
         );
     }
 
+    fn assert_table_panel_marker(
+        lifecycle: &ScriptLifecycle,
+        runtime: &UiRuntimeState,
+        track: bool,
+        internal: bool,
+        count: i32,
+    ) {
+        let root = lifecycle.root().unwrap();
+        let panel = if track {
+            root
+        } else {
+            let UiNodeKind::Box { children } = root.kind() else {
+                panic!("expected track")
+            };
+            &children[0]
+        };
+        assert_eq!(
+            panel.style().base.width,
+            Some(crate::LayoutLength::Definite(
+                crate::Length::pixels(123.0).unwrap()
+            ))
+        );
+        if track {
+            let Some(crate::table_layout::TableLayout::Columns(columns)) = panel.table_layout()
+            else {
+                panic!("track marker lost: internal={internal}, count={count}")
+            };
+            let plan = crate::table_layout::resolve(columns.as_slice(), 400.0, &runtime.signals);
+            assert_eq!(
+                plan.widths,
+                vec![120.0 + if internal { f64::from(count) } else { 0.0 }, 140.0]
+            );
+        } else {
+            assert_eq!(
+                panel.table_column(),
+                Some(if internal {
+                    usize::try_from(count % 2).unwrap()
+                } else {
+                    0
+                })
+            );
+        }
+        let UiNodeKind::Box { children } = panel.kind() else {
+            panic!("expected panel")
+        };
+        assert!(
+            matches!(children[0].kind(), UiNodeKind::Text { text } if text.as_str() == count.to_string())
+        );
+    }
+
     fn assert_table_modifier_replay(track: bool) {
         for internal in [true, false] {
             let modifier = if track {
@@ -3870,75 +3920,35 @@ mod tests {
             )
             .unwrap();
             lifecycle.start(&mut engine).unwrap();
-            let assert_panel = |lifecycle: &ScriptLifecycle, count: i64| {
-                let root = lifecycle.root().unwrap();
-                let panel = if track {
-                    root
-                } else {
-                    let UiNodeKind::Box { children } = root.kind() else {
-                        panic!("expected track")
-                    };
-                    &children[0]
-                };
-                assert_eq!(
-                    panel.style().base.width,
-                    Some(crate::LayoutLength::Definite(
-                        crate::Length::pixels(123.0).unwrap()
-                    ))
-                );
-                if track {
-                    let Some(crate::table_layout::TableLayout::Columns(columns)) =
-                        panel.table_layout()
-                    else {
-                        panic!("track marker lost: internal={internal}, count={count}")
-                    };
-                    let plan = crate::table_layout::resolve(
-                        columns.as_slice(),
-                        400.0,
-                        &runtime.borrow().signals,
-                    );
-                    assert_eq!(
-                        plan.widths,
-                        vec![120.0 + if internal { count as f64 } else { 0.0 }, 140.0]
-                    );
-                } else {
-                    assert_eq!(
-                        panel.table_column(),
-                        Some(if internal { (count % 2) as usize } else { 0 })
-                    );
-                }
-                let UiNodeKind::Box { children } = panel.kind() else {
-                    panic!("expected panel")
-                };
-                assert!(
-                    matches!(children[0].kind(), UiNodeKind::Text { text } if text == &count.to_string())
-                );
-            };
-            assert_panel(&lifecycle, 0);
+            assert_table_panel_marker(&lifecycle, &runtime.borrow(), track, internal, 0);
             for count in [1, 2] {
                 runtime
                     .borrow_mut()
-                    .set_component_state_from_host(&component, "count", UiValue::Integer(count))
+                    .set_component_state_from_host(
+                        &component,
+                        "count",
+                        UiValue::Integer(i64::from(count)),
+                    )
                     .unwrap();
                 assert_eq!(
                     runtime.borrow().dirty_components(),
                     &BTreeSet::from([component.clone()])
                 );
                 assert!(lifecycle.render_dirty(&mut engine).unwrap());
-                assert_panel(&lifecycle, count);
+                assert_table_panel_marker(&lifecycle, &runtime.borrow(), track, internal, count);
             }
             runtime
                 .borrow_mut()
                 .set_component_state_from_host(&component, "count", UiValue::Integer(-1))
                 .unwrap();
             assert!(lifecycle.render_dirty(&mut engine).is_err());
-            assert_panel(&lifecycle, 2);
+            assert_table_panel_marker(&lifecycle, &runtime.borrow(), track, internal, 2);
             runtime
                 .borrow_mut()
                 .set_component_state_from_host(&component, "count", UiValue::Integer(3))
                 .unwrap();
             assert!(lifecycle.render_dirty(&mut engine).unwrap());
-            assert_panel(&lifecycle, 3);
+            assert_table_panel_marker(&lifecycle, &runtime.borrow(), track, internal, 3);
         }
     }
 
