@@ -8,9 +8,10 @@ publish = false
 
 [dependencies]
 gpui = { package = "gpui-pre", version = "=0.3.7", default-features = false, features = ["font-kit", "test-support"] }
-gpui_platform = { package = "gpui-pre-platform", version = "=0.3.7", default-features = false, features = ["font-kit", "runtime_shaders", "wayland", "x11"] }
+gpui_platform = { package = "gpui-pre-platform", version = "=0.3.7", default-features = false, features = ["font-kit", "runtime_shaders", "wayland", "x11", "test-support"] }
 gpui-rhai = { path = "../../crates/gpui-rhai", features = ["charts"] }
 gpui-rhai-cli = { path = "../../crates/gpui-rhai-cli", features = ["test-support"] }
 gpui-rhai-registry = { path = "../../registry" }
+image = { version = "0.25", default-features = false, features = ["png"] }
 semver = "1"
 serde_json = "1"

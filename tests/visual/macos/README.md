@@ -8,12 +8,12 @@ evidence tied to an explicit environment, not portable pixel-perfect promises.
 - Original capture: 2026-08-28
 - Complex-control refresh: 2026-08-30
 - Registry design-system refresh: 2026-09-01
-- Gallery/Acceptance Application capture: 2026-09-27
+- Gallery/Acceptance Application capture: 2026-09-27; replaced by the 0.2 Gallery on 2026-10-04
 - Data Table release-candidate refresh: 2026-10-03 (see the separate environment below)
 - Data Table local-fix source refresh: 2026-10-04
 - macOS: 26.6.2 (25G83)
 - Original product captures: GPUI 0.2.2 / Rust 1.94.1
-- Gallery captures: gpui-pre 0.3.6 / Rust 1.95.0
+- Gallery captures: gpui-pre 0.3.7 / Rust 1.95.0, macOS 27.0 (offscreen Metal readback)
 - Capture service: Codex Computer Use, one screenshot pixel per logical point
 - Settings viewport/capture: 640 × 520 points / 640 × 552 pixels
 - Dashboard viewport/capture: 760 × 560 points / 760 × 592 pixels
@@ -21,9 +21,9 @@ evidence tied to an explicit environment, not portable pixel-perfect promises.
 - Data Table viewport/capture: 980 × 720 points / 980 × 752 pixels
 - Theme Studio planned viewport/capture: 1280 × 820 points / 1280 × 852 pixels
 - Embedded Views viewport/capture: 900 × 420 points / 900 × 452 pixels
-- Gallery content viewport/capture: 1181 × 820 points / 1181 × 820 pixels
-  (the macOS title bar is excluded so the screen-control privacy indicator is
-  not mistaken for product UI)
+- Gallery viewport/capture: 1280 × 860 points / 2560 × 1720 pixels, rendered
+  offscreen and read back from the GPU texture (no window chrome, no screen
+  capture)
 
 ## Recorded cases
 
@@ -92,15 +92,22 @@ Theme Studio replaced the old Component Gallery on 2026-09-01. An unlocked
 manual pass on 2026-09-05 verified its independent editor/specimen scrolling
 and the shared specimen across the Gallery's 15-theme, category, compact,
 regular, RTL, reduced-motion, Sheet, CommandDialog, and AlertDialog matrix.
-The 2026-09-27 Acceptance Application pass adds 29 checked-in, content-only
-Gallery PNGs. They cover every Component Catalog case in Default Light/Dark,
-Catppuccin Mocha Arabic RTL, Tokyo Night reduced motion, Chart normal/reduced/
-none plus diagnostics, Motion none, HostSlot, and Operations dashboard/config/
-loading/empty/large/failure/CommandDialog states. Obsolete Gallery PNGs were
-not relabeled as Theme Studio evidence. With the original 38 product-context
-and shared-Host captures, that pass yielded 67 baselines. The later Resizable
-and SplitPane captures bring the maintained inventory to 69; refreshing the
-five Table files does not change the count.
+The 2026-09-27 Acceptance Application pass recorded 29 story-shell Gallery
+PNGs; with Resizable and SplitPane they reached 31 and the inventory 69.
+
+On 2026-10-04 the 0.2 Gallery replaced them. The Rust story shell they showed no
+longer exists, and the 0.2 components look different, so the 31 files were
+removed rather than relabeled. The 19 new files (`gallery/*.png`) are four pages
+(Button and the operations, form and settings scenes) in comfortable/compact ×
+light/dark, `scene.operations` in Arabic RTL, and `table` and
+`description_list` in Simplified Chinese. They are rendered offscreen by
+`scripts/capture-macos-gallery-baselines.sh`. The inventory is now 57: 38
+product-context and shared-Host captures plus 19 Gallery captures.
+
+**The 38 example baselines (`settings_panel`, `dashboard_layout`,
+`form_showcase`, `data_table`, `embedded_views`) predate the 0.2 design system.**
+They still show the 0.1.x component appearance and need a refresh pass; their
+capture procedure is unchanged.
 
 `embedded_views/default-dark.shared-host.png` records three independent Rhai
 views inside one host-owned GPUI layout. It proves compact responsive sizing for

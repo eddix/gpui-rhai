@@ -70,23 +70,25 @@ manual pass verified its independent editor/specimen scrolling and the shared
 specimen; checked-in Studio PNG expansion remains separate baseline work.
 Capture `embedded_views` once with the small view's Combobox open and duplicate
 local Toast IDs visible in the shared Host queue.
-Capture `components/catalog` in every case under Default Light/Dark, one
-community theme, reduced motion, and Arabic RTL. Gallery controls must switch
-all visible components without recompiling or resetting controlled state.
-The 2026-09-05 manual pass covered every category, all 15 themes, 560-point
-compact and 900-point regular windows, Arabic RTL, reduced motion, Sheet,
-CommandDialog, and AlertDialog. Reproduce deterministic launch states with:
+The Gallery baselines are rendered offscreen: `scripts/capture-macos-gallery-baselines.sh`
+runs `tests/native-keyboard/src/bin/gallery_baselines.rs`, which mounts the
+Gallery in a GPUI `VisualTestAppContext` window at (-10000, -10000) and reads
+the frame back from the Metal texture with `Window::render_to_image`. Window
+managers, other windows and the screen-recording permission therefore never
+enter a baseline, and the window keeps its 1280 × 860-point size even under a
+tiling window manager. Images are stored in device pixels (2560 × 1720 on a
+Retina display). The matrix is four pages (Button, `scene.operations`,
+`scene.form`, `scene.settings`) in comfortable and compact, Default Light and
+Dark, plus `scene.operations` in Arabic RTL and `table` and `description_list`
+in Simplified Chinese. `--pages [density] [theme] [locale]` renders every page
+for a review sweep without writing baselines.
+
+Stories remain available for manual checks in a standalone window:
 
 ```sh
 bash scripts/build-macos-gallery-app.sh components/catalog forms default-light en
 bash scripts/build-macos-gallery-app.sh components/catalog forms catppuccin-mocha ar
-bash scripts/build-macos-gallery-app.sh components/catalog overlays tokyo-night en
 ```
-
-The 2026-09-27 checked-in Gallery matrix records all five catalog cases in
-Default Light/Dark, Catppuccin Mocha Arabic RTL, and Tokyo Night Reduced. The
-1181×820 files are content-only captures: macOS window chrome is excluded so
-the active screen-control privacy indicator cannot enter a product baseline.
 
 Capture `charts/catalog` after every built-in series has installed its prepared
 scene, including Default Light/Dark, one community theme, Arabic RTL, normal,
@@ -221,13 +223,11 @@ bash scripts/build-macos-theme-studio-app.sh
 bash scripts/build-macos-test-app.sh data_table default-dark en selected
 bash scripts/build-macos-test-app.sh form_showcase default-light zh-CN date-picker
 bash scripts/build-macos-gallery-app.sh components/split-pane basic default-dark en normal
-bash scripts/capture-macos-gallery-baselines.sh
 ```
 
 The command prints the unique temporary bundle path. It never replaces an
 existing application or baseline. The optional theme, locale, state, and motion
 arguments are consumed only by examples that opt into deterministic
 visual-test startup; normal runs preserve their documented defaults.
-The Gallery capture manifest uses deterministic story cases and motion policy,
-waits for background document preparation, excludes the native titlebar, and
-normalizes Retina captures to the maintained 1181×820 content baseline.
+Gallery baselines need no bundle: `bash scripts/capture-macos-gallery-baselines.sh`
+renders them offscreen as described above.
