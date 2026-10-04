@@ -48,6 +48,23 @@ content extent, not a new percentage base. Header and body consume that same
 resolution and offset. Clipping, vertical virtualization, RTL reachability and
 controlled proposal rollback remain separate contracts.
 
+Scroll continuity uses distance from the logical start. Decode the prior
+offset using its prior direction/range, clamp to the new range, then encode
+in the new direction. Only the first measurement initializes that distance
+to zero; changing locale must not masquerade as first initialization.
+
+## Maintaining node modifiers
+
+A caller decoration intended to survive component updates must participate
+in `NodePresentationMutation` and its apply/replay path, including layout
+metadata such as Table track and column markers. Wiring only a builder field
+and renderer is insufficient. The lazily retained component-owned snapshot
+must stay free of caller decoration; successful replacements replay that
+decoration over the fresh owned render, while failures retain last-good
+presentation. Add internal/external and repeated-update controls when adding
+such metadata, and generation/scope binding controls if it contains callbacks.
+Do not create a second metadata-restoration registry.
+
 ## Verification
 
 The maintained contract index is [runtime-contract-tests.md](../runtime-contract-tests.md).

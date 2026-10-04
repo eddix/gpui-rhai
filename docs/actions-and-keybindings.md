@@ -31,8 +31,12 @@ host.bind_keys(prepared.key_bindings().iter().cloned(), cx)?;
 The same declaration is available on `FileScriptView`, but mounting a view never
 changes the App keymap automatically. The host must explicitly approve and bind
 the declarations. Binding the same keys/context to different actions is an
-error; repeating the same binding is idempotent. GPUI first offers keyboard input
-to the focused native primitive; unhandled input then reaches the action system.
+error; repeating the same binding is idempotent. In the pinned gpui-pre 0.3.7,
+matching Host keybindings may dispatch and consume an action before raw node
+Capture/Target/Bubble handlers run. A consumed chord does not also reach node
+capture. Character-preferred text input can bypass bindings; this is not a
+universal "native input first, actions second" ordering. Leave exact chords to
+the Host and use node handlers for unconsumed single-key events.
 Register an app action once (normally only when `ctx.window_id() == "main"`) so
 opening another script window does not redefine policy accidentally.
 

@@ -419,17 +419,15 @@ impl Element for TableViewportElement {
         let mut state = frame.state.borrow_mut();
         if let Some(scroll) = &self.scroll {
             let old = f64::from(scroll.offset().x);
-            let offset = if self.direction == TextDirection::RightToLeft {
-                let logical = if state.direction == Some(self.direction) {
-                    state.maximum + old
-                } else {
-                    0.0
-                };
-                logical.clamp(0.0, maximum) - maximum
-            } else if state.direction == Some(TextDirection::RightToLeft) {
-                -(state.maximum + old).clamp(0.0, maximum)
-            } else {
-                old.clamp(-maximum, 0.0)
+            let logical = match state.direction {
+                None => 0.0,
+                Some(TextDirection::LeftToRight) => -old,
+                Some(TextDirection::RightToLeft) => state.maximum + old,
+            }
+            .clamp(0.0, maximum);
+            let offset = match self.direction {
+                TextDirection::LeftToRight => -logical,
+                TextDirection::RightToLeft => logical - maximum,
             };
             scroll.set_offset(point(
                 px(crate::renderer::f64_to_f32(offset)),

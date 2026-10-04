@@ -87,6 +87,56 @@ fn view(ctx) {{
     )
 }
 const FIXED: &str = r#"[#{key:"a",title:"A",width:#{kind:"fixed",value:120.0},sortable:true},#{key:"b",title:"B",width:#{kind:"fixed",value:140.0},sortable:true},#{key:"c",title:"C",width:#{kind:"fixed",value:160.0},sortable:true}]"#;
+
+#[gpui::test]
+fn direction_changes_preserve_logical_scroll_distance_and_clamp(cx: &mut TestAppContext) {
+    for rtl in [false, true] {
+        for native in [false, true] {
+            let source = script(rtl, native, FIXED, true)
+                .replace("Fn(\"viewport\"),500.0", "Fn(\"viewport\"),350.0");
+            let (window, view) = mount(cx, source, &format!("extent-direction-{rtl}-{native}"));
+            let mut v = VisualTestContext::from_window(*window, cx);
+            settle(&mut v);
+            let logical_distance = |v: &mut VisualTestContext, direction_is_rtl: bool| {
+                let table = bounds(v, &view, "table", "Extent Table");
+                let first = bounds(v, &view, "columnheader", "A");
+                if direction_is_rtl {
+                    first.x + first.width - (table.x + table.width - 1.0)
+                } else {
+                    table.x + 1.0 - first.x
+                }
+            };
+            let table = bounds(&mut v, &view, "table", "Extent Table");
+            wheel(
+                &mut v,
+                point(px((table.x + 150.0) as f32), px((table.y + 15.0) as f32)),
+                if rtl { 80.0 } else { -80.0 },
+                0.0,
+            );
+            assert!((logical_distance(&mut v, rtl) - 80.0).abs() < 0.6);
+            v.update(|_, cx| view.select_locale(if rtl { "en" } else { "ar" }, cx))
+                .unwrap();
+            settle(&mut v);
+            let after = logical_distance(&mut v, !rtl);
+            assert!(
+                (after - 80.0).abs() < 0.6,
+                "rtl={rtl} native={native}: {after}"
+            );
+            assert_width(&mut v, &view, "A", "Alpha", 120.0);
+
+            // The wider viewport reduces the range to 420 - (350 - 2) = 72.
+            command(&mut v, &view, "button", "Viewport", "click");
+            settle(&mut v);
+            let clamped = logical_distance(&mut v, !rtl);
+            assert!((clamped - 72.0).abs() < 0.6, "range clamp: {clamped}");
+            v.update(|_, cx| view.select_locale(if rtl { "ar" } else { "en" }, cx))
+                .unwrap();
+            settle(&mut v);
+            assert!((logical_distance(&mut v, rtl) - 72.0).abs() < 0.6);
+            assert_width(&mut v, &view, "A", "Alpha", 120.0);
+        }
+    }
+}
 fn mount(
     cx: &mut TestAppContext,
     source: String,
