@@ -361,3 +361,71 @@ fn rotatable_page_turns_from_anywhere_in_the_area(cx: &mut TestAppContext) {
         .and_then(|node| node.value.clone());
     assert_eq!(value, Some(UiValue::Float(30.0)));
 }
+
+fn theme_mount(cx: &mut TestAppContext, theme: &str) -> (VisualTestContext, ScriptViewHandle) {
+    cx.update(gpui_rhai::install);
+    let launch = AcceptanceLaunch {
+        theme: theme.to_owned(),
+        ..AcceptanceLaunch::default()
+    };
+    let (window, view) = mount(cx, &launch);
+    let mut visual = VisualTestContext::from_window(*window, cx);
+    visual.update(|window, _| window.refresh());
+    visual.run_until_parked();
+    (visual, view)
+}
+
+#[gpui::test]
+fn gallery_launches_any_bundled_theme_and_toggles_within_its_family(cx: &mut TestAppContext) {
+    let (mut visual, view) = theme_mount(cx, "catppuccin-latte");
+    assert!(shows(&mut visual, &view, "THEME Catppuccin Latte"));
+    action(&mut visual, &view, "gallery.toggle_mode", UiValue::Null);
+    assert!(shows(&mut visual, &view, "THEME Catppuccin Mocha"));
+    // A family with one variant has nothing to toggle to.
+    let (mut visual, view) = theme_mount(cx, "nord");
+    action(&mut visual, &view, "gallery.toggle_mode", UiValue::Null);
+    assert!(shows(&mut visual, &view, "THEME Nord Dark"));
+    no_error(&mut visual, &view);
+}
+
+fn click_at(visual: &mut VisualTestContext, bounds: GeometryBounds) {
+    use gpui::{Modifiers, point, px};
+    #[allow(clippy::cast_possible_truncation)]
+    let center = point(
+        px((bounds.x + bounds.width / 2.0) as f32),
+        px((bounds.y + bounds.height / 2.0) as f32),
+    );
+    visual.simulate_click(center, Modifiers::default());
+    for _ in 0..3 {
+        visual.update(|window, _| window.refresh());
+        visual.run_until_parked();
+    }
+}
+
+#[gpui::test]
+fn gallery_theme_picker_lists_loaded_themes_and_switches(cx: &mut TestAppContext) {
+    let (mut visual, view) = theme_mount(cx, "default-dark");
+    let picker = bounds_of(&mut visual, &view, "combobox", "Theme");
+    click_at(&mut visual, picker);
+    let tree = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
+    let options = tree
+        .nodes()
+        .filter(|node| node.role == "option")
+        .map(|node| node.name.clone())
+        .collect::<Vec<_>>();
+    // The list is virtual: the first rows, in family and variant order.
+    assert_eq!(
+        options[..4],
+        [
+            "Aetheria",
+            "Catppuccin · Latte",
+            "Catppuccin · Mocha",
+            "Default · Dark"
+        ],
+        "{options:?}"
+    );
+    let mocha = bounds_of(&mut visual, &view, "option", "Catppuccin · Mocha");
+    click_at(&mut visual, mocha);
+    no_error(&mut visual, &view);
+    assert!(shows(&mut visual, &view, "THEME Catppuccin Mocha"));
+}

@@ -2900,6 +2900,29 @@ impl UiContext {
         })
     }
 
+    /// Every loaded theme variant, ordered by family and name, for a theme
+    /// picker. The set only changes when sources reload, which renders again.
+    #[must_use]
+    pub fn theme_variants(&self) -> Vec<crate::ThemeVariantInfo> {
+        let Ok(runtime) = self.runtime.try_borrow() else {
+            return Vec::new();
+        };
+        runtime
+            .theme
+            .as_ref()
+            .map(|theme| {
+                theme
+                    .variants()
+                    .map(|variant| crate::ThemeVariantInfo {
+                        family: variant.family.clone(),
+                        name: variant.name.clone(),
+                        mode: variant.mode,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     fn with_resolved_theme<R>(&self, project: impl FnOnce(&crate::ThemeVariant) -> R) -> Option<R> {
         let Ok(mut runtime) = self.runtime.try_borrow_mut() else {
             return None;
@@ -4210,27 +4233,37 @@ fn number_format_options(mut options: Map) -> Result<NumberFormatOptions, Box<Ev
     Ok(parsed)
 }
 
+fn theme_variant_map(variant: &crate::ThemeVariantInfo) -> Dynamic {
+    let mut map = rhai::Map::new();
+    map.insert("family".into(), Dynamic::from(variant.family.clone()));
+    map.insert("name".into(), Dynamic::from(variant.name.clone()));
+    map.insert(
+        "mode".into(),
+        Dynamic::from(match variant.mode {
+            crate::ThemeMode::Light => "light",
+            crate::ThemeMode::Dark => "dark",
+        }),
+    );
+    Dynamic::from(map)
+}
+
 fn register_theme_context_methods(builder: &mut TypeBuilder<UiContext>) {
     builder
         .with_fn(
             "theme_variant",
             |context: &mut UiContext| -> Result<Dynamic, Box<EvalAltResult>> {
-                let Some(variant) = context.resolved_theme_variant() else {
-                    return Ok(Dynamic::UNIT);
-                };
-                let mut map = rhai::Map::new();
-                map.insert("family".into(), Dynamic::from(variant.family.clone()));
-                map.insert("name".into(), Dynamic::from(variant.name.clone()));
-                map.insert(
-                    "mode".into(),
-                    Dynamic::from(match variant.mode {
-                        crate::ThemeMode::Light => "light",
-                        crate::ThemeMode::Dark => "dark",
-                    }),
-                );
-                Ok(Dynamic::from(map))
+                Ok(context
+                    .resolved_theme_variant()
+                    .map_or(Dynamic::UNIT, |variant| theme_variant_map(&variant)))
             },
         )
+        .with_fn("theme_variants", |context: &mut UiContext| -> rhai::Array {
+            context
+                .theme_variants()
+                .iter()
+                .map(theme_variant_map)
+                .collect()
+        })
         .with_fn(
             "set_theme",
             |context: &mut UiContext, family: ImmutableString, variant: ImmutableString| {

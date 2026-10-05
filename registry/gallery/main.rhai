@@ -27,26 +27,26 @@ fn state_schema() {
         page: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "button" } },
         density: #{ schema: #{ type: "string", allowed: ["comfortable", "compact"] },
             "default": #{ type: "string", value: "comfortable" } },
-        mode: #{ schema: #{ type: "string", allowed: ["dark", "light"] }, "default": #{ type: "string", value: "dark" } },
         locale: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "en" } },
         audit: #{ schema: #{ type: "integer" }, "default": #{ type: "integer", value: 0 } },
         palette_open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: false } },
         palette_query: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "" } },
         palette_active: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "" } },
         locale_open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: false } },
+        theme_open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: false } },
         nav_active: #{ schema: #{ type: "optional", value: #{ type: "string" } }, "default": #{ type: "null" } },
         values: #{ schema: #{ type: "map", values: #{ type: "ui_value" } }, "default": #{ type: "map", value: #{} } },
     } }
 }
 
-// The Host replaces this map with the launch selection (page, density, mode, locale).
-fn launch() { #{ page: "button", density: "comfortable", mode: "dark", locale: "en" } }
+// The Host replaces this map with the launch selection (page, density, locale); the
+// launch theme is the Host's primary theme.
+fn launch() { #{ page: "button", density: "comfortable", locale: "en" } }
 
 fn init(ctx) {
     let start = launch();
     ctx.set_state("page", start.page);
     ctx.set_state("density", start.density);
-    ctx.set_state("mode", start.mode);
     if start.locale != "en" {
         ctx.set_state("locale", start.locale);
         ctx.set_locale(start.locale);
@@ -110,11 +110,22 @@ fn toggle_density(ctx, payload) {
 }
 fn set_density_action(ctx, density) { if density == "compact" || density == "comfortable" { ctx.set_state("density", density); } }
 fn set_density(ctx, values) { if values.len > 0 { ctx.set_state("density", values[0]); } }
+// Light and dark are variants of one family; families with one mode stay as they are.
 fn toggle_mode(ctx, payload) {
-    let mode = if ctx.get_state("mode") == "dark" { "light" } else { "dark" };
-    ctx.set_state("mode", mode);
-    ctx.set_theme("Default", if mode == "dark" { "Dark" } else { "Light" });
+    let current = ctx.theme_variant();
+    for variant in ctx.theme_variants() {
+        if variant.family == current.family && variant.mode != current.mode {
+            ctx.set_theme(variant.family, variant.name);
+            return;
+        }
+    }
 }
+fn choose_theme(ctx, value) {
+    if value == () { return; }
+    let parts = value.split("|");
+    if parts.len == 2 { ctx.set_theme(parts[0], parts[1]); }
+}
+fn theme_open(ctx, open) { ctx.set_state("theme_open", open); }
 fn choose_locale(ctx, value) {
     if value == () { return; }
     ctx.set_state("locale", value);
@@ -215,15 +226,29 @@ fn title_controls(ctx) {
         values: [ctx.get_state("density")], allow_empty: false, size: "sm",
         items: [#{ value: "comfortable", label: "Comfortable" }, #{ value: "compact", label: "Compact" }],
         on_change: Fn("set_density") });
-    let mode = button::Button(#{ key: "gallery-mode", text: if ctx.get_state("mode") == "dark" { "Light" } else { "Dark" },
-        variant: "ghost", size: "sm", action: "gallery.toggle_mode" });
+    let current = ctx.theme_variant();
+    let theme = select::Select(#{ key: "gallery-theme", label: "Theme", value: `${current.family}|${current.name}`,
+        open: ctx.get_state("theme_open"), query: "", size: "sm", width: px(176), options: theme_options(ctx),
+        on_change: Fn("choose_theme"), on_open_change: Fn("theme_open") });
     let locale = select::Select(#{ key: "gallery-locale", label: "Locale", value: ctx.get_state("locale"),
         open: ctx.get_state("locale_open"), query: "", size: "sm", width: px(120),
         options: [#{ value: "en", label: "English" }, #{ value: "zh-CN", label: "简体中文" }, #{ value: "ar", label: "العربية" }],
         on_change: Fn("choose_locale"), on_open_change: Fn("locale_open") });
     let palette = button::Button(#{ key: "gallery-palette", text: "Commands", variant: "ghost", size: "sm",
         action: "gallery.palette" });
-    [density, mode, locale, palette]
+    [density, theme, locale, palette]
+}
+
+// One option per loaded variant; a family with several variants names the variant.
+fn theme_options(ctx) {
+    let variants = ctx.theme_variants();
+    let options = [];
+    for variant in variants {
+        let siblings = variants.filter(|other| other.family == variant.family).len;
+        options.push(#{ value: `${variant.family}|${variant.name}`,
+            label: if siblings > 1 { `${variant.family} · ${variant.name}` } else { variant.family } });
+    }
+    options
 }
 
 fn palette_items() {
@@ -249,10 +274,12 @@ fn source_inspector(ctx, page) {
     region::Region(#{ label: "Source", title: "Source", body: viewer, bleed: true })
 }
 
+fn theme_label(variant) { `${variant.family} ${variant.name}` }
+
 fn status_items(ctx) {
     let label = |name, value| text(`${name} ${value}`);
     #{
-        start: [label.call("DENSITY", ctx.get_state("density")), label.call("THEME", if ctx.get_state("mode") == "dark" { "Default Dark" } else { "Default Light" }),
+        start: [label.call("DENSITY", ctx.get_state("density")), label.call("THEME", theme_label(ctx.theme_variant())),
             label.call("LOCALE", ctx.get_state("locale"))],
         end: [text(`AUDIT ${ctx.get_state("audit")}`).accessibility_role("status").accessibility_label("Audit findings"),
             text("⌘K")],

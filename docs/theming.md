@@ -124,6 +124,10 @@ fn render_Palette(ctx, props) {
 }
 ```
 
+`ctx.theme_variants()` lists every loaded variant as the same maps, ordered by
+family and name, for a theme picker; the Gallery's title bar builds its theme
+Select from it and calls `set_theme` on change.
+
 Declare that effect in the formal component schema. Its start callback receives
 the same metadata as deps and restarts only when they change. Event-time reads
 are imperative, not subscriptions. Rust uses lightweight `ThemeVariantInfo` or

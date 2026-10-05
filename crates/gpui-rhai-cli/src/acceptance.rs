@@ -37,7 +37,8 @@ pub struct AcceptanceLaunch {
     pub page: String,
     /// `comfortable` or `compact`.
     pub density: String,
-    /// `default-dark` or `default-light`.
+    /// A bundled theme slug: the file name with dashes (`default-dark`,
+    /// `catppuccin-latte`, `tokyo-storm`, ...).
     pub theme: String,
     /// `en`, `zh-CN` or `ar`.
     pub locale: String,
@@ -57,8 +58,7 @@ impl Default for AcceptanceLaunch {
 }
 
 /// The launch map in `registry/gallery/main.rhai` that the Host replaces.
-const LAUNCH_DEFAULT: &str =
-    r#"#{ page: "button", density: "comfortable", mode: "dark", locale: "en" }"#;
+const LAUNCH_DEFAULT: &str = r#"#{ page: "button", density: "comfortable", locale: "en" }"#;
 
 /// Every Gallery page ID, in navigation order, read from the page modules'
 /// `pages()` lists.
@@ -117,30 +117,36 @@ fn validate(launch: &AcceptanceLaunch) -> Result<(), String> {
     if !matches!(launch.density.as_str(), "comfortable" | "compact") {
         return Err(format!("unknown Gallery density `{}`", launch.density));
     }
-    if !matches!(launch.theme.as_str(), "default-dark" | "default-light") {
-        return Err(format!(
-            "unknown Gallery theme `{}` (expected default-dark or default-light)",
-            launch.theme
-        ));
-    }
+    theme_file(&launch.theme)?;
     if !matches!(launch.locale.as_str(), "en" | "zh-CN" | "ar") {
         return Err(format!("unknown Gallery locale `{}`", launch.locale));
     }
     Ok(())
 }
 
+/// The bundled theme file for a slug (`default-dark` is `default_dark.rhai`).
+fn theme_file(slug: &str) -> Result<(&'static str, &'static str), String> {
+    let file = format!("{}.rhai", slug.replace('-', "_"));
+    BUNDLED_THEME_SOURCES
+        .iter()
+        .copied()
+        .find(|(name, _)| *name == file)
+        .ok_or_else(|| {
+            let known = BUNDLED_THEME_SOURCES
+                .iter()
+                .map(|(name, _)| name.trim_end_matches(".rhai").replace('_', "-"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("unknown Gallery theme `{slug}` (expected one of {known})")
+        })
+}
+
 fn launch_map(launch: &AcceptanceLaunch) -> Result<String, String> {
     let quoted = |value: &str| serde_json::to_string(value).map_err(|error| error.to_string());
-    let mode = if launch.theme == "default-light" {
-        "light"
-    } else {
-        "dark"
-    };
     Ok(format!(
-        "#{{ page: {}, density: {}, mode: {}, locale: {} }}",
+        "#{{ page: {}, density: {}, locale: {} }}",
         quoted(&launch.page)?,
         quoted(&launch.density)?,
-        quoted(mode)?,
         quoted(&launch.locale)?,
     ))
 }
@@ -207,16 +213,7 @@ fn key_bindings() -> Result<Vec<KeyBindingSpec>, String> {
 /// Returns a launch selection or source assembly error.
 pub fn view(launch: &AcceptanceLaunch) -> Result<EmbeddedScriptView, String> {
     validate(launch)?;
-    let primary = if launch.theme == "default-light" {
-        "default_light.rhai"
-    } else {
-        "default_dark.rhai"
-    };
-    let (_, primary_source) = BUNDLED_THEME_SOURCES
-        .iter()
-        .copied()
-        .find(|(name, _)| *name == primary)
-        .ok_or_else(|| format!("bundled theme `{primary}` is missing"))?;
+    let (primary, primary_source) = theme_file(&launch.theme)?;
     let profile = BUNDLED_PROFILES
         .iter()
         .find(|(name, _)| *name == "productivity")
