@@ -255,17 +255,22 @@ fn render_table_row(resize_signals, numeric, total_rows, ctx, payload) {
     let cells = [];
     let cell_index = 1;
     for cell in item.cells {
-        // A column with no text of its own (a status column) shows only its adornments.
+        // A status column shows only its badge: when the column has no value of its
+        // own, or its badge already says it.
         let content = [];
         let labels = [];
-        if cell.text != "" || cell.adornments.len == 0 {
+        let repeated = false;
+        for adornment in cell.adornments { if adornment.text == cell.text { repeated = true; } }
+        if (cell.text != "" && !repeated) || cell.adornments.len == 0 {
             content.push(text(cell.text).with_key(`${cell.key}-text`)
                 .with_style(style().min_width(px(0)).whitespace_nowrap().text_ellipsis()));
             labels.push(cell.text);
         }
         for index in 0..cell.adornments.len {
             let adornment = cell.adornments[index];
-            content.push(badge::Badge(#{ text: adornment.text, variant: adornment.variant,
+            // Rows render as separate virtual items: the instance key carries the row.
+            content.push(badge::Badge(#{ key: `${payload.key}-${cell.key}-adornment-${index}`,
+                text: adornment.text, variant: adornment.variant,
                 dot: adornment.dot, size: "sm" }).with_key(`${cell.key}-adornment-${index}`));
             labels.push(adornment.text);
         }

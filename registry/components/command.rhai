@@ -209,7 +209,7 @@ fn render_command_row(content, total_rows, ctx, payload) {
     let label = if item.value in content { content[item.value] } else { text(item.label) };
     let children = [label.with_style(ctx.component_style("label", style().flex_grow()))];
     if shortcut != "" {
-        children.push(kbd::Kbd(#{ text: shortcut, appearance: "inline" })
+        children.push(kbd::Kbd(#{ key: `${payload.key}-shortcut`, text: shortcut, appearance: "inline" })
             .with_style(ctx.component_style("shortcut", style())));
     }
     if item.active && !disabled { children.push(command_indicator(ctx)); }

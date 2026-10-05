@@ -118,8 +118,9 @@ fn form_field(ctx, form_key, index, field, vertical, label_width) {
             .typography("caption").text_color(theme_color("text.danger"))))
             .accessibility_id(`${id}-error`).accessibility_role("alert"));
     }
+    // Controls keep their own width (contract C4): a field that should be wide says so.
     let control_cell = column(stack).with_style(style().flex_col().flex_grow().min_width(px(0))
-        .gap(theme_spacing("xxs")));
+        .items_start().gap(theme_length("space.unit")));
     let pair = if vertical { column([label_cell, control_cell]) } else { row([label_cell, control_cell]) };
     // A horizontal field row is a grid: the label column is a fixed track, so its gap
     // is not a proximity relationship for the control's own layout.

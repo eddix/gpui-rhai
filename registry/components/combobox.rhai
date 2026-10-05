@@ -293,7 +293,8 @@ fn render_combobox_row(total_rows, ctx, payload) {
             .width(theme_length("metrics.icon")).height(theme_length("metrics.icon"))
             .text_color(theme_color("text.accent"))
             .opacity(if item.selected { 1.0 } else { 0.0 }))),
-        text(item.label).with_style(style().flex_grow())
+        text(item.label).with_style(style().flex_grow().min_width(px(0))
+            .whitespace_nowrap().text_ellipsis())
     ];
     if item.active && !item.disabled { children.push(combobox_indicator(ctx)); }
     let node = row(children)

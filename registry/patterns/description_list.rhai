@@ -73,6 +73,10 @@ fn render_DescriptionList(ctx, props) {
         if ("numeric" in item && item.numeric) || ("identifier" in item && item.identifier) {
             value_style = value_style.font_feature("tnum", 1).font_feature("zero", 1);
         }
+        // Identifiers are atoms: they truncate rather than break.
+        if "identifier" in item && item.identifier {
+            value_style = value_style.whitespace_nowrap().text_ellipsis();
+        }
         let value = if type_of(item.value) == "string" {
             text(item.value).with_style(ctx.component_style("value", value_style))
         } else { item.value.with_style(ctx.component_style("value", value_style)) };

@@ -9,7 +9,7 @@
   "assets": [],
   "tokens": [
     "surface_raised", "border", "danger", "focus_ring", "text_primary", "text_muted",
-    "text.danger", "disabled", "selection", "accent", "metrics.control_pad", "spacing.xs",
+    "text.danger", "disabled", "selection", "accent", "metrics.control_pad", "spacing.xxs", "spacing.xs",
     "radius.md", "typography.body", "typography.body_small", "typography.caption"
   ],
   "environment": ["size", "density"]
@@ -30,7 +30,7 @@ define_component(#{
         tokens: [
             "surface_raised", "border", "danger", "focus_ring", "text_primary", "text_muted",
             "text.danger", "disabled", "selection", "accent", "metrics.control_pad",
-            "spacing.xs", "radius.md", "typography.body", "typography.body_small",
+            "spacing.xxs", "spacing.xs", "radius.md", "typography.body", "typography.body_small",
             "typography.caption"
         ],
         environment: ["size", "density"], assets: [],
@@ -159,6 +159,8 @@ fn render_Textarea(ctx, props) {
     }
     let root = column(children)
         .with_key(props.key)
-        .with_style(ctx.component_style("root", style().gap(theme_spacing("xs"))));
+        // The counter belongs to the field: it sits closer than any helper text
+        // a form places under the field.
+        .with_style(ctx.component_style("root", style().gap(theme_spacing("xxs"))));
     if "size" in props && props.size != () { root.env(#{ size: props.size }) } else { root }
 }

@@ -6,7 +6,7 @@
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": ["layouts/region", "layouts/toolbar", "patterns/inline_state"],
   "capabilities": {},
-  "tokens": ["text_primary", "text_muted", "space.related"],
+  "tokens": ["text_primary", "text_muted", "space.related", "space.group"],
   "environment": []
 }
 */
@@ -33,7 +33,7 @@ define_component(#{
         id: "patterns/data_view", "export": "DataView", version: "0.2.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 },
         dependencies: ["layouts/region", "layouts/toolbar", "patterns/inline_state"], capabilities: #{},
-        tokens: ["text_primary", "text_muted", "space.related"],
+        tokens: ["text_primary", "text_muted", "space.related", "space.group"],
         environment: [],
     },
     schema: #{
@@ -107,10 +107,13 @@ fn render_DataView(ctx, props) {
         for name in ["count", "updated"] {
             if has(footer, name) { end.push(text(footer[name]).with_style(style().font_feature("tnum", 1))); }
         }
+        // Footer fields are groups (status, selection, count), like Region's; the
+        // start and end ends are distributed, so the footer gap is only a floor.
         config.footer = [
-            row(start).with_style(style().flex_row().items_center().flex_grow().gap(theme_length("space.related"))),
-            row(end).with_style(style().flex_row().items_center().gap(theme_length("space.related"))),
+            row(start).with_style(style().flex_row().items_center().flex_grow().gap(theme_length("space.group"))),
+            row(end).with_style(style().flex_row().items_center().gap(theme_length("space.group"))),
         ];
+        config.part_styles = #{ footer: style().justify_between() };
     }
     region::Region(config).with_key(props.key).with_style(ctx.component_style("root", style()))
 }
