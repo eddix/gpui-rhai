@@ -267,3 +267,97 @@ fn command_palette_navigates_by_keyboard(cx: &mut TestAppContext) {
         "the palette opened the Badge page"
     );
 }
+
+fn bounds_of(
+    visual: &mut VisualTestContext,
+    view: &ScriptViewHandle,
+    role: &str,
+    name: &str,
+) -> GeometryBounds {
+    let tree = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
+    tree.nodes()
+        .find(|node| node.role == role && node.name.contains(name))
+        .and_then(|node| node.geometry)
+        .unwrap_or_else(|| panic!("no {role} named {name}"))
+        .visual
+}
+
+fn drag(visual: &mut VisualTestContext, from: (f64, f64), by: (f64, f64)) {
+    use gpui::{Modifiers, MouseButton, point, px};
+    #[allow(clippy::cast_possible_truncation)]
+    let at = |t: f64| {
+        point(
+            px((from.0 + by.0 * t) as f32),
+            px((from.1 + by.1 * t) as f32),
+        )
+    };
+    visual.simulate_mouse_move(at(0.0), None, Modifiers::default());
+    visual.simulate_mouse_down(at(0.0), MouseButton::Left, Modifiers::default());
+    for step in 1..=4 {
+        visual.simulate_mouse_move(
+            at(f64::from(step) / 4.0),
+            MouseButton::Left,
+            Modifiers::default(),
+        );
+        visual.run_until_parked();
+    }
+    visual.simulate_mouse_up(at(1.0), MouseButton::Left, Modifiers::default());
+    visual.update(|window, _| window.refresh());
+    visual.run_until_parked();
+}
+
+fn no_error(visual: &mut VisualTestContext, view: &ScriptViewHandle) {
+    let error = visual.update(|_, cx| view.last_error(cx).unwrap());
+    assert_eq!(error, None);
+}
+
+#[gpui::test]
+fn resizable_page_stores_the_proposal_as_the_next_rect(cx: &mut TestAppContext) {
+    let (mut visual, view) = keyboard_mount(cx, "resizable");
+    let before = bounds_of(&mut visual, &view, "separator", "se resize handle");
+    let center = (
+        before.x + before.width / 2.0,
+        before.y + before.height / 2.0,
+    );
+    drag(&mut visual, center, (60.0, 30.0));
+    no_error(&mut visual, &view);
+    let after = bounds_of(&mut visual, &view, "separator", "se resize handle");
+    assert!(
+        (after.x - before.x - 60.0).abs() < 1.0 && (after.y - before.y - 30.0).abs() < 1.0,
+        "{before:?} -> {after:?}"
+    );
+}
+
+#[gpui::test]
+fn pan_zoom_page_drags_accumulate_and_reset(cx: &mut TestAppContext) {
+    let (mut visual, view) = keyboard_mount(cx, "pan_zoom");
+    let canvas = bounds_of(&mut visual, &view, "region", "Pan and zoom canvas");
+    let start = (
+        canvas.x + canvas.width / 2.0,
+        canvas.y + canvas.height / 2.0,
+    );
+    drag(&mut visual, start, (80.0, 40.0));
+    drag(&mut visual, (start.0 + 80.0, start.1 + 40.0), (20.0, 10.0));
+    no_error(&mut visual, &view);
+    assert!(shows(&mut visual, &view, "x 100 · y 50 · 100%"));
+    let reset = bounds_of(&mut visual, &view, "button", "Reset view");
+    drag(&mut visual, (reset.x + 8.0, reset.y + 8.0), (0.0, 0.0));
+    assert!(shows(&mut visual, &view, "x 0 · y 0 · 100%"));
+}
+
+#[gpui::test]
+fn rotatable_page_turns_from_anywhere_in_the_area(cx: &mut TestAppContext) {
+    let (mut visual, view) = keyboard_mount(cx, "rotatable");
+    let area = bounds_of(&mut visual, &view, "slider", "Rotate arm");
+    // The pivot sits at (100, 100) in the area; a drag well away from both the
+    // arm and the old corner handle sweeps about 34 degrees, snapped to 30.
+    let pivot = (area.x + 100.0, area.y + 100.0);
+    drag(&mut visual, (pivot.0 + 80.0, pivot.1 + 94.0), (-70.0, 0.0));
+    no_error(&mut visual, &view);
+    let tree = visual.update(|_, cx| view.accessibility_snapshot(cx).unwrap());
+    let value = tree
+        .nodes()
+        .find(|node| node.role == "slider" && node.name == "Rotate arm")
+        .and_then(|node| node.value.clone());
+    assert_eq!(value, Some(UiValue::Float(30.0)));
+}

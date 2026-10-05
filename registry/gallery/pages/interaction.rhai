@@ -9,6 +9,7 @@ import "components/pan_zoom" as pan_zoom;
 import "components/rotatable" as rotatable;
 import "components/selection_area" as selection_area;
 import "components/card" as card;
+import "components/button" as button;
 
 fn pages() {
     [
@@ -84,23 +85,42 @@ fn sortable_page(h, v) {
     ])
 }
 
-fn grid_scene() {
+// Larger than the viewport in every direction, so panning reads as moving a
+// camera over a plane rather than moving one shape.
+fn pan_scene() {
     let commands = [];
-    for index in 0..9 {
-        let offset = index * 40.0;
-        commands.push(canvas_line(`v-${index}`, offset, 0.0, offset, 320.0, 1.0, theme_color("border")));
-        commands.push(canvas_line(`h-${index}`, 0.0, offset, 320.0, offset, 1.0, theme_color("border")));
+    for index in 0..53 {
+        let offset = -800.0 + index * 40.0;
+        commands.push(canvas_line(`v-${index}`, offset, -600.0, offset, 840.0, 1.0, theme_color("border")));
     }
-    commands.push(canvas_circle("origin", 160.0, 120.0, 14.0, theme_color("accent")));
+    for index in 0..37 {
+        let offset = -600.0 + index * 40.0;
+        commands.push(canvas_line(`h-${index}`, -800.0, offset, 1280.0, offset, 1.0, theme_color("border")));
+    }
+    for mark in [#{ key: "nw", x: -160.0, y: -120.0 }, #{ key: "e", x: 456.0, y: 40.0 }, #{ key: "s", x: 120.0, y: 220.0 }] {
+        commands.push(canvas_rect(`mark-${mark.key}`, mark.x, mark.y, 40.0, 40.0, theme_color("text_muted")));
+    }
+    commands.push(canvas_circle("center", 240.0, 120.0, 14.0, theme_color("accent")));
     canvas(canvas_scene(commands)).with_key("pan-canvas").with_style(style().width(relative(1.0)).height(relative(1.0)))
 }
 
 fn pan_zoom_page(h, v) {
-    kit::page(h, v, "pan_zoom", "PanZoom", "Drag to pan, modifier and wheel to zoom; arrows and plus/minus from the keyboard.", [
-        kit::sec("Canvas", pan_zoom::PanZoom(#{ key: "pan-zoom", label: "Pan and zoom canvas",
-            transform: kit::val(v, "pan.transform", #{ x: 0.0, y: 0.0, scale: 1.0 }), min_scale: 0.5, max_scale: 3.0,
-            content: grid_scene(), on_transform_change: kit::store(h, "pan.transform") })
-            .with_style(style().width(px(480)).height(px(240)))),
+    let home = #{ x: 0.0, y: 0.0, scale: 1.0 };
+    let transform = kit::val(v, "pan.transform", home);
+    let readout = `x ${transform.x.round().to_int()} · y ${transform.y.round().to_int()} · ${(transform.scale * 100.0).round().to_int()}%`;
+    kit::page(h, v, "pan_zoom", "PanZoom",
+        "A camera over a canvas (maps, diagrams, image viewers): dragging moves the whole view, not one shape. Cmd or Ctrl with the wheel zooms at the pointer; from the keyboard, arrows pan, plus and minus zoom, 0 resets.", [
+        kit::sec("Canvas", kit::pile([
+            pan_zoom::PanZoom(#{ key: "pan-zoom", label: "Pan and zoom canvas",
+                transform: transform, min_scale: 0.5, max_scale: 3.0,
+                content: pan_scene(), on_transform_change: kit::store(h, "pan.transform") })
+                .with_style(style().width(px(480)).height(px(240))),
+            kit::line([
+                button::Button(#{ key: "pan-reset", text: "Reset view", variant: "outline", disabled: transform == home,
+                    on_click: kit::put(h, "pan.transform", home) }),
+                kit::note(readout).accessibility_role("status"),
+            ]),
+        ])),
     ])
 }
 
@@ -109,10 +129,12 @@ fn rotatable_page(h, v) {
         canvas_rect("arm", 100.0, 86.0, 82.0, 28.0, theme_color("accent")),
         canvas_circle("pivot", 100.0, 100.0, 7.0, theme_color("text_primary")),
     ])).with_key("rotate-canvas");
-    kit::page(h, v, "rotatable", "Rotatable", "Rotation around an explicit pivot, snapped in 15° steps.", [
+    // No handle: the whole area takes the drag. A handle suits content that
+    // has pointer interactions of its own.
+    kit::page(h, v, "rotatable", "Rotatable",
+        "Drag anywhere in the area to turn the arm around its pivot (the dot), in 15° steps. Arrows step from the keyboard; Home returns to 0°.", [
         kit::sec("Arm", rotatable::Rotatable(#{ key: "rotate-arm", label: "Rotate arm", angle: kit::val(v, "rotate.angle", 0.0),
             pivot: #{ x: 100.0, y: 100.0 }, snap: 15.0, content: scene,
-            handle: text("↻").with_style(style().items_center().justify_center()),
             on_rotate: kit::store(h, "rotate.angle") }).with_style(style().width(px(300)).height(px(220)))),
     ])
 }
