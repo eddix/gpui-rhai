@@ -24,8 +24,11 @@ reading `ScriptViewHandle::last_error`; standalone adapters expose the matching
 `ScriptApplication` option. `ScriptViewHandle::last_diagnostic` returns the
 same failure as structured data: bounded Rhai termination details, typed timing
 and operation budget, deepest failing component identity, and a pre-redacted
-snapshot of only that component's state. Success clears the message and
-diagnostic atomically; ordinary error formatting never emits the snapshot.
+snapshot of only that component's state. The failed transaction rolls back
+and the view keeps working, so the error stays until a successful reload, the
+banner's Dismiss button, or `ScriptViewHandle::clear_error`, which clear the
+message and diagnostic together; a later successful event does not. Ordinary
+error formatting never emits the snapshot.
 
 The inspector is available only in development and opens with Command-Option-I
 or F12. It shows source locations, redacted state, computed semantics, traces,

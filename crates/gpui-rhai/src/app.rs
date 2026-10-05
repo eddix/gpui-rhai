@@ -891,16 +891,15 @@ impl ScriptViewHandle {
         })
     }
 
-    /// Return the latest rendered declarative root.
+    /// Return the last successfully committed declarative tree.
+    ///
+    /// A failed transaction rolls back, so this is always a committed tree,
+    /// never a partial candidate. [`Self::last_error`] reports whether some
+    /// script work failed since the last reload or [`Self::clear_error`].
     ///
     /// # Errors
     ///
     /// Returns [`ScriptViewError::DisposedView`] after disposal.
-    /// Return the last successfully committed declarative tree.
-    ///
-    /// A failed render deliberately preserves this last-good tree. Pair this
-    /// method with [`Self::last_error`] when the caller must distinguish a
-    /// current successful tree from a rollback after failure.
     pub fn root(&self, cx: &App) -> Result<Option<crate::UiNode>, ScriptViewError> {
         self.require_not_disposed()?;
         Ok(self.0.entity.read(cx).lifecycle.root().cloned())
@@ -920,9 +919,10 @@ impl ScriptViewHandle {
 
     /// Return the latest mounted-view render, callback, delivery, or reload error.
     ///
-    /// Errors remain available while the last-good tree continues to render.
-    /// A later successful script transaction clears the value; native-only
-    /// repaint and animation frames do not.
+    /// A failed transaction rolls back to the last committed tree, and the view
+    /// keeps working, so later transactions usually succeed. The error stays
+    /// until a successful reload or [`Self::clear_error`]; otherwise a failure
+    /// in one event would be gone before anyone could read it.
     ///
     /// # Errors
     ///
@@ -955,6 +955,23 @@ impl ScriptViewHandle {
             .last_failure
             .as_ref()
             .and_then(|failure| failure.diagnostic.as_deref().cloned()))
+    }
+
+    /// Acknowledge the reported error: [`Self::last_error`] returns `None` and
+    /// the built-in banner closes until the next failure.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ScriptViewError::DisposedView`] after disposal.
+    pub fn clear_error(&self, cx: &mut App) -> Result<(), ScriptViewError> {
+        self.require_not_disposed()?;
+        self.0.entity.update(cx, |view, cx| {
+            if view.last_failure.is_some() {
+                view.clear_failure();
+                cx.notify();
+            }
+        });
+        Ok(())
     }
 
     /// Drain execution timings and snapshot retained/virtual metrics.
@@ -3050,6 +3067,7 @@ impl PreparedScriptView {
                 lifecycle,
                 primitives,
                 last_failure: None,
+                failure_serial: 0,
                 theme: self.theme,
                 theme_handle: view_theme_handle,
                 #[cfg(feature = "dev-reload")]
@@ -3417,6 +3435,7 @@ fn open_secondary_window(
                 lifecycle,
                 primitives,
                 last_failure: None,
+                failure_serial: 0,
                 theme: view_factory.theme.clone(),
                 theme_handle: view_theme_handle,
                 #[cfg(feature = "dev-reload")]
@@ -3723,6 +3742,9 @@ struct ScriptHostView {
     lifecycle: ScriptLifecycle,
     primitives: PrimitiveRegistry,
     last_failure: Option<ScriptFailure>,
+    /// Counts failures, so one command can tell whether it failed without
+    /// clearing an earlier failure the developer has not seen yet.
+    failure_serial: u64,
     theme: ThemeVariant,
     theme_handle: ThemeHandle,
     #[cfg(feature = "dev-reload")]
@@ -3941,6 +3963,7 @@ const fn error_banner_font_family() -> &'static str {
     "DejaVu Sans Mono"
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_error_banner(
     view_id: &str,
     window_id: &str,
@@ -3948,11 +3971,14 @@ fn build_error_banner(
     theme: &ThemeVariant,
     selection: crate::renderer::TextSelectionRegistry,
     host_focus: FocusHandle,
+    on_dismiss: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
     content: AnyElement,
 ) -> AnyElement {
     let selector = format!("gpui-rhai-error-banner:{view_id}");
+    let dismiss_selector = format!("gpui-rhai-error-banner-dismiss:{view_id}");
     let accessibility_id = selector.clone();
     let owner = format!("window:{window_id}/view:{view_id}/error-banner");
+    let owner_id = owner.clone();
     // The banner is developer-facing and must render with any vocabulary.
     let color = |token: &str, fallback: u32| {
         theme
@@ -3985,7 +4011,25 @@ fn build_error_banner(
                 .text_color(rgba(color("danger", 0xff55_55ff).as_rgba_hex()))
                 .border_1()
                 .border_color(rgba(color("danger", 0xff55_55ff).as_rgba_hex()))
-                .child(error_text),
+                .flex()
+                .items_start()
+                .gap_2()
+                .child(div().flex_1().min_w_0().child(error_text))
+                .child(
+                    // The error outlives the transaction that raised it; the
+                    // developer closes it once read.
+                    div()
+                        .id(ElementId::Name(format!("{owner_id}/dismiss").into()))
+                        .role(Role::Button)
+                        .aria_label("Dismiss script view error")
+                        .debug_selector(move || dismiss_selector.clone())
+                        .flex_none()
+                        .px_1()
+                        .cursor_pointer()
+                        .text_color(rgba(color("text_muted", 0xc8c8_c8ff).as_rgba_hex()))
+                        .child("Dismiss")
+                        .on_click(on_dismiss),
+                ),
         )
         .child(content)
         .into_any_element()
@@ -4284,6 +4328,10 @@ impl Render for ScriptHostView {
                 &snapshot.theme,
                 self.text_selection.clone(),
                 self.host_focus.clone(),
+                cx.listener(|view, _, _, cx| {
+                    view.clear_failure();
+                    cx.notify();
+                }),
                 content,
             ),
             _ => content,
@@ -4496,6 +4544,7 @@ impl ScriptHostView {
     }
 
     fn set_failure(&mut self, failure: ScriptFailure) {
+        self.failure_serial += 1;
         self.last_failure = Some(failure);
     }
 
@@ -4513,6 +4562,15 @@ impl ScriptHostView {
             .map(|failure| failure.message.clone())
     }
 
+    /// The failure recorded after `serial` was read, if any.
+    fn failure_since(&self, serial: u64) -> Option<String> {
+        if self.failure_serial == serial {
+            None
+        } else {
+            self.failure_message()
+        }
+    }
+
     fn publish_theme_after_render(&self, theme: &ThemeVariant, cx: &mut Context<Self>) {
         if self.theme_handle.matches(theme, cx) {
             return;
@@ -4528,6 +4586,7 @@ impl ScriptHostView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Result<crate::AutomationResult, ScriptViewError> {
+        let serial = self.failure_serial;
         match command {
             crate::AutomationCommand::Dispatch {
                 locator,
@@ -4549,7 +4608,7 @@ impl ScriptHostView {
                     window,
                     cx,
                 );
-                if let Some(error) = self.failure_message() {
+                if let Some(error) = self.failure_since(serial) {
                     return Err(crate::AutomationError::Command(error).into());
                 }
                 Ok(crate::AutomationResult::Action { id })
@@ -4560,9 +4619,8 @@ impl ScriptHostView {
                 if !clock.advance(duration) {
                     return Err(crate::AutomationError::ClockNotControllable.into());
                 }
-                self.clear_failure();
                 self.poll_async(cx);
-                if let Some(error) = self.failure_message() {
+                if let Some(error) = self.failure_since(serial) {
                     return Err(crate::AutomationError::Command(error).into());
                 }
                 Ok(crate::AutomationResult::Advanced { millis })
@@ -4582,7 +4640,7 @@ impl ScriptHostView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Result<crate::AutomationResult, ScriptViewError> {
-        self.clear_failure();
+        let serial = self.failure_serial;
         let runtime = self.lifecycle.runtime();
         let geometry = runtime.borrow().geometry_for(Some(&self.view_id));
         let mut accessibility = crate::AccessibilityTree::from_committed(
@@ -4638,7 +4696,7 @@ impl ScriptHostView {
                 ),
             };
             invoked = invoked.saturating_add(1);
-            if let Some(error) = self.failure_message() {
+            if let Some(error) = self.failure_since(serial) {
                 return Err(crate::AutomationError::Command(error).into());
             }
             response.merge(current);
@@ -4694,7 +4752,7 @@ impl ScriptHostView {
                     ),
                     None => crate::EventResponse::new().stop(),
                 };
-                if let Some(error) = self.failure_message() {
+                if let Some(error) = self.failure_since(serial) {
                     return Err(crate::AutomationError::Command(error).into());
                 }
                 response.merge(current.stop());
@@ -5151,7 +5209,6 @@ impl ScriptHostView {
         });
         match result {
             Ok(()) => {
-                self.clear_failure();
                 self.process_window_commands(cx);
                 cx.notify();
                 false
@@ -5208,7 +5265,6 @@ impl ScriptHostView {
         }
         self.quiesce_host_view(window, cx);
         self.state.set(ScriptViewState::Suspended);
-        self.clear_failure();
         Ok(true)
     }
 
@@ -5330,7 +5386,8 @@ impl ScriptHostView {
                 self.activity_wake.notify();
                 if let Some(error) = pending_reload_error {
                     self.set_failure(error);
-                } else {
+                } else if migrating {
+                    // The reload deferred while suspended rendered.
                     self.clear_failure();
                 }
                 self.collect_timings();
@@ -5582,9 +5639,8 @@ impl ScriptHostView {
             .as_ref()
             .is_ok_and(|(_, rendered)| *rendered);
         let succeeded = callback_result.is_ok();
-        match callback_result {
-            Ok(_) => self.clear_failure(),
-            Err(error) => self.set_failure(error),
+        if let Err(error) = callback_result {
+            self.set_failure(error);
         }
         self.process_window_commands(cx);
         self.process_element_commands(window, cx);
@@ -5639,7 +5695,6 @@ impl ScriptHostView {
         });
         match result {
             Ok((response, rendered)) => {
-                self.clear_failure();
                 self.process_window_commands(cx);
                 self.process_element_commands(window, cx);
                 self.mark_interaction_contract_changed(rendered);
@@ -5809,9 +5864,6 @@ impl ScriptHostView {
         let notify = match result {
             Ok((changed, contract_changed)) => {
                 self.mark_interaction_contract_changed(contract_changed);
-                if has_script_work {
-                    self.clear_failure();
-                }
                 self.process_window_commands(cx);
                 changed || repaint
             }

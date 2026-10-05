@@ -385,13 +385,14 @@ temporary page does not dispose it.
 
 ## Last-good trees and host-visible failures
 
-Rendering is transactional. When a callback, delivery, or rerender fails,
-`ScriptViewHandle::root` continues to return the last successfully committed
-tree so the host never observes a partial candidate. Embedding hosts must pair
-that snapshot with `ScriptViewHandle::last_error`: a non-`None` error means the
-tree is last-good fallback state rather than the result of the latest attempted
-update. Successful script work clears the error; native-only repaint and
-animation frames do not hide it.
+Rendering is transactional. When a callback, delivery, or rerender fails, the
+transaction rolls back and `ScriptViewHandle::root` continues to return the last
+successfully committed tree, so the host never observes a partial candidate.
+`ScriptViewHandle::last_error` reports the failure until the source reloads
+successfully or someone acknowledges it (the banner's Dismiss button, or
+`ScriptViewHandle::clear_error` from a host-owned error panel). Later successful
+events do not clear it: the view keeps working after a rollback, and an error
+that vanished on the next event would never be read.
 
 The built-in banner is monospace and selectable through the normal Host copy
 action. An application with its own error panel may opt out per mounted view:

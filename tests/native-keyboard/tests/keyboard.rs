@@ -5171,6 +5171,16 @@ fn mounted_view_exposes_failed_render_while_retaining_last_good_root(cx: &mut Te
             )
         })
         .unwrap();
+    visual.run_until_parked();
+    // A later success does not hide the failure: the rolled-back event is
+    // still reported until the developer dismisses it.
+    let error = visual.update(|_, cx| view.last_error(cx).unwrap().unwrap());
+    assert!(error.contains("dogfood render failure"), "{error}");
+    let dismiss = visual
+        .debug_bounds("gpui-rhai-error-banner-dismiss:failure-view")
+        .expect("the banner offers a dismiss button");
+    visual.simulate_click(dismiss.center(), Modifiers::default());
+    visual.run_until_parked();
     assert!(
         visual
             .update(|_, cx| view.last_error(cx))
@@ -5181,6 +5191,13 @@ fn mounted_view_exposes_failed_render_while_retaining_last_good_root(cx: &mut Te
         visual
             .update(|_, cx| view.last_diagnostic(cx))
             .unwrap()
+            .is_none()
+    );
+    visual.update(|window, _| window.refresh());
+    visual.run_until_parked();
+    assert!(
+        visual
+            .debug_bounds("gpui-rhai-error-banner:failure-view")
             .is_none()
     );
 }
@@ -5241,6 +5258,8 @@ fn host_can_suppress_the_builtin_error_banner_without_hiding_last_error(cx: &mut
             .is_none(),
         "the host-owned error surface must not compete with a built-in banner"
     );
+    visual.update(|_, cx| view.clear_error(cx)).unwrap();
+    assert_eq!(visual.update(|_, cx| view.last_error(cx).unwrap()), None);
 }
 
 #[gpui::test]
