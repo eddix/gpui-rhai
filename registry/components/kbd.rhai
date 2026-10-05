@@ -7,10 +7,10 @@
   "dependencies": [],
   "capabilities": {},
   "tokens": [
-    "border", "text_muted", "metrics.marker", "spacing.xxs", "spacing.xs", "radius.sm",
+    "border", "text_muted", "metrics.marker", "spacing.xxs", "spacing.xs", "radius.xs",
     "typography.label"
   ],
-  "environment": []
+  "environment": ["corners"]
 }
 */
 // Kbd presents a key legend: a framed keycap, or an inline legend inside menus and buttons.
@@ -26,10 +26,10 @@ define_component(#{
     metadata: #{ id: "components/kbd", "export": "Kbd", version: "0.2.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{},
         tokens: [
-            "border", "text_muted", "metrics.marker", "spacing.xxs", "spacing.xs", "radius.sm",
+            "border", "text_muted", "metrics.marker", "spacing.xxs", "spacing.xs", "radius.xs",
             "typography.label"
         ],
-        environment: [] },
+        environment: ["corners"] },
     schema: #{
         props: #{
             text: #{ schema: #{ type: "string" }, required: false, sensitive: false,
@@ -54,7 +54,7 @@ fn kbd_key(ctx, legend, inline) {
         key = key
             .min_width(theme_length("metrics.marker"))
             .padding_x(theme_spacing("xs"))
-            .radius(theme_radius("sm"))
+            .radius(theme_radius("xs"))
             .border(px(1)).border_color(theme_color("border"));
     }
     row([text(legend)]).with_style(ctx.component_style("key", key))

@@ -10,7 +10,7 @@
     "surface_raised", "border", "text_primary", "spacing.xl", "space.group", "space.related",
     "radius.lg", "typography.title", "typography.body"
   ],
-  "environment": ["density"]
+  "environment": ["density", "corners"]
 }
 */
 // Dialog presents controlled modal content through the native overlay layer.
@@ -33,7 +33,7 @@ define_component(#{
             "surface_raised", "border", "text_primary", "spacing.xl", "space.group",
             "space.related", "radius.lg", "typography.title", "typography.body"
         ],
-        environment: ["density"],
+        environment: ["density", "corners"],
     },
     schema: #{
         props: #{

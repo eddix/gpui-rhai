@@ -1076,6 +1076,13 @@ pub struct CornerLengths {
     pub top_right: Option<Length>,
     pub bottom_right: Option<Length>,
     pub bottom_left: Option<Length>,
+    /// Both corners on the logical inline start; overrides the matching
+    /// physical corners (left in LTR, right in RTL).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start: Option<Length>,
+    /// Both corners on the logical inline end.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end: Option<Length>,
 }
 
 impl CornerLengths {
@@ -1086,6 +1093,8 @@ impl CornerLengths {
             top_right: Some(value),
             bottom_right: Some(value),
             bottom_left: Some(value),
+            start: None,
+            end: None,
         }
     }
 
@@ -1094,6 +1103,8 @@ impl CornerLengths {
         merge_option(&mut self.top_right, overlay.top_right);
         merge_option(&mut self.bottom_right, overlay.bottom_right);
         merge_option(&mut self.bottom_left, overlay.bottom_left);
+        merge_option(&mut self.start, overlay.start);
+        merge_option(&mut self.end, overlay.end);
     }
 }
 
@@ -1491,6 +1502,21 @@ impl Style {
     #[must_use]
     pub fn radius(mut self, value: Length) -> Self {
         self.base.radii = CornerLengths::all(value);
+        self
+    }
+
+    /// Round both corners on the logical inline start (the first item of a
+    /// joined group); they mirror in RTL.
+    #[must_use]
+    pub fn radius_start(mut self, value: Length) -> Self {
+        self.base.radii.start = Some(value);
+        self
+    }
+
+    /// Round both corners on the logical inline end.
+    #[must_use]
+    pub fn radius_end(mut self, value: Length) -> Self {
+        self.base.radii.end = Some(value);
         self
     }
 
@@ -2338,6 +2364,12 @@ fn register_border_methods(builder: &mut TypeBuilder<Style>) {
     builder
         .with_fn("radius", |style: &mut Style, value: Length| {
             style.clone().radius(value)
+        })
+        .with_fn("radius_start", |style: &mut Style, value: Length| {
+            style.clone().radius_start(value)
+        })
+        .with_fn("radius_end", |style: &mut Style, value: Length| {
+            style.clone().radius_end(value)
         })
         .with_fn("radius_top_left", |style: &mut Style, value: Length| {
             style.clone().radius_top_left(value)

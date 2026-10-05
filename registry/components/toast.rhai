@@ -12,7 +12,7 @@
     "text_primary", "text_muted", "metrics.inset", "metrics.icon", "spacing.xxs", "spacing.sm",
     "space.related", "radius.lg", "typography.body"
   ],
-  "environment": ["density"]
+  "environment": ["density", "corners"]
 }
 */
 // Controlled Toast composition over public Layer, declarative timeout, atoms, and hover events.
@@ -29,7 +29,7 @@ define_component(#{
             "text_primary", "text_muted", "metrics.inset", "metrics.icon", "spacing.xxs",
             "spacing.sm", "space.related", "radius.lg", "typography.body"
         ],
-        environment: ["density"],
+        environment: ["density", "corners"],
         assets: ["icons/close.svg"],
     },
     schema: #{

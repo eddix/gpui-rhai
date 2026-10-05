@@ -27,6 +27,8 @@ fn state_schema() {
         page: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "button" } },
         density: #{ schema: #{ type: "string", allowed: ["comfortable", "compact"] },
             "default": #{ type: "string", value: "comfortable" } },
+        corners: #{ schema: #{ type: "string", allowed: ["square", "subtle", "round"] },
+            "default": #{ type: "string", value: "square" } },
         locale: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "en" } },
         audit: #{ schema: #{ type: "integer" }, "default": #{ type: "integer", value: 0 } },
         palette_open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: false } },
@@ -60,6 +62,7 @@ fn init(ctx) {
     ctx.register_action("gallery.toggle_mode", Fn("toggle_mode"));
     ctx.register_action("gallery.go", Fn("go_to"));
     ctx.register_action("gallery.set_density", Fn("set_density_action"));
+    ctx.register_action("gallery.set_corners", Fn("set_corners_action"));
     ctx.register_action("gallery.audit", Fn("set_audit"));
 }
 
@@ -104,6 +107,7 @@ fn palette_query(ctx, query) { ctx.set_state("palette_query", query); }
 fn palette_active(ctx, value) { ctx.set_state("palette_active", value); }
 fn palette_run(ctx, value) {
     if value.starts_with("page:") { ctx.set_state("page", value.sub_string(5)); }
+    if value.starts_with("corners:") { set_corners_action(ctx, value.sub_string(8)); }
     ctx.set_state("palette_open", false);
 }
 fn toggle_source(ctx, payload) { set_value("gallery.source_open", ctx, !source_open(ctx.get_state("values"))); }
@@ -113,6 +117,10 @@ fn toggle_density(ctx, payload) {
 }
 fn set_density_action(ctx, density) { if density == "compact" || density == "comfortable" { ctx.set_state("density", density); } }
 fn set_density(ctx, values) { if values.len > 0 { ctx.set_state("density", values[0]); } }
+fn set_corners(ctx, values) { if values.len > 0 { ctx.set_state("corners", values[0]); } }
+fn set_corners_action(ctx, corners) {
+    if corners == "square" || corners == "subtle" || corners == "round" { ctx.set_state("corners", corners); }
+}
 // Light and dark are variants of one family; families with one mode stay as they are.
 fn toggle_mode(ctx, payload) {
     let current = ctx.theme_variant();
@@ -229,6 +237,11 @@ fn title_controls(ctx) {
         values: [ctx.get_state("density")], allow_empty: false, size: "sm",
         items: [#{ value: "comfortable", label: "Comfortable" }, #{ value: "compact", label: "Compact" }],
         on_change: Fn("set_density") });
+    let corners = toggle_group::ToggleGroup(#{ key: "gallery-corners", label: "Corners",
+        values: [ctx.get_state("corners")], allow_empty: false, size: "sm",
+        items: [#{ value: "square", label: "Square" }, #{ value: "subtle", label: "Subtle" },
+            #{ value: "round", label: "Round" }],
+        on_change: Fn("set_corners") });
     let current = ctx.theme_variant();
     let theme = select::Select(#{ key: "gallery-theme", label: "Theme", value: `${current.family}|${current.name}`,
         open: ctx.get_state("theme_open"), query: "", size: "sm", width: px(176), options: theme_options(ctx),
@@ -239,7 +252,7 @@ fn title_controls(ctx) {
         on_change: Fn("choose_locale"), on_open_change: Fn("locale_open") });
     let palette = button::Button(#{ key: "gallery-palette", text: "Commands", variant: "ghost", size: "sm",
         action: "gallery.palette" });
-    [density, theme, locale, palette]
+    [density, corners, theme, locale, palette]
 }
 
 // One option per loaded variant; a family with several variants names the variant.
@@ -263,6 +276,9 @@ fn palette_items() {
     }
     items.push(#{ value: "action:density", label: "Toggle density", group: "Gallery", action: "gallery.toggle_density" });
     items.push(#{ value: "action:mode", label: "Toggle light and dark", group: "Gallery", action: "gallery.toggle_mode" });
+    for corners in ["square", "subtle", "round"] {
+        items.push(#{ value: `corners:${corners}`, label: `Corners: ${corners}`, group: "Gallery" });
+    }
     items.push(#{ value: "action:source", label: "Toggle source", group: "Gallery", action: "gallery.toggle_source" });
     items
 }
@@ -283,6 +299,7 @@ fn status_items(ctx) {
     let label = |name, value| text(`${name} ${value}`);
     #{
         start: [label.call("DENSITY", ctx.get_state("density")), label.call("THEME", theme_label(ctx.theme_variant())),
+            label.call("CORNERS", ctx.get_state("corners")),
             label.call("LOCALE", ctx.get_state("locale"))],
         end: [text(`AUDIT ${ctx.get_state("audit")}`).accessibility_role("status").accessibility_label("Audit findings"),
             text("⌘K")],
@@ -315,5 +332,5 @@ fn view(ctx) {
         sidebar: navigation(ctx, v, page), main: page_view(ctx, h, v, page),
         status: status_items(ctx), overlays: [palette] };
     if source_open(v) { shell.inspector = source_inspector(ctx, page); }
-    app_shell::AppShell(shell).env(#{ density: ctx.get_state("density") })
+    app_shell::AppShell(shell).env(#{ density: ctx.get_state("density"), corners: ctx.get_state("corners") })
 }

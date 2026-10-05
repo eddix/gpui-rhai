@@ -9,6 +9,9 @@ fn tokens() {
         environment: #{
             density: #{ values: ["comfortable", "compact"], "default": "comfortable" },
             size: #{ values: ["xs", "sm", "md", "lg"], "default": "md" },
+            // Corner style. Square is the design language; subtle and round are opt-in
+            // (`.env(#{ corners: "round" })`, or a Host environment default).
+            corners: #{ values: ["square", "subtle", "round"], "default": "square" },
         },
 
         // Density-aware spacing scale. Compact shrinks only the outer steps.
@@ -29,9 +32,17 @@ fn tokens() {
             section: by_env("density", #{ comfortable: px(24), compact: px(16) }),
         },
 
-        // Radius roles: sm markers, md controls, lg overlays. Square by default;
-        // a profile may use up to 4px.
-        radius: #{ sm: px(0), md: px(0), lg: px(0) },
+        // Radius roles, all zero unless `corners` asks otherwise. xs: boxes that must
+        // stay boxes (Checkbox, Kbd); sm: markers (Tag, strong Badge, chips); md:
+        // single-line controls; lg: panels, multi-line fields and tooltips. Round makes
+        // markers and controls capsules (a square control a circle: radii clamp to half
+        // the shorter side) and keeps panels at 8px, which their 4px row inset hides.
+        radius: #{
+            xs: by_env("corners", #{ square: px(0), subtle: px(2), round: px(4) }),
+            sm: by_env("corners", #{ square: px(0), subtle: px(2), round: px(999) }),
+            md: by_env("corners", #{ square: px(0), subtle: px(4), round: px(999) }),
+            lg: by_env("corners", #{ square: px(0), subtle: px(4), round: px(8) }),
+        },
 
         metrics: #{
             control: by_env(["density", "size"], #{

@@ -14,7 +14,7 @@
     "metrics.inset", "spacing.xs", "spacing.sm", "radius.md", "radius.lg",
     "typography.control", "typography.body", "typography.label"
   ],
-  "environment": ["size", "density"]
+  "environment": ["size", "density", "corners"]
 }
 */
 // Controlled single-date field composed from public date data helpers, atoms, and Overlay.
@@ -34,7 +34,7 @@ define_component(#{
             "metrics.marker", "metrics.inset", "spacing.xs", "spacing.sm", "radius.md",
             "radius.lg", "typography.control", "typography.body", "typography.label"
         ],
-        environment: ["size", "density"],
+        environment: ["size", "density", "corners"],
         assets: ["icons/calendar.svg", "icons/date_previous.svg", "icons/date_next.svg", "icons/close.svg"],
     },
     schema: #{

@@ -12,7 +12,7 @@
     "focus_ring", "disabled", "control.hover", "metrics.control", "metrics.control_pad",
     "spacing.xs", "radius.md", "typography.control", "typography.code"
   ],
-  "environment": ["size", "density"]
+  "environment": ["size", "density", "corners"]
 }
 */
 // Button presents a desktop action: a large block with a centered label.
@@ -41,7 +41,7 @@ define_component(#{
             "focus_ring", "disabled", "control.hover", "metrics.control", "metrics.control_pad",
             "spacing.xs", "radius.md", "typography.control", "typography.code"
         ],
-        environment: ["size", "density"],
+        environment: ["size", "density", "corners"],
     },
     schema: #{
         props: #{

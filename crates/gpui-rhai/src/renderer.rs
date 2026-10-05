@@ -5239,6 +5239,8 @@ fn resolve_style_lengths(style: &mut StyleProperties, resolver: &impl ColorResol
         &mut style.radii.top_right,
         &mut style.radii.bottom_right,
         &mut style.radii.bottom_left,
+        &mut style.radii.start,
+        &mut style.radii.end,
         &mut style.font_size,
         &mut style.line_height,
     ] {
@@ -5569,6 +5571,41 @@ fn apply_paint_and_text(
     apply_shadows(element, style, colors)
 }
 
+/// Physical corner radii, with the logical start and end corners mirrored in RTL.
+fn apply_corner_radii(
+    mut element: Div,
+    radii: &crate::CornerLengths,
+    direction: TextDirection,
+) -> Div {
+    let (top_left, top_right) = logical_horizontal_edges(
+        radii.top_left,
+        radii.top_right,
+        radii.start,
+        radii.end,
+        direction,
+    );
+    let (bottom_left, bottom_right) = logical_horizontal_edges(
+        radii.bottom_left,
+        radii.bottom_right,
+        radii.start,
+        radii.end,
+        direction,
+    );
+    if let Some(value) = top_left {
+        element = radius_top_left(element, value);
+    }
+    if let Some(value) = top_right {
+        element = radius_top_right(element, value);
+    }
+    if let Some(value) = bottom_right {
+        element = radius_bottom_right(element, value);
+    }
+    if let Some(value) = bottom_left {
+        element = radius_bottom_left(element, value);
+    }
+    element
+}
+
 fn apply_paint(
     mut element: Div,
     style: &StyleProperties,
@@ -5634,18 +5671,7 @@ fn apply_paint(
     if let Some(value) = border_left_value {
         element = border_left(element, value);
     }
-    if let Some(value) = style.radii.top_left {
-        element = radius_top_left(element, value);
-    }
-    if let Some(value) = style.radii.top_right {
-        element = radius_top_right(element, value);
-    }
-    if let Some(value) = style.radii.bottom_right {
-        element = radius_bottom_right(element, value);
-    }
-    if let Some(value) = style.radii.bottom_left {
-        element = radius_bottom_left(element, value);
-    }
+    element = apply_corner_radii(element, &style.radii, direction);
     if let Some(value) = style.font_size {
         element = font_size(element, value);
     }
@@ -6410,6 +6436,34 @@ mod tests {
                 TextDirection::RightToLeft,
             ),
             (Some(end), Some(start))
+        );
+    }
+
+    #[test]
+    fn logical_corners_round_the_inline_start_and_mirror_in_rtl() {
+        let style = Style::new()
+            .radius(Length::Pixels(0.0))
+            .radius_start(Length::Pixels(6.0));
+        let corners = |direction| {
+            let mut element = apply_paint(div(), &style.base, &TypographyResolver, direction);
+            let radii = element.style().corner_radii.clone();
+            [
+                radii.top_left,
+                radii.top_right,
+                radii.bottom_right,
+                radii.bottom_left,
+            ]
+            .map(|corner| corner.map(|value| format!("{value:?}")))
+        };
+        let six = Some(format!("{:?}", gpui::AbsoluteLength::Pixels(px(6.0))));
+        let zero = Some(format!("{:?}", gpui::AbsoluteLength::Pixels(px(0.0))));
+        assert_eq!(
+            corners(TextDirection::LeftToRight),
+            [six.clone(), zero.clone(), zero.clone(), six.clone()]
+        );
+        assert_eq!(
+            corners(TextDirection::RightToLeft),
+            [zero.clone(), six.clone(), six, zero]
         );
     }
 

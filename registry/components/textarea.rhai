@@ -10,9 +10,9 @@
   "tokens": [
     "surface_raised", "border", "danger", "focus_ring", "text_primary", "text_muted",
     "text.danger", "disabled", "selection", "accent", "metrics.control_pad", "spacing.xxs", "spacing.xs",
-    "radius.md", "typography.body", "typography.body_small", "typography.caption"
+    "radius.lg", "typography.body", "typography.body_small", "typography.caption"
   ],
-  "environment": ["size", "density"]
+  "environment": ["size", "density", "corners"]
 }
 */
 // Textarea is a controlled multiline field with native IME, selection, wrapping, and auto-grow.
@@ -30,10 +30,10 @@ define_component(#{
         tokens: [
             "surface_raised", "border", "danger", "focus_ring", "text_primary", "text_muted",
             "text.danger", "disabled", "selection", "accent", "metrics.control_pad",
-            "spacing.xxs", "spacing.xs", "radius.md", "typography.body", "typography.body_small",
+            "spacing.xxs", "spacing.xs", "radius.lg", "typography.body", "typography.body_small",
             "typography.caption"
         ],
-        environment: ["size", "density"], assets: [],
+        environment: ["size", "density", "corners"], assets: [],
     },
     schema: #{
         props: #{
@@ -121,7 +121,7 @@ fn render_Textarea(ctx, props) {
             style()
                 .padding_x(theme_length("metrics.control_pad"))
                 .padding_y(theme_spacing("xs"))
-                .radius(theme_radius("md"))
+                .radius(theme_radius("lg"))
                 .border(px(2))
                 .border_color(border)
                 .background(theme_color("surface_raised"))

@@ -14,7 +14,7 @@
     "metrics.marker", "spacing.xs", "spacing.sm", "radius.sm",
     "typography.caption", "typography.label"
   ],
-  "environment": []
+  "environment": ["corners"]
 }
 */
 // Tag labels a category: a flat tonal tape with an optional facet segment.
@@ -39,7 +39,7 @@ define_component(#{
             "metrics.marker", "spacing.xs", "spacing.sm", "radius.sm",
             "typography.caption", "typography.label"
         ],
-        environment: [],
+        environment: ["corners"],
     },
     schema: #{
         props: #{
@@ -88,8 +88,9 @@ fn render_Tag(ctx, props) {
         let facet_fill = if variant == "neutral" { theme_color("tag.facet") } else { theme_color(variant) };
         let facet_text = if variant == "neutral" { theme_color("text_primary") }
             else { theme_color(`on_${variant}`) };
+        // The facet carries the tag's start corners: clipping is rectangular.
         children.push(row([text(facet.to_upper())]).with_style(ctx.component_style("facet", style()
-            .flex_row().items_center().self_stretch()
+            .flex_row().items_center().self_stretch().radius_start(theme_radius("sm"))
             .padding_x(theme_spacing("sm"))
             .background(if disabled { theme_color("surface_hover") } else { facet_fill })
             .text_color(if disabled { theme_color("disabled") } else { facet_text })
@@ -106,7 +107,7 @@ fn render_Tag(ctx, props) {
         let close = row([image_source(asset("app/icons/close"))
                 .with_style(style().width(px(12)).height(px(12)))])
             .with_style(ctx.component_style("close", style()
-                .items_center().justify_center()
+                .items_center().justify_center().radius(theme_radius("sm"))
                 .border(px(1)).border_color(rgba(0x00000000))
                 .text_color(value_color)
                 .hover(style().background(theme_color("control.hover")))

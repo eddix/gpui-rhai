@@ -10,7 +10,7 @@
     "surface_hover", "selection", "text_primary", "disabled", "focus_ring", "border",
     "metrics.control", "metrics.icon", "radius.md"
   ],
-  "environment": ["size", "density"]
+  "environment": ["size", "density", "corners"]
 }
 */
 // IconButton presents one icon in a square action target.
@@ -36,7 +36,7 @@ define_component(#{
             "surface_hover", "selection", "text_primary", "disabled", "focus_ring", "border",
             "metrics.control", "metrics.icon", "radius.md"
         ],
-        environment: ["size", "density"],
+        environment: ["size", "density", "corners"],
     },
     schema: #{
         props: #{

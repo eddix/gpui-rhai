@@ -11,7 +11,7 @@
     "metrics.inset", "metrics.icon", "spacing.xxs", "spacing.sm", "space.related", "radius.lg",
     "typography.body"
   ],
-  "environment": ["density"]
+  "environment": ["density", "corners"]
 }
 */
 // Persistent inline feedback with semantic variants and composable actions.
@@ -28,7 +28,7 @@ define_component(#{
             "text_muted", "metrics.inset", "metrics.icon", "spacing.xxs", "spacing.sm",
             "space.related", "radius.lg", "typography.body"
         ],
-        environment: ["density"] },
+        environment: ["density", "corners"] },
     schema: #{
         props: #{
             title: #{ schema: #{ type: "string" }, required: true, sensitive: false },

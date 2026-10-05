@@ -14,7 +14,7 @@
     "spacing.sm", "radius.md", "radius.lg", "radius.sm", "typography.control",
     "typography.body", "typography.label"
   ],
-  "environment": ["size", "density"]
+  "environment": ["size", "density", "corners"]
 }
 */
 // Public Rhai choice composition over Overlay, Input, and virtual_collection.
@@ -36,7 +36,7 @@ define_component(#{
             "spacing.sm", "radius.md", "radius.lg", "radius.sm", "typography.control",
             "typography.body", "typography.label"
         ],
-        environment: ["size", "density"],
+        environment: ["size", "density", "corners"],
         assets: ["icons/check.svg", "icons/close.svg", "icons/chevron_down.svg", "icons/chevron_up.svg"] },
     schema: #{
         props: #{

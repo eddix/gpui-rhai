@@ -72,6 +72,10 @@ style()
     .opacity(0.92).cursor_pointer()
 ```
 
+`radius_start` and `radius_end` round both corners on one logical inline side
+and mirror in RTL, like `padding_start`; the first and last items of a joined
+group use them so only the group's outer corners are rounded.
+
 `shadow` and `linear_gradient` reject unknown fields. Opacity, grid counts,
 font weights, line clamps, translations, lengths, and shadow geometry are
 bounded before a GPUI element is built. Occlusion forces a retained interactive

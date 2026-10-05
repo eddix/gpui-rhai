@@ -168,10 +168,15 @@ red, amber and green status roles. Exact values and constraints are in
 
 ### Geometry
 
-Rectangles are square by default. Radius roles exist (`sm` for markers, `md`
-for controls, `lg` for overlays) so a Host or profile can apply a micro radius
-consistently; the recommended ceiling is 4px. Borders are 1px hairlines.
-Shadows, glass and gradients are not part of the default component language.
+Rectangles are square by default. Radius roles exist (`xs` for boxes, `sm` for
+markers, `md` for controls, `lg` for panels) and follow the `corners`
+environment value: `subtle` is a micro radius (at most 4px), `round` makes
+controls and markers capsules for applications whose users expect them.
+Square remains the design language: the Gallery and the baselines are square,
+and `round` keeps the signatures that do not depend on corners (square lamps,
+faders, label voice, indicator bars). See [atoms.md](atoms.md#radius-roles-and-the-corner-style).
+Borders are 1px hairlines. Shadows, glass and gradients are not part of the
+default component language.
 
 ## Density and size
 

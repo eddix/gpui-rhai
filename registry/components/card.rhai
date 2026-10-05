@@ -10,7 +10,7 @@
     "surface_raised", "border", "text_primary", "metrics.inset", "space.group", "radius.lg",
     "typography.subtitle"
   ],
-  "environment": ["density"]
+  "environment": ["density", "corners"]
 }
 */
 // General themed content surface with optional header and footer slots.
@@ -26,7 +26,7 @@ define_component(#{
             "surface_raised", "border", "text_primary", "metrics.inset", "space.group",
             "radius.lg", "typography.subtitle"
         ],
-        environment: ["density"] },
+        environment: ["density", "corners"] },
     schema: #{
         props: #{
             content: #{ schema: #{ type: "node" }, required: true, sensitive: false },

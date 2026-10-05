@@ -57,17 +57,37 @@ offsets, semantic circles. The registry lint
 other literal height or font size, and any token a component reads without
 declaring it.
 
-### Radius roles
+### Radius roles and the corner style
 
-| Role | Used by | Default |
-|---|---|---:|
-| `radius.sm` | Badge, Tag, Kbd, Checkbox box, indicator-free chips | 0 |
-| `radius.md` | Button, IconButton, inputs, Select, Tabs track/thumb, ToggleGroup | 0 |
-| `radius.lg` | Popover, Dialog, Menu panel, Tooltip, Toast, Sheet | 0 |
+Corners are an environment axis, `corners`, like density: `square` (the
+default and the design language), `subtle` and `round`. Every role is zero in
+`square`, so choosing nothing changes nothing.
 
-Semantic circles (Radio, Avatar, presence) use half their size. Slider caps
-are rectangular faders, not circles.
-Square status lamps are not circles.
+| Role | Used by | square | subtle | round |
+|---|---|---:|---:|---:|
+| `radius.xs` | Checkbox box, Kbd keycap | 0 | 2 | 4 |
+| `radius.sm` | Tag (and its facet and close target), strong Badge, Combobox chips, Switch track and thumb | 0 | 2 | capsule |
+| `radius.md` | Button, IconButton, Input, Select and DatePicker triggers and day cells, ToggleGroup, ButtonGroup, InputGroup, horizontal Tabs | 0 | 4 | capsule |
+| `radius.lg` | Card, Alert, Toast, Dialog, Popover, Menu, Command and field panels, Tooltip, Textarea, vertical Tabs, ToggleGroup and ButtonGroup | 0 | 4 | 8 |
+
+"Capsule" is 999px: radii clamp to half the shorter side, so a control
+becomes a capsule and a square control (IconButton, a day cell) a circle.
+Panels stay at 8px in `round` because their rows are inset 4px from the edge;
+a larger radius would show a highlighted first or last row's corner outside
+the curve (clipping is rectangular). Joined groups round only their outer
+corners: the first and last items use `radius_start` / `radius_end`, so a
+pressed segment or a Tag facet never pokes past the frame.
+
+Some shapes do not follow the corner style, on purpose:
+
+- Checkbox stays a box (`xs`): a round checkbox reads as a Radio.
+- Status lamps stay square: they are a recognizability signature (G2).
+- Slider and RangeSlider caps stay rectangular faders on square tracks, and
+  Progress stays a square bar.
+- Tables, lists, trees and their selection rows stay square; the indicator bar
+  needs a straight start edge.
+
+Semantic circles (Radio, Avatar, presence) use half their size in every style.
 
 ## 3. Typography
 

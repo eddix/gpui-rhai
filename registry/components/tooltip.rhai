@@ -7,10 +7,10 @@
   "dependencies": [],
   "capabilities": {},
   "tokens": [
-    "text_primary", "surface", "spacing.xxs", "spacing.sm", "radius.sm", "typography.caption",
+    "text_primary", "surface", "spacing.xxs", "spacing.sm", "radius.lg", "typography.caption",
     "typography.label"
   ],
-  "environment": []
+  "environment": ["corners"]
 }
 */
 // Native delayed tooltip using the per-window overlay scheduler.
@@ -24,10 +24,10 @@ define_component(#{
         id: "components/tooltip", "export": "Tooltip", version: "0.2.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{},
         tokens: [
-            "text_primary", "surface", "spacing.xxs", "spacing.sm", "radius.sm",
+            "text_primary", "surface", "spacing.xxs", "spacing.sm", "radius.lg",
             "typography.caption", "typography.label"
         ],
-        environment: [],
+        environment: ["corners"],
     },
     schema: #{
         props: #{
@@ -75,7 +75,7 @@ fn render_Tooltip(ctx, props) {
     let content = row(children).with_style(ctx.component_style("content",
         style().max_width(px(320)).padding_x(theme_spacing("sm")).padding_y(theme_spacing("xxs"))
             .gap(theme_spacing("sm")).items_center()
-            .radius(theme_radius("sm")).typography("caption")
+            .radius(theme_radius("lg")).typography("caption")
             .background(theme_color("text_primary"))
             .text_color(theme_color("surface"))
     )).accessibility_role("tooltip").accessibility_label(props.label);

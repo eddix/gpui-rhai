@@ -9,10 +9,10 @@
   "assets": ["icons/check.svg", "icons/minus.svg"],
   "tokens": [
     "accent", "on_accent", "border", "surface_raised", "surface_hover", "focus_ring",
-    "text_primary", "disabled", "metrics.mark", "metrics.control", "spacing.sm", "radius.sm",
+    "text_primary", "disabled", "metrics.mark", "metrics.control", "spacing.sm", "radius.xs",
     "typography.control"
   ],
-  "environment": ["size", "density"]
+  "environment": ["size", "density", "corners"]
 }
 */
 // Controlled checkbox with checked, unchecked, and indeterminate states.
@@ -29,9 +29,9 @@ define_component(#{
         tokens: [
             "accent", "on_accent", "border", "surface_raised", "surface_hover", "focus_ring",
             "text_primary", "disabled", "metrics.mark", "metrics.control", "spacing.sm",
-            "radius.sm", "typography.control"
+            "radius.xs", "typography.control"
         ],
-        environment: ["size", "density"], assets: ["icons/check.svg", "icons/minus.svg"],
+        environment: ["size", "density", "corners"], assets: ["icons/check.svg", "icons/minus.svg"],
     },
     schema: #{
         props: #{
@@ -82,7 +82,7 @@ fn render_Checkbox(ctx, props) {
             .opacity(if active { 1.0 } else { 0.0 })));
     let box_node = row([mark_node]).with_style(ctx.component_style("box", style()
         .width(theme_length("metrics.mark")).height(theme_length("metrics.mark"))
-        .items_center().justify_center().radius(theme_radius("sm"))
+        .items_center().justify_center().radius(theme_radius("xs"))
         .border(px(2)).border_color(if active { theme_color("accent") } else { theme_color("border") })
         .background(if active { theme_color("accent") } else { theme_color("surface_raised") })
         .group_focus(style().border_color(theme_color("focus_ring")))

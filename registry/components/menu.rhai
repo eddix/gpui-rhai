@@ -13,7 +13,7 @@
     "metrics.icon", "spacing.xs", "spacing.sm", "radius.lg", "typography.body",
     "typography.label"
   ],
-  "environment": ["density"]
+  "environment": ["density", "corners"]
 }
 */
 // Controlled in-window menu with roving selection and nested submenu nodes.
@@ -39,7 +39,7 @@ define_component(#{
             "metrics.inset", "metrics.icon", "spacing.xs", "spacing.sm", "radius.lg",
             "typography.body", "typography.label"
         ],
-        environment: ["density"], assets: ["icons/check.svg"],
+        environment: ["density", "corners"], assets: ["icons/check.svg"],
     },
     schema: #{
         props: #{

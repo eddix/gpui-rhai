@@ -11,7 +11,7 @@
     "warning", "on_warning", "danger", "on_danger", "metrics.marker", "metrics.marker_small",
     "spacing.xs", "spacing.sm", "radius.sm", "typography.caption"
   ],
-  "environment": []
+  "environment": ["corners"]
 }
 */
 // Badge marks a read-only status: a square lamp followed by its label.
@@ -34,7 +34,7 @@ define_component(#{
             "warning", "on_warning", "danger", "on_danger", "metrics.marker", "metrics.marker_small",
             "spacing.xs", "spacing.sm", "radius.sm", "typography.caption"
         ],
-        environment: [],
+        environment: ["corners"],
     },
     schema: #{
         props: #{

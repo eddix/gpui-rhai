@@ -8,9 +8,9 @@
   "capabilities": {},
   "tokens": [
     "border", "selection", "surface_hover", "text_primary", "text_muted", "disabled",
-    "focus_ring", "metrics.control", "metrics.control_pad", "radius.md", "typography.control"
+    "focus_ring", "metrics.control", "metrics.control_pad", "radius.md", "radius.lg", "typography.control"
   ],
-  "environment": ["size", "density"]
+  "environment": ["size", "density", "corners"]
 }
 */
 // ToggleGroup holds pressed tool state: equal-height segments joined inside one frame.
@@ -30,9 +30,9 @@ define_component(#{
         dependencies: [], capabilities: #{},
         tokens: [
             "border", "selection", "surface_hover", "text_primary", "text_muted", "disabled",
-            "focus_ring", "metrics.control", "metrics.control_pad", "radius.md", "typography.control"
+            "focus_ring", "metrics.control", "metrics.control_pad", "radius.md", "radius.lg", "typography.control"
         ],
-        environment: ["size", "density"] },
+        environment: ["size", "density", "corners"] },
     schema: #{
         props: #{
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false },
@@ -121,6 +121,10 @@ fn render_ToggleGroup(ctx, props) {
     let can_change = "on_change" in props && props.on_change != ();
     let count = props.items.len;
 
+    // A horizontal group is a capsule with round corners; a vertical one rounds like a
+    // panel. The outer segments carry the frame's corners, so a pressed fill never
+    // pokes past them (clipping is rectangular).
+    let corner = theme_radius(if vertical { "lg" } else { "md" });
     let segments = [];
     for index in 0..count {
         let item = props.items[index];
@@ -140,12 +144,17 @@ fn render_ToggleGroup(ctx, props) {
             .disabled(style().text_color(theme_color("disabled")));
         if vertical {
             segment = segment.margin_x(offset_px(-2));
-            if index == 0 { segment = segment.margin_top(offset_px(-2)); }
-            if index == count - 1 { segment = segment.margin_bottom(offset_px(-2)); }
+            if index == 0 {
+                segment = segment.margin_top(offset_px(-2)).radius_top_left(corner).radius_top_right(corner);
+            }
+            if index == count - 1 {
+                segment = segment.margin_bottom(offset_px(-2))
+                    .radius_bottom_left(corner).radius_bottom_right(corner);
+            }
         } else {
             segment = segment.margin_y(offset_px(-2));
-            if index == 0 { segment = segment.margin_start(offset_px(-2)); }
-            if index == count - 1 { segment = segment.margin_end(offset_px(-2)); }
+            if index == 0 { segment = segment.margin_start(offset_px(-2)).radius_start(corner); }
+            if index == count - 1 { segment = segment.margin_end(offset_px(-2)).radius_end(corner); }
         }
         if !pressed && !unavailable {
             segment = segment.hover(style().background(theme_color("surface_hover"))
@@ -173,7 +182,7 @@ fn render_ToggleGroup(ctx, props) {
 
     let frame = style()
         .border(px(2)).border_color(theme_color("border"))
-        .radius(theme_radius("md")).clip()
+        .radius(corner).clip()
         .typography("control");
     let root = if vertical { column(segments) } else { row(segments) };
     root = root

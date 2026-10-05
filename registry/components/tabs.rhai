@@ -10,9 +10,9 @@
     "surface_hover", "surface_raised", "focus_ring", "text_primary", "tabs.foreground",
     "disabled", "metrics.control", "metrics.control_pad", "metrics.icon",
     "metrics.label_column", "spacing.xxs", "spacing.xs", "spacing.sm", "space.group",
-    "radius.md", "typography.control", "typography.body"
+    "radius.md", "radius.lg", "typography.control", "typography.body"
   ],
-  "environment": ["size", "density"]
+  "environment": ["size", "density", "corners"]
 }
 */
 // Controlled tabs with one tab stop and orientation-aware arrow selection.
@@ -30,9 +30,9 @@ define_component(#{
             "surface_hover", "surface_raised", "focus_ring", "text_primary", "tabs.foreground",
             "disabled", "metrics.control", "metrics.control_pad", "metrics.icon",
             "metrics.label_column", "spacing.xxs", "spacing.xs", "spacing.sm", "space.group",
-            "radius.md", "typography.control", "typography.body"
+            "radius.md", "radius.lg", "typography.control", "typography.body"
         ],
-        environment: ["size", "density"],
+        environment: ["size", "density", "corners"],
     },
     schema: #{
         props: #{
@@ -87,6 +87,8 @@ fn next_tab(tabs, value, step) {
 fn Tabs(props) { render_component("components/tabs", props) }
 fn render_Tabs(ctx, props) {
     let orientation = if "orientation" in props { props.orientation } else { "horizontal" };
+    // A horizontal track is a capsule with round corners; a vertical one rounds like a panel.
+    let corner = theme_radius(if orientation == "vertical" { "lg" } else { "md" });
     let layout = if "layout" in props { props.layout } else { "content" };
     let show_panel = if "panel" in props { props.panel } else { true };
     let motion_key = if "motion_key" in props { props.motion_key } else { "" };
@@ -127,7 +129,7 @@ fn render_Tabs(ctx, props) {
             // The thumb: a raised block inset in the track. It carries the tab list's
             // focus as the 2px ink frame.
             let thumb = style().absolute().left(px(0)).right(px(0)).top(px(0)).bottom(px(0));
-            thumb = thumb.radius(theme_radius("md")).background(theme_color("surface_raised"))
+            thumb = thumb.radius(corner).background(theme_color("surface_raised"))
                 .border(px(2)).border_color(theme_color("surface_raised"))
                 .group_focus(style().border_color(theme_color("focus_ring")));
             let indicator = row([]).with_key("indicator")
@@ -171,7 +173,7 @@ fn render_Tabs(ctx, props) {
     let list = if orientation == "vertical" { column(headers) } else { row(headers) };
     // One continuous tonal track, metrics.control high, holding the slots 2px in.
     let list_style = style().relative().padding(theme_spacing("xxs")).gap(theme_spacing("xxs"))
-        .background(theme_color("surface_hover")).radius(theme_radius("md")).min_width(px(0))
+        .background(theme_color("surface_hover")).radius(corner).min_width(px(0))
         .focus(style());
     if orientation == "vertical" {
         list_style = list_style.min_width(theme_length("metrics.label_column")).self_start();

@@ -6,8 +6,8 @@
   "runtime_api": { "min_inclusive": 3, "max_exclusive": 4 },
   "dependencies": [],
   "capabilities": {},
-  "tokens": ["spacing.xxs", "radius.md"],
-  "environment": ["size", "density"]
+  "tokens": ["spacing.xxs", "radius.md", "radius.lg"],
+  "environment": ["size", "density", "corners"]
 }
 */
 // Visually joins related buttons into one horizontal or vertical control.
@@ -19,7 +19,7 @@
 define_component(#{
     metadata: #{ id: "components/button_group", "export": "ButtonGroup", version: "0.2.0",
         runtime_api: #{ min_inclusive: 3, max_exclusive: 4 }, dependencies: [], capabilities: #{},
-        tokens: ["spacing.xxs", "radius.md"], environment: ["size", "density"] },
+        tokens: ["spacing.xxs", "radius.md", "radius.lg"], environment: ["size", "density", "corners"] },
     schema: #{
         props: #{
             buttons: #{ schema: #{ type: "array", max_items: 16, items: #{ type: "node" } },
@@ -41,19 +41,30 @@ fn ButtonGroup(props) { render_component("components/button_group", props) }
 fn render_ButtonGroup(ctx, props) {
     if props.buttons.len == 0 { throw "button group requires at least one button"; }
     let vertical = "orientation" in props && props.orientation == "vertical";
+    // Only the group's outer corners round: a horizontal group is a capsule with round
+    // corners, a vertical one rounds like a panel.
+    let corner = theme_radius(if vertical { "lg" } else { "md" });
     let items = [];
     for index in 0..props.buttons.len {
         let first = index == 0;
         let last = index == props.buttons.len - 1;
         let part = if first { "first" } else if last { "last" } else { "item" };
+        let joined = style().radius(px(0));
+        if vertical {
+            if first { joined = joined.radius_top_left(corner).radius_top_right(corner); }
+            if last { joined = joined.radius_bottom_left(corner).radius_bottom_right(corner); }
+        } else {
+            if first { joined = joined.radius_start(corner); }
+            if last { joined = joined.radius_end(corner); }
+        }
         items.push(props.buttons[index].with_style(ctx.component_style(part,
-            ctx.component_style("item", style().radius(px(0))))));
+            ctx.component_style("item", joined))));
     }
     // Joined blocks keep a 2px seam, so each button keeps its own focus border and
     // outline frames never double up.
     let root = if vertical { column(items) } else { row(items) };
     root = root.with_style(ctx.component_style("root", style()
-        .gap(theme_spacing("xxs")).clip().radius(theme_radius("md"))))
+        .gap(theme_spacing("xxs")).clip().radius(corner)))
         .accessibility_role("group").accessibility_label(props.label);
     if "size" in props && props.size != () { root.env(#{ size: props.size }) } else { root }
 }

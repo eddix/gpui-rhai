@@ -7,7 +7,7 @@
   "dependencies": [],
   "capabilities": {},
   "tokens": ["surface_raised", "border", "metrics.inset", "space.related", "radius.lg", "typography.body"],
-  "environment": ["density"]
+  "environment": ["density", "corners"]
 }
 */
 // Popover renders controlled content through the native per-window overlay layer.
@@ -30,7 +30,7 @@ define_component(#{
             "surface_raised", "border", "metrics.inset", "space.related", "radius.lg",
             "typography.body"
         ],
-        environment: ["density"],
+        environment: ["density", "corners"],
     },
     schema: #{
         props: #{

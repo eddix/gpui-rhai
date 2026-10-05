@@ -59,7 +59,10 @@ fn tokens() {
   derived color follows the active palette and Host overrides.
 - Environment declarations: `environment: #{ density: #{ values: [...],
   "default": "comfortable" } }`. `default` is a reserved Rhai keyword, so the
-  key is quoted.
+  key is quoted. The token base declares `density`, `size` and `corners`
+  (`square`, `subtle`, `round`; radius roles depend on it). A subtree selects
+  one with `.env(#{ corners: "round" })`; a Host sets the application default
+  with `ThemeTokenOverrides::environment_defaults`.
 
 ## 3. Semantic colors
 

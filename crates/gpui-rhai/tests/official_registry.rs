@@ -846,12 +846,29 @@ fn bundled_palettes_own_colors_only_and_share_the_token_base_metrics() {
             "{name}: palettes must contain colors only"
         );
         let theme = load_bundled(&engine, name, source);
-        for radius in ["sm", "md", "lg"] {
+        // Square is the default corner style and every role is zero in it, so
+        // choosing no corner style leaves the design pixel-identical.
+        for radius in ["xs", "sm", "md", "lg"] {
             assert_eq!(
                 theme.resolve_length(Length::theme_radius(radius).unwrap()),
                 Some(Length::Pixels(0.0)),
                 "{name}: radius {radius}"
             );
+        }
+        for (corners, expected) in [
+            ("subtle", [2.0, 2.0, 4.0, 4.0]),
+            ("round", [4.0, 999.0, 999.0, 8.0]),
+        ] {
+            for (radius, pixels) in ["xs", "sm", "md", "lg"].into_iter().zip(expected) {
+                assert_eq!(
+                    theme.resolve_length_in(
+                        Length::theme_radius(radius).unwrap(),
+                        &environment(&[("corners", corners)])
+                    ),
+                    Some(Length::Pixels(pixels)),
+                    "{name}: radius {radius} with {corners} corners"
+                );
+            }
         }
         for &(role, size, line_height, weight) in &typography {
             let token = theme.resolve_typography(role).unwrap();
@@ -1127,7 +1144,9 @@ fn tabs_and_table_use_semantic_theme_state_surfaces() {
     // Tabs: one tonal track, a raised thumb inset by xxs that carries the list focus,
     // control type at a single weight so widths never jitter.
     assert!(TABS.contains("padding(theme_spacing(\"xxs\"))"));
-    assert!(TABS.contains("radius(theme_radius(\"md\"))"));
+    assert!(
+        TABS.contains("theme_radius(if orientation == \"vertical\" { \"lg\" } else { \"md\" })")
+    );
     assert!(TABS.contains("background(theme_color(\"surface_hover\"))"));
     assert!(TABS.contains("group_focus(style().border_color(theme_color(\"focus_ring\")))"));
     assert!(TABS.contains("typography(\"control\")"));

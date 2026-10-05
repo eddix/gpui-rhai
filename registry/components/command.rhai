@@ -11,7 +11,7 @@
     "text_muted", "disabled", "metrics.row", "metrics.inset", "spacing.xs", "spacing.sm",
     "radius.lg", "typography.body", "typography.label"
   ],
-  "environment": ["density"]
+  "environment": ["density", "corners"]
 }
 */
 // Embeddable keyboard-first command search with deterministic fuzzy ranking.
@@ -34,7 +34,7 @@ define_component(#{
             "text_muted", "disabled", "metrics.row", "metrics.inset", "spacing.xs", "spacing.sm",
             "radius.lg", "typography.body", "typography.label"
         ],
-        environment: ["density"] },
+        environment: ["density", "corners"] },
     schema: #{
         props: #{
             key: #{ schema: #{ type: "string" }, required: true, sensitive: false },

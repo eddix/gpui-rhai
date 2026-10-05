@@ -10,7 +10,7 @@
     "surface_raised", "border", "danger", "focus_ring", "text_primary", "text_muted",
     "disabled", "metrics.control", "metrics.control_pad", "radius.md", "typography.control"
   ],
-  "environment": ["size", "density"]
+  "environment": ["size", "density", "corners"]
 }
 */
 // Input is a controlled single-line native text input.
@@ -33,7 +33,7 @@ define_component(#{
             "disabled", "metrics.control", "metrics.control_pad", "radius.md",
             "typography.control"
         ],
-        environment: ["size", "density"],
+        environment: ["size", "density", "corners"],
     },
     schema: #{
         props: #{
