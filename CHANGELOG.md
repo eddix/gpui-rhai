@@ -72,6 +72,21 @@ and [docs/design/](docs/design/) for the specification.
 - The five visual examples are rewritten with the 0.2 layouts and patterns and
   pass the productivity audit; their 38 baselines are recaptured offscreen
   (`scripts/capture-macos-example-baselines.sh`).
+- **Breaking:** a failed callback, delivery or render stays reported until a
+  successful reload, the banner's Dismiss button, or the new
+  `ScriptViewHandle::clear_error`. A later successful transaction no longer
+  clears it, so a failure that rolled back one event is readable instead of
+  flashing away. Automation commands still report only their own failures.
+- **Breaking:** Resizable's `resize` payload is `{x,y,width,height}`, exactly the
+  next `rect`; the `handle` field is removed. Storing the payload as the rect
+  used to fail validation and roll the drag back.
+- Gallery: PanZoom shows a plane larger than the viewport, the transform and a
+  Reset view button; Rotatable takes the drag anywhere in its area.
+- `gpui-rhai check` warns (`builtin-shadow`) about entry functions that take
+  over a built-in: `fn f(a, b)` captures method calls `x.f(a, b)` and direct
+  calls `f(a, b)`, also inside imported components
+  (`RuntimeEngine::lint_shadowed_builtins`, `ShadowedBuiltin`). The Gallery's
+  locale callback, two stories and two examples were renamed.
 
 ## 0.1.8 - 2026-10-04
 

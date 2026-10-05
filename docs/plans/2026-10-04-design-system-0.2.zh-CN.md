@@ -157,3 +157,31 @@ bash scripts/audit-visual-baselines.sh
   命令面板项等），已在一到两帧之内；进一步优化需要应用层缓存静态数据或运行时级的子树缓存。
 - 证据：fmt 通过；三个 workspace 的 clippy 退出码 0；workspace 672 / 0，native-keyboard
   227 / 0，performance 2 / 0。
+
+### 2026-10-05 交互问题与运行时诊断
+
+- 维护者试用 Gallery 报告三个问题，逐个用离屏真实渲染和指针模拟复现：
+  1. Resizable 拖完报错、一闪就消失。根因：`resize` 事件发出 `{x,y,width,height,handle}`，
+     Gallery 原样存成下一帧的 `rect`，而 `rect` 的 schema 不认 `handle`，下一帧渲染失败、事务
+     回滚（矩形弹回），紧接着下一次成功事务清掉了 `last_failure`。workbench 的 interaction_lab
+     有同样问题。修复：payload 只发 `{x,y,width,height}`，与 `move`/`transform_change`/`rotate`
+     一致——受控事件的 payload 就是下一次的受控值（D44，写入组件编写指南）。
+  2. 报错看不见是运行时语义问题：任何成功事务都会清错误。改为失败一直保留，直到成功热重载、
+     横幅上的 Dismiss 按钮或新 API `ScriptViewHandle::clear_error`；自动化命令改为比较失败计数，
+     只报告本命令的失败，不再清掉开发者没看到的错误（D43）。
+  3. PanZoom 本身正常（两次拖动累积、状态和画面一致），但 demo 的网格比视口小，平移后露边，
+     看上去像"圆被挪走"。Rotatable 只有右上角 32×32 的手柄接收指针，点臂没反应。Gallery
+     改为：PanZoom 画布大于视口、显示变换读数和 Reset view；Rotatable 不传手柄，区域内任意
+     位置拖动旋转；页面说明写清用途和键盘操作（D45）。
+- 运行时诊断剩余项：`gpui-rhai check` 新增 `builtin-shadow` 警告（D46）。实测 Rhai 1.26 的解析：
+  方法调用 `x.f(a, b)` 找脚本 `fn f(a, b)`（接收者不计参数），直接调用 `f(a, b)` 找同参数个数
+  的脚本函数；规则据此区分两种劫持。扫描结果：Gallery 的 `fn set_locale(ctx, value)`（劫持
+  直接调用）、两个 story 的 `fn index_of`、data_table 示例的 `fn filter(ctx)`、diff_viewer 示例
+  的 `fn split(ctx, payload)`，均已改名；Gallery、全部 story、Theme Studio、示例应用由测试守住。
+- 回归测试：Gallery 三个页面的指针测试（撤掉 Resizable 修复时该测试失败，报错正是用户看到的
+  `$.rect.handle: unknown field`）；错误横幅 Dismiss 与 `clear_error`；lint 单测与 check 警告。
+- 证据：fmt 通过；workspace 与 native-keyboard clippy（-D warnings）退出码 0；
+  `cargo test --workspace --all-features --all-targets` 676 passed / 0 failed（此前 672，新增 4 个）；
+  native-keyboard 230 / 0（此前 227，新增 3 个）；performance 2 / 0；57 张基线重新离屏渲染后与
+  仓库逐像素一致（gallery 19、dashboard_layout 14、form_showcase 9、settings_panel 9、
+  data_table 5、embedded_views 1）。

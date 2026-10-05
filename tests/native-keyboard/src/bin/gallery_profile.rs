@@ -210,16 +210,21 @@ mod profile {
                 gpui_rhai_registry::DEFAULT_THEME,
             )
             .token_base(gpui_rhai_registry::TOKEN_BASE_SOURCE)
-            .locale_sources([("en.rhai".to_owned(), gpui_rhai_registry::EN_LOCALE.to_owned())])
-            .asset_sources(gpui_rhai_registry::BUNDLED_ASSET_SOURCES.iter().map(|(path, source)| {
-                (
-                    path.strip_suffix(".svg").unwrap_or(path).to_owned(),
-                    gpui_rhai::AssetData {
-                        mime_type: "image/svg+xml".to_owned(),
-                        bytes: source.as_bytes().to_vec(),
-                    },
-                )
-            }))
+            .locale_sources([(
+                "en.rhai".to_owned(),
+                gpui_rhai_registry::EN_LOCALE.to_owned(),
+            )])
+            .asset_sources(gpui_rhai_registry::BUNDLED_ASSET_SOURCES.iter().map(
+                |(path, source)| {
+                    (
+                        path.strip_suffix(".svg").unwrap_or(path).to_owned(),
+                        gpui_rhai::AssetData {
+                            mime_type: "image/svg+xml".to_owned(),
+                            bytes: source.as_bytes().to_vec(),
+                        },
+                    )
+                },
+            ))
             .prepare()
             .map_err(|error| error.to_string())?;
             let (window, view) = offscreen::mount(&mut cx, prepared, 1280.0, 860.0, "probe")?;
