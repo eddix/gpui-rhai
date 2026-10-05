@@ -14,8 +14,11 @@
 }
 */
 // Source-owned application chrome with logical start, center, and end regions.
-// Native window authority remains Host-owned; this component never moves or closes a window.
-// Props: accessible label, string-or-node title/subtitle, start/center/end nodes, and logical start inset.
+// With window_drag, the bar replaces the platform title bar: pressing its background
+// moves the window and a double press zooms it. The Host decides whether the window
+// draws a platform title bar; it never closes or resizes a window.
+// Props: accessible label, string-or-node title/subtitle, start/center/end nodes, logical start
+// inset (room for macOS window buttons), window_drag.
 // Events/state: stateless and emits no events. Parts: root, start, title, subtitle, center, end.
 // Example: TitleBar(#{ label: "Workbench", title: breadcrumb_node, end: [settings_button] })
 
@@ -43,6 +46,8 @@ define_component(#{
                 required: false, sensitive: false, "default": #{ type: "array", value: [] } },
             inset_start: #{ schema: #{ type: "integer", min: 0, max: 256 }, required: false,
                 sensitive: false, "default": #{ type: "integer", value: 0 } },
+            window_drag: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
+                "default": #{ type: "bool", value: false } },
         },
         state: #{ fields: #{} }, events: #{},
         slots: #{ start: #{ required: false, multiple: true },
@@ -93,11 +98,12 @@ fn render_TitleBar(ctx, props) {
             .flex_grow().flex_basis(relative(0)).height(relative(1.0))
         .items_center().justify_end().gap(theme_length("space.related"))));
     // Window chrome: a raised block, metrics.titlebar high, content at metrics.inset.
-    row([start, center, end])
+    let bar = row([start, center, end])
         .with_style(ctx.component_style("root", style()
         .width(relative(1.0)).height(theme_length("metrics.titlebar"))
             .padding_x(theme_length("metrics.inset")).items_center()
             .border_bottom(px(1)).border_color(theme_color("border"))
             .background(theme_color("surface_raised")).text_color(theme_color("text_primary"))))
-        .accessibility_role("toolbar").accessibility_label(props.label)
+        .accessibility_role("toolbar").accessibility_label(props.label);
+    if "window_drag" in props && props.window_drag { bar.window_drag_area() } else { bar }
 }

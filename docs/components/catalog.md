@@ -183,11 +183,19 @@ progress indicator has an explicit textual accessible name. Input placeholders
 are hints, not names. An Icon without its optional `label` is decorative
 presentation; IconButton always requires an action label.
 
-For a custom macOS titlebar, configure GPUI's transparent `TitlebarOptions` in
-the trusted Host and pass `inset_start: 70` to the Rhai `TitleBar`. Rendering a
-bar alone deliberately does not change native window behavior. This keeps an
-embedded user-authored view from turning ordinary content into a window-control
-surface.
+TitleBar can replace the platform title bar. The trusted Host hides the
+platform bar (`TitlebarOptions { appears_transparent: true, traffic_light_position, .. }`
+and, on macOS, `app_owns_titlebar_drag: true` so AppKit does not claim clicks in
+the title strip) and allows window drag areas for the view
+(`ScriptViewConfig::window_drag_areas(true)` or
+`ScriptApplication::window_drag_areas(true)`). The script passes
+`inset_start` (room for the macOS window buttons; the Gallery uses 72 with the
+buttons at (12, 11)) and `window_drag: true`: pressing the bar's background
+moves the window, a double press runs the platform title-bar action (zoom or
+minimize), and a press on a control inside the bar stays with the control.
+Window moves are platform drags on macOS and Linux. Without the Host's
+permission a drag area is inert, so an embedded user-authored view cannot turn
+ordinary content into a window-control surface.
 
 TitleBar requires a textual `label` for accessibility. Its `title` and optional
 `subtitle` accept strings or nodes. String values receive the standard

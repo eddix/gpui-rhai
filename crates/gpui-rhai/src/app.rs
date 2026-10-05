@@ -96,6 +96,7 @@ pub struct ScriptViewConfig {
     view_id: String,
     paint_background: bool,
     show_error_banner: bool,
+    window_drag_areas: bool,
 }
 
 impl ScriptViewConfig {
@@ -105,6 +106,7 @@ impl ScriptViewConfig {
             view_id: view_id.into(),
             paint_background: false,
             show_error_banner: true,
+            window_drag_areas: false,
         }
     }
 
@@ -121,6 +123,16 @@ impl ScriptViewConfig {
     #[must_use]
     pub const fn show_error_banner(mut self, show: bool) -> Self {
         self.show_error_banner = show;
+        self
+    }
+
+    /// Let `window_drag_area()` nodes in this view move the window. Off by
+    /// default, so an embedded view cannot turn its content into a window
+    /// control surface; a Host that draws its own title bar (a transparent
+    /// `TitlebarOptions`) turns it on for the view that renders the bar.
+    #[must_use]
+    pub const fn window_drag_areas(mut self, enabled: bool) -> Self {
+        self.window_drag_areas = enabled;
         self
     }
 
@@ -3079,6 +3091,7 @@ impl PreparedScriptView {
                 host: view_host,
                 paint_background: config.paint_background,
                 show_error_banner: config.show_error_banner,
+                window_drag_areas: config.window_drag_areas,
                 content_bounds: None,
                 factory,
                 native_windows: Rc::clone(native_windows),
@@ -3157,6 +3170,7 @@ pub struct ScriptApplication {
     window_size: (f32, f32),
     window_options: Option<WindowOptionsConfigurator>,
     show_error_banner: bool,
+    window_drag_areas: bool,
 }
 
 impl ScriptApplication {
@@ -3167,6 +3181,7 @@ impl ScriptApplication {
             window_size: (720.0, 480.0),
             window_options: None,
             show_error_banner: true,
+            window_drag_areas: false,
         }
     }
 
@@ -3183,6 +3198,16 @@ impl ScriptApplication {
     #[must_use]
     pub const fn show_error_banner(mut self, show: bool) -> Self {
         self.show_error_banner = show;
+        self
+    }
+
+    /// Let `window_drag_area()` nodes in the main window's view move the window,
+    /// for an application that hides the platform title bar through
+    /// [`Self::window_options`] and draws its own (`TitleBar` with
+    /// `window_drag`). See [`ScriptViewConfig::window_drag_areas`].
+    #[must_use]
+    pub const fn window_drag_areas(mut self, enabled: bool) -> Self {
+        self.window_drag_areas = enabled;
         self
     }
 
@@ -3210,6 +3235,7 @@ impl ScriptApplication {
         let window_options = self.window_options;
         let prepared = self.prepared;
         let show_error_banner = self.show_error_banner;
+        let window_drag_areas = self.window_drag_areas;
         prepared.factory.show_error_banner.set(show_error_banner);
         gpui_platform::application().run(move |cx: &mut App| {
             install(cx);
@@ -3251,7 +3277,8 @@ impl ScriptApplication {
                     let view = prepared.mount_with_registry(
                         ScriptViewConfig::new("main")
                             .paint_background(true)
-                            .show_error_banner(show_error_banner),
+                            .show_error_banner(show_error_banner)
+                            .window_drag_areas(window_drag_areas),
                         host,
                         &view_native_windows,
                         WindowCommandPolicy::ApplicationOwned,
@@ -3447,6 +3474,7 @@ fn open_secondary_window(
                 host: view_host.clone(),
                 paint_background: true,
                 show_error_banner: view_factory.show_error_banner.get(),
+                window_drag_areas: false,
                 content_bounds: None,
                 factory: Rc::clone(&view_factory),
                 native_windows: Rc::clone(&view_native_windows),
@@ -3756,6 +3784,7 @@ struct ScriptHostView {
     host: ScriptViewHost,
     paint_background: bool,
     show_error_banner: bool,
+    window_drag_areas: bool,
     content_bounds: Option<Bounds<Pixels>>,
     factory: Rc<ScriptWindowFactory>,
     native_windows: Rc<RefCell<NativeWindowRegistry>>,
@@ -4307,6 +4336,7 @@ impl Render for ScriptHostView {
             view_id: &self.view_id,
             semantics: &semantics,
             a11y_active,
+            window_drag: self.window_drag_areas,
         };
         let content = self.lifecycle.retained().root().map_or_else(
             || div().child("Script view has no root").into_any_element(),

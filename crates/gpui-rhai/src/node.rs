@@ -2200,6 +2200,12 @@ fn register_node_behavior_methods(builder: &mut TypeBuilder<UiNode>) {
             node.clone()
                 .with_attribute("tab_stop", UiValue::Bool(tab_stop))
         })
+        // Pressing the node itself (not a focusable control inside it) moves
+        // the window, and a double press runs the platform title-bar action.
+        .with_fn("window_drag_area", |node: &mut UiNode| {
+            node.clone()
+                .with_attribute("window_drag_area", UiValue::Bool(true))
+        })
         // A deliberate, greppable exception: this node opts out of the named
         // composition audit rules (for example a figure and its unit).
         .with_fn(

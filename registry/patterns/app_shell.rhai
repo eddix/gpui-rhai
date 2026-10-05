@@ -53,6 +53,8 @@ define_component(#{
                     required: false, sensitive: false, "default": #{ type: "array", value: [] } },
                 inset_start: #{ schema: #{ type: "integer", min: 0, max: 256 }, required: false,
                     sensitive: false, "default": #{ type: "integer", value: 0 } },
+                window_drag: #{ schema: #{ type: "bool" }, required: false, sensitive: false,
+                    "default": #{ type: "bool", value: false } },
             } } }, required: false, sensitive: false },
             sidebar: #{ schema: #{ type: "optional", value: #{ type: "node" } }, required: false, sensitive: false },
             main: #{ schema: #{ type: "node" }, required: true, sensitive: false },

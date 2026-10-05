@@ -13,7 +13,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use gpui_rhai::gpui::prelude::*;
-use gpui_rhai::gpui::{App, Bounds, Context, Window, WindowBounds, WindowOptions, px, size};
+use gpui_rhai::gpui::{
+    App, Bounds, Context, TitlebarOptions, Window, WindowBounds, WindowOptions, point, px, size,
+};
 use gpui_rhai::{
     ActionId, AssetData, AutomationCommand, EmbeddedScriptSource, EmbeddedScriptView,
     KeyBindingSpec, ModuleId, MotionPreference, NativeTextDocument, PreparedScriptView,
@@ -58,7 +60,14 @@ impl Default for AcceptanceLaunch {
 }
 
 /// The launch map in `registry/gallery/main.rhai` that the Host replaces.
-const LAUNCH_DEFAULT: &str = r#"#{ page: "button", density: "comfortable", locale: "en" }"#;
+const LAUNCH_DEFAULT: &str =
+    r#"#{ page: "button", density: "comfortable", locale: "en", titlebar_inset: 0 }"#;
+
+/// On macOS the Gallery window has no platform title bar: its own `TitleBar`
+/// moves the window and leaves this much room for the window buttons, which
+/// sit at [`MACOS_TRAFFIC_LIGHTS`].
+const MACOS_TITLEBAR_INSET: u32 = 72;
+const MACOS_TRAFFIC_LIGHTS: (f32, f32) = (12.0, 11.0);
 
 /// Every Gallery page ID, in navigation order, read from the page modules'
 /// `pages()` lists.
@@ -141,17 +150,20 @@ fn theme_file(slug: &str) -> Result<(&'static str, &'static str), String> {
         })
 }
 
-fn launch_map(launch: &AcceptanceLaunch) -> Result<String, String> {
+fn launch_map(launch: &AcceptanceLaunch, titlebar_inset: u32) -> Result<String, String> {
     let quoted = |value: &str| serde_json::to_string(value).map_err(|error| error.to_string());
     Ok(format!(
-        "#{{ page: {}, density: {}, locale: {} }}",
+        "#{{ page: {}, density: {}, locale: {}, titlebar_inset: {titlebar_inset} }}",
         quoted(&launch.page)?,
         quoted(&launch.density)?,
         quoted(&launch.locale)?,
     ))
 }
 
-fn modules(launch: &AcceptanceLaunch) -> Result<BTreeMap<ModuleId, String>, String> {
+fn modules(
+    launch: &AcceptanceLaunch,
+    titlebar_inset: u32,
+) -> Result<BTreeMap<ModuleId, String>, String> {
     let mut modules = BTreeMap::new();
     for (id, source) in BUNDLED_COMPONENT_SOURCES_BY_ID
         .iter()
@@ -170,7 +182,7 @@ fn modules(launch: &AcceptanceLaunch) -> Result<BTreeMap<ModuleId, String>, Stri
             if !source.contains(LAUNCH_DEFAULT) {
                 return Err("the Gallery entry no longer declares its launch map".to_owned());
             }
-            let main = source.replacen(LAUNCH_DEFAULT, &launch_map(launch)?, 1);
+            let main = source.replacen(LAUNCH_DEFAULT, &launch_map(launch, titlebar_inset)?, 1);
             modules.insert(
                 ModuleId::parse("main").map_err(|error| error.to_string())?,
                 main,
@@ -212,6 +224,15 @@ fn key_bindings() -> Result<Vec<KeyBindingSpec>, String> {
 ///
 /// Returns a launch selection or source assembly error.
 pub fn view(launch: &AcceptanceLaunch) -> Result<EmbeddedScriptView, String> {
+    view_with_titlebar(launch, 0)
+}
+
+/// The Gallery for a window whose own `TitleBar` replaces the platform title
+/// bar, leaving `titlebar_inset` points at its start for window buttons.
+fn view_with_titlebar(
+    launch: &AcceptanceLaunch,
+    titlebar_inset: u32,
+) -> Result<EmbeddedScriptView, String> {
     validate(launch)?;
     let (primary, primary_source) = theme_file(&launch.theme)?;
     let profile = BUNDLED_PROFILES
@@ -222,7 +243,7 @@ pub fn view(launch: &AcceptanceLaunch) -> Result<EmbeddedScriptView, String> {
     let entry = ModuleId::parse("main").map_err(|error| error.to_string())?;
     let mut view = EmbeddedScriptView::new(
         entry,
-        EmbeddedScriptSource::new(modules(launch)?),
+        EmbeddedScriptSource::new(modules(launch, titlebar_inset)?),
         primary_source,
     )
     .token_base(TOKEN_BASE_SOURCE)
@@ -341,6 +362,23 @@ impl Render for GalleryRoot {
     }
 }
 
+fn window_options(own_titlebar: bool, cx: &mut App) -> WindowOptions {
+    let bounds = Bounds::centered(None, size(px(1280.0), px(860.0)), cx);
+    WindowOptions {
+        window_bounds: Some(WindowBounds::Windowed(bounds)),
+        titlebar: Some(TitlebarOptions {
+            title: Some("gpui-rhai Gallery".into()),
+            appears_transparent: own_titlebar,
+            traffic_light_position: own_titlebar
+                .then(|| point(px(MACOS_TRAFFIC_LIGHTS.0), px(MACOS_TRAFFIC_LIGHTS.1))),
+        }),
+        // The Gallery's TitleBar moves the window itself; AppKit must not claim
+        // clicks in the title strip.
+        app_owns_titlebar_drag: own_titlebar,
+        ..WindowOptions::default()
+    }
+}
+
 /// Run the Gallery in a GPUI window.
 ///
 /// # Errors
@@ -348,7 +386,15 @@ impl Render for GalleryRoot {
 /// Returns a launch selection, preparation or platform error.
 pub fn run(launch: &AcceptanceLaunch) -> Result<(), String> {
     // Platform callbacks cannot unwind safely; prepare before entering GPUI.
-    let prepared = prepare(launch)?;
+    let own_titlebar = cfg!(target_os = "macos");
+    let titlebar_inset = if own_titlebar {
+        MACOS_TITLEBAR_INSET
+    } else {
+        0
+    };
+    let prepared = view_with_titlebar(launch, titlebar_inset)?
+        .prepare()
+        .map_err(|error| error.to_string())?;
     let reported = std::rc::Rc::new(std::cell::RefCell::new(None::<String>));
     let error = std::rc::Rc::clone(&reported);
     gpui_rhai::gpui_platform::application().run(move |cx: &mut App| {
@@ -371,45 +417,41 @@ pub fn run(launch: &AcceptanceLaunch) -> Result<(), String> {
         if let Err(bind_error) = host.bind_keys(prepared.key_bindings().iter().cloned(), cx) {
             eprintln!("gpui-rhai gallery: {bind_error}");
         }
-        let bounds = Bounds::centered(None, size(px(1280.0), px(860.0)), cx);
-        let opened = cx.open_window(
-            WindowOptions {
-                window_bounds: Some(WindowBounds::Windowed(bounds)),
-                ..WindowOptions::default()
-            },
-            move |window, cx| {
-                let root = cx.new(|_| GalleryRoot {
-                    host: host.clone(),
-                    view: None,
-                    error: None,
-                    audit: None,
-                    audited_revision: None,
-                });
-                let weak = root.downgrade();
-                window.defer(cx, move |window, cx| {
-                    let mounted = prepared.mount(
-                        ScriptViewConfig::new("gallery").paint_background(true),
-                        host,
-                        window,
-                        cx,
-                    );
-                    let _ = weak.update(cx, |root, cx| {
-                        match mounted {
-                            Ok(view) => {
-                                let _ = view.focus(window, cx);
-                                root.view = Some(view);
-                            }
-                            Err(mount_error) => {
-                                eprintln!("gpui-rhai gallery: {mount_error}");
-                                root.error = Some(mount_error.to_string());
-                            }
+        let options = window_options(own_titlebar, cx);
+        let opened = cx.open_window(options, move |window, cx| {
+            let root = cx.new(|_| GalleryRoot {
+                host: host.clone(),
+                view: None,
+                error: None,
+                audit: None,
+                audited_revision: None,
+            });
+            let weak = root.downgrade();
+            window.defer(cx, move |window, cx| {
+                let mounted = prepared.mount(
+                    ScriptViewConfig::new("gallery")
+                        .paint_background(true)
+                        .window_drag_areas(own_titlebar),
+                    host,
+                    window,
+                    cx,
+                );
+                let _ = weak.update(cx, |root, cx| {
+                    match mounted {
+                        Ok(view) => {
+                            let _ = view.focus(window, cx);
+                            root.view = Some(view);
                         }
-                        cx.notify();
-                    });
+                        Err(mount_error) => {
+                            eprintln!("gpui-rhai gallery: {mount_error}");
+                            root.error = Some(mount_error.to_string());
+                        }
+                    }
+                    cx.notify();
                 });
-                root
-            },
-        );
+            });
+            root
+        });
         if let Err(open_error) = opened {
             *error.borrow_mut() = Some(open_error.to_string());
             cx.quit();

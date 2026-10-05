@@ -34,19 +34,22 @@ fn state_schema() {
         palette_active: #{ schema: #{ type: "string" }, "default": #{ type: "string", value: "" } },
         locale_open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: false } },
         theme_open: #{ schema: #{ type: "bool" }, "default": #{ type: "bool", value: false } },
+        titlebar_inset: #{ schema: #{ type: "integer" }, "default": #{ type: "integer", value: 0 } },
         nav_active: #{ schema: #{ type: "optional", value: #{ type: "string" } }, "default": #{ type: "null" } },
         values: #{ schema: #{ type: "map", values: #{ type: "ui_value" } }, "default": #{ type: "map", value: #{} } },
     } }
 }
 
-// The Host replaces this map with the launch selection (page, density, locale); the
-// launch theme is the Host's primary theme.
-fn launch() { #{ page: "button", density: "comfortable", locale: "en" } }
+// The Host replaces this map with the launch selection (page, density, locale) and, when
+// the window has no platform title bar, the room its window buttons need. The launch
+// theme is the Host's primary theme.
+fn launch() { #{ page: "button", density: "comfortable", locale: "en", titlebar_inset: 0 } }
 
 fn init(ctx) {
     let start = launch();
     ctx.set_state("page", start.page);
     ctx.set_state("density", start.density);
+    ctx.set_state("titlebar_inset", start.titlebar_inset);
     if start.locale != "en" {
         ctx.set_state("locale", start.locale);
         ctx.set_locale(start.locale);
@@ -286,6 +289,18 @@ fn status_items(ctx) {
     }
 }
 
+// Without a platform title bar, the Gallery's own bar moves the window and starts after
+// the window buttons.
+fn title_bar(ctx, page) {
+    let bar = #{ title: "GPUI RHAI", subtitle: page_title(page), end: title_controls(ctx) };
+    let inset = ctx.get_state("titlebar_inset");
+    if inset > 0 {
+        bar.inset_start = inset;
+        bar.window_drag = true;
+    }
+    bar
+}
+
 fn view(ctx) {
     let page = ctx.get_state("page");
     let v = ctx.get_state("values");
@@ -296,7 +311,7 @@ fn view(ctx) {
         on_open_change: Fn("palette_open"), on_query_change: Fn("palette_query"),
         on_active_change: Fn("palette_active"), on_action: Fn("palette_run") });
     let shell = #{ key: "gallery", label: "gpui-rhai Gallery",
-        title_bar: #{ title: "GPUI RHAI", subtitle: page_title(page), end: title_controls(ctx) },
+        title_bar: title_bar(ctx, page),
         sidebar: navigation(ctx, v, page), main: page_view(ctx, h, v, page),
         status: status_items(ctx), overlays: [palette] };
     if source_open(v) { shell.inspector = source_inspector(ctx, page); }

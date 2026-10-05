@@ -293,7 +293,29 @@ ScriptApplication::new(prepared)
 ```
 
 The callback receives the normal centered defaults, so it can change only the
-policies it owns or replace the options entirely.
+policies it owns or replace the options entirely. To draw the title bar in
+Rhai, hide the platform bar there and let the view's drag areas move the
+window:
+
+```rust
+ScriptApplication::new(prepared)
+    .window_options(|mut options, _cx| {
+        options.titlebar = Some(TitlebarOptions {
+            title: Some("Workbench".into()),
+            appears_transparent: true,
+            traffic_light_position: Some(point(px(12.0), px(11.0))),
+        });
+        options.app_owns_titlebar_drag = true;
+        options
+    })
+    .window_drag_areas(true)
+    .run()?;
+```
+
+Rhai then renders `TitleBar(#{ ..., inset_start: 72, window_drag: true })`, or
+calls `.window_drag_area()` on its own node. Embedded hosts use
+`ScriptViewConfig::window_drag_areas(true)` for the view that draws the bar;
+every other view keeps drag areas inert.
 
 ## Key bindings
 

@@ -9,6 +9,7 @@ use crate::{
 };
 
 #[derive(Clone)]
+#[allow(clippy::struct_excessive_bools)]
 pub(crate) struct NodeSlotRuntime {
     pub now: std::time::Instant,
     pub clock: crate::RuntimeClock,
@@ -42,6 +43,7 @@ pub(crate) struct NodeSlotRuntime {
     pub view_id: String,
     pub semantics: crate::CommittedSemanticFrame,
     pub a11y_active: bool,
+    pub window_drag: bool,
     pub retained_roots: BTreeMap<String, crate::NodeId>,
     pub retained_links: BTreeMap<crate::NodeId, Vec<crate::RetainedChildLink>>,
 }
@@ -92,6 +94,7 @@ impl NodeSlotRuntime {
             view_id: &self.view_id,
             semantics: &self.semantics,
             a11y_active: self.a11y_active,
+            window_drag: self.window_drag,
         };
         GpuiNodeRenderer::render_subtree_with_window_runtime_at(
             node,

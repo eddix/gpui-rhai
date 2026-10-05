@@ -1452,6 +1452,7 @@ struct NodeFocus {
 }
 
 #[derive(Clone, Copy)]
+#[allow(clippy::struct_excessive_bools)]
 struct RenderEnvironment<'a, C> {
     now: Instant,
     clock: &'a crate::RuntimeClock,
@@ -1492,6 +1493,8 @@ struct RenderEnvironment<'a, C> {
     retained_links: Option<&'a BTreeMap<NodeId, Vec<crate::RetainedChildLink>>>,
     semantics: Option<&'a crate::CommittedSemanticFrame>,
     a11y_active: bool,
+    /// The Host lets window drag areas in this view move the window.
+    window_drag: bool,
     /// The parent stacks its children vertically and stretches them: a child
     /// without a width of its own is as wide as the parent, and in an RTL view a
     /// child with a definite width sits on the start (right) edge.
@@ -1560,6 +1563,7 @@ impl<'a, C: ColorResolver> RenderEnvironment<'a, C> {
     }
 }
 
+#[allow(clippy::struct_excessive_bools)]
 pub(crate) struct WindowRenderResources<'a> {
     pub now: Instant,
     pub clock: &'a crate::RuntimeClock,
@@ -1591,6 +1595,9 @@ pub(crate) struct WindowRenderResources<'a> {
     pub view_id: &'a str,
     pub semantics: &'a crate::CommittedSemanticFrame,
     pub a11y_active: bool,
+    /// Whether `window_drag_area()` nodes move the window
+    /// (`ScriptViewConfig::window_drag_areas`).
+    pub window_drag: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -1672,6 +1679,7 @@ impl GpuiNodeRenderer {
             retained_links: None,
             semantics: None,
             a11y_active: false,
+            window_drag: false,
             stretch_parent: false,
         };
         Self::render_internal(node, &environment, None, "root", None)
@@ -1753,6 +1761,7 @@ impl GpuiNodeRenderer {
             retained_links: None,
             semantics: Some(semantics),
             a11y_active,
+            window_drag: false,
             stretch_parent: false,
         };
         tree.root().map_or_else(
@@ -1827,6 +1836,7 @@ impl GpuiNodeRenderer {
             retained_links: None,
             semantics: Some(&semantics),
             a11y_active: false,
+            window_drag: false,
             stretch_parent: false,
         };
         tree.root().map_or_else(
@@ -1893,6 +1903,7 @@ impl GpuiNodeRenderer {
             retained_links: None,
             semantics: None,
             a11y_active: false,
+            window_drag: false,
             stretch_parent: false,
         };
         Self::render_internal(node, &environment, None, "root", None)
@@ -1949,6 +1960,7 @@ impl GpuiNodeRenderer {
             view_id: "standalone",
             semantics: &crate::CommittedSemanticFrame::default(),
             a11y_active: false,
+            window_drag: false,
         };
         Self::render_with_window_runtime(node, colors, interaction, primitives, &resources)
     }
@@ -2015,6 +2027,7 @@ impl GpuiNodeRenderer {
             retained_links: None,
             semantics: Some(resources.semantics),
             a11y_active: resources.a11y_active,
+            window_drag: resources.window_drag,
             stretch_parent: false,
         };
         tree.root().map_or_else(
@@ -2081,6 +2094,7 @@ impl GpuiNodeRenderer {
             retained_links: None,
             semantics: Some(resources.semantics),
             a11y_active: resources.a11y_active,
+            window_drag: resources.window_drag,
             stretch_parent: false,
         };
         Self::render_internal(node, &environment, None, path, None)
@@ -2133,6 +2147,7 @@ impl GpuiNodeRenderer {
             retained_links: Some(retained.links),
             semantics: Some(resources.semantics),
             a11y_active: resources.a11y_active,
+            window_drag: resources.window_drag,
             stretch_parent: false,
         };
         Self::render_internal(node, &environment, None, path, retained.root)
@@ -2349,6 +2364,11 @@ impl GpuiNodeRenderer {
             environment,
         );
         let element = apply_hit_test(element, hit_test);
+        let element = if environment.window_drag {
+            apply_window_drag_area(element, node)
+        } else {
+            element
+        };
         let ancestor_disabled = disabled && !is_disabled(node);
         let persistent_focus = retained_id
             .and_then(|id| environment.focus_handles.get(&id))
@@ -2903,6 +2923,7 @@ fn render_flattened_children<C: ColorResolver>(
 
 fn node_needs_interaction_wrapper(node: &UiNode, needs: u8, disabled: bool) -> bool {
     needs & 0b10_1000 != 0
+        || is_window_drag_area(node)
         || !disabled
             && (needs & 0b0111 != 0
                 || node_has_focus_declaration(node)
@@ -2911,6 +2932,30 @@ fn node_needs_interaction_wrapper(node: &UiNode, needs: u8, disabled: bool) -> b
                 || node.style().focus.is_some()
                 || node_has_raw_pointer_handlers(node)
                 || node_scrollable(node))
+}
+
+fn is_window_drag_area(node: &UiNode) -> bool {
+    node.attributes().get("window_drag_area") == Some(&UiValue::Bool(true))
+}
+
+/// A window drag area: a press that no focusable control inside it took (they
+/// prevent default when they take focus) moves the window, and a double press
+/// runs the platform title-bar action (zoom or minimize on macOS). Window moves
+/// are platform drags on macOS and Linux.
+fn apply_window_drag_area(element: Stateful<Div>, node: &UiNode) -> Stateful<Div> {
+    if !is_window_drag_area(node) {
+        return element;
+    }
+    element.on_mouse_down(MouseButton::Left, |event, window, _| {
+        if window.default_prevented() {
+            return;
+        }
+        if event.click_count == 2 {
+            window.titlebar_double_click();
+        } else {
+            window.start_window_move();
+        }
+    })
 }
 
 fn apply_native_semantics(
@@ -4039,6 +4084,7 @@ fn owned_slot_runtime<C: ColorResolver>(
         view_id: environment.view_id.to_owned(),
         semantics: environment.semantics.cloned().unwrap_or_default(),
         a11y_active: environment.a11y_active,
+        window_drag: environment.window_drag,
         retained_roots,
         retained_links,
     }
