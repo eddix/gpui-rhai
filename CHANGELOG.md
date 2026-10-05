@@ -54,10 +54,17 @@ and [docs/design/](docs/design/) for the specification.
   are removed; the `test-support` feature remains and gates nothing.
 - Gallery baselines are rendered offscreen with the real macOS renderer
   (`scripts/capture-macos-gallery-baselines.sh`); 19 captures replace the 31
-  story-shell captures. The 38 example baselines predate 0.2 and await a
-  refresh.
+  story-shell captures.
 - Adds `examples/byod_treemap`, an application with its own palette and no token
   base or official components.
+- Every interactive component is one tab stop: overlay trigger wrappers, key
+  routing containers and tooltip panels no longer take focus (Select, Combobox,
+  Popover, Tooltip, DatePicker, ToggleGroup and closed Dialogs had phantom stops).
+- RTL: definite-width children of stretching columns sit on the start edge; the
+  audit compares right edges in RTL views.
+- The five visual examples are rewritten with the 0.2 layouts and patterns and
+  pass the productivity audit; their 38 baselines are recaptured offscreen
+  (`scripts/capture-macos-example-baselines.sh`).
 
 ## 0.1.8 - 2026-10-04
 

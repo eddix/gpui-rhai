@@ -114,3 +114,26 @@ bash scripts/audit-visual-baselines.sh
   `scripts/audit-visual-baselines.sh` 通过（57 张）；`verify-target-manifest.py` 21 个示例；
   release 版 `gallery --list` 含所需 page/story，`--page scene.operations --density compact`
   与 `--story apps/operations --case large` 各运行 3 秒退出码 0、无报错、启动目录无写入。
+
+### 2026-10-05 0.2.0 发版前：示例重写、38 张示例基线、键盘与 RTL 修正
+
+- 维护者决定：这一轮不叫 0.1.9，已知问题处理完后以 0.2.0 发布。
+- 示例：settings_panel、dashboard_layout、form_showcase、data_table、embedded_views 用
+  0.2 的 Region / FormLayout / DataView / Section / Stat / DescriptionList 重写，不再有 0.1
+  风格的字面几何；每个示例导出 `view(...)` 构造函数和 `WINDOW`，`main` 只读环境变量。
+  新增门禁 `tests/native-keyboard/tests/example_audit.rs`：示例在各基线状态下 productivity
+  审计零发现。
+- 38 张示例基线用离屏采集重拍（`scripts/capture-macos-example-baselines.sh`），用例矩阵不变；
+  焦点用例用脚本化按键，normal 动效用手动时钟固定时刻。
+- 重写中发现并修复：
+  - 键盘：Select、Combobox 各 3 个 tab stop，Popover、Tooltip、DatePicker、ToggleGroup 各 2 个，
+    关闭的 Dialog 1 个（应为 0）。根因是 overlay 触发器包装层、带按键处理的容器、tooltip 面板
+    被当成 tab stop。修复后新增普查测试 `tab_stops.rs`，19 个交互组件全部符合（D34）。
+  - RTL：拉伸列里定宽子元素停在左边（D35）；审计在 RTL 下比较左边缘导致误报，居中单元格
+    无起始边（D36）。
+  - 组件：FormLayout 控件不再被拉满、帮助文字 unit 间距，Textarea 计数器 xxs（D37）；DataView
+    页脚分组间距与两端分布，Table 徽标重复单元格值时替代文字，并按行给徽标实例键（虚拟行里
+    重复实例路径），标识符值与过长选项截断（D38）。
+- 证据：fmt 通过；workspace / native-keyboard / performance 的 clippy（-D warnings）退出码 0；
+  workspace 672 passed / 0 failed；native-keyboard 227 passed / 0 failed；performance 2 / 0；
+  基线审计 57 张通过；Gallery 审计门禁与键盘场景通过。
