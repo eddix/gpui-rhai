@@ -137,3 +137,23 @@ bash scripts/audit-visual-baselines.sh
 - 证据：fmt 通过；workspace / native-keyboard / performance 的 clippy（-D warnings）退出码 0；
   workspace 672 passed / 0 failed；native-keyboard 227 passed / 0 failed；performance 2 / 0；
   基线审计 57 张通过；Gallery 审计门禁与键盘场景通过。
+
+### 2026-10-05 性能度量与优化
+
+- 工具：`tests/native-keyboard/src/bin/gallery_profile.rs`（release、离屏真实 Metal 渲染），
+  按交互统计 Rhai 耗时、`Window::draw` CPU 帧耗时、审计耗时的 p50/p95；另有逐页帧耗时、
+  任意 Rhai 视图探针、供 `sample` 采样的循环模式。
+- 发现与修复（数字均为本机 release 实测）：
+  1. Gallery Host 每帧跑一次组合审计，每次约 103 ms，几乎全是枚举系统字体。改为只在提交新
+     渲染后审计（新增 `ScriptViewHandle::committed_revision`），字体名缓存、关掉字体规则时不枚举；
+     审计降到约 0.1 ms，且悬停/滚动帧不再触发（D41）。
+  2. 每帧布局 20–52 ms：被列拉伸、没有自身宽度的子元素先按内容宽度测量、再按拉伸宽度重排，
+     逐层叠加。改为渲染成确定的 `width: 100%`：帧耗时约 2 ms；57 张基线与 415 次全页渲染
+     逐像素一致（D40）。
+  3. Rhai 渲染约一半时间在深拷贝 `UiNode` 子树。`UiNode` 改为 `Rc` 写时复制句柄：页面切换
+     15→7.4 ms，120 行数据场景 22→13 ms，过滤框每次按键 10.6→5.1 ms，明暗切换 21→14 ms，
+     渲染结果逐像素一致（D42）。
+- 剩余：一次交互 5–14 ms 中约 70% 是 Rhai 解释执行（Gallery 根视图每次变化都整体重算导航项、
+  命令面板项等），已在一到两帧之内；进一步优化需要应用层缓存静态数据或运行时级的子树缓存。
+- 证据：fmt 通过；三个 workspace 的 clippy 退出码 0；workspace 672 / 0，native-keyboard
+  227 / 0，performance 2 / 0。
