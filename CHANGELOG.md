@@ -67,6 +67,8 @@ and [docs/design/](docs/design/) for the specification.
   from 20-52 ms to about 2 ms, pixel-identical); `ScriptViewHandle::committed_revision`
   lets Hosts skip work on repaint-only frames, and the composition audit caches
   system font names (the Gallery no longer runs a 100 ms audit per frame).
+  `UiNode` is a shared copy-on-write handle, which halves Rhai render time;
+  `UiNode::kind_tag` and `UiNode::element_ref` are no longer `const`.
 - The five visual examples are rewritten with the 0.2 layouts and patterns and
   pass the productivity audit; their 38 baselines are recaptured offscreen
   (`scripts/capture-macos-example-baselines.sh`).

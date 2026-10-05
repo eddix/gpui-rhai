@@ -293,8 +293,48 @@ pub enum UiNodeKindTag {
 
 /// A stable declarative UI node. Script-produced nodes contain no GPUI values
 /// or lifetimes; trusted Rust Hosts may attach opaque foreground callbacks.
+///
+/// A node is a shared, copy-on-write handle: Rhai passes nodes by value
+/// (variables, arrays, arguments), so a clone must not copy the subtree.
+#[derive(Clone)]
+pub struct UiNode(Rc<UiNodeData>);
+
+impl std::fmt::Debug for UiNode {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(formatter)
+    }
+}
+
+impl PartialEq for UiNode {
+    fn eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.0, &other.0) || self.0 == other.0
+    }
+}
+
+impl std::ops::Deref for UiNode {
+    type Target = UiNodeData;
+
+    fn deref(&self) -> &UiNodeData {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for UiNode {
+    fn deref_mut(&mut self) -> &mut UiNodeData {
+        Rc::make_mut(&mut self.0)
+    }
+}
+
+impl From<UiNodeData> for UiNode {
+    fn from(data: UiNodeData) -> Self {
+        Self(Rc::new(data))
+    }
+}
+
+/// The contents of a [`UiNode`]; reached only through the node's methods.
+#[doc(hidden)]
 #[derive(Clone, Debug, PartialEq)]
-pub struct UiNode {
+pub struct UiNodeData {
     kind: UiNodeKind,
     key: Option<NodeKey>,
     style: Rc<Style>,
@@ -662,7 +702,7 @@ impl ComponentSubtreeIndex {
 impl UiNode {
     #[must_use]
     pub fn text(text: impl Into<ImmutableString>) -> Self {
-        Self {
+        UiNodeData {
             kind: UiNodeKind::Text { text: text.into() },
             key: None,
             style: default_node_style(),
@@ -683,12 +723,13 @@ impl UiNode {
             presentation: Vec::new(),
             component_snapshot: None,
         }
+        .into()
     }
 
     #[must_use]
     pub fn rich_text(spans: Vec<Span>) -> Self {
         let text = spans.iter().map(Span::text).collect::<String>().into();
-        Self {
+        UiNodeData {
             kind: UiNodeKind::RichText { text, spans },
             key: None,
             style: default_node_style(),
@@ -709,6 +750,7 @@ impl UiNode {
             presentation: Vec::new(),
             component_snapshot: None,
         }
+        .into()
     }
 
     #[must_use]
@@ -734,7 +776,7 @@ impl UiNode {
 
     #[must_use]
     pub fn box_node(children: Vec<Self>) -> Self {
-        Self {
+        UiNodeData {
             kind: UiNodeKind::Box { children },
             key: None,
             style: default_node_style(),
@@ -755,15 +797,13 @@ impl UiNode {
             presentation: Vec::new(),
             component_snapshot: None,
         }
+        .into()
     }
 
     #[must_use]
     pub fn fragment(children: Vec<Self>) -> Self {
-        let mut node = Self::box_node(children);
-        node.kind = match node.kind {
-            UiNodeKind::Box { children } => UiNodeKind::Fragment { children },
-            _ => unreachable!(),
-        };
+        let mut node = Self::box_node(Vec::new());
+        node.kind = UiNodeKind::Fragment { children };
         node
     }
 
@@ -780,7 +820,7 @@ impl UiNode {
     #[must_use]
     pub fn custom(primitive: PrimitiveNode) -> Self {
         let key = primitive.key.as_ref().map(NodeKey::new);
-        Self {
+        UiNodeData {
             kind: UiNodeKind::Custom { primitive },
             key,
             style: default_node_style(),
@@ -801,11 +841,12 @@ impl UiNode {
             presentation: Vec::new(),
             component_snapshot: None,
         }
+        .into()
     }
 
     #[must_use]
     pub fn error_boundary(child: Self, fallback: Self) -> Self {
-        Self {
+        UiNodeData {
             kind: UiNodeKind::ErrorBoundary {
                 child: Box::new(child),
                 fallback: Box::new(fallback),
@@ -829,6 +870,7 @@ impl UiNode {
             presentation: Vec::new(),
             component_snapshot: None,
         }
+        .into()
     }
 
     #[must_use]
@@ -842,7 +884,7 @@ impl UiNode {
     }
 
     fn image_source(source: ImageSourceSpec) -> Self {
-        Self {
+        UiNodeData {
             kind: UiNodeKind::Image { source },
             key: None,
             style: default_node_style(),
@@ -863,6 +905,7 @@ impl UiNode {
             presentation: Vec::new(),
             component_snapshot: None,
         }
+        .into()
     }
 
     #[must_use]
@@ -885,7 +928,7 @@ impl UiNode {
         left_to_right: ImageSourceSpec,
         right_to_left: ImageSourceSpec,
     ) -> Self {
-        Self {
+        UiNodeData {
             kind: UiNodeKind::DirectionalImage {
                 left_to_right,
                 right_to_left,
@@ -909,11 +952,12 @@ impl UiNode {
             presentation: Vec::new(),
             component_snapshot: None,
         }
+        .into()
     }
 
     #[must_use]
     pub fn overlay(trigger: Self, content: Self, spec: OverlayNodeSpec) -> Self {
-        Self {
+        UiNodeData {
             kind: UiNodeKind::Overlay {
                 trigger: Box::new(trigger),
                 content: Box::new(content),
@@ -938,12 +982,13 @@ impl UiNode {
             presentation: Vec::new(),
             component_snapshot: None,
         }
+        .into()
     }
 
     #[must_use]
     pub fn layer(content: Self, spec: LayerNodeSpec) -> Self {
         let key = spec.id.as_str().to_owned();
-        Self {
+        UiNodeData {
             kind: UiNodeKind::Layer {
                 content: Box::new(content),
                 spec,
@@ -967,12 +1012,13 @@ impl UiNode {
             presentation: Vec::new(),
             component_snapshot: None,
         }
+        .into()
     }
 
     #[must_use]
     pub fn virtual_collection(spec: crate::VirtualCollectionNodeSpec) -> Self {
         let key = spec.id.key.clone();
-        Self {
+        UiNodeData {
             kind: UiNodeKind::VirtualCollection { spec },
             key: Some(NodeKey::new(key)),
             style: default_node_style(),
@@ -993,6 +1039,7 @@ impl UiNode {
             presentation: Vec::new(),
             component_snapshot: None,
         }
+        .into()
     }
 
     fn apply_presentation_mutation(&mut self, mutation: NodePresentationMutation) {
@@ -1572,7 +1619,7 @@ impl UiNode {
     }
 
     #[must_use]
-    pub(crate) const fn handler_payloads(&self) -> &BTreeMap<String, UiValue> {
+    pub(crate) fn handler_payloads(&self) -> &BTreeMap<String, UiValue> {
         &self.handler_payloads
     }
 
@@ -1775,7 +1822,7 @@ impl UiNode {
     }
 
     #[must_use]
-    pub const fn kind_tag(&self) -> UiNodeKindTag {
+    pub fn kind_tag(&self) -> UiNodeKindTag {
         match self.kind {
             UiNodeKind::Text { .. } | UiNodeKind::RichText { .. } => UiNodeKindTag::Text,
             UiNodeKind::Canvas { .. } => UiNodeKindTag::Canvas,
@@ -1884,7 +1931,7 @@ impl UiNode {
     }
 
     #[must_use]
-    pub const fn element_ref(&self) -> Option<&crate::ElementRef> {
+    pub fn element_ref(&self) -> Option<&crate::ElementRef> {
         self.element_ref.as_ref()
     }
 
@@ -1892,7 +1939,7 @@ impl UiNode {
         self.table_layout.as_deref()
     }
 
-    pub(crate) const fn table_column(&self) -> Option<usize> {
+    pub(crate) fn table_column(&self) -> Option<usize> {
         self.table_column
     }
 

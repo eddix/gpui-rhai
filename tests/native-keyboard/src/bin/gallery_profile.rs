@@ -151,7 +151,9 @@ mod profile {
             let (rhai, rhai_renders) = self.take_rhai();
             let view = self.view.clone();
             let started = Instant::now();
-            if std::env::var_os("GALLERY_PROFILE_LOOP").is_none() {
+            if std::env::var_os("GALLERY_PROFILE_LOOP").is_none()
+                && std::env::var_os("GALLERY_PROFILE_LOOP_NAV").is_none()
+            {
                 let _ = self.cx.update(|cx| view.composition_audit(cx));
             }
             let audit = started.elapsed();
@@ -231,6 +233,20 @@ mod profile {
                 percentile(&mut samples, 0.5),
                 percentile(&mut samples, 0.95)
             );
+            std::mem::forget(session);
+            return Ok(());
+        }
+        if std::env::var_os("GALLERY_PROFILE_LOOP_NAV").is_some() {
+            // Navigate back and forth, for an external sampling profiler.
+            let mut session = Session::new("button")?;
+            let started = Instant::now();
+            let mut renders = 0;
+            while started.elapsed() < Duration::from_secs(12) {
+                let page = if renders % 2 == 0 { "table" } else { "button" };
+                session.measure(|s| s.action("gallery.go", UiValue::String(page.into())));
+                renders += 1;
+            }
+            println!("{renders} navigations in 12 s");
             std::mem::forget(session);
             return Ok(());
         }
@@ -395,6 +411,29 @@ mod profile {
 
         for stats in &report {
             println!("{}", stats.line());
+        }
+        // Where Rhai time goes in one navigation and one keystroke.
+        for (label, page) in [("navigate to table", "table")] {
+            session.action("gallery.go", UiValue::String("button".into()));
+            offscreen::settle(&mut session.cx, session.window)?;
+            session.take_rhai();
+            session.action("gallery.go", UiValue::String(page.into()));
+            offscreen::settle(&mut session.cx, session.window)?;
+            let view = session.view.clone();
+            let snapshot = session
+                .cx
+                .update(|cx| view.take_performance_snapshot(cx))
+                .map_err(|error| error.to_string())?;
+            println!("{label}:");
+            for timing in &snapshot.timings {
+                println!(
+                    "  {:?} {:<32} {:>7.2} ms {:>8} ops",
+                    timing.operation,
+                    timing.source,
+                    millis(timing.duration),
+                    timing.operations
+                );
+            }
         }
         // What the audit costs without enumerating system fonts.
         let started = Instant::now();

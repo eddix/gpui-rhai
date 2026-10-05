@@ -75,6 +75,9 @@ only repaint (hover, scrolling, a caret). Two rules keep that cheap:
   every nesting level: a `ListDetail` inside a page inside an `AppShell` took
   28 ms per frame and takes 0.4 ms. The output is pixel-identical (verified on
   all 57 baselines and 415 Gallery page renders).
+- **Nodes are shared.** `UiNode` is a copy-on-write handle: Rhai passes nodes
+  by value (variables, arrays, arguments), and copying subtrees was half of a
+  render. Cloning a node is now a reference-count increment.
 - **Host audits run after renders, not after frames.**
   `ScriptViewHandle::committed_revision` advances only when a render commits;
   the Gallery Host audits once per revision. Font enumeration for the
@@ -99,8 +102,11 @@ Measured on an Apple Silicon Mac (release, 2026-10-05), before and after:
 | idle frame, Button page | 19.7 ms | 1.9 ms |
 | idle frame, `list_detail` page | 52.2 ms | under 2 ms |
 | audit per frame in the Gallery | 103 ms | not run (0.1 ms after a render) |
-| mount and first frame | 453 ms | 128 ms |
-| Rhai render, navigate to a page | 15 ms | 14 ms |
+| mount and first frame | 453 ms | 160 ms |
+| Rhai render, navigate to a page | 15 ms | 7.4 ms |
+| Rhai render, navigate to the 120-row data scene | 22 ms | 13 ms |
+| Rhai work per keystroke in a filter | 10.6 ms | 5.1 ms |
+| Rhai render, light/dark switch | 21 ms | 14 ms |
 
 ## Trusted Host execution policy
 
