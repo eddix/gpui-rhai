@@ -2269,7 +2269,6 @@ impl GpuiNodeRenderer {
         }
     }
 
-    #[allow(clippy::too_many_lines)]
     fn populate_with_interactions<C: ColorResolver>(
         element: Div,
         node: &UiNode,
@@ -2279,6 +2278,41 @@ impl GpuiNodeRenderer {
         retained_id: Option<NodeId>,
         motion: NodeMotionValues,
     ) -> AnyElement {
+        // The interaction wrapper is built in its own frame, which is gone
+        // before the children render: the recursion carries only this frame.
+        match Self::wrap_interactions(element, node, environment, path, retained_id) {
+            Wrapped::Interactive(element) => Self::populate(
+                element,
+                node,
+                environment,
+                boundary_fallback,
+                path,
+                retained_id,
+                motion,
+            ),
+            Wrapped::Plain(element) => Self::populate(
+                element,
+                node,
+                environment,
+                boundary_fallback,
+                path,
+                retained_id,
+                motion,
+            ),
+        }
+    }
+
+    /// Attach the node's handlers, focus and semantics, or return the element
+    /// unchanged when the node needs no interaction wrapper.
+    #[inline(never)]
+    #[allow(clippy::too_many_lines)]
+    fn wrap_interactions<C: ColorResolver>(
+        element: Div,
+        node: &UiNode,
+        environment: &RenderEnvironment<'_, C>,
+        path: &str,
+        retained_id: Option<NodeId>,
+    ) -> Wrapped {
         let disabled = environment.inherited_disabled;
         let click = (!disabled && !node.event_handlers("click").is_empty()).then(|| {
             (
@@ -2323,15 +2357,7 @@ impl GpuiNodeRenderer {
             })) << 4
             | u8::from(semantic.is_some()) << 5;
         if !node_needs_interaction_wrapper(node, needs, disabled) {
-            return Self::populate(
-                element,
-                node,
-                environment,
-                boundary_fallback,
-                path,
-                retained_id,
-                motion,
-            );
+            return Wrapped::Plain(element);
         }
 
         let click_dispatcher = environment.dispatcher.cloned();
@@ -2488,15 +2514,7 @@ impl GpuiNodeRenderer {
         } else {
             apply_environment_raw_pointer(element, node, retained_id, environment)
         };
-        Self::populate(
-            element,
-            node,
-            environment,
-            boundary_fallback,
-            path,
-            retained_id,
-            motion,
-        )
+        Wrapped::Interactive(element)
     }
 
     #[allow(clippy::too_many_lines)]
@@ -2919,6 +2937,12 @@ fn render_flattened_children<C: ColorResolver>(
         }
     }
     rendered
+}
+
+/// A node's element with or without its interaction wrapper.
+enum Wrapped {
+    Interactive(Stateful<Div>),
+    Plain(Div),
 }
 
 fn node_needs_interaction_wrapper(node: &UiNode, needs: u8, disabled: bool) -> bool {
