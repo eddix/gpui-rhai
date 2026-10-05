@@ -67,7 +67,10 @@ Rust host 注册为带 schema 和版本的 capability。需要发布时运行
 
 可跨 render 保存的回调必须是命名且不捕获环境的函数。Rhai 的编译只检查语法，
 不会证明所有动态函数重载都存在；`gpui-rhai check` 会额外检查已知调用并真实执行
-首帧，但事件分支仍应以真实 payload 类型测试。
+首帧，但事件分支仍应以真实 payload 类型测试。入口脚本的函数不要和内置函数同名
+（如 `index_of`、`filter`、`split`）：Rhai 优先调用脚本函数，连导入组件里的
+`x.index_of(a, b)` 也会落到你的 `fn index_of(a, b)` 上；`check` 会给出
+`builtin-shadow` 警告。
 
 Rust 侧以脚本视图为核心：`FileScriptView` / `EmbeddedScriptView` 先生成
 `PreparedScriptView`。独立应用交给 `ScriptApplication` 打开窗口；已有 GPUI

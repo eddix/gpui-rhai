@@ -443,6 +443,36 @@ mod tests {
     use super::*;
 
     #[test]
+    fn bundled_entry_scripts_do_not_shadow_builtins() {
+        // The Theme Studio and story entries are covered next to the code
+        // that fills their placeholders.
+        let mut entries = vec![("gallery/main".to_owned(), gallery_entry_source())];
+        for example in ["hello_world", "byod_treemap"] {
+            let path = format!(
+                "{}/../../examples/{example}/ui/main.rhai",
+                env!("CARGO_MANIFEST_DIR")
+            );
+            entries.push((example.to_owned(), std::fs::read_to_string(path).unwrap()));
+        }
+        let mut runtime = gpui_rhai::RuntimeEngine::new();
+        let mut found = Vec::new();
+        for (name, source) in &entries {
+            for diagnostic in runtime.lint_shadowed_builtins(name, source).unwrap() {
+                found.push(diagnostic.to_string());
+            }
+        }
+        assert!(found.is_empty(), "{}", found.join("\n"));
+    }
+
+    fn gallery_entry_source() -> String {
+        GALLERY_SOURCES_BY_ID
+            .iter()
+            .find(|(id, _)| *id == "gallery/main")
+            .map(|(_, source)| (*source).to_owned())
+            .unwrap()
+    }
+
+    #[test]
     fn page_ids_cover_every_bundled_component() {
         let ids = page_ids();
         assert!(ids.iter().any(|id| id == DEFAULT_PAGE));

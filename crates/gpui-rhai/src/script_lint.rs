@@ -61,6 +61,55 @@ impl fmt::Display for KnownCallDiagnostic {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+/// An entry-script function that takes over calls meant for a native function.
+///
+/// Rhai looks for a script function before a native one. A method call
+/// `x.f(a, b)` looks for a script `fn f(a, b)` (the receiver is not a
+/// parameter), and a direct call `f(a, b)` for `fn f(a, b)`. Entry-script
+/// functions are visible inside imported modules, so `fn index_of(values,
+/// key)` in an application captured `text.index_of(character, start)` in the
+/// official Command component.
+pub struct ShadowedBuiltin {
+    /// Diagnostic source name supplied by the Host.
+    pub source: String,
+    /// One-based line of the `fn` declaration, when found in the source text.
+    pub line: Option<usize>,
+    /// The shadowing function name.
+    pub function: String,
+    /// Its parameter count.
+    pub arity: usize,
+    /// A native method takes `arity` explicit arguments after its receiver.
+    pub captures_method_calls: bool,
+    /// A native function takes exactly `arity` arguments.
+    pub captures_direct_calls: bool,
+}
+
+impl fmt::Display for ShadowedBuiltin {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{}", self.source)?;
+        if let Some(line) = self.line {
+            write!(formatter, ":{line}")?;
+        }
+        let arguments = (0..self.arity)
+            .map(|index| char::from(b'a' + u8::try_from(index % 26).unwrap_or(0)).to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let name = &self.function;
+        let captured = match (self.captures_method_calls, self.captures_direct_calls) {
+            (true, true) => format!(
+                "method calls `x.{name}({arguments})` and direct calls `{name}({arguments})`"
+            ),
+            (true, false) => format!("method calls `x.{name}({arguments})`"),
+            _ => format!("direct calls `{name}({arguments})`"),
+        };
+        write!(
+            formatter,
+            ": `fn {name}` takes over built-in {captured}, also inside imported components; rename it"
+        )
+    }
+}
+
 #[derive(Debug, Error)]
 /// Failure to construct or parse inputs for known-call validation.
 pub enum KnownCallLintError {
@@ -125,6 +174,10 @@ impl FunctionSet {
 struct KnownCallCatalog {
     global: FunctionSet,
     modules: BTreeMap<String, FunctionSet>,
+    /// Native functions callable directly, by name and parameter count.
+    native_direct: BTreeMap<String, BTreeSet<usize>>,
+    /// Native functions by name and explicit argument count after the receiver.
+    native_method: BTreeMap<String, BTreeSet<usize>>,
 }
 
 impl KnownCallCatalog {
@@ -176,6 +229,20 @@ impl KnownCallCatalog {
                 if function.namespace == MetadataNamespace::Global {
                     self.global
                         .insert_direct(function.name.clone(), function.num_params);
+                }
+                if function.function_type == MetadataFunctionType::Native {
+                    if function.namespace == MetadataNamespace::Global {
+                        self.native_direct
+                            .entry(function.name.clone())
+                            .or_default()
+                            .insert(function.num_params);
+                    }
+                    if function.num_params > 0 {
+                        self.native_method
+                            .entry(function.name.clone())
+                            .or_default()
+                            .insert(function.num_params - 1);
+                    }
                 }
                 match function.function_type {
                     MetadataFunctionType::Native if function.num_params > 0 => self
@@ -259,6 +326,65 @@ pub(crate) fn lint_known_calls(
     });
     diagnostics.dedup();
     Ok(diagnostics)
+}
+
+pub(crate) fn lint_shadowed_builtins(
+    engine: &mut Engine,
+    entry_name: &str,
+    entry_source: &str,
+) -> Result<Vec<ShadowedBuiltin>, KnownCallLintError> {
+    let catalog = KnownCallCatalog::from_engine(engine)?;
+    let previous_optimization = engine.optimization_level();
+    engine.set_optimization_level(OptimizationLevel::None);
+    let parsed = parse_source(engine, entry_name, None, entry_source);
+    engine.set_optimization_level(previous_optimization);
+    let parsed = parsed?;
+    let takes = |set: &BTreeMap<String, BTreeSet<usize>>, name: &str, arity: usize| {
+        set.get(name)
+            .is_some_and(|arities| arities.contains(&arity))
+    };
+    let mut diagnostics = parsed
+        .ast
+        .iter_functions()
+        .filter(|function| function.this_type.is_none())
+        .filter_map(|function| {
+            let arity = function.params.len();
+            let captures_method_calls = takes(&catalog.native_method, function.name, arity);
+            let captures_direct_calls = takes(&catalog.native_direct, function.name, arity);
+            (captures_method_calls || captures_direct_calls).then(|| ShadowedBuiltin {
+                source: entry_name.to_owned(),
+                line: declaration_line(entry_source, function.name),
+                function: function.name.to_owned(),
+                arity,
+                captures_method_calls,
+                captures_direct_calls,
+            })
+        })
+        .collect::<Vec<_>>();
+    diagnostics
+        .sort_by(|left, right| (left.line, &left.function).cmp(&(right.line, &right.function)));
+    Ok(diagnostics)
+}
+
+/// The line of `fn name(` (or `private fn name(`) outside line comments.
+fn declaration_line(source: &str, name: &str) -> Option<usize> {
+    source
+        .lines()
+        .position(|line| {
+            let code = line.split("//").next().unwrap_or(line);
+            code.match_indices("fn ").any(|(index, _)| {
+                let starts_word = code[..index]
+                    .chars()
+                    .next_back()
+                    .is_none_or(|character| !character.is_alphanumeric() && character != '_');
+                let rest = code[index + 3..].trim_start();
+                starts_word
+                    && rest
+                        .strip_prefix(name)
+                        .is_some_and(|after| after.trim_start().starts_with('('))
+            })
+        })
+        .map(|index| index + 1)
 }
 
 fn parse_sources(
@@ -571,6 +697,45 @@ mod tests {
             )
             .unwrap();
         assert!(diagnostics.is_empty(), "{diagnostics:#?}");
+    }
+
+    #[test]
+    fn shadowed_builtin_lint_reports_entry_functions_named_like_natives() {
+        let mut runtime = RuntimeEngine::new();
+        let source = "fn helper(value) { value }\n\
+                      // fn index_of(values, key) in a comment\n\
+                      fn index_of(values, key) { 0 }\n\
+                      private fn contains(a) { false }\n\
+                      fn len(a, b, c, d, e, f) { 0 }\n\
+                      fn text(value) { value }\n\
+                      fn view(ctx) { text(helper(\"x\")) }\n";
+        let diagnostics = runtime
+            .lint_shadowed_builtins("ui/main.rhai", source)
+            .unwrap();
+        let found = diagnostics
+            .iter()
+            .map(|diagnostic| {
+                (
+                    diagnostic.function.as_str(),
+                    diagnostic.line,
+                    diagnostic.captures_method_calls,
+                    diagnostic.captures_direct_calls,
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            found,
+            [
+                ("index_of", Some(3), true, true),
+                ("contains", Some(4), true, false),
+                ("text", Some(6), false, true),
+            ]
+        );
+        assert_eq!(
+            diagnostics[1].to_string(),
+            "ui/main.rhai:4: `fn contains` takes over built-in method calls `x.contains(a)`, \
+             also inside imported components; rename it"
+        );
     }
 
     #[test]

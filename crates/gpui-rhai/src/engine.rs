@@ -1864,6 +1864,22 @@ impl RuntimeEngine {
         crate::script_lint::lint_known_calls(&mut self.engine, entry_name, entry_source, modules)
     }
 
+    /// List entry-script functions that replace a native function of the same
+    /// name and arity. Rhai prefers the script function for every call,
+    /// including method calls inside imported components, so a helper named
+    /// like a built-in breaks code that never mentions it.
+    ///
+    /// # Errors
+    ///
+    /// Returns a metadata or parse error if the lint catalog cannot be built.
+    pub fn lint_shadowed_builtins(
+        &mut self,
+        entry_name: &str,
+        entry_source: &str,
+    ) -> Result<Vec<crate::ShadowedBuiltin>, crate::KnownCallLintError> {
+        crate::script_lint::lint_shadowed_builtins(&mut self.engine, entry_name, entry_source)
+    }
+
     /// Return a snapshot of components exported through this engine.
     ///
     /// # Errors

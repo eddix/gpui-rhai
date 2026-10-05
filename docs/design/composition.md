@@ -54,11 +54,13 @@ Rhai limits expression depth (64 per script, 32 inside a function). Build deep
 screens from small functions, one per region or section, as in the examples;
 it reads better too.
 
-Do not name application functions after built-in methods (`index_of`,
-`contains`, `len`, `push`, `replace`, …). Rhai lets a script function be called
-as a method and prefers script functions over built-ins, also inside imported
-components: an application `fn index_of(values, key)` captures every
-`text.index_of(c, position)` call in the registry.
+Do not name application functions after built-ins (`index_of`, `contains`,
+`filter`, `split`, `text`, …). Rhai prefers a script function over a built-in,
+also inside imported components: a method call `x.f(a, b)` resolves to a
+script `fn f(a, b)` (the receiver is not a parameter), a direct call `f(a, b)`
+to the same. An application `fn index_of(values, key)` captured every
+`text.index_of(c, position)` in the registry. `gpui-rhai check` warns about
+these (`builtin-shadow`).
 
 ## 2. Spacing
 

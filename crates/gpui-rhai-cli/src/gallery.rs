@@ -1083,6 +1083,29 @@ mod tests {
     }
 
     #[test]
+    fn story_entries_do_not_shadow_builtins() {
+        let mut runtime = RuntimeEngine::new();
+        let (theme_name, theme_source) = theme_source("default-dark").unwrap();
+        let selected = load_theme_source(runtime.engine(), theme_name, theme_source).unwrap();
+        let mut found = Vec::new();
+        for story in BUNDLED_STORIES {
+            for case in story.cases {
+                let launch = GalleryLaunch {
+                    story: story.id.to_owned(),
+                    case: case.id.to_owned(),
+                    ..GalleryLaunch::default()
+                };
+                let source = materialize_story_source(story, &launch, &selected).unwrap();
+                for diagnostic in runtime.lint_shadowed_builtins(story.id, &source).unwrap() {
+                    found.push(diagnostic.to_string());
+                }
+            }
+        }
+        found.dedup();
+        assert!(found.is_empty(), "{}", found.join("\n"));
+    }
+
+    #[test]
     fn every_bundled_story_case_prepares() {
         for story in BUNDLED_STORIES {
             for case in story.cases {

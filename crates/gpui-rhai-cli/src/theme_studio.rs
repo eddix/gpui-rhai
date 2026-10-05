@@ -966,6 +966,16 @@ mod tests {
     }
 
     #[test]
+    fn studio_entry_does_not_shadow_builtins() {
+        let document = default_draft().unwrap();
+        let main = source_with_state(&document, "", &validation_status(&document));
+        let found = RuntimeEngine::new()
+            .lint_shadowed_builtins("studio", &main)
+            .unwrap();
+        assert!(found.is_empty(), "{found:?}");
+    }
+
+    #[test]
     fn studio_executes_the_real_component_specimen() {
         let document = default_draft().unwrap();
         let session = Rc::new(RefCell::new(StudioSession {

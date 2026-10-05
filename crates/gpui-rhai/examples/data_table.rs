@@ -167,7 +167,7 @@ fn actions(ctx) {
     actions
 }
 
-fn filter(ctx) {
+fn filter_field(ctx) {
     input::Input(#{ key: "users-filter", label: "Filter users", value: ctx.get_state("query"),
         placeholder: "Filter by name or email", on_change: Fn("set_query") })
         .with_style(style().width(px(240)))
@@ -200,7 +200,7 @@ fn view(ctx) {
     } else { () };
     column([data_view::DataView(#{
         key: "users-view", label: "Users", title: "Users", body: grid, state: state,
-        toolbar: #{ filters: [filter(ctx)], actions: actions(ctx) },
+        toolbar: #{ filters: [filter_field(ctx)], actions: actions(ctx) },
         footer: #{ status: pager, selection: `${selected.len} selected`, count: `${rows.len} users` }
     })]).with_style(style().flex_col().width(relative(1.0)).height(relative(1.0)))
 }

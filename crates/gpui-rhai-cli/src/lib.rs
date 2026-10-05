@@ -506,7 +506,8 @@ impl Project {
         validate_locales(&self.root)?;
         validate_embedded_assets(&self.root)?;
         validate_fonts(&self.root)?;
-        let warnings = profile_warnings(&self.root, &manifest)?;
+        let mut warnings = shadow_warnings(&self.root)?;
+        warnings.extend(profile_warnings(&self.root, &manifest)?);
         Ok(CheckReport {
             components: manifest.components.len(),
             entry: app.entry,
@@ -1134,6 +1135,17 @@ fn validate_entry(
     } else {
         Ok(false)
     }
+}
+
+/// Entry functions that replace a built-in. Always on: the failure they cause
+/// is silent (a component's render fails and rolls back).
+fn shadow_warnings(root: &Path) -> Result<Vec<String>, ProjectError> {
+    let entry = read(&root.join("ui/main.rhai"))?;
+    Ok(RuntimeEngine::new()
+        .lint_shadowed_builtins("ui/main.rhai", &entry)?
+        .iter()
+        .map(|diagnostic| format!("builtin-shadow {diagnostic}"))
+        .collect())
 }
 
 /// Static design-rule warnings enabled by `ui/profile.rhai`. Without a
@@ -2063,7 +2075,8 @@ pub struct CheckReport {
     pub entry: ModuleId,
     pub host_validation_required: bool,
     pub initial_view_validated: bool,
-    /// Design-rule warnings from the application profile; never fatal.
+    /// Built-in shadowing and the application profile's design rules; never
+    /// fatal.
     pub warnings: Vec<String>,
 }
 
@@ -2344,6 +2357,18 @@ mod tests {
         assert_eq!(report.warnings.len(), 1, "{:?}", report.warnings);
         assert!(report.warnings[0].starts_with("literal-geometry ui/main.rhai:2"));
         assert!(report.summary().contains("warning: literal-geometry"));
+        fs::write(
+            directory.path().join("ui/main.rhai"),
+            "fn index_of(values, key) { 0 }\nfn view(ctx) { text(\"Hi\") }\n",
+        )
+        .unwrap();
+        let report = project.check().unwrap();
+        assert_eq!(report.warnings.len(), 1, "{:?}", report.warnings);
+        assert!(
+            report.warnings[0].starts_with("builtin-shadow ui/main.rhai:1: `fn index_of`"),
+            "{:?}",
+            report.warnings
+        );
     }
 
     #[test]

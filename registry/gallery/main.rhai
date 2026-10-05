@@ -115,7 +115,7 @@ fn toggle_mode(ctx, payload) {
     ctx.set_state("mode", mode);
     ctx.set_theme("Default", if mode == "dark" { "Dark" } else { "Light" });
 }
-fn set_locale(ctx, value) {
+fn choose_locale(ctx, value) {
     if value == () { return; }
     ctx.set_state("locale", value);
     ctx.set_locale(value);
@@ -220,7 +220,7 @@ fn title_controls(ctx) {
     let locale = select::Select(#{ key: "gallery-locale", label: "Locale", value: ctx.get_state("locale"),
         open: ctx.get_state("locale_open"), query: "", size: "sm", width: px(120),
         options: [#{ value: "en", label: "English" }, #{ value: "zh-CN", label: "简体中文" }, #{ value: "ar", label: "العربية" }],
-        on_change: Fn("set_locale"), on_open_change: Fn("locale_open") });
+        on_change: Fn("choose_locale"), on_open_change: Fn("locale_open") });
     let palette = button::Button(#{ key: "gallery-palette", text: "Commands", variant: "ghost", size: "sm",
         action: "gallery.palette" });
     [density, mode, locale, palette]
