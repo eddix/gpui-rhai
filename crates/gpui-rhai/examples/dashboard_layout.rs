@@ -1,7 +1,13 @@
 use std::collections::BTreeMap;
 
-use gpui_rhai::{AssetData, EmbeddedScriptSource, EmbeddedScriptView, ModuleId, ScriptApplication};
+use gpui_rhai::{EmbeddedScriptSource, EmbeddedScriptView, ModuleId, ScriptApplication};
 
+const REGION: &str = include_str!("../../../registry/layouts/region.rhai");
+const STACK: &str = include_str!("../../../registry/layouts/stack.rhai");
+const INLINE: &str = include_str!("../../../registry/layouts/inline.rhai");
+const SECTION: &str = include_str!("../../../registry/patterns/section.rhai");
+const STAT: &str = include_str!("../../../registry/patterns/stat.rhai");
+const DESCRIPTION_LIST: &str = include_str!("../../../registry/patterns/description_list.rhai");
 const TABS: &str = include_str!("../../../registry/components/tabs.rhai");
 const TAG: &str = include_str!("../../../registry/components/tag.rhai");
 const AVATAR: &str = include_str!("../../../registry/components/avatar.rhai");
@@ -18,6 +24,12 @@ const ZH_CN: &str = include_str!("../../../registry/locales/zh_cn.rhai");
 const AR: &str = include_str!("../../../registry/locales/ar.rhai");
 
 const MAIN: &str = r#"
+import "layouts/region" as region;
+import "layouts/stack" as stack;
+import "layouts/inline" as inline;
+import "patterns/section" as section;
+import "patterns/stat" as stat;
+import "patterns/description_list" as description_list;
 import "components/tabs" as tabs;
 import "components/tag" as tag;
 import "components/avatar" as avatar;
@@ -48,61 +60,65 @@ fn init(ctx) {
     ctx.set_locale("__VISUAL_LOCALE__");
 }
 
-fn overview() {
+fn heading() {
     column([
-        row([
-            tag::Tag(#{ text: "Production", variant: "success" }),
-            tag::Tag(#{ text: "Rust", variant: "accent", closable: true, on_close: Fn("ignore") })
-        ]).with_style(style().gap(px(8))),
-        text("Deployment progress"),
-        progress::Progress(#{ key: "deployment", value: 72, max: 100, label: "Deployment" }),
-        text("Background synchronization"),
-        progress::Progress(#{ key: "sync", indeterminate: true, label: "Synchronization" })
-    ]).with_style(style().padding(px(16)).gap(px(12)).items_start())
+        text("Runtime dashboard").with_style(style().typography("title").text_color(theme_color("text_primary")))
+            .accessibility_role("heading").accessibility_level(1),
+        text("Source-owned Rhai components").with_style(style().typography("caption")
+            .text_color(theme_color("text_muted"))),
+    ]).with_style(style().flex_col().gap(theme_spacing("xxs")).min_width(px(0)))
+}
+
+fn profile(ctx) {
+    popover::Popover(#{
+        key: "profile", label: "Profile", placement: "bottom", align: "end",
+        trigger: avatar::Avatar(#{ name: "Ada Lovelace", initials: "AL", presence: "online" }),
+        content: description_list::DescriptionList(#{ label: "Profile", items: [
+            #{ label: "Name", value: "Ada Lovelace" }, #{ label: "Role", value: "Runtime maintainer" },
+        ] }),
+        open: ctx.get_state("profile_open"), on_open_change: Fn("set_profile_open")
+    })
+}
+
+fn overview() {
+    stack::Stack(#{ gap: "section", children: [
+        inline::Inline(#{ children: [
+            tag::Tag(#{ facet: "env", text: "production" }),
+            tag::Tag(#{ facet: "lang", text: "rust", closable: true, on_close: Fn("ignore") })
+        ] }),
+        stat::stats([
+            #{ label: "Hosts", value: "128" },
+            #{ label: "Healthy", value: "127" },
+            #{ label: "Deploy", value: "72", unit: "%" },
+        ]),
+        section::Section(#{ title: "Deployment", description: "Rolling out 1.4.2 to eu-west.",
+            content: progress::Progress(#{ key: "deployment", value: 72, max: 100, label: "Deployment" }) }),
+        section::Section(#{ title: "Synchronization", description: "Background sync of the host inventory.",
+            content: progress::Progress(#{ key: "sync", indeterminate: true, label: "Synchronization" }) })
+    ] })
 }
 
 fn activity() {
-    column([
-        text("09:42  Release candidate built"),
-        text("09:44  Integration checks passed"),
-        text("09:47  Deployment started")
-    ]).with_style(style().padding(px(16)).gap(px(8)).items_start())
+    description_list::DescriptionList(#{ label: "Activity", items: [
+        #{ label: "09:42", value: "Release candidate built", numeric: true },
+        #{ label: "09:44", value: "Integration checks passed", numeric: true },
+        #{ label: "09:47", value: "Deployment started", numeric: true },
+    ] })
 }
 
 fn view(ctx) {
     let selected = ctx.get_state("tab");
-    column([
-        row([
-            column([
-                text("Runtime dashboard").with_style(style().font_size(rem(1.25))),
-                text("Source-owned Rhai components").with_style(style().text_color(theme_color("text_muted")))
-            ]).with_style(style().gap(px(4))),
-            popover::Popover(#{
-                key: "profile",
-                label: "Profile",
-                trigger: avatar::Avatar(#{ name: "Ada Lovelace", initials: "AL", presence: "online" }),
-                content: column([
-                    text("Ada Lovelace"),
-                    text("Runtime maintainer").with_style(style().text_color(theme_color("text_muted")))
-                ]).with_style(style().gap(px(6))),
-                open: ctx.get_state("profile_open"),
-                placement: "left",
-                on_open_change: Fn("set_profile_open")
-            })
-        ]).with_style(style().justify_between().items_center()),
-        tabs::Tabs(#{
-            value: selected,
-            label: "Dashboard sections",
-            tabs: [
-                #{ value: "overview", label: "Overview", content: overview() },
-                #{ value: "activity", label: "Activity", content: activity() }
-            ],
-            on_change: Fn("set_tab")
-        })
-    ]).with_style(
-        style().width(px(680)).padding(px(24)).gap(px(18))
-            .background(theme_color("surface"))
-    )
+    let switcher = tabs::Tabs(#{
+        value: selected, label: "Dashboard sections", panel: false,
+        tabs: [#{ value: "overview", label: "Overview" }, #{ value: "activity", label: "Activity" }],
+        on_change: Fn("set_tab")
+    });
+    // The region fills the window, so its footer sits at the bottom.
+    column([region::Region(#{
+        label: "Runtime dashboard", title: heading(), actions: [profile(ctx)], toolbar: switcher,
+        body: if selected == "activity" { activity() } else { overview() },
+        footer: [text("Updated 09:47")]
+    })]).with_style(style().flex_col().width(relative(1.0)).height(relative(1.0)))
 }
 "#;
 
@@ -113,14 +129,44 @@ fn module(id: &str, source: &str) -> (ModuleId, String) {
     )
 }
 
-fn main() {
-    let visual_theme = visual_theme("default-dark");
-    let visual_locale = visual_locale();
+/// Logical window size of the example.
+pub const WINDOW: (f32, f32) = (760.0, 560.0);
+
+/// Assemble the dashboard for one theme slug and locale.
+///
+/// # Panics
+///
+/// Panics only if a static module ID is invalid.
+pub fn view(theme: &str, locale: &str) -> EmbeddedScriptView {
+    let theme = if matches!(
+        theme,
+        "default-light"
+            | "default-dark"
+            | "tokyo-night"
+            | "tokyo-storm"
+            | "catppuccin-latte"
+            | "catppuccin-mocha"
+    ) {
+        theme
+    } else {
+        "default-dark"
+    };
+    let locale = if matches!(locale, "en" | "zh-CN" | "ar") {
+        locale
+    } else {
+        "en"
+    };
     let main_source = MAIN
-        .replace("__VISUAL_THEME__", &visual_theme)
-        .replace("__VISUAL_LOCALE__", &visual_locale);
+        .replace("__VISUAL_THEME__", theme)
+        .replace("__VISUAL_LOCALE__", locale);
     let scripts = EmbeddedScriptSource::new(BTreeMap::from([
         module("main", &main_source),
+        module("layouts/region", REGION),
+        module("layouts/stack", STACK),
+        module("layouts/inline", INLINE),
+        module("patterns/section", SECTION),
+        module("patterns/stat", STAT),
+        module("patterns/description_list", DESCRIPTION_LIST),
         module("components/tabs", TABS),
         module("components/tag", TAG),
         module("components/avatar", AVATAR),
@@ -147,42 +193,21 @@ fn main() {
             ("zh_cn.rhai".to_owned(), ZH_CN.to_owned()),
             ("ar.rhai".to_owned(), AR.to_owned()),
         ])
-        .asset_sources([(
-            "icons/close".to_owned(),
-            AssetData {
-                mime_type: "image/svg+xml".to_owned(),
-                bytes: include_bytes!("../../../registry/assets/icons/close.svg").to_vec(),
-            },
-        )])
+        .asset_sources(registry_icons())
+}
+
+#[allow(dead_code)]
+fn main() {
+    let theme = std::env::var("GPUI_RHAI_VISUAL_THEME").unwrap_or_default();
+    let locale = std::env::var("GPUI_RHAI_VISUAL_LOCALE").unwrap_or_default();
+    view(&theme, &locale)
         .prepare()
         .and_then(|prepared| {
             ScriptApplication::new(prepared)
-                .window_size(760.0, 560.0)
+                .window_size(WINDOW.0, WINDOW.1)
                 .run()
         })
         .expect("dashboard_layout failed");
 }
 
-fn visual_theme(default: &str) -> String {
-    std::env::var("GPUI_RHAI_VISUAL_THEME")
-        .ok()
-        .filter(|theme| {
-            matches!(
-                theme.as_str(),
-                "default-light"
-                    | "default-dark"
-                    | "tokyo-night"
-                    | "tokyo-storm"
-                    | "catppuccin-latte"
-                    | "catppuccin-mocha"
-            )
-        })
-        .unwrap_or_else(|| default.to_owned())
-}
-
-fn visual_locale() -> String {
-    std::env::var("GPUI_RHAI_VISUAL_LOCALE")
-        .ok()
-        .filter(|locale| matches!(locale.as_str(), "en" | "zh-CN" | "ar"))
-        .unwrap_or_else(|| "en".to_owned())
-}
+include!("support/icons.rs");

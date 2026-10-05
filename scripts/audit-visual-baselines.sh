@@ -130,20 +130,21 @@ PY
   fi
 }
 
+# All baselines are offscreen captures in device pixels: twice the window size.
 for case_name in "${settings_cases[@]}"; do
-  check_case "tests/visual/macos/settings_panel/${case_name}.png" 640 552
+  check_case "tests/visual/macos/settings_panel/${case_name}.png" 1280 1040
 done
 for case_name in "${dashboard_cases[@]}"; do
-  check_case "tests/visual/macos/dashboard_layout/${case_name}.png" 760 592
+  check_case "tests/visual/macos/dashboard_layout/${case_name}.png" 1520 1120
 done
 for case_name in "${form_cases[@]}"; do
-  check_case "tests/visual/macos/form_showcase/${case_name}.png" 760 752
+  check_case "tests/visual/macos/form_showcase/${case_name}.png" 1520 1440
 done
 for case_name in "${data_table_cases[@]}"; do
-  check_case "tests/visual/macos/data_table/${case_name}.png" 980 752
+  check_case "tests/visual/macos/data_table/${case_name}.png" 1960 1440
 done
 for case_name in "${embedded_view_cases[@]}"; do
-  check_case "tests/visual/macos/embedded_views/${case_name}.png" 900 452
+  check_case "tests/visual/macos/embedded_views/${case_name}.png" 1800 840
 done
 for case_name in "${gallery_cases[@]}"; do
   # Offscreen captures in device pixels: the 1280 x 860 Gallery at 2x.

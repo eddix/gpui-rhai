@@ -5,25 +5,20 @@ evidence tied to an explicit environment, not portable pixel-perfect promises.
 
 ## Capture environment
 
-- Original capture: 2026-08-28
-- Complex-control refresh: 2026-08-30
-- Registry design-system refresh: 2026-09-01
-- Gallery/Acceptance Application capture: 2026-09-27; replaced by the 0.2 Gallery on 2026-10-04
-- Data Table release-candidate refresh: 2026-10-03 (see the separate environment below)
-- Data Table local-fix source refresh: 2026-10-04
-- macOS: 26.6.2 (25G83)
-- Original product captures: GPUI 0.2.2 / Rust 1.94.1
-- Gallery captures: gpui-pre 0.3.7 / Rust 1.95.0, macOS 27.0 (offscreen Metal readback)
-- Capture service: Codex Computer Use, one screenshot pixel per logical point
-- Settings viewport/capture: 640 × 520 points / 640 × 552 pixels
-- Dashboard viewport/capture: 760 × 560 points / 760 × 592 pixels
-- Form viewport/capture: 760 × 720 points / 760 × 752 pixels
-- Data Table viewport/capture: 980 × 720 points / 980 × 752 pixels
-- Theme Studio planned viewport/capture: 1280 × 820 points / 1280 × 852 pixels
-- Embedded Views viewport/capture: 900 × 420 points / 900 × 452 pixels
-- Gallery viewport/capture: 1280 × 860 points / 2560 × 1720 pixels, rendered
-  offscreen and read back from the GPU texture (no window chrome, no screen
-  capture)
+- Original capture: 2026-08-28; every file was recaptured for 0.2.0 on
+  2026-10-05 (examples) and 2026-10-04 (Gallery)
+- Environment of the current files: macOS 27.0, gpui-pre 0.3.7, Rust 1.95.0,
+  rendered offscreen and read back from the GPU texture (no window chrome, no
+  screen capture), stored in device pixels (2x)
+- Settings: 640 × 520 points / 1280 × 1040 pixels
+- Dashboard: 760 × 560 points / 1520 × 1120 pixels
+- Form: 760 × 720 points / 1520 × 1440 pixels
+- Data Table: 980 × 720 points / 1960 × 1440 pixels
+- Embedded Views: 900 × 420 points / 1800 × 840 pixels
+- Gallery: 1280 × 860 points / 2560 × 1720 pixels
+
+Examples: `scripts/capture-macos-example-baselines.sh [example] [case]`.
+Gallery: `scripts/capture-macos-gallery-baselines.sh [case]`.
 
 ## Recorded cases
 
@@ -104,10 +99,12 @@ light/dark, `scene.operations` in Arabic RTL, and `table` and
 `scripts/capture-macos-gallery-baselines.sh`. The inventory is now 57: 38
 product-context and shared-Host captures plus 19 Gallery captures.
 
-**The 38 example baselines (`settings_panel`, `dashboard_layout`,
-`form_showcase`, `data_table`, `embedded_views`) predate the 0.2 design system.**
-They still show the 0.1.x component appearance and need a refresh pass; their
-capture procedure is unchanged.
+On 2026-10-05 the five examples were rewritten with the 0.2 layouts and
+patterns (Region, FormLayout, DataView, Section, Stat, DescriptionList) and all
+38 example files were recaptured offscreen with the same case matrix. The focus
+cases come from scripted keyboard traversal in the capture tool (Tab, arrows,
+Space), and normal-motion cases run on a manual clock, so the indeterminate
+Progress is captured at a fixed moment.
 
 `embedded_views/default-dark.shared-host.png` records three independent Rhai
 views inside one host-owned GPUI layout. It proves compact responsive sizing for

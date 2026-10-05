@@ -229,5 +229,9 @@ The command prints the unique temporary bundle path. It never replaces an
 existing application or baseline. The optional theme, locale, state, and motion
 arguments are consumed only by examples that opt into deterministic
 visual-test startup; normal runs preserve their documented defaults.
-Gallery baselines need no bundle: `bash scripts/capture-macos-gallery-baselines.sh`
-renders them offscreen as described above.
+Baselines need no bundle: `bash scripts/capture-macos-gallery-baselines.sh`
+and `bash scripts/capture-macos-example-baselines.sh` render them offscreen as
+described above. The example tool compiles the five examples in as modules and
+calls their `view(...)` builders, so a capture is exactly what the example runs;
+focus states are scripted keystrokes and normal-motion cases use a manual clock.
+The app wrappers above remain for manual interaction checks.
