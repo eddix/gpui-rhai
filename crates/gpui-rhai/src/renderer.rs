@@ -1492,9 +1492,22 @@ struct RenderEnvironment<'a, C> {
     retained_links: Option<&'a BTreeMap<NodeId, Vec<crate::RetainedChildLink>>>,
     semantics: Option<&'a crate::CommittedSemanticFrame>,
     a11y_active: bool,
+    /// The parent stacks its children vertically and stretches them in an RTL
+    /// view: a child with a definite width must sit on the start (right) edge,
+    /// which flex layout without a direction would put on the left.
+    rtl_stretch_parent: bool,
 }
 
 impl<'a, C: ColorResolver> RenderEnvironment<'a, C> {
+    /// The environment of a node's own content: its resolved text color, and
+    /// no start-edge hint (a Box sets that again for its own children).
+    fn below(&self, style: &StyleProperties) -> Self {
+        Self {
+            rtl_stretch_parent: false,
+            ..self.with_resolved_text_color(style)
+        }
+    }
+
     /// The theme resolver bound to this subtree's inherited environment.
     fn resolver(&self) -> EnvironmentScoped<'a, C> {
         EnvironmentScoped::new(self.colors, self.environment)
@@ -1659,6 +1672,7 @@ impl GpuiNodeRenderer {
             retained_links: None,
             semantics: None,
             a11y_active: false,
+            rtl_stretch_parent: false,
         };
         Self::render_internal(node, &environment, None, "root", None)
     }
@@ -1739,6 +1753,7 @@ impl GpuiNodeRenderer {
             retained_links: None,
             semantics: Some(semantics),
             a11y_active,
+            rtl_stretch_parent: false,
         };
         tree.root().map_or_else(
             || {
@@ -1812,6 +1827,7 @@ impl GpuiNodeRenderer {
             retained_links: None,
             semantics: Some(&semantics),
             a11y_active: false,
+            rtl_stretch_parent: false,
         };
         tree.root().map_or_else(
             || {
@@ -1877,6 +1893,7 @@ impl GpuiNodeRenderer {
             retained_links: None,
             semantics: None,
             a11y_active: false,
+            rtl_stretch_parent: false,
         };
         Self::render_internal(node, &environment, None, "root", None)
     }
@@ -1998,6 +2015,7 @@ impl GpuiNodeRenderer {
             retained_links: None,
             semantics: Some(resources.semantics),
             a11y_active: resources.a11y_active,
+            rtl_stretch_parent: false,
         };
         tree.root().map_or_else(
             || {
@@ -2063,6 +2081,7 @@ impl GpuiNodeRenderer {
             retained_links: None,
             semantics: Some(resources.semantics),
             a11y_active: resources.a11y_active,
+            rtl_stretch_parent: false,
         };
         Self::render_internal(node, &environment, None, path, None)
     }
@@ -2114,10 +2133,12 @@ impl GpuiNodeRenderer {
             retained_links: Some(retained.links),
             semantics: Some(resources.semantics),
             a11y_active: resources.a11y_active,
+            rtl_stretch_parent: false,
         };
         Self::render_internal(node, &environment, None, path, retained.root)
     }
 
+    #[allow(clippy::too_many_lines)]
     fn render_internal<C: ColorResolver>(
         node: &UiNode,
         environment: &RenderEnvironment<'_, C>,
@@ -2157,11 +2178,14 @@ impl GpuiNodeRenderer {
                     .update_canvas_transform(retained_id, animation.canvas_transform());
             }
         }
-        let mut resolved_style = node.style().resolve(&local_interaction);
+        let mut resolved_style = rtl_start_edge(
+            node.style().resolve(&local_interaction),
+            environment.rtl_stretch_parent,
+        );
         apply_motion_dimensions(&mut resolved_style, animation);
         apply_signal_style(&mut resolved_style, &signals);
         normalize_text_content_layout(node, &mut resolved_style);
-        let local_environment = environment.with_resolved_text_color(&resolved_style);
+        let local_environment = environment.below(&resolved_style);
         let mut element = apply_style(
             div(),
             &resolved_style,
@@ -2329,10 +2353,15 @@ impl GpuiNodeRenderer {
                 !matches!(node.kind(), UiNodeKind::Custom { primitive }
                     if environment.primitives.uses_primary_focus(&primitive.primitive))
             });
+        // Key handlers on a container that holds focusable children route keys
+        // bubbling from those children (roving groups, overlay roots); only a
+        // click target or a key target without focusable content is a stop.
+        let implicit_tab_stop =
+            click.is_some() || !key_handlers.is_empty() && !children_take_focus(node, disabled);
         let element = apply_tab_behavior(
             element,
             node,
-            click.is_some() || !key_handlers.is_empty(),
+            implicit_tab_stop,
             ancestor_disabled,
             persistent_focus,
         );
@@ -2483,9 +2512,16 @@ impl GpuiNodeRenderer {
             ),
             UiNodeKind::Svg { source } => render_inline_svg(element, node, source, environment),
             UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => {
+                let style = &node.style().base;
+                let child_environment = RenderEnvironment {
+                    rtl_stretch_parent: environment.direction == TextDirection::RightToLeft
+                        && style.direction != Some(FlexDirection::Row)
+                        && matches!(style.align, None | Some(Align::Stretch)),
+                    ..*environment
+                };
                 let children = render_flattened_children(
                     children,
-                    environment,
+                    &child_environment,
                     boundary_fallback,
                     path,
                     retained_id,
@@ -3715,6 +3751,7 @@ fn native_overlay_element<C: ColorResolver>(
     boundary_fallback: Option<&UiNode>,
     (path, retained_id): (&str, Option<NodeId>),
 ) -> ScriptOverlayElement {
+    let trigger_focusable = subtree_takes_focus(trigger, environment.inherited_disabled);
     let mut rendered_spec = scoped_overlay_spec(spec, environment.view_id, environment.direction);
     if rendered_spec.kind == crate::OverlayKind::Tooltip {
         rendered_spec.open = environment
@@ -3801,6 +3838,48 @@ fn native_overlay_element<C: ColorResolver>(
             0x0018_181b,
         ))
         .restore_focus_on_close(restore_focus_on_close)
+        .with_trigger_focusable(trigger_focusable)
+}
+
+/// In an RTL stretching column, a child with a definite width belongs on the
+/// start (right) edge; `apply_flex_alignment` mirrors `Start` to the right.
+fn rtl_start_edge(mut style: StyleProperties, rtl_stretch_parent: bool) -> StyleProperties {
+    if rtl_stretch_parent && style.align_self.is_none() && style.width.is_some() {
+        style.align_self = Some(Align::Start);
+    }
+    style
+}
+
+fn children_take_focus(node: &UiNode, disabled: bool) -> bool {
+    match node.kind() {
+        UiNodeKind::Box { children } | UiNodeKind::Fragment { children } => children
+            .iter()
+            .any(|child| subtree_takes_focus(child, disabled)),
+        UiNodeKind::Overlay { trigger, .. } => subtree_takes_focus(trigger, disabled),
+        UiNodeKind::ErrorBoundary { child, .. } => subtree_takes_focus(child, disabled),
+        _ => false,
+    }
+}
+
+/// Whether rendering `node` puts a tab stop anywhere in its subtree, by the same
+/// policy as `apply_tab_behavior`: an explicit declaration wins, otherwise a click
+/// or key handler makes a node a stop, and native primitives own their focus.
+fn subtree_takes_focus(node: &UiNode, disabled: bool) -> bool {
+    let disabled = disabled || is_disabled(node);
+    if disabled {
+        return false;
+    }
+    if matches!(node.kind(), UiNodeKind::Custom { .. }) {
+        return true;
+    }
+    if node_has_focus_declaration(node) && node_tab_stop(node) {
+        return true;
+    }
+    if !node_has_focus_declaration(node) && !node.event_handlers("click").is_empty() {
+        return true;
+    }
+    let children = children_take_focus(node, disabled);
+    children || !node_has_focus_declaration(node) && !key_handler_bindings(node, false).is_empty()
 }
 
 fn overlay_panel_key(

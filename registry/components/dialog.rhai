@@ -133,6 +133,9 @@ fn render_Dialog(ctx, props) {
             open: props.open,
             gap: 0,
             modal: true,
+            // The anchor is empty: the dialog opens from application state, never
+            // by activating its trigger, so the trigger takes no focus.
+            activate_on_trigger: false,
             dismiss_on_escape: optional_bool(props, "dismiss_on_escape", true),
             dismiss_on_outside: optional_bool(props, "dismiss_on_outside", true),
             initial_focus: if "initial_focus" in props { props.initial_focus } else { "panel" },

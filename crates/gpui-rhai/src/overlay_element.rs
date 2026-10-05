@@ -449,6 +449,9 @@ pub(crate) struct ScriptOverlayElement {
     focus_ring: Rgba8,
     focus_surface: Rgba8,
     restore_focus_on_close: bool,
+    /// The trigger content holds its own tab stop (a Button, a field), so the
+    /// trigger wrapper must not add a second one.
+    trigger_focusable: bool,
     coordinator: WindowOverlayCoordinator,
 }
 
@@ -474,8 +477,20 @@ impl ScriptOverlayElement {
             focus_ring: Rgba8::from_rgb_hex(0x003b_82f6),
             focus_surface: Rgba8::from_rgb_hex(0x0018_181b),
             restore_focus_on_close,
+            trigger_focusable: false,
             coordinator,
         }
+    }
+
+    pub(crate) fn with_trigger_focusable(mut self, focusable: bool) -> Self {
+        self.trigger_focusable = focusable;
+        self
+    }
+
+    /// The trigger wrapper is a tab stop only when it is the activation
+    /// target: it opens the overlay and its content cannot take focus itself.
+    fn trigger_tab_stop(&self) -> bool {
+        self.open_change.is_some() && self.spec.activate_on_trigger && !self.trigger_focusable
     }
 
     pub(crate) fn with_backdrop_style(mut self, style: Option<BackdropStyleHandler>) -> Self {
@@ -574,7 +589,7 @@ impl ScriptOverlayElement {
         let mut trigger = div()
             .id(SharedString::from(format!("{}-trigger", self.id)))
             .track_focus(trigger_focus)
-            .tab_stop(activate_on_trigger && click_callback.is_some())
+            .tab_stop(self.trigger_tab_stop())
             .focus(move |style| overlay_focus_shadow(style, focus_ring, focus_surface))
             .child(self.trigger.take().expect("overlay trigger rendered once"))
             .on_click(move |event, window, cx| {
@@ -665,7 +680,8 @@ impl ScriptOverlayElement {
         let mut panel = div()
             .id(SharedString::from(format!("{}-panel", self.id)))
             .track_focus(panel_focus)
-            .tab_stop(true)
+            // A tooltip is never a keyboard target.
+            .tab_stop(self.spec.kind != OverlayKind::Tooltip)
             .occlude()
             .on_any_mouse_down(|_, _, cx| cx.stop_propagation())
             .on_key_down(move |event, window, cx| {
@@ -837,14 +853,16 @@ impl Element for ScriptOverlayElement {
                     .ensure_window_viewport(window.viewport_size());
                 let mut state = state.unwrap_or_else(|| OverlayElementState {
                     was_open: false,
-                    trigger_focus: cx.focus_handle().tab_stop(self.open_change.is_some()),
-                    panel_focus: cx.focus_handle().tab_stop(true),
+                    trigger_focus: cx.focus_handle().tab_stop(self.trigger_tab_stop()),
+                    panel_focus: cx
+                        .focus_handle()
+                        .tab_stop(self.spec.kind != OverlayKind::Tooltip),
                     previous_focus: None,
                 });
                 state.trigger_focus = state
                     .trigger_focus
                     .clone()
-                    .tab_stop(self.open_change.is_some());
+                    .tab_stop(self.trigger_tab_stop());
                 if state.was_open && !self.spec.open {
                     let _ = self.coordinator.dismiss(&self.spec.id, window, cx);
                 }

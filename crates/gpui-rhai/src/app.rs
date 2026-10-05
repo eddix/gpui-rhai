@@ -1242,6 +1242,16 @@ impl ScriptViewHandle {
             .runtime()
             .borrow()
             .geometry_for(Some(&view.view_id));
+        let direction = {
+            let runtime = view.lifecycle.runtime();
+            let runtime = runtime.borrow();
+            let root = view.lifecycle.root_path();
+            runtime
+                .locale
+                .as_ref()
+                .and_then(|locale| locale.direction(Some(&view.window_id), Some(root)).ok())
+                .unwrap_or(TextDirection::LeftToRight)
+        };
         let fonts = cx
             .text_system()
             .all_font_names()
@@ -1254,6 +1264,7 @@ impl ScriptViewHandle {
                 theme: &theme,
                 rules,
                 available_fonts: Some(&fonts),
+                direction,
             },
         ))
     }

@@ -8,9 +8,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
-    ColorResolver, Environment, FlexDirection, GeometryBounds, GeometryRegistry, InteractionState,
-    Justify, Length, NodeId, RetainedUiTree, Rgba8, StyleProperties, Symbol, UiNode, UiNodeKind,
-    UiValue,
+    Align, ColorResolver, Environment, FlexDirection, GeometryBounds, GeometryRegistry,
+    InteractionState, Justify, Length, NodeId, RetainedUiTree, Rgba8, StyleProperties, Symbol,
+    UiNode, UiNodeKind, UiValue,
 };
 
 /// One composition rule.
@@ -151,6 +151,8 @@ pub(crate) struct AuditInputs<'a, C: ColorResolver> {
     /// Font families known to the text system, when the caller can provide
     /// them; `None` skips [`AuditRule::UnresolvedFont`].
     pub available_fonts: Option<&'a BTreeSet<String>>,
+    /// Text starts are right edges in right-to-left views.
+    pub direction: crate::TextDirection,
 }
 
 #[derive(Clone, Copy)]
@@ -261,6 +263,14 @@ impl<C: ColorResolver> Walker<'_, '_, C> {
         }
     }
 
+    /// The edge text starts from: left in left-to-right views, right otherwise.
+    fn start_edge(&self, bounds: GeometryBounds) -> f64 {
+        match self.inputs.direction {
+            crate::TextDirection::LeftToRight => bounds.x,
+            crate::TextDirection::RightToLeft => bounds.x + bounds.width,
+        }
+    }
+
     fn pixels(&self, length: Option<Length>, environment: &Environment) -> Option<f64> {
         match self.inputs.theme.resolve_length_in(length?, environment)? {
             Length::Pixels(value) => Some(value),
@@ -340,7 +350,7 @@ impl<C: ColorResolver> Walker<'_, '_, C> {
                 if !scope.label_voice {
                     summary.text_size = scope.font_size;
                 }
-                summary.text_start = bounds.map(|bounds| bounds.x);
+                summary.text_start = bounds.map(|bounds| self.start_edge(bounds));
                 self.check_contrast(&scope, id, path);
             }
             // A native control renders its own text at the inherited size.
@@ -447,13 +457,23 @@ impl<C: ColorResolver> Walker<'_, '_, C> {
             self.pixels(width, &scope.environment)
                 .is_some_and(|width| width > 0.0)
         });
+        // A cell that centers its content (weekday labels, day numbers) has no
+        // text start of its own: the cell edge is what lines up.
+        let centered = match style.direction {
+            Some(FlexDirection::Row) => style.justify == Some(Justify::Center),
+            Some(FlexDirection::Column) => style.align == Some(Align::Center),
+            None => false,
+        };
         if painted
             || framed
+            || centered
             || role
                 .as_deref()
                 .is_some_and(|role| CONTROL_ROLES.contains(&role) || MARKER_ROLES.contains(&role))
         {
-            summary.text_start = bounds.map(|bounds| bounds.x).or(summary.text_start);
+            summary.text_start = bounds
+                .map(|bounds| self.start_edge(bounds))
+                .or(summary.text_start);
         }
         summary
     }
